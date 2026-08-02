@@ -14,12 +14,34 @@
  * a confident wrong number is not.
  */
 
+/**
+ * How close a meter is to its ceiling, decided by the server.
+ *
+ * The thresholds (75%, 90%) are the control plane's — see `pressure_for` in
+ * `routes/usage.py`. This app deliberately does not recompute them from
+ * `used`/`limit`: it renders a percentage already, and a second copy of "when
+ * do we warn" living in a component is how the screen and the refusal come to
+ * disagree. Every other number in this file arrives the same way and for the
+ * same reason.
+ */
+export type AllowancePressure = "ok" | "approaching" | "critical" | "exhausted";
+
 export type Allowance = {
   used: number;
   /** null means unlimited — never "unknown". Unknown fails the parse. */
   limit: number | null;
   remaining: number | null;
   exhausted: boolean;
+  /**
+   * Absent on an API older than 2026-08-03, and that is not a parse failure.
+   *
+   * Web deploys through Vercel and the API through Cloud Run, independently —
+   * so there is a window where this app is newer than the control plane. Failing
+   * the parse would blank the whole usage panel for the length of it. Defaulting
+   * to "ok" loses a warning nobody had yesterday; failing loses the numbers a
+   * person came to the page for.
+   */
+  pressure: AllowancePressure;
 };
 
 export type RunAllowance = Allowance & {
@@ -140,6 +162,20 @@ function readOptionalCount(
   return { ok: false };
 }
 
+const PRESSURES: readonly AllowancePressure[] = ["ok", "approaching", "critical", "exhausted"];
+
+/**
+ * The server's word, or "ok" when it did not send one.
+ *
+ * An unrecognised string is treated as absent rather than passed through: a
+ * future fifth level rendered as an unknown CSS state is a broken-looking page,
+ * and this app cannot know what a word it has never heard of should look like.
+ */
+function readPressure(source: Record<string, unknown>): AllowancePressure {
+  const value = source.pressure;
+  return PRESSURES.includes(value as AllowancePressure) ? (value as AllowancePressure) : "ok";
+}
+
 function parseAllowance(value: unknown): Allowance | null {
   if (!isRecord(value)) return null;
   const used = readCount(value, "used");
@@ -147,7 +183,13 @@ function parseAllowance(value: unknown): Allowance | null {
   const remaining = readOptionalCount(value, "remaining");
   if (used === null || !limit.ok || !remaining.ok) return null;
   if (typeof value.exhausted !== "boolean") return null;
-  return { used, limit: limit.value, remaining: remaining.value, exhausted: value.exhausted };
+  return {
+    used,
+    limit: limit.value,
+    remaining: remaining.value,
+    exhausted: value.exhausted,
+    pressure: readPressure(value),
+  };
 }
 
 /** The windowed half of an allowance block: `window_days` + `next_slot_at`. */

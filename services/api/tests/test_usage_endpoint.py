@@ -648,3 +648,64 @@ async def test_remaining_and_exhausted_track_a_ceiling_without_going_negative(
     assert result.hardware_spend.exhausted is exhausted
     assert result.hardware_spend.remaining_usd == pytest.approx(remaining)
     assert result.hardware_spend.remaining_usd >= 0.0
+
+
+@pytest.mark.parametrize(
+    "used, limit, expected",
+    [
+        (0, 100, "ok"),
+        (74, 100, "ok"),
+        (75, 100, "approaching"),  # exactly 75% warns
+        (89, 100, "approaching"),
+        (90, 100, "critical"),  # exactly 90% escalates
+        (99, 100, "critical"),
+        (100, 100, "exhausted"),
+        (250, 100, "exhausted"),  # overshoot, not a fifth state
+        (0, None, "ok"),  # unlimited has no ratio to be three quarters of
+        (10**9, None, "ok"),
+        (0, 0, "exhausted"),  # a zero limit refuses before any division
+    ],
+)
+def test_pressure_thresholds_are_the_servers_and_include_their_boundaries(used, limit, expected):
+    """Owner request: warn at 75% and 90%.
+
+    The boundaries are parametrized because `>=` versus `>` at exactly 75 is the
+    entire difference between warning a person and not, and it is the kind of
+    thing a later refactor flips without noticing.
+
+    A zero limit is here because it is the one input that can raise rather than
+    answer — `used / 0` — and a tier with a zero allowance is a real shape: the
+    web app's `preview` tier ships `agentTokensPerWeek: 0`.
+    """
+    assert usage_routes.pressure_for(used, limit) == expected
+
+
+async def test_pressure_travels_on_every_meter_not_just_tokens(scope, monkeypatch):
+    """Artifacts and workspaces fill up too, and a person deserves the same warning.
+
+    Pinned because `pressure` is computed once in `_allowance`, which is what
+    makes this true — a later change that builds one of these meters by hand
+    would silently ship a field that is always "ok".
+    """
+    result, _ = await _usage(scope, monkeypatch, executed=0, oldest=[])
+
+    for name in ("runs", "tokens", "artifacts", "workspaces", "shared_projects"):
+        meter = getattr(result, name)
+        assert meter.pressure == usage_routes.pressure_for(meter.used, meter.limit), name
+
+
+async def test_a_nearly_spent_week_is_reported_as_critical_before_it_refuses(scope, monkeypatch):
+    """The whole point of the field: `exhausted` is still False here.
+
+    A client watching only `exhausted` says nothing until the submission is
+    already being refused, which is the behaviour the owner asked to change.
+    """
+    limit = TIER_LIMITS["free"].agent_tokens_per_week
+    assert limit is not None
+    result, _ = await _usage(
+        scope, monkeypatch, executed=0, oldest=[], tokens_used=int(limit * 0.95)
+    )
+
+    assert result.tokens.exhausted is False
+    assert result.tokens.pressure == "critical"
+    assert result.tokens.remaining is not None and result.tokens.remaining > 0

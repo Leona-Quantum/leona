@@ -22,9 +22,7 @@ from majorana_llm import (
     LLMClient,
     LLMResponse,
     default_llm,
-    endpoint_for,
-    model_for,
-    resolve_provider,
+    missing_provider_keys,
 )
 from majorana_sandbox import ExecutionSpec, LocalSubprocessSandbox, Sandbox, SandboxResult
 
@@ -43,18 +41,35 @@ requires_db = pytest.mark.skipif(
 )
 
 
-def _live_provider_ready() -> bool:
-    if resolve_provider() == "anthropic":
-        return bool(os.environ.get("ANTHROPIC_API_KEY"))
-    required_keys = {
-        endpoint_for(model_for(stage))[1] for stage in ("route", "plan", "generate", "verify")
-    }
-    return all(os.environ.get(key) for key in required_keys)
+#: The only test that drives a real provider through the whole pipeline, which
+#: is why its skip condition gets this much care: a bare "requires credentials"
+#: skip is how it sat broken long enough for an outage to ship behind 1709 green
+#: tests. The missing variables are named so a skip says what to fix.
+_MISSING_KEYS = sorted(missing_provider_keys())
+_ENABLED = os.environ.get("MAJORANA_RUN_LIVE_LLM") == "1"
 
+#: Set by the live-llm workflow. Turns "cannot run" from a skip into an ERROR.
+#:
+#: `pytest` exits 0 for "1 skipped" exactly as it does for "1 passed", so in the
+#: one job whose entire purpose is to prove a real provider still works, an exit
+#: code could not tell success from "the test did not run". This closes that
+#: without a second mechanism to keep in step: a missing key now fails
+#: COLLECTION, and a rename or a bad `-k` leaves nothing collected, which pytest
+#: already reports as exit 5. Both are non-zero, and both are impossible to
+#: mistake for a pass.
+if os.environ.get("MAJORANA_LIVE_LLM_REQUIRED") == "1" and (not _ENABLED or _MISSING_KEYS):
+    raise RuntimeError(
+        "MAJORANA_LIVE_LLM_REQUIRED=1 but the live e2e cannot run: "
+        + ("MAJORANA_RUN_LIVE_LLM is not 1" if not _ENABLED else "")
+        + (f" unset provider variables: {', '.join(_MISSING_KEYS)}" if _MISSING_KEYS else "")
+    )
 
 requires_live_llm = pytest.mark.skipif(
-    os.environ.get("MAJORANA_RUN_LIVE_LLM") != "1" or not _live_provider_ready(),
-    reason="live provider test requires MAJORANA_RUN_LIVE_LLM=1 and configured credentials",
+    not _ENABLED or bool(_MISSING_KEYS),
+    reason=(
+        "live provider test requires MAJORANA_RUN_LIVE_LLM=1"
+        + (f" and these unset variables: {', '.join(_MISSING_KEYS)}" if _MISSING_KEYS else "")
+    ),
 )
 
 SETTINGS = Settings(

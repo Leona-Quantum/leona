@@ -50,7 +50,7 @@ shape is this route's own business.
 
 import datetime as dt
 from collections.abc import Sequence
-from typing import Annotated
+from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends
 from majorana_contracts.enums import CHAT_USAGE_ROLE
@@ -69,6 +69,44 @@ from ..tiers import TIER_WINDOW, TOKENS_PER_RUN_EQUIVALENT, limits_for, tier_of
 router = APIRouter()
 
 
+#: Owner request, 2026-08-03: tell a person before the wall, not at it.
+#:
+#: Thresholds live here, on the server, and reach the client as a decided
+#: `pressure` word rather than as numbers for it to compare. The client already
+#: renders a percentage from `used`/`limit`; if it also owned the thresholds,
+#: "when do we warn" would have two definitions and one would be a hardcoded
+#: 0.75 in a component. That is the drift this codebase has been bitten by
+#: repeatedly — the tier table alone had three copies of itself.
+WARN_RATIO = 0.75
+CRITICAL_RATIO = 0.90
+
+#: `ok` → nothing to say. `approaching` → three quarters gone. `critical` → nine
+#: tenths gone, the next substantial piece of work probably will not fit.
+#: `exhausted` → the gate is refusing now.
+AllowancePressure = Literal["ok", "approaching", "critical", "exhausted"]
+
+
+def pressure_for(used: int, limit: int | None) -> AllowancePressure:
+    """Where a meter sits against the warning thresholds.
+
+    Unlimited tiers are always `ok`: there is no ratio to be three quarters of.
+    A limit of zero is `exhausted` whatever `used` is — dividing by it would be
+    the only way to get that wrong, so it is answered before the division.
+    """
+    if limit is None:
+        return "ok"
+    if used >= limit:
+        return "exhausted"
+    if limit <= 0:
+        return "exhausted"
+    ratio = used / limit
+    if ratio >= CRITICAL_RATIO:
+        return "critical"
+    if ratio >= WARN_RATIO:
+        return "approaching"
+    return "ok"
+
+
 class Allowance(BaseModel):
     """One metered quantity. `limit`/`remaining` are null when unlimited."""
 
@@ -76,6 +114,11 @@ class Allowance(BaseModel):
     limit: int | None
     remaining: int | None
     exhausted: bool
+    #: Decided server-side so the client never owns a threshold. Redundant with
+    #: `exhausted` at the top end on purpose: `exhausted` is the gate's own word
+    #: and predates this field, and removing it would change a shape the web app
+    #: and its tests already read.
+    pressure: AllowancePressure = "ok"
 
 
 class RunAllowance(Allowance):
@@ -232,6 +275,7 @@ def _allowance(used: int, limit: int | None) -> Allowance:
         limit=limit,
         remaining=None if limit is None else max(limit - used, 0),
         exhausted=limit is not None and used >= limit,
+        pressure=pressure_for(used, limit),
     )
 
 

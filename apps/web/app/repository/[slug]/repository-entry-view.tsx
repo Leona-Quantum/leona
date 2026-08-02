@@ -314,7 +314,11 @@ export function RepositoryEntryView({
                   <article key={citation.url}>
                     <div><strong>{citation.title}</strong><span>{citation.year} · {citation.authors}</span></div>
                     <p>{locale === "ja" ? citation.relevanceJa : citation.relevance}</p>
-                    <a className="mj-text-link" href={citation.url} target="_blank" rel="noreferrer">{citation.url.replace(/^https?:\/\//, "")} ↗</a>
+                    {/* --url: the link text here is a citation URL, so its
+                        length is data. The base class is nowrap, which suits
+                        the fixed labels it was written for and overflowed this
+                        card silently. */}
+                    <a className="mj-text-link mj-text-link--url" href={citation.url} target="_blank" rel="noreferrer">{citation.url.replace(/^https?:\/\//, "")} ↗</a>
                   </article>
                 ))}
               </div>

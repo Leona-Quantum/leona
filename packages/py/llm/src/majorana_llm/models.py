@@ -71,6 +71,16 @@ def resolve_provider() -> str:
     return "anthropic"
 
 
+def roles_for_profile() -> frozenset[str]:
+    """Every role the active profile can be asked for.
+
+    The keys of `_DEFAULTS` are the authority on that set. Anything deriving
+    "which credentials do we need" from a shorter hand-written list answers for
+    a pipeline the product does not actually run.
+    """
+    return frozenset(_DEFAULTS[resolve_provider()])
+
+
 def model_for(stage: Stage | str) -> str:
     """Resolve the model for an agent role; legacy Stage values remain accepted."""
     key = stage.value if isinstance(stage, Stage) else str(stage)

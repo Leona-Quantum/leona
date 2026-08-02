@@ -346,6 +346,42 @@ export function limitsForTier(tier: AccountTier): TierLimits {
   return TIER_LIMITS[tier];
 }
 
+/**
+ * Which card on /pricing sells this tier, by the card's `name`.
+ *
+ * The id is not the name and never was — `pro` is sold as "Plus" and `team` as
+ * "Professional" — so anything that wants to show a person their own plan has to
+ * cross that gap. Written once, here, because the upgrade page and the pricing
+ * page both need it and a second copy is how one of them comes to quote the
+ * wrong price at somebody.
+ *
+ * `null` where no card sells the tier: `preview` is the signed-out fixture
+ * surface and `developer` is an operator grant. Neither is purchasable, and
+ * mapping them to a card would put a price on something nobody can buy.
+ */
+export const PLAN_CARD_NAMES: Record<AccountTier, string | null> = {
+  preview: null,
+  free: "Free",
+  pro: "Plus",
+  team: "Professional",
+  developer: null,
+};
+
+/**
+ * The purchasable cards above `tier`, in ladder order.
+ *
+ * Derived from `ACCOUNT_TIERS` rather than listed, so a tier inserted between
+ * two others appears here without anyone remembering this function exists.
+ * "Enterprise" is appended by the caller when it wants it: it sells no tier, so
+ * it cannot be derived from the ladder.
+ */
+export function upgradeCardsAbove(tier: AccountTier): string[] {
+  const here = ACCOUNT_TIERS.indexOf(tier);
+  return ACCOUNT_TIERS.slice(here + 1)
+    .map((candidate) => PLAN_CARD_NAMES[candidate])
+    .filter((name): name is string => name !== null);
+}
+
 export function isUnlimited(tier: AccountTier): boolean {
   const limits = TIER_LIMITS[tier];
   return limits.agentRunsPerWeek === null && limits.privateArtifacts === null;

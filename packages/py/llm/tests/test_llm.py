@@ -20,8 +20,10 @@ from majorana_llm import (
     classify_provider_error,
     endpoint_for,
     extract_json,
+    missing_provider_keys,
     model_for,
     resolve_provider,
+    roles_for_profile,
     simple_generation_system_prompt,
 )
 
@@ -574,6 +576,65 @@ def test_provider_resolution_prefers_owner_confirmed_keys(monkeypatch):
     monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "nonsense")
     with pytest.raises(ValueError):
         resolve_provider()
+
+
+def test_a_deepseek_only_environment_is_a_complete_openai_profile(monkeypatch):
+    """The regression that made this function necessary.
+
+    Three hand-written copies of "is the profile complete" demanded OPENAI_API_KEY
+    as well, which was true while gpt-5.5 planned and verified and false from the
+    day every role moved to a deepseek model. Both of them refused to run against
+    a DeepSeek-only environment that works perfectly.
+    """
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
+    assert missing_provider_keys() == frozenset()
+
+
+def test_missing_provider_keys_follows_the_models_table_rather_than_a_list(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
+
+    # Point ONE role at an OpenAI model and OPENAI_API_KEY becomes genuinely
+    # required — without anyone editing a list of key names. This is the whole
+    # reason the set is derived rather than written down.
+    monkeypatch.setenv("MAJORANA_MODEL_AUDIT", "gpt-5.5")
+    assert missing_provider_keys() == frozenset({"OPENAI_API_KEY"})
+    monkeypatch.setenv("OPENAI_API_KEY", "y")
+    assert missing_provider_keys() == frozenset()
+
+
+def test_missing_provider_keys_covers_every_role_the_product_can_call(monkeypatch):
+    """`audit` and `writeback` are real product calls and were in neither list.
+
+    The old copies checked route/plan/generate/verify only. A profile missing the
+    key for a role the pipeline reaches later reported itself ready and failed
+    mid-run instead of before it.
+    """
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "openai")
+    monkeypatch.setenv("DEEPSEEK_API_KEY", "x")
+    monkeypatch.setenv("MAJORANA_MODEL_WRITEBACK", "gpt-5.5")
+    assert "OPENAI_API_KEY" in missing_provider_keys()
+    assert roles_for_profile() >= {
+        "chat",
+        "route",
+        "plan",
+        "generate",
+        "audit",
+        "verify",
+        "writeback",
+    }
+
+
+def test_missing_provider_keys_reports_the_anthropic_profile(monkeypatch):
+    _clear_provider_env(monkeypatch)
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "anthropic")
+    assert missing_provider_keys() == frozenset({"ANTHROPIC_API_KEY"})
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "x")
+    assert missing_provider_keys() == frozenset()
 
 
 def test_provider_timeout_is_bounded_and_environment_overridable(monkeypatch):

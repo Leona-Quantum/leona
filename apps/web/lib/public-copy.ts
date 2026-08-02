@@ -262,6 +262,86 @@ export const PRICING_COPY: Record<PublicLocale, {
   },
 };
 
+/**
+ * The signed-in upgrade surface.
+ *
+ * Deliberately thin. Every price, cadence and feature line on this screen is
+ * read from `PRICING_COPY` above — the cards a person already saw before they
+ * signed up, and the ones `account-tier.test.ts` ties to `TIER_LIMITS`. This
+ * table holds only the words that are new here: whose plan it is, what they are
+ * currently using, and the fact that nothing on the page can charge them yet.
+ *
+ * A second plan table on this screen was the obvious way to build it and the
+ * wrong one. The pricing page and the upgrade page quoting different numbers is
+ * not a hypothetical in this codebase — the tier ladder alone had three copies
+ * of itself, two of them wrong, inside one month.
+ */
+export const UPGRADE_COPY: Record<PublicLocale, {
+  title: string;
+  lede: string;
+  currentLabel: string;
+  currentSuffix: string;
+  usageTitle: string;
+  usageApproaching: string;
+  usageCritical: string;
+  usageExhausted: string;
+  topOfLadderTitle: string;
+  topOfLadderBody: string;
+  developerTitle: string;
+  developerBody: string;
+  checkoutTitle: string;
+  checkoutBody: string;
+  enterpriseName: string;
+  cta: string;
+  backToAccount: string;
+}> = {
+  en: {
+    title: "Move up a plan",
+    lede: "What each plan adds, measured against what you are using now.",
+    currentLabel: "Your plan",
+    currentSuffix: "— what you have today",
+    usageTitle: "Where you are this week",
+    usageApproaching: "Three quarters of this week's tokens are spent.",
+    usageCritical: "Nine tenths of this week's tokens are spent. A long run may not finish.",
+    usageExhausted: "This week's allowance is used. Browser simulation in Studio stays available.",
+    topOfLadderTitle: "You are on the top published plan.",
+    topOfLadderBody:
+      "Professional is the highest plan with prices set here. Anything beyond it — larger allowances, private-corpus work, terms agreed with your organisation — is arranged directly.",
+    developerTitle: "Your account is unmetered.",
+    developerBody:
+      "Developer accounts are an operator grant, not a purchase. No allowance on this page applies to you.",
+    checkoutTitle: "Checkout is not live yet.",
+    checkoutBody:
+      "No payment method can be added in this deployment — there is no card entry, checkout, or charge. Get in touch and your plan is changed by hand in the meantime.",
+    enterpriseName: "Enterprise",
+    cta: "Get in touch",
+    backToAccount: "Back to account",
+  },
+  ja: {
+    title: "プランを変更する",
+    lede: "現在の使用状況と照らして、各プランで何が増えるかを示します。",
+    currentLabel: "現在のプラン",
+    currentSuffix: "— 現在ご利用中の内容",
+    usageTitle: "今週の使用状況",
+    usageApproaching: "今週のトークンの4分の3を使用しました。",
+    usageCritical: "今週のトークンの9割を使用しました。長い実行は完了しない可能性があります。",
+    usageExhausted:
+      "今週分の上限に達しました。Studioのブラウザ実行は引き続きご利用いただけます。",
+    topOfLadderTitle: "公開されている最上位のプランをご利用中です。",
+    topOfLadderBody:
+      "価格を公開しているプランではProfessionalが最上位です。これを超える利用上限、社内データを扱う運用、組織ごとの契約条件については個別にご相談ください。",
+    developerTitle: "このアカウントには上限がありません。",
+    developerBody:
+      "開発者アカウントは購入ではなく運営側による付与です。このページの上限はいずれも適用されません。",
+    checkoutTitle: "決済はまだ開始していません。",
+    checkoutBody:
+      "現在の環境では支払い方法を登録できず、カード入力も決済も行われません。それまでの間はお問い合わせいただければ手動でプランを変更します。",
+    enterpriseName: "Enterprise",
+    cta: "お問い合わせ",
+    backToAccount: "アカウントに戻る",
+  },
+};
+
 export const CONTACT_COPY: Record<PublicLocale, {
   overline: string;
   title: string;

@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
@@ -64,7 +65,11 @@ export function BillingPanel({ locale }: { locale: PublicLocale }) {
         <div><dt>{copy.billingPolicyCpu}</dt><dd>{copy.billingPolicyCpuValue}</dd></div>
         <div><dt>{copy.billingPolicyHardware}</dt><dd>{copy.billingPolicyHardwareValue}</dd></div>
       </dl>
-      <p className="mj-panel-help"><a href="/studio">{copy.billingEstimatesLink} →</a></p>
+      <p className="mj-panel-help">
+        <a href="/studio">{copy.billingEstimatesLink} →</a>
+        {" · "}
+        <Link href="/upgrade">{copy.billingUpgradeLink} →</Link>
+      </p>
     </section>
   );
 }

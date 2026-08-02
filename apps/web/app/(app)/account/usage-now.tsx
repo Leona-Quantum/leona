@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useEffect, useState } from "react";
 import { ACCOUNT_TIERS, type AccountTier } from "../../../lib/account-tier";
 import type { PublicLocale } from "../../../lib/public-locale";
@@ -180,6 +181,27 @@ function WeeklyMeters({ tokens, locale }: { tokens: TokenAllowance; locale: Publ
   const ratio = Math.min(tokens.used / tokens.limit, 1);
   const percent = Math.min(Math.round((tokens.used / tokens.limit) * 100), 100);
 
+  // Which sentence sits under the label. The server decided WHICH — the
+  // thresholds are its, not this component's — and this only words it.
+  //
+  // Ordered by severity rather than by `if (exhausted)` first, so a future
+  // fifth level cannot land in the middle of the chain and be unreachable.
+  // `remaining` is non-null here: `limit === null` returned above, and the
+  // parser rejects a payload where one is present without the other.
+  const remaining = formatTokens(tokens.remaining ?? 0, locale);
+  const pressureLine =
+    tokens.pressure === "exhausted" || tokens.exhausted
+      ? copy.meterExhausted
+      : tokens.pressure === "critical"
+        ? copy.meterCritical(remaining)
+        : tokens.pressure === "approaching"
+          ? copy.meterApproaching(remaining)
+          : null;
+  // The reset date is the calmer fact and keeps the row to one line, so it only
+  // appears when there is no warning to make instead.
+  const subLine = pressureLine ?? resetLine;
+  const warned = tokens.pressure !== "ok" || tokens.exhausted;
+
   return (
     <div className="mj-meters">
       <h3>{copy.meterWeeklyTitle}</h3>
@@ -187,17 +209,13 @@ function WeeklyMeters({ tokens, locale }: { tokens: TokenAllowance; locale: Publ
         <div>
           <span className="mj-meter-name">{copy.meterTokens}</span>
           {/* The reset line sits under the label rather than under the bar, so
-              the row stays one row. Exhaustion is said in words as well as in
+              the row stays one row. Pressure is said in words as well as in
               colour: the amber fill is the only other signal, and colour alone
               is not one.
               Nothing at all when neither applies — an account that has spent
               nothing has no date to give, and falling back to the ratio here
               printed "0 of 150,000" twice, two lines apart. */}
-          {tokens.exhausted || resetLine ? (
-            <p className="mj-meter-sub">
-              {tokens.exhausted ? copy.meterExhausted : resetLine}
-            </p>
-          ) : null}
+          {subLine ? <p className="mj-meter-sub">{subLine}</p> : null}
         </div>
         <div
           className="mj-meter-track"
@@ -209,7 +227,12 @@ function WeeklyMeters({ tokens, locale }: { tokens: TokenAllowance; locale: Publ
         >
           <div
             className="mj-meter-fill"
+            // Kept alongside `data-pressure` rather than replaced by it. The
+            // API may be older than this app for the length of a deploy (Vercel
+            // and Cloud Run ship independently), and in that window `pressure`
+            // parses to "ok" while `exhausted` is still true and correct.
             data-exhausted={tokens.exhausted}
+            data-pressure={tokens.exhausted ? "exhausted" : tokens.pressure}
             style={{ width: `${ratio * 100}%` }}
           />
         </div>
@@ -223,6 +246,15 @@ function WeeklyMeters({ tokens, locale }: { tokens: TokenAllowance; locale: Publ
         {tokens.runsEquivalent === null
           ? null
           : ` \u00b7 ${copy.meterTokensRuns(tokens.runsEquivalent)}`}
+        {/* Only once there is something to act on. A link to the plan ladder
+            beside a meter at 12% is an upsell; beside one at 78% it is the
+            answer to the question the number just raised. */}
+        {warned ? (
+          <>
+            {" \u00b7 "}
+            <Link href="/upgrade">{copy.meterUpgradeHint}</Link>
+          </>
+        ) : null}
       </p>
     </div>
   );

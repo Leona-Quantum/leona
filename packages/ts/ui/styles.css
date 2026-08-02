@@ -931,7 +931,20 @@
   font-size: var(--fs-12);
   font-weight: 500;
   text-decoration: none;
+  /* Correct for the fixed labels this class was written for — "View ↗",
+     "Contact ↗" — where a wrap would strand the arrow on a line of its own.
+     NOT correct for arbitrary text: see the modifier below. */
   white-space: nowrap;
+}
+/* A link whose text is a URL, which is data and can be any length.
+   `nowrap` on the base class turned one long citation URL into silent
+   horizontal overflow past the card border on the public Atlas entry page —
+   nothing in that subtree sets `overflow: hidden`, so there was no ellipsis and
+   no scrollbar to notice it by. `anywhere` rather than `break-word` because a
+   URL has no spaces to break at, which is the whole problem. */
+.mj-text-link--url {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .mj-text-link:hover {
   text-decoration: underline;
@@ -8407,6 +8420,42 @@ div.mj-rail-row:hover {
   color: var(--text-1);
   font-size: var(--fs-13);
 }
+/* /upgrade — the plan cards, and the current plan above them.
+   auto-fit rather than a fixed column count: a free account sees two cards and
+   a Plus account sees one, and a lone card stretched across a 1200px row reads
+   as a mistake. `minmax(0, ...)` on the track because a long feature line in a
+   grid item with an implicit `min-width: auto` widens the column instead of
+   wrapping — the same failure the nowrap audit keeps finding elsewhere. */
+.mj-upgrade-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: var(--sp-4);
+}
+.mj-upgrade-card {
+  display: flex;
+  flex-direction: column;
+  /* The button sits at the bottom of every card whatever the feature list does,
+     so two cards of different heights still line their actions up. */
+  align-items: flex-start;
+}
+.mj-upgrade-card .mj-primary-button {
+  margin-top: auto;
+}
+.mj-upgrade-description {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-upgrade-features {
+  margin: 0 0 var(--sp-4);
+  padding-left: var(--sp-4);
+  display: grid;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
 /* "Right now" — what is spent, under the ceilings that say what is allowed.
    Appears only once the numbers load, so it reserves no space. */
 .mj-usage-now {
@@ -9120,6 +9169,15 @@ div.mj-rail-row:hover {
   background: var(--accent);
   transition: width 240ms ease;
 }
+/* Amber from three quarters onward, not only at the wall.
+   `critical` and `exhausted` share the colour deliberately: the palette has one
+   amber and one red, red means an error, and a person near their limit has not
+   made a mistake. The three levels are distinguished in WORDS on the row above
+   — the sentence changes at each threshold — which is also the only version of
+   this that works for a reader who cannot see the colour at all. */
+.mj-meter-fill[data-pressure="approaching"],
+.mj-meter-fill[data-pressure="critical"],
+.mj-meter-fill[data-pressure="exhausted"],
 .mj-meter-fill[data-exhausted="true"] {
   background: var(--warn);
 }
