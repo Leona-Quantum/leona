@@ -1687,7 +1687,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     qpuKeyLengthHint: (length) => `That is ${length} characters — an IBM API key is 44.`,
     qpuInstanceLabel: "Instance CRN (optional)",
     qpuInstanceHelp:
-      "Only needed when your IBM account has more than one instance. Open Plan instances exist only in IBM's us-east region.",
+      "Only needed when your IBM account has more than one instance. Paste the CRN itself — it starts with “crn:” and an instance name is not accepted here. Open Plan instances exist only in IBM's us-east region.",
     qpuLabelLabel: "Label (optional)",
     qpuLabelHelp: "A name for your own reference. It is shown here and nowhere else.",
     qpuConnect: "Connect",
@@ -1867,7 +1867,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     qpuKeyLengthHint: (length) => `現在${length}文字です。IBM の API キーは44文字です。`,
     qpuInstanceLabel: "インスタンス CRN（任意）",
     qpuInstanceHelp:
-      "IBM アカウントに複数のインスタンスがある場合のみ必要です。Open Plan のインスタンスは IBM の us-east リージョンにのみ存在します。",
+      "IBM アカウントに複数のインスタンスがある場合のみ必要です。「crn:」で始まる CRN をそのまま貼り付けてください（インスタンス名は登録できません）。Open Plan のインスタンスは IBM の us-east リージョンにのみ存在します。",
     qpuLabelLabel: "ラベル（任意）",
     qpuLabelHelp: "ご自身の覚え書き用の名前です。この画面にのみ表示されます。",
     qpuConnect: "接続する",
