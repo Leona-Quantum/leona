@@ -265,7 +265,20 @@ async def test_the_refusal_carries_all_three_numbers(monkeypatch):
 
 
 def _open_the_gate(monkeypatch):
-    monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda: None)
+    """Every gate in front of the spend check, opened.
+
+    Two of them now: the deployment-wide flag (`submission_block_reason`, which
+    takes `has_credential` since credentials became per-user) and the caller's
+    own stored IBM credential. `_caller_can_submit` is patched rather than
+    seeded because this file is about the money, and its refusal has its own
+    test in `test_qpu_routes.py`.
+    """
+    monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda **_: None)
+    monkeypatch.setattr(qpu_routes, "_caller_can_submit", _always_connected)
+
+
+async def _always_connected(scope, session) -> bool:
+    return True
 
 
 async def _fake_create_record(scope_arg, session_arg, **kwargs):

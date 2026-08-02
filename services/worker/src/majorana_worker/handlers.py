@@ -54,6 +54,7 @@ from opentelemetry import metrics
 
 from pathlib import Path
 
+from majorana_api import credential_crypto
 from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.catalog_bootstrap_manifest import BootstrapManifestSource
 from majorana_api.catalog_import_fixtures import LocalFixtureSource
@@ -62,6 +63,7 @@ from majorana_api.db import AsyncSession
 from majorana_api.jobs import CATALOG_IMPORT_JOB_KIND, QPU_RUN_JOB_KIND, RUN_EXECUTE_JOB_KIND
 from majorana_api.orm import ImportJob, User
 from majorana_api.repos import catalog_import as catalog_import_repo
+from majorana_api.repos import provider_credentials as credentials_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
@@ -1154,10 +1156,88 @@ QPU_POLL_DELAY_S = 30
 QPU_POLL_DEADLINE_H = 24
 
 
-def _default_qpu_provider() -> Any:
+#: The provider a stored credential names. One today; `routes/qpu.py` holds the
+#: same constant for the API side of the same lookup.
+IBM_PROVIDER = "ibm"
+
+
+def _ibm_provider(token: str, instance: str | None) -> Any:
     from majorana_qpu import IbmRuntimeProvider
 
-    return IbmRuntimeProvider()
+    return IbmRuntimeProvider(token, instance=instance)
+
+
+class _CredentialUnusable(Exception):
+    """The submitting user's credential cannot be used for this record.
+
+    Carries the sentence written onto the durable row, which is the only place
+    the owner of the run will ever see it — `majorana_failure_evidence` applies
+    here too: `error` is the whole of what the person gets. It never carries
+    ciphertext or plaintext, only the row's `key_id` where that helps an
+    operator.
+    """
+
+
+async def _qpu_credential_for(session: AsyncSession, scope: Any) -> tuple[str, str | None]:
+    """The submitting user's IBM token and instance, decrypted.
+
+    Keyed on `scope.user_id`, which `_scope_from_payload` built from the job
+    payload the API wrote out of the submitting scope — so it is the same person
+    the `qpu_runs` row names, and `handle_qpu_run` asserts that rather than
+    assuming it.
+
+    Raises `_CredentialUnusable` for both failure modes, because the record has
+    to close terminally either way: a user who disconnected between submission
+    and execution, and a row whose encryption key is no longer configured. A
+    handler that retried on these would retry forever — neither condition is
+    transient, and the job queue would spend three attempts discovering that.
+    """
+    record = await credentials_repo.get(scope, session, IBM_PROVIDER)
+    if record is None:
+        raise _CredentialUnusable(
+            "the account that submitted this run has no IBM Quantum credential "
+            "connected; it was disconnected before the job ran"
+        )
+    try:
+        cipher = credential_crypto.load_cipher()
+        token = cipher.decrypt(record.ciphertext, key_id=record.key_id)
+    except credential_crypto.CredentialCryptoError:
+        # `from None`, and the message is built from the row's key_id rather
+        # than from the underlying exception: this string is written to a
+        # database column and read by the user.
+        raise _CredentialUnusable(
+            f"the stored IBM Quantum credential for this account (key "
+            f"{record.key_id}) could not be decrypted by the worker"
+        ) from None
+    return token, record.instance
+
+
+def _credential_failure_message(cause: str, qpu_record: Any) -> str:
+    """The failure written onto the attestation row, with the RIGHT consequence.
+
+    The two `_CredentialUnusable` causes state what went wrong and stop there,
+    because what the user should do next does not follow from the cause — it
+    follows from whether IBM already has the job.
+
+    Both messages used to end "nothing was sent to IBM ... submit again", and
+    that block runs for the RUNNING branch too. Driven against a RUNNING record
+    carrying `provider_job_id`, the row was closed with a sentence telling the
+    user that nothing had been sent and to submit again — while their job was
+    running at IBM and spending their own 28-day Open Plan allowance. Doing what
+    the message said would have spent it twice.
+
+    `error` is the entire evidence a user gets for a failed hardware run, so a
+    confident wrong sentence here is worse than a vague right one.
+    """
+    job_id = getattr(qpu_record, "provider_job_id", None)
+    if not job_id:
+        return f"{cause}. Nothing was sent to IBM — reconnect the credential and submit again."
+    return (
+        f"{cause}. IBM job {job_id} had already been submitted and may still be "
+        "running on your IBM account; its result could not be collected. Reconnect "
+        "the credential, and check that job on IBM's dashboard before submitting "
+        "again — resubmitting spends your free-plan allowance a second time."
+    )
 
 
 async def handle_qpu_run(
@@ -1176,7 +1256,17 @@ async def handle_qpu_run(
     **The provider is contacted at most once per record.** A `qpu.run` job is
     redelivered on failure like any other, and this is the one handler where a
     redelivery spends money: see `claim_submission_attempt` below, which is
-    stamped and committed before the submit rather than after it."""
+    stamped and committed before the submit rather than after it.
+
+    **The credential is the submitting user's own** (migration 0045), loaded and
+    decrypted here and passed to the provider explicitly. It is resolved BEFORE
+    `claim_submission_attempt`, which matters for the at-most-once invariant in
+    both directions: a record whose owner has disconnected must never consume the
+    one attempt it gets, and a credential loaded after the claim would turn "you
+    disconnected" into "this record was already attempted and cannot be retried".
+    Either failure to obtain a usable credential closes the record terminally
+    with the cause named — it is not transient, and retrying it three times
+    changes nothing except how long the user waits to be told."""
     try:
         job = QpuRunJobPayload.model_validate(payload)
     except ValidationError as exc:
@@ -1186,7 +1276,12 @@ async def handle_qpu_run(
     status = QpuRunStatus(record.status)
     if status in {QpuRunStatus.DONE, QpuRunStatus.ERROR, QpuRunStatus.CANCELLED}:
         return
-    reason = submission_block_reason()
+    # The DEPLOYMENT-wide half of the gate first — `has_credential=True` because
+    # the caller's half is a database question answered immediately below, and
+    # passing False here would close every record with `credentials_unconfigured`
+    # in a deployment whose flag is simply off. A closed deployment is not the
+    # user's problem and must not be described as their missing key.
+    reason = submission_block_reason(has_credential=True)
     if reason is not None:
         await qpu_runs_repo.transition(
             scope,
@@ -1197,7 +1292,43 @@ async def handle_qpu_run(
         )
         await session.commit()
         return
-    qpu = provider or _default_qpu_provider()
+    # An injected provider carries its own credential and is how the tests drive
+    # this handler without a database of secrets. Real execution takes the other
+    # branch, always: `provider` has no production producer.
+    credential: tuple[str, str | None] | None = None
+    if provider is None:
+        if record.user_id != scope.user_id:
+            # The payload and the row disagree about whose run this is. There is
+            # no correct credential to load, and guessing at one would submit a
+            # job under somebody else's IBM account.
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                error=(
+                    "this record's owner does not match the job that carries it; "
+                    "no credential was loaded and nothing was sent to IBM"
+                ),
+            )
+            await session.commit()
+            return
+        try:
+            credential = await _qpu_credential_for(session, scope)
+        except _CredentialUnusable as unusable:
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                # Not `str(unusable)`. This block runs for the RUNNING branch as
+                # well as the QUEUED one, so the consequence depends on the
+                # record, not on the cause — see `_credential_failure_message`.
+                error=_credential_failure_message(str(unusable), record),
+            )
+            await session.commit()
+            return
+    qpu = provider if provider is not None else _ibm_provider(*credential)
 
     if status is QpuRunStatus.QUEUED:
         # Claim the attempt and COMMIT it before the provider is contacted, so a
@@ -1251,6 +1382,15 @@ async def handle_qpu_run(
             QpuRunStatus.RUNNING,
             provider_job_id=submitted.provider_job_id,
         )
+        if credential is not None:
+            # After the provider accepted it, not before. A submit that IBM
+            # accepted is proof the key still authenticates, so this refreshes
+            # `last_verified_at` as well as `last_used_at` — the alternative is a
+            # "Last verified" date that never moves after the day the key was
+            # pasted, which would keep reading as verified for a credential
+            # revoked on IBM's dashboard months ago. Stamping either field on an
+            # attempt that FAILED would be the same lie in the other direction.
+            await credentials_repo.mark_provider_success(scope, session, IBM_PROVIDER)
     else:  # RUNNING: one poll
         if record.provider_job_id is None:
             await qpu_runs_repo.transition(
@@ -1263,6 +1403,11 @@ async def handle_qpu_run(
             await session.commit()
             return
         polled = await asyncio.to_thread(qpu.poll, record.provider_job_id)
+        if credential is not None:
+            # A poll that answered authenticated too. Refreshed here as well as
+            # on submit so `last_verified_at` tracks a long-running job rather
+            # than going stale for the hours it queues at IBM.
+            await credentials_repo.mark_provider_success(scope, session, IBM_PROVIDER)
         if polled.status is QpuJobStatus.DONE:
             await qpu_runs_repo.transition(
                 scope,

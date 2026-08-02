@@ -131,10 +131,22 @@ def _body(device_id: str, shots: int, tag: str = "probe") -> dict:
 
 @pytest.fixture(autouse=True)
 def open_the_deployment_gate(monkeypatch):
-    """Every gate this route consults is deployment-wide, and all of them are
-    closed in a test process. Opening them is what puts the account-level
-    question — the one this file is about — on the path at all."""
-    monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda: None)
+    """Every gate in front of the spend check, opened.
+
+    The deployment-wide ones are closed in a test process; the per-user IBM
+    credential gate (migration 0045) is closed for every account this suite
+    provisions, and it now sits in front of the spend check on the same route.
+    Both are opened here so the account-level MONEY question — the one this file
+    is about — is what the requests below actually reach. The credential refusal
+    has its own coverage in `test_qpu_routes.py` and
+    `test_provider_credentials_live.py`.
+    """
+
+    async def connected(scope, session) -> bool:
+        return True
+
+    monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda **_: None)
+    monkeypatch.setattr(qpu_routes, "_caller_can_submit", connected)
 
 
 async def _provision(session, tag: str, *, plan: str | None = None):

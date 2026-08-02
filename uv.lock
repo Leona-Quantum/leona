@@ -1064,6 +1064,7 @@ version = "0.0.0"
 source = { editable = "services/api" }
 dependencies = [
     { name = "alembic" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "majorana-contracts" },
     { name = "majorana-openqasm" },
@@ -1081,6 +1082,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.16" },
+    { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
@@ -1255,6 +1257,7 @@ name = "majorana-worker"
 version = "0.0.0"
 source = { editable = "services/worker" }
 dependencies = [
+    { name = "cryptography" },
     { name = "majorana-agent" },
     { name = "majorana-api" },
     { name = "majorana-frameworks" },
@@ -1267,6 +1270,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
     { name = "majorana-agent", editable = "packages/py/agent" },
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-frameworks", editable = "packages/py/frameworks" },
