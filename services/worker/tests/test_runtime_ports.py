@@ -1,6 +1,8 @@
 from uuid import uuid4
 import signal
 
+import pytest
+
 from majorana_agent import CandidateRevision, ExecutionEvidence, ExecutionFailureKind
 from majorana_contracts.enums import Algorithm, Framework
 from majorana_contracts.plan import Plan
@@ -277,3 +279,26 @@ async def test_converter_uses_only_trusted_observation():
 
     assert qasm is None
     assert reason == "framework export unavailable"
+
+
+def test_a_statevector_estimate_stays_a_number_a_json_reader_can_hold():
+    """The figure is copied into resource_metrics and parsed by a browser.
+
+    `qubits_estimate` lost its upper bound when authoring stopped being capped by
+    local capacity, so this estimate is `2**n` scaled — at 1,024 qubits about
+    10^300, and above roughly 1,038 beyond the IEEE 754 double range, where
+    `JSON.parse` yields Infinity and every arithmetic use downstream is poisoned.
+    """
+    executor = SandboxCandidateExecutor(MustNotCreateSandbox())
+    ceiling = SandboxCandidateExecutor._MAX_REPORTABLE_STATEVECTOR_QUBITS
+
+    at_ceiling = executor._statevector_memory_mb(ceiling)
+    assert isinstance(at_ceiling, int)
+    # Representable as a double, which is what every consumer of this field uses.
+    assert float(at_ceiling) != float("inf")
+
+    # And one qubit past a double's range is exactly the case the cap exists for:
+    # the arithmetic still works in Python and stops being reportable.
+    huge = executor._statevector_memory_mb(1_100)
+    with pytest.raises(OverflowError):
+        float(huge)

@@ -2488,6 +2488,13 @@ def _invalid_field_snapshot(
         payload = json.loads(extract_json(raw_output))
     except (StageOutputError, TypeError, ValueError):
         return {}
+    except RecursionError:
+        # `json.loads` raises this on a deeply nested document, and RecursionError
+        # is not a ValueError, so the handler above does not catch it. This whole
+        # function runs inside a failure path — the plan was already invalid — so
+        # letting it escape would replace an actionable `plan_output_invalid` with
+        # an unexplained stage crash.
+        return {}
     snapshot: dict[str, Any] = {}
     for issue in issues[:12]:
         location = issue.get("loc")
@@ -2504,16 +2511,28 @@ def _invalid_field_snapshot(
     return snapshot
 
 
-def _bounded_repair_value(value: Any) -> Any:
+#: How deep `_bounded_repair_value` will follow untrusted model output. The
+#: breadth caps below bound how WIDE a snapshot gets; without this one it could
+#: still recurse to whatever depth a model nested, and the input is a JSON
+#: document the product did not write.
+_MAX_REPAIR_SNAPSHOT_DEPTH = 8
+
+
+def _bounded_repair_value(value: Any, depth: int = 0) -> Any:
     if value is None or isinstance(value, bool | int | float):
         return value
     if isinstance(value, str):
         return value[:500]
+    if depth >= _MAX_REPAIR_SNAPSHOT_DEPTH:
+        # Named rather than dropped: the repair prompt reads this snapshot, and a
+        # silently truncated branch reads as a field the model did not send.
+        return f"<{type(value).__name__} truncated at depth {_MAX_REPAIR_SNAPSHOT_DEPTH}>"
     if isinstance(value, list):
-        return [_bounded_repair_value(item) for item in value[:8]]
+        return [_bounded_repair_value(item, depth + 1) for item in value[:8]]
     if isinstance(value, dict):
         return {
-            str(key)[:100]: _bounded_repair_value(item) for key, item in list(value.items())[:12]
+            str(key)[:100]: _bounded_repair_value(item, depth + 1)
+            for key, item in list(value.items())[:12]
         }
     return f"<{type(value).__name__}>"
 

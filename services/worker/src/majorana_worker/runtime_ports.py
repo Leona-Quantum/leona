@@ -30,6 +30,9 @@ class SandboxCandidateExecutor:
     _OUTPUT_LIMIT = 4_000
     _STATEVECTOR_BYTES_PER_AMPLITUDE = 32
     _LOCAL_STATEVECTOR_QUBIT_CEILING = 25
+    #: Above this the statevector memory estimate stops being a number a JSON
+    #: reader can hold — see where it is used.
+    _MAX_REPORTABLE_STATEVECTOR_QUBITS = 64
     #: The entry point the generator prompt promises for work above the local
     #: lane: "a `run(backend)` entry point that returns the promised RESULT
     #: dictionary when a compatible GPU/QPU backend is later supplied."
@@ -100,13 +103,25 @@ class SandboxCandidateExecutor:
                     kind=ExecutionFailureKind.CODE_ERROR,
                     observation={"contract_diagnostics": undeliverable},
                 )
-            # Keep the exact estimate while it remains a practical JSON integer.
-            # Beyond that, qubits plus the logarithmic model are the bounded,
-            # actionable representation; constructing an enormous decimal only to
-            # explain that it cannot fit would itself become a resource bug.
+            # Keep the exact estimate while it remains a number a JSON reader
+            # can hold. Beyond that, qubits plus the logarithmic model are the
+            # bounded, actionable representation; constructing an enormous
+            # decimal only to explain that it cannot fit would itself become a
+            # resource bug.
+            #
+            # The ceiling is 64 rather than the 10,000 this shipped with, and the
+            # difference is not cosmetic. This figure is written into the
+            # execution observation, copied into `resource_metrics`, and read
+            # back by a browser: at 1,024 qubits it is ~10^300, and above roughly
+            # 1,038 it exceeds the IEEE 754 double range, so `JSON.parse` yields
+            # `Infinity` and every arithmetic use downstream is poisoned. 64 is
+            # also where the estimate stops saying anything a reader did not
+            # already know — 2^64 amplitudes is ~590 exabytes, and "it does not
+            # fit" is the whole content of every larger number.
             estimated_memory_mb = (
                 self._statevector_memory_mb(plan.qubits_estimate)
-                if circuit_expected and plan.qubits_estimate <= 10_000
+                if circuit_expected
+                and plan.qubits_estimate <= self._MAX_REPORTABLE_STATEVECTOR_QUBITS
                 else None
             )
             local_ceiling = (

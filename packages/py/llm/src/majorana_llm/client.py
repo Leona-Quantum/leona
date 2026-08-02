@@ -161,6 +161,13 @@ def attempt_timeout_seconds(now: float | None = None) -> float:
     stage actually has left. A stall then fails as a retryable provider timeout
     with budget still on the clock, which is the difference between a slow plan
     and a failed run.
+
+    This value is handed to httpx, whose `Timeout` bounds each OPERATION —
+    connect, read, write, pool — and not the request's total lifetime. On a
+    streaming call every chunk resets the read timeout, so a provider dripping
+    one token at a time could outlive any per-operation bound. Both `complete`
+    implementations therefore also wrap the call in `asyncio.timeout()` with the
+    same number, which is the only thing here that bounds wall clock.
     """
 
     ceiling = provider_timeout_seconds()
@@ -347,48 +354,58 @@ class OpenAICompatibleLLM:
         params, system = decode_params(request, key_env)
 
         messages = [{"role": "system", "content": system}, *request_messages(request)]
+        # One number, read once: the wall-clock bound below and the
+        # per-operation bound handed to httpx must not be two different values.
+        attempt_budget = attempt_timeout_seconds()
         try:
+            # `asyncio.timeout` is what bounds the WALL CLOCK. httpx's own
+            # timeout is per operation and a stream resets its read timeout on
+            # every chunk, so the SDK's value alone cannot stop a slow drip from
+            # outliving the stage that owns this call. TimeoutError lands in the
+            # handler below and is classified as a retryable provider timeout.
+            #
             # RetryingLLM below is the one retry authority. Disabling the SDK's
             # implicit retries prevents 3x3 request amplification on one 429.
             client = AsyncOpenAI(
                 api_key=api_key,
                 base_url=base_url,
                 max_retries=0,
-                timeout=attempt_timeout_seconds(),
+                timeout=attempt_budget,
             )
-            if on_delta is None:
-                completion = await client.chat.completions.create(
-                    model=request.model,
-                    messages=messages,
-                    **params,
-                )
-                text = completion.choices[0].message.content or ""
-                usage = completion.usage
-                served_model = getattr(completion, "model", None)
-            else:
-                stream = await client.chat.completions.create(
-                    model=request.model,
-                    messages=messages,
-                    stream=True,
-                    **params,
-                )
-                text_parts: list[str] = []
-                usage = None
-                served_model = None
-                async for chunk in stream:
-                    served_model = getattr(chunk, "model", None) or served_model
-                    if getattr(chunk, "usage", None) is not None:
-                        usage = chunk.usage
-                    for choice in getattr(chunk, "choices", []) or []:
-                        delta = choice.delta
-                        reasoning = getattr(delta, "reasoning_content", None) or ""
-                        content = getattr(delta, "content", None) or ""
-                        if reasoning:
-                            await on_delta(reasoning, "reasoning")
-                        if content:
-                            text_parts.append(content)
-                            await on_delta(content, "output")
-                text = "".join(text_parts)
+            async with asyncio.timeout(attempt_budget):
+                if on_delta is None:
+                    completion = await client.chat.completions.create(
+                        model=request.model,
+                        messages=messages,
+                        **params,
+                    )
+                    text = completion.choices[0].message.content or ""
+                    usage = completion.usage
+                    served_model = getattr(completion, "model", None)
+                else:
+                    stream = await client.chat.completions.create(
+                        model=request.model,
+                        messages=messages,
+                        stream=True,
+                        **params,
+                    )
+                    text_parts: list[str] = []
+                    usage = None
+                    served_model = None
+                    async for chunk in stream:
+                        served_model = getattr(chunk, "model", None) or served_model
+                        if getattr(chunk, "usage", None) is not None:
+                            usage = chunk.usage
+                        for choice in getattr(chunk, "choices", []) or []:
+                            delta = choice.delta
+                            reasoning = getattr(delta, "reasoning_content", None) or ""
+                            content = getattr(delta, "content", None) or ""
+                            if reasoning:
+                                await on_delta(reasoning, "reasoning")
+                            if content:
+                                text_parts.append(content)
+                                await on_delta(content, "output")
+                    text = "".join(text_parts)
         except LLMProviderError:
             raise
         except Exception as exc:
@@ -563,35 +580,39 @@ class AnthropicLLM:
 
         max_tokens = request.max_tokens or _ANTHROPIC_DEFAULT_MAX_TOKENS
         messages = request_messages(request)
+        # Same wall-clock bound as the OpenAI-compatible client above, and for
+        # the same reason: the SDK's timeout is per operation, not per request.
+        attempt_budget = attempt_timeout_seconds()
         try:
             client = AsyncAnthropic(
                 api_key=api_key,
                 max_retries=0,
-                timeout=attempt_timeout_seconds(),
+                timeout=attempt_budget,
             )
-            if on_delta is None:
-                message = await client.messages.create(
-                    model=request.model,
-                    max_tokens=max_tokens,
-                    temperature=request.temperature,
-                    system=system,
-                    messages=messages,
-                )
-                text = "".join(block.text for block in message.content if block.type == "text")
-            else:
-                text_parts: list[str] = []
-                async with client.messages.stream(
-                    model=request.model,
-                    max_tokens=max_tokens,
-                    temperature=request.temperature,
-                    system=system,
-                    messages=messages,
-                ) as stream:
-                    async for fragment in stream.text_stream:
-                        text_parts.append(fragment)
-                        await on_delta(fragment, "output")
-                    message = await stream.get_final_message()
-                text = "".join(text_parts)
+            async with asyncio.timeout(attempt_budget):
+                if on_delta is None:
+                    message = await client.messages.create(
+                        model=request.model,
+                        max_tokens=max_tokens,
+                        temperature=request.temperature,
+                        system=system,
+                        messages=messages,
+                    )
+                    text = "".join(block.text for block in message.content if block.type == "text")
+                else:
+                    text_parts: list[str] = []
+                    async with client.messages.stream(
+                        model=request.model,
+                        max_tokens=max_tokens,
+                        temperature=request.temperature,
+                        system=system,
+                        messages=messages,
+                    ) as stream:
+                        async for fragment in stream.text_stream:
+                            text_parts.append(fragment)
+                            await on_delta(fragment, "output")
+                        message = await stream.get_final_message()
+                    text = "".join(text_parts)
         except LLMProviderError:
             raise
         except Exception as exc:

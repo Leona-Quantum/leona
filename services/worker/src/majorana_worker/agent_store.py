@@ -371,6 +371,16 @@ class RepoAgentStore:
                 raise ValueError(
                     "unexecuted materialization requires trusted not-run preflight evidence"
                 )
+            if review is not None:
+                # A review that EXISTS must be bound to this candidate and this
+                # execution even when nothing ran. `handlers._finish_simple_pipeline`
+                # already asserts it on the unexecuted path; leaving it out here
+                # meant the store admitted a materialization the worker would
+                # then refuse, and — worse — that a caller reaching the store
+                # directly could file an artifact carrying somebody else's
+                # review. The not-run relaxation is about the review being
+                # OPTIONAL, never about an unbound one being acceptable.
+                review.assert_binding(candidate, execution)
         else:
             if not execution.succeeded:
                 raise ValueError("materialization requires successful execution")

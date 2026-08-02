@@ -45,7 +45,9 @@ from majorana_worker.simple_ports import (
     RepoReviewArtifactSaver,
     SimpleIntentReviewer,
     SimpleIntentReviewResult,
+    _bounded_repair_value,
     _dynamics_reference_call_args,
+    _invalid_field_snapshot,
     _reference_checks,
     _reference_check_routing,
     _preserve_replan_range_strength,
@@ -3621,3 +3623,46 @@ def test_an_unusable_linear_system_primary_metric_returns_a_verdict_rather_than_
         # the Plan would send the repair loop to replanning a correct reference.
         assert check["details"].get("fault") != "plan"
         assert any("state_fidelity" in line for line in check["details"]["disagreements"]), unusable
+
+
+def test_a_repair_snapshot_of_untrusted_output_is_bounded_in_depth():
+    """The breadth caps bound how wide it gets; nothing bounded how deep.
+
+    The input is a JSON document a model wrote, walked to build the repair
+    prompt. Unbounded recursion over it is a stack overflow reachable from
+    provider output, on a path that only runs when a plan was ALREADY invalid —
+    so it would replace an actionable `plan_output_invalid` with an unexplained
+    stage crash.
+    """
+    depth = 400
+    nested: object = "leaf"
+    for _ in range(depth):
+        nested = {"next": nested}
+
+    snapshot = _bounded_repair_value(nested)
+
+    walked = 0
+    node = snapshot
+    while isinstance(node, dict) and "next" in node:
+        walked += 1
+        node = node["next"]
+    assert walked < depth, "the snapshot followed the whole document"
+    # And it says so rather than pretending the branch ended.
+    assert "truncated at depth" in str(node)
+
+
+def test_a_document_too_nested_for_json_to_parse_is_not_a_stage_crash():
+    """`json.loads` raises RecursionError, which is not a ValueError.
+
+    The handler beside it catches (StageOutputError, TypeError, ValueError), so
+    this one escaped and took the stage with it.
+    """
+    # Nested OBJECTS, not arrays: `extract_json` looks for an object and refuses
+    # a bare array outright, so an array payload never reaches `json.loads` and
+    # this test would pass without the handler it exists to pin. Verified at
+    # this depth to raise RecursionError out of `json.loads`.
+    depth = 20_000
+    payload = '{"a":' * depth + "1" + "}" * depth
+    issues = [{"loc": ("qubits_estimate",), "type": "int_parsing", "msg": "bad"}]
+
+    assert _invalid_field_snapshot(payload, issues) == {}

@@ -70,7 +70,7 @@ CASES: list[tuple[str, dict[str, object], bool]] = [
     ),
     ("timed out", _deviation(failure_kind=ExecutionFailureKind.TIMEOUT), False),
     # The observation has to say so, and say why.
-    ("no execution_status", _deviation(execution_status="executed"), False),
+    ("execution_status is executed", _deviation(execution_status="executed"), False),
     ("blank reason code", _deviation(execution_reason_code="   "), False),
     ("non-string reason code", _deviation(execution_reason_code=7), False),
 ]
