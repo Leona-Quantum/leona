@@ -19,10 +19,17 @@ import { UpgradePressure } from "./upgrade-pressure";
  * piece, and it renders nothing at all when it cannot answer.
  */
 export async function UpgradeContent() {
-  const [locale, { tier }] = await Promise.all([getPublicLocale(), getAccountTier()]);
+  const [locale, { tier: rawTier }] = await Promise.all([getPublicLocale(), getAccountTier()]);
   const copy = UPGRADE_COPY[locale];
   const pricing = PRICING_COPY[locale];
 
+  // `preview` is the signed-out fixture tier and cannot legitimately reach a
+  // route inside (app) — but `resolveAccountTier` returns it whenever it sees no
+  // email, so a session that resolves oddly would land here and be offered FREE
+  // as an upgrade. Treat it as free: this page is only ever rendered for someone
+  // signed in, and offering them the plan they already have is the one output
+  // that is certainly wrong.
+  const tier = rawTier === "preview" ? "free" : rawTier;
   const currentCardName = PLAN_CARD_NAMES[tier];
   const currentCard = pricing.plans.find((plan) => plan.name === currentCardName) ?? null;
   const above = upgradeCardsAbove(tier);

@@ -664,6 +664,13 @@ async def test_remaining_and_exhausted_track_a_ceiling_without_going_negative(
         (0, None, "ok"),  # unlimited has no ratio to be three quarters of
         (10**9, None, "ok"),
         (0, 0, "exhausted"),  # a zero limit refuses before any division
+        # A negative `used` against a zero limit: the one input shape that could
+        # reach `used / limit` and raise. Counts cannot go negative today, so
+        # this pins the guard rather than a behaviour anyone observes — and it
+        # is honest about being cheap insurance, not a regression this has ever
+        # had. It does NOT pin the order of the two exhausted-branches: both
+        # orders return before the division, checked by running them.
+        (-1, 0, "exhausted"),
     ],
 )
 def test_pressure_thresholds_are_the_servers_and_include_their_boundaries(used, limit, expected):

@@ -90,14 +90,19 @@ def pressure_for(used: int, limit: int | None) -> AllowancePressure:
     """Where a meter sits against the warning thresholds.
 
     Unlimited tiers are always `ok`: there is no ratio to be three quarters of.
-    A limit of zero is `exhausted` whatever `used` is — dividing by it would be
-    the only way to get that wrong, so it is answered before the division.
+
+    `limit <= 0` sits above `used >= limit` so that the branch answering a zero
+    limit is the one a reader finds first. Purely presentational — both orders
+    return `exhausted` for every input, including a negative `used`, because
+    whichever comparison runs second still returns before the division. The
+    ordering is not load-bearing and no test pins it; what the tests pin is that
+    a zero limit never reaches `used / limit`.
     """
     if limit is None:
         return "ok"
-    if used >= limit:
-        return "exhausted"
     if limit <= 0:
+        return "exhausted"
+    if used >= limit:
         return "exhausted"
     ratio = used / limit
     if ratio >= CRITICAL_RATIO:
