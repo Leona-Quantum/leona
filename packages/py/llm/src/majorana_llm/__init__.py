@@ -13,10 +13,11 @@ from majorana_llm.client import (
     endpoint_for,
     classify_provider_error,
     attempt_timeout_seconds,
+    missing_provider_keys,
     provider_timeout_seconds,
     stage_budget,
 )
-from majorana_llm.models import model_for, resolve_provider
+from majorana_llm.models import model_for, resolve_provider, roles_for_profile
 from majorana_llm.parsing import (
     StageOutputError,
     extract_json,
@@ -57,8 +58,10 @@ __all__ = [
     "default_llm",
     "endpoint_for",
     "classify_provider_error",
+    "missing_provider_keys",
     "model_for",
     "resolve_provider",
+    "roles_for_profile",
     "extract_json",
     "StageOutputError",
     "INTENT_ROUTER_SYSTEM_PROMPT",

@@ -22,9 +22,7 @@ from majorana_llm import (
     LLMClient,
     LLMResponse,
     default_llm,
-    endpoint_for,
-    model_for,
-    resolve_provider,
+    missing_provider_keys,
 )
 from majorana_sandbox import ExecutionSpec, LocalSubprocessSandbox, Sandbox, SandboxResult
 
@@ -43,18 +41,20 @@ requires_db = pytest.mark.skipif(
 )
 
 
-def _live_provider_ready() -> bool:
-    if resolve_provider() == "anthropic":
-        return bool(os.environ.get("ANTHROPIC_API_KEY"))
-    required_keys = {
-        endpoint_for(model_for(stage))[1] for stage in ("route", "plan", "generate", "verify")
-    }
-    return all(os.environ.get(key) for key in required_keys)
-
+#: Naming the missing variables matters more here than anywhere else in the
+#: suite: this is the only test that drives a real provider through the whole
+#: pipeline, and a bare "requires credentials" skip is how it sat broken long
+#: enough for an outage to ship behind 1709 green tests. CI additionally
+#: *fails* when this test is skipped — see the live-llm workflow — because a
+#: skip is indistinguishable from a pass in an exit code.
+_MISSING_KEYS = sorted(missing_provider_keys())
 
 requires_live_llm = pytest.mark.skipif(
-    os.environ.get("MAJORANA_RUN_LIVE_LLM") != "1" or not _live_provider_ready(),
-    reason="live provider test requires MAJORANA_RUN_LIVE_LLM=1 and configured credentials",
+    os.environ.get("MAJORANA_RUN_LIVE_LLM") != "1" or bool(_MISSING_KEYS),
+    reason=(
+        "live provider test requires MAJORANA_RUN_LIVE_LLM=1"
+        + (f" and these unset variables: {', '.join(_MISSING_KEYS)}" if _MISSING_KEYS else "")
+    ),
 )
 
 SETTINGS = Settings(

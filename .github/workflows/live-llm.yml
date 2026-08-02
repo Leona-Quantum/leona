@@ -1,0 +1,105 @@
+# The one test that drives a REAL provider through the entire pipeline.
+#
+# Why this exists as its own workflow. On 2026-08-02 an outage reached production
+# behind 1,709 green tests. The single test that would have caught it —
+# `test_run_executes_end_to_end_with_real_fixed_pipeline` — had been unable to
+# pass for weeks (two stale assertions), and nothing noticed, because it was
+# gated behind an env var no workflow set. A test nothing runs is not a test.
+#
+# Not on `pull_request`: every run spends real provider tokens, and an external
+# provider having a bad minute must not block an unrelated PR. It runs where a
+# failure is actionable — on the merge that is about to deploy, nightly to catch
+# provider-side drift, and on demand before a risky merge.
+#
+# It deliberately does NOT gate the deploy. Coupling a rollout to a third party's
+# uptime trades a rare bug for a frequent outage. This runs alongside the deploy
+# and goes red on the commit within a few minutes.
+name: live-llm
+
+on:
+  push:
+    branches: [dev]
+  schedule:
+    # 06:00 UTC = 15:00 JST. Provider-side model changes surface here rather
+    # than on the next merge.
+    - cron: "0 6 * * *"
+  workflow_dispatch:
+
+# One live run at a time. These share a provider account with bench.yml and the
+# deploy probe; overlapping runs turn a rate-limit into a mystery failure.
+concurrency:
+  group: live-llm
+  cancel-in-progress: false
+
+jobs:
+  live-pipeline:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:17
+        env:
+          POSTGRES_USER: pg
+          POSTGRES_PASSWORD: pg
+          POSTGRES_DB: majorana_live_llm
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v6
+        with:
+          python-version: "3.12"
+      # --all-extras pulls the qiskit extra: the pipeline drives a real QASM
+      # epilogue through LocalSubprocessSandbox, which imports qiskit at runtime.
+      - run: uv sync --all-packages --all-extras --frozen
+
+      # Fail here, loudly, rather than letting pytest skip into a green tick.
+      # `missing_provider_keys` derives the required set from the role→model→
+      # endpoint chain, so this stays correct when the models table changes.
+      - name: a complete provider profile is configured
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: uv run --package majorana-llm python scripts/assert_provider_profile_complete.py
+
+      - name: migrate
+        env:
+          DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_live_llm
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_live_llm
+        run: uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+
+      - name: real provider, whole pipeline
+        env:
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_live_llm
+          MAJORANA_RUN_LIVE_LLM: "1"
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DEEPSEEK_API_KEY: ${{ secrets.DEEPSEEK_API_KEY }}
+          ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+        run: |
+          uv run --all-extras pytest \
+            services/api/tests/test_pipeline_e2e.py \
+            -k real_fixed_pipeline \
+            -q --junitxml=live-e2e.xml
+
+      # The load-bearing check, and the reason the step above writes JUnit XML.
+      # pytest exits 0 for "1 skipped" exactly as it does for "1 passed", so the
+      # exit code cannot distinguish "the live pipeline works" from "the live
+      # test did not run" — which is precisely the failure this workflow exists
+      # to end. Assert on what ran, not on the exit code. `if: always()` so a
+      # skip is still caught when an earlier step failed for some other reason.
+      - name: the live test actually ran
+        if: always()
+        run: python3 scripts/assert_live_test_ran.py live-e2e.xml --expect 1
+
+      - name: keep the report
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: live-e2e-report
+          path: live-e2e.xml
+          if-no-files-found: warn

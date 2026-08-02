@@ -8,7 +8,7 @@ from types import SimpleNamespace
 import pytest
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role, VerifierDecision
-from majorana_llm import default_llm
+from majorana_llm import default_llm, missing_provider_keys
 from majorana_sandbox import LocalSubprocessSandbox
 
 from majorana_api.db import engine_from_env, session_factory
@@ -45,20 +45,20 @@ requires_db = pytest.mark.skipif(
 )
 
 
-def _live_provider_ready() -> bool:
-    provider = os.environ.get("MAJORANA_LLM_PROVIDER", "").strip().lower()
-    if provider == "anthropic":
-        return bool(os.environ.get("ANTHROPIC_API_KEY"))
-    if provider == "openai":
-        return bool(os.environ.get("OPENAI_API_KEY") and os.environ.get("DEEPSEEK_API_KEY"))
-    return bool(os.environ.get("ANTHROPIC_API_KEY")) or bool(
-        os.environ.get("OPENAI_API_KEY") and os.environ.get("DEEPSEEK_API_KEY")
-    )
-
+#: This used to hand-list the keys and demanded BOTH OPENAI_API_KEY and
+#: DEEPSEEK_API_KEY for the openai profile — true when gpt-5.5 planned and
+#: verified, false since every role moved to a deepseek model. A DeepSeek-only
+#: environment is a complete profile, and this skipped a run that would work.
+#: `missing_provider_keys` derives the set from the role→model→endpoint chain
+#: instead, so it cannot drift from the models table again.
+_MISSING_KEYS = sorted(missing_provider_keys())
 
 requires_live_llm = pytest.mark.skipif(
-    os.environ.get("MAJORANA_RUN_LIVE_LLM") != "1" or not _live_provider_ready(),
-    reason="live provider test requires MAJORANA_RUN_LIVE_LLM=1 and configured credentials",
+    os.environ.get("MAJORANA_RUN_LIVE_LLM") != "1" or bool(_MISSING_KEYS),
+    reason=(
+        "live provider test requires MAJORANA_RUN_LIVE_LLM=1"
+        + (f" and these unset variables: {', '.join(_MISSING_KEYS)}" if _MISSING_KEYS else "")
+    ),
 )
 
 

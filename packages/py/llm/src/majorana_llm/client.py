@@ -219,6 +219,34 @@ def endpoint_for(model: str) -> tuple[str | None, str]:
     return None, "OPENAI_API_KEY"
 
 
+def missing_provider_keys() -> frozenset[str]:
+    """Which API-key env vars the ACTIVE profile needs and does not have.
+
+    Empty means every role the product can call has a key behind it.
+
+    Derived from the role→model→endpoint chain rather than hand-listed, because
+    three hand-listed copies of this had already drifted from `_DEFAULTS`: the
+    evals harness demanded both OPENAI_API_KEY and DEEPSEEK_API_KEY for the
+    openai profile, and bench.yml's guard said the same in a comment, months
+    after every role moved to a deepseek model. A DeepSeek-only environment is a
+    complete profile today; both of those would have skipped a run that works.
+
+    Honours MAJORANA_MODEL_* overrides for free: an operator who points one role
+    at an OpenAI model makes OPENAI_API_KEY genuinely required, and this reports
+    it without anyone remembering to update a list.
+    """
+    import os
+
+    from majorana_llm.models import model_for, resolve_provider, roles_for_profile
+
+    if resolve_provider() == "anthropic":
+        return (
+            frozenset() if os.environ.get("ANTHROPIC_API_KEY") else frozenset({"ANTHROPIC_API_KEY"})
+        )
+    required = {endpoint_for(model_for(role))[1] for role in roles_for_profile()}
+    return frozenset(key for key in required if not os.environ.get(key))
+
+
 def decode_params(request: LLMRequest, key_env: str) -> tuple[dict[str, Any], str]:
     """(extra completion kwargs, effective system prompt) for an OpenAI-compatible
     call. GPT-5-series chat completions deprecate max_tokens (reasoning tokens count
