@@ -57,7 +57,7 @@ export type TierLimits = {
   agentRunsPerWeek: number | null;
   /** null means unlimited. */
   privateArtifacts: number | null;
-  /** Browser statevector lane. Measured, not guessed — see the table below. */
+  /** Browser statevector lane. A product boundary, not a measurement — see the table below. */
   cpuSimQubits: number;
   cpuSimOperations: number;
   cpuSimShots: number;
@@ -100,7 +100,7 @@ export type TierLimits = {
 
 /**
  * Browser-lane ceilings are 8 / 12 / 18 / 20 (preview shares free's 8), set by
- * the owner on 2026-08-03. **They are product differentiation now, not a
+ * the owner on 2026-08-02. **They are product differentiation now, not a
  * capability limit, and that is a change in what this number means.**
  *
  * What the hardware can actually do, measured on the same Float64Array kernel
@@ -166,7 +166,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   // and `sharedProjects` is 0 rather than null for the reason that field
   // documents.
   //
-  // All three numbers are the owner's table of 2026-08-03, not a derivation.
+  // All three numbers are the owner's table of 2026-08-02, not a derivation.
   // 12 qubits is well inside what the browser can do (free's measured 16 was
   // comfortable); see the note above TIER_LIMITS for why these stopped being
   // capability numbers.
@@ -184,7 +184,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   },
   // **Professional** on the pricing page — the collaboration plan, and the one
   // whose id reads like the tier below it. Runs, artifacts and the 18-qubit
-  // lane are the owner's table of 2026-08-03; `sharedProjects` is the one
+  // lane are the owner's table of 2026-08-02; `sharedProjects` is the one
   // number that table did not restate and it keeps its earlier value.
   //
   // `privateArtifacts` mirrors `TIER_LIMITS["team"].private_artifacts` on the

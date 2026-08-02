@@ -176,7 +176,7 @@ class TierLimits:
 #: If these ever disagree, the smaller one wins in practice and the user sees the
 #: server's refusal — which is the correct direction for a divergence.
 #:
-#: **Every number below is the owner's, given as a table on 2026-08-03.** Nothing
+#: **Every number below is the owner's, given as a table on 2026-08-02.** Nothing
 #: here was chosen or interpolated, which is a change from how this table read
 #: before: `pro`'s allowances used to be described as sitting "strictly between
 #: the two neighbours it is sold between", and that derivation is no longer what
@@ -266,7 +266,7 @@ PRO_PLAN = "pro"
 #: owner had been told for five sessions to set `LEONA_TEAM_EMAILS` and renaming
 #: would have invalidated that instruction silently. The owner then wrote the
 #: tier ids as `plus` and `professional` when restating the ladder on
-#: 2026-08-03, which is the natural thing to write and, until now, the thing
+#: 2026-08-02, which is the natural thing to write and, until now, the thing
 #: that granted nothing.
 #:
 #: So both spellings resolve, rather than one of them being right. `update users
