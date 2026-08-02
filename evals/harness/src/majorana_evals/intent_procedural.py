@@ -8,16 +8,16 @@ from collections.abc import Callable
 
 from majorana_evals.schema import IntentCase
 
-INTENT_PROCEDURAL_VERSION = "v1"
+INTENT_PROCEDURAL_VERSION = "v2"
 _FAMILIES = (
     "canonical-execute",
     "explicit-qubo-execute",
     "explicit-dynamics-execute",
     "bounded-assignment-execute",
     "underspecified-chat",
-    "resource-chat",
+    "resource-artifact",
     "capability-chat",
-    "oversized-assignment-chat",
+    "oversized-assignment-artifact",
 )
 
 
@@ -144,19 +144,19 @@ def _underspecified_chat(seed: int, index: int) -> IntentCase:
     )
 
 
-def _resource_chat(seed: int, index: int) -> IntentCase:
-    rng = _family_rng(seed, "resource-chat", index)
+def _resource_artifact(seed: int, index: int) -> IntentCase:
+    rng = _family_rng(seed, "resource-artifact", index)
     qubits = rng.randint(26, 40)
     construction = rng.choice(("GHZ", "W", "random entangled"))
     return IntentCase(
-        id=_case_id(seed, "resource-chat", index),
+        id=_case_id(seed, "resource-artifact", index),
         split="holdout",
         cohort="procedural-resource",
         prompt=(
             f"Create a {qubits}-qubit {construction} circuit and simulate its complete "
             "statevector locally."
         ),
-        expected_mode="chat",
+        expected_mode="execute",
     )
 
 
@@ -179,12 +179,12 @@ def _capability_chat(seed: int, index: int) -> IntentCase:
     )
 
 
-def _oversized_assignment_chat(seed: int, index: int) -> IntentCase:
-    rng = _family_rng(seed, "oversized-assignment-chat", index)
+def _oversized_assignment_artifact(seed: int, index: int) -> IntentCase:
+    rng = _family_rng(seed, "oversized-assignment-artifact", index)
     size = rng.randint(6, 8)
     costs = _cost_matrix(rng, size)
     return IntentCase(
-        id=_case_id(seed, "oversized-assignment-chat", index),
+        id=_case_id(seed, "oversized-assignment-artifact", index),
         split="holdout",
         cohort="procedural-resource",
         prompt=(
@@ -193,7 +193,7 @@ def _oversized_assignment_chat(seed: int, index: int) -> IntentCase:
             f"one-hot constraint families, run the resulting {size * size}-qubit QAOA "
             "statevector locally, and compare with the classical optimum."
         ),
-        expected_mode="chat",
+        expected_mode="execute",
     )
 
 
@@ -203,9 +203,9 @@ _GENERATORS: dict[str, Callable[[int, int], IntentCase]] = {
     "explicit-dynamics-execute": _explicit_dynamics_execute,
     "bounded-assignment-execute": _bounded_assignment_execute,
     "underspecified-chat": _underspecified_chat,
-    "resource-chat": _resource_chat,
+    "resource-artifact": _resource_artifact,
     "capability-chat": _capability_chat,
-    "oversized-assignment-chat": _oversized_assignment_chat,
+    "oversized-assignment-artifact": _oversized_assignment_artifact,
 }
 
 

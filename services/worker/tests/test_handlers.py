@@ -4,6 +4,7 @@ from types import SimpleNamespace
 
 import pytest
 from majorana_agent import (
+    SemanticReviewEvidence,
     SimpleFailureKind,
     SimplePipelineCounters,
     SimplePipelineFailure,
@@ -15,6 +16,7 @@ from majorana_contracts.enums import (
     Framework,
     RunMode,
     RunStatus,
+    RetryTarget,
     SemanticReviewDecision,
     VerifierDecision,
 )
@@ -167,6 +169,116 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
         "verification_summary": summary,
         "residual_risks": "AI review is advisory",
     }
+
+
+async def test_unexecuted_artifact_finishes_successfully_without_result_claims():
+    run_id = uuid.uuid4()
+    candidate = SimpleNamespace(candidate_id=uuid.uuid4(), source_fingerprint="a" * 64)
+    execution = SimpleNamespace(was_not_run=True)
+    artifact = SimpleNamespace(
+        candidate_id=candidate.candidate_id,
+        source_fingerprint=candidate.source_fingerprint,
+        execution_status="not_run",
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.SUCCEEDED,
+        stage=SimplePipelineStage.COMPLETED,
+        counters=SimplePipelineCounters(),
+        candidate=candidate,
+        execution=execution,
+        artifact=artifact,
+    )
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = (status, payload, fields)
+            return status
+
+    run_store = RunStore()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="Build a 480-qubit assignment artifact",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=object(),
+    )
+
+    result = await handlers._finish_simple_pipeline(ctx, run_store, outcome)
+
+    assert result is RunStatus.SUCCEEDED
+    _, payload, fields = run_store.observed
+    assert payload["reason_code"] == "artifact_generated_execution_not_run"
+    assert payload["evidence_strength"] is None
+    assert payload["verification_summary"]["checks"] == []
+    assert "reported output" in payload["verification_summary"]["unverified_claims"]
+    assert fields["verifier_decision"] is VerifierDecision.INCONCLUSIVE
+
+
+async def test_static_reviewed_artifact_remains_inconclusive_until_execution():
+    run_id = uuid.uuid4()
+    candidate = SimpleNamespace(candidate_id=uuid.uuid4(), source_fingerprint="a" * 64)
+    execution = SimpleNamespace(
+        execution_id=uuid.uuid4(),
+        candidate_id=candidate.candidate_id,
+        source_fingerprint=candidate.source_fingerprint,
+        was_not_run=True,
+    )
+    review = SemanticReviewEvidence(
+        review_id=uuid.uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        confidence="high",
+        severity="none",
+        reason_code="static_intent_aligned",
+        retry_target=RetryTarget.NONE,
+        feedback={"basic_checks": [{"method": "structural", "result": "pass"}]},
+    )
+    artifact = SimpleNamespace(
+        candidate_id=candidate.candidate_id,
+        source_fingerprint=candidate.source_fingerprint,
+        execution_status="not_run",
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.SUCCEEDED,
+        stage=SimplePipelineStage.COMPLETED,
+        counters=SimplePipelineCounters(review_attempts=1),
+        candidate=candidate,
+        execution=execution,
+        review=review,
+        artifact=artifact,
+    )
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = (status, payload, fields)
+            return status
+
+    run_store = RunStore()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="Build a reviewed 480-qubit assignment artifact",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=object(),
+    )
+
+    result = await handlers._finish_simple_pipeline(ctx, run_store, outcome)
+
+    assert result is RunStatus.SUCCEEDED
+    _, payload, _ = run_store.observed
+    assert payload["reason_code"] == "artifact_static_review_ready_execution_not_run"
+    assert payload["verifier_decision"] == "inconclusive"
+    assert payload["evidence_strength"] is None
+    assert payload["verification_summary"]["semantic_review_decision"] == "ready"
 
 
 async def test_simple_terminal_failure_emits_typed_sanitized_error():

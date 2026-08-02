@@ -133,8 +133,8 @@ def test_procedural_intent_cases_are_reproducible_seeded_and_balanced():
     assert [case.prompt for case in first] != [case.prompt for case in different]
     assert len(first) == 16
     assert len({case.id for case in first}) == 16
-    assert sum(case.expected_mode == "execute" for case in first) == 8
-    assert sum(case.expected_mode == "chat" for case in first) == 8
+    assert sum(case.expected_mode == "execute" for case in first) == 12
+    assert sum(case.expected_mode == "chat" for case in first) == 4
     assert all(case.split == "holdout" for case in first)
     assert all(
         case.id.startswith(f"intent-procedural-{INTENT_PROCEDURAL_VERSION}-s20260802-")
@@ -142,10 +142,10 @@ def test_procedural_intent_cases_are_reproducible_seeded_and_balanced():
     )
 
 
-def test_procedural_assignment_pairs_separate_input_readiness_from_resource_readiness():
+def test_procedural_assignment_pairs_separate_input_readiness_from_local_capacity():
     cases = generate_procedural_intent_cases(20260802)
     bounded = next(case for case in cases if "-bounded-assignment-execute-" in case.id)
-    oversized = next(case for case in cases if "-oversized-assignment-chat-" in case.id)
+    oversized = next(case for case in cases if "-oversized-assignment-artifact-" in case.id)
     underspecified = next(case for case in cases if "-underspecified-chat-" in case.id)
 
     bounded_size = int(re.search(r"Assign (\d+) workers", bounded.prompt).group(1))
@@ -161,7 +161,7 @@ def test_procedural_assignment_pairs_separate_input_readiness_from_resource_read
     stated_qubits = int(re.search(r"resulting (\d+)-qubit", oversized.prompt).group(1))
     assert stated_qubits == oversized_size**2 > 25
     assert "complete cost matrix" in oversized.prompt
-    assert oversized.expected_mode == "chat"
+    assert oversized.expected_mode == "execute"
 
     assert "cost matrix" not in underspecified.prompt
     assert underspecified.expected_mode == "chat"
@@ -177,8 +177,8 @@ def test_intent_loader_merges_static_holdout_and_procedural_cases():
 
     assert len(cases) == 30
     assert len({case.id for case in cases}) == 30
-    assert sum(case.expected_mode == "execute" for case in cases) == 15
-    assert sum(case.expected_mode == "chat" for case in cases) == 15
+    assert sum(case.expected_mode == "execute" for case in cases) == 19
+    assert sum(case.expected_mode == "chat" for case in cases) == 11
 
 
 @pytest.mark.parametrize("seed", [-1, 2**63])
