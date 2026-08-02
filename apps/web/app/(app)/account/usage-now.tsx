@@ -13,6 +13,7 @@ import {
   type Allowance,
   type HardwareSpend,
   type SpendReport,
+  type TokenAllowance,
   type UsageSummary,
 } from "../../../lib/usage-summary";
 
@@ -93,6 +94,7 @@ export function UsageNow({
           {copy.usageEnforcedAs(copy.tierNames[enforcedTier])}
         </p>
       ) : null}
+      {usage.tokens ? <WeeklyMeters tokens={usage.tokens} locale={locale} /> : null}
       <dl className="mj-usage-list">
         <div>
           <dt>{copy.usageRuns}</dt>
@@ -126,6 +128,102 @@ export function UsageNow({
         ) : null}
       </dl>
       {usage.spend ? <ModelSpend spend={usage.spend} locale={locale} /> : null}
+    </div>
+  );
+}
+
+/**
+ * The weekly allowance, as a bar that fills.
+ *
+ * This is the meter a submission is refused on. The run count below it is still
+ * reported and is still what the plan is sold as, but since 2026-08-03 it does
+ * not gate — so the bar is drawn from tokens, and the run figure appears
+ * underneath as the sentence that makes six digits mean something.
+ *
+ * Three things the layout is doing deliberately:
+ *
+ * - The percentage is right-aligned opposite the label rather than trailing the
+ *   bar, so a reader compares figures down a column instead of across a row.
+ * - The ratio ("45,000 of 150,000") is a sub-line, not the headline. The
+ *   headline is the percentage, because that is the question — how much is left
+ *   — and the exact tokens are the supporting detail.
+ * - An unmetered plan gets a sentence and no track at all. A full-width empty
+ *   rail under "no limit" reads as a limit nobody has reached yet.
+ */
+function WeeklyMeters({ tokens, locale }: { tokens: TokenAllowance; locale: PublicLocale }) {
+  const copy = ACCOUNT_COPY[locale];
+  const slot = tokens.nextSlotAt ? describeNextSlot(tokens.nextSlotAt, locale) : null;
+  const resetLine = slot
+    ? slot.relative
+      ? copy.meterResetsWhen(slot.text)
+      : copy.meterResetsOn(slot.text)
+    : null;
+
+  if (tokens.limit === null) {
+    return (
+      <div className="mj-meters">
+        <h3>{copy.meterWeeklyTitle}</h3>
+        <div className="mj-meter">
+          <div>
+            <span className="mj-meter-name">{copy.meterTokens}</span>
+          </div>
+          <p className="mj-meter-unmetered">{copy.meterTokensUnmetered}</p>
+        </div>
+      </div>
+    );
+  }
+
+  // Rounded for the label only; the fill uses the unrounded ratio so a meter at
+  // 0.4% still shows a sliver rather than snapping to empty. Clamped because a
+  // tier lowered under an account leaves `used` above `limit`, and a bar wider
+  // than its track would overflow the panel.
+  const ratio = Math.min(tokens.used / tokens.limit, 1);
+  const percent = Math.min(Math.round((tokens.used / tokens.limit) * 100), 100);
+
+  return (
+    <div className="mj-meters">
+      <h3>{copy.meterWeeklyTitle}</h3>
+      <div className="mj-meter">
+        <div>
+          <span className="mj-meter-name">{copy.meterTokens}</span>
+          {/* The reset line sits under the label rather than under the bar, so
+              the row stays one row. Exhaustion is said in words as well as in
+              colour: the amber fill is the only other signal, and colour alone
+              is not one.
+              Nothing at all when neither applies — an account that has spent
+              nothing has no date to give, and falling back to the ratio here
+              printed "0 of 150,000" twice, two lines apart. */}
+          {tokens.exhausted || resetLine ? (
+            <p className="mj-meter-sub">
+              {tokens.exhausted ? copy.meterExhausted : resetLine}
+            </p>
+          ) : null}
+        </div>
+        <div
+          className="mj-meter-track"
+          role="progressbar"
+          aria-valuenow={percent}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-label={copy.meterTokens}
+        >
+          <div
+            className="mj-meter-fill"
+            data-exhausted={tokens.exhausted}
+            style={{ width: `${ratio * 100}%` }}
+          />
+        </div>
+        <span className="mj-meter-pct">{copy.meterPercentUsed(percent)}</span>
+      </div>
+      {/* The exact figures, once, under the row. Kept off the row itself
+          because the reference's whole point is that the row carries one fact
+          — how much is left — and the tokens are the supporting detail. */}
+      <p className="mj-meter-sub">
+        {copy.meterAmount(formatTokens(tokens.used, locale), formatTokens(tokens.limit, locale))}
+        {tokens.runsEquivalent === null
+          ? null
+          : ` \u00b7 ${copy.meterTokensRuns(tokens.runsEquivalent)}`}
+      </p>
     </div>
   );
 }

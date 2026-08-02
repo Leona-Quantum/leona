@@ -52,9 +52,33 @@ export const ACCOUNT_TIERS: readonly AccountTier[] = [
   "developer",
 ] as const;
 
+/**
+ * Tokens one advertised run is worth. MEASURED on production 2026-08-03 across
+ * twelve full execute runs (14,650 for a GHZ, 19,452 for an H2 VQE, 54,182 for
+ * a Grover run that spent its whole repair budget).
+ *
+ * Mirrors `TOKENS_PER_RUN_EQUIVALENT` in services/api/src/majorana_api/tiers.py,
+ * which is the copy that enforces. Change it there.
+ */
+export const TOKENS_PER_RUN_EQUIVALENT = 30_000;
+
 export type TierLimits = {
-  /** null means unlimited. */
+  /**
+   * What the plan is SOLD as. No longer the gate — `agentTokensPerWeek` below
+   * is, since 2026-08-03. Kept because it is the figure /pricing states and the
+   * one a customer reasons in.
+   *
+   * null means unlimited.
+   */
   agentRunsPerWeek: number | null;
+  /**
+   * The ENFORCED weekly allowance: LLM tokens across every stage, per account,
+   * on a trailing seven days. Always `agentRunsPerWeek * TOKENS_PER_RUN_EQUIVALENT`
+   * — the server pins that derivation in a test that parses this file.
+   *
+   * null means unlimited.
+   */
+  agentTokensPerWeek: number | null;
   /** null means unlimited. */
   privateArtifacts: number | null;
   /** Browser statevector lane. A product boundary, not a measurement — see the table below. */
@@ -139,6 +163,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   // the limits here describe a walkthrough, not an allowance.
   preview: {
     agentRunsPerWeek: 0,
+    agentTokensPerWeek: 0,
     privateArtifacts: 0,
     cpuSimQubits: 8,
     cpuSimOperations: 2_000,
@@ -151,6 +176,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   },
   free: {
     agentRunsPerWeek: 5,
+    agentTokensPerWeek: 150000,
     privateArtifacts: 10,
     cpuSimQubits: 8,
     cpuSimOperations: 2_000,
@@ -172,6 +198,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   // capability numbers.
   pro: {
     agentRunsPerWeek: 75,
+    agentTokensPerWeek: 2250000,
     privateArtifacts: 75,
     cpuSimQubits: 12,
     cpuSimOperations: 2_500,
@@ -192,6 +219,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   // sees the server's refusal, which is the correct direction for a divergence.
   team: {
     agentRunsPerWeek: 250,
+    agentTokensPerWeek: 7500000,
     privateArtifacts: 250,
     cpuSimQubits: 18,
     cpuSimOperations: 3_000,
@@ -206,6 +234,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   // allowances. It is NOT a security tier: see grantsQpuSubmission below.
   developer: {
     agentRunsPerWeek: null,
+    agentTokensPerWeek: null,
     privateArtifacts: null,
     cpuSimQubits: 20,
     cpuSimOperations: 4_000,

@@ -23,7 +23,7 @@ from majorana_api.repos.usage import TokenSpendRow
 from majorana_api.routes import runs as runs_routes
 from majorana_api.routes import usage as usage_routes
 from majorana_api.settings import Settings
-from majorana_api.tiers import TIER_LIMITS, TIER_WINDOW
+from majorana_api.tiers import TIER_LIMITS, TIER_WINDOW, TOKENS_PER_RUN_EQUIVALENT
 
 FREE_WEEKLY = TIER_LIMITS["free"].agent_runs_per_week
 FREE_ARTIFACTS = TIER_LIMITS["free"].private_artifacts
@@ -57,8 +57,10 @@ def _wire(
     shared_projects: int = 0,
     spend: list[TokenSpendRow] | None = None,
     hardware_spend_usd: float = 0.0,
+    tokens_used: int = 0,
+    tokens_next_at: dt.datetime | None = None,
 ):
-    """Stand in for the six repositories the route reads, recording its calls."""
+    """Stand in for the repositories the route reads, recording its calls."""
     seen: dict = {}
 
     async def count_execute_runs_since(_scope, _session, since):
@@ -90,6 +92,18 @@ def _wire(
         seen["spend_since"] = since
         return spend or []
 
+    async def account_tokens_since(_scope, _session, since):
+        # The ENFORCED meter since 2026-08-03, and named for the function the
+        # gate calls (repos.runs.reserve_execute_run_slot reads the same one).
+        # The run count beside it is reported and no longer refuses.
+        seen["tokens_since"] = since
+        return tokens_used
+
+    async def tokens_free_at(_scope, _session, since, *, window, surplus):
+        seen["tokens_free_since"] = since
+        seen["tokens_surplus"] = surplus
+        return None if tokens_next_at is None else tokens_next_at + window
+
     async def authorized_spend_since(_scope, _session, since):
         # The reservation's own function, named for it. The hardware allowance is
         # the one place the endpoint and a 429 must agree on a number, so the
@@ -109,6 +123,8 @@ def _wire(
     monkeypatch.setattr(usage_routes.system, "count_owned_workspaces", count_owned_workspaces)
     monkeypatch.setattr(usage_routes.shares_repo, "count_shared_projects", count_shared_projects)
     monkeypatch.setattr(usage_routes.usage_repo, "token_spend_since", token_spend_since)
+    monkeypatch.setattr(usage_routes.usage_repo, "account_tokens_since", account_tokens_since)
+    monkeypatch.setattr(usage_routes.usage_repo, "tokens_free_at", tokens_free_at)
     monkeypatch.setattr(
         usage_routes.qpu_runs_repo, "authorized_spend_since", authorized_spend_since
     )
@@ -467,24 +483,45 @@ async def test_an_unmetered_account_still_gets_its_spend(scope, monkeypatch):
 # --- the agreement the whole file is about ---------------------------------
 
 
-@pytest.mark.parametrize("executed", list(range(0, 8)))
-async def test_exhausted_says_yes_exactly_when_the_gate_refuses(executed, scope, monkeypatch):
-    """The screen and the gate, walked through the same count.
+#: Free is 5 * TOKENS_PER_RUN_EQUIVALENT. Walked from empty to over the line,
+#: including the exact boundary, because `>=` versus `>` at the limit is the
+#: difference between the last run being offered and being refused.
+_FREE_TOKENS = TIER_LIMITS["free"].agent_tokens_per_week
+assert _FREE_TOKENS is not None
 
-    `exhausted` is what the profile menu will colour red and what stops the
-    composer offering a verified run. If it disagreed with `_enforce_execute_
-    backstop` in either direction the product either refuses a run it advertised
-    or advertises a refusal that never comes.
+
+@pytest.mark.parametrize(
+    "tokens_used",
+    [0, 1, _FREE_TOKENS // 2, _FREE_TOKENS - 1, _FREE_TOKENS, _FREE_TOKENS + 1],
+)
+async def test_exhausted_says_yes_exactly_when_the_gate_refuses(tokens_used, scope, monkeypatch):
+    """The screen and the gate, walked through the same TOKEN count.
+
+    `exhausted` is what the profile menu colours red and what stops the composer
+    offering a verified run. If it disagreed with `_enforce_execute_backstop` in
+    either direction the product either refuses a run it advertised or advertises
+    a refusal that never comes.
+
+    Walked through tokens rather than runs since 2026-08-03, because that is what
+    the gate compares now. Left on runs, this test would have gone on passing
+    while agreeing about a number nothing enforces — the failure it exists to
+    catch, dressed as a pass.
     """
-    reported, _ = await _usage(scope, monkeypatch, executed=executed, oldest=[NOW])
+    reported, _ = await _usage(
+        scope, monkeypatch, executed=0, oldest=[NOW], tokens_used=tokens_used
+    )
 
-    async def counted(_scope, _session, _since):
-        return executed
+    async def spent(_scope, _session, _since):
+        return tokens_used
+
+    async def nothing_in_flight(_scope, _session):
+        return 0
 
     async def no_backstop(*_args, **_kwargs):
         return {}
 
-    monkeypatch.setattr(runs_routes.runs_repo, "count_execute_runs_since", counted)
+    monkeypatch.setattr(runs_routes.runs_repo.usage_repo, "account_tokens_since", spent)
+    monkeypatch.setattr(runs_routes.runs_repo, "count_in_flight_execute_runs", nothing_in_flight)
     monkeypatch.setattr(runs_routes.runs_repo, "count_runs_by_mode_since", no_backstop)
 
     request = runs_routes.CreateRunRequest(
@@ -500,10 +537,26 @@ async def test_exhausted_says_yes_exactly_when_the_gate_refuses(executed, scope,
         assert refusal.detail["reason"] == "run_allowance_exhausted"
         gate_refused = True
 
-    assert reported.runs.exhausted is gate_refused
+    assert reported.tokens.exhausted is gate_refused
     # The gate reserved rather than merely counted. Without this the double
     # would happily stand in for a version that dropped the lock again.
     assert session.statements, "the allowance gate issued no statement of its own"
+
+
+async def test_the_reported_token_allowance_is_the_one_the_plan_was_sold_as(scope, monkeypatch):
+    """The bar's own numbers, and the derivation the client must not repeat."""
+
+    reported, _ = await _usage(scope, monkeypatch, executed=0, oldest=[NOW], tokens_used=45_000)
+
+    assert reported.tokens.limit == _FREE_TOKENS
+    assert reported.tokens.used == 45_000
+    assert reported.tokens.remaining == _FREE_TOKENS - 45_000
+    assert reported.tokens.exhausted is False
+    assert reported.tokens.runs_equivalent == TIER_LIMITS["free"].agent_runs_per_week
+    assert reported.tokens.tokens_per_run == TOKENS_PER_RUN_EQUIVALENT
+    # The client renders a bar from used/limit. Sending the derivation too is
+    # what stops it dividing by a constant of its own.
+    assert reported.tokens.runs_equivalent * reported.tokens.tokens_per_run == reported.tokens.limit
 
 
 # --- the hardware allowance, which is the one denominated in money ----------

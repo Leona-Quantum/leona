@@ -151,3 +151,72 @@ async def token_spend_since(
         TokenSpendRow(role=row.role, model=row.model, calls=int(row.calls), tokens=int(row.tokens))
         for row in rows
     ]
+
+
+def account_token_allowance_stmt(scope: Scope, since: dt.datetime):
+    """The rows that spend the weekly TOKEN allowance. ONE definition, three statements.
+
+    The same discipline `runs._spends_the_weekly_allowance` documents, for the
+    same reason: the sum the gate refuses on, the sum `/v1/usage` reports, and
+    the timestamps it computes "when your allowance frees up" from are all built
+    here. Written separately they could drift by one predicate, and the product
+    would then refuse a submission on a screen that had just shown headroom.
+
+    Bound to `user_id` and NOT to `workspace_id`, unlike `token_spend_stmt` next
+    to it. An allowance is granted to a person and travels between their
+    workspaces; a spend report belongs to the tenant whose activity produced it.
+    Summing this per workspace would let one account get its whole allowance
+    again for every workspace it owns, which `owned_workspaces` exists to bound
+    precisely because that kind of bypass is cheap.
+    """
+    return select(UsageEvent).where(
+        UsageEvent.user_id == scope.user_id,
+        UsageEvent.kind == UsageKind.LLM_TOKENS,
+        UsageEvent.ts >= since,
+    )
+
+
+async def account_tokens_since(scope: Scope, session: AsyncSession, since: dt.datetime) -> int:
+    """This ACCOUNT's metered tokens inside the window, across every workspace."""
+
+    stmt = select(func.coalesce(func.sum(UsageEvent.quantity), 0)).where(
+        UsageEvent.user_id == scope.user_id,
+        UsageEvent.kind == UsageKind.LLM_TOKENS,
+        UsageEvent.ts >= since,
+    )
+    return int((await session.execute(stmt)).scalar_one())
+
+
+async def tokens_free_at(
+    scope: Scope,
+    session: AsyncSession,
+    since: dt.datetime,
+    *,
+    window: dt.timedelta,
+    surplus: int,
+) -> dt.datetime | None:
+    """When enough of the window's spend expires to clear `surplus` tokens.
+
+    A run count could answer "your next run frees up then" by taking the Nth
+    oldest row. Tokens cannot: rows are different sizes, so the answer is the
+    oldest timestamp at which the CUMULATIVE spend that has aged out reaches
+    `surplus`. Walking them oldest-first is the whole computation.
+
+    `None` when the window does not hold enough to clear it, which is reachable
+    without a bug — an account metered down from a higher tier can be over a
+    limit that its whole current window cannot bring it under. Returning some
+    timestamp anyway would be a promise the product then breaks.
+    """
+    if surplus <= 0:
+        return None
+    rows = (
+        await session.execute(
+            account_token_allowance_stmt(scope, since).order_by(UsageEvent.ts.asc())
+        )
+    ).scalars()
+    freed = 0
+    for row in rows:
+        freed += int(row.quantity)
+        if freed >= surplus:
+            return row.ts + window
+    return None

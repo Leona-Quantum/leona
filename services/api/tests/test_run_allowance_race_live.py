@@ -22,13 +22,14 @@ import uuid
 
 import pytest
 from majorana_contracts import Scope
-from majorana_contracts.enums import Framework, Role, RunMode
+from majorana_contracts.enums import Framework, Role, RunMode, UsageKind
 from repo_test_helpers import delete_committed_tenants, slot_taken_or_the_reason_why
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import system
-from majorana_api.tiers import TIER_WINDOW, limits_for
+from majorana_api.repos import usage as usage_repo
+from majorana_api.tiers import TIER_WINDOW, TOKENS_PER_RUN_EQUIVALENT, limits_for
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="the run allowance race needs DATABASE_URL"
@@ -37,18 +38,23 @@ requires_db = pytest.mark.skipif(
 pytestmark = requires_db
 
 #: Read from the tier table rather than pinned as a second copy.
-FREE_RUNS_PER_WEEK = limits_for("free").agent_runs_per_week
+#:
+#: Tokens, not runs, since 2026-08-03. Staging four run ROWS and racing for a
+#: fifth no longer describes this gate at all: the reservation charges every
+#: admitted-but-unfinished run at the run-equivalent rate, so four queued rows
+#: are themselves 120,000 tokens of the allowance and both callers would be
+#: refused before the race began. What is staged now is recorded SPEND, leaving
+#: exactly one run's worth on the clock.
+FREE_TOKENS = limits_for("free").agent_tokens_per_week
 
 BLOCKED_FOR_S = 1.5
 
 
 async def _spend(scope: Scope, session, count: int, tag: str) -> None:
-    """`count` runs whose resolved mode is EXECUTE — what the allowance counts.
+    """`count` runs whose resolved mode is EXECUTE — what a caller submits.
 
-    AUTO would not do. `count_execute_runs_since` is deliberately narrower than
-    the abuse backstop: a free account's chat is unmetered by policy, so a
-    fixture that filled the window with AUTO rows would leave the allowance
-    untouched and the two callers below would not be at any boundary at all.
+    AUTO would not do. These rows are what makes the winner's run in-flight for
+    the loser's reservation, and the in-flight charge only counts EXECUTE/AUTO.
     """
     for index in range(count):
         await runs_repo.create_run(
@@ -60,9 +66,20 @@ async def _spend(scope: Scope, session, count: int, tag: str) -> None:
         )
 
 
+async def _record_tokens(scope: Scope, session, tokens: int) -> None:
+    """Recorded spend inside the window, written the way the worker writes it."""
+    await usage_repo.record_usage(
+        scope,
+        session,
+        kind=UsageKind.LLM_TOKENS,
+        quantity=tokens,
+        meta={"role": "request_plan", "model": "test"},
+    )
+
+
 @pytest.mark.asyncio
 async def test_the_last_weekly_run_cannot_be_spent_twice_by_two_connections():
-    assert FREE_RUNS_PER_WEEK is not None and FREE_RUNS_PER_WEEK >= 2
+    assert FREE_TOKENS is not None and FREE_TOKENS > TOKENS_PER_RUN_EQUIVALENT
     engine = engine_from_env()
     factory = session_factory(engine)
 
@@ -74,14 +91,15 @@ async def test_the_last_weekly_run_cannot_be_spent_twice_by_two_connections():
             display_name="Run Race",
         )
         scope = Scope(user_id=user.id, workspace_id=workspace.id, role=Role.OWNER)
-        await _spend(scope, session, FREE_RUNS_PER_WEEK - 1, "fill")
+        # Exactly one run's worth left, and nothing in flight.
+        await _record_tokens(scope, session, FREE_TOKENS - TOKENS_PER_RUN_EQUIVALENT)
         await session.commit()
 
         since = dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
-        staged = await runs_repo.count_execute_runs_since(scope, session, since)
-        assert staged == FREE_RUNS_PER_WEEK - 1, (
-            f"staged {staged} execute runs, not {FREE_RUNS_PER_WEEK - 1}: the two "
-            "callers below would not be racing for the last one"
+        staged = await usage_repo.account_tokens_since(scope, session, since)
+        assert staged == FREE_TOKENS - TOKENS_PER_RUN_EQUIVALENT, (
+            f"staged {staged} tokens, not {FREE_TOKENS - TOKENS_PER_RUN_EQUIVALENT}: the "
+            "two callers below would not be racing for the last run's worth"
         )
 
     a_has_the_slot = asyncio.Event()
@@ -90,7 +108,7 @@ async def test_the_last_weekly_run_cannot_be_spent_twice_by_two_connections():
     async def caller_a() -> None:
         async with factory() as session:
             since = dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
-            await runs_repo.reserve_execute_run_slot(scope, session, since, FREE_RUNS_PER_WEEK)
+            await runs_repo.reserve_execute_run_slot(scope, session, since, FREE_TOKENS)
             await _spend(scope, session, 1, "contend-a")
             a_has_the_slot.set()
             await asyncio.sleep(BLOCKED_FOR_S * 2)
@@ -101,7 +119,7 @@ async def test_the_last_weekly_run_cannot_be_spent_twice_by_two_connections():
         async with factory() as session:
             since = dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
             try:
-                await runs_repo.reserve_execute_run_slot(scope, session, since, FREE_RUNS_PER_WEEK)
+                await runs_repo.reserve_execute_run_slot(scope, session, since, FREE_TOKENS)
                 await _spend(scope, session, 1, "contend-b")
                 await session.commit()
                 b_outcome.append("spent")
@@ -126,13 +144,18 @@ async def test_the_last_weekly_run_cannot_be_spent_twice_by_two_connections():
         assert b_outcome and isinstance(b_outcome[0], runs_repo.RunAllowanceReached), (
             f"the second caller was not refused: {b_outcome}"
         )
-        assert b_outcome[0].limit == FREE_RUNS_PER_WEEK
+        assert b_outcome[0].limit == FREE_TOKENS
 
+        # One winner, so one more run in flight and no second charge against the
+        # week. Read the way the gate reads it: recorded spend plus the reservation.
         async with factory() as session:
             since = dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
-            used = await runs_repo.count_execute_runs_since(scope, session, since)
-        assert used == FREE_RUNS_PER_WEEK, (
-            f"the account spent {used} runs against an allowance of {FREE_RUNS_PER_WEEK}"
+            spent = await usage_repo.account_tokens_since(scope, session, since)
+            in_flight = await runs_repo.count_in_flight_execute_runs(scope, session)
+        assert in_flight == 1, f"{in_flight} runs were admitted against one run's worth"
+        assert spent + in_flight * TOKENS_PER_RUN_EQUIVALENT == FREE_TOKENS, (
+            f"the account holds {spent} spent + {in_flight} in flight against an "
+            f"allowance of {FREE_TOKENS}"
         )
     finally:
         for task in (a_task, b_task):
@@ -206,12 +229,17 @@ async def test_the_allowance_is_the_account_s_and_not_one_workspace_s():
         workspace_ids += [personal.id, second.id]
         here = Scope(user_id=user.id, workspace_id=personal.id, role=Role.OWNER)
         there = Scope(user_id=user.id, workspace_id=second.id, role=Role.OWNER)
-        await _spend(here, session, FREE_RUNS_PER_WEEK, "in-personal")
+        # Spent entirely in the personal workspace, and refused in the second
+        # one. Written as recorded spend rather than run rows so the refusal is
+        # the SUM being unscoped, not the in-flight reservation — both are keyed
+        # on the account, and staging runs would leave which of the two did the
+        # refusing ambiguous.
+        await _record_tokens(here, session, FREE_TOKENS)
         await session.commit()
 
         since = dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
         with pytest.raises(runs_repo.RunAllowanceReached):
-            await runs_repo.reserve_execute_run_slot(there, session, since, FREE_RUNS_PER_WEEK)
+            await runs_repo.reserve_execute_run_slot(there, session, since, FREE_TOKENS)
     try:
         pass
     finally:
