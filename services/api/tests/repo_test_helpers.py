@@ -11,6 +11,25 @@ from majorana_contracts import Scope
 from majorana_contracts.enums import Role
 from sqlalchemy.dialects import postgresql
 
+#: A `users.plan` value that names no tier, for the tests that exercise the
+#: fall-through. `users.plan` has no CHECK constraint and `resolve_tier` maps an
+#: unrecognised value to `free`, so this is a real state, not a hypothetical.
+#:
+#: It lives here rather than beside its users because it must be *asserted*
+#: rather than chosen, and the module that uses it sits entirely under a
+#: `requires_db` skip. `test_tier_table.test_unknown_plan_names_no_tier` is the
+#: guard, and it runs in the `py` job — on every pull request — rather than only
+#: in `db`.
+#:
+#: The value was `"pro"` until `pro` became a real tier. The day it did,
+#: `test_me_reports_free_for_a_plan_string_nobody_recognises` failed loudly with
+#: `assert 'pro' == 'free'`, which was the honest outcome. The quieter half is
+#: the one that made this a shared constant with a guard: the OTHER test using
+#: it went on passing, because `pro` happens not to grant sharing either — so it
+#: silently stopped being a test about an unknown plan string and became a test
+#: about the pro tier, green the whole way.
+UNKNOWN_PLAN = "not-a-plan"
+
 
 class _Result:
     """Empty result: reads see no rows, writes see rowcount 0."""

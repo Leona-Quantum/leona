@@ -141,3 +141,26 @@ def test_a_pro_account_is_outranked_by_both_lists_above_it():
     assert resolve_tier(subject, pro_emails=frozenset({subject})) == "pro"
     # A `pro` plan row belonging to somebody on the team list is a Team account.
     assert resolve_tier(subject, plan=PRO_PLAN, team_emails=frozenset({subject})) == "team"
+
+
+def test_unknown_plan_names_no_tier():
+    """The unrecognised-plan fixture must actually be unrecognised.
+
+    `repo_test_helpers.UNKNOWN_PLAN` carries the history: it was `"pro"`, and
+    two live tests used it to prove that a plan string nobody recognises is
+    metered as `free`. Adding the `pro` tier broke one of them honestly and left
+    the other passing while it quietly changed meaning.
+
+    This guard is here rather than beside the constant because
+    `test_project_sharing_tier_live.py` is skipped wholesale without a
+    `DATABASE_URL`. A check that only runs in the `db` job would not have caught
+    the drift on the pull requests where it matters.
+    """
+    from repo_test_helpers import UNKNOWN_PLAN
+
+    assert UNKNOWN_PLAN not in PLAN_TIERS, (
+        f"UNKNOWN_PLAN is {UNKNOWN_PLAN!r}, which now names the "
+        f"{PLAN_TIERS[UNKNOWN_PLAN]!r} tier. The tests using it have stopped "
+        "being about an unrecognised plan string — pick a value no tier claims."
+    )
+    assert resolve_tier("someone@example.test", plan=UNKNOWN_PLAN) == "free"
