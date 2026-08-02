@@ -1,0 +1,23 @@
+id: holdout-v9-02
+category: "Holdout v9 — Coherent quantum teleportation"
+split: holdout
+difficulty: intermediate
+workload: educational
+prompt: >-
+  In Qiskit, prepare an input qubit as Rz(-0.41) Ry(0.73)|0>, then teleport it
+  to a third qubit using a Bell pair, a Bell-basis transform, and deferred-measurement
+  coherent X/Z corrections. From the final statevector, compute the teleported qubit's
+  Bloch x, y, z components and its fidelity with the original input. Return top-level
+  numeric RESULT keys bloch_x, bloch_y, bloch_z, and state_fidelity. Bind the complete
+  three-qubit teleportation circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["bloch_x", "bloch_y", "bloch_z", "state_fidelity"]
+  expected_values:
+    bloch_x: 0.6116000283660006
+    bloch_y: -0.2658204570620414
+    bloch_z: 0.7451744023448704
+    state_fidelity: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

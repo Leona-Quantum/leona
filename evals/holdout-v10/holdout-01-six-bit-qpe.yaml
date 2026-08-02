@@ -1,0 +1,24 @@
+id: holdout-v10-01
+category: "Holdout v10 — Unseen six-bit exact phase estimation"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Build a Qiskit phase-estimation circuit with six counting qubits and one target
+  qubit prepared in |1>. Use U=diag(1,exp(2*pi*i*13/64)), explicit controlled powers,
+  an inverse QFT, 4096 shots, deterministic simulator and transpiler seeds, and decode
+  the Qiskit measurement order from the sampled count distribution. Return top-level
+  RESULT keys phase_index, estimated_phase, dominant_probability, and measurement_counts.
+  Bind the executed phase-estimation circuit to FINAL_CIRCUIT. The decoded values must
+  come from the circuit samples rather than directly from the known phase.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["phase_index", "estimated_phase", "dominant_probability", "measurement_counts"]
+  expected_top_bitstring: "001101"
+  expected_values:
+    phase_index: 13.0
+    estimated_phase: 0.203125
+    dominant_probability: 1.0
+  expected_value_tolerance: 0.001
+  saves_artifact: true

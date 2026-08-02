@@ -245,6 +245,7 @@ def _with_exact_diag(**verification) -> dict:
         "success_criteria": {"primary_metric": "ground_state_energy"},
         "verification_plan": {
             "methods": ["exact_diag", "return_contract"],
+            "reference_result_key": "ground_state_energy",
             "reference_hamiltonian": _HAMILTONIAN,
             **verification,
         },
@@ -260,6 +261,7 @@ def test_exact_diag_is_plannable_at_last():
     assert plan.verification_plan.reference_hamiltonian is not None
     assert len(plan.verification_plan.reference_hamiltonian) == 3
     assert plan.verification_plan.reference_hamiltonian[0].pauli == "ZI"
+    assert plan.verification_plan.reference_result_key == "ground_state_energy"
 
 
 def test_exact_diag_with_no_reference_at_all_normalizes_to_yesterdays_behaviour():
@@ -320,14 +322,22 @@ def test_a_non_pauli_character_is_rejected_by_the_field_itself():
         )
 
 
-def test_exact_diag_whose_metric_is_not_a_promised_key_is_rejected():
-    """The check reads primary_metric out of the result dict. A metric the code
+def test_exact_diag_whose_bound_result_is_not_a_promised_key_is_rejected():
+    """The check reads reference_result_key out of the result dict. A metric the code
     was never asked to print fails identically on every candidate."""
     with pytest.raises(ValidationError) as exc:
-        Plan.model_validate(
-            {**_with_exact_diag(), "success_criteria": {"primary_metric": "energy_Ha"}}
-        )
+        Plan.model_validate(_with_exact_diag(reference_result_key="energy_Ha"))
     assert "does not promise that key" in str(exc.value)
+
+
+def test_legacy_exact_diag_without_explicit_binding_falls_back_to_primary_metric():
+    payload = _with_exact_diag()
+    payload["verification_plan"].pop("reference_result_key")
+
+    plan = Plan.model_validate(payload)
+
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.reference_result_key is None
 
 
 def test_a_plan_without_exact_diag_needs_no_hamiltonian():
@@ -335,6 +345,430 @@ def test_a_plan_without_exact_diag_needs_no_hamiltonian():
     plan = Plan.model_validate({**VALID, "verification_plan": {"methods": ["return_contract"]}})
     assert plan.verification_plan is not None
     assert plan.verification_plan.reference_hamiltonian is None
+
+
+_DYNAMICS_REFERENCE = {
+    "num_qubits": 2,
+    "hamiltonian": [
+        {"coefficient": 0.8, "factors": [{"qubit": 0, "pauli": "Z"}]},
+        {"coefficient": 0.4, "factors": [{"qubit": 1, "pauli": "Z"}]},
+        {
+            "coefficient": 0.2,
+            "factors": [
+                {"qubit": 0, "pauli": "X"},
+                {"qubit": 1, "pauli": "X"},
+            ],
+        },
+    ],
+    "initial_basis_state": "00",
+    "evolution_time": 1.2,
+    "result_key": "value",
+    "metric": "observable_expectation",
+    "observable": [{"coefficient": 1.0, "factors": [{"qubit": 0, "pauli": "Z"}]}],
+}
+
+
+def _with_exact_dynamics(reference=None) -> dict:
+    return {
+        **VALID,
+        "algorithm": "Simulation",
+        "qubits_estimate": 2,
+        "expected_output_keys": ["value"],
+        "success_criteria": {"primary_metric": "value"},
+        "verification_plan": {
+            "methods": ["return_contract"],
+            "exact_dynamics_reference": _DYNAMICS_REFERENCE if reference is None else reference,
+        },
+    }
+
+
+def test_bounded_exact_dynamics_reference_is_preserved():
+    plan = Plan.model_validate(_with_exact_dynamics())
+
+    assert plan.verification_plan is not None
+    reference = plan.verification_plan.exact_dynamics_reference
+    assert reference is not None
+    assert reference.initial_basis_state == "00"
+    assert reference.observable is not None
+    assert [factor.qubit for factor in reference.observable[0].factors] == [0]
+
+
+@pytest.mark.parametrize(
+    "reference,fragment",
+    [
+        (
+            {**_DYNAMICS_REFERENCE, "initial_basis_state": "0"},
+            "one bit per declared qubit",
+        ),
+        (
+            {
+                **_DYNAMICS_REFERENCE,
+                "hamiltonian": [
+                    {
+                        "coefficient": 1.0,
+                        "factors": [
+                            {"qubit": 0, "pauli": "Z"},
+                            {"qubit": 0, "pauli": "X"},
+                        ],
+                    }
+                ],
+            },
+            "duplicate qubit factors",
+        ),
+        (
+            {
+                **_DYNAMICS_REFERENCE,
+                "metric": "survival_probability",
+            },
+            "does not use",
+        ),
+        (
+            {
+                **_DYNAMICS_REFERENCE,
+                "observable": [
+                    {
+                        "coefficient": 1.0,
+                        "factors": [{"qubit": 2, "pauli": "Z"}],
+                    }
+                ],
+            },
+            "lies outside the declared 2-qubit register",
+        ),
+    ],
+)
+def test_inconsistent_exact_dynamics_shapes_are_rejected(reference, fragment):
+    with pytest.raises(ValidationError, match=fragment):
+        Plan.model_validate(_with_exact_dynamics(reference))
+
+
+def test_survival_reference_requires_no_observable():
+    reference = {key: value for key, value in _DYNAMICS_REFERENCE.items() if key != "observable"}
+    reference["metric"] = "survival_probability"
+
+    plan = Plan.model_validate(_with_exact_dynamics(reference))
+
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.exact_dynamics_reference is not None
+
+
+def test_exact_dynamics_metric_must_be_a_promised_result_key():
+    payload = _with_exact_dynamics()
+    payload["success_criteria"] = {"primary_metric": "missing_metric"}
+    payload["verification_plan"]["exact_dynamics_reference"] = {
+        **_DYNAMICS_REFERENCE,
+        "result_key": "missing_metric",
+    }
+
+    with pytest.raises(ValidationError, match="does not promise that key"):
+        Plan.model_validate(payload)
+
+
+def test_exact_dynamics_result_key_must_equal_the_primary_metric():
+    reference = {**_DYNAMICS_REFERENCE, "result_key": "another_metric"}
+
+    with pytest.raises(ValidationError, match="must equal success_criteria.primary_metric"):
+        Plan.model_validate(_with_exact_dynamics(reference))
+
+
+_QPE_REFERENCE = {
+    "counting_qubits": 5,
+    "eigenphase": 11 / 32,
+    "phase_integer_result_key": "phase_integer",
+    "phase_estimate_result_key": "phase_estimate",
+    "peak_probability_result_key": "peak_probability",
+    "counts_result_key": "counts",
+}
+
+
+def _with_exact_qpe(reference=None) -> dict:
+    return {
+        **VALID,
+        "algorithm": "QPE",
+        "qubits_estimate": 6,
+        "parameters": {"shots": 4096},
+        "expected_output_keys": [
+            "phase_integer",
+            "phase_estimate",
+            "peak_probability",
+            "counts",
+        ],
+        "success_criteria": {"primary_metric": "phase_estimate"},
+        "verification_plan": {
+            "methods": ["return_contract"],
+            "exact_phase_estimation_reference": (
+                _QPE_REFERENCE if reference is None else reference
+            ),
+        },
+    }
+
+
+def test_bounded_exact_qpe_reference_is_preserved():
+    plan = Plan.model_validate(_with_exact_qpe())
+
+    assert plan.verification_plan is not None
+    reference = plan.verification_plan.exact_phase_estimation_reference
+    assert reference is not None
+    assert reference.counting_qubits == 5
+    assert reference.eigenphase == pytest.approx(11 / 32)
+
+
+def test_exact_qpe_rejects_a_nonrepresentable_phase():
+    with pytest.raises(ValidationError, match="exactly representable"):
+        Plan.model_validate(_with_exact_qpe({**_QPE_REFERENCE, "eigenphase": 1 / 3}))
+
+
+def test_exact_qpe_requires_all_bound_result_keys_to_be_promised():
+    payload = _with_exact_qpe()
+    payload["expected_output_keys"].remove("peak_probability")
+
+    with pytest.raises(ValidationError, match="unpromised RESULT keys"):
+        Plan.model_validate(payload)
+
+
+def test_exact_qpe_requires_algorithm_and_target_qubit_capacity():
+    wrong_algorithm = _with_exact_qpe()
+    wrong_algorithm["algorithm"] = "QFT"
+    with pytest.raises(ValidationError, match="requires algorithm QPE"):
+        Plan.model_validate(wrong_algorithm)
+
+    too_narrow = _with_exact_qpe()
+    too_narrow["qubits_estimate"] = 5
+    with pytest.raises(ValidationError, match="requires at least one target qubit"):
+        Plan.model_validate(too_narrow)
+
+
+_LINEAR_REFERENCE = {
+    "matrix": [[0.75, 0.25], [0.25, 0.75]],
+    "rhs": [1.0, -0.25],
+    "results": [
+        {
+            "result_key": "solution_x0",
+            "metric": "normalized_solution_component",
+            "index": 0,
+        },
+        {
+            "result_key": "solution_x1",
+            "metric": "normalized_solution_component",
+            "index": 1,
+        },
+        {
+            "result_key": "amplitude_ratio",
+            "metric": "component_ratio",
+            "numerator_index": 1,
+            "denominator_index": 0,
+        },
+        {"result_key": "residual_norm", "metric": "residual_norm"},
+        {"result_key": "state_fidelity", "metric": "state_fidelity"},
+    ],
+}
+
+
+def _with_exact_linear(reference=None) -> dict:
+    return {
+        **VALID,
+        "algorithm": "other",
+        "qubits_estimate": 5,
+        "expected_output_keys": [
+            "solution_x0",
+            "solution_x1",
+            "amplitude_ratio",
+            "residual_norm",
+            "state_fidelity",
+        ],
+        "success_criteria": {"primary_metric": "state_fidelity"},
+        "verification_plan": {
+            "methods": ["return_contract"],
+            "exact_linear_system_reference": (
+                _LINEAR_REFERENCE if reference is None else reference
+            ),
+        },
+    }
+
+
+def test_bounded_exact_linear_system_reference_is_preserved():
+    plan = Plan.model_validate(_with_exact_linear())
+
+    assert plan.verification_plan is not None
+    reference = plan.verification_plan.exact_linear_system_reference
+    assert reference is not None
+    assert reference.matrix[0][1] == pytest.approx(0.25)
+    assert reference.results[2].numerator_index == 1
+
+
+@pytest.mark.parametrize(
+    ("reference", "fragment"),
+    [
+        ({**_LINEAR_REFERENCE, "matrix": [[1.0, 0.2], [0.3, 1.0]]}, "symmetric"),
+        (
+            {**_LINEAR_REFERENCE, "matrix": [[1.0] * 3 for _ in range(3)], "rhs": [1.0] * 3},
+            "power of two",
+        ),
+        ({**_LINEAR_REFERENCE, "rhs": [1.0]}, "at least 2"),
+        (
+            {
+                **_LINEAR_REFERENCE,
+                "results": [
+                    {
+                        "result_key": "solution_x0",
+                        "metric": "normalized_solution_component",
+                        "index": 2,
+                    }
+                ],
+            },
+            "outside the matrix",
+        ),
+    ],
+)
+def test_inconsistent_exact_linear_system_shapes_are_rejected(reference, fragment):
+    with pytest.raises(ValidationError, match=fragment):
+        Plan.model_validate(_with_exact_linear(reference))
+
+
+def test_exact_linear_system_cannot_check_an_unpromised_result():
+    payload = _with_exact_linear()
+    payload["expected_output_keys"].remove("amplitude_ratio")
+
+    with pytest.raises(ValidationError, match="unpromised RESULT keys"):
+        Plan.model_validate(payload)
+
+
+_LINDBLAD_REFERENCE = {
+    "num_qubits": 1,
+    "initial_product_state": ["plus"],
+    "hamiltonian": None,
+    "dissipators": [
+        {
+            "rate": 0.7,
+            "jump": {
+                "terms": [
+                    {
+                        "coefficient": {"real": 1.0},
+                        "factors": [{"qubit": 0, "operator": "lowering"}],
+                    }
+                ]
+            },
+        },
+        {
+            "rate": 0.1,
+            "jump": {
+                "terms": [
+                    {
+                        "coefficient": {"real": 1.0},
+                        "factors": [{"qubit": 0, "operator": "Z"}],
+                    }
+                ]
+            },
+        },
+    ],
+    "evolution_time": 1.3,
+    "results": [
+        {
+            "result_key": "excited_population",
+            "metric": "population",
+            "basis_state": "1",
+        },
+        {
+            "result_key": "coherence_real",
+            "metric": "density_element_real",
+            "row_state": "0",
+            "column_state": "1",
+        },
+        {"result_key": "purity", "metric": "purity"},
+    ],
+}
+
+
+def _with_exact_lindblad(reference=None) -> dict:
+    return {
+        **VALID,
+        "algorithm": "Simulation",
+        "qubits_estimate": 3,
+        "expected_output_keys": ["excited_population", "coherence_real", "purity"],
+        "success_criteria": {"primary_metric": "excited_population"},
+        "verification_plan": {
+            "methods": ["return_contract"],
+            "exact_lindblad_reference": (_LINDBLAD_REFERENCE if reference is None else reference),
+        },
+    }
+
+
+def test_bounded_exact_lindblad_reference_is_preserved():
+    plan = Plan.model_validate(_with_exact_lindblad())
+
+    assert plan.verification_plan is not None
+    reference = plan.verification_plan.exact_lindblad_reference
+    assert reference is not None
+    assert reference.dissipators[0].jump.terms[0].factors[0].operator == "lowering"
+    assert [result.result_key for result in reference.results] == [
+        "excited_population",
+        "coherence_real",
+        "purity",
+    ]
+
+
+@pytest.mark.parametrize(
+    "reference,fragment",
+    [
+        (
+            {**_LINDBLAD_REFERENCE, "initial_product_state": ["plus", "zero"]},
+            "one state per qubit",
+        ),
+        (
+            {
+                **_LINDBLAD_REFERENCE,
+                "dissipators": [
+                    {
+                        "rate": 0.7,
+                        "jump": {
+                            "terms": [
+                                {
+                                    "coefficient": {"real": 1.0},
+                                    "factors": [{"qubit": 1, "operator": "lowering"}],
+                                }
+                            ]
+                        },
+                    }
+                ],
+            },
+            "lies outside the declared 1-qubit register",
+        ),
+        (
+            {
+                **_LINDBLAD_REFERENCE,
+                "results": [
+                    {
+                        "result_key": "excited_population",
+                        "metric": "population",
+                    }
+                ],
+            },
+            "population requires only basis_state",
+        ),
+    ],
+)
+def test_inconsistent_exact_lindblad_shapes_are_rejected(reference, fragment):
+    with pytest.raises(ValidationError, match=fragment):
+        Plan.model_validate(_with_exact_lindblad(reference))
+
+
+def test_exact_lindblad_reference_must_cover_the_primary_metric():
+    reference = {
+        **_LINDBLAD_REFERENCE,
+        "results": [{"result_key": "purity", "metric": "purity"}],
+    }
+
+    with pytest.raises(ValidationError, match="must include success_criteria.primary_metric"):
+        Plan.model_validate(_with_exact_lindblad(reference))
+
+
+def test_exact_lindblad_reference_cannot_check_an_unpromised_result():
+    reference = {
+        **_LINDBLAD_REFERENCE,
+        "results": [*_LINDBLAD_REFERENCE["results"], {"result_key": "extra", "metric": "purity"}],
+    }
+
+    with pytest.raises(ValidationError, match="unpromised RESULT keys: extra"):
+        Plan.model_validate(_with_exact_lindblad(reference))
 
 
 _MAXCUT_PROBLEM = {
@@ -444,6 +878,72 @@ def test_a_qubo_diagonal_term_is_not_a_self_loop():
     )
     assert plan.verification_plan is not None
     assert plan.verification_plan.reference_problem is not None
+
+
+def test_qubo_reference_can_preserve_offset_direction_and_linear_constraints():
+    plan = Plan.model_validate(
+        _with_brute_force(
+            reference_problem={
+                "kind": "qubo",
+                "num_variables": 3,
+                "terms": [
+                    {"i": 0, "j": 0, "weight": 8.0},
+                    {"i": 1, "j": 1, "weight": 5.0},
+                    {"i": 2, "j": 2, "weight": 6.0},
+                ],
+                "offset": 4.0,
+                "objective": "maximize",
+                "constraints": [
+                    {
+                        "terms": [
+                            {"i": 0, "weight": 4.0},
+                            {"i": 1, "weight": 2.0},
+                            {"i": 2, "weight": 3.0},
+                        ],
+                        "sense": "le",
+                        "rhs": 7.0,
+                    }
+                ],
+            }
+        )
+    )
+
+    assert plan.verification_plan is not None
+    problem = plan.verification_plan.reference_problem
+    assert problem is not None
+    assert problem.offset == 4.0
+    assert problem.objective == "maximize"
+    assert problem.constraints[0].sense == "le"
+    assert problem.constraints[0].terms[2].i == 2
+
+
+def test_constraint_term_outside_the_declared_variable_count_is_rejected():
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            _with_brute_force(
+                reference_problem={
+                    "kind": "qubo",
+                    "num_variables": 2,
+                    "terms": [{"i": 0, "j": 0, "weight": 1.0}],
+                    "constraints": [
+                        {
+                            "terms": [{"i": 2, "weight": 1.0}],
+                            "sense": "eq",
+                            "rhs": 1.0,
+                        }
+                    ],
+                }
+            )
+        )
+    assert "constraint term 2" in str(exc.value)
+
+
+def test_maxcut_cannot_reverse_its_fixed_objective_direction():
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(
+            _with_brute_force(reference_problem={**_MAXCUT_PROBLEM, "objective": "minimize"})
+        )
+    assert "fixed maximize semantics" in str(exc.value)
 
 
 def test_an_instance_above_the_enumeration_ceiling_is_rejected_by_the_field():

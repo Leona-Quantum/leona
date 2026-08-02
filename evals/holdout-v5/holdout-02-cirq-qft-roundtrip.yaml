@@ -1,0 +1,21 @@
+id: holdout-v5-02
+category: "Holdout v5 — Cirq QFT round trip"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  In Cirq, use four LineQubits ordered q0,q1,q2,q3, prepare the written basis state
+  |q0 q1 q2 q3>=|1010>, apply a four-qubit quantum Fourier transform and then its exact
+  inverse, and evaluate the final statevector without sampling. Derive the recovered
+  integer from the largest final-state probability in that written qubit order. Return
+  top-level numeric RESULT keys roundtrip_fidelity and recovered_integer, and bind the
+  complete preparation-plus-QFT-plus-inverse circuit to FINAL_CIRCUIT.
+framework: cirq
+expect:
+  terminal_reason: null
+  output_keys: ["roundtrip_fidelity", "recovered_integer"]
+  expected_values:
+    roundtrip_fidelity: 1.0
+    recovered_integer: 10.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

@@ -1,0 +1,20 @@
+id: holdout-v9-01
+category: "Holdout v9 — Bell-state statistics"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  In Qiskit, prepare (|00>+|11>)/sqrt(2), measure both qubits with 4096 shots
+  using deterministic simulator and transpiler seeds, and calculate probabilities
+  from the sampled counts. Return top-level RESULT keys p00, p11, zz_correlation,
+  and counts. Bind the exact measured Bell circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["p00", "p11", "zz_correlation", "counts"]
+  expected_values:
+    p00: 0.5
+    p11: 0.5
+    zz_correlation: 1.0
+  expected_value_tolerance: 0.05
+  saves_artifact: true

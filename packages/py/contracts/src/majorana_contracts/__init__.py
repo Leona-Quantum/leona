@@ -109,6 +109,19 @@ from .models import (
 )
 from .plan import (
     ArtifactContract,
+    ComplexCoefficient,
+    ExactDynamicsReference,
+    ExactLindbladReference,
+    ExactLinearSystemReference,
+    ExactPhaseEstimationReference,
+    IndexedPauliTerm,
+    LindbladDissipator,
+    LindbladFactor,
+    LindbladOperator,
+    LindbladOperatorTerm,
+    LindbladResultSpec,
+    LinearSystemResultSpec,
+    PauliFactor,
     Plan,
     PlanParameters,
     SuccessCriteria,
@@ -177,7 +190,11 @@ from .lifecycle import (
 # an optional one would invite a client to reimplement that default. A web build
 # that lands BEFORE the API's sees neither field, so `apps/web/lib/project-shares`
 # reads both defensively rather than parsing them as required.
-CONTRACTS_VERSION = "2.8.0"
+# 2.9.0: VerificationPlan gains bounded typed references for practical binary
+# optimization, Pauli dynamics, Lindblad evolution, phase estimation, and dense
+# linear systems, plus explicit RESULT-key binding for exact diagonalization.
+# These additions strengthen existing evidence paths without a new DB enum.
+CONTRACTS_VERSION = "2.9.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -188,6 +205,18 @@ __all__ = [
     "ArtifactSaved",
     "ArtifactType",
     "ArtifactVersion",
+    "ComplexCoefficient",
+    "ExactDynamicsReference",
+    "ExactLindbladReference",
+    "ExactLinearSystemReference",
+    "ExactPhaseEstimationReference",
+    "IndexedPauliTerm",
+    "LindbladDissipator",
+    "LindbladFactor",
+    "LindbladOperator",
+    "LindbladOperatorTerm",
+    "LindbladResultSpec",
+    "LinearSystemResultSpec",
     "BaselineKind",
     "BaselineResult",
     "CatalogProvenance",
@@ -221,6 +250,7 @@ __all__ = [
     "LlmDelta",
     "MeasurementPolicy",
     "Optimizer",
+    "PauliFactor",
     "Plan",
     "PlanParameters",
     "PlanProduced",

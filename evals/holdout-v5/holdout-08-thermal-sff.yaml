@@ -1,0 +1,21 @@
+id: holdout-v5-08
+category: "Holdout v5 — Finite-temperature spectral form factor"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, construct the exact four-qubit Hamiltonian
+  H=0.63 Z0 Z1 - 0.37 X1 X2 + 0.29 Y0 Y3 + 0.21 Z2 Z3 + 0.17 X0 - 0.11 Z3.
+  At beta=0.35 and t=0.8 compute the normalized finite-temperature spectral form
+  factor K=|Tr(exp(-(beta+i*t)H))|^2/|Tr(exp(-beta*H))|^2 using explicit matrices and
+  SciPy exponentiation. Return K as the top-level numeric RESULT key
+  spectral_form_factor, and bind a Qiskit circuit implementing exp(-i*t*H) to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["spectral_form_factor"]
+  expected_values:
+    spectral_form_factor: 0.6434339832301231
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

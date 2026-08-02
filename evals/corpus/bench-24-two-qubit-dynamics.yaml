@@ -1,0 +1,17 @@
+id: bench-24
+category: "H — Explicit Hamiltonian time evolution"
+prompt: >-
+  In Qiskit, start from |00> and evolve for t=1.2 under the explicit two-qubit
+  Hamiltonian H = 0.8 ZI + 0.4 IZ + 0.2 XX using an exact matrix exponential or
+  equivalent exact circuit construction. Return the final expectation value of
+  Z on qubit 0 as the top-level numeric RESULT key z0_expectation, and bind the
+  complete evolution circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  export_status: lossless
+  output_keys: ["z0_expectation"]
+  expected_values:
+    z0_expectation: 0.9466084218
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

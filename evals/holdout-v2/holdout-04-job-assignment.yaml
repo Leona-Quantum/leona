@@ -1,0 +1,23 @@
+id: holdout-v2-04
+category: "Holdout v2 — Capacitated job assignment"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  Assign each of three jobs to exactly one of machines A and B. Job resource demands
+  are [2,3,2], machine capacities are A=4 and B=5, assignment costs on A are [4,2,5],
+  and costs on B are [3,6,1]. Use six binary decision variables and encode the one-hot
+  and capacity constraints in a Qiskit QAOA cost Hamiltonian. Run deterministic
+  optimization and at least 4096 shots, decode only feasible sampled assignments, and
+  independently enumerate all 64 strings. Return top-level numeric RESULT keys
+  qaoa_best_cost and exact_minimum_cost plus counts, and bind the optimized QAOA
+  circuit to FINAL_CIRCUIT. Do not report the classical assignment as the QAOA sample.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_cost", "exact_minimum_cost", "counts"]
+  expected_values:
+    qaoa_best_cost: 6.0
+    exact_minimum_cost: 6.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

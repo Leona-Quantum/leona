@@ -1,0 +1,114 @@
+{
+  "total": 1,
+  "passed": 1,
+  "pass_rate": 1.0,
+  "pass_rate_ci95_low": 0.20654931437723745,
+  "pass_rate_ci95_high": 1.0,
+  "unique_cases": 1,
+  "stable_passed_cases": 1,
+  "repetitions": 1,
+  "product_accepted": 1,
+  "oracle_cases": 1,
+  "oracle_passed": 1,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "first_candidate_passed": 0,
+  "candidate_revisions": 2,
+  "mean_candidates": 2.0,
+  "recorded_llm_calls": 7,
+  "recorded_input_tokens": 40928,
+  "recorded_output_tokens": 9901,
+  "cases": [
+    {
+      "id": "diagnostic-v9-hhl",
+      "category": "Diagnostic — HHL semantic-reference consensus",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trial": 1,
+      "passed": true,
+      "run_status": "succeeded",
+      "terminal_reason": "ai_review_aligned",
+      "verifier_decision": "inconclusive",
+      "export_status": "unsupported",
+      "saved": true,
+      "product_accepted": true,
+      "oracle_passed": true,
+      "false_positive": false,
+      "false_negative": false,
+      "first_candidate_passed": false,
+      "observed_values": {
+        "solution_x0": 0.8804710999221751,
+        "solution_x1": -0.47409982303501774,
+        "amplitude_ratio": -0.5384615384615389,
+        "residual_norm": 1.1102230246251565e-16,
+        "state_fidelity": 1.0
+      },
+      "observed_top_bitstring": null,
+      "reasons": [],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "missing",
+        "qasm_epilogue_applied": true,
+        "qasm_available": false,
+        "qasm_epilogue_error": "TypeError",
+        "trusted_result_available": true,
+        "candidate_id": "c31716a7-4698-5a1a-a8f9-f763aa189b9b",
+        "execution_id": "fa8fdcc3-bd5c-586a-bab2-c1b1ea12d061",
+        "result_evidence_error": null,
+        "candidates_considered": 2,
+        "plans_produced": 1,
+        "sandbox_attempts": 2,
+        "semantic_review_attempts": 1,
+        "recorded_llm_calls": 7,
+        "recorded_input_tokens": 40928,
+        "recorded_output_tokens": 9901
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "diagnostic-v9-hhl",
+      "category": "Diagnostic — HHL semantic-reference consensus",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "product_accepted": 1,
+      "oracle_trials": 1,
+      "oracle_passed": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 2.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "research",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 2.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "scientific",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 2.0
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local, repetitions=1)"
+}

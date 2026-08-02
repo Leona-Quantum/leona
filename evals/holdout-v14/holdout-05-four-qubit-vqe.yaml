@@ -1,0 +1,26 @@
+id: holdout-v14-05
+category: "Holdout v14 — Four-qubit correlated VQE"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Estimate the ground-state energy of the explicit four-qubit Hamiltonian
+  H=+0.12 IIII -0.31 ZIII +0.27 IZII -0.22 IIZI +0.19 IIIZ
+  +0.14 XXII -0.10 YYII +0.13 IXXI -0.09 IYYI +0.11 IIXX
+  -0.08 IIYY +0.07 XIZX. Use a nontrivial parameterized Qiskit ansatz,
+  exact statevector expectations, alternating entangler patterns, a robust bounded
+  optimizer, and at least six deterministic starting points spread across the
+  parameter range. Independently diagonalize exactly the same written Hamiltonian.
+  Return top-level numeric RESULT keys ansatz_expectation, matrix_ground_value,
+  and variational_gap. Bind the best optimized ansatz circuit—not an exact
+  eigenvector preparation—to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["ansatz_expectation", "matrix_ground_value", "variational_gap"]
+  expected_values:
+    ansatz_expectation: -0.8815390432246132
+    matrix_ground_value: -0.8815390432246132
+    variational_gap: 0.0
+  expected_value_tolerance: 0.00001
+  saves_artifact: true

@@ -1,0 +1,23 @@
+id: holdout-v6-07
+category: "Holdout v6 — Three-qubit out-of-time-order correlator"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, use explicit matrices to evaluate at t=0.47
+  the OTOC F=<010|W(t) V W(t) V|010>, where
+  H=0.43 X0 X1 +0.31 Z1 Z2 +0.17 Y0, U=exp(-i*t*H), W(t)=U_dagger Z0 U,
+  and V=X2. Also evaluate C=<[W(t),V]_dagger[W(t),V]> directly rather than assuming
+  F is real. Return top-level numeric RESULT keys otoc_real, otoc_imag, and
+  commutator_squared. Bind a Qiskit circuit preparing |010> and applying U to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["otoc_real", "otoc_imag", "commutator_squared"]
+  expected_values:
+    otoc_real: 0.9933737062311196
+    otoc_imag: -0.04443591327299533
+    commutator_squared: 0.013252587537760353
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

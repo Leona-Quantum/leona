@@ -1,0 +1,23 @@
+id: holdout-v14-10
+category: "Holdout v14 — Coherent phase-flip error correction"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  In Qiskit, prepare the logical input Rz(-0.37) Ry(0.68)|0>, encode it in the
+  three-data-qubit phase-flip repetition code, and for each of the three possible
+  single-data-qubit Z errors perform coherent syndrome extraction and unitary
+  recovery with two ancillas and no mid-circuit measurements. Compute the fidelity
+  of the recovered three-data-qubit reduced state with the ideal encoded logical
+  state for each error. Return top-level RESULT keys worst_recovery_fidelity and
+  tested_error_count. Bind the full recovery circuit for a Z error on data qubit 1
+  to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["worst_recovery_fidelity", "tested_error_count"]
+  expected_values:
+    worst_recovery_fidelity: 1.0
+    tested_error_count: 3.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

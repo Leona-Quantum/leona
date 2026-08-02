@@ -1,0 +1,21 @@
+id: holdout-v3-02
+category: "Holdout v3 — Hadamard test"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  In Cirq, use a Hadamard test to estimate Re<psi|Z|psi> for the one-qubit state
+  |psi>=cos(pi/8)|0>+sin(pi/8)|1>. Prepare the state by a gate, use a separate ancilla
+  and a controlled-Z operation, and evaluate the exact statevector before measurement.
+  Return top-level numeric RESULT keys real_expectation and ancilla_zero_probability,
+  deriving the expectation from the ancilla probability, and bind the complete
+  Hadamard-test circuit to FINAL_CIRCUIT.
+framework: cirq
+expect:
+  terminal_reason: null
+  output_keys: ["real_expectation", "ancilla_zero_probability"]
+  expected_values:
+    real_expectation: 0.7071067811865476
+    ancilla_zero_probability: 0.8535533905932737
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

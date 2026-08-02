@@ -1,0 +1,21 @@
+id: holdout-v6-04
+category: "Holdout v6 — Four-qubit sparse exact dynamics"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, exactly evolve |1101> to t=0.58 under
+  H=0.31 X0 Z2 -0.28 Y1 Y3 +0.22 Z0 Z1 +0.17 X2 -0.11 Z3 using an explicit matrix
+  exponential. Return the expectation of 0.4 Z0 -0.3 X1 +0.2 Z2 Z3 as the top-level
+  numeric RESULT key observable_expectation and also return survival_probability.
+  Bind a Qiskit circuit that prepares |1101> and applies the exact unitary to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["observable_expectation", "survival_probability"]
+  expected_values:
+    observable_expectation: -0.5606675919022253
+    survival_probability: 0.933957026206998
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

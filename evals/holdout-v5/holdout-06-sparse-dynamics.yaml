@@ -1,0 +1,21 @@
+id: holdout-v5-06
+category: "Holdout v5 — Sparse five-qubit dynamics"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, exactly evolve the written basis state
+  |10100> to t=0.73 under H=0.41 X0 Y2 - 0.27 Z1 X4 + 0.33 Y0 Y4 + 0.18 Z2 Z3
+  + 0.12 X1 using an explicit matrix exponential. Return the expectation of
+  (Z0-Z2+2*Z4)/4 as the top-level numeric RESULT key weighted_z and the survival
+  probability as survival_probability. Bind a Qiskit circuit preparing |10100> and
+  applying the exact unitary to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["weighted_z", "survival_probability"]
+  expected_values:
+    weighted_z: 0.4352140709089669
+    survival_probability: 0.8199335881582381
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

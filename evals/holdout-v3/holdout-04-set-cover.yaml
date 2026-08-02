@@ -1,0 +1,22 @@
+id: holdout-v3-04
+category: "Holdout v3 — Minimum-cost set cover"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  Solve minimum-cost set cover for universe {0,1,2,3}. The five available sets are
+  S0={0,1}, S1={1,2}, S2={2,3}, S3={0,3}, S4={0,2}, with costs [4,3,4,3,2]. Encode
+  every coverage constraint in a Qiskit QAOA cost Hamiltonian, use deterministic seeds
+  and at least 4096 shots, and decode only sampled selections that cover the universe.
+  Independently enumerate all 32 selections. Return top-level numeric RESULT keys
+  qaoa_best_cost and exact_minimum_cost plus counts, and bind the optimized QAOA
+  circuit to FINAL_CIRCUIT. Do not substitute the enumerated solution for QAOA output.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_cost", "exact_minimum_cost", "counts"]
+  expected_values:
+    qaoa_best_cost: 6.0
+    exact_minimum_cost: 6.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

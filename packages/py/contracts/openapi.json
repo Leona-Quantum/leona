@@ -1118,6 +1118,50 @@
         "title": "CompilationResult",
         "type": "object"
       },
+      "ComplexCoefficient": {
+        "additionalProperties": false,
+        "description": "One finite complex scalar represented without JSON-specific conventions.",
+        "properties": {
+          "imag": {
+            "default": 0.0,
+            "title": "Imag",
+            "type": "number"
+          },
+          "real": {
+            "title": "Real",
+            "type": "number"
+          }
+        },
+        "required": [
+          "real"
+        ],
+        "title": "ComplexCoefficient",
+        "type": "object"
+      },
+      "ConstraintTerm": {
+        "additionalProperties": false,
+        "description": "One coefficient of a linear constraint over binary decision variables.",
+        "properties": {
+          "i": {
+            "description": "Binary variable index, 0-based.",
+            "exclusiveMaximum": 16,
+            "minimum": 0,
+            "title": "I",
+            "type": "integer"
+          },
+          "weight": {
+            "description": "Finite coefficient multiplying x_i in the constraint's left side.",
+            "title": "Weight",
+            "type": "number"
+          }
+        },
+        "required": [
+          "i",
+          "weight"
+        ],
+        "title": "ConstraintTerm",
+        "type": "object"
+      },
       "Conversation": {
         "additionalProperties": false,
         "properties": {
@@ -1227,6 +1271,248 @@
         "title": "EvidenceStrength",
         "type": "string"
       },
+      "ExactDynamicsReference": {
+        "additionalProperties": false,
+        "description": "One scalar from bounded exact Pauli-Hamiltonian time evolution.\n\nThe model transcribes data; the worker independently constructs the dense\nmatrices and evolves the declared basis state. This is intentionally narrower\nthan general quantum dynamics so unsupported requests fail honestly instead of\nbeing coerced into a superficially similar metric.",
+        "properties": {
+          "evolution_time": {
+            "description": "Finite real t in U=exp(-i*t*H), in the request's units.",
+            "title": "Evolution Time",
+            "type": "number"
+          },
+          "hamiltonian": {
+            "description": "Real sparse Pauli decomposition of H in U=exp(-i*t*H). Each term lists only non-identity factors by qubit index; an empty list is identity.",
+            "items": {
+              "$ref": "#/components/schemas/IndexedPauliTerm"
+            },
+            "maxItems": 256,
+            "minItems": 1,
+            "title": "Hamiltonian",
+            "type": "array"
+          },
+          "initial_basis_state": {
+            "description": "Computational-basis state written q0 first, matching the Pauli-string tensor convention; for example '0101' means |q0 q1 q2 q3>.",
+            "maxLength": 8,
+            "minLength": 1,
+            "pattern": "^[01]+$",
+            "title": "Initial Basis State",
+            "type": "string"
+          },
+          "metric": {
+            "enum": [
+              "survival_probability",
+              "observable_expectation"
+            ],
+            "title": "Metric",
+            "type": "string"
+          },
+          "num_qubits": {
+            "description": "Register width shared by the state, Hamiltonian, and observable.",
+            "maximum": 8,
+            "minimum": 1,
+            "title": "Num Qubits",
+            "type": "integer"
+          },
+          "observable": {
+            "anyOf": [
+              {
+                "items": {
+                  "$ref": "#/components/schemas/IndexedPauliTerm"
+                },
+                "maxItems": 256,
+                "minItems": 1,
+                "type": "array"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Hermitian real Pauli sum whose expectation is requested after evolution. Required only for observable_expectation and absent for survival_probability.",
+            "title": "Observable"
+          },
+          "result_key": {
+            "description": "Top-level protected RESULT key this one scalar verifies; it must equal Plan.success_criteria.primary_metric.",
+            "minLength": 1,
+            "title": "Result Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "num_qubits",
+          "hamiltonian",
+          "initial_basis_state",
+          "evolution_time",
+          "result_key",
+          "metric"
+        ],
+        "title": "ExactDynamicsReference",
+        "type": "object"
+      },
+      "ExactLindbladReference": {
+        "additionalProperties": false,
+        "description": "Bounded exact evolution under one time-independent Lindblad generator.",
+        "properties": {
+          "dissipators": {
+            "items": {
+              "$ref": "#/components/schemas/LindbladDissipator"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Dissipators",
+            "type": "array"
+          },
+          "evolution_time": {
+            "minimum": 0,
+            "title": "Evolution Time",
+            "type": "number"
+          },
+          "hamiltonian": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LindbladOperator"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "initial_product_state": {
+            "items": {
+              "enum": [
+                "zero",
+                "one",
+                "plus",
+                "minus",
+                "plus_i",
+                "minus_i"
+              ],
+              "type": "string"
+            },
+            "maxItems": 3,
+            "minItems": 1,
+            "title": "Initial Product State",
+            "type": "array"
+          },
+          "num_qubits": {
+            "maximum": 3,
+            "minimum": 1,
+            "title": "Num Qubits",
+            "type": "integer"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/LindbladResultSpec"
+            },
+            "maxItems": 16,
+            "minItems": 1,
+            "title": "Results",
+            "type": "array"
+          }
+        },
+        "required": [
+          "num_qubits",
+          "initial_product_state",
+          "dissipators",
+          "evolution_time",
+          "results"
+        ],
+        "title": "ExactLindbladReference",
+        "type": "object"
+      },
+      "ExactLinearSystemReference": {
+        "additionalProperties": false,
+        "description": "Bounded real-symmetric linear system checked independently with a dense solve.",
+        "properties": {
+          "matrix": {
+            "items": {
+              "items": {
+                "type": "number"
+              },
+              "type": "array"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Matrix",
+            "type": "array"
+          },
+          "results": {
+            "items": {
+              "$ref": "#/components/schemas/LinearSystemResultSpec"
+            },
+            "maxItems": 32,
+            "minItems": 1,
+            "title": "Results",
+            "type": "array"
+          },
+          "rhs": {
+            "items": {
+              "type": "number"
+            },
+            "maxItems": 8,
+            "minItems": 2,
+            "title": "Rhs",
+            "type": "array"
+          }
+        },
+        "required": [
+          "matrix",
+          "rhs",
+          "results"
+        ],
+        "title": "ExactLinearSystemReference",
+        "type": "object"
+      },
+      "ExactPhaseEstimationReference": {
+        "additionalProperties": false,
+        "description": "Noiseless QPE reference for a phase exactly representable by the register.\n\nThis is intentionally not a general finite-precision QPE oracle. If the phase is\nnot dyadic at the declared width, its sinc-like output distribution needs a\ndifferent statistical specification and this reference must be omitted.",
+        "properties": {
+          "counting_qubits": {
+            "maximum": 16,
+            "minimum": 1,
+            "title": "Counting Qubits",
+            "type": "integer"
+          },
+          "counts_result_key": {
+            "minLength": 1,
+            "title": "Counts Result Key",
+            "type": "string"
+          },
+          "eigenphase": {
+            "description": "Eigenphase phi in U|psi>=exp(2*pi*i*phi)|psi>.",
+            "exclusiveMaximum": 1.0,
+            "minimum": 0.0,
+            "title": "Eigenphase",
+            "type": "number"
+          },
+          "peak_probability_result_key": {
+            "minLength": 1,
+            "title": "Peak Probability Result Key",
+            "type": "string"
+          },
+          "phase_estimate_result_key": {
+            "minLength": 1,
+            "title": "Phase Estimate Result Key",
+            "type": "string"
+          },
+          "phase_integer_result_key": {
+            "minLength": 1,
+            "title": "Phase Integer Result Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "counting_qubits",
+          "eigenphase",
+          "phase_integer_result_key",
+          "phase_estimate_result_key",
+          "peak_probability_result_key",
+          "counts_result_key"
+        ],
+        "title": "ExactPhaseEstimationReference",
+        "type": "object"
+      },
       "ExportClassified": {
         "additionalProperties": false,
         "properties": {
@@ -1301,6 +1587,306 @@
         ],
         "title": "Framework",
         "type": "string"
+      },
+      "IndexedPauliTerm": {
+        "additionalProperties": false,
+        "description": "One real Pauli term written only on the qubits where it acts.\n\nAn empty factor list is the identity term. The worker, rather than the model,\npads every other qubit with identity before dense evaluation. This removes a\ntranscription step that is especially error-prone for sparse operators.",
+        "properties": {
+          "coefficient": {
+            "title": "Coefficient",
+            "type": "number"
+          },
+          "factors": {
+            "items": {
+              "$ref": "#/components/schemas/PauliFactor"
+            },
+            "maxItems": 8,
+            "title": "Factors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "coefficient"
+        ],
+        "title": "IndexedPauliTerm",
+        "type": "object"
+      },
+      "LindbladDissipator": {
+        "additionalProperties": false,
+        "description": "The literal multiplier of D[L] in a time-independent master equation.",
+        "properties": {
+          "jump": {
+            "$ref": "#/components/schemas/LindbladOperator"
+          },
+          "rate": {
+            "exclusiveMinimum": 0,
+            "title": "Rate",
+            "type": "number"
+          }
+        },
+        "required": [
+          "rate",
+          "jump"
+        ],
+        "title": "LindbladDissipator",
+        "type": "object"
+      },
+      "LindbladFactor": {
+        "additionalProperties": false,
+        "description": "One non-identity local factor in a sparse open-system operator.",
+        "properties": {
+          "operator": {
+            "enum": [
+              "X",
+              "Y",
+              "Z",
+              "lowering",
+              "raising",
+              "projector_zero",
+              "projector_one"
+            ],
+            "title": "Operator",
+            "type": "string"
+          },
+          "qubit": {
+            "exclusiveMaximum": 3,
+            "minimum": 0,
+            "title": "Qubit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qubit",
+          "operator"
+        ],
+        "title": "LindbladFactor",
+        "type": "object"
+      },
+      "LindbladOperator": {
+        "additionalProperties": false,
+        "description": "A finite complex sum of sparse tensor-product operator terms.",
+        "properties": {
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/LindbladOperatorTerm"
+            },
+            "maxItems": 64,
+            "minItems": 1,
+            "title": "Terms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "terms"
+        ],
+        "title": "LindbladOperator",
+        "type": "object"
+      },
+      "LindbladOperatorTerm": {
+        "additionalProperties": false,
+        "description": "One complex tensor-product term; an empty factor list is identity.",
+        "properties": {
+          "coefficient": {
+            "$ref": "#/components/schemas/ComplexCoefficient"
+          },
+          "factors": {
+            "items": {
+              "$ref": "#/components/schemas/LindbladFactor"
+            },
+            "maxItems": 3,
+            "title": "Factors",
+            "type": "array"
+          }
+        },
+        "required": [
+          "coefficient"
+        ],
+        "title": "LindbladOperatorTerm",
+        "type": "object"
+      },
+      "LindbladResultSpec": {
+        "additionalProperties": false,
+        "description": "One protected RESULT scalar derived from the evolved density matrix.",
+        "properties": {
+          "basis_state": {
+            "anyOf": [
+              {
+                "pattern": "^[01]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Basis State"
+          },
+          "column_state": {
+            "anyOf": [
+              {
+                "pattern": "^[01]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Column State"
+          },
+          "metric": {
+            "enum": [
+              "population",
+              "density_element_real",
+              "density_element_imag",
+              "purity",
+              "observable_expectation"
+            ],
+            "title": "Metric",
+            "type": "string"
+          },
+          "observable": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LindbladOperator"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "result_key": {
+            "minLength": 1,
+            "title": "Result Key",
+            "type": "string"
+          },
+          "row_state": {
+            "anyOf": [
+              {
+                "pattern": "^[01]+$",
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Row State"
+          }
+        },
+        "required": [
+          "result_key",
+          "metric"
+        ],
+        "title": "LindbladResultSpec",
+        "type": "object"
+      },
+      "LinearConstraint": {
+        "additionalProperties": false,
+        "description": "A bounded linear condition the brute-force reference applies to assignments.",
+        "properties": {
+          "rhs": {
+            "title": "Rhs",
+            "type": "number"
+          },
+          "sense": {
+            "description": "Comparison between sum(weight_i*x_i) and rhs: <=, ==, or >=.",
+            "enum": [
+              "le",
+              "eq",
+              "ge"
+            ],
+            "title": "Sense",
+            "type": "string"
+          },
+          "terms": {
+            "items": {
+              "$ref": "#/components/schemas/ConstraintTerm"
+            },
+            "maxItems": 512,
+            "minItems": 1,
+            "title": "Terms",
+            "type": "array"
+          }
+        },
+        "required": [
+          "terms",
+          "sense",
+          "rhs"
+        ],
+        "title": "LinearConstraint",
+        "type": "object"
+      },
+      "LinearSystemResultSpec": {
+        "additionalProperties": false,
+        "description": "One scalar derived from an exact real linear-system solution.",
+        "properties": {
+          "denominator_index": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Denominator Index"
+          },
+          "index": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Index"
+          },
+          "metric": {
+            "enum": [
+              "normalized_solution_component",
+              "solution_component",
+              "component_ratio",
+              "residual_norm",
+              "state_fidelity"
+            ],
+            "title": "Metric",
+            "type": "string"
+          },
+          "numerator_index": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 8,
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Numerator Index"
+          },
+          "result_key": {
+            "minLength": 1,
+            "title": "Result Key",
+            "type": "string"
+          }
+        },
+        "required": [
+          "result_key",
+          "metric"
+        ],
+        "title": "LinearSystemResultSpec",
+        "type": "object"
       },
       "LlmCall": {
         "additionalProperties": false,
@@ -1436,6 +2022,35 @@
         ],
         "title": "Optimizer",
         "type": "string"
+      },
+      "PauliFactor": {
+        "additionalProperties": false,
+        "description": "One non-identity factor in a sparse Pauli product.",
+        "properties": {
+          "pauli": {
+            "description": "Non-identity Pauli acting on this qubit. Identity factors are omitted.",
+            "enum": [
+              "X",
+              "Y",
+              "Z"
+            ],
+            "title": "Pauli",
+            "type": "string"
+          },
+          "qubit": {
+            "description": "0-based qubit index, with q0 the leftmost tensor factor.",
+            "exclusiveMaximum": 8,
+            "minimum": 0,
+            "title": "Qubit",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "qubit",
+          "pauli"
+        ],
+        "title": "PauliFactor",
+        "type": "object"
       },
       "PauliTerm": {
         "additionalProperties": false,
@@ -2124,6 +2739,15 @@
         "additionalProperties": false,
         "description": "The combinatorial instance the `brute_force` check enumerates.",
         "properties": {
+          "constraints": {
+            "description": "Linear feasibility conditions over the declared decision variables. Use these for capacity, cardinality, budget, and assignment constraints instead of enumerating an unconstrained surrogate.",
+            "items": {
+              "$ref": "#/components/schemas/LinearConstraint"
+            },
+            "maxItems": 32,
+            "title": "Constraints",
+            "type": "array"
+          },
           "kind": {
             "enum": [
               "maxcut",
@@ -2138,6 +2762,29 @@
             "minimum": 1,
             "title": "Num Variables",
             "type": "integer"
+          },
+          "objective": {
+            "anyOf": [
+              {
+                "enum": [
+                  "minimize",
+                  "maximize"
+                ],
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optimization direction. Omit for legacy semantics: maxcut maximizes and qubo minimizes. Set explicitly when a QUBO-shaped linear/quadratic objective is reported in maximization units.",
+            "title": "Objective"
+          },
+          "offset": {
+            "default": 0.0,
+            "description": "Constant added to every objective value. Include constants introduced when expanding penalties such as P*(sum(x)-k)^2.",
+            "title": "Offset",
+            "type": "number"
           },
           "terms": {
             "description": "maxcut: the weighted edge list; the objective is the MAXIMUM total weight of edges whose endpoints fall on opposite sides. qubo: the coefficients of sum(w_ij * x_i * x_j); the objective is the MINIMUM. Duplicate index pairs add their weights.",
@@ -4187,6 +4834,54 @@
       "VerificationPlan": {
         "additionalProperties": false,
         "properties": {
+          "exact_dynamics_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExactDynamicsReference"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional bounded exact-time-evolution reference for success_criteria. Use only for one explicit real Pauli Hamiltonian, a computational-basis initial state, exact U=exp(-i*t*H), and either survival probability or an explicit real-Pauli observable expectation. It is not a general replacement for echoes, OTOCs, thermal traces, channels, or product formulas."
+          },
+          "exact_lindblad_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExactLindbladReference"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional bounded exact open-system reference. Use only for at most three qubits, a written product initial state, one time-independent Lindblad generator, and scalar density-matrix results represented by the typed schema."
+          },
+          "exact_linear_system_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExactLinearSystemReference"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional bounded real-symmetric linear-system reference. The worker independently solves the declared matrix and rhs and checks bound scalar components, ratios, residual, or state fidelity."
+          },
+          "exact_phase_estimation_reference": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/ExactPhaseEstimationReference"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Optional bounded exact-QPE reference for a noiseless eigenphase exactly representable by the declared counting register. It checks the reported integer, phase, peak probability, and protected count distribution."
+          },
           "expected_metrics": {
             "anyOf": [
               {
@@ -4287,6 +4982,19 @@
             ],
             "default": null,
             "description": "The combinatorial instance the 'brute_force' check enumerates, required when 'brute_force' is listed. Write the instance the task actually names \u2014 the graph's weighted edges, the QUBO's coefficients \u2014 not a transcription of the code you expect back. success_criteria.primary_metric must name the result key holding the objective value the run reports."
+          },
+          "reference_result_key": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "RESULT key compared with the exact ground-state energy. Required for new exact_diag Plans; legacy stored Plans fall back to success_criteria.primary_metric.",
+            "title": "Reference Result Key"
           },
           "required_invariants": {
             "anyOf": [
@@ -4888,7 +5596,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.8.0"
+    "version": "2.9.0"
   },
   "openapi": "3.1.0",
   "paths": {}

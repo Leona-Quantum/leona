@@ -1,0 +1,115 @@
+{
+  "total": 1,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "pass_rate_ci95_low": 0.0,
+  "pass_rate_ci95_high": 0.7934506856227626,
+  "unique_cases": 1,
+  "stable_passed_cases": 0,
+  "repetitions": 1,
+  "product_accepted": 0,
+  "oracle_cases": 1,
+  "oracle_passed": 1,
+  "false_positives": 0,
+  "false_negatives": 1,
+  "first_candidate_passed": 0,
+  "candidate_revisions": 7,
+  "mean_candidates": 7.0,
+  "recorded_llm_calls": 18,
+  "recorded_input_tokens": 239614,
+  "recorded_output_tokens": 30874,
+  "cases": [
+    {
+      "id": "holdout-v1-04",
+      "category": "Holdout — Constrained knapsack",
+      "split": "holdout",
+      "difficulty": "intermediate",
+      "workload": "practical",
+      "trial": 1,
+      "passed": false,
+      "run_status": "failed",
+      "terminal_reason": "stage_time_budget_exhausted",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "product_accepted": false,
+      "oracle_passed": true,
+      "false_positive": false,
+      "false_negative": true,
+      "first_candidate_passed": false,
+      "observed_values": {
+        "qaoa_best_value": 16.0,
+        "qaoa_best_weight": 7.0,
+        "exact_optimum_value": 16.0
+      },
+      "observed_top_bitstring": "001110110",
+      "reasons": [
+        "run_status 'failed' != expected 'succeeded'",
+        "expected a saved artifact, none was written"
+      ],
+      "evidence": {
+        "failed_stage": "generate",
+        "error_code": "stage_time_budget_exhausted",
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": true,
+        "candidate_id": "5008a8cd-341c-572a-a1aa-1f9bff9927d3",
+        "execution_id": "3474d0ba-5f43-547e-81fb-de2ce67da95f",
+        "result_evidence_error": null,
+        "candidates_considered": 7,
+        "plans_produced": 2,
+        "sandbox_attempts": 7,
+        "semantic_review_attempts": 7,
+        "recorded_llm_calls": 18,
+        "recorded_input_tokens": 239614,
+        "recorded_output_tokens": 30874
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "holdout-v1-04",
+      "category": "Holdout — Constrained knapsack",
+      "split": "holdout",
+      "difficulty": "intermediate",
+      "workload": "practical",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "product_accepted": 0,
+      "oracle_trials": 1,
+      "oracle_passed": 1,
+      "false_positives": 0,
+      "false_negatives": 1,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "intermediate",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 1,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "practical",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 1,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local, repetitions=1)"
+}

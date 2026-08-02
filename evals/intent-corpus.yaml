@@ -1,0 +1,140 @@
+- id: calibration-basic-bell
+  split: calibration
+  cohort: basic
+  expected_mode: execute
+  prompt: Create and measure a Bell state in Qiskit.
+- id: calibration-basic-ghz-ja
+  split: calibration
+  cohort: basic
+  expected_mode: execute
+  prompt: Cirqで4量子ビットGHZ状態を作って測定して。
+- id: calibration-intermediate-qpe
+  split: calibration
+  cohort: intermediate
+  expected_mode: execute
+  prompt: Run QPE for eigenphase 3/8 with three counting qubits and return counts.
+- id: calibration-intermediate-grover
+  split: calibration
+  cohort: intermediate
+  expected_mode: execute
+  prompt: Use Grover search on 4 qubits for marked state 1011 and simulate 2048 shots.
+- id: calibration-optimization-maxcut
+  split: calibration
+  cohort: optimization
+  expected_mode: execute
+  prompt: Run QAOA p=1 for unit-weight MaxCut edges (0,1), (1,2), (2,0), and compare with brute force.
+- id: calibration-research-ising
+  split: calibration
+  cohort: research
+  expected_mode: execute
+  prompt: Simulate a 5-qubit transverse-field Ising chain H=-sum Z_i Z_{i+1}-0.7 sum X_i to t=0.8 with 12 second-order Trotter steps.
+- id: calibration-research-vqe
+  split: calibration
+  cohort: research
+  expected_mode: execute
+  prompt: Run VQE for the explicit 3-qubit Hamiltonian -1.0 ZII -0.7 IZI -0.4 IIZ +0.2 XXI and return the energy.
+- id: calibration-chat-explain
+  split: calibration
+  cohort: chat
+  expected_mode: chat
+  prompt: Why does Grover's algorithm provide a quadratic speedup?
+- id: calibration-missing-vrp
+  split: calibration
+  cohort: underspecified
+  expected_mode: chat
+  prompt: Assign 12 vehicles to 40 stops at the lowest total cost, and check the answer against a classical baseline.
+- id: calibration-missing-portfolio
+  split: calibration
+  cohort: underspecified
+  expected_mode: chat
+  prompt: Choose the best 20 assets with QAOA to maximize return at low risk.
+- id: calibration-missing-hamiltonian
+  split: calibration
+  cohort: underspecified
+  expected_mode: chat
+  prompt: Find the ground-state energy of my custom Hamiltonian with VQE.
+- id: calibration-resource-ghz
+  split: calibration
+  cohort: resource
+  expected_mode: chat
+  prompt: Create and simulate a 30-qubit GHZ state with 4096 shots.
+- id: calibration-capability-hardware
+  split: calibration
+  cohort: capability
+  expected_mode: chat
+  prompt: Run this Bell circuit on a real IBM quantum computer and return the hardware counts.
+- id: calibration-capability-chemistry
+  split: calibration
+  cohort: capability
+  expected_mode: chat
+  prompt: Compute LiH at 1.6 Angstrom from molecular geometry using qiskit-nature and PySCF.
+- id: holdout-basic-teleportation
+  split: holdout
+  cohort: basic
+  expected_mode: execute
+  prompt: Quantum teleportation
+- id: holdout-basic-w-state
+  split: holdout
+  cohort: basic
+  expected_mode: execute
+  prompt: Build and simulate a 5-qubit W state.
+- id: holdout-intermediate-qft
+  split: holdout
+  cohort: intermediate
+  expected_mode: execute
+  prompt: Apply a 3-qubit QFT to |101> and return the statevector.
+- id: holdout-intermediate-grover-ja
+  split: holdout
+  cohort: intermediate
+  expected_mode: execute
+  prompt: 5量子ビットで01101を探すGrover回路を作って2048 shots実行して。
+- id: holdout-optimization-qubo
+  split: holdout
+  cohort: optimization
+  expected_mode: execute
+  prompt: Minimize the 3-variable QUBO x0 + 2*x1 - x2 - 3*x0*x1 + x1*x2 with QAOA and exact enumeration.
+- id: holdout-research-h2
+  split: holdout
+  cohort: research
+  expected_mode: execute
+  prompt: Estimate the total ground-state energy of H2 at 0.735 Angstrom with VQE.
+- id: holdout-research-dynamics
+  split: holdout
+  cohort: research
+  expected_mode: execute
+  prompt: Evolve |00> under H = 0.8 ZI + 0.4 IZ + 0.2 XX for t=1.2 and return <ZZ>.
+- id: holdout-chat-concept
+  split: holdout
+  cohort: chat
+  expected_mode: chat
+  prompt: How should I interpret barren plateaus in variational algorithms?
+- id: holdout-missing-workforce
+  split: holdout
+  cohort: underspecified
+  expected_mode: chat
+  prompt: Assign 8 nurses to next month's shifts at minimum cost.
+- id: holdout-missing-oracle
+  split: holdout
+  cohort: underspecified
+  expected_mode: chat
+  prompt: Run amplitude amplification using my custom oracle.
+- id: holdout-resource-w-state
+  split: holdout
+  cohort: resource
+  expected_mode: chat
+  prompt: Generate a 28-qubit W state and simulate its measurement distribution.
+- id: holdout-capability-braket
+  split: holdout
+  cohort: capability
+  expected_mode: chat
+  prompt: Submit this circuit to an IonQ device through AWS Braket.
+- id: holdout-capability-openfermion
+  split: holdout
+  cohort: capability
+  expected_mode: chat
+  prompt: Use OpenFermion and PySCF to derive and solve the BeH2 Hamiltonian.
+- id: holdout-capability-qutip
+  split: holdout
+  cohort: capability
+  expected_mode: chat
+  prompt: Use QuTiP to simulate this Lindblad master equation.

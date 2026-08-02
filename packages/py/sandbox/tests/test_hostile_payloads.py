@@ -151,6 +151,29 @@ async def test_protected_result_is_bounded_before_provider_read(tmp_path):
     }
 
 
+async def test_nonfinite_result_is_rejected_before_jsonb_persistence(tmp_path):
+    """Python json emits Infinity by default, but Postgres JSONB rejects it."""
+
+    result_path = tmp_path / "protected-result.json"
+    fingerprint = "c" * 64
+    result = await run(
+        LocalSubprocessSandbox(),
+        ExecutionSpec(
+            code='RESULT = {"amplitude_ratio": 1e309}',
+            trusted_observer='_majorana_observation["observed"] = True',
+            protected_result_path=str(result_path),
+            source_fingerprint=fingerprint,
+        ),
+    )
+
+    assert result.ok
+    assert result.protected_result == {
+        "source_fingerprint": fingerprint,
+        "result_error": "not_json_serializable",
+        "observed": True,
+    }
+
+
 # --- The deny-all egress invariant (provider adapter) ------------------------
 
 

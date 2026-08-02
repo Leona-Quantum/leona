@@ -1,0 +1,17 @@
+id: bench-13
+category: "C — Quantum amplitude estimation"
+prompt: >-
+  Implement standard quantum amplitude estimation in Qiskit for a one-qubit state
+  A|0> = cos(0.37)|0> + sin(0.37)|1>. Use four evaluation qubits, controlled powers
+  of the Grover operator, an inverse QFT, and exact statevector probabilities. Decode
+  the dominant phase pair into an amplitude estimate and return it as the top-level
+  numeric RESULT key amplitude_estimate. Bind the complete estimation circuit to
+  FINAL_CIRCUIT; do not return sin(0.37)^2 directly as a hard-coded result.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["amplitude_estimate"]
+  expected_values:
+    amplitude_estimate: 0.14644660940672624
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

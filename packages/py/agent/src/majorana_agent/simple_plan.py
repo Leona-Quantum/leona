@@ -22,6 +22,14 @@ from majorana_contracts.enums import (
 )
 from majorana_contracts.plan import (
     ArtifactContract,
+    ConstraintTerm,
+    ExactDynamicsReference,
+    ExactLindbladReference,
+    ExactLinearSystemReference,
+    ExactPhaseEstimationReference,
+    IndexedPauliTerm,
+    LinearConstraint,
+    PauliFactor,
     PauliTerm,
     Plan,
     PlanParameters,
@@ -31,7 +39,7 @@ from majorana_contracts.plan import (
     VerificationPlan,
 )
 from majorana_llm import StageOutputError, extract_json
-from pydantic import BaseModel, ConfigDict, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 
 class _SimplePlanModel(BaseModel):
@@ -85,26 +93,105 @@ class SimplePauliTerm(_SimplePlanModel):
     pauli: str = Field(min_length=1)
 
 
-class SimpleProblemTerm(_SimplePlanModel):
-    i: int = Field(ge=0)
-    j: int = Field(ge=0)
-    weight: float
+class SimpleBusinessCoefficient(_SimplePlanModel):
+    variable: int = Field(ge=0, lt=16)
+    coefficient: float = Field(allow_inf_nan=False)
+
+
+class SimpleBusinessQuadraticCoefficient(_SimplePlanModel):
+    left: int = Field(ge=0, lt=16)
+    right: int = Field(ge=0, lt=16)
+    coefficient: float = Field(allow_inf_nan=False)
+
+    @model_validator(mode="after")
+    def _uses_two_distinct_variables(self) -> "SimpleBusinessQuadraticCoefficient":
+        if self.left == self.right:
+            raise ValueError("quadratic business coefficient must use distinct variables")
+        return self
+
+
+class SimpleBusinessObjective(_SimplePlanModel):
+    direction: Literal["minimize", "maximize"]
+    constant: float = Field(default=0.0, allow_inf_nan=False)
+    linear_coefficients: list[SimpleBusinessCoefficient] = Field(default_factory=list)
+    quadratic_coefficients: list[SimpleBusinessQuadraticCoefficient] = Field(default_factory=list)
+
+
+class SimpleBusinessConstraint(_SimplePlanModel):
+    coefficients: list[SimpleBusinessCoefficient] = Field(min_length=1)
+    sense: Literal["le", "eq", "ge"]
+    rhs: float = Field(allow_inf_nan=False)
 
 
 class SimpleReferenceProblem(_SimplePlanModel):
-    kind: Literal["maxcut", "qubo"]
-    num_variables: int = Field(ge=1)
-    terms: list[SimpleProblemTerm] = Field(min_length=1)
+    """Business metric and feasible set, never an internal penalty Hamiltonian."""
+
+    num_variables: int = Field(ge=1, le=16)
+    business_objective: SimpleBusinessObjective
+    business_constraints: list[SimpleBusinessConstraint] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _indices_fit_the_declared_business_variables(self) -> "SimpleReferenceProblem":
+        objective = self.business_objective
+        if not objective.linear_coefficients and not objective.quadratic_coefficients:
+            raise ValueError("business objective must contain at least one coefficient")
+        indices = [term.variable for term in objective.linear_coefficients]
+        indices.extend(
+            index for term in objective.quadratic_coefficients for index in (term.left, term.right)
+        )
+        indices.extend(
+            term.variable
+            for constraint in self.business_constraints
+            for term in constraint.coefficients
+        )
+        outside = [index for index in indices if index >= self.num_variables]
+        if outside:
+            raise ValueError(
+                f"business coefficient variable {outside[0]} lies outside "
+                f"0..{self.num_variables - 1}"
+            )
+        return self
+
+
+class SimplePauliFactor(_SimplePlanModel):
+    qubit: int = Field(ge=0, lt=8)
+    pauli: Literal["X", "Y", "Z"]
+
+
+class SimpleIndexedPauliTerm(_SimplePlanModel):
+    coefficient: float = Field(allow_inf_nan=False)
+    factors: list[SimplePauliFactor] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def _each_qubit_appears_at_most_once(self) -> "SimpleIndexedPauliTerm":
+        indices = [factor.qubit for factor in self.factors]
+        if len(indices) != len(set(indices)):
+            raise ValueError("indexed Pauli term contains duplicate qubit factors")
+        return self
+
+
+class SimpleExactDynamicsReference(_SimplePlanModel):
+    """Narrow data shape for one deterministic finite-time scalar."""
+
+    num_qubits: int = Field(ge=1, le=8)
+    hamiltonian: list[SimpleIndexedPauliTerm] = Field(min_length=1)
+    initial_basis_state: str = Field(min_length=1)
+    evolution_time: float
+    result_key: str = Field(min_length=1)
+    metric: Literal["survival_probability", "observable_expectation"]
+    observable: list[SimpleIndexedPauliTerm] | None = None
 
 
 class SimpleVerificationPlan(_SimplePlanModel):
     """An independent ground truth the planner writes out, not a policy it selects.
 
-    Deliberately only the two checks that compare the run's own reported number
+    Deliberately only bounded checks that compare the run's own reported number
     against a reference computed from data the *plan* declares: `exact_diag`
     diagonalizes a stated Hamiltonian, `brute_force` enumerates a stated
-    combinatorial instance.  Neither reads the candidate source, so neither can be
-    satisfied by a program that merely agrees with itself.
+    combinatorial instance, `exact_dynamics_reference` evolves one explicit
+    computational-basis state under one small Pauli Hamiltonian, and
+    `exact_lindblad_reference` evolves a small typed open system. None reads the
+    candidate source, so none can be satisfied merely by printing a convenient value.
 
     This is what `success_criteria.expected_range` alone cannot do.  A range the
     planner guessed and a result the generator produced can both come from the
@@ -123,8 +210,27 @@ class SimpleVerificationPlan(_SimplePlanModel):
         json_schema_extra={"items": {"enum": list(_SUPPORTED_REFERENCE_METHODS)}},
     )
     reference_hamiltonian: list[SimplePauliTerm] | None = None
+    reference_result_key: str | None = Field(
+        default=None,
+        description="RESULT key containing the energy checked by exact_diag",
+    )
     reference_problem: SimpleReferenceProblem | None = None
+    exact_dynamics_reference: SimpleExactDynamicsReference | None = None
+    exact_lindblad_reference: ExactLindbladReference | None = None
+    exact_linear_system_reference: ExactLinearSystemReference | None = None
+    exact_phase_estimation_reference: ExactPhaseEstimationReference | None = None
     tolerance: float | None = Field(default=None, gt=0)
+
+    @field_validator("tolerance", mode="before")
+    @classmethod
+    def _zero_tolerance_uses_the_deterministic_default(cls, value):
+        # Structured planners commonly spell "no additional allowance" as 0.0.
+        # Durable verifiers already derive a numerical floor, so zero cannot make
+        # comparison stricter and should not discard an otherwise valid reference.
+        # Negative values remain invalid through the field constraint.
+        if isinstance(value, (int, float)) and not isinstance(value, bool) and value == 0:
+            return None
+        return value
 
     def to_durable_verification_plan(
         self,
@@ -146,29 +252,55 @@ class SimpleVerificationPlan(_SimplePlanModel):
             for method in dict.fromkeys(self.methods)
             if method in _SUPPORTED_REFERENCE_METHODS
         ]
+        # The reference is optional independent evidence, not part of the requested
+        # artifact. A planner can transcribe a valid exact evolution but bind it to a
+        # secondary RESULT key while choosing a different primary metric. The durable
+        # contract correctly rejects that mismatch, but retrying Plan cannot repair it
+        # reliably and used to fail an otherwise executable task before generation.
+        # Degrade to the remaining checks instead; never compare different scalars.
+        exact_dynamics_reference = self.exact_dynamics_reference
+        if (
+            exact_dynamics_reference is not None
+            and exact_dynamics_reference.result_key != primary_metric
+        ):
+            exact_dynamics_reference = None
         if "exact_diag" in methods and not self.reference_hamiltonian:
             methods.remove("exact_diag")
         if "brute_force" in methods and self.reference_problem is None:
             methods.remove("brute_force")
-        if not methods:
+        if (
+            not methods
+            and exact_dynamics_reference is None
+            and self.exact_lindblad_reference is None
+            and self.exact_linear_system_reference is None
+            and self.exact_phase_estimation_reference is None
+        ):
             return None
         tolerance = self.tolerance
         if "exact_diag" in methods and shots is None and self.reference_hamiltonian:
-            # Statevector expectation values have no sampling uncertainty. The
-            # verifier's general 2%-of-Hamiltonian-scale optimizer allowance is
-            # intentionally permissive for shot-based product runs, but it accepted
-            # a live six-qubit VQE 0.067 above the exact energy as research-ready.
-            # Tighten exact-expectation Plans to 0.5% of operator L1 scale while
-            # retaining a small absolute floor for near-zero normalized operators.
+            # Statevector expectation values have no sampling uncertainty. A 0.5%
+            # Plan allowance still accepted an observed three-qubit VQE 0.007 above
+            # exact truth. Use the verifier's scale-aware numerical/termination
+            # allowance: one part per million with a unit-scale floor. This is based
+            # on execution semantics, not a task instance or expected answer.
             scale = sum(abs(term.coefficient) for term in self.reference_hamiltonian)
-            exact_expectation_tolerance = max(1e-3, 0.005 * scale)
+            exact_expectation_tolerance = 1e-6 * max(1.0, scale)
             tolerance = (
                 exact_expectation_tolerance
                 if tolerance is None
                 else min(tolerance, exact_expectation_tolerance)
             )
         return VerificationPlan(
-            methods=[VerificationMethod(method) for method in methods],
+            # Exact dynamics/open-system references strengthen the unconditional
+            # success-criteria check without adding a VerificationMethod/DB enum or
+            # claiming a stronger evidence grade. A durable VerificationPlan still
+            # needs one method, so use return-contract when one of these is the only
+            # reference.
+            methods=(
+                [VerificationMethod(method) for method in methods]
+                if methods
+                else [VerificationMethod.RETURN_CONTRACT]
+            ),
             reference_hamiltonian=(
                 [
                     PauliTerm(coefficient=term.coefficient, pauli=term.pauli)
@@ -177,13 +309,85 @@ class SimpleVerificationPlan(_SimplePlanModel):
                 if "exact_diag" in methods and self.reference_hamiltonian
                 else None
             ),
+            reference_result_key=(self.reference_result_key if "exact_diag" in methods else None),
+            exact_dynamics_reference=(
+                ExactDynamicsReference(
+                    num_qubits=exact_dynamics_reference.num_qubits,
+                    hamiltonian=[
+                        IndexedPauliTerm(
+                            coefficient=term.coefficient,
+                            factors=[
+                                PauliFactor(qubit=factor.qubit, pauli=factor.pauli)
+                                for factor in term.factors
+                            ],
+                        )
+                        for term in exact_dynamics_reference.hamiltonian
+                    ],
+                    initial_basis_state=exact_dynamics_reference.initial_basis_state,
+                    evolution_time=exact_dynamics_reference.evolution_time,
+                    result_key=exact_dynamics_reference.result_key,
+                    metric=exact_dynamics_reference.metric,
+                    observable=(
+                        [
+                            IndexedPauliTerm(
+                                coefficient=term.coefficient,
+                                factors=[
+                                    PauliFactor(qubit=factor.qubit, pauli=factor.pauli)
+                                    for factor in term.factors
+                                ],
+                            )
+                            for term in exact_dynamics_reference.observable
+                        ]
+                        if exact_dynamics_reference.observable is not None
+                        else None
+                    ),
+                )
+                if exact_dynamics_reference is not None
+                else None
+            ),
+            exact_lindblad_reference=self.exact_lindblad_reference,
+            exact_linear_system_reference=self.exact_linear_system_reference,
+            exact_phase_estimation_reference=self.exact_phase_estimation_reference,
             reference_problem=(
                 ReferenceProblem(
-                    kind=self.reference_problem.kind,
+                    # The LLM-facing boundary states the reported business metric
+                    # directly. The durable enumerator's QUBO form is only a compact
+                    # storage/evaluation representation, never a penalty Hamiltonian.
+                    kind="qubo",
                     num_variables=self.reference_problem.num_variables,
                     terms=[
-                        ProblemTerm(i=term.i, j=term.j, weight=term.weight)
-                        for term in self.reference_problem.terms
+                        ProblemTerm(
+                            i=term.variable,
+                            j=term.variable,
+                            weight=term.coefficient,
+                        )
+                        for term in self.reference_problem.business_objective.linear_coefficients
+                    ]
+                    + [
+                        ProblemTerm(
+                            i=term.left,
+                            j=term.right,
+                            weight=term.coefficient,
+                        )
+                        for term in (
+                            self.reference_problem.business_objective.quadratic_coefficients
+                        )
+                    ],
+                    offset=self.reference_problem.business_objective.constant,
+                    objective=self.reference_problem.business_objective.direction,
+                    constraints=[
+                        LinearConstraint(
+                            terms=[
+                                ConstraintTerm(
+                                    i=term.variable,
+                                    weight=term.coefficient,
+                                )
+                                for term in constraint.coefficients
+                            ],
+                            sense=constraint.sense,
+                            rhs=constraint.rhs,
+                        )
+                        for constraint in self.reference_problem.business_constraints
                     ],
                 )
                 if "brute_force" in methods and self.reference_problem is not None
@@ -193,7 +397,9 @@ class SimpleVerificationPlan(_SimplePlanModel):
             # first, so keep the historical `<metric>_error_max` spelling rather than
             # inventing a second convention for the same number.
             thresholds=(
-                {f"{primary_metric}_error_max": tolerance} if tolerance is not None else None
+                {f"{self.reference_result_key or primary_metric}_error_max": tolerance}
+                if tolerance is not None
+                else None
             ),
         )
 
@@ -234,11 +440,42 @@ class SimplePlan(_SimplePlanModel):
             or not verification.reference_hamiltonian
         ):
             return self
-        if self.algorithm is Algorithm.VQE:
-            return self
-        metric = self.success_criteria.primary_metric.strip().lower()
+        if not verification.reference_result_key:
+            raise ValueError(
+                "exact_diag requires verification_plan.reference_result_key naming the "
+                "RESULT energy scalar"
+            )
+        if verification.reference_result_key not in self.expected_output_keys:
+            raise ValueError(
+                "verification_plan.reference_result_key must be one of expected_output_keys"
+            )
+        metric = verification.reference_result_key.strip().lower()
         description = f"{self.problem_summary} {self.algorithm_rationale}".lower()
-        energy_metric = any(token in metric for token in ("energy", "eigenvalue"))
+        # VQE implementations often call the candidate scalar an expectation rather
+        # than an energy. It is still the quantity exact_diag must check. Conversely,
+        # a classically diagonalized ground energy is a baseline even when its key
+        # omits the word "exact".
+        energy_metric = any(token in metric for token in ("energy", "eigenvalue", "expectation"))
+        derived_or_baseline_metric = any(
+            token in metric
+            for token in (
+                "error",
+                "difference",
+                "delta",
+                "fidelity",
+                "variance",
+                "exact",
+                "baseline",
+                "reference",
+                "dense_ground",
+                "diagonalized",
+                "diagonalised",
+                "eigensolver",
+                "ground_truth",
+            )
+        )
+        if self.algorithm is Algorithm.VQE and energy_metric and not derived_or_baseline_metric:
+            return self
         ground_state_claim = any(
             phrase in description
             for phrase in (
@@ -248,12 +485,12 @@ class SimplePlan(_SimplePlanModel):
                 "lowest eigenvalue",
             )
         )
-        if energy_metric and ground_state_claim:
+        if energy_metric and not derived_or_baseline_metric and ground_state_claim:
             return self
         raise ValueError(
             "verification_plan.methods includes 'exact_diag', but exact_diag verifies "
             "only a reported Hamiltonian ground-state energy/minimum eigenvalue. It "
-            f"cannot verify primary_metric {self.success_criteria.primary_metric!r}. "
+            f"cannot verify reference_result_key {verification.reference_result_key!r}. "
             "For time evolution, magnetization, fidelity, or another observable, "
             "drop exact_diag and omit verification_plan unless an independent "
             "same-unit reference is available."

@@ -1,0 +1,24 @@
+id: holdout-v6-02
+category: "Holdout v6 — Sixteen-variable assignment boundary"
+split: holdout
+difficulty: advanced
+workload: practical
+prompt: >-
+  Assign four workers to four jobs with exactly one job per worker and exactly one
+  worker per job. The cost matrix by worker row is
+  [[8,3,6,7],[5,9,2,4],[6,4,7,3],[7,5,8,6]]. Encode the sixteen x_worker_job binary
+  variables and all eight assignment equalities in a Qiskit QAOA cost Hamiltonian,
+  run a deterministic simulator with at least 2048 shots, and decode only feasible
+  samples. Independently enumerate all 4! assignments as the classical baseline.
+  Return top-level RESULT keys qaoa_best_cost, exact_minimum_cost, assignment, and
+  counts, and bind the optimized QAOA circuit to FINAL_CIRCUIT. The QAOA answer must
+  come from a feasible sampled bitstring, not from the enumeration.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_cost", "exact_minimum_cost", "assignment", "counts"]
+  expected_values:
+    qaoa_best_cost: 15.0
+    exact_minimum_cost: 15.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

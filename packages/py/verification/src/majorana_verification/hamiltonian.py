@@ -107,22 +107,29 @@ def ground_state_energy(terms: list[tuple[float, str]]) -> float:
 def energy_tolerance(terms: list[tuple[float, str]], shots: int | None) -> float:
     """How far a correct variational run may honestly land from the true minimum.
 
-    Two independent budgets, added:
+    Exact and sampled expectation values have different error budgets:
+
+    - **Exact statevector expectation.** With ``shots=None`` there is no sampling
+      uncertainty. Allow one part per million of the Hamiltonian's L1 scale (with
+      a unit-scale floor) for floating-point arithmetic and optimizer termination.
+      Ansatz error or a visibly unconverged local minimum is not numerical noise and
+      must fail so the generator gets a chance to repair it.
 
     - **Shot noise.** Each Pauli expectation is estimated from finite samples with
       variance at most 1/shots, so the energy's standard error is bounded by
       `sqrt(sum(c**2)/shots)`. Four of those is a wide interval on purpose.
-    - **Optimizer slack**, 2% of the Hamiltonian's scale `sum(|c|)`. A classical
+    - **Sampled optimizer slack**, 2% of the Hamiltonian's scale `sum(|c|)`. A classical
       optimizer stopping near, not at, the minimum is correct behaviour, and a
       bound that forbade it would fail correct code — the one outcome this
       codebase treats as worse than the alternative.
 
-    Deliberately loose. It is not trying to certify convergence quality; it is
-    trying to catch a run that converged to an excited state or to nothing, which
-    is the failure that actually happens. The number lands in the evidence so a
-    reader can see how much slack was allowed.
+    The sampled regime is deliberately loose: it catches gross convergence failures
+    without pretending finite data can certify a precision it does not contain. The
+    exact regime is deliberately strict because the run itself has chosen a noiseless
+    objective and can repair optimizer or ansatz error. The number lands in the
+    evidence so a reader can see which claim was actually accepted.
 
-    **The honest limit that follows from being loose:** the check cannot separate
+    **The honest sampled-data limit:** the check cannot separate
     two eigenvalues closer together than this tolerance. The bound scales with the
     Hamiltonian, so that means near-degenerate RELATIVE TO ITS OWN SCALE —
     `1.0*Z0 + 0.01*Z1` has its two lowest eigenvalues 0.02 apart against a bound of
@@ -135,7 +142,9 @@ def energy_tolerance(terms: list[tuple[float, str]], shots: int | None) -> float
     """
     sum_of_squares = sum(coefficient**2 for coefficient, _ in terms)
     scale = sum(abs(coefficient) for coefficient, _ in terms)
-    shot_noise = 4.0 * math.sqrt(sum_of_squares / shots) if shots and shots > 0 else 0.0
+    if shots is None:
+        return 1e-6 * max(1.0, scale)
+    shot_noise = 4.0 * math.sqrt(sum_of_squares / shots) if shots > 0 else 0.0
     return shot_noise + 0.02 * scale
 
 
@@ -181,6 +190,7 @@ def ground_state_comparison(
         return True, details
     if error < 0:
         spectrum = np.linalg.eigvalsh(hamiltonian_matrix(terms))
+        details["failure_mode"] = "reported_below_ground_state"
         details["disagreement"] = (
             f"the reported energy {reported_energy:.6f} is BELOW the true ground "
             f"state {exact:.6f}, which no variational method can reach. The energy "
@@ -196,6 +206,7 @@ def ground_state_comparison(
     details["scores"]["spectrum"] = [float(value) for value in spectrum[:8]]
     details["scores"]["nearest_eigenvalue"] = float(nearest)
     if abs(nearest - reported_energy) <= tolerance and not math.isclose(nearest, exact):
+        details["failure_mode"] = "converged_to_excited_state"
         details["disagreement"] = (
             f"the reported energy {reported_energy:.6f} matches the EXCITED "
             f"eigenvalue {float(nearest):.6f}, not the ground state {exact:.6f}. The "
@@ -204,10 +215,11 @@ def ground_state_comparison(
             "several initial parameter vectors and keep the lowest energy."
         )
     else:
+        details["failure_mode"] = "reported_above_ground_state"
         details["disagreement"] = (
             f"the reported energy {reported_energy:.6f} is {abs(error):.6f} above "
             f"the true ground state {exact:.6f}, more than the {tolerance:.6f} this "
-            "run is allowed for shot noise and optimizer slack, and it does not "
+            "run's verification protocol allows, and it does not "
             "match any eigenvalue of the declared Hamiltonian. Check that every "
             "term's expectation is being measured and summed with its coefficient."
         )

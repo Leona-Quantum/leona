@@ -1,0 +1,21 @@
+id: holdout-v1-05
+category: "Holdout — Continuous-time quantum walk"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Simulate an exact continuous-time quantum walk on the four-node cycle with edges
+  (0,1),(1,2),(2,3),(3,0). Encode nodes in the two-qubit computational basis, use the
+  adjacency matrix itself as the Hamiltonian, start at node 0, and evolve to t=0.7.
+  Construct the exact unitary in Qiskit, return the node-0 and node-2 probabilities as
+  top-level numeric RESULT keys return_probability and opposite_probability, and bind
+  the complete evolution circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["return_probability", "opposite_probability"]
+  expected_values:
+    return_probability: 0.3422057788665383
+    opposite_probability: 0.1722386359662972
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

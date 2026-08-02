@@ -1,0 +1,25 @@
+id: holdout-v15-10
+category: "Holdout v15 — Finite-register non-dyadic QPE"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Implement noiseless Qiskit phase estimation for U=diag(1,exp(2*pi*i*0.217)) with
+  the target prepared in |1> and five counting qubits. Use controlled powers and an
+  inverse QFT, then derive the exact counting-register probabilities from the complete
+  circuit Statevector. Return top-level numeric RESULT keys dominant_integer,
+  finite_phase_estimate, and dominant_probability, plus the JSON-compatible list
+  phase_probabilities in displayed integer order 0 through 31. Bind the complete
+  unmeasured QPE circuit to FINAL_CIRCUIT. Report the finite-register peak rather than
+  replacing it with the continuous phase 0.217.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys:
+    ["dominant_integer", "finite_phase_estimate", "dominant_probability", "phase_probabilities"]
+  expected_values:
+    dominant_integer: 7.0
+    finite_phase_estimate: 0.21875
+    dominant_probability: 0.9897354277117065
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

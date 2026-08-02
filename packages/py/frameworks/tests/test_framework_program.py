@@ -1,5 +1,6 @@
 import builtins
 import re
+import math
 
 import pytest
 
@@ -120,9 +121,15 @@ def test_multiline_literal_contents_are_preserved_in_fingerprint():
 
 def test_native_optimization_is_classified_in_selected_source():
     qiskit = FrameworkProgram(Framework.QISKIT, "FINAL_CIRCUIT = transpile(circuit)\n")
+    preset = FrameworkProgram(
+        Framework.QISKIT,
+        "pm = generate_preset_pass_manager(optimization_level=1)\n"
+        "FINAL_CIRCUIT = pm.run(circuit)\n",
+    )
     cirq = FrameworkProgram(Framework.CIRQ, "FINAL_CIRCUIT = circuit\n")
 
     assert qiskit.native_optimization().applied
+    assert preset.native_optimization().applied
     assert not cirq.native_optimization().applied
 
 
@@ -716,6 +723,92 @@ def test_qiskit_native_statevector_breaks_permutation_symmetry():
     assert _amplitude_support(payload) == [1, 5]
 
 
+@pytest.mark.filterwarnings("ignore::scipy.sparse.SparseEfficiencyWarning")
+def test_qiskit_pauli_evolution_crosses_native_observer_and_qasm_export():
+    pytest.importorskip("qiskit")
+    import numpy as np
+    from qiskit import QuantumCircuit
+    from qiskit.circuit.library import PauliEvolutionGate
+    from qiskit.quantum_info import SparsePauliOp, Statevector
+
+    code = (
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit.circuit.library import PauliEvolutionGate\n"
+        "from qiskit.quantum_info import SparsePauliOp, Statevector\n"
+        "qc = QuantumCircuit(3)\n"
+        "qc.x(0)\n"
+        "for label, coefficient, time in "
+        "[('IXX', 0.61, 0.08), ('YYI', -0.37, 0.16), ('IXX', 0.61, 0.08)]:\n"
+        "    qc.append(PauliEvolutionGate("
+        "SparsePauliOp.from_list([(label, coefficient)]), time=time), range(3))\n"
+        "state = Statevector.from_instruction(qc)\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'z1': float(state.expectation_value(SparsePauliOp('IZI')).real)}\n"
+    )
+    observation = _run_epilogue(Framework.QISKIT, code)
+    payload = observation["native_statevector"]
+    observed_pairs = np.asarray(payload["amplitudes"], dtype=float).reshape(-1, 2)
+    observed = observed_pairs[:, 0] + 1j * observed_pairs[:, 1]
+
+    circuit = QuantumCircuit(3)
+    circuit.x(0)
+    for label, coefficient, time in (
+        ("IXX", 0.61, 0.08),
+        ("YYI", -0.37, 0.16),
+        ("IXX", 0.61, 0.08),
+    ):
+        circuit.append(
+            PauliEvolutionGate(SparsePauliOp.from_list([(label, coefficient)]), time=time),
+            range(3),
+        )
+    expected = np.asarray(Statevector.from_instruction(circuit).data)
+
+    assert payload["qubits"] == 3
+    assert np.max(np.abs(observed - expected)) <= 1e-14
+    assert observation["native_sampled_error"] == "circuit has no measurements to sample"
+    interchange = extract_interchange_qasm(observation)
+    assert interchange.source == "sandbox_epilogue"
+    assert interchange.epilogue_error is None
+    assert interchange.qasm is not None
+    assert interchange.qasm.startswith("OPENQASM 3")
+
+
+def test_qiskit_kraus_channel_preserves_result_and_reports_interchange_incapacity():
+    pytest.importorskip("qiskit")
+    pytest.importorskip("qiskit_aer")
+    code = (
+        "import math\n"
+        "import numpy as np\n"
+        "from qiskit import QuantumCircuit\n"
+        "from qiskit.quantum_info import Kraus\n"
+        "from qiskit_aer import AerSimulator\n"
+        "gamma = 0.31\n"
+        "k0 = np.array([[1, 0], [0, math.sqrt(1-gamma)]], dtype=complex)\n"
+        "k1 = np.array([[0, math.sqrt(gamma)], [0, 0]], dtype=complex)\n"
+        "qc = QuantumCircuit(1)\n"
+        "qc.ry(1.1, 0)\n"
+        "qc.append(Kraus([k0, k1]).to_instruction(), [0])\n"
+        "executed = qc.copy()\n"
+        "executed.save_density_matrix()\n"
+        "rho = np.asarray(AerSimulator(method='density_matrix').run(executed)"
+        ".result().data(0)['density_matrix'])\n"
+        "FINAL_CIRCUIT = qc\n"
+        "RESULT = {'excited_population': float(rho[1, 1].real)}\n"
+    )
+    observation = _run_epilogue(Framework.QISKIT, code)
+    interchange = extract_interchange_qasm(observation)
+
+    assert observation["result"]["excited_population"] == pytest.approx(
+        (1.0 - 0.31) * math.sin(1.1 / 2.0) ** 2
+    )
+    assert observation["resource_metrics"]["qubits"] == 1
+    assert "native_statevector" not in observation
+    assert observation["native_statevector_error"]
+    assert interchange.source == "missing"
+    assert interchange.qasm is None
+    assert interchange.epilogue_error
+
+
 def test_qiskit_native_statevector_declares_incapacity_on_feed_forward():
     pytest.importorskip("qiskit")
     code = (
@@ -741,6 +834,11 @@ def test_qiskit_native_statevector_declares_incapacity_on_feed_forward():
     observation = _run_epilogue(Framework.QISKIT, code)
     assert "native_statevector" not in observation
     assert "not unitary up to final measurements" in observation["native_statevector_error"]
+    interchange = extract_interchange_qasm(observation)
+    assert interchange.source == "sandbox_epilogue"
+    assert interchange.epilogue_error is None
+    assert interchange.qasm is not None
+    assert "if (" in interchange.qasm
     # The register structure the verifier marginalizes on (plans/sampled-counts-
     # width-mismatch.md). Only present when Aer is installed — it is in the sandbox
     # image, not in the dev/CI venv, which is why the ordering claim underneath it
@@ -791,6 +889,42 @@ def test_cirq_native_statevector_and_sampled_counts():
     assert sum(sampled["counts"].values()) == sampled["shots"]
     # q0 measured as key 'a' is the leftmost sampled bit and is always 1.
     assert all(key.startswith("1") for key in sampled["counts"])
+
+
+def test_cirq_native_statevector_uses_complex128_for_exact_evidence():
+    cirq = pytest.importorskip("cirq")
+    import numpy as np
+
+    code = (
+        "import cirq\n"
+        "q0, q1 = cirq.LineQubit.range(2)\n"
+        "FINAL_CIRCUIT = cirq.Circuit(\n"
+        "    cirq.ry(0.924297)(q0),\n"
+        "    cirq.CNOT(q0, q1),\n"
+        "    cirq.rz(-0.091798)(q1),\n"
+        ")\n"
+        "RESULT = {'ok': True}\n"
+    )
+    observation = _run_epilogue(Framework.CIRQ, code)
+    payload = observation["native_statevector"]
+    observed = np.asarray(payload["amplitudes"], dtype=float).reshape(-1, 2)
+    observed = observed[:, 0] + 1j * observed[:, 1]
+
+    q0, q1 = cirq.LineQubit.range(2)
+    circuit = cirq.Circuit(
+        cirq.ry(0.924297)(q0),
+        cirq.CNOT(q0, q1),
+        cirq.rz(-0.091798)(q1),
+    )
+    expected128 = cirq.final_state_vector(
+        circuit,
+        qubit_order=[q0, q1],
+        dtype=np.complex128,
+    )
+    default64 = cirq.final_state_vector(circuit, qubit_order=[q0, q1])
+
+    assert np.max(np.abs(observed - expected128)) <= 1e-15
+    assert np.max(np.abs(default64 - expected128)) > 1e-9
 
 
 def test_cirq_feed_forward_samples_but_declares_statevector_incapacity():

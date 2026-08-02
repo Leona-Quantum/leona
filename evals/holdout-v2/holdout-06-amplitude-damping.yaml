@@ -1,0 +1,22 @@
+id: holdout-v2-06
+category: "Holdout v2 — Stinespring amplitude damping"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Construct a two-qubit Qiskit Stinespring circuit for amplitude damping with
+  gamma=0.3, with the system initialized in |+> and the environment in |0>. Use a
+  controlled rotation or an equivalent unitary dilation, obtain the reduced system
+  density matrix by tracing out the environment, and do not use a noise-model shortcut.
+  Return the top-level numeric RESULT keys excited_population, output_purity, and
+  input_state_fidelity, and bind the complete dilation circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["excited_population", "output_purity", "input_state_fidelity"]
+  expected_values:
+    excited_population: 0.35
+    output_purity: 0.895
+    input_state_fidelity: 0.9183300132670378
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

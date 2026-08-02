@@ -1,0 +1,24 @@
+id: holdout-v9-10
+category: "Holdout v9 — Ising ground-state entanglement"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, exactly diagonalize the open four-qubit
+  transverse-field Ising Hamiltonian H=-sum_{i=0}^{2} Zi Z(i+1)-0.73*sum_{i=0}^{3} Xi.
+  Prepare its normalized ground-state vector in a Qiskit circuit and compute the
+  ground energy, gap to the first excited state, base-2 von Neumann entropy across
+  partition {q0,q1}|{q2,q3}, and <Z0 Z3>. Return top-level numeric RESULT keys
+  ground_energy, spectral_gap, entropy_q01, and correlation_zz_03. Bind the actual
+  ground-state preparation circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["ground_energy", "spectral_gap", "entropy_q01", "correlation_zz_03"]
+  expected_values:
+    ground_energy: -3.951806951034333
+    spectral_gap: 0.31100920870084403
+    entropy_q01: 0.6358897582240801
+    correlation_zz_03: 0.433737605814325
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

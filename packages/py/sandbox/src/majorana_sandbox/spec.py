@@ -58,6 +58,12 @@ class QubitCeilingExceeded(ValueError):
     sandbox is created."""
 
 
+def _reject_nonfinite_json_constant(value: str) -> None:
+    """Reject Python JSON's non-standard NaN/Infinity extensions."""
+
+    raise ValueError(f"non-finite JSON constant {value}")
+
+
 def preflight(spec: ExecutionSpec) -> None:
     """Enforce pre-dispatch caps. Raises before a sandbox is ever created."""
     if spec.qubits_estimate is not None and spec.qubits_estimate > spec.qubit_ceiling:
@@ -73,8 +79,8 @@ def parse_protected_result(raw: bytes | None) -> dict[str, Any] | None:
     if raw is None or len(raw) > MAX_OUTPUT_BYTES:
         return None
     try:
-        value = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        value = json.loads(raw, parse_constant=_reject_nonfinite_json_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         return None
     return value if isinstance(value, dict) else None
 
@@ -118,13 +124,15 @@ def compose_execution(spec: ExecutionSpec) -> str:
     _majorana_result = _majorana_namespace.get("RESULT")
     if _majorana_result is not None:
         try:
-            _majorana_json_dumps(_majorana_result)
+            _majorana_json_dumps(_majorana_result, allow_nan=False)
             _majorana_observation["result"] = _majorana_result
         except _majorana_exception:
             _majorana_observation["result_error"] = "not_json_serializable"
 {observer}
     try:
-        _majorana_serialized_observation = _majorana_json_dumps(_majorana_observation)
+        _majorana_serialized_observation = _majorana_json_dumps(
+            _majorana_observation, allow_nan=False
+        )
         if _majorana_len(_majorana_serialized_observation.encode("utf-8")) > {MAX_OUTPUT_BYTES}:
             _majorana_observation = {{
                 "source_fingerprint": {spec.source_fingerprint!r},
@@ -181,7 +189,7 @@ def compose_execution(spec: ExecutionSpec) -> str:
     with _majorana_open(
         {spec.protected_result_path!r}, "w", encoding="utf-8"
     ) as _majorana_result_file:
-        _majorana_json_dump(_majorana_observation, _majorana_result_file)
+        _majorana_json_dump(_majorana_observation, _majorana_result_file, allow_nan=False)
 
 _majorana_host_run()
 """

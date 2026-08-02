@@ -1,0 +1,17 @@
+id: bench-08
+category: "B — Bell inequality"
+prompt: >-
+  Prepare a Bell state in Qiskit and evaluate the four exact correlators needed for
+  the CHSH expression S=E(A0,B0)+E(A0,B1)+E(A1,B0)-E(A1,B1), with
+  A0=Z, A1=X, B0=(Z+X)/sqrt(2), and B1=(Z-X)/sqrt(2). Return |S| as the
+  top-level numeric RESULT key chsh_value and bind the Bell preparation circuit to
+  FINAL_CIRCUIT. Use Statevector expectations rather than inserting the theoretical
+  answer.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["chsh_value"]
+  expected_values:
+    chsh_value: 2.8284271247461903
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

@@ -1,0 +1,20 @@
+id: holdout-v2-07
+category: "Holdout v2 — Loschmidt echo"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Compute an exact three-qubit Loschmidt echo in Qiskit. Let
+  H0=0.8*(Z0 Z1 + Z1 Z2)+0.6*(X0+X1+X2), H1=H0+0.25*Z0, start in |+++>, and evolve
+  both Hamiltonians to t=1.1. Use exact matrix exponentiation, not a product formula,
+  and evaluate L=|<psi0(t)|psi1(t)>|^2. Return L as the top-level numeric RESULT key
+  loschmidt_echo and bind a circuit that prepares |+++> and applies U0^dagger U1 to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["loschmidt_echo"]
+  expected_values:
+    loschmidt_echo: 0.9353420403082606
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

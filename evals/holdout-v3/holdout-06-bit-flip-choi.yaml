@@ -1,0 +1,21 @@
+id: holdout-v3-06
+category: "Holdout v3 — Bit-flip Choi state"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Build a three-qubit Qiskit Stinespring circuit for a bit-flip channel with p=0.2.
+  Prepare a Bell state of a reference qubit and the system, rotate an environment qubit
+  so its |1> probability is p, and use it to control X on the system. Trace out the
+  environment and evaluate the two-qubit Choi state. Return top-level numeric RESULT
+  keys entanglement_fidelity with the original Bell state and choi_purity, and bind the
+  complete dilation circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["entanglement_fidelity", "choi_purity"]
+  expected_values:
+    entanglement_fidelity: 0.8
+    choi_purity: 0.68
+  expected_value_tolerance: 0.000001
+  saves_artifact: true
