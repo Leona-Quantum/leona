@@ -17,7 +17,6 @@ real repository is proven in `test_provider_credentials_live.py`, which is the
 only place cross-user isolation can honestly be tested.
 """
 
-import json
 import uuid as uuid_module
 from types import SimpleNamespace
 
@@ -109,10 +108,6 @@ def client():
     app.dependency_overrides[auth_deps.get_scope] = lambda: scope
     app.dependency_overrides[auth_deps.get_session] = lambda: object()
     return httpx.AsyncClient(transport=httpx.ASGITransport(app=app), base_url="http://test")
-
-
-def _accepts(url, body, headers, timeout):
-    return 200, json.dumps({"access_token": "a-bearer-token", "expires_in": 3600}).encode()
 
 
 @pytest.fixture
