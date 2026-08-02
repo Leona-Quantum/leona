@@ -35,6 +35,7 @@ from majorana_contracts.enums import (
 )
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
+from majorana_llm import attempt_timeout_seconds, provider_timeout_seconds
 
 
 def _plan(*, qubits: int = 2) -> Plan:
@@ -1416,3 +1417,83 @@ async def test_export_provider_failure_is_best_effort():
     assert outcome.status is SimplePipelineStatus.SUCCEEDED
     assert outcome.conversion is None
     assert outcome.warnings == (failure,)
+
+
+class _BlockingPlanPorts(FakePorts):
+    """A port double that can actually block.
+
+    Every other double here returns immediately, which is why 1709 green tests
+    said nothing about the 2026-08-02 outage: the failure was a plan stage that
+    ran and never came back, and no double in this suite could stay inside a
+    stage long enough to be one. This one waits on an event nobody sets, so the
+    stage budget is the only thing that can end it.
+    """
+
+    def __init__(self, *, block_s: float, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.plan_attempts = 0
+        self.observed_budgets: list[float | None] = []
+        self._block_s = block_s
+
+    async def plan(self, run_id, previous, feedback):
+        self.plan_attempts += 1
+        self.observed_budgets.append(attempt_timeout_seconds())
+        await asyncio.sleep(self._block_s)
+        return await super().plan(run_id, previous, feedback)
+
+
+async def test_a_blocked_stage_is_ended_by_its_budget_not_by_the_run_deadline():
+    """A stage that never returns must fail as a stage, with the run's tail intact."""
+
+    loop = asyncio.get_running_loop()
+    # 40 s of run left: _estimated_finalization_s reserves 25, so PLANNING gets 15.
+    deadline = loop.time() + 40.0
+    ports = _BlockingPlanPorts(block_s=60.0)
+
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=lambda: deadline - loop.time(),
+        monotonic=loop.time,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert outcome.failure is not None
+    assert outcome.failure.stage is SimplePipelineStage.PLANNING
+    assert outcome.failure.kind is SimpleFailureKind.TIMEOUT
+    # It ended on OUR budget, not on the operation's own timeout.
+    assert outcome.failure.code == "stage_time_budget_exhausted"
+
+
+async def test_a_provider_attempt_may_not_outlive_the_stage_that_owns_it():
+    """The bound that turns an unanswered request into a retry instead of a dead run.
+
+    Production 2026-08-02: the provider ceiling (120 s) sat above the plan stage's
+    budget (~90 s), so a stalled request could only ever end by the stage budget
+    expiring — non-retryable — and the run died with its finalization reserve
+    unspent. Whatever a stage has left, one attempt inside it must ask for less.
+    """
+
+    loop = asyncio.get_running_loop()
+    # The production shape, and the one that makes this test able to fail: a
+    # 120 s run leaves the stage ~95 s, BELOW the 120 s provider ceiling. Pick a
+    # run longer than the ceiling instead and the ceiling alone satisfies the
+    # assertion, which is exactly the blind spot being closed.
+    deadline = loop.time() + 120.0
+    ports = _BlockingPlanPorts(block_s=0.0)
+
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=lambda: deadline - loop.time(),
+        monotonic=loop.time,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    stage_budget_s = 120.0 - 25.0  # _estimated_finalization_s with no samples yet
+    assert stage_budget_s < provider_timeout_seconds()  # the case that mattered
+    observed = ports.observed_budgets[0]
+    assert observed is not None
+    assert observed < stage_budget_s, (
+        f"one attempt was allowed {observed:.1f}s inside a {stage_budget_s:.1f}s stage"
+    )
+    # And outside any stage the configured ceiling still applies unchanged.
+    assert attempt_timeout_seconds() == provider_timeout_seconds()

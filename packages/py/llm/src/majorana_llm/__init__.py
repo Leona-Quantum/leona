@@ -12,6 +12,9 @@ from majorana_llm.client import (
     default_llm,
     endpoint_for,
     classify_provider_error,
+    attempt_timeout_seconds,
+    provider_timeout_seconds,
+    stage_budget,
 )
 from majorana_llm.models import model_for, resolve_provider
 from majorana_llm.parsing import (
@@ -41,6 +44,9 @@ from majorana_llm.prompts import (
 
 __all__ = [
     "LLMClient",
+    "attempt_timeout_seconds",
+    "provider_timeout_seconds",
+    "stage_budget",
     "LLMMessage",
     "LLMProviderError",
     "LLMRequest",

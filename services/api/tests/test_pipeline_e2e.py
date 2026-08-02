@@ -487,7 +487,12 @@ async def test_run_executes_end_to_end_with_real_fixed_pipeline(env):
     events = (await client.get(f"/v1/runs/{run['id']}/events")).json()
     types = [e["type"] for e in events]
     assert types[0] == "run.queued"
-    assert types[1] == "run.started"
+    # `run.started` is no longer types[1]: mode resolution and titling both emit
+    # before the pipeline starts. What the ordering has to prove is that nothing
+    # the pipeline produces predates it, which is the assertion that survives a
+    # new pre-flight event being added ahead of it.
+    assert "run.started" in types
+    assert types.index("run.started") < types.index("plan.produced")
     assert types[-1] == "run.finished"
     assert "stage.started" not in types
     assert "stage.finished" not in types
@@ -511,13 +516,22 @@ async def test_run_executes_end_to_end_with_real_fixed_pipeline(env):
     saved = next(e for e in events if e["type"] == "artifact.saved")
     async with factory() as session:
         version = await artifacts_repo.get_version(scope, session, uuid.UUID(saved["version_id"]))
-    assert version.export_status == "lossless"
-    if version.qasm is not None:
-        assert version.qasm_version == "3.0"
-        assert version.qasm.startswith("OPENQASM 3.0;")
+    # This test runs against `_NonExecutingSandbox`, which returns canned Bell
+    # evidence without running the QASM epilogue — so nothing ever serializes
+    # FINAL_CIRCUIT and `lossless` is not reachable here. Asserting it made this
+    # the only test that drives a real provider through the whole pipeline AND
+    # made it impossible to pass, which is how it came to be one of the suites
+    # nothing runs. What matters at this seam is the honest direction: with no
+    # serialized circuit the product must report `unsupported` and must not
+    # invent interchange QASM to fill the column.
+    assert version.export_status == "unsupported"
+    assert version.qasm is None
+    assert version.qasm_version is None
     assert version.fingerprint == FrameworkProgram(Framework.QISKIT, version.code).fingerprint
     assert version.artifact_metadata["canonical_representation"] == "framework_code"
-    assert version.artifact_metadata["openqasm_role"] == "interchange"
+    # Same reason as export_status above: no serialized circuit, so the role is
+    # `unavailable` rather than `interchange`.
+    assert version.artifact_metadata["openqasm_role"] == "unavailable"
     assert version.artifact_metadata["verification_summary"]["decision"] == "inconclusive"
 
     # SSE replay of the stored run: same rows, same order.

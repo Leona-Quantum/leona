@@ -26,6 +26,7 @@ from majorana_agent.models import (
     SemanticReviewEvidence,
 )
 from majorana_contracts.enums import SemanticReviewDecision
+from majorana_llm import stage_budget
 
 log = logging.getLogger("majorana.agent.simple_pipeline")
 
@@ -1369,8 +1370,15 @@ class SimpleCircuitPipeline:
             if timeout_s is None:
                 result = await operation()
             else:
-                async with asyncio.timeout(timeout_s):
-                    result = await operation()
+                # Publish the stage deadline so a provider attempt inside this
+                # stage cannot outlive it. Without this the provider ceiling
+                # (120 s) sits above a typical stage budget (~90 s), so one
+                # unanswered request always surfaced as OUR budget expiring —
+                # non-retryable — instead of as the retryable provider timeout
+                # it was. See majorana_llm.attempt_timeout_seconds.
+                with stage_budget(timeout_s):
+                    async with asyncio.timeout(timeout_s):
+                        result = await operation()
         except TimeoutError:
             # `except TimeoutError` cannot tell OUR deadline from one the
             # operation raised itself. Since Python 3.10 `socket.timeout` IS
@@ -1379,19 +1387,27 @@ class SimpleCircuitPipeline:
             #
             # Both reported "stopped to preserve time for finalization", which
             # names a cause — Leona's own budget management — that in the second
-            # case is false. Measured in production 2026-08-02: a post-deploy
-            # probe failed `stage_time_budget_exhausted` at the plan stage **97
-            # milliseconds** after the run started, against a 120 s run deadline
-            # that left the stage roughly 90 s. The deploy gate reported that the
-            # deployed stack could not complete a run, and the one line anybody
-            # would read to diagnose it blamed a budget with 90 s left in it.
+            # case is false. So attribute it by the clock rather than by the
+            # exception type, and carry the two numbers that settle it.
             #
-            # So attribute it by the clock rather than by the exception type.
-            # Behaviour is deliberately unchanged — same kind, same retryability
-            # — because only the claim was wrong. Whether an upstream timeout
-            # should be retryable where budget exhaustion must not be is a real
-            # question and a separate change; it needs a decision, not a guess
-            # folded into a diagnostic fix.
+            # CORRECTION (2026-08-03). The evidence originally cited here was
+            # that a 2026-08-02 post-deploy probe failed at the plan stage "97
+            # milliseconds after the run started". It did not. `RunEvent.ts` is
+            # `server_default=func.now()`, and Postgres `now()` is the
+            # TRANSACTION start, not the statement's. `run.error` for runs
+            # 019fc318 and 019fc325 inherited the timestamp of the transaction
+            # that opened at `get_llm_call`, immediately before the provider
+            # request — a transaction that then never committed, because the
+            # request was never answered. Measured against `run.finished`, which
+            # is a later transaction: 91.6 s and 92.2 s inside one plan stage.
+            # The stage budget really was what ended those runs.
+            #
+            # The distinction this branch draws is still worth drawing, and
+            # `elapsed` below is a real monotonic reading rather than an event
+            # timestamp, so the code was right for a reason that was wrong. The
+            # actual defect those runs exposed was that the provider ceiling sat
+            # ABOVE the stage budget, so a stalled call could only ever end as
+            # ours — see majorana_llm.attempt_timeout_seconds.
             elapsed = max(0.0, self._monotonic() - started_at)
             if timeout_s is None or elapsed < timeout_s:
                 return SimplePortResult.failed(

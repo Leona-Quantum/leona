@@ -8,9 +8,12 @@ enforce quotas.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import math
-from collections.abc import Awaitable, Callable
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
@@ -81,9 +84,49 @@ DeltaHandler = Callable[[str, str], Awaitable[None]]
 _DEFAULT_PROVIDER_TIMEOUT_SECONDS = 120.0
 _MAX_PROVIDER_TIMEOUT_SECONDS = 600.0
 
+#: Monotonic deadline of the pipeline stage the current call belongs to, or None
+#: outside a bounded stage. Set by the caller that owns the stage budget; read
+#: here so the provider attempt cannot outlive it. A ContextVar rather than a
+#: parameter because the deadline has to cross three packages and every
+#: `LLMClient` implementation without widening the protocol every caller
+#: implements — and because it propagates down an await chain by itself.
+_stage_deadline: ContextVar[float | None] = ContextVar("majorana_llm_stage_deadline", default=None)
+
+#: Fraction of a stage's remaining time one provider attempt may consume. Half,
+#: so a stalled attempt still leaves the stage room to retry and succeed rather
+#: than handing back a run that has already spent its whole budget.
+_STAGE_ATTEMPT_SHARE = 0.5
+#: Never cut an attempt below this: healthy plan/generate calls measured 4-26 s,
+#: so a smaller bound would start failing calls that were about to answer.
+_MIN_STAGE_ATTEMPT_SECONDS = 30.0
+
+
+@contextmanager
+def stage_budget(seconds: float | None) -> Iterator[None]:
+    """Bind provider attempts made inside this block to a stage's remaining time.
+
+    Takes a duration rather than a deadline on purpose: the caller that owns the
+    budget may be running on an injected clock (the pipeline takes `monotonic` so
+    its tests can drive time), and an absolute value from that clock would be
+    meaningless here. Resolving it against the running loop at entry keeps both
+    ends of the comparison on one clock.
+    """
+
+    deadline: float | None = None
+    if seconds is not None:
+        try:
+            deadline = asyncio.get_running_loop().time() + seconds
+        except RuntimeError:  # no running loop: nothing to bound against
+            deadline = None
+    token = _stage_deadline.set(deadline)
+    try:
+        yield
+    finally:
+        _stage_deadline.reset(token)
+
 
 def provider_timeout_seconds() -> float:
-    """Bound one provider attempt so a half-open response cannot stall a run forever."""
+    """The configured ceiling for one provider attempt."""
 
     import os
 
@@ -97,6 +140,46 @@ def provider_timeout_seconds() -> float:
     if not math.isfinite(value) or not 1.0 <= value <= _MAX_PROVIDER_TIMEOUT_SECONDS:
         return _DEFAULT_PROVIDER_TIMEOUT_SECONDS
     return value
+
+
+def attempt_timeout_seconds(now: float | None = None) -> float:
+    """Bound one provider attempt so a half-open response cannot stall a run forever.
+
+    The configured ceiling alone could not do that. It defaults to 120 s while a
+    stage of a 120 s run gets roughly 90 s, so the ceiling was unreachable: every
+    stalled provider call was cancelled by the stage budget instead, and surfaced
+    as `stage_time_budget_exhausted` — a TIMEOUT failure, which is not retryable.
+    One unanswered request therefore killed the whole run while naming Leona's own
+    budget management as the cause.
+
+    Measured in production 2026-08-02, runs 019fc318 and 019fc325: the plan stage
+    opened its provider request and the transaction carrying it stayed open for
+    91.6 s, against a ~90 s stage budget and a 120 s ceiling. Both runs died with
+    ~25 s of finalization reserve untouched and no retry attempted.
+
+    So an attempt gets the smaller of the ceiling and its share of the time the
+    stage actually has left. A stall then fails as a retryable provider timeout
+    with budget still on the clock, which is the difference between a slow plan
+    and a failed run.
+    """
+
+    ceiling = provider_timeout_seconds()
+    deadline = _stage_deadline.get()
+    if deadline is None:
+        return ceiling
+    if now is None:
+        try:
+            now = asyncio.get_running_loop().time()
+        except RuntimeError:  # no running loop: nothing is enforcing a stage budget
+            return ceiling
+    remaining = deadline - now
+    if remaining <= 0.0:
+        # The stage is already over. Do not hand the provider a negative or zero
+        # timeout (httpx treats <= 0 inconsistently); let the caller's own
+        # cancellation win on the first await.
+        return _MIN_STAGE_ATTEMPT_SECONDS
+    share = max(remaining * _STAGE_ATTEMPT_SHARE, _MIN_STAGE_ATTEMPT_SECONDS)
+    return min(ceiling, share, remaining)
 
 
 class LLMMessage(BaseModel):
@@ -271,7 +354,7 @@ class OpenAICompatibleLLM:
                 api_key=api_key,
                 base_url=base_url,
                 max_retries=0,
-                timeout=provider_timeout_seconds(),
+                timeout=attempt_timeout_seconds(),
             )
             if on_delta is None:
                 completion = await client.chat.completions.create(
@@ -484,7 +567,7 @@ class AnthropicLLM:
             client = AsyncAnthropic(
                 api_key=api_key,
                 max_retries=0,
-                timeout=provider_timeout_seconds(),
+                timeout=attempt_timeout_seconds(),
             )
             if on_delta is None:
                 message = await client.messages.create(
