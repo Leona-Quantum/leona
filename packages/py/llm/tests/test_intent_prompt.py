@@ -42,22 +42,20 @@ def test_intent_router_still_names_the_bare_task_statement():
     )
 
 
-def test_intent_router_requires_data_and_supports_capacity_limited_artifacts():
+def test_intent_router_requires_data_and_capability_readiness_without_keyword_rules():
     """Execution must be possible as stated, not merely phrased as an action.
 
     This pins the general decision boundary rather than any one benchmark prompt:
-    Missing instance data needs a conversational answer. A supported-framework task
-    that only exceeds local capacity remains executable as an honest unexecuted
-    artifact, while unsupported dependencies still route to chat.
+    missing instance data and known runtime limits both need a conversational answer,
+    while canonical circuits and harmless execution defaults stay executable.
     """
     lowered = " ".join(INTENT_ROUTER_SYSTEM_PROMPT.lower().split())
 
     assert "input readiness" in lowered
     assert "capability readiness" in lowered
     assert "do not guess an omitted problem instance" in lowered
-    assert "25 qubits the local execution maximum" in lowered
-    assert "execution explicitly marked not_run" in lowered
-    assert "artifact-only form" in lowered
+    assert "25 qubits the executable circuit/simulation maximum" in lowered
+    assert "26- or 27-qubit circuit is rejected before a sandbox is created" in lowered
     assert "package list is exhaustive" in lowered
     assert "never silently shrink" in lowered
     assert "shot count or random seed" in lowered

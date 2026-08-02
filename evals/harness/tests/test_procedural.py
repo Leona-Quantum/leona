@@ -1101,24 +1101,6 @@ framework: qiskit
     assert sum(PROCEDURAL_SURFACE_VERSION in case.id for case in varied) == 46
 
 
-def test_cli_case_loader_combines_multiple_unseen_seeds(tmp_path):
-    (tmp_path / "static.yaml").write_text(
-        "id: static-case\ncategory: static\nprompt: Prepare a Bell state.\n"
-    )
-
-    cases = _load_eval_cases(
-        str(tmp_path),
-        procedural_seed=[7319426802, 9182746611],
-        procedural_cases_per_family=1,
-        procedural_prompt_variants=2,
-    )
-
-    assert len(cases) == 1 + 2 * 23 * 2
-    assert len({case.id for case in cases}) == len(cases)
-    assert sum("-s7319426802-" in case.id for case in cases) == 46
-    assert sum("-s9182746611-" in case.id for case in cases) == 46
-
-
 def test_cli_case_loader_rejects_partial_configuration_and_duplicate_ids(tmp_path):
     with pytest.raises(ValueError, match="procedural_seed is required"):
         _load_eval_cases(str(tmp_path), procedural_seed=None, procedural_cases_per_family=1)
@@ -1130,12 +1112,6 @@ def test_cli_case_loader_rejects_partial_configuration_and_duplicate_ids(tmp_pat
             procedural_seed=None,
             procedural_cases_per_family=0,
             procedural_prompt_variants=2,
-        )
-    with pytest.raises(ValueError, match="procedural seeds must be unique"):
-        _load_eval_cases(
-            str(tmp_path),
-            procedural_seed=[1, 1],
-            procedural_cases_per_family=1,
         )
 
     duplicate = generate_procedural_cases(1)[0]

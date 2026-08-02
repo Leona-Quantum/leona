@@ -2,7 +2,6 @@
 
 from __future__ import annotations
 
-import ast
 import hashlib
 import json
 import signal
@@ -20,7 +19,7 @@ from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_frameworks.roles import ProgramRole
 from majorana_openqasm import OpenQASMError, normalize
-from majorana_sandbox import DEFAULT_QUBIT_CEILING, ExecutionSpec, GuardRejection, Sandbox
+from majorana_sandbox import ExecutionSpec, GuardRejection, Sandbox
 from majorana_sandbox import run as sandbox_run
 
 
@@ -29,11 +28,6 @@ class SandboxCandidateExecutor:
 
     _OUTPUT_LIMIT = 4_000
     _STATEVECTOR_BYTES_PER_AMPLITUDE = 32
-    _LOCAL_STATEVECTOR_QUBIT_CEILING = 25
-    #: The entry point the generator prompt promises for work above the local
-    #: lane: "a `run(backend)` entry point that returns the promised RESULT
-    #: dictionary when a compatible GPU/QPU backend is later supplied."
-    _ARTIFACT_ENTRY_POINT = "run"
 
     def __init__(self, sandbox: Sandbox) -> None:
         self._sandbox = sandbox
@@ -44,18 +38,16 @@ class SandboxCandidateExecutor:
             plan.artifact_contract is None
             or plan.artifact_contract.artifact_type is not ArtifactType.OTHER
         )
-        # Artifact-only delivery relaxes only the module-scope execution contract.
-        # Syntax and selected-framework boundaries remain mandatory even when the
-        # connected lane cannot execute the authored scale.
-        authoring_diagnostics = program.contract_diagnostics(circuit_expected=False)
-        if authoring_diagnostics:
+        diagnostics = program.contract_diagnostics(circuit_expected=circuit_expected)
+        if diagnostics:
             return self._failure(
                 candidate,
                 plan,
                 exit_code=2,
                 kind=ExecutionFailureKind.CODE_ERROR,
-                observation={"contract_diagnostics": authoring_diagnostics},
+                observation={"contract_diagnostics": diagnostics},
             )
+
         # A CIRCUIT reports nothing, so the trusted evidence is the only thing that
         # can become its result. Native collection is off by default here for
         # budget reasons (58118a1, "bounded budgets") and stays off for programs —
@@ -86,72 +78,21 @@ class SandboxCandidateExecutor:
             protected_result_path=f"/tmp/majorana-result-{uuid4().hex}.json",
             source_fingerprint=candidate.source_fingerprint,
         )
-        exceeds_statevector = (
-            circuit_expected and plan.qubits_estimate > self._LOCAL_STATEVECTOR_QUBIT_CEILING
-        )
-        exceeds_lane = plan.qubits_estimate > DEFAULT_QUBIT_CEILING
-        if exceeds_statevector or exceeds_lane:
-            undeliverable = self._undeliverable_artifact_diagnostics(program)
-            if undeliverable:
-                return self._failure(
-                    candidate,
-                    plan,
-                    exit_code=2,
-                    kind=ExecutionFailureKind.CODE_ERROR,
-                    observation={"contract_diagnostics": undeliverable},
-                )
-            # Keep the exact estimate while it remains a practical JSON integer.
-            # Beyond that, qubits plus the logarithmic model are the bounded,
-            # actionable representation; constructing an enormous decimal only to
-            # explain that it cannot fit would itself become a resource bug.
-            estimated_memory_mb = (
-                self._statevector_memory_mb(plan.qubits_estimate)
-                if circuit_expected and plan.qubits_estimate <= 10_000
-                else None
-            )
-            local_ceiling = (
-                self._LOCAL_STATEVECTOR_QUBIT_CEILING if circuit_expected else DEFAULT_QUBIT_CEILING
-            )
-            reason_code = (
-                "local_statevector_capacity_exceeded"
-                if exceeds_statevector
-                else "local_qubit_lane_capacity_exceeded"
-            )
+        estimated_memory_mb = self._statevector_memory_mb(plan.qubits_estimate)
+        if circuit_expected and estimated_memory_mb >= spec.memory_mb:
             return self._failure(
                 candidate,
                 plan,
                 exit_code=75,
                 kind=ExecutionFailureKind.RESOURCE_LIMIT,
                 observation={
-                    "evidence_error": reason_code,
-                    **(
-                        {"estimated_memory_mb": estimated_memory_mb}
-                        if estimated_memory_mb is not None
-                        else {}
-                    ),
+                    "evidence_error": "statevector_memory_preflight_exceeded",
+                    "estimated_memory_mb": estimated_memory_mb,
                     "memory_limit_mb": spec.memory_mb,
-                    **(
-                        {"estimate_model": "32_bytes_per_complex_amplitude"}
-                        if circuit_expected
-                        else {}
-                    ),
+                    "estimate_model": "32_bytes_per_complex_amplitude",
                     "qubits": plan.qubits_estimate,
-                    "local_execution_ceiling_qubits": local_ceiling,
-                    "execution_status": "not_run",
-                    "execution_reason_code": reason_code,
-                    "target_backend": "unassigned_external",
                     "sandbox_runs": 0,
                 },
-            )
-
-        diagnostics = program.contract_diagnostics(circuit_expected=circuit_expected)
-        if diagnostics:
-            return self._failure(
-                candidate,
-                plan,
-                exit_code=2,
-                kind=ExecutionFailureKind.CODE_ERROR,
-                observation={"contract_diagnostics": diagnostics},
             )
 
         try:
@@ -269,62 +210,6 @@ class SandboxCandidateExecutor:
     @classmethod
     def _statevector_memory_mb(cls, qubits: int) -> int:
         return (cls._STATEVECTOR_BYTES_PER_AMPLITUDE * (1 << qubits) + (1 << 20) - 1) // (1 << 20)
-
-    @classmethod
-    def _undeliverable_artifact_diagnostics(cls, program: FrameworkProgram) -> list[str]:
-        """Refuse to publish, unexecuted, source this product cannot pick up.
-
-        Artifact-only delivery skips the module-scope execution contract because
-        nothing here can execute the authored scale. That relaxation must not
-        extend to whether the source is *anything*: `roles.classify_source` calls
-        source binding neither FINAL_CIRCUIT nor RESULT `UNKNOWN` — "something
-        this product cannot execute", and roles.py is explicit that UNKNOWN is
-        never guessed into one of the others. Delivering one as a backend-ready
-        artifact would publish exactly the row that module exists to refuse to
-        invent: no interchange QASM can be lifted from it (the epilogue
-        serializes FINAL_CIRCUIT), so it cannot be exported, submitted, or
-        re-executed when a backend that fits it does connect.
-
-        The generator prompt offers two shapes above the local lane, and this
-        accepts either: bind FINAL_CIRCUIT "when constructing it is itself
-        bounded", or expose a `run(backend)` entry point returning the promised
-        RESULT. Requiring FINAL_CIRCUIT alone would be wrong for the case that
-        relaxation was written for — a circuit too large to build at import.
-
-        It runs before the preflight's early return and costs one `ast.parse`.
-        That ordering is the whole point: this is a static check, so the
-        candidates it catches are precisely the ones no execution will ever
-        catch instead, and the only other thing looking at them is a language
-        model's opinion in the static review.
-        """
-        if program.role is not ProgramRole.UNKNOWN:
-            return []
-        if cls._defines_entry_point(program.source, cls._ARTIFACT_ENTRY_POINT):
-            return []
-        return [
-            f"contract:{program.framework.value} source delivered without execution must bind "
-            f"FINAL_CIRCUIT or define a module-scope "
-            f"{cls._ARTIFACT_ENTRY_POINT}(backend) entry point"
-        ]
-
-    @staticmethod
-    def _defines_entry_point(source: str, name: str) -> bool:
-        """Whether the module defines `name` as a function at module scope.
-
-        Module scope only, unlike `roles._bound_names`: that one walks the whole
-        tree because a circuit built inside `if __name__ == "__main__":` really
-        is bound when the sandbox executes the module. Nothing executes this
-        source, so the question is what a caller can import and hand a backend —
-        and a `run` nested inside another function is not that.
-        """
-        try:
-            tree = ast.parse(source)
-        except SyntaxError:  # pragma: no cover - authoring diagnostics catch this first
-            return False
-        return any(
-            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
-            for node in tree.body
-        )
 
     @staticmethod
     def _classify_failure(exit_code: int, stderr: str) -> ExecutionFailureKind:

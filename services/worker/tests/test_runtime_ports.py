@@ -148,7 +148,7 @@ class MustNotCreateSandbox:
         raise AssertionError("memory preflight must run before sandbox creation")
 
 
-async def test_executor_marks_oversized_statevector_not_run_before_provider_creation():
+async def test_executor_rejects_oversized_statevector_before_provider_creation():
     output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
         _candidate(),
         _plan(qubits=27),
@@ -157,106 +157,6 @@ async def test_executor_marks_oversized_statevector_not_run_before_provider_crea
     assert output.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
     assert output.observation["estimated_memory_mb"] == 4096
     assert output.observation["sandbox_runs"] == 0
-    assert output.observation["execution_status"] == "not_run"
-    assert output.observation["execution_reason_code"] == ("local_statevector_capacity_exceeded")
-    assert output.observation["target_backend"] == "unassigned_external"
-
-
-async def test_industrial_scale_source_is_delivered_before_local_contract_checks():
-    """The module-scope FINAL_CIRCUIT contract is what artifact-only delivery relaxes.
-
-    A `run(backend)` entry point is the shape the generator prompt promises for a
-    circuit too large to build at import, and it is deliverable without ever
-    satisfying the contract the local lane would have checked by executing it.
-    """
-    source = (
-        "from qiskit import QuantumCircuit\n\n"
-        "def run(backend):\n"
-        "    return {'counts': backend.run(QuantumCircuit(480)).result()}\n"
-    )
-
-    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
-        _candidate(source),
-        _plan(qubits=480),
-    )
-
-    assert output.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
-    assert output.observation["qubits"] == 480
-    assert output.observation["execution_status"] == "not_run"
-    assert output.observation["sandbox_runs"] == 0
-
-
-async def test_artifact_only_delivery_refuses_source_with_no_entry_point():
-    """UNKNOWN source is not published as a backend-ready artifact.
-
-    `roles.classify_source` calls source that binds neither FINAL_CIRCUIT nor
-    RESULT "something this product cannot execute". Nothing can be lifted from
-    it, so an artifact holding it could never be exported, submitted, or run
-    when a backend that fits it connects. The check is pure AST and must run
-    BEFORE the resource preflight returns not_run — after it, the candidates it
-    catches are exactly the ones no execution will catch instead.
-    """
-    source = "from qiskit import QuantumCircuit\n\ndef build():\n    return QuantumCircuit(480)\n"
-
-    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
-        _candidate(source),
-        _plan(qubits=480),
-    )
-
-    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR
-    assert output.observation["contract_diagnostics"] == [
-        "contract:qiskit source delivered without execution must bind FINAL_CIRCUIT "
-        "or define a module-scope run(backend) entry point"
-    ]
-    # Routed to the repair loop, not published: a not_run observation here is
-    # what would make it artifact-only eligible downstream.
-    assert "execution_status" not in output.observation
-
-
-async def test_artifact_only_delivery_accepts_a_bound_final_circuit():
-    source = "from qiskit import QuantumCircuit\n\nFINAL_CIRCUIT = QuantumCircuit(480)\n"
-
-    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
-        _candidate(source),
-        _plan(qubits=480),
-    )
-
-    assert output.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
-    assert output.observation["execution_status"] == "not_run"
-
-
-async def test_a_nested_run_is_not_an_entry_point():
-    """Module scope only — a `run` a caller cannot reach is not one."""
-    source = (
-        "from qiskit import QuantumCircuit\n\n"
-        "def build():\n"
-        "    def run(backend):\n"
-        "        return {}\n"
-        "    return run\n"
-    )
-
-    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
-        _candidate(source),
-        _plan(qubits=480),
-    )
-
-    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR
-    assert "execution_status" not in output.observation
-
-
-async def test_artifact_only_source_still_obeys_selected_framework_boundary():
-    source = "import cirq\n\ndef build():\n    return cirq.Circuit()\n"
-
-    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
-        _candidate(source),
-        _plan(qubits=480),
-    )
-
-    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR
-    assert output.observation["contract_diagnostics"] == [
-        "contract:qiskit source imports foreign quantum framework `cirq`"
-    ]
-    assert "execution_status" not in output.observation
 
 
 async def test_converter_uses_only_trusted_observation():

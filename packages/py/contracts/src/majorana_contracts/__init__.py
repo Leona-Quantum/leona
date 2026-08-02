@@ -194,10 +194,7 @@ from .lifecycle import (
 # optimization, Pauli dynamics, Lindblad evolution, phase estimation, and dense
 # linear systems, plus explicit RESULT-key binding for exact diagonalization.
 # These additions strengthen existing evidence paths without a new DB enum.
-# 2.10.0: Plan.qubits_estimate is no longer capped by the local sandbox lane;
-# execution providers enforce their own limits so larger unexecuted artifacts can
-# be authored without pretending that they ran.
-CONTRACTS_VERSION = "2.10.0"
+CONTRACTS_VERSION = "2.9.0"
 
 __all__ = [
     "CONTRACTS_VERSION",

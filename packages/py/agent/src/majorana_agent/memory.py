@@ -234,27 +234,10 @@ class MemoryAgentStore:
             for item in self._candidates[owner]
             if item.candidate_id == materialization.candidate_id
         )
-        execution = self._executions.get((owner, materialization.candidate_id))
         reviews = self._semantic_reviews[(owner, materialization.candidate_id)]
         review = max(reviews, key=lambda item: item.attempt_seq) if reviews else None
-        if execution is None:
-            raise ValueError("materialization requires execution evidence")
-        if (
-            execution.candidate_id != candidate.candidate_id
-            or execution.source_fingerprint != candidate.source_fingerprint
-        ):
-            raise ValueError("materialization execution evidence does not match candidate")
-        if materialization.execution_status == "not_run":
-            if not execution.was_not_run:
-                raise ValueError(
-                    "unexecuted materialization requires trusted not-run preflight evidence"
-                )
-        else:
-            if not execution.succeeded:
-                raise ValueError("materialization requires successful execution")
-            if review is None or not review.is_deliverable():
-                raise ValueError("materialization requires a review whose evidence is deliverable")
-            review.assert_binding(candidate, execution)
+        if review is None or not review.is_deliverable():
+            raise ValueError("materialization requires a review whose evidence is deliverable")
         if candidate.source_fingerprint != materialization.source_fingerprint:
             raise ValueError("materialization fingerprint does not match candidate")
         existing = next(

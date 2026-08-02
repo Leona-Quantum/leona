@@ -34,10 +34,9 @@ uv run --package majorana-evals python -m majorana_evals.intent_eval \
   --out /tmp/majorana-intent-holdout-procedural.json
 ```
 
-The generated assignment pairs distinguish complete small instances from missing-data
-requests and from complete but explicitly oversized one-qubit-per-pair encodings. The
-oversized cases route to target-ready artifact generation rather than claiming a local
-statevector result. The seed and generator version are recorded in the report note.
+The generated assignment pairs deliberately distinguish complete small instances
+from missing-data requests and from complete but explicitly oversized one-qubit-per-pair
+encodings. The seed and generator version are recorded in the report note.
 
 This eval intentionally runs sequentially to avoid a provider rate spike. It does
 not use a database or sandbox and does not replace the end-to-end corpus.
