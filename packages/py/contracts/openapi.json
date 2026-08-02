@@ -2106,7 +2106,7 @@
             "type": "string"
           },
           "expected_output_keys": {
-            "description": "Keys the authored code must return when a compatible backend executes it",
+            "description": "Keys the executed code prints in its result dict",
             "items": {
               "type": "string"
             },
@@ -2132,7 +2132,8 @@
             "type": "string"
           },
           "qubits_estimate": {
-            "description": "Logical qubits required by the authored artifact. Execution providers apply their own capability ceilings; this estimate must not be silently shrunk to fit the local simulator.",
+            "description": "Planned qubit count; 27 is the default sandbox lane ceiling",
+            "maximum": 27,
             "minimum": 1,
             "title": "Qubits Estimate",
             "type": "integer"
@@ -5595,7 +5596,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.10.0"
+    "version": "2.9.0"
   },
   "openapi": "3.1.0",
   "paths": {}

@@ -413,10 +413,7 @@ class SimplePlan(_SimplePlanModel):
     problem_summary: str = Field(min_length=5)
     algorithm_rationale: str = Field(min_length=5)
     parameters: SimplePlanParameters = Field(default_factory=SimplePlanParameters)
-    # Authoring is backend-independent.  The execution adapter, not the planner,
-    # owns local GPU/QPU/simulator capacity and may deliver this as an unexecuted
-    # artifact when no connected backend can run it.
-    qubits_estimate: int = Field(ge=1)
+    qubits_estimate: int = Field(ge=1, le=27)
     # The default sandbox has a hard 120 s ceiling. Reserving 30 s for provider
     # setup/observation makes every Plan executable under the runtime it declares.
     expected_runtime_sec: int = Field(ge=1, le=90)

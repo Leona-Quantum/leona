@@ -184,27 +184,6 @@ class ExecutionEvidence(_Record):
             ExecutionFailureKind.RESOURCE_LIMIT,
         }
 
-    @property
-    def was_not_run(self) -> bool:
-        """Whether trusted preflight skipped execution for backend capacity.
-
-        A generic resource failure is not enough: code that started and exhausted
-        memory must still fail.  Artifact-only delivery is reserved for a provider-
-        authored preflight decision that records zero sandbox runs.
-        """
-
-        reason_code = self.observation.get("execution_reason_code")
-        return (
-            self.exit_code != 0
-            and self.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
-            and self.duration_ms == 0
-            and not self.result
-            and self.observation.get("execution_status") == "not_run"
-            and self.observation.get("sandbox_runs") == 0
-            and isinstance(reason_code, str)
-            and bool(reason_code.strip())
-        )
-
     @model_validator(mode="after")
     def failure_kind_matches_exit(self) -> "ExecutionEvidence":
         if self.exit_code == 0 and self.failure_kind is not None:
@@ -332,4 +311,3 @@ class MaterializedArtifact(_Record):
     candidate_id: UUID
     framework: Framework
     source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
-    execution_status: Literal["executed", "not_run"] = "executed"

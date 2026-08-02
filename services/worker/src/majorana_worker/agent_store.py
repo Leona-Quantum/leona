@@ -359,24 +359,11 @@ class RepoAgentStore:
         candidate = self._candidate(row)
         execution = await self.execution_for(candidate.run_id, candidate.candidate_id)
         review = await self.latest_semantic_review(candidate.run_id, candidate.candidate_id)
-        if execution is None:
-            raise ValueError("materialization requires execution evidence")
-        if (
-            execution.candidate_id != candidate.candidate_id
-            or execution.source_fingerprint != candidate.source_fingerprint
-        ):
-            raise ValueError("materialization execution evidence does not match candidate")
-        if materialization.execution_status == "not_run":
-            if not execution.was_not_run:
-                raise ValueError(
-                    "unexecuted materialization requires trusted not-run preflight evidence"
-                )
-        else:
-            if not execution.succeeded:
-                raise ValueError("materialization requires successful execution")
-            if review is None or not review.is_deliverable():
-                raise ValueError("materialization requires a review whose evidence is deliverable")
-            review.assert_binding(candidate, execution)
+        if execution is None or not execution.succeeded:
+            raise ValueError("materialization requires successful execution")
+        if review is None or not review.is_deliverable():
+            raise ValueError("materialization requires a review whose evidence is deliverable")
+        review.assert_binding(candidate, execution)
         if candidate.source_fingerprint != materialization.source_fingerprint:
             raise ValueError("materialization fingerprint does not match candidate")
         await agent_repo.set_materialization(
