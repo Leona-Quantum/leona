@@ -1,0 +1,24 @@
+id: holdout-v6-01
+category: "Holdout v6 — Exact four-bit phase estimation"
+split: holdout
+difficulty: advanced
+workload: educational
+prompt: >-
+  Build a Qiskit phase-estimation circuit with four counting qubits and one target
+  qubit prepared in |1>. The unitary is U=diag(1,exp(2*pi*i*5/16)); implement the
+  controlled powers and an inverse QFT, use 4096 shots and deterministic simulator
+  and transpiler seeds, and decode Qiskit bit order explicitly. Return top-level RESULT
+  keys phase_integer, phase_estimate, peak_probability, and counts. Bind the executed
+  phase-estimation circuit to FINAL_CIRCUIT; do not replace its sampled estimate by the
+  known phase.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["phase_integer", "phase_estimate", "peak_probability", "counts"]
+  expected_top_bitstring: "0101"
+  expected_values:
+    phase_integer: 5.0
+    phase_estimate: 0.3125
+    peak_probability: 1.0
+  expected_value_tolerance: 0.001
+  saves_artifact: true

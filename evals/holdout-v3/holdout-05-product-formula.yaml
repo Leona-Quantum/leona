@@ -1,0 +1,22 @@
+id: holdout-v3-05
+category: "Holdout v3 — Product-formula error"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Starting from |0>, simulate H=X+0.7*Z to t=0.9 in Qiskit using the first-order
+  product [exp(-i*0.7*Z*dt) exp(-i*X*dt)] repeated r=8 times, with the rightmost
+  exponential applied first. Independently construct the exact matrix exponential.
+  Return the squared state fidelity between product-formula and exact states as the
+  top-level numeric RESULT key state_fidelity and the product-formula state's Z
+  expectation as trotter_z_expectation. Bind the eight-step product-formula circuit to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["state_fidelity", "trotter_z_expectation"]
+  expected_values:
+    state_fidelity: 0.9985588422123336
+    trotter_z_expectation: -0.06742289542264215
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

@@ -1,0 +1,24 @@
+id: holdout-v14-03
+category: "Holdout v14 — Practical weighted MaxCut QAOA"
+split: holdout
+difficulty: advanced
+workload: practical
+prompt: >-
+  Solve weighted MaxCut on seven binary vertices with edges
+  (0,1,3.0), (0,2,2.0), (1,2,4.0), (1,3,1.5), (2,4,2.5),
+  (3,4,3.5), (3,5,2.0), (4,6,4.5), (5,6,1.0), (0,6,2.2),
+  and (2,5,1.7). Build and optimize a Qiskit QAOA circuit with deterministic
+  seeds and at least 4096 shots. Independently enumerate all 128 partitions.
+  Return top-level RESULT keys sampled_cut_weight, enumerated_cut_weight,
+  chosen_partition, and counts. Bind the optimized measured QAOA circuit to
+  FINAL_CIRCUIT. sampled_cut_weight and chosen_partition must come from the same
+  bitstring actually present in counts, not from enumeration.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["sampled_cut_weight", "enumerated_cut_weight", "chosen_partition", "counts"]
+  expected_values:
+    sampled_cut_weight: 24.9
+    enumerated_cut_weight: 24.9
+  expected_value_tolerance: 0.0000001
+  saves_artifact: true

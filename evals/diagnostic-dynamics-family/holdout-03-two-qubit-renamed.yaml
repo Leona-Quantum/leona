@@ -1,0 +1,21 @@
+id: diagnostic-dynamics-family-03
+category: "Diagnostic — renamed two-qubit exact dynamics"
+split: holdout
+difficulty: intermediate
+workload: scientific
+prompt: >-
+  With q0 leftmost, exactly evolve |01> to t=1.13 under
+  H=0.31 Y0 +0.22 X0 Z1 -0.17 X1 +0.08 Z0 Z1 with a matrix exponential.
+  Return the expectation of 0.50 X0 -0.25 Y1 +0.10 Z0 X1 as top-level numeric
+  RESULT key rotated_observable and return the squared overlap with |01> as
+  survival_mass. Bind a Qiskit circuit that prepares |01> and applies the same exact
+  unitary to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["rotated_observable", "survival_mass"]
+  expected_values:
+    rotated_observable: 0.4184634483473595
+    survival_mass: 0.7963317010493219
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

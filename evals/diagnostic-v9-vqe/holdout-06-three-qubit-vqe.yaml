@@ -1,0 +1,23 @@
+id: diagnostic-v9-vqe
+category: "Diagnostic — selected VQE reference context"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Estimate the ground-state energy of the explicit three-qubit Hamiltonian
+  H=-0.23 III +0.44 ZII -0.31 IZI +0.27 IIZ +0.18 XXI -0.12 IYY
+  +0.11 XIX -0.09 ZZI. Use a nontrivial parameterized Qiskit ansatz, exact
+  statevector expectation values, a robust optimizer, and at least four deterministic
+  starting points. Independently diagonalize the same written Hamiltonian. Return
+  top-level numeric RESULT keys variational_energy, exact_energy, and energy_error.
+  Bind the best optimized ansatz circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["variational_energy", "exact_energy", "energy_error"]
+  expected_values:
+    variational_energy: -1.209363599472168
+    exact_energy: -1.209363599472168
+    energy_error: 0.0
+  expected_value_tolerance: 0.00001
+  saves_artifact: true

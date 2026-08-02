@@ -1,0 +1,24 @@
+id: holdout-v1-03
+category: "Holdout — Facility selection"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  A company must open exactly two of six service hubs. Binary xi indicates whether hub
+  i is opened. Minimize
+  4*x0 + 2*x1 + 5*x2 + 3*x3 + 6*x4 + x5
+  - 2*x0*x3 - 3*x1*x5 - x2*x4 + 10*(x0+x1+x2+x3+x4+x5-2)^2.
+  Implement a Qiskit QAOA circuit with at least p=2 and deterministic seeds, evaluate
+  its sampled bitstrings using that exact objective, and independently enumerate all
+  64 assignments. Return top-level numeric RESULT keys qaoa_best_cost and
+  exact_minimum_cost plus counts, and bind the QAOA circuit to FINAL_CIRCUIT. Do not
+  replace QAOA sampling with the enumerated solution.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_cost", "exact_minimum_cost", "counts"]
+  expected_values:
+    qaoa_best_cost: 0.0
+    exact_minimum_cost: 0.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

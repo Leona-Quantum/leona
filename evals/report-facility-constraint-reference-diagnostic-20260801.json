@@ -1,0 +1,114 @@
+{
+  "total": 1,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "pass_rate_ci95_low": 0.0,
+  "pass_rate_ci95_high": 0.7934506856227626,
+  "unique_cases": 1,
+  "stable_passed_cases": 0,
+  "repetitions": 1,
+  "product_accepted": 1,
+  "oracle_cases": 1,
+  "oracle_passed": 0,
+  "false_positives": 1,
+  "false_negatives": 0,
+  "first_candidate_passed": 0,
+  "candidate_revisions": 6,
+  "mean_candidates": 6.0,
+  "recorded_llm_calls": 16,
+  "recorded_input_tokens": 109593,
+  "recorded_output_tokens": 15030,
+  "cases": [
+    {
+      "id": "holdout-v1-03",
+      "category": "Holdout — Facility selection",
+      "split": "holdout",
+      "difficulty": "intermediate",
+      "workload": "practical",
+      "trial": 1,
+      "passed": false,
+      "run_status": "succeeded",
+      "terminal_reason": "ai_review_aligned_with_reference_check",
+      "verifier_decision": "inconclusive",
+      "export_status": "lossless",
+      "saved": true,
+      "product_accepted": true,
+      "oracle_passed": false,
+      "false_positive": true,
+      "false_negative": false,
+      "first_candidate_passed": false,
+      "observed_values": {
+        "qaoa_best_cost": 40.0,
+        "exact_minimum_cost": 40.0
+      },
+      "observed_top_bitstring": "000010",
+      "reasons": [
+        "RESULT field 'qaoa_best_cost' 40.0 is outside expected 0.0 ± 0.0",
+        "RESULT field 'exact_minimum_cost' 40.0 is outside expected 0.0 ± 0.0"
+      ],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": true,
+        "candidate_id": "6b451726-c623-56fd-a7d2-b544eb3eba71",
+        "execution_id": "dd76058f-ec0a-508b-8647-0e7c58335998",
+        "result_evidence_error": null,
+        "candidates_considered": 6,
+        "plans_produced": 3,
+        "sandbox_attempts": 6,
+        "semantic_review_attempts": 6,
+        "recorded_llm_calls": 16,
+        "recorded_input_tokens": 109593,
+        "recorded_output_tokens": 15030
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "holdout-v1-03",
+      "category": "Holdout — Facility selection",
+      "split": "holdout",
+      "difficulty": "intermediate",
+      "workload": "practical",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "product_accepted": 1,
+      "oracle_trials": 1,
+      "oracle_passed": 0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 6.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "intermediate",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 6.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "practical",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 6.0
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local, repetitions=1)"
+}

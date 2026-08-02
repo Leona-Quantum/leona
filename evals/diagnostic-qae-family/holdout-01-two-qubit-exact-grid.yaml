@@ -1,0 +1,27 @@
+id: diagnostic-qae-family-01
+category: "Diagnostic — two-qubit exact-grid amplitude estimation"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Implement standard quantum amplitude estimation in Qiskit. On two system qubits,
+  prepare q0 with RY(5*pi/16), prepare q1 with H, then apply CZ(q0,q1). Mark the
+  computational-basis states with q0=1 as good, namely Qiskit integer indices 1 and 3.
+  Use five evaluation qubits, explicit controlled powers of the Grover iterate, an
+  inverse QFT, and exact statevector marginal probabilities. Fold the symmetric phase
+  pair before mapping it to an amplitude. Return top-level RESULT keys
+  folded_phase_bin, estimated_good_weight, symmetric_peak_mass, and
+  evaluation_probabilities. Bind the complete estimation circuit to FINAL_CIRCUIT;
+  derive every scalar from its evaluation-register distribution rather than returning
+  the prepared good probability directly.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys:
+    ["folded_phase_bin", "estimated_good_weight", "symmetric_peak_mass", "evaluation_probabilities"]
+  expected_values:
+    folded_phase_bin: 5.0
+    estimated_good_weight: 0.22221488349019888
+    symmetric_peak_mass: 1.0
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

@@ -1,0 +1,24 @@
+id: holdout-v14-02
+category: "Holdout v14 — Bernstein-Vazirani decoding"
+split: holdout
+difficulty: intermediate
+workload: educational
+prompt: >-
+  Implement Bernstein-Vazirani in Qiskit for the six-bit secret 101101. Use six
+  query qubits plus one phase-kickback ancilla, construct the oracle from CNOTs,
+  measure the query register with 2048 shots and deterministic simulator and
+  transpiler seeds, and decode the secret from the measured counts with Qiskit's
+  count-key order made explicit in code. Return top-level RESULT keys
+  recovered_secret, success_probability, and counts. Bind the executed algorithm
+  circuit to FINAL_CIRCUIT; derive recovered_secret from counts rather than copying
+  the input string.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["recovered_secret", "success_probability", "counts"]
+  expected_values:
+    success_probability: 1.0
+  expected_result_subset:
+    recovered_secret: "101101"
+  expected_value_tolerance: 0.001
+  saves_artifact: true

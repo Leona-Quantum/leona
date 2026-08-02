@@ -1,0 +1,114 @@
+{
+  "total": 1,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "pass_rate_ci95_low": 0.0,
+  "pass_rate_ci95_high": 0.7934506856227626,
+  "unique_cases": 1,
+  "stable_passed_cases": 0,
+  "repetitions": 1,
+  "product_accepted": 1,
+  "oracle_cases": 1,
+  "oracle_passed": 0,
+  "false_positives": 1,
+  "false_negatives": 0,
+  "first_candidate_passed": 0,
+  "candidate_revisions": 1,
+  "mean_candidates": 1.0,
+  "recorded_llm_calls": 4,
+  "recorded_input_tokens": 17528,
+  "recorded_output_tokens": 2657,
+  "cases": [
+    {
+      "id": "holdout-v5-07",
+      "category": "Holdout v5 — Lindblad amplitude damping and dephasing",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trial": 1,
+      "passed": false,
+      "run_status": "succeeded",
+      "terminal_reason": "ai_review_aligned",
+      "verifier_decision": "inconclusive",
+      "export_status": "lossless",
+      "saved": true,
+      "product_accepted": true,
+      "oracle_passed": false,
+      "false_positive": true,
+      "false_negative": false,
+      "first_candidate_passed": false,
+      "observed_values": {
+        "excited_population": 0.7987378879831819,
+        "coherence_real": 0.24459605589816577,
+        "purity": 0.7981431125551814
+      },
+      "observed_top_bitstring": null,
+      "reasons": [
+        "RESULT field 'excited_population' 0.7987378879831819 is outside expected 0.201262112016818 ± 1e-06"
+      ],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": true,
+        "candidate_id": "82a38e4c-dbd1-5716-a59e-61eca2abd9b1",
+        "execution_id": "77265d46-1e1e-511e-a59a-771746e6191d",
+        "result_evidence_error": null,
+        "candidates_considered": 1,
+        "plans_produced": 1,
+        "sandbox_attempts": 1,
+        "semantic_review_attempts": 1,
+        "recorded_llm_calls": 4,
+        "recorded_input_tokens": 17528,
+        "recorded_output_tokens": 2657
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "holdout-v5-07",
+      "category": "Holdout v5 — Lindblad amplitude damping and dephasing",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "product_accepted": 1,
+      "oracle_trials": 1,
+      "oracle_passed": 0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 1.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "research",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 1.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "scientific",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 1,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 1.0
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local, repetitions=1)"
+}

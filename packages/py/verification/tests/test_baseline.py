@@ -15,6 +15,7 @@ from majorana_verification import (
     BaselineProblemError,
     objective_values,
     optimal_objective,
+    reference_problems_equivalent,
     verify_brute_force,
 )
 
@@ -53,6 +54,74 @@ def test_the_qubo_minimum_matches_the_hand_enumeration():
     assert set(np.round(objective_values("qubo", 2, _QUBO), 12)) == {0.0, 1.0, -2.0, 2.0}
 
 
+def test_qubo_constant_offset_is_preserved_in_the_reported_objective():
+    """Minimize 10*(x0+x1-1)^2. Its expanded QUBO is
+    10 - 10*x0 - 10*x1 + 20*x0*x1, with true minimum zero at 01 or 10.
+    Omitting the constant reproduces the live false rejection: it reports -10.
+    """
+
+    terms = [(0, 0, -10.0), (1, 1, -10.0), (0, 1, 20.0)]
+    assert optimal_objective("qubo", 2, terms) == pytest.approx(-10.0)
+    assert optimal_objective("qubo", 2, terms, offset=10.0) == pytest.approx(0.0)
+    assert verify_brute_force("qubo", 2, terms, 0.0, offset=10.0).result is (
+        VerificationResultKind.PASS
+    )
+
+
+def test_constrained_maximization_finds_the_knapsack_optimum_in_metric_units():
+    """Capacity 7, values [8,5,6,4,7,3], weights [4,2,3,2,5,1].
+    Items 0,1,5 weigh 7 and score 16; exhaustive hand ordering shows no feasible
+    score above 16. The objective stays a positive maximization metric.
+    """
+
+    values = [8.0, 5.0, 6.0, 4.0, 7.0, 3.0]
+    weights = [4.0, 2.0, 3.0, 2.0, 5.0, 1.0]
+    terms = [(i, i, value) for i, value in enumerate(values)]
+    constraints = [([(i, weight) for i, weight in enumerate(weights)], "le", 7.0)]
+
+    assert optimal_objective(
+        "qubo",
+        6,
+        terms,
+        objective="maximize",
+        constraints=constraints,
+    ) == pytest.approx(16.0)
+    passed = verify_brute_force(
+        "qubo",
+        6,
+        terms,
+        16.0,
+        objective="maximize",
+        constraints=constraints,
+    )
+    suboptimal = verify_brute_force(
+        "qubo",
+        6,
+        terms,
+        15.0,
+        objective="maximize",
+        constraints=constraints,
+    )
+    assert passed.result is VerificationResultKind.PASS
+    assert passed.details["protocol"]["feasible_assignments"] < 64
+    assert suboptimal.result is VerificationResultKind.FAIL
+    assert "SUBOPTIMAL" in suboptimal.details["disagreement"]
+
+
+def test_infeasible_constraints_are_a_plan_defect():
+    outcome = verify_brute_force(
+        "qubo",
+        1,
+        [(0, 0, 1.0)],
+        0.0,
+        constraints=[([(0, 1.0)], "ge", 2.0)],
+    )
+
+    assert outcome.result is VerificationResultKind.FAIL
+    assert outcome.details["fault"] == "plan"
+    assert "no feasible assignment" in outcome.details["reason"]
+
+
 def test_a_qubo_diagonal_term_is_linear_not_squared():
     """x**2 == x for binary variables; a solver that squared the diagonal would
     agree on 0/1 anyway, so pin the semantics through a two-sided instance: the
@@ -63,6 +132,67 @@ def test_a_qubo_diagonal_term_is_linear_not_squared():
 def test_duplicate_edges_add_their_weights():
     doubled = [(0, 1, 1.0), (0, 1, 1.0), (1, 0, 1.0)]
     assert optimal_objective("maxcut", 2, doubled) == pytest.approx(3.0)
+
+
+def test_reference_consensus_compares_every_assignment_across_equivalent_encodings():
+    maxcut = {
+        "kind": "maxcut",
+        "num_variables": 2,
+        "terms": [(0, 1, 1.0)],
+        "objective": "maximize",
+    }
+    business_qubo = {
+        "kind": "qubo",
+        "num_variables": 2,
+        "terms": [(0, 0, 1.0), (1, 1, 1.0), (0, 1, -2.0)],
+        "objective": "maximize",
+    }
+
+    equivalent, details = reference_problems_equivalent(maxcut, business_qubo)
+
+    assert equivalent is True
+    assert details["reason"] == "equivalent_on_all_assignments"
+    assert details["assignments_enumerated"] == 4
+
+
+def test_reference_consensus_rejects_distinct_objectives_that_share_one_optimum():
+    x0 = {
+        "kind": "qubo",
+        "num_variables": 2,
+        "terms": [(0, 0, 1.0)],
+        "objective": "maximize",
+    }
+    x1 = {
+        "kind": "qubo",
+        "num_variables": 2,
+        "terms": [(1, 1, 1.0)],
+        "objective": "maximize",
+    }
+    assert optimal_objective(**x0) == optimal_objective(**x1) == 1.0
+
+    equivalent, details = reference_problems_equivalent(x0, x1)
+
+    assert equivalent is False
+    assert details["reason"] == "objective_value_mismatch"
+
+
+def test_reference_consensus_rejects_distinct_feasible_sets_that_share_one_optimum():
+    unconstrained = {
+        "kind": "qubo",
+        "num_variables": 2,
+        "terms": [(0, 0, 1.0)],
+        "objective": "maximize",
+    }
+    constrained = {
+        **unconstrained,
+        "constraints": [([(0, 1.0)], "eq", 1.0)],
+    }
+    assert optimal_objective(**unconstrained) == optimal_objective(**constrained) == 1.0
+
+    equivalent, details = reference_problems_equivalent(unconstrained, constrained)
+
+    assert equivalent is False
+    assert details["reason"] == "feasible_set_mismatch"
 
 
 def test_an_isolated_variable_changes_nothing_but_the_enumeration_size():

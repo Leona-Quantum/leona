@@ -1,0 +1,21 @@
+id: diagnostic-dynamics-family-01
+category: "Diagnostic — three-qubit complex indexed-Pauli dynamics"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, exactly evolve |110> to t=0.42 under
+  H=0.23 Y0 -0.11 X1 Z2 +0.17 Z0 Y2 by explicit matrix exponential. Return the
+  expectation of 0.40 X0 Y1 +0.20 Z2 as top-level numeric RESULT key
+  mixed_pauli_signal and the squared overlap with |110> as basis_return_weight.
+  Bind a Qiskit circuit that prepares the written basis state and applies the exact
+  unitary to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["mixed_pauli_signal", "basis_return_weight"]
+  expected_values:
+    mixed_pauli_signal: 0.20503414905900022
+    basis_return_weight: 0.9835338666014788
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

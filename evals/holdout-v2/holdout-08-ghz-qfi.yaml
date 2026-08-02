@@ -1,0 +1,22 @@
+id: holdout-v2-08
+category: "Holdout v2 — GHZ quantum Fisher information"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Prepare a four-qubit GHZ state in Qiskit and encode theta=0.37 with
+  exp(-i*theta*G), where G=(Z0+Z1+Z2+Z3)/2. Compute the pure-state quantum Fisher
+  information as 4*Var(G). Independently estimate it from the squared fidelity between
+  states at theta and theta+delta with delta=0.001 using
+  4*(1-fidelity)/delta^2. Return top-level numeric RESULT keys analytic_qfi and
+  finite_difference_qfi, and bind the parameter-encoded circuit at theta=0.37 to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["analytic_qfi", "finite_difference_qfi"]
+  expected_values:
+    analytic_qfi: 16.0
+    finite_difference_qfi: 15.999978666678043
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

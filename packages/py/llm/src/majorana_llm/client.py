@@ -9,6 +9,7 @@ enforce quotas.
 from __future__ import annotations
 
 import json
+import math
 from collections.abc import Awaitable, Callable
 from typing import Any, Literal, Protocol
 
@@ -76,6 +77,26 @@ class LLMProviderError(RuntimeError):
 
 
 DeltaHandler = Callable[[str, str], Awaitable[None]]
+
+_DEFAULT_PROVIDER_TIMEOUT_SECONDS = 120.0
+_MAX_PROVIDER_TIMEOUT_SECONDS = 600.0
+
+
+def provider_timeout_seconds() -> float:
+    """Bound one provider attempt so a half-open response cannot stall a run forever."""
+
+    import os
+
+    raw = os.environ.get("MAJORANA_LLM_TIMEOUT_SECONDS")
+    if raw is None:
+        return _DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    if not math.isfinite(value) or not 1.0 <= value <= _MAX_PROVIDER_TIMEOUT_SECONDS:
+        return _DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    return value
 
 
 class LLMMessage(BaseModel):
@@ -246,7 +267,12 @@ class OpenAICompatibleLLM:
         try:
             # RetryingLLM below is the one retry authority. Disabling the SDK's
             # implicit retries prevents 3x3 request amplification on one 429.
-            client = AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0)
+            client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=0,
+                timeout=provider_timeout_seconds(),
+            )
             if on_delta is None:
                 completion = await client.chat.completions.create(
                     model=request.model,
@@ -455,7 +481,11 @@ class AnthropicLLM:
         max_tokens = request.max_tokens or _ANTHROPIC_DEFAULT_MAX_TOKENS
         messages = request_messages(request)
         try:
-            client = AsyncAnthropic(api_key=api_key)
+            client = AsyncAnthropic(
+                api_key=api_key,
+                max_retries=0,
+                timeout=provider_timeout_seconds(),
+            )
             if on_delta is None:
                 message = await client.messages.create(
                     model=request.model,

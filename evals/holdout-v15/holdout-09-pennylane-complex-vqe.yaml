@@ -1,0 +1,25 @@
+id: holdout-v15-09
+category: "Holdout v15 — Complex four-qubit PennyLane VQE"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Use PennyLane with an exact statevector device and a bounded scipy optimizer to run
+  at least four deterministic starts of an entangling four-qubit VQE for
+  H=-0.9 ZIII -0.6 IZII -0.4 IIZI -0.2 IIIZ +0.3 XXII +0.25 IXXI
+  +0.2 IIXX +0.18 YXII -0.12 IYXI, with the leftmost Pauli letter acting on
+  PennyLane wire 0. Include both Y- and Z-capable single-qubit rotations so the ansatz
+  can represent complex states. Independently diagonalize the 16-by-16 Hamiltonian.
+  Return top-level numeric RESULT keys variational_energy, exact_energy, and
+  variational_gap. Bind an equivalent optimized PennyLane QuantumTape or
+  QuantumScript to FINAL_CIRCUIT; do not prepare the exact eigenvector.
+framework: pennylane
+expect:
+  terminal_reason: null
+  output_keys: ["variational_energy", "exact_energy", "variational_gap"]
+  expected_values:
+    variational_energy: -2.212747039443476
+    exact_energy: -2.212747039443476
+    variational_gap: 0.0
+  expected_value_tolerance: 0.02
+  saves_artifact: true

@@ -1,0 +1,23 @@
+id: holdout-v7-02
+category: "Holdout v7 — Independent two-qubit VQE"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Estimate the ground-state energy of the explicit two-qubit Hamiltonian
+  H=-0.21 II +0.48 ZI -0.35 IZ +0.22 XX -0.14 YY +0.08 ZZ. Use a nontrivial
+  parameterized Qiskit ansatz, an exact statevector expectation objective, a robust
+  optimizer, and at least three deterministic initial parameter vectors. Diagonalize
+  the same written Hamiltonian independently as a classical baseline. Return top-level
+  numeric RESULT keys variational_energy, exact_energy, and energy_error, and bind the
+  best variational circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["variational_energy", "exact_energy", "energy_error"]
+  expected_values:
+    variational_energy: -1.1238465086573195
+    exact_energy: -1.1238465086573195
+    energy_error: 0.0
+  expected_value_tolerance: 0.00001
+  saves_artifact: true

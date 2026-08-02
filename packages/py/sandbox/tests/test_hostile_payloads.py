@@ -151,6 +151,72 @@ async def test_protected_result_is_bounded_before_provider_read(tmp_path):
     }
 
 
+async def test_nonfinite_result_is_rejected_before_jsonb_persistence(tmp_path):
+    """Python json emits Infinity by default, but Postgres JSONB rejects it."""
+
+    result_path = tmp_path / "protected-result.json"
+    fingerprint = "c" * 64
+    result = await run(
+        LocalSubprocessSandbox(),
+        ExecutionSpec(
+            code='RESULT = {"amplitude_ratio": 1e309}',
+            trusted_observer='_majorana_observation["observed"] = True',
+            protected_result_path=str(result_path),
+            source_fingerprint=fingerprint,
+        ),
+    )
+
+    assert result.ok
+    assert result.protected_result == {
+        "source_fingerprint": fingerprint,
+        "result_error": "not_json_serializable",
+        "observed": True,
+    }
+
+
+async def test_a_nonfinite_value_in_the_OBSERVATION_drops_one_key_not_the_run(tmp_path):
+    """The other half of the pair above, and the half that could kill the process.
+
+    `RESULT` is checked with `allow_nan=False` before it is recorded, so a non-finite
+    value there is caught. The OBSERVATION is not: the trusted observer copies numbers
+    straight out of the candidate's namespace — `_float(_amp.real)` for every native
+    statevector amplitude — and a diverged optimizer makes those NaN.
+
+    The recovery block below the serialization failure kept such a key, because its
+    per-key probe omitted `allow_nan=False` while the write that ends the program
+    requires it. That write sits outside every handler, so the process died on it:
+    measured as `ok=False`, `protected_result=None` and NO sidecar on disk at all —
+    the candidate's own serializable RESULT thrown away along with it. The point of
+    this block is that one bad value must not cost every other one.
+    """
+
+    for literal in ("float('inf')", "float('nan')"):
+        result_path = tmp_path / f"protected-{literal}.json"
+        fingerprint = "e" * 64
+        result = await run(
+            LocalSubprocessSandbox(),
+            ExecutionSpec(
+                code=f"DIVERGED = {literal}\nRESULT = {{'shots': 1024}}",
+                trusted_observer=(
+                    '_majorana_observation["native_expectation"] = '
+                    '_majorana_namespace.get("DIVERGED")\n'
+                    '_majorana_observation["native_sampled"] = {"counts": {"00": 1024}}'
+                ),
+                protected_result_path=str(result_path),
+                source_fingerprint=fingerprint,
+            ),
+        )
+
+        assert result.ok, f"{literal} killed the sandbox process: {result.stderr}"
+        assert result.protected_result == {
+            "evidence_error": "protected_result_not_json_serializable",
+            "evidence_dropped_keys": ["native_expectation"],
+            "native_sampled": {"counts": {"00": 1024}},
+            "result": {"shots": 1024},
+            "source_fingerprint": fingerprint,
+        }
+
+
 # --- The deny-all egress invariant (provider adapter) ------------------------
 
 

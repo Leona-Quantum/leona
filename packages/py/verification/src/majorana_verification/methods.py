@@ -488,7 +488,12 @@ def verify_exact_diag(
         )
     try:
         computed = energy_tolerance(terms, shots)
-        tolerance, source = computed, "shot_noise_and_optimizer_allowance"
+        source = (
+            "exact_expectation_numerical_allowance"
+            if shots is None
+            else "shot_noise_and_optimizer_allowance"
+        )
+        tolerance = computed
         if declared_tolerance is not None and declared_tolerance > 0:
             tolerance = min(computed, declared_tolerance)
             source = "plan" if tolerance == declared_tolerance else source
@@ -497,6 +502,9 @@ def verify_exact_diag(
             float(reported_energy),
             tolerance=tolerance,
             tolerance_source=source,
+        )
+        details["protocol"]["expectation_mode"] = (
+            "exact_statevector" if shots is None else "finite_shots"
         )
     except HamiltonianError as exc:
         # A malformed reference is a defect in the PLAN, not in the candidate. The
@@ -524,6 +532,10 @@ def verify_brute_force(
     num_variables: int,
     terms: list[tuple[int, int, float]],
     reported_value: Any,
+    *,
+    offset: float = 0.0,
+    objective: str | None = None,
+    constraints: list[tuple[list[tuple[int, float]], str, float]] | None = None,
 ) -> VerificationOutcome:
     """Reported objective value against the enumerated optimum of a declared instance.
 
@@ -557,6 +569,9 @@ def verify_brute_force(
             num_variables,
             terms,
             float(reported_value),
+            offset=offset,
+            objective=objective,  # type: ignore[arg-type]  # invalid strings become evidence
+            constraints=constraints,
         )
     except BaselineProblemError as exc:
         # A malformed instance is a defect in the PLAN, not in the candidate. The

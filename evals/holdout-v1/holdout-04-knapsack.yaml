@@ -1,0 +1,24 @@
+id: holdout-v1-04
+category: "Holdout — Constrained knapsack"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  Solve a capacity-7 binary knapsack with six items whose values are [8,5,6,4,7,3]
+  and weights are [4,2,3,2,5,1]. Encode the capacity constraint in a Qiskit QAOA cost
+  Hamiltonian using enough binary slack qubits, run a seeded simulator with at least
+  4096 shots, and decode only feasible sampled assignments. Independently enumerate
+  all 64 decision strings as a classical baseline. Return top-level numeric RESULT
+  keys qaoa_best_value, qaoa_best_weight, and exact_optimum_value plus counts, and bind
+  the optimized QAOA circuit to FINAL_CIRCUIT. Do not substitute the enumerated
+  solution for QAOA sampling.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_value", "qaoa_best_weight", "exact_optimum_value", "counts"]
+  expected_values:
+    qaoa_best_value: 16.0
+    qaoa_best_weight: 7.0
+    exact_optimum_value: 16.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

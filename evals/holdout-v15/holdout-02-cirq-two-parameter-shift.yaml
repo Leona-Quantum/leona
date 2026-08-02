@@ -1,0 +1,23 @@
+id: holdout-v15-02
+category: "Holdout v15 — Entangled two-parameter gradients in Cirq"
+split: holdout
+difficulty: intermediate
+workload: educational
+prompt: >-
+  In Cirq, start in |00>, apply RY(theta) to q0 with theta=0.63, CNOT q0->q1,
+  and RZ(phi) to q1 with phi=-0.41. Evaluate the exact expectation of X0 X1 and
+  compute its derivatives with respect to theta and phi using separate plus/minus
+  pi/2 parameter-shift simulations for each parameter. Return top-level numeric
+  RESULT keys xx_expectation, theta_gradient, and phi_gradient. Bind the unshifted
+  resolved Cirq circuit to FINAL_CIRCUIT; do not substitute analytic derivatives for
+  the four shifted simulations.
+framework: cirq
+expect:
+  terminal_reason: null
+  output_keys: ["xx_expectation", "theta_gradient", "phi_gradient"]
+  expected_values:
+    xx_expectation: 0.5403169251621038
+    theta_gradient: 0.741058853281692
+    phi_gradient: 0.23483859604891355
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

@@ -1,0 +1,25 @@
+id: diagnostic-qae-family-03
+category: "Diagnostic — singleton-good high-amplitude estimation"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Implement standard quantum amplitude estimation in Qiskit on two system qubits.
+  Apply RY(9*pi/16) to q0, X to q1, then CZ(q0,q1), and mark only Qiskit integer basis
+  index 3 as good. Use five evaluation qubits, explicit controlled powers of the
+  Grover iterate, an inverse QFT, and exact statevector marginal probabilities. Fold
+  the symmetric phase pair but do not replace an amplitude above one half by its
+  complement. Return top-level RESULT keys folded_register_index, grid_amplitude,
+  mirror_pair_probability, and phase_histogram. Bind the complete estimation circuit
+  to FINAL_CIRCUIT and derive the result from the estimation distribution.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys:
+    ["folded_register_index", "grid_amplitude", "mirror_pair_probability", "phase_histogram"]
+  expected_values:
+    folded_register_index: 9.0
+    grid_amplitude: 0.5975451610080641
+    mirror_pair_probability: 1.0
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

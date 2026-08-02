@@ -6,6 +6,7 @@ requires-python = ">=3.12"
 dependencies = [
     "pydantic>=2.8",
     "numpy>=1.26",
+    "scipy>=1.11",
     "majorana-contracts",
     "majorana-openqasm",
 ]

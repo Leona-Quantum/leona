@@ -2,14 +2,17 @@ import sys
 from types import SimpleNamespace
 
 import pytest
-from majorana_contracts.enums import Stage
+from majorana_contracts.enums import Algorithm, Framework, Stage
 from majorana_llm import (
     CHAT_SYSTEM_PROMPT,
     LLMProviderError,
     LLMRequest,
     LLMResponse,
     RetryingLLM,
+    SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_GENERATION_SYSTEM_PROMPT,
+    SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+    SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_PLAN_SYSTEM_PROMPT,
     SIMPLE_REVIEW_SYSTEM_PROMPT,
     StageOutputError,
@@ -18,6 +21,7 @@ from majorana_llm import (
     extract_json,
     model_for,
     resolve_provider,
+    simple_generation_system_prompt,
 )
 
 
@@ -31,6 +35,13 @@ def test_generation_prompt_always_embeds_nameko_style_reference_implementations(
     assert "Example 4 — Qiskit coherent bit-flip QEC" in prompt
     assert '("II", -0.3324043)' in prompt
     assert "TOTAL energies near -1.137 Ha" in prompt
+    assert "DiagonalGate(phases)" in prompt
+    assert "Never turn that vector into np.diag(...)" in prompt
+    assert "13 or more variables" in prompt
+    assert "append_qubo_cost_layer" in prompt
+    assert "QFTGate(width).inverse()" in prompt
+    assert "it has no to_gate() method" in prompt
+    assert "pass float(np.real(angle))" in prompt
     assert "DEMO DATA ONLY" in prompt
     assert "partial_trace(recovered_state, [3, 4])" in prompt
     assert "do not convert it with to_operator()" in prompt
@@ -39,15 +50,365 @@ def test_generation_prompt_always_embeds_nameko_style_reference_implementations(
     assert "The request and known_reference override every example." in prompt
     assert "from __future__ import annotations" not in prompt
     assert "minimize the negative" in prompt
+    assert (
+        "Keep the search energy and the requested business metric as separate functions" in prompt
+    )
+    assert "select_observed_business_solution" in prompt
+    assert 'direction="minimize"' in prompt
+    assert "QAOA sampling produced no feasible business solution" in prompt
     assert "never place FINAL_CIRCUIT" in prompt
     assert prompt.count("FINAL_CIRCUIT =") >= 4
     assert prompt.count("RESULT =") >= 4
+
+
+@pytest.mark.parametrize(
+    ("fields", "included", "excluded"),
+    [
+        (
+            {
+                "framework": "qiskit",
+                "domain": "quantum information",
+                "algorithm": "Bell",
+                "problem_summary": "prepare entanglement",
+            },
+            "Example 1 — Qiskit Bell state",
+            (
+                "Example 2 —",
+                "Example 3 —",
+                "Example 4 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded statevector amplitude estimation",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "quantum information",
+                "algorithm": "other",
+                "problem_summary": "coherent quantum teleportation",
+            },
+            "Example — coherent single-qubit teleportation",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 3 —",
+                "Example 4 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded finite-register phase estimation",
+                "bounded statevector amplitude estimation",
+                "bounded explicit-Hamiltonian statevector VQE",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "quantum dynamics",
+                "algorithm": "other",
+                "problem_summary": "exact Pauli dynamics by explicit matrix exponential",
+            },
+            "Example — bounded exact indexed-Pauli dynamics",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 3 —",
+                "Example 4 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded finite-register phase estimation",
+                "bounded statevector amplitude estimation",
+                "bounded explicit-Hamiltonian statevector VQE",
+                "coherent single-qubit teleportation",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "quantum chemistry",
+                "algorithm": "VQE",
+                "problem_summary": "minimize a Hamiltonian",
+            },
+            "Example — bounded explicit-Hamiltonian statevector VQE",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 3 —",
+                "Example 4 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded finite-register phase estimation",
+                "bounded statevector amplitude estimation",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "combinatorial optimization",
+                "algorithm": "QAOA",
+                "problem_summary": "sample a feasible solution",
+            },
+            "Example 3 — Qiskit portfolio QAOA",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 4 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded finite-register phase estimation",
+                "bounded statevector amplitude estimation",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "quantum linear systems",
+                "algorithm": "other",
+                "problem_summary": "complete HHL circuit",
+            },
+            "Example — bounded exact-dyadic 2x2 HHL structure",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 3 —",
+                "Example 4 —",
+                "bounded finite-register phase estimation",
+                "bounded statevector amplitude estimation",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "phase estimation",
+                "algorithm": "QPE",
+                "problem_summary": "estimate an exactly representable eigenphase",
+            },
+            "Example — bounded finite-register phase estimation",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 3 —",
+                "Example 4 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded statevector amplitude estimation",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "amplitude estimation",
+                "algorithm": "other",
+                "problem_summary": "estimate a computational-basis good probability",
+            },
+            "Example — bounded statevector amplitude estimation",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 3 —",
+                "Example 4 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded finite-register phase estimation",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "unstructured search",
+                "algorithm": "Grover",
+                "problem_summary": "find any of several marked bitstrings",
+            },
+            "Example — bounded multi-marked Grover search",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 3 —",
+                "Example 4 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded finite-register phase estimation",
+                "bounded statevector amplitude estimation",
+            ),
+        ),
+        (
+            {
+                "framework": "qiskit",
+                "domain": "quantum error correction",
+                "algorithm": "other",
+                "problem_summary": "coherent phase-flip repetition code",
+            },
+            "Phase-flip repetition code basis rule",
+            (
+                "Example 1 —",
+                "Example 2 —",
+                "Example 3 —",
+                "exact-dyadic 2x2 HHL",
+                "bounded finite-register phase estimation",
+                "bounded statevector amplitude estimation",
+            ),
+        ),
+    ],
+)
+def test_generation_prompt_selects_only_the_relevant_verified_family(fields, included, excluded):
+    prompt = simple_generation_system_prompt(**fields)
+
+    assert included in prompt
+    assert all(marker not in prompt for marker in excluded)
+    assert "Current Qiskit statevector rule" in prompt
+    assert "Execution contract:" in prompt
+    assert len(prompt) < len(SIMPLE_GENERATION_SYSTEM_PROMPT)
+
+
+def test_pennylane_vqe_receives_only_its_framework_native_family_example():
+    prompt = simple_generation_system_prompt(
+        framework="pennylane",
+        domain="variational algorithms",
+        algorithm="VQE",
+        problem_summary="optimize a three-qubit ansatz",
+    )
+
+    assert "Example 1 —" not in prompt
+    assert "Example 2 —" not in prompt
+    assert "Example 3 —" not in prompt
+    assert "Example 4 —" not in prompt
+    assert "exact-dyadic 2x2 HHL" not in prompt
+    assert "bounded finite-register phase estimation" not in prompt
+    assert "bounded explicit-Hamiltonian statevector VQE" not in prompt
+    assert "bounded statevector amplitude estimation" not in prompt
+    assert "coherent single-qubit teleportation" not in prompt
+    assert "bounded exact indexed-Pauli dynamics" not in prompt
+    assert "Current Qiskit statevector rule" not in prompt
+    assert "bounded PennyLane explicit-Hamiltonian VQE" in prompt
+    assert "bounded_pennylane_vqe" in prompt
+    normalized = " ".join(prompt.split())
+    assert "never pass an ordinary `numpy.ndarray` directly to `qml.grad`" in normalized
+    assert "qml.numpy.array(..., requires_grad=True)" in normalized
+    assert "PennyLane" in prompt
+
+
+def test_grover_helper_is_qiskit_and_generation_family_scoped():
+    generic_qiskit = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="search",
+        algorithm="other",
+        problem_summary="perform amplitude amplification over marked states",
+    )
+    cirq_grover = simple_generation_system_prompt(
+        framework="cirq",
+        domain="search",
+        algorithm="Grover",
+        problem_summary="find marked states",
+    )
+    qiskit_qpe = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="phase estimation",
+        algorithm="QPE",
+        problem_summary="mentions Grover only as an unrelated comparison",
+    )
+
+    marker = "Example — bounded multi-marked Grover search"
+    assert marker in generic_qiskit
+    assert marker not in cirq_grover
+    assert marker not in qiskit_qpe
+
+
+def test_cirq_vqe_and_pennylane_non_vqe_do_not_receive_the_pennylane_vqe_helper():
+    cirq_vqe = simple_generation_system_prompt(
+        framework="cirq",
+        domain="variational algorithms",
+        algorithm="VQE",
+        problem_summary="optimize a two-qubit Hamiltonian",
+    )
+    pennylane_bell = simple_generation_system_prompt(
+        framework="pennylane",
+        domain="quantum information",
+        algorithm="Bell",
+        problem_summary="prepare entanglement",
+    )
+
+    marker = "bounded PennyLane explicit-Hamiltonian VQE"
+    assert marker not in cirq_vqe
+    assert marker not in pennylane_bell
+
+
+@pytest.mark.parametrize(
+    ("framework", "included", "excluded"),
+    [
+        (
+            Framework.QISKIT,
+            (
+                "qiskit_aer.AerSimulator plus transpile/run",
+                "rightmost character is qubit 0",
+                "QFTGate(width)",
+                "vector = np.asarray(statevector.data, dtype=complex)",
+                "overlap=conj(alpha)*beta",
+                "append `Kraus([K0, K1, ...])` directly",
+                "rho = np.asarray(saved_density_matrix, dtype=complex)",
+            ),
+            (
+                "cirq.Simulator(dtype=np.complex128",
+                "PennyLane result values, including numpy scalars",
+            ),
+        ),
+        (
+            Framework.CIRQ,
+            ("cirq.Simulator(dtype=np.complex128",),
+            (
+                "qiskit_aer.AerSimulator plus transpile/run",
+                "rightmost character is qubit 0",
+                "QFTGate(width)",
+                "PennyLane result values, including numpy scalars",
+            ),
+        ),
+        (
+            Framework.PENNYLANE,
+            ("PennyLane result values, including numpy scalars",),
+            (
+                "qiskit_aer.AerSimulator plus transpile/run",
+                "rightmost character is qubit 0",
+                "QFTGate(width)",
+                "cirq.Simulator(dtype=np.complex128",
+            ),
+        ),
+    ],
+)
+def test_generation_prompt_scopes_sdk_rules_across_every_algorithm(framework, included, excluded):
+    for algorithm in Algorithm:
+        prompt = simple_generation_system_prompt(
+            framework=framework.value,
+            domain="neutral domain",
+            algorithm=algorithm.value,
+            problem_summary="neutral task summary",
+        )
+
+        assert all(marker in prompt for marker in included), algorithm
+        assert all(marker not in prompt for marker in excluded), algorithm
+
+
+def test_lindblad_matrix_exponential_does_not_select_closed_system_dynamics_helper():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="open-system dynamics",
+        algorithm="other",
+        problem_summary="solve a Lindblad master equation with a matrix exponential",
+    )
+
+    assert "bounded exact indexed-Pauli dynamics" not in prompt
+
+
+def test_open_system_context_does_not_borrow_a_secondary_algorithm_helper():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="open-system dynamics",
+        algorithm="Simulation",
+        problem_summary=(
+            "solve a Lindblad master equation and compare the result with phase estimation"
+        ),
+    )
+
+    assert "bounded exact indexed-Pauli dynamics" not in prompt
+    assert "bounded finite-register phase estimation" not in prompt
 
 
 def test_replan_prompt_requires_a_materially_different_approach_after_stagnation():
     assert "autonomous replan, not a" in SIMPLE_PLAN_SYSTEM_PROMPT
     assert "candidate_not_converging" in SIMPLE_PLAN_SYSTEM_PROMPT
     assert "materially different, simpler executable approach" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "Never move or widen an expected_range" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "not independent truth" in SIMPLE_PLAN_SYSTEM_PROMPT
 
 
 def test_planner_and_reviewer_prompts_prevent_observed_live_false_failures():
@@ -56,7 +417,116 @@ def test_planner_and_reviewer_prompts_prevent_observed_live_false_failures():
     assert "QFT applied to the default computational state" in SIMPLE_REVIEW_SYSTEM_PROMPT
     assert "decision must be READY" in SIMPLE_REVIEW_SYSTEM_PROMPT
     assert "Never use it to verify finite-time evolution" in SIMPLE_PLAN_SYSTEM_PROMPT
-    assert "0.5% of sum(abs(Hamiltonian coefficients))" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "sin(pi*y/2**m)**2" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "cosine-squared" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "aggregate the probabilities of y and 2**m-y before selecting y" in (
+        SIMPLE_PLAN_SYSTEM_PROMPT
+    )
+    assert "single raw peak and folding it afterwards is not equivalent" in (
+        SIMPLE_PLAN_SYSTEM_PROMPT
+    )
+    assert "1e-6 * max(1, sum(abs(Hamiltonian coefficients)))" in SIMPLE_PLAN_SYSTEM_PROMPT
+
+
+def test_prompts_pin_general_numerical_and_representation_invariants():
+    plan = " ".join(SIMPLE_PLAN_SYSTEM_PROMPT.split())
+    generation = " ".join(SIMPLE_GENERATION_SYSTEM_PROMPT.split())
+    review = " ".join(SIMPLE_REVIEW_SYSTEM_PROMPT.split())
+
+    assert "finite-register estimator" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "discrete output grid" in plan
+    assert "rightmost character is qubit 0" in generation
+    assert "q_(n-1),...,q_0" in generation
+    assert "bridge conventions exactly once" in generation
+    assert "one explicit bit-reversal permutation" in generation
+    assert "cirq.Simulator(dtype=np.complex128, seed=...)" in generation
+    assert "default complex64 state can introduce errors around 1e-7" in generation
+    assert "required basis-state or eigenstate map" in generation
+    assert "coefficient-time accumulated by every" in generation
+    assert "symmetry-related phase peaks" in generation
+    assert "trace the proposed change" in review
+    assert 'Do not infer that consistency from an "exact" value' in review
+    assert "Never recommend moving a Plan range" in review
+    assert "leave the subsystem that must change untouched" in review
+    assert "business_objective.constant" in plan
+    assert "reference_result_key" in plan
+    assert "It may differ from success_criteria.primary_metric" in plan
+    assert "business_constraints" in plan
+    assert "original business problem has at most 16" in plan
+    assert "without checking feasibility" in plan
+    assert "Never include QAOA energy sign flips" in plan
+    assert "Matrix x_row_column variables use row-major indices" in plan
+
+
+def test_business_reference_extraction_is_independent_and_request_scoped():
+    extraction = " ".join(SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT.split())
+
+    assert "bounded binary BUSINESS problem" in extraction
+    assert "business_objective must evaluate exactly to the RESULT" in extraction
+    assert "never an internal Hamiltonian minimization convention" in extraction
+    assert "Ignore QAOA, penalty strengths, slack or ancilla variables" in extraction
+    assert "more than 16 original binary variables" in extraction
+    assert "Never guess missing business data" in extraction
+
+
+def test_lindblad_reference_extraction_is_bounded_and_request_scoped():
+    extraction = " ".join(SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT.split())
+    plan = " ".join(SIMPLE_PLAN_SYSTEM_PROMPT.split())
+
+    assert "at most 3 qubits" in extraction
+    assert "product initial state" in extraction
+    assert "Each jump is an operator SUM" in extraction
+    assert "lowering means |0><1|" in extraction
+    assert "Preserve the literal multiplier of D[L]" in extraction
+    assert "a/b*(Z*rho*Z-rho) has rate=a/b" in extraction
+    assert "additional circuit, Stinespring dilation, QASM export" in extraction
+    assert "does not make otherwise complete scalar evolution unsupported" in extraction
+    assert "Do not solve the equation or invent omitted data" in extraction
+    assert "Include every requested numeric RESULT key" in plan
+    assert "non-product initial state" in plan
+
+
+def test_linear_system_reference_extraction_does_not_guess_result_semantics():
+    extraction = " ".join(SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT.split())
+
+    assert "power of two from 2 through 8" in extraction
+    assert "normalized_solution_component" in extraction
+    assert "Never infer ratio orientation" in extraction
+    assert "not the candidate implementation" in extraction
+    assert "Do not diagonalize A, solve the system" in extraction
+
+
+def test_generation_and_review_guard_general_numeric_evidence_failures():
+    generation = " ".join(SIMPLE_GENERATION_SYSTEM_PROMPT.split())
+    review = " ".join(SIMPLE_REVIEW_SYSTEM_PROMPT.split())
+
+    assert "flat vector of shape (2**n,)" in generation
+    assert "Do not reuse a Kronecker helper seeded with a 2-D identity" in generation
+    assert "Matrix products act on states from right to left" in generation
+    assert "append B's gate before A's gate" in generation
+    assert "every RESULT field the request uses as evidence" in review
+    assert "correct most-likely label with unexplained off-target support" in review
+    assert "lowering matrix |0><1|" in generation
+    assert "lowering is |0><1|" in review
+    assert "a/b*(Z*rho*Z-rho) as a/b*D[Z]" in review
+    assert "exact_phase_estimation_reference" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "phi*2**m is an integer" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "exact_linear_system_reference" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "normalized_solution_component" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "lowest-index component among magnitudes tied within 1e-12" in (
+        SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT
+    )
+
+
+def test_chat_carries_the_same_execution_boundary_as_routing():
+    normalized = " ".join(CHAT_SYSTEM_PROMPT.split())
+
+    assert "absolute Plan/lane ceiling is 27 qubits" in normalized
+    assert "25 qubits the executable circuit/simulation maximum" in normalized
+    assert "26- or 27-qubit circuit is rejected before a sandbox is created" in normalized
+    assert "cannot contact a real QPU" in normalized
+    assert "package list is exhaustive" in normalized
+    assert "Do not imply that switching to Execute can bypass" in normalized
 
 
 def test_model_constants_use_v4_pro_for_all_product_stages_and_are_env_overridable(monkeypatch):
@@ -65,6 +535,7 @@ def test_model_constants_use_v4_pro_for_all_product_stages_and_are_env_overridab
     assert model_for("route") == "deepseek-v4-pro"
     assert model_for(Stage.PLAN) == "deepseek-v4-pro"
     assert model_for(Stage.GENERATE) == "deepseek-v4-pro"
+    assert model_for("audit") == "deepseek-v4-flash"
     assert model_for(Stage.VERIFY) == "deepseek-v4-pro"
     monkeypatch.setenv("MAJORANA_MODEL_PLAN", "custom-model")
     assert model_for(Stage.PLAN) == "custom-model"
@@ -87,11 +558,24 @@ def test_provider_resolution_prefers_owner_confirmed_keys(monkeypatch):
         resolve_provider()
 
 
+def test_provider_timeout_is_bounded_and_environment_overridable(monkeypatch):
+    from majorana_llm.client import provider_timeout_seconds
+
+    monkeypatch.delenv("MAJORANA_LLM_TIMEOUT_SECONDS", raising=False)
+    assert provider_timeout_seconds() == 120.0
+    monkeypatch.setenv("MAJORANA_LLM_TIMEOUT_SECONDS", "45.5")
+    assert provider_timeout_seconds() == 45.5
+    for invalid in ("0", "601", "nan", "not-a-number"):
+        monkeypatch.setenv("MAJORANA_LLM_TIMEOUT_SECONDS", invalid)
+        assert provider_timeout_seconds() == 120.0
+
+
 def test_model_defaults_follow_provider_profile(monkeypatch):
     _clear_provider_env(monkeypatch)
     monkeypatch.setenv("OPENAI_API_KEY", "x")
     assert model_for(Stage.PLAN) == "deepseek-v4-pro"
     assert model_for(Stage.GENERATE) == "deepseek-v4-pro"
+    assert model_for("audit") == "deepseek-v4-flash"
     assert model_for(Stage.VERIFY) == "deepseek-v4-pro"
 
 
@@ -176,6 +660,7 @@ async def test_openai_compatible_llm_streams_reasoning_and_output(monkeypatch):
 
     monkeypatch.setitem(sys.modules, "openai", SimpleNamespace(AsyncOpenAI=RecordingAsyncOpenAI))
     monkeypatch.setenv("DEEPSEEK_API_KEY", "test-key")
+    monkeypatch.delenv("MAJORANA_LLM_TIMEOUT_SECONDS", raising=False)
 
     from majorana_llm.client import OpenAICompatibleLLM
 
@@ -196,6 +681,7 @@ async def test_openai_compatible_llm_streams_reasoning_and_output(monkeypatch):
     assert calls[0]["stream"] is True
     assert calls[0]["extra_body"] == {"thinking": {"type": "disabled"}}
     assert client_options[0]["max_retries"] == 0
+    assert client_options[0]["timeout"] == 120.0
 
 
 async def test_openai_compatible_llm_fails_fast_with_typed_missing_credentials(monkeypatch):
@@ -287,6 +773,104 @@ def test_chat_persona_cannot_narrate_results_it_did_not_produce():
     assert "do not present them as a new execution" in CHAT_SYSTEM_PROMPT
 
 
+def test_qaoa_generation_rule_is_selected_only_for_qaoa_context():
+    qaoa = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="combinatorial optimization",
+        algorithm="QAOA",
+        problem_summary="minimize a constrained binary business objective",
+    )
+    bell = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="quantum information",
+        algorithm="Bell",
+        problem_summary="prepare an entangled state",
+    )
+
+    rule = "Keep the search energy and the requested business metric as separate functions"
+    assert rule in qaoa
+    assert "qaoa_energy(bits)" in qaoa
+    assert rule not in bell
+
+
+@pytest.mark.parametrize(
+    ("algorithm", "summary", "included", "excluded"),
+    [
+        (
+            "AmplitudeEstimation",
+            "estimate amplitude 0.146 on a prepared state",
+            "bounded statevector amplitude estimation",
+            "bounded finite-register phase estimation",
+        ),
+        (
+            "QAOA",
+            "optimize scheduling data produced by a phase estimation stage",
+            "Example 3 — Qiskit portfolio QAOA",
+            "bounded finite-register phase estimation",
+        ),
+        (
+            "other",
+            "run HHL, including its phase estimation subroutine",
+            "exact-dyadic 2x2 HHL",
+            "bounded finite-register phase estimation",
+        ),
+        (
+            "Simulation",
+            "exact Pauli dynamics, then compare against phase estimation language",
+            "bounded exact indexed-Pauli dynamics",
+            "bounded finite-register phase estimation",
+        ),
+    ],
+)
+def test_typed_algorithm_and_specific_other_context_beat_colliding_keywords(
+    algorithm, summary, included, excluded
+):
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="research",
+        algorithm=algorithm,
+        problem_summary=summary,
+    )
+
+    assert included in prompt
+    assert excluded not in prompt
+
+
+def test_generic_error_correction_does_not_receive_qpe_or_repetition_code_examples():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="fault-tolerant quantum computing",
+        algorithm="ErrorCorrection",
+        problem_summary="analyze a surface-code decoder and compare phase estimation noise",
+    )
+
+    assert "Current Qiskit statevector rule" in prompt
+    assert "bounded finite-register phase estimation" not in prompt
+    assert "Example 4 — Qiskit coherent bit-flip QEC" not in prompt
+
+
+def test_repetition_error_correction_receives_the_bounded_qec_example():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="quantum error correction",
+        algorithm="ErrorCorrection",
+        problem_summary="coherent three-qubit phase-flip repetition code",
+    )
+
+    assert "Example 4 — Qiskit coherent bit-flip QEC" in prompt
+
+
+def test_specific_non_generic_algorithm_does_not_receive_a_context_only_helper():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="quantum algorithms",
+        algorithm="QFT",
+        problem_summary="transpile a QFT circuit used before a phase estimation comparison",
+    )
+
+    assert "bounded finite-register phase estimation" not in prompt
+
+
 def test_chat_persona_names_no_surface_the_product_no_longer_has():
     # The Vault was folded into Studio and /library now redirects. The capability
     # list is the one piece of stale copy that would actively instruct a user to
@@ -295,8 +879,9 @@ def test_chat_persona_names_no_surface_the_product_no_longer_has():
     assert "Studio" in CHAT_SYSTEM_PROMPT
 
 
-def test_grover_plan_and_review_prompts_pin_attainable_iteration_arithmetic():
-    assert "four qubits needs about three iterations, not one" in SIMPLE_PLAN_SYSTEM_PROMPT
+def test_grover_plan_and_review_prompts_pin_general_iteration_arithmetic():
+    assert "theta=asin(sqrt(M/N))" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "pi/(4*theta)-1/2" in SIMPLE_PLAN_SYSTEM_PROMPT
     assert "Recompute simple arithmetic instead of trusting a Plan rationale" in (
         SIMPLE_REVIEW_SYSTEM_PROMPT
     )

@@ -1,0 +1,16 @@
+id: bench-17
+category: "E — Explicit QUBO"
+prompt: >-
+  Minimize the explicit three-variable QUBO
+  x0 + 2*x1 - x2 - 3*x0*x1 + x1*x2 using QAOA in Qiskit and compare the
+  result with exact enumeration of all eight assignments. Return the best
+  observed objective as the top-level numeric RESULT key objective_value,
+  together with counts. Use deterministic seeds and at least 2048 shots.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned_with_reference_check
+  output_keys: ["objective_value", "counts"]
+  expected_values:
+    objective_value: -1.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

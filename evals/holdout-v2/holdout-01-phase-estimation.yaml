@@ -1,0 +1,22 @@
+id: holdout-v2-01
+category: "Holdout v2 — Exact phase estimation"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Implement standard three-bit quantum phase estimation in Qiskit for a one-qubit
+  phase unitary whose |1> eigenvalue is exp(2*pi*i*3/8). Prepare the eigenstate, apply
+  controlled powers of the unitary and an inverse QFT, then sample at least 1024 shots
+  with deterministic simulator and transpiler seeds. Derive the estimate from the
+  measured counting register. Return top-level numeric RESULT keys estimated_phase
+  and peak_probability plus counts, and bind the complete measured QPE circuit to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["estimated_phase", "peak_probability", "counts"]
+  expected_values:
+    estimated_phase: 0.375
+    peak_probability: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

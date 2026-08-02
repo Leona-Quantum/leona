@@ -1115,6 +1115,7 @@ dependencies = [
     { name = "majorana-contracts" },
     { name = "majorana-llm", extra = ["anthropic", "openai"] },
     { name = "majorana-worker" },
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
@@ -1125,6 +1126,7 @@ requires-dist = [
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-llm", extras = ["openai", "anthropic"], editable = "packages/py/llm" },
     { name = "majorana-worker", editable = "services/worker" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pyyaml", specifier = ">=6" },
 ]
@@ -1236,6 +1238,7 @@ dependencies = [
     { name = "majorana-openqasm" },
     { name = "numpy" },
     { name = "pydantic" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
@@ -1244,6 +1247,7 @@ requires-dist = [
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.8" },
+    { name = "scipy", specifier = ">=1.11" },
 ]
 
 [[package]]

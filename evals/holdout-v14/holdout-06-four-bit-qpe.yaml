@@ -1,0 +1,24 @@
+id: holdout-v14-06
+category: "Holdout v14 — Renamed exact dyadic QPE"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Build a Qiskit phase-estimation circuit with four counting qubits and one target
+  qubit prepared in |1>. Use U=diag(1,exp(2*pi*i*7/16)), explicit controlled
+  powers, an inverse QFT, 4096 shots, deterministic simulator and transpiler seeds,
+  and explicit Qiskit count-key decoding. Return top-level RESULT keys decoded_index,
+  estimated_phase, dominant_mass, and histogram. Bind the executed phase-estimation
+  circuit to FINAL_CIRCUIT; all three scalars must be derived from the protected
+  histogram rather than copied from the given phase.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["decoded_index", "estimated_phase", "dominant_mass", "histogram"]
+  expected_top_bitstring: "0111"
+  expected_values:
+    decoded_index: 7.0
+    estimated_phase: 0.4375
+    dominant_mass: 1.0
+  expected_value_tolerance: 0.001
+  saves_artifact: true

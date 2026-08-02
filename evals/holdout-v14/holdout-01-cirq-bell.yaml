@@ -1,0 +1,21 @@
+id: holdout-v14-01
+category: "Holdout v14 — Cross-framework Cirq Bell statistics"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Using Cirq rather than Qiskit, prepare (|00>+|11>)/sqrt(2), measure both
+  qubits for 4096 repetitions with a deterministic simulator seed, and compute
+  probabilities from the sampled histogram. Return top-level RESULT keys
+  probability_00, probability_11, parity_expectation, and histogram. Bind the
+  exact measured Cirq circuit to FINAL_CIRCUIT.
+framework: cirq
+expect:
+  terminal_reason: null
+  output_keys: ["probability_00", "probability_11", "parity_expectation", "histogram"]
+  expected_values:
+    probability_00: 0.5
+    probability_11: 0.5
+    parity_expectation: 1.0
+  expected_value_tolerance: 0.05
+  saves_artifact: true

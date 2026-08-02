@@ -1,0 +1,28 @@
+id: holdout-v14-08
+category: "Holdout v14 — Collective-jump Lindblad evolution"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor and basis |0>,|1>, start from |+1> and
+  solve at t=0.71 the time-independent master equation with Hamiltonian
+  H=0.16 X0 +0.11 Z0 Z1 and dissipators
+  0.22*D[sigma_minus_0 + 0.6*sigma_minus_1] and
+  0.05*D[Z0-Z1], where each bracket is one collective jump operator and
+  D[L](rho)=L rho L_dagger-0.5*{L_dagger L,rho}. Use an explicit Liouvillian
+  matrix exponential. Return top-level numeric RESULT keys population_00,
+  population_01, coherence_00_11_real, state_purity, and zz_mean. Bind a Qiskit
+  circuit preparing |+1> to FINAL_CIRCUIT; RESULT values must come from the
+  master-equation evolution.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["population_00", "population_01", "coherence_00_11_real", "state_purity", "zz_mean"]
+  expected_values:
+    population_00: 0.03265361005921929
+    population_01: 0.5325034064022834
+    coherence_00_11_real: -0.000046048878523391936
+    state_purity: 0.7934244820273426
+    zz_mean: -0.11062129461953735
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

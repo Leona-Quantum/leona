@@ -1,0 +1,30 @@
+id: diagnostic-v9-hhl
+category: "Diagnostic — HHL semantic-reference consensus"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Solve A x=b for A=[[0.75,0.25],[0.25,0.75]] and b=[1,-0.25] using a complete
+  Qiskit HHL-style circuit with phase estimation, a controlled reciprocal rotation,
+  and exact uncomputation. Scale the simulated unitary so the two eigenphases are
+  1/2 and 1/4, use enough phase qubits to resolve both exactly, postselect the success
+  ancilla, and extract the normalized signed solution amplitudes from the circuit.
+  Independently solve the same system with NumPy. Return top-level numeric RESULT keys
+  solution_x0 and solution_x1 for those signed normalized circuit amplitudes;
+  amplitude_ratio=solution_x1/solution_x0; residual_norm=||A*x_classical-b||_2 for
+  the independent NumPy solution; and state_fidelity equal to the squared overlap
+  between the postselected circuit state and the normalized classical solution. Bind
+  the complete HHL-style circuit to FINAL_CIRCUIT. Do not substitute the classical
+  solution for the postselected circuit state.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["solution_x0", "solution_x1", "amplitude_ratio", "residual_norm", "state_fidelity"]
+  expected_values:
+    solution_x0: 0.8804710999221753
+    solution_x1: -0.4740998230350174
+    amplitude_ratio: -0.5384615384615384
+    residual_norm: 0.0
+    state_fidelity: 1.0
+  expected_value_tolerance: 0.01
+  saves_artifact: true

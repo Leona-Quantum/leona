@@ -1,0 +1,24 @@
+id: holdout-v7-01
+category: "Holdout v7 — Constrained project portfolio"
+split: holdout
+difficulty: advanced
+workload: practical
+prompt: >-
+  Select from eight binary projects with values [11,8,7,6,5,4,9,3] and costs
+  [6,4,5,3,2,2,5,1] to maximize total value under budget 12. Project 0 requires
+  project 4, projects 2 and 6 are mutually exclusive, and at least one of projects
+  1 and 3 must be selected. Encode the original eight variables and all constraints
+  in a Qiskit QAOA model, use deterministic seeds and at least 2048 shots, and decode
+  only feasible sampled solutions. Independently enumerate all 256 selections.
+  Return top-level RESULT keys qaoa_value, exact_value, selected_projects, and counts,
+  and bind the optimized QAOA circuit to FINAL_CIRCUIT. Do not use the enumeration as
+  the QAOA sample.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_value", "exact_value", "selected_projects", "counts"]
+  expected_values:
+    qaoa_value: 26.0
+    exact_value: 26.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

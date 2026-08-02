@@ -1,0 +1,26 @@
+id: holdout-v6-08
+category: "Holdout v6 — Quantum linear-system state"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Solve A x=b for A=[[1,1/3],[1/3,1]] and b=[1,0] using a Qiskit HHL-style
+  phase-estimation, controlled-rotation, and uncomputation circuit with enough phase
+  precision to resolve the two eigenvalues. Postselect the success ancilla and extract
+  the normalized signed solution amplitudes. Independently solve the same system with
+  NumPy and compare. Return top-level numeric RESULT keys solution_x0, solution_x1,
+  amplitude_ratio, residual_norm, and state_fidelity, and bind the complete HHL-style
+  circuit to FINAL_CIRCUIT. Do not replace the circuit-derived amplitudes with the
+  classical baseline.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["solution_x0", "solution_x1", "amplitude_ratio", "residual_norm", "state_fidelity"]
+  expected_values:
+    solution_x0: 0.9486832980505138
+    solution_x1: -0.31622776601683794
+    amplitude_ratio: -0.3333333333333333
+    residual_norm: 0.0
+    state_fidelity: 1.0
+  expected_value_tolerance: 0.01
+  saves_artifact: true

@@ -19,6 +19,7 @@ from majorana_api.repos import usage as usage_repo
 
 _ROLE_STAGE = {
     "request_plan": Stage.PLAN,
+    "reference_audit": Stage.PLAN,
     "agent_tool_call": Stage.GENERATE,
     "generate_circuit": Stage.GENERATE,
     "intent_alignment": Stage.VERIFY,

@@ -25,6 +25,7 @@ from majorana_agent import (
     SimplePipelineStage,
     SimplePlan,
     SimplePortResult,
+    SimpleReferenceProblem,
     SimpleRepairFeedback,
     SimpleRetryTarget,
     ToolCall,
@@ -47,20 +48,57 @@ from majorana_contracts.enums import (
     VerificationResultKind,
     VerifierDecision,
 )
-from majorana_contracts.plan import PauliTerm, Plan, VerificationPlan
-from majorana_verification import verify_brute_force, verify_exact_diag
+from majorana_contracts.plan import (
+    ConstraintTerm,
+    ExactLinearSystemReference,
+    ExactLindbladReference,
+    IndexedPauliTerm,
+    LindbladOperator,
+    LinearConstraint,
+    PauliTerm,
+    Plan,
+    ProblemTerm,
+    ReferenceProblem,
+    VerificationPlan,
+)
+from majorana_verification import (
+    BaselineProblemError,
+    DynamicsReferenceError,
+    LindbladReferenceError,
+    LindbladSpecification,
+    LinearSystemReferenceError,
+    PhaseEstimationReferenceError,
+    ProblemSpecification,
+    exact_dynamics_comparison,
+    exact_dynamics_value,
+    exact_lindblad_comparison,
+    exact_lindblad_values,
+    exact_linear_system_comparison,
+    exact_linear_system_values,
+    exact_phase_estimation_comparison,
+    lindblad_references_equivalent,
+    linear_system_references_equivalent,
+    optimal_objective,
+    reference_problems_equivalent,
+    verify_brute_force,
+    verify_exact_diag,
+)
 from majorana_frameworks import FrameworkProgram
 from majorana_frameworks.roles import ProgramRole, result_was_derived
 from majorana_llm import (
     LLMClient,
     LLMProviderError,
     LLMRequest,
-    SIMPLE_GENERATION_SYSTEM_PROMPT,
+    SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+    SIMPLE_DYNAMICS_REFERENCE_AUDIT_SYSTEM_PROMPT,
+    SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+    SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_PLAN_SYSTEM_PROMPT,
     SIMPLE_REVIEW_SYSTEM_PROMPT,
     StageOutputError,
     extract_json,
     model_for,
+    simple_generation_system_prompt,
 )
 from majorana_sandbox import DEFAULT_QUBIT_CEILING
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -876,6 +914,84 @@ class _GeneratedSource(BaseModel):
     source: str = Field(min_length=1, max_length=200_000)
 
 
+class _ReferenceAuditOutput(BaseModel):
+    """Independent request-to-reference check before generation can inherit it."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    valid: bool
+    errors: list[str] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="after")
+    def _validity_matches_errors(self) -> "_ReferenceAuditOutput":
+        self.errors = [item.strip()[:1_000] for item in self.errors if item.strip()]
+        if self.valid and self.errors:
+            raise ValueError("a valid audit cannot report semantic mismatches")
+        if not self.valid and not self.errors:
+            raise ValueError("an invalid audit must name at least one mismatch")
+        return self
+
+
+class _BusinessReferenceExtraction(BaseModel):
+    """A second derivation, not a yes/no opinion about the planner's reference."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    supported: bool
+    reason: str | None = Field(default=None, max_length=1_000)
+    reference: SimpleReferenceProblem | None = None
+
+    @model_validator(mode="after")
+    def _support_matches_the_reference(self) -> "_BusinessReferenceExtraction":
+        if self.supported != (self.reference is not None):
+            raise ValueError("supported must be true exactly when reference is present")
+        if not self.supported and (self.reason is None or not self.reason.strip()):
+            raise ValueError("an unsupported extraction must state the missing capability or data")
+        if self.reason is not None:
+            self.reason = self.reason.strip()[:1_000] or None
+        return self
+
+
+class _LindbladReferenceExtraction(BaseModel):
+    """A second typed derivation of one bounded open-system problem."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    supported: bool
+    reason: str | None = Field(default=None, max_length=1_000)
+    reference: ExactLindbladReference | None = None
+
+    @model_validator(mode="after")
+    def _support_matches_the_reference(self) -> "_LindbladReferenceExtraction":
+        if self.supported != (self.reference is not None):
+            raise ValueError("supported must be true exactly when reference is present")
+        if not self.supported and (self.reason is None or not self.reason.strip()):
+            raise ValueError("an unsupported extraction must state the missing capability or data")
+        if self.reason is not None:
+            self.reason = self.reason.strip()[:1_000] or None
+        return self
+
+
+class _LinearSystemReferenceExtraction(BaseModel):
+    """A request-derived bounded A*x=b problem and its scalar meanings."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    supported: bool
+    reason: str | None = Field(default=None, max_length=1_000)
+    reference: ExactLinearSystemReference | None = None
+
+    @model_validator(mode="after")
+    def _support_matches_the_reference(self) -> "_LinearSystemReferenceExtraction":
+        if self.supported != (self.reference is not None):
+            raise ValueError("supported must be true exactly when reference is present")
+        if not self.supported and (self.reason is None or not self.reason.strip()):
+            raise ValueError("an unsupported extraction must state the missing capability or data")
+        if self.reason is not None:
+            self.reason = self.reason.strip()[:1_000] or None
+        return self
+
+
 _SIMULATION_TOOL = {
     Framework.QISKIT: ToolName.SIMULATE_QISKIT,
     Framework.CIRQ: ToolName.SIMULATE_CIRQ,
@@ -886,6 +1002,242 @@ _SIMULATION_TOOL = {
 def _plan_fingerprint(plan: Plan) -> str:
     payload = json.dumps(plan.model_dump(mode="json"), sort_keys=True, separators=(",", ":"))
     return hashlib.sha256(payload.encode()).hexdigest()
+
+
+def _reference_problem_requires_audit(plan: Plan) -> bool:
+    """Every model-authored combinatorial reference needs independent consensus.
+
+    In prior real evaluations, a boolean reviewer both rejected a correct assignment
+    oracle and approved a sign-flipped project-selection oracle. A second derivation can
+    instead be compared over all assignments. Only agreement earns the reference;
+    disagreement removes the unsafe check without blocking otherwise runnable work.
+    """
+
+    verification = plan.verification_plan
+    if verification is None or VerificationMethod.BRUTE_FORCE not in verification.methods:
+        return False
+    problem = verification.reference_problem
+    return problem is not None
+
+
+def _reference_problem_spec(problem: ReferenceProblem) -> ProblemSpecification:
+    return {
+        "kind": problem.kind,
+        "num_variables": problem.num_variables,
+        "terms": [(term.i, term.j, term.weight) for term in problem.terms],
+        "offset": problem.offset,
+        "objective": problem.objective,
+        "constraints": [
+            (
+                [(term.i, term.weight) for term in constraint.terms],
+                constraint.sense,
+                constraint.rhs,
+            )
+            for constraint in problem.constraints
+        ],
+    }
+
+
+def _reference_problem_call_args(plan: Plan) -> ProblemSpecification:
+    verification = plan.verification_plan
+    if verification is None or verification.reference_problem is None:
+        raise BaselineProblemError("brute-force reference problem is missing")
+    return _reference_problem_spec(verification.reference_problem)
+
+
+def _durable_business_reference(reference: SimpleReferenceProblem) -> ReferenceProblem:
+    objective = reference.business_objective
+    return ReferenceProblem(
+        kind="qubo",
+        num_variables=reference.num_variables,
+        terms=[
+            ProblemTerm(
+                i=term.variable,
+                j=term.variable,
+                weight=term.coefficient,
+            )
+            for term in objective.linear_coefficients
+        ]
+        + [
+            ProblemTerm(
+                i=term.left,
+                j=term.right,
+                weight=term.coefficient,
+            )
+            for term in objective.quadratic_coefficients
+        ],
+        offset=objective.constant,
+        objective=objective.direction,
+        constraints=[
+            LinearConstraint(
+                terms=[
+                    ConstraintTerm(i=term.variable, weight=term.coefficient)
+                    for term in constraint.coefficients
+                ],
+                sense=constraint.sense,
+                rhs=constraint.rhs,
+            )
+            for constraint in reference.business_constraints
+        ],
+    )
+
+
+def _without_brute_force_reference(plan: Plan) -> Plan:
+    verification = plan.verification_plan
+    if verification is None:
+        return plan
+    methods = [
+        method for method in verification.methods if method is not VerificationMethod.BRUTE_FORCE
+    ]
+    if not methods:
+        methods = [VerificationMethod.RETURN_CONTRACT]
+    reference_method = (
+        verification.reference_method
+        if any(
+            method in {VerificationMethod.EXACT_DIAG, VerificationMethod.EXACT}
+            for method in methods
+        )
+        else None
+    )
+    return plan.model_copy(
+        update={
+            "verification_plan": verification.model_copy(
+                update={
+                    "methods": methods,
+                    "reference_problem": None,
+                    "reference_method": reference_method,
+                }
+            )
+        }
+    )
+
+
+def _indexed_pauli_string(term: IndexedPauliTerm, num_qubits: int) -> str:
+    """Materialize identity padding deterministically, with q0 leftmost."""
+
+    paulis = ["I"] * num_qubits
+    for factor in term.factors:
+        paulis[factor.qubit] = factor.pauli
+    return "".join(paulis)
+
+
+def _dynamics_reference_call_args(plan: Plan) -> dict[str, Any]:
+    verification = plan.verification_plan
+    if verification is None or verification.exact_dynamics_reference is None:
+        raise DynamicsReferenceError("exact dynamics reference is missing")
+    reference = verification.exact_dynamics_reference
+    return {
+        "terms": [
+            (term.coefficient, _indexed_pauli_string(term, reference.num_qubits))
+            for term in reference.hamiltonian
+        ],
+        "initial_basis_state": reference.initial_basis_state,
+        "evolution_time": reference.evolution_time,
+        "metric": reference.metric,
+        "observable": (
+            [
+                (term.coefficient, _indexed_pauli_string(term, reference.num_qubits))
+                for term in reference.observable
+            ]
+            if reference.observable is not None
+            else None
+        ),
+    }
+
+
+def _lindblad_operator_spec(
+    operator: LindbladOperator,
+) -> list[tuple[complex, list[tuple[int, str]]]]:
+    return [
+        (
+            complex(term.coefficient.real, term.coefficient.imag),
+            [(factor.qubit, factor.operator) for factor in term.factors],
+        )
+        for term in operator.terms
+    ]
+
+
+def _lindblad_reference_spec(reference: ExactLindbladReference) -> LindbladSpecification:
+    results: list[dict[str, Any]] = []
+    for result in reference.results:
+        item: dict[str, Any] = {
+            "result_key": result.result_key,
+            "metric": result.metric,
+        }
+        for name in ("basis_state", "row_state", "column_state"):
+            value = getattr(result, name)
+            if value is not None:
+                item[name] = value
+        if result.observable is not None:
+            item["observable"] = _lindblad_operator_spec(result.observable)
+        results.append(item)
+    return {
+        "num_qubits": reference.num_qubits,
+        "initial_product_state": list(reference.initial_product_state),
+        "hamiltonian": (
+            _lindblad_operator_spec(reference.hamiltonian)
+            if reference.hamiltonian is not None
+            else None
+        ),
+        "dissipators": [
+            (dissipator.rate, _lindblad_operator_spec(dissipator.jump))
+            for dissipator in reference.dissipators
+        ],
+        "evolution_time": reference.evolution_time,
+        "results": results,
+    }
+
+
+def _should_attempt_lindblad_reference(plan: Plan, task_prompt: str) -> bool:
+    """Route likely open-system tasks to optional typed reference extraction.
+
+    This is a domain router, not an answer parser: coefficients, states, times, and
+    result meanings remain typed model output and must survive independent semantic
+    comparison before the deterministic verifier can use them. A false routing
+    decision only costs a bounded extraction call before falling back to weaker review.
+    """
+
+    verification = plan.verification_plan
+    if verification is not None and verification.exact_lindblad_reference is not None:
+        return True
+    domain = plan.domain.lower().replace("_", "-")
+    if "open" in domain and ("quantum" in domain or "system" in domain):
+        return True
+    request = f"{task_prompt}\n{plan.problem_summary}".lower()
+    return any(
+        marker in request
+        for marker in (
+            "lindblad",
+            "liouvillian",
+            "master equation",
+            "d rho/dt",
+            "dρ/dt",
+            "dissipator",
+        )
+    )
+
+
+def _should_attempt_linear_system_reference(plan: Plan, task_prompt: str) -> bool:
+    """Route likely A*x=b tasks without interpreting their numeric answer."""
+
+    verification = plan.verification_plan
+    if verification is not None and verification.exact_linear_system_reference is not None:
+        return True
+    domain = plan.domain.lower().replace("_", "-")
+    if "linear" in domain and ("quantum" in domain or "system" in domain):
+        return True
+    request = f"{task_prompt}\n{plan.problem_summary}".lower()
+    return any(
+        marker in request
+        for marker in (
+            "hhl",
+            "linear system",
+            "linear-system",
+            "a*x=b",
+            "ax=b",
+            "matrix a",
+        )
+    )
 
 
 def _apply_trusted_task_reference(plan: Plan, task_prompt: str) -> Plan:
@@ -904,12 +1256,232 @@ def _apply_trusted_task_reference(plan: Plan, task_prompt: str) -> Plan:
         update={
             "verification_plan": VerificationPlan(
                 methods=[VerificationMethod.EXACT_DIAG],
+                reference_method="server_owned_task_reference",
                 reference_hamiltonian=[
                     PauliTerm(coefficient=coefficient, pauli=pauli) for coefficient, pauli in terms
                 ],
                 thresholds=thresholds,
             )
         }
+    )
+
+
+def _reconcile_exact_diag_success_criteria(plan: Plan) -> SimplePortResult[Plan]:
+    """Let exact diagonalization, not model-authored prose, own the numeric criterion."""
+
+    verification = plan.verification_plan
+    if (
+        verification is None
+        or VerificationMethod.EXACT_DIAG not in verification.methods
+        or not verification.reference_hamiltonian
+    ):
+        return SimplePortResult.success(plan)
+    outcome = verify_exact_diag(
+        [(term.coefficient, term.pauli) for term in verification.reference_hamiltonian],
+        0.0,
+        shots=plan.parameters.shots,
+    )
+    if outcome.details.get("fault") == "plan":
+        return _failure(
+            kind=SimpleFailureKind.PLAN,
+            stage=SimplePipelineStage.PLANNING,
+            code="exact_diag_reference_unusable",
+            message="Plan-declared Hamiltonian cannot be diagonalized",
+            retryable=True,
+            retry_target=SimpleRetryTarget.PLANNING,
+            details={"reference_errors": [str(outcome.details.get("reason", "unknown"))]},
+        )
+    scores = outcome.details.get("scores")
+    exact = scores.get("exact_ground_state_energy") if isinstance(scores, dict) else None
+    if (
+        not isinstance(exact, int | float)
+        or isinstance(exact, bool)
+        or not math.isfinite(float(exact))
+    ):
+        return _failure(
+            kind=SimpleFailureKind.PLAN,
+            stage=SimplePipelineStage.PLANNING,
+            code="exact_diag_reference_unusable",
+            message="Exact diagonalization did not produce a finite ground-state energy",
+            retryable=True,
+            retry_target=SimpleRetryTarget.PLANNING,
+        )
+    reference_metric = verification.reference_result_key or plan.success_criteria.primary_metric
+    expected_range = (
+        (plan.success_criteria.expected_range or {})
+        if reference_metric == plan.success_criteria.primary_metric
+        else {}
+    )
+    lower = expected_range.get("min")
+    upper = expected_range.get("max")
+    outside = (
+        isinstance(lower, int | float)
+        and not isinstance(lower, bool)
+        and exact < float(lower)
+        and not math.isclose(exact, float(lower), rel_tol=1e-12, abs_tol=1e-12)
+    ) or (
+        isinstance(upper, int | float)
+        and not isinstance(upper, bool)
+        and exact > float(upper)
+        and not math.isclose(exact, float(upper), rel_tol=1e-12, abs_tol=1e-12)
+    )
+    criteria_updates: dict[str, Any] = {"additional_notes": None}
+    if outside:
+        criteria_updates["expected_range"] = None
+    reconciled_verification = verification.model_copy(
+        update={
+            "reference_method": verification.reference_method
+            or "plan_declared_hamiltonian_exact_diagonalization"
+        }
+    )
+    return SimplePortResult.success(
+        plan.model_copy(
+            update={
+                "success_criteria": plan.success_criteria.model_copy(update=criteria_updates),
+                "verification_plan": reconciled_verification,
+            }
+        )
+    )
+
+
+def _reconcile_exact_qpe_success_criteria(plan: Plan) -> Plan:
+    """Remove model-authored prose/ranges that contradict exact dyadic QPE truth."""
+
+    verification = plan.verification_plan
+    reference = verification.exact_phase_estimation_reference if verification is not None else None
+    if reference is None:
+        return plan
+    scale = 1 << reference.counting_qubits
+    exact_values = {
+        reference.phase_integer_result_key: float(round(reference.eigenphase * scale) % scale),
+        reference.phase_estimate_result_key: reference.eigenphase,
+        reference.peak_probability_result_key: 1.0,
+    }
+    exact = exact_values[plan.success_criteria.primary_metric]
+    expected_range = plan.success_criteria.expected_range or {}
+    lower = expected_range.get("min")
+    upper = expected_range.get("max")
+    outside = (
+        isinstance(lower, int | float)
+        and not isinstance(lower, bool)
+        and exact < float(lower)
+        and not math.isclose(exact, float(lower), rel_tol=1e-12, abs_tol=1e-12)
+    ) or (
+        isinstance(upper, int | float)
+        and not isinstance(upper, bool)
+        and exact > float(upper)
+        and not math.isclose(exact, float(upper), rel_tol=1e-12, abs_tol=1e-12)
+    )
+    return plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={
+                    "additional_notes": None,
+                    **({"expected_range": None} if outside else {}),
+                }
+            ),
+            "verification_plan": verification.model_copy(
+                update={
+                    "reference_method": verification.reference_method
+                    or "plan_declared_exact_dyadic_phase_estimation"
+                }
+            ),
+        }
+    )
+
+
+def _preserve_replan_range_strength(previous: Plan, proposed: Plan) -> Plan:
+    """Do not let rejected candidate output launder itself into a weaker threshold."""
+
+    previous_criteria = previous.success_criteria
+    proposed_criteria = proposed.success_criteria
+    if previous_criteria.primary_metric != proposed_criteria.primary_metric:
+        return proposed
+    previous_range = previous_criteria.expected_range
+    if not previous_range:
+        return proposed
+    proposed_range = proposed_criteria.expected_range
+    if not proposed_range:
+        weakened = True
+    else:
+        previous_lower = previous_range.get("min")
+        previous_upper = previous_range.get("max")
+        proposed_lower = proposed_range.get("min")
+        proposed_upper = proposed_range.get("max")
+        weakened = (
+            previous_lower is not None
+            and (proposed_lower is None or float(proposed_lower) < float(previous_lower))
+        ) or (
+            previous_upper is not None
+            and (proposed_upper is None or float(proposed_upper) > float(previous_upper))
+        )
+    if not weakened:
+        return proposed
+    return proposed.model_copy(
+        update={
+            "success_criteria": proposed_criteria.model_copy(
+                update={
+                    "expected_range": previous_range,
+                    "additional_notes": previous_criteria.additional_notes,
+                }
+            )
+        }
+    )
+
+
+def _reconcile_exact_linear_system_success_criteria(
+    plan: Plan,
+) -> SimplePortResult[Plan]:
+    """Make the independently solved linear system own numeric Plan truth."""
+
+    verification = plan.verification_plan
+    reference = verification.exact_linear_system_reference if verification else None
+    if reference is None:
+        return SimplePortResult.success(plan)
+    try:
+        exact_values, _ = exact_linear_system_values(reference)
+    except LinearSystemReferenceError as exc:
+        return _failure(
+            kind=SimpleFailureKind.PLAN,
+            stage=SimplePipelineStage.PLANNING,
+            code="linear_system_reference_unusable",
+            message="Plan-declared linear system cannot be solved independently",
+            retryable=True,
+            retry_target=SimpleRetryTarget.PLANNING,
+            details={"reference_errors": [str(exc)]},
+        )
+    exact = exact_values[plan.success_criteria.primary_metric]
+    expected_range = plan.success_criteria.expected_range or {}
+    lower = expected_range.get("min")
+    upper = expected_range.get("max")
+    outside = (
+        isinstance(lower, int | float)
+        and not isinstance(lower, bool)
+        and exact < float(lower)
+        and not math.isclose(exact, float(lower), rel_tol=1e-12, abs_tol=1e-12)
+    ) or (
+        isinstance(upper, int | float)
+        and not isinstance(upper, bool)
+        and exact > float(upper)
+        and not math.isclose(exact, float(upper), rel_tol=1e-12, abs_tol=1e-12)
+    )
+    return SimplePortResult.success(
+        plan.model_copy(
+            update={
+                "success_criteria": plan.success_criteria.model_copy(
+                    update={
+                        "additional_notes": None,
+                        **({"expected_range": None} if outside else {}),
+                    }
+                ),
+                "verification_plan": verification.model_copy(
+                    update={
+                        "reference_method": verification.reference_method
+                        or "plan_declared_dense_linear_system"
+                    }
+                ),
+            }
+        )
     )
 
 
@@ -941,6 +1513,254 @@ def _success_criteria_check(
             "result": "fail",
             "details": details | {"reason": "primary metric is missing from RESULT"},
         }
+    qpe_reference = (
+        plan.verification_plan.exact_phase_estimation_reference
+        if plan.verification_plan is not None
+        else None
+    )
+    if qpe_reference is not None:
+        try:
+            passed, reference_details = exact_phase_estimation_comparison(
+                qpe_reference,
+                execution.result,
+                requested_shots=plan.parameters.shots,
+            )
+        except PhaseEstimationReferenceError as exc:
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | {
+                    "reason": "exact phase-estimation reference could not read RESULT",
+                    "error": str(exc),
+                },
+            }
+        exact_values = {
+            qpe_reference.phase_integer_result_key: reference_details["scores"][
+                "exact_phase_integer"
+            ],
+            qpe_reference.phase_estimate_result_key: reference_details["scores"][
+                "exact_phase_estimate"
+            ],
+            qpe_reference.peak_probability_result_key: 1.0,
+        }
+        exact = float(exact_values[metric])
+        lower = expected_range.get("min")
+        upper = expected_range.get("max")
+        if (
+            isinstance(lower, int | float) and not isinstance(lower, bool) and exact < float(lower)
+        ) or (
+            isinstance(upper, int | float) and not isinstance(upper, bool) and exact > float(upper)
+        ):
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | reference_details
+                | {
+                    "reason": "Plan expected_range excludes exact phase-estimation truth",
+                    "fault": "plan",
+                },
+            }
+        return {
+            "method": "success_criteria",
+            "result": "pass" if passed else "fail",
+            "details": details
+            | reference_details
+            | {
+                "reason": (
+                    "all QPE scalars and protected counts match exact dyadic truth"
+                    if passed
+                    else "QPE RESULT disagrees with exact dyadic phase-estimation truth"
+                )
+            },
+        }
+    linear_reference = (
+        plan.verification_plan.exact_linear_system_reference
+        if plan.verification_plan is not None
+        else None
+    )
+    if linear_reference is not None:
+        try:
+            passed, reference_details = exact_linear_system_comparison(
+                linear_reference,
+                execution.result,
+            )
+        except LinearSystemReferenceError as exc:
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | {
+                    "reason": "exact linear-system reference is unusable as declared",
+                    "error": str(exc),
+                    "fault": "plan",
+                },
+            }
+        exact = float(reference_details["scores"][metric]["exact"])
+        lower = expected_range.get("min")
+        upper = expected_range.get("max")
+        if (
+            isinstance(lower, int | float) and not isinstance(lower, bool) and exact < float(lower)
+        ) or (
+            isinstance(upper, int | float) and not isinstance(upper, bool) and exact > float(upper)
+        ):
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | reference_details
+                | {
+                    "reason": "Plan expected_range excludes exact linear-system truth",
+                    "fault": "plan",
+                },
+            }
+        return {
+            "method": "success_criteria",
+            "result": "pass" if passed else "fail",
+            "details": details
+            | reference_details
+            | {
+                "reason": (
+                    "all declared scalars match the independently solved linear system"
+                    if passed
+                    else "declared scalars disagree with the exact linear-system solution"
+                )
+            },
+        }
+    lindblad_reference = (
+        plan.verification_plan.exact_lindblad_reference
+        if plan.verification_plan is not None
+        else None
+    )
+    if lindblad_reference is not None:
+        try:
+            passed, reference_details = exact_lindblad_comparison(
+                _lindblad_reference_spec(lindblad_reference),
+                execution.result,
+            )
+        except LindbladReferenceError as exc:
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | {
+                    "reason": "exact Lindblad reference is unusable as declared",
+                    "error": str(exc),
+                    "fault": "plan",
+                },
+            }
+        exact = reference_details["scores"][metric]["exact"]
+        lower = expected_range.get("min")
+        upper = expected_range.get("max")
+        truth_below = (
+            isinstance(lower, int | float)
+            and not isinstance(lower, bool)
+            and exact < float(lower)
+            and not math.isclose(exact, float(lower), rel_tol=1e-12, abs_tol=1e-12)
+        )
+        truth_above = (
+            isinstance(upper, int | float)
+            and not isinstance(upper, bool)
+            and exact > float(upper)
+            and not math.isclose(exact, float(upper), rel_tol=1e-12, abs_tol=1e-12)
+        )
+        if truth_below or truth_above:
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | reference_details
+                | {
+                    "reason": "Plan expected_range excludes exact Lindblad truth",
+                    "fault": "plan",
+                },
+            }
+        return {
+            "method": "success_criteria",
+            "result": "pass" if passed else "fail",
+            "details": details
+            | reference_details
+            | {
+                "reason": (
+                    "all declared scalars match exact Plan-declared Lindblad evolution"
+                    if passed
+                    else "declared scalars disagree with exact Plan-declared Lindblad evolution"
+                )
+            },
+        }
+    dynamics_reference = (
+        plan.verification_plan.exact_dynamics_reference
+        if plan.verification_plan is not None
+        else None
+    )
+    if dynamics_reference is not None:
+        if (
+            isinstance(observed, bool)
+            or not isinstance(observed, (int, float))
+            or not math.isfinite(float(observed))
+        ):
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | {"reason": "exact dynamics requires a finite numeric primary metric"},
+            }
+        try:
+            passed, reference_details = exact_dynamics_comparison(
+                **_dynamics_reference_call_args(plan),
+                reported_value=float(observed),
+            )
+        except DynamicsReferenceError as exc:
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | {
+                    "reason": "exact dynamics reference is unusable as declared",
+                    "error": str(exc),
+                    "fault": "plan",
+                },
+            }
+        exact = reference_details["scores"]["exact_dynamics_value"]
+        lower = expected_range.get("min")
+        upper = expected_range.get("max")
+        truth_below = (
+            isinstance(lower, int | float)
+            and not isinstance(lower, bool)
+            and exact < float(lower)
+            and not math.isclose(exact, float(lower), rel_tol=1e-12, abs_tol=1e-12)
+        )
+        truth_above = (
+            isinstance(upper, int | float)
+            and not isinstance(upper, bool)
+            and exact > float(upper)
+            and not math.isclose(exact, float(upper), rel_tol=1e-12, abs_tol=1e-12)
+        )
+        if truth_below or truth_above:
+            return {
+                "method": "success_criteria",
+                "result": "fail",
+                "details": details
+                | reference_details
+                | {
+                    "reason": "Plan expected_range excludes exact dynamics truth",
+                    "fault": "plan",
+                },
+            }
+        return {
+            "method": "success_criteria",
+            "result": "pass" if passed else "fail",
+            "details": details
+            | reference_details
+            | {
+                "reason": (
+                    "primary metric matches exact Plan-declared dynamics"
+                    if passed
+                    else "primary metric disagrees with exact Plan-declared dynamics"
+                )
+            },
+        }
     if not expected_range:
         return {
             "method": "success_criteria",
@@ -960,7 +1780,38 @@ def _success_criteria_check(
         }
     lower = expected_range.get("min")
     upper = expected_range.get("max")
-    passed = (lower is None or observed >= lower) and (upper is None or observed <= upper)
+    observed_number = float(observed)
+
+    # Simulator results often differ from an exact Plan boundary by only a handful of
+    # IEEE-754 ulps. Treating that as a semantic defect can burn the entire candidate
+    # budget while the source and result remain mathematically correct. This tolerance
+    # is many orders of magnitude tighter than physical or shot-noise tolerance; it
+    # absorbs only floating-point representation error at a closed interval boundary.
+    def meets_lower(bound: float | None) -> bool:
+        return (
+            bound is None
+            or observed_number >= bound
+            or math.isclose(
+                observed_number,
+                bound,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+        )
+
+    def meets_upper(bound: float | None) -> bool:
+        return (
+            bound is None
+            or observed_number <= bound
+            or math.isclose(
+                observed_number,
+                bound,
+                rel_tol=1e-12,
+                abs_tol=1e-12,
+            )
+        )
+
+    passed = meets_lower(lower) and meets_upper(upper)
     return {
         "method": "success_criteria",
         "result": "pass" if passed else "fail",
@@ -999,10 +1850,9 @@ def _reference_checks(
     verification_plan = plan.verification_plan
     if verification_plan is None:
         return []
-    metric = plan.success_criteria.primary_metric
-    reported = execution.result.get(metric)
+    primary_metric = plan.success_criteria.primary_metric
     thresholds = verification_plan.thresholds or {}
-    outcomes = []
+    outcomes: list[tuple[Any, str, Any]] = []
 
     if VerificationMethod.EXACT_DIAG in verification_plan.methods:
         terms = verification_plan.reference_hamiltonian
@@ -1010,28 +1860,42 @@ def _reference_checks(
         # rather than diagonalizing an empty one keeps a stored plan that predates that
         # rule from being reported as a check that ran.
         if terms:
+            metric = verification_plan.reference_result_key or primary_metric
+            reported = execution.result.get(metric)
             outcomes.append(
-                verify_exact_diag(
-                    [(term.coefficient, term.pauli) for term in terms],
-                    reported,
-                    shots=plan.parameters.shots,
-                    # A declared tolerance may only TIGHTEN the computed bound;
-                    # verify_exact_diag applies the min() itself, so pass it through
-                    # rather than pre-selecting a winner here.
-                    declared_tolerance=thresholds.get(
-                        f"{metric}_error_max", thresholds.get("energy_error_max")
+                (
+                    verify_exact_diag(
+                        [(term.coefficient, term.pauli) for term in terms],
+                        reported,
+                        shots=plan.parameters.shots,
+                        # A declared tolerance may only TIGHTEN the computed bound;
+                        # verify_exact_diag applies the min() itself, so pass it through
+                        # rather than pre-selecting a winner here.
+                        declared_tolerance=thresholds.get(
+                            f"{metric}_error_max", thresholds.get("energy_error_max")
+                        ),
                     ),
+                    metric,
+                    reported,
                 )
             )
 
     if VerificationMethod.BRUTE_FORCE in verification_plan.methods:
         problem = verification_plan.reference_problem
         if problem is not None:
+            metric = primary_metric
+            reported = execution.result.get(metric)
+            args = _reference_problem_call_args(plan)
             outcomes.append(
-                verify_brute_force(
-                    problem.kind,
-                    problem.num_variables,
-                    [(term.i, term.j, term.weight) for term in problem.terms],
+                (
+                    verify_brute_force(
+                        args.pop("kind"),
+                        args.pop("num_variables"),
+                        args.pop("terms"),
+                        reported,
+                        **args,
+                    ),
+                    metric,
                     reported,
                 )
             )
@@ -1042,11 +1906,21 @@ def _reference_checks(
             "result": "pass" if outcome.result is VerificationResultKind.PASS else "fail",
             "details": dict(outcome.details) | {"primary_metric": metric, "reported": reported},
         }
-        for outcome in outcomes
+        for outcome, metric, reported in outcomes
     ]
 
 
-_REFERENCE_METHODS = frozenset({VerificationMethod.EXACT_DIAG, VerificationMethod.BRUTE_FORCE})
+_REFERENCE_METHODS = frozenset(
+    {VerificationMethod.EXACT, VerificationMethod.EXACT_DIAG, VerificationMethod.BRUTE_FORCE}
+)
+_EXACT_SUCCESS_PROTOCOLS = frozenset(
+    {
+        "exact_pauli_dynamics",
+        "exact_lindblad_evolution",
+        "exact_dyadic_phase_estimation",
+        "exact_dense_linear_system",
+    }
+)
 
 
 def _reference_check_routing(
@@ -1082,13 +1956,19 @@ def _reference_check_routing(
         success_details.get("expected_range") if isinstance(success_details, dict) else None
     )
     if isinstance(expected_range, dict):
+        success_metric = success_details.get("primary_metric")
         reference_values: list[float] = []
         for check in checks:
             details = check.get("details")
+            if not isinstance(details, dict) or details.get("primary_metric") != success_metric:
+                continue
             scores = details.get("scores") if isinstance(details, dict) else None
             if not isinstance(scores, dict):
                 continue
-            value = scores.get("exact_ground_state_energy", scores.get("optimal_value"))
+            value = scores.get(
+                "exact_ground_state_energy",
+                scores.get("optimal_value", scores.get("exact_dynamics_value")),
+            )
             if isinstance(value, int | float) and not isinstance(value, bool):
                 reference_values.append(float(value))
         lower = expected_range.get("min")
@@ -1102,6 +1982,136 @@ def _reference_check_routing(
     if not failed:
         return None
     return SemanticReviewDecision.CODE_REPAIR, "reference_check_failed"
+
+
+def _reference_routing_critic(
+    advisory: dict[str, Any],
+    checks: list[dict[str, Any]],
+    decision: SemanticReviewDecision,
+) -> dict[str, Any]:
+    """Keep deterministic reference evidence from becoming speculative repair prose."""
+
+    failed = [check for check in checks if check.get("result") != "pass"]
+    disagreements: list[str] = []
+    for check in failed:
+        details = check.get("details") or {}
+        plural = details.get("disagreements")
+        if isinstance(plural, list):
+            disagreements.extend(str(item) for item in plural)
+        singular = details.get("disagreement")
+        if isinstance(singular, str) and singular.strip():
+            disagreements.append(singular)
+    if decision is SemanticReviewDecision.REPLAN:
+        return advisory | {
+            "decision": "replan",
+            "confidence": "high",
+            "severity": "major",
+            "summary": (
+                "The deterministic reference is unusable or contradicts the Plan; "
+                "source repair cannot satisfy this declaration."
+            ),
+            "failed_checks": [str(check.get("method", "reference")) for check in failed],
+            "mismatches": disagreements
+            or ["The Plan's declared reference cannot be used consistently."],
+            "repair_instructions": [
+                "Re-derive the typed reference and success criterion from the request; "
+                "do not modify candidate code against a contradictory Plan."
+            ],
+        }
+
+    protocols: set[str] = set()
+    exact_diag_failures: list[dict[str, Any]] = []
+    for check in failed:
+        details = check.get("details") or {}
+        protocol = details.get("protocol")
+        if isinstance(protocol, dict) and isinstance(protocol.get("name"), str):
+            protocols.add(protocol["name"])
+            if protocol["name"] == "exact_diagonalization":
+                exact_diag_failures.append(details)
+    instructions = [
+        "Repair the computation that produces the protected RESULT values first. "
+        "Do not replace or broaden unrelated artifact code solely from this scalar mismatch; "
+        "artifact semantics can be reviewed after the exact numeric check passes."
+    ]
+    if "exact_lindblad_evolution" in protocols:
+        instructions.append(
+            "Rebuild the declared Lindblad generator in basis |0>,|1>: lowering "
+            "|0><1| is [[0,1],[0,0]] and raising |1><0| is [[0,0],[1,0]]. "
+            "Apply every written dissipator multiplier literally and recompute all "
+            "declared density-matrix scalars."
+        )
+    if any(
+        details.get("failure_mode") in {"reported_above_ground_state", "converged_to_excited_state"}
+        and (details.get("protocol") or {}).get("expectation_mode") == "exact_statevector"
+        for details in exact_diag_failures
+    ):
+        instructions.append(
+            "The exact-statevector variational energy is above the independently "
+            "diagonalized ground state, so this is not shot noise. First confirm every "
+            "written Pauli term is included once. If the independently reported exact "
+            "energy already matches the reference, materially change the variational "
+            "search: use an ansatz that connects the Hamiltonian's coupled basis states, "
+            "change or deepen the entangler pattern, and run deterministic starts that "
+            "include the best diagonal-basis state plus points spread across the full "
+            "parameter range. Use a robust bounded optimizer from the best starts and "
+            "keep the lowest energy actually reached. Do not substitute the exact "
+            "eigenvector or exact baseline for the variational RESULT or FINAL_CIRCUIT."
+        )
+    if "exact_pauli_dynamics" in protocols:
+        instructions.append(
+            "Rebuild every Hamiltonian and observable Pauli string from the Plan's "
+            "sparse factors instead of copying a prior full string. With q0 leftmost, "
+            "factor index i occupies character i and every other character is I. "
+            "Then recompute the exact matrix exponential and both requested scalars."
+        )
+    if "exact_dyadic_phase_estimation" in protocols:
+        instructions.append(
+            "Repair the controlled-power and inverse-QFT circuit so an exactly "
+            "representable eigenphase concentrates the protected count distribution. "
+            "Derive phase_integer, phase_estimate, and peak_probability from those "
+            "same counts; do not return the known input phase as a substitute."
+        )
+    if "exact_dense_linear_system" in protocols:
+        instructions.append(
+            "Trace the HHL-style circuit on each matrix eigenvector: verify phase "
+            "estimation, reciprocal controlled rotation, and the exact inverse of the "
+            "forward phase-estimation subcircuit. Extract the postselected system "
+            "amplitudes and canonicalize their global sign. A raw Qiskit statevector "
+            "reshapes as axes q_(n-1),...,q_0: postselect qubit a by testing "
+            "((basis_index >> a) & 1), or use subsystem APIs, rather than treating "
+            "reshape axis a as qubit a. Do not replace circuit amplitudes with the "
+            "classical baseline values."
+        )
+    if "brute_force_enumeration" in protocols:
+        if any("SUBOPTIMAL" in disagreement for disagreement in disagreements):
+            instructions.append(
+                "The reported objective is achievable but suboptimal, so preserve the "
+                "scoring and feasibility rules and improve the quantum search. For an "
+                "enumerated diagonal cost, use a length-2**n DiagonalGate phase vector, "
+                "never a dense np.diag UnitaryGate; tune bounded QAOA parameters and "
+                "select the best feasible bitstring actually present in sampled counts. "
+                "Do not copy the enumerated optimum into the quantum RESULT."
+            )
+        else:
+            instructions.append(
+                "Recheck Qiskit count-key reversal, original-variable indices, every "
+                "feasibility predicate, and the objective sign before changing QAOA "
+                "search parameters. The reported value must be recomputed from the same "
+                "sampled bitstring returned as the selection."
+            )
+    return advisory | {
+        "decision": "code_repair",
+        "confidence": "high",
+        "severity": "major",
+        "summary": (
+            "Protected RESULT values disagree with a deterministic reference; repair "
+            "the reported computation before making broader artifact changes."
+        ),
+        "failed_checks": [str(check.get("method", "reference")) for check in failed],
+        "mismatches": disagreements
+        or ["At least one protected RESULT value disagrees with its exact reference."],
+        "repair_instructions": instructions,
+    }
 
 
 def passed_reference_methods(review: SemanticReviewEvidence) -> tuple[VerificationMethod, ...]:
@@ -1118,6 +2128,16 @@ def passed_reference_methods(review: SemanticReviewEvidence) -> tuple[Verificati
     found: list[VerificationMethod] = []
     for check in checks:
         if not isinstance(check, dict) or check.get("result") != "pass":
+            continue
+        if check.get("method") == VerificationMethod.SUCCESS_CRITERIA.value:
+            details = check.get("details")
+            protocol = details.get("protocol") if isinstance(details, dict) else None
+            if (
+                isinstance(protocol, dict)
+                and protocol.get("name") in _EXACT_SUCCESS_PROTOCOLS
+                and VerificationMethod.EXACT not in found
+            ):
+                found.append(VerificationMethod.EXACT)
             continue
         try:
             method = VerificationMethod(str(check.get("method")))
@@ -1278,6 +2298,672 @@ class ProductionSimplePipelinePorts:
 
         return self._projection_dirty
 
+    async def _reconcile_reference_problem(self, plan: Plan) -> SimplePortResult[Plan]:
+        if not _reference_problem_requires_audit(plan):
+            return SimplePortResult.success(plan)
+        assert plan.verification_plan is not None
+        assert plan.verification_plan.reference_problem is not None
+        try:
+            response = await self._llm.complete(
+                LLMRequest(
+                    # A cheaper audit model repeatedly reversed implications and
+                    # invented bounded oracles for large underspecified assignment
+                    # requests. Use the substantive tier, then still require
+                    # deterministic consensus.
+                    model=model_for("plan"),
+                    system=SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                    user=json.dumps(
+                        {
+                            "request": self._task_prompt,
+                            "primary_metric": plan.success_criteria.primary_metric,
+                        },
+                        sort_keys=True,
+                    ),
+                    temperature=0.0,
+                    response_schema=_BusinessReferenceExtraction.model_json_schema(),
+                    schema_name="business_reference_extraction",
+                )
+            )
+            extraction = _BusinessReferenceExtraction.model_validate_json(
+                extract_json(response.text)
+            )
+        except (StageOutputError, ValidationError) as exc:
+            log.warning(
+                "dropping brute-force reference after invalid independent extraction: %s",
+                type(exc).__name__,
+            )
+            return SimplePortResult.success(_without_brute_force_reference(plan))
+        except Exception as exc:
+            # This call can only add evidence. A provider outage must not turn an
+            # otherwise executable task into a product failure; run with the weaker
+            # structural/review evidence instead.
+            log.warning(
+                "dropping brute-force reference after independent extraction failure: %s",
+                type(exc).__name__,
+            )
+            return SimplePortResult.success(_without_brute_force_reference(plan))
+
+        if not extraction.supported or extraction.reference is None:
+            return SimplePortResult.success(_without_brute_force_reference(plan))
+
+        try:
+            planner_spec = _reference_problem_call_args(plan)
+            independent = _durable_business_reference(extraction.reference)
+            equivalent, comparison = reference_problems_equivalent(
+                planner_spec,
+                _reference_problem_spec(independent),
+            )
+            reference_optimum = optimal_objective(**planner_spec)
+        except (BaselineProblemError, ValidationError, ValueError) as exc:
+            log.warning(
+                "dropping unusable brute-force reference during consensus: %s",
+                type(exc).__name__,
+            )
+            return SimplePortResult.success(_without_brute_force_reference(plan))
+        if not equivalent:
+            log.info(
+                "dropping brute-force reference without independent consensus: %s",
+                comparison.get("reason", "unknown_mismatch"),
+            )
+            return SimplePortResult.success(_without_brute_force_reference(plan))
+
+        expected_range = plan.success_criteria.expected_range or {}
+        lower = expected_range.get("min")
+        upper = expected_range.get("max")
+        truth_outside_range = (
+            isinstance(lower, int | float)
+            and not isinstance(lower, bool)
+            and reference_optimum < float(lower)
+            and not math.isclose(reference_optimum, float(lower), rel_tol=1e-12, abs_tol=1e-12)
+        ) or (
+            isinstance(upper, int | float)
+            and not isinstance(upper, bool)
+            and reference_optimum > float(upper)
+            and not math.isclose(reference_optimum, float(upper), rel_tol=1e-12, abs_tol=1e-12)
+        )
+        verification = plan.verification_plan.model_copy(
+            update={"reference_method": "independent_business_extraction_consensus"}
+        )
+        updates: dict[str, Any] = {"verification_plan": verification}
+        criteria_updates: dict[str, Any] = {"additional_notes": None}
+        if truth_outside_range:
+            # Two independently derived references agree over every assignment;
+            # a guessed numeric range that excludes their exact optimum is weaker
+            # evidence and must not override the deterministic oracle.
+            criteria_updates["expected_range"] = None
+        if plan.success_criteria.additional_notes is not None or truth_outside_range:
+            updates["success_criteria"] = plan.success_criteria.model_copy(update=criteria_updates)
+        return SimplePortResult.success(plan.model_copy(update=updates))
+
+    async def _reconcile_linear_system_reference(self, plan: Plan) -> SimplePortResult[Plan]:
+        verification = plan.verification_plan
+        declared_reference = (
+            verification.exact_linear_system_reference if verification is not None else None
+        )
+        if not _should_attempt_linear_system_reference(plan, self._task_prompt):
+            return SimplePortResult.success(plan)
+
+        request_payload = json.dumps(
+            {
+                "request": self._task_prompt,
+                "expected_output_keys": plan.expected_output_keys,
+                "primary_metric": plan.success_criteria.primary_metric,
+            },
+            sort_keys=True,
+        )
+        extractions: list[tuple[str, _LinearSystemReferenceExtraction]] = []
+        for role, schema_name in (
+            ("plan", "linear_system_reference_extraction"),
+            ("audit", "linear_system_reference_audit_extraction"),
+        ):
+            try:
+                response = await self._llm.complete(
+                    LLMRequest(
+                        model=model_for(role),
+                        system=SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                        user=request_payload,
+                        temperature=0.0,
+                        response_schema=_LinearSystemReferenceExtraction.model_json_schema(),
+                        schema_name=schema_name,
+                    )
+                )
+                extraction = _LinearSystemReferenceExtraction.model_validate_json(
+                    extract_json(response.text)
+                )
+            except (StageOutputError, ValidationError) as exc:
+                if role == "audit":
+                    log.warning(
+                        "continuing with the substantive linear-system extraction after "
+                        "invalid audit extraction: %s",
+                        type(exc).__name__,
+                    )
+                    continue
+                if declared_reference is None:
+                    log.warning(
+                        "skipping optional linear-system enrichment after invalid %s "
+                        "extraction: %s",
+                        role,
+                        type(exc).__name__,
+                    )
+                    return SimplePortResult.success(plan)
+                return _failure(
+                    kind=SimpleFailureKind.MODEL_OUTPUT,
+                    stage=SimplePipelineStage.PLANNING,
+                    code="linear_system_reference_extraction_invalid",
+                    message=(
+                        f"{role}-role linear-system extraction returned invalid structured data"
+                    ),
+                    retryable=True,
+                    retry_target=SimpleRetryTarget.PLANNING,
+                    exception=exc,
+                    details=_model_output_details(exc),
+                )
+            except Exception as exc:
+                if role == "audit":
+                    log.warning(
+                        "continuing with the substantive linear-system extraction after "
+                        "audit provider failure: %s",
+                        type(exc).__name__,
+                    )
+                    continue
+                if declared_reference is None:
+                    log.warning(
+                        "skipping optional linear-system enrichment after %s provider failure: %s",
+                        role,
+                        type(exc).__name__,
+                    )
+                    return SimplePortResult.success(plan)
+                return _provider_failure(
+                    stage=SimplePipelineStage.PLANNING,
+                    role=role,
+                    exception=exc,
+                )
+            if not extraction.supported or extraction.reference is None:
+                if role == "audit":
+                    # Flash occasionally treats an explicitly out-of-scope circuit
+                    # obligation as making a complete A*x=b problem unsupported. An
+                    # abstention is not a contradictory typed derivation, so it cannot
+                    # veto agreement between the planner (when present) and the
+                    # substantive independent extractor.
+                    log.info("linear-system audit extractor abstained: %s", extraction.reason)
+                    continue
+                if declared_reference is None:
+                    return SimplePortResult.success(plan)
+                return _failure(
+                    kind=SimpleFailureKind.PLAN,
+                    stage=SimplePipelineStage.PLANNING,
+                    code="linear_system_reference_consensus_failed",
+                    message=(
+                        f"{role}-role extraction does not support the declared "
+                        "linear-system reference"
+                    ),
+                    retryable=True,
+                    retry_target=SimpleRetryTarget.PLANNING,
+                    details={
+                        "comparison": {
+                            "reason": f"{role}_extraction_unsupported",
+                            "detail": extraction.reason,
+                        }
+                    },
+                )
+            extractions.append((role, extraction))
+
+        if declared_reference is None:
+            reference = extractions[0][1].reference
+            comparison_references = [
+                (f"{role}_extraction", extraction.reference) for role, extraction in extractions[1:]
+            ]
+            reference_method = (
+                "dual_model_linear_system_extraction_consensus"
+                if comparison_references
+                else "independent_linear_system_extraction"
+            )
+        else:
+            reference = declared_reference
+            comparison_references = [
+                (f"{role}_extraction", extraction.reference) for role, extraction in extractions
+            ]
+            reference_method = (
+                "independent_dual_model_linear_system_consensus"
+                if len(comparison_references) > 1
+                else "independent_linear_system_extraction_consensus"
+            )
+        assert reference is not None
+
+        comparison: dict[str, object] = {"reason": "all_linear_system_references_equivalent"}
+        mismatch_source: str | None = None
+        try:
+            equivalent = True
+            for source, comparison_reference in comparison_references:
+                assert comparison_reference is not None
+                equivalent, comparison = linear_system_references_equivalent(
+                    reference, comparison_reference
+                )
+                if not equivalent:
+                    mismatch_source = source
+                    break
+            exact_values, _ = exact_linear_system_values(reference)
+        except LinearSystemReferenceError as exc:
+            if declared_reference is None:
+                log.warning("skipping unusable optional linear-system enrichment: %s", exc)
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="linear_system_reference_unusable",
+                message="typed linear-system reference cannot be evaluated as declared",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={"reference_errors": [str(exc)[:1_000]]},
+            )
+        if not equivalent:
+            comparison = comparison | {"source": mismatch_source}
+            if declared_reference is None:
+                log.info(
+                    "skipping optional linear-system enrichment without semantic consensus: %s",
+                    comparison.get("reason", "unknown_mismatch"),
+                )
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="linear_system_reference_consensus_failed",
+                message="planner and independent linear-system extractions disagree",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={"comparison": comparison},
+            )
+
+        primary = plan.success_criteria.primary_metric
+        declared_keys = {result.result_key for result in reference.results}
+        if primary not in declared_keys or not declared_keys.issubset(plan.expected_output_keys):
+            if declared_reference is None:
+                log.info("skipping optional linear-system enrichment with unbound result keys")
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="linear_system_reference_result_binding_failed",
+                message="typed linear-system results are not bound to the Plan output contract",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={
+                    "primary_metric": primary,
+                    "reference_result_keys": sorted(declared_keys),
+                    "expected_output_keys": sorted(plan.expected_output_keys),
+                },
+            )
+        # Solving here ensures the agreed primary meaning is numerically usable before
+        # the later reconciliation removes weaker model-authored ranges and notes.
+        _ = exact_values[primary]
+        base_verification = plan.verification_plan or VerificationPlan(
+            methods=[VerificationMethod.RETURN_CONTRACT]
+        )
+        return SimplePortResult.success(
+            plan.model_copy(
+                update={
+                    "verification_plan": base_verification.model_copy(
+                        update={
+                            "exact_linear_system_reference": reference,
+                            "reference_method": reference_method,
+                        }
+                    )
+                }
+            )
+        )
+
+    async def _reconcile_lindblad_reference(self, plan: Plan) -> SimplePortResult[Plan]:
+        verification = plan.verification_plan
+        declared_reference = verification.exact_lindblad_reference if verification else None
+        if not _should_attempt_lindblad_reference(plan, self._task_prompt):
+            return SimplePortResult.success(plan)
+        request_payload = json.dumps(
+            {
+                "request": self._task_prompt,
+                "expected_output_keys": plan.expected_output_keys,
+                "primary_metric": plan.success_criteria.primary_metric,
+            },
+            sort_keys=True,
+        )
+        try:
+            response = await self._llm.complete(
+                LLMRequest(
+                    model=model_for("plan"),
+                    system=SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                    user=request_payload,
+                    temperature=0.0,
+                    response_schema=_LindbladReferenceExtraction.model_json_schema(),
+                    schema_name="lindblad_reference_extraction",
+                )
+            )
+            extraction = _LindbladReferenceExtraction.model_validate_json(
+                extract_json(response.text)
+            )
+        except (StageOutputError, ValidationError) as exc:
+            if declared_reference is None:
+                log.warning(
+                    "skipping optional Lindblad enrichment after invalid extraction: %s",
+                    type(exc).__name__,
+                )
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.MODEL_OUTPUT,
+                stage=SimplePipelineStage.PLANNING,
+                code="lindblad_reference_extraction_invalid",
+                message="independent Lindblad extraction returned invalid structured data",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                exception=exc,
+                details=_model_output_details(exc),
+            )
+        except Exception as exc:
+            if declared_reference is None:
+                log.warning(
+                    "skipping optional Lindblad enrichment after provider failure: %s",
+                    type(exc).__name__,
+                )
+                return SimplePortResult.success(plan)
+            return _provider_failure(
+                stage=SimplePipelineStage.PLANNING,
+                role="plan",
+                exception=exc,
+            )
+        if not extraction.supported or extraction.reference is None:
+            if declared_reference is None:
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="lindblad_reference_consensus_failed",
+                message="independent extraction does not support the declared Lindblad reference",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={"comparison": {"reason": "independent_extraction_unsupported"}},
+            )
+
+        # The broad planner and the Pro extractor are correlated model evidence.
+        # Require a second model role even when the Plan already supplied a reference;
+        # exact execution is enabled only when all available typed meanings agree.
+        try:
+            audit_response = await self._llm.complete(
+                LLMRequest(
+                    model=model_for("audit"),
+                    system=SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                    user=request_payload,
+                    temperature=0.0,
+                    response_schema=_LindbladReferenceExtraction.model_json_schema(),
+                    schema_name="lindblad_reference_audit_extraction",
+                )
+            )
+            audit_extraction = _LindbladReferenceExtraction.model_validate_json(
+                extract_json(audit_response.text)
+            )
+        except (StageOutputError, ValidationError) as exc:
+            if declared_reference is None:
+                log.warning(
+                    "skipping optional Lindblad enrichment without dual-model consensus: %s",
+                    type(exc).__name__,
+                )
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.MODEL_OUTPUT,
+                stage=SimplePipelineStage.PLANNING,
+                code="lindblad_reference_audit_extraction_invalid",
+                message="audit-role Lindblad extraction returned invalid structured data",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                exception=exc,
+                details=_model_output_details(exc),
+            )
+        except Exception as exc:
+            if declared_reference is None:
+                log.warning(
+                    "skipping optional Lindblad enrichment after audit provider failure: %s",
+                    type(exc).__name__,
+                )
+                return SimplePortResult.success(plan)
+            return _provider_failure(
+                stage=SimplePipelineStage.PLANNING,
+                role="audit",
+                exception=exc,
+            )
+        if not audit_extraction.supported or audit_extraction.reference is None:
+            if declared_reference is None:
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="lindblad_reference_consensus_failed",
+                message="audit extraction does not support the declared Lindblad reference",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={"comparison": {"reason": "audit_extraction_unsupported"}},
+            )
+
+        if declared_reference is None:
+            reference = extraction.reference
+            comparison_references = [("audit_extraction", audit_extraction.reference)]
+            reference_method = "dual_model_lindblad_extraction_consensus"
+        else:
+            reference = declared_reference
+            comparison_references = [
+                ("plan_extraction", extraction.reference),
+                ("audit_extraction", audit_extraction.reference),
+            ]
+            reference_method = "independent_dual_model_lindblad_consensus"
+
+        assert reference is not None
+        planner_spec = _lindblad_reference_spec(reference)
+        try:
+            comparison: dict[str, Any] = {"reason": "all_lindblad_references_equivalent"}
+            mismatch_source: str | None = None
+            for source, comparison_reference in comparison_references:
+                equivalent, comparison = lindblad_references_equivalent(
+                    planner_spec,
+                    _lindblad_reference_spec(comparison_reference),
+                )
+                if not equivalent:
+                    mismatch_source = source
+                    break
+            exact_values = exact_lindblad_values(**planner_spec)
+        except LindbladReferenceError as exc:
+            if declared_reference is None:
+                log.warning("skipping unusable optional Lindblad enrichment: %s", exc)
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="lindblad_reference_unusable",
+                message="typed Lindblad reference cannot be evaluated as declared",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                exception=exc,
+                details={"reference_errors": [str(exc)[:1_000]]},
+            )
+        if not equivalent:
+            comparison = comparison | {"source": mismatch_source}
+            if declared_reference is None:
+                log.info(
+                    "skipping optional Lindblad enrichment without semantic consensus: %s",
+                    comparison.get("reason", "unknown_mismatch"),
+                )
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="lindblad_reference_consensus_failed",
+                message="planner and independent Lindblad extraction disagree",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={"comparison": comparison},
+            )
+
+        primary = plan.success_criteria.primary_metric
+        declared_keys = {result.result_key for result in reference.results}
+        if primary not in declared_keys or not declared_keys.issubset(plan.expected_output_keys):
+            if declared_reference is None:
+                log.info("skipping optional Lindblad enrichment with unbound result keys")
+                return SimplePortResult.success(plan)
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="lindblad_reference_result_binding_failed",
+                message="typed Lindblad results are not bound to the Plan output contract",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={
+                    "primary_metric": primary,
+                    "reference_result_keys": sorted(declared_keys),
+                    "expected_output_keys": sorted(plan.expected_output_keys),
+                },
+            )
+        exact_primary = exact_values[primary]
+        expected_range = plan.success_criteria.expected_range or {}
+        lower = expected_range.get("min")
+        upper = expected_range.get("max")
+        truth_outside_range = (
+            isinstance(lower, int | float)
+            and not isinstance(lower, bool)
+            and exact_primary < float(lower)
+            and not math.isclose(exact_primary, float(lower), rel_tol=1e-12, abs_tol=1e-12)
+        ) or (
+            isinstance(upper, int | float)
+            and not isinstance(upper, bool)
+            and exact_primary > float(upper)
+            and not math.isclose(exact_primary, float(upper), rel_tol=1e-12, abs_tol=1e-12)
+        )
+        base_verification = plan.verification_plan or VerificationPlan(
+            methods=[VerificationMethod.RETURN_CONTRACT]
+        )
+        reconciled = base_verification.model_copy(
+            update={
+                "exact_lindblad_reference": reference,
+                "reference_method": reference_method,
+            }
+        )
+        updates: dict[str, Any] = {"verification_plan": reconciled}
+        criteria_updates = {"additional_notes": None}
+        if truth_outside_range:
+            criteria_updates["expected_range"] = None
+        if plan.success_criteria.additional_notes is not None or truth_outside_range:
+            updates["success_criteria"] = plan.success_criteria.model_copy(update=criteria_updates)
+        return SimplePortResult.success(plan.model_copy(update=updates))
+
+    async def _audit_dynamics_reference(self, plan: Plan) -> SimplePortResult[Plan]:
+        verification = plan.verification_plan
+        reference = verification.exact_dynamics_reference if verification else None
+        if reference is None:
+            return SimplePortResult.success(plan)
+        try:
+            response = await self._llm.complete(
+                LLMRequest(
+                    model=model_for("audit"),
+                    system=SIMPLE_DYNAMICS_REFERENCE_AUDIT_SYSTEM_PROMPT,
+                    user=json.dumps(
+                        {
+                            "request": self._task_prompt,
+                            "success_criteria": plan.success_criteria.model_dump(mode="json"),
+                            "exact_dynamics_reference": reference.model_dump(mode="json"),
+                        },
+                        sort_keys=True,
+                    ),
+                    temperature=0.0,
+                    response_schema=_ReferenceAuditOutput.model_json_schema(),
+                    schema_name="dynamics_reference_audit",
+                )
+            )
+            audit = _ReferenceAuditOutput.model_validate_json(extract_json(response.text))
+        except (StageOutputError, ValidationError) as exc:
+            return _failure(
+                kind=SimpleFailureKind.MODEL_OUTPUT,
+                stage=SimplePipelineStage.PLANNING,
+                code="dynamics_reference_audit_output_invalid",
+                message="independent dynamics-reference audit returned invalid structured data",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                exception=exc,
+                details=_model_output_details(exc),
+            )
+        except Exception as exc:
+            return _provider_failure(
+                stage=SimplePipelineStage.PLANNING,
+                role="audit",
+                exception=exc,
+            )
+
+        try:
+            exact_value = exact_dynamics_value(**_dynamics_reference_call_args(plan))
+        except DynamicsReferenceError as exc:
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="dynamics_reference_unusable",
+                message="model-authored dynamics reference cannot be evaluated as declared",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                exception=exc,
+                details={"audit_errors": [str(exc)[:1_000]]},
+            )
+
+        expected_range = plan.success_criteria.expected_range or {}
+        lower = expected_range.get("min")
+        upper = expected_range.get("max")
+        outside = (
+            isinstance(lower, int | float)
+            and not isinstance(lower, bool)
+            and exact_value < float(lower)
+            and not math.isclose(exact_value, float(lower), rel_tol=1e-12, abs_tol=1e-12)
+        ) or (
+            isinstance(upper, int | float)
+            and not isinstance(upper, bool)
+            and exact_value > float(upper)
+            and not math.isclose(exact_value, float(upper), rel_tol=1e-12, abs_tol=1e-12)
+        )
+        if outside:
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="dynamics_reference_audit_failed",
+                message="typed dynamics truth contradicts the Plan's success range",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={
+                    "audit_errors": [
+                        f"exact dynamics value {exact_value} is outside "
+                        f"success_criteria.expected_range {expected_range}"
+                    ],
+                    "typed_reference_value": exact_value,
+                },
+            )
+        if not audit.valid:
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="dynamics_reference_audit_failed",
+                message="independent audit rejected the model-authored dynamics reference",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details={
+                    "audit_errors": audit.errors[:8],
+                    "typed_reference_value": exact_value,
+                },
+            )
+
+        assert plan.verification_plan is not None
+        audited_verification = plan.verification_plan.model_copy(
+            update={"reference_method": "independent_model_audit"}
+        )
+        return SimplePortResult.success(
+            plan.model_copy(
+                update={
+                    "verification_plan": audited_verification,
+                    "success_criteria": plan.success_criteria.model_copy(
+                        update={"additional_notes": None}
+                    ),
+                }
+            )
+        )
+
     async def plan(
         self,
         run_id: UUID,
@@ -1369,6 +3055,41 @@ class ProductionSimplePipelinePorts:
                 role="plan",
                 exception=exc,
             )
+
+        reconciled = _reconcile_exact_diag_success_criteria(plan)
+        if reconciled.failure is not None:
+            return SimplePortResult.failed(reconciled.failure)
+        assert reconciled.value is not None
+        plan = reconciled.value
+        plan = _reconcile_exact_qpe_success_criteria(plan)
+        audited = await self._reconcile_linear_system_reference(plan)
+        if audited.failure is not None:
+            return SimplePortResult.failed(audited.failure)
+        assert audited.value is not None
+        plan = audited.value
+        reconciled = _reconcile_exact_linear_system_success_criteria(plan)
+        if reconciled.failure is not None:
+            return SimplePortResult.failed(reconciled.failure)
+        assert reconciled.value is not None
+        plan = reconciled.value
+        audited = await self._reconcile_reference_problem(plan)
+        if audited.failure is not None:
+            return SimplePortResult.failed(audited.failure)
+        assert audited.value is not None
+        plan = audited.value
+        audited = await self._reconcile_lindblad_reference(plan)
+        if audited.failure is not None:
+            return SimplePortResult.failed(audited.failure)
+        assert audited.value is not None
+        plan = audited.value
+        audited = await self._audit_dynamics_reference(plan)
+        if audited.failure is not None:
+            return SimplePortResult.failed(audited.failure)
+        assert audited.value is not None
+        plan = audited.value
+
+        if previous is not None:
+            plan = _preserve_replan_range_strength(previous.plan, plan)
 
         if plan.framework is not self._framework:
             return _failure(
@@ -1482,7 +3203,12 @@ class ProductionSimplePipelinePorts:
                 response = await self._llm.complete(
                     LLMRequest(
                         model=model_for("generate"),
-                        system=SIMPLE_GENERATION_SYSTEM_PROMPT,
+                        system=simple_generation_system_prompt(
+                            framework=plan.plan.framework.value,
+                            domain=plan.plan.domain,
+                            algorithm=plan.plan.algorithm.value,
+                            problem_summary=plan.plan.problem_summary,
+                        ),
                         user=json.dumps(user, default=str, sort_keys=True),
                         temperature=_REPAIR_TEMPERATURE if feedback is not None else 0.0,
                         response_schema=_GeneratedSource.model_json_schema(),
@@ -1829,6 +3555,7 @@ class ProductionSimplePipelinePorts:
                 exception=exc,
             )
 
+        success_criteria_check = _success_criteria_check(plan.plan, execution)
         fast_checks = [
             {
                 "method": "structural",
@@ -1836,10 +3563,21 @@ class ProductionSimplePipelinePorts:
                 "details": {"source_fingerprint": candidate.source_fingerprint},
             },
             _return_contract_check(execution.result, execution.observation),
-            _success_criteria_check(plan.plan, execution),
+            success_criteria_check,
         ]
         reference_checks = _reference_checks(plan.plan, execution)
         fast_checks.extend(reference_checks)
+        if plan.plan.verification_plan is not None and (
+            plan.plan.verification_plan.exact_dynamics_reference is not None
+            or plan.plan.verification_plan.exact_lindblad_reference is not None
+            or plan.plan.verification_plan.exact_phase_estimation_reference is not None
+            or plan.plan.verification_plan.exact_linear_system_reference is not None
+        ):
+            # It uses the existing success_criteria method name so public/event/DB
+            # enums remain stable, but it must still participate in deterministic
+            # reference routing: a mismatch is a candidate defect and an unusable
+            # declaration or contradictory range is a Plan defect.
+            reference_checks.append(success_criteria_check)
         try:
             output = await self._reviewer.review(
                 candidate,
@@ -1867,7 +3605,7 @@ class ProductionSimplePipelinePorts:
             )
         routing = _reference_check_routing(
             reference_checks,
-            success_criteria_check=fast_checks[2],
+            success_criteria_check=success_criteria_check,
         )
         if routing is not None:
             # The advisory reviewer never gets to overturn a check that already
@@ -1888,6 +3626,11 @@ class ProductionSimplePipelinePorts:
                     "reason_code": reason_code,
                     "failure_class": failure_class,
                     "retry_target": retry_target,
+                    "critic": _reference_routing_critic(
+                        output.critic,
+                        reference_checks,
+                        decision,
+                    ),
                 }
             )
         evidence = SemanticReviewEvidence(

@@ -1,0 +1,22 @@
+id: holdout-v4-01
+category: "Holdout v4 — Maximum-weight independent set"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  Find a maximum-weight independent set on five vertices with vertex weights
+  [6,5,4,3,2] and edges (0,1),(0,2),(1,3),(2,3),(3,4). Encode every edge exclusion
+  in a Qiskit QAOA cost Hamiltonian, use deterministic seeds and at least 4096 shots,
+  and decode only independent sampled sets. Independently enumerate all 32 subsets.
+  Return top-level numeric RESULT keys qaoa_best_weight and exact_maximum_weight plus
+  counts, and bind the optimized QAOA circuit to FINAL_CIRCUIT. Do not substitute the
+  enumerated set for the QAOA sample.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_weight", "exact_maximum_weight", "counts"]
+  expected_values:
+    qaoa_best_weight: 11.0
+    exact_maximum_weight: 11.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

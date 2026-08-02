@@ -1,0 +1,20 @@
+id: holdout-v1-02
+category: "Holdout — Deutsch-Jozsa"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Implement the Deutsch-Jozsa algorithm in Cirq with three input qubits and one
+  phase-kickback ancilla for the balanced Boolean function f(x)=x0 XOR x2. Use the
+  oracle circuit itself to evaluate the function. Simulate the final state before
+  measurement, return the probability of the all-zero input register as the top-level
+  numeric RESULT key all_zero_probability, and bind the complete algorithm circuit to
+  FINAL_CIRCUIT.
+framework: cirq
+expect:
+  terminal_reason: null
+  output_keys: ["all_zero_probability"]
+  expected_values:
+    all_zero_probability: 0.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

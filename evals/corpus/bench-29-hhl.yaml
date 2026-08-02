@@ -1,0 +1,18 @@
+id: bench-29
+category: "J — Quantum linear systems"
+prompt: >-
+  Implement the HHL algorithm in Qiskit for A=[[1.5,-0.5],[-0.5,1.5]] and
+  b=[1,0]. Use two phase-estimation qubits so the eigenvalues 1 and 2 are represented
+  exactly, perform the controlled reciprocal rotation and uncomputation, and use a
+  Statevector to postselect the reciprocal ancilla. Return the fidelity of the
+  normalized solution qubit with the normalized classical solution A^{-1}b as the
+  top-level numeric RESULT key solution_fidelity. Bind the complete HHL circuit before
+  postselection to FINAL_CIRCUIT; do not directly initialize the solution state.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["solution_fidelity"]
+  expected_values:
+    solution_fidelity: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

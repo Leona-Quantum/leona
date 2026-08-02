@@ -1,0 +1,23 @@
+id: holdout-v8-01
+category: "Holdout v8 — VQE result/reference binding"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Estimate the ground-state energy of H=-0.16 II +0.41 ZI -0.27 IZ +0.18 XX
+  +0.12 YY -0.07 ZZ with a parameterized two-qubit Qiskit ansatz, exact statevector
+  expectations, a robust optimizer, and four deterministic starting points. Independently
+  diagonalize the written Hamiltonian. Return top-level numeric RESULT keys
+  optimized_energy, exact_ground_energy, and energy_error, where energy_error is the
+  absolute difference between the first two values. Bind the best optimized ansatz to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["optimized_energy", "exact_ground_energy", "energy_error"]
+  expected_values:
+    optimized_energy: -0.8332361670424819
+    exact_ground_energy: -0.8332361670424819
+    energy_error: 0.0
+  expected_value_tolerance: 0.00001
+  saves_artifact: true

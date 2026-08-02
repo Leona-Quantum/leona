@@ -1,0 +1,25 @@
+id: holdout-v9-04
+category: "Holdout v9 — Practical three-by-three assignment"
+split: holdout
+difficulty: advanced
+workload: practical
+prompt: >-
+  Assign three workers to three jobs with exactly one job per worker and one worker
+  per job. The cost matrix by worker row is [[7,2,6],[5,8,3],[4,6,5]]. Encode the
+  nine x_worker_job variables and all six equalities in a Qiskit QAOA cost Hamiltonian,
+  use deterministic seeds and at least 2048 shots, and decode only feasible samples.
+  Independently enumerate all 3! assignments. Return top-level RESULT keys qaoa_cost,
+  exact_cost, jobs_by_worker, and counts, where jobs_by_worker[i] is the job assigned
+  to worker i. Bind the optimized QAOA circuit to FINAL_CIRCUIT. The QAOA assignment
+  must come from a sampled feasible bitstring rather than the enumeration.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_cost", "exact_cost", "jobs_by_worker", "counts"]
+  expected_values:
+    qaoa_cost: 9.0
+    exact_cost: 9.0
+  expected_result_subset:
+    jobs_by_worker: [1, 2, 0]
+  expected_value_tolerance: 0.0
+  saves_artifact: true

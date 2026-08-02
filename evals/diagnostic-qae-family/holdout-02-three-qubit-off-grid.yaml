@@ -1,0 +1,24 @@
+id: diagnostic-qae-family-02
+category: "Diagnostic — three-qubit off-grid amplitude estimation"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Implement standard quantum amplitude estimation in Qiskit on three system qubits.
+  Apply RY(0.58) to q2, H to q0, RY(0.4) to q1, then CZ(q2,q0) and CZ(q2,q1).
+  Mark q2=1 as good, so the Qiskit integer good-state indices are 4, 5, 6, and 7.
+  Use five evaluation qubits, controlled Grover powers, an inverse QFT, and exact
+  statevector marginal probabilities. Return top-level RESULT keys decoded_fold,
+  finite_grid_probability, paired_support, and spectrum. Bind the complete estimation
+  circuit to FINAL_CIRCUIT. Report the finite-register estimate rather than the
+  continuous prepared probability, and combine the two symmetric phase peaks.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["decoded_fold", "finite_grid_probability", "paired_support", "spectrum"]
+  expected_values:
+    decoded_fold: 3.0
+    finite_grid_probability: 0.08426519384872735
+    paired_support: 0.9931061446753955
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

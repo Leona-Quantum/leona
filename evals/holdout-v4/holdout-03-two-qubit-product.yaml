@@ -1,0 +1,22 @@
+id: holdout-v4-03
+category: "Holdout v4 — Two-qubit product formula"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  In the written tensor-factor order, let A=0.6*(X tensor X),
+  B=0.4*(Z tensor I)+0.3*(I tensor Z), H=A+B, and start in |01>. Evolve to t=0.8
+  with five first-order steps [exp(-i*A*dt) exp(-i*B*dt)], where the rightmost B
+  factor acts first, and independently compute exp(-i*H*t). Return the squared state
+  fidelity as the top-level numeric RESULT key state_fidelity and the product state's
+  first-tensor-factor Z expectation as first_factor_z. Bind an equivalent two-qubit
+  Qiskit product-formula circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["state_fidelity", "first_factor_z"]
+  expected_values:
+    state_fidelity: 0.9999556803449826
+    first_factor_z: 0.5744042382964715
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

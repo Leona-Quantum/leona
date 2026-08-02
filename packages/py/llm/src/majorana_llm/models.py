@@ -36,6 +36,10 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         # model.py) specifically to give harder/VQE-scale tasks more headroom
         # before hitting the exact failure bench-14 found.
         "generate": "deepseek-v4-pro",
+        # A small independent pass audits only complex planner-authored classical
+        # references before code generation. Use a different served model so one
+        # arithmetic transcription is not both proposition and proof.
+        "audit": "deepseek-v4-flash",
         "verify": "deepseek-v4-pro",
         "analyze": "deepseek-v4-pro",
         "writeback": "deepseek-v4-pro",  # library metadata + explanations
@@ -45,6 +49,7 @@ _DEFAULTS: dict[str, dict[str, str]] = {
         "route": "claude-haiku-4-5-20251001",
         "plan": "claude-opus-4-8",
         "generate": "claude-sonnet-5",
+        "audit": "claude-sonnet-5",
         "verify": "claude-opus-4-8",
         "analyze": "claude-opus-4-8",
         "writeback": "claude-haiku-4-5-20251001",

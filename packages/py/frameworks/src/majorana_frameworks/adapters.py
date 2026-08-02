@@ -625,12 +625,19 @@ try:
     import cirq as _majorana_native_cirq
 except Exception:
     pass
+_majorana_native_cirq_dtype = None
+try:
+    import numpy as _majorana_native_numpy
+    _majorana_native_cirq_dtype = _majorana_native_numpy.complex128
+except Exception:
+    pass
 
 
 def _majorana_native_evidence(
     _circuit,
     _observation,
     _cirq=_majorana_native_cirq,
+    _statevector_dtype=_majorana_native_cirq_dtype,
     _sv_limit=_MAJORANA_NATIVE_SV_QUBITS,
     _shots=_MAJORANA_NATIVE_SHOTS,
     _seed=_MAJORANA_NATIVE_SEED,
@@ -707,7 +714,14 @@ def _majorana_native_evidence(
                 for _op in _moment.operations
                 if not _cirq.is_measurement(_op)
             )
-            _vector = _cirq.final_state_vector(_pure, qubit_order=_qubit_order)
+            if _statevector_dtype is None:
+                _vector = _cirq.final_state_vector(_pure, qubit_order=_qubit_order)
+            else:
+                _vector = _cirq.final_state_vector(
+                    _pure,
+                    qubit_order=_qubit_order,
+                    dtype=_statevector_dtype,
+                )
             _amplitudes = []
             for _amp in _vector:
                 _amplitudes.append(_float(_amp.real))
@@ -1013,7 +1027,14 @@ if _majorana_final_circuit is not None and _majorana_interchange_dumps is not No
 _ADAPTERS: dict[Framework, FrameworkAdapter] = {
     Framework.QISKIT: QiskitAdapter(
         framework=Framework.QISKIT,
-        optimization_calls=frozenset({"transpile", "qiskit.transpile"}),
+        optimization_calls=frozenset(
+            {
+                "transpile",
+                "qiskit.transpile",
+                "generate_preset_pass_manager",
+                "qiskit.transpiler.generate_preset_pass_manager",
+            }
+        ),
         operation_calls=frozenset(
             {
                 "x",

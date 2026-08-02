@@ -1,0 +1,24 @@
+id: holdout-v13-01
+category: "Holdout v13 — Unseen correlated three-qubit VQE"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Estimate the ground-state energy of the explicit three-qubit Hamiltonian
+  H=+0.17 III -0.38 ZII +0.29 IZI -0.21 IIZ +0.16 XXI +0.13 IXX
+  -0.11 YYI +0.08 ZIZ +0.07 XZX. Use a nontrivial parameterized Qiskit ansatz,
+  exact statevector expectation values, a robust optimizer, and at least five
+  deterministic starting points that are not all near zero. Independently
+  diagonalize exactly the same written Hamiltonian. Return top-level numeric RESULT
+  keys optimized_expectation, dense_ground_energy, and absolute_gap. Bind the best
+  optimized ansatz circuit—not an exact eigenvector preparation—to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["optimized_expectation", "dense_ground_energy", "absolute_gap"]
+  expected_values:
+    optimized_expectation: -0.6622452268370413
+    dense_ground_energy: -0.6622452268370413
+    absolute_gap: 0.0
+  expected_value_tolerance: 0.00001
+  saves_artifact: true

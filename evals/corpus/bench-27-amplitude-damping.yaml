@@ -1,0 +1,18 @@
+id: bench-27
+category: "J — Open-system channel simulation"
+prompt: >-
+  Implement a two-qubit Stinespring dilation of an amplitude-damping channel with
+  gamma=0.3 acting on a system qubit initially in |1>, with the environment initially
+  in |0>. Use a unitary Qiskit circuit, trace out the environment, and return both the
+  final excited-state population and the system's base-2 von Neumann entropy as the
+  top-level numeric RESULT keys excited_population and system_entropy_bits. Bind the
+  complete dilation circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["excited_population", "system_entropy_bits"]
+  expected_values:
+    excited_population: 0.7
+    system_entropy_bits: 0.8812908992306927
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

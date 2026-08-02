@@ -1,0 +1,23 @@
+id: holdout-v15-05
+category: "Holdout v15 — Weighted-generator graph-state QFI"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  In Qiskit, prepare the four-qubit cycle graph state by applying H to every qubit
+  and CZ on edges (0,1), (1,2), (2,3), and (3,0). For the Hermitian generator
+  G=(1.0*Z0 + 0.7*Z1 - 0.4*Z2 + 1.3*Z3)/2, compute from the Statevector both the
+  mean of G and the pure-state quantum Fisher information 4*(<G^2>-<G>^2).
+  Return top-level numeric RESULT keys generator_mean and
+  quantum_fisher_information. Bind the graph-state preparation circuit to
+  FINAL_CIRCUIT; construct G explicitly rather than inserting a known graph-state
+  formula.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["generator_mean", "quantum_fisher_information"]
+  expected_values:
+    generator_mean: 0.0
+    quantum_fisher_information: 3.34
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

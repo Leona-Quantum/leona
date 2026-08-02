@@ -1,0 +1,118 @@
+{
+  "total": 1,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "pass_rate_ci95_low": 0.0,
+  "pass_rate_ci95_high": 0.7934506856227626,
+  "unique_cases": 1,
+  "stable_passed_cases": 0,
+  "repetitions": 1,
+  "product_accepted": 0,
+  "oracle_cases": 1,
+  "oracle_passed": 0,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "first_candidate_passed": 0,
+  "candidate_revisions": 0,
+  "mean_candidates": 0.0,
+  "recorded_llm_calls": 5,
+  "recorded_input_tokens": 14640,
+  "recorded_output_tokens": 2945,
+  "cases": [
+    {
+      "id": "holdout-v1-04",
+      "category": "Holdout — Constrained knapsack",
+      "split": "holdout",
+      "difficulty": "intermediate",
+      "workload": "practical",
+      "trial": 1,
+      "passed": false,
+      "run_status": "failed",
+      "terminal_reason": "reference_audit_failed",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "product_accepted": false,
+      "oracle_passed": false,
+      "false_positive": false,
+      "false_negative": false,
+      "first_candidate_passed": false,
+      "observed_values": {},
+      "observed_top_bitstring": null,
+      "reasons": [
+        "expected numeric RESULT field 'qaoa_best_value' was not found",
+        "expected numeric RESULT field 'qaoa_best_weight' was not found",
+        "expected numeric RESULT field 'exact_optimum_value' was not found",
+        "RESULT missing promised key 'qaoa_best_value'",
+        "RESULT missing promised key 'qaoa_best_weight'",
+        "RESULT missing promised key 'exact_optimum_value'",
+        "RESULT missing promised key 'counts'",
+        "run_status 'failed' != expected 'succeeded'",
+        "expected a saved artifact, none was written"
+      ],
+      "evidence": {
+        "failed_stage": "plan",
+        "error_code": "reference_audit_failed",
+        "qasm_source": null,
+        "qasm_epilogue_applied": null,
+        "qasm_available": null,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": false,
+        "candidate_id": null,
+        "execution_id": null,
+        "result_evidence_error": null,
+        "candidates_considered": 0,
+        "plans_produced": 0,
+        "sandbox_attempts": 0,
+        "semantic_review_attempts": 0,
+        "recorded_llm_calls": 5,
+        "recorded_input_tokens": 14640,
+        "recorded_output_tokens": 2945
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "holdout-v1-04",
+      "category": "Holdout — Constrained knapsack",
+      "split": "holdout",
+      "difficulty": "intermediate",
+      "workload": "practical",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "product_accepted": 0,
+      "oracle_trials": 1,
+      "oracle_passed": 0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 0.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "intermediate",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 0.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "practical",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 0.0
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local, repetitions=1)"
+}

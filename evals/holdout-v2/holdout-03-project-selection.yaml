@@ -1,0 +1,23 @@
+id: holdout-v2-03
+category: "Holdout v2 — Constrained project selection"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  Select from five projects with values [9,7,6,5,4] and costs [5,4,3,2,2] under a
+  total budget of 9. Project 0 may be selected only if project 2 is selected, and
+  projects 1 and 3 are mutually exclusive. Encode the objective and all constraints in
+  a Qiskit QAOA cost Hamiltonian, use deterministic seeds and at least 4096 shots, and
+  decode only feasible sampled assignments. Independently enumerate all 32 decision
+  strings as a classical baseline. Return top-level numeric RESULT keys
+  qaoa_best_value and exact_optimum_value plus counts, and bind the optimized QAOA
+  circuit to FINAL_CIRCUIT. Do not substitute the enumerated solution for QAOA output.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_value", "exact_optimum_value", "counts"]
+  expected_values:
+    qaoa_best_value: 17.0
+    exact_optimum_value: 17.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

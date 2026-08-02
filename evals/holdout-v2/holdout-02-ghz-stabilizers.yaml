@@ -1,0 +1,21 @@
+id: holdout-v2-02
+category: "Holdout v2 — GHZ stabilizers"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Prepare a five-qubit GHZ state in Cirq using one Hadamard and a nearest-neighbor CNOT
+  chain. From the exact simulated statevector, evaluate the stabilizer expectations
+  <X0 X1 X2 X3 X4> and <Zi Z(i+1)> for all four neighboring pairs. Return the first as
+  the top-level numeric RESULT key global_x_expectation and the minimum of the four
+  pair expectations as minimum_neighbor_zz. Bind the state-preparation circuit to
+  FINAL_CIRCUIT.
+framework: cirq
+expect:
+  terminal_reason: null
+  output_keys: ["global_x_expectation", "minimum_neighbor_zz"]
+  expected_values:
+    global_x_expectation: 1.0
+    minimum_neighbor_zz: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

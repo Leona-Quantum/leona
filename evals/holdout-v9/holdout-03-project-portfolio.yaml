@@ -1,0 +1,28 @@
+id: holdout-v9-03
+category: "Holdout v9 — Practical constrained portfolio"
+split: holdout
+difficulty: advanced
+workload: practical
+prompt: >-
+  Select from ten binary projects with values [13,9,8,7,6,11,5,10,4,12]
+  and costs [6,4,3,4,2,5,2,5,1,6] to maximize total value under budget 14.
+  Project 0 requires project 4; projects 2 and 7 are mutually exclusive; projects
+  5 and 9 are mutually exclusive; and at least one of projects 1 and 3 is required.
+  Encode all ten original variables and constraints in a Qiskit QAOA model, use
+  deterministic seeds and at least 2048 shots, and decode only feasible samples.
+  Independently enumerate all 1024 selections. Return top-level RESULT keys
+  qaoa_value, exact_value, selected_projects, total_cost, and counts. Bind the
+  optimized QAOA circuit to FINAL_CIRCUIT; selected_projects and qaoa_value must
+  come from one feasible sampled bitstring, not from enumeration.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_value", "exact_value", "selected_projects", "total_cost", "counts"]
+  expected_values:
+    qaoa_value: 35.0
+    exact_value: 35.0
+    total_cost: 14.0
+  expected_result_subset:
+    selected_projects: [1, 4, 5, 6, 8]
+  expected_value_tolerance: 0.0
+  saves_artifact: true

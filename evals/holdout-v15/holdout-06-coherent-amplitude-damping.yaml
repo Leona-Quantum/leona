@@ -1,0 +1,25 @@
+id: holdout-v15-06
+category: "Holdout v15 — Coherent-input amplitude damping"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Implement a unitary two-qubit Stinespring dilation in Qiskit for amplitude damping
+  with gamma=0.37 on a system initially in
+  cos(0.58)|0> + exp(-0.33i)*sin(0.58)|1>, with the environment initially |0>.
+  Trace out the environment and return top-level numeric RESULT keys
+  excited_population, coherence_0_1_real, coherence_0_1_imag, and state_purity for
+  the reduced system density matrix in basis |0>,|1>. Bind the complete dilation
+  circuit to FINAL_CIRCUIT. Derive all values from the reduced simulated state.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys:
+    ["excited_population", "coherence_0_1_real", "coherence_0_1_imag", "state_purity"]
+  expected_values:
+    excited_population: 0.18920804823702397
+    coherence_0_1_real: 0.34421273301341965
+    coherence_0_1_imag: 0.11790142077757422
+    state_purity: 0.9579495757411567
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true
