@@ -1432,6 +1432,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   meterResetsOn: (date: string) => string;
   meterResetsWhen: (word: string) => string;
   meterExhausted: string;
+  // The two warnings before the wall (75% / 90%). Both say what is left rather
+  // than what is spent — "37,500 left" is the fact a person acts on, and the
+  // percentage is already on the row. The server decides which one applies;
+  // this file only words them.
+  meterApproaching: (remaining: string) => string;
+  meterCritical: (remaining: string) => string;
+  meterUpgradeHint: string;
   usageWorkspaces: string;
   usageSpent: (used: number, limit: number) => string;
   usageSpentUnmetered: (used: number) => string;
@@ -1500,6 +1507,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   billingPolicyHardware: string;
   billingPolicyHardwareValue: string;
   billingEstimatesLink: string;
+  billingUpgradeLink: string;
   /**
    * Connecting your own IBM Quantum key.
    *
@@ -1624,6 +1632,9 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     meterResetsOn: (date) => `Frees up ${date}`,
     meterResetsWhen: (word) => `Frees up ${word}`,
     meterExhausted: "This week's allowance is used",
+    meterApproaching: (remaining) => `${remaining} left this week`,
+    meterCritical: (remaining) => `${remaining} left — a long run may not finish`,
+    meterUpgradeHint: "See what more costs",
     usageWorkspaces: "Workspaces owned",
     usageSpent: (used, limit) => `${used} of ${limit} used`,
     usageSpentUnmetered: (used) => `${used} used — no limit on your plan`,
@@ -1694,6 +1705,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingPolicyHardware: "GPU / QPU hardware",
     billingPolicyHardwareValue: "Owner-gated. Sourced cost estimates appear in Studio's hardware lane before any submission.",
     billingEstimatesLink: "See hardware estimates in Studio",
+    billingUpgradeLink: "Compare plans",
     qpuTitle: "Connect IBM Quantum",
     qpuHelp:
       "Run on IBM hardware with your own IBM account instead of the one Leona shares between everybody.",
@@ -1815,6 +1827,9 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     meterResetsOn: (date) => `${date}に回復`,
     meterResetsWhen: (word) => `${word}回復`,
     meterExhausted: "今週分の上限に達しました",
+    meterApproaching: (remaining) => `今週の残りは${remaining}`,
+    meterCritical: (remaining) => `残り${remaining} — 長い実行は完了しない可能性があります`,
+    meterUpgradeHint: "上位プランを見る",
     usageWorkspaces: "所有ワークスペース",
     // 助数詞を持たない形にしてある。実行は「回」、アーティファクトは「件」、
     // ワークスペースは「つ」と数え方が違うので、三つの行で同じ関数を使う以上
@@ -1887,6 +1902,7 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingPolicyHardware: "GPU・量子コンピュータ実行",
     billingPolicyHardwareValue: "管理者の承認が必要です。送信前に Studio で、出典付きの費用見積もりを確認できます。",
     billingEstimatesLink: "Studio でハードウェア見積もりを見る",
+    billingUpgradeLink: "プランを比較する",
     qpuTitle: "IBM Quantum と接続",
     qpuHelp:
       "全員で共有しているアカウントではなく、ご自身の IBM アカウントで IBM の量子コンピュータを実行できます。",
