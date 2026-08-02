@@ -903,7 +903,15 @@ async def test_sound_candidate_is_delivered_when_review_never_accepts():
     assert "save" in ports.calls
 
 
-async def test_a_blocking_defect_is_never_delivered_as_a_fallback():
+async def test_a_blocking_defect_is_delivered_and_not_disguised():
+    """Owner ruling, 2026-08-03: the repository classifies, it does not exclude.
+
+    A blocking severity is the reviewer's OPINION, and destroying the run's only
+    candidate over an opinion made the advisory review the strongest gate in the
+    pipeline. It is delivered — and `simple_pipeline_verification_summary` carries
+    the severity into the artifact's unverified claims so nothing reads as accepted.
+    """
+
     ports = FakePorts(
         reviews=[SemanticReviewDecision.CODE_REPAIR],
         review_feedback=_sound_review_feedback(),
@@ -912,13 +920,21 @@ async def test_a_blocking_defect_is_never_delivered_as_a_fallback():
 
     outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
 
-    assert outcome.status is SimplePipelineStatus.FAILED
-    assert "save" not in ports.calls
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert "save" in ports.calls
+    assert outcome.review is not None
+    assert outcome.review.decision is not SemanticReviewDecision.READY
 
 
-async def test_a_failed_deterministic_check_is_never_delivered_as_a_fallback():
-    """The fallback rests on trusted evidence, so a failed check disqualifies it —
-    including a Plan-declared reference the reported number contradicted."""
+async def test_a_failed_deterministic_check_is_delivered_and_labelled():
+    """The case the owner asked about by name, including a Plan-declared reference
+    the reported number contradicted.
+
+    A failed check is EVIDENCE, not an absence of it: the record says what was
+    examined and what came back wrong, which is precisely what a development
+    workspace should hold. What used to happen is that the run failed at the save
+    step and the person got nothing to repair.
+    """
 
     ports = FakePorts(
         reviews=[SemanticReviewDecision.CODE_REPAIR],
@@ -928,6 +944,25 @@ async def test_a_failed_deterministic_check_is_never_delivered_as_a_fallback():
                 {"method": "exact_diag", "result": "fail"},
             ]
         },
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert "save" in ports.calls
+    assert outcome.review is not None
+    assert not outcome.review.evidence_is_complete()
+
+
+async def test_a_review_with_no_recorded_check_is_still_never_delivered():
+    """The line that did NOT move. Permissive about the verdict, never about
+    whether there is a record: an artifact filed on a review that examined nothing
+    is unlabelled, and that is the one thing an honest classifier cannot hold."""
+
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={},
         review_severity="minor",
     )
 

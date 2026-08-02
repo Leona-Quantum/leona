@@ -8,7 +8,7 @@ import json
 import logging
 import math
 from dataclasses import asdict
-from typing import Any, Awaitable, Callable, Literal, Protocol, Sequence
+from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
 from uuid import UUID, uuid5
 
 from majorana_agent import (
@@ -39,7 +39,6 @@ from majorana_contracts import Scope, VerificationSummary
 from majorana_contracts.enums import (
     Algorithm,
     ArtifactType,
-    EvidenceStrength,
     ExportStatus,
     Framework,
     RetryTarget,
@@ -48,6 +47,7 @@ from majorana_contracts.enums import (
     VerificationMethod,
     VerificationResultKind,
     VerifierDecision,
+    evidence_strength_of,
 )
 from majorana_contracts.plan import (
     ConstraintTerm,
@@ -690,76 +690,155 @@ def _return_contract_check(result: dict[str, Any], observation: dict[str, Any]) 
     }
 
 
+#: How a recorded check's bare string maps onto the typed public vocabulary.
+#:
+#: Every value the worker writes has a member except `"n/a"`, which
+#: `_return_contract_check` records when the platform derived the result from the
+#: circuit: the program made no claim, so the check did not run rather than
+#: failing. SKIPPED is that state — see `VerificationResultKind`, which says
+#: SKIPPED means "not applicable by design" and that it never establishes a
+#: candidate defect.
+_RECORDED_RESULT_KINDS: dict[str, VerificationResultKind] = {
+    "pass": VerificationResultKind.PASS,
+    "fail": VerificationResultKind.FAIL,
+    "skipped": VerificationResultKind.SKIPPED,
+    "unavailable": VerificationResultKind.UNAVAILABLE,
+    "error": VerificationResultKind.ERROR,
+    "n/a": VerificationResultKind.SKIPPED,
+}
+
+
+def _project_recorded_checks(
+    recorded: Sequence[Mapping[str, Any]],
+) -> tuple[list[dict[str, object]], bool]:
+    """Narrow a review's own deterministic checks into the public projection.
+
+    Returns the typed checks and whether ANY recorded check failed.
+
+    The second value is computed over every recorded entry, including the ones
+    that do not project. `framework_boundary` and `execution_claims` are recorded
+    by the unexecuted path and are not `VerificationMethod` members, so they
+    cannot be *named* in a `VerificationCheckSummary` — but a failure that cannot
+    be named must still be counted. Dropping an unprojectable check from the list
+    AND from the verdict is precisely how a summary comes to report that nothing
+    failed while something did.
+    """
+
+    projected: list[dict[str, object]] = []
+    any_failed = False
+    for check in recorded:
+        if not isinstance(check, Mapping):
+            continue
+        result = _RECORDED_RESULT_KINDS.get(str(check.get("result")))
+        if result is VerificationResultKind.FAIL:
+            any_failed = True
+        try:
+            method = VerificationMethod(str(check.get("method")))
+        except ValueError:
+            continue
+        if result is None:
+            continue
+        projected.append({"method": method, "result": result})
+    return projected, any_failed
+
+
 def simple_pipeline_verification_summary(
     reference_methods: Sequence[VerificationMethod] = (),
     semantic_review_decision: SemanticReviewDecision = SemanticReviewDecision.READY,
     *,
     result_derived: bool = False,
+    recorded_checks: Sequence[Mapping[str, Any]],
+    review_severity: str | None = None,
 ) -> dict[str, object]:
-    """Return the single typed trust projection for a successful simple run.
+    """Return the single typed trust projection for a completed simple run.
 
-    A successful simple pipeline proves that the generated program executed and
-    satisfied its basic structural/result contract. The AI review is advisory, so
-    the final verification decision stays explicitly inconclusive.
+    A simple pipeline proves that the generated program executed and how it fared
+    against its basic structural/result contract. The AI review is advisory, so a
+    clean run's decision stays explicitly inconclusive rather than becoming a PASS.
 
-    Plan-declared reference checks that actually ran and passed are recorded here
-    and raise evidence_strength to PHYSICAL — the grade EvidenceStrength was split
-    out to express: one limited claim really was compared against what the physics
-    should do, while the overall decision remains INCONCLUSIVE because the other
-    claims still are not supported. It never becomes a PASS or a "verified" label.
+    `recorded_checks` is the review's own `basic_checks` and it is REQUIRED, with
+    no default, on purpose. This function used to synthesise an all-PASS list from
+    nothing but the reference methods, which meant a candidate whose
+    `success_criteria` check had come back FAIL was filed with a summary asserting
+    that it passed. Making the evidence an argument the caller cannot forget is
+    what stops that from being one missing keyword away — see
+    `_project_recorded_checks` for why a failure that cannot be projected is still
+    counted.
+
+    Plan-declared reference checks that ran and passed raise evidence_strength to
+    PHYSICAL — the grade `EvidenceStrength` was split out to express: one limited
+    claim really was compared against what the physics should do, while the overall
+    decision remains INCONCLUSIVE because the other claims still are not supported.
+    A physical check that ran and FAILED does not lift the grade, which is
+    `evidence_strength_of`'s rule rather than one restated here.
     """
 
-    checks: list[dict[str, object]] = [
-        {
-            "method": VerificationMethod.STRUCTURAL,
-            "result": VerificationResultKind.PASS,
-        },
-        {
-            "method": VerificationMethod.SUCCESS_CRITERIA,
-            "result": VerificationResultKind.PASS,
-        },
-    ]
+    checks, any_check_failed = _project_recorded_checks(recorded_checks)
+    if VerificationMethod.EXACT in reference_methods and not any(
+        check["method"] is VerificationMethod.EXACT for check in checks
+    ):
+        # `passed_reference_methods` reads a PASSING success_criteria check whose
+        # declared protocol is an exact one as an EXACT comparison. That is the one
+        # piece of real evidence not recorded under its own method name, so it is
+        # added here rather than silently lost from the grade.
+        checks.append({"method": VerificationMethod.EXACT, "result": VerificationResultKind.PASS})
+
     unverified = ["physical fidelity", "optimality"]
+    if not recorded_checks:
+        # An empty `checks` list is read by a person as "nothing failed". Say which
+        # of the two it is, because "no check found a problem" and "no check ran"
+        # are the same picture and opposite facts.
+        unverified.insert(0, "every deterministic check (none was recorded for this candidate)")
+    if review_severity in {"major", "blocking"}:
+        # Model-authored opinion, so it never becomes a FAIL decision — that word is
+        # reserved for a check that ran and established a mismatch. But an artifact
+        # the reviewer called broken must not be filed under a label that mentions
+        # only what the deterministic checks did not catch. The store used to refuse
+        # this candidate outright; now that it is kept, the severity has to be
+        # carried rather than dropped along with the refusal.
+        unverified.append(f"intent alignment (the reviewer recorded a {review_severity} defect)")
     if result_derived:
         # RETURN_CONTRACT is "the program reported what it said it would". A
         # CIRCUIT reported nothing — the platform sampled it and made that the
-        # result — so claiming the check PASSED would be a false statement about
-        # source that never made a claim at all. It is DROPPED rather than marked
-        # failed: nothing went wrong, there was simply no return to contract with.
+        # result — so the recorded check is SKIPPED rather than passed: nothing
+        # went wrong, there was simply no return to contract with.
         #
         # The claim withdrawn beside it is the one that matters most. A derived
         # result comes from the same trusted evidence any later check would
         # compare it against, so agreement between them is `f(x) == f(x)` — a
         # comparison that cannot fail, which is worse than no comparison.
         unverified.insert(0, "reported output (the result was derived, not returned)")
-    else:
-        checks.insert(
-            1,
-            {
-                "method": VerificationMethod.RETURN_CONTRACT,
-                "result": VerificationResultKind.PASS,
-            },
-        )
     if not reference_methods:
         unverified.insert(0, "quantum correctness")
-    else:
-        # The declared references established this one number; the rest of the run's
-        # quantum behaviour is still unexamined, so only that claim is withdrawn.
-        checks.extend(
-            {"method": method, "result": VerificationResultKind.PASS}
-            for method in reference_methods
-        )
     if semantic_review_decision is not SemanticReviewDecision.READY:
         # Delivered on trusted evidence alone. Say so rather than letting a reader
         # infer that the reviewer signed off on intent.
         unverified.append("intent alignment")
 
+    if any_check_failed:
+        # The repository classifies, it does not exclude (owner, 2026-08-03) — so
+        # this candidate is still filed. What must not happen is filing it under a
+        # label that describes a different candidate. A deterministic check that
+        # ran and established a mismatch IS a candidate defect, which is the one
+        # thing `VerifierDecision.INCONCLUSIVE` is forbidden to say: the contract's
+        # `inconclusive_never_blames_the_candidate` validator would reject it.
+        summary = VerificationSummary(
+            decision=VerifierDecision.FAIL,
+            semantic_review_decision=semantic_review_decision,
+            evidence_strength=evidence_strength_of(checks),
+            reason_code="deterministic_check_failed",
+            candidate_defect_observed=True,
+            failure_class=VerificationFailureClass.CANDIDATE_DEFECT,
+            retry_target=RetryTarget.CODE_GENERATION,
+            unverified_claims=unverified,
+            checks=checks,
+        )
+        return summary.model_dump(mode="json")
+
     summary = VerificationSummary(
         decision=VerifierDecision.INCONCLUSIVE,
         semantic_review_decision=semantic_review_decision,
-        evidence_strength=(
-            EvidenceStrength.PHYSICAL if reference_methods else EvidenceStrength.STRUCTURAL
-        ),
+        evidence_strength=evidence_strength_of(checks),
         reason_code=_summary_reason_code(reference_methods, semantic_review_decision),
         candidate_defect_observed=False,
         failure_class=VerificationFailureClass.EVIDENCE_GAP,
@@ -940,8 +1019,11 @@ class RepoReviewArtifactSaver:
         if not execution.succeeded:
             raise ValueError("artifact save requires successful execution")
         review.assert_binding(candidate, execution)
-        if not review.is_deliverable():
-            raise ValueError("artifact save requires complete trusted evidence")
+        # Permissive about the VERDICT, never about whether there is a record. A
+        # failed check is evidence and is filed under a FAIL label; a review that
+        # examined nothing would be filed under no label at all.
+        if not review.has_recorded_checks():
+            raise ValueError("artifact save requires recorded deterministic checks")
         if conversion is not None and not (
             conversion.candidate_id == candidate.candidate_id
             and conversion.execution_id == execution.execution_id
@@ -1075,6 +1157,8 @@ class RepoReviewArtifactSaver:
                 reference_methods,
                 review.decision,
                 result_derived=result_was_derived(execution.observation),
+                recorded_checks=recorded_basic_checks(review),
+                review_severity=review.severity,
             )
         metadata: dict[str, object] = {
             "source": "simple_pipeline_candidate",
@@ -2386,6 +2470,20 @@ def _reference_routing_critic(
         or ["At least one protected RESULT value disagrees with its exact reference."],
         "repair_instructions": instructions,
     }
+
+
+def recorded_basic_checks(review: SemanticReviewEvidence) -> tuple[Mapping[str, Any], ...]:
+    """The deterministic checks recorded against this review, or none.
+
+    `feedback` is a free-form dict on the record, so a caller cannot assume the key
+    is present or that its value is a list. One reader for it, because the summary
+    and the fallback ranking must not disagree about what evidence exists.
+    """
+
+    checks = review.feedback.get("basic_checks")
+    if not isinstance(checks, list):
+        return ()
+    return tuple(check for check in checks if isinstance(check, Mapping))
 
 
 def passed_reference_methods(review: SemanticReviewEvidence) -> tuple[VerificationMethod, ...]:

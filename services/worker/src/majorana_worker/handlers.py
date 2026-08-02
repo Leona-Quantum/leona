@@ -85,6 +85,7 @@ from .simple_ports import (
     RepoReviewArtifactSaver,
     SimpleIntentReviewer,
     passed_reference_methods,
+    recorded_basic_checks,
     simple_pipeline_verification_summary,
     unexecuted_artifact_verification_summary,
 )
@@ -870,20 +871,29 @@ async def _finish_simple_pipeline(
             reference_methods,
             review.decision,
             result_derived=result_was_derived(execution.observation),
+            recorded_checks=recorded_basic_checks(review),
+            review_severity=review.severity,
         )
+        # Read the verdict and the grade back OFF the summary rather than deriving
+        # them a second time here. They were restated — INCONCLUSIVE and
+        # `PHYSICAL if reference_methods` — which was true only while the summary
+        # could not say anything else. It can now: a candidate with a failed
+        # deterministic check is filed as FAIL, and a restated INCONCLUSIVE would
+        # have put the run row and its own summary in contradiction, with the row
+        # winning every surface that reads the run instead of the artifact.
+        decision = VerifierDecision(str(summary["decision"]))
+        evidence_strength = EvidenceStrength(str(summary["evidence_strength"]))
         final = await run_store.finish(
             RunStatus.SUCCEEDED,
             {
                 "status": RunStatus.SUCCEEDED,
-                "verifier_decision": VerifierDecision.INCONCLUSIVE,
-                "evidence_strength": (
-                    EvidenceStrength.PHYSICAL if reference_methods else EvidenceStrength.STRUCTURAL
-                ),
+                "verifier_decision": decision,
+                "evidence_strength": evidence_strength,
                 "reason_code": summary["reason_code"],
                 "residual_risks": residual_risks,
                 "verification_summary": summary,
             },
-            verifier_decision=VerifierDecision.INCONCLUSIVE,
+            verifier_decision=decision,
             verification_summary=summary,
             residual_risks=residual_risks,
         )

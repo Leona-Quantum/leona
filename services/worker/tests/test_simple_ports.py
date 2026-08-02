@@ -52,6 +52,7 @@ from majorana_worker.simple_ports import (
     _reference_check_routing,
     _preserve_replan_range_strength,
     passed_reference_methods,
+    recorded_basic_checks,
     simple_pipeline_verification_summary,
 )
 
@@ -2098,7 +2099,7 @@ async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeyp
     assert "no connected backend" in captured["version"]["limitations"]
 
 
-async def test_repo_review_saver_rejects_review_without_complete_evidence():
+async def test_repo_review_saver_rejects_a_review_that_examined_nothing():
     ports, *_ = _ports()
     run_id = uuid4()
     planned = await ports.plan(run_id, None, None)
@@ -2126,7 +2127,9 @@ async def test_repo_review_saver_rejects_review_without_complete_evidence():
         title="Bell state",
     )
 
-    with pytest.raises(ValueError, match="complete trusted evidence"):
+    # Not "the checks failed" — this review has no `basic_checks` at all. A failed
+    # check is now filed with a FAIL label; an absent one cannot be labelled.
+    with pytest.raises(ValueError, match="recorded deterministic checks"):
         await saver.save(
             candidate,
             execution,
@@ -3022,7 +3025,9 @@ def test_summary_reports_a_physical_grade_without_ever_claiming_a_pass():
     methods = passed_reference_methods(review)
     assert methods == (VerificationMethod.EXACT_DIAG,)
 
-    summary = simple_pipeline_verification_summary(methods)
+    summary = simple_pipeline_verification_summary(
+        methods, recorded_checks=recorded_basic_checks(review)
+    )
 
     assert summary["evidence_strength"] == EvidenceStrength.PHYSICAL.value
     assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
@@ -3035,7 +3040,7 @@ def test_summary_stays_structural_when_no_reference_check_ran():
     review = _review_with_checks([{"method": "success_criteria", "result": "pass"}])
     assert passed_reference_methods(review) == ()
 
-    summary = simple_pipeline_verification_summary()
+    summary = simple_pipeline_verification_summary(recorded_checks=recorded_basic_checks(review))
 
     assert summary["evidence_strength"] == EvidenceStrength.STRUCTURAL.value
     assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
@@ -3054,7 +3059,9 @@ def test_exact_typed_success_criteria_is_recorded_as_physical_reference_evidence
     )
 
     methods = passed_reference_methods(review)
-    summary = simple_pipeline_verification_summary(methods)
+    summary = simple_pipeline_verification_summary(
+        methods, recorded_checks=recorded_basic_checks(review)
+    )
 
     assert methods == (VerificationMethod.EXACT,)
     assert summary["evidence_strength"] == EvidenceStrength.PHYSICAL.value
@@ -3065,6 +3072,116 @@ def test_a_failed_reference_check_never_counts_as_evidence_in_the_summary():
     review = _review_with_checks([{"method": "exact_diag", "result": "fail"}])
 
     assert passed_reference_methods(review) == ()
+
+
+# --- The summary reports the checks that ran, not a template -------------------
+#
+# The repository holds a candidate whose deterministic checks failed (owner,
+# 2026-08-03). That is only honest if the label describes THAT candidate, and this
+# function used to synthesise an all-PASS list from the reference methods alone —
+# so the artifact asserted `success_criteria: pass` for a candidate whose
+# success_criteria check had come back FAIL.
+
+
+def test_a_failed_check_is_reported_as_failed_and_not_as_a_pass():
+    review = _review_with_checks(
+        [
+            {"method": "structural", "result": "pass"},
+            {"method": "success_criteria", "result": "fail"},
+        ]
+    )
+
+    summary = simple_pipeline_verification_summary(
+        passed_reference_methods(review),
+        review.decision,
+        recorded_checks=recorded_basic_checks(review),
+    )
+
+    assert {"method": "success_criteria", "result": "fail"} in summary["checks"]
+    assert {"method": "success_criteria", "result": "pass"} not in summary["checks"]
+    # A check that ran and established a mismatch IS a candidate defect, which is
+    # the one thing INCONCLUSIVE may not say — the contract's validator rejects it.
+    assert summary["decision"] == VerifierDecision.FAIL.value
+    assert summary["candidate_defect_observed"] is True
+    assert summary["reason_code"] == "deterministic_check_failed"
+
+
+def test_a_failed_physical_check_does_not_lift_the_grade():
+    """A comparison that ran and came back wrong proves nothing about the physics.
+
+    The grade used to be `PHYSICAL if reference_methods else STRUCTURAL`, and
+    `reference_methods` only ever contains PASSING methods, so this held by
+    accident. It is `evidence_strength_of`'s rule now, which states it on purpose.
+    """
+
+    review = _review_with_checks(
+        [
+            {"method": "structural", "result": "pass"},
+            {"method": "exact_diag", "result": "fail"},
+        ]
+    )
+
+    summary = simple_pipeline_verification_summary(
+        passed_reference_methods(review),
+        review.decision,
+        recorded_checks=recorded_basic_checks(review),
+    )
+
+    assert summary["evidence_strength"] == EvidenceStrength.STRUCTURAL.value
+
+
+def test_a_failure_that_cannot_be_named_is_still_counted():
+    """`framework_boundary` is recorded by the unexecuted path and is not a
+    `VerificationMethod`, so it cannot appear in a typed check. Dropping it from
+    the LIST is unavoidable; dropping it from the VERDICT would be a summary that
+    reports nothing failed while something did."""
+
+    review = _review_with_checks(
+        [
+            {"method": "structural", "result": "pass"},
+            {"method": "framework_boundary", "result": "fail"},
+        ]
+    )
+
+    summary = simple_pipeline_verification_summary(
+        (), review.decision, recorded_checks=recorded_basic_checks(review)
+    )
+
+    assert "framework_boundary" not in {check["method"] for check in summary["checks"]}
+    assert summary["decision"] == VerifierDecision.FAIL.value
+
+
+def test_a_reviewer_that_called_the_circuit_broken_is_quoted_not_dropped():
+    """Severity is model opinion, so it never becomes a FAIL decision. But the store
+    used to refuse this candidate outright; now that it is kept, the opinion has to
+    be carried rather than discarded along with the refusal."""
+
+    review = _review_with_checks([{"method": "structural", "result": "pass"}])
+
+    summary = simple_pipeline_verification_summary(
+        (),
+        SemanticReviewDecision.CODE_REPAIR,
+        recorded_checks=recorded_basic_checks(review),
+        review_severity="blocking",
+    )
+
+    assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
+    assert any("blocking defect" in claim for claim in summary["unverified_claims"])
+
+
+def test_an_empty_check_list_says_so_rather_than_reading_as_all_clear():
+    summary = simple_pipeline_verification_summary((), recorded_checks=())
+
+    assert summary["checks"] == []
+    assert any("none was recorded" in claim for claim in summary["unverified_claims"])
+
+
+def test_the_summary_cannot_be_built_without_the_evidence_it_describes():
+    """The mechanism, not the intention. A default here would put the old all-PASS
+    template one forgotten keyword away from every future call site."""
+
+    with pytest.raises(TypeError, match="recorded_checks"):
+        simple_pipeline_verification_summary(())  # type: ignore[call-arg]
 
 
 # --- Every review names a next step -------------------------------------------
@@ -3252,7 +3369,11 @@ async def test_a_blocking_review_never_reaches_the_user_as_an_aligned_run(
     result = await _decide(_critic(severity=severity, summary="the circuit is wrong"))
 
     assert result.decision is not SemanticReviewDecision.READY
-    summary = simple_pipeline_verification_summary(reference_methods, result.decision)
+    summary = simple_pipeline_verification_summary(
+        reference_methods,
+        result.decision,
+        recorded_checks=({"method": "structural", "result": "pass"},),
+    )
     assert not str(summary["reason_code"]).startswith("ai_review_aligned")
     assert summary["reason_code"] == "trusted_evidence_without_review_acceptance"
     # The user is told which claim was not established, rather than being left to
@@ -3487,7 +3608,12 @@ def test_a_plan_declared_tolerance_can_tighten_a_loose_shot_allowance():
 
 def test_summary_marks_intent_alignment_unverified_when_review_did_not_accept():
     summary = simple_pipeline_verification_summary(
-        (VerificationMethod.EXACT_DIAG,), SemanticReviewDecision.CODE_REPAIR
+        (VerificationMethod.EXACT_DIAG,),
+        SemanticReviewDecision.CODE_REPAIR,
+        recorded_checks=(
+            {"method": "structural", "result": "pass"},
+            {"method": "exact_diag", "result": "pass"},
+        ),
     )
 
     assert summary["reason_code"] == "trusted_evidence_without_review_acceptance"
@@ -3500,7 +3626,11 @@ def test_summary_marks_intent_alignment_unverified_when_review_did_not_accept():
 
 
 def test_summary_without_reference_or_acceptance_withdraws_nothing():
-    summary = simple_pipeline_verification_summary((), SemanticReviewDecision.CODE_REPAIR)
+    summary = simple_pipeline_verification_summary(
+        (),
+        SemanticReviewDecision.CODE_REPAIR,
+        recorded_checks=({"method": "structural", "result": "pass"},),
+    )
 
     assert summary["evidence_strength"] == EvidenceStrength.STRUCTURAL.value
     for claim in ("quantum correctness", "physical fidelity", "optimality", "intent alignment"):

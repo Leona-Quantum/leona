@@ -264,7 +264,7 @@ def _plan_revision(run_id) -> PlanRevision:
     )
 
 
-async def _seed_reviewed_candidate(store, *, decision, severity="minor"):
+async def _seed_reviewed_candidate(store, *, decision, severity="minor", checks=None):
     """A stored candidate that executed and was reviewed, with the given verdict."""
 
     run_id = uuid4()
@@ -307,7 +307,11 @@ async def _seed_reviewed_candidate(store, *, decision, severity="minor"):
             reason_code="intent_code_mismatch",
             failure_class=VerificationFailureClass.CANDIDATE_DEFECT,
             retry_target=RetryTarget.CODE_GENERATION,
-            feedback={"basic_checks": [{"method": "success_criteria", "result": "pass"}]},
+            feedback={
+                "basic_checks": (
+                    [{"method": "success_criteria", "result": "pass"}] if checks is None else checks
+                )
+            },
         )
     )
     return run_id, candidate, execution
@@ -340,15 +344,18 @@ async def test_memory_store_writes_a_conversion_for_a_review_the_model_disliked(
     assert await store.conversion_for(run_id, candidate.candidate_id) is not None
 
 
-async def test_memory_store_still_refuses_a_blocking_review():
+async def test_memory_store_refuses_a_review_that_examined_nothing():
     from majorana_agent import ConversionEvidence
 
     store = MemoryAgentStore()
     run_id, candidate, execution = await _seed_reviewed_candidate(
-        store, decision=SemanticReviewDecision.CODE_REPAIR, severity="blocking"
+        store, decision=SemanticReviewDecision.CODE_REPAIR, severity="blocking", checks=[]
     )
 
-    with pytest.raises(ValueError, match="deliverable"):
+    # A blocking severity no longer refuses on its own — the reviewer's opinion is
+    # carried into the artifact's label instead. What is refused here is the empty
+    # `basic_checks`: a record of nothing examined cannot be honestly labelled.
+    with pytest.raises(ValueError, match="recorded deterministic checks"):
         await store.add_conversion(
             ConversionEvidence(
                 candidate_id=candidate.candidate_id,

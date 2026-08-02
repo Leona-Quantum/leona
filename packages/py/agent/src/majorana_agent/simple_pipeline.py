@@ -668,10 +668,24 @@ class SimpleCircuitPipeline:
                     warnings=warnings,
                 )
 
-            if artifact_only or self._deterministically_sound(review):
-                # Keep the strongest reviewed candidate as a fallback. Executed,
-                # contract-satisfying evidence always outranks static-only evidence;
-                # the latter still prevents a later repair outage from erasing the
+            if artifact_only or review.has_recorded_checks():
+                # Keep the strongest reviewed candidate as a fallback. This used to
+                # require `evidence_is_complete()`, so a run that spent its entire
+                # budget on a candidate with ONE failed check delivered nothing at
+                # all — not a labelled failure a person could read and repair,
+                # nothing, after every expensive stage had been paid for. A failed
+                # check is a record of what was examined; it is held now, and
+                # `simple_pipeline_verification_summary` labels it FAIL off that
+                # same evidence.
+                #
+                # What is still refused is a review with no recorded check at all:
+                # that is not a permissive record but an unlabelled one. Completeness
+                # moved into the ranking below, where it leads the tuple — a sound
+                # candidate still outranks an unsound one, and the unsound one wins
+                # only when it is the only candidate there is.
+                #
+                # Executed, contract-satisfying evidence still outranks static-only
+                # evidence, which prevents a later repair outage from erasing the
                 # target-ready source that prompted it.
                 score = self._sound_candidate_score(
                     candidate,
@@ -1943,20 +1957,21 @@ class SimpleCircuitPipeline:
         attempts.append(entry)
 
     @staticmethod
-    def _deterministically_sound(review: SemanticReviewEvidence) -> bool:
-        """One definition, shared with the durable stores. See
-        SemanticReviewEvidence.evidence_is_complete."""
-
-        return review.evidence_is_complete()
-
-    @staticmethod
     def _sound_candidate_score(
         candidate: CandidateRevision,
         review: SemanticReviewEvidence,
         *,
         executed: bool,
-    ) -> tuple[int, int, int, int, int]:
-        """Prefer executed, accepted, lower-severity, better-evidenced revisions."""
+    ) -> tuple[int, int, int, int, int, int]:
+        """Prefer complete, executed, accepted, lower-severity, better-evidenced revisions.
+
+        Completeness leads the tuple because it is the only term that used to be a
+        gate. A candidate whose deterministic evidence is complete outranks every
+        candidate whose evidence is not, however many revisions later the second one
+        arrived — so nothing that was previously delivered is displaced by an unsound
+        candidate. The unsound one wins only when it is the sole candidate there is,
+        which is the case that used to deliver nothing.
+        """
 
         severity_score = {
             None: 3,
@@ -1972,6 +1987,7 @@ class SimpleCircuitPipeline:
             else 0
         )
         return (
+            int(review.evidence_is_complete()),
             int(executed),
             int(review.decision is SemanticReviewDecision.READY),
             severity_score,

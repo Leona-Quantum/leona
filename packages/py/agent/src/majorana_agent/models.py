@@ -272,26 +272,47 @@ class SemanticReviewEvidence(_Record):
         that keeps requesting improvements is expressing a preference, not
         contradicting the evidence.
 
-        Lives on the record rather than in the pipeline because the durable stores
-        enforce the same rule before they will write a conversion or a
-        materialization. Keeping one definition is what stops the store's fail-closed
-        guard from encoding a policy the orchestrator has since changed — which is
-        exactly what happened when the guard still demanded READY.
+        **This RANKS candidates; it no longer admits or refuses them.** It used to
+        back an `is_deliverable()` that the stores, the saver and the fallback filter
+        all called before writing anything, so a run that spent its whole budget and
+        produced a candidate with one failed check delivered nothing at all — the
+        artifact was destroyed at the last step, after every expensive stage had been
+        paid for. The owner's ruling of 2026-08-03 is that the repository classifies
+        rather than excludes, so the candidate is now filed and
+        `simple_pipeline_verification_summary` labels it `VerifierDecision.FAIL` off
+        its real checks. `is_deliverable()` was deleted rather than left unused: a
+        tested predicate one import away from the guards it used to gate is how the
+        old policy comes back.
+
+        What is still refused is a record that would not be TRUE — an unbound review,
+        or an artifact with no recorded opinion at all.
         """
 
         if self.severity in {"major", "blocking"}:
             return False
-        checks = self.feedback.get("basic_checks")
-        if not isinstance(checks, list) or not checks:
+        if not self.has_recorded_checks():
             return False
+        checks = self.feedback["basic_checks"]
         return all(isinstance(check, dict) and check.get("result") == "pass" for check in checks)
 
-    def is_deliverable(self) -> bool:
-        """May this review's candidate be exported and saved?"""
-        # READY is advisory model output, not a substitute for trusted checks.
-        # Production review construction records the checks before this boundary;
-        # missing or failed evidence must therefore fail closed for every decision.
-        return self.evidence_is_complete()
+    def has_recorded_checks(self) -> bool:
+        """Did any deterministic check actually run against this candidate?
+
+        This is the line the repository still refuses to cross. A candidate whose
+        checks FAILED is a labelled record — it says what was examined and what came
+        back wrong, which is exactly what a development workspace should hold. A
+        candidate with no recorded check at all is not a permissive record, it is an
+        unlabelled one, and an unlabelled artifact is the single thing an honest
+        classifier cannot file.
+
+        In production this is always true on the executed path: `fast_checks` records
+        `structural` before the reviewer is ever called. It is a guard against a
+        caller reaching the pipeline with a hand-built review, not against the
+        pipeline itself.
+        """
+
+        checks = self.feedback.get("basic_checks")
+        return isinstance(checks, list) and bool(checks)
 
     def assert_binding(self, candidate: "CandidateRevision", execution: ExecutionEvidence) -> None:
         if self.candidate_id != candidate.candidate_id:
