@@ -261,10 +261,41 @@ class ExactDynamicsReference(_PlanBase):
                         f"exact_dynamics_reference.{name} factor q{outside[0]} lies outside "
                         f"the declared {self.num_qubits}-qubit register"
                     )
+        # A reference whose value does not depend on the evolution proves nothing
+        # about whether the candidate evolved anything. These three shapes are
+        # degenerate in the DECLARED DATA, not merely hard: each one is a constant
+        # that a program printing one number satisfies, under the verdict "the
+        # reported scalar matches exact evolution of the Plan-declared Pauli system".
+        # A plan that carries this reference has asked for the check, so — following
+        # exact_diag's rule for a reference that IS present — each is a hard error
+        # with a corrective objection rather than a silent downgrade.
+        if self.evolution_time == 0.0:
+            raise ValueError(
+                "exact_dynamics_reference.evolution_time is 0, so U=exp(-i*0*H) is the "
+                "identity for every Hamiltonian and the reference is satisfied by any "
+                "candidate that echoes the initial state. Use the request's actual "
+                "evolution time, or drop the reference."
+            )
+        if all(not term.factors for term in self.hamiltonian):
+            raise ValueError(
+                "every exact_dynamics_reference.hamiltonian term is the identity (no "
+                "factors), so U is a global phase and no metric can distinguish an "
+                "evolved state from the initial one. Write the non-identity factors by "
+                "qubit index — an XX coupling on q0,q1 is two factors, not an empty list."
+            )
         if self.metric == "survival_probability":
             if self.observable is not None:
                 raise ValueError(
                     "survival_probability does not use exact_dynamics_reference.observable"
+                )
+            if all(factor.pauli == "Z" for term in self.hamiltonian for factor in term.factors):
+                raise ValueError(
+                    "exact_dynamics_reference.hamiltonian is diagonal (Z factors only), so "
+                    "the computational-basis initial state is an eigenstate and its "
+                    "survival probability is exactly 1 at every time and for every "
+                    "coefficient. Pick a metric the evolution can move — an "
+                    "observable_expectation with an X or Y factor — or drop the reference. "
+                    "An Ising Hamiltonian written with ZZ terms only reaches this."
                 )
             return self
         if not self.observable:

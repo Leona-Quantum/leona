@@ -1015,3 +1015,57 @@ def test_a_plan_without_brute_force_needs_no_problem():
     plan = Plan.model_validate({**VALID, "verification_plan": {"methods": ["return_contract"]}})
     assert plan.verification_plan is not None
     assert plan.verification_plan.reference_problem is None
+
+
+def test_a_dynamics_reference_that_cannot_move_is_refused_with_the_remedy():
+    """Three shapes whose value does not depend on the evolution at all.
+
+    Measured against the real check: each one returned "primary metric matches exact
+    Plan-declared dynamics" for a candidate that printed a single 1.0, so the run
+    earned the exact-evolution verdict without evolving anything.
+
+    - `evolution_time` 0 makes U the identity for every Hamiltonian.
+    - A Hamiltonian of identity terms only (`factors: []`) makes U a global phase.
+    - A DIAGONAL Hamiltonian makes the computational-basis initial state an
+      eigenstate, so its survival probability is exactly 1 at every time and for
+      every coefficient. This is the reachable one: an Ising Hamiltonian written
+      with ZZ and Z terms is the ordinary way to ask for a quench.
+
+    A plan carrying the reference has asked for the check, so each is a hard error
+    with a corrective objection — exact_diag's rule for a reference that IS present.
+    """
+    zero_time = {**_DYNAMICS_REFERENCE, "evolution_time": 0.0}
+    with pytest.raises(ValidationError, match="is the identity for every Hamiltonian"):
+        Plan.model_validate(_with_exact_dynamics(zero_time))
+
+    identity_only = {
+        **_DYNAMICS_REFERENCE,
+        "hamiltonian": [{"coefficient": 2.5, "factors": []}],
+    }
+    with pytest.raises(ValidationError, match="is the identity \\(no "):
+        Plan.model_validate(_with_exact_dynamics(identity_only))
+
+    diagonal_survival = {
+        **_DYNAMICS_REFERENCE,
+        "metric": "survival_probability",
+        "observable": None,
+        "hamiltonian": [
+            {"coefficient": 1.3, "factors": [{"qubit": 0, "pauli": "Z"}]},
+            {
+                "coefficient": 0.4,
+                "factors": [{"qubit": 0, "pauli": "Z"}, {"qubit": 1, "pauli": "Z"}],
+            },
+        ],
+    }
+    with pytest.raises(ValidationError, match="survival probability is exactly 1"):
+        Plan.model_validate(_with_exact_dynamics(diagonal_survival))
+
+    # The discriminating cases are untouched: one X factor is enough to move the
+    # basis state, and a diagonal Hamiltonian is still fine for an expectation.
+    moving = {**diagonal_survival}
+    moving["hamiltonian"] = [
+        *diagonal_survival["hamiltonian"],
+        {"coefficient": 0.2, "factors": [{"qubit": 0, "pauli": "X"}]},
+    ]
+    assert Plan.model_validate(_with_exact_dynamics(moving)).verification_plan is not None
+    assert Plan.model_validate(_with_exact_dynamics()).verification_plan is not None
