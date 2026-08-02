@@ -307,6 +307,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     uncommittedEditsNote: string;
     footer: string;
     openRun: string;
+    /** How many rows the discovery list holds after the active filter. */
+    countCircuits: (count: number) => string;
+    /** Label for the artifact's last-changed date in the Summary fact strip. */
+    updated: string;
     inspector: string;
     liveDraft: string;
     selectedGate: string;
@@ -759,6 +763,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       uncommittedEditsNote: "These edits exist only in this browser until a verification run saves them as the next version.",
       footer: "Edits stay in this browser until a verification run saves them as the next version.",
       openRun: "Open live run",
+      countCircuits: (count) => (count === 1 ? "1 circuit" : `${count} circuits`),
+      updated: "Updated",
       inspector: "Circuit inspector",
       liveDraft: "live draft",
       selectedGate: "Selected gate",
@@ -1217,6 +1223,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       uncommittedEditsNote: "この編集はブラウザ内にのみ存在します。検証を実行すると次のバージョンとして保存されます。",
       footer: "編集内容はこのブラウザ内にのみ保持されます。検証を実行すると次のバージョンとして保存されます。",
       openRun: "実行を開く",
+      countCircuits: (count) => `${count} 件の回路`,
+      updated: "更新",
       inspector: "回路の詳細",
       liveDraft: "編集中",
       selectedGate: "選択中のゲート",
@@ -1419,6 +1427,23 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageEnforcedAs: (tier: string) => string;
   usageNextSlotOn: (date: string) => string;
   usageNextSlotWhen: (word: string) => string;
+  // Shared projects. The scope line is not decoration: this allowance counts
+  // shared projects only, from both directions, and "2 of 4" printed beside the
+  // word "projects" reads as a cap on every project a person has. It is not
+  // one — unshared projects are unlimited on every tier — and the sentence
+  // saying so has to sit under the number rather than in a help page.
+  usageSharedProjects: string;
+  usageSharedProjectsScope: string;
+  usageSharedProjectsNone: string;
+  // Hardware spend, in dollars, per account. `usageHardwareAuthorized` is the
+  // ORDINARY case: there is no weekly ceiling on any tier, so the sentence has
+  // to read as a complete fact on its own rather than as half of a ratio.
+  usageHardware: string;
+  usageHardwareAuthorized: (amount: string, days: number) => string;
+  usageHardwareRemaining: (remaining: string, limit: string) => string;
+  usageHardwareExhausted: (limit: string) => string;
+  usageHardwareFreeQueuesOnly: string;
+  usageHardwareScope: string;
   // Model spend. Never optional — a `?` here is how the Japanese principles
   // section disappeared in PR 194, because `Record<PublicLocale, …>` cannot
   // catch a field one locale is allowed to omit.
@@ -1462,6 +1487,63 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   billingPolicyHardware: string;
   billingPolicyHardwareValue: string;
   billingEstimatesLink: string;
+  /**
+   * Connecting your own IBM Quantum key.
+   *
+   * There is no OAuth here and the copy must not imply one. IBM publishes no
+   * way for a third-party application to obtain an API key on somebody's
+   * behalf, so the honest surface is instructions, a paste field and a status —
+   * and a "Connect with IBM" button that redirected nowhere would be worse than
+   * three sentences of prose.
+   *
+   * The four failure sentences are four separate strings because they mean four
+   * different things to the person reading them: fix the key, wait and retry,
+   * stop (nothing you do here helps), and an unclassified failure. Collapsing
+   * any two of them would send somebody to re-paste a key that was never the
+   * problem.
+   */
+  qpuTitle: string;
+  qpuHelp: string;
+  qpuOpenPlan: string;
+  qpuStepAccount: string;
+  qpuStepKey: string;
+  qpuStepPaste: string;
+  qpuDashboardLink: string;
+  qpuStorageNote: string;
+  qpuKeyLabel: string;
+  qpuKeyPlaceholder: string;
+  qpuKeyLengthHint: (length: number) => string;
+  qpuInstanceLabel: string;
+  qpuInstanceHelp: string;
+  qpuLabelLabel: string;
+  qpuLabelHelp: string;
+  qpuConnect: string;
+  qpuConnecting: string;
+  qpuLoading: string;
+  qpuLoadFailed: string;
+  qpuNotConnected: string;
+  qpuConnectedTitle: string;
+  qpuConnectedMessage: string;
+  qpuStatusLabel: string;
+  qpuStatusInstance: string;
+  qpuStatusConnectedAt: string;
+  qpuStatusVerified: string;
+  qpuStatusUsed: string;
+  qpuStatusNone: string;
+  qpuNeverUsed: string;
+  qpuDisconnect: string;
+  qpuDisconnectConfirm: string;
+  qpuDisconnectCancel: string;
+  qpuDisconnecting: string;
+  qpuDisconnectWarning: string;
+  qpuDisconnected: string;
+  qpuErrorRejected: string;
+  qpuErrorVerificationUnavailable: string;
+  qpuErrorStorageUnavailable: string;
+  qpuErrorGeneric: string;
+  qpuErrorDisconnect: string;
+  /** IBM's own sentence, quoted rather than paraphrased. */
+  qpuProviderDetail: (sentence: string) => string;
 }> = {
   en: {
     title: "Settings",
@@ -1529,6 +1611,26 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
       `Your runs are being enforced as ${tier}. The limits above are what this page resolved; these are what the control plane applies.`,
     usageNextSlotOn: (date) => `1 more frees up on ${date}`,
     usageNextSlotWhen: (word) => `1 more frees up ${word}`,
+    usageSharedProjects: "Shared projects",
+    usageSharedProjectsScope:
+      "Counted across your whole account — projects you share plus projects shared with you. Projects you keep to yourself are unlimited on every plan and are not counted here.",
+    usageSharedProjectsNone:
+      "Sharing is not part of your plan. Projects you keep to yourself stay unlimited.",
+    usageHardware: "Hardware spend",
+    // The sentence stands on its own, because on every plan there is now no
+    // weekly hardware ceiling: what you spend on your own provider account is
+    // your decision. "$3.40 of unlimited" would be a ratio with nothing on the
+    // other side of it.
+    usageHardwareAuthorized: (amount, days) => `${amount} authorized in the last ${days} days`,
+    usageHardwareRemaining: (remaining, limit) => `${remaining} left of your ${limit} ceiling`,
+    usageHardwareExhausted: (limit) => `Your ${limit} ceiling for this window is used up`,
+    // A zero ceiling is not a hardware ban, and saying so is the whole point of
+    // this line: free-queue devices estimate nothing, count as $0.00, and are
+    // never refused on it.
+    usageHardwareFreeQueuesOnly:
+      "Free queues only on your plan — priced hardware cannot be submitted, and free-queue devices are unaffected.",
+    usageHardwareScope:
+      "Estimated cost of the hardware you have authorized, for your whole account. Free-queue devices count as $0.00.",
     spendTitle: "Model usage",
     spendScope: (days) => `This workspace, last ${days} days`,
     spendEmpty: (days) => `No model usage in the last ${days} days`,
@@ -1567,6 +1669,60 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingPolicyHardware: "GPU / QPU hardware",
     billingPolicyHardwareValue: "Owner-gated. Sourced cost estimates appear in Studio's hardware lane before any submission.",
     billingEstimatesLink: "See hardware estimates in Studio",
+    qpuTitle: "Connect IBM Quantum",
+    qpuHelp:
+      "Run on IBM hardware with your own IBM account instead of the one Leona shares between everybody.",
+    qpuOpenPlan:
+      "IBM's free Open Plan gives roughly 10 minutes of QPU time per rolling 28 days. Connected here, that allowance is yours on your own IBM account — today every Leona user draws from a single shared pool, so a busy week for someone else is a queue you wait in.",
+    qpuStepAccount: "Create a free account and open the IBM Quantum Platform dashboard.",
+    qpuStepKey: "Create an API key there. It is 44 characters long.",
+    qpuStepPaste: "Paste it below. Leona checks it with IBM before saving it.",
+    qpuDashboardLink: "quantum.cloud.ibm.com",
+    qpuStorageNote:
+      "Leona stores the key encrypted and never shows it again. You can revoke it at any time from IBM's own dashboard, which cuts off this connection whether or not you disconnect it here.",
+    qpuKeyLabel: "IBM API key",
+    qpuKeyPlaceholder: "44 characters",
+    // A hint, not a refusal. IBM decides whether a key is valid, and a length
+    // this page hardcoded would start rejecting real keys the day that changes.
+    qpuKeyLengthHint: (length) => `That is ${length} characters — an IBM API key is 44.`,
+    qpuInstanceLabel: "Instance CRN (optional)",
+    qpuInstanceHelp:
+      "Only needed when your IBM account has more than one instance. Paste the CRN itself — it starts with “crn:” and an instance name is not accepted here. Open Plan instances exist only in IBM's us-east region.",
+    qpuLabelLabel: "Label (optional)",
+    qpuLabelHelp: "A name for your own reference. It is shown here and nowhere else.",
+    qpuConnect: "Connect",
+    qpuConnecting: "Checking with IBM…",
+    qpuLoading: "Checking your connection…",
+    qpuLoadFailed: "Could not check whether a key is connected. Reload the page to try again.",
+    qpuNotConnected: "No IBM key is connected to your account.",
+    qpuConnectedTitle: "Connected",
+    qpuConnectedMessage: "IBM accepted the key. Leona stored it encrypted and will not show it again.",
+    qpuStatusLabel: "Label",
+    qpuStatusInstance: "Instance",
+    qpuStatusConnectedAt: "Connected",
+    qpuStatusVerified: "Last verified",
+    qpuStatusUsed: "Last used",
+    qpuStatusNone: "Not set",
+    qpuNeverUsed: "Not yet used",
+    qpuDisconnect: "Disconnect",
+    qpuDisconnectConfirm: "Yes, disconnect",
+    qpuDisconnectCancel: "Keep it",
+    qpuDisconnecting: "Disconnecting…",
+    qpuDisconnectWarning:
+      "Queued hardware runs will stop submitting until a key is connected again. This removes the key from Leona; it does not revoke it at IBM.",
+    qpuDisconnected: "Your IBM key was removed. Leona no longer holds it.",
+    // Fix the key.
+    qpuErrorRejected:
+      "IBM did not accept that key. Check that you copied all 44 characters, and that the key has not been revoked or deleted on IBM's dashboard.",
+    // Wait and try again — nothing was saved and nothing is wrong with the key.
+    qpuErrorVerificationUnavailable:
+      "Leona could not reach IBM to check the key. Nothing was saved and your key was not stored — try again in a few minutes.",
+    // Stop. There is nothing the person reading this can do about it.
+    qpuErrorStorageUnavailable:
+      "This deployment cannot store credentials yet, so a key cannot be accepted here. Nothing is wrong with your key and there is nothing to retry — it needs a change on our side.",
+    qpuErrorGeneric: "The key could not be saved.",
+    qpuErrorDisconnect: "The key could not be removed. It is still connected.",
+    qpuProviderDetail: (sentence) => `IBM said: ${sentence}`,
   },
   ja: {
     title: "設定",
@@ -1636,6 +1792,25 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
       `実行は ${tier} として制限されています。上の上限はこのページが判定した値、以下はコントロールプレーンが実際に適用している値です。`,
     usageNextSlotOn: (date) => `${date}に1回分が戻ります`,
     usageNextSlotWhen: (word) => `${word}1回分が戻ります`,
+    usageSharedProjects: "共有プロジェクト",
+    // 「2 / 4」だけを見ると全プロジェクトの上限に読めてしまう。共有していない
+    // プロジェクトはどのプランでも無制限で、この数には入らない。
+    usageSharedProjectsScope:
+      "アカウント全体での数です。自分が共有しているプロジェクトと、共有されたプロジェクトの両方を数えます。共有していないプロジェクトはどのプランでも無制限で、ここには含まれません。",
+    usageSharedProjectsNone:
+      "現在のプランでは共有をご利用いただけません。共有しないプロジェクトは引き続き無制限です。",
+    usageHardware: "ハードウェア費用",
+    // 上限はどのプランでも設けていない。自分のプロバイダアカウントで
+    // いくら使うかは本人の判断、というのが方針。
+    usageHardwareAuthorized: (amount, days) => `直近${days}日間で${amount}を承認`,
+    usageHardwareRemaining: (remaining, limit) => `上限${limit}のうち${remaining}が残っています`,
+    usageHardwareExhausted: (limit) => `この期間の上限${limit}を使い切りました`,
+    // 上限0は「ハードウェア禁止」ではない。無料キューの実行は見積り0.00ドルとして
+    // 数えられ、この上限で拒否されることはない。
+    usageHardwareFreeQueuesOnly:
+      "現在のプランでは無料キューのみご利用いただけます。有料のハードウェアには送信できませんが、無料キューへの送信は影響を受けません。",
+    usageHardwareScope:
+      "アカウント全体で承認したハードウェア実行の見積り費用です。無料キューの実行は $0.00 として数えます。",
     spendTitle: "モデル使用量",
     spendScope: (days) => `このワークスペース・直近${days}日間`,
     spendEmpty: (days) => `直近${days}日間のモデル使用はありません`,
@@ -1675,6 +1850,59 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingPolicyHardware: "GPU・量子コンピュータ実行",
     billingPolicyHardwareValue: "管理者の承認が必要です。送信前に Studio で、出典付きの費用見積もりを確認できます。",
     billingEstimatesLink: "Studio でハードウェア見積もりを見る",
+    qpuTitle: "IBM Quantum と接続",
+    qpuHelp:
+      "全員で共有しているアカウントではなく、ご自身の IBM アカウントで IBM の量子コンピュータを実行できます。",
+    qpuOpenPlan:
+      "IBM の無料 Open Plan では、28日間のローリング期間ごとにおよそ10分の QPU 時間が使えます。ここで接続すると、その枠はご自身の IBM アカウントのものになります。現在は Leona の利用者全員が一つの共有枠を使っているため、他の人が多く使った週はその分だけ順番待ちが長くなります。",
+    qpuStepAccount: "無料のアカウントを作成し、IBM Quantum Platform のダッシュボードを開きます。",
+    qpuStepKey: "そこで API キーを作成します。キーは44文字です。",
+    qpuStepPaste: "下の欄に貼り付けます。保存する前に Leona が IBM に照会して確認します。",
+    qpuDashboardLink: "quantum.cloud.ibm.com",
+    qpuStorageNote:
+      "キーは暗号化して保存し、以後は表示しません。IBM のダッシュボードからいつでも無効化でき、無効化するとこの接続も使えなくなります。",
+    qpuKeyLabel: "IBM API キー",
+    qpuKeyPlaceholder: "44文字",
+    // 目安であって拒否ではない。有効かどうかを決めるのは IBM 側。
+    qpuKeyLengthHint: (length) => `現在${length}文字です。IBM の API キーは44文字です。`,
+    qpuInstanceLabel: "インスタンス CRN（任意）",
+    qpuInstanceHelp:
+      "IBM アカウントに複数のインスタンスがある場合のみ必要です。「crn:」で始まる CRN をそのまま貼り付けてください（インスタンス名は登録できません）。Open Plan のインスタンスは IBM の us-east リージョンにのみ存在します。",
+    qpuLabelLabel: "ラベル（任意）",
+    qpuLabelHelp: "ご自身の覚え書き用の名前です。この画面にのみ表示されます。",
+    qpuConnect: "接続する",
+    qpuConnecting: "IBM に照会しています…",
+    qpuLoading: "接続状況を確認しています…",
+    qpuLoadFailed: "接続状況を確認できませんでした。ページを再読み込みしてください。",
+    qpuNotConnected: "このアカウントには IBM のキーが接続されていません。",
+    qpuConnectedTitle: "接続済み",
+    qpuConnectedMessage: "IBM がキーを受理しました。暗号化して保存し、以後は表示しません。",
+    qpuStatusLabel: "ラベル",
+    qpuStatusInstance: "インスタンス",
+    qpuStatusConnectedAt: "接続日時",
+    qpuStatusVerified: "最終確認",
+    qpuStatusUsed: "最終使用",
+    qpuStatusNone: "未設定",
+    qpuNeverUsed: "未使用",
+    qpuDisconnect: "接続を解除",
+    qpuDisconnectConfirm: "解除する",
+    qpuDisconnectCancel: "そのままにする",
+    qpuDisconnecting: "解除しています…",
+    qpuDisconnectWarning:
+      "解除すると、キーを再接続するまで待機中のハードウェア実行は送信されなくなります。解除は Leona からキーを削除する操作で、IBM 側でキーが無効化されるわけではありません。",
+    qpuDisconnected: "IBM のキーを削除しました。Leona は保持していません。",
+    // キーを直す。
+    qpuErrorRejected:
+      "IBM がこのキーを受理しませんでした。44文字すべてを貼り付けたか、IBM のダッシュボードでキーが無効化・削除されていないかをご確認ください。",
+    // しばらく待って再試行する。キー自体には問題がなく、保存もされていない。
+    qpuErrorVerificationUnavailable:
+      "IBM に照会できなかったため確認できませんでした。キーは保存されていません。数分後にもう一度お試しください。",
+    // ここで待っても直らない。利用者側にできることはない。
+    qpuErrorStorageUnavailable:
+      "この環境では資格情報をまだ保存できないため、キーを登録できません。キーに問題があるわけではなく、再試行しても変わりません。こちら側での対応が必要です。",
+    qpuErrorGeneric: "キーを保存できませんでした。",
+    qpuErrorDisconnect: "キーを削除できませんでした。接続は解除されていません。",
+    qpuProviderDetail: (sentence) => `IBM からの応答: ${sentence}`,
   },
 };
 

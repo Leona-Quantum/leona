@@ -1,21 +1,45 @@
-"""QPU catalog, deterministic estimates, the submission gate, and submission.
+"""QPU catalog, deterministic estimates, the submission gate, submission, and
+the caller's own IBM Quantum credential.
 
 The rate card is code (majorana_qpu) and the estimate is arithmetic over it.
 Submission is fail-closed behind the deployment gates; when every gate is
 open, POST /qpu/submissions writes the durable qpu_runs attestation row
 (migration 0034) and its qpu.run job in one transaction and returns the
 record. The worker owns every provider interaction after that.
+
+## The credential surface
+
+`GET/PUT/DELETE /v1/qpu/credentials` manage the caller's own IBM Quantum API
+key. They live here rather than in a new router because the submission gate is
+now a question about the caller — "may this deployment submit" AND "does this
+person have an account to submit through" — and splitting the two halves across
+files is how they drift.
+
+There is no OAuth flow. IBM Quantum Platform publishes none that would let a
+third-party application obtain an API key on a user's behalf, so the shape is:
+the user creates their own free key on IBM's dashboard and pastes it here. What
+this surface owes them in exchange is that the paste is verified before it is
+stored, that a bad key produces a sentence they can act on, and that the key is
+never readable again by anything — including them, including us.
+
+Response models are route-local, on the precedent stated at the top of
+`routes/usage.py`: a read-only projection whose shape is this route's own
+business does not need a CONTRACTS_VERSION bump.
 """
 
+import asyncio
 import datetime as dt
+import logging
 import uuid
-from typing import Annotated
+from typing import Annotated, Literal
 
-from fastapi import APIRouter, Depends, HTTPException
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from majorana_contracts import QpuRunRecord
 from pydantic import BaseModel, ConfigDict, Field
 
 from majorana_qpu import (
+    IbmCredentialRejected,
+    IbmVerificationUnavailable,
     QpuBackendInfo,
     QpuCostEstimate,
     QpuRunJobPayload,
@@ -24,12 +48,15 @@ from majorana_qpu import (
     estimate as rate_card_estimate,
     list_backends,
     submission_block_reason,
+    verify_ibm_api_key,
 )
 
+from .. import credential_crypto
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..request_models import RequestModel
 from ..jobs import QPU_RUN_JOB_KIND
-from ..orm import QpuRun as QpuRunRow
+from ..orm import ProviderCredential, QpuRun as QpuRunRow
+from ..repos import provider_credentials as credentials_repo
 from ..repos import qpu_runs as qpu_runs_repo
 from ..repos import system
 from ..settings import Settings
@@ -37,10 +64,17 @@ from ..tiers import TIER_WINDOW, limits_for, tier_of
 
 router = APIRouter()
 
+log = logging.getLogger("majorana_api.qpu")
+
 MAX_ESTIMATE_SHOTS = 1_000_000
 # Generous bound for a submitted OpenQASM program; the Studio surface caps far
 # lower — this only stops abuse of the raw endpoint.
 MAX_SUBMISSION_QASM_CHARS = 200_000
+
+#: The one provider a credential may name today. A constant rather than a
+#: literal at four call sites: the day a second provider lands, the compiler
+#: cannot help and a missed string is a route that reads the wrong row.
+IBM_PROVIDER = "ibm"
 
 
 class QpuBackendsResponse(BaseModel):
@@ -75,13 +109,300 @@ async def qpu_estimate(body: QpuEstimateRequest, scope: CurrentScope) -> QpuCost
         raise HTTPException(status_code=404, detail="unknown QPU device") from None
 
 
+async def _caller_can_submit(scope, session) -> bool:
+    """Whether this caller holds a credential this deployment could actually use.
+
+    Not "is there a row" — **is there a row this deployment can still decrypt**.
+    A stored credential whose key has left `MAJORANA_CREDENTIAL_KEYS` cannot be
+    read by the worker, so accepting a submission against it writes a durable
+    attestation row and enqueues a job that fails hours later with a cause no
+    user can act on.
+
+    An earlier version of this function checked `storage_available()` and the
+    row's existence, which are both true in exactly the case that matters: a key
+    rotated by REPLACEMENT rather than by prepending. Measured — storage
+    available, row present, row undecryptable, gate open. Comparing the row's
+    own `key_id` against the configured keys' ids is what makes the docstring
+    above true rather than aspirational.
+
+    The comparison is deliberately stricter than `CredentialCipher.decrypt`,
+    which tries every key and does not look at `key_id` at all. That asymmetry
+    is correct: decrypt has the ciphertext and can simply try, while this has to
+    decide whether to begin work whose failure is expensive and late.
+    """
+    # Configured keys first, and the row only if there are any. Not merely an
+    # optimisation: with no key at all the answer cannot depend on the row, and
+    # `test_the_gate_is_closed_when_credential_storage_is_unavailable` fails the
+    # session outright if this path reads one — a deployment with no encryption
+    # key should not be issuing queries about secrets it could not use.
+    configured = credential_crypto.configured_key_ids()
+    if not configured:
+        return False
+    return await credentials_repo.credential_key_id(scope, session, IBM_PROVIDER) in configured
+
+
 @router.get("/qpu/submission-gate", response_model=QpuSubmissionGateResponse)
-async def qpu_submission_gate(scope: CurrentScope) -> QpuSubmissionGateResponse:
-    reason = submission_block_reason()
+async def qpu_submission_gate(scope: CurrentScope, session: DbSession) -> QpuSubmissionGateResponse:
+    """Caller-aware. The deployment gates are the same for everybody; the
+    credential is not, and a gate that answered "available" to an account with
+    no IBM key would send them to a submission that refuses."""
+    reason = submission_block_reason(has_credential=await _caller_can_submit(scope, session))
     return QpuSubmissionGateResponse(
         submission_available=reason is None,
         blocked_reason=None if reason is None else reason.value,
     )
+
+
+class QpuCredentialStatus(BaseModel):
+    """What the caller has connected. Never the key.
+
+    Every field here is either a timestamp, a user-supplied label, or the
+    instance CRN — which names an IBM instance and authorizes nothing on its
+    own. There is no field for the API key and there is deliberately no
+    fingerprint, prefix or masked form of it either: a "last four" is a real
+    reduction of the search space for a 44-character secret, and it buys the
+    user nothing they cannot get from `last_verified_at`.
+    """
+
+    provider: str
+    connected: bool
+    label: str | None
+    instance: str | None
+    #: When this credential was first connected. "Connected since" — it does not
+    #: move when the key is replaced, because the connection did not lapse.
+    created_at: dt.datetime | None
+    #: **The last time a provider actually accepted this key**, not the last time
+    #: it was saved. Written by the PUT that stored it (IBM's IAM endpoint
+    #: exchanged it for a token right then) and REFRESHED by the worker every
+    #: time a provider call made with it succeeds — a submission handed to IBM,
+    #: a poll answered by IBM. Both are proof the key still works.
+    #:
+    #: Written down because the alternative was a trap: a field only the store
+    #: path ever wrote would be a creation timestamp wearing a verification
+    #: label, saying nothing `created_at` does not, while a UI rendered "Last
+    #: verified" beside it. A key revoked on IBM's dashboard yesterday would
+    #: still have reported "verified" as of the day it was pasted. With the
+    #: worker refreshing it, a stale value means something: nothing has
+    #: successfully used this credential since then.
+    last_verified_at: dt.datetime | None
+    #: The last time the credential was HANDED to a provider on this account's
+    #: behalf. Null for a credential that has been connected but never used.
+    #: Distinct from `last_verified_at` at exactly one moment — connect time,
+    #: when the key has been verified and not yet used — and after a
+    #: reconnection, when verification moves and use does not.
+    last_used_at: dt.datetime | None
+    #: Operator-facing. False means `MAJORANA_CREDENTIAL_KEYS` is unset or
+    #: malformed on this service, so nothing can be connected until it is fixed.
+    #: Surfaced rather than hidden behind a 503 because a user staring at a
+    #: refusing form needs to know it is not their key that is wrong.
+    storage_available: bool
+
+
+class QpuCredentialRequest(RequestModel):
+    """The connect body.
+
+    `api_key` carries NO pydantic constraints, and that is a security decision
+    rather than laziness. A pydantic failure produces a `RequestValidationError`
+    whose `errors()` include the offending `input` — so a `min_length` on this
+    field would echo the user's API key back in the 422. This app's validation
+    handler already collapses that to a fixed body (`app.py`), which is what
+    makes the echo survivable at all; not putting the constraint here removes
+    the second half of the problem, since the value would still have been
+    formatted into an exception object first. Length is checked in the handler,
+    where the refusal is ours to write.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    provider: Literal["ibm"] = IBM_PROVIDER
+    api_key: str
+    #: An IBM Service CRN. Not a secret — it names an instance — which is
+    #: exactly why it is stored UNENCRYPTED and echoed back on every GET.
+    #:
+    #: Hence the `crn:` prefix, which is a security constraint rather than
+    #: validation for its own sake. This field sits directly beside the API key
+    #: field in the UI, both are optional-looking text inputs, and a user who
+    #: pastes their key into the wrong one would have it written to the row in
+    #: plaintext and returned to the browser on every status poll — past every
+    #: protection in this module. Refusing a value that is not shaped like a CRN
+    #: makes that specific mistake impossible rather than unlikely.
+    #:
+    #: The cost is real and accepted: `QiskitRuntimeService` also accepts an
+    #: instance NAME, and this refuses those. The UI labels the field "instance
+    #: CRN", IBM's REST path needs a CRN in the `Service-CRN` header, and the
+    #: field is optional — so the narrow shape is the right trade against
+    #: storing somebody's credential in a column nothing encrypts.
+    instance: str | None = Field(default=None, max_length=512, pattern=r"^crn:")
+    label: str | None = Field(default=None, max_length=120)
+
+
+def _credential_status(
+    record: ProviderCredential | None, provider: str = IBM_PROVIDER
+) -> QpuCredentialStatus:
+    available = credential_crypto.storage_available()
+    if record is None:
+        return QpuCredentialStatus(
+            provider=provider,
+            connected=False,
+            label=None,
+            instance=None,
+            created_at=None,
+            last_verified_at=None,
+            last_used_at=None,
+            storage_available=available,
+        )
+    return QpuCredentialStatus(
+        provider=record.provider,
+        connected=True,
+        label=record.label,
+        instance=record.instance,
+        created_at=record.created_at,
+        last_verified_at=record.last_verified_at,
+        last_used_at=record.last_used_at,
+        storage_available=available,
+    )
+
+
+def _storage_unavailable(diagnostic: str) -> HTTPException:
+    """503 with a `reason` and nothing else.
+
+    The diagnostic goes to the log, deliberately. Every field in an
+    `HTTPException` detail is rendered by `app._http_exc` into a body the web
+    client shows a person, and "MAJORANA_CREDENTIAL_KEYS is not set" is a
+    sentence for whoever runs the service — putting it on an end user's screen
+    tells them nothing they can act on and describes our deployment to somebody
+    who did not ask. Only `credential_rejected` carries a user-facing `error`,
+    because only that one is about something the user did.
+    """
+    log.error("credential storage unavailable: %s", diagnostic)
+    return HTTPException(status_code=503, detail={"reason": "credential_storage_unavailable"})
+
+
+@router.get("/qpu/credentials", response_model=QpuCredentialStatus)
+async def qpu_credential_status(
+    scope: CurrentScope,
+    session: DbSession,
+    provider: Annotated[Literal["ibm"], Query()] = IBM_PROVIDER,
+) -> QpuCredentialStatus:
+    """What this caller has connected for `provider`.
+
+    Takes the same `provider` parameter DELETE does, and defaults the same way.
+    A GET with no parameter that answered `"provider": "ibm"` would presume one
+    provider per account forever, and the day a second one lands (Braket, IonQ
+    direct) every existing caller would have to change; a `Literal` keeps the
+    single valid value enforced meanwhile, so an unknown provider is a 422 rather
+    than a confidently empty answer about something that does not exist.
+
+    One object for the provider asked about, never a list: a client that wants
+    two asks twice, and a list would make "which of these is the IBM one"
+    everybody's problem.
+
+    Readable with storage unavailable, on purpose: the row's metadata is not
+    encrypted, and an account that cannot see whether it is connected has no way
+    to understand why submission refuses.
+    """
+    record = await credentials_repo.get(scope, session, provider)
+    return _credential_status(record, provider)
+
+
+@router.put("/qpu/credentials", response_model=QpuCredentialStatus)
+async def qpu_connect_credential(
+    body: QpuCredentialRequest, scope: CurrentScope, session: DbSession
+) -> QpuCredentialStatus:
+    """Verify the key with IBM, then store it encrypted. Never echo it.
+
+    ## Verify first, store second
+
+    A key IBM refuses is a 400 and is not written anywhere. Storing an unusable
+    credential moves the failure from this form — where the user is looking at
+    the IBM dashboard they just copied it from — into a job hours later, where
+    it appears as a hardware run that failed for reasons nobody can attribute.
+
+    ## Three different refusals, because the user does three different things
+
+    - **400 `credential_rejected`**: IBM answered and said no. Go back to the
+      dashboard. The ONLY one of the three that carries a `detail.error`
+      sentence, because it is the only one about something the user did — the
+      web client renders it verbatim.
+    - **502 `credential_verification_unavailable`**: IBM could not be reached.
+      Try again shortly; nothing is wrong with the key.
+    - **503 `credential_storage_unavailable`**: this deployment has no
+      encryption key configured. Nothing the user can do; an operator must set
+      `MAJORANA_CREDENTIAL_KEYS`.
+
+    Collapsing the first two would send somebody to regenerate a perfectly good
+    credential because a TLS handshake timed out.
+
+    502 and 503 carry `reason` and nothing else. Their diagnostics are logged
+    rather than returned: the client renders whatever `error` it finds, so an
+    operator-facing string in one of those bodies is an operator-facing string
+    on an end user's screen.
+
+    ## Where the plaintext goes
+
+    Into `verify_ibm_api_key`, into `cipher.encrypt`, and nowhere else. It is not
+    logged, not returned (the response model has no field for it), and not
+    carried into any exception: every raise on this path is `from None`, because
+    the frame being chained is the frame holding the key.
+    """
+    try:
+        cipher = credential_crypto.load_cipher()
+    except credential_crypto.CredentialStorageUnavailable as unavailable:
+        # Loaded BEFORE the key is sent anywhere. A deployment that cannot store
+        # the credential has no business exchanging it with IBM: the round trip
+        # would prove a key it is about to throw away, and refusing first is the
+        # only way to be certain plaintext is never persisted.
+        raise _storage_unavailable(str(unavailable)) from None
+    api_key = body.api_key.strip()
+    try:
+        # `to_thread`: urllib is blocking and this is an async handler. Running
+        # it inline would stall the event loop for the whole IAM round trip on
+        # every connect.
+        await asyncio.to_thread(verify_ibm_api_key, api_key)
+    except IbmCredentialRejected as rejected:
+        raise HTTPException(
+            status_code=400,
+            detail={"reason": "credential_rejected", "error": str(rejected)},
+        ) from None
+    except IbmVerificationUnavailable as unavailable:
+        log.warning("IBM credential verification unavailable: %s", unavailable)
+        raise HTTPException(
+            status_code=502,
+            detail={"reason": "credential_verification_unavailable"},
+        ) from None
+    ciphertext, key_id = cipher.encrypt(api_key)
+    record = await credentials_repo.upsert(
+        scope,
+        session,
+        provider=body.provider,
+        ciphertext=ciphertext,
+        key_id=key_id,
+        instance=(body.instance or None),
+        label=(body.label or None),
+        # Stamped from the verification that just succeeded, not from "now" at
+        # some later point in the handler: the fact recorded is that IBM
+        # accepted this key, and it is only true of this request. The worker
+        # refreshes it on every later provider call that succeeds, so the field
+        # keeps meaning "last accepted" rather than decaying into "first saved".
+        last_verified_at=dt.datetime.now(dt.UTC),
+    )
+    return _credential_status(record, body.provider)
+
+
+@router.delete("/qpu/credentials", status_code=204)
+async def qpu_disconnect_credential(
+    scope: CurrentScope,
+    session: DbSession,
+    provider: Annotated[Literal["ibm"], Query()] = IBM_PROVIDER,
+) -> Response:
+    """Remove the caller's credential. 204 whether or not one was there.
+
+    Idempotent on purpose: a user who clicks disconnect twice, or whose first
+    request timed out after committing, must not be told that something went
+    wrong. There is nothing to report — after either call, the key is gone.
+    """
+    await credentials_repo.delete(scope, session, provider)
+    return Response(status_code=204)
 
 
 class QpuSubmissionRequest(RequestModel):
@@ -187,12 +508,20 @@ async def qpu_submit(
     The spend check runs AFTER the deployment gate deliberately. A closed
     deployment is not the account's problem, and telling somebody their budget
     is spent when nothing in this deployment could have submitted anything would
-    be the wrong sentence."""
+    be the wrong sentence.
+
+    The gate is now caller-aware: an account with no IBM credential is refused
+    with `credentials_unconfigured` HERE, before any row is written and any job
+    is enqueued. Letting it through would create a durable attestation row and a
+    `qpu.run` job for a submission that cannot be made, and the worker would
+    close it as an errored hardware run — a failure record for something that
+    never reached a provider, on a table whose whole purpose is attesting to
+    things that did."""
     try:
         backend = backend_info(body.device_id)
     except UnknownDeviceError:
         raise HTTPException(status_code=404, detail="unknown QPU device") from None
-    reason = submission_block_reason()
+    reason = submission_block_reason(has_credential=await _caller_can_submit(scope, session))
     if reason is not None:
         raise HTTPException(status_code=409, detail={"blocked_reason": reason.value})
     estimate = rate_card_estimate(body.device_id, body.shots)

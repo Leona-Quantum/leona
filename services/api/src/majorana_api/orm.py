@@ -726,3 +726,44 @@ class QpuRun(Base):
     completed_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ProviderCredential(Base):
+    """One person's own credential for one third-party provider (migration 0045).
+
+    **Per USER, not per workspace, and that is the point of the table.** A
+    provider account belongs to a person; it follows them into every workspace
+    they act in, exactly as the weekly run allowance and the weekly hardware
+    spend allowance do — both of which are keyed on `user_id` for the same
+    reason, that a provider bill follows the account rather than the tenant.
+    Keying this on `workspace_id` would silently disconnect a user's IBM account
+    every time they switched workspaces.
+
+    Because of that, `repos/provider_credentials.py` scopes on `scope.user_id`
+    rather than `scope.workspace_id`. That is narrower, not weaker: no query in
+    that module admits a user id other than the caller's, so there is no path by
+    which one account reads or deletes another's row.
+
+    `ciphertext` is a Fernet token from `majorana_api.credential_crypto`. The
+    plaintext API key is in no column of this table, is returned by no endpoint,
+    and appears in no error message. `key_id` names the encryption key the row
+    needs, so an operator mid-rotation can tell which rows still depend on the
+    key being retired; it is a truncated digest, not key material.
+    """
+
+    __tablename__ = "provider_credentials"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_provider_credentials_user_provider"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    provider: Mapped[str]
+    ciphertext: Mapped[str]
+    key_id: Mapped[str]
+    instance: Mapped[str | None]
+    label: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    last_verified_at: Mapped[dt.datetime | None]
+    last_used_at: Mapped[dt.datetime | None]

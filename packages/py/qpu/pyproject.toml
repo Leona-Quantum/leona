@@ -12,7 +12,13 @@ dependencies = [
 # the control plane can serve catalog/estimate surfaces without hardware deps.
 # The `ibm` extra exists for deployments the owner has switched on — the
 # worker depends on it, which puts the package in the shared api+worker image
-# (the runtime gate still requires the flag AND the token to touch IBM).
+# (the runtime gate still requires the deployment flag AND the submitting
+# user's own stored credential to touch IBM).
+#
+# `majorana_qpu.iam` — the credential check the API runs before storing a user's
+# key — deliberately does NOT use this extra. It is stdlib urllib against IBM's
+# IAM token endpoint, because the API image is built without the extra and a
+# verification path that needs qiskit is a verification path the API cannot run.
 [project.optional-dependencies]
 ibm = [
     "qiskit-ibm-runtime>=0.48,<1",

@@ -583,15 +583,25 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                 <div className="mj-studio-actions">
                   {/* The chip is a shortcut to the evidence panel. On the tab
                       that already renders that panel it would just be the same
-                      sentence twice. */}
-                  {panel === "summary" ? null : (
+                      sentence twice — so it is hidden there, not unmounted.
+                      Unmounting it let the row reflow every time you moved on
+                      or off Summary, and Download export / Verify & save jumped
+                      sideways under the pointer on a plain tab change. Hidden
+                      with `visibility`, so it keeps its box, takes no clicks and
+                      leaves the tab order. */}
+                  <span
+                    className="mj-studio-verdict-slot"
+                    data-hidden={panel === "summary" ? "true" : undefined}
+                    aria-hidden={panel === "summary" ? true : undefined}
+                  >
                     <StudioVerdictChip
                       summary={artifact?.verificationSummary ?? null}
                       state={verificationDisplayState}
                       onOpen={() => selectPanel("summary")}
                       copy={copy}
+                      inert={panel === "summary"}
                     />
-                  )}
+                  </span>
                   {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
                   <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
@@ -759,7 +769,32 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                 })}
               </div>
             ) : null}
-            {artifactSyncError ? <p className="mj-studio-empty" role="alert">{copy.remoteSyncUnavailable}</p> : null}
+            {/* How many rows the list below actually holds. A list you have
+                just filtered should say what the filter left, and this is the
+                one number that used to be reachable only by counting cards.
+
+                Rendered unconditionally, with the sentence conditional inside
+                it: the server paints before local storage has been read, so a
+                line that only exists once there are rows appears after
+                hydration and pushes the whole list down. The element reserves
+                its own height (globals.css) whether or not it has anything to
+                say. */}
+            <p className="mj-studio-discovery-count">
+              {filteredArtifacts.length ? copy.countCircuits(filteredArtifacts.length) : null}
+            </p>
+            {/* The sync failure used to render in `.mj-studio-empty`, the same
+                muted 12px the "nothing here yet" sentence uses — so a workspace
+                that could not reach the control plane looked exactly like an
+                empty one, and the difference between "you have nothing" and "we
+                could not read what you have" was invisible. It has its own tone
+                now.
+
+                It sits directly above the list rather than above the search
+                field, because it appears only after the fetch has failed: any
+                higher and it pushes the search box down under whoever is
+                already typing in it. Here the only thing it moves is the list
+                it qualifies. */}
+            {artifactSyncError ? <p className="mj-studio-notice" data-tone="warn" role="alert">{copy.remoteSyncUnavailable}</p> : null}
             <div className="mj-studio-discovery-list">
               {filteredArtifacts.length ? filteredArtifacts.map((item) => {
                 // Named on the card only under "All". Repeating one project's
@@ -769,10 +804,28 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                 return (
                 <article className="mj-studio-discovery-card" key={item.id}>
                   <button type="button" onClick={() => void selectArtifact(item.id)}>
-                    <span className="mj-studio-artifact-mark" aria-hidden="true">{item.status === "verified" ? "✓" : "–"}</span><span className="sr-only">{item.status.replaceAll("_", " ")}</span>
-                    <span><strong>{item.title}</strong><small>{item.framework} · {item.family} · {formatDiscoveryDate(item.updatedAt, locale)}{project ? <> · <span className="mj-studio-card-project">{project.name}</span></> : null}</small><em>{item.description}</em></span>
+                    <span className="mj-studio-card-body">
+                      <strong>{item.title}</strong>
+                      <em>{item.description}</em>
+                      <small>
+                        <span className="mj-studio-card-framework">{item.framework}</span>
+                        <span>{item.family}</span>
+                        <span>{formatDiscoveryDate(item.updatedAt, locale)}</span>
+                        {project ? <span className="mj-studio-card-project">{project.name}</span> : null}
+                      </small>
+                    </span>
                   </button>
-                  <a className="mj-secondary-button" href={`/run?artifact=${encodeURIComponent(item.id)}`}>{copy.openRun}</a>
+                  {/* The verdict, in the same words and tone the rest of the
+                      product uses for it. The mark this replaces was one grey
+                      ring whose glyph was "✓" for verified and "–" for
+                      everything else — so a FAILED artifact and a structurally
+                      verified one were the same picture, in the same colour
+                      (`.mj-studio-artifact-mark` is hard-coded to `--ok`). It
+                      is the first thing anybody opens this list to learn. */}
+                  <span className="mj-studio-card-side">
+                    <StudioStatusPill status={item.status} locale={locale} />
+                    <a className="mj-secondary-button" href={`/run?artifact=${encodeURIComponent(item.id)}`}>{copy.openRun}</a>
+                  </span>
                 </article>
                 );
               }) : (
@@ -817,11 +870,14 @@ function StudioVerdictChip({
   state,
   onOpen,
   copy,
+  inert = false,
 }: {
   summary: Parameters<typeof verificationHeadline>[0];
   state: Parameters<typeof verificationHeadline>[1];
   onOpen: () => void;
   copy: StudioCopy;
+  /** Rendered only to hold its width open; not reachable and not announced. */
+  inert?: boolean;
 }) {
   const headline = verificationHeadline(summary, state);
   return (
@@ -831,11 +887,46 @@ function StudioVerdictChip({
       data-tone={headline.tone}
       onClick={onOpen}
       title={copy.openSummary}
+      tabIndex={inert ? -1 : undefined}
     >
       <span aria-hidden="true">{headline.glyph}</span>
       {headline.title}
       <span className="sr-only">— {copy.openSummary}</span>
     </button>
+  );
+}
+
+/**
+ * One artifact's verdict on a discovery card: glyph, word, tone.
+ *
+ * Deliberately reuses `.mj-library-status`, the vocabulary the retired Vault
+ * list already had, rather than inventing a second one — the tone mapping
+ * (verified → ok, failed → err, everything else → warn) and the glyph pairing
+ * that keeps it off hue alone both live in that ruleset. The words come from
+ * `library`, not `studio`, for the same reason: one artifact status has one
+ * name, and a second copy of it in another section is a string that drifts.
+ */
+function StudioStatusPill({ status, locale }: { status: LibraryArtifact["status"]; locale: PublicLocale }) {
+  const copy = WORKSPACE_COPY[locale].library;
+  const label =
+    status === "verified"
+      ? copy.verified
+      : status === "structural"
+        ? copy.structural
+        : status === "verified_caveats"
+          ? copy.caveats
+          : status === "inconclusive"
+            ? copy.inconclusive
+            : status === "legacy_unknown"
+              ? copy.legacyUnknown
+              : status === "stale"
+                ? copy.stale
+                : copy.failed;
+  return (
+    <span className={`mj-library-status mj-studio-card-status mj-library-status--${status}`}>
+      <span aria-hidden="true">{status === "failed" ? "×" : status === "verified" ? "✓" : "–"}</span>
+      {label}
+    </span>
   );
 }
 
@@ -1569,9 +1660,15 @@ function SimulationPanel({
               </div>
             </div>
           ) : (
-            <button className="mj-primary-button" type="button" disabled={busy} onClick={onRun}>
-              {busy ? copy.starting : currentRecords.length ? copy.rerunCpuSimulation : copy.runCpuSimulation}
-            </button>
+            // Wrapped so the button sizes to its label. The lane is a grid, and
+            // a bare button in it stretched to the full panel width — the
+            // loudest object on the tab was a control for the weakest of the
+            // three lanes.
+            <div className="mj-studio-lane-action">
+              <button className="mj-primary-button" type="button" disabled={busy} onClick={onRun}>
+                {busy ? copy.starting : currentRecords.length ? copy.rerunCpuSimulation : copy.runCpuSimulation}
+              </button>
+            </div>
           )
         ) : (
           <div className="mj-studio-simulation-unavailable" role="alert">
@@ -1615,9 +1712,19 @@ function SimulationPanel({
           <QpuLane artifact={artifact} shots={shots} copy={copy} />
         </div>
 
-        <section className="mj-studio-simulation-records" aria-label={copy.simulationResults}>
-          <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
-          {records.length ? records.map((record) => <SimulationRecordCard record={record} family={artifact?.family ?? null} copy={copy} key={record.id} />) : <p className="mj-studio-empty">{copy.simulationNoRecords}</p>}
+        {/* A heading, a count of zero and a sentence saying the count is zero
+            took a whole band of the tab to say one thing three times. With no
+            records the section is the sentence; the heading and the counter
+            come back the moment there is something to count. */}
+        <section className="mj-studio-simulation-records" data-empty={records.length ? undefined : "true"} aria-label={copy.simulationResults}>
+          {records.length ? (
+            <>
+              <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
+              {records.map((record) => <SimulationRecordCard record={record} family={artifact?.family ?? null} copy={copy} key={record.id} />)}
+            </>
+          ) : (
+            <p className="mj-studio-empty">{copy.simulationNoRecords}</p>
+          )}
         </section>
       </div>
     </section>
@@ -1928,7 +2035,15 @@ function SummaryPanel({
   locale: PublicLocale;
   onRestored: (seq: number) => void;
 }) {
-  const checks: VerificationCheck[] = artifact?.checks ?? [];
+  const summaryChecks = artifact?.verificationSummary?.checks ?? [];
+  // Only the checks the typed summary did NOT already account for. The panel
+  // above groups every check the summary carries into passed / failed /
+  // unavailable, and this list used to print the same methods again underneath
+  // it — the same four rows, twice, in two different shapes. What is left here
+  // is the legacy-metadata case: an artifact whose checks arrived on the older
+  // `metadata` path and have no typed summary to be grouped into.
+  const checks: VerificationCheck[] = summaryChecks.length ? [] : artifact?.checks ?? [];
+  const facts = artifact ? summaryFacts(artifact, locale, copy) : [];
   return (
     <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.summary} {...panelRegion("studio", "summary")}>
       <div className="mj-studio-surface-head">
@@ -1938,6 +2053,22 @@ function SummaryPanel({
         </div>
         <span className="mj-mono-muted">{artifact?.framework ?? ""}</span>
       </div>
+
+      {/* What the circuit IS, before what was proved about it. The evidence
+          panel below opens with a machine reason code and an evidence-strength
+          enum, which is the vocabulary of the verifier rather than of the
+          person reading it — the width, the depth and the version this verdict
+          belongs to were not on this tab at all. */}
+      {facts.length > 1 ? (
+        <dl className="mj-studio-fact-row">
+          {facts.map((fact) => (
+            <div key={fact.label}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
 
       <div className="mj-studio-summary-section">
         <span className="mj-section-label">{copy.evidence}</span>
@@ -1954,11 +2085,19 @@ function SummaryPanel({
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="mj-mono-muted">{copy.evidenceNotLoaded}</p>
-          )
+          ) : null
         ) : null}
-        {artifact?.id ? <p><a href={`/library/${encodeURIComponent(artifact.id)}`}>{copy.openFullRecord}</a></p> : null}
+        {/* One way in, not two. When no checks had loaded, this section printed
+            "Open the full record to load this version's checks." directly above
+            a link reading "Open the full verification record" — the same
+            instruction, twice, one of them not clickable. The sentence is the
+            link's context now. */}
+        {artifact?.id ? (
+          <p className="mj-studio-record-link">
+            <a href={`/library/${encodeURIComponent(artifact.id)}`}>{copy.openFullRecord}</a>
+            {!summaryChecks.length && !checks.length ? <span className="mj-mono-muted">{copy.evidenceNotLoaded}</span> : null}
+          </p>
+        ) : null}
       </div>
 
       <div className="mj-studio-summary-section">
@@ -1982,6 +2121,26 @@ function SummaryPanel({
       </details>
     </section>
   );
+}
+
+/**
+ * The handful of numbers a saved circuit is opened for, in a fixed order.
+ *
+ * Drawn from `resourceRows`, which the artifact already carried and which no
+ * Studio tab rendered — the Summary tab opened on a reason code and an evidence
+ * enum instead. Capped at four so this stays a header strip rather than
+ * becoming the resource table it is a summary of; a circuit with more rows than
+ * that has them in the run record, which the link below this reaches.
+ *
+ * The caller drops the strip below two entries. A version with no stored
+ * estimates leaves only the date, and one labelled cell across the panel is
+ * exactly the kind of row this change exists to remove.
+ */
+function summaryFacts(artifact: LibraryArtifact, locale: PublicLocale, copy: StudioCopy): Array<{ label: string; value: string }> {
+  const facts = artifact.resourceRows.slice(0, 4).map(({ label, value }) => ({ label, value }));
+  const updated = formatDiscoveryDate(artifact.updatedAt, locale);
+  if (updated) facts.push({ label: copy.updated, value: updated });
+  return facts;
 }
 
 function originLabel(origin: VersionOrigin, copy: StudioCopy): string {

@@ -3,6 +3,7 @@ import { getAccountTier } from "../../../lib/account-tier-server";
 import { AccountSettings } from "./account-settings";
 import { ArchivedChats } from "./archived-chats";
 import { BillingPanel } from "./billing-panel";
+import { QpuCredentials } from "./qpu-credentials";
 import { UsageNow } from "./usage-now";
 import { LanguageToggle } from "../../../components/language-toggle";
 import { getPublicLocale } from "../../../lib/public-locale-server";
@@ -78,6 +79,11 @@ export async function AccountContent() {
             Client-side and additive — see usage-now.tsx for why the split. */}
         <UsageNow locale={locale} renderedTier={tier} />
       </section>
+      {/* Directly under the allowances, and above billing, because it is the
+          one control on this page that changes what the hardware line means:
+          a connected key moves IBM's free allowance off the pool everybody
+          shares and onto the reader's own account. */}
+      <QpuCredentials locale={locale} />
       <BillingPanel locale={locale} />
     </div>
   );
