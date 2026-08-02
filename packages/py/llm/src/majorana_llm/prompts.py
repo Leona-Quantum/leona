@@ -426,7 +426,13 @@ _VERIFICATION_PLAN_DIRECTIVE = (
     "original matrix and rhs, never a block encoding or circuit-derived approximation. "
     "For each requested supported scalar, bind one result spec: components use index; "
     "ratios use numerator_index and denominator_index; residual_norm and state_fidelity "
-    "use no indices. Use normalized_solution_component for postselected quantum-state "
+    "use no indices. At least one result spec MUST be a solution-bound metric "
+    "(normalized_solution_component, solution_component, or component_ratio): "
+    "residual_norm references 0 and state_fidelity references 1 whatever the system is, "
+    "so a reference built only from those checks nothing about the solution. If the "
+    "request asks only for a residual or a fidelity, bind the component the request "
+    "implies as well, or omit the reference entirely. "
+    "Use normalized_solution_component for postselected quantum-state "
     "amplitudes and solution_component only for unnormalized classical x entries. Omit "
     "the reference for non-symmetric, complex, singular/underspecified, non-power-of-two, "
     "or larger systems. The worker solves the typed system; do not place derived answers "
@@ -661,6 +667,13 @@ the lowest-index component among magnitudes tied within 1e-12 of the largest mag
 positive. This convention does not apply to an unnormalized solution_component, whose
 sign comes from A*x=b, and it does not change component ratios. residual_norm and
 state_fidelity need no indices. Preserve zero-based component indices exactly.
+
+At least one result spec must be solution-bound — normalized_solution_component,
+solution_component, or component_ratio. residual_norm and state_fidelity reference the
+constants 0 and 1 for every system, so they carry no information about the solution and
+cannot stand alone. When the request names only a residual or a fidelity, also bind the
+component the request determines; if the request determines none, set supported=false
+with a reason rather than emitting a reference that checks two constants.
 
 An HHL circuit, phase-estimation precision, reciprocal rotation, postselection,
 ancillas, QASM export, plot, or classical-baseline obligation is not part of this typed

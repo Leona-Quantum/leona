@@ -138,3 +138,68 @@ def test_linear_system_consensus_is_order_insensitive_but_rejects_ratio_reversal
     equivalent, comparison = linear_system_references_equivalent(_reference(), reversed_ratio)
     assert not equivalent
     assert comparison["reason"] == "linear_system_result_target_mismatch"
+
+
+def test_every_declared_key_scores_even_when_its_RESULT_value_is_unusable():
+    """The caller reads `scores[primary_metric]["exact"]`, so the entry has to exist.
+
+    `_success_criteria_check` admits a metric that is PRESENT in RESULT — its guard is
+    `metric not in execution.result` — so a string, null or bool reaches this function.
+    Skipping the score entry for those turned the caller's lookup into an uncaught
+    KeyError that crashed the review step, and a crashed review step gives the repair
+    loop nothing to repair from. Verdicts fail; they do not raise.
+    """
+
+    for unusable in ("not-computed", None, True, float("nan")):
+        passed, details = exact_linear_system_comparison(
+            _reference(),
+            {
+                "solution_x0": 0.8804710999221753,
+                "solution_x1": -0.4740998230350174,
+                "amplitude_ratio": -0.5384615384615384,
+                "residual_norm": 0.0,
+                "state_fidelity": unusable,
+            },
+        )
+
+        assert not passed
+        assert "state_fidelity" in details["scores"], unusable
+        assert details["scores"]["state_fidelity"]["exact"] == pytest.approx(1.0)
+        assert details["scores"]["state_fidelity"]["metric"] == "state_fidelity"
+        assert any("state_fidelity" in line for line in details["disagreements"])
+
+
+def test_a_reference_built_only_from_constants_is_refused_by_the_schema():
+    """`residual_norm` references 0 and `state_fidelity` references 1, always.
+
+    Neither is derived from the declared matrix and rhs, so neither says anything
+    about the candidate's own solution vector: a program that prints those two
+    numbers and computes nothing passed `exact_linear_system` with the verdict
+    "all declared scalars match the independently solved linear system". At least
+    one solution-bound component has to be checked for that sentence to be true.
+    """
+
+    with pytest.raises(ValueError, match="must bind at least one of"):
+        ExactLinearSystemReference.model_validate(
+            {
+                "matrix": [[0.75, 0.25], [0.25, 0.75]],
+                "rhs": [1.0, -0.25],
+                "results": [
+                    {"result_key": "state_fidelity", "metric": "state_fidelity"},
+                    {"result_key": "residual_norm", "metric": "residual_norm"},
+                ],
+            }
+        )
+
+    # One bound component is enough, and the constants may ride along with it.
+    bound = ExactLinearSystemReference.model_validate(
+        {
+            "matrix": [[0.75, 0.25], [0.25, 0.75]],
+            "rhs": [1.0, -0.25],
+            "results": [
+                {"result_key": "state_fidelity", "metric": "state_fidelity"},
+                {"result_key": "x0", "metric": "normalized_solution_component", "index": 0},
+            ],
+        }
+    )
+    assert len(bound.results) == 2

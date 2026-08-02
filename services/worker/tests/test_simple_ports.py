@@ -3215,3 +3215,45 @@ async def test_the_first_generation_has_no_previous_execution():
     await ports.generate(run_id, planned.value, None, None)
 
     assert json.loads(llm.requests[-1].user)["previous_execution"] is None
+
+
+def test_an_unusable_linear_system_primary_metric_returns_a_verdict_rather_than_raising():
+    """A metric that is PRESENT but is not a number reaches the reference comparison.
+
+    The guard above it is `metric not in execution.result`, which a string, a null and
+    a bool all pass. The comparison then recorded no `scores` entry for such a value
+    while this caller indexed `scores[metric]["exact"]` unconditionally, so the review
+    step died on an uncaught KeyError — and `_success_criteria_check` is called outside
+    every try in the review step, so nothing turned that into an attributable failure.
+    The repair loop's whole input is the verdict, so it has to get one.
+    """
+    payload = _linear_plan_payload()
+    payload["verification_plan"]["methods"] = ["return_contract"]
+    plan = Plan.model_validate(payload)
+
+    for unusable in ("not-computed", None, True):
+        execution = ExecutionEvidence(
+            execution_id=uuid4(),
+            candidate_id=uuid4(),
+            source_fingerprint="a" * 64,
+            environment_fingerprint="e" * 64,
+            sandbox_provider="test",
+            exit_code=0,
+            duration_ms=1,
+            result={
+                "solution_x0": 0.8804710999221753,
+                "solution_x1": -0.4740998230350174,
+                "amplitude_ratio": -0.5384615384615384,
+                "residual_norm": 0.0,
+                "state_fidelity": unusable,
+            },
+            observation={},
+        )
+
+        check = simple_ports_module._success_criteria_check(plan, execution)
+
+        assert check["result"] == "fail", unusable
+        # The candidate printed the wrong thing; the Plan is fine. Attributing this to
+        # the Plan would send the repair loop to replanning a correct reference.
+        assert check["details"].get("fault") != "plan"
+        assert any("state_fidelity" in line for line in check["details"]["disagreements"]), unusable

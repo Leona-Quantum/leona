@@ -330,6 +330,32 @@ def test_exact_diag_whose_bound_result_is_not_a_promised_key_is_rejected():
     assert "does not promise that key" in str(exc.value)
 
 
+def test_exact_diag_still_requires_the_PRIMARY_metric_to_be_promised():
+    """`reference_result_key` may differ from the primary metric; it may not replace it.
+
+    Introducing the key moved this validator from checking primary_metric to checking
+    reference_result_key, so a Plan promising only the reference key started passing
+    validation. Nothing else pins the primary metric — there is no global rule — and
+    `_success_criteria_check` reads it out of RESULT on every run regardless of which
+    key the reference reads. Such a Plan therefore fails EVERY candidate with "primary
+    metric is missing from RESULT" and no `fault`, so the repair loop attributes a Plan
+    defect to correct code and spends the whole candidate budget on it.
+    """
+    payload = _with_exact_diag()
+    payload["success_criteria"] = {"primary_metric": "energy_error"}
+
+    with pytest.raises(ValidationError) as exc:
+        Plan.model_validate(payload)
+    assert "is read out of the result on every run" in str(exc.value)
+
+    # Promising both keys is the fix, and the two staying different is still fine.
+    payload["expected_output_keys"] = ["ground_state_energy", "optimal_params", "energy_error"]
+    plan = Plan.model_validate(payload)
+    assert plan.verification_plan is not None
+    assert plan.verification_plan.reference_result_key == "ground_state_energy"
+    assert plan.success_criteria.primary_metric == "energy_error"
+
+
 def test_legacy_exact_diag_without_explicit_binding_falls_back_to_primary_metric():
     payload = _with_exact_diag()
     payload["verification_plan"].pop("reference_result_key")

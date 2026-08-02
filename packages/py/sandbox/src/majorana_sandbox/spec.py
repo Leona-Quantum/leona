@@ -158,7 +158,16 @@ def compose_execution(spec: ExecutionSpec) -> str:
             _majorana_observation.items(), key=lambda _pair: _majorana_str(_pair[0])
         ):
             try:
-                _majorana_json_dumps({{_majorana_key: _majorana_value}})
+                # `allow_nan=False` HAS to match the final write below. Without it
+                # this probe accepts a key holding inf/NaN — Python's json emits
+                # those by default — the key is kept, and the write that ends this
+                # function then raises OUTSIDE any handler: the process dies, the
+                # sidecar is left truncated, and every serializable key in the
+                # observation is lost along with the run's own RESULT. That is the
+                # exact total loss this recovery block exists to prevent, reached
+                # through the block itself. A diverged optimizer produces NaN
+                # amplitudes, so this is one bad float away on any VQE run.
+                _majorana_json_dumps({{_majorana_key: _majorana_value}}, allow_nan=False)
             except _majorana_exception:
                 _majorana_dropped.append(_majorana_str(_majorana_key))
                 continue
@@ -175,7 +184,7 @@ def compose_execution(spec: ExecutionSpec) -> str:
             # reader then rejects wholesale, turning a partial loss into a total
             # one. `test_the_byte_ceiling_still_applies_to_a_RECOVERED_observation`
             # fails without these three lines.
-            _majorana_recovered = _majorana_json_dumps(_majorana_kept)
+            _majorana_recovered = _majorana_json_dumps(_majorana_kept, allow_nan=False)
             if _majorana_len(_majorana_recovered.encode("utf-8")) > {MAX_OUTPUT_BYTES}:
                 raise _majorana_builtins.ValueError("protected_result_too_large")
             _majorana_observation = _majorana_kept

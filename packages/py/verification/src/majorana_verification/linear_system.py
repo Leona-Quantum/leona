@@ -156,12 +156,26 @@ def exact_linear_system_comparison(
     specs = {spec.result_key: spec for spec in reference.results}
     for key, expected in exact.items():
         observed = result.get(key)
+        # Every declared key gets a `scores` entry even when the RESULT value is
+        # unusable, because the caller reads `scores[primary_metric]["exact"]` to
+        # decide whether the Plan's expected_range excludes the truth. Skipping the
+        # entry made that an uncaught KeyError for a RESULT that reported the metric
+        # as a string, null or bool — present, so the caller's `metric not in result`
+        # guard let it through — which crashed the review step instead of returning
+        # the honest verdict the repair loop needs. `exact_lindblad_comparison`
+        # records the entry on this path; this is the same contract.
         if isinstance(observed, bool) or not isinstance(observed, int | float):
             disagreements.append(f"{key}: finite numeric RESULT value is missing")
+            scores[key] = {"metric": specs[key].metric, "exact": expected, "reported": "missing"}
             continue
         reported = float(observed)
         if not math.isfinite(reported):
             disagreements.append(f"{key}: RESULT value is not finite")
+            scores[key] = {
+                "metric": specs[key].metric,
+                "exact": expected,
+                "reported": "not_finite",
+            }
             continue
         error = abs(reported - expected)
         scores[key] = {

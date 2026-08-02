@@ -352,6 +352,18 @@ class LinearSystemResultSpec(_PlanBase):
         return self
 
 
+# The metrics whose reference value is DERIVED from the declared matrix and rhs,
+# rather than being the ideal constant every correct solve reports. `residual_norm`
+# always references 0 and `state_fidelity` always references 1, so neither carries
+# any information about the candidate's own solution vector — a reference built
+# only from them passes a program that prints those two constants and computes
+# nothing. At least one solution-bound metric has to be present for the check to
+# mean what its verdict says.
+_SOLUTION_BOUND_METRICS = frozenset(
+    {"normalized_solution_component", "solution_component", "component_ratio"}
+)
+
+
 class ExactLinearSystemReference(_PlanBase):
     """Bounded real-symmetric linear system checked independently with a dense solve."""
 
@@ -400,6 +412,14 @@ class ExactLinearSystemReference(_PlanBase):
                 raise ValueError(
                     "exact_linear_system_reference result index lies outside the matrix"
                 )
+        if not any(result.metric in _SOLUTION_BOUND_METRICS for result in self.results):
+            raise ValueError(
+                "exact_linear_system_reference must bind at least one of "
+                f"{', '.join(sorted(_SOLUTION_BOUND_METRICS))}; 'residual_norm' and "
+                "'state_fidelity' have the constant references 0 and 1, so a reference "
+                "built only from those asks the candidate to agree with two numbers it "
+                "authored itself and verifies nothing about the solution"
+            )
         return self
 
 
@@ -1014,6 +1034,21 @@ class Plan(_PlanBase):
                 f"but expected_output_keys ({', '.join(self.expected_output_keys)}) "
                 "does not promise that key. Spell the metric exactly as one of the "
                 "keys the code will print."
+            )
+        # `reference_result_key` decoupled the exact_diag reference from the primary
+        # metric, and in doing so it dropped the rule that used to be checked here.
+        # The primary metric is read out of RESULT on EVERY run, whatever the
+        # reference reads — so a Plan that does not promise it validates and then
+        # fails every candidate with "primary metric is missing from RESULT" and no
+        # fault attribution, which sends the repair loop after correct code until the
+        # budget is gone. Both keys have to be promised, not either one.
+        if self.success_criteria.primary_metric not in self.expected_output_keys:
+            raise ValueError(
+                "success_criteria.primary_metric "
+                f"('{self.success_criteria.primary_metric}') is read out of the result "
+                "on every run, but expected_output_keys "
+                f"({', '.join(self.expected_output_keys)}) does not promise that key. "
+                "Promise it alongside reference_result_key, or make them the same key."
             )
         return self
 
