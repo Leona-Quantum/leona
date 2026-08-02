@@ -132,7 +132,23 @@ test("the team allowlist grants team, and developer still wins over it", () => {
 test("the pro allowlist is empty by default and never hardcoded", () => {
   // Same rule as the other two: this repository is public, so a default holding
   // real addresses would publish them.
-  assert.deepEqual(proEmails(undefined), []);
+  //
+  // `proEmails(undefined)` falls back to `process.env.LEONA_PRO_EMAILS`, so
+  // asserting it is empty asserts something about the machine running the test,
+  // not about the parser. Today that variable is unset everywhere and the
+  // assertion passes for a reason that has nothing to do with the code. The
+  // environment is therefore staged and restored, and the default is checked
+  // for what it actually is: a read of that variable.
+  const saved = process.env.LEONA_PRO_EMAILS;
+  try {
+    delete process.env.LEONA_PRO_EMAILS;
+    assert.deepEqual(proEmails(undefined), []);
+    process.env.LEONA_PRO_EMAILS = "Someone@Example.org";
+    assert.deepEqual(proEmails(undefined), ["someone@example.org"]);
+  } finally {
+    if (saved === undefined) delete process.env.LEONA_PRO_EMAILS;
+    else process.env.LEONA_PRO_EMAILS = saved;
+  }
   assert.deepEqual(proEmails(""), []);
   assert.deepEqual(proEmails(" Rui@Keio.jp, not-an-email "), ["rui@keio.jp"]);
 });
