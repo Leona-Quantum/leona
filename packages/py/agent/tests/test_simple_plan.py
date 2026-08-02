@@ -32,6 +32,20 @@ def test_simple_plan_schema_includes_small_artifact_contract():
     assert "measurement_policy" in json.dumps(schema)
 
 
+def test_simple_plan_preserves_industrial_scale_for_artifact_only_delivery():
+    payload = _payload()
+    payload["qubits_estimate"] = 480
+
+    simple = parse_simple_plan(json.dumps(payload))
+    durable = simple.to_durable_plan(
+        selected_framework=Framework.QISKIT,
+        requested_shots=None,
+        requested_seed=None,
+    )
+
+    assert simple.qubits_estimate == durable.qubits_estimate == 480
+
+
 def test_simple_plan_schema_offers_only_the_two_reference_checks():
     """The planner may declare a reference, but only one it can state as data.
 

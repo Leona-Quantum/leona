@@ -928,12 +928,18 @@ class Plan(_PlanBase):
     algorithm_rationale: str = Field(min_length=5)
     parameters: PlanParameters
     qubits_estimate: int = Field(
-        ge=1, le=27, description="Planned qubit count; 27 is the default sandbox lane ceiling"
+        ge=1,
+        description=(
+            "Logical qubits required by the authored artifact. Execution providers "
+            "apply their own capability ceilings; this estimate must not be silently "
+            "shrunk to fit the local simulator."
+        ),
     )
     expected_runtime_sec: int = Field(ge=1, le=300)
     success_criteria: SuccessCriteria
     expected_output_keys: list[str] = Field(
-        min_length=1, description="Keys the executed code prints in its result dict"
+        min_length=1,
+        description="Keys the authored code must return when a compatible backend executes it",
     )
     artifact_contract: ArtifactContract | None = None
     verification_plan: VerificationPlan | None = None
