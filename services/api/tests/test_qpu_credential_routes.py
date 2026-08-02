@@ -486,3 +486,46 @@ async def test_the_key_is_verified_before_it_is_stored(client, store, keys, monk
     async with client as http:
         await http.put("/v1/qpu/credentials", json=_body())
     assert order == ["verify", "store"]
+
+
+async def test_a_key_pasted_into_the_instance_field_is_refused_and_not_stored(
+    client, store, keys, ibm_accepts
+):
+    """The field beside the key field must not become a plaintext key column.
+
+    `instance` is deliberately NOT encrypted and IS echoed on every GET, because
+    a Service CRN names an instance and authorizes nothing. That is exactly what
+    makes it dangerous: it sits next to the API key input in the UI, both are
+    plain text boxes, and a mis-paste would write the user's credential to a
+    column nothing encrypts and return it to the browser on every status poll —
+    past every other protection in this module.
+
+    The `crn:` prefix makes that specific mistake impossible rather than
+    unlikely. Asserted here on the store rather than only on the status code,
+    because "the request was refused" and "nothing was written" are two claims
+    and only the second one is the security property.
+    """
+    async with client as http:
+        response = await http.put(
+            "/v1/qpu/credentials",
+            json={"provider": "ibm", "api_key": PASTED_KEY, "instance": PASTED_KEY},
+        )
+
+    assert response.status_code == 422
+    assert PASTED_KEY not in response.text
+    assert store.row is None, "a refused body must leave nothing behind"
+
+
+async def test_a_real_crn_is_accepted_and_echoed(client, store, keys, ibm_accepts):
+    """The control. A guard that refused every instance would pass the test
+    above and break the feature, and the shape below is the one IBM's own REST
+    documentation puts in the `Service-CRN` header."""
+    crn = "crn:v1:bluemix:public:quantum-computing:us-east:a/abc123:def456::"
+    async with client as http:
+        response = await http.put(
+            "/v1/qpu/credentials",
+            json={"provider": "ibm", "api_key": PASTED_KEY, "instance": crn},
+        )
+
+    assert response.status_code == 200
+    assert response.json()["instance"] == crn
