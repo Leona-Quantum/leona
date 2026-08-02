@@ -217,7 +217,16 @@ does not disturb secret-backed variables already on the service.
 | `OPENAI_API_KEY`, `DEEPSEEK_API_KEY`, `VERCEL_TOKEN` (secrets) | — | ✔ |
 | `LEONA_DEVELOPER_EMAILS` | ✔ | ✔ |
 | `LEONA_TEAM_EMAILS` | ✔ | ✔ |
+| `LEONA_PRO_EMAILS` | ✔ | ✔ |
 | `DEPLOY_PROBE_TOKEN` (secret) | ✔ | — |
+
+The three `LEONA_*_EMAILS` lists are tier allowlists, named after the internal
+tier ids rather than the plan names on the pricing page: `pro` is sold as
+**Plus** and `team` as **Professional**. `TIER_ALLOWLIST_ENV` in
+`services/api/src/majorana_api/tiers.py` is the one table both services read
+them from. Each must be set on the api service, the worker, AND Vercel, or an
+account is metered at one tier by the surface that displays and another by the
+surface that refuses.
 
 A service's environment is **not** the repository's environment. The worker has
 never had `WORKOS_CLIENT_ID`, and #164 shipped worker code that built a settings

@@ -128,25 +128,31 @@ class SpendReport(BaseModel):
 
 
 class HardwareSpendAllowance(BaseModel):
-    """The weekly hardware allowance, in DOLLARS, per ACCOUNT.
+    """Weekly hardware spend, in DOLLARS, per ACCOUNT.
 
-    The only allowance the product denominates in money, and until now the only
-    one a client could not see: `POST /v1/qpu/submissions` refuses on it with a
-    429, and nothing on the account page said the ceiling existed, so the refusal
-    could not be anticipated — only explained after it happened.
+    A report rather than an allowance as of 2026-08-02: no tier sets a ceiling,
+    so `limit_usd` and `remaining_usd` are null on every account and `exhausted`
+    is always false. The owner ruled the ceiling an individual user's decision —
+    `tiers.TierLimits.qpu_spend_usd_per_week` carries the ruling and the
+    condition under which a number comes back.
 
-    Money, not a count, for the reason the limit itself is money: the rate card
+    Reporting it is the part that was never optional. `POST /v1/qpu/submissions`
+    once accepted $96,006.30 from a free account across twenty-one requests, and
+    what made that possible was that the amount existed nowhere a person could
+    look. It is on this response so the spend is visible whether or not anything
+    bounds it — and so that a budget the user sets for themselves has a screen to
+    live on.
+
+    Money, not a count, because the submissions are not fungible: the rate card
     spans $0.000425 to $0.08 per shot, so a submission count would bound IonQ
     Forte and Rigetti Cepheus 188x differently.
 
-    `used` is the sum the reservation compares against — `authorized_spend_since`,
-    the same function, over the same `TIER_WINDOW`. Not a second sum written to
-    look like the first: a tally computed twice drifts, and this one has a
-    refusal on the other end of it.
-
-    A free-queue submission estimates `None`, counts as `0.0`, and is never
-    refused, so `limit` 0.0 is NOT a hardware ban — it means only the free queues
-    are reachable. `limit` null is unmetered (developer).
+    `used_usd` is the sum the reservation compares against —
+    `authorized_spend_since`, the same function, over the same `TIER_WINDOW`. Not
+    a second sum written to look like the first: a tally computed twice drifts,
+    and a refusal is one number away from being on the other end of this one
+    again. A free-queue submission estimates `None` and counts as `0.0`, so it
+    never appears in `used_usd`.
     """
 
     used_usd: float
@@ -317,6 +323,9 @@ async def usage(
             remaining_usd=(
                 None if hardware_limit is None else max(hardware_limit - hardware_used, 0.0)
             ),
+            # False for everyone while no tier sets a ceiling, and written out
+            # rather than hardcoded because the ceiling's absence is conditional.
+            #
             # `>=`, not the reservation's `>`: this answers "can anything more be
             # submitted", and at exactly the limit the answer is no for every
             # priced device. The reservation asks a different question — whether

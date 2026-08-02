@@ -13,21 +13,41 @@
  */
 
 /**
- * `preview` is not a plan. It is what a request with no identity resolves to —
- * the signed-out fixture surface — and it was called "demo" until the Team plan
- * arrived. The rename is not cosmetic: with a real tier in the list, a name
- * that reads like a plan sitting where the least-capable plan should be is one
- * misreading away from someone treating "signed out" as a tier that can be
- * granted something. `preview` says what it is.
+ * ## The tier ids are not the plan names. Read this before editing one.
+ *
+ *   `free`      → **Free**          ($0)
+ *   `pro`       → **Plus**          ($50 per user per month)
+ *   `team`      → **Professional**  ($240 per user per month)
+ *   `developer` → internal only; never appears on the pricing page
+ *
+ * **`pro` is Plus, and `team` is Professional.** A reader who sees `pro` and
+ * thinks "Professional" is looking at the wrong plan — the one below it. The
+ * ids are deliberately not renamed: `LEONA_TEAM_EMAILS` is set in two
+ * deployments and sits in the owner's todo, and this repository already keeps
+ * internal ids (`majorana`) that stopped matching the product name (Leona
+ * Quantum) on purpose. `ACCOUNT_COPY.tierNames` is the only place a tier gets a
+ * human label, and account-tier.test.ts pins this mapping so an edit that
+ * "corrects" `pro` to read Professional fails instead of shipping.
+ *
+ * Enterprise is a pricing card and a sales motion, not a tier: nothing here
+ * enforces it and no account resolves to it.
+ *
+ * `preview` is not a plan either. It is what a request with no identity
+ * resolves to — the signed-out fixture surface — and it was called "demo" until
+ * the Team plan arrived. The rename is not cosmetic: with a real tier in the
+ * list, a name that reads like a plan sitting where the least-capable plan
+ * should be is one misreading away from someone treating "signed out" as a tier
+ * that can be granted something. `preview` says what it is.
  *
  * Ordered least to most capable. `atLeastTier` is the only place that ordering
  * is read; everything else asks for a capability by name.
  */
-export type AccountTier = "preview" | "free" | "team" | "developer";
+export type AccountTier = "preview" | "free" | "pro" | "team" | "developer";
 
 export const ACCOUNT_TIERS: readonly AccountTier[] = [
   "preview",
   "free",
+  "pro",
   "team",
   "developer",
 ] as const;
@@ -86,6 +106,12 @@ export type TierLimits = {
  *   16 q -> 1.0 MB /   78 ms      20 q -> 16 MB / 1233 ms
  *                                 22 q -> 64 MB / 5021 ms
  *
+ * Plus (`pro`) sits at 17 qubits, which is not a row of that sweep and is not a
+ * new measurement either: every step in the table doubles both numbers, so 17 q
+ * falls between the two measured neighbours at ~2 MB and ~155 ms. Stated as an
+ * interpolation on purpose — a number presented as measured when nobody ran it
+ * is how a budget stops meaning anything.
+ *
  * The lane runs on the main thread, so the ceiling is a responsiveness budget
  * rather than a memory one: 22 qubits would freeze the tab for five seconds on
  * fast hardware, which is why nothing is set there. The previous cap of 6 for
@@ -134,9 +160,32 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     projectSharing: false,
     sharedProjects: 0,
   },
-  // The collaboration plan. The artifact allowance is the owner's number; the
-  // browser-lane ceilings sit between free and developer because they bound the
-  // user's own hardware and cost the platform nothing.
+  // **Plus** on the pricing page. Expanded allowances and nothing else: the
+  // owner scoped it as "expanded usage limits and artifacts compared to free,
+  // but less than team", so `projectSharing` stays false — sharing is what
+  // Professional (`team`) is — and `sharedProjects` is 0 rather than null for
+  // the reason that field documents.
+  //
+  // 17 qubits is the interpolated point between free's measured 16 (1 MB /
+  // 78 ms) and Professional's measured 18 (4 MB / 311 ms): ~2 MB and ~155 ms.
+  // The browser lane runs on the user's own hardware, so this is a
+  // responsiveness budget rather than a cost the platform carries.
+  pro: {
+    agentRunsPerWeek: 20,
+    privateArtifacts: 75,
+    cpuSimQubits: 17,
+    cpuSimOperations: 2_500,
+    cpuSimShots: 24_576,
+    cpuSimRunsPer10Min: 15,
+    qpuEstimates: true,
+    persistentArtifacts: true,
+    projectSharing: false,
+    sharedProjects: 0,
+  },
+  // **Professional** on the pricing page — the collaboration plan, and the one
+  // whose id reads like the tier below it. The artifact allowance is the
+  // owner's number; the browser-lane ceilings sit between Plus and developer
+  // because they bound the user's own hardware and cost the platform nothing.
   //
   // `privateArtifacts` mirrors `TIER_LIMITS["team"].private_artifacts` on the
   // server. If the two ever disagree the smaller wins in practice and the user
@@ -211,12 +260,27 @@ export function teamEmails(raw: string | undefined = process.env.LEONA_TEAM_EMAI
   return parseEmailList(raw);
 }
 
+/**
+ * Addresses granted the PRO tier — the plan the pricing page calls **Plus** —
+ * from LEONA_PRO_EMAILS. Same parsing, same empty default, same variable the
+ * control plane reads.
+ *
+ * The variable keeps the internal id rather than the public label for the
+ * reason the tier ids do: it is set in deployment environments and read by two
+ * services, and a rename would take effect in whichever of them was redeployed
+ * first, resolving those accounts as free in the other.
+ */
+export function proEmails(raw: string | undefined = process.env.LEONA_PRO_EMAILS): string[] {
+  return parseEmailList(raw);
+}
+
 export function resolveAccountTier(
   email: string | null | undefined,
   options: {
     isPreviewSurface?: boolean;
     allowlist?: string[];
     teamAllowlist?: string[];
+    proAllowlist?: string[];
   } = {},
 ): AccountTier {
   // The preview surface is a property of the request, not of the person: it
@@ -226,10 +290,14 @@ export function resolveAccountTier(
   const normalized = normalizeEmail(email);
   if (!normalized) return "preview";
   if (OPERATOR_IDENTITIES.has(normalized)) return "developer";
-  // Highest first: an address on both lists resolves to the more capable tier
-  // rather than to whichever check happened to be written first.
+  // Highest first: an address on two lists resolves to the more capable tier
+  // rather than to whichever check happened to be written first. Same order as
+  // `resolve_tier` in services/api/src/majorana_api/tiers.py, which is the copy
+  // that enforces — a different order here would offer a button the control
+  // plane then refuses.
   if ((options.allowlist ?? developerEmails()).includes(normalized)) return "developer";
   if ((options.teamAllowlist ?? teamEmails()).includes(normalized)) return "team";
+  if ((options.proAllowlist ?? proEmails()).includes(normalized)) return "pro";
   return "free";
 }
 

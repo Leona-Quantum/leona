@@ -23,7 +23,7 @@ import uuid
 
 import httpx
 import pytest
-from repo_test_helpers import delete_committed_tenants
+from repo_test_helpers import UNKNOWN_PLAN, delete_committed_tenants
 from majorana_contracts import Scope
 from majorana_contracts.enums import Role
 
@@ -49,10 +49,11 @@ SETTINGS_KWARGS = dict(
     web_origin="http://localhost:3000",
 )
 
-#: `users.plan` has no CHECK constraint and `resolve_tier` maps an unrecognised
-#: value to `free`. The seed data already contains one of these ("pro"), so the
-#: fall-through is a real state and not a hypothetical.
-UNKNOWN_PLAN = "pro"
+#: A `users.plan` string that names no tier. Defined in `repo_test_helpers` and
+#: guarded there by `test_unknown_plan_names_no_tier` in `test_tier_table.py`,
+#: which runs in the `py` job — every pull request — rather than only in `db`.
+#: The whole of THIS module sits under `requires_db`, so a guard written here
+#: would have been skipped on exactly the pull requests that need it.
 
 
 async def _party(session, tag: str, plan: str):

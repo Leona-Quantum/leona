@@ -762,11 +762,21 @@
 }
 
 /* pricing */
+/* Four plans since the Enterprise card arrived. The two-column step matters:
+   at four columns a ~1100px window gives each card ~250px, which wraps the
+   longest feature line to four lines and breaks the row heights the reveal
+   wrapper works to keep equal. It is declared BEFORE the 860px rule below, so
+   the single-column rule still wins on phones. */
 .mj-pricing-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--sp-4);
   padding: var(--sp-12) 0;
+}
+@media (max-width: 1180px) {
+  .mj-pricing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .mj-pricing-card {
   display: flex;

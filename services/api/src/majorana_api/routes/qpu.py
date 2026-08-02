@@ -122,11 +122,15 @@ def _to_qpu_run_resource(record: QpuRunRow) -> QpuRunRecord:
 def qpu_spend_refusal(spent: float, limit: float, estimate: float) -> HTTPException:
     """The refusal an account sees when a hardware submission does not fit.
 
+    Unreachable on the tiers that ship today: none of them sets a ceiling, so
+    `reserve_qpu_spend_slot` never raises. Kept whole — sentence, reason code and
+    all three fields — because the removal is conditional on submissions running
+    on the user's own provider credential, and a user-set budget refuses through
+    this same path. See `tiers.TierLimits.qpu_spend_usd_per_week`.
+
     Names all three numbers, because "you cannot do that" is unactionable for a
     limit denominated in money: what the user needs to know is whether to wait
-    for the window to roll, pick a cheaper device, or drop the shot count. A
-    free account reads the `limit: 0.0` case, which is the honest sentence —
-    billed hardware is not part of that plan, and the free queue still is.
+    for the window to roll, pick a cheaper device, or drop the shot count.
 
     429 rather than 402: this is an allowance that refills, the same shape as
     `tier_allowance_refusal` next door, not a demand for payment.
@@ -174,6 +178,12 @@ async def qpu_submit(
     result was $96,006.30 accepted from a free account over twenty-one requests
     — see `qpu_runs.reserve_qpu_spend_slot`, which carries the measurement.
 
+    That reservation refuses nothing today: no tier sets a hardware ceiling
+    (2026-08-02, the owner's ruling), so what it does now is record the estimate
+    on the row and let `GET /v1/usage` report the total. The number the tier
+    table gives is still what reaches it — never a constant here — so a ceiling
+    reintroduced there binds this route without an edit.
+
     The spend check runs AFTER the deployment gate deliberately. A closed
     deployment is not the account's problem, and telling somebody their budget
     is spent when nothing in this deployment could have submitted anything would
@@ -195,9 +205,10 @@ async def qpu_submit(
             dt.datetime.now(dt.timezone.utc) - TIER_WINDOW,
             limits.qpu_spend_usd_per_week,
             # A free-queue device has no total to charge, and this `or 0.0` is
-            # the whole of how it stays free: the reservation returns on a zero
-            # estimate, so an account whose ceiling is $0 still reaches the IBM
-            # Open Plan queue.
+            # what keeps it free of any ceiling that exists: the reservation
+            # returns on a zero estimate, so an account whose ceiling is $0
+            # still reaches the IBM Open Plan queue. `None` here would compare
+            # against the sum as a type error rather than as free.
             estimate.total_usd or 0.0,
         )
     except qpu_runs_repo.QpuSpendReached as reached:

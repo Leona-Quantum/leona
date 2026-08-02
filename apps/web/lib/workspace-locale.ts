@@ -119,7 +119,15 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     usageNextSlotOn: (date: string) => string;
     usageNextSlotWhen: (word: string) => string;
     signOut: string;
-    /** Plan name shown beside the person's first name in the sidebar footer. */
+    /**
+     * Plan name shown beside the person's first name in the sidebar footer.
+     *
+     * The PUBLIC name of the tier, which for two of them is not the id: `pro`
+     * is Plus and `team` is Professional. See the mapping at the top of
+     * lib/account-tier.ts — a label written from the id reads as the wrong
+     * plan, one rung off, on the surface a person checks to see what they pay
+     * for.
+     */
     tierLabel: Record<AccountTier, string>;
   };
   run: {
@@ -538,7 +546,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       usageNextSlotOn: (date: string) => `1 more frees up on ${date}`,
       usageNextSlotWhen: (word: string) => `1 more frees up ${word}`,
       signOut: "Log out",
-      tierLabel: { preview: "Preview", free: "Free", team: "Team", developer: "Developer" },
+      tierLabel: {
+        preview: "Preview",
+        free: "Free",
+        pro: "Plus",
+        team: "Professional",
+        developer: "Developer",
+      },
     },
     run: {
       previewStatus: "Public preview · view-only",
@@ -994,7 +1008,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       usageNextSlotOn: (date: string) => `${date}に1回分が戻ります`,
       usageNextSlotWhen: (word: string) => `${word}1回分が戻ります`,
       signOut: "ログアウト",
-      tierLabel: { preview: "プレビュー", free: "フリー", team: "チーム", developer: "開発者" },
+      tierLabel: {
+        preview: "プレビュー",
+        free: "フリー",
+        pro: "プラス",
+        team: "プロフェッショナル",
+        developer: "開発者",
+      },
     },
     run: {
       previewStatus: "公開プレビュー · 閲覧のみ",
@@ -1415,6 +1435,12 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   // strings. It was the second copy, and a second copy is what let a tier be
   // added to the product while this table silently kept describing the old set
   // — the failure surfacing far from here, at whichever line indexes into it.
+  //
+  // The PUBLIC plan name, which for two tiers is not the id: `pro` is **Plus**,
+  // `team` is **Professional**. This table and `sidebar.tierLabel` are the only
+  // two places a tier is named to a person, and account-tier.test.ts pins both
+  // so that "fixing" `pro` to say Professional fails rather than telling every
+  // Plus subscriber they are on the plan above.
   tierNames: Record<AccountTier, string>;
   usageEnforcement: string;
   billingTitle: string;
@@ -1514,7 +1540,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     // Said because a page that suddenly reports six-figure numbers reads like
     // a bill arriving. Nothing in this deployment prices a token.
     spendNotBilled: "Shown for visibility. Tokens are not charged for and count against no allowance.",
-    tierNames: { preview: "Preview", free: "Free", team: "Team", developer: "Developer" },
+    tierNames: {
+      preview: "Preview",
+      free: "Free",
+      pro: "Plus",
+      team: "Professional",
+      developer: "Developer",
+    },
     usageEnforcement: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
     billingTitle: "Billing & credits",
     billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
@@ -1616,7 +1648,13 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     // Japanese throughout, matching `sidebar.tierLabel` above. These two tables
     // name the same four tiers to the same reader, and they disagreed before —
     // フリー in the sidebar, "Free" in account settings.
-    tierNames: { preview: "プレビュー", free: "フリー", team: "チーム", developer: "開発者" },
+    tierNames: {
+      preview: "プレビュー",
+      free: "フリー",
+      pro: "プラス",
+      team: "プロフェッショナル",
+      developer: "開発者",
+    },
     usageEnforcement: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
     billingTitle: "請求とクレジット",
     billingHelp: "将来予定している Leona Run と量子コンピュータ実行の料金体系です。現在、支払いは発生しません。",
