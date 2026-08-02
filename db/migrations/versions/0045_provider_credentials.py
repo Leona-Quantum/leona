@@ -50,10 +50,23 @@ its own, and it is returned by the status endpoint so a user can see what they
 pasted.
 
 `last_verified_at` is stamped when IBM's IAM endpoint accepted the key, which
-happens before the row is written and never after. `last_used_at` is stamped by
-the worker when the credential is actually handed to the provider. They are two
-different facts and a user reads them differently: "we checked this and it
-worked" versus "something of yours ran with it".
+happens before the row is first written, **and refreshed every time the worker
+successfully authenticates with it** against the provider (submit and poll
+both). `last_used_at` is stamped only when the credential is actually handed to
+the provider.
+
+The refresh is what makes the field mean anything. Written once at connect time
+it would be a creation timestamp wearing a verification label, saying nothing
+that `created_at` does not — and the account page renders it as "Last verified",
+a sentence a user is entitled to read as "this key still works". With the
+refresh, a stale value carries real information: nothing has successfully
+authenticated with that key since then, which is what a key revoked on IBM's own
+dashboard looks like from here.
+
+So the two columns answer two different questions and a user reads them
+differently: "we checked this and it worked" versus "something of yours ran with
+it". `last_used_at` is null until the first hardware run and is deliberately
+unchanged by reconnecting, which is what keeps them from collapsing into one.
 
 ## Reversibility
 
