@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import ast
 import hashlib
 import json
 import signal
@@ -29,6 +30,10 @@ class SandboxCandidateExecutor:
     _OUTPUT_LIMIT = 4_000
     _STATEVECTOR_BYTES_PER_AMPLITUDE = 32
     _LOCAL_STATEVECTOR_QUBIT_CEILING = 25
+    #: The entry point the generator prompt promises for work above the local
+    #: lane: "a `run(backend)` entry point that returns the promised RESULT
+    #: dictionary when a compatible GPU/QPU backend is later supplied."
+    _ARTIFACT_ENTRY_POINT = "run"
 
     def __init__(self, sandbox: Sandbox) -> None:
         self._sandbox = sandbox
@@ -86,6 +91,15 @@ class SandboxCandidateExecutor:
         )
         exceeds_lane = plan.qubits_estimate > DEFAULT_QUBIT_CEILING
         if exceeds_statevector or exceeds_lane:
+            undeliverable = self._undeliverable_artifact_diagnostics(program)
+            if undeliverable:
+                return self._failure(
+                    candidate,
+                    plan,
+                    exit_code=2,
+                    kind=ExecutionFailureKind.CODE_ERROR,
+                    observation={"contract_diagnostics": undeliverable},
+                )
             # Keep the exact estimate while it remains a practical JSON integer.
             # Beyond that, qubits plus the logarithmic model are the bounded,
             # actionable representation; constructing an enormous decimal only to
@@ -255,6 +269,62 @@ class SandboxCandidateExecutor:
     @classmethod
     def _statevector_memory_mb(cls, qubits: int) -> int:
         return (cls._STATEVECTOR_BYTES_PER_AMPLITUDE * (1 << qubits) + (1 << 20) - 1) // (1 << 20)
+
+    @classmethod
+    def _undeliverable_artifact_diagnostics(cls, program: FrameworkProgram) -> list[str]:
+        """Refuse to publish, unexecuted, source this product cannot pick up.
+
+        Artifact-only delivery skips the module-scope execution contract because
+        nothing here can execute the authored scale. That relaxation must not
+        extend to whether the source is *anything*: `roles.classify_source` calls
+        source binding neither FINAL_CIRCUIT nor RESULT `UNKNOWN` — "something
+        this product cannot execute", and roles.py is explicit that UNKNOWN is
+        never guessed into one of the others. Delivering one as a backend-ready
+        artifact would publish exactly the row that module exists to refuse to
+        invent: no interchange QASM can be lifted from it (the epilogue
+        serializes FINAL_CIRCUIT), so it cannot be exported, submitted, or
+        re-executed when a backend that fits it does connect.
+
+        The generator prompt offers two shapes above the local lane, and this
+        accepts either: bind FINAL_CIRCUIT "when constructing it is itself
+        bounded", or expose a `run(backend)` entry point returning the promised
+        RESULT. Requiring FINAL_CIRCUIT alone would be wrong for the case that
+        relaxation was written for — a circuit too large to build at import.
+
+        It runs before the preflight's early return and costs one `ast.parse`.
+        That ordering is the whole point: this is a static check, so the
+        candidates it catches are precisely the ones no execution will ever
+        catch instead, and the only other thing looking at them is a language
+        model's opinion in the static review.
+        """
+        if program.role is not ProgramRole.UNKNOWN:
+            return []
+        if cls._defines_entry_point(program.source, cls._ARTIFACT_ENTRY_POINT):
+            return []
+        return [
+            f"contract:{program.framework.value} source delivered without execution must bind "
+            f"FINAL_CIRCUIT or define a module-scope "
+            f"{cls._ARTIFACT_ENTRY_POINT}(backend) entry point"
+        ]
+
+    @staticmethod
+    def _defines_entry_point(source: str, name: str) -> bool:
+        """Whether the module defines `name` as a function at module scope.
+
+        Module scope only, unlike `roles._bound_names`: that one walks the whole
+        tree because a circuit built inside `if __name__ == "__main__":` really
+        is bound when the sandbox executes the module. Nothing executes this
+        source, so the question is what a caller can import and hand a backend —
+        and a `run` nested inside another function is not that.
+        """
+        try:
+            tree = ast.parse(source)
+        except SyntaxError:  # pragma: no cover - authoring diagnostics catch this first
+            return False
+        return any(
+            isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef)) and node.name == name
+            for node in tree.body
+        )
 
     @staticmethod
     def _classify_failure(exit_code: int, stderr: str) -> ExecutionFailureKind:
