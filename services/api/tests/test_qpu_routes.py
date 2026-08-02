@@ -36,6 +36,9 @@ def test_every_route_requires_a_scope():
         qpu_routes.qpu_backends,
         qpu_routes.qpu_estimate,
         qpu_routes.qpu_submission_gate,
+        qpu_routes.qpu_credential_status,
+        qpu_routes.qpu_connect_credential,
+        qpu_routes.qpu_disconnect_credential,
     ):
         assert "scope" in handler.__annotations__
 
@@ -66,12 +69,72 @@ def test_estimate_request_bounds_shots():
         QpuEstimateRequest(device_id="braket.iqm.garnet", shots=MAX_ESTIMATE_SHOTS + 1)
 
 
+class _NoCredentialSession:
+    """A session whose only answer is "this caller has connected nothing"."""
+
+    async def execute(self, statement):  # noqa: D102 - a double, not a repository
+        class _Result:
+            @staticmethod
+            def scalar_one_or_none():
+                return None
+
+        return _Result()
+
+
 async def test_submission_gate_defaults_to_blocked(monkeypatch):
     """No deployment submits to hardware unless the owner opens every gate."""
     monkeypatch.delenv("MAJORANA_QPU_SUBMIT_ENABLED", raising=False)
-    response = await qpu_routes.qpu_submission_gate(scope=object())
+    response = await qpu_routes.qpu_submission_gate(scope=_scope(), session=_NoCredentialSession())
     assert response.submission_available is False
     assert response.blocked_reason == "submission_disabled"
+
+
+async def test_submission_gate_is_caller_aware(monkeypatch):
+    """Open deployment gates plus a caller with no key is `credentials_unconfigured`.
+
+    The reason this is not `submission_available: true`: the gate is what the
+    Studio reads to decide whether to offer hardware at all, and offering it to
+    somebody with no IBM account connected produces a 409 at the moment they
+    press the button, with no explanation of what to do about it.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setenv("MAJORANA_CREDENTIAL_KEYS", _a_key())
+    response = await qpu_routes.qpu_submission_gate(scope=_scope(), session=_NoCredentialSession())
+    assert response.submission_available is False
+    assert response.blocked_reason == "credentials_unconfigured"
+
+
+async def test_the_gate_is_closed_when_credential_storage_is_unavailable(monkeypatch):
+    """An operator who never set MAJORANA_CREDENTIAL_KEYS cannot submit either.
+
+    A stored row nothing can decrypt is not a usable credential, and reporting
+    the caller as able to submit would enqueue a job that dies in the worker.
+    Fail closed; `storage_available: false` on the status route is where an
+    operator sees the actual cause.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.delenv("MAJORANA_CREDENTIAL_KEYS", raising=False)
+
+    class _WouldAnswerYes:
+        async def execute(self, statement):
+            raise AssertionError("storage is unavailable; the row must not be read at all")
+
+    response = await qpu_routes.qpu_submission_gate(scope=_scope(), session=_WouldAnswerYes())
+    assert response.submission_available is False
+    assert response.blocked_reason == "credentials_unconfigured"
+
+
+def _a_key() -> str:
+    from majorana_api.credential_crypto import generate_key
+
+    return generate_key()
+
+
+def _scope():
+    import uuid as uuid_module
+    from types import SimpleNamespace
+
+    return SimpleNamespace(user_id=uuid_module.uuid4(), workspace_id=uuid_module.uuid4())
 
 
 def _submission(device_id: str = "braket.ionq.forte") -> QpuSubmissionRequest:
@@ -138,13 +201,50 @@ async def test_submission_refuses_with_the_gate_reason(monkeypatch):
     with pytest.raises(HTTPException) as excinfo:
         await qpu_routes.qpu_submit(
             _submission(),
-            scope=object(),
-            session=object(),
+            scope=_scope(),
+            session=_NoCredentialSession(),
             identity=_unmetered_identity(),
             settings=_sources(),
         )
     assert excinfo.value.status_code == 409
     assert excinfo.value.detail == {"blocked_reason": "submission_disabled"}
+
+
+async def test_submission_refuses_a_caller_with_no_credential_before_writing_anything(
+    monkeypatch,
+):
+    """The per-user gate, refused where a refusal costs nothing.
+
+    Placed before `create_record` and `enqueue_job` on purpose. Letting it
+    through would write a durable `qpu_runs` attestation row and a `qpu.run` job
+    for a submission that cannot be made, and the worker would then close it as
+    an errored hardware run — a failure record for something that never reached
+    a provider, on the table whose entire purpose is attesting to things that
+    did. Both repository functions are replaced with doubles that FAIL if called,
+    so this proves the ordering rather than the return code.
+    """
+    from fastapi import HTTPException
+
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setenv("MAJORANA_CREDENTIAL_KEYS", _a_key())
+
+    async def must_not_run(*args, **kwargs):
+        raise AssertionError("a caller with no credential must not reach this")
+
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", must_not_run)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "reserve_qpu_spend_slot", must_not_run)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", must_not_run)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await qpu_routes.qpu_submit(
+            _submission(),
+            scope=_scope(),
+            session=_NoCredentialSession(),
+            identity=_unmetered_identity(),
+            settings=_sources(),
+        )
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail == {"blocked_reason": "credentials_unconfigured"}
 
 
 async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeypatch):
@@ -185,7 +285,11 @@ async def test_submission_with_open_gates_writes_the_record_and_enqueues(monkeyp
     async def fake_enqueue_job(session_arg, *, kind, payload, **kwargs):
         captured["job"] = {"kind": kind, "payload": payload}
 
-    monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda: None)
+    async def connected(scope_arg, session_arg) -> bool:
+        return True
+
+    monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda **_: None)
+    monkeypatch.setattr(qpu_routes, "_caller_can_submit", connected)
     monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", fake_create_record)
     monkeypatch.setattr(qpu_routes.system, "enqueue_job", fake_enqueue_job)
 
