@@ -9063,3 +9063,99 @@ div.mj-rail-row:hover {
 .mj-shared-circuit-conflict strong {
   color: var(--text-0);
 }
+
+/* Weekly allowance meters — the bar a person watches fill up.
+
+   Laid out from the reference the owner supplied: the label and its reset line
+   on the left, the track taking the middle at whatever width is left, and the
+   percentage right-aligned at the end of the same row. Three columns rather
+   than a stack because that is what keeps it uncrowded — one row per meter
+   instead of four, and the percentages line up in a column so two meters can be
+   compared without reading across.
+
+   Below 560px the row becomes a stack: this panel also renders inside the
+   account modal, and three columns there would leave the track a few dozen
+   pixels wide, which is a bar that cannot show anything. */
+.mj-meters {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+}
+.mj-meter {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.34fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mj-meter-name {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-meter-sub {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-meter-pct {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  /* The figure and its unit are one thing; wrapping "68%" onto a line above
+     "used" reads as two facts. */
+  white-space: nowrap;
+}
+.mj-meter-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  /* The fill is a child rather than a gradient on the track so a 0% meter is a
+     visible empty rail instead of nothing at all. */
+  overflow: hidden;
+}
+.mj-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+.mj-meter-fill[data-exhausted="true"] {
+  background: var(--warn);
+}
+/* An unmetered plan has no track, so its sentence takes the middle column
+   rather than leaving a gap where a bar would be. */
+.mj-meter-unmetered {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+@media (max-width: 560px) {
+  .mj-meter {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--sp-2) var(--sp-3);
+  }
+  /* Placed explicitly. Left to flow, the track would take row 2 and push the
+     percentage to a row of its own — which is how the stacked layout lost its
+     bar entirely the first time this was rendered. */
+  .mj-meter > :first-child {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .mj-meter-pct {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .mj-meter-track,
+  .mj-meter-unmetered {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-meter-fill {
+    transition: none;
+  }
+}

@@ -72,9 +72,27 @@ ACCOUNT_TIERS: tuple[AccountTier, ...] = ("free", "pro", "team", "developer")
 class TierLimits:
     """The allowances this service enforces. `None` means unlimited."""
 
-    #: Runs whose resolved mode is EXECUTE, in a trailing seven days. Counted
-    #: per USER, not per workspace — see repos/runs.count_execute_runs_since.
+    #: The run count this tier is SOLD as, in a trailing seven days.
+    #:
+    #: **This is no longer the gate.** Since 2026-08-03 the meter is
+    #: `agent_tokens_per_week` below, on the owner's direction ("start the
+    #: tokens/week metering over the runs/week"). This number stays because it
+    #: is the one a customer understands and the one `/pricing` states, and
+    #: because the token allowance is DERIVED from it — see
+    #: `TOKENS_PER_RUN_EQUIVALENT`. `test_the_token_allowance_is_derived_from_the
+    #: _advertised_run_count` pins the derivation so the two cannot drift; a
+    #: number nothing enforces and nothing checks is how the next session comes
+    #: to believe this one still refuses submissions.
     agent_runs_per_week: int | None
+    #: LLM tokens (input + output, every stage) in a trailing seven days,
+    #: counted per USER like the run count it replaced. This is what a
+    #: submission is refused on.
+    #:
+    #: Tokens rather than runs because runs are not the same size. Measured on
+    #: production 2026-08-03: a 3-qubit GHZ run cost 14,650 tokens, an H2 VQE run
+    #: 19,452, and a Grover run that spent its whole repair budget 54,182 — a
+    #: 3.7x spread that a run count charges identically.
+    agent_tokens_per_week: int | None
     #: Artifacts filed in the Vault (`kept_at` set, not deleted). Per WORKSPACE,
     #: which is what `owned_workspaces` below exists to bound.
     private_artifacts: int | None
@@ -197,18 +215,40 @@ class TierLimits:
 #: `project_sharing` is later flipped true must not silently acquire an
 #: unbounded allowance.
 #:
-#: **These become token-usage limits, not run counts.** The owner's direction on
-#: the same day: "We will later make the plus/professional/enterprise tiers be
-#: limited by token usage rather than runs/week." `agent_runs_per_week` is what
-#: enforces today; when that lands it is a different field with a different
-#: window, not this one with a bigger number.
+#: **These are token-usage limits now, not run counts** — landed 2026-08-03 on
+#: the owner's direction, "start the tokens/week metering over the runs/week.
+#: token limits can correspond to the number of runs/week x average tokens per
+#: full execute run". `agent_runs_per_week` is still the number the product is
+#: sold as; `agent_tokens_per_week` is what refuses a submission.
 #:
 #: `qpu_spend_usd_per_week` is `None` on all four, and that is not a tier
 #: decision at all — see the field, which carries the ruling, the companion
 #: change it depends on, and the condition under which a number comes back.
+#: Tokens one advertised run is worth. The owner's formula is "runs/week x
+#: average tokens per full execute run", and this is that average.
+#:
+#: MEASURED, not chosen. Twelve full execute runs, 2026-08-03:
+#:
+#:   * nine 2-qubit Bell runs (local, real provider): 14,493-15,121, mean 15,031
+#:   * a 3-qubit GHZ run (production): 14,650
+#:   * an H2 VQE run (production): 19,452
+#:   * a 3-qubit Grover run that spent its whole repair budget (production): 54,182
+#:
+#: 30,000 sits above every successful run measured and a little over half of the
+#: worst case, which is the point: at 15,000 the advertised run count would be a
+#: lie for anybody whose run needed repairs, and at 54,000 every tier would carry
+#: 3.6x the tokens its price was set against. The failure this avoids is the
+#: silent one — a user told they have five runs who gets two.
+#:
+#: If a tier should be more or less generous, change THIS, not the table below:
+#: the derivation is pinned by a test, so editing a tier's token number alone
+#: fails CI rather than quietly decoupling it from the advertised run count.
+TOKENS_PER_RUN_EQUIVALENT = 30_000
+
 TIER_LIMITS: dict[AccountTier, TierLimits] = {
     "free": TierLimits(
         agent_runs_per_week=5,
+        agent_tokens_per_week=5 * TOKENS_PER_RUN_EQUIVALENT,
         private_artifacts=10,
         owned_workspaces=3,
         project_sharing=False,
@@ -217,6 +257,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
     ),
     "pro": TierLimits(
         agent_runs_per_week=75,
+        agent_tokens_per_week=75 * TOKENS_PER_RUN_EQUIVALENT,
         private_artifacts=75,
         owned_workspaces=5,
         project_sharing=False,
@@ -225,6 +266,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
     ),
     "team": TierLimits(
         agent_runs_per_week=250,
+        agent_tokens_per_week=250 * TOKENS_PER_RUN_EQUIVALENT,
         private_artifacts=250,
         owned_workspaces=20,
         project_sharing=True,
@@ -233,6 +275,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
     ),
     "developer": TierLimits(
         agent_runs_per_week=None,
+        agent_tokens_per_week=None,
         private_artifacts=None,
         owned_workspaces=None,
         project_sharing=True,

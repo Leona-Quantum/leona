@@ -64,7 +64,7 @@ from ..repos import shares as shares_repo
 from ..repos import system
 from ..repos import usage as usage_repo
 from ..settings import Settings
-from ..tiers import TIER_WINDOW, limits_for, tier_of
+from ..tiers import TIER_WINDOW, TOKENS_PER_RUN_EQUIVALENT, limits_for, tier_of
 
 router = APIRouter()
 
@@ -87,14 +87,46 @@ class RunAllowance(Allowance):
     next_slot_at: dt.datetime | None
 
 
+class TokenAllowance(Allowance):
+    """The account's weekly token allowance — the meter a submission is refused on.
+
+    Per ACCOUNT, across every workspace, exactly like `RunAllowance` above and
+    for the same reason. Sits BESIDE the run count rather than replacing it in
+    this response: the run figure is still true and still what a customer
+    understands, it simply no longer gates. A client that shows one bar should
+    show this one.
+    """
+
+    #: Length of the rolling window in days, so the client words the sentence
+    #: without hardcoding a seven it might later disagree with.
+    window_days: int
+    #: When enough of the window's spend ages out to bring `used` back under
+    #: `limit`. Null when nothing is spent, the tier is unlimited, or the whole
+    #: window does not hold enough to clear the overage — see
+    #: `usage_repo.tokens_free_at`, which will not invent a timestamp.
+    next_slot_at: dt.datetime | None
+    #: The run count this allowance was derived from, i.e. what the plan is sold
+    #: as. Sent so the client can write "about 5 runs" without a second table
+    #: that could disagree with the server's.
+    runs_equivalent: int | None
+    #: Tokens one advertised run is worth. Sent for the same reason: the
+    #: derivation is the server's, and a client dividing by its own constant is
+    #: how the two come to say different things.
+    tokens_per_run: int
+
+
 class TokenSpend(BaseModel):
     """Model tokens, and the number of provider calls that spent them.
 
     No money. Nothing in this deployment prices a token — payments are hard-off
-    and the tier table meters runs, not tokens — so a currency figure here would
-    be this route inventing a rate card. `calls` is what makes the number
-    legible without one: 40,000 tokens over 2 calls and over 200 are different
-    facts about a workspace.
+    — so a currency figure here would be this route inventing a rate card.
+    `calls` is what makes the number legible without one: 40,000 tokens over 2
+    calls and over 200 are different facts about a workspace.
+
+    Distinct from `TokenAllowance` above, and the difference matters: this is
+    the WORKSPACE's spend, broken down by who spent it, and it includes chat.
+    That one is the ACCOUNT's allowance. The two legitimately differ on any
+    account with more than one workspace.
     """
 
     tokens: int
@@ -164,7 +196,13 @@ class HardwareSpendAllowance(BaseModel):
 
 class UsageResponse(BaseModel):
     tier: str
+    #: Execute runs this account started in the window. Reported, no longer
+    #: enforced — `tokens` below is the meter since 2026-08-03. Kept because it
+    #: is the figure /pricing states and the one a customer reasons in.
     runs: RunAllowance
+    #: The enforced weekly allowance. Additive in 2026-08: a client built before
+    #: it exists keeps rendering the allowances it already knows.
+    tokens: TokenAllowance
     #: Kept artifacts, per WORKSPACE — this one is about the active workspace,
     #: not the account, and the client must not label it "your artifacts".
     #:
@@ -288,6 +326,21 @@ async def usage(
         if len(oldest) >= needed:
             next_slot_at = oldest[needed - 1] + TIER_WINDOW
 
+    # The enforced meter. The same `since` as everything above it, so the number
+    # the bar fills to and the number the gate refuses on are the same window.
+    tokens_used = await usage_repo.account_tokens_since(scope, session, since)
+    tokens_free_at: dt.datetime | None = None
+    if limits.agent_tokens_per_week is not None:
+        # How far over the line, plus one token: the same "what has to expire
+        # before the next submission is admitted" question `_runs_still_to_expire`
+        # answers, asked in the unit the gate compares. `reserve_execute_run_slot`
+        # refuses on `used >= limit`, so clearing exactly the overage still
+        # refuses — the `+ 1` is that boundary, not a rounding cushion.
+        surplus = tokens_used - limits.agent_tokens_per_week + 1
+        tokens_free_at = await usage_repo.tokens_free_at(
+            scope, session, since, window=TIER_WINDOW, surplus=surplus
+        )
+
     # The QUOTA count, not `get_overview`'s Vault total. An allowance reports
     # what a refusal will be measured against, and since 2026-08-02 artifacts in
     # a shared project are outside that measurement — reporting the total here
@@ -312,6 +365,13 @@ async def usage(
             **runs.model_dump(),
             window_days=TIER_WINDOW.days,
             next_slot_at=next_slot_at,
+        ),
+        tokens=TokenAllowance(
+            **_allowance(tokens_used, limits.agent_tokens_per_week).model_dump(),
+            window_days=TIER_WINDOW.days,
+            next_slot_at=tokens_free_at,
+            runs_equivalent=limits.agent_runs_per_week,
+            tokens_per_run=TOKENS_PER_RUN_EQUIVALENT,
         ),
         artifacts=_allowance(kept, limits.private_artifacts),
         workspaces=_allowance(owned, limits.owned_workspaces),

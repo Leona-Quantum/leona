@@ -16,7 +16,9 @@ from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
 from ..orm import Run, RunEvent, User, VerificationRecord
+from ..tiers import TOKENS_PER_RUN_EQUIVALENT
 from . import artifacts as artifacts_repo
+from . import usage as usage_repo
 from ._base import NotFoundError, require_write
 
 
@@ -176,13 +178,52 @@ async def reserve_execute_run_slot(
 
     `limit is None` takes no lock: an unmetered tier has nothing to serialize,
     and this is the product's hottest write path.
+
+    ## Why in-flight runs are charged before they have spent anything
+
+    The meter is tokens now, and tokens are a LAGGING signal: a row lands only
+    when a provider call returns. Counting runs, the reservation was the row
+    itself and the boundary was exact. Summing tokens, an account at 149,000 of
+    150,000 could submit twenty runs in the same second, every one of them
+    reading the same 149,000, and spend twenty runs' tokens — the precise burst
+    this lock was added to stop, reopened by changing what it counts.
+
+    So a run that has been admitted and has not finished is charged
+    `TOKENS_PER_RUN_EQUIVALENT` until its real spend replaces it. That
+    over-charges a cheap run while it is in flight and under-charges a
+    repair-heavy one, and both self-correct the moment it terminates. The
+    alternative — trusting the sum alone — is unbounded in the direction that
+    costs money.
     """
     if limit is None:
         return
     await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
-    used = await count_execute_runs_since(scope, session, since)
+    spent = await usage_repo.account_tokens_since(scope, session, since)
+    in_flight = await count_in_flight_execute_runs(scope, session)
+    used = spent + in_flight * TOKENS_PER_RUN_EQUIVALENT
     if used >= limit:
         raise RunAllowanceReached(used, limit)
+
+
+async def count_in_flight_execute_runs(scope: Scope, session: AsyncSession) -> int:
+    """This ACCOUNT's admitted-but-unfinished runs, in any of its workspaces.
+
+    Not windowed: a run that is still going is spending now regardless of when
+    it started, and a stuck row ages out of the window while still holding a
+    worker. AUTO counts alongside EXECUTE — at admission an AUTO run may still
+    resolve to EXECUTE, and the reservation has to bound the worst case, which
+    is the same reasoning `count_runs_by_mode_since` gives for the backstop.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(Run)
+        .where(
+            Run.user_id == scope.user_id,
+            Run.mode.in_(BACKSTOP_COUNTED_MODES),
+            Run.status.in_((RunStatus.QUEUED.value, RunStatus.RUNNING.value)),
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one())
 
 
 def _spends_the_weekly_allowance(scope: Scope, since: dt.datetime):
