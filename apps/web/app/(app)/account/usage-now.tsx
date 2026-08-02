@@ -7,8 +7,11 @@ import { ACCOUNT_COPY } from "../../../lib/workspace-locale";
 import {
   describeNextSlot,
   formatTokens,
+  formatUsd,
   isMetered,
   parseUsage,
+  type Allowance,
+  type HardwareSpend,
   type SpendReport,
   type UsageSummary,
 } from "../../../lib/usage-summary";
@@ -115,8 +118,94 @@ export function UsageNow({
           <dt>{copy.usageWorkspaces}</dt>
           <dd>{spent(usage.workspaces.used, usage.workspaces.limit)}</dd>
         </div>
+        {usage.sharedProjects ? (
+          <SharedProjects allowance={usage.sharedProjects} locale={locale} />
+        ) : null}
+        {usage.hardwareSpend ? (
+          <HardwareSpendRow spend={usage.hardwareSpend} locale={locale} />
+        ) : null}
       </dl>
       {usage.spend ? <ModelSpend spend={usage.spend} locale={locale} /> : null}
+    </div>
+  );
+}
+
+/**
+ * Shared projects, and the sentence that stops the number being misread.
+ *
+ * "2 of 4 used" under the word "projects" says, to anyone who has not read the
+ * tier table, that this account may have four projects. It may have as many as
+ * it likes: this counts the shared ones only, from both directions — projects
+ * it shares out and projects shared with it — and unshared projects are
+ * unlimited on every tier. The scope line is therefore not supporting detail,
+ * it is the half of the fact the number cannot carry.
+ *
+ * A limit of zero gets a sentence instead of a ratio. "0 of 0 used" is the
+ * arithmetic of a tier that cannot share at all, and it reads as a quota that
+ * has been consumed rather than a feature that is not included.
+ */
+function SharedProjects({ allowance, locale }: { allowance: Allowance; locale: PublicLocale }) {
+  const copy = ACCOUNT_COPY[locale];
+  return (
+    <div>
+      <dt>{copy.usageSharedProjects}</dt>
+      <dd>
+        {allowance.limit === 0
+          ? copy.usageSharedProjectsNone
+          : allowance.limit === null
+            ? copy.usageSpentUnmetered(allowance.used)
+            : copy.usageSpent(allowance.used, allowance.limit)}
+        {/* Dropped for a tier that cannot share, where the sentence above
+            already says unshared projects stay unlimited. Printing both puts
+            the same fact on the screen twice, a line apart. */}
+        {allowance.limit === 0 ? null : <small>{copy.usageSharedProjectsScope}</small>}
+      </dd>
+    </div>
+  );
+}
+
+/**
+ * Dollars of hardware authorized, written for the case where there is no cap.
+ *
+ * Every tier's weekly hardware ceiling was removed once the owner ruled that
+ * what a person spends on their own provider account is their decision, so
+ * `limit_usd` is null in production and the unlimited branch is the ordinary
+ * one. It reads as a complete sentence — "$3.40 authorized in the last 7 days"
+ * — rather than as half of a ratio with "unlimited" on the other side.
+ *
+ * The bounded branch stays because the field stays: a self-set budget will use
+ * it, and a branch that exists only in a comment is a branch nobody notices is
+ * broken. The zero-ceiling branch is separate again, because the API's own
+ * docstring is explicit that a zero limit is not a hardware ban — free-queue
+ * devices estimate nothing, count as $0.00 and are never refused on it — and
+ * "$0.00 of $0.00" would read as exactly the ban it is not.
+ */
+function HardwareSpendRow({ spend, locale }: { spend: HardwareSpend; locale: PublicLocale }) {
+  const copy = ACCOUNT_COPY[locale];
+  const used = formatUsd(spend.usedUsd, locale);
+  const ceiling =
+    spend.limitUsd === null
+      ? null
+      : spend.limitUsd === 0
+        ? copy.usageHardwareFreeQueuesOnly
+        : spend.exhausted
+          ? copy.usageHardwareExhausted(formatUsd(spend.limitUsd, locale))
+          : copy.usageHardwareRemaining(
+              // `remaining` is the API's own subtraction, and the parser has
+              // already refused a block where it disagrees with limit − used.
+              // Recomputing it here would be a second answer to the same
+              // question, printed a line below the first.
+              formatUsd(spend.remainingUsd ?? 0, locale),
+              formatUsd(spend.limitUsd, locale),
+            );
+  return (
+    <div>
+      <dt>{copy.usageHardware}</dt>
+      <dd>
+        {copy.usageHardwareAuthorized(used, spend.windowDays)}
+        {ceiling ? <small>{ceiling}</small> : null}
+        <small>{copy.usageHardwareScope}</small>
+      </dd>
     </div>
   );
 }

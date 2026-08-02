@@ -48,11 +48,45 @@ export type SpendReport = {
   byModel: ModelSpend[];
 };
 
+/**
+ * Dollars of estimated hardware spend this ACCOUNT has authorized, and the
+ * ceiling it was measured against.
+ *
+ * `limitUsd` null is unlimited and is the ordinary case, not the exotic one:
+ * the weekly hardware ceiling was removed on every tier once the owner ruled
+ * that what a person spends on their own provider account is their decision.
+ * The field stays in the contract because a self-set budget will use it, so
+ * both branches are live code rather than one branch and a comment.
+ *
+ * `limitUsd` 0 is a third thing again, and the API's own docstring is explicit
+ * about it: it is NOT a hardware ban. A free-queue submission estimates nothing,
+ * counts as 0.00 and is never refused, so a zero ceiling means the priced
+ * devices are out of reach and the free queues are not.
+ */
+export type HardwareSpend = {
+  usedUsd: number;
+  /** null means unlimited — never "unknown", exactly as {@link Allowance}. */
+  limitUsd: number | null;
+  remainingUsd: number | null;
+  exhausted: boolean;
+  windowDays: number;
+};
+
 export type UsageSummary = {
   tier: string;
   runs: RunAllowance;
   artifacts: Allowance;
   workspaces: Allowance;
+  /**
+   * Shared projects this ACCOUNT is in, counted from both directions: projects
+   * it owns that carry a live grant, plus projects shared with it.
+   *
+   * Null on absence rather than a parse failure, for the reason `spend` is —
+   * see below. Unshared projects are not counted here and are unlimited on
+   * every tier, which is a fact the copy layer has to say out loud: "2 of 4"
+   * beside the word "projects" reads as a cap on all of them.
+   */
+  sharedProjects: Allowance | null;
   /**
    * Null when the control plane did not send one, or sent one that does not
    * add up. Unlike every field above it, absence here is not a parse failure:
@@ -61,6 +95,8 @@ export type UsageSummary = {
    * blanking the panel.
    */
   spend: SpendReport | null;
+  /** Additive in the same way and for the same reason as `spend`. */
+  hardwareSpend: HardwareSpend | null;
 };
 
 function isRecord(value: unknown): value is Record<string, unknown> {
@@ -141,6 +177,44 @@ function parseSpend(value: unknown): SpendReport | null {
   return { windowDays, total, chat, runs, byModel };
 }
 
+/**
+ * The hardware block, or null — with the same "absent key is not null" rule the
+ * counted allowances get, and one coherence check on top.
+ *
+ * `remaining_usd` is not recomputed here and it is not trusted either. The API
+ * derives it as `max(limit - used, 0)`, the panel prints "$3.40 authorized" and
+ * "$21.60 left" a line apart, and a reader subtracts them by eye. A pair that
+ * does not agree is not a stale number to the person reading it — it is the
+ * whole panel being wrong. So a contradiction drops the block, and the account
+ * page renders exactly what it rendered before this field existed.
+ *
+ * The tolerance is half a cent because these are floats read back from a
+ * `Numeric` column: 25 - 21.6 lands on 3.4000000000000004 in IEEE754, and a
+ * strict comparison would reject every real response.
+ */
+function parseHardwareSpend(value: unknown): HardwareSpend | null {
+  if (!isRecord(value)) return null;
+  const used = readCount(value, "used_usd");
+  const limit = readOptionalCount(value, "limit_usd");
+  const remaining = readOptionalCount(value, "remaining_usd");
+  const windowDays = readCount(value, "window_days");
+  if (used === null || !limit.ok || !remaining.ok || windowDays === null) return null;
+  if (typeof value.exhausted !== "boolean") return null;
+  // Unlimited on one field and bounded on the other is not a state the API can
+  // produce, and it is the state a half-applied deploy would produce.
+  if ((limit.value === null) !== (remaining.value === null)) return null;
+  if (limit.value !== null && remaining.value !== null) {
+    if (Math.abs(Math.max(limit.value - used, 0) - remaining.value) > 0.005) return null;
+  }
+  return {
+    usedUsd: used,
+    limitUsd: limit.value,
+    remainingUsd: remaining.value,
+    exhausted: value.exhausted,
+    windowDays,
+  };
+}
+
 export function parseUsage(payload: unknown): UsageSummary | null {
   if (!isRecord(payload)) return null;
   const runs = parseAllowance(payload.runs);
@@ -162,8 +236,42 @@ export function parseUsage(payload: unknown): UsageSummary | null {
     runs: { ...runs, windowDays, nextSlotAt: rawNext ?? null },
     artifacts,
     workspaces,
+    // `parseAllowance` already refuses a block whose `limit` key is missing, so
+    // the additive treatment here costs nothing: absent means "an API that
+    // predates the field", malformed means "do not guess", and both render as
+    // the panel that shipped before it.
+    sharedProjects: parseAllowance(payload.shared_projects),
     spend: parseSpend(payload.spend),
+    hardwareSpend: parseHardwareSpend(payload.hardware_spend),
   };
+}
+
+/**
+ * US dollars, always to the cent, in the reader's own digit grouping.
+ *
+ * Two decimals is not a style choice. These arrive as floats read back from a
+ * `Numeric` column and a sum of them lands on 25.000000000000004 often enough
+ * to be the normal case rather than the pathological one; printing the raw
+ * value would put fourteen decimal places of IEEE754 noise on the account page.
+ *
+ * Deliberately NOT `qpu.formatUsd`, which shows four decimals below a dollar.
+ * That one prices a single shot, where $0.000425 is the whole number and
+ * rounding it to $0.00 would be reporting free hardware that is not free. This
+ * one totals what an account authorized, where a fraction of a cent is noise
+ * and the extra digits only make two figures harder to compare. Same currency,
+ * opposite requirement — one function could not serve both without a flag that
+ * every call site would then have to get right.
+ */
+export function formatUsd(value: number, locale: "en" | "ja"): string {
+  // Round to cents before formatting so a value a hair under zero — float
+  // noise on a `remaining` that is really zero — cannot print as "-$0.00".
+  const cents = Math.round(value * 100);
+  return new Intl.NumberFormat(locale === "ja" ? "ja-JP" : "en-US", {
+    style: "currency",
+    currency: "USD",
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(cents === 0 ? 0 : cents / 100);
 }
 
 /**

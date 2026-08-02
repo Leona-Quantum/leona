@@ -1299,3 +1299,93 @@ html[lang="ja"] .mj-company-hero-title-line {
   flex-wrap: wrap;
   gap: var(--sp-3);
 }
+
+/* ---------- Connect IBM Quantum (account) ----------
+   Appended rather than merged into the account block above: this file is being
+   edited by more than one lane at a time, and rules added at the end are the
+   ones that merge without a conflict. */
+.mj-qpu-credentials .mj-qpu-open-plan,
+.mj-qpu-credentials .mj-qpu-not-connected,
+.mj-qpu-credentials .mj-qpu-warning {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-qpu-credentials .mj-qpu-warning {
+  margin: var(--sp-2) 0 0;
+  color: var(--warn);
+  font-size: var(--fs-12);
+}
+/* Numbered, explicitly: Tailwind's preflight sets `list-style: none` on every
+   list, so an <ol> of instructions renders as three indented sentences with no
+   order to them — which is the one thing an ordered list is for. */
+.mj-qpu-steps {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-5);
+  list-style: decimal;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-qpu-steps li::marker {
+  color: var(--text-2);
+}
+.mj-qpu-steps a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+/* The form inherits .mj-account-profile-form, which already owns the label,
+   input and button geometry. Only the top rule it draws is unwanted here —
+   this panel's fields are the panel, not an addendum to something above them. */
+.mj-qpu-form {
+  margin-top: var(--sp-4);
+  margin-bottom: var(--sp-4);
+  padding-top: 0;
+  border-top: 0;
+  gap: var(--sp-3);
+}
+/* A deployment that cannot store a credential disables the whole form rather
+   than accepting a secret it will refuse. Disabled has to LOOK disabled: these
+   inputs carry their own background, so the browser's default greying does not
+   show through. */
+.mj-qpu-form input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mj-qpu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+/* An IBM CRN is long enough to overflow a narrow panel. It wraps at any point
+   rather than clipping: a truncated CRN cannot be compared against the one in
+   IBM's own console, which is the only reason it is shown. */
+.mj-qpu-crn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+.mj-qpu-message {
+  display: grid;
+  gap: var(--sp-1);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-qpu-message--ok {
+  color: var(--ok);
+}
+.mj-qpu-message--error {
+  color: var(--err);
+}
+/* The provider's own sentence, set apart from ours so a reader can tell which
+   words are IBM's. */
+.mj-qpu-message small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
