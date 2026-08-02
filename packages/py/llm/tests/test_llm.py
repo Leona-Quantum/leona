@@ -9,6 +9,7 @@ from majorana_llm import (
     LLMRequest,
     LLMResponse,
     RetryingLLM,
+    SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT,
     SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_GENERATION_SYSTEM_PROMPT,
     SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
@@ -23,6 +24,18 @@ from majorana_llm import (
     resolve_provider,
     simple_generation_system_prompt,
 )
+
+
+def test_artifact_only_review_prompt_demands_deep_static_feedback_without_result_claims():
+    prompt = " ".join(SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT.split())
+
+    assert "variable-to-qubit mapping" in prompt
+    assert "objective sign and scaling" in prompt
+    assert "future-backend readiness" in prompt
+    assert "backend-injected entry point" in prompt
+    assert "classical baseline that does not solve the same instance" in prompt
+    assert "never means executed, verified, optimal" in prompt
+    assert "Never fabricate RESULT" in prompt
 
 
 def test_generation_prompt_always_embeds_nameko_style_reference_implementations():
@@ -513,6 +526,11 @@ def test_generation_and_review_guard_general_numeric_evidence_failures():
     assert "phi*2**m is an integer" in SIMPLE_PLAN_SYSTEM_PROMPT
     assert "exact_linear_system_reference" in SIMPLE_PLAN_SYSTEM_PROMPT
     assert "normalized_solution_component" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "true logical-qubit count" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "execution is explicitly recorded as not run" in SIMPLE_PLAN_SYSTEM_PROMPT
+    assert "qubits_estimate above 25" in SIMPLE_GENERATION_SYSTEM_PROMPT
+    assert "do not fabricate RESULT values" in SIMPLE_GENERATION_SYSTEM_PROMPT
+    assert "previous_execution.execution_status is not_run" in SIMPLE_GENERATION_SYSTEM_PROMPT
     assert "lowest-index component among magnitudes tied within 1e-12" in (
         SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT
     )
@@ -521,12 +539,12 @@ def test_generation_and_review_guard_general_numeric_evidence_failures():
 def test_chat_carries_the_same_execution_boundary_as_routing():
     normalized = " ".join(CHAT_SYSTEM_PROMPT.split())
 
-    assert "absolute Plan/lane ceiling is 27 qubits" in normalized
-    assert "25 qubits the executable circuit/simulation maximum" in normalized
-    assert "26- or 27-qubit circuit is rejected before a sandbox is created" in normalized
+    assert "25 qubits the local execution maximum" in normalized
+    assert "execution explicitly marked not_run" in normalized
+    assert "target-ready unexecuted artifact" in normalized
     assert "cannot contact a real QPU" in normalized
     assert "package list is exhaustive" in normalized
-    assert "Do not imply that switching to Execute can bypass" in normalized
+    assert "switching to Execute creates numerical results" in normalized
 
 
 def test_model_constants_use_v4_pro_for_all_product_stages_and_are_env_overridable(monkeypatch):

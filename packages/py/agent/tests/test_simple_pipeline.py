@@ -37,7 +37,7 @@ from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
 
 
-def _plan() -> Plan:
+def _plan(*, qubits: int = 2) -> Plan:
     return Plan.model_validate(
         {
             "domain": "quantum information",
@@ -46,7 +46,7 @@ def _plan() -> Plan:
             "problem_summary": "Build and execute a Bell circuit",
             "algorithm_rationale": "Entanglement matches the requested state",
             "parameters": {"shots": 100, "seed": 7},
-            "qubits_estimate": 2,
+            "qubits_estimate": qubits,
             "expected_runtime_sec": 10,
             "success_criteria": {"primary_metric": "counts"},
             "expected_output_keys": ["counts"],
@@ -60,8 +60,9 @@ def _plan_revision(
     *,
     parent_plan_id: UUID | None = None,
     reason: str | None = None,
+    qubits: int = 2,
 ) -> PlanRevision:
-    plan = _plan()
+    plan = _plan(qubits=qubits)
     fingerprint = hashlib.sha256(
         json.dumps(plan.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -241,6 +242,23 @@ class FakePorts:
             )
         )
 
+    async def save_unexecuted(self, _run_id, _plan, candidate, execution, review):
+        self.calls.append("save_unexecuted")
+        assert execution.was_not_run
+        if review is not None:
+            review.assert_binding(candidate, execution)
+        return SimplePortResult.success(
+            MaterializedArtifact(
+                artifact_id=uuid4(),
+                version_id=uuid4(),
+                version_seq=1,
+                candidate_id=candidate.candidate_id,
+                framework=candidate.framework,
+                source_fingerprint=candidate.source_fingerprint,
+                execution_status="not_run",
+            )
+        )
+
 
 async def test_fixed_happy_path_has_no_model_selected_transition():
     ports = FakePorts()
@@ -252,6 +270,165 @@ async def test_fixed_happy_path_has_no_model_selected_transition():
     assert outcome.counters.plan_attempts == 1
     assert outcome.counters.generation_attempts == 1
     assert outcome.counters.review_attempts == 1
+
+
+class ArtifactOnlyPorts(FakePorts):
+    async def plan(self, run_id, previous, feedback):
+        self.calls.append("plan")
+        self.plan_feedback.append(feedback)
+        revision = 1 if previous is None else previous.revision + 1
+        return SimplePortResult.success(
+            _plan_revision(
+                run_id,
+                revision,
+                parent_plan_id=previous.plan_id if previous else None,
+                reason=feedback.message if previous and feedback else None,
+                qubits=480,
+            )
+        )
+
+    async def run_execution(self, _run_id, _plan, candidate):
+        self.calls.append("execute")
+        return SimplePortResult.success(
+            ExecutionEvidence(
+                execution_id=uuid4(),
+                candidate_id=candidate.candidate_id,
+                source_fingerprint=candidate.source_fingerprint,
+                environment_fingerprint="e" * 64,
+                sandbox_provider="local",
+                exit_code=75,
+                failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+                duration_ms=0,
+                result={},
+                observation={
+                    "execution_status": "not_run",
+                    "execution_reason_code": "local_statevector_capacity_exceeded",
+                    "target_backend": "unassigned_external",
+                    "qubits": 480,
+                    "sandbox_runs": 0,
+                },
+            )
+        )
+
+
+async def test_backend_capacity_limit_delivers_an_honest_unexecuted_artifact():
+    ports = ArtifactOnlyPorts()
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.artifact is not None
+    assert outcome.artifact.execution_status == "not_run"
+    assert outcome.execution is not None and outcome.execution.was_not_run
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.READY
+    assert outcome.conversion is None
+    assert ports.calls == ["plan", "generate", "execute", "review", "save_unexecuted"]
+    assert outcome.counters.execution_attempts == 1
+    assert outcome.counters.review_attempts == 1
+    assert outcome.warnings[0].code == "execution_resource_limit"
+
+
+async def test_artifact_only_static_review_repairs_code_then_reviews_again():
+    ports = ArtifactOnlyPorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR, SemanticReviewDecision.READY],
+        review_feedback={
+            "basic_checks": [{"method": "structural", "result": "pass"}],
+            "critic": {
+                "summary": "backend injection is missing",
+                "mismatches": ["run() constructs its own local simulator"],
+                "repair_instructions": ["accept a backend argument"],
+            },
+        },
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.candidate is not None and outcome.candidate.revision == 2
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.READY
+    assert ports.calls == [
+        "plan",
+        "generate",
+        "execute",
+        "review",
+        "generate",
+        "execute",
+        "review",
+        "save_unexecuted",
+    ]
+    feedback = ports.generation_feedback[1]
+    assert feedback is not None
+    assert feedback.details["critic"]["repair_instructions"] == ["accept a backend argument"]
+
+
+async def test_artifact_only_static_review_can_replan_before_regeneration():
+    ports = ArtifactOnlyPorts(
+        reviews=[SemanticReviewDecision.REPLAN, SemanticReviewDecision.READY],
+        review_feedback={
+            "basic_checks": [{"method": "structural", "result": "pass"}],
+            "critic": {
+                "summary": "the Plan omitted a requested constraint",
+                "mismatches": ["capacity constraint is absent"],
+                "repair_instructions": ["add the capacity constraint to the Plan"],
+            },
+        },
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.plan is not None and outcome.plan.revision == 2
+    assert outcome.candidate is not None and outcome.candidate.revision == 2
+    assert ports.calls[:5] == ["plan", "generate", "execute", "review", "plan"]
+    assert ports.plan_feedback[1] is not None
+    assert ports.plan_feedback[1].details["controller"]["action"] == "replan"
+
+
+async def test_artifact_only_review_exhaustion_saves_with_an_explicit_warning():
+    ports = ArtifactOnlyPorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={
+            "basic_checks": [{"method": "structural", "result": "pass"}],
+            "critic": {
+                "summary": "static review still finds an unresolved mismatch",
+                "mismatches": ["objective sign is reversed"],
+                "repair_instructions": ["reverse the encoded objective sign"],
+            },
+        },
+        review_severity="major",
+    )
+    budget = SimplePipelineBudget(
+        max_plan_attempts=1,
+        max_generation_attempts=2,
+        max_consecutive_code_repairs=2,
+        max_execution_attempts_per_candidate=1,
+        max_review_attempts_per_candidate=1,
+        max_save_attempts=1,
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports, budget=budget).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.CODE_REPAIR
+    assert outcome.artifact is not None and outcome.artifact.execution_status == "not_run"
+    assert {warning.code for warning in outcome.warnings} == {
+        "execution_resource_limit",
+        "candidate_budget_exhausted",
+    }
+
+
+async def test_not_run_evidence_cannot_contain_a_reported_result():
+    outcome = await SimpleCircuitPipeline(ports=ArtifactOnlyPorts()).run(uuid4())
+
+    assert outcome.execution is not None
+    execution_with_result = outcome.execution.model_copy(update={"result": {"value": 1}})
+
+    assert not execution_with_result.was_not_run
 
 
 async def test_execution_error_repairs_with_a_new_candidate_revision():
@@ -432,6 +609,7 @@ async def test_repeated_code_repair_escalates_to_replan_with_observed_metric():
         "expected_range": None,
         "review_decision": "code_repair",
         "review_reason_code": "review_code_repair",
+        "execution_status": "executed",
     }
 
 

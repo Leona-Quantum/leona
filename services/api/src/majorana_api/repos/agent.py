@@ -781,18 +781,30 @@ async def set_materialization(
         raise NotFoundError("candidate")
     execution = await get_execution(scope, session, run_id, candidate_id)
     review = await latest_semantic_review(scope, session, run_id, candidate_id)
-    if execution is None or execution.exit_code != 0:
-        raise NotFoundError("successful_candidate_execution")
-    if review is None or review.decision != "ready":
-        raise NotFoundError("ready_semantic_review")
+    if execution is None:
+        raise NotFoundError("candidate_execution")
+    execution_status = materialization.get("execution_status", "executed")
+    if execution_status not in {"executed", "not_run"}:
+        raise ValueError("materialization execution_status is invalid")
+    if execution_status == "executed":
+        if execution.exit_code != 0:
+            raise NotFoundError("successful_candidate_execution")
+        if review is None or review.decision != "ready":
+            raise NotFoundError("ready_semantic_review")
+    elif not _trusted_not_run_execution(execution):
+        raise NotFoundError("trusted_not_run_execution")
+
     if not (
         candidate.source_fingerprint
         == execution.source_fingerprint
-        == review.source_fingerprint
         == materialization.get("source_fingerprint")
-        and review.execution_id == execution.id
     ):
         raise ValueError("materialization evidence binding mismatch")
+    if review is not None and not (
+        review.source_fingerprint == execution.source_fingerprint
+        and review.execution_id == execution.id
+    ):
+        raise ValueError("materialization review binding mismatch")
     row = (
         await session.execute(
             select(AgentRun)
@@ -814,3 +826,25 @@ async def set_materialization(
     )
     if changed.rowcount == 0:
         raise NotFoundError("agent_run")
+
+
+def _trusted_not_run_execution(execution: CandidateExecution) -> bool:
+    """Mirror the worker's trusted preflight predicate at the repository boundary.
+
+    A non-zero exit alone is an execution failure, not permission to publish source.
+    Artifact-only materialization is limited to a zero-duration, zero-sandbox-run
+    resource preflight with no reported RESULT and an explicit reason code.
+    """
+
+    observation = execution.observation if isinstance(execution.observation, dict) else {}
+    reason_code = observation.get("execution_reason_code")
+    return (
+        execution.exit_code != 0
+        and execution.failure_kind == "resource_limit"
+        and execution.duration_ms == 0
+        and not execution.result
+        and observation.get("execution_status") == "not_run"
+        and observation.get("sandbox_runs") == 0
+        and isinstance(reason_code, str)
+        and bool(reason_code.strip())
+    )

@@ -937,6 +937,19 @@ uv run --package majorana-evals python -m majorana_evals \
   --procedural-prompt-variants 3
 ```
 
+For a final generalization gate, repeat `--procedural-seed` to combine independent
+unseen instances in one report, then use `--repetitions` to separate a stable pass
+from a single lucky provider response. Seeds must be unique and are recorded in the
+report note:
+
+```bash
+uv run --package majorana-evals python -m majorana_evals \
+  --corpus evals/holdout-v15 --out evals/report-unseen.json \
+  --procedural-seed 7319426802 --procedural-seed 9182746611 \
+  --procedural-cases-per-family 1 --procedural-prompt-variants 3 \
+  --repetitions 3
+```
+
 This combines 10 static cases, 46 base procedural instances, and 92 surface variants,
 for 148 real-provider cases. A provider-free property audit generated all three forms
 for 2,300 base cases across 100 root seeds: all 6,900 IDs were unique, regeneration was
