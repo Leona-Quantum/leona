@@ -1138,6 +1138,7 @@ class SimpleCircuitPipeline:
                     )
                 )
         started_at = self._monotonic()
+        timeout_s: float | None = None
         try:
             timeout_s = self._stage_timeout_s(stage)
             if timeout_s is None:
@@ -1146,12 +1147,52 @@ class SimpleCircuitPipeline:
                 async with asyncio.timeout(timeout_s):
                     result = await operation()
         except TimeoutError:
+            # `except TimeoutError` cannot tell OUR deadline from one the
+            # operation raised itself. Since Python 3.10 `socket.timeout` IS
+            # `TimeoutError`, so an HTTP read timeout inside a provider call
+            # lands here, and so does any `asyncio.timeout` the client uses.
+            #
+            # Both reported "stopped to preserve time for finalization", which
+            # names a cause — Leona's own budget management — that in the second
+            # case is false. Measured in production 2026-08-02: a post-deploy
+            # probe failed `stage_time_budget_exhausted` at the plan stage **97
+            # milliseconds** after the run started, against a 120 s run deadline
+            # that left the stage roughly 90 s. The deploy gate reported that the
+            # deployed stack could not complete a run, and the one line anybody
+            # would read to diagnose it blamed a budget with 90 s left in it.
+            #
+            # So attribute it by the clock rather than by the exception type.
+            # Behaviour is deliberately unchanged — same kind, same retryability
+            # — because only the claim was wrong. Whether an upstream timeout
+            # should be retryable where budget exhaustion must not be is a real
+            # question and a separate change; it needs a decision, not a guess
+            # folded into a diagnostic fix.
+            elapsed = max(0.0, self._monotonic() - started_at)
+            if timeout_s is None or elapsed < timeout_s:
+                return SimplePortResult.failed(
+                    SimplePipelineFailure(
+                        kind=SimpleFailureKind.TIMEOUT,
+                        stage=stage,
+                        code="stage_upstream_timed_out",
+                        message=f"{stage.value} timed out waiting on an upstream call",
+                        details={
+                            "elapsed_s": round(elapsed, 3),
+                            "stage_budget_s": (
+                                round(timeout_s, 3) if timeout_s is not None else None
+                            ),
+                        },
+                    )
+                )
             return SimplePortResult.failed(
                 SimplePipelineFailure(
                     kind=SimpleFailureKind.TIMEOUT,
                     stage=stage,
                     code="stage_time_budget_exhausted",
                     message=f"{stage.value} stopped to preserve time for finalization",
+                    details={
+                        "elapsed_s": round(elapsed, 3),
+                        "stage_budget_s": round(timeout_s, 3),
+                    },
                 )
             )
         except Exception:  # raw exception text must not cross the product boundary
