@@ -89,7 +89,65 @@ async def test_conversion_repository_accepts_ready_review_without_strict_attempt
     assert session.added == [row]
 
 
-async def test_conversion_repository_rejects_non_ready_review(monkeypatch):
+async def test_conversion_repository_accepts_a_review_the_model_merely_disliked(monkeypatch):
+    """Owner decision 2026-08-03: this layer classifies, it does not exclude.
+
+    `inconclusive` is an opinion about the circuit, not a statement that the
+    record is untrue. Refusing it here destroyed the artifact after every
+    expensive stage had been paid for, and left the user nothing to look at —
+    while the two other layers enforcing the same operation had already been
+    made decision-agnostic.
+    """
+    run_id = uuid4()
+    candidate_id = uuid4()
+    execution_id = uuid4()
+    fingerprint = "a" * 64
+    candidate = SimpleNamespace(id=candidate_id, source_fingerprint=fingerprint)
+    execution = SimpleNamespace(id=execution_id, source_fingerprint=fingerprint)
+    review = SimpleNamespace(
+        decision="inconclusive",
+        execution_id=execution_id,
+        source_fingerprint=fingerprint,
+    )
+
+    async def get_candidate(_scope, _session, _run_id, _candidate_id):
+        return candidate
+
+    async def get_execution(_scope, _session, _run_id, _candidate_id):
+        return execution
+
+    async def latest_review(_scope, _session, _run_id, _candidate_id):
+        return review
+
+    monkeypatch.setattr(agent_repo, "get_candidate", get_candidate)
+    monkeypatch.setattr(agent_repo, "get_execution", get_execution)
+    monkeypatch.setattr(agent_repo, "latest_semantic_review", latest_review)
+    session = WriteSession()
+
+    row = await agent_repo.add_conversion(
+        _scope(),
+        session,
+        run_id,
+        {
+            "candidate_id": candidate_id,
+            "execution_id": execution_id,
+            "source_fingerprint": fingerprint,
+            "status": "unavailable",
+            "qasm": None,
+            "reason": "unsupported",
+        },
+    )
+
+    assert row.candidate_id == candidate_id
+    assert session.added == [row]
+
+
+async def test_conversion_repository_still_requires_a_review_to_exist(monkeypatch):
+    """Permissive about the verdict, not about the record being unlabelled.
+
+    An artifact with no recorded opinion behind it cannot be classified, and an
+    unclassifiable artifact is the one thing an honest classifier cannot hold.
+    """
     candidate = SimpleNamespace(id=uuid4(), source_fingerprint="a" * 64)
 
     async def get_candidate(_scope, _session, _run_id, _candidate_id):
@@ -99,13 +157,13 @@ async def test_conversion_repository_rejects_non_ready_review(monkeypatch):
         return SimpleNamespace(id=uuid4(), source_fingerprint="a" * 64)
 
     async def latest_review(_scope, _session, _run_id, _candidate_id):
-        return SimpleNamespace(decision="inconclusive")
+        return None
 
     monkeypatch.setattr(agent_repo, "get_candidate", get_candidate)
     monkeypatch.setattr(agent_repo, "get_execution", get_execution)
     monkeypatch.setattr(agent_repo, "latest_semantic_review", latest_review)
 
-    with pytest.raises(NotFoundError, match="ready_semantic_review"):
+    with pytest.raises(NotFoundError, match="semantic_review"):
         await agent_repo.add_conversion(
             _scope(),
             WriteSession(),
@@ -184,6 +242,135 @@ async def test_materialization_repository_requires_bound_execution_and_ready_rev
     await agent_repo.set_materialization(_scope(), session, run_id, materialization)
 
     assert session.results == []
+
+
+@pytest.mark.parametrize("decision", ["code_repair", "replan", "inconclusive"])
+async def test_materialization_repository_files_an_artifact_the_model_did_not_bless(
+    monkeypatch, decision
+):
+    """The reachable case that cost a user a whole run.
+
+    A run that exhausts its repair budget delivers its strongest candidate with a
+    `code_repair` or `replan` review attached. Every stage has executed and been
+    paid for; the evidence is bound and true. This layer used to throw all of it
+    away at the last step because a language model had not said "ready".
+
+    The decisions are parametrized because the old gate was a single `!= "ready"`
+    comparison — pinning one alternative would leave the next one to be
+    rediscovered by a user.
+    """
+    run_id = uuid4()
+    candidate_id = uuid4()
+    execution_id = uuid4()
+    fingerprint = "a" * 64
+    candidate = SimpleNamespace(id=candidate_id, source_fingerprint=fingerprint)
+    execution = SimpleNamespace(id=execution_id, source_fingerprint=fingerprint, exit_code=0)
+    review = SimpleNamespace(
+        decision=decision,
+        execution_id=execution_id,
+        source_fingerprint=fingerprint,
+    )
+
+    async def get_candidate(_scope, _session, _run_id, _candidate_id):
+        return candidate
+
+    async def get_execution(_scope, _session, _run_id, _candidate_id):
+        return execution
+
+    async def latest_review(_scope, _session, _run_id, _candidate_id):
+        return review
+
+    monkeypatch.setattr(agent_repo, "get_candidate", get_candidate)
+    monkeypatch.setattr(agent_repo, "get_execution", get_execution)
+    monkeypatch.setattr(agent_repo, "latest_semantic_review", latest_review)
+    version_id = uuid4()
+    artifact_id = uuid4()
+
+    async def get_version(_scope, _session, got_version_id):
+        return SimpleNamespace(artifact_id=artifact_id, fingerprint=fingerprint)
+
+    monkeypatch.setattr(agent_repo.artifacts_repo, "get_version", get_version)
+    session = WriteSession(
+        [
+            ScalarResult(SimpleNamespace(id=run_id, artifact_version_id=version_id)),
+            ScalarResult(SimpleNamespace(materialization=None)),
+            UpdateResult(),
+        ]
+    )
+
+    await agent_repo.set_materialization(
+        _scope(),
+        session,
+        run_id,
+        {
+            "candidate_id": str(candidate_id),
+            "source_fingerprint": fingerprint,
+            "artifact_id": str(artifact_id),
+            "version_id": str(version_id),
+            "version_seq": 1,
+            "framework": "qiskit",
+        },
+    )
+
+    assert session.results == []
+
+
+async def test_materialization_repository_still_refuses_a_mismatched_review(monkeypatch):
+    """Loosening the verdict must not loosen the binding.
+
+    A review of one candidate attached to a different execution is not a
+    permissive record, it is a false one — and that is the failure this layer
+    exists to prevent. Kept adjacent to the test above so the two cannot drift.
+    """
+    run_id = uuid4()
+    candidate_id = uuid4()
+    execution_id = uuid4()
+    fingerprint = "a" * 64
+    candidate = SimpleNamespace(id=candidate_id, source_fingerprint=fingerprint)
+    execution = SimpleNamespace(id=execution_id, source_fingerprint=fingerprint, exit_code=0)
+    review = SimpleNamespace(
+        decision="inconclusive",
+        execution_id=uuid4(),  # a DIFFERENT execution
+        source_fingerprint=fingerprint,
+    )
+
+    async def get_candidate(_scope, _session, _run_id, _candidate_id):
+        return candidate
+
+    async def get_execution(_scope, _session, _run_id, _candidate_id):
+        return execution
+
+    async def latest_review(_scope, _session, _run_id, _candidate_id):
+        return review
+
+    monkeypatch.setattr(agent_repo, "get_candidate", get_candidate)
+    monkeypatch.setattr(agent_repo, "get_execution", get_execution)
+    monkeypatch.setattr(agent_repo, "latest_semantic_review", latest_review)
+    version_id = uuid4()
+    artifact_id = uuid4()
+
+    async def get_version(_scope, _session, got_version_id):
+        return SimpleNamespace(artifact_id=artifact_id, fingerprint=fingerprint)
+
+    monkeypatch.setattr(agent_repo.artifacts_repo, "get_version", get_version)
+    session = WriteSession(
+        [ScalarResult(SimpleNamespace(id=run_id, artifact_version_id=version_id))]
+    )
+
+    with pytest.raises(ValueError, match="materialization review binding mismatch"):
+        await agent_repo.set_materialization(
+            _scope(),
+            session,
+            run_id,
+            {
+                "candidate_id": str(candidate_id),
+                "source_fingerprint": fingerprint,
+                "artifact_id": str(artifact_id),
+                "version_id": str(version_id),
+                "version_seq": 1,
+                "framework": "qiskit",
+            },
+        )
 
 
 async def test_materialization_repository_accepts_trusted_not_run_without_review(
