@@ -119,6 +119,40 @@ def test_the_pro_plan_string_no_longer_resolves_to_free():
     assert resolve_tier("ada@example.dev", plan="platinum") == "free"
 
 
+def test_the_product_names_resolve_to_the_same_tiers_as_the_internal_ids():
+    """`plus` and `professional` are what a person types, and they must work.
+
+    The ids stayed `pro`/`team` through the rename on purpose. The cost of that
+    is that the plan strings spelled on the pricing page granted nothing — the
+    same trap `pro` itself was in, one rename later — and the owner wrote
+    exactly those two spellings when restating the ladder. Both resolve now, so
+    `update users set plan = 'professional'` does what it reads like.
+
+    This matters most for billing, which writes this column: a customer whose
+    Stripe plan id is not a key here pays and is metered as free.
+    """
+    assert resolve_tier("ada@example.dev", plan="plus") == "pro"
+    assert resolve_tier("ada@example.dev", plan="professional") == "team"
+    # Same normalization as every other plan string.
+    assert resolve_tier("ada@example.dev", plan="  Professional ") == "team"
+
+
+def test_every_tier_below_developer_is_reachable_by_a_product_name():
+    """A tier a customer can buy but cannot be put on is not sellable.
+
+    Counted off the pricing cards rather than off `PLAN_TIERS`, so adding a tier
+    without a plan string somebody can actually type fails here instead of at
+    the first support request.
+    """
+    for name, tier in (("free", "free"), ("plus", "pro"), ("professional", "team")):
+        if name == "free":
+            # Free needs no plan string: it is what an unrecognised value and a
+            # null column both resolve to.
+            assert resolve_tier("ada@example.dev", plan=None) == "free"
+            continue
+        assert PLAN_TIERS[name] == tier
+
+
 def test_a_pro_account_is_outranked_by_both_lists_above_it():
     """Highest signal wins, and `pro` is now the lowest paid one.
 

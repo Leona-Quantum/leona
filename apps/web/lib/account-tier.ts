@@ -99,25 +99,26 @@ export type TierLimits = {
 };
 
 /**
- * Browser-lane ceilings come from a measured sweep of the same Float64Array
- * kernel studio-simulation.ts uses (2026-07-23, Apple silicon), at ~1,000 gates:
+ * Browser-lane ceilings are 8 / 12 / 18 / 20 (preview shares free's 8), set by
+ * the owner on 2026-08-03. **They are product differentiation now, not a
+ * capability limit, and that is a change in what this number means.**
+ *
+ * What the hardware can actually do, measured on the same Float64Array kernel
+ * studio-simulation.ts uses (2026-07-23, Apple silicon), at ~1,000 gates:
  *
  *   14 q -> 0.3 MB /   25 ms      18 q ->  4 MB /  311 ms
  *   16 q -> 1.0 MB /   78 ms      20 q -> 16 MB / 1233 ms
  *                                 22 q -> 64 MB / 5021 ms
  *
- * Plus (`pro`) sits at 17 qubits, which is not a row of that sweep and is not a
- * new measurement either: every step in the table doubles both numbers, so 17 q
- * falls between the two measured neighbours at ~2 MB and ~155 ms. Stated as an
- * interpolation on purpose — a number presented as measured when nobody ran it
- * is how a budget stops meaning anything.
+ * Every tier below Professional now sits well under its own hardware: free was
+ * 16 and is 8, Plus was an interpolated 17 and is 12. So do not read a ceiling
+ * here as "what the browser can take" and do not re-derive one from the sweep —
+ * only Professional's 18 and developer's 20 are still near the measurement.
  *
- * The lane runs on the main thread, so the ceiling is a responsiveness budget
- * rather than a memory one: 22 qubits would freeze the tab for five seconds on
- * fast hardware, which is why nothing is set there. The previous cap of 6 for
- * everyone was roughly a thousand times more conservative than the measurement
- * justifies, and it was the reason no researcher-scale circuit could be run
- * anywhere in the product.
+ * The sweep is kept because it is still the ceiling on how HIGH any of these
+ * may go. The lane runs on the main thread, so the real limit is a
+ * responsiveness budget rather than a memory one: 22 qubits would freeze the
+ * tab for five seconds on fast hardware, which is why nothing is set there.
  */
 /**
  * Artifacts one project holds when its owner has not set a number, for every
@@ -139,7 +140,7 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   preview: {
     agentRunsPerWeek: 0,
     privateArtifacts: 0,
-    cpuSimQubits: 16,
+    cpuSimQubits: 8,
     cpuSimOperations: 2_000,
     cpuSimShots: 8_192,
     cpuSimRunsPer10Min: 10,
@@ -150,8 +151,8 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
   },
   free: {
     agentRunsPerWeek: 5,
-    privateArtifacts: 25,
-    cpuSimQubits: 16,
+    privateArtifacts: 10,
+    cpuSimQubits: 8,
     cpuSimOperations: 2_000,
     cpuSimShots: 16_384,
     cpuSimRunsPer10Min: 10,
@@ -160,20 +161,19 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     projectSharing: false,
     sharedProjects: 0,
   },
-  // **Plus** on the pricing page. Expanded allowances and nothing else: the
-  // owner scoped it as "expanded usage limits and artifacts compared to free,
-  // but less than team", so `projectSharing` stays false — sharing is what
-  // Professional (`team`) is — and `sharedProjects` is 0 rather than null for
-  // the reason that field documents.
+  // **Plus** on the pricing page. Expanded allowances and nothing else:
+  // `projectSharing` stays false — sharing is what Professional (`team`) is —
+  // and `sharedProjects` is 0 rather than null for the reason that field
+  // documents.
   //
-  // 17 qubits is the interpolated point between free's measured 16 (1 MB /
-  // 78 ms) and Professional's measured 18 (4 MB / 311 ms): ~2 MB and ~155 ms.
-  // The browser lane runs on the user's own hardware, so this is a
-  // responsiveness budget rather than a cost the platform carries.
+  // All three numbers are the owner's table of 2026-08-03, not a derivation.
+  // 12 qubits is well inside what the browser can do (free's measured 16 was
+  // comfortable); see the note above TIER_LIMITS for why these stopped being
+  // capability numbers.
   pro: {
-    agentRunsPerWeek: 20,
+    agentRunsPerWeek: 75,
     privateArtifacts: 75,
-    cpuSimQubits: 17,
+    cpuSimQubits: 12,
     cpuSimOperations: 2_500,
     cpuSimShots: 24_576,
     cpuSimRunsPer10Min: 15,
@@ -183,16 +183,16 @@ export const TIER_LIMITS: Record<AccountTier, TierLimits> = {
     sharedProjects: 0,
   },
   // **Professional** on the pricing page — the collaboration plan, and the one
-  // whose id reads like the tier below it. The artifact allowance is the
-  // owner's number; the browser-lane ceilings sit between Plus and developer
-  // because they bound the user's own hardware and cost the platform nothing.
+  // whose id reads like the tier below it. Runs, artifacts and the 18-qubit
+  // lane are the owner's table of 2026-08-03; `sharedProjects` is the one
+  // number that table did not restate and it keeps its earlier value.
   //
   // `privateArtifacts` mirrors `TIER_LIMITS["team"].private_artifacts` on the
   // server. If the two ever disagree the smaller wins in practice and the user
   // sees the server's refusal, which is the correct direction for a divergence.
   team: {
-    agentRunsPerWeek: 50,
-    privateArtifacts: 150,
+    agentRunsPerWeek: 250,
+    privateArtifacts: 250,
     cpuSimQubits: 18,
     cpuSimOperations: 3_000,
     cpuSimShots: 32_768,
