@@ -11,6 +11,7 @@ from majorana_api.routes.qpu import (
     QpuEstimateRequest,
     QpuSubmissionRequest,
 )
+from repo_test_helpers import empty_tier_sources
 
 import pytest
 from pydantic import ValidationError
@@ -96,9 +97,7 @@ def _unmetered_identity():
 
 
 def _sources():
-    from types import SimpleNamespace
-
-    return SimpleNamespace(developer_emails=frozenset(), team_emails=frozenset())
+    return empty_tier_sources()
 
 
 def test_submission_route_is_reachable_and_scoped():

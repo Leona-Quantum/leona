@@ -61,6 +61,26 @@ def make_scope(role: Role = Role.MEMBER) -> Scope:
     return Scope(user_id=uuid.uuid4(), workspace_id=uuid.uuid4(), role=role)
 
 
+def empty_tier_sources(**populated: frozenset[str]):
+    """A `tiers.TierSources` with every allowlist empty unless named.
+
+    Built from `TIER_ALLOWLIST_ENV` rather than written out, because a double
+    thinner than the protocol it stands in for is the mistake this shape exists
+    to prevent: `tier_of` reads every allowlist, so a hand-listed namespace that
+    forgets one raises AttributeError deep inside a route the moment a third
+    list is added — which is exactly what happened when `pro` arrived.
+    """
+    from types import SimpleNamespace
+
+    from majorana_api.tiers import TIER_ALLOWLIST_ENV
+
+    unknown = set(populated) - set(TIER_ALLOWLIST_ENV)
+    assert not unknown, f"no such allowlist: {sorted(unknown)}"
+    return SimpleNamespace(
+        **{field: populated.get(field, frozenset()) for field in TIER_ALLOWLIST_ENV}
+    )
+
+
 class Row:
     """Wraps one value with the subset of the Result API repo code calls."""
 

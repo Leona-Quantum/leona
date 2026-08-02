@@ -8,6 +8,7 @@ statements rather than the two answers, and the last one walks the same count
 through both the report and the gate.
 """
 
+import dataclasses
 import datetime as dt
 
 import pytest
@@ -508,12 +509,14 @@ async def test_exhausted_says_yes_exactly_when_the_gate_refuses(executed, scope,
 # --- the hardware allowance, which is the one denominated in money ----------
 
 
-async def test_the_hardware_allowance_is_reported_in_dollars_against_the_tier(scope, monkeypatch):
-    """Until now this ceiling existed only in the 429 that enforced it.
+async def test_hardware_spend_is_reported_even_though_nothing_caps_it(scope, monkeypatch):
+    """The half of this block that survived the ceiling coming off.
 
-    `POST /v1/qpu/submissions` refuses on a weekly DOLLAR limit, and nothing the
-    account page could read said the limit was there — so a user could not
-    anticipate the refusal, only be told about it afterwards.
+    No tier sets a hardware limit since 2026-08-02 — the owner ruled it an
+    individual user's decision — so this line reports a total against a null
+    ceiling. It stays on the response because the amount is the thing that was
+    missing when $96,006.30 was authorized without anybody being able to look at
+    it, and because a budget a user sets for themselves needs a screen.
     """
     result, seen = await _usage(
         scope,
@@ -524,21 +527,30 @@ async def test_the_hardware_allowance_is_reported_in_dollars_against_the_tier(sc
     )
 
     assert result.hardware_spend.used_usd == pytest.approx(6.25)
-    assert result.hardware_spend.limit_usd == pytest.approx(0.0)  # free tier
+    assert result.hardware_spend.limit_usd is None
+    assert result.hardware_spend.remaining_usd is None
+    assert result.hardware_spend.exhausted is False
     assert result.hardware_spend.window_days == TIER_WINDOW.days
     # The same instant the runs figure used: two windows would be two different
     # weeks presented as one sentence.
     assert seen["hardware_spend_since"] == seen["count_since"]
 
 
-async def test_an_unmetered_account_reports_no_hardware_ceiling(scope, monkeypatch):
+@pytest.mark.parametrize("plan", [None, "pro", "team", "developer"])
+async def test_no_tier_reports_a_hardware_ceiling(scope, monkeypatch, plan):
+    """Every tier, not just the one that was measured.
+
+    Reported from the tier table rather than hardcoded on the response, so a
+    ceiling put back on any tier shows up here — the endpoint's job is to say
+    what the refusal would be measured against, including "nothing".
+    """
     result, _ = await _usage(
         scope,
         monkeypatch,
         executed=0,
         oldest=[],
         hardware_spend_usd=1234.5,
-        plan="developer",
+        plan=plan,
     )
 
     assert result.hardware_spend.limit_usd is None
@@ -550,13 +562,13 @@ async def test_an_unmetered_account_reports_no_hardware_ceiling(scope, monkeypat
 @pytest.mark.parametrize(
     ("spent", "exhausted", "remaining"),
     [
-        (0.0, True, 0.0),  # free's ceiling IS 0.0, so it starts exhausted
+        (0.0, False, 25.0),
         (12.0, False, 13.0),
         (25.0, True, 0.0),  # exactly at the ceiling: nothing priced still fits
         (30.0, True, 0.0),  # never negative
     ],
 )
-async def test_remaining_and_exhausted_track_the_ceiling_without_going_negative(
+async def test_remaining_and_exhausted_track_a_ceiling_without_going_negative(
     scope, monkeypatch, spent, exhausted, remaining
 ):
     """`exhausted` is `>=` where the reservation is `>`, and that is deliberate.
@@ -566,12 +578,20 @@ async def test_remaining_and_exhausted_track_the_ceiling_without_going_negative(
     question a client renders — can anything priced still be submitted — and at
     exactly the ceiling the answer is no. A free-queue submission is unaffected
     because that path returns before any comparison, not because of this flag.
+
+    Staged on the tier table, because no tier ships a ceiling any more. The
+    arithmetic stays covered so that a per-user budget — or a ceiling reinstated
+    because customer submissions went back onto an operator-owned token — does
+    not arrive on a code path nothing has exercised in months.
     """
-    plan = None if spent == 0.0 else "team"
+    monkeypatch.setitem(
+        TIER_LIMITS, "team", dataclasses.replace(TIER_LIMITS["team"], qpu_spend_usd_per_week=25.0)
+    )
     result, _ = await _usage(
-        scope, monkeypatch, executed=0, oldest=[], hardware_spend_usd=spent, plan=plan
+        scope, monkeypatch, executed=0, oldest=[], hardware_spend_usd=spent, plan="team"
     )
 
+    assert result.hardware_spend.limit_usd == pytest.approx(25.0)
     assert result.hardware_spend.exhausted is exhausted
     assert result.hardware_spend.remaining_usd == pytest.approx(remaining)
     assert result.hardware_spend.remaining_usd >= 0.0

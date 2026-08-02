@@ -32,13 +32,19 @@ first:
 
 A missing allowlist therefore degrades to "collaborators are metered like free
 accounts", which is visible and recoverable, not to "the owner is locked out".
+
+The two paid tiers below developer get the same two signals — a `users.plan`
+value and an allowlist — for the same reason: nothing writes `users.plan` yet,
+so an allowlist is the only way an operator can put somebody on a plan without
+hand-editing SQL. The three variables are named once, in `TIER_ALLOWLIST_ENV`,
+because a fourth read spelled out at a call site is how one of them goes missing.
 """
 
 import datetime as dt
 from dataclasses import dataclass
 from typing import Literal, Protocol
 
-AccountTier = Literal["free", "team", "developer"]
+AccountTier = Literal["free", "pro", "team", "developer"]
 
 #: The allowance window. It ROLLS — it is a trailing seven days, not a calendar
 #: week, so there is no Monday on which everyone's allowance returns at once.
@@ -59,7 +65,7 @@ TIER_WINDOW = dt.timedelta(days=7)
 #: Ordered from least to most capable, and read that way — `at_least` below is
 #: the only place a tier is compared to another tier, so a capability is a
 #: position in this tuple rather than a set of names each caller writes out.
-ACCOUNT_TIERS: tuple[AccountTier, ...] = ("free", "team", "developer")
+ACCOUNT_TIERS: tuple[AccountTier, ...] = ("free", "pro", "team", "developer")
 
 
 @dataclass(frozen=True)
@@ -118,27 +124,51 @@ class TierLimits:
     #: authorize in a trailing seven days. Per USER, like the run allowance and
     #: for the same reason: a bill follows the account, not the tenant.
     #:
-    #: This is the only limit here denominated in money, and it is the only one
-    #: whose absence was measured in money. Before it existed,
-    #: `POST /v1/qpu/submissions` compared the estimate it computes to nothing
-    #: at all: driven over real HTTP by a FREE account with the deployment gate
-    #: open, twenty-one requests were accepted for **$96,006.30** of authorized
-    #: IonQ Forte time — one of them a single 1,000,000-shot job at $80,000.30 —
-    #: while that same account was refused its sixth simulator run of the week.
+    #: **`None` on every tier the product ships (2026-08-02).** The owner ruled
+    #: it: "hardware spend shouldn't have a limit, since this is an individual
+    #: user decision." A researcher deciding to spend $400 of their own money on
+    #: a device-hour is not a thing this product refuses.
     #:
-    #: A dollar figure rather than a submission count because the submissions
-    #: are not fungible: the rate card spans $0.000425 to $0.08 per shot, so a
-    #: count that bounded IonQ Forte sensibly would bound Rigetti Cepheus at
-    #: 1/188th of the spend, and a count that bounded Cepheus sensibly would not
-    #: bound Forte at all.
+    #: ## The condition the removal depends on
     #:
-    #: **Free-queue devices cost `0.0` and are never refused here.** IBM's Open
-    #: Plan is an included allowance, not per-shot billing, so its estimate
-    #: carries no total to charge — inventing one to meter it would be inventing
-    #: a number the vendor did not publish. What bounds it is the provider's own
-    #: 10-minutes-per-28-days allowance. Whether Leona should meter it a second
-    #: time is an owner question, recorded in OWNER_TODO rather than answered
-    #: here with a guess.
+    #: It is safe to remove ONLY because a companion change in the same session
+    #: (branch `feature/byo-ibm-credentials`) moves hardware submission onto the
+    #: submitting user's OWN provider credential. The dollars authorized are
+    #: then the user's own, and a ceiling on them is the operator deciding how
+    #: much of somebody else's money they may spend.
+    #:
+    #: **The inverse is the rule, not a caveat: if a shared operator-owned
+    #: provider token is ever reintroduced for customer submissions, this
+    #: ceiling has to come back.** At that moment every submission spends the
+    #: operator's money again, and the field is still here, still enforced by
+    #: `qpu_runs.reserve_qpu_spend_slot`, precisely so that reinstating it is
+    #: setting a number rather than rebuilding a gate.
+    #:
+    #: ## Why the ledger and the reservation stay
+    #:
+    #: Because the measurement that produced them was never about a preference.
+    #: `POST /v1/qpu/submissions` once compared the estimate it computes to
+    #: nothing at all: driven over real HTTP by a FREE account with the
+    #: deployment gate open, twenty-one requests were accepted for
+    #: **$96,006.30** of authorized IonQ Forte time — one of them a single
+    #: 1,000,000-shot job at $80,000.30 — while that same account was refused
+    #: its sixth simulator run of the week. That is why the spend is recorded
+    #: and reported (`GET /v1/usage` → `hardware_spend`); it is no longer why it
+    #: is refused. An amount nobody can see is an amount nobody can decide about,
+    #: and the obvious next feature is a budget the user sets for themselves —
+    #: which is this field with a per-user value in front of it.
+    #:
+    #: A dollar figure rather than a submission count, for when a number returns
+    #: here: the submissions are not fungible. The rate card spans $0.000425 to
+    #: $0.08 per shot, so a count that bounded IonQ Forte sensibly would bound
+    #: Rigetti Cepheus at 1/188th of the spend, and a count that bounded Cepheus
+    #: sensibly would not bound Forte at all.
+    #:
+    #: **Free-queue devices cost `0.0` and were never refused here even when a
+    #: ceiling existed.** IBM's Open Plan is an included allowance, not per-shot
+    #: billing, so its estimate carries no total to charge — inventing one to
+    #: meter it would be inventing a number the vendor did not publish. What
+    #: bounds it is the provider's own 10-minutes-per-28-days allowance.
     qpu_spend_usd_per_week: float | None
 
 
@@ -152,14 +182,21 @@ class TierLimits:
 #: chosen. All four are in OWNER_TODO so they stay a decision rather than a
 #: default nobody revisits.
 #:
-#: `qpu_spend_usd_per_week` is the fifth, and the two numbers in it were chosen
-#: differently from each other. Free's `0.0` is not a chosen number: an account
-#: that has paid nothing cannot authorize spend on somebody else's provider
-#: account, and free-queue hardware stays reachable because it costs `0.0` to
-#: submit. Team's `25.0` IS a chosen number, taken deliberately low because no
-#: revenue backs it yet — Stripe is unconfigured, so today every dollar here is
-#: the owner's. It buys roughly 17,000 shots on IQM Garnet or 300 on IonQ Forte.
-#: It is in OWNER_TODO to be raised once billing exists.
+#: `pro` is the plan the pricing page has advertised while resolving to `free`:
+#: an account with `plan = 'pro'` — the seed data contains one — got the free
+#: allowances, because `PLAN_TIERS` did not name the string. The owner scoped it
+#: on 2026-08-02: "pro should become a tier. probably just expanded usage limits
+#: and artifacts compared to free, but less than team." So its numbers sit
+#: strictly between the two neighbours it is sold between (20 runs against 5 and
+#: 50; 75 artifacts against 25 and 150; 5 workspaces against 3 and 10), and it
+#: gets NO capability Team has. `project_sharing` stays False because sharing is
+#: what Team is; `shared_projects` is `0` rather than `None` for the reason the
+#: field documents — a tier whose `project_sharing` is later flipped true must
+#: not silently acquire an unbounded allowance.
+#:
+#: `qpu_spend_usd_per_week` is `None` on all four, and that is not a tier
+#: decision at all — see the field, which carries the ruling, the companion
+#: change it depends on, and the condition under which a number comes back.
 TIER_LIMITS: dict[AccountTier, TierLimits] = {
     "free": TierLimits(
         agent_runs_per_week=5,
@@ -167,7 +204,15 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         owned_workspaces=3,
         project_sharing=False,
         shared_projects=0,
-        qpu_spend_usd_per_week=0.0,
+        qpu_spend_usd_per_week=None,
+    ),
+    "pro": TierLimits(
+        agent_runs_per_week=20,
+        private_artifacts=75,
+        owned_workspaces=5,
+        project_sharing=False,
+        shared_projects=0,
+        qpu_spend_usd_per_week=None,
     ),
     "team": TierLimits(
         agent_runs_per_week=50,
@@ -175,7 +220,7 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         owned_workspaces=10,
         project_sharing=True,
         shared_projects=4,
-        qpu_spend_usd_per_week=25.0,
+        qpu_spend_usd_per_week=None,
     ),
     "developer": TierLimits(
         agent_runs_per_week=None,
@@ -205,11 +250,38 @@ OPERATOR_IDENTITIES = frozenset(
 
 DEVELOPER_PLAN = "developer"
 TEAM_PLAN = "team"
+PRO_PLAN = "pro"
 
 #: `users.plan` values that name a tier, lowest first. A plan string that names
 #: none of them resolves to `free`, which is the safe direction: an unrecognised
 #: value must not grant anything.
-PLAN_TIERS: dict[str, AccountTier] = {TEAM_PLAN: "team", DEVELOPER_PLAN: "developer"}
+#:
+#: `pro` was exactly that unrecognised value until 2026-08-02, and the safe
+#: direction was the wrong answer for it: the pricing page sold the plan, the
+#: seed data carries an account on it, and every one of them was metered as
+#: free with nothing anywhere reporting a mismatch.
+PLAN_TIERS: dict[str, AccountTier] = {
+    PRO_PLAN: "pro",
+    TEAM_PLAN: "team",
+    DEVELOPER_PLAN: "developer",
+}
+
+#: Allowlist field -> environment variable. ONE table, read by both things that
+#: turn an environment into a tier decision: `Settings.from_env` for the API and
+#: `EnvTierSources.from_env` for the worker.
+#:
+#: It exists because the alternative is spelling each variable out at each of
+#: two call sites, and the failure that produces is silent in the worst
+#: direction — a paid account resolved as free, refused at limits it does not
+#: have, with nothing raising. `EnvTierSources` has no defaults on its fields
+#: and is CONSTRUCTED from this mapping, so a fourth allowlist added to the
+#: dataclass without an entry here raises TypeError the first time the worker
+#: resolves a tier, instead of reading as an empty list forever.
+TIER_ALLOWLIST_ENV: dict[str, str] = {
+    "developer_emails": "LEONA_DEVELOPER_EMAILS",
+    "team_emails": "LEONA_TEAM_EMAILS",
+    "pro_emails": "LEONA_PRO_EMAILS",
+}
 
 
 def normalize_email(email: str | None) -> str:
@@ -233,13 +305,14 @@ def resolve_tier(
     plan: str | None = None,
     developer_emails: frozenset[str] = frozenset(),
     team_emails: frozenset[str] = frozenset(),
+    pro_emails: frozenset[str] = frozenset(),
 ) -> AccountTier:
     """The account's tier, from the strongest signal that names one.
 
-    Order is highest-tier-first and that is deliberate: an address on both
-    allowlists, or a `team` plan row belonging to a collaborator, resolves to
-    the more capable tier rather than to whichever check happened to run first.
-    An unrecognised `plan` value grants nothing.
+    Order is highest-tier-first and that is deliberate: an address on two
+    allowlists, or a `pro` plan row belonging to a collaborator, resolves to the
+    more capable tier rather than to whichever check happened to run first. An
+    unrecognised `plan` value grants nothing.
     """
     normalized = normalize_email(email)
     if normalized in OPERATOR_IDENTITIES:
@@ -253,14 +326,24 @@ def resolve_tier(
         return "team"
     if normalized and normalized in team_emails:
         return "team"
+    if plan_tier == "pro":
+        return "pro"
+    if normalized and normalized in pro_emails:
+        return "pro"
     return "free"
 
 
 class TierSources(Protocol):
-    """The deployment-level half of a tier decision: who is on which allowlist."""
+    """The deployment-level half of a tier decision: who is on which allowlist.
+
+    One attribute per entry in `TIER_ALLOWLIST_ENV`, and `tier_of` passes every
+    one of them — a source object carrying two of the three would resolve the
+    third tier's accounts as free.
+    """
 
     developer_emails: frozenset[str]
     team_emails: frozenset[str]
+    pro_emails: frozenset[str]
 
 
 @dataclass(frozen=True)
@@ -273,15 +356,23 @@ class EnvTierSources:
     environment carries none of the web-facing values `Settings` validates —
     which turned an allowance check into an outage.
 
-    So the worker reads the two variables and nothing else. This class exists so
-    it reads BOTH of them: the version of that code which named one variable
-    inline was one edit away from resolving every team account as free, in the
-    one service where that failure would refuse a run rather than merely display
-    a wrong number.
+    So the worker reads the allowlist variables and nothing else. This class
+    exists so it reads ALL of them: the version of that code which named one
+    variable inline was one edit away from resolving every team account as free,
+    in the one service where that failure would refuse a run rather than merely
+    display a wrong number.
+
+    A third variable is that same hazard again, so the reading is no longer
+    written out here at all. The fields carry no defaults and `from_env` builds
+    the instance from `TIER_ALLOWLIST_ENV`, which makes the failure impossible
+    rather than unlikely: a field this mapping does not name is a missing
+    required argument — a TypeError on the first resolution — and never a
+    silently empty allowlist.
     """
 
     developer_emails: frozenset[str]
     team_emails: frozenset[str]
+    pro_emails: frozenset[str]
 
     @classmethod
     def from_env(cls, environ: dict[str, str] | None = None) -> "EnvTierSources":
@@ -289,8 +380,10 @@ class EnvTierSources:
 
         source = os.environ if environ is None else environ
         return cls(
-            developer_emails=parse_developer_emails(source.get("LEONA_DEVELOPER_EMAILS")),
-            team_emails=parse_developer_emails(source.get("LEONA_TEAM_EMAILS")),
+            **{
+                field: parse_developer_emails(source.get(variable))
+                for field, variable in TIER_ALLOWLIST_ENV.items()
+            }
         )
 
 
@@ -306,12 +399,13 @@ def tier_of(account: Account, sources: TierSources) -> AccountTier:
 
     **Prefer this to calling `resolve_tier` directly.** `resolve_tier` takes the
     allowlists as separate defaulted keyword arguments, so a caller that passes
-    one and forgets the other gets a tier that is wrong in the quiet direction —
-    a team account metered as free, refused at a limit it does not have, with
-    nothing failing anywhere. That is not hypothetical arithmetic: adding the
-    team list gave seven existing call sites the chance to make exactly that
-    mistake, and `test_tier_resolution_goes_through_one_helper` is what stops an
-    eighth from being written.
+    two of the three gets a tier that is wrong in the quiet direction — a paid
+    account metered as free, refused at a limit it does not have, with nothing
+    failing anywhere. That is not hypothetical arithmetic: adding the team list
+    gave seven existing call sites the chance to make exactly that mistake, and
+    `test_tier_resolution_goes_through_one_helper` is what stops an eighth from
+    being written. `test_tier_of_reads_every_allowlist` is what stops this
+    function from quietly dropping one.
 
     `resolve_tier` stays public and defaulted because the tests that pin the
     resolution rules need to vary one input at a time.
@@ -321,6 +415,7 @@ def tier_of(account: Account, sources: TierSources) -> AccountTier:
         plan=account.plan,
         developer_emails=sources.developer_emails,
         team_emails=sources.team_emails,
+        pro_emails=sources.pro_emails,
     )
 
 

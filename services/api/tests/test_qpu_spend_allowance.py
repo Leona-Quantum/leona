@@ -1,4 +1,4 @@
-"""The weekly hardware spend allowance, without a database.
+"""The weekly hardware spend machinery, without a database.
 
 `POST /v1/qpu/submissions` computed a dollar estimate, wrote it onto the durable
 row, and compared it to nothing. Measured over real HTTP against the live schema
@@ -11,18 +11,30 @@ Every gate that route consulted — `MAJORANA_QPU_SUBMIT_ENABLED`, the provider
 token, the provider dependency — is deployment-wide. Each answers "may this
 DEPLOYMENT submit"; none answers "may this ACCOUNT spend".
 
-What is checkable here: the tier table carries the number, the reservation
-compares the right way round, the route passes the tier's number rather than a
-constant, and a free account keeps the free queue. The lock's *effect* needs two
-connections and lives in `test_qpu_spend_allowance_live.py`.
+**No tier sets a ceiling as of 2026-08-02.** The owner ruled hardware spend an
+individual user's decision, and the companion change on
+`feature/byo-ibm-credentials` puts submissions on the user's own provider
+credential, which is what makes that safe. So the tier-table section below pins
+the opposite of what it used to: that nothing is capped, and that a cap
+reintroduced by accident fails a test.
+
+The reservation, the 429 and the three-number sentence are NOT gone and are not
+untested here. They are what a user-set budget will refuse through, and they are
+what has to come back if a shared operator-owned token ever returns. Every test
+that covers them now stages an explicit limit — through the tier table where the
+route reads it, so the wiring under test is still the real wiring.
+
+The lock's *effect* needs two connections and lives in
+`test_qpu_spend_allowance_live.py`.
 """
 
+import dataclasses
 import datetime as dt
 from types import SimpleNamespace
 
 import pytest
 from fastapi import HTTPException
-from repo_test_helpers import LockOnlySession, make_scope
+from repo_test_helpers import LockOnlySession, empty_tier_sources, make_scope
 
 from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.routes import qpu as qpu_routes
@@ -52,24 +64,47 @@ def _identity(plan: str):
 
 
 def _sources():
-    return SimpleNamespace(developer_emails=frozenset(), team_emails=frozenset())
+    return empty_tier_sources()
 
 
 def _since() -> dt.datetime:
     return dt.datetime.now(dt.timezone.utc) - dt.timedelta(days=7)
 
 
+#: A ceiling staged for the tests that cover the refusal path. Deliberately not
+#: a number any tier carries: it is a stand-in for a limit somebody sets later —
+#: a per-user budget, or the ceiling that has to return if customer submissions
+#: ever run on an operator-owned token again — not a value this table ships.
+STAGED_LIMIT_USD = 25.0
+
+
+def _stage_a_ceiling(monkeypatch, tier: str, limit: float) -> None:
+    """Put a hardware ceiling on one tier, where the ROUTE reads it.
+
+    Through `TIER_LIMITS` rather than by passing a number to the reservation,
+    because the thing worth keeping covered is the whole path: the route reads
+    the tier's limit, hands it to the reservation, and turns the exception into
+    the 429 a user reads. A test that called the repository directly would still
+    pass with the route hardcoding `None`.
+    """
+    monkeypatch.setitem(
+        TIER_LIMITS, tier, dataclasses.replace(TIER_LIMITS[tier], qpu_spend_usd_per_week=limit)
+    )
+
+
 # ---------------------------------------------------------------- the tier table
 
 
 def test_every_tier_states_a_hardware_spend_number():
-    """A tier added without one is a tier with no ceiling on provider spend.
+    """A tier added without one is a tier that never states its position.
 
     `TierLimits` is a frozen dataclass with no default on this field, so this
     cannot fail at runtime — it can only fail by somebody adding a default. The
     assertion is that the field is never optional, which is the shape the four
     limits before it already have and the reason none of them was the one that
-    shipped unbounded.
+    shipped unbounded. It matters more now that the shipped value is `None`
+    everywhere: a default would let a tier be added that says nothing about
+    spend and reads exactly like the four that say "no ceiling, deliberately".
     """
     for tier in ACCOUNT_TIERS:
         limits = TIER_LIMITS[tier]
@@ -77,31 +112,41 @@ def test_every_tier_states_a_hardware_spend_number():
         assert limits.qpu_spend_usd_per_week is None or limits.qpu_spend_usd_per_week >= 0.0
 
 
-def test_free_authorizes_no_billed_hardware_and_developer_is_unmetered():
-    """The two numbers that are not preferences.
+def test_the_shipped_tier_table_caps_nobody():
+    """The owner's ruling, as an assertion: "hardware spend shouldn't have a
+    limit, since this is an individual user decision."
 
-    Free's `0.0` is what stops an account that has paid nothing from spending on
-    the operator's provider account, and it is compatible with free hardware
-    access because a free-queue submission costs `0.0` to make. Developer's
-    `None` is the operator, who is not a customer.
-
-    Team's number is deliberately NOT pinned here: it is a chosen figure that
-    should move when billing exists, and a test that pins it would make raising
-    it look like breaking something.
+    Every tier, not just the free one that was measured — a ceiling
+    reintroduced on any single tier fails here, which is the point. This is the
+    test that has to be deleted deliberately if the decision is ever reversed,
+    and the field's own comment states the one condition that would reverse it:
+    customer submissions running on an operator-owned provider token again.
     """
-    assert limits_for("free").qpu_spend_usd_per_week == 0.0
-    assert limits_for("developer").qpu_spend_usd_per_week is None
-    assert limits_for("team").qpu_spend_usd_per_week is not None
+    capped = {
+        tier: TIER_LIMITS[tier].qpu_spend_usd_per_week
+        for tier in ACCOUNT_TIERS
+        if TIER_LIMITS[tier].qpu_spend_usd_per_week is not None
+    }
+    assert capped == {}, (
+        f"these tiers cap hardware spend: {capped}. The owner ruled it an "
+        "individual user's decision, and submissions run on the user's own "
+        "provider credential."
+    )
 
 
-def test_a_paid_tier_is_not_more_restricted_than_free():
-    """Monotonic in the direction the product sells. Cheap, and it has teeth: the
-    limits are written out per tier rather than derived, so a transposed pair of
-    literals is a one-character mistake that nothing else would catch."""
-    free = limits_for("free").qpu_spend_usd_per_week
-    team = limits_for("team").qpu_spend_usd_per_week
-    assert free is not None and team is not None
-    assert team >= free
+def test_the_ledger_and_the_reservation_survive_the_ceiling():
+    """Removing the limit must not remove the machinery that reports the spend.
+
+    `$96,006.30` was authorized because the amount existed nowhere anybody could
+    look, not merely because nothing refused it. These four are what make it
+    visible and what a user-set budget would refuse through, so a change that
+    deleted them along with the number would take away the recovery as well as
+    the cap.
+    """
+    assert callable(qpu_runs_repo.reserve_qpu_spend_slot)
+    assert callable(qpu_runs_repo.authorized_spend_since)
+    assert issubclass(qpu_runs_repo.QpuSpendReached, Exception)
+    assert callable(qpu_routes.qpu_spend_refusal)
 
 
 # ------------------------------------------------------------- the reservation
@@ -223,9 +268,51 @@ def _open_the_gate(monkeypatch):
     monkeypatch.setattr(qpu_routes, "submission_block_reason", lambda: None)
 
 
-async def test_the_route_refuses_a_free_account_the_submission_that_was_measured(monkeypatch):
-    """The exact request that was accepted for $80,000.30, now a 429."""
+async def _fake_create_record(scope_arg, session_arg, **kwargs):
+    """The durable row, echoing back what the route decided to write on it.
+
+    Echoing rather than returning a fixed shape: the estimate the route
+    snapshots is the number `GET /v1/usage` later sums, so a double that
+    invented its own would hide a route that wrote the wrong one.
+    """
+    return SimpleNamespace(
+        id=make_scope().workspace_id,
+        workspace_id=make_scope().workspace_id,
+        user_id=make_scope().user_id,
+        artifact_version_id=None,
+        provider=kwargs["provider"],
+        device_id=kwargs["device_id"],
+        provider_job_id=None,
+        shots=kwargs["shots"],
+        status="queued",
+        source_fingerprint=kwargs["source_fingerprint"],
+        estimate_basis=kwargs["estimate_basis"],
+        estimated_total_usd=kwargs["estimated_total_usd"],
+        rate_source=kwargs["rate_source"],
+        rate_confirmed_on=kwargs["rate_confirmed_on"],
+        raw_counts=None,
+        error=None,
+        submitted_at=None,
+        completed_at=None,
+        created_at=dt.datetime.now(dt.UTC),
+    )
+
+
+async def _fake_enqueue_job(*args, **kwargs):
+    return None
+
+
+async def test_a_ceiling_turns_the_measured_submission_into_a_429(monkeypatch):
+    """The exact request that was accepted for $80,000.30, against a ceiling.
+
+    No tier carries one today, so this stages `STAGED_LIMIT_USD` on the free
+    tier — which is what a per-user budget will do, and what reinstating an
+    operator-token ceiling would do. What is under test is everything between
+    the tier table and the sentence a user reads: the route reads the limit,
+    passes it to the reservation, and renders all three numbers.
+    """
     _open_the_gate(monkeypatch)
+    _stage_a_ceiling(monkeypatch, "free", STAGED_LIMIT_USD)
     reserved: list[tuple] = []
 
     async def fake_reserve(scope, session, since, limit, estimate):
@@ -245,16 +332,53 @@ async def test_the_route_refuses_a_free_account_the_submission_that_was_measured
     assert excinfo.value.status_code == 429
     assert excinfo.value.detail["reason"] == "qpu_spend_exhausted"
     assert excinfo.value.detail["estimate_usd"] == pytest.approx(80_000.30)
-    assert excinfo.value.detail["limit_usd"] == 0.0
+    assert excinfo.value.detail["limit_usd"] == pytest.approx(STAGED_LIMIT_USD)
+    assert excinfo.value.detail["spent_usd"] == 0.0
     # The sentence has to name the money; "too many requests" is unactionable
-    # for a limit denominated in dollars.
+    # for a limit denominated in dollars. All three numbers, because the user's
+    # next move depends on which of them is the problem.
     assert "$80,000.30" in excinfo.value.detail["error"]
-    assert reserved == [(0.0, pytest.approx(80_000.30))]
+    assert "$25.00" in excinfo.value.detail["error"]
+    assert "$0.00" in excinfo.value.detail["error"]
+    assert reserved == [(STAGED_LIMIT_USD, pytest.approx(80_000.30))]
+
+
+async def test_the_shipped_tiers_accept_that_submission_because_nothing_caps_it(monkeypatch):
+    """And the same request with the table as it ships: nothing to compare to.
+
+    The other half of the ruling, asserted where a user meets it rather than in
+    the tier table. `None` reaches the reservation, which returns without
+    reading anything, and the submission is written like any other.
+    """
+    _open_the_gate(monkeypatch)
+    reserved: list[tuple] = []
+
+    async def fake_reserve(scope, session, since, limit, estimate):
+        reserved.append((limit, estimate))
+
+    monkeypatch.setattr(qpu_runs_repo, "reserve_qpu_spend_slot", fake_reserve)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", _fake_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", _fake_enqueue_job)
+
+    result = await qpu_routes.qpu_submit(
+        _submission(FORTE, shots=1_000_000),
+        scope=make_scope(),
+        session=object(),
+        identity=_identity("free"),
+        settings=_sources(),
+    )
+    assert result.status.value == "queued"
+    assert reserved == [(None, pytest.approx(80_000.30))]
+    # And the estimate is still snapshotted onto the row. The dollars are not
+    # refused, but they are recorded — that is what `GET /v1/usage` reports and
+    # what a budget the user sets would later be measured against.
+    assert result.estimated_total_usd == pytest.approx(80_000.30)
 
 
 async def test_nothing_is_written_when_the_submission_is_refused(monkeypatch):
     """No durable row, no job. The refusal is not an attestation of anything."""
     _open_the_gate(monkeypatch)
+    _stage_a_ceiling(monkeypatch, "free", STAGED_LIMIT_USD)
     wrote: list[str] = []
 
     async def fake_reserve(scope, session, since, limit, estimate):
@@ -281,12 +405,20 @@ async def test_nothing_is_written_when_the_submission_is_refused(monkeypatch):
     assert wrote == []
 
 
-@pytest.mark.parametrize("plan", ["free", "team", "developer"])
+@pytest.mark.parametrize("plan", ["free", "pro", "team", "developer"])
 async def test_the_route_passes_the_tier_number_and_not_a_constant(monkeypatch, plan):
     """Audited by signature, not by value: whatever the tier table says for this
     plan is what reaches the reservation. A route that hardcoded any single
-    number would pass for one tier and silently meter the other two wrongly."""
+    number would pass for one tier and silently meter the others wrongly.
+
+    Load-bearing now that the table says `None` everywhere: this is what proves
+    the route still READS the table rather than having been simplified to pass
+    `None` itself, which would look identical today and ignore the ceiling the
+    day one comes back. `_stage_a_ceiling` on one tier is the other half — a
+    route passing a constant fails there.
+    """
     _open_the_gate(monkeypatch)
+    _stage_a_ceiling(monkeypatch, "team", STAGED_LIMIT_USD)
     seen: list[float | None] = []
 
     async def fake_reserve(scope, session, since, limit, estimate):
@@ -315,6 +447,7 @@ async def test_the_window_the_route_reserves_against_is_the_tier_window(monkeypa
     from majorana_api.tiers import TIER_WINDOW
 
     _open_the_gate(monkeypatch)
+    _stage_a_ceiling(monkeypatch, "free", STAGED_LIMIT_USD)
     seen: list[dt.datetime] = []
 
     async def fake_reserve(scope, session, since, limit, estimate):
@@ -340,44 +473,20 @@ async def test_a_free_account_still_reaches_the_free_queue(monkeypatch):
     IBM's Open Plan is an included allowance, not per-shot billing, so its
     estimate carries no total — `estimate.total_usd or 0.0` is zero and the
     reservation returns before it compares anything. A free account's hardware
-    access survives its $0 ceiling, which a submission COUNT would have taken
-    away.
+    access survived its $0 ceiling, which a submission COUNT would have taken
+    away; the ceiling staged here is what makes that still checkable now that
+    the shipped table has none.
     """
     _open_the_gate(monkeypatch)
+    _stage_a_ceiling(monkeypatch, "free", 0.0)
     estimates: list[float] = []
 
     async def fake_reserve(scope, session, since, limit, estimate):
         estimates.append(estimate)
 
-    async def fake_create_record(scope_arg, session_arg, **kwargs):
-        return SimpleNamespace(
-            id=make_scope().workspace_id,
-            workspace_id=make_scope().workspace_id,
-            user_id=make_scope().user_id,
-            artifact_version_id=None,
-            provider=kwargs["provider"],
-            device_id=kwargs["device_id"],
-            provider_job_id=None,
-            shots=kwargs["shots"],
-            status="queued",
-            source_fingerprint=kwargs["source_fingerprint"],
-            estimate_basis=kwargs["estimate_basis"],
-            estimated_total_usd=kwargs["estimated_total_usd"],
-            rate_source=kwargs["rate_source"],
-            rate_confirmed_on=kwargs["rate_confirmed_on"],
-            raw_counts=None,
-            error=None,
-            submitted_at=None,
-            completed_at=None,
-            created_at=dt.datetime.now(dt.UTC),
-        )
-
-    async def fake_enqueue_job(*args, **kwargs):
-        return None
-
     monkeypatch.setattr(qpu_runs_repo, "reserve_qpu_spend_slot", fake_reserve)
-    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", fake_create_record)
-    monkeypatch.setattr(qpu_routes.system, "enqueue_job", fake_enqueue_job)
+    monkeypatch.setattr(qpu_routes.qpu_runs_repo, "create_record", _fake_create_record)
+    monkeypatch.setattr(qpu_routes.system, "enqueue_job", _fake_enqueue_job)
 
     result = await qpu_routes.qpu_submit(
         _submission(OPEN_PLAN, shots=4096),

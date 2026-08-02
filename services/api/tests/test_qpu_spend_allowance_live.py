@@ -1,10 +1,23 @@
-"""The weekly hardware spend allowance over real HTTP, against real Postgres.
+"""The weekly hardware spend machinery over real HTTP, against real Postgres.
 
 `test_qpu_spend_allowance.py` proves the arithmetic and the route's shape with
 doubles. It cannot prove the thing that was actually broken, because what was
 broken was that real requests were accepted: the measurement that produced this
 work drove this endpoint with the deployment gate open and a free-tier account,
 and got twenty-one 201s worth $96,006.30. So this file drives the endpoint.
+
+**No tier caps hardware spend as of 2026-08-02** — the owner ruled it an
+individual user's decision, and submissions move onto the submitting user's own
+provider credential. Two consequences for this file:
+
+- The refusal tests stage a ceiling on the tier table, where the route reads it.
+  They are about the reservation, the 429 and the SQL sum, all of which are what
+  a user-set budget (or a reinstated operator-token ceiling) refuses through.
+  Deleting them would leave that path unexercised until the day it matters.
+- One test asserts the opposite end to end: the $80,000.30 submission that
+  started all of this is accepted now, and its estimate is on the durable row —
+  because what the measurement was really about was an amount nobody could see,
+  and that half is still enforced.
 
 What is only checkable here:
 
@@ -24,6 +37,7 @@ Committing, and therefore responsible for its own teardown.
 """
 
 import asyncio
+import dataclasses
 import datetime as dt
 import os
 import uuid
@@ -42,7 +56,7 @@ from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
 from majorana_api.routes import qpu as qpu_routes
 from majorana_api.settings import Settings
-from majorana_api.tiers import TEAM_PLAN, TIER_WINDOW, limits_for
+from majorana_api.tiers import TEAM_PLAN, TIER_LIMITS, TIER_WINDOW
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="the hardware spend allowance needs DATABASE_URL"
@@ -62,10 +76,48 @@ GARNET = "braket.iqm.garnet"
 OPEN_PLAN = "ibm.open_plan"
 QASM = 'OPENQASM 3.0; include "stdgates.inc"; qubit[1] q; bit[1] c; h q[0]; c[0] = measure q[0];'
 
-#: Read from the tier table rather than pinned as a second copy.
-TEAM_BUDGET = limits_for("team").qpu_spend_usd_per_week
+#: The ceiling the refusal tests stage. No tier ships one, so this is a
+#: stand-in for the next thing that sets a number here — a budget the user picks
+#: for themselves, or the operator ceiling that has to return if customer
+#: submissions ever run on a shared operator-owned provider token again.
+#:
+#: $25 rather than a round $100 because the Garnet arithmetic below is written
+#: against it: two 10,000-shot jobs at $14.80 do not both fit, and a 1,000-shot
+#: job at $1.75 fits in what is left. A budget these tests derived from the tier
+#: table would go back to proving nothing the moment the table says `None`.
+STAGED_BUDGET = 25.0
 
 BLOCKED_FOR_S = 1.5
+
+
+@pytest.fixture
+def staged_budget(monkeypatch):
+    """Put `STAGED_BUDGET` on every tier, where the route reads it.
+
+    Through `TIER_LIMITS` rather than by calling the reservation with a number,
+    because what these tests are for is the path from the tier table to the 429
+    — a route that stopped consulting the table would still pass a test that
+    handed the repository a limit directly.
+    """
+    for tier, limits in list(TIER_LIMITS.items()):
+        monkeypatch.setitem(
+            TIER_LIMITS, tier, dataclasses.replace(limits, qpu_spend_usd_per_week=STAGED_BUDGET)
+        )
+    return STAGED_BUDGET
+
+
+@pytest.fixture
+def no_billed_hardware(monkeypatch):
+    """A $0 ceiling on the free tier: what free carried until 2026-08-02.
+
+    Kept as a fixture rather than deleted with the number, because `0.0` is the
+    interesting edge — an account that may submit only what costs nothing — and
+    it is the shape a "no paid hardware on this plan" tier would take again.
+    """
+    monkeypatch.setitem(
+        TIER_LIMITS, "free", dataclasses.replace(TIER_LIMITS["free"], qpu_spend_usd_per_week=0.0)
+    )
+    return 0.0
 
 
 def _body(device_id: str, shots: int, tag: str = "probe") -> dict:
@@ -143,13 +195,20 @@ async def account(request):
         await engine.dispose()
 
 
-# ------------------------------------------------ the measurement, now refused
+# ------------------------------------------ the measurement, against a ceiling
 
 
 @pytest.mark.parametrize("account", [None], indirect=True)
-async def test_the_submission_that_cost_eighty_thousand_dollars_is_refused(account):
+async def test_the_submission_that_cost_eighty_thousand_dollars_is_refused(
+    account, no_billed_hardware
+):
     """The exact request from the measurement: free tier, IonQ Forte, 1,000,000
-    shots, $80,000.30. It was a 201."""
+    shots, $80,000.30. It was a 201, and against a $0 ceiling it is a 429.
+
+    The ceiling is staged, because no tier carries one any more. What this pins
+    is that a number in the tier table still binds real HTTP requests all the
+    way down to the durable row — the property a per-user budget depends on.
+    """
     client, factory, scope, _user = account
     response = await client.post("/v1/qpu/submissions", json=_body(FORTE, 1_000_000))
 
@@ -170,7 +229,9 @@ async def test_the_submission_that_cost_eighty_thousand_dollars_is_refused(accou
 
 
 @pytest.mark.parametrize("account", [None], indirect=True)
-async def test_twenty_free_tier_submissions_no_longer_authorize_sixteen_thousand(account):
+async def test_twenty_submissions_against_a_zero_ceiling_authorize_nothing(
+    account, no_billed_hardware
+):
     """The other half of the measurement: 20 x 10,000 shots on Forte, every one
     a 201, $16,006.00. Driven as a loop for the same reason it was measured as
     one — the first refusal is the interesting number."""
@@ -183,11 +244,41 @@ async def test_twenty_free_tier_submissions_no_longer_authorize_sixteen_thousand
         if response.status_code != 201:
             break
         accepted += 1
-    assert accepted == 0, f"{accepted} billed submissions accepted from a free account"
+    assert accepted == 0, f"{accepted} billed submissions accepted against a $0 ceiling"
 
 
 @pytest.mark.parametrize("account", [None], indirect=True)
-async def test_a_free_account_still_reaches_the_free_queue(account):
+async def test_the_shipped_tiers_accept_the_measured_submission_and_record_it(account):
+    """And with the table exactly as it ships: a 201, and the dollars written down.
+
+    The owner's ruling, end to end — "hardware spend shouldn't have a limit,
+    since this is an individual user decision" — on the same request that
+    produced the $96,006.30 measurement. No fixture stages a ceiling here on
+    purpose: this is the shipped configuration.
+
+    The estimate on the durable row is the assertion that matters beside the
+    201. What made that measurement a problem was that the amount existed
+    nowhere anybody could look, and this is the row `authorized_spend_since`
+    sums for `GET /v1/usage`. The ceiling is gone; the ledger is not.
+    """
+    client, factory, scope, _user = account
+    response = await client.post("/v1/qpu/submissions", json=_body(FORTE, 1_000_000, "uncapped"))
+
+    assert response.status_code == 201, response.text
+    assert response.json()["estimated_total_usd"] == pytest.approx(80_000.30)
+
+    async with factory() as session:
+        spent = await qpu_runs_repo.authorized_spend_since(
+            scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
+        )
+    assert spent == pytest.approx(80_000.30), (
+        "the spend was authorized but not recorded, which is the half of the "
+        "$96,006.30 measurement that is still a bug"
+    )
+
+
+@pytest.mark.parametrize("account", [None], indirect=True)
+async def test_a_free_account_still_reaches_the_free_queue(account, no_billed_hardware):
     """A $0 ceiling is not a hardware ban. IBM's Open Plan carries no per-shot
     price, so its estimate has no total and the submission costs nothing to
     authorize — which is the whole reason this allowance counts dollars rather
@@ -207,14 +298,13 @@ async def test_a_free_account_still_reaches_the_free_queue(account):
     assert spent == 0.0, "a free-queue submission spent part of a paid allowance"
 
 
-# ------------------------------------------------------- the paid tier's budget
+# ---------------------------------------------------------- a staged budget
 
 
 @pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
-async def test_a_team_account_spends_its_budget_down_and_is_then_refused(account):
+async def test_an_account_spends_a_staged_budget_down_and_is_then_refused(account, staged_budget):
     """Accepted while it fits, refused when it does not, and the sum the refusal
     reports is the sum of what was accepted — not a recount that could differ."""
-    assert TEAM_BUDGET is not None
     client, _factory, _scope, _user = account
 
     # Garnet: $0.30 per task + $0.00145 per shot. 10,000 shots = $14.80.
@@ -226,7 +316,7 @@ async def test_a_team_account_spends_its_budget_down_and_is_then_refused(account
     assert second.status_code == 429, second.text
     detail = second.json()
     assert detail["spent_usd"] == pytest.approx(14.80)
-    assert detail["limit_usd"] == pytest.approx(TEAM_BUDGET)
+    assert detail["limit_usd"] == pytest.approx(STAGED_BUDGET)
     assert detail["estimate_usd"] == pytest.approx(14.80)
 
     # And something that DOES fit in the $10.20 remaining is still accepted —
@@ -237,11 +327,14 @@ async def test_a_team_account_spends_its_budget_down_and_is_then_refused(account
 
 
 @pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
-async def test_a_submission_that_never_reached_the_provider_does_not_spend(account):
+async def test_a_submission_that_never_reached_the_provider_does_not_spend(account, staged_budget):
     """`worker.handlers.handle_qpu_run` closes a record as ERROR with
     `submitted_at` still NULL when the deployment gate shuts between enqueue and
     dequeue. Nothing was billed, so nothing is charged — otherwise an operator
-    toggling the gate off for ten minutes burns every affected account's week."""
+    toggling the gate off for ten minutes burns every affected account's week.
+
+    The budget is staged because the last assertion is about a slot being freed,
+    and against no ceiling at all "the retry is accepted" is true either way."""
     client, factory, scope, _user = account
     accepted = await client.post("/v1/qpu/submissions", json=_body(GARNET, 10_000, "doomed"))
     assert accepted.status_code == 201, accepted.text
@@ -360,8 +453,11 @@ async def test_a_record_that_errored_after_submission_still_spends(account):
 
 
 @pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
-async def test_spend_outside_the_window_is_not_counted(account):
-    """The allowance rolls. A job from eight days ago is not this week's money."""
+async def test_spend_outside_the_window_is_not_counted(account, staged_budget):
+    """The allowance rolls. A job from eight days ago is not this week's money.
+
+    Staged, because the closing assertion is that a fresh job fits once the old
+    one ages out — which no ceiling would make true for the wrong reason."""
     client, factory, scope, _user = account
     accepted = await client.post("/v1/qpu/submissions", json=_body(GARNET, 10_000, "old"))
     assert accepted.status_code == 201, accepted.text
@@ -384,7 +480,7 @@ async def test_spend_outside_the_window_is_not_counted(account):
 
 
 @pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
-async def test_another_accounts_spend_is_not_charged_to_this_one(account):
+async def test_another_accounts_spend_is_not_charged_to_this_one(account, staged_budget):
     """Per USER. A sum missing its identity predicate reads plausibly and
     charges strangers for each other's hardware."""
     client, factory, scope, _user = account
@@ -427,7 +523,9 @@ async def test_another_accounts_spend_is_not_charged_to_this_one(account):
 
 
 @pytest.mark.parametrize("account", [TEAM_PLAN], indirect=True)
-async def test_a_second_workspace_of_the_same_account_spends_the_same_budget(account):
+async def test_a_second_workspace_of_the_same_account_spends_the_same_budget(
+    account, staged_budget
+):
     """Per USER, and this is the case a workspace predicate would miss entirely.
 
     A bill follows the account. One person owning two tenants is an ordinary
@@ -589,8 +687,12 @@ async def test_the_last_dollars_cannot_be_spent_twice_by_two_connections():
 
     Removing `with_for_update()` from `reserve_qpu_spend_slot` fails this with
     caller B reporting a reservation it should not have got.
+
+    Calls the reservation directly with `STAGED_BUDGET`, so it needs no tier to
+    carry a ceiling: the lock is the property under test, and it is the property
+    a user-set budget will depend on the day one exists.
     """
-    assert TEAM_BUDGET is not None and TEAM_BUDGET > 0
+    assert STAGED_BUDGET > 0
     engine = engine_from_env()
     factory = session_factory(engine)
 
@@ -601,7 +703,7 @@ async def test_the_last_dollars_cannot_be_spent_twice_by_two_connections():
 
     # Fill the budget to exactly one dollar remaining, so both callers below are
     # racing for the same last dollar rather than for room neither needs.
-    staged = round(TEAM_BUDGET - 1.0, 6)
+    staged = round(STAGED_BUDGET - 1.0, 6)
     async with factory() as session:
         await qpu_runs_repo.create_record(
             scope,
@@ -629,7 +731,7 @@ async def test_the_last_dollars_cannot_be_spent_twice_by_two_connections():
 
     async def caller_a() -> None:
         async with factory() as session:
-            await qpu_runs_repo.reserve_qpu_spend_slot(scope, session, since, TEAM_BUDGET, 1.0)
+            await qpu_runs_repo.reserve_qpu_spend_slot(scope, session, since, STAGED_BUDGET, 1.0)
             a_has_the_slot.set()
             # Hold the transaction open so B has to wait on the row rather than
             # merely arriving after A committed.
@@ -653,7 +755,9 @@ async def test_the_last_dollars_cannot_be_spent_twice_by_two_connections():
         await slot_taken_or_the_reason_why(a_has_the_slot, task_a)
         async with factory() as session:
             try:
-                await qpu_runs_repo.reserve_qpu_spend_slot(scope, session, since, TEAM_BUDGET, 1.0)
+                await qpu_runs_repo.reserve_qpu_spend_slot(
+                    scope, session, since, STAGED_BUDGET, 1.0
+                )
                 b_outcome.append("reserved")
             except qpu_runs_repo.QpuSpendReached as reached:
                 b_outcome.append(reached)
@@ -671,7 +775,7 @@ async def test_the_last_dollars_cannot_be_spent_twice_by_two_connections():
             "the second caller reserved the same last dollar the first one did — "
             "the account row was not held across the read and the write"
         )
-        assert b_outcome[0].spent == pytest.approx(TEAM_BUDGET)
+        assert b_outcome[0].spent == pytest.approx(STAGED_BUDGET)
     finally:
         await delete_committed_tenants(factory, [workspace.id], [user.id])
         await engine.dispose()

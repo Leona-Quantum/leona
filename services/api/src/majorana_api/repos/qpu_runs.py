@@ -37,6 +37,11 @@ class QpuSpendReached(Exception):
     the submission would cost, what has already been authorized, and the ceiling.
     A caller that had to recount to build that sentence would be reading outside
     the lock that made the numbers true.
+
+    No tier the product ships sets a ceiling as of 2026-08-02, so nothing raises
+    this today. It stays because the ceiling's absence is conditional — see
+    `tiers.TierLimits.qpu_spend_usd_per_week` — and because a budget the user
+    sets for themselves refuses through exactly this path.
     """
 
     def __init__(self, spent: float, limit: float, estimate: float) -> None:
@@ -140,6 +145,17 @@ async def reserve_qpu_spend_slot(
 ) -> None:
     """Take the account's lock and refuse a submission that does not fit.
 
+    ## What it does today
+
+    Nothing, on every tier the product ships: `limit is None` everywhere as of
+    2026-08-02, so this returns on its first line without comparing. The owner
+    ruled hardware spend an individual user's decision, and the companion change
+    on `feature/byo-ibm-credentials` puts submissions on the submitting user's
+    own provider credential, which is what makes that safe. Reinstating a
+    ceiling — a shared operator token, or a budget a user sets for themselves —
+    is passing a number here, not rebuilding this. See
+    `tiers.TierLimits.qpu_spend_usd_per_week`.
+
     ## Why this exists at all
 
     `POST /v1/qpu/submissions` computed an estimate, wrote it onto the durable
@@ -150,6 +166,12 @@ async def reserve_qpu_spend_slot(
     twenty-one requests by an account whose sixth *simulator* run of the week is
     refused. The route took no `CurrentIdentity` at all, so it had no tier to
     compare against and could not have checked one.
+
+    That measurement is why the spend is written down and reported. It is no
+    longer why it is refused: what was wrong there was that nobody could see or
+    bound the number, and an unbounded amount the account holder chose to spend
+    on their own credential is a different thing from an unbounded amount
+    charged to the operator without either party seeing it.
 
     Every gate that route did consult — `MAJORANA_QPU_SUBMIT_ENABLED`, the
     provider token, the provider dependency — is deployment-wide. Each answers
@@ -167,14 +189,15 @@ async def reserve_qpu_spend_slot(
 
     ## What takes no lock
 
-    `limit is None` — an unmetered tier has nothing to serialize.
+    `limit is None` — an unmetered tier has nothing to serialize. That is every
+    tier today, which is why this function currently issues no statement at all.
 
     `estimate == 0.0` — a free-queue submission adds nothing to the sum, so it
     cannot carry any account over any ceiling, and there is nothing to serialize
-    against. This matters beyond the saved round trip: a free account's ceiling
-    is `0.0`, so a zero-cost submission is the ONLY kind it can make, and making
-    that path queue behind a row lock would put every free hardware submission
-    the product has through one exclusive lock per account.
+    against. This mattered beyond the saved round trip while free's ceiling was
+    `0.0`: a zero-cost submission was the ONLY kind a free account could make,
+    and making that path queue behind a row lock would have put every free
+    hardware submission the product has through one exclusive lock per account.
 
     ## Lock ordering
 
