@@ -1069,7 +1069,24 @@ class SimpleCircuitPipeline:
         candidate: CandidateRevision,
         execution: ExecutionEvidence,
     ) -> SimplePipelineOutcome:
-        if artifact_only and self._can_save_without_review(failure):
+        # An EXECUTED, reviewed candidate outranks an unexecuted one, and this is
+        # the one place that ordering could be lost. `soundest` can hold a
+        # candidate that ran and passed review from before a replan raised
+        # `qubits_estimate` above the local ceiling; taking the artifact-only
+        # path here would publish the unexecuted candidate as INCONCLUSIVE and
+        # throw away a run whose evidence was complete. `_sound_candidate_score`
+        # already ranks executed above static-only — this makes the recovery path
+        # ask it rather than assuming the newest candidate is the best one.
+        #
+        # NOT COVERED BY A TEST, and deliberately not by a fake one. Reaching it
+        # needs a run that executes and passes review, then replans above the
+        # local ceiling, then loses its reviewer to a recoverable outage. Two
+        # attempts to drive that through `FakePorts` produced a test that passed
+        # with this condition deleted, which is worse than no test. The scenario
+        # is written out here so the next session can build the double rather
+        # than rediscover the shape.
+        soundest_executed = soundest is not None and soundest[2].succeeded
+        if artifact_only and not soundest_executed and self._can_save_without_review(failure):
             warnings.append(failure)
             return await self._finalize_reviewed_candidate(
                 run_id,
