@@ -1062,7 +1062,7 @@ export interface components {
             domain: string;
             /**
              * Expected Output Keys
-             * @description Keys the executed code prints in its result dict
+             * @description Keys the authored code must return when a compatible backend executes it
              */
             expected_output_keys: string[];
             /** Expected Runtime Sec */
@@ -1073,7 +1073,7 @@ export interface components {
             problem_summary: string;
             /**
              * Qubits Estimate
-             * @description Planned qubit count; 27 is the default sandbox lane ceiling
+             * @description Logical qubits required by the authored artifact. Execution providers apply their own capability ceilings; this estimate must not be silently shrunk to fit the local simulator.
              */
             qubits_estimate: number;
             success_criteria: components["schemas"]["SuccessCriteria"];

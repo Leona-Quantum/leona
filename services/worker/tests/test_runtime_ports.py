@@ -148,7 +148,7 @@ class MustNotCreateSandbox:
         raise AssertionError("memory preflight must run before sandbox creation")
 
 
-async def test_executor_rejects_oversized_statevector_before_provider_creation():
+async def test_executor_marks_oversized_statevector_not_run_before_provider_creation():
     output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
         _candidate(),
         _plan(qubits=27),
@@ -157,6 +157,38 @@ async def test_executor_rejects_oversized_statevector_before_provider_creation()
     assert output.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
     assert output.observation["estimated_memory_mb"] == 4096
     assert output.observation["sandbox_runs"] == 0
+    assert output.observation["execution_status"] == "not_run"
+    assert output.observation["execution_reason_code"] == ("local_statevector_capacity_exceeded")
+    assert output.observation["target_backend"] == "unassigned_external"
+
+
+async def test_industrial_scale_source_is_delivered_before_local_contract_checks():
+    source = "from qiskit import QuantumCircuit\n\ndef build():\n    return QuantumCircuit(480)\n"
+
+    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
+        _candidate(source),
+        _plan(qubits=480),
+    )
+
+    assert output.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
+    assert output.observation["qubits"] == 480
+    assert output.observation["execution_status"] == "not_run"
+    assert output.observation["sandbox_runs"] == 0
+
+
+async def test_artifact_only_source_still_obeys_selected_framework_boundary():
+    source = "import cirq\n\ndef build():\n    return cirq.Circuit()\n"
+
+    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
+        _candidate(source),
+        _plan(qubits=480),
+    )
+
+    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR
+    assert output.observation["contract_diagnostics"] == [
+        "contract:qiskit source imports foreign quantum framework `cirq`"
+    ]
+    assert "execution_status" not in output.observation
 
 
 async def test_converter_uses_only_trusted_observation():

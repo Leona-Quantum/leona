@@ -19,7 +19,7 @@ from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram, extract_interchange_qasm
 from majorana_frameworks.roles import ProgramRole
 from majorana_openqasm import OpenQASMError, normalize
-from majorana_sandbox import ExecutionSpec, GuardRejection, Sandbox
+from majorana_sandbox import DEFAULT_QUBIT_CEILING, ExecutionSpec, GuardRejection, Sandbox
 from majorana_sandbox import run as sandbox_run
 
 
@@ -28,6 +28,7 @@ class SandboxCandidateExecutor:
 
     _OUTPUT_LIMIT = 4_000
     _STATEVECTOR_BYTES_PER_AMPLITUDE = 32
+    _LOCAL_STATEVECTOR_QUBIT_CEILING = 25
 
     def __init__(self, sandbox: Sandbox) -> None:
         self._sandbox = sandbox
@@ -38,16 +39,18 @@ class SandboxCandidateExecutor:
             plan.artifact_contract is None
             or plan.artifact_contract.artifact_type is not ArtifactType.OTHER
         )
-        diagnostics = program.contract_diagnostics(circuit_expected=circuit_expected)
-        if diagnostics:
+        # Artifact-only delivery relaxes only the module-scope execution contract.
+        # Syntax and selected-framework boundaries remain mandatory even when the
+        # connected lane cannot execute the authored scale.
+        authoring_diagnostics = program.contract_diagnostics(circuit_expected=False)
+        if authoring_diagnostics:
             return self._failure(
                 candidate,
                 plan,
                 exit_code=2,
                 kind=ExecutionFailureKind.CODE_ERROR,
-                observation={"contract_diagnostics": diagnostics},
+                observation={"contract_diagnostics": authoring_diagnostics},
             )
-
         # A CIRCUIT reports nothing, so the trusted evidence is the only thing that
         # can become its result. Native collection is off by default here for
         # budget reasons (58118a1, "bounded budgets") and stays off for programs —
@@ -78,21 +81,63 @@ class SandboxCandidateExecutor:
             protected_result_path=f"/tmp/majorana-result-{uuid4().hex}.json",
             source_fingerprint=candidate.source_fingerprint,
         )
-        estimated_memory_mb = self._statevector_memory_mb(plan.qubits_estimate)
-        if circuit_expected and estimated_memory_mb >= spec.memory_mb:
+        exceeds_statevector = (
+            circuit_expected and plan.qubits_estimate > self._LOCAL_STATEVECTOR_QUBIT_CEILING
+        )
+        exceeds_lane = plan.qubits_estimate > DEFAULT_QUBIT_CEILING
+        if exceeds_statevector or exceeds_lane:
+            # Keep the exact estimate while it remains a practical JSON integer.
+            # Beyond that, qubits plus the logarithmic model are the bounded,
+            # actionable representation; constructing an enormous decimal only to
+            # explain that it cannot fit would itself become a resource bug.
+            estimated_memory_mb = (
+                self._statevector_memory_mb(plan.qubits_estimate)
+                if circuit_expected and plan.qubits_estimate <= 10_000
+                else None
+            )
+            local_ceiling = (
+                self._LOCAL_STATEVECTOR_QUBIT_CEILING if circuit_expected else DEFAULT_QUBIT_CEILING
+            )
+            reason_code = (
+                "local_statevector_capacity_exceeded"
+                if exceeds_statevector
+                else "local_qubit_lane_capacity_exceeded"
+            )
             return self._failure(
                 candidate,
                 plan,
                 exit_code=75,
                 kind=ExecutionFailureKind.RESOURCE_LIMIT,
                 observation={
-                    "evidence_error": "statevector_memory_preflight_exceeded",
-                    "estimated_memory_mb": estimated_memory_mb,
+                    "evidence_error": reason_code,
+                    **(
+                        {"estimated_memory_mb": estimated_memory_mb}
+                        if estimated_memory_mb is not None
+                        else {}
+                    ),
                     "memory_limit_mb": spec.memory_mb,
-                    "estimate_model": "32_bytes_per_complex_amplitude",
+                    **(
+                        {"estimate_model": "32_bytes_per_complex_amplitude"}
+                        if circuit_expected
+                        else {}
+                    ),
                     "qubits": plan.qubits_estimate,
+                    "local_execution_ceiling_qubits": local_ceiling,
+                    "execution_status": "not_run",
+                    "execution_reason_code": reason_code,
+                    "target_backend": "unassigned_external",
                     "sandbox_runs": 0,
                 },
+            )
+
+        diagnostics = program.contract_diagnostics(circuit_expected=circuit_expected)
+        if diagnostics:
+            return self._failure(
+                candidate,
+                plan,
+                exit_code=2,
+                kind=ExecutionFailureKind.CODE_ERROR,
+                observation={"contract_diagnostics": diagnostics},
             )
 
         try:

@@ -260,9 +260,18 @@ class SimplePipelinePorts(Protocol):
         conversion: ConversionEvidence | None,
     ) -> SimplePortResult[MaterializedArtifact]: ...
 
+    async def save_unexecuted(
+        self,
+        run_id: UUID,
+        plan: PlanRevision,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence | None,
+    ) -> SimplePortResult[MaterializedArtifact]: ...
+
 
 CancelCheck = Callable[[], Awaitable[bool]]
-SoundCandidate = tuple[
+ReviewedCandidate = tuple[
     PlanRevision,
     CandidateRevision,
     ExecutionEvidence,
@@ -311,8 +320,8 @@ class SimpleCircuitPipeline:
         plan_feedback: SimpleRepairFeedback | None = None
         generation_feedback: SimpleRepairFeedback | None = None
         consecutive_code_repairs = 0
-        soundest: SoundCandidate | None = None
-        soundest_score: tuple[int, int, int, int] | None = None
+        soundest: ReviewedCandidate | None = None
+        soundest_score: tuple[int, int, int, int, int] | None = None
         attempts: list[dict[str, Any]] = []
         # What forced the pending replan. A replan that then fails must not be
         # allowed to erase it — see _with_originating_cause.
@@ -366,14 +375,29 @@ class SimpleCircuitPipeline:
             out_of_time = self._out_of_time(plan, counts["generation_attempts"])
             if out_of_budget or out_of_time:
                 if soundest is not None:
-                    # Same reasoning as the review-driven fallback below: a sound,
-                    # executed candidate is not thrown away because the run ran out of
+                    # Same reasoning as the review-driven fallback below: the strongest
+                    # reviewed candidate is not thrown away because the run ran out of
                     # room. Reaching this from the DEADLINE matters most — the worker's
                     # asyncio.timeout cancels the pipeline outright, so a run that hits
                     # the wall delivers nothing at all, which is strictly worse than a
                     # budget-exhausted one.
                     plan, candidate, execution, review = soundest
-                    return await self._finalize(
+                    budget_failure = SimplePipelineFailure(
+                        kind=(
+                            SimpleFailureKind.TIMEOUT
+                            if out_of_time
+                            else SimpleFailureKind.GENERATION
+                        ),
+                        stage=SimplePipelineStage.GENERATING,
+                        code=(
+                            "run_time_budget_exhausted"
+                            if out_of_time
+                            else "candidate_budget_exhausted"
+                        ),
+                        message="stopped improving the strongest reviewed candidate",
+                    )
+                    warnings.append(budget_failure)
+                    return await self._finalize_reviewed_candidate(
                         run_id,
                         plan=plan,
                         candidate=candidate,
@@ -520,7 +544,8 @@ class SimpleCircuitPipeline:
                     execution=execution,
                     warnings=warnings,
                 )
-            if not execution.succeeded:
+            artifact_only = execution.was_not_run
+            if not execution.succeeded and not artifact_only:
                 failure = self._execution_failure(execution)
                 signature = self._execution_failure_signature(failure)
                 self._record_attempt(
@@ -562,65 +587,42 @@ class SimpleCircuitPipeline:
                     execution=execution,
                 )
 
-            checked = await self._invoke(
-                SimplePipelineStage.CHECKING,
-                lambda: self._ports.check_contract(run_id, plan, candidate, execution),
-            )
-            if checked.failure is not None:
-                return await self._recover_sound_candidate_or_fail(
+            if not artifact_only:
+                failure = await self._check_executed_contract(
                     run_id,
-                    failure=checked.failure,
-                    soundest=soundest,
-                    counts=counts,
-                    warnings=warnings,
-                    plan=plan,
-                    candidate=candidate,
-                    execution=execution,
+                    plan,
+                    candidate,
+                    execution,
                 )
-            contract = checked.value
-            assert contract is not None
-            if not contract.passed:
-                failure = SimplePipelineFailure(
-                    kind=(
-                        SimpleFailureKind.PLAN
-                        if contract.retry_target is SimpleRetryTarget.PLANNING
-                        else SimpleFailureKind.CODE
-                    ),
-                    stage=SimplePipelineStage.CHECKING,
-                    code=contract.code,
-                    message=contract.message,
-                    retryable=True,
-                    retry_target=contract.retry_target,
-                    details={"diagnostics": list(contract.diagnostics)},
-                )
-                self._record_attempt(
-                    attempts,
-                    candidate=candidate,
-                    reason=contract.code,
-                    diagnostics=list(contract.diagnostics),
-                )
-                if (
-                    contract.retry_target is SimpleRetryTarget.PLANNING
-                    and counts["plan_attempts"] < self._budget.max_plan_attempts
-                ):
-                    plan_feedback = self._feedback(failure, attempts)
-                    continue
-                if (
-                    contract.retry_target is SimpleRetryTarget.GENERATION
-                    and counts["generation_attempts"] < self._budget.max_generation_attempts
-                ):
-                    generation_feedback = self._feedback(failure, attempts)
-                    continue
-                return await self._recover_sound_candidate_or_fail(
-                    run_id,
-                    failure=failure,
-                    soundest=soundest,
-                    counts=counts,
-                    warnings=warnings,
-                    plan=plan,
-                    candidate=candidate,
-                    execution=execution,
-                )
+                if failure is not None:
+                    self._record_attempt(
+                        attempts,
+                        candidate=candidate,
+                        reason=failure.code,
+                        diagnostics=self._failure_diagnostics(failure),
+                    )
+                    if (
+                        failure.retry_target is SimpleRetryTarget.PLANNING
+                        and counts["plan_attempts"] < self._budget.max_plan_attempts
+                    ):
+                        plan_feedback = self._feedback(failure, attempts)
+                        continue
+                    if (
+                        failure.retry_target is SimpleRetryTarget.GENERATION
+                        and counts["generation_attempts"] < self._budget.max_generation_attempts
+                    ):
+                        generation_feedback = self._feedback(failure, attempts)
+                        continue
+                    return await self._recover_sound_candidate_or_fail(
+                        run_id,
+                        failure=failure,
+                        soundest=soundest,
+                        counts=counts,
+                        warnings=warnings,
+                        plan=plan,
+                        candidate=candidate,
+                        execution=execution,
+                    )
 
             reviewed = await self._review(run_id, plan, candidate, execution, counts)
             if isinstance(reviewed, SimplePipelineFailure):
@@ -631,27 +633,20 @@ class SimpleCircuitPipeline:
                     counts=counts,
                     consecutive_code_repairs=consecutive_code_repairs,
                 )
-                if recovered is not None:
-                    if isinstance(recovered, SimplePipelineFailure):
-                        return await self._recover_sound_candidate_or_fail(
-                            run_id,
-                            failure=recovered,
-                            soundest=soundest,
-                            counts=counts,
-                            warnings=warnings,
-                            plan=plan,
-                            candidate=candidate,
-                            execution=execution,
-                        )
+                if isinstance(recovered, tuple):
                     action, feedback, consecutive_code_repairs = recovered
                     if action is SimpleNextAction.REPLAN:
                         plan_feedback = feedback
                     else:
                         generation_feedback = feedback
                     continue
-                return await self._recover_sound_candidate_or_fail(
+                terminal_review_failure = (
+                    recovered if isinstance(recovered, SimplePipelineFailure) else reviewed
+                )
+                return await self._recover_review_failure(
                     run_id,
-                    failure=reviewed,
+                    failure=terminal_review_failure,
+                    artifact_only=artifact_only,
                     soundest=soundest,
                     counts=counts,
                     warnings=warnings,
@@ -672,14 +667,16 @@ class SimpleCircuitPipeline:
                     warnings=warnings,
                 )
 
-            if self._deterministically_sound(review):
-                # Keep the strongest candidate whose TRUSTED evidence was complete.
-                # Reaching review already proves it executed and satisfied the basic
-                # contract; this adds "no deterministic check objected, and the
-                # reviewer found nothing blocking". Kept as a fallback so an advisory
-                # opinion cannot destroy a run whose evidence is sound — see
-                # _accept_without_review_acceptance below.
-                score = self._sound_candidate_score(candidate, review)
+            if artifact_only or self._deterministically_sound(review):
+                # Keep the strongest reviewed candidate as a fallback. Executed,
+                # contract-satisfying evidence always outranks static-only evidence;
+                # the latter still prevents a later repair outage from erasing the
+                # target-ready source that prompted it.
+                score = self._sound_candidate_score(
+                    candidate,
+                    review,
+                    executed=execution.succeeded,
+                )
                 if soundest_score is None or score > soundest_score:
                     soundest = (plan, candidate, execution, review)
                     soundest_score = score
@@ -749,6 +746,28 @@ class SimpleCircuitPipeline:
                 # it, recorded as review-unaccepted so nothing claims otherwise.
                 plan, candidate, execution, review = soundest
                 soundest = None
+                if execution.was_not_run:
+                    warnings.append(
+                        self._review_failure(
+                            review,
+                            (
+                                "plan_budget_exhausted"
+                                if review.decision is SemanticReviewDecision.REPLAN
+                                else "candidate_budget_exhausted"
+                            ),
+                        )
+                    )
+            elif action is SimpleNextAction.EXPLAIN_FAILURE and artifact_only:
+                warnings.append(
+                    self._review_failure(
+                        review,
+                        (
+                            "plan_budget_exhausted"
+                            if review.decision is SemanticReviewDecision.REPLAN
+                            else "candidate_budget_exhausted"
+                        ),
+                    )
+                )
             elif action is SimpleNextAction.EXPLAIN_FAILURE:
                 failure_code = (
                     "plan_budget_exhausted"
@@ -765,7 +784,7 @@ class SimpleCircuitPipeline:
                     warnings=warnings,
                 )
 
-            return await self._finalize(
+            return await self._finalize_reviewed_candidate(
                 run_id,
                 plan=plan,
                 candidate=candidate,
@@ -774,6 +793,48 @@ class SimpleCircuitPipeline:
                 counts=counts,
                 warnings=warnings,
             )
+
+    async def _finalize_reviewed_candidate(
+        self,
+        run_id: UUID,
+        *,
+        plan: PlanRevision,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence | None,
+        counts: dict[str, int],
+        warnings: list[SimplePipelineFailure],
+    ) -> SimplePipelineOutcome:
+        """Finalize through the evidence path selected by trusted execution status."""
+
+        if execution.was_not_run:
+            return await self._finalize_unexecuted(
+                run_id,
+                plan=plan,
+                candidate=candidate,
+                execution=execution,
+                review=review,
+                counts=counts,
+                warnings=warnings,
+            )
+        if review is None:
+            return self._failed(
+                self._integrity(SimplePipelineStage.SAVING, "executed_review_missing"),
+                counts,
+                plan=plan,
+                candidate=candidate,
+                execution=execution,
+                warnings=warnings,
+            )
+        return await self._finalize(
+            run_id,
+            plan=plan,
+            candidate=candidate,
+            execution=execution,
+            review=review,
+            counts=counts,
+            warnings=warnings,
+        )
 
     async def _finalize(
         self,
@@ -857,6 +918,10 @@ class SimpleCircuitPipeline:
                 warnings=warnings,
             )
         binding_failure = self._validate_artifact(candidate, saved)
+        if binding_failure is None and saved.execution_status != "executed":
+            binding_failure = self._integrity(
+                SimplePipelineStage.SAVING, "executed_artifact_status_mismatch"
+            )
         if binding_failure is not None:
             return self._failed(
                 binding_failure,
@@ -881,12 +946,74 @@ class SimpleCircuitPipeline:
             warnings=tuple(warnings),
         )
 
+    async def _finalize_unexecuted(
+        self,
+        run_id: UUID,
+        *,
+        plan: PlanRevision,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence | None,
+        counts: dict[str, int],
+        warnings: list[SimplePipelineFailure],
+    ) -> SimplePipelineOutcome:
+        """Save statically reviewed source when trusted preflight cannot run it."""
+
+        execution_warning = self._execution_failure(execution)
+        if not any(warning.code == execution_warning.code for warning in warnings):
+            warnings.append(execution_warning)
+
+        saved = await self._save_unexecuted(
+            run_id,
+            plan,
+            candidate,
+            execution,
+            review,
+            counts,
+        )
+        if isinstance(saved, SimplePipelineFailure):
+            return self._failed(
+                saved,
+                counts,
+                plan=plan,
+                candidate=candidate,
+                execution=execution,
+                review=review,
+                warnings=warnings,
+            )
+        binding_failure = self._validate_artifact(candidate, saved)
+        if binding_failure is None and saved.execution_status != "not_run":
+            binding_failure = self._integrity(
+                SimplePipelineStage.SAVING, "unexecuted_artifact_status_mismatch"
+            )
+        if binding_failure is not None:
+            return self._failed(
+                binding_failure,
+                counts,
+                plan=plan,
+                candidate=candidate,
+                execution=execution,
+                review=review,
+                warnings=warnings,
+            )
+        return SimplePipelineOutcome(
+            status=SimplePipelineStatus.SUCCEEDED,
+            stage=SimplePipelineStage.COMPLETED,
+            counters=self._counters(counts),
+            plan=plan,
+            candidate=candidate,
+            execution=execution,
+            review=review,
+            artifact=saved,
+            warnings=tuple(warnings),
+        )
+
     async def _recover_sound_candidate_or_fail(
         self,
         run_id: UUID,
         *,
         failure: SimplePipelineFailure,
-        soundest: SoundCandidate | None,
+        soundest: ReviewedCandidate | None,
         counts: dict[str, int],
         warnings: list[SimplePipelineFailure],
         plan: PlanRevision | None = None,
@@ -909,7 +1036,7 @@ class SimpleCircuitPipeline:
         }:
             warnings.append(failure)
             fallback_plan, fallback_candidate, fallback_execution, fallback_review = soundest
-            return await self._finalize(
+            return await self._finalize_reviewed_candidate(
                 run_id,
                 plan=fallback_plan,
                 candidate=fallback_candidate,
@@ -926,6 +1053,41 @@ class SimpleCircuitPipeline:
             execution=execution,
             review=review,
             warnings=warnings,
+        )
+
+    async def _recover_review_failure(
+        self,
+        run_id: UUID,
+        *,
+        failure: SimplePipelineFailure,
+        artifact_only: bool,
+        soundest: ReviewedCandidate | None,
+        counts: dict[str, int],
+        warnings: list[SimplePipelineFailure],
+        plan: PlanRevision,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+    ) -> SimplePipelineOutcome:
+        if artifact_only and self._can_save_without_review(failure):
+            warnings.append(failure)
+            return await self._finalize_reviewed_candidate(
+                run_id,
+                plan=plan,
+                candidate=candidate,
+                execution=execution,
+                review=None,
+                counts=counts,
+                warnings=warnings,
+            )
+        return await self._recover_sound_candidate_or_fail(
+            run_id,
+            failure=failure,
+            soundest=soundest,
+            counts=counts,
+            warnings=warnings,
+            plan=plan,
+            candidate=candidate,
+            execution=execution,
         )
 
     async def _obtain_plan(
@@ -986,6 +1148,37 @@ class SimpleCircuitPipeline:
             ):
                 return result.failure
         raise AssertionError("execution loop must return")
+
+    async def _check_executed_contract(
+        self,
+        run_id: UUID,
+        plan: PlanRevision,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+    ) -> SimplePipelineFailure | None:
+        checked = await self._invoke(
+            SimplePipelineStage.CHECKING,
+            lambda: self._ports.check_contract(run_id, plan, candidate, execution),
+        )
+        if checked.failure is not None:
+            return checked.failure
+        contract = checked.value
+        assert contract is not None
+        if contract.passed:
+            return None
+        return SimplePipelineFailure(
+            kind=(
+                SimpleFailureKind.PLAN
+                if contract.retry_target is SimpleRetryTarget.PLANNING
+                else SimpleFailureKind.CODE
+            ),
+            stage=SimplePipelineStage.CHECKING,
+            code=contract.code,
+            message=contract.message,
+            retryable=True,
+            retry_target=contract.retry_target,
+            details={"diagnostics": list(contract.diagnostics)},
+        )
 
     async def _review(
         self,
@@ -1054,6 +1247,38 @@ class SimpleCircuitPipeline:
             ):
                 return result.failure
         raise AssertionError("save loop must return")
+
+    async def _save_unexecuted(
+        self,
+        run_id: UUID,
+        plan: PlanRevision,
+        candidate: CandidateRevision,
+        execution: ExecutionEvidence,
+        review: SemanticReviewEvidence | None,
+        counts: dict[str, int],
+    ) -> MaterializedArtifact | SimplePipelineFailure:
+        for attempt in range(1, self._budget.max_save_attempts + 1):
+            counts["save_attempts"] += 1
+            result = await self._invoke(
+                SimplePipelineStage.SAVING,
+                lambda: self._ports.save_unexecuted(
+                    run_id,
+                    plan,
+                    candidate,
+                    execution,
+                    review,
+                ),
+            )
+            if result.failure is None:
+                assert result.value is not None
+                return result.value
+            if not (
+                result.failure.retryable
+                and result.failure.retry_target is SimpleRetryTarget.SAVE
+                and attempt < self._budget.max_save_attempts
+            ):
+                return result.failure
+        raise AssertionError("unexecuted save loop must return")
 
     def _out_of_time(self, _plan: PlanRevision, generation_attempts: int) -> bool:
         if self._out_of_time_check is not None and self._out_of_time_check():
@@ -1528,6 +1753,16 @@ class SimpleCircuitPipeline:
         )
 
     @staticmethod
+    def _can_save_without_review(failure: SimplePipelineFailure) -> bool:
+        """A reviewer outage must not erase valid source; trust failures still gate."""
+
+        return failure.kind not in {
+            SimpleFailureKind.INTEGRITY,
+            SimpleFailureKind.CANCELLED,
+            SimpleFailureKind.PERSISTENCE,
+        }
+
+    @staticmethod
     def _history_feedback(
         attempts: list[dict[str, Any]],
     ) -> SimpleRepairFeedback | None:
@@ -1644,8 +1879,10 @@ class SimpleCircuitPipeline:
     def _sound_candidate_score(
         candidate: CandidateRevision,
         review: SemanticReviewEvidence,
-    ) -> tuple[int, int, int, int]:
-        """Prefer accepted, lower-severity, better-evidenced, later revisions."""
+        *,
+        executed: bool,
+    ) -> tuple[int, int, int, int, int]:
+        """Prefer executed, accepted, lower-severity, better-evidenced revisions."""
 
         severity_score = {
             None: 3,
@@ -1661,6 +1898,7 @@ class SimpleCircuitPipeline:
             else 0
         )
         return (
+            int(executed),
             int(review.decision is SemanticReviewDecision.READY),
             severity_score,
             passed_checks,
@@ -1808,6 +2046,7 @@ class SimpleCircuitPipeline:
             "expected_range": plan.plan.success_criteria.expected_range,
             "review_decision": review.decision.value,
             "review_reason_code": review.reason_code,
+            "execution_status": "not_run" if execution.was_not_run else "executed",
         }
         if attempts:
             details["prior_attempts"] = list(attempts)

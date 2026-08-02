@@ -33,10 +33,15 @@ def test_valid_plan_parses():
     assert plan.verification_plan is not None
 
 
-def test_qubit_ceiling_is_27():
+def test_qubit_estimate_describes_the_artifact_not_the_local_execution_lane():
+    plan = Plan.model_validate({**VALID, "qubits_estimate": 480})
+
+    assert plan.qubits_estimate == 480
+
+
+def test_qubit_estimate_remains_positive():
     with pytest.raises(ValidationError):
-        Plan.model_validate({**VALID, "qubits_estimate": 28})
-    assert Plan.model_validate({**VALID, "qubits_estimate": 27}).qubits_estimate == 27
+        Plan.model_validate({**VALID, "qubits_estimate": 0})
 
 
 def test_unknown_framework_rejected():
