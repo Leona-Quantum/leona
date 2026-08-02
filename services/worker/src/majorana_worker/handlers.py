@@ -456,10 +456,17 @@ class _RunAllowanceExhausted(Exception):
     send a finished run into the conversation handler.
     """
 
-    def __init__(self, used: int, limit: int) -> None:
-        super().__init__(f"{used}/{limit} weekly execute runs used")
+    def __init__(self, used: int, limit: int, *, runs: int | None = None) -> None:
+        super().__init__(f"{used}/{limit} weekly agent tokens used")
         self.used = used
         self.limit = limit
+        self.runs = runs
+
+    @property
+    def allowance_phrase(self) -> str:
+        if self.runs is None:
+            return f"{self.limit:,} tokens a week"
+        return f"about {self.runs} verified runs a week ({self.limit:,} tokens)"
 
 
 async def _assert_execute_allowance(scope: Scope, session: AsyncSession) -> None:
@@ -485,14 +492,24 @@ async def _assert_execute_allowance(scope: Scope, session: AsyncSession) -> None
     if user is None:  # pragma: no cover - a run cannot outlive its owner
         return
     limits = limits_for(tier_of(user, EnvTierSources.from_env()))
-    if limits.agent_runs_per_week is None:
+    if limits.agent_tokens_per_week is None:
         return
     since = datetime.now(UTC) - _TIER_WINDOW
-    used = await runs_repo.count_execute_runs_since(scope, session, since)
-    # The run being resolved is still AUTO in the database, so it is not in this
-    # count — `used >= limit` is the correct comparison, not `>`.
-    if used >= limits.agent_runs_per_week:
-        raise _RunAllowanceExhausted(used, limits.agent_runs_per_week)
+    # Tokens, matching the API's admission gate since 2026-08-03. The two must
+    # meter the same thing: this backstop exists precisely for the runs that
+    # never passed the API's tier gate (AUTO ones), so a copy still counting
+    # runs would refuse a different set of people than the front door does.
+    #
+    # No in-flight reservation here, unlike the API's. This is a backstop on a
+    # run that has ALREADY been admitted and is executing; charging it for its
+    # own not-yet-recorded tokens would refuse the run for existing.
+    used = await usage_repo.account_tokens_since(scope, session, since)
+    # The run being resolved has not spent its own tokens yet, so it is not in
+    # this sum — `used >= limit` is the correct comparison, not `>`.
+    if used >= limits.agent_tokens_per_week:
+        raise _RunAllowanceExhausted(
+            used, limits.agent_tokens_per_week, runs=limits.agent_runs_per_week
+        )
 
 
 async def _finish_allowance_exhausted(
@@ -506,9 +523,15 @@ async def _finish_allowance_exhausted(
         {
             "stage": None,
             "code": "run_allowance_exhausted",
+            # Worded from the same two numbers as the API's admission refusal
+            # (routes/runs.tier_allowance_refusal), and for the same reason: the
+            # enforced figure is tokens now, and "your plan includes 150000
+            # verified runs per week" is not a sentence to put in front of a
+            # user. `runs` is carried on the exception so the two surfaces
+            # cannot describe the same allowance differently.
             "message": (
-                f"Your plan includes {exhausted.limit} verified runs per week and all "
-                f"{exhausted.limit} are used. Browser simulation in Studio stays available."
+                f"Your plan includes {exhausted.allowance_phrase}, and this week's "
+                "allowance is used. Browser simulation in Studio stays available."
             ),
         },
         event_id=uuid.uuid5(ctx.run_id, "run.error.run_allowance_exhausted"),

@@ -28,6 +28,19 @@ export type RunAllowance = Allowance & {
   nextSlotAt: string | null;
 };
 
+/**
+ * The ENFORCED weekly allowance, and the one the meter on this page fills.
+ *
+ * `runsEquivalent` and `tokensPerRun` come from the server rather than from
+ * this app's own tier table on purpose. The derivation belongs to whoever
+ * enforces it; a client multiplying by a constant of its own is how the screen
+ * and the refusal come to state different allowances.
+ */
+export type TokenAllowance = RunAllowance & {
+  runsEquivalent: number | null;
+  tokensPerRun: number;
+};
+
 /** Model tokens and the provider calls that spent them. Never money. */
 export type TokenSpend = {
   tokens: number;
@@ -74,7 +87,14 @@ export type HardwareSpend = {
 
 export type UsageSummary = {
   tier: string;
+  /** Execute runs started in the window. Reported; no longer the gate. */
   runs: RunAllowance;
+  /**
+   * The enforced weekly allowance. Null on absence rather than a parse failure,
+   * for the reason `spend` is — an API that predates it must not blank the
+   * whole panel.
+   */
+  tokens: TokenAllowance | null;
   artifacts: Allowance;
   workspaces: Allowance;
   /**
@@ -128,6 +148,37 @@ function parseAllowance(value: unknown): Allowance | null {
   if (used === null || !limit.ok || !remaining.ok) return null;
   if (typeof value.exhausted !== "boolean") return null;
   return { used, limit: limit.value, remaining: remaining.value, exhausted: value.exhausted };
+}
+
+/** The windowed half of an allowance block: `window_days` + `next_slot_at`. */
+function parseWindow(
+  value: Record<string, unknown>,
+): { ok: true; windowDays: number; nextSlotAt: string | null } | { ok: false } {
+  const windowDays = readCount(value, "window_days");
+  if (windowDays === null) return { ok: false };
+  const rawNext = value.next_slot_at;
+  if (rawNext !== null && typeof rawNext !== "string") return { ok: false };
+  // A string that isn't a date is worse than no date: it would render
+  // "Invalid Date" beside a real number and make both look broken.
+  if (typeof rawNext === "string" && Number.isNaN(Date.parse(rawNext))) return { ok: false };
+  return { ok: true, windowDays, nextSlotAt: rawNext ?? null };
+}
+
+function parseTokenAllowance(value: unknown): TokenAllowance | null {
+  const allowance = parseAllowance(value);
+  if (!allowance || !isRecord(value)) return null;
+  const window = parseWindow(value);
+  if (!window.ok) return null;
+  const runsEquivalent = readOptionalCount(value, "runs_equivalent");
+  const tokensPerRun = readCount(value, "tokens_per_run");
+  if (!runsEquivalent.ok || tokensPerRun === null) return null;
+  return {
+    ...allowance,
+    windowDays: window.windowDays,
+    nextSlotAt: window.nextSlotAt,
+    runsEquivalent: runsEquivalent.value,
+    tokensPerRun,
+  };
 }
 
 function parseTokenSpend(value: unknown): TokenSpend | null {
@@ -222,18 +273,15 @@ export function parseUsage(payload: unknown): UsageSummary | null {
   const workspaces = parseAllowance(payload.workspaces);
   if (!runs || !artifacts || !workspaces || typeof payload.tier !== "string") return null;
 
-  const runsRecord = payload.runs as Record<string, unknown>;
-  const windowDays = readCount(runsRecord, "window_days");
-  if (windowDays === null) return null;
-  const rawNext = runsRecord.next_slot_at;
-  if (rawNext !== null && typeof rawNext !== "string") return null;
-  // A string that isn't a date is worse than no date: it would render
-  // "Invalid Date" beside a real number and make both look broken.
-  if (typeof rawNext === "string" && Number.isNaN(Date.parse(rawNext))) return null;
+  const runsWindow = parseWindow(payload.runs as Record<string, unknown>);
+  if (!runsWindow.ok) return null;
 
   return {
     tier: payload.tier,
-    runs: { ...runs, windowDays, nextSlotAt: rawNext ?? null },
+    runs: { ...runs, windowDays: runsWindow.windowDays, nextSlotAt: runsWindow.nextSlotAt },
+    // Additive, like the blocks below it: an API that predates the token meter
+    // renders the panel that shipped before it rather than nothing at all.
+    tokens: parseTokenAllowance(payload.tokens),
     artifacts,
     workspaces,
     // `parseAllowance` already refuses a block whose `limit` key is missing, so

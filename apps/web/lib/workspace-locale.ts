@@ -1419,6 +1419,19 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageArtifacts: (count: number) => string;
   usageQubits: (count: number) => string;
   usageNowTitle: string;
+  // The weekly allowance meter. `meterTokens` names what the bar measures;
+  // `meterTokensRuns` is the sentence that makes a six-figure token number mean
+  // something to somebody who bought "5 runs a week". Both take their numbers
+  // from the server so the screen and the refusal cannot state different ones.
+  meterWeeklyTitle: string;
+  meterTokens: string;
+  meterTokensRuns: (runs: number) => string;
+  meterTokensUnmetered: string;
+  meterPercentUsed: (percent: number) => string;
+  meterAmount: (used: string, limit: string) => string;
+  meterResetsOn: (date: string) => string;
+  meterResetsWhen: (word: string) => string;
+  meterExhausted: string;
   usageWorkspaces: string;
   usageSpent: (used: number, limit: number) => string;
   usageSpentUnmetered: (used: number) => string;
@@ -1599,6 +1612,18 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageArtifacts: (count) => `${count} artifacts`,
     usageQubits: (count) => `Up to ${count} qubits`,
     usageNowTitle: "Right now",
+    meterWeeklyTitle: "Weekly limits",
+    meterTokens: "Agent tokens",
+    // "About", because it is: a run costs what it costs, and the number here is
+    // a measured average. Promising an exact count would be the lie the whole
+    // change exists to avoid.
+    meterTokensRuns: (runs) => `about ${runs} verified runs`,
+    meterTokensUnmetered: "No limit on your plan",
+    meterPercentUsed: (percent) => `${percent}% used`,
+    meterAmount: (used, limit) => `${used} of ${limit}`,
+    meterResetsOn: (date) => `Frees up ${date}`,
+    meterResetsWhen: (word) => `Frees up ${word}`,
+    meterExhausted: "This week's allowance is used",
     usageWorkspaces: "Workspaces owned",
     usageSpent: (used, limit) => `${used} of ${limit} used`,
     usageSpentUnmetered: (used) => `${used} used — no limit on your plan`,
@@ -1778,6 +1803,18 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageArtifacts: (count) => `${count}件`,
     usageQubits: (count) => `${count}量子ビットまで`,
     usageNowTitle: "現在の使用状況",
+    meterWeeklyTitle: "週あたりの上限",
+    meterTokens: "エージェントトークン",
+    // 「約」を外さないこと。1回の実行にかかるトークン数は内容で変わり、ここの
+    // 換算は実測の平均でしかない。正確な回数を約束する書き方にすると、この
+    // 変更が避けようとしている嘘そのものになる。
+    meterTokensRuns: (runs) => `検証付き実行 約${runs}回分`,
+    meterTokensUnmetered: "現在のプランでは上限なし",
+    meterPercentUsed: (percent) => `${percent}% 使用中`,
+    meterAmount: (used, limit) => `${used} / ${limit}`,
+    meterResetsOn: (date) => `${date}に回復`,
+    meterResetsWhen: (word) => `${word}回復`,
+    meterExhausted: "今週分の上限に達しました",
     usageWorkspaces: "所有ワークスペース",
     // 助数詞を持たない形にしてある。実行は「回」、アーティファクトは「件」、
     // ワークスペースは「つ」と数え方が違うので、三つの行で同じ関数を使う以上

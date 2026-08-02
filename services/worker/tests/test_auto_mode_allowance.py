@@ -13,8 +13,13 @@ import uuid
 
 import pytest
 from majorana_contracts.enums import Framework, RunMode, RunStatus
+from majorana_api.tiers import TIER_LIMITS
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
+
+FREE_TOKENS = TIER_LIMITS["free"].agent_tokens_per_week
+FREE_RUNS = TIER_LIMITS["free"].agent_runs_per_week
+assert FREE_TOKENS is not None and FREE_RUNS is not None
 
 
 class _RecordingSink:
@@ -103,12 +108,12 @@ def _worker_production_environment(monkeypatch):
 
 async def test_auto_cannot_be_used_to_spend_an_exhausted_allowance(monkeypatch):
     """The bypass this file exists to close."""
-    used = {"count": 5}
+    used = {"count": FREE_TOKENS}
 
-    async def count_execute_runs_since(_scope, _session, _since):
+    async def account_tokens_since(_scope, _session, _since):
         return used["count"]
 
-    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
 
     sink = _RecordingSink()
     with pytest.raises(handlers._RunAllowanceExhausted) as caught:
@@ -121,22 +126,24 @@ async def test_auto_cannot_be_used_to_spend_an_exhausted_allowance(monkeypatch):
             has_source_code=False,
         )
 
-    assert caught.value.used == 5
-    assert caught.value.limit == 5
+    assert caught.value.used == FREE_TOKENS
+    assert caught.value.limit == FREE_TOKENS
+    # The message a user reads is built from the run count, not this one.
+    assert f"about {FREE_RUNS} verified runs a week" in caught.value.allowance_phrase
 
 
 async def test_the_run_being_resolved_is_not_counted_against_itself(monkeypatch):
-    """Four used, limit five: this run is the fifth and must be allowed.
+    """One token under the limit: this run must still be allowed.
 
-    The row is still AUTO in the database at this point, so it is outside the
-    execute count — which is why `used >= limit` is the right comparison and
-    `used > limit` would silently grant everyone a sixth run.
+    The run has not spent its own tokens yet at this point, so it is outside
+    this sum — which is why `used >= limit` is the right comparison and
+    `used > limit` would silently grant everyone one more run.
     """
 
-    async def count_execute_runs_since(_scope, _session, _since):
-        return 4
+    async def account_tokens_since(_scope, _session, _since):
+        return FREE_TOKENS - 1
 
-    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
 
     recorded = {}
 
@@ -162,10 +169,10 @@ async def test_the_run_being_resolved_is_not_counted_against_itself(monkeypatch)
 async def test_the_operator_is_not_metered_without_any_configuration(monkeypatch):
     """A missing allowlist must not throttle an operator-owned synthetic identity."""
 
-    async def count_execute_runs_since(_scope, _session, _since):
+    async def account_tokens_since(_scope, _session, _since):
         return 10_000
 
-    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
     monkeypatch.setattr(handlers.runs_repo, "set_run_mode", _noop_set_mode)
 
     result = await handlers._resolve_mode(
@@ -180,10 +187,10 @@ async def test_the_operator_is_not_metered_without_any_configuration(monkeypatch
 
 
 async def test_a_developer_by_plan_column_is_not_metered(monkeypatch):
-    async def count_execute_runs_since(_scope, _session, _since):
+    async def account_tokens_since(_scope, _session, _since):
         return 10_000
 
-    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
     monkeypatch.setattr(handlers.runs_repo, "set_run_mode", _noop_set_mode)
 
     result = await handlers._resolve_mode(
@@ -204,7 +211,9 @@ async def test_the_refusal_lands_in_the_run_stream_as_a_reason_not_a_crash():
     ctx = _ctx(sink)
 
     status = await handlers._finish_allowance_exhausted(
-        ctx, store, handlers._RunAllowanceExhausted(5, 5)
+        ctx,
+        store,
+        handlers._RunAllowanceExhausted(FREE_TOKENS, FREE_TOKENS, runs=FREE_RUNS),
     )
 
     assert status is RunStatus.FAILED
@@ -217,7 +226,11 @@ async def test_the_refusal_lands_in_the_run_stream_as_a_reason_not_a_crash():
     # run_events.ck_type_enum, and the reason belongs in the payload anyway.
     assert event_type == "run.error"
     assert payload["code"] == "run_allowance_exhausted"
-    assert "5 verified runs per week" in payload["message"]
+    # Both numbers: the run count is the one the plan is sold as, and building
+    # the sentence from the enforced figure alone would read "your plan
+    # includes 150000 verified runs per week".
+    assert f"about {FREE_RUNS} verified runs a week" in payload["message"]
+    assert f"{FREE_TOKENS:,} tokens" in payload["message"]
     assert "abuse" not in payload["message"]
 
 
@@ -235,10 +248,10 @@ async def test_the_check_survives_the_worker_environment_it_runs_in(monkeypatch)
 
     assert "WORKOS_CLIENT_ID" not in os.environ
 
-    async def count_execute_runs_since(_scope, _session, _since):
+    async def account_tokens_since(_scope, _session, _since):
         return 0
 
-    monkeypatch.setattr(handlers.runs_repo, "count_execute_runs_since", count_execute_runs_since)
+    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
 
     # No exception is the assertion.
     await handlers._assert_execute_allowance(_Scope(), _Session(_User("someone@example.com")))

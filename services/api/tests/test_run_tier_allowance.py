@@ -23,10 +23,20 @@ from repo_test_helpers import LockOnlySession
 from majorana_api.orm import User, Workspace
 from majorana_api.routes import runs
 from majorana_api.settings import Settings
-from majorana_api.tiers import TIER_LIMITS, limits_for, resolve_tier
+from majorana_api.tiers import (
+    TIER_LIMITS,
+    TOKENS_PER_RUN_EQUIVALENT,
+    limits_for,
+    resolve_tier,
+)
 
-FREE_WEEKLY = TIER_LIMITS["free"].agent_runs_per_week
-assert FREE_WEEKLY is not None
+#: The ENFORCED figure since 2026-08-03. `agent_runs_per_week` is still what
+#: the plan is sold as, and this file used to meter on it — left there, every
+#: assertion below would have gone on passing about a number the gate no
+#: longer reads.
+FREE_TOKENS = TIER_LIMITS["free"].agent_tokens_per_week
+FREE_RUNS = TIER_LIMITS["free"].agent_runs_per_week
+assert FREE_TOKENS is not None and FREE_RUNS is not None
 
 
 def _settings(developer_emails: frozenset[str] = frozenset()) -> Settings:
@@ -59,17 +69,32 @@ def _no_backstop(monkeypatch):
     monkeypatch.setattr(runs.runs_repo, "count_runs_by_mode_since", none)
 
 
-def _executed(count: int, captured: dict | None = None):
-    async def count_execute_runs_since(_scope, _session, since):
+def _spent(monkeypatch, tokens: int, *, in_flight: int = 0, captured: dict | None = None):
+    """Stand in for both halves of the token reservation.
+
+    Two doubles rather than one because the gate compares a SUM: recorded spend
+    plus a charge for every admitted-but-unfinished run. A double for the sum
+    alone would let the in-flight reservation be deleted with this file still
+    green, and that reservation is the whole reason a burst of concurrent
+    submissions cannot spend the week twice.
+    """
+
+    async def account_tokens_since(_scope, _session, since):
         if captured is not None:
             captured["since"] = since
-        return count
+        return tokens
 
-    return count_execute_runs_since
+    async def count_in_flight_execute_runs(_scope, _session):
+        return in_flight
+
+    monkeypatch.setattr(runs.runs_repo.usage_repo, "account_tokens_since", account_tokens_since)
+    monkeypatch.setattr(
+        runs.runs_repo, "count_in_flight_execute_runs", count_in_flight_execute_runs
+    )
 
 
 async def test_a_free_account_is_refused_at_its_weekly_limit(scope, monkeypatch):
-    monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY))
+    _spent(monkeypatch, FREE_TOKENS)
 
     with pytest.raises(HTTPException) as caught:
         await runs._enforce_execute_backstop(
@@ -79,7 +104,7 @@ async def test_a_free_account_is_refused_at_its_weekly_limit(scope, monkeypatch)
     assert caught.value.status_code == 429
     detail = caught.value.detail
     assert detail["reason"] == "run_allowance_exhausted"
-    assert detail["limit"] == FREE_WEEKLY
+    assert detail["limit"] == FREE_TOKENS
     # This one IS the plan allowance. Telling a user who used their five runs
     # that they hit "an abuse backstop" would send them to support for something
     # support cannot fix.
@@ -88,7 +113,7 @@ async def test_a_free_account_is_refused_at_its_weekly_limit(scope, monkeypatch)
 
 
 async def test_one_run_below_the_limit_is_admitted(scope, monkeypatch):
-    monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY - 1))
+    _spent(monkeypatch, FREE_TOKENS - 1)
     await runs._enforce_execute_backstop(
         _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
     )
@@ -101,7 +126,7 @@ async def test_chat_traffic_is_never_metered_against_the_plan(scope, monkeypatch
     would raise, and a free user's fifth execute run would silently cost them
     the ability to ask a follow-up question.
     """
-    monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY * 100))
+    _spent(monkeypatch, FREE_TOKENS * 100)
     await runs._enforce_execute_backstop(
         _request(RunMode.AUTO),
         scope,
@@ -118,7 +143,7 @@ async def test_the_operator_is_never_throttled_by_a_missing_env_var(scope, monke
     Cloud Run service missing LEONA_DEVELOPER_EMAILS cannot cut the operator — or
     the deploy gate, which is not a customer either — down to five runs a week.
     """
-    monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY * 100))
+    _spent(monkeypatch, FREE_TOKENS * 100)
     for email in ("local-dev@majorana.test", "deploy-probe@leonaquantum.com"):
         await runs._enforce_execute_backstop(
             _request(), scope, LockOnlySession(), _identity(email), _settings()
@@ -126,7 +151,7 @@ async def test_the_operator_is_never_throttled_by_a_missing_env_var(scope, monke
 
 
 async def test_a_developer_by_allowlist_or_by_plan_column_is_unmetered(scope, monkeypatch):
-    monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY * 100))
+    _spent(monkeypatch, FREE_TOKENS * 100)
     await runs._enforce_execute_backstop(
         _request(),
         scope,
@@ -146,7 +171,7 @@ async def test_a_developer_by_allowlist_or_by_plan_column_is_unmetered(scope, mo
 
 async def test_the_window_matches_the_one_the_bff_measures(scope, monkeypatch):
     captured: dict = {}
-    monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(0, captured))
+    _spent(monkeypatch, 0, captured=captured)
 
     before = dt.datetime.now(dt.timezone.utc)
     await runs._enforce_execute_backstop(
@@ -164,7 +189,7 @@ async def test_the_window_matches_the_one_the_bff_measures(scope, monkeypatch):
 
 async def test_the_tier_gate_is_checked_before_the_flat_backstop(scope, monkeypatch):
     """Both exhausted: the user must be told about their plan, not the ceiling."""
-    monkeypatch.setattr(runs.runs_repo, "count_execute_runs_since", _executed(FREE_WEEKLY))
+    _spent(monkeypatch, FREE_TOKENS)
 
     async def at_ceiling(*_args, **_kwargs):
         return {RunMode.EXECUTE.value: runs.EXECUTE_BACKSTOP_LIMIT}
@@ -183,6 +208,7 @@ async def test_the_tier_gate_is_checked_before_the_flat_backstop(scope, monkeypa
 #: not enforce, and this service holds `owned_workspaces`, which the web does not.
 _MIRRORED_FIELDS = {
     "agentRunsPerWeek": "agent_runs_per_week",
+    "agentTokensPerWeek": "agent_tokens_per_week",
     "privateArtifacts": "private_artifacts",
     "projectSharing": "project_sharing",
     "sharedProjects": "shared_projects",
@@ -268,3 +294,68 @@ def test_an_unknown_account_is_free_rather_than_unlimited():
     assert resolve_tier("stranger@example.com", plan="free") == "free"
     # Case and padding must not be a way past the allowlist or into it.
     assert resolve_tier("  Local-Dev@Majorana.TEST ") == "developer"
+
+
+# --- the token meter itself -------------------------------------------------
+
+
+def test_the_token_allowance_is_derived_from_the_advertised_run_count():
+    """The two numbers in the tier table must not drift apart.
+
+    `agent_runs_per_week` is what /pricing states and what the refusal says;
+    `agent_tokens_per_week` is what refuses. Nothing enforces the first, so
+    without this it can be edited to any value and the product will go on
+    advertising it — the same shape as the four sessions a paying account was
+    metered as free because a plan string nothing recognised resolved that way.
+    """
+    for tier, limits in TIER_LIMITS.items():
+        if limits.agent_runs_per_week is None:
+            assert limits.agent_tokens_per_week is None, (
+                f"{tier} sells unlimited runs but meters tokens"
+            )
+            continue
+        assert limits.agent_tokens_per_week == (
+            limits.agent_runs_per_week * TOKENS_PER_RUN_EQUIVALENT
+        ), f"{tier}'s token allowance no longer matches the run count it is sold as"
+
+
+async def test_runs_already_in_flight_are_charged_before_they_have_spent_anything(
+    scope, monkeypatch
+):
+    """The burst the lock exists to stop, reopened by metering a lagging signal.
+
+    A token row lands only when a provider call returns, so an account one run
+    below its limit could submit many at once and every one of them would read
+    the same recorded spend. Charging admitted-but-unfinished runs at the
+    run-equivalent rate is what bounds that.
+    """
+    # Recorded spend leaves room for exactly one more run...
+    just_under = FREE_TOKENS - TOKENS_PER_RUN_EQUIVALENT
+    _spent(monkeypatch, just_under, in_flight=0)
+    await runs._enforce_execute_backstop(
+        _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
+    )
+
+    # ...and that one run, still running and still having spent nothing, is what
+    # makes the next submission a refusal instead of a second free pass.
+    _spent(monkeypatch, just_under, in_flight=1)
+    with pytest.raises(HTTPException) as caught:
+        await runs._enforce_execute_backstop(
+            _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
+        )
+    assert caught.value.detail["reason"] == "run_allowance_exhausted"
+
+
+async def test_the_refusal_names_runs_and_tokens_rather_than_150000_runs(scope, monkeypatch):
+    """The enforced figure is not a sentence a user can read on its own."""
+
+    _spent(monkeypatch, FREE_TOKENS)
+    with pytest.raises(HTTPException) as caught:
+        await runs._enforce_execute_backstop(
+            _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
+        )
+
+    error = caught.value.detail["error"]
+    assert f"about {FREE_RUNS} verified runs a week" in error
+    assert f"{FREE_TOKENS:,} tokens" in error
+    assert f"{FREE_TOKENS} verified runs" not in error
