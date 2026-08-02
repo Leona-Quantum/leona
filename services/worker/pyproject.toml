@@ -12,6 +12,11 @@ dependencies = [
     "majorana-openqasm",
     "majorana-qpu[ibm]",
     "majorana-verification",
+    # The worker decrypts the submitting user's provider credential itself
+    # (handlers._qpu_credential_for). It arrives through majorana-api today, but
+    # this service imports `cryptography` in its own right, and a dependency you
+    # import is a dependency you declare.
+    "cryptography>=43",
 ]
 
 [project.scripts]
