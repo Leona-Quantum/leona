@@ -11,7 +11,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 from uuid import UUID
 
 from majorana_contracts.enums import (
@@ -309,10 +309,20 @@ class SemanticReviewEvidence(_Record):
         `structural` before the reviewer is ever called. It is a guard against a
         caller reaching the pipeline with a hand-built review, not against the
         pipeline itself.
+
+        The element test is not decoration. `feedback` is a free-form dict, and the
+        projection this gate exists to guarantee — `recorded_basic_checks` in the
+        worker's `simple_ports` — keeps only entries that are actually mappings. A
+        bare `bool(checks)` here would admit `basic_checks: ["ok"]`, which is a
+        non-empty list this predicate calls a record and the projection then empties.
+        The gate must be false in exactly the cases where the projection is empty, or
+        it is not guaranteeing the thing it is named for.
         """
 
         checks = self.feedback.get("basic_checks")
-        return isinstance(checks, list) and bool(checks)
+        if not isinstance(checks, list):
+            return False
+        return any(isinstance(check, Mapping) for check in checks)
 
     def assert_binding(self, candidate: "CandidateRevision", execution: ExecutionEvidence) -> None:
         if self.candidate_id != candidate.candidate_id:

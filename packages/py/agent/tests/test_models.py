@@ -104,6 +104,21 @@ def test_a_review_without_recorded_checks_has_incomplete_evidence():
     assert not _review(feedback={"basic_checks": []}).evidence_is_complete()
 
 
+def test_the_record_gate_is_false_wherever_the_projection_would_be_empty():
+    """`has_recorded_checks` is the durable stores' promise that something is there
+    to label. The worker's projection keeps only mapping-shaped entries, so a gate
+    admitting a non-empty list of non-mappings would guarantee a record the
+    projection then empties — two readers of one predicate, disagreeing."""
+
+    assert not _review(feedback={}).has_recorded_checks()
+    assert not _review(feedback={"basic_checks": []}).has_recorded_checks()
+    assert not _review(feedback={"basic_checks": "structural"}).has_recorded_checks()
+    assert not _review(feedback={"basic_checks": ["structural", 7]}).has_recorded_checks()
+    assert _review(
+        feedback={"basic_checks": [{"method": "structural", "result": "fail"}]}
+    ).has_recorded_checks()
+
+
 def test_an_accepted_review_is_still_graded_on_its_trusted_evidence():
     review = _review(
         decision=SemanticReviewDecision.READY,
