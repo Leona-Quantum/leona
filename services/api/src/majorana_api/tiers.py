@@ -176,23 +176,32 @@ class TierLimits:
 #: If these ever disagree, the smaller one wins in practice and the user sees the
 #: server's refusal — which is the correct direction for a divergence.
 #:
-#: `team` is the plan the pricing page has advertised since before it existed
-#: ("Team workspaces and roles"). Two of its numbers are the owner's —
-#: 150 artifacts and 4 shared-project memberships — and the other two were
-#: chosen. All four are in OWNER_TODO so they stay a decision rather than a
-#: default nobody revisits.
+#: **Every number below is the owner's, given as a table on 2026-08-02.** Nothing
+#: here was chosen or interpolated, which is a change from how this table read
+#: before: `pro`'s allowances used to be described as sitting "strictly between
+#: the two neighbours it is sold between", and that derivation is no longer what
+#: produced them. Free 5/10/3, Plus 75/75/5, Professional 250/250/20 —
+#: runs per week, private artifacts, owned workspaces.
 #:
-#: `pro` is the plan the pricing page has advertised while resolving to `free`:
-#: an account with `plan = 'pro'` — the seed data contains one — got the free
-#: allowances, because `PLAN_TIERS` did not name the string. The owner scoped it
-#: on 2026-08-02: "pro should become a tier. probably just expanded usage limits
-#: and artifacts compared to free, but less than team." So its numbers sit
-#: strictly between the two neighbours it is sold between (20 runs against 5 and
-#: 50; 75 artifacts against 25 and 150; 5 workspaces against 3 and 10), and it
-#: gets NO capability Team has. `project_sharing` stays False because sharing is
-#: what Team is; `shared_projects` is `0` rather than `None` for the reason the
-#: field documents — a tier whose `project_sharing` is later flipped true must
-#: not silently acquire an unbounded allowance.
+#: Two of them went DOWN: free's artifacts (25 -> 10). An account already over a
+#: lowered cap keeps everything it has; the cap refuses the next file rather than
+#: deleting anything, which is the same behaviour a shared project expiring back
+#: into the private count already produces.
+#:
+#: `shared_projects` is not in the owner's table and keeps its value. It is the
+#: one allowance here the owner set separately and did not revisit.
+#:
+#: Plus still gets NO capability Professional has: `project_sharing` stays False
+#: because sharing is what Professional is, and `shared_projects` is `0` rather
+#: than `None` for the reason the field documents — a tier whose
+#: `project_sharing` is later flipped true must not silently acquire an
+#: unbounded allowance.
+#:
+#: **These become token-usage limits, not run counts.** The owner's direction on
+#: the same day: "We will later make the plus/professional/enterprise tiers be
+#: limited by token usage rather than runs/week." `agent_runs_per_week` is what
+#: enforces today; when that lands it is a different field with a different
+#: window, not this one with a bigger number.
 #:
 #: `qpu_spend_usd_per_week` is `None` on all four, and that is not a tier
 #: decision at all — see the field, which carries the ruling, the companion
@@ -200,14 +209,14 @@ class TierLimits:
 TIER_LIMITS: dict[AccountTier, TierLimits] = {
     "free": TierLimits(
         agent_runs_per_week=5,
-        private_artifacts=25,
+        private_artifacts=10,
         owned_workspaces=3,
         project_sharing=False,
         shared_projects=0,
         qpu_spend_usd_per_week=None,
     ),
     "pro": TierLimits(
-        agent_runs_per_week=20,
+        agent_runs_per_week=75,
         private_artifacts=75,
         owned_workspaces=5,
         project_sharing=False,
@@ -215,9 +224,9 @@ TIER_LIMITS: dict[AccountTier, TierLimits] = {
         qpu_spend_usd_per_week=None,
     ),
     "team": TierLimits(
-        agent_runs_per_week=50,
-        private_artifacts=150,
-        owned_workspaces=10,
+        agent_runs_per_week=250,
+        private_artifacts=250,
+        owned_workspaces=20,
         project_sharing=True,
         shared_projects=4,
         qpu_spend_usd_per_week=None,
@@ -252,6 +261,21 @@ DEVELOPER_PLAN = "developer"
 TEAM_PLAN = "team"
 PRO_PLAN = "pro"
 
+#: The plan strings the PRODUCT NAMES spell. The tier ids stayed `pro`/`team`
+#: when the cards were renamed Plus/Professional — deliberately, because the
+#: owner had been told for five sessions to set `LEONA_TEAM_EMAILS` and renaming
+#: would have invalidated that instruction silently. The owner then wrote the
+#: tier ids as `plus` and `professional` when restating the ladder on
+#: 2026-08-02, which is the natural thing to write and, until now, the thing
+#: that granted nothing.
+#:
+#: So both spellings resolve, rather than one of them being right. `update users
+#: set plan = 'professional'` and `= 'team'` do the same thing. Nothing has to
+#: be migrated, no stored value stops working, and the SQL somebody types from
+#: the pricing page does what it looks like it does.
+PLUS_PLAN = "plus"
+PROFESSIONAL_PLAN = "professional"
+
 #: `users.plan` values that name a tier, lowest first. A plan string that names
 #: none of them resolves to `free`, which is the safe direction: an unrecognised
 #: value must not grant anything.
@@ -259,10 +283,18 @@ PRO_PLAN = "pro"
 #: `pro` was exactly that unrecognised value until 2026-08-02, and the safe
 #: direction was the wrong answer for it: the pricing page sold the plan, the
 #: seed data carries an account on it, and every one of them was metered as
-#: free with nothing anywhere reporting a mismatch.
+#: free with nothing anywhere reporting a mismatch. `plus` and `professional`
+#: were the same trap one rename later — the strings a person reads off the
+#: pricing page — and are here for that reason, not for symmetry.
+#:
+#: **Billing writes this column.** Whatever Stripe is configured to send as the
+#: plan has to be a key here or the customer pays and is metered as free. Two
+#: spellings per tier is the cheap direction for that.
 PLAN_TIERS: dict[str, AccountTier] = {
     PRO_PLAN: "pro",
+    PLUS_PLAN: "pro",
     TEAM_PLAN: "team",
+    PROFESSIONAL_PLAN: "team",
     DEVELOPER_PLAN: "developer",
 }
 

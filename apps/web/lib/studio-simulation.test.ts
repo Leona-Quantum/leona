@@ -148,19 +148,30 @@ const ghzSource = (n: number) => [
   "qc.measure_all()",
 ].join("\n");
 
-test("a circuit beyond the former editor limit still simulates", () => {
+test("a circuit at the tier ceiling still simulates", () => {
   // Regression for a defect this lane hid: cpuSimulationEligibility reuses the
   // editor parser, whose former six-wire limit silently became the *simulation*
   // limit. Raising the simulation ceiling alone changed nothing, because a
   // 10-qubit circuit never got past the parser.
+  //
+  // Sized off the tier rather than hardcoded, because hardcoding is what broke
+  // it: the fixture asked for 10 qubits against free's ceiling of 16, and when
+  // free dropped to 8 the test failed for a reason that had nothing to do with
+  // the parser. What has to hold is that NOTHING caps below the tier — so ask
+  // for exactly the tier's ceiling, whatever it is.
+  const width = TIER_LIMITS.free.cpuSimQubits;
+  assert.ok(width > 6, "must stay above the former six-wire editor limit to test anything");
   const record = runCpuSimulation(
-    { artifactId: "artifact", code: ghzSource(10), framework: "qiskit", shots: 512, seed: 5 },
+    { artifactId: "artifact", code: ghzSource(width), framework: "qiskit", shots: 512, seed: 5 },
     TIER_LIMITS.free,
   );
-  assert.equal(record.qubitCount, 10);
+  assert.equal(record.qubitCount, width);
   // A GHZ state has exactly two outcomes. Anything else means the wider path
   // reconstructed a different circuit rather than the same one.
-  assert.deepEqual(Object.keys(record.counts).sort(), ["0".repeat(10), "1".repeat(10)]);
+  assert.deepEqual(
+    Object.keys(record.counts).sort(),
+    ["0".repeat(width), "1".repeat(width)],
+  );
 });
 
 test("an over-width circuit is refused as a plan limit, not as unreadable source", () => {

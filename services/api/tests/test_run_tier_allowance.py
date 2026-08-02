@@ -11,6 +11,8 @@ stays unmetered, and that no missing configuration can throttle the operator.
 """
 
 import datetime as dt
+import re
+from pathlib import Path
 
 import pytest
 from fastapi import HTTPException
@@ -176,14 +178,84 @@ async def test_the_tier_gate_is_checked_before_the_flat_backstop(scope, monkeypa
     assert caught.value.detail["reason"] == "run_allowance_exhausted"
 
 
-def test_the_server_side_numbers_match_the_published_plan():
-    """These are the numbers OWNER_TODO §8 tells the owner are the policy.
+#: `apps/web/lib/account-tier.ts` -> `majorana_api.tiers`. Only the fields both
+#: tables carry; the web table also holds browser-lane ceilings this service does
+#: not enforce, and this service holds `owned_workspaces`, which the web does not.
+_MIRRORED_FIELDS = {
+    "agentRunsPerWeek": "agent_runs_per_week",
+    "privateArtifacts": "private_artifacts",
+    "projectSharing": "project_sharing",
+    "sharedProjects": "shared_projects",
+}
 
-    A silent divergence here would meter people differently from what they were
-    told, which is worse than either number being wrong on its own.
+
+def _web_tier_limits() -> dict[str, dict[str, object]]:
+    """The web app's tier table, read out of its source.
+
+    Parsed rather than duplicated. `tiers.py` says "Mirrors
+    apps/web/lib/account-tier.ts" in three places and nothing has ever checked
+    it, so the mirror held only for as long as somebody remembered both files —
+    and the numbers are what a bill and a refusal depend on.
     """
-    assert limits_for("free").agent_runs_per_week == 5
-    assert limits_for("free").private_artifacts == 25
+    source = (
+        Path(__file__).resolve().parents[3] / "apps" / "web" / "lib" / "account-tier.ts"
+    ).read_text()
+    table = re.search(
+        r"export const TIER_LIMITS: Record<AccountTier, TierLimits> = \{(.*?)\n\};",
+        source,
+        re.DOTALL,
+    )
+    assert table is not None, "the web tier table moved — this comparison is now vacuous"
+
+    def value(raw: str) -> object:
+        if raw == "null":
+            return None
+        if raw in ("true", "false"):
+            return raw == "true"
+        return int(raw.replace("_", ""))
+
+    limits: dict[str, dict[str, object]] = {}
+    for tier, body in re.findall(r"\n  (\w+): \{(.*?)\n  \},", table.group(1), re.DOTALL):
+        limits[tier] = {
+            snake: value(found.group(1))
+            for camel, snake in _MIRRORED_FIELDS.items()
+            if (found := re.search(rf"\b{camel}: ([\w.]+),", body))
+        }
+    assert limits, "no tiers parsed out of the web table"
+    return limits
+
+
+def test_the_server_side_numbers_match_the_published_plan():
+    """The two tier tables must agree, and this reads one to check the other.
+
+    A silent divergence meters people differently from what they were told,
+    which is worse than either number being wrong on its own. The previous
+    version of this test asserted the numbers by hand, which made it a THIRD
+    copy: it failed when the server table moved and the hardcoded pair did not,
+    rather than when the two tables disagreed with each other.
+
+    `preview` is web-only — a signed-out walkthrough that presents no token and
+    never reaches this service — so it has no server row to compare.
+    """
+    web = _web_tier_limits()
+    assert set(web) == {"preview", "free", "pro", "team", "developer"}, (
+        "a tier was added or removed on the web side"
+    )
+    for tier, expected in web.items():
+        if tier == "preview":
+            continue
+        server = limits_for(tier)
+        assert set(expected) == set(_MIRRORED_FIELDS.values()), (
+            f"{tier}: a mirrored field is missing from the web table"
+        )
+        for field, number in expected.items():
+            assert getattr(server, field) == number, (
+                f"{tier}.{field}: web says {number}, this service enforces {getattr(server, field)}"
+            )
+
+
+def test_the_unlimited_tier_stays_unlimited():
+    """Separate from the mirror: `None` is the one value that must not be a number."""
     assert limits_for("developer").agent_runs_per_week is None
     assert limits_for("developer").private_artifacts is None
 
