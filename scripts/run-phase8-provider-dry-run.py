@@ -15,7 +15,7 @@ import json
 import os
 from pathlib import Path
 
-from majorana_api.github_client import GitHubClientError, GitHubRestClient
+from majorana_api.github_client import GitHubClientError, GitHubNetworkMode, GitHubRestClient
 from majorana_api.github_coordinates import parse_public_github_repository
 from majorana_api.github_snapshot import GitHubSnapshotError, build_github_metadata_snapshot
 from majorana_api.vqe_metadata_assertions import EXTRACTOR_VERSION
@@ -65,7 +65,10 @@ async def _run(keys: list[str] | None) -> dict[str, object]:
     token = os.environ.get("GITHUB_TOKEN") or None
     reports = []
     failures = []
-    async with GitHubRestClient(token=token) as client:
+    async with GitHubRestClient(
+        token=token,
+        network_mode=GitHubNetworkMode.LIVE_OFFICIAL_PROVIDER_METADATA,
+    ) as client:
         for source in _selected_sources(keys):
             coordinate = parse_public_github_repository(source.canonical_locator)
             try:

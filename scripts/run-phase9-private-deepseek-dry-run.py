@@ -17,7 +17,7 @@ import os
 from pathlib import Path
 from typing import Any, Protocol
 
-from majorana_api.github_client import GitHubClientError, GitHubRestClient
+from majorana_api.github_client import GitHubClientError, GitHubNetworkMode, GitHubRestClient
 from majorana_api.github_coordinates import parse_public_github_repository
 from majorana_api.github_snapshot import (
     GitHubRepositorySnapshot,
@@ -330,7 +330,10 @@ async def execute(
     )
     token = os.environ.get("GITHUB_TOKEN") or None
     try:
-        async with GitHubRestClient(token=token) as github:
+        async with GitHubRestClient(
+            token=token,
+            network_mode=GitHubNetworkMode.LIVE_OFFICIAL_PROVIDER_METADATA,
+        ) as github:
             snapshot = await snapshot_builder(github, coordinate)
     except (GitHubClientError, GitHubSnapshotError) as exc:
         code = getattr(exc, "failure_code", "snapshot_retrieval_failed")

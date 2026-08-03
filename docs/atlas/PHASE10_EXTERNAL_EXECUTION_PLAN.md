@@ -417,6 +417,12 @@ at `evidence/phase10/threat_control_matrix_v1.json`. It identifies 26
 release-blocking threats, but is **designed, not accepted**: responsible people
 have not been named and Phase 10-specific live controls are not qualified.
 
+The S2 constructor-boundary preflight is recorded in
+`PHASE10_S2_ACQUISITION_PREFLIGHT.md`. It makes recorded-response mode the
+default and requires the existing official-provider metadata scripts to state
+their narrow live-network mode explicitly. This does not enable Phase 10 live
+acquisition or satisfy the DNS/quarantine/fetcher-identity gates.
+
 Request the S0 owner security decision and review the S1 baseline. Until those
 are recorded, only recorded-response acquisition design, inert hostile-fixture
 specification, schema, and documentation work may continue. Fetching or

@@ -5,8 +5,11 @@ The only authority is the hardcoded GitHub API origin plus validated
 base-URL configuration from the process environment, never follows redirects,
 and never accepts a caller-supplied URL.
 
-Live-network enablement remains a separate security gate.  The initial purpose
-of this module is deterministic qualification with ``httpx.MockTransport``.
+Live-network use is fail-closed by default.  The only explicit live mode is the
+bounded, owner-approved Phase 8/9 official-provider metadata dry-run lane.  It
+does not qualify or enable Phase 10 external-source acquisition.  The default
+purpose of this module remains deterministic qualification with
+``httpx.MockTransport``.
 """
 
 from __future__ import annotations
@@ -14,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 from dataclasses import dataclass
+from enum import StrEnum
 from typing import Any
 
 import httpx
@@ -42,6 +46,18 @@ class GitHubClientError(RuntimeError):
         self.status_code = status_code
 
 
+class GitHubNetworkMode(StrEnum):
+    """Explicitly distinguish inert qualification from approved operator fetches.
+
+    ``LIVE_OFFICIAL_PROVIDER_METADATA`` is the narrow Phase 8/9 operator lane.
+    It is not Phase 10 external-source qualification and must not be used by an
+    API request handler or untrusted-source execution path.
+    """
+
+    RECORDED_ONLY = "recorded_only"
+    LIVE_OFFICIAL_PROVIDER_METADATA = "live_official_provider_metadata"
+
+
 @dataclass(frozen=True)
 class GitHubRateLimit:
     remaining: int | None
@@ -64,7 +80,17 @@ class GitHubRestClient:
         *,
         token: str | None = None,
         transport: httpx.AsyncBaseTransport | None = None,
+        network_mode: GitHubNetworkMode = GitHubNetworkMode.RECORDED_ONLY,
     ):
+        if (
+            transport is None
+            and network_mode is not GitHubNetworkMode.LIVE_OFFICIAL_PROVIDER_METADATA
+        ):
+            raise GitHubClientError("live_network_not_authorized", retryable=False)
+        if transport is not None and network_mode is not GitHubNetworkMode.RECORDED_ONLY:
+            raise GitHubClientError("invalid_network_mode", retryable=False)
+        if token and network_mode is not GitHubNetworkMode.LIVE_OFFICIAL_PROVIDER_METADATA:
+            raise GitHubClientError("credential_not_allowed_in_recorded_mode", retryable=False)
         headers = {
             "Accept": "application/vnd.github+json",
             "Accept-Encoding": "identity",

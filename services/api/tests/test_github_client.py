@@ -8,6 +8,7 @@ from majorana_api.github_client import (
     GITHUB_API_ORIGIN,
     MAX_GITHUB_JSON_BYTES,
     GitHubClientError,
+    GitHubNetworkMode,
     GitHubRestClient,
 )
 from majorana_api.github_coordinates import (
@@ -21,6 +22,25 @@ def _coordinate():
         "https://github.com/mafaldaramoa/ceo-adapt-vqe",
         requested_ref="paper/revision 1",
     )
+
+
+def test_live_network_is_fail_closed_unless_operator_mode_is_explicit() -> None:
+    with pytest.raises(GitHubClientError) as exc:
+        GitHubRestClient()
+    assert exc.value.failure_code == "live_network_not_authorized"
+
+    with pytest.raises(GitHubClientError) as exc:
+        GitHubRestClient(token="must-not-enter-recorded-tests", transport=httpx.MockTransport(None))
+    assert exc.value.failure_code == "credential_not_allowed_in_recorded_mode"
+
+
+def test_live_operator_mode_cannot_be_combined_with_test_transport() -> None:
+    with pytest.raises(GitHubClientError) as exc:
+        GitHubRestClient(
+            transport=httpx.MockTransport(None),
+            network_mode=GitHubNetworkMode.LIVE_OFFICIAL_PROVIDER_METADATA,
+        )
+    assert exc.value.failure_code == "invalid_network_mode"
 
 
 @pytest.mark.asyncio
