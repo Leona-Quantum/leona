@@ -1,4 +1,4 @@
-> **ARCHIVED 2026-08-04.** the step 0 working record of the completed 2026-07 catalog migration; the conflicts it maps were resolved into ADR-0016 through ADR-0019.
+> **ARCHIVED 2026-08-04.** the step 0 working record of the completed 2026-07 catalog migration; the decisions it maps were recorded in ADR-0016 through ADR-0019, each of which keeps its own status (see `docs/adr/README.md`).
 > Retained for history; do not treat as current.
 
 # Quantum Repository Step 0 - conflict and decision map

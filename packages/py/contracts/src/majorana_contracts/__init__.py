@@ -157,7 +157,8 @@ from .lifecycle import (
 # 1.4.0: VerificationMethod gains "statistical_native" (physical) — reported
 # counts vs a trusted framework-native re-execution of the circuit object; the
 # mid-circuit-capable check (plans/archive/framework-native-verification.md, archived
-# as shipped; the implementation is packages/py/verification/.../native.py).
+# as shipped; the implementation is
+# packages/py/verification/src/majorana_verification/native.py).
 # 1.5.0: Artifact (list resource) gains optional verifier_decision /
 # evidence_strength from the current version's verification_summary, so the
 # Vault list stops fabricating "verified" for unopened artifacts.

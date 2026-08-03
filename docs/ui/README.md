@@ -31,9 +31,11 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 
 ## Current state (2026-07-14, corrected 2026-08-04)
 
-> **Correction, 2026-08-04.** The paragraph below ends with *"The current catalog records
-> are static reference data; save/publish actions and API-backed Atlas search remain
-> follow-up work."* **That is no longer true and it is load-bearing.**
+> **Correction, 2026-08-04.** The public-surface paragraph below used to end with *"The
+> current catalog records are static reference data; save/publish actions and API-backed
+> Atlas search remain follow-up work."* **That was no longer true and it was
+> load-bearing**, so the paragraph itself has been rewritten — this banner explains why,
+> it does not stand in for the fix.
 >
 > `MAJORANA_PUBLIC_CATALOG_API` is **on in production**, so `/repository` is served from
 > the API's published system catalog (`GET /v1/catalog/entries`), not from the committed
@@ -43,12 +45,13 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 > re-imported. See `docs/runbooks/deploys.md § The public catalog flag` and
 > `docs/runbooks/system-catalog.md`.
 >
-> Two further corrections to the same paragraph: publication is a CLI action
+> Two further corrections folded into the same paragraph: publication is a CLI action
 > (`catalog_admin publish-bootstrap`), deliberately not an HTTP route, so "publish
 > actions" are not follow-up UI work; and the `dev` → Production promotion listed as
 > remaining is done — `deploy.yml` auto-deploys api and worker on every merge to `dev`.
 >
-> The rest of the paragraph still reads true. It is left unedited below.
+> The authenticated-workspace paragraph that follows was accurate on 2026-07-14 and is
+> unchanged.
 
 The usable authenticated workspace slice is now wired: `/run` has a bottom composer, example
 prompts, mode selection, and a persistent collapsible sidebar with recent API-backed runs;
@@ -67,13 +70,17 @@ for a just-completed run while remote data settles.
 The public surface now includes a shared company shell/footer, a formal landing page, early-access
 pricing, contact, privacy, and terms routes, plus a searchable public Atlas catalog that
 exposes classification, verification, export status, and provenance without mixing in private
-workspace data. Public routes are explicitly allowed through the fail-closed middleware. The current
-catalog records are static reference data; save/publish actions and API-backed Atlas search
-remain follow-up work. Remaining work is the hosted verified-artifact acceptance run, fuller remote
-chat/history persistence, account meters and workspace selection, visual-diff automation, and the
-owner-controlled `dev` → Production promotion. Studio edits and framework variants now have a
-control-plane write/read path; hosted acceptance still needs to exercise it against the deployed
-migration.
+workspace data. Public routes are explicitly allowed through the fail-closed middleware. The catalog
+records are served from the API's published system catalog (`GET /v1/catalog/entries`) while
+`MAJORANA_PUBLIC_CATALOG_API` is on, as it is in production; the committed TypeScript corpus is the
+editing surface and the whole-corpus fallback, not the serving surface. What is *not* API-backed is
+the query itself: `repository-browser.tsx` fetches the list server-side and filters it in the
+browser, because there is no faceted catalog query endpoint (`docs/adr/README.md § Decisions with no
+ADR`). Publication is an owner-run CLI action (`catalog_admin publish-bootstrap`), deliberately not
+an HTTP route. Remaining work is the hosted verified-artifact acceptance run, fuller remote
+chat/history persistence, account meters and workspace selection, and visual-diff automation. Studio
+edits and framework variants now have a control-plane write/read path; hosted acceptance still needs
+to exercise it against the deployed migration.
 
 ## Quality bar (CI-checkable subset in 07 §5)
 

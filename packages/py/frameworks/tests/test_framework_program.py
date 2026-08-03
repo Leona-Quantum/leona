@@ -659,12 +659,12 @@ def test_qiskit_get_statevector_without_save_is_caught_before_execution():
 # --- Framework-native verification evidence ----------------------------------------
 #
 # plans/archive/framework-native-verification.md (archived as shipped; the implementation
-# is packages/py/verification/.../native.py): the observer computes the statevector and
-# a trusted sampled-counts re-execution with the framework's OWN simulator, so no
-# OpenQASM conversion sits in the trust path. Every statevector fixture here breaks
-# the qubit-permutation symmetry (the standing rule from PR 100): X on the lowest
-# qubit plus H on the highest, so a wire-relabelling or endianness defect changes
-# the state and cannot hide.
+# is packages/py/verification/src/majorana_verification/native.py): the observer computes
+# the statevector and a trusted sampled-counts re-execution with the framework's OWN
+# simulator, so no OpenQASM conversion sits in the trust path. Every statevector
+# fixture here breaks the qubit-permutation symmetry (the standing rule from PR 100):
+# X on the lowest qubit plus H on the highest, so a wire-relabelling or endianness
+# defect changes the state and cannot hide.
 
 
 def _run_epilogue(framework: Framework, code: str) -> dict:

@@ -3,7 +3,9 @@
 Seed list: ADR-0001..0012 correspond to AD-1..AD-12 in
 `~/Documents/Projects/Majorana/plans/archive/rebuild/02-architecture.md` — written out
 in Phase 0 step 5. New decisions: copy `0000-template.md`, number sequentially.
-An architecture choice without an ADR did not happen.
+An architecture choice without an ADR is undocumented and non-compliant — it still
+shipped, it just answers "why" from nowhere. The list under **Decisions with no ADR**
+below is the current backlog of exactly that.
 
 **A superseded ADR stays where it is.** It keeps its number and its text and gains a
 `superseded-by-NNNN` status line; it is never moved, rewritten or archived. The point
