@@ -423,6 +423,11 @@ default and requires the existing official-provider metadata scripts to state
 their narrow live-network mode explicitly. This does not enable Phase 10 live
 acquisition or satisfy the DNS/quarantine/fetcher-identity gates.
 
+The same preflight now includes a pure selected-file retrieval-manifest
+contract with canonical SHA-256 evidence, immutable-ref enforcement, strict
+text/path/size bounds, and adversarial round-trip tests. The contract performs
+no I/O and does not satisfy the S2 network or deployment exit gates by itself.
+
 Request the S0 owner security decision and review the S1 baseline. Until those
 are recorded, only recorded-response acquisition design, inert hostile-fixture
 specification, schema, and documentation work may continue. Fetching or

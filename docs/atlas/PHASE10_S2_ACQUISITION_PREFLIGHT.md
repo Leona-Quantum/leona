@@ -72,11 +72,29 @@ external fetch.
 
 ## 5. S2 exit status
 
-S2 is **not complete**. The next permitted work is a design and
-recorded-response implementation of destination classification and a fetch
-manifest contract. Live deployment remains blocked until:
+S2 is **not complete**. The next permitted network work is a design and
+recorded-response implementation of destination classification. The selected-
+file retrieval-manifest contract is now implemented as the pure, offline
+`phase10_retrieval_manifest` module. It:
+
+- accepts only an immutable 40- or 64-hex commit identity;
+- canonicalizes and bounds selected UTF-8 text files;
+- records path, media type, length, SHA-256, fetcher/policy versions, and a UTC
+  retrieval timestamp;
+- rejects traversal, duplicate/noncanonical paths, binary/unsupported media,
+  mutable refs, unsupported versions, and over-limit input;
+- supports round-trip manifest verification and later byte-level length/digest
+  verification;
+- contains no network, database, filesystem, parser, import, publish, or
+  execution operation.
+
+This contract is evidence plumbing only. It is not a connector, and it does
+not make the current metadata client a Phase 10 fetcher. Live deployment
+remains blocked until:
 
 1. S0/S1 are accepted;
 2. a separate fetcher workload identity and route are selected;
 3. DNS validation/connection pinning passes hostile tests;
-4. quarantine and credential-separation decisions are approved.
+4. quarantine and credential-separation decisions are approved;
+5. the retrieval manifest is wired to an approved connector and the private
+   quarantine round trip is independently verified.
