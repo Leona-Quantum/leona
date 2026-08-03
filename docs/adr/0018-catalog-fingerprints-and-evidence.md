@@ -1,6 +1,32 @@
 # ADR-0018: Catalog identity separates byte, normalized, and semantic fingerprints
 
-**Date:** 2026-07-18 · **Status:** proposed (owner/CODEOWNER decision required)
+**Date:** 2026-07-18 · **Status:** proposed — two of three hashes built, evidence never built
+
+> **Annotated 2026-08-04. Partially built; the parts that were not are the load-bearing
+> ones.**
+>
+> - **Built:** `source_blob_sha256` and `normalized_source_hash`, as
+>   `catalog_hashing.hash_source_blob` and `hash_normalized_source`, with columns from
+>   migration `0014_catalog_classification`.
+> - **Not built — `semantic_fingerprint`.** The columns exist
+>   (`artifact_versions.semantic_fingerprint` and `.semantic_fingerprint_algorithm`, plus
+>   the ORM attributes and a `None`-defaulted keyword in `repos/catalog.py`), and
+>   **nothing computes or writes them**. The only other reference in the tree is a
+>   migration test asserting the columns are present. A reader who greps for the field
+>   finds schema and concludes the feature exists; it does not.
+> - **Not built — the evidence tables.** `artifact_verifications` and
+>   `conversion_attempts` appear in no migration and no ORM model. The immutable,
+>   version-bound evidence rows this ADR requires, and the rule that public support
+>   labels are *derived from matching stored evidence rather than mutable boolean
+>   fields*, therefore have nothing to derive from. What the public site renders instead
+>   is the legacy prose `verification` / `exportStatus` strings carried inside the
+>   catalog record blob — which is the outcome this ADR and ADR-0019 were written to
+>   prevent.
+>
+> Nothing below is edited. The three-way hash separation and the "prose cannot create a
+> passing run" rule remain the standing design; carry them into the block-evidence model
+> rather than re-deriving them (`plans/leona-block-repository-roadmap.md`).
+
 **Context:** The current artifact fingerprint identifies selected-framework source
 inside one artifact, but the public catalog must reject exact duplicates globally,
 preserve multiple provenance claims, compare quantum semantics without unsafe

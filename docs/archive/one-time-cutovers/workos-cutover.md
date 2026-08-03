@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** the staging-to-production WorkOS cutover completed 2026-07-29. The durable facts — which revision trusts which issuer — live in `docs/runbooks/deploys.md`.
+> Retained for history; do not treat as current.
+
 # WorkOS production cutover
 
 Moving authentication from the **staging** WorkOS environment (which has been

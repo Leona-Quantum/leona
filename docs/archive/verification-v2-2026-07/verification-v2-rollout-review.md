@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** a release-candidate check record for the verification-v2 design that ADR-0023 superseded.
+> Retained for history; do not treat as current.
+
 # Verification v2 rollout review
 
 Date: 2026-07-23

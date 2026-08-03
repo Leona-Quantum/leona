@@ -228,6 +228,27 @@ them from. Each must be set on the api service, the worker, AND Vercel, or an
 account is metered at one tier by the surface that displays and another by the
 surface that refuses.
 
+### The production WorkOS pair
+
+The table above says *which* service carries these; this is *what they are*. Both are
+public identifiers, not credentials — the client id is visible in every AuthKit URL the
+browser follows, and the issuer is derived from it. The secret in this system is
+`WORKOS_API_KEY`, which lives in Secret Manager and is never written down here.
+
+| Variable | Production value |
+|---|---|
+| `WORKOS_CLIENT_ID` (Vercel + `majorana-api`) | `client_01KX3TN2Y37QDVCWG1M7M5WRG8` |
+| `WORKOS_JWT_ISSUER` (`majorana-api`) | `https://api.workos.com/user_management/client_01KX3TN2Y37QDVCWG1M7M5WRG8` |
+
+**The issuer does not follow the client id.** It defaults to being derived from it, but
+`majorana-api` pins it explicitly, so changing only `WORKOS_CLIENT_ID` leaves token
+validation aimed at the environment you just left: every request 403s, sign-in included,
+while the service reports itself healthy. `settings._validate_workos_client_consistency`
+now refuses to start on that combination, and fires only on WorkOS-shaped URLs so a
+custom auth domain stays a deliberate override. The worker has no WorkOS variables at
+all and needs none. The one-time staging→production cutover log, including the previous
+staging pair, is `docs/archive/one-time-cutovers/workos-cutover.md`.
+
 A service's environment is **not** the repository's environment. The worker has
 never had `WORKOS_CLIENT_ID`, and #164 shipped worker code that built a settings
 object validating it — green in local tests and in CI, because both of those
@@ -263,6 +284,76 @@ remain readable by the revision still serving traffic for the length of the
 deploy: expand in one release, contract in a later one. Dropping or renaming
 something the live code still touches breaks production in the window between the
 migration and the traffic shift.
+
+### The public catalog flag — `MAJORANA_PUBLIC_CATALOG_API`
+
+**Set on Vercel, not on Cloud Run.** It is read by the Next.js server
+(`apps/web/lib/public-catalog.ts`), and it is the single switch that decides where
+`/repository` gets its content:
+
+| Value | What `/repository` serves |
+|---|---|
+| `"true"` | the API's published system catalog — `GET /v1/catalog/entries` (+ `/{slug}`) |
+| anything else, including unset | the committed static corpus, `apps/web/lib/repository/entries-*.ts` |
+
+**It is `true` in production.** It was documented in no runbook until 2026-08-04, which
+is why the operational consequence below kept surprising people.
+
+**There is a whole-corpus fallback and it is deliberate.** If the API is unreachable,
+returns nothing usable, or fails the page-completeness check, `repository-source.ts`
+serves the static corpus anyway rather than 500 the public site, and logs
+`[repository-source] falling back to the static corpus`. That is safe only for as long
+as both sides really are the same 283 records. **Grep the Vercel logs for that line
+before concluding the cutover is healthy** — a silent fallback makes a broken cutover
+look like a working one, which is exactly why it is logged loudly.
+
+**The consequence that surprises everyone: editing the TypeScript corpus does not
+change the site.** With the flag on, the entries files are the *editing* surface and
+the *fallback* surface, but not the *serving* surface. A content fix reaches visitors
+only after the full loop:
+
+```bash
+# 1. Regenerate the pinned manifest from the entries at the current commit.
+#    --check verifies the committed manifest matches without rewriting it.
+node scripts/generate-catalog-bootstrap-manifest.mjs --check
+node scripts/generate-catalog-bootstrap-manifest.mjs   # → services/api/catalog_bootstrap/manifest.json
+# 2. Re-import, re-attest, re-publish against production.
+#    Full procedure, including the SYSTEM_CATALOG_ENABLED shell trap and the
+#    fail-closed attestation policy: docs/runbooks/system-catalog.md
+```
+
+Steps 1 and 2 are a deliberate, reviewed action — there is no automatic sync, by design
+(ADR-0019). Until they run, the database keeps serving the previous manifest and the
+repository keeps showing the fix.
+
+**Turning the flag off is not free.** It is a Vercel config change and a redeploy of the
+same code, and it takes effect immediately — but it changes *what the site serves*, not
+just where it reads from:
+
+| Flag | `/repository` serves | What is lost |
+|---|---|---|
+| on (production today) | the published system catalog in Cloud SQL | nothing — the database is the authority |
+| off | the committed corpus in `apps/web/lib/repository/entries-*.ts` | **every record or field that exists only in the database** |
+
+The corpus is a snapshot of the manifest that was last imported. Anything published to
+the catalog since then — a new record, a corrected field, a re-attested entry — lives in
+the database only, and turning the flag off deletes it from the public pages until it is
+round-tripped back into the entries files and a new manifest is generated. The two sides
+are interchangeable only while they hold the same records, which today is the same 283.
+
+That is also the precondition the automatic fallback assumes and cannot check. Before
+flipping the flag off deliberately, confirm the database holds nothing extra:
+
+```bash
+# what the API is publishing (the list route sets x-catalog-total)
+curl -sI "$API_URL/v1/catalog/entries?limit=1" | rg -i '^x-catalog-total'
+# what the committed manifest — and therefore the corpus — holds
+python3 -c "import json; print(json.load(open('services/api/catalog_bootstrap/manifest.json'))['item_count'])"
+```
+
+Equal counts are necessary, not sufficient: a same-count corpus can still differ slug by
+slug or field by field. A total *above* the manifest's is positive proof that turning the
+flag off will drop content.
 
 ## Post-deploy synthetic run
 

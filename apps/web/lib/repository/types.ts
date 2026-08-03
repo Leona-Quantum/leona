@@ -3,15 +3,12 @@ import type { PortableCircuit } from "../circuit-frameworks";
 
 export type PublicRepositoryCategory = "gates" | "algorithms" | "operators" | "states";
 export type PublicRepositoryStatus = "verified" | "verified_caveats" | "community_review";
-export type PublicRepositoryFramework =
-  | "Qiskit"
-  | "PennyLane"
-  | "Cirq"
-  | "CUDA-Q"
-  | "Amazon Braket"
-  | "OpenQASM 3.0"
-  | "PyQuil"
-  | "Qmod";
+/**
+ * Derived from PUBLIC_REPOSITORY_FRAMEWORKS (bottom of this file) rather than
+ * written out again here. The array is the vocabulary; this is a view of it.
+ * See the comment on that array for what the second copy cost.
+ */
+export type PublicRepositoryFramework = (typeof PUBLIC_REPOSITORY_FRAMEWORKS)[number];
 export type PublicRepositoryVariantStatus = "native" | "conversion" | "source" | "unsupported";
 
 export interface PublicRepositoryCodeVariant {
@@ -205,7 +202,23 @@ export const PUBLIC_REPOSITORY_CATEGORIES: Array<{
   { value: "states", label: "States", labelJa: "状態" },
 ];
 
-export const PUBLIC_REPOSITORY_FRAMEWORKS: PublicRepositoryFramework[] = [
+/**
+ * The framework vocabulary. One list, and the source of the type above — not a
+ * copy kept in step with it by hand.
+ *
+ * Adding a framework here adds it to `PublicRepositoryFramework` and to every
+ * runtime check derived from this array, in one edit. It used to be the other
+ * way round: the type was written out separately, and repository/from-catalog.ts
+ * kept a third copy for validating API records. That copy fell a member behind
+ * (it never gained "Qmod"), and the validator's job is to reject anything
+ * outside the vocabulary — so a published record whose primary framework was
+ * missing from the copy would have been dropped from the API-backed catalog
+ * with only a console line to show for it. Derive; do not restate.
+ *
+ * `as const` is what makes the derivation work, and it is why nothing may
+ * mutate this array in place.
+ */
+export const PUBLIC_REPOSITORY_FRAMEWORKS = [
   "Qiskit",
   "PennyLane",
   "Cirq",
@@ -214,4 +227,4 @@ export const PUBLIC_REPOSITORY_FRAMEWORKS: PublicRepositoryFramework[] = [
   "OpenQASM 3.0",
   "PyQuil",
   "Qmod",
-];
+] as const;

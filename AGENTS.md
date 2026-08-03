@@ -1,7 +1,11 @@
 # AGENTS.md — majorana monorepo
 
 Conventions for AI agents (Claude Code / Codex / others) working in this repository.
-Plan authority: `~/Documents/Projects/Majorana/plans/rebuild/` (00-INDEX.md is the map).
+Plan authority: `~/Documents/Projects/Majorana/plans/roadmap/00-INDEX.md` is the stage map;
+architecture decisions live in the ADRs under `majorana/docs/adr/`; the security gate is
+`plans/rebuild/05-security.md`; block-repository direction is
+`plans/leona-block-repository-roadmap.md`. (The old `plans/rebuild/` index and its phase
+docs were archived 2026-08-04 to `plans/archive/rebuild/` — history, not authority.)
 Scope your context: each app/service/package has its own AGENTS.md — read the one for
 the package you're touching, not the whole tree.
 
@@ -14,8 +18,8 @@ Before substantive work in a fresh standalone Codex session, read these sources 
    `~/Documents/Projects/_ops/CODEX_ONBOARDING.md` (Claude/Codex handoff and Codex environment).
 3. `~/Documents/Projects/Majorana/memory/START_NEXT.md` if present; process
    its Owner Inbox first, then read `STATUS.md` and `NEXT.md`.
-4. `~/Documents/Projects/Majorana/plans/rebuild/00-INDEX.md` and
-   `~/Documents/Projects/Majorana/plans/roadmap/00-INDEX.md`.
+4. `~/Documents/Projects/Majorana/plans/roadmap/00-INDEX.md` (the stage map) and
+   `~/Documents/Projects/Majorana/plans/leona-block-repository-roadmap.md`.
 5. The nested `AGENTS.md` for every package you will touch.
 
 Then report exactly five short lines covering current phase/revision, active pickup,

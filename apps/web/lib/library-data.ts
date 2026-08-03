@@ -8,7 +8,8 @@ import { scopedStorage } from "./user-storage.ts";
  * had the promised keys, the qubit count was within the plan's ceiling — with nothing
  * compared against what the physics should do. It is a real pass, and it is not the
  * claim "verified" makes, so it gets its own word. See
- * `plans/evidence-strength-labelling.md`. */
+ * `plans/archive/evidence-strength-labelling.md` (shipped; the live rule is
+ * `evidence_strength_of` in `packages/py/contracts/src/majorana_contracts/enums.py`). */
 export type LibraryStatus = "verified" | "structural" | "verified_caveats" | "inconclusive" | "failed" | "legacy_unknown" | "stale";
 
 export interface LibraryArtifact {

@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** shipped as migration `0014_catalog_classification`, `catalog_hashing.py` and `repos/catalog.py` (ADR-0018) — except `semantic_fingerprint`, which has columns and no writer.
+> Retained for history; do not treat as current.
+
 # Repository Step 3 — catalog classification and private staging
 
 Date: 2026-07-18

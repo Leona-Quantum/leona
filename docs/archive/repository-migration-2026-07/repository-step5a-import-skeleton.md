@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** shipped as migration `0016_catalog_import` and `repos/catalog_import.py`.
+> Retained for history; do not treat as current.
+
 # Repository Step 5a — durable import pipeline (local fixture provider only)
 
 Date: 2026-07-18

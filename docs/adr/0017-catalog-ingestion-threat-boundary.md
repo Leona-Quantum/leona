@@ -1,6 +1,26 @@
 # ADR-0017: Catalog ingestion uses connector allowlists and offline quarantine
 
-**Date:** 2026-07-18 · **Status:** proposed (Ryu/Eshaan security review required)
+**Date:** 2026-07-18 · **Status:** proposed — **never exercised**
+
+> **Annotated 2026-08-04. Still `proposed`, and correctly so: none of the
+> network-facing half of this ADR was ever built.** `ImportProvider` is a closed
+> two-member allowlist — `LOCAL_FIXTURE` and `CATALOG_BOOTSTRAP` — and both read
+> in-repo bytes. **No connector was ever written**, so no allowlisted HTTPS host, no
+> resolve-then-connect address pinning, no redirect rejection, no quarantine store and
+> no bounded-egress fetcher exists in the codebase. MQT Bench, QASMBench, GitHub and
+> Hugging Face ingestion were Step 5b Slice B and did not land
+> (`docs/archive/repository-migration-2026-07/repository-step5b-bootstrap-manifest.md`).
+>
+> What *did* land is the last paragraph: the pinned in-repo bootstrap connector, which
+> submits an embedded, content-hashed manifest through the durable importer with the
+> same quarantine/rights/review/publication states. That is a local connector by
+> construction and proves nothing about the threat boundary above it.
+>
+> **Consequence: this is an unexercised design, not a tested control.** The first real
+> fetch is the first time any of it runs. Treat every clause as unimplemented scope
+> when the block repository starts ingesting from papers or third-party repositories,
+> and re-review rather than assume — see `plans/leona-block-repository-roadmap.md`.
+
 **Context:** Atlas ingestion accepts content controlled outside Leona Quantum. The
 fetch phase can be abused for SSRF, DNS rebinding, redirect bypass, resource
 exhaustion, path traversal, dependency installation, and credential theft; the parse

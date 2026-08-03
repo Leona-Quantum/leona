@@ -387,7 +387,8 @@ def test_unparseable_qasm_still_fails_rather_than_skips():
 
 
 def test_wrong_counts_still_fail_after_the_skip_path_exists():
-    """The test that matters (plans/statistical-cannot-judge-control-flow.md):
+    """The test that matters (plans/archive/statistical-cannot-judge-control-flow.md,
+    archived as shipped in PR #107 — `StatevectorIncapable`):
     the skip must not silence genuine numerical disagreement. A Bell state never
     yields |01>/|10>; a candidate reporting them must keep failing."""
     outcome = verify_statistical_counts(BELL, {"01": 500, "10": 500, "00": 24})

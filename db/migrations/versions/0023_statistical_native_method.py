@@ -5,7 +5,9 @@ Revises: 0022
 
 Contracts 1.4.0 adds VerificationMethod.STATISTICAL_NATIVE — reported counts
 compared against a trusted framework-native re-execution of the circuit object,
-the mid-circuit-capable physical check (plans/framework-native-verification.md).
+the mid-circuit-capable physical check (plans/archive/framework-native-verification.md,
+archived as shipped; the implementation is
+packages/py/verification/src/majorana_verification/native.py).
 Same discipline as 0021/0022: the Python enum and the database allowlist are two
 gates on one value and must widen together, even though production currently
 records deterministic checks on candidate_verifications JSONB.

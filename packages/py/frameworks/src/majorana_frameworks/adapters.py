@@ -290,8 +290,10 @@ if _majorana_final_circuit is not None:
 
 # --- Native verification evidence -------------------------------------------------
 #
-# plans/framework-native-verification.md: the selected framework's own SDK is the
-# substrate correctness is judged on; OpenQASM is an export, not the trust path.
+# plans/archive/framework-native-verification.md (archived as shipped; the implementation
+# is packages/py/verification/src/majorana_verification/native.py): the selected
+# framework's own SDK is the substrate correctness is judged on; OpenQASM is an export,
+# not the trust path.
 # Each adapter's trusted_setup defines a `_majorana_native_evidence(circuit, obs)`
 # helper that writes:
 #

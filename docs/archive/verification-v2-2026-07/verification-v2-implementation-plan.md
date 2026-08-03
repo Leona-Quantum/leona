@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** self-marked superseded by ADR-0023. The three-state verdict and private materialization shipped (migrations 0026-0033); the strict-verification runtime this plan specifies did not.
+> Retained for history; do not treat as current.
+
 # Verification v2 — gated implementation plan
 
 Status: superseded by ADR-0023; retained as historical design context only

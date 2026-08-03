@@ -607,7 +607,7 @@ Done when:
 - rejected items never create public artifacts.
 
 Status: implemented, validated against a throwaway local Postgres 14, and Neon-gated —
-see `docs/repository-step5a-import-skeleton.md` and `docs/repository-step5a-neon-gate.md`.
+see `docs/archive/repository-migration-2026-07/repository-step5a-import-skeleton.md` and `docs/archive/repository-migration-2026-07/repository-step5a-neon-gate.md`.
 
 Rollback: disable import creation and drain/cancel active jobs; staged data remains non-public for
 audit or approved deletion.
@@ -836,8 +836,8 @@ Step 2's temporary Neon gate passed and its CI output-name bug (`db_url_pooled` 
 `repos/catalog.py` provenance/rights/review functions), and Step 5a (migration `0016`,
 `catalog_import_fixtures.py`, `repos/catalog_import.py`, the local-fixture-only import
 pipeline) are implemented and validated against a throwaway local Postgres 14 — see
-`docs/repository-step3-catalog-schema.md`, `docs/repository-step4-provenance-rights.md`,
-and `docs/repository-step5a-import-skeleton.md`. Before Step 5b implementation:
+`docs/archive/repository-migration-2026-07/repository-step3-catalog-schema.md`, `docs/archive/repository-migration-2026-07/repository-step4-provenance-rights.md`,
+and `docs/archive/repository-migration-2026-07/repository-step5a-import-skeleton.md`. Before Step 5b implementation:
 
 1. retain `SYSTEM_CATALOG_ENABLED=false`;
 2. delete the temporary Neon branches used for gate validation

@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** screenshot evidence for the archived verification-v2 rollout review beside it.
+> Retained for history; do not treat as current.
+
 # Step 12 visual QA
 
 These screenshots are generated from the real `@majorana/ui` source through the

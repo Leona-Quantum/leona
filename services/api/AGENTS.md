@@ -12,4 +12,6 @@ Worker use it with role `app_rw`. No other process may talk to Postgres.
 - Top-level run statuses use `majorana_contracts.lifecycle`; new circuit runs follow
   the fixed `majorana_agent.SimpleCircuitPipeline`, while durable step records are
   persisted only through the scoped repository layer.
-Schema: plans/rebuild/04-database.md. Migrations live in /db/migrations (blast-radius).
+Schema: majorana/docs/runbooks/database.md (live authority; the original
+plans/archive/rebuild/04-database.md is archived history). Migrations live in
+/db/migrations (blast-radius).

@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** a gate result recorded on Neon branch `step3-4-catalog-provenance-20260718`, since deleted. The database has been Cloud SQL for PostgreSQL 17 since 2026-07-27 (ADR-0024), and CI now runs a `postgres:17` service container.
+> Retained for history; do not treat as current.
+
 # Repository Steps 3-4 — Neon gate result
 
 Date: 2026-07-18

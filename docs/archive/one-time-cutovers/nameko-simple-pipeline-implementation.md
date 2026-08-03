@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** a local execution and audit log from one checkout; the decision it records is ADR-0023, and the shipping code is `simple_plan.py` + `simple_ports.py`.
+> Retained for history; do not treat as current.
+
 # Nameko-style simple pipeline implementation log
 
 This is the local execution and audit log for ADR-0023. The authoritative external

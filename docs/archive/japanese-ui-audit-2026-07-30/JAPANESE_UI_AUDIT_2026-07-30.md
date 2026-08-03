@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** the findings were applied — every string spot-checked from sections A, I and J is gone from the code. Its 用語集 glossary was promoted to `docs/ui/copy.md`, and four residues remain open (see that section).
+> Retained for history; do not treat as current.
+
 # 日本語UI文言監査
 
 監査日: 2026-07-30

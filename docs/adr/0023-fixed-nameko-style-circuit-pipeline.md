@@ -1,6 +1,14 @@
 # ADR-0023: Fixed nameko-style circuit pipeline
 
-**Date:** 2026-07-24 · **Status:** implemented locally (CODEOWNER review required)
+**Date:** 2026-07-24 · **Status:** implemented (this is the shipping pipeline)
+
+> **Status corrected 2026-08-04.** No longer "implemented locally". This is the pipeline
+> every production run takes: `packages/py/agent/src/majorana_agent/simple_plan.py` and
+> `services/worker/src/majorana_worker/simple_ports.py`. It supersedes ADR-0014 for new
+> execute runs and partially supersedes ADR-0022's strict-verification runtime.
+> `_SUPPORTED_REFERENCE_METHODS` in `simple_plan.py` is `("exact_diag", "brute_force")`,
+> and `PlannableVerificationMethod` is the four-member enum the planner's JSON schema is
+> built from — a model cannot request a method with no dispatch branch.
 
 **Context:** ADR-0014 replaced a fixed executor with a durable model-directed tool
 loop. Its evidence binding and sandbox boundaries are useful, but giving the model a

@@ -1,5 +1,6 @@
 """majorana-evals — corpus loader + harness that runs the pipeline over corpus
-cases and scores them (plans/rebuild/08-phases.md §Phase 2 step 7)."""
+cases and scores them (plans/archive/rebuild/08-phases.md §Phase 2 step 7, archived;
+the live stage map is plans/roadmap/00-INDEX.md)."""
 
 from majorana_evals.runner import run_case, run_corpus, summarize_results, top_measured_bitstring
 from majorana_evals.procedural import (

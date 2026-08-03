@@ -1,6 +1,7 @@
 """Alembic environment. Offline mode is unsupported on purpose: every migration
 must run (and be up→down→up tested) against a real Postgres — see
-plans/rebuild/04-database.md §4."""
+plans/archive/rebuild/04-database.md §4 (archived; live successor is
+majorana/docs/runbooks/database.md)."""
 
 import os
 

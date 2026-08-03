@@ -9,4 +9,4 @@ headless pipeline) with no visible UI; Phase 3 ships the polished Execute surfac
 **Consequences:** Buys a pipeline that never gets rebuilt under a UI, and an honest eval
 baseline before demos. Costs: no visible demo for the first two phases — the owner
 accepts delayed gratification. Reversal trigger: a hard external demo deadline would
-force a re-plan at a phase boundary (plans/rebuild/08 standing rule).
+force a re-plan at a phase boundary (plans/archive/rebuild/08-phases.md standing rule).
