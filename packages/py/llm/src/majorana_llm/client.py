@@ -11,7 +11,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
-from collections.abc import Awaitable, Callable, Iterator
+from collections.abc import Awaitable, Callable, Iterator, Mapping, Sequence
 from contextlib import contextmanager
 from contextvars import ContextVar
 from typing import Any, Literal, Protocol
@@ -199,6 +199,28 @@ def request_messages(request: LLMRequest) -> list[dict[str, str]]:
     if request.messages is not None:
         return [message.model_dump() for message in request.messages]
     return [{"role": "user", "content": request.user}]
+
+
+def conversation_request_messages(
+    history: Sequence[Mapping[str, str]], current_user: str
+) -> list[dict[str, str]] | None:
+    """History with the current request appended, or None when there is none.
+
+    The inverse of `request_messages`, and deliberately in the same module: this
+    is the only place that decides what a conversation turn looks like on the
+    wire. Three callers (intent routing, the pipeline stages, and chat) each
+    built this list themselves and had already drifted on the empty case — chat
+    returned a one-element list where the others returned None. Both reach the
+    provider as the same single user turn *only because* `request_messages`
+    falls back to `request.user`, which is a coincidence of two functions
+    agreeing, not a guarantee. Returning None here makes it one function.
+    """
+    if not history:
+        return None
+    return [
+        *({"role": message["role"], "content": message["content"]} for message in history),
+        {"role": "user", "content": current_user},
+    ]
 
 
 class LLMClient(Protocol):
