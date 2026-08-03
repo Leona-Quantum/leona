@@ -12,23 +12,30 @@ overrides:
   # range, so dedupe the whole tree onto the first patched release. All postcss
   # here is 8.x; 8.5.18 is a backward-compatible patch bump.
   postcss: 8.5.18
-  # GHSA-mh99-v99m-4gvg (high): unbounded brace expansion OOMs the process.
-  # Only the 5.x line is reachable here (minimatch@10 -> brace-expansion@5.0.7,
-  # via @sentry/bundler-plugin-core's glob and openapi-typescript's @redocly).
-  # Scoped to ^5 on purpose: minimatch@5 still resolves 2.1.2 and a blanket
-  # override would jump it three majors for no advisory.
-  brace-expansion@^5.0.0: 5.0.8
-  # NOT `minimatch@^5 -> 10`, though that is the tempting way to drag the last
-  # vulnerable brace-expansion off the tree. minimatch 10 moved from a callable
-  # default export to named exports, and @redocly/openapi-core (the only
-  # minimatch@5 consumer here) does `const minimatch = require("minimatch")`
-  # and then calls it — which throws "m is not a function" under 10. That was
-  # verified against the installed file, not inferred: the contracts codegen
-  # still passed with the override in place because a plain JSON spec never
-  # reaches minimatch's glob path, so the break was latent rather than loud.
-  # There is no callable-default minimatch that depends on a patched
-  # brace-expansion, so the remaining advisory is allowlisted instead — see
-  # ALLOWLIST in scripts/check_osv_report.py.
+  # brace-expansion DoS, twice over: GHSA-mh99-v99m-4gvg (unbounded expansion
+  # length OOMs the process) and then GHSA-rgw5-rvv9-x895, which bypasses the
+  # first one's mitigation via unbounded *intermediate* arrays. Both CVSS 7.5.
+  # Two copies are on the tree and each needs its own line, because a single
+  # unscoped override would jump minimatch@5's copy three majors for no reason:
+  #   - 2.x, via minimatch@5 <- @redocly/openapi-core <- openapi-typescript
+  #     (contracts codegen). Patched at 2.1.3 / 2.1.4.
+  #   - 5.x, via minimatch@10 <- @sentry/bundler-plugin-core's glob, and the
+  #     same @redocly path. Patched at 5.0.8 / 5.0.9.
+  # Both are patch bumps inside the resolved major, so no consumer sees an API
+  # change. This replaces the ALLOWLIST entry that previously accepted the 2.x
+  # copy in scripts/check_osv_report.py: that entry was written when 2.1.2 was
+  # the last 2.x release and no fix existed for it. Upstream has since shipped
+  # 2.1.3 and 2.1.4, so the finding is now upgradable and the acceptance is gone.
+  brace-expansion@^2.0.0: 2.1.4
+  brace-expansion@^5.0.0: 5.0.9
+  # NOT `minimatch@^5 -> 10`, though that is the tempting way to collapse the
+  # two lines above into one. minimatch 10 moved from a callable default export
+  # to named exports, and @redocly/openapi-core (the only minimatch@5 consumer
+  # here) does `const minimatch = require("minimatch")` and then calls it —
+  # which throws "m is not a function" under 10. That was verified against the
+  # installed file, not inferred: the contracts codegen still passed with the
+  # override in place because a plain JSON spec never reaches minimatch's glob
+  # path, so the break was latent rather than loud.
 # 05-security supply chain: build scripts stay blocked. sharp (next/image) is
 # explicitly denied - we do not use image optimization yet; revisit in Phase 3.
 allowBuilds:
