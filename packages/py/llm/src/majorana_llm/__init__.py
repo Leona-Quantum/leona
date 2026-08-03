@@ -41,6 +41,7 @@ from majorana_llm.prompts import (
     render_conversation_title_prompt,
     render_intent_prompt,
     simple_generation_system_prompt,
+    with_execution_conversation_context,
 )
 
 __all__ = [
@@ -81,4 +82,5 @@ __all__ = [
     "render_conversation_title_prompt",
     "render_intent_prompt",
     "simple_generation_system_prompt",
+    "with_execution_conversation_context",
 ]

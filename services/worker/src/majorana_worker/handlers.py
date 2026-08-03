@@ -303,6 +303,16 @@ async def handle_run_execute(
     try:
         async with asyncio.timeout(timeout_s):
             provider = llm or _default_llm()
+            conversation_messages = (
+                await runs_repo.list_conversation_messages(
+                    scope,
+                    session,
+                    ctx.conversation_id,
+                    exclude_run_id=ctx.run_id,
+                )
+                if ctx.conversation_id is not None
+                else []
+            )
             ctx = await _resolve_mode(
                 ctx,
                 store,
@@ -310,10 +320,16 @@ async def handle_run_execute(
                 session=session,
                 llm=provider,
                 has_source_code=bool(payload.get("source_code")),
+                conversation_messages=conversation_messages,
             )
             ctx = await _title_conversation(ctx, store, scope=scope, session=session, llm=provider)
             if ctx.mode is not RunMode.EXECUTE:
-                final = await _handle_conversation(ctx, store, provider)
+                final = await _handle_conversation(
+                    ctx,
+                    store,
+                    provider,
+                    conversation_messages=conversation_messages,
+                )
             else:
                 final = await _handle_agent_execution(
                     ctx,
@@ -326,6 +342,7 @@ async def handle_run_execute(
                     parent_artifact_version_id=parent_artifact_version_id,
                     parent_artifact_fingerprint=parent_artifact_fingerprint,
                     run_deadline=run_deadline,
+                    conversation_messages=conversation_messages,
                 )
     except _RunAllowanceExhausted as exhausted:
         # A refusal, not a fault: the run ends in its own event stream with a
@@ -555,6 +572,7 @@ async def _resolve_mode(
     session: AsyncSession,
     llm: LLMClient,
     has_source_code: bool,
+    conversation_messages: list[dict[str, str]] | None = None,
 ) -> RunContext:
     """Settle which mode this run dispatches in, before anything else happens.
 
@@ -581,6 +599,7 @@ async def _resolve_mode(
         ctx.mode,
         llm,
         has_source_code=has_source_code,
+        conversation_messages=conversation_messages or (),
     )
     if not decision.changed:
         return ctx
@@ -656,6 +675,7 @@ async def _handle_agent_execution(
     run_deadline: float,
     parent_artifact_version_id: uuid.UUID | None = None,
     parent_artifact_fingerprint: str | None = None,
+    conversation_messages: list[dict[str, str]] | None = None,
 ) -> RunStatus:
     status = await run_store.current_status()
     if status not in {RunStatus.QUEUED, RunStatus.RUNNING}:
@@ -705,6 +725,7 @@ async def _handle_agent_execution(
         reviewer=SimpleIntentReviewer(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
+            conversation_messages=conversation_messages or (),
         ),
         converter=TrustedOpenQASMConverter(),
         saver=RepoReviewArtifactSaver(
@@ -722,6 +743,7 @@ async def _handle_agent_execution(
             artifact_limit=artifact_limit,
         ),
         task_prompt=ctx.task_prompt,
+        conversation_messages=conversation_messages or (),
         framework=ctx.framework,
         requested_shots=ctx.shots,
         requested_seed=ctx.seed,
@@ -982,7 +1004,11 @@ async def _record_chat_usage(ctx: RunContext, store: RepoRunStateStore, response
 
 
 async def _handle_conversation(
-    ctx: RunContext, store: RepoRunStateStore, llm: LLMClient
+    ctx: RunContext,
+    store: RepoRunStateStore,
+    llm: LLMClient,
+    *,
+    conversation_messages: list[dict[str, str]] | None = None,
 ) -> RunStatus:
     """Answer a direct chat turn without invoking the execution pipeline."""
     status = await store.current_status()
@@ -992,14 +1018,18 @@ async def _handle_conversation(
     await ctx.sink.emit("run.started", {})
 
     history = (
-        await runs_repo.list_conversation_messages(
-            store._scope,
-            store._session,
-            ctx.conversation_id,
-            exclude_run_id=ctx.run_id,
+        conversation_messages
+        if conversation_messages is not None
+        else (
+            await runs_repo.list_conversation_messages(
+                store._scope,
+                store._session,
+                ctx.conversation_id,
+                exclude_run_id=ctx.run_id,
+            )
+            if ctx.conversation_id is not None
+            else []
         )
-        if ctx.conversation_id is not None
-        else []
     )
     model = model_for("chat")
     started = asyncio.get_running_loop().time()

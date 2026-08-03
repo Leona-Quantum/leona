@@ -27,7 +27,9 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import Sequence
 from dataclasses import dataclass
+from typing import Mapping
 from typing import Literal
 
 from majorana_contracts.enums import RunMode
@@ -98,6 +100,7 @@ async def resolve_mode(
     llm: LLMClient,
     *,
     has_source_code: bool = False,
+    conversation_messages: Sequence[Mapping[str, str]] = (),
 ) -> ModeDecision:
     """Resolve `requested` to the mode this run will actually dispatch in."""
     if has_source_code:
@@ -108,6 +111,17 @@ async def resolve_mode(
         return ModeDecision(requested, requested, "passthrough", "mode explicitly selected")
 
     rendered = render_intent_prompt(prompt)
+    messages = (
+        [
+            *(
+                {"role": message["role"], "content": message["content"]}
+                for message in conversation_messages
+            ),
+            {"role": "user", "content": rendered.user},
+        ]
+        if conversation_messages
+        else None
+    )
     try:
         # Bounded on purpose. This call is now on the path of every auto message
         # — which is every message the composer sends by default — and it is the
@@ -122,6 +136,7 @@ async def resolve_mode(
                     model=model_for("route"),
                     system=rendered.system,
                     user=rendered.user,
+                    messages=messages,
                     temperature=0.0,
                 )
             )

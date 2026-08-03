@@ -101,6 +101,7 @@ from majorana_llm import (
     extract_json,
     model_for,
     simple_generation_system_prompt,
+    with_execution_conversation_context,
 )
 from majorana_sandbox import DEFAULT_QUBIT_CEILING
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -120,6 +121,18 @@ log = logging.getLogger("majorana_worker.simple_ports")
 # unaffected: every candidate is stored as its own immutable revision, and the
 # durable LLM-call inbox replays the recorded response rather than re-sampling.
 _REPAIR_TEMPERATURE = 0.4
+
+
+def _conversation_request_messages(
+    history: Sequence[Mapping[str, str]], current_user: str
+) -> list[dict[str, str]] | None:
+    """Preserve bounded turn roles and make the structured request the final turn."""
+    if not history:
+        return None
+    return [
+        *({"role": message["role"], "content": message["content"]} for message in history),
+        {"role": "user", "content": current_user},
+    ]
 
 
 class SimpleStepObserver(Protocol):
@@ -462,9 +475,16 @@ def _static_review_failures(output: _ArtifactIntentReviewOutput) -> tuple[list[s
 class SimpleIntentReviewer:
     """One model call that advises on intent alignment without strict checks."""
 
-    def __init__(self, *, llm: LLMClient, task_prompt: str) -> None:
+    def __init__(
+        self,
+        *,
+        llm: LLMClient,
+        task_prompt: str,
+        conversation_messages: Sequence[Mapping[str, str]] = (),
+    ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
+        self._conversation_messages = tuple(conversation_messages)
 
     async def review(
         self,
@@ -476,43 +496,51 @@ class SimpleIntentReviewer:
     ) -> SimpleIntentReviewResult:
         artifact_only = execution.was_not_run
         output_model = _ArtifactIntentReviewOutput if artifact_only else _IntentReviewOutput
+        user = json.dumps(
+            {
+                "request": self._task_prompt,
+                "review_attempt": attempt,
+                "plan": plan.model_dump(mode="json"),
+                "candidate": {
+                    "framework": candidate.framework.value,
+                    "source": candidate.source,
+                    "source_fingerprint": candidate.source_fingerprint,
+                },
+                "execution": {
+                    "status": "not_run" if artifact_only else "executed",
+                    "execution_id": str(execution.execution_id),
+                    "source_fingerprint": execution.source_fingerprint,
+                    "exit_code": execution.exit_code,
+                    "result": execution.result,
+                    "resource_metrics": execution.observation.get("resource_metrics"),
+                    "reason_code": execution.observation.get("execution_reason_code"),
+                    "target_backend": execution.observation.get("target_backend"),
+                    "declared_qubits": execution.observation.get("qubits"),
+                    "local_execution_ceiling_qubits": execution.observation.get(
+                        "local_execution_ceiling_qubits"
+                    ),
+                },
+                "basic_checks": basic_checks,
+                "known_reference": known_reference_for_task(self._task_prompt),
+            },
+            default=str,
+            sort_keys=True,
+        )
         response = await self._llm.complete(
             LLMRequest(
                 model=model_for("verify"),
-                system=(
-                    SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT
-                    if artifact_only
-                    else SIMPLE_REVIEW_SYSTEM_PROMPT
+                system=with_execution_conversation_context(
+                    (
+                        SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT
+                        if artifact_only
+                        else SIMPLE_REVIEW_SYSTEM_PROMPT
+                    ),
+                    has_history=bool(self._conversation_messages),
                 ),
-                user=json.dumps(
-                    {
-                        "request": self._task_prompt,
-                        "review_attempt": attempt,
-                        "plan": plan.model_dump(mode="json"),
-                        "candidate": {
-                            "framework": candidate.framework.value,
-                            "source": candidate.source,
-                            "source_fingerprint": candidate.source_fingerprint,
-                        },
-                        "execution": {
-                            "status": "not_run" if artifact_only else "executed",
-                            "execution_id": str(execution.execution_id),
-                            "source_fingerprint": execution.source_fingerprint,
-                            "exit_code": execution.exit_code,
-                            "result": execution.result,
-                            "resource_metrics": execution.observation.get("resource_metrics"),
-                            "reason_code": execution.observation.get("execution_reason_code"),
-                            "target_backend": execution.observation.get("target_backend"),
-                            "declared_qubits": execution.observation.get("qubits"),
-                            "local_execution_ceiling_qubits": execution.observation.get(
-                                "local_execution_ceiling_qubits"
-                            ),
-                        },
-                        "basic_checks": basic_checks,
-                        "known_reference": known_reference_for_task(self._task_prompt),
-                    },
-                    default=str,
-                    sort_keys=True,
+                user=user,
+                messages=_conversation_request_messages(
+                    self._conversation_messages,
+                    user,
                 ),
                 temperature=0.0,
                 response_schema=output_model.model_json_schema(),
@@ -2721,6 +2749,7 @@ class ProductionSimplePipelinePorts:
         saver: ReviewArtifactSaver | None,
         task_prompt: str,
         framework: Framework,
+        conversation_messages: Sequence[Mapping[str, str]] = (),
         requested_shots: int | None = None,
         requested_seed: int | None = None,
         initial_source: str | None = None,
@@ -2734,6 +2763,7 @@ class ProductionSimplePipelinePorts:
         self._converter = converter
         self._saver = saver
         self._task_prompt = task_prompt
+        self._conversation_messages = tuple(conversation_messages)
         self._framework = framework
         self._requested_shots = (
             min(requested_shots, 20_000)
@@ -2760,6 +2790,13 @@ class ProductionSimplePipelinePorts:
             return SimplePortResult.success(plan)
         assert plan.verification_plan is not None
         assert plan.verification_plan.reference_problem is not None
+        user_text = json.dumps(
+            {
+                "request": self._task_prompt,
+                "primary_metric": plan.success_criteria.primary_metric,
+            },
+            sort_keys=True,
+        )
         try:
             response = await self._llm.complete(
                 LLMRequest(
@@ -2768,13 +2805,14 @@ class ProductionSimplePipelinePorts:
                     # requests. Use the substantive tier, then still require
                     # deterministic consensus.
                     model=model_for("plan"),
-                    system=SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
-                    user=json.dumps(
-                        {
-                            "request": self._task_prompt,
-                            "primary_metric": plan.success_criteria.primary_metric,
-                        },
-                        sort_keys=True,
+                    system=with_execution_conversation_context(
+                        SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                        has_history=bool(self._conversation_messages),
+                    ),
+                    user=user_text,
+                    messages=_conversation_request_messages(
+                        self._conversation_messages,
+                        user_text,
                     ),
                     temperature=0.0,
                     response_schema=_BusinessReferenceExtraction.model_json_schema(),
@@ -2877,8 +2915,15 @@ class ProductionSimplePipelinePorts:
                 response = await self._llm.complete(
                     LLMRequest(
                         model=model_for(role),
-                        system=SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                        system=with_execution_conversation_context(
+                            SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                            has_history=bool(self._conversation_messages),
+                        ),
                         user=request_payload,
+                        messages=_conversation_request_messages(
+                            self._conversation_messages,
+                            request_payload,
+                        ),
                         temperature=0.0,
                         response_schema=_LinearSystemReferenceExtraction.model_json_schema(),
                         schema_name=schema_name,
@@ -3086,8 +3131,15 @@ class ProductionSimplePipelinePorts:
             response = await self._llm.complete(
                 LLMRequest(
                     model=model_for("plan"),
-                    system=SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                    system=with_execution_conversation_context(
+                        SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                        has_history=bool(self._conversation_messages),
+                    ),
                     user=request_payload,
+                    messages=_conversation_request_messages(
+                        self._conversation_messages,
+                        request_payload,
+                    ),
                     temperature=0.0,
                     response_schema=_LindbladReferenceExtraction.model_json_schema(),
                     schema_name="lindblad_reference_extraction",
@@ -3145,8 +3197,15 @@ class ProductionSimplePipelinePorts:
             audit_response = await self._llm.complete(
                 LLMRequest(
                     model=model_for("audit"),
-                    system=SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                    system=with_execution_conversation_context(
+                        SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+                        has_history=bool(self._conversation_messages),
+                    ),
                     user=request_payload,
+                    messages=_conversation_request_messages(
+                        self._conversation_messages,
+                        request_payload,
+                    ),
                     temperature=0.0,
                     response_schema=_LindbladReferenceExtraction.model_json_schema(),
                     schema_name="lindblad_reference_audit_extraction",
@@ -3311,18 +3370,26 @@ class ProductionSimplePipelinePorts:
         reference = verification.exact_dynamics_reference if verification else None
         if reference is None:
             return SimplePortResult.success(plan)
+        user_text = json.dumps(
+            {
+                "request": self._task_prompt,
+                "success_criteria": plan.success_criteria.model_dump(mode="json"),
+                "exact_dynamics_reference": reference.model_dump(mode="json"),
+            },
+            sort_keys=True,
+        )
         try:
             response = await self._llm.complete(
                 LLMRequest(
                     model=model_for("audit"),
-                    system=SIMPLE_DYNAMICS_REFERENCE_AUDIT_SYSTEM_PROMPT,
-                    user=json.dumps(
-                        {
-                            "request": self._task_prompt,
-                            "success_criteria": plan.success_criteria.model_dump(mode="json"),
-                            "exact_dynamics_reference": reference.model_dump(mode="json"),
-                        },
-                        sort_keys=True,
+                    system=with_execution_conversation_context(
+                        SIMPLE_DYNAMICS_REFERENCE_AUDIT_SYSTEM_PROMPT,
+                        has_history=bool(self._conversation_messages),
+                    ),
+                    user=user_text,
+                    messages=_conversation_request_messages(
+                        self._conversation_messages,
+                        user_text,
                     ),
                     temperature=0.0,
                     response_schema=_ReferenceAuditOutput.model_json_schema(),
@@ -3477,12 +3544,20 @@ class ProductionSimplePipelinePorts:
             "repair_contract": _plan_repair_contract(feedback),
         }
         raw_plan_output: str | None = None
+        user_text = json.dumps(user, default=str, sort_keys=True)
         try:
             response = await self._llm.complete(
                 LLMRequest(
                     model=model_for("plan"),
-                    system=SIMPLE_PLAN_SYSTEM_PROMPT,
-                    user=json.dumps(user, default=str, sort_keys=True),
+                    system=with_execution_conversation_context(
+                        SIMPLE_PLAN_SYSTEM_PROMPT,
+                        has_history=bool(self._conversation_messages),
+                    ),
+                    user=user_text,
+                    messages=_conversation_request_messages(
+                        self._conversation_messages,
+                        user_text,
+                    ),
                     temperature=0.0,
                     response_schema=schema,
                     schema_name="request_plan",
@@ -3659,17 +3734,25 @@ class ProductionSimplePipelinePorts:
                 "repair_feedback": asdict(feedback) if feedback else None,
                 "known_reference": known_reference_for_task(self._task_prompt),
             }
+            user_text = json.dumps(user, default=str, sort_keys=True)
             try:
                 response = await self._llm.complete(
                     LLMRequest(
                         model=model_for("generate"),
-                        system=simple_generation_system_prompt(
-                            framework=plan.plan.framework.value,
-                            domain=plan.plan.domain,
-                            algorithm=plan.plan.algorithm.value,
-                            problem_summary=plan.plan.problem_summary,
+                        system=with_execution_conversation_context(
+                            simple_generation_system_prompt(
+                                framework=plan.plan.framework.value,
+                                domain=plan.plan.domain,
+                                algorithm=plan.plan.algorithm.value,
+                                problem_summary=plan.plan.problem_summary,
+                            ),
+                            has_history=bool(self._conversation_messages),
                         ),
-                        user=json.dumps(user, default=str, sort_keys=True),
+                        user=user_text,
+                        messages=_conversation_request_messages(
+                            self._conversation_messages,
+                            user_text,
+                        ),
                         temperature=_REPAIR_TEMPERATURE if feedback is not None else 0.0,
                         response_schema=_GeneratedSource.model_json_schema(),
                         schema_name="generate_circuit",
