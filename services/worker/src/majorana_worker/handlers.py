@@ -77,14 +77,9 @@ from majorana_api.repos import vqe as vqe_repo
 from majorana_api.repos import usage as usage_repo
 from majorana_api.repos import workspaces as workspaces_repo
 from majorana_api.tiers import EnvTierSources, limits_for, tier_of
-from majorana_api.vqe_runtime_profiles import profile_for_binding
-from majorana_vqe.models import ExecutionBinding
-from majorana_vqe.result import ExecutionFailureResult
-
 from .agent_llm import MeteredAgentLLM
 from .agent_store import RepoAgentStore
 from .context import RunContext
-from .errors import RetryableJobError
 from .intent import resolve_mode
 from majorana_frameworks.roles import result_was_derived
 
@@ -99,13 +94,7 @@ from .simple_ports import (
     simple_pipeline_verification_summary,
     unexecuted_artifact_verification_summary,
 )
-from .vqe_runtime import (
-    OptimizerAlgorithm,
-    VqeRuntimeCancelled,
-    VqeRuntimeError,
-    build_success_evidence,
-    execute_candidate_image,
-)
+from . import vqe_handlers
 
 log = logging.getLogger("majorana_worker")
 
@@ -1093,203 +1082,15 @@ JobHandler = Callable[[AsyncSession, dict[str, Any]], Awaitable[None]]
 DeadLetterHandler = Callable[[AsyncSession, dict[str, Any], str], Awaitable[None]]
 
 
-def _ansatz_digest(scientific_spec_json: dict[str, Any]) -> str:
-    for component in scientific_spec_json.get("component_bindings", []):
-        if component.get("role") == "ansatz":
-            return str(component["component_spec_sha256"])
-    raise ValueError("portable scientific spec lacks an ansatz binding")
-
-
-def _optimizer_algorithm(
-    scientific_spec_json: dict[str, Any],
-) -> OptimizerAlgorithm:
-    frozen_h2_bounded_scalar = (
-        "h2.sto3g.actual_vqe.v0_2.parameter_optimizer",
-        "dabb6c8ff883eb2e5c969a988a7a416a7415025e6cfa163e98a29ba262e5645c",
-    )
-    for component in scientific_spec_json.get("component_bindings", []):
-        if component.get("role") != "parameter_optimizer":
-            continue
-        semantic_key = component.get("component_semantic_key")
-        if semantic_key == "optimizer.scipy_bounded_scalar.v1":
-            return "scipy_minimize_scalar_bounded"
-        if (
-            semantic_key,
-            component.get("component_spec_sha256"),
-        ) == frozen_h2_bounded_scalar:
-            # The owner-waived H2 v0.2 registry predates the canonical
-            # component key.  Accept only its exact reviewed digest; a reused
-            # legacy key with different scientific content remains rejected.
-            return "scipy_minimize_scalar_bounded"
-        if semantic_key == "optimizer.slsqp.v1":
-            return "scipy_slsqp"
-        if semantic_key == "optimizer.cobyla.v1":
-            return "scipy_cobyla"
-        raise ValueError(f"unsupported optimizer semantic key {semantic_key!r}")
-    raise ValueError("portable scientific spec lacks an optimizer binding")
-
-
 async def handle_vqe_execute(session: AsyncSession, payload: dict[str, Any]) -> None:
-    """Execute one frozen H2 candidate and append capability-specific evidence."""
-    scope = _scope_from_payload(payload)
-    execution_id = uuid.UUID(payload["execution_id"])
-    run_id = uuid.UUID(payload["run_id"])
-    execution = await vqe_repo.get_execution(scope, session, execution_id)
-    if execution.run_id != run_id:
-        raise ValueError("VQE job run does not match execution binding")
-    if execution.status in {"succeeded", "failed", "cancelled"}:
-        return
-    run_store = RepoRunStateStore(scope, session, run_id)
-    if await run_store.current_status() is RunStatus.CANCELLED:
-        await vqe_repo.transition_execution(
-            scope,
-            session,
-            execution.id,
-            new_status="cancelled",
-        )
-        await session.commit()
-        return
-    if execution.status == "queued":
-        execution = await vqe_repo.transition_execution(
-            scope,
-            session,
-            execution.id,
-            new_status="running",
-        )
-        await run_store.set_status(RunStatus.RUNNING, started_at_now=True)
-        await RepoEventSink(scope, session, run_id).emit(
-            "run.started",
-            {},
-            event_id=uuid.uuid5(run_id, "run.started"),
-        )
-
-    experiment = await vqe_repo.get_experiment(scope, session, execution.experiment_id)
-    binding = ExecutionBinding.model_validate(execution.execution_binding_json)
-    profile = profile_for_binding(binding)
-    optimizer_algorithm = _optimizer_algorithm(experiment.scientific_spec_json)
-    try:
-        runtime_output = await execute_candidate_image(
-            profile,
-            optimizer_algorithm=optimizer_algorithm,
-            cancel_requested=lambda: _vqe_cancel_requested(run_store),
-        )
-        if await run_store.current_status() is RunStatus.CANCELLED:
-            current_execution = await vqe_repo.get_execution(
-                scope,
-                session,
-                execution.id,
-            )
-            if current_execution.status == "running":
-                await vqe_repo.transition_execution(
-                    scope,
-                    session,
-                    execution.id,
-                    new_status="cancelled",
-                )
-                await session.commit()
-            return
-        evidence = build_success_evidence(
-            runtime_output.payload,
-            binding=binding,
-            scientific_spec_sha256=experiment.scientific_spec_sha256,
-            registry_resolution_sha256=experiment.registry_resolution_sha256,
-            ansatz_semantic_digest=_ansatz_digest(experiment.scientific_spec_json),
-            seed=int(experiment.scientific_spec_json["seed"]),
-            expected_optimizer_algorithm=optimizer_algorithm,
-        )
-    except VqeRuntimeCancelled:
-        current_execution = await vqe_repo.get_execution(scope, session, execution.id)
-        if current_execution.status in {"planned", "queued", "running"}:
-            await vqe_repo.transition_execution(
-                scope,
-                session,
-                execution.id,
-                new_status="cancelled",
-            )
-            await session.commit()
-        return
-    except VqeRuntimeError as exc:
-        failure_code = exc.failure_code
-        failure = ExecutionFailureResult(
-            scientific_spec_sha256=experiment.scientific_spec_sha256,
-            registry_resolution_sha256=experiment.registry_resolution_sha256,
-            framework=binding.framework,
-            runtime_profile_id=binding.runtime_profile_id,
-            runtime_image_digest=binding.container_digest,
-            adapter_release_id=binding.adapter_release_id,
-            provider_versions=binding.provider_versions,
-            hamiltonian_exact_digest="d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79",
-            seed=int(experiment.scientific_spec_json["seed"]),
-            status="failed",
-            failure_code=failure_code,
-            failure_detail=str(exc)[:500],
-        )
-        observation = await vqe_repo.append_observation(
-            scope,
-            session,
-            execution.id,
-            attempt=None,
-            evidence=failure,
-        )
-        attempt = observation.attempt
-        if exc.retryable:
-            await session.commit()
-            raise RetryableJobError(str(exc)) from exc
-        await vqe_repo.transition_execution(
-            scope,
-            session,
-            execution.id,
-            new_status="failed",
-        )
-        await RepoEventSink(scope, session, run_id).emit(
-            "run.error",
-            {
-                "stage": "final_execute",
-                "code": failure_code.value,
-                "message": str(exc)[:2000],
-            },
-            event_id=uuid.uuid5(run_id, f"run.error.vqe.{attempt}"),
-        )
-        await run_store.finish(
-            RunStatus.FAILED,
-            {
-                "status": RunStatus.FAILED,
-                "reason_code": failure_code.value,
-            },
-        )
-        return
-
-    current_execution = await vqe_repo.get_execution(scope, session, execution.id)
-    if current_execution.status in {"succeeded", "failed", "cancelled"}:
-        return
-    await vqe_repo.append_observation(
-        scope,
+    """Dispatch VQE work through its isolated lifecycle implementation."""
+    await vqe_handlers.handle_vqe_execute(
         session,
-        execution.id,
-        attempt=None,
-        evidence=evidence,
-        evidence_json={
-            "stderr_was_empty": not bool(runtime_output.bounded_stderr),
-            "human_review_state": "owner_waived",
-            "production_runtime_status": binding.production_runtime_status,
-        },
+        payload,
+        scope=_scope_from_payload(payload),
+        run_store_factory=RepoRunStateStore,
+        event_sink_factory=RepoEventSink,
     )
-    await vqe_repo.transition_execution(
-        scope,
-        session,
-        execution.id,
-        new_status="succeeded",
-    )
-    await run_store.finish(
-        RunStatus.SUCCEEDED,
-        {
-            "status": RunStatus.SUCCEEDED,
-        },
-    )
-
-
-async def _vqe_cancel_requested(run_store: RepoRunStateStore) -> bool:
-    return await run_store.current_status() is RunStatus.CANCELLED
 
 
 async def handle_vqe_dead_letter(

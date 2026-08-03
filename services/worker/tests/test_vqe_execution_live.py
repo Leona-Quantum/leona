@@ -29,7 +29,7 @@ from majorana_vqe.portable import (
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import artifacts, runs, system, vqe
 from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
-from majorana_worker import handlers
+from majorana_worker import handlers, vqe_handlers
 from majorana_worker.errors import RetryableJobError
 from majorana_worker.vqe_runtime import VqeRuntimeError, VqeRuntimeOutput
 
@@ -174,7 +174,7 @@ async def test_worker_persists_success_and_terminal_events(db, monkeypatch):
         async def frozen_runtime(_profile, **_kwargs):
             return VqeRuntimeOutput(payload=raw, bounded_stderr="")
 
-        monkeypatch.setattr(handlers, "execute_candidate_image", frozen_runtime)
+        monkeypatch.setattr(vqe_handlers, "execute_candidate_image", frozen_runtime)
         await handlers.handle_vqe_execute(
             session,
             {
@@ -239,7 +239,7 @@ async def test_retry_is_append_only_and_does_not_claim_terminal_failure(db, monk
                 retryable=True,
             )
 
-        monkeypatch.setattr(handlers, "execute_candidate_image", unavailable)
+        monkeypatch.setattr(vqe_handlers, "execute_candidate_image", unavailable)
         with pytest.raises(RetryableJobError, match="temporary local image outage"):
             await handlers.handle_vqe_execute(
                 session,

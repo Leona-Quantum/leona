@@ -8,7 +8,7 @@ from majorana_contracts.enums import RunStatus
 from majorana_vqe.models import FailureCode, Framework
 
 from majorana_api.vqe_runtime_profiles import candidate_runtime_profile
-from majorana_worker import handlers
+from majorana_worker import handlers, vqe_handlers
 from majorana_worker.errors import RetryableJobError
 from majorana_worker.vqe_runtime import VqeRuntimeError, VqeRuntimeOutput
 
@@ -130,13 +130,13 @@ def test_optimizer_algorithm_accepts_only_exact_frozen_h2_legacy_digest():
         ),
     }
     assert (
-        handlers._optimizer_algorithm({"component_bindings": [binding]})
+        vqe_handlers.optimizer_algorithm({"component_bindings": [binding]})
         == "scipy_minimize_scalar_bounded"
     )
 
     binding["component_spec_sha256"] = "0" * 64
     with pytest.raises(ValueError, match="unsupported optimizer semantic key"):
-        handlers._optimizer_algorithm({"component_bindings": [binding]})
+        vqe_handlers.optimizer_algorithm({"component_bindings": [binding]})
 
 
 @pytest.mark.parametrize(
@@ -152,7 +152,7 @@ def test_optimizer_algorithm_maps_admitted_private_components(semantic_key, expe
         "component_semantic_key": semantic_key,
         "component_spec_sha256": "0" * 64,
     }
-    assert handlers._optimizer_algorithm({"component_bindings": [binding]}) == expected
+    assert vqe_handlers.optimizer_algorithm({"component_bindings": [binding]}) == expected
 
 
 async def test_vqe_handler_persists_success_and_closes_both_lifecycles(monkeypatch):
@@ -164,7 +164,7 @@ async def test_vqe_handler_persists_success_and_closes_both_lifecycles(monkeypat
     async def execute(profile, **kwargs):
         return VqeRuntimeOutput(payload=report, bounded_stderr="")
 
-    monkeypatch.setattr(handlers, "execute_candidate_image", execute)
+    monkeypatch.setattr(vqe_handlers, "execute_candidate_image", execute)
     await handlers.handle_vqe_execute(Session(), payload)
 
     assert state["execution"].status == "succeeded"
@@ -186,7 +186,7 @@ async def test_vqe_handler_appends_retry_observation_without_false_terminal_stat
             retryable=True,
         )
 
-    monkeypatch.setattr(handlers, "execute_candidate_image", execute)
+    monkeypatch.setattr(vqe_handlers, "execute_candidate_image", execute)
     session = Session()
     with pytest.raises(RetryableJobError, match="temporary Docker outage"):
         await handlers.handle_vqe_execute(session, payload)
