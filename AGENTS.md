@@ -1,11 +1,21 @@
 # AGENTS.md — majorana monorepo
 
 Conventions for AI agents (Claude Code / Codex / others) working in this repository.
+
+The product is **Leona Quantum**. The repo, the Python distributions, the database and
+every internal identifier stay `majorana` on purpose — renaming them buys nothing and
+would invalidate published artifact ids. Do not "fix" this.
+
 Plan authority: `~/Documents/Projects/Majorana/plans/roadmap/00-INDEX.md` is the stage map;
 architecture decisions live in the ADRs under `majorana/docs/adr/`; the security gate is
 `plans/rebuild/05-security.md`; block-repository direction is
 `plans/leona-block-repository-roadmap.md`. (The old `plans/rebuild/` index and its phase
 docs were archived 2026-08-04 to `plans/archive/rebuild/` — history, not authority.)
+
+If any instruction you are carrying points the security gate at
+`plans/security-baseline.md`, it is out of date: that path does not exist, and the file it
+names sits in `plans/attic/` describing a Supabase/Firebase stack this project never built.
+The gate is `plans/rebuild/05-security.md`.
 Scope your context: each app/service/package has its own AGENTS.md — read the one for
 the package you're touching, not the whole tree.
 
@@ -36,8 +46,8 @@ credentials/secrets without the required owner approval.
 
 ## What this repo is
 
-Majorana: a platform that turns LLM-generated quantum code into verified, reproducible,
-reusable artifacts. The API and Worker are the only DB-connected processes, and both use
+Leona Quantum: a platform that turns LLM-generated quantum code into verified,
+reproducible, reusable artifacts. The API and Worker are the only DB-connected processes, and both use
 the repository layer owned by `services/api`; `apps/web` (Next.js) is a thin renderer;
 untrusted generated code runs only in ephemeral network-locked sandboxes
 (`packages/py/sandbox`).
@@ -46,10 +56,17 @@ untrusted generated code runs only in ephemeral network-locked sandboxes
 
 - `apps/web` — Next.js App Router UI (Vercel)
 - `services/api`, `services/worker` — FastAPI control plane + job runner (Cloud Run)
-- `packages/py/*` — agent, contracts, verification, baselines, openqasm, sandbox, llm
-- `packages/ts/*` — ui (vendored components), contracts-gen (GENERATED — never hand-edit)
+- `packages/py/*` — agent, contracts, frameworks, llm, openqasm, qpu, sandbox, verification
+- `packages/ts/*` — ui (vendored components), ui-visual (render/diff harness),
+  contracts-gen (GENERATED — never hand-edit)
 - `db/migrations` — Alembic, single linear history, every migration reversible
 - `evals/`, `bench/` — product evals and performance benchmarks (CI-run, JSON reports)
+
+The two `packages/*` lines are checked against the filesystem by
+`scripts/check-workspace-inventory.mjs`, which runs in `lint`. Add a package and this file
+fails CI until it says so — a prose inventory nobody verifies is worse than none, because
+it reads as current. `packages/py/ir/` is deliberately absent: it holds stale `.pyc` files
+with no sources, is untracked, has no `pyproject.toml`, and nothing imports `majorana_ir`.
 
 ## Hard rules
 

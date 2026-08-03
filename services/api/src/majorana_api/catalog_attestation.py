@@ -75,9 +75,38 @@ class AttestedRecord:
     source_kind_claim: str
     license_claim: str | None
     # sha256 over the record's canonicalized `source` object: pins *what was
-    # claimed* at attestation time, so a later manifest regeneration that changes
-    # a record's asserted provenance is detectable against the approved license.
+    # claimed* at attestation time. This is the governing hash for carry-forward
+    # (see `grant_carries_forward`) — the grant is about the record's identity
+    # and provenance, so a change here is a change to the thing that was signed.
+    claim_hash: str
+    # sha256 over the claim *and* a digest of the record's content. Recorded on
+    # the audit row so it names the exact bytes the grant was made over, not just
+    # the provenance sub-object. Owner decision B, 2026-08-04: without this, the
+    # audit trail says a human approved "this record" while being unable to
+    # distinguish any two revisions of its code — the 156 content fixes leave the
+    # `source` object untouched, so a claim-only hash is identical across them.
     evidence_hash: str
+
+    def grant_carries_forward(self, previous_claim_hash: str | None) -> bool:
+        """May a prior human grant bind to this record's new version unattended?
+
+        Owner decision B (2026-08-04): yes, when the *provenance claim* is
+        unchanged. The attestation's own sentence grants "original first-party
+        work ... reference implementations, scaffolds, and explanatory metadata",
+        which is a statement about where a record comes from, not about each byte
+        revision of it. Editing Leona-authored scaffold does not change who
+        authored it or what it cites, so re-collecting a signature for that would
+        be a rubber stamp — and a rubber stamp on every content session teaches
+        people to sign without reading.
+
+        It stops being defensible the moment a record's origin is third-party,
+        which is exactly what a changed claim indicates. So a changed claim
+        refuses and falls back to option A: a human re-attests (`--attested-by`).
+
+        `previous_claim_hash` of None means no prior grant exists, which is not a
+        carry-forward at all — it needs a first signature.
+        """
+        return previous_claim_hash is not None and previous_claim_hash == self.claim_hash
 
 
 @dataclass(frozen=True)
@@ -185,16 +214,30 @@ class AttestationPolicy:
             "spdx_id": self.spdx_id,
         }
 
-    def plan(self, records: dict[str, dict[str, Any]]) -> AttestationPlan:
+    def plan(
+        self,
+        records: dict[str, dict[str, Any]],
+        content_digests: dict[str, str] | None = None,
+    ) -> AttestationPlan:
         """Classify every manifest record; raise on anything unclassifiable.
 
         `records` maps upstream_identity -> the record's parsed `source` object
         (the already hash-verified manifest blob). Exclusions are checked before
         inclusions so naming an identity always overrides its source kind.
+
+        `content_digests` maps the same identities to a digest of the record's
+        *content* — `source_blob_sha256` from the manifest, which the manifest
+        loader has already verified against the bytes it handed back. It widens
+        `evidence_hash` so the audit row names the bytes, not just the claim.
+        Optional because the claim-only form is what the tests of the
+        classification rules need, and because an older manifest has no digest to
+        offer; when it is absent the two hashes coincide and the audit row is
+        exactly as informative as it was before.
         """
         included: list[AttestedRecord] = []
         excluded: list[ExcludedRecord] = []
         unclassified: list[str] = []
+        digests = content_digests or {}
 
         for identity in sorted(records):
             claim = records[identity] or {}
@@ -206,12 +249,19 @@ class AttestationPolicy:
                 unclassified.append(f"{identity} (source.kind={kind!r})")
                 continue
             license_claim = claim.get("license")
+            claim_hash = _sha256_hex(canonicalize(claim))
+            content_digest = digests.get(identity)
             included.append(
                 AttestedRecord(
                     upstream_identity=identity,
                     source_kind_claim=kind,
                     license_claim=license_claim if isinstance(license_claim, str) else None,
-                    evidence_hash=_sha256_hex(canonicalize(claim)),
+                    claim_hash=claim_hash,
+                    evidence_hash=(
+                        _sha256_hex(f"{claim_hash}:{content_digest}")
+                        if content_digest
+                        else claim_hash
+                    ),
                 )
             )
 
