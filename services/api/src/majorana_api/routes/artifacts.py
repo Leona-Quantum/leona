@@ -25,7 +25,7 @@ from majorana_contracts.enums import (
 from majorana_frameworks import FrameworkProgram
 from majorana_frameworks.roles import ProgramRole
 from majorana_openqasm import OpenQASMError, fingerprint, normalize
-from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
+from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
 from fastapi import Depends
 
@@ -114,6 +114,17 @@ class ImportOwnSourceRequest(RequestModel):
     framework: Framework
     code: str = Field(min_length=1, max_length=100_000)
     family: Algorithm = Algorithm.OTHER
+
+    @field_validator("code")
+    @classmethod
+    def _code_is_not_blank(cls, value: str) -> str:
+        """`min_length=1` admits a single space, and `FrameworkProgram` raises on
+        one — an unhandled ValueError, which is a 500 for what is plainly a bad
+        request. Refused here so the contract states it and the caller gets a 422.
+        """
+        if not value.strip():
+            raise ValueError("code must contain source, not only whitespace")
+        return value
 
 
 class ImportPublicArtifactRequest(RequestModel):
