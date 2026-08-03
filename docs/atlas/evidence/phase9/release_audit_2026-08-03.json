@@ -1,0 +1,66 @@
+{
+  "schema_version": "atlas.phase9.release_audit.v1",
+  "audit_date": "2026-08-03",
+  "classification": "code_and_private_schema_release_audit_not_scientific_result",
+  "audited_commit": "c85f7156a42f38157b6978f93f0acb50bc733c99",
+  "github_ci": {
+    "run_id": 30779777364,
+    "url": "https://github.com/EshMis/majorana/actions/runs/30779777364",
+    "conclusion": "success",
+    "jobs": {
+      "py": "success",
+      "ts": "success",
+      "db": "success",
+      "ui_visual": "success"
+    }
+  },
+  "local_gates": {
+    "alembic_up_down_up": "passed",
+    "alembic_heads": [
+      "0049"
+    ],
+    "python_full": {
+      "passed": 1695,
+      "skipped": 207
+    },
+    "fresh_database_authz_and_candidate_paths": {
+      "passed": 92
+    },
+    "phase9_replay_and_prompt_injection": {
+      "passed": 28
+    },
+    "web_tests": {
+      "passed": 362
+    },
+    "next_production_build": {
+      "status": "passed",
+      "routes_generated": 337
+    },
+    "ruff_check": "passed",
+    "ruff_format_check": {
+      "status": "passed",
+      "files": 417
+    },
+    "import_linter": {
+      "kept": 5,
+      "broken": 0
+    },
+    "raw_query_scan": "passed",
+    "generated_contracts": "current"
+  },
+  "browser_evidence": {
+    "authenticated_ci_contract": "passed",
+    "manual_read_only_attempt": "blocked_by_vercel_deployment_protection_before_app_load",
+    "manual_attempt_changed_application_state": false
+  },
+  "scientific_and_release_boundaries": {
+    "provider_call_performed": false,
+    "public_candidate_data_released": false,
+    "public_execution_enabled": false,
+    "s7_candidate_accepted": false,
+    "s7_candidate_materialized": false,
+    "independent_scientific_review_claimed": false,
+    "model_quality_claimed": false,
+    "performance_claimed": false
+  }
+}

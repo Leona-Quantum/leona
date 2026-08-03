@@ -20,9 +20,9 @@ Updated: 2026-08-03
   PostgreSQL in feature-branch CI;
 - S10 accepted-review private materialization: implemented and remotely
   qualified on fresh disposable PostgreSQL;
-- S11 controlled private integration E2E: implemented and locally qualified on
-  disposable PostgreSQL;
-- S12 release audit: not yet started.
+- S11 controlled private integration E2E: implemented and remotely qualified
+  on fresh disposable PostgreSQL;
+- S12 release audit: complete for code and private schemas only.
 
 No live LLM provider was contacted in S0–S6. S7 used the owner-supplied
 DeepSeek credential for exactly one generation request with retries disabled.
@@ -306,19 +306,18 @@ fresh disposable PostgreSQL database and passed migration
 creation, idempotent replay, cross-workspace denial, and append-only mutation
 rejection. It also confirmed that downgrade is refused after append-only
 materialization evidence exists. The focused DB-free
-review/materialization/persistence/route suite has 43 passing tests. Remote
-fresh-database CI remains the final S10 gate until this feature-branch commit is
-pushed.
+review/materialization/persistence/route suite has 43 passing tests. Fresh-
+database CI qualified the S10 path before S11, and the later S11/S12 audit
+repeated the materialization and tenant-isolation boundaries.
 
-## Open gates
+## S10 boundary after qualification
 
 S10 is a private metadata materialization mechanism, not a publication or
-scientific acceptance mechanism. S11 must demonstrate a controlled
-compose/review/materialize/reopen path on disposable infrastructure, including
-unauthenticated, rejected, stale-version, and cross-workspace failures. S12 must
-then audit migrations, generated contracts, tenant isolation, UI behavior, and
-release claims. Neither step may manufacture acceptance for the one S7 live
-response or issue a second provider call.
+scientific acceptance mechanism. S11 subsequently demonstrated the controlled
+compose/review/materialize/reopen path, and S12 audited migrations, generated
+contracts, tenant isolation, UI contracts, and release claims. Neither step
+manufactured acceptance for the one S7 live response or issued a second
+provider call.
 
 ## S11 controlled private integration E2E
 
@@ -358,13 +357,56 @@ system transaction to be qualified without manufacturing a scientific result.
 
 The focused DB-free route/materialization suite reports 29 passing tests. The
 S10 and S11 live tests pass together on the same disposable database, including
-repeat execution. Remote fresh-database CI remains the final S11 gate until the
-feature-branch commit is pushed.
+repeat execution. Feature-branch CI run `30779777364` passed the fresh-database
+migration, authz, pipeline, repository-integrity, Python, TypeScript,
+production-build, and authenticated browser-contract jobs for commit
+`c85f7156a42f38157b6978f93f0acb50bc733c99`.
 
-## Open gates
+## S12 release audit
 
-S12 must rerun migration up/down/up, the complete Python and TypeScript suites,
-generated-contract checks, authz and tenant-isolation suites, deterministic
-replay and prompt-injection fixtures, production web build, and a browser-level
-private UI smoke test. The release remains code and private schemas only; public
-candidate data and performance/scientific claims remain blocked.
+S12 used a fresh local PostgreSQL database, not the stale Neon feature-history
+branch. Alembic `upgrade head -> downgrade base -> upgrade head` completed, and
+the repository still has exactly one head at `0049`. The complete Python suite
+reported 1,695 passed and 207 skipped tests. A fresh-database selection covering
+authz, candidate persistence, materialization, and the S11 integration path
+reported 92 passing tests. The four Phase 9 deterministic replay and prompt-
+injection suites reported 28 passing tests.
+
+Generated Python and TypeScript contracts were current with no generated diff.
+The complete TypeScript lint/typecheck/test graph passed, including 362 web
+tests. The local Next.js production build compiled, typechecked, and generated
+337 routes. Ruff checked the repository clean, all 417 Python files were
+formatted, all five import-linter contracts were kept, and the raw-query scan
+was clean. The build still emits non-blocking framework-maintenance warnings
+about workspace-root inference and the deprecated Next.js middleware naming;
+neither warning changed the build result, but both remain ordinary engineering
+debt rather than scientific evidence.
+
+GitHub feature-branch run `30779777364` independently passed all `py`, `ts`,
+`db`, and `ui-visual` jobs. Its UI job exercised authenticated Atlas VQE happy
+and failure browser contracts. A separate read-only manual browser attempt was
+stopped by Vercel Deployment Protection at the Vercel login surface before the
+application loaded; no credential was entered and no application state was
+changed. This is recorded as an access-control observation, not a successful
+manual application smoke test. The authenticated CI browser contract and the
+owner's earlier private UI walkthrough remain distinct evidence and are not
+misreported as one another.
+
+The machine-readable redacted audit summary is stored at
+`docs/atlas/evidence/phase9/release_audit_2026-08-03.json` with SHA-256
+`cbc054afe2ab1cc98f20f51b4cc724beb50607d7285c0a6fbdfddcdc38dc5eb5`. It
+records zero provider calls, zero public candidate releases, and zero S7
+materializations. S12 therefore qualifies only the feature-branch code,
+migration, private data boundaries, and controlled synthetic system
+transaction. It does not qualify LLM extraction quality, scientific
+correctness, independent review, compatibility claims, performance claims, or
+public execution.
+
+## Remaining scientific and publication gates
+
+The one S7 live envelope remains unreviewed and contains ten unknowns. No S7
+candidate has been accepted, materialized, executed, or published. Public
+candidate data, public execution, performance claims, and scientific claims
+remain blocked. Any later publication requires evidence-backed resolution of
+the unknowns, an explicitly scoped scientific review process, and a separate
+owner-approved release decision; S12 does not provide any of those approvals.
