@@ -1,6 +1,6 @@
 # Phase 9 progress — LLM-assisted extraction
 
-Updated: 2026-08-01
+Updated: 2026-08-03
 
 ## Current state
 
@@ -18,9 +18,11 @@ Updated: 2026-08-01
   PostgreSQL 17 in feature-branch CI;
 - S9 evidence-bound human review queue: implemented and qualified on fresh
   PostgreSQL in feature-branch CI;
-- S10 accepted-review private materialization: implemented and locally
-  qualified on a fresh disposable PostgreSQL instance;
-- S11–S12 controlled E2E and release audit: not yet started.
+- S10 accepted-review private materialization: implemented and remotely
+  qualified on fresh disposable PostgreSQL;
+- S11 controlled private integration E2E: implemented and locally qualified on
+  disposable PostgreSQL;
+- S12 release audit: not yet started.
 
 No live LLM provider was contacted in S0–S6. S7 used the owner-supplied
 DeepSeek credential for exactly one generation request with retries disabled.
@@ -317,3 +319,52 @@ unauthenticated, rejected, stale-version, and cross-workspace failures. S12 must
 then audit migrations, generated contracts, tenant isolation, UI behavior, and
 release claims. Neither step may manufacture acceptance for the one S7 live
 response or issue a second provider call.
+
+## S11 controlled private integration E2E
+
+The S11 live test runs the real repository chain on disposable PostgreSQL:
+
+1. store an immutable selected-metadata snapshot;
+2. reconstruct the deterministic Phase 8 declared-evidence bundle;
+3. persist a private schema/evidence-validated candidate envelope;
+4. append a rejected review and prove it cannot materialize;
+5. append two accepted synthetic transaction-test versions and prove the older
+   version is stale;
+6. prove a second workspace cannot materialize or reopen the object;
+7. materialize the latest version as a private structured Artifact;
+8. reopen its Artifact and ArtifactVersion from a separate database session;
+9. replay the same idempotency key and obtain the original materialization.
+
+An HTTP-level test separately proves the materialization endpoint returns 401
+to a caller without a bearer token before database use. The existing route
+inventory now also explicitly includes this handler in the `CurrentScope`
+signature gate.
+
+S11 exposed a real S10 integration defect that the earlier mocked evidence view
+had hidden. Phase 8 serializes a declared fact as
+`{"field":"citation.license","value":"Apache-2.0"}`, while S10 had compared
+the whole `declared_value` to the bare SPDX string. The production path could
+therefore never satisfy its license gate. The gate now requires both the exact
+`citation.license` field identity and exact allowlisted SPDX value. A regression
+test proves that an unrelated declared field containing the same text cannot
+authorize the license.
+
+The S11 happy-path input is deliberately labelled a synthetic transaction
+fixture. Its metadata and reviewer decisions are not Qiskit Nature facts,
+independent human review, LLM-quality evidence, or scientific acceptance. No
+provider was called, no S7 candidate was accepted, and the resulting object is
+fixed private, non-executable, and non-publishable. This distinction allows the
+system transaction to be qualified without manufacturing a scientific result.
+
+The focused DB-free route/materialization suite reports 29 passing tests. The
+S10 and S11 live tests pass together on the same disposable database, including
+repeat execution. Remote fresh-database CI remains the final S11 gate until the
+feature-branch commit is pushed.
+
+## Open gates
+
+S12 must rerun migration up/down/up, the complete Python and TypeScript suites,
+generated-contract checks, authz and tenant-isolation suites, deterministic
+replay and prompt-injection fixtures, production web build, and a browser-level
+private UI smoke test. The release remains code and private schemas only; public
+candidate data and performance/scientific claims remain blocked.

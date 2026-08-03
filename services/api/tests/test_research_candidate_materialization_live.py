@@ -27,7 +27,6 @@ requires_db = pytest.mark.skipif(
 )
 
 SOURCE_URL = "https://github.com/Qiskit/qiskit-nature"
-SOURCE_COMMIT = "a" * 40
 
 
 @pytest.fixture
@@ -50,7 +49,7 @@ async def _new_scope(session, label: str) -> Scope:
     return Scope(user_id=user.id, workspace_id=workspace.id, role=Role.OWNER)
 
 
-def _candidate() -> dict:
+def _candidate(source_commit: str) -> dict:
     values = {
         "name": "UCCSD implementation",
         "component_type": "ansatz",
@@ -61,7 +60,7 @@ def _candidate() -> dict:
         "version": "0.8.0",
         "license_expression": "Apache-2.0",
         "repository_url": SOURCE_URL,
-        "commit_sha": SOURCE_COMMIT,
+        "commit_sha": source_commit,
     }
     return {
         "local_id": "candidate_uccsd",
@@ -94,10 +93,12 @@ def _decisions(candidate: dict) -> list[dict]:
 
 @requires_db
 async def test_materialization_is_private_atomic_scoped_and_append_only(db, monkeypatch):
+    repository_id = int(uuid.uuid4().int % 9_000_000_000) + 1
+    source_commit = uuid.uuid4().hex + uuid.uuid4().hex[:8]
     snapshot_id = uuid.uuid4()
     envelope_id = uuid.uuid4()
     review_id = uuid.uuid4()
-    candidate = _candidate()
+    candidate = _candidate(source_commit)
     candidate_sha = research_candidates._sha256_json(candidate)
     evidence_bundle_sha = "c" * 64
     snapshot_sha = research_candidates._sha256_json({"scope": "phase9-s10-live"})
@@ -108,16 +109,16 @@ async def test_materialization_is_private_atomic_scoped_and_append_only(db, monk
         session.add(
             GitHubRepositorySnapshotRow(
                 id=snapshot_id,
-                repository_id=123456789,
+                repository_id=repository_id,
                 repository_node_id=f"R_{uuid.uuid4().hex}",
                 full_name="Qiskit/qiskit-nature",
                 canonical_repository_url=SOURCE_URL,
-                requested_ref=SOURCE_COMMIT,
+                requested_ref=source_commit,
                 default_branch="main",
                 archived=False,
                 disabled=False,
                 api_version="2022-11-28",
-                commit_sha=SOURCE_COMMIT,
+                commit_sha=source_commit,
                 tree_sha="b" * 40,
                 tree_entry_count=1,
                 tree_manifest_sha256="d" * 64,
@@ -138,8 +139,8 @@ async def test_materialization_is_private_atomic_scoped_and_append_only(db, monk
                 prompt_version="atlas.research-extraction.prompt.v1",
                 policy_version="atlas.research-candidate-policy.v1",
                 response_schema_version="atlas.research-candidate-response.v1",
-                repository_id=123456789,
-                commit_sha=SOURCE_COMMIT,
+                repository_id=repository_id,
+                commit_sha=source_commit,
                 snapshot_sha256=snapshot_sha,
                 input_bundle_sha256=evidence_bundle_sha,
                 response_sha256="f" * 64,
@@ -186,7 +187,13 @@ async def test_materialization_is_private_atomic_scoped_and_append_only(db, monk
         await session.commit()
 
     evidence = (
-        {"evidence_id": "ev_license", "declared_value": "Apache-2.0"},
+        {
+            "evidence_id": "ev_license",
+            "declared_value": {
+                "field": "citation.license",
+                "value": "Apache-2.0",
+            },
+        },
         {"evidence_id": "ev_identity", "declared_value": "identity evidence"},
     )
 
@@ -210,6 +217,9 @@ async def test_materialization_is_private_atomic_scoped_and_append_only(db, monk
 
     async with db() as session:
         baseline_artifact_count = await session.scalar(select(func.count()).select_from(Artifact))
+        baseline_materialization_count = await session.scalar(
+            select(func.count()).select_from(VqeResearchCandidateMaterializationRow)
+        )
         with pytest.raises(
             research_candidates.ResearchCandidateMaterializationError,
             match="stale_materialization_input",
@@ -233,7 +243,7 @@ async def test_materialization_is_private_atomic_scoped_and_append_only(db, monk
             await session.scalar(
                 select(func.count()).select_from(VqeResearchCandidateMaterializationRow)
             )
-            == 0
+            == baseline_materialization_count
         )
 
     key = f"materialize-{uuid.uuid4()}"

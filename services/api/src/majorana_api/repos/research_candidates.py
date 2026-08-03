@@ -1141,7 +1141,10 @@ def _build_private_materialization_contract(
         evidence_by_id.get(evidence_id) for evidence_id in license_field.get("evidence_ids", [])
     ]
     if not license_evidence or not any(
-        item is not None and item.get("declared_value") == license_expression
+        isinstance(item, dict)
+        and isinstance(item.get("declared_value"), dict)
+        and item["declared_value"].get("field") == "citation.license"
+        and item["declared_value"].get("value") == license_expression
         for item in license_evidence
     ):
         raise ResearchCandidateMaterializationError("license_evidence_not_exact")

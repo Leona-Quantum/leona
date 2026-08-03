@@ -82,6 +82,7 @@ def test_every_route_requires_a_scope():
         vqe_routes.list_research_candidate_envelopes,
         vqe_routes.get_research_candidate_review_view,
         vqe_routes.create_research_candidate_review,
+        vqe_routes.materialize_research_candidate_review,
         vqe_routes.create_experiment,
         vqe_routes.get_experiment,
         vqe_routes.create_controlled_comparison,

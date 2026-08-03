@@ -75,7 +75,10 @@ def _evidence() -> tuple[dict, ...]:
     return (
         {
             "evidence_id": "ev_license",
-            "declared_value": "Apache-2.0",
+            "declared_value": {
+                "field": "citation.license",
+                "value": "Apache-2.0",
+            },
         },
         {
             "evidence_id": "ev_identity",
@@ -123,7 +126,29 @@ def test_human_edited_license_cannot_create_its_own_license_authority() -> None:
 
 def test_license_must_equal_declared_source_evidence() -> None:
     evidence = list(_evidence())
-    evidence[0] = {"evidence_id": "ev_license", "declared_value": "unknown"}
+    evidence[0] = {
+        "evidence_id": "ev_license",
+        "declared_value": {"field": "citation.license", "value": "unknown"},
+    }
+
+    with pytest.raises(
+        research_candidates.ResearchCandidateMaterializationError,
+        match="license_evidence_not_exact",
+    ):
+        research_candidates._build_private_materialization_contract(
+            _review(),
+            evidence=tuple(evidence),
+            source_repository_url=SOURCE_URL,
+            source_commit_sha=SOURCE_COMMIT,
+        )
+
+
+def test_unrelated_declared_value_cannot_authorize_a_license() -> None:
+    evidence = list(_evidence())
+    evidence[0] = {
+        "evidence_id": "ev_license",
+        "declared_value": {"field": "citation.title", "value": "Apache-2.0"},
+    }
 
     with pytest.raises(
         research_candidates.ResearchCandidateMaterializationError,
