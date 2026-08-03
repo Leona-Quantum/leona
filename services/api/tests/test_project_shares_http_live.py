@@ -785,7 +785,15 @@ async def test_a_copy_into_another_workspaces_project_is_a_404_not_an_oracle(sta
 PUBLIC_IMPORT = {
     "family": "Bell",
     "framework": "qiskit",
-    "code": "from qiskit import QuantumCircuit\nqc = QuantumCircuit(2)\n",
+    # Binds FINAL_CIRCUIT because the route refuses source that binds neither it
+    # nor RESULT — the catalog published 87 records this rejects, and the point
+    # of the gate is that they stop reaching the Vault. A fixture that binds
+    # nothing would be exercising the allowance against something the route can
+    # no longer be asked to file.
+    "code": (
+        "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)\n\n"
+        "FINAL_CIRCUIT = qc\n"
+    ),
     "code_lang": "python",
     "source_url": "https://example.org/atlas",
     "source_license": "CC-BY-4.0",
@@ -865,3 +873,40 @@ async def test_re_importing_something_already_imported_spends_nothing(stage):
     async with stage["factory"]() as session:
         after_second = await artifacts_repo.count_kept_against_quota(alice.scope, session)
     assert after_second == after_first, "a repeat import spent a second slot"
+
+
+async def test_a_public_record_that_is_not_a_circuit_never_reaches_the_vault(stage):
+    """The catalog published 87 prose records — an operator's representative form,
+    a literature method's ingredient list — as `framework: "Qiskit"`, and this
+    route filed the paragraph as an artifact's executable code with
+    `code_lang: "text"`.
+
+    Asserted over real HTTP and against the real count rather than in a unit test
+    with a mocked repo: what matters is that nothing lands, and a double cannot
+    tell you that.
+    """
+    alice = stage["alice"]
+    async with stage["factory"]() as session:
+        before = await artifacts_repo.count_kept_against_quota(alice.scope, session)
+
+    response = await alice.client.post(
+        "/v1/artifacts/import-public",
+        json={
+            **PUBLIC_IMPORT,
+            "source_slug": f"operator-annihilation-{uuid.uuid4().hex[:8]}",
+            "title": "Fermionic annihilation operator",
+            "source_title": "Fermionic annihilation operator",
+            "code": (
+                "OPERATOR: Fermionic annihilation operator\n"
+                "REPRESENTATIVE FORM: a_p\n\n"
+                "This is a mathematical operator record, not an executable circuit."
+            ),
+            "code_lang": "text",
+        },
+    )
+    assert response.status_code == 422, response.text
+    assert response.json()["reason"] == "public_source_role_unknown"
+
+    async with stage["factory"]() as session:
+        after = await artifacts_repo.count_kept_against_quota(alice.scope, session)
+    assert after == before, "a record this product cannot run was filed anyway"

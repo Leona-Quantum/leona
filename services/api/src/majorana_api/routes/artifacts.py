@@ -296,11 +296,38 @@ async def import_public_artifact(
     Idempotent on the source slug, and that is load-bearing for the cap too:
     re-importing something already imported returns the existing row and spends
     nothing, so an account at its limit can still open what it already has.
+
+    ## Why this route checks the role too
+
+    `import-source` refuses source that binds neither `FINAL_CIRCUIT` nor
+    `RESULT`, because Leona cannot tell what it is or run it. This route did not,
+    and the asymmetry ran the wrong way: a user's own circuit was held to the
+    execution contract while the product's own catalog was not. Measured against
+    the published catalog before it was fixed, 156 of 283 entries exported a blob
+    this product could not execute — 87 of them not Python at all, but a
+    paragraph of English filed with `code_lang: "text"`.
+
+    The catalog is clean now and this gate refuses nothing that exists, which is
+    the point: it is a ratchet, so the next entry that cannot run is refused at
+    the door rather than discovered in a run that hands it to a model to rewrite.
     """
     slug = f"public-{_public_slug(body.source_slug)}-{scope.workspace_id.hex}"
     existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
     if existing is not None:
         return _to_artifact(existing)
+
+    if FrameworkProgram(framework=body.framework, source=body.code).role is ProgramRole.UNKNOWN:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": (
+                    "This catalog entry is a reference record, not a circuit Leona can "
+                    "run, so there is nothing to put in your Library. Open it in the "
+                    "repository to read or copy it."
+                ),
+                "reason": "public_source_role_unknown",
+            },
+        )
 
     qasm, qasm_version, qasm_fingerprint = _canonical_public_qasm(body.qasm)
     # Unkept, then filed below. `keep_artifact` is the one place an artifact

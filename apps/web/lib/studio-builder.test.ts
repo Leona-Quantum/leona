@@ -90,6 +90,12 @@ test("Qmod emits Classiq's Python-embedded form with its documented gate signatu
   ], 3);
 
   assert.match(generated.qmod, /^from classiq import \*$/m);
+  // The file says what it is. A drawn circuit is a gate list, and Qmod's whole
+  // point is the layer above gates — qnum arithmetic, within/apply, reusable
+  // qfuncs — so shipping a transliteration under the name "Qmod" with nothing
+  // said overstates it. Asserted rather than left to the doc comment, because a
+  // comment above the function is not what a reader of the export sees.
+  assert.match(generated.qmod, /^# A gate-level rendering of this circuit as a Qmod model\./m);
   // Classiq's own symbolic pi, not numpy's: the angle is a Qmod expression.
   assert.match(generated.qmod, /^from classiq\.qmod\.symbolic import pi$/m);
   assert.match(generated.qmod, /^@qfunc$/m);

@@ -110,10 +110,25 @@ export function makeReferenceEntry(options: ReferenceEntryOptions): PublicReposi
     codeVariants: [
       {
         framework: options.framework,
-        status: "native",
+        // `native` is a claim: "this is genuine source for that framework".
+        // 87 published records are prose — an operator's representative form, a
+        // literature method's ingredient list — carried under `language: "text"`
+        // and stamped `native` here anyway. Nothing downstream re-checked it, so
+        // `getPublicRepositoryLibraryVariant` picked them up and Save-to-Library
+        // filed a paragraph of English as an artifact's executable code.
+        // A text record is not source for any framework, and says so here once
+        // rather than in each of the five places that read this field.
+        status: options.language === "text" ? "unsupported" : "native",
         language: options.language,
         filename: options.filename,
         code: options.code,
+        ...(options.language === "text"
+          ? {
+              note:
+                "A reference record, not runnable source. Leona cannot execute it, "
+                + "so it cannot be saved to your Library as a circuit.",
+            }
+          : {}),
       },
       ...(options.extraVariants ?? []),
     ],

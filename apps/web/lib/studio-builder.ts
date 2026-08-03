@@ -264,6 +264,18 @@ function pyquilOperation(step: BuilderStep): string {
  * measure gates; the qubits it exposes as `Output` are what an execution
  * samples, so measurement is expressed by executing the synthesized program.
  * `generateBuilderCode` appends that call instead.
+ *
+ * ## What this export is NOT, and why the emitted file says so
+ *
+ * A gate-for-gate transliteration. Qmod's reason to exist is the layer above
+ * gates — `qnum` variables with arithmetic (`res = a <= 2` synthesises a
+ * comparator), `within { } apply { }` for U†VU with automatic uncompute and
+ * ancilla reclamation, and a synthesis engine that chooses implementations
+ * rather than transpiling a fixed one. A drawn circuit is a gate list, so this
+ * emitter renders a gate list, and calling that "Qmod" without qualification
+ * overstates it in the same way `status: "native"` on a prose record did.
+ * Studied in `plans/classiq-library-study.md`; the header comment in the emitted
+ * file is where a reader actually sees it.
  */
 function qmodOperation(step: BuilderStep): string {
   const [a, b] = step.qubits;
@@ -414,6 +426,11 @@ export function generateBuilderCode(
 
   const qmodLines = flattenedOperations.map(qmodOperation).filter(Boolean);
   const qmod = [
+    "# A gate-level rendering of this circuit as a Qmod model. It synthesizes, and",
+    "# executes when the circuit is measured, but it uses none of what Qmod is for:",
+    "# quantum numeric variables with arithmetic, within/apply for automatic",
+    "# uncompute, and reusable qfuncs. Rewrite it in those terms before treating it",
+    "# as idiomatic Qmod.",
     "from classiq import *",
     ...(usesAngle ? ["from classiq.qmod.symbolic import pi"] : []),
     "",
