@@ -95,6 +95,20 @@ const INCONCLUSIVE_SUMMARY = {
   ],
   unverified_claims: ["Expected Bell-state distribution", "Relative phase"],
 };
+/** What an artifact-only run really files: no checks ran, and the five claims
+ * are the product's own fixed vocabulary rather than a reviewer's prose. This
+ * is the INCONCLUSIVE a Japanese user is most likely to meet, so it is the one
+ * the Japanese story renders. */
+const ARTIFACT_ONLY_SUMMARY = {
+  decision: "inconclusive" as const, evidence_strength: null,
+  reason_code: "artifact_static_review_ready_execution_not_run",
+  candidate_defect_observed: false, failure_class: "evidence_gap" as const,
+  retry_target: "none" as const, semantic_review_decision: "ready" as const,
+  checks: [],
+  unverified_claims: [
+    "reported output", "quantum correctness", "physical fidelity", "optimality", "intent alignment",
+  ],
+};
 
 function StudioEvidenceFixture({ title, children }: { title: string; children: ReactNode }) {
   return <section className="mj-studio-surface mj-studio-version-panel" style={{ maxWidth: "760px" }}><div className="mj-studio-surface-head"><div><span className="mj-section-label">Version history</span><h2>{title}</h2></div><span className="mj-mono-muted">Studio</span></div><div className="mj-studio-version-evidence" style={{ margin: "var(--sp-4)" }}>{children}</div></section>;
@@ -188,6 +202,12 @@ export const STORIES: Story[] = [
   { name: "studio-verification-loading", title: "Studio — verification loading", node: <StudioEvidenceFixture title="Loading artifact"><VerificationSummaryPanel summary={null} state="loading" /></StudioEvidenceFixture> },
   { name: "studio-verification-empty", title: "Studio — no verification record", node: <StudioEvidenceFixture title="New draft"><VerificationSummaryPanel summary={null} state="empty" /></StudioEvidenceFixture> },
   { name: "studio-verification-error", title: "Studio — verification load error", node: <StudioEvidenceFixture title="Unavailable artifact"><VerificationSummaryPanel summary={null} state="error" /></StudioEvidenceFixture> },
+  // Japanese. FAIL is the one a user meets at their worst moment, and until this
+  // panel took a locale it met them in English on an otherwise bilingual page.
+  { name: "studio-verification-fail-ja", title: "Studio — FAIL evidence (ja)", node: <StudioEvidenceFixture title="ベル状態の候補"><VerificationSummaryPanel summary={FAIL_SUMMARY} locale="ja" /></StudioEvidenceFixture> },
+  { name: "studio-verification-pass-ja", title: "Studio — PASS artifact (ja)", node: <StudioEvidenceFixture title="ベル状態"><VerificationSummaryPanel summary={PASS_SUMMARY} locale="ja" /></StudioEvidenceFixture> },
+  { name: "studio-verification-inconclusive-ja", title: "Studio — artifact-only INCONCLUSIVE (ja)", node: <StudioEvidenceFixture title="動的回路"><VerificationSummaryPanel summary={ARTIFACT_ONLY_SUMMARY} locale="ja" /></StudioEvidenceFixture> },
+  { name: "studio-verification-stale-ja", title: "Studio — edited formerly-PASS artifact (ja)", node: <StudioEvidenceFixture title="ベル状態の下書き"><VerificationSummaryPanel summary={PASS_SUMMARY} state="stale" locale="ja" /></StudioEvidenceFixture> },
   // ---- StageRail (6): all states × interactive/non-interactive ----
   {
     name: "rail-mid-run",
