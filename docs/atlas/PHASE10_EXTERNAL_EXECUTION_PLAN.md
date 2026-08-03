@@ -411,6 +411,13 @@ Progress is measured by controls, not repository count:
 
 ## 10. Immediate next action
 
-Request the S0 owner security decision. Until it is recorded, only threat-model,
-test-fixture, schema, and documentation work may continue. Fetching or executing
-external source remains blocked by design.
+The S1 design baseline is now recorded in
+`PHASE10_S1_THREAT_MODEL.md`, with a machine-checked threat/control/test matrix
+at `evidence/phase10/threat_control_matrix_v1.json`. It identifies 26
+release-blocking threats, but is **designed, not accepted**: responsible people
+have not been named and Phase 10-specific live controls are not qualified.
+
+Request the S0 owner security decision and review the S1 baseline. Until those
+are recorded, only recorded-response acquisition design, inert hostile-fixture
+specification, schema, and documentation work may continue. Fetching or
+executing external source remains blocked by design.
