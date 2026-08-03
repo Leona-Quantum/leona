@@ -15,6 +15,29 @@ verification → first-login provisioning (user + personal workspace) → `/v1/m
 3. `cp apps/web/.env.local.example apps/web/.env.local`, fill in the two values,
    and set `WORKOS_COOKIE_PASSWORD` to the output of `openssl rand -base64 32`.
 
+## The local database
+
+**A local PostgreSQL 17, not a hosted branch.** Production moved to Cloud SQL on
+2026-07-27 (ADR-0024) and Cloud SQL has no branching, so there is no `neonctl` and no
+per-developer hosted database any more. CI does the same thing — `ci.yml`'s `db` job and
+`bench.yml` run a `postgres:17` service container.
+
+```bash
+# One container, once. 17 matches production; 16 is the sort of gap that surfaces
+# as a mystery on the day it matters.
+docker run -d --name majorana-pg -p 5432:5432 \
+  -e POSTGRES_USER=postgres -e POSTGRES_PASSWORD=postgres -e POSTGRES_DB=majorana \
+  postgres:17
+
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/majorana"
+export DATABASE_URL_DIRECT="$DATABASE_URL"   # locally the same value; Alembic reads this one
+uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+```
+
+`.env.example` carries the same pair. **Never point either variable at production** —
+`db.py` refuses a *Neon* URL in a deployed environment, but nothing stops a local process
+from opening the production Cloud SQL instance if you hand it that URL.
+
 ## Run locally
 
 ### WorkOS-free local loop
@@ -29,7 +52,7 @@ and JWT verification at the two auth choke points.
 export MAJORANA_ENV=development
 export MAJORANA_LOCAL_DEV_AUTH=true
 export MAJORANA_SANDBOX=local  # DEV/TEST double only; never production
-export DATABASE_URL="$(neonctl connection-string dev-local --project-id twilight-wildflower-01313590 --pooled)"
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/majorana"
 uv run --package majorana-api uvicorn --factory majorana_api.app:create_app --port 8000
 
 # In a second terminal, start the worker with the same database and the local
@@ -37,7 +60,7 @@ uv run --package majorana-api uvicorn --factory majorana_api.app:create_app --po
 # sandbox credentials; it is not a production isolation boundary.
 export MAJORANA_ENV=development
 export MAJORANA_SANDBOX=local
-export DATABASE_URL="$(neonctl connection-string dev-local --project-id twilight-wildflower-01313590 --pooled)"
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/majorana"
 uv run --package majorana-worker majorana-worker
 
 # Web — Next must be running in development mode
@@ -50,8 +73,8 @@ The seam is fail-closed outside a local development process and never accepts a
 production/Cloud Run/Vercel configuration.
 
 ```bash
-# API (needs a dev DB — create/reuse a Neon branch, run migrations first)
-export DATABASE_URL="$(neonctl connection-string dev-local --project-id twilight-wildflower-01313590)"
+# API (needs the local dev DB from above, migrated)
+export DATABASE_URL="postgresql://postgres:postgres@localhost:5432/majorana"
 export WORKOS_CLIENT_ID="client_..."          # same value as apps/web/.env.local
 uv run --package majorana-api alembic -c db/alembic.ini upgrade head
 uv run --package majorana-api uvicorn --factory majorana_api.app:create_app --port 8000

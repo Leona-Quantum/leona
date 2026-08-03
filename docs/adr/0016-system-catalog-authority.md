@@ -1,6 +1,19 @@
 # ADR-0016: System catalog authority is isolated through server-owned principals
 
-**Date:** 2026-07-18 · **Status:** accepted for Step 2 implementation; CODEOWNER review required before deploy
+**Date:** 2026-07-18 · **Status:** implemented and deployed (2026-07-19)
+
+> **Status corrected 2026-08-04.** Shipped as migration `0013_system_workspace_kind`,
+> `catalog_authority.py` and `auth/catalog_deps.py`; the public read path is
+> `routes/catalog.py`. `SYSTEM_CATALOG_ENABLED` and the three `SYSTEM_CATALOG_*_ID`
+> values are set on both live Cloud Run services (`docs/runbooks/deploys.md §
+> Environment`), and the corpus is published. The status line read "CODEOWNER review
+> required before deploy" for the whole time this was serving production traffic.
+>
+> Two nouns in the text below are stale and were left unedited: the database is
+> **Cloud SQL for PostgreSQL 17**, not Neon (ADR-0024), and the "temporary-Neon-branch
+> up→down→up result" that the consequences require is now an
+> `upgrade→downgrade→upgrade` run against CI's `postgres:17` service container.
+
 **Context:** The existing API authorizes repository operations with an immutable
 user/workspace `Scope`, while the new Neon catalog needs importer mutations,
 reviewed publication, and anonymous public reads without exposing personal or team

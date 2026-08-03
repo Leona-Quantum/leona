@@ -1,5 +1,6 @@
 # Phase 1 gates (contracts + migrations landed; import-linter and authz suite
-# arrive with their steps — plans/rebuild/03-repo-structure.md §4).
+# arrive with their steps — plans/archive/rebuild/03-repo-structure.md §4, archived;
+# the live repo layout is the current authority).
 # Job names ts/py/db are required checks on dev+prod — do not rename.
 # Contracts chain (ADR-0008): models are truth → py job verifies openapi.json is
 # current → ts job regenerates schema.d.ts and fails on diff.

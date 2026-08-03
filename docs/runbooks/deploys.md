@@ -264,6 +264,50 @@ deploy: expand in one release, contract in a later one. Dropping or renaming
 something the live code still touches breaks production in the window between the
 migration and the traffic shift.
 
+### The public catalog flag — `MAJORANA_PUBLIC_CATALOG_API`
+
+**Set on Vercel, not on Cloud Run.** It is read by the Next.js server
+(`apps/web/lib/public-catalog.ts`), and it is the single switch that decides where
+`/repository` gets its content:
+
+| Value | What `/repository` serves |
+|---|---|
+| `"true"` | the API's published system catalog — `GET /v1/catalog/entries` (+ `/{slug}`) |
+| anything else, including unset | the committed static corpus, `apps/web/lib/repository/entries-*.ts` |
+
+**It is `true` in production.** It was documented in no runbook until 2026-08-04, which
+is why the operational consequence below kept surprising people.
+
+**There is a whole-corpus fallback and it is deliberate.** If the API is unreachable,
+returns nothing usable, or fails the page-completeness check, `repository-source.ts`
+serves the static corpus anyway rather than 500 the public site, and logs
+`[repository-source] falling back to the static corpus`. That is safe only for as long
+as both sides really are the same 283 records. **Grep the Vercel logs for that line
+before concluding the cutover is healthy** — a silent fallback makes a broken cutover
+look like a working one, which is exactly why it is logged loudly.
+
+**The consequence that surprises everyone: editing the TypeScript corpus does not
+change the site.** With the flag on, the entries files are the *editing* surface and
+the *fallback* surface, but not the *serving* surface. A content fix reaches visitors
+only after the full loop:
+
+```bash
+# 1. Regenerate the pinned manifest from the entries at the current commit.
+#    --check verifies the committed manifest matches without rewriting it.
+node scripts/generate-catalog-bootstrap-manifest.mjs --check
+node scripts/generate-catalog-bootstrap-manifest.mjs   # → services/api/catalog_bootstrap/manifest.json
+# 2. Re-import, re-attest, re-publish against production.
+#    Full procedure, including the SYSTEM_CATALOG_ENABLED shell trap and the
+#    fail-closed attestation policy: docs/runbooks/system-catalog.md
+```
+
+Steps 1 and 2 are a deliberate, reviewed action — there is no automatic sync, by design
+(ADR-0019). Until they run, the database keeps serving the previous manifest and the
+repository keeps showing the fix.
+
+Turning the flag off is a Vercel config change and a redeploy of the same code; it
+falls back to the corpus immediately and loses nothing.
+
 ## Post-deploy synthetic run
 
 The last step of `deploy.yml` submits one real run against the freshly deployed

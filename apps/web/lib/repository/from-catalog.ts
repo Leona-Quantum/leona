@@ -12,25 +12,37 @@
 // (scripts/generate-catalog-bootstrap-manifest.mjs bundles the barrel, not the
 // raw entries-* modules), so records arrive with the text normalization and
 // derived verificationMethods already applied. Do not re-run that pipeline here.
-import type {
-  PublicRepositoryCategory,
-  PublicRepositoryEntry,
-  PublicRepositoryFramework,
-  PublicRepositoryListEntry,
-  PublicRepositoryStatus,
-} from "./types";
+//
+// The specifier carries its `.ts` extension because this is now a VALUE import
+// rather than a type-only one: `node --test` strips the types but resolves the
+// path literally. The rest of lib/ spells it out for the same reason.
+import {
+  PUBLIC_REPOSITORY_FRAMEWORKS,
+  type PublicRepositoryCategory,
+  type PublicRepositoryEntry,
+  type PublicRepositoryFramework,
+  type PublicRepositoryListEntry,
+  type PublicRepositoryStatus,
+} from "./types.ts";
 
+// The framework vocabulary is imported, never restated. This file used to keep
+// its own array, and it was one member short — it never gained "Qmod" — so a
+// published record whose primary framework was Qmod would have failed the check
+// below and been dropped from the API-backed catalog. Nothing today publishes
+// one, which is exactly why the copy could sit wrong without a symptom.
+//
+// If you are adding a framework, add it to PUBLIC_REPOSITORY_FRAMEWORKS in
+// ./types and stop; there is nothing to add here.
+const FRAMEWORKS: readonly PublicRepositoryFramework[] = PUBLIC_REPOSITORY_FRAMEWORKS;
+
+// Categories and statuses are still written out here, because neither has an
+// exported list to import: ./types exports PUBLIC_REPOSITORY_CATEGORIES, but
+// that is the browse filter's options (it carries an "all" sentinel that is not
+// a category), and a validator that followed a UI control would turn hiding a
+// filter into rejecting every record in that category. Statuses have no
+// exported list at all. Both are hand-kept against the types above.
 const CATEGORIES: readonly PublicRepositoryCategory[] = ["gates", "algorithms", "operators", "states"];
 const STATUSES: readonly PublicRepositoryStatus[] = ["verified", "verified_caveats", "community_review"];
-const FRAMEWORKS: readonly PublicRepositoryFramework[] = [
-  "Qiskit",
-  "PennyLane",
-  "Cirq",
-  "CUDA-Q",
-  "Amazon Braket",
-  "OpenQASM 3.0",
-  "PyQuil",
-];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
   return typeof value === "object" && value !== null && !Array.isArray(value);

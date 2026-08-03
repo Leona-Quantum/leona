@@ -1,5 +1,6 @@
 """Closed enums shared across every boundary. Values match the DB CHECK constraints
-(plans/rebuild/04-database.md §2) — additive changes only within /v1."""
+(plans/archive/rebuild/04-database.md §2, archived; live schema authority is
+majorana/docs/runbooks/database.md) — additive changes only within /v1."""
 
 from collections.abc import Iterable, Mapping
 from enum import StrEnum

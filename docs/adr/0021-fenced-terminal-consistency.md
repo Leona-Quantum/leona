@@ -1,6 +1,11 @@
 # ADR-0021: Terminal queue writes are lease-fenced and Dead Letter closure is atomic
 
-**Date:** 2026-07-19 · **Status:** accepted for implementation; CODEOWNER review required
+**Date:** 2026-07-19 · **Status:** implemented
+
+> **Status corrected 2026-08-04.** Shipped as migration
+> `0017_dead_letter_delivery_claims` together with the `lease_expires_at > now()`
+> predicates on `finish_job` and `retry_job`, on top of `0012_job_leases`. It extends
+> ADR-0007's Postgres queue rather than replacing it.
 
 **Context:** A matching job token could previously write terminal state after its
 database lease expired. Separately, Dead Letter handling committed `run.error`,

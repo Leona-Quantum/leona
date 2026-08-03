@@ -1,6 +1,15 @@
 # ADR-0019: The pinned 285-record snapshot bootstraps Neon through the importer
 
-**Date:** 2026-07-18 · **Status:** accepted (user-requested)
+**Date:** 2026-07-18 · **Status:** implemented (executed 2026-07-19; live in production)
+
+> **Status corrected 2026-08-04.** Fully executed. The pinned manifest is committed at
+> `services/api/catalog_bootstrap/manifest.json` (2.0 MB, 283 items) and the corpus was
+> imported, attested and published through `catalog_admin bootstrap-import` →
+> `attest-bootstrap` → `publish-bootstrap` (`ImportProvider.CATALOG_BOOTSTRAP`,
+> migration `0019_catalog_bootstrap_provider`). The operator procedure lives in
+> `docs/runbooks/system-catalog.md`. "Neon" throughout the text below means the
+> catalog database, which has been **Cloud SQL for PostgreSQL 17** since 2026-07-27
+> (ADR-0024); nothing about the mechanism changed with the move.
 
 > **Amendment, 2026-07-19.** The corpus is now **283 records**, not 285. The owner removed
 > `grover-4bit-search` and `simon-query-circuit` — the two community submissions the
@@ -10,6 +19,7 @@
 > commit, and the count is derived, never asserted. The category breakdown becomes 29 gates,
 > 60 operators, 13 states, and **181** algorithms — both removed records were `algorithms`.
 > The figures in the body are the numbers as of the original decision and are left as written.
+
 **Context:** The latest integrated `dev` baseline validates 285 TypeScript Atlas
 records: 29 gates, 60 operators, 13 states, and 183 algorithms. Neon must become the
 default catalog authority without losing this work, but copying rows in a migration,

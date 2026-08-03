@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** shipped as migration `0015_catalog_provenance` and its four provenance tables, with append-only history enforced by `0018_license_assertions_append_only` (ADR-0020).
+> Retained for history; do not treat as current.
+
 # Repository Step 4 — provenance, rights, citations, and review
 
 Date: 2026-07-18

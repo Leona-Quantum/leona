@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** shipped as migrations `0012_job_leases` and `0017_dead_letter_delivery_claims` (ADR-0021).
+> Retained for history; do not treat as current.
+
 # Quantum Repository Step 1 - durable queue recovery report
 
 Status: implemented on `feature/repository`; owner/CODEOWNER review and live Neon

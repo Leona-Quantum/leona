@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** shipped as migration `0013_system_workspace_kind` and `catalog_authority.py` (ADR-0016). The database has been Cloud SQL for PostgreSQL 17, not Neon, since 2026-07-27 (ADR-0024).
+> Retained for history; do not treat as current.
+
 # Repository Step 2 — Neon connection and catalog authority
 
 Date: 2026-07-18  

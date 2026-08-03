@@ -1,6 +1,10 @@
 # ADR-0020: License assertion history is append-only in PostgreSQL
 
-**Date:** 2026-07-19 · **Status:** accepted for implementation; CODEOWNER review required
+**Date:** 2026-07-19 · **Status:** implemented
+
+> **Status corrected 2026-08-04.** Shipped as migration
+> `0018_license_assertions_append_only` — the `BEFORE UPDATE OR DELETE` trigger on
+> `license_assertions` described below. Migration `0015` was not edited.
 
 **Context:** Catalog rights decisions are represented as a superseding chain of
 `license_assertions`. Repository code appends corrections, but PostgreSQL currently

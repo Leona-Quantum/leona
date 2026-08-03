@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** a closed review-disposition record for PR #64; every finding carries a resolution and the branch merged.
+> Retained for history; do not treat as current.
+
 # PR #64 CodeRabbit review disposition
 
 Date: 2026-07-18  

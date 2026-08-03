@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** a gate result recorded on a Neon branch, since deleted. The database has been Cloud SQL for PostgreSQL 17 since 2026-07-27 (ADR-0024).
+> Retained for history; do not treat as current.
+
 # Repository Step 5a — Neon gate result
 
 Date: 2026-07-18

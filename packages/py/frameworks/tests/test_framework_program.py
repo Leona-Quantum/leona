@@ -658,7 +658,8 @@ def test_qiskit_get_statevector_without_save_is_caught_before_execution():
 
 # --- Framework-native verification evidence ----------------------------------------
 #
-# plans/framework-native-verification.md: the observer computes the statevector and
+# plans/archive/framework-native-verification.md (archived as shipped; the implementation
+# is packages/py/verification/.../native.py): the observer computes the statevector and
 # a trusted sampled-counts re-execution with the framework's OWN simulator, so no
 # OpenQASM conversion sits in the trust path. Every statevector fixture here breaks
 # the qubit-permutation symmetry (the standing rule from PR 100): X on the lowest
@@ -839,8 +840,9 @@ def test_qiskit_native_statevector_declares_incapacity_on_feed_forward():
     assert interchange.epilogue_error is None
     assert interchange.qasm is not None
     assert "if (" in interchange.qasm
-    # The register structure the verifier marginalizes on (plans/sampled-counts-
-    # width-mismatch.md). Only present when Aer is installed — it is in the sandbox
+    # The register structure the verifier marginalizes on
+    # (plans/archive/sampled-counts-width-mismatch.md, archived as shipped in PR #113).
+    # Only present when Aer is installed — it is in the sandbox
     # image, not in the dev/CI venv, which is why the ordering claim underneath it
     # gets its own aer-free pin below.
     if "native_sampled" in observation:

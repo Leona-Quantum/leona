@@ -1,6 +1,7 @@
 """majorana-sandbox — ephemeral execution of untrusted generated code.
 
-Layers (05-security.md §1, plans/rebuild/08-phases.md §Phase 2 step 2):
+Layers (plans/rebuild/05-security.md §1, plans/archive/rebuild/08-phases.md §Phase 2
+step 2 — archived; the live stage map is plans/roadmap/00-INDEX.md):
 1. `guard.check_python_code` — static defense-in-depth (allowlist imports, deny
    dangerous tokens/builtins).
 2. `spec.preflight` — pre-dispatch caps incl. the ≤27-qubit lane ceiling.

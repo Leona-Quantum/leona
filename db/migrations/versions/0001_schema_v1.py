@@ -1,4 +1,5 @@
-"""schema v1 — all entities from plans/rebuild/04-database.md §2
+"""schema v1 — all entities from plans/archive/rebuild/04-database.md §2
+(archived; live schema authority is majorana/docs/runbooks/database.md)
 
 Revision ID: 0001
 Revises: None

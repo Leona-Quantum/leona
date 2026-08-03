@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** Slice A shipped (manifest generator + migration `0019_catalog_bootstrap_provider` + the committed 283-item `manifest.json`). **Slice B — the allowlisted network fetcher, SSRF/redirect/archive hardening, MQT Bench and QASMBench — was never built** and remains live scope; see `plans/leona-block-repository-roadmap.md`.
+> Retained for history; do not treat as current.
+
 # Repository Step 5b (Slice A) — pinned bootstrap manifest generator
 
 Date: 2026-07-19

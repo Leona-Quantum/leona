@@ -1,4 +1,5 @@
-"""API-facing resource models mirroring plans/rebuild/04-database.md §2. These are
+"""API-facing resource models mirroring plans/archive/rebuild/04-database.md §2 (archived;
+live schema authority is majorana/docs/runbooks/database.md). These are
 the /v1 response shapes, not ORM rows — the repository layer maps between them."""
 
 from datetime import datetime

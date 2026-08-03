@@ -1,3 +1,6 @@
+> **ARCHIVED 2026-08-04.** superseded by `docs/runbooks/system-catalog.md`. Its Neon temporary-branch procedure is dead (Cloud SQL since 2026-07-27, ADR-0024); its catalog-admin half — `provision` / `bootstrap-import` / `attest-bootstrap` / `publish-bootstrap`, the `SYSTEM_CATALOG_ENABLED` shell trap, and the fail-closed attestation policy — was carried forward to that file.
+> Retained for history; do not treat as current.
+
 # Neon system catalog authority — Step 2 operator runbook
 
 Purpose: validate the database connection split and create only the empty,

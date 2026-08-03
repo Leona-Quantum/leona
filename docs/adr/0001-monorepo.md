@@ -10,7 +10,7 @@ documented multi-language pattern). No Bazel/Nx — agents have far more trainin
 to package.json/pyproject than to build-graph DSLs.
 **Consequences:** Buys atomic cross-stack PRs, one CI surface, one clone for agents. Costs
 path-filter discipline in CI as the repo grows. Reversal trigger (two-repo exit criteria,
-plans/rebuild/03 §6): ≥2 humans owning frontend vs platform independently; agent context
+plans/archive/rebuild/03-repo-structure.md §6): ≥2 humans owning frontend vs platform independently; agent context
 cost measurably degrading sessions (>~50 packages); or genuinely independent release
 cadences/compliance boundaries. Exit is cheap: `apps/web` + `packages/ts` lift out against
 the OpenAPI contract.

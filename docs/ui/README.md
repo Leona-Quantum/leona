@@ -29,7 +29,26 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 | Style gate (no raw hex outside tokens.css) | `scripts/check-raw-hex.mjs`, runs as `@majorana/ui` `lint` in CI |
 | Tailwind v4 theme mapping | `apps/web/app/globals.css` (`@theme inline` → token vars) |
 
-## Current state (2026-07-14)
+## Current state (2026-07-14, corrected 2026-08-04)
+
+> **Correction, 2026-08-04.** The paragraph below ends with *"The current catalog records
+> are static reference data; save/publish actions and API-backed Atlas search remain
+> follow-up work."* **That is no longer true and it is load-bearing.**
+>
+> `MAJORANA_PUBLIC_CATALOG_API` is **on in production**, so `/repository` is served from
+> the API's published system catalog (`GET /v1/catalog/entries`), not from the committed
+> TypeScript corpus. The corpus remains in the repository as the *editing* surface and as
+> a whole-corpus fallback if the API is unreachable — which means **a content fix
+> committed here does not reach the public pages** until the manifest is regenerated and
+> re-imported. See `docs/runbooks/deploys.md § The public catalog flag` and
+> `docs/runbooks/system-catalog.md`.
+>
+> Two further corrections to the same paragraph: publication is a CLI action
+> (`catalog_admin publish-bootstrap`), deliberately not an HTTP route, so "publish
+> actions" are not follow-up UI work; and the `dev` → Production promotion listed as
+> remaining is done — `deploy.yml` auto-deploys api and worker on every merge to `dev`.
+>
+> The rest of the paragraph still reads true. It is left unedited below.
 
 The usable authenticated workspace slice is now wired: `/run` has a bottom composer, example
 prompts, mode selection, and a persistent collapsible sidebar with recent API-backed runs;
