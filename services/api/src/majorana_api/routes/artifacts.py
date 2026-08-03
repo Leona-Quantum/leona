@@ -23,7 +23,7 @@ from majorana_contracts.enums import (
     Visibility,
 )
 from majorana_frameworks import FrameworkProgram
-from majorana_frameworks.roles import ProgramRole
+from majorana_frameworks.roles import ProgramRole, is_python_source
 from majorana_openqasm import OpenQASMError, fingerprint, normalize
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field, field_validator
 
@@ -297,26 +297,39 @@ async def import_public_artifact(
     re-importing something already imported returns the existing row and spends
     nothing, so an account at its limit can still open what it already has.
 
-    ## Why this route checks the role too
+    ## Why this route refuses prose, and why it is NOT the full role gate
 
     `import-source` refuses source that binds neither `FINAL_CIRCUIT` nor
     `RESULT`, because Leona cannot tell what it is or run it. This route did not,
     and the asymmetry ran the wrong way: a user's own circuit was held to the
-    execution contract while the product's own catalog was not. Measured against
-    the published catalog before it was fixed, 156 of 283 entries exported a blob
-    this product could not execute — 87 of them not Python at all, but a
-    paragraph of English filed with `code_lang: "text"`.
+    execution contract while the product's own catalog was not. 156 of the 283
+    published entries exported a blob this product could not execute — 87 of them
+    not Python at all, but a paragraph of English filed with `code_lang: "text"`.
 
-    The catalog is clean now and this gate refuses nothing that exists, which is
-    the point: it is a ratchet, so the next entry that cannot run is refused at
-    the door rather than discovered in a run that hands it to a model to rewrite.
+    The same check was applied here first, and **measured against the live
+    catalog it refused 276 of 283 entries**: the rows in Cloud SQL were imported
+    before the source fix, so 189 of them still bind nothing, and the gate took
+    the entire repository out of the Library to enforce a property the data does
+    not yet have. `bootstrap-import` cannot update them — it stages every item as
+    a new artifact and has no upsert on `upstream_identity` — so that state
+    persists until a reconciling importer exists.
+
+    So the refusal is narrowed to what is both harmful and true of today's data:
+    source that is **not Python at all**. That catches every prose record and
+    loses nothing — a record is not a circuit anyone can run either way. A Python
+    circuit that merely forgot its binding is filed, exactly as before.
+
+    **Trigger to widen this to the full `ProgramRole.UNKNOWN` check:** the day the
+    catalog rows carry the bindings the manifest already has. `roles.py` is where
+    the two meanings of UNKNOWN are distinguished; nothing else needs to change.
     """
     slug = f"public-{_public_slug(body.source_slug)}-{scope.workspace_id.hex}"
     existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
     if existing is not None:
         return _to_artifact(existing)
 
-    if FrameworkProgram(framework=body.framework, source=body.code).role is ProgramRole.UNKNOWN:
+    program = FrameworkProgram(framework=body.framework, source=body.code)
+    if program.role is ProgramRole.UNKNOWN and not is_python_source(body.code):
         raise HTTPException(
             status_code=422,
             detail={
@@ -325,7 +338,7 @@ async def import_public_artifact(
                     "run, so there is nothing to put in your Library. Open it in the "
                     "repository to read or copy it."
                 ),
-                "reason": "public_source_role_unknown",
+                "reason": "public_source_not_executable_code",
             },
         )
 
