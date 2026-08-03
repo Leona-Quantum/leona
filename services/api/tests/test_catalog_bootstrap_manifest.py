@@ -286,7 +286,9 @@ def test_a_final_circuit_binding_names_something_that_survives_the_module():
         for node in tree.body:
             if isinstance(node, ast.Assign):
                 names.update(t.id for t in node.targets if isinstance(t, ast.Name))
-            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(node.target, ast.Name):
+            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(
+                node.target, ast.Name
+            ):
                 names.add(node.target.id)
             elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
                 names.add(node.name)
