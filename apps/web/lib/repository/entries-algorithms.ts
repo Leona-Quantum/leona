@@ -112,7 +112,9 @@ def qft(n):
 
 qc = QuantumCircuit(3, 3)
 qc.append(qft(3), [0, 1, 2])
-qc.measure(range(3), range(3))`,
+qc.measure(range(3), range(3))
+
+FINAL_CIRCUIT = qc`,
     filename: "quantum_fourier_transform.py",
     language: "python",
     extraVariants: [
@@ -135,7 +137,9 @@ def qft_circuit(qubits):
     return circuit
 
 qubits = cirq.LineQubit.range(3)
-circuit = qft_circuit(qubits)`,
+circuit = qft_circuit(qubits)
+
+FINAL_CIRCUIT = circuit`,
       },
     ],
     relatedSlugs: ["shor-period-finding", "quantum-phase-estimation", "qft-resource-screen", "iterative-phase-estimation"],
@@ -269,7 +273,9 @@ for i in range(t):
     controlled_g = grover_op.repeat(power).to_gate().control(1)
     qc.append(controlled_g, [i] + list(range(t, t + 2)))
 qc.append(QFT(t, inverse=True), range(t))
-qc.measure(range(t), range(t))`,
+qc.measure(range(t), range(t))
+
+FINAL_CIRCUIT = qc`,
     filename: "quantum_counting.py",
     language: "python",
     relatedSlugs: ["grover-unstructured-search", "amplitude-amplification", "amplitude-estimation", "quantum-phase-estimation"],
@@ -439,7 +445,9 @@ qc.x(0)
 qc.z(0)
 qc.x(0)  # S_0: reflect about |0>
 qc.append(A, [0])
-qc.measure(0, 0)`,
+qc.measure(0, 0)
+
+FINAL_CIRCUIT = qc`,
     filename: "amplitude_amplification.py",
     language: "python",
     relatedSlugs: ["grover-unstructured-search", "quantum-counting", "amplitude-estimation"],
@@ -558,7 +566,9 @@ def ipe_round(k, total_bits, omega):
 
 # phi = 1/4 for U = S acting on |1>; recovered exactly in 2 rounds
 round0 = ipe_round(0, 2, omega=0.0)        # expect bit b1 = 0
-round1 = ipe_round(1, 2, omega=0.0)        # feedback uses b1; expect bit b0 = 1`,
+round1 = ipe_round(1, 2, omega=0.0)        # feedback uses b1; expect bit b0 = 1
+
+FINAL_CIRCUIT = round1`,
     filename: "iterative_phase_estimation.py",
     language: "python",
     relatedSlugs: ["quantum-phase-estimation", "quantum-fourier-transform", "hamiltonian-simulation-ising"],
@@ -701,7 +711,9 @@ def trotter_step(t, r):
 t, r = 1.1107, 4  # t = pi / (2*sqrt(2)) approximately
 qc = QuantumCircuit(1, 1)
 qc.append(trotter_step(t, r), [0])
-qc.measure(0, 0)`,
+qc.measure(0, 0)
+
+FINAL_CIRCUIT = qc`,
     filename: "trotter_suzuki_simulation.py",
     language: "python",
     relatedSlugs: ["hamiltonian-simulation-ising", "qite-imaginary-time", "vqe-ground-state-energy"],
@@ -859,7 +871,9 @@ for _ in range(2):
     qc.x(coin)
     qc.append(shift_minus.control(1), [coin] + pos)
     qc.x(coin)
-qc.measure(pos, range(n_pos))`,
+qc.measure(pos, range(n_pos))
+
+FINAL_CIRCUIT = qc`,
     filename: "quantum_walk_line.py",
     language: "python",
     extraVariants: [
@@ -892,7 +906,9 @@ for _ in range(2):
     circuit.append(shift_plus(coin, *pos))
     circuit.append(cirq.X(coin))
     circuit.append(shift_minus(coin, *pos))
-    circuit.append(cirq.X(coin))`,
+    circuit.append(cirq.X(coin))
+
+FINAL_CIRCUIT = circuit`,
       },
     ],
     relatedSlugs: ["grover-unstructured-search", "quantum-fourier-transform"],
@@ -1000,7 +1016,8 @@ for _ in range(2):
       + "qc = QuantumCircuit(2)\n"
       + "qc.rzz(2 * J * dt, 0, 1)\n"
       + "qc.rx(2 * h * dt, 0)\n"
-      + "qc.rx(2 * h * dt, 1)",
+      + "qc.rx(2 * h * dt, 1)\n\n"
+      + "FINAL_CIRCUIT = qc",
     filename: "ising_trotter_step.py",
     language: "python",
     relatedSlugs: [
@@ -1107,11 +1124,22 @@ for _ in range(2):
     ],
     code:
       "import numpy as np\n\n"
-      + "# QITE update sketch: measure these on a chosen ansatz.\n"
+      + "# One QITE step. The two measurement functions are the parts that come\n"
+      + "# from a device or simulator; they are stood in for here with the\n"
+      + "# analytic values of a single-qubit RY ansatz under H = -Z, so the whole\n"
+      + "# file runs as written. Replace them with real measurements to use it.\n"
+      + "def measure_metric(theta):\n"
+      + "    return np.array([[0.25]])  # Fubini-Study metric of RY(theta) on one qubit\n\n"
+      + "def measure_imaginary_time_force(theta):\n"
+      + "    return np.array([0.5 * np.sin(theta[0])])  # -d<H>/dtheta / 2 for H = -Z\n\n"
+      + "theta = np.array([0.3])\n"
+      + "dt = 0.05\n"
       + "metric = measure_metric(theta)\n"
       + "force = measure_imaginary_time_force(theta)\n"
       + "velocity = np.linalg.solve(metric + 1e-8 * np.eye(len(theta)), force)\n"
-      + "theta = theta + dt * velocity",
+      + "theta = theta + dt * velocity\n"
+      + "print('theta after one imaginary-time step:', theta)\n\n"
+      + "RESULT = {'theta': [float(v) for v in theta], 'velocity': [float(v) for v in velocity]}",
     filename: "qite_update_sketch.py",
     language: "python",
     relatedSlugs: [
@@ -1224,7 +1252,12 @@ for _ in range(2):
       + "        if index < len(phases) - 1:\n"
       + "            oracle = block_encoding if index % 2 == 0 else block_encoding.inverse()\n"
       + "            qc.compose(oracle, inplace=True)\n"
-      + "    return qc",
+      + "    return qc\n\n"
+      + "# A concrete instance, so the published record is a circuit and not a\n"
+      + "# skeleton: a 1-qubit block-encoding of X with three QSP phases.\n"
+      + "block_encoding = QuantumCircuit(1)\n"
+      + "block_encoding.x(0)\n"
+      + "FINAL_CIRCUIT = qsvt_skeleton([0.3, -0.7, 0.4], block_encoding)",
     filename: "qsvt_skeleton.py",
     language: "python",
     relatedSlugs: [
@@ -1337,7 +1370,8 @@ for _ in range(2):
       + "qc.ry(2 * acos(sqrt(alpha0)), 0)  # PREPARE\n"
       + "qc.cx(0, 1)  # SELECT: U0=I, U1=X\n"
       + "qc.ry(-2 * acos(sqrt(alpha0)), 0)  # PREPARE†\n"
-      + "qc.measure(0, 0)  # retain the ancilla=0 branch",
+      + "qc.measure(0, 0)  # retain the ancilla=0 branch\n\n"
+      + "FINAL_CIRCUIT = qc",
     filename: "lcu_two_term.py",
     language: "python",
     relatedSlugs: [
@@ -1451,7 +1485,8 @@ for _ in range(2):
       + "    dt = 0.05\n"
       + "    qc.rx(-2 * (1 - s) * dt, 0)\n"
       + "    qc.rx(-2 * (1 - s) * dt, 1)\n"
-      + "    qc.rzz(2 * s * dt, 0, 1)",
+      + "    qc.rzz(2 * s * dt, 0, 1)\n\n"
+      + "FINAL_CIRCUIT = qc",
     filename: "adiabatic_interpolation.py",
     language: "python",
     relatedSlugs: [
@@ -1565,7 +1600,10 @@ for _ in range(2):
       + "    for phase in phases:\n"
       + "        qc.rz(2 * phase, 0)\n"
       + "        qc.ry(2 * acos(x), 0)  # signal W(x)\n"
-      + "    return qc",
+      + "    return qc\n\n"
+      + "# A concrete instance, so the published record is a circuit and not a\n"
+      + "# skeleton: three phases at signal x = 0.5.\n"
+      + "FINAL_CIRCUIT = qsp_skeleton([0.3, -0.7, 0.4], 0.5)",
     filename: "qsp_phase_sequence.py",
     language: "python",
     relatedSlugs: [

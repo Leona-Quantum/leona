@@ -132,7 +132,11 @@ async def test_imported_public_reference_is_explicitly_not_fresh_verification(sc
         title="Bell reference",
         family="bell",
         framework=Framework.QISKIT,
-        code="print('reference')",
+        # A real published circuit, not a placeholder: the route refuses source
+        # that binds neither FINAL_CIRCUIT nor RESULT, so `print('reference')`
+        # here would be testing the import path with something the catalog can
+        # no longer contain.
+        code="from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)\n\nFINAL_CIRCUIT = qc",
         code_lang="python",
         source_url="https://example.test/reference",
         source_title="Public reference",
@@ -191,6 +195,61 @@ async def test_imported_public_reference_is_explicitly_not_fresh_verification(sc
         "evidence_strength": None,
     }
     assert "verification_attempt_id" not in captured["metadata"]
+
+
+async def test_a_public_record_that_is_not_a_circuit_is_refused_not_filed(scope, monkeypatch):
+    """The catalog published 87 prose records — an operator's representative
+    form, a literature method's ingredient list — under `framework: "Qiskit"`.
+    `getPublicRepositoryLibraryVariant` selected them, and this route filed the
+    paragraph as an artifact's executable code.
+
+    `import-source` has always refused source that binds neither name. This is
+    the same refusal on the catalog's side of the door.
+    """
+    filed = []
+
+    async def get_by_slug(*_args):
+        return None
+
+    async def create_artifact(*_args, **_kwargs):
+        filed.append("created")
+        return SimpleNamespace(id=uuid.uuid4())
+
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "get_artifact_by_slug", get_by_slug)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_artifact", create_artifact)
+
+    body = artifact_routes.ImportPublicArtifactRequest(
+        source_slug="operator-annihilation",
+        title="Fermionic annihilation operator",
+        family="bell",
+        framework=Framework.QISKIT,
+        code=(
+            "OPERATOR: Fermionic annihilation operator\n"
+            "REPRESENTATIVE FORM: a_p\n\n"
+            "This is a mathematical operator record, not an executable circuit."
+        ),
+        code_lang="text",
+        source_url="https://example.test/reference",
+        source_title="Public reference",
+        source_license="Apache-2.0",
+        introduction="Introduction",
+        explanation="Explanation",
+        verification="Source description only",
+        export_status=ExportStatus.DOWNLOAD_ONLY,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await artifact_routes.import_public_artifact(
+            body,
+            scope,
+            object(),
+            (User(email="importer@example.com", plan=None), object()),
+            _settings(),
+        )
+
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.detail["reason"] == "public_source_role_unknown"
+    assert filed == [], "a record this product cannot run must not reach the Vault"
 
 
 # --- version history ---------------------------------------------------------

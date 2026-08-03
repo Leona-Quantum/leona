@@ -159,7 +159,16 @@ for (const entry of entries) {
 
   const variants = entry.codeVariants ?? [];
   const native = variants.filter((v) => v.status === "native" && nonEmpty(v.code));
-  if (!native.length) fail(slug, "no native code variant with code");
+  // A reference record — an operator's representative form, a literature
+  // method's ingredient list — has no native source, and claiming `native` on
+  // it is what let Save-to-Library file a paragraph of English as an artifact's
+  // executable code. It still has to CARRY its text; the requirement is that
+  // every entry publishes something, not that everything is a circuit.
+  const reference = variants.filter((v) => v.language === "text" && nonEmpty(v.code));
+  if (!native.length && !reference.length) fail(slug, "no code variant with code");
+  if (native.length && reference.length) {
+    fail(slug, "an entry is a runnable circuit or a reference record, never both");
+  }
   for (const variant of variants) {
     if (!FRAMEWORKS.has(variant.framework)) fail(slug, `variant has unknown framework ${variant.framework}`);
     if (!LANGUAGES.has(variant.language)) fail(slug, `variant has unknown language ${variant.language}`);

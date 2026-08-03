@@ -203,39 +203,52 @@ def test_unknown_identity_read_bytes_rejected():
 # --- What the repository publishes, as source ---------------------------------
 
 
-def _executable_variants() -> list[tuple[str, str, str]]:
-    """(identity, framework, code) for every variant this product can execute.
-
-    The export-only frameworks are excluded: a CUDA-Q or OpenQASM blob is a
-    download, not something the sandbox runs, so `FINAL_CIRCUIT` means nothing
-    there.
-    """
+def _all_variants() -> list[tuple[str, dict]]:
+    """(identity, variant) for every code variant in the published catalog."""
     manifest = json.loads(COMMITTED.read_text())
-    rows = []
-    for item in manifest["items"]:
-        blob = json.loads(item["source_blob"])
-        for variant in blob.get("codeVariants", []):
-            framework = (variant.get("framework") or "").lower()
-            if framework in {"qiskit", "cirq", "pennylane"}:
-                rows.append((item["upstream_identity"], framework, variant.get("code") or ""))
-    return rows
+    return [
+        (item["upstream_identity"], variant)
+        for item in manifest["items"]
+        for variant in json.loads(item["source_blob"]).get("codeVariants", [])
+    ]
 
 
-def test_a_published_circuit_that_binds_nothing_is_counted_not_ignored():
+def _executable_variants() -> list[tuple[str, str, str]]:
+    """(identity, framework, code) for every variant this product would execute.
+
+    Three filters, each of which was wrong somewhere before this shape existed:
+
+    * **framework** — a CUDA-Q or OpenQASM blob is a download, not something the
+      sandbox runs, so `FINAL_CIRCUIT` means nothing there.
+    * **language** — 87 records are prose (`language: "text"`), and counting them
+      as circuits is how the earlier version of this test reported 191 broken
+      circuits when 104 were broken circuits and 87 were not circuits at all.
+    * **status** — only `native`/`conversion` variants reach a Library or a run;
+      `getPublicRepositoryLibraryVariant` uses the same two.
+    """
+    return [
+        (identity, (variant.get("framework") or "").lower(), variant.get("code") or "")
+        for identity, variant in _all_variants()
+        if (variant.get("framework") or "").lower() in {"qiskit", "cirq", "pennylane"}
+        and variant.get("language") == "python"
+        and variant.get("status") in {"native", "conversion"}
+    ]
+
+
+def test_every_published_circuit_says_what_it_built():
     """The open repository publishes circuits, and `roles.classify_source` is
     what decides whether a blob IS one.
 
     A variant binding neither FINAL_CIRCUIT nor RESULT is UNKNOWN — "something
     this product cannot execute" — so it fails its execution contract and takes
     the repair path, which hands a published circuit to a language model to be
-    rewritten. That is the failure `roles.py` was written to stop, and it is
-    live for every entry below the count pinned here.
+    rewritten. That is the failure `roles.py` was written to stop, and it ran
+    against 104 published circuits until this assertion replaced a pinned count.
 
-    The number is pinned rather than asserted to be zero because most of the
-    catalog is hand-authored and fixing it is per-entry work (OWNER_TODO).
-    Pinned, so it can only go down: a new entry that binds nothing raises it and
-    fails, and a batch that gets fixed lowers it and fails until the number is
-    updated with the fix.
+    Zero rather than a pinned number, deliberately: a pinned count is satisfied
+    by a new broken entry displacing a fixed one, and it needs a human to notice
+    the direction. There is no longer any published Python this product cannot
+    classify, so the honest gate is that adding one fails.
     """
     from majorana_frameworks.roles import ProgramRole, classify_source
 
@@ -246,27 +259,110 @@ def test_a_published_circuit_that_binds_nothing_is_counted_not_ignored():
         if classify_source(code) is ProgramRole.UNKNOWN
     ]
 
-    assert len(variants) == 311, "executable variants in the published catalog"
-    assert len(unknown) == 191, (
-        f"{len(unknown)} published variants bind neither FINAL_CIRCUIT nor RESULT. "
-        "If this went DOWN, lower the number with the fix. If it went UP, an entry "
-        "was added that this product cannot execute — bind FINAL_CIRCUIT in it."
+    assert len(variants) == 224, "executable variants in the published catalog"
+    assert unknown == [], (
+        f"{len(unknown)} published variants bind neither FINAL_CIRCUIT nor RESULT, so "
+        "Leona reads them as something it cannot execute and sends them to a model to "
+        f"be rewritten: {unknown[:5]}. Bind FINAL_CIRCUIT to the circuit the source "
+        "builds, or RESULT to what the program computed."
+    )
+
+
+def test_a_final_circuit_binding_names_something_that_survives_the_module():
+    """`FINAL_CIRCUIT = qc` where `qc` only exists inside a factory function is a
+    NameError at the end of the module, and `classify_source` cannot see the
+    difference — it walks the whole tree, so a binding inside a `def` counts.
+
+    Four entries were written that way while fixing this catalog (a circuit
+    built and returned by a helper). They classify as CIRCUIT and fail at run
+    time, which is a worse failure than the one being fixed.
+    """
+    import ast
+
+    from majorana_frameworks.roles import CIRCUIT_NAME
+
+    def module_scope_names(tree: ast.Module) -> set[str]:
+        names: set[str] = set()
+        for node in tree.body:
+            if isinstance(node, ast.Assign):
+                names.update(t.id for t in node.targets if isinstance(t, ast.Name))
+            elif isinstance(node, (ast.AnnAssign, ast.AugAssign)) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+            elif isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.ClassDef)):
+                names.add(node.name)
+            elif isinstance(node, (ast.Import, ast.ImportFrom)):
+                names.update(a.asname or a.name.split(".")[0] for a in node.names)
+            elif isinstance(node, ast.For) and isinstance(node.target, ast.Name):
+                names.add(node.target.id)
+        return names
+
+    dangling = []
+    for identity, framework, code in _executable_variants():
+        tree = ast.parse(code)
+        at_module_scope = module_scope_names(tree)
+        for node in tree.body:
+            if not isinstance(node, ast.Assign):
+                continue
+            if not any(isinstance(t, ast.Name) and t.id == CIRCUIT_NAME for t in node.targets):
+                continue
+            if isinstance(node.value, ast.Name) and node.value.id not in at_module_scope:
+                dangling.append((identity, framework, node.value.id))
+
+    assert dangling == [], (
+        f"FINAL_CIRCUIT is bound to a name that does not exist when the module ends: "
+        f"{dangling}. Call the builder at module scope instead."
+    )
+
+
+def test_a_prose_record_never_claims_to_be_framework_source():
+    """`status: "native"` is a claim that a variant is genuine source for its
+    framework. 87 records are prose — an operator's representative form, a
+    literature method's ingredient list — and `makeReferenceEntry` stamped
+    `native` on them regardless of language.
+
+    Nothing downstream re-checked, so `getPublicRepositoryLibraryVariant`
+    selected them and Save-to-Library filed a paragraph of English as an
+    artifact's executable code, with `code_lang: "text"`.
+    """
+    mislabelled = [
+        (identity, variant.get("framework"), variant.get("language"), variant.get("status"))
+        for identity, variant in _all_variants()
+        if variant.get("language") == "text" and variant.get("status") in {"native", "conversion"}
+    ]
+    assert mislabelled == [], (
+        f"{len(mislabelled)} prose records claim to be executable framework source: "
+        f"{mislabelled[:5]}"
     )
 
 
 def test_builder_generated_entries_all_name_what_they_built():
-    """The 120 the canvas generates are the ones `generateBuilderCode` owns, and
-    it binds FINAL_CIRCUIT now. They are identifiable by shape: the builder's
-    output ends with the binding and nothing else."""
+    """The 120 entries `generateBuilderCode` owns must classify as circuits.
+
+    They are identified by carrying a `portableCircuit` — the framework-neutral
+    gate graph the generator renders from — and NOT by the shape of the code.
+    The shape test this replaced looked for a trailing `FINAL_CIRCUIT = qc`,
+    which stopped discriminating the moment the hand-authored entries were fixed
+    to end the same way: it matched 201 variants and would have gone on matching
+    whatever the count happened to be. A discriminator that stops discriminating
+    is worse than a missing test, because it keeps reporting a pass.
+    """
     from majorana_frameworks.roles import ProgramRole, classify_source
 
+    manifest = json.loads(COMMITTED.read_text())
     generated = [
-        (identity, framework, code)
-        for identity, framework, code in _executable_variants()
-        if code.rstrip().endswith(("FINAL_CIRCUIT = qc", "FINAL_CIRCUIT = circuit"))
+        (item["upstream_identity"], variant.get("framework"), variant.get("code") or "")
+        for item in manifest["items"]
+        for blob in [json.loads(item["source_blob"])]
+        if blob.get("portableCircuit")
+        for variant in blob.get("codeVariants", [])
+        if (variant.get("framework") or "").lower() in {"qiskit", "cirq", "pennylane"}
+        and variant.get("language") == "python"
     ]
 
     assert len(generated) == 120
-    assert all(
-        classify_source(code) is ProgramRole.CIRCUIT for _identity, _framework, code in generated
-    ), "a binding the builder emits must classify as a circuit"
+    not_circuits = [
+        (identity, framework)
+        for identity, framework, code in generated
+        if classify_source(code) is not ProgramRole.CIRCUIT
+    ]
+    assert not_circuits == [], "a binding the builder emits must classify as a circuit"
