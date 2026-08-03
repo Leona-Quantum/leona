@@ -175,6 +175,9 @@ Implemented offline preflight contracts:
   immutable commit, and canonical selected paths; it fixes the connector,
   operation, `api.github.com:443` destination, policy, and canonical request
   digest, then binds the request to short-lived destination evidence;
+- `phase10_github_request_plan` compiles only fixed GitHub Contents API `GET`
+  operations with exact-commit `ref`, segment-wise path encoding, object JSON,
+  API version, identity encoding, no redirects, and a bounded response;
 - `phase10_retrieval_manifest` records bounded UTF-8 file evidence and verifies
   the exact repository, commit, selected path set, byte length, and SHA-256;
 - no contract accepts a URL, header, credential, proxy, redirect, command,

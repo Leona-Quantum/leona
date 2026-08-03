@@ -101,7 +101,41 @@ This does not perform DNS, network, TLS, filesystem, database, quarantine, or
 replay-state operations. A production connector must enforce one-time job
 state and connection pinning outside this pure contract.
 
-## 6. Tests
+## 6. Offline GitHub REST request plan
+
+The pure `phase10_github_request_plan` module compiles an approved
+authorization into one deterministic `GET` per selected file. GitHub's
+[official repository-contents API documentation](https://docs.github.com/en/rest/repos/contents#get-repository-content)
+was rechecked on 2026-08-03 before fixing this contract. The documented route
+is `GET /repos/{owner}/{repo}/contents/{path}`, and `ref` selects the exact
+commit/branch/tag. Atlas supplies only the already validated immutable commit.
+
+The plan fixes:
+
+```text
+method                 GET
+route                  /repos/{owner}/{repo}/contents/{encoded path}
+query                  ref=<immutable commit>
+Accept                 application/vnd.github.object+json
+X-GitHub-Api-Version   2026-03-10
+Accept-Encoding        identity
+redirects              false
+response byte limit    512 KiB
+```
+
+The object media type is intentional. GitHub documents that the raw media type
+can return a symlink target's contents; the later response validator must first
+prove that the response represents an ordinary file and reject directories,
+symlinks, and submodules. This request-plan stage does not yet parse or trust a
+response.
+
+Paths are encoded segment by segment, so spaces, Unicode, `?`, and `#` cannot
+become query/fragment syntax. The complete plan, including the acquisition and
+destination evidence, is SHA-256 bound and rejects even self-consistently
+rehashed changes to the method, route, query, headers, redirect policy, or
+limit. Workload credentials are deliberately absent from the plan.
+
+## 7. Tests
 
 Targeted validation after the change:
 
@@ -118,7 +152,7 @@ digest tampering, mutable refs, unsafe/duplicate paths, repository/commit/path
 substitution, pre-request evidence, and expired DNS evidence. Normal CI uses
 inert fixtures and performs no new external fetch.
 
-## 7. S2 exit status
+## 8. S2 exit status
 
 S2 is **not complete**. The selected-file retrieval-manifest contract is now
 implemented as the pure, offline
@@ -135,9 +169,9 @@ implemented as the pure, offline
 - contains no network, database, filesystem, parser, import, publish, or
   execution operation.
 
-The retrieval and acquisition contracts are evidence plumbing only. They are
-not a connector, and they do not make the current metadata client a Phase 10
-fetcher. Live deployment remains blocked until:
+The retrieval, acquisition, and request-plan contracts are evidence plumbing
+only. They are not a connector, and they do not make the current metadata
+client a Phase 10 fetcher. Live deployment remains blocked until:
 
 1. S0/S1 are accepted;
 2. a separate fetcher workload identity and route are selected;
