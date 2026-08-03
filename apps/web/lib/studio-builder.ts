@@ -426,10 +426,11 @@ export function generateBuilderCode(
 
   const qmodLines = flattenedOperations.map(qmodOperation).filter(Boolean);
   const qmod = [
-    "# A gate-level rendering of this circuit as a Qmod model. It synthesizes and",
-    "# runs, but it uses none of what Qmod is for: quantum numeric variables with",
-    "# arithmetic, within/apply for automatic uncompute, and reusable qfuncs.",
-    "# Rewrite it in those terms before treating it as idiomatic Qmod.",
+    "# A gate-level rendering of this circuit as a Qmod model. It synthesizes, and",
+    "# executes when the circuit is measured, but it uses none of what Qmod is for:",
+    "# quantum numeric variables with arithmetic, within/apply for automatic",
+    "# uncompute, and reusable qfuncs. Rewrite it in those terms before treating it",
+    "# as idiomatic Qmod.",
     "from classiq import *",
     ...(usesAngle ? ["from classiq.qmod.symbolic import pi"] : []),
     "",
