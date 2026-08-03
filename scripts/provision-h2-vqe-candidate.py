@@ -80,6 +80,11 @@ async def _component(
         title=semantic_key,
         family=Algorithm.VQE,
         framework=ContractFramework.QISKIT,
+        # Provisioned component records are private, unreviewed registry
+        # inputs rather than user-kept Vault artifacts.  Keeping them would
+        # consume the owner's plan quota and could make this idempotent E2E
+        # fixture fail for an unrelated product-limit reason.
+        kept=False,
     )
     code = json.dumps(entry["spec_json"], sort_keys=True, indent=2)
     version = await artifacts.create_version(
