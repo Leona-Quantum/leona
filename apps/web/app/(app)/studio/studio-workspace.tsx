@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState, type KeyboardEvent, type ReactNode, type UIEvent } from "react";
+import { useRouter } from "next/navigation";
 import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationHeadline } from "@majorana/ui";
 import { CopyIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
@@ -47,7 +48,7 @@ import { PanelTabs, panelRegion } from "../../../components/panel-tabs";
 // tab, because a version list with no verdict beside it was never the thing
 // anyone opened it for. The list itself lives in lib/studio-panels so the order
 // can be asserted as a sequence.
-type StudioAction = "simulation" | "save";
+type StudioAction = "simulation" | "save" | "bring";
 /** Panels that can be thrown full-screen. Both are things you look at closely. */
 type StudioPopout = "code" | "visual";
 
@@ -117,6 +118,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [code, setCode] = useState(STARTER_CODES.qiskit);
   const [panel, setPanel] = useState<StudioPanel>(DEFAULT_STUDIO_PANEL);
   const [selectedGate, setSelectedGate] = useState("H");
+  const router = useRouter();
   const [busy, setBusy] = useState<StudioAction | null>(null);
   const [message, setMessage] = useState<string | null>(null);
   const [runId, setRunId] = useState<string | null>(null);
@@ -564,6 +566,56 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     }
   }
 
+  /** File a circuit the user already has, without spending an agent run.
+   *
+   * The pipeline would plan it, review it, and hand back the same bytes it was
+   * given — two model calls and their tokens for source that needed neither.
+   * This is the other door: it stores what was typed and says plainly that
+   * nothing was executed. Verify & save is still there when evidence is wanted.
+   *
+   * Every refusal comes from the control plane and is rendered, not re-decided
+   * here: the source binding neither name, the framework contract, the artifact
+   * cap. A client-side copy of any of those becomes the real gate the moment
+   * the server's rule moves.
+   */
+  async function bringYourOwnCircuit() {
+    if (!code.trim() || busy || !isExecutableCircuitFramework(sourceFramework)) return;
+    setBusy("bring");
+    setMessage(null);
+    try {
+      const response = await fetch("/api/artifacts/import-source", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          title,
+          // sourceFramework for the same reason startRun uses it: the editor's
+          // text belongs to the framework it was written in, not to whichever
+          // tab happens to be selected.
+          framework: sourceFramework,
+          code,
+        }),
+      });
+      const payload = (await response.json()) as {
+        id?: string;
+        detail?: { error?: string; diagnostics?: string[] };
+        error?: string;
+      };
+      if (!response.ok || !payload.id) {
+        const detail = payload.detail;
+        const diagnostics = detail?.diagnostics?.length ? ` (${detail.diagnostics.join("; ")})` : "";
+        throw new Error(
+          `${detail?.error ?? payload.error ?? copy.broughtInFailed}${diagnostics}`,
+        );
+      }
+      setMessage(copy.broughtInSaved);
+      router.push(`/library/${payload.id}`);
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : copy.broughtInFailed);
+    } finally {
+      setBusy(null);
+    }
+  }
+
   return (
     <div className="mj-studio-page">
       <div className={`mj-studio-workspace${showEditor ? " mj-studio-workspace--editor mj-studio-workspace--editor-solo" : " mj-studio-workspace--discovery"}`}>
@@ -604,6 +656,16 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                     />
                   </span>
                   {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
+                  {!artifact ? (
+                    <button
+                      className="mj-secondary-button"
+                      type="button"
+                      disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(sourceFramework)}
+                      onClick={() => void bringYourOwnCircuit()}
+                    >
+                      {busy === "bring" ? copy.bringingYourOwn : copy.bringYourOwn}
+                    </button>
+                  ) : null}
                   <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
               </div>
@@ -2150,6 +2212,7 @@ function originLabel(origin: VersionOrigin, copy: StudioCopy): string {
   if (origin === "agent_run") return copy.versionOriginAgentRun;
   if (origin === "studio_draft") return copy.versionOriginStudioDraft;
   if (origin === "imported_reference") return copy.versionOriginImportedReference;
+  if (origin === "user_import") return copy.versionOriginUserImport;
   if (origin === "starter_example") return copy.versionOriginStarterExample;
   return copy.versionOriginUnknown;
 }

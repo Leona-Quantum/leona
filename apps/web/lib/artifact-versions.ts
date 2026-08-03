@@ -15,11 +15,12 @@
  *    say it out loud instead of the canvas discovering it.
  */
 
-/** Which of the four writers produced a version. `unknown` is a real answer. */
+/** Which of the five writers produced a version. `unknown` is a real answer. */
 export type VersionOrigin =
   | "agent_run"
   | "studio_draft"
   | "imported_reference"
+  | "user_import"
   | "starter_example"
   | "unknown";
 
@@ -67,6 +68,7 @@ const ORIGINS: readonly VersionOrigin[] = [
   "agent_run",
   "studio_draft",
   "imported_reference",
+  "user_import",
   "starter_example",
   "unknown",
 ];

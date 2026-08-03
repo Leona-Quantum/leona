@@ -23,6 +23,7 @@ from majorana_api.version_capabilities import (
     ORIGIN_STARTER_EXAMPLE,
     ORIGIN_STUDIO_DRAFT,
     ORIGIN_UNKNOWN,
+    ORIGIN_USER_IMPORT,
     CIRCUIT_ROLE,
     PROGRAM_ROLE,
     capabilities_of,
@@ -119,6 +120,39 @@ def imported_version():
     )
 
 
+def user_import_version():
+    """A circuit the user brought in themselves: code and nothing else.
+
+    Bare on purpose — no QASM, no estimates, no variants, and a summary that
+    says nothing ran. `POST /artifacts/import-source` writes exactly this.
+    """
+    return _version(
+        qasm=None,
+        export_status="unsupported",
+        # A circuit, not the module default program: what a person brings is
+        # usually a definition, and the route stores it byte for byte.
+        code="FINAL_CIRCUIT = build()\n",
+        artifact_metadata={
+            "source": "user_import",
+            "source_fingerprint": "c" * 64,
+            "program_role": "circuit",
+            "verification_summary": {
+                "verified": False,
+                "decision": None,
+                "evidence_strength": None,
+                "reason_code": "user_supplied_source_not_verified",
+                "unverified_claims": [
+                    "reported output",
+                    "quantum correctness",
+                    "physical fidelity",
+                    "optimality",
+                    "intent alignment",
+                ],
+            },
+        },
+    )
+
+
 def starter_version():
     return _version(
         qasm="OPENQASM 3.0;",
@@ -133,6 +167,7 @@ def test_each_writer_is_identified_and_none_is_guessed():
     assert capabilities_of(worker_version()).origin == ORIGIN_AGENT_RUN
     assert capabilities_of(studio_draft_version()).origin == ORIGIN_STUDIO_DRAFT
     assert capabilities_of(imported_version()).origin == ORIGIN_IMPORTED_REFERENCE
+    assert capabilities_of(user_import_version()).origin == ORIGIN_USER_IMPORT
     assert capabilities_of(starter_version()).origin == ORIGIN_STARTER_EXAMPLE
     # Legacy rows say unknown rather than being sorted into the nearest bucket.
     assert capabilities_of(_version()).origin == ORIGIN_UNKNOWN
@@ -255,3 +290,43 @@ def test_the_role_is_not_in_the_restore_losses():
     circuit = capabilities_of(_version(code="FINAL_CIRCUIT = build()"))
     assert restore_losses(program, circuit) == []
     assert restore_losses(circuit, program) == []
+
+
+def test_every_origin_is_reachable_and_named():
+    """A writer that forgets to name itself here reads as `unknown`, which is
+    what a legacy row reads as — indistinguishable, next to a restore button.
+    This walks the constants, so adding one without a producer fails."""
+    import majorana_api.version_capabilities as vc
+
+    declared = {
+        value
+        for name, value in vars(vc).items()
+        if name.startswith("ORIGIN_") and isinstance(value, str)
+    }
+    produced = {
+        capabilities_of(version()).origin
+        for version in (
+            worker_version,
+            studio_draft_version,
+            imported_version,
+            user_import_version,
+            starter_version,
+            _version,
+        )
+    }
+
+    assert declared == produced, (
+        "every declared origin needs a version that produces it, and every "
+        "version's origin needs to be a declared one"
+    )
+
+
+def test_a_brought_circuit_holds_no_evidence_and_says_so():
+    caps = capabilities_of(user_import_version())
+
+    assert caps.verified is False, "nothing executed it"
+    assert caps.has_qasm is False, "interchange QASM is lifted by an execution"
+    assert caps.exportable is False
+    assert caps.has_resource_estimates is False
+    assert caps.has_framework_variants is False
+    assert caps.program_role == "circuit", "read from the code, not from the writer"
