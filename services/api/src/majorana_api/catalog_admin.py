@@ -122,7 +122,7 @@ def _bootstrap_plan(source: BootstrapManifestSource, policy: AttestationPolicy):
         identity: (json.loads(source.read_bytes(identity)).get("source") or {})
         for identity in source.identities()
     }
-    return policy.plan(claims)
+    return policy.plan(claims, source.content_digests())
 
 
 async def _attest_bootstrap(attested_by: uuid.UUID) -> None:

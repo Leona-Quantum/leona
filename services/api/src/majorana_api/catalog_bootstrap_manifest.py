@@ -167,6 +167,12 @@ class BootstrapManifestSource:
         self._blobs: dict[str, str] = {
             it["upstream_identity"]: it["source_blob"] for it in manifest["items"]
         }
+        # Safe to expose as authoritative: _verify has already recomputed each of
+        # these against the bytes with the same function the importer uses at
+        # staging, so a mismatched digest never reaches this line.
+        self._content_digests: dict[str, str] = {
+            it["upstream_identity"]: it["source_blob_sha256"] for it in manifest["items"]
+        }
 
     @property
     def upstream_ref(self) -> str:
@@ -185,6 +191,16 @@ class BootstrapManifestSource:
 
     def identities(self) -> list[str]:
         return list(self._identities)
+
+    def content_digests(self) -> dict[str, str]:
+        """Verified sha256 per identity, for hashing what a grant was made over.
+
+        The license attestation's evidence hash covers the record's provenance
+        claim; on its own that claim is identical across every revision of a
+        record's code, so the audit row could not distinguish them. These digests
+        are what widen it (owner decision B, 2026-08-04).
+        """
+        return dict(self._content_digests)
 
     def read_bytes(self, upstream_identity: str) -> bytes:
         blob = self._blobs.get(upstream_identity)

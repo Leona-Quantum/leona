@@ -4,5 +4,7 @@ Read `AGENTS.md` (root) first, then the `AGENTS.md` of the package you are editi
 Plan docs: `~/Documents/Projects/Majorana/plans/roadmap/00-INDEX.md` (stage map), the ADRs
 in `majorana/docs/adr/` (architecture), `~/Documents/Projects/Majorana/plans/rebuild/05-security.md`
 (security gate), and `~/Documents/Projects/Majorana/plans/leona-block-repository-roadmap.md`
-(block-repository direction).
+(block-repository direction). The security gate is **not** `plans/security-baseline.md` —
+that path does not exist and the file it names is superseded, in `plans/attic/`, and
+describes a Supabase/Firebase stack this project never built.
 Current phase: see `~/Documents/Projects/Majorana/memory/NEXT.md`.
