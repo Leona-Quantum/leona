@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import math
 from types import SimpleNamespace
 from typing import get_args
 from uuid import uuid4
@@ -14,11 +15,13 @@ from majorana_agent import (
     CandidateRevision,
     ConversionEvidence,
     ExecutionEvidence,
+    ExecutionFailureKind,
     ExecutionOutput,
     MaterializedArtifact,
     MemoryAgentStore,
     SemanticReviewEvidence,
     SimpleCircuitPipeline,
+    SimplePlan,
     SimplePipelineStatus,
     SimpleRetryTarget,
 )
@@ -42,9 +45,14 @@ from majorana_worker.simple_ports import (
     RepoReviewArtifactSaver,
     SimpleIntentReviewer,
     SimpleIntentReviewResult,
+    _bounded_repair_value,
+    _dynamics_reference_call_args,
+    _invalid_field_snapshot,
     _reference_checks,
     _reference_check_routing,
+    _preserve_replan_range_strength,
     passed_reference_methods,
+    recorded_basic_checks,
     simple_pipeline_verification_summary,
 )
 
@@ -65,6 +73,60 @@ def _plan_payload() -> dict:
             "methods": ["return_contract"],
         },
     }
+
+
+@pytest.mark.parametrize(
+    "proposed_range",
+    [
+        None,
+        {"min": 0.92, "max": 1.0},
+        {"min": 0.99, "max": None},
+        {"min": 0.99, "max": 1.1},
+    ],
+)
+def test_replan_cannot_weaken_a_range_around_rejected_candidate_output(proposed_range):
+    payload = _plan_payload()
+    payload["success_criteria"] = {
+        "primary_metric": "fidelity",
+        "expected_range": {"min": 0.99, "max": 1.0},
+        "additional_notes": ["Derived before candidate execution."],
+    }
+    payload["expected_output_keys"] = ["fidelity"]
+    previous = Plan.model_validate(payload)
+    proposed = previous.model_copy(
+        update={
+            "success_criteria": previous.success_criteria.model_copy(
+                update={
+                    "expected_range": proposed_range,
+                    "additional_notes": ["Observed candidate value was 0.925."],
+                }
+            )
+        }
+    )
+
+    reconciled = _preserve_replan_range_strength(previous, proposed)
+
+    assert reconciled.success_criteria.expected_range == {"min": 0.99, "max": 1.0}
+    assert reconciled.success_criteria.additional_notes == ["Derived before candidate execution."]
+
+
+def test_replan_may_tighten_an_existing_range_without_using_candidate_output():
+    payload = _plan_payload()
+    payload["success_criteria"] = {
+        "primary_metric": "fidelity",
+        "expected_range": {"min": 0.9, "max": 1.0},
+    }
+    payload["expected_output_keys"] = ["fidelity"]
+    previous = Plan.model_validate(payload)
+    proposed = previous.model_copy(
+        update={
+            "success_criteria": previous.success_criteria.model_copy(
+                update={"expected_range": {"min": 0.95, "max": 0.999}}
+            )
+        }
+    )
+
+    assert _preserve_replan_range_strength(previous, proposed) is proposed
 
 
 _SOURCE = """from qiskit import QuantumCircuit
@@ -119,21 +181,50 @@ class Executor:
         )
 
 
+class ArtifactOnlyExecutor:
+    def __init__(self):
+        self.calls = 0
+
+    async def run_candidate(self, _candidate, plan):
+        self.calls += 1
+        return ExecutionOutput(
+            environment_fingerprint="e" * 64,
+            sandbox_provider="local",
+            exit_code=75,
+            failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+            duration_ms=0,
+            result={},
+            observation={
+                "execution_status": "not_run",
+                "execution_reason_code": "local_statevector_capacity_exceeded",
+                "target_backend": "unassigned_external",
+                "qubits": plan.qubits_estimate,
+                "sandbox_runs": 0,
+            },
+        )
+
+
 class Reviewer:
     def __init__(self):
         self.calls = 0
 
-    async def review(self, _candidate, _execution, _plan, fast_checks, _attempt):
+    async def review(self, _candidate, execution, _plan, fast_checks, _attempt):
         self.calls += 1
-        assert {check["method"] for check in fast_checks} == {
-            "structural",
-            "return_contract",
-            "success_criteria",
-        }
-        assert (
-            next(check for check in fast_checks if check["method"] == "success_criteria")["result"]
-            == "pass"
-        )
+        methods = {check["method"] for check in fast_checks}
+        if execution.was_not_run:
+            assert methods == {
+                "structural",
+                "framework_boundary",
+                "execution_claims",
+            }
+        else:
+            assert methods == {"structural", "return_contract", "success_criteria"}
+            assert (
+                next(check for check in fast_checks if check["method"] == "success_criteria")[
+                    "result"
+                ]
+                == "pass"
+            )
         return SimpleIntentReviewResult(
             decision=SemanticReviewDecision.READY,
             critic={
@@ -169,6 +260,21 @@ class Saver:
             candidate_id=candidate.candidate_id,
             framework=candidate.framework,
             source_fingerprint=candidate.source_fingerprint,
+        )
+
+    async def save_unexecuted(self, candidate, execution, review, _plan):
+        self.calls += 1
+        assert execution.was_not_run
+        assert review is not None
+        review.assert_binding(candidate, execution)
+        return MaterializedArtifact(
+            artifact_id=uuid4(),
+            version_id=uuid4(),
+            version_seq=1,
+            candidate_id=candidate.candidate_id,
+            framework=candidate.framework,
+            source_fingerprint=candidate.source_fingerprint,
+            execution_status="not_run",
         )
 
 
@@ -227,6 +333,9 @@ async def test_production_ports_complete_fixed_flow_without_strict_verification(
     assert "artifact_contract" in llm.requests[0].response_schema["properties"]
     assert "verification_plan" in llm.requests[0].response_schema["properties"]
     assert llm.requests[1].schema_name == "generate_circuit"
+    assert "Example 1 — Qiskit Bell state" in llm.requests[1].system
+    assert "Example 2 — Qiskit H2 VQE" not in llm.requests[1].system
+    assert "Example 3 — Qiskit portfolio QAOA" not in llm.requests[1].system
     assert executor.calls == reviewer.calls == converter.calls == saver.calls == 1
     assert all(result.tool_call_id.startswith("simple:") for result in observer.results)
     assert all(result.name.value != "strict_verify" for result in observer.results)
@@ -274,6 +383,598 @@ async def test_plan_retry_receives_bounded_validation_issues():
     assert issue["path"] == "algorithm"
     assert issue["type"] == "enum"
     assert "VQE" in issue["message"]
+    assert feedback["details"]["invalid_fields"] == {"algorithm": "invented-algorithm"}
+    contract = repair_request["repair_contract"]
+    assert contract["mode"] == "schema_repair"
+    assert contract["invalid_fields"] == {"algorithm": "invented-algorithm"}
+    assert any("Preserve the requested framework" in item for item in contract["requirements"])
+
+
+def _constrained_reference_plan_payload() -> dict:
+    payload = _plan_payload()
+    payload.update(
+        {
+            "domain": "operations research",
+            "algorithm": "QAOA",
+            "problem_summary": "Maximize item value under a capacity",
+            "algorithm_rationale": "QAOA samples a constrained binary objective",
+            "expected_output_keys": ["best_value"],
+            "success_criteria": {"primary_metric": "best_value"},
+            "verification_plan": {
+                "methods": ["brute_force"],
+                "reference_problem": {
+                    "num_variables": 2,
+                    "business_objective": {
+                        "direction": "maximize",
+                        "linear_coefficients": [
+                            {"variable": 0, "coefficient": 8.0},
+                            {"variable": 1, "coefficient": 5.0},
+                        ],
+                    },
+                    "business_constraints": [
+                        {
+                            "coefficients": [
+                                {"variable": 0, "coefficient": 4.0},
+                                {"variable": 1, "coefficient": 2.0},
+                            ],
+                            "sense": "le",
+                            "rhs": 4.0,
+                        }
+                    ],
+                },
+            },
+        }
+    )
+    return payload
+
+
+def _business_reference_extraction_payload(*, capacity: float = 4.0) -> dict:
+    return {
+        "supported": True,
+        "reason": None,
+        "reference": {
+            "num_variables": 2,
+            "business_objective": {
+                "direction": "maximize",
+                "linear_coefficients": [
+                    {"variable": 0, "coefficient": 8.0},
+                    {"variable": 1, "coefficient": 5.0},
+                ],
+            },
+            "business_constraints": [
+                {
+                    "coefficients": [
+                        {"variable": 0, "coefficient": 4.0},
+                        {"variable": 1, "coefficient": 2.0},
+                    ],
+                    "sense": "le",
+                    "rhs": capacity,
+                }
+            ],
+        },
+    }
+
+
+async def test_complex_reference_requires_independent_semantic_consensus_before_persistence(
+    monkeypatch,
+):
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "openai")
+    ports, llm, *_ = _ports()
+    ports._task_prompt = (
+        "Maximize values [8,5] with weights [4,2] and capacity 4; return best_value."
+    )
+    llm.texts = [
+        json.dumps(_constrained_reference_plan_payload()),
+        json.dumps(_business_reference_extraction_payload()),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    assert planned.value.plan.verification_plan is not None
+    assert (
+        planned.value.plan.verification_plan.reference_method
+        == "independent_business_extraction_consensus"
+    )
+    assert [request.schema_name for request in llm.requests] == [
+        "request_plan",
+        "business_reference_extraction",
+    ]
+    assert llm.requests[1].model == "deepseek-v4-pro"
+    audit_request = json.loads(llm.requests[1].user)
+    assert audit_request["request"] == ports._task_prompt
+    assert "source" not in audit_request
+
+
+async def test_reference_mismatch_drops_unsafe_check_without_blocking_the_run():
+    ports, llm, *_ = _ports()
+    llm.texts = [
+        json.dumps(_constrained_reference_plan_payload()),
+        json.dumps(_business_reference_extraction_payload(capacity=3.0)),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.reference_problem is None
+    assert verification.methods == [VerificationMethod.RETURN_CONTRACT]
+
+
+@pytest.mark.parametrize(
+    "extraction",
+    [
+        {
+            "supported": False,
+            "reason": "the original business instance exceeds the bounded verifier",
+            "reference": None,
+        },
+        {},
+    ],
+)
+async def test_unsupported_or_invalid_independent_extraction_only_weakens_evidence(extraction):
+    ports, llm, *_ = _ports()
+    llm.texts = [
+        json.dumps(_constrained_reference_plan_payload()),
+        json.dumps(extraction),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.reference_problem is None
+    assert verification.methods == [VerificationMethod.RETURN_CONTRACT]
+
+
+async def test_consensus_truth_removes_a_weaker_contradictory_plan_range():
+    ports, llm, *_ = _ports()
+    payload = _constrained_reference_plan_payload()
+    payload["success_criteria"].update(
+        {
+            "expected_range": {"min": 0.0, "max": 7.0},
+            "additional_notes": ["The optimum is 7."],
+        }
+    )
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps(_business_reference_extraction_payload()),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    assert planned.value.plan.success_criteria.expected_range is None
+    assert planned.value.plan.success_criteria.additional_notes is None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.reference_problem is not None
+
+
+async def test_exact_diagonalization_truth_removes_guessed_range_and_notes_before_generation():
+    ports, llm, *_ = _ports()
+    ports._task_prompt = "Find the ground energy of the custom Hamiltonian H=Z."
+    payload = _plan_payload()
+    payload.update(
+        {
+            "domain": "quantum simulation",
+            "algorithm": "VQE",
+            "qubits_estimate": 1,
+            "expected_output_keys": ["energy"],
+            "success_criteria": {
+                "primary_metric": "energy",
+                "expected_range": {"min": 0.0, "max": 1.0},
+                "additional_notes": ["The ground energy is positive."],
+            },
+            "verification_plan": {
+                "methods": ["exact_diag"],
+                "reference_result_key": "energy",
+                "reference_hamiltonian": [{"coefficient": 1.0, "pauli": "Z"}],
+            },
+        }
+    )
+    llm.texts = [json.dumps(payload)]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    criteria = planned.value.plan.success_criteria
+    assert criteria.expected_range is None
+    assert criteria.additional_notes is None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.reference_method == "plan_declared_hamiltonian_exact_diagonalization"
+
+
+def _lindblad_reference_plan_payload() -> dict:
+    payload = _plan_payload()
+    payload.update(
+        {
+            "domain": "open quantum systems",
+            "algorithm": "Simulation",
+            "problem_summary": "Evolve one excited qubit under amplitude damping",
+            "algorithm_rationale": "The Lindblad master equation gives the density matrix",
+            "parameters": {"shots": None},
+            "qubits_estimate": 1,
+            "expected_output_keys": [
+                "excited_population",
+                "coherence_real",
+                "purity",
+            ],
+            "success_criteria": {"primary_metric": "excited_population"},
+            "verification_plan": {
+                "methods": ["return_contract"],
+                "exact_lindblad_reference": {
+                    "num_qubits": 1,
+                    "initial_product_state": ["one"],
+                    "dissipators": [
+                        {
+                            "rate": 0.7,
+                            "jump": {
+                                "terms": [
+                                    {
+                                        "coefficient": {"real": 1.0},
+                                        "factors": [{"qubit": 0, "operator": "lowering"}],
+                                    }
+                                ]
+                            },
+                        }
+                    ],
+                    "evolution_time": 1.3,
+                    "results": [
+                        {
+                            "result_key": "excited_population",
+                            "metric": "population",
+                            "basis_state": "1",
+                        },
+                        {
+                            "result_key": "coherence_real",
+                            "metric": "density_element_real",
+                            "row_state": "0",
+                            "column_state": "1",
+                        },
+                        {"result_key": "purity", "metric": "purity"},
+                    ],
+                },
+            },
+        }
+    )
+    return payload
+
+
+def _lindblad_extraction_payload(*, operator: str = "lowering") -> dict:
+    reference = _lindblad_reference_plan_payload()["verification_plan"]["exact_lindblad_reference"]
+    reference["dissipators"][0]["jump"]["terms"][0]["factors"][0]["operator"] = operator
+    return {"supported": True, "reason": None, "reference": reference}
+
+
+async def test_lindblad_reference_requires_independent_semantic_consensus(monkeypatch):
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "openai")
+    ports, llm, *_ = _ports()
+    ports._task_prompt = (
+        "Start in |1>, evolve for t=1.3 under 0.7 D[sigma_-], and return the "
+        "excited population, Re rho_01, and purity."
+    )
+    payload = _lindblad_reference_plan_payload()
+    payload["success_criteria"]["additional_notes"] = ["The population is about 0.9."]
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps(_lindblad_extraction_payload()),
+        json.dumps(_lindblad_extraction_payload()),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.exact_lindblad_reference is not None
+    assert verification.reference_method == "independent_dual_model_lindblad_consensus"
+    assert planned.value.plan.success_criteria.additional_notes is None
+    assert [request.schema_name for request in llm.requests] == [
+        "request_plan",
+        "lindblad_reference_extraction",
+        "lindblad_reference_audit_extraction",
+    ]
+    assert llm.requests[1].model == "deepseek-v4-pro"
+    assert llm.requests[2].model == "deepseek-v4-flash"
+    extraction_request = json.loads(llm.requests[1].user)
+    assert extraction_request["request"] == ports._task_prompt
+    assert "source" not in extraction_request
+
+
+async def test_omitted_lindblad_reference_is_enriched_only_after_dual_model_consensus(
+    monkeypatch,
+):
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "openai")
+    ports, llm, *_ = _ports()
+    payload = _lindblad_reference_plan_payload()
+    payload["verification_plan"].pop("exact_lindblad_reference")
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps(_lindblad_extraction_payload()),
+        json.dumps(_lindblad_extraction_payload()),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.exact_lindblad_reference is not None
+    assert verification.reference_method == "dual_model_lindblad_extraction_consensus"
+    assert [request.schema_name for request in llm.requests] == [
+        "request_plan",
+        "lindblad_reference_extraction",
+        "lindblad_reference_audit_extraction",
+    ]
+    assert llm.requests[1].model == "deepseek-v4-pro"
+    assert llm.requests[2].model == "deepseek-v4-flash"
+
+
+async def test_omitted_lindblad_reference_stays_weaker_when_models_disagree():
+    ports, llm, *_ = _ports()
+    payload = _lindblad_reference_plan_payload()
+    payload["verification_plan"].pop("exact_lindblad_reference")
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps(_lindblad_extraction_payload()),
+        json.dumps(_lindblad_extraction_payload(operator="raising")),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is None or (
+        verification.exact_lindblad_reference is None and verification.reference_method is None
+    )
+
+
+async def test_lindblad_reference_disagreement_requests_replan():
+    ports, llm, *_ = _ports()
+    llm.texts = [
+        json.dumps(_lindblad_reference_plan_payload()),
+        json.dumps(_lindblad_extraction_payload(operator="raising")),
+        json.dumps(_lindblad_extraction_payload()),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.failure is not None
+    assert planned.failure.code == "lindblad_reference_consensus_failed"
+    assert planned.failure.retry_target is SimpleRetryTarget.PLANNING
+    assert planned.failure.details["comparison"]["reason"] == "lindblad_generator_mismatch"
+
+
+async def test_unsupported_independent_extraction_rejects_a_declared_lindblad_reference():
+    ports, llm, *_ = _ports()
+    llm.texts = [
+        json.dumps(_lindblad_reference_plan_payload()),
+        json.dumps(
+            {
+                "supported": False,
+                "reason": "the request uses a correlated initial state",
+                "reference": None,
+            }
+        ),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.failure is not None
+    assert planned.failure.code == "lindblad_reference_consensus_failed"
+    assert planned.failure.retry_target is SimpleRetryTarget.PLANNING
+    assert planned.failure.details["comparison"]["reason"] == ("independent_extraction_unsupported")
+
+
+def _dynamics_reference_plan_payload() -> dict:
+    payload = _plan_payload()
+    payload.update(
+        {
+            "domain": "quantum dynamics",
+            "algorithm": "Simulation",
+            "problem_summary": "Evolve a two-qubit Pauli Hamiltonian exactly",
+            "algorithm_rationale": "Dense evolution gives the requested observable",
+            "parameters": {"shots": None},
+            "expected_output_keys": ["value"],
+            "success_criteria": {"primary_metric": "value"},
+            "verification_plan": {
+                "exact_dynamics_reference": {
+                    "num_qubits": 2,
+                    "hamiltonian": [
+                        {
+                            "coefficient": 0.8,
+                            "factors": [{"qubit": 0, "pauli": "Z"}],
+                        },
+                        {
+                            "coefficient": 0.4,
+                            "factors": [{"qubit": 1, "pauli": "Z"}],
+                        },
+                        {
+                            "coefficient": 0.2,
+                            "factors": [
+                                {"qubit": 0, "pauli": "X"},
+                                {"qubit": 1, "pauli": "X"},
+                            ],
+                        },
+                    ],
+                    "initial_basis_state": "00",
+                    "evolution_time": 1.2,
+                    "result_key": "value",
+                    "metric": "observable_expectation",
+                    "observable": [
+                        {
+                            "coefficient": 1.0,
+                            "factors": [{"qubit": 0, "pauli": "Z"}],
+                        }
+                    ],
+                }
+            },
+        }
+    )
+    return payload
+
+
+def test_sparse_pauli_factors_are_padded_by_the_worker_without_model_authored_identities():
+    payload = _dynamics_reference_plan_payload()
+    payload.update(
+        {
+            "qubits_estimate": 5,
+            "expected_output_keys": ["weighted_z", "survival_probability"],
+            "success_criteria": {"primary_metric": "weighted_z"},
+            "verification_plan": {
+                "exact_dynamics_reference": {
+                    "num_qubits": 5,
+                    "hamiltonian": [
+                        {
+                            "coefficient": 0.41,
+                            "factors": [
+                                {"qubit": 0, "pauli": "X"},
+                                {"qubit": 2, "pauli": "Y"},
+                            ],
+                        },
+                        {
+                            "coefficient": -0.27,
+                            "factors": [
+                                {"qubit": 1, "pauli": "Z"},
+                                {"qubit": 4, "pauli": "X"},
+                            ],
+                        },
+                        {
+                            "coefficient": 0.33,
+                            "factors": [
+                                {"qubit": 0, "pauli": "Y"},
+                                {"qubit": 4, "pauli": "Y"},
+                            ],
+                        },
+                        {
+                            "coefficient": 0.18,
+                            "factors": [
+                                {"qubit": 2, "pauli": "Z"},
+                                {"qubit": 3, "pauli": "Z"},
+                            ],
+                        },
+                        {
+                            "coefficient": 0.12,
+                            "factors": [{"qubit": 1, "pauli": "X"}],
+                        },
+                    ],
+                    "initial_basis_state": "10100",
+                    "evolution_time": 0.73,
+                    "result_key": "weighted_z",
+                    "metric": "observable_expectation",
+                    "observable": [
+                        {
+                            "coefficient": 0.25,
+                            "factors": [{"qubit": 0, "pauli": "Z"}],
+                        },
+                        {
+                            "coefficient": -0.25,
+                            "factors": [{"qubit": 2, "pauli": "Z"}],
+                        },
+                        {
+                            "coefficient": 0.5,
+                            "factors": [{"qubit": 4, "pauli": "Z"}],
+                        },
+                    ],
+                }
+            },
+        }
+    )
+    plan = SimplePlan.model_validate(payload).to_durable_plan(
+        selected_framework=Framework.QISKIT,
+        requested_shots=None,
+        requested_seed=None,
+    )
+
+    args = _dynamics_reference_call_args(plan)
+
+    assert args["terms"] == [
+        (0.41, "XIYII"),
+        (-0.27, "IZIIX"),
+        (0.33, "YIIIY"),
+        (0.18, "IIZZI"),
+        (0.12, "IXIII"),
+    ]
+    assert args["observable"] == [
+        (0.25, "ZIIII"),
+        (-0.25, "IIZII"),
+        (0.5, "IIIIZ"),
+    ]
+    assert simple_ports_module.exact_dynamics_value(**args) == pytest.approx(0.4352140709089669)
+
+
+async def test_dynamics_reference_is_audited_before_persistence(monkeypatch):
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "openai")
+    ports, llm, *_ = _ports()
+    ports._task_prompt = (
+        "With q0 leftmost, evolve |00> exactly to t=1.2 under "
+        "H=0.8 Z0+0.4 Z1+0.2 X0 X1 and return <Z0> as value."
+    )
+    payload = _dynamics_reference_plan_payload()
+    payload["success_criteria"]["additional_notes"] = ["The value is probably below zero."]
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps({"valid": True, "errors": []}),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.reference_method == "independent_model_audit"
+    assert verification.exact_dynamics_reference is not None
+    assert planned.value.plan.success_criteria.additional_notes is None
+    assert [request.schema_name for request in llm.requests] == [
+        "request_plan",
+        "dynamics_reference_audit",
+    ]
+    audit_request = json.loads(llm.requests[1].user)
+    assert audit_request["request"] == ports._task_prompt
+    assert "source" not in audit_request
+
+
+async def test_failed_dynamics_reference_audit_requests_a_replan():
+    ports, llm, *_ = _ports()
+    llm.texts = [
+        json.dumps(_dynamics_reference_plan_payload()),
+        json.dumps(
+            {
+                "valid": False,
+                "errors": ["XX coefficient sign does not match the request"],
+            }
+        ),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.failure is not None
+    assert planned.failure.code == "dynamics_reference_audit_failed"
+    assert planned.failure.retry_target is SimpleRetryTarget.PLANNING
+    assert planned.failure.details["audit_errors"] == [
+        "XX coefficient sign does not match the request"
+    ]
+
+
+async def test_dynamics_truth_outside_plan_range_fails_before_generation():
+    ports, llm, *_ = _ports()
+    payload = _dynamics_reference_plan_payload()
+    payload["success_criteria"]["expected_range"] = {"min": -1.0, "max": 0.5}
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps({"valid": True, "errors": []}),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.failure is not None
+    assert planned.failure.code == "dynamics_reference_audit_failed"
+    assert planned.failure.retry_target is SimpleRetryTarget.PLANNING
+    assert planned.failure.details["typed_reference_value"] == pytest.approx(0.9466084218)
 
 
 async def test_permanent_provider_failure_is_specific_and_not_retried_by_stage():
@@ -473,6 +1174,53 @@ async def test_replay_reuses_all_durable_outputs_without_provider_or_sandbox_cal
     assert observer.results
 
 
+async def test_production_ports_materialize_large_source_without_claiming_execution():
+    ports, llm, _executor, reviewer, converter, saver, _observer = _ports()
+    payload = _plan_payload()
+    payload["qubits_estimate"] = 480
+    llm.texts[0] = json.dumps(payload)
+    llm.texts[1] = json.dumps(
+        {
+            "source": (
+                "from qiskit import QuantumCircuit\n\n"
+                "def build_circuit():\n"
+                "    return QuantumCircuit(480)\n"
+            )
+        }
+    )
+    artifact_executor = ArtifactOnlyExecutor()
+    ports._executor = artifact_executor
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.artifact is not None
+    assert outcome.artifact.execution_status == "not_run"
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.READY
+    assert artifact_executor.calls == 1
+    assert reviewer.calls == 1
+    assert converter.calls == 0
+    assert saver.calls == 1
+
+
+async def test_generation_rejects_invalid_python_before_artifact_only_delivery():
+    ports, llm, *_ = _ports()
+    payload = _plan_payload()
+    payload["qubits_estimate"] = 480
+    llm.texts[0] = json.dumps(payload)
+    llm.texts[1] = json.dumps({"source": "def broken(:\n    pass\n"})
+    run_id = uuid4()
+
+    planned = await ports.plan(run_id, None, None)
+    assert planned.value is not None
+    generated = await ports.generate(run_id, planned.value, None, None)
+
+    assert generated.failure is not None
+    assert generated.failure.code == "generated_source_invalid"
+    assert generated.failure.retry_target is SimpleRetryTarget.GENERATION
+
+
 async def test_event_projection_failure_is_reconciled_without_failing_domain_work():
     class FlakyObserver(Observer):
         def __init__(self):
@@ -639,6 +1387,151 @@ async def test_simple_intent_reviewer_is_one_advisory_call_over_trusted_evidence
     assert '"review_attempt": 1' in llm.requests[0].user
 
 
+async def test_unexecuted_reviewer_uses_deep_static_prompt_without_result_evidence():
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert planned.value is not None and generated.value is not None
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=generated.value.candidate_id,
+        source_fingerprint=generated.value.source_fingerprint,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="local",
+        exit_code=75,
+        failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+        duration_ms=0,
+        result={},
+        observation={
+            "execution_status": "not_run",
+            "execution_reason_code": "local_statevector_capacity_exceeded",
+            "target_backend": "unassigned_external",
+            "qubits": 480,
+            "sandbox_runs": 0,
+        },
+    )
+    llm = QueueLLM(
+        [
+            _critic(
+                summary="source is statically aligned",
+                static_readiness=_static_readiness(),
+                residual_risks=["Execution has not been observed."],
+                risk_assessments=[
+                    {
+                        "category": "execution_unverified",
+                        "detail": "Execution has not been observed.",
+                    }
+                ],
+            )
+        ]
+    )
+    reviewer = SimpleIntentReviewer(llm=llm, task_prompt="solve a 480-qubit assignment")
+
+    result = await reviewer.review(
+        generated.value,
+        execution,
+        planned.value.plan,
+        [
+            {"method": "structural", "result": "pass"},
+            {"method": "framework_boundary", "result": "pass"},
+            {"method": "execution_claims", "result": "pass"},
+        ],
+        1,
+    )
+
+    assert result.decision is SemanticReviewDecision.READY
+    assert result.reason_code == "static_intent_aligned"
+    assert "deep static review" in llm.requests[0].system
+    assert "variable-to-qubit mapping" in llm.requests[0].system
+    assert '"status": "not_run"' in llm.requests[0].user
+    assert '"result": {}' in llm.requests[0].user
+
+
+async def _review_unexecuted(payload: str) -> SimpleIntentReviewResult:
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    generated = await ports.generate(run_id, planned.value, None, None)
+    assert planned.value is not None and generated.value is not None
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=generated.value.candidate_id,
+        source_fingerprint=generated.value.source_fingerprint,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="local",
+        exit_code=75,
+        failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+        duration_ms=0,
+        result={},
+        observation={
+            "execution_status": "not_run",
+            "execution_reason_code": "local_statevector_capacity_exceeded",
+            "qubits": 60,
+            "sandbox_runs": 0,
+        },
+    )
+    reviewer = SimpleIntentReviewer(llm=QueueLLM([payload]), task_prompt="large optimization")
+    return await reviewer.review(
+        generated.value,
+        execution,
+        planned.value.plan,
+        [{"method": "structural", "result": "pass"}],
+        1,
+    )
+
+
+async def test_static_formulation_risk_cannot_coexist_with_ready():
+    finding = "The sector penalty may change the objective among feasible portfolios."
+
+    result = await _review_unexecuted(
+        _critic(
+            decision="ready",
+            summary="ready apart from a possible penalty distortion",
+            static_readiness=_static_readiness(),
+            residual_risks=[finding],
+            risk_assessments=[{"category": "formulation_uncertainty", "detail": finding}],
+        )
+    )
+
+    assert result.decision is SemanticReviewDecision.REPLAN
+    assert result.reason_code == "static_plan_mismatch"
+    assert "static_risk.formulation_uncertainty" in result.critic["failed_checks"]
+
+
+async def test_static_placeholder_baseline_routes_to_code_repair():
+    finding = "The requested classical baseline is only a placeholder."
+
+    result = await _review_unexecuted(
+        _critic(
+            decision="ready",
+            summary="source is otherwise aligned",
+            static_readiness=_static_readiness(baseline_requirement_satisfied=False),
+            residual_risks=[finding],
+            risk_assessments=[{"category": "baseline_incomplete", "detail": finding}],
+        )
+    )
+
+    assert result.decision is SemanticReviewDecision.CODE_REPAIR
+    assert result.reason_code == "static_code_mismatch"
+    assert "static_readiness.baseline_requirement_satisfied" in result.critic["failed_checks"]
+
+
+async def test_static_unclassified_residual_risk_is_not_accepted():
+    result = await _review_unexecuted(
+        _critic(
+            decision="ready",
+            summary="source has an unclassified risk",
+            static_readiness=_static_readiness(),
+            residual_risks=["A possible source defect remains."],
+            risk_assessments=[],
+        )
+    )
+
+    assert result.decision is SemanticReviewDecision.CODE_REPAIR
+    assert "static_risk_classification" in result.critic["failed_checks"]
+
+
 async def test_ready_review_with_failed_nameko_check_is_not_accepted():
     ports, *_ = _ports()
     run_id = uuid4()
@@ -709,6 +1602,39 @@ def test_success_criteria_check_compares_trusted_numeric_result_to_plan_range():
     assert failed["result"] == "fail"
     assert failed["details"]["observed"] == 0.75
     assert passed["result"] == "pass"
+
+
+def test_success_criteria_check_absorbs_only_floating_point_boundary_noise():
+    plan = Plan.model_validate(
+        {
+            **_plan_payload(),
+            "success_criteria": {
+                "primary_metric": "score",
+                "expected_range": {"min": 0.625, "max": 0.625},
+            },
+            "expected_output_keys": ["score"],
+        }
+    )
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="f" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={"score": 0.6249999999999997},
+        observation={},
+    )
+
+    rounding_only = simple_ports_module._success_criteria_check(plan, execution)
+    materially_low = simple_ports_module._success_criteria_check(
+        plan,
+        execution.model_copy(update={"result": {"score": 0.62499999}}),
+    )
+
+    assert rounding_only["result"] == "pass"
+    assert materially_low["result"] == "fail"
 
 
 async def test_malformed_simple_intent_review_is_typed_model_output_failure():
@@ -1062,7 +1988,118 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
     assert captured["run_binding"] == (run_id, version_id)
 
 
-async def test_repo_review_saver_rejects_review_without_complete_evidence():
+async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeypatch):
+    run_id = uuid4()
+    source = "from qiskit import QuantumCircuit\n\ndef build():\n    return QuantumCircuit(480)\n"
+    program = FrameworkProgram(Framework.QISKIT, source)
+    candidate = CandidateRevision(
+        candidate_id=uuid4(),
+        run_id=run_id,
+        tool_call_id="simple:generate:1",
+        revision=1,
+        plan_id=uuid4(),
+        framework=Framework.QISKIT,
+        source=program.normalized_source,
+        source_fingerprint=program.fingerprint,
+    )
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        source_fingerprint=candidate.source_fingerprint,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="local",
+        exit_code=75,
+        failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+        duration_ms=0,
+        result={},
+        observation={
+            "execution_status": "not_run",
+            "execution_reason_code": "local_statevector_capacity_exceeded",
+            "target_backend": "unassigned_external",
+            "qubits": 480,
+            "local_execution_ceiling_qubits": 25,
+            "sandbox_runs": 0,
+        },
+    )
+    review = SemanticReviewEvidence(
+        review_id=uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        confidence="high",
+        severity="none",
+        reason_code="static_intent_aligned",
+        retry_target=RetryTarget.NONE,
+        feedback={
+            "basic_checks": [
+                {"method": "structural", "result": "pass"},
+                {"method": "framework_boundary", "result": "pass"},
+                {"method": "execution_claims", "result": "pass"},
+            ],
+            "critic": {"summary": "source is statically aligned", "residual_risks": []},
+        },
+    )
+    payload = _plan_payload()
+    payload["qubits_estimate"] = 480
+    payload.pop("verification_plan")
+    plan = Plan.model_validate(payload)
+    artifact_id = uuid4()
+    version_id = uuid4()
+    captured = {}
+
+    async def create_artifact(_scope, _session, **values):
+        return SimpleNamespace(id=artifact_id)
+
+    async def create_version(_scope, _session, _artifact_id, **values):
+        captured["version"] = values
+        return SimpleNamespace(id=version_id, seq=1)
+
+    async def set_run_artifact_version(_scope, _session, _run_id, _version_id):
+        return None
+
+    monkeypatch.setattr(simple_ports_module.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(simple_ports_module.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(
+        simple_ports_module.runs_repo,
+        "set_run_artifact_version",
+        set_run_artifact_version,
+    )
+    saver = RepoReviewArtifactSaver(
+        scope=object(),
+        session=object(),
+        run_id=run_id,
+        parent_artifact_id=None,
+        title="Industrial assignment",
+    )
+
+    saved = await saver.save_unexecuted(candidate, execution, review, plan)
+
+    assert saved.execution_status == "not_run"
+    metadata = captured["version"]["metadata"]
+    assert metadata["execution"] == {
+        "status": "not_run",
+        "provider": "local",
+        "reason_code": "local_statevector_capacity_exceeded",
+        "target_backend": "unassigned_external",
+    }
+    assert metadata["measured_result"] is None
+    assert metadata["result_origin"] == "not_available"
+    assert metadata["review_summary"]["status"] == "static_aligned"
+    assert metadata["review_summary"]["decision"] == "ready"
+    assert metadata["verification_summary"]["decision"] == "inconclusive"
+    assert metadata["verification_summary"]["semantic_review_decision"] == "ready"
+    assert metadata["verification_summary"]["evidence_strength"] is None
+    assert metadata["verification_summary"]["reason_code"] == (
+        "artifact_static_review_ready_execution_not_run"
+    )
+    assert metadata["verification_summary"]["checks"] == []
+    assert captured["version"]["resource_estimates"]["qubits"] == 480
+    assert "no connected backend" in captured["version"]["limitations"]
+
+
+async def test_repo_review_saver_rejects_a_review_that_examined_nothing():
     ports, *_ = _ports()
     run_id = uuid4()
     planned = await ports.plan(run_id, None, None)
@@ -1090,7 +2127,9 @@ async def test_repo_review_saver_rejects_review_without_complete_evidence():
         title="Bell state",
     )
 
-    with pytest.raises(ValueError, match="complete trusted evidence"):
+    # Not "the checks failed" — this review has no `basic_checks` at all. A failed
+    # check is now filed with a FAIL label; an absent one cannot be labelled.
+    with pytest.raises(ValueError, match="recorded deterministic checks"):
         await saver.save(
             candidate,
             execution,
@@ -1124,6 +2163,7 @@ _H2_HAMILTONIAN = [
 def _vqe_plan(reported: float, *, hamiltonian=None, tolerance=None) -> tuple[Plan, object]:
     verification_plan = {
         "methods": ["exact_diag"],
+        "reference_result_key": "energy_Ha",
         "reference_hamiltonian": _H2_HAMILTONIAN if hamiltonian is None else hamiltonian,
     }
     if tolerance is not None:
@@ -1171,6 +2211,70 @@ def test_reference_check_passes_the_true_h2_ground_state_energy():
     assert check is not None
     assert check["method"] == "exact_diag"
     assert check["result"] == "pass"
+
+
+def test_exact_diag_binding_can_differ_from_the_success_primary_metric():
+    plan, execution = _vqe_plan(-1.1373061)
+    assert plan.verification_plan is not None
+    plan = plan.model_copy(
+        update={
+            "expected_output_keys": ["variational_energy", "energy_error"],
+            "success_criteria": plan.success_criteria.model_copy(
+                update={"primary_metric": "energy_error", "expected_range": None}
+            ),
+            "verification_plan": plan.verification_plan.model_copy(
+                update={"reference_result_key": "variational_energy"}
+            ),
+        }
+    )
+    execution = execution.model_copy(
+        update={
+            "result": {
+                "variational_energy": -1.1373061,
+                "energy_error": 1.0e-12,
+            }
+        }
+    )
+
+    [check] = _reference_checks(plan, execution)
+
+    assert check["result"] == "pass"
+    assert check["details"]["primary_metric"] == "variational_energy"
+    assert check["details"]["reported"] == pytest.approx(-1.1373061)
+
+
+def test_primary_error_range_is_not_compared_with_a_bound_energy_reference():
+    plan, execution = _vqe_plan(-1.419)
+    assert plan.verification_plan is not None
+    plan = plan.model_copy(
+        update={
+            "expected_output_keys": ["variational_energy", "energy_error"],
+            "success_criteria": plan.success_criteria.model_copy(
+                update={
+                    "primary_metric": "energy_error",
+                    "expected_range": {"min": 0.0, "max": 1e-5},
+                }
+            ),
+            "verification_plan": plan.verification_plan.model_copy(
+                update={"reference_result_key": "variational_energy"}
+            ),
+        }
+    )
+    execution = execution.model_copy(
+        update={
+            "result": {
+                "variational_energy": -1.419,
+                "energy_error": 0.2816939,
+            }
+        }
+    )
+
+    routing = _reference_check_routing(
+        _reference_checks(plan, execution),
+        simple_ports_module._success_criteria_check(plan, execution),
+    )
+
+    assert routing == (SemanticReviewDecision.CODE_REPAIR, "reference_check_failed")
 
 
 def test_reference_check_catches_the_energy_the_plans_own_range_admitted():
@@ -1244,6 +2348,58 @@ def test_valid_tight_range_still_routes_an_inaccurate_candidate_to_code_repair()
     assert routing == (SemanticReviewDecision.CODE_REPAIR, "reference_check_failed")
 
 
+def test_suboptimal_brute_force_failure_preserves_specific_search_guidance():
+    check = {
+        "method": "brute_force",
+        "result": "fail",
+        "details": {
+            "protocol": {"name": "brute_force_enumeration"},
+            "disagreement": ("SUBOPTIMAL: 34 is achievable, but ALL sampled assignments missed 35"),
+        },
+    }
+
+    critic = simple_ports_module._reference_routing_critic(
+        {"summary": "Change the objective sign."},
+        [check],
+        SemanticReviewDecision.CODE_REPAIR,
+    )
+
+    assert critic["mismatches"] == [check["details"]["disagreement"]]
+    assert any(
+        "preserve the scoring and feasibility rules" in instruction
+        and "DiagonalGate" in instruction
+        for instruction in critic["repair_instructions"]
+    )
+
+
+def test_exact_statevector_vqe_failure_gets_convergence_specific_repair():
+    check = {
+        "method": "exact_diag",
+        "result": "fail",
+        "details": {
+            "protocol": {
+                "name": "exact_diagonalization",
+                "expectation_mode": "exact_statevector",
+            },
+            "failure_mode": "reported_above_ground_state",
+            "disagreement": "the reported energy is above the true ground state",
+        },
+    }
+
+    critic = simple_ports_module._reference_routing_critic(
+        {"summary": "Increase the number of shots."},
+        [check],
+        SemanticReviewDecision.CODE_REPAIR,
+    )
+
+    assert any(
+        "not shot noise" in instruction
+        and "change or deepen the entangler pattern" in instruction
+        and "Do not substitute the exact eigenvector" in instruction
+        for instruction in critic["repair_instructions"]
+    )
+
+
 def test_unusable_reference_declaration_is_blamed_on_the_plan():
     """A reference the verifier cannot use fails identically on every candidate.
 
@@ -1292,6 +2448,557 @@ def test_plan_without_a_declared_reference_runs_the_check_not_at_all():
     assert _reference_check_routing([]) is None
 
 
+def _exact_dynamics_plan_and_execution(reported: float) -> tuple[Plan, ExecutionEvidence]:
+    payload = _dynamics_reference_plan_payload()
+    payload["verification_plan"]["methods"] = ["return_contract"]
+    plan = Plan.model_validate(payload)
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={"value": reported},
+        observation={},
+    )
+    return plan, execution
+
+
+def test_success_criteria_passes_exact_plan_declared_dynamics():
+    plan, execution = _exact_dynamics_plan_and_execution(0.9466084218)
+
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    assert check["result"] == "pass"
+    assert check["details"]["protocol"]["name"] == "exact_pauli_dynamics"
+    assert check["details"]["scores"]["exact_dynamics_value"] == pytest.approx(0.9466084218)
+
+
+def test_wrong_dynamics_scalar_routes_to_code_repair_even_without_a_guessed_range():
+    plan, execution = _exact_dynamics_plan_and_execution(0.4)
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    routing = _reference_check_routing([check], success_criteria_check=check)
+
+    assert check["result"] == "fail"
+    assert routing == (SemanticReviewDecision.CODE_REPAIR, "reference_check_failed")
+
+
+def test_exact_dynamics_failure_repair_rebuilds_sparse_pauli_indices():
+    plan, execution = _exact_dynamics_plan_and_execution(0.4)
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    critic = simple_ports_module._reference_routing_critic(
+        {"summary": "Change an unrelated circuit layer."},
+        [check],
+        SemanticReviewDecision.CODE_REPAIR,
+    )
+
+    assert any(
+        "factor index i occupies character i" in instruction
+        for instruction in critic["repair_instructions"]
+    )
+
+
+def _exact_qpe_plan_and_execution(
+    *, peak_probability: float, counts: dict[str, int]
+) -> tuple[Plan, ExecutionEvidence]:
+    plan = Plan.model_validate(
+        {
+            "domain": "quantum algorithms",
+            "framework": "qiskit",
+            "algorithm": "QPE",
+            "problem_summary": "Estimate the exactly representable eigenphase 11/32",
+            "algorithm_rationale": "Five counting qubits resolve the phase exactly",
+            "parameters": {"shots": 4096, "seed": 7},
+            "qubits_estimate": 6,
+            "expected_runtime_sec": 20,
+            "success_criteria": {"primary_metric": "phase_estimate"},
+            "expected_output_keys": [
+                "phase_integer",
+                "phase_estimate",
+                "peak_probability",
+                "counts",
+            ],
+            "verification_plan": {
+                "methods": ["return_contract"],
+                "exact_phase_estimation_reference": {
+                    "counting_qubits": 5,
+                    "eigenphase": 11 / 32,
+                    "phase_integer_result_key": "phase_integer",
+                    "phase_estimate_result_key": "phase_estimate",
+                    "peak_probability_result_key": "peak_probability",
+                    "counts_result_key": "counts",
+                },
+            },
+        }
+    )
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={
+            "phase_integer": 11,
+            "phase_estimate": 11 / 32,
+            "peak_probability": peak_probability,
+            "counts": counts,
+        },
+        observation={},
+    )
+    return plan, execution
+
+
+def test_exact_qpe_success_criteria_checks_protected_distribution_concentration():
+    plan, execution = _exact_qpe_plan_and_execution(
+        peak_probability=1.0,
+        counts={"01011": 4096},
+    )
+
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    assert check["result"] == "pass"
+    assert check["details"]["protocol"]["name"] == "exact_dyadic_phase_estimation"
+
+
+def test_diffuse_exact_qpe_distribution_routes_to_minimal_code_repair():
+    plan, execution = _exact_qpe_plan_and_execution(
+        peak_probability=0.56884765625,
+        counts={"01011": 2330, "00101": 1766},
+    )
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    critic = simple_ports_module._reference_routing_critic(
+        {"summary": "Accept because the decoded integer is correct."},
+        [check],
+        SemanticReviewDecision.CODE_REPAIR,
+    )
+
+    assert check["result"] == "fail"
+    assert _reference_check_routing([check], check) == (
+        SemanticReviewDecision.CODE_REPAIR,
+        "reference_check_failed",
+    )
+    assert any(
+        "controlled-power and inverse-QFT" in instruction
+        for instruction in critic["repair_instructions"]
+    )
+
+
+def test_qpe_reconciliation_removes_a_range_that_excludes_exact_truth():
+    plan, _ = _exact_qpe_plan_and_execution(
+        peak_probability=1.0,
+        counts={"01011": 4096},
+    )
+    plan = plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={
+                    "expected_range": {"min": 0.4, "max": 0.5},
+                    "additional_notes": ["The phase is probably 0.45"],
+                }
+            )
+        }
+    )
+
+    reconciled = simple_ports_module._reconcile_exact_qpe_success_criteria(plan)
+
+    assert reconciled.success_criteria.expected_range is None
+    assert reconciled.success_criteria.additional_notes is None
+    assert reconciled.verification_plan is not None
+    assert reconciled.verification_plan.reference_method == (
+        "plan_declared_exact_dyadic_phase_estimation"
+    )
+
+
+def _linear_reference_payload() -> dict:
+    return {
+        "matrix": [[0.75, 0.25], [0.25, 0.75]],
+        "rhs": [1.0, -0.25],
+        "results": [
+            {
+                "result_key": "solution_x0",
+                "metric": "normalized_solution_component",
+                "index": 0,
+            },
+            {
+                "result_key": "solution_x1",
+                "metric": "normalized_solution_component",
+                "index": 1,
+            },
+            {
+                "result_key": "amplitude_ratio",
+                "metric": "component_ratio",
+                "numerator_index": 1,
+                "denominator_index": 0,
+            },
+            {"result_key": "residual_norm", "metric": "residual_norm"},
+            {"result_key": "state_fidelity", "metric": "state_fidelity"},
+        ],
+    }
+
+
+def _linear_plan_payload() -> dict:
+    return {
+        "domain": "quantum linear systems",
+        "framework": "qiskit",
+        "algorithm": "other",
+        "problem_summary": "Solve a two-dimensional symmetric linear system",
+        "algorithm_rationale": "HHL-style phase estimation extracts a solution state",
+        "parameters": {},
+        "qubits_estimate": 5,
+        "expected_runtime_sec": 30,
+        "success_criteria": {"primary_metric": "state_fidelity"},
+        "expected_output_keys": [
+            "solution_x0",
+            "solution_x1",
+            "amplitude_ratio",
+            "residual_norm",
+            "state_fidelity",
+        ],
+        "verification_plan": {
+            "methods": ["return_contract"],
+            "exact_linear_system_reference": _linear_reference_payload(),
+        },
+    }
+
+
+def _linear_extraction_payload(reference: dict | None = None) -> dict:
+    return {
+        "supported": True,
+        "reason": None,
+        "reference": reference or _linear_reference_payload(),
+    }
+
+
+async def test_linear_system_reference_requires_dual_model_semantic_consensus(monkeypatch):
+    monkeypatch.setenv("MAJORANA_LLM_PROVIDER", "openai")
+    ports, llm, *_ = _ports()
+    ports._task_prompt = (
+        "For A=[[0.75,0.25],[0.25,0.75]] and b=[1,-0.25], return signed "
+        "normalized solution_x0 and solution_x1, amplitude_ratio=solution_x1/solution_x0, "
+        "residual_norm, and state_fidelity."
+    )
+    llm.texts = [
+        json.dumps(_linear_plan_payload()),
+        json.dumps(_linear_extraction_payload()),
+        json.dumps(_linear_extraction_payload()),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.reference_method == "independent_dual_model_linear_system_consensus"
+    assert [request.schema_name for request in llm.requests] == [
+        "request_plan",
+        "linear_system_reference_extraction",
+        "linear_system_reference_audit_extraction",
+    ]
+    assert llm.requests[1].model == "deepseek-v4-pro"
+    assert llm.requests[2].model == "deepseek-v4-flash"
+    extraction_request = json.loads(llm.requests[1].user)
+    assert extraction_request["request"] == ports._task_prompt
+    assert "source" not in extraction_request
+
+
+async def test_wrong_linear_result_semantics_request_replanning_before_generation():
+    ports, llm, *_ = _ports()
+    payload = _linear_plan_payload()
+    payload["verification_plan"]["exact_linear_system_reference"]["results"][0]["metric"] = (
+        "solution_component"
+    )
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps(_linear_extraction_payload()),
+        json.dumps(_linear_extraction_payload()),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.failure is not None
+    assert planned.failure.code == "linear_system_reference_consensus_failed"
+    assert planned.failure.retry_target is SimpleRetryTarget.PLANNING
+    assert planned.failure.details["comparison"] == {
+        "reason": "linear_system_result_metric_mismatch",
+        "result_key": "solution_x0",
+        "source": "plan_extraction",
+    }
+
+
+async def test_linear_audit_abstention_does_not_veto_substantive_consensus():
+    ports, llm, *_ = _ports()
+    llm.texts = [
+        json.dumps(_linear_plan_payload()),
+        json.dumps(_linear_extraction_payload()),
+        json.dumps(
+            {
+                "supported": False,
+                "reason": "the request also asks for an HHL circuit",
+                "reference": None,
+            }
+        ),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.exact_linear_system_reference is not None
+    assert verification.reference_method == ("independent_linear_system_extraction_consensus")
+
+
+async def test_linear_substantive_extraction_enriches_a_plan_that_omits_reference():
+    ports, llm, *_ = _ports()
+    payload = _linear_plan_payload()
+    payload["verification_plan"].pop("exact_linear_system_reference")
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps(_linear_extraction_payload()),
+        json.dumps(
+            {
+                "supported": False,
+                "reason": "the request also asks for a circuit",
+                "reference": None,
+            }
+        ),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.exact_linear_system_reference is not None
+    assert verification.reference_method == "independent_linear_system_extraction"
+
+
+def _exact_linear_plan_and_execution(
+    *, solution_x0: float, solution_x1: float, state_fidelity: float
+) -> tuple[Plan, ExecutionEvidence]:
+    plan = Plan.model_validate(_linear_plan_payload())
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={
+            "solution_x0": solution_x0,
+            "solution_x1": solution_x1,
+            "amplitude_ratio": solution_x1 / solution_x0,
+            "residual_norm": 0.0,
+            "state_fidelity": state_fidelity,
+        },
+        observation={},
+    )
+    return plan, execution
+
+
+def test_exact_linear_system_success_criteria_checks_every_bound_scalar():
+    plan, execution = _exact_linear_plan_and_execution(
+        solution_x0=0.8804710999221753,
+        solution_x1=-0.4740998230350174,
+        state_fidelity=1.0,
+    )
+
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    assert check["result"] == "pass"
+    assert check["details"]["protocol"]["name"] == "exact_dense_linear_system"
+    assert set(check["details"]["scores"]) == set(plan.expected_output_keys)
+
+
+def test_wrong_linear_system_result_routes_to_basis_traced_code_repair():
+    plan, execution = _exact_linear_plan_and_execution(
+        solution_x0=0.65,
+        solution_x1=-0.71,
+        state_fidelity=0.84,
+    )
+    check = simple_ports_module._success_criteria_check(plan, execution)
+    critic = simple_ports_module._reference_routing_critic(
+        {"summary": "Try a different classical solve."},
+        [check],
+        SemanticReviewDecision.CODE_REPAIR,
+    )
+
+    assert check["result"] == "fail"
+    assert _reference_check_routing([check], check) == (
+        SemanticReviewDecision.CODE_REPAIR,
+        "reference_check_failed",
+    )
+    assert any(
+        "reciprocal controlled rotation" in instruction
+        for instruction in critic["repair_instructions"]
+    )
+    assert any(
+        "((basis_index >> a) & 1)" in instruction for instruction in critic["repair_instructions"]
+    )
+
+
+def test_linear_system_reconciliation_removes_model_authored_numeric_notes():
+    plan, _ = _exact_linear_plan_and_execution(
+        solution_x0=0.8804710999221753,
+        solution_x1=-0.4740998230350174,
+        state_fidelity=1.0,
+    )
+    plan = plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={
+                    "expected_range": {"min": 0.4, "max": 0.8},
+                    "additional_notes": ["Fidelity should be near 0.6"],
+                }
+            )
+        }
+    )
+
+    reconciled = simple_ports_module._reconcile_exact_linear_system_success_criteria(plan)
+
+    assert reconciled.failure is None
+    assert reconciled.value is not None
+    assert reconciled.value.success_criteria.expected_range is None
+    assert reconciled.value.success_criteria.additional_notes is None
+
+
+def test_dynamics_range_excluding_exact_truth_routes_to_replan():
+    plan, execution = _exact_dynamics_plan_and_execution(0.9466084218)
+    plan = plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={"expected_range": {"min": -1.0, "max": 0.5}}
+            )
+        }
+    )
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    assert check["result"] == "fail"
+    assert check["details"]["fault"] == "plan"
+    assert _reference_check_routing([check], check) == (
+        SemanticReviewDecision.REPLAN,
+        "reference_declaration_unusable",
+    )
+
+
+def _exact_lindblad_plan_and_execution(
+    *,
+    excited_population: float,
+    coherence_real: float = 0.0,
+    purity: float | None = None,
+) -> tuple[Plan, ExecutionEvidence]:
+    plan = Plan.model_validate(_lindblad_reference_plan_payload())
+    exact_population = math.exp(-0.7 * 1.3)
+    exact_purity = exact_population**2 + (1.0 - exact_population) ** 2
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={
+            "excited_population": excited_population,
+            "coherence_real": coherence_real,
+            "purity": exact_purity if purity is None else purity,
+        },
+        observation={},
+    )
+    return plan, execution
+
+
+def test_success_criteria_checks_every_declared_lindblad_scalar():
+    exact_population = math.exp(-0.7 * 1.3)
+    plan, execution = _exact_lindblad_plan_and_execution(excited_population=exact_population)
+
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    assert check["result"] == "pass"
+    assert check["details"]["protocol"]["name"] == "exact_lindblad_evolution"
+    assert set(check["details"]["scores"]) == {
+        "excited_population",
+        "coherence_real",
+        "purity",
+    }
+
+
+@pytest.mark.parametrize(
+    ("population", "purity", "failed_key"),
+    [
+        (1.0 - math.exp(-0.7 * 1.3), None, "excited_population"),
+        (math.exp(-0.7 * 1.3), 1.0, "purity"),
+    ],
+)
+def test_wrong_primary_or_secondary_lindblad_scalar_routes_to_code_repair(
+    population,
+    purity,
+    failed_key,
+):
+    plan, execution = _exact_lindblad_plan_and_execution(
+        excited_population=population,
+        purity=purity,
+    )
+
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    assert check["result"] == "fail"
+    assert any(item.startswith(f"{failed_key}:") for item in check["details"]["disagreements"])
+    assert _reference_check_routing([check], check) == (
+        SemanticReviewDecision.CODE_REPAIR,
+        "reference_check_failed",
+    )
+
+
+def test_exact_lindblad_failure_replaces_speculative_reviewer_repair_with_fixed_guidance():
+    plan, execution = _exact_lindblad_plan_and_execution(excited_population=0.9)
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    critic = simple_ports_module._reference_routing_critic(
+        {
+            "summary": "Rebuild the unrelated Stinespring circuit.",
+            "repair_instructions": ["Replace the entire dilation."],
+            "residual_risks": ["artifact semantics still need review"],
+        },
+        [check],
+        SemanticReviewDecision.CODE_REPAIR,
+    )
+
+    assert "Protected RESULT" in critic["summary"]
+    assert all("entire dilation" not in item for item in critic["repair_instructions"])
+    assert any("lowering |0><1|" in item for item in critic["repair_instructions"])
+    assert critic["residual_risks"] == ["artifact semantics still need review"]
+
+
+def test_lindblad_range_excluding_exact_truth_routes_to_replan():
+    exact_population = math.exp(-0.7 * 1.3)
+    plan, execution = _exact_lindblad_plan_and_execution(excited_population=exact_population)
+    plan = plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={"expected_range": {"min": 0.8, "max": 1.0}}
+            )
+        }
+    )
+
+    check = simple_ports_module._success_criteria_check(plan, execution)
+
+    assert check["result"] == "fail"
+    assert check["details"]["fault"] == "plan"
+    assert _reference_check_routing([check], check) == (
+        SemanticReviewDecision.REPLAN,
+        "reference_declaration_unusable",
+    )
+
+
 def _review_with_checks(checks) -> SemanticReviewEvidence:
     return SemanticReviewEvidence(
         review_id=uuid4(),
@@ -1318,7 +3025,9 @@ def test_summary_reports_a_physical_grade_without_ever_claiming_a_pass():
     methods = passed_reference_methods(review)
     assert methods == (VerificationMethod.EXACT_DIAG,)
 
-    summary = simple_pipeline_verification_summary(methods)
+    summary = simple_pipeline_verification_summary(
+        methods, recorded_checks=recorded_basic_checks(review)
+    )
 
     assert summary["evidence_strength"] == EvidenceStrength.PHYSICAL.value
     assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
@@ -1331,17 +3040,148 @@ def test_summary_stays_structural_when_no_reference_check_ran():
     review = _review_with_checks([{"method": "success_criteria", "result": "pass"}])
     assert passed_reference_methods(review) == ()
 
-    summary = simple_pipeline_verification_summary()
+    summary = simple_pipeline_verification_summary(recorded_checks=recorded_basic_checks(review))
 
     assert summary["evidence_strength"] == EvidenceStrength.STRUCTURAL.value
     assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
     assert "quantum correctness" in summary["unverified_claims"]
 
 
+def test_exact_typed_success_criteria_is_recorded_as_physical_reference_evidence():
+    review = _review_with_checks(
+        [
+            {
+                "method": "success_criteria",
+                "result": "pass",
+                "details": {"protocol": {"name": "exact_dense_linear_system"}},
+            }
+        ]
+    )
+
+    methods = passed_reference_methods(review)
+    summary = simple_pipeline_verification_summary(
+        methods, recorded_checks=recorded_basic_checks(review)
+    )
+
+    assert methods == (VerificationMethod.EXACT,)
+    assert summary["evidence_strength"] == EvidenceStrength.PHYSICAL.value
+    assert {"method": "exact", "result": "pass"} in summary["checks"]
+
+
 def test_a_failed_reference_check_never_counts_as_evidence_in_the_summary():
     review = _review_with_checks([{"method": "exact_diag", "result": "fail"}])
 
     assert passed_reference_methods(review) == ()
+
+
+# --- The summary reports the checks that ran, not a template -------------------
+#
+# The repository holds a candidate whose deterministic checks failed (owner,
+# 2026-08-03). That is only honest if the label describes THAT candidate, and this
+# function used to synthesise an all-PASS list from the reference methods alone —
+# so the artifact asserted `success_criteria: pass` for a candidate whose
+# success_criteria check had come back FAIL.
+
+
+def test_a_failed_check_is_reported_as_failed_and_not_as_a_pass():
+    review = _review_with_checks(
+        [
+            {"method": "structural", "result": "pass"},
+            {"method": "success_criteria", "result": "fail"},
+        ]
+    )
+
+    summary = simple_pipeline_verification_summary(
+        passed_reference_methods(review),
+        review.decision,
+        recorded_checks=recorded_basic_checks(review),
+    )
+
+    assert {"method": "success_criteria", "result": "fail"} in summary["checks"]
+    assert {"method": "success_criteria", "result": "pass"} not in summary["checks"]
+    # A check that ran and established a mismatch IS a candidate defect, which is
+    # the one thing INCONCLUSIVE may not say — the contract's validator rejects it.
+    assert summary["decision"] == VerifierDecision.FAIL.value
+    assert summary["candidate_defect_observed"] is True
+    assert summary["reason_code"] == "deterministic_check_failed"
+
+
+def test_a_failed_physical_check_does_not_lift_the_grade():
+    """A comparison that ran and came back wrong proves nothing about the physics.
+
+    The grade used to be `PHYSICAL if reference_methods else STRUCTURAL`, and
+    `reference_methods` only ever contains PASSING methods, so this held by
+    accident. It is `evidence_strength_of`'s rule now, which states it on purpose.
+    """
+
+    review = _review_with_checks(
+        [
+            {"method": "structural", "result": "pass"},
+            {"method": "exact_diag", "result": "fail"},
+        ]
+    )
+
+    summary = simple_pipeline_verification_summary(
+        passed_reference_methods(review),
+        review.decision,
+        recorded_checks=recorded_basic_checks(review),
+    )
+
+    assert summary["evidence_strength"] == EvidenceStrength.STRUCTURAL.value
+
+
+def test_a_failure_that_cannot_be_named_is_still_counted():
+    """`framework_boundary` is recorded by the unexecuted path and is not a
+    `VerificationMethod`, so it cannot appear in a typed check. Dropping it from
+    the LIST is unavoidable; dropping it from the VERDICT would be a summary that
+    reports nothing failed while something did."""
+
+    review = _review_with_checks(
+        [
+            {"method": "structural", "result": "pass"},
+            {"method": "framework_boundary", "result": "fail"},
+        ]
+    )
+
+    summary = simple_pipeline_verification_summary(
+        (), review.decision, recorded_checks=recorded_basic_checks(review)
+    )
+
+    assert "framework_boundary" not in {check["method"] for check in summary["checks"]}
+    assert summary["decision"] == VerifierDecision.FAIL.value
+
+
+def test_a_reviewer_that_called_the_circuit_broken_is_quoted_not_dropped():
+    """Severity is model opinion, so it never becomes a FAIL decision. But the store
+    used to refuse this candidate outright; now that it is kept, the opinion has to
+    be carried rather than discarded along with the refusal."""
+
+    review = _review_with_checks([{"method": "structural", "result": "pass"}])
+
+    summary = simple_pipeline_verification_summary(
+        (),
+        SemanticReviewDecision.CODE_REPAIR,
+        recorded_checks=recorded_basic_checks(review),
+        review_severity="blocking",
+    )
+
+    assert summary["decision"] == VerifierDecision.INCONCLUSIVE.value
+    assert any("blocking defect" in claim for claim in summary["unverified_claims"])
+
+
+def test_an_empty_check_list_says_so_rather_than_reading_as_all_clear():
+    summary = simple_pipeline_verification_summary((), recorded_checks=())
+
+    assert summary["checks"] == []
+    assert any("none was recorded" in claim for claim in summary["unverified_claims"])
+
+
+def test_the_summary_cannot_be_built_without_the_evidence_it_describes():
+    """The mechanism, not the intention. A default here would put the old all-PASS
+    template one forgotten keyword away from every future call site."""
+
+    with pytest.raises(TypeError, match="recorded_checks"):
+        simple_pipeline_verification_summary(())  # type: ignore[call-arg]
 
 
 # --- Every review names a next step -------------------------------------------
@@ -1364,6 +3204,17 @@ def _critic(**overrides) -> str:
         "residual_risks": [],
     }
     return json.dumps({**payload, **overrides})
+
+
+def _static_readiness(**overrides) -> dict[str, bool]:
+    payload = {
+        "objective_and_constraints_preserved": True,
+        "plan_source_consistent": True,
+        "backend_entrypoint_complete": True,
+        "baseline_requirement_satisfied": True,
+        "no_fabricated_results": True,
+    }
+    return {**payload, **overrides}
 
 
 async def _decide(payload: str, checks=None) -> SimpleIntentReviewResult:
@@ -1518,7 +3369,11 @@ async def test_a_blocking_review_never_reaches_the_user_as_an_aligned_run(
     result = await _decide(_critic(severity=severity, summary="the circuit is wrong"))
 
     assert result.decision is not SemanticReviewDecision.READY
-    summary = simple_pipeline_verification_summary(reference_methods, result.decision)
+    summary = simple_pipeline_verification_summary(
+        reference_methods,
+        result.decision,
+        recorded_checks=({"method": "structural", "result": "pass"},),
+    )
     assert not str(summary["reason_code"]).startswith("ai_review_aligned")
     assert summary["reason_code"] == "trusted_evidence_without_review_acceptance"
     # The user is told which claim was not established, rather than being left to
@@ -1588,6 +3443,77 @@ def test_every_declared_reference_method_actually_runs():
     )
 
 
+def test_worker_passes_offset_direction_and_constraints_to_brute_force():
+    plan = Plan.model_validate(
+        {
+            "domain": "operations research",
+            "framework": "qiskit",
+            "algorithm": "QAOA",
+            "problem_summary": "Maximize a capacity-constrained item value",
+            "algorithm_rationale": "QAOA samples the encoded objective",
+            "parameters": {"shots": 4096},
+            "qubits_estimate": 3,
+            "expected_runtime_sec": 30,
+            "success_criteria": {"primary_metric": "best_value"},
+            "expected_output_keys": ["best_value"],
+            "verification_plan": {
+                "methods": ["brute_force"],
+                "reference_problem": {
+                    "kind": "qubo",
+                    "num_variables": 3,
+                    "terms": [
+                        {"i": 0, "j": 0, "weight": 8.0},
+                        {"i": 1, "j": 1, "weight": 5.0},
+                        {"i": 2, "j": 2, "weight": 6.0},
+                    ],
+                    "offset": 1.0,
+                    "objective": "maximize",
+                    "constraints": [
+                        {
+                            "terms": [
+                                {"i": 0, "weight": 4.0},
+                                {"i": 1, "weight": 2.0},
+                                {"i": 2, "weight": 3.0},
+                            ],
+                            "sense": "le",
+                            "rhs": 7.0,
+                        }
+                    ],
+                },
+            },
+        }
+    )
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={"best_value": 15.0},
+        observation={},
+    )
+
+    checks = _reference_checks(plan, execution)
+
+    assert len(checks) == 1
+    assert checks[0]["result"] == "pass"
+    assert checks[0]["details"]["protocol"] == {
+        "name": "brute_force_enumeration",
+        "kind": "qubo",
+        "num_variables": 3,
+        "terms": 3,
+        "assignments_enumerated": 8,
+        "feasible_assignments": 7,
+        "constraints": 1,
+        "offset": 1.0,
+        "objective": "maximize",
+        "tolerance": pytest.approx(2.0e-8),
+        "tolerance_source": "floating_point_only",
+    }
+
+
 async def test_reference_failure_replans_through_the_real_review_port():
     """End-to-end wiring: a Plan-declared reference that the RESULT contradicts must
     reach the durable review as a typed routing decision, not as reviewer prose."""
@@ -1600,6 +3526,7 @@ async def test_reference_failure_replans_through_the_real_review_port():
     plan_payload["algorithm"] = "VQE"
     plan_payload["verification_plan"] = {
         "methods": ["exact_diag"],
+        "reference_result_key": "energy_Ha",
         "reference_hamiltonian": _H2_HAMILTONIAN,
     }
     # Enough shots that the shot-noise allowance is narrower than the error under
@@ -1681,7 +3608,12 @@ def test_a_plan_declared_tolerance_can_tighten_a_loose_shot_allowance():
 
 def test_summary_marks_intent_alignment_unverified_when_review_did_not_accept():
     summary = simple_pipeline_verification_summary(
-        (VerificationMethod.EXACT_DIAG,), SemanticReviewDecision.CODE_REPAIR
+        (VerificationMethod.EXACT_DIAG,),
+        SemanticReviewDecision.CODE_REPAIR,
+        recorded_checks=(
+            {"method": "structural", "result": "pass"},
+            {"method": "exact_diag", "result": "pass"},
+        ),
     )
 
     assert summary["reason_code"] == "trusted_evidence_without_review_acceptance"
@@ -1694,7 +3626,11 @@ def test_summary_marks_intent_alignment_unverified_when_review_did_not_accept():
 
 
 def test_summary_without_reference_or_acceptance_withdraws_nothing():
-    summary = simple_pipeline_verification_summary((), SemanticReviewDecision.CODE_REPAIR)
+    summary = simple_pipeline_verification_summary(
+        (),
+        SemanticReviewDecision.CODE_REPAIR,
+        recorded_checks=({"method": "structural", "result": "pass"},),
+    )
 
     assert summary["evidence_strength"] == EvidenceStrength.STRUCTURAL.value
     for claim in ("quantum correctness", "physical fidelity", "optimality", "intent alignment"):
@@ -1775,3 +3711,88 @@ async def test_the_first_generation_has_no_previous_execution():
     await ports.generate(run_id, planned.value, None, None)
 
     assert json.loads(llm.requests[-1].user)["previous_execution"] is None
+
+
+def test_an_unusable_linear_system_primary_metric_returns_a_verdict_rather_than_raising():
+    """A metric that is PRESENT but is not a number reaches the reference comparison.
+
+    The guard above it is `metric not in execution.result`, which a string, a null and
+    a bool all pass. The comparison then recorded no `scores` entry for such a value
+    while this caller indexed `scores[metric]["exact"]` unconditionally, so the review
+    step died on an uncaught KeyError — and `_success_criteria_check` is called outside
+    every try in the review step, so nothing turned that into an attributable failure.
+    The repair loop's whole input is the verdict, so it has to get one.
+    """
+    payload = _linear_plan_payload()
+    payload["verification_plan"]["methods"] = ["return_contract"]
+    plan = Plan.model_validate(payload)
+
+    for unusable in ("not-computed", None, True):
+        execution = ExecutionEvidence(
+            execution_id=uuid4(),
+            candidate_id=uuid4(),
+            source_fingerprint="a" * 64,
+            environment_fingerprint="e" * 64,
+            sandbox_provider="test",
+            exit_code=0,
+            duration_ms=1,
+            result={
+                "solution_x0": 0.8804710999221753,
+                "solution_x1": -0.4740998230350174,
+                "amplitude_ratio": -0.5384615384615384,
+                "residual_norm": 0.0,
+                "state_fidelity": unusable,
+            },
+            observation={},
+        )
+
+        check = simple_ports_module._success_criteria_check(plan, execution)
+
+        assert check["result"] == "fail", unusable
+        # The candidate printed the wrong thing; the Plan is fine. Attributing this to
+        # the Plan would send the repair loop to replanning a correct reference.
+        assert check["details"].get("fault") != "plan"
+        assert any("state_fidelity" in line for line in check["details"]["disagreements"]), unusable
+
+
+def test_a_repair_snapshot_of_untrusted_output_is_bounded_in_depth():
+    """The breadth caps bound how wide it gets; nothing bounded how deep.
+
+    The input is a JSON document a model wrote, walked to build the repair
+    prompt. Unbounded recursion over it is a stack overflow reachable from
+    provider output, on a path that only runs when a plan was ALREADY invalid —
+    so it would replace an actionable `plan_output_invalid` with an unexplained
+    stage crash.
+    """
+    depth = 400
+    nested: object = "leaf"
+    for _ in range(depth):
+        nested = {"next": nested}
+
+    snapshot = _bounded_repair_value(nested)
+
+    walked = 0
+    node = snapshot
+    while isinstance(node, dict) and "next" in node:
+        walked += 1
+        node = node["next"]
+    assert walked < depth, "the snapshot followed the whole document"
+    # And it says so rather than pretending the branch ended.
+    assert "truncated at depth" in str(node)
+
+
+def test_a_document_too_nested_for_json_to_parse_is_not_a_stage_crash():
+    """`json.loads` raises RecursionError, which is not a ValueError.
+
+    The handler beside it catches (StageOutputError, TypeError, ValueError), so
+    this one escaped and took the stage with it.
+    """
+    # Nested OBJECTS, not arrays: `extract_json` looks for an object and refuses
+    # a bare array outright, so an array payload never reaches `json.loads` and
+    # this test would pass without the handler it exists to pin. Verified at
+    # this depth to raise RecursionError out of `json.loads`.
+    depth = 20_000
+    payload = '{"a":' * depth + "1" + "}" * depth
+    issues = [{"loc": ("qubits_estimate",), "type": "int_parsing", "msg": "bad"}]
+
+    assert _invalid_field_snapshot(payload, issues) == {}

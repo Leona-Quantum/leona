@@ -1,0 +1,29 @@
+id: holdout-v14-09
+category: "Holdout v14 — Rotated-eigenbasis HHL"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Solve A x=b for A=[[0.305,-0.24],[-0.24,0.445]] and b=[0.7,-0.4]
+  using a complete Qiskit HHL-style circuit. Use
+  U=exp(2*pi*i*A), three phase qubits so the eigenphases 1/8 and 5/8 are exact,
+  a phase-keyed controlled reciprocal rotation, exact uncomputation, and
+  postselection of the success ancilla. Extract signed normalized amplitudes from
+  the postselected circuit state and independently solve the same system with NumPy.
+  Return top-level numeric RESULT keys postselected_amp_zero,
+  postselected_amp_one, zero_over_one, linear_residual, and
+  postselection_fidelity, with zero_over_one explicitly equal to the first circuit
+  amplitude divided by the second. Bind the complete HHL-style circuit to
+  FINAL_CIRCUIT; do not substitute the classical solution for circuit amplitudes.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["postselected_amp_zero", "postselected_amp_one", "zero_over_one", "linear_residual", "postselection_fidelity"]
+  expected_values:
+    postselected_amp_zero: 0.9779681364397121
+    postselected_amp_one: 0.20875421937924235
+    zero_over_one: 4.684782608695656
+    linear_residual: 0.0
+    postselection_fidelity: 1.0
+  expected_value_tolerance: 0.01
+  saves_artifact: true

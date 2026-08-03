@@ -156,6 +156,9 @@ async def _persist_spec(
         # Artifact.framework is a legacy required storage field. Scientific
         # framework identity lives in the component/workflow payload.
         framework=ContractFramework.QISKIT,
+        # Server-owned catalog seeds are bounded by the reviewed seed manifest,
+        # not by an end-user Vault allowance.
+        kept=True,
     )
     version = await artifacts_repo.create_version(
         scope,

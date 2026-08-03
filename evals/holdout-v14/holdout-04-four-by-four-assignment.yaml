@@ -1,0 +1,27 @@
+id: holdout-v14-04
+category: "Holdout v14 — Practical four-by-four assignment"
+split: holdout
+difficulty: advanced
+workload: practical
+prompt: >-
+  Assign four technicians to four service jobs with exactly one job per technician
+  and one technician per job. The cost matrix by technician row is
+  [[9,2,7,8],[6,4,3,7],[5,8,1,8],[7,6,9,4]]. Encode all sixteen
+  x_technician_job variables and all eight equality constraints in a Qiskit QAOA
+  cost model. Use a bounded simulator strategy, deterministic seeds, and at least
+  8192 shots, then decode only feasible sampled assignments. Independently enumerate
+  all 4! assignments. Return top-level RESULT keys sampled_assignment_cost,
+  enumerated_assignment_cost, jobs_by_technician, and counts. Bind the optimized
+  measured QAOA circuit to FINAL_CIRCUIT; the sampled assignment must not be copied
+  from enumeration.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["sampled_assignment_cost", "enumerated_assignment_cost", "jobs_by_technician", "counts"]
+  expected_values:
+    sampled_assignment_cost: 13.0
+    enumerated_assignment_cost: 13.0
+  expected_result_subset:
+    jobs_by_technician: [1, 0, 2, 3]
+  expected_value_tolerance: 0.0
+  saves_artifact: true

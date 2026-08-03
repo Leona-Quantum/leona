@@ -1,0 +1,23 @@
+id: holdout-v15-08
+category: "Holdout v15 — Ordered second-order Pauli Trotterization"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, start from |101> and approximate evolution
+  to t=0.9 under H=0.6 X0 X1 +0.4 Y1 Y2 -0.3 Z0 using exactly six symmetric
+  second-order product-formula steps. In each step use half evolutions in the written
+  X0X1 then Y1Y2 order, the full Z0 evolution, then the reverse half evolutions.
+  Independently compute the exact matrix exponential. Return top-level numeric RESULT
+  keys trotter_z1, exact_z1, and exact_trotter_fidelity. Bind the six-step Trotter
+  circuit, not the exact unitary, to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["trotter_z1", "exact_z1", "exact_trotter_fidelity"]
+  expected_values:
+    trotter_z1: 0.28310541374335335
+    exact_z1: 0.28195064340364634
+    exact_trotter_fidelity: 0.9999981128508361
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

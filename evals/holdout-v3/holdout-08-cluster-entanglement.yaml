@@ -1,0 +1,20 @@
+id: holdout-v3-08
+category: "Holdout v3 — Cluster-state entanglement"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Prepare the four-qubit open-chain cluster state in Qiskit by applying H to every
+  qubit and CZ gates on (0,1), (1,2), and (2,3). From the exact statevector, trace out
+  qubits 2 and 3 and compute the base-2 von Neumann entropy and purity of the reduced
+  state on qubits 0 and 1. Return top-level numeric RESULT keys bipartite_entropy_bits
+  and reduced_purity, and bind the cluster-state circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["bipartite_entropy_bits", "reduced_purity"]
+  expected_values:
+    bipartite_entropy_bits: 1.0
+    reduced_purity: 0.5
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

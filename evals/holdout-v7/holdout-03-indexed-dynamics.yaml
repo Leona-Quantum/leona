@@ -1,0 +1,20 @@
+id: holdout-v7-03
+category: "Holdout v7 — Indexed three-qubit dynamics"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, exactly evolve |011> to t=0.72 under
+  H=0.26 Y0 X2 -0.19 Z1 +0.23 X0 X1 +0.15 Z2 using an explicit matrix exponential.
+  Return the expectation of 0.5 X0 -0.25 Z1 +0.25 Y2 as top-level numeric RESULT key
+  observable_expectation and also return survival_probability. Bind a Qiskit circuit
+  that prepares |011> and applies the exact unitary to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["observable_expectation", "survival_probability"]
+  expected_values:
+    observable_expectation: 0.23665201021170632
+    survival_probability: 0.9391180551454411
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

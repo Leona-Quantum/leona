@@ -1,0 +1,17 @@
+id: bench-26
+category: "J — Many-body entanglement"
+prompt: >-
+  Exactly diagonalize the six-qubit periodic transverse-field Ising Hamiltonian
+  H = -sum_{i=0}^{5} Z_i Z_{(i+1) mod 6} - sum_{i=0}^{5} X_i at the critical field.
+  Prepare its lowest-energy eigenvector in a Qiskit circuit, compute the base-2 von
+  Neumann entropy of qubits 0,1,2 after tracing out qubits 3,4,5, return it as the
+  top-level numeric RESULT key half_chain_entropy_bits, and bind the preparation
+  circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["half_chain_entropy_bits"]
+  expected_values:
+    half_chain_entropy_bits: 0.8479265692034441
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

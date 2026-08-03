@@ -21,6 +21,7 @@ from .routes.catalog import router as catalog_router
 from .routes.me import router as me_router
 from .routes.qpu import router as qpu_router
 from .routes.runs import router as runs_router
+from .routes.shares import router as shares_router
 from .routes.usage import router as usage_router
 from .routes.vqe import router as vqe_router
 from .routes.workspaces import router as workspaces_router
@@ -120,6 +121,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     app.include_router(artifacts_router, prefix="/v1")
     app.include_router(runs_router, prefix="/v1")
     app.include_router(workspaces_router, prefix="/v1")
+    # After the workspaces router: `/workspace/projects/{project_id}/shares` must
+    # not be reached by that router's `/workspace/projects/{project_id}` PATCH and
+    # DELETE, and FastAPI matches in registration order. The paths differ by a
+    # trailing segment so no ordering bug is possible today — this is registered
+    # here so that stays true if either side gains a wildcard.
+    app.include_router(shares_router, prefix="/v1")
     app.include_router(catalog_router, prefix="/v1")
     app.include_router(qpu_router, prefix="/v1")
     app.include_router(billing_router, prefix="/v1")

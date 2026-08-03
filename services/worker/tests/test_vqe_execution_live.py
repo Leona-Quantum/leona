@@ -73,6 +73,7 @@ async def _workflow(scope: Scope, session):
         title="H2 worker live",
         family=Algorithm.VQE,
         framework=ContractFramework.QISKIT,
+        kept=False,
     )
     version = await artifacts.create_version(
         scope,

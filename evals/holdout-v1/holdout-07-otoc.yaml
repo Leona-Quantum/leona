@@ -1,0 +1,22 @@
+id: holdout-v1-07
+category: "Holdout — Out-of-time-order correlator"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  In Qiskit, compute the exact infinite-temperature-pure-state OTOC on three qubits for
+  H=0.7*Z0*Z1 + 0.5*Z1*Z2 + 0.4*X1, initial state |+++>, W=X0, V=X2, and t=1.3.
+  With U=exp(-iHt), define W(t)=U^dagger W U and
+  F=<+++|W(t) V W(t) V|+++>. Use exact matrix evolution, not a Trotter approximation.
+  Return Re(F) and 2*(1-Re(F)) as top-level numeric RESULT keys otoc_real and
+  squared_commutator, and bind a Qiskit circuit applying the ordered OTOC operator to
+  |+++> to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["otoc_real", "squared_commutator"]
+  expected_values:
+    otoc_real: 0.8203931908836948
+    squared_commutator: 0.3592136182326104
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

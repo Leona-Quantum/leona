@@ -1,0 +1,26 @@
+id: holdout-v5-05
+category: "Holdout v5 — Non-dyadic phase estimation"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  Implement standard five-bit quantum phase estimation in Qiskit for the one-qubit
+  unitary U=diag(1,exp(2*pi*i*0.3)) on its |1> eigenstate. Build the controlled powers
+  and inverse QFT, use deterministic simulator/transpiler seeds and at least 8192
+  shots, and decode y/32 from the measured phase-register integer. Normalize the
+  returned phase_counts keys to ordinary five-bit MSB-first binary representations of
+  y, independent of Qiskit's raw classical-bit display order. Return top-level numeric
+  RESULT keys most_likely_integer, decoded_phase, and peak_probability plus
+  phase_counts, all derived from sampling, and bind the complete measured QPE circuit
+  to FINAL_CIRCUIT. Do not return the ideal input phase as the decoded estimate.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["most_likely_integer", "decoded_phase", "peak_probability", "phase_counts"]
+  expected_top_bitstring: "01010"
+  expected_values:
+    most_likely_integer: 10.0
+    decoded_phase: 0.3125
+    peak_probability: 0.5730812243784882
+  expected_value_tolerance: 0.02
+  saves_artifact: true

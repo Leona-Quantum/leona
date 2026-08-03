@@ -3,7 +3,7 @@
 // Route fixtures (spec §5 step 2 — Storybook alternative): every rail state, every
 // verdict banner, the designed empty state. Screenshot source for PR review + the
 // axe-core / visual-diff checks when Playwright lands.
-import { EmptyState, RunView, StageRail, VerdictBanner, type RailStage } from "@majorana/ui";
+import { EmptyState, RunView, StageRail, VerdictBanner, VerificationSummaryPanel, type RailStage } from "@majorana/ui";
 import { RUN_FIXTURES } from "../../(app)/run/[taskId]/fixtures";
 import { getStandardVqeCatalog } from "../../../lib/atlas-vqe/standard-source";
 import { VqeMethodsBrowser } from "../../repository/vqe/vqe-methods-browser";
@@ -274,9 +274,80 @@ const EXECUTE_TURN: Turn = {
   terminal: true,
 };
 
+/** The two verification states the repository can now hold and nobody had ever
+ * seen rendered. Before 2026-08-03 neither could reach this panel: a candidate
+ * whose deterministic check failed was refused at the save step, and a `skipped`
+ * check belonged to no group in the panel so it drew nothing at all. */
+const FAILED_SUMMARY = {
+  decision: "fail",
+  semantic_review_decision: "code_repair",
+  evidence_strength: "structural",
+  reason_code: "deterministic_check_failed",
+  candidate_defect_observed: true,
+  failure_class: "candidate_defect",
+  retry_target: "code_generation",
+  unverified_claims: [
+    "quantum correctness",
+    "physical fidelity",
+    "optimality",
+    "intent alignment (the reviewer recorded a blocking defect)",
+  ],
+  checks: [
+    { method: "structural", result: "pass" },
+    { method: "return_contract", result: "pass" },
+    { method: "success_criteria", result: "fail" },
+  ],
+} as const;
+
+const DERIVED_SUMMARY = {
+  decision: "inconclusive",
+  semantic_review_decision: "ready",
+  evidence_strength: "structural",
+  reason_code: "ai_review_aligned",
+  candidate_defect_observed: false,
+  failure_class: "evidence_gap",
+  retry_target: "none",
+  unverified_claims: [
+    "quantum correctness",
+    "reported output (the result was derived, not returned)",
+    "physical fidelity",
+    "optimality",
+  ],
+  checks: [
+    { method: "structural", result: "pass" },
+    { method: "return_contract", result: "skipped" },
+    { method: "success_criteria", result: "pass" },
+  ],
+} as const;
+
+function VerificationFixture({ title, summary }: { title: string; summary: unknown }) {
+  return (
+    <section style={{ display: "grid", gap: "var(--sp-3)", minWidth: 0 }}>
+      <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 600 }}>{title}</h2>
+      {/* eslint-disable-next-line @typescript-eslint/no-explicit-any */}
+      <VerificationSummaryPanel summary={summary as any} />
+    </section>
+  );
+}
+
 export function UiFixtures() {
   return (
-    <div style={{ display: "grid", gap: "var(--sp-8)" }}>
+    // `minmax(0, 1fr)`, not the implicit `auto`. One grid column is sized to the
+    // widest item in the WHOLE grid, and a single wide fixture (a long code line,
+    // a many-qubit diagram) was stretching the shared track to ~8,500px — so every
+    // other fixture inherited it, and any row laid out with `space-between` put its
+    // value 7,000px off-screen. Nothing was wrong with those components; the
+    // gallery meant to review them was measuring them in a column nobody could see.
+    <div style={{ display: "grid", gap: "var(--sp-8)", gridTemplateColumns: "minmax(0, 1fr)" }}>
+      <VerificationFixture
+        title="Verification — a deterministic check ran and failed (the repository holds this now)"
+        summary={FAILED_SUMMARY}
+      />
+      <VerificationFixture
+        title="Verification — a check that did not apply (derived result: return_contract is skipped, not passed)"
+        summary={DERIVED_SUMMARY}
+      />
+
       <ChatTurnFixture
         title="Chat turn — Japanese answer with a GFM table (must show TEXT, never a Final Output card)"
         turn={chatTurn("chat-ja", "ベル状態とは何ですか？", JA_BELL_ANSWER)}
@@ -303,7 +374,7 @@ export function UiFixtures() {
         artifact={{ framework: "qiskit", code: LLM_QISKIT, qasm: null }}
       />
       <DraftBundleFixture
-        title="Draft bundle — 8 qubits, wider than the canvas"
+        title="Draft bundle — 8 qubits, editable beyond the former limit"
         artifact={{ framework: "qiskit", code: WIDE_QISKIT, qasm: null }}
       />
 
@@ -354,11 +425,11 @@ export function UiFixtures() {
       <DiagramFixture qasm={ghzQasm(3)} title="Circuit diagram — narrow (3q GHZ)" />
       <DiagramFixture
         qasm={ghzQasm(10)}
-        title="Circuit diagram — read-only, wider than the editable builder (10q GHZ)"
+        title="Circuit diagram — editable, wider than the former builder (10q GHZ)"
       />
       <DiagramFixture
         qasm={ghzQasm(80)}
-        title="Circuit diagram — beyond the viewing ceiling (80q GHZ, must not draw)"
+        title="Circuit diagram — virtualized wide view (80q GHZ)"
       />
 
       <section>

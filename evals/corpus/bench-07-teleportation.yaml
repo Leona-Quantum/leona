@@ -1,0 +1,17 @@
+id: bench-07
+category: "B — Quantum teleportation"
+prompt: >-
+  Implement coherent quantum teleportation in Qiskit for the normalized input state
+  cos(0.41)|0> + exp(0.27i) sin(0.41)|1>. Use deferred measurement with coherent
+  corrections so the complete three-qubit circuit remains unitary. Compute the
+  receiver qubit's reduced-state fidelity with the original state, return it as the
+  top-level numeric RESULT key teleportation_fidelity, and bind the complete circuit
+  to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["teleportation_fidelity"]
+  expected_values:
+    teleportation_fidelity: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

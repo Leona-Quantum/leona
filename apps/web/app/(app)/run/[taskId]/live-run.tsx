@@ -13,6 +13,7 @@ import {
   type RunEvent,
 } from "@majorana/ui";
 import { ChatMarkdown } from "../../../../components/chat-markdown";
+import { runToFollow } from "../../../../lib/conversation-follow";
 import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
 import { displayChatTitle, titleFromPrompt } from "../../../../lib/chat-title";
 import { RunComposer, type ComposerFramework } from "../../../../components/run-composer";
@@ -331,26 +332,31 @@ export function LiveRun({ taskId }: { taskId: string }) {
   // screen, so they vanished the moment the first message was sent.
   const [mode, setMode] = useState<ComposerMode>("auto");
   const [framework, setFramework] = useState<ComposerFramework>("qiskit");
+  // The run this page is following. It starts as the one in the URL and then
+  // tracks the conversation's newest turn — see lib/conversation-follow.ts for
+  // why the URL is not that run for most of a conversation's life.
+  const [activeRunId, setActiveRunId] = useState(taskId);
+  const activeRunIdRef = useRef(taskId);
   const lastEventId = useRef<number | null>(null);
   const loadSeq = useRef(0);
   const conversationIdRef = useRef<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
   const shouldAutoScrollRef = useRef(true);
-  const completionScrolledForTaskRef = useRef<string | null>(null);
 
-  const currentRunIsTerminal = fixtureIsTerminal
-    || liveEvents.some((event) => event.run_id === taskId && event.type === "run.finished")
-    || turns.some((turn) => turn.id === taskId && turn.terminal);
+  /** Move the page onto a run, synchronously for readers inside async callbacks. */
+  function followRun(runId: string) {
+    activeRunIdRef.current = runId;
+    setActiveRunId(runId);
+  }
 
   useEffect(() => {
     const found = loadChatHistory({ includeArchived: true }).find(
       (item) => item.id === taskId || item.conversationId === conversationId,
     ) ?? null;
-    // Hold the current row while a follow-up is in flight. Each turn is a new run
-    // id, so between `router.replace` and the next `/conversation` response the
-    // new id is not in local history and `conversationId` is briefly null —
-    // dropping the row there is what made the header flash from the conversation's
-    // name to the raw text of its first prompt on every message.
+    // Hold the current row while a follow-up is in flight: `conversationId` is
+    // briefly null while the conversation reloads, and dropping the row there is
+    // what made the header flash from the conversation's name to the raw text of
+    // its first prompt on every message.
     setExistingChat((current) => found ?? (conversationId === null ? current : null));
   }, [conversationId, taskId]);
 
@@ -363,60 +369,35 @@ export function LiveRun({ taskId }: { taskId: string }) {
     conversationIdRef.current = null;
     setConversationId(null);
     setStopping(false);
+    followRun(taskId);
     shouldAutoScrollRef.current = true;
-    completionScrolledForTaskRef.current = null;
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- followRun is stable by construction
   }, [taskId]);
 
+  // A conversation opens at its end and stays there while it grows.
+  //
+  // The second pin is not superstition: the thread keeps growing after the
+  // render that placed us at the end commits — markdown, highlighted code and
+  // the result panel each settle a beat later, and all of them add height below
+  // the fold, which leaves the reader short of the newest message. A timer
+  // rather than requestAnimationFrame or ResizeObserver deliberately: neither
+  // runs while the tab is hidden, and a conversation left open in a background
+  // tab is exactly where the rest of a turn arrives. `onScroll` still owns the
+  // preference — scroll up and both pins stop.
   useEffect(() => {
     const scrollContainer = chatScrollRef.current;
     if (!scrollContainer || !shouldAutoScrollRef.current) return;
     scrollContainer.scrollTop = scrollContainer.scrollHeight;
-  }, [taskId, turns, streamingText, reasoningText, liveEvents.length, pending]);
-
-  useEffect(() => {
-    if (
-      !currentRunIsTerminal
-      || completionScrolledForTaskRef.current === taskId
-      || !shouldAutoScrollRef.current
-    ) {
-      return;
-    }
-    const scrollContainer = chatScrollRef.current;
-    if (!scrollContainer) return;
-    const target = Array.from(
-      scrollContainer.querySelectorAll<HTMLElement>("[data-run-final-output]"),
-    ).find((element) => element.dataset.runFinalOutput === taskId);
-    // Conversation hydration can reveal `run.finished` one render before the
-    // result projection mounts. Leave the request pending so the next turns or
-    // event update can try again instead of falling back to the bottom edge.
-    if (!target) return;
-
-    const frame = window.requestAnimationFrame(() => {
-      // Do not steal the viewport if the reader moved away while the terminal
-      // render was settling. `onScroll` owns this preference.
+    const settle = setTimeout(() => {
       if (!shouldAutoScrollRef.current) return;
-      const containerRect = scrollContainer.getBoundingClientRect();
-      const targetRect = target.getBoundingClientRect();
-      const top = Math.max(
-        0,
-        scrollContainer.scrollTop + targetRect.top - containerRect.top - 16,
-      );
-      const reducedMotion = window.matchMedia("(prefers-reduced-motion: reduce)").matches;
-      scrollContainer.scrollTo({
-        top,
-        behavior: reducedMotion ? "auto" : "smooth",
-      });
-      completionScrolledForTaskRef.current = taskId;
-      // The result heading, rather than its lower code/log content, is now the
-      // stable reading anchor. Later hydration must not pull it down to the
-      // bottom again.
-      shouldAutoScrollRef.current = false;
-    });
-    return () => window.cancelAnimationFrame(frame);
-  }, [currentRunIsTerminal, liveEvents.length, taskId, turns]);
+      scrollContainer.scrollTop = scrollContainer.scrollHeight;
+    }, 120);
+    return () => clearTimeout(settle);
+  }, [taskId, activeRunId, turns, streamingText, reasoningText, liveEvents.length, pending]);
 
   useEffect(() => {
     if (fixtureEvents) return;
+    const followedRunId = activeRunId;
     const controller = new AbortController();
     let reconnectTimer: ReturnType<typeof setTimeout> | undefined;
     setLiveEvents([]);
@@ -427,7 +408,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
 
     async function loadConversation() {
       const seq = ++loadSeq.current;
-      const response = await fetch(`/api/runs/${encodeURIComponent(taskId)}/conversation`, {
+      const response = await fetch(`/api/runs/${encodeURIComponent(followedRunId)}/conversation`, {
         cache: "no-store",
         signal: controller.signal,
       });
@@ -445,11 +426,20 @@ export function LiveRun({ taskId }: { taskId: string }) {
         // the durable events. Only ever set, never cleared: an older turn that
         // predates naming would otherwise blank a name already on screen.
         if (named) setConversationTitle(named);
-        setPending(payload.turns.some((turn) =>
-          turn.run.id === taskId
-          && !hasFinished(turn.events)
-          && !answerFromEvents(turn.events)
-        ));
+        // Follow the conversation, not the URL. Anything that re-enters a
+        // conversation — the sidebar, a bookmark, a reload after switching tabs —
+        // names its FIRST run, and that run has been finished for as long as the
+        // conversation has had a second turn. Whether a turn is still generating
+        // is a property of the newest one.
+        const newest = payload.turns.at(-1);
+        const follow = runToFollow(payload.turns.map((turn) => turn.run.id), activeRunIdRef.current);
+        if (newest && follow === newest.run.id) {
+          if (follow !== activeRunIdRef.current) followRun(follow);
+          setPending(
+            !(Boolean(newest.run.finished_at) || hasFinished(newest.events))
+            && !answerFromEvents(newest.events),
+          );
+        }
       }
     }
 
@@ -462,7 +452,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
         try {
           const headers: Record<string, string> = {};
           if (lastEventId.current !== null) headers["Last-Event-ID"] = String(lastEventId.current);
-          const response = await fetch(`/api/runs/${encodeURIComponent(taskId)}/events/stream`, {
+          const response = await fetch(`/api/runs/${encodeURIComponent(followedRunId)}/events/stream`, {
             headers,
             cache: "no-store",
             signal: controller.signal,
@@ -565,7 +555,8 @@ export function LiveRun({ taskId }: { taskId: string }) {
       controller.abort();
       if (reconnectTimer) clearTimeout(reconnectTimer);
     };
-  }, [fixtureEvents, taskId]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- taskId is read only for the sidebar row's identity; the stream follows activeRunId
+  }, [fixtureEvents, activeRunId, taskId]);
 
   function addFiles(files: File[]) {
     void (async () => {
@@ -605,7 +596,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
     setStopping(true);
     setError(null);
     try {
-      const response = await fetch(`/api/runs/${encodeURIComponent(taskId)}/cancel`, {
+      const response = await fetch(`/api/runs/${encodeURIComponent(activeRunIdRef.current)}/cancel`, {
         method: "POST",
       });
       if (!response.ok) {
@@ -643,6 +634,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
       setError("The conversation is still loading. Try again in a moment.");
       return;
     }
+    const previousRunId = activeRunIdRef.current;
     setPending(true);
     setError(null);
     // Show the message immediately and empty the box. Each turn is a new run id,
@@ -650,6 +642,9 @@ export function LiveRun({ taskId }: { taskId: string }) {
     // used to disappear for that whole round trip while still sitting in the
     // composer, which read as the send having failed.
     setPendingPrompt(taskPrompt);
+    // A new message belongs at the end, even if the reader had scrolled up to
+    // re-read something before writing it.
+    shouldAutoScrollRef.current = true;
     setPrompt("");
     const sentAttachments = attachments;
     setAttachments([]);
@@ -674,6 +669,15 @@ export function LiveRun({ taskId }: { taskId: string }) {
       });
       const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
       if (!response.ok || !payload.id) throw new Error(payload.detail ?? payload.error ?? `Message submission failed (${response.status})`);
+      // Follow the new turn in place. This used to `router.replace` onto the new
+      // run's URL, and because the whole authed surface sits behind a
+      // `loading.tsx` boundary and the run page is `force-dynamic`, every
+      // message tore the conversation off the screen, showed the workspace
+      // skeleton, and remounted the page — losing the scroll position and the
+      // message the user had just sent. Nothing needed the URL to name the
+      // newest run: /conversation answers for any run in the conversation, and
+      // every link back into one names its first.
+      followRun(payload.id);
       const chatToContinue = existingChat ?? loadChatHistory({ includeDemo: false, includeArchived: true }).find(
         (chat) => chat.id === taskId || chat.conversationId === conversationId,
       );
@@ -692,9 +696,10 @@ export function LiveRun({ taskId }: { taskId: string }) {
           status: "queued",
         });
       }
-      router.replace(`/run/${payload.id}`, { scroll: false });
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Message submission failed");
+      // The turn never started; go back to following the one that was on screen.
+      followRun(previousRunId);
       setPending(false);
       // The turn never started, so put the text back rather than losing it.
       setPrompt((current) => current || taskPrompt);
@@ -703,7 +708,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
     }
   }
 
-  const settledTurn = turns.find((turn) => turn.id === taskId);
+  const settledTurn = turns.find((turn) => turn.id === activeRunId);
   // `pendingPrompt` covers the window between send and the first /conversation
   // response; `existingChat.prompt` still covers a cold open of a run whose
   // conversation has not loaded yet.
@@ -756,9 +761,9 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 </div>
                 {turn.answer || turn.terminal ? (
                   <CompletedAssistant turn={turn} />
-                ) : turn.id === taskId && (streamingText || reasoningText || liveEvents.length > 0) ? (
+                ) : turn.id === activeRunId && (streamingText || reasoningText || liveEvents.length > 0) ? (
                   <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={turn.id} />
-                ) : turn.id === taskId && pending ? (
+                ) : turn.id === activeRunId && pending ? (
                   <AssistantLoading turnId={turn.id} />
                 ) : null}
               </div>
@@ -767,8 +772,8 @@ export function LiveRun({ taskId }: { taskId: string }) {
               <div className="mj-chat-turn">
                 <div className="mj-chat-message mj-chat-message--user"><ChatMarkdown source={activePrompt ?? ""} /></div>
                 {streamingText || reasoningText || liveEvents.length > 0 ? (
-                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={taskId} />
-                ) : pending ? <AssistantLoading turnId={taskId} /> : null}
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={activeRunId} />
+                ) : pending ? <AssistantLoading turnId={activeRunId} /> : null}
               </div>
             ) : null}
             {!turns.length && !activePrompt && !pending ? <p className="mj-run-waiting">Connecting to the conversation…</p> : null}

@@ -15,8 +15,10 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import Run, RunEvent, VerificationRecord
+from ..orm import Run, RunEvent, User, VerificationRecord
+from ..tiers import TOKENS_PER_RUN_EQUIVALENT
 from . import artifacts as artifacts_repo
+from . import usage as usage_repo
 from ._base import NotFoundError, require_write
 
 
@@ -131,6 +133,97 @@ async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: d
     one bounds a tenant rather than an account.
     """
     return int((await session.execute(execute_allowance_stmt(scope, since))).scalar_one())
+
+
+class RunAllowanceReached(Exception):
+    """The account has spent its weekly execute allowance. Carries both numbers."""
+
+    def __init__(self, used: int, limit: int) -> None:
+        super().__init__(f"{used}/{limit} weekly execute runs used")
+        self.used = used
+        self.limit = limit
+
+
+async def reserve_execute_run_slot(
+    scope: Scope, session: AsyncSession, since: dt.datetime, limit: int | None
+) -> None:
+    """Take the account's lock and refuse if the weekly allowance is spent.
+
+    ## Why a lock, and why on the user's row
+
+    The route compared this count against the tier limit with nothing held
+    between the read and the write, which is the same shape
+    `artifacts.reserve_artifact_slot`, `shares._reserve_membership_slot` and
+    `system.reserve_owned_workspace_slot` all exist to close. Here it is the one
+    with money directly attached: every execute run buys provider tokens and
+    sandbox time, so a burst of concurrent submissions at the boundary is a
+    multiple of the plan's spend, once a week, for as long as nobody notices.
+
+    **Nothing downstream catches it.** The worker has a second allowance gate,
+    but `_assert_execute_allowance` runs only when it RESOLVES an AUTO run to
+    EXECUTE — an explicit `mode=execute` submission takes `resolve_mode`'s
+    passthrough branch, `decision.changed` is False, and the worker returns
+    before the check. So for the mode that says outright what it is, this route
+    is the only gate there is.
+
+    The allowance belongs to the ACCOUNT, not the tenant (see
+    `count_execute_runs_since`), so the row two concurrent submissions share is
+    the user — the workspace is not it, and two submissions from two workspaces
+    of the same account are the case a workspace lock would miss entirely.
+
+    ## Lock ordering
+
+    A user row is the last lock any path takes. This route holds nothing else,
+    so there is nothing here to order against.
+
+    `limit is None` takes no lock: an unmetered tier has nothing to serialize,
+    and this is the product's hottest write path.
+
+    ## Why in-flight runs are charged before they have spent anything
+
+    The meter is tokens now, and tokens are a LAGGING signal: a row lands only
+    when a provider call returns. Counting runs, the reservation was the row
+    itself and the boundary was exact. Summing tokens, an account at 149,000 of
+    150,000 could submit twenty runs in the same second, every one of them
+    reading the same 149,000, and spend twenty runs' tokens — the precise burst
+    this lock was added to stop, reopened by changing what it counts.
+
+    So a run that has been admitted and has not finished is charged
+    `TOKENS_PER_RUN_EQUIVALENT` until its real spend replaces it. That
+    over-charges a cheap run while it is in flight and under-charges a
+    repair-heavy one, and both self-correct the moment it terminates. The
+    alternative — trusting the sum alone — is unbounded in the direction that
+    costs money.
+    """
+    if limit is None:
+        return
+    await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
+    spent = await usage_repo.account_tokens_since(scope, session, since)
+    in_flight = await count_in_flight_execute_runs(scope, session)
+    used = spent + in_flight * TOKENS_PER_RUN_EQUIVALENT
+    if used >= limit:
+        raise RunAllowanceReached(used, limit)
+
+
+async def count_in_flight_execute_runs(scope: Scope, session: AsyncSession) -> int:
+    """This ACCOUNT's admitted-but-unfinished runs, in any of its workspaces.
+
+    Not windowed: a run that is still going is spending now regardless of when
+    it started, and a stuck row ages out of the window while still holding a
+    worker. AUTO counts alongside EXECUTE — at admission an AUTO run may still
+    resolve to EXECUTE, and the reservation has to bound the worst case, which
+    is the same reasoning `count_runs_by_mode_since` gives for the backstop.
+    """
+    stmt = (
+        select(func.count())
+        .select_from(Run)
+        .where(
+            Run.user_id == scope.user_id,
+            Run.mode.in_(BACKSTOP_COUNTED_MODES),
+            Run.status.in_((RunStatus.QUEUED.value, RunStatus.RUNNING.value)),
+        )
+    )
+    return int((await session.execute(stmt)).scalar_one())
 
 
 def _spends_the_weekly_allowance(scope: Scope, since: dt.datetime):
@@ -258,17 +351,28 @@ async def list_conversation_runs(
     *,
     limit: int = 50,
 ) -> list[Run]:
-    """Return the scoped turns in chronological order for durable chat replay."""
+    """Return the scoped turns in chronological order for durable chat replay.
+
+    The cap is applied to the NEWEST turns, not the oldest. Ordering ascending
+    and then limiting returns a conversation's first `limit` turns, so past that
+    many messages the screen silently stops at an old turn: the newest ones are
+    absent, and the client — which reads the last turn to learn which run is
+    still generating — is left tailing a run that finished long ago. Same shape
+    as `list_conversation_messages`, which already reads newest-first for the
+    same reason.
+    """
     stmt = (
         select(Run)
         .where(
             Run.workspace_id == scope.workspace_id,
             Run.conversation_id == conversation_id,
         )
-        .order_by(Run.created_at, Run.id)
+        .order_by(Run.created_at.desc(), Run.id.desc())
         .limit(min(max(limit, 1), 100))
     )
-    return list((await session.execute(stmt)).scalars().all())
+    rows = list((await session.execute(stmt)).scalars().all())
+    rows.reverse()
+    return rows
 
 
 # Conversation history is priced in estimated tokens, not characters, because

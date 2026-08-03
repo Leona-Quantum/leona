@@ -1,0 +1,121 @@
+{
+  "total": 1,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "pass_rate_ci95_low": 0.0,
+  "pass_rate_ci95_high": 0.7934506856227626,
+  "unique_cases": 1,
+  "stable_passed_cases": 0,
+  "repetitions": 1,
+  "product_accepted": 0,
+  "oracle_cases": 1,
+  "oracle_passed": 0,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "first_candidate_passed": 0,
+  "candidate_revisions": 7,
+  "mean_candidates": 7.0,
+  "recorded_llm_calls": 12,
+  "recorded_input_tokens": 97177,
+  "recorded_output_tokens": 36944,
+  "cases": [
+    {
+      "id": "holdout-v11-01",
+      "category": "Holdout v11 — Unseen exact two-dimensional linear system",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trial": 1,
+      "passed": false,
+      "run_status": "failed",
+      "terminal_reason": "execution_code_error",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "product_accepted": false,
+      "oracle_passed": false,
+      "false_positive": false,
+      "false_negative": false,
+      "first_candidate_passed": false,
+      "observed_values": {},
+      "observed_top_bitstring": null,
+      "reasons": [
+        "expected numeric RESULT field 'normalized_component_0' was not found",
+        "expected numeric RESULT field 'normalized_component_1' was not found",
+        "expected numeric RESULT field 'component_1_over_0' was not found",
+        "expected numeric RESULT field 'classical_residual' was not found",
+        "expected numeric RESULT field 'solution_fidelity' was not found",
+        "RESULT missing promised key 'normalized_component_0'",
+        "RESULT missing promised key 'normalized_component_1'",
+        "RESULT missing promised key 'component_1_over_0'",
+        "RESULT missing promised key 'classical_residual'",
+        "RESULT missing promised key 'solution_fidelity'",
+        "run_status 'failed' != expected 'succeeded'",
+        "expected a saved artifact, none was written"
+      ],
+      "evidence": {
+        "failed_stage": "final_execute",
+        "error_code": "execution_code_error",
+        "qasm_source": null,
+        "qasm_epilogue_applied": null,
+        "qasm_available": null,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": true,
+        "candidate_id": "0244154d-856b-5235-b990-f42911da3674",
+        "execution_id": "12b08e66-b709-5621-8886-a4f7da1157bb",
+        "result_evidence_error": null,
+        "candidates_considered": 7,
+        "plans_produced": 2,
+        "sandbox_attempts": 7,
+        "semantic_review_attempts": 0,
+        "recorded_llm_calls": 12,
+        "recorded_input_tokens": 97177,
+        "recorded_output_tokens": 36944
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "holdout-v11-01",
+      "category": "Holdout v11 — Unseen exact two-dimensional linear system",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "product_accepted": 0,
+      "oracle_trials": 1,
+      "oracle_passed": 0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "research",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "scientific",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local, repetitions=1)"
+}

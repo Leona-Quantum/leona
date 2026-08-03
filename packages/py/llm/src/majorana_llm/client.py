@@ -8,8 +8,12 @@ enforce quotas.
 
 from __future__ import annotations
 
+import asyncio
 import json
-from collections.abc import Awaitable, Callable
+import math
+from collections.abc import Awaitable, Callable, Iterator
+from contextlib import contextmanager
+from contextvars import ContextVar
 from typing import Any, Literal, Protocol
 
 from pydantic import BaseModel, Field
@@ -77,6 +81,113 @@ class LLMProviderError(RuntimeError):
 
 DeltaHandler = Callable[[str, str], Awaitable[None]]
 
+_DEFAULT_PROVIDER_TIMEOUT_SECONDS = 120.0
+_MAX_PROVIDER_TIMEOUT_SECONDS = 600.0
+
+#: Monotonic deadline of the pipeline stage the current call belongs to, or None
+#: outside a bounded stage. Set by the caller that owns the stage budget; read
+#: here so the provider attempt cannot outlive it. A ContextVar rather than a
+#: parameter because the deadline has to cross three packages and every
+#: `LLMClient` implementation without widening the protocol every caller
+#: implements — and because it propagates down an await chain by itself.
+_stage_deadline: ContextVar[float | None] = ContextVar("majorana_llm_stage_deadline", default=None)
+
+#: Fraction of a stage's remaining time one provider attempt may consume. Half,
+#: so a stalled attempt still leaves the stage room to retry and succeed rather
+#: than handing back a run that has already spent its whole budget.
+_STAGE_ATTEMPT_SHARE = 0.5
+#: Never cut an attempt below this: healthy plan/generate calls measured 4-26 s,
+#: so a smaller bound would start failing calls that were about to answer.
+_MIN_STAGE_ATTEMPT_SECONDS = 30.0
+
+
+@contextmanager
+def stage_budget(seconds: float | None) -> Iterator[None]:
+    """Bind provider attempts made inside this block to a stage's remaining time.
+
+    Takes a duration rather than a deadline on purpose: the caller that owns the
+    budget may be running on an injected clock (the pipeline takes `monotonic` so
+    its tests can drive time), and an absolute value from that clock would be
+    meaningless here. Resolving it against the running loop at entry keeps both
+    ends of the comparison on one clock.
+    """
+
+    deadline: float | None = None
+    if seconds is not None:
+        try:
+            deadline = asyncio.get_running_loop().time() + seconds
+        except RuntimeError:  # no running loop: nothing to bound against
+            deadline = None
+    token = _stage_deadline.set(deadline)
+    try:
+        yield
+    finally:
+        _stage_deadline.reset(token)
+
+
+def provider_timeout_seconds() -> float:
+    """The configured ceiling for one provider attempt."""
+
+    import os
+
+    raw = os.environ.get("MAJORANA_LLM_TIMEOUT_SECONDS")
+    if raw is None:
+        return _DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    try:
+        value = float(raw)
+    except ValueError:
+        return _DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    if not math.isfinite(value) or not 1.0 <= value <= _MAX_PROVIDER_TIMEOUT_SECONDS:
+        return _DEFAULT_PROVIDER_TIMEOUT_SECONDS
+    return value
+
+
+def attempt_timeout_seconds(now: float | None = None) -> float:
+    """Bound one provider attempt so a half-open response cannot stall a run forever.
+
+    The configured ceiling alone could not do that. It defaults to 120 s while a
+    stage of a 120 s run gets roughly 90 s, so the ceiling was unreachable: every
+    stalled provider call was cancelled by the stage budget instead, and surfaced
+    as `stage_time_budget_exhausted` — a TIMEOUT failure, which is not retryable.
+    One unanswered request therefore killed the whole run while naming Leona's own
+    budget management as the cause.
+
+    Measured in production 2026-08-02, runs 019fc318 and 019fc325: the plan stage
+    opened its provider request and the transaction carrying it stayed open for
+    91.6 s, against a ~90 s stage budget and a 120 s ceiling. Both runs died with
+    ~25 s of finalization reserve untouched and no retry attempted.
+
+    So an attempt gets the smaller of the ceiling and its share of the time the
+    stage actually has left. A stall then fails as a retryable provider timeout
+    with budget still on the clock, which is the difference between a slow plan
+    and a failed run.
+
+    This value is handed to httpx, whose `Timeout` bounds each OPERATION —
+    connect, read, write, pool — and not the request's total lifetime. On a
+    streaming call every chunk resets the read timeout, so a provider dripping
+    one token at a time could outlive any per-operation bound. Both `complete`
+    implementations therefore also wrap the call in `asyncio.timeout()` with the
+    same number, which is the only thing here that bounds wall clock.
+    """
+
+    ceiling = provider_timeout_seconds()
+    deadline = _stage_deadline.get()
+    if deadline is None:
+        return ceiling
+    if now is None:
+        try:
+            now = asyncio.get_running_loop().time()
+        except RuntimeError:  # no running loop: nothing is enforcing a stage budget
+            return ceiling
+    remaining = deadline - now
+    if remaining <= 0.0:
+        # The stage is already over. Do not hand the provider a negative or zero
+        # timeout (httpx treats <= 0 inconsistently); let the caller's own
+        # cancellation win on the first await.
+        return _MIN_STAGE_ATTEMPT_SECONDS
+    share = max(remaining * _STAGE_ATTEMPT_SHARE, _MIN_STAGE_ATTEMPT_SECONDS)
+    return min(ceiling, share, remaining)
+
 
 class LLMMessage(BaseModel):
     role: Literal["user", "assistant"]
@@ -106,6 +217,34 @@ def endpoint_for(model: str) -> tuple[str | None, str]:
 
         return os.environ.get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"), "DEEPSEEK_API_KEY"
     return None, "OPENAI_API_KEY"
+
+
+def missing_provider_keys() -> frozenset[str]:
+    """Which API-key env vars the ACTIVE profile needs and does not have.
+
+    Empty means every role the product can call has a key behind it.
+
+    Derived from the role→model→endpoint chain rather than hand-listed, because
+    three hand-listed copies of this had already drifted from `_DEFAULTS`: the
+    evals harness demanded both OPENAI_API_KEY and DEEPSEEK_API_KEY for the
+    openai profile, and bench.yml's guard said the same in a comment, months
+    after every role moved to a deepseek model. A DeepSeek-only environment is a
+    complete profile today; both of those would have skipped a run that works.
+
+    Honours MAJORANA_MODEL_* overrides for free: an operator who points one role
+    at an OpenAI model makes OPENAI_API_KEY genuinely required, and this reports
+    it without anyone remembering to update a list.
+    """
+    import os
+
+    from majorana_llm.models import model_for, resolve_provider, roles_for_profile
+
+    if resolve_provider() == "anthropic":
+        return (
+            frozenset() if os.environ.get("ANTHROPIC_API_KEY") else frozenset({"ANTHROPIC_API_KEY"})
+        )
+    required = {endpoint_for(model_for(role))[1] for role in roles_for_profile()}
+    return frozenset(key for key in required if not os.environ.get(key))
 
 
 def decode_params(request: LLMRequest, key_env: str) -> tuple[dict[str, Any], str]:
@@ -243,43 +382,58 @@ class OpenAICompatibleLLM:
         params, system = decode_params(request, key_env)
 
         messages = [{"role": "system", "content": system}, *request_messages(request)]
+        # One number, read once: the wall-clock bound below and the
+        # per-operation bound handed to httpx must not be two different values.
+        attempt_budget = attempt_timeout_seconds()
         try:
+            # `asyncio.timeout` is what bounds the WALL CLOCK. httpx's own
+            # timeout is per operation and a stream resets its read timeout on
+            # every chunk, so the SDK's value alone cannot stop a slow drip from
+            # outliving the stage that owns this call. TimeoutError lands in the
+            # handler below and is classified as a retryable provider timeout.
+            #
             # RetryingLLM below is the one retry authority. Disabling the SDK's
             # implicit retries prevents 3x3 request amplification on one 429.
-            client = AsyncOpenAI(api_key=api_key, base_url=base_url, max_retries=0)
-            if on_delta is None:
-                completion = await client.chat.completions.create(
-                    model=request.model,
-                    messages=messages,
-                    **params,
-                )
-                text = completion.choices[0].message.content or ""
-                usage = completion.usage
-                served_model = getattr(completion, "model", None)
-            else:
-                stream = await client.chat.completions.create(
-                    model=request.model,
-                    messages=messages,
-                    stream=True,
-                    **params,
-                )
-                text_parts: list[str] = []
-                usage = None
-                served_model = None
-                async for chunk in stream:
-                    served_model = getattr(chunk, "model", None) or served_model
-                    if getattr(chunk, "usage", None) is not None:
-                        usage = chunk.usage
-                    for choice in getattr(chunk, "choices", []) or []:
-                        delta = choice.delta
-                        reasoning = getattr(delta, "reasoning_content", None) or ""
-                        content = getattr(delta, "content", None) or ""
-                        if reasoning:
-                            await on_delta(reasoning, "reasoning")
-                        if content:
-                            text_parts.append(content)
-                            await on_delta(content, "output")
-                text = "".join(text_parts)
+            client = AsyncOpenAI(
+                api_key=api_key,
+                base_url=base_url,
+                max_retries=0,
+                timeout=attempt_budget,
+            )
+            async with asyncio.timeout(attempt_budget):
+                if on_delta is None:
+                    completion = await client.chat.completions.create(
+                        model=request.model,
+                        messages=messages,
+                        **params,
+                    )
+                    text = completion.choices[0].message.content or ""
+                    usage = completion.usage
+                    served_model = getattr(completion, "model", None)
+                else:
+                    stream = await client.chat.completions.create(
+                        model=request.model,
+                        messages=messages,
+                        stream=True,
+                        **params,
+                    )
+                    text_parts: list[str] = []
+                    usage = None
+                    served_model = None
+                    async for chunk in stream:
+                        served_model = getattr(chunk, "model", None) or served_model
+                        if getattr(chunk, "usage", None) is not None:
+                            usage = chunk.usage
+                        for choice in getattr(chunk, "choices", []) or []:
+                            delta = choice.delta
+                            reasoning = getattr(delta, "reasoning_content", None) or ""
+                            content = getattr(delta, "content", None) or ""
+                            if reasoning:
+                                await on_delta(reasoning, "reasoning")
+                            if content:
+                                text_parts.append(content)
+                                await on_delta(content, "output")
+                    text = "".join(text_parts)
         except LLMProviderError:
             raise
         except Exception as exc:
@@ -454,31 +608,39 @@ class AnthropicLLM:
 
         max_tokens = request.max_tokens or _ANTHROPIC_DEFAULT_MAX_TOKENS
         messages = request_messages(request)
+        # Same wall-clock bound as the OpenAI-compatible client above, and for
+        # the same reason: the SDK's timeout is per operation, not per request.
+        attempt_budget = attempt_timeout_seconds()
         try:
-            client = AsyncAnthropic(api_key=api_key)
-            if on_delta is None:
-                message = await client.messages.create(
-                    model=request.model,
-                    max_tokens=max_tokens,
-                    temperature=request.temperature,
-                    system=system,
-                    messages=messages,
-                )
-                text = "".join(block.text for block in message.content if block.type == "text")
-            else:
-                text_parts: list[str] = []
-                async with client.messages.stream(
-                    model=request.model,
-                    max_tokens=max_tokens,
-                    temperature=request.temperature,
-                    system=system,
-                    messages=messages,
-                ) as stream:
-                    async for fragment in stream.text_stream:
-                        text_parts.append(fragment)
-                        await on_delta(fragment, "output")
-                    message = await stream.get_final_message()
-                text = "".join(text_parts)
+            client = AsyncAnthropic(
+                api_key=api_key,
+                max_retries=0,
+                timeout=attempt_budget,
+            )
+            async with asyncio.timeout(attempt_budget):
+                if on_delta is None:
+                    message = await client.messages.create(
+                        model=request.model,
+                        max_tokens=max_tokens,
+                        temperature=request.temperature,
+                        system=system,
+                        messages=messages,
+                    )
+                    text = "".join(block.text for block in message.content if block.type == "text")
+                else:
+                    text_parts: list[str] = []
+                    async with client.messages.stream(
+                        model=request.model,
+                        max_tokens=max_tokens,
+                        temperature=request.temperature,
+                        system=system,
+                        messages=messages,
+                    ) as stream:
+                        async for fragment in stream.text_stream:
+                            text_parts.append(fragment)
+                            await on_delta(fragment, "output")
+                        message = await stream.get_final_message()
+                    text = "".join(text_parts)
         except LLMProviderError:
             raise
         except Exception as exc:

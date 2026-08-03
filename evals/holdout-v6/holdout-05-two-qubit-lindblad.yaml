@@ -1,0 +1,26 @@
+id: holdout-v6-05
+category: "Holdout v6 — Coupled two-qubit Lindblad evolution"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor and basis |0>,|1>, start from |10> and solve
+  at t=0.9 the time-independent master equation with Hamiltonian
+  H=0.19 X0 X1 +0.19 Y0 Y1 and dissipators 0.36*D[sigma_minus_0],
+  0.12*D[sigma_minus_1], and 0.08*D[Z1], where
+  D[L](rho)=L rho L_dagger-0.5*{L_dagger L,rho}. Use an explicit Liouvillian matrix
+  exponential. Return top-level numeric RESULT keys population_10, population_01,
+  population_00, purity, and imbalance=<Z0-Z1>. Bind a Qiskit circuit preparing |10>
+  to FINAL_CIRCUIT; the RESULT values must come from the master-equation evolution.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["population_10", "population_01", "population_00", "purity", "imbalance"]
+  expected_values:
+    population_10: 0.6429343304285418
+    population_01: 0.08654638930455343
+    population_00: 0.2705192802669048
+    purity: 0.5943216297231697
+    imbalance: -1.1127758822479767
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

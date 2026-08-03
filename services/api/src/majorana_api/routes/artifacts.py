@@ -27,12 +27,13 @@ from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 from fastapi import Depends
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..repos import artifacts as artifacts_repo
-from ..repos import workspaces as workspaces_repo
+from ..repos import projects as projects_repo
 from ..orm import Artifact as ArtifactRow
 from ..orm import ArtifactVersion as ArtifactVersionRow
 from ..settings import Settings
-from ..tiers import limits_for, resolve_tier
+from ..tiers import limits_for, tier_of
 from ..verification_summary import parse_verification_summary
 from ..version_capabilities import capabilities_of, restore_losses
 
@@ -65,7 +66,37 @@ def _artifact_cap_refusal(used: int, limit: int) -> HTTPException:
     )
 
 
-class ImportPublicArtifactRequest(BaseModel):
+def _project_full_refusal(held: int, limit: int) -> HTTPException:
+    """A project is full — a different wall from the plan's, so a different sentence.
+
+    409 rather than 429: the plan allowance is a rate the account can wait out or
+    buy out of, and this is a container the caller can fix right now by choosing
+    a different project or raising the limit on this one. Telling both stories
+    with one status would send a user to the pricing page over a full folder.
+
+    Zero gets its own sentence for the same reason `contribute_artifact` gives it
+    one: "holds 0 of its 0" is arithmetically true and reads as a bug.
+    """
+    error = (
+        "This project does not accept circuits — its artifact limit is 0."
+        if limit == 0
+        else (
+            f"This project holds {held} of its {limit} artifacts. "
+            "Raise its limit or move something out, and this one will file."
+        )
+    )
+    return HTTPException(
+        status_code=409,
+        detail={
+            "error": error,
+            "reason": "project_artifact_limit_reached",
+            "used": held,
+            "limit": limit,
+        },
+    )
+
+
+class ImportPublicArtifactRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     source_slug: str = Field(min_length=1, max_length=160)
@@ -153,6 +184,7 @@ def _to_artifact(row: ArtifactRow, version_metadata: dict | None = None) -> Arti
         created_at=row.created_at,
         updated_at=row.updated_at,
         kept_at=row.kept_at,
+        project_id=row.project_id,
         deleted_at=row.deleted_at,
     )
 
@@ -206,12 +238,33 @@ async def import_public_artifact(
     body: ImportPublicArtifactRequest,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> ArtifactResource:
     """Copy a public reference into the caller's personal Library.
 
     This is an import snapshot, not a new verification result. The source and
     limitations are retained on the artifact version so the private copy does not
     lose its public provenance.
+
+    ## The allowance, and why this route had none
+
+    It files an artifact into the caller's Vault, so it spends the same allowance
+    `POST /artifacts/{id}/keep` spends. It did not check it — and could not have:
+    the handler took `scope` and `session` and no `CurrentIdentity`, so there was
+    no account to resolve a tier from. **A route that writes a metered row and
+    does not take the identity is not enforcing a cap, whatever the rest of the
+    service does.** Measured over real HTTP before this changed: 35 imports, all
+    201, a free-tier workspace holding 36 against a cap of 25.
+
+    Fixed by filing the way everything else files — created unkept, then
+    `keep_artifact`, which holds the workspace lock across the comparison and the
+    write. A count compared here, before the rows were written, would be the
+    read-then-write `reserve_artifact_slot` exists to close.
+
+    Idempotent on the source slug, and that is load-bearing for the cap too:
+    re-importing something already imported returns the existing row and spends
+    nothing, so an account at its limit can still open what it already has.
     """
     slug = f"public-{_public_slug(body.source_slug)}-{scope.workspace_id.hex}"
     existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
@@ -219,6 +272,9 @@ async def import_public_artifact(
         return _to_artifact(existing)
 
     qasm, qasm_version, qasm_fingerprint = _canonical_public_qasm(body.qasm)
+    # Unkept, then filed below. `keep_artifact` is the one place an artifact
+    # enters the Vault under the workspace's cap lock; creating it kept here is
+    # what walked past the allowance entirely.
     artifact = await artifacts_repo.create_artifact(
         scope,
         session,
@@ -226,6 +282,7 @@ async def import_public_artifact(
         title=body.title,
         family=_public_family(body.family),
         framework=body.framework,
+        kept=False,
     )
     await artifacts_repo.create_version(
         scope,
@@ -263,7 +320,18 @@ async def import_public_artifact(
             "source license and rerun the artifact before relying on it."
         ),
     )
-    return _to_artifact(artifact)
+    user, _workspace = identity
+    limits = limits_for(tier_of(user, settings))
+    try:
+        filed = await artifacts_repo.keep_artifact(
+            scope,
+            session,
+            artifact.id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
+    return _to_artifact(filed)
 
 
 @router.get("/artifacts/{artifact_id}", response_model=ArtifactResource)
@@ -299,24 +367,84 @@ async def keep_artifact(
     Idempotent — keeping something already kept returns it unchanged rather than
     re-stamping, so a double click cannot reorder the artifact list.
 
-    This is where the per-tier artifact cap is enforced, because since migration
-    0036 it is the only place an artifact is FILED by a user's choice.
-    The cap is checked before the write and skipped for an artifact that is
-    already kept, so re-keeping never fails at the boundary.
+    This is where the per-tier artifact cap is APPLIED, because since migration
+    0036 this is the only place an artifact is filed by a user's choice. It is
+    no longer where the cap is CHECKED: the check moved into
+    `artifacts_repo.keep_artifact`, which holds the workspace's cap lock across
+    the comparison and the write. Counting here and writing there left a gap two
+    connections could both pass — see `reserve_artifact_slot`. The route's
+    remaining job is to resolve the caller's tier and to turn the repository's
+    refusal into the 429 sentence the user reads.
     """
     user, _workspace = identity
-    limits = limits_for(
-        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
-    )
-    if limits.private_artifacts is not None:
-        existing = await artifacts_repo.get_artifact(scope, session, artifact_id)
-        if existing.kept_at is None:
-            _workspace_row, _members, kept, _runs = await workspaces_repo.get_overview(
-                scope, session
-            )
-            if kept >= limits.private_artifacts:
-                raise _artifact_cap_refusal(kept, limits.private_artifacts)
-    artifact = await artifacts_repo.keep_artifact(scope, session, artifact_id)
+    limits = limits_for(tier_of(user, settings))
+    try:
+        artifact = await artifacts_repo.keep_artifact(
+            scope,
+            session,
+            artifact_id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ProjectFull as full:
+        # Reachable because an artifact can be staged into a project while
+        # unkept — `copy_shared_artifact` does exactly that — so filing is the
+        # moment it starts occupying a project slot.
+        raise _project_full_refusal(full.held, full.limit) from full
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
+    metadata: dict | None = None
+    if artifact.current_version_id is not None:
+        version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)
+        metadata = version.artifact_metadata
+    return _to_artifact(artifact, metadata)
+
+
+class SetArtifactProjectRequest(RequestModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: None files the artifact back into the ungrouped list. Explicit rather than
+    #: a separate DELETE endpoint: "no project" is a value the drag-and-drop UI
+    #: sends as readily as any other, and one route keeps the two indivisible.
+    project_id: uuid.UUID | None = None
+
+
+@router.patch("/artifacts/{artifact_id}/project", response_model=ArtifactResource)
+async def set_artifact_project(
+    artifact_id: uuid.UUID,
+    body: SetArtifactProjectRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ArtifactResource:
+    """File an artifact under a Studio project, or return it to the ungrouped list.
+
+    Until migration 0041 this assignment lived in one browser's localStorage
+    (`majorana.artifact-folder-assignments.v1`), so it did not survive a second
+    device and could not be seen by anyone else in the workspace — the same shape
+    as the Library delete that only hid a row locally.
+
+    Metered since 2026-08-02, which a drag between two folders does not look
+    like: a project's contents are capped whether it is shared or not, and a
+    shared project's contents spend no individual allowance — so this route can
+    both fill a project and move an artifact back into the Vault's ledger. The
+    tier is resolved here, like every other tier decision in this service, and
+    the comparisons happen under the repository's locks.
+    """
+    user, _workspace = identity
+    limits = limits_for(tier_of(user, settings))
+    try:
+        artifact = await projects_repo.set_artifact_project(
+            scope,
+            session,
+            artifact_id,
+            body.project_id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ProjectFull as full:
+        raise _project_full_refusal(full.held, full.limit) from full
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
     metadata: dict | None = None
     if artifact.current_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, artifact.current_version_id)
@@ -387,6 +515,11 @@ class ArtifactVersionSummary(BaseModel):
     #: What this version actually holds. The UI states these per row rather than
     #: assuming every version can do what the current one can.
     origin: str
+    #: "circuit" | "program" | "unknown". What this version's code IS, rather than
+    #: who wrote it: a circuit defines FINAL_CIRCUIT and reports nothing, a program
+    #: binds RESULT. The distinction is what makes a version transpilable or
+    #: runnable, and it was invisible until now — one `code` column held both.
+    program_role: str
     has_qasm: bool
     has_resource_estimates: bool
     has_framework_variants: bool
@@ -407,7 +540,7 @@ class ArtifactVersionPage(BaseModel):
     next_before_seq: int | None
 
 
-class RestoreVersionRequest(BaseModel):
+class RestoreVersionRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: Set once the caller has been shown what the restore costs. Without it a
@@ -436,6 +569,7 @@ def _to_version_summary(
         verification_summary=parse_verification_summary(raw),
         created_at=row.created_at,
         origin=caps.origin,
+        program_role=caps.program_role,
         has_qasm=caps.has_qasm,
         has_resource_estimates=caps.has_resource_estimates,
         has_framework_variants=caps.has_framework_variants,

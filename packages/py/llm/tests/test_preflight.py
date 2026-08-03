@@ -113,7 +113,9 @@ async def test_openai_and_deepseek_ids_are_checked_against_their_own_endpoints(m
 
     async def fake_openai(base_url, api_key):
         seen[base_url] = api_key
-        return frozenset({"gpt-5"} if base_url is None else {"deepseek-v4-pro"})
+        return frozenset(
+            {"gpt-5"} if base_url is None else {"deepseek-v4-pro", "deepseek-v4-flash"}
+        )
 
     monkeypatch.setattr(preflight, "_openai_served_models", fake_openai)
 

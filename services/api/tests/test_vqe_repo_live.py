@@ -78,6 +78,7 @@ async def _make_artifact_version(scope, session, *, slug: str):
         title=slug,
         family=Algorithm.VQE,
         framework=ContractFramework.QISKIT,
+        kept=False,
     )
     return await artifacts_repo.create_version(
         scope,

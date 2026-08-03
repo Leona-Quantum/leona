@@ -1,0 +1,22 @@
+id: holdout-v4-04
+category: "Holdout v4 — Ising quench"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Using explicit matrices with q0 as the leftmost tensor factor, compute an exact
+  four-qubit open-chain quench for
+  H=0.7*(Z0 Z1+Z1 Z2+Z2 Z3)+0.5*(X0+X1+X2+X3)+0.2*Z0.
+  Start in the written basis state |0101> and evolve to t=0.6 with SciPy matrix
+  exponentiation. Return the survival probability and mean single-site Z as top-level
+  numeric RESULT keys survival_probability and mean_z. Bind a Qiskit circuit preparing
+  that state and applying the exact unitary to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["survival_probability", "mean_z"]
+  expected_values:
+    survival_probability: 0.7304907088549235
+    mean_z: -0.0011475365876325028
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

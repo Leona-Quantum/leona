@@ -1,0 +1,21 @@
+id: holdout-v15-01
+category: "Holdout v15 — PennyLane GHZ stabilizers"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Using PennyLane with an exact statevector device, prepare the three-qubit GHZ
+  state (|000>+|111>)/sqrt(2). Derive from the simulated state the total probability
+  on 000 and 111 and the expectation of Z0 Z1. Return top-level numeric RESULT keys
+  ghz_support_probability and zz01_expectation. Bind an equivalent resolved
+  PennyLane QuantumTape or QuantumScript to FINAL_CIRCUIT; do not return theoretical
+  constants without evaluating the prepared state.
+framework: pennylane
+expect:
+  terminal_reason: null
+  output_keys: ["ghz_support_probability", "zz01_expectation"]
+  expected_values:
+    ghz_support_probability: 1.0
+    zz01_expectation: 1.0
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

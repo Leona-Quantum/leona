@@ -1,0 +1,23 @@
+id: diagnostic-teleport-family-01
+category: "Diagnostic — arbitrary-rotation coherent teleportation"
+split: holdout
+difficulty: advanced
+workload: educational
+prompt: >-
+  In Qiskit, prepare one input qubit by applying Rx(0.29), then Ry(-1.1), then
+  Rz(0.84) in source order. Coherently teleport it to a receiver qubit with a Bell
+  pair, Bell-basis transform, and deferred-measurement unitary corrections. From the
+  final three-qubit statevector, return top-level numeric RESULT keys receiver_x,
+  receiver_y, receiver_z, and transfer_fidelity. Bind the complete unitary
+  teleportation circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["receiver_x", "receiver_y", "receiver_z", "transfer_fidelity"]
+  expected_values:
+    receiver_x: -0.35707688781634755
+    receiver_y: -0.8267832327924862
+    receiver_z: 0.434655705312373
+    transfer_fidelity: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

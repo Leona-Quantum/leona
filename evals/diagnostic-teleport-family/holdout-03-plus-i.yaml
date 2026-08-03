@@ -1,0 +1,22 @@
+id: diagnostic-teleport-family-03
+category: "Diagnostic — basic plus-i coherent teleportation"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Prepare |+i> with H then S on one Qiskit qubit and teleport it coherently through a
+  Bell pair using a Bell-basis transform and deferred-measurement X/Z corrections.
+  Obtain the receiver's reduced state from the complete final statevector. Return
+  top-level numeric RESULT keys output_x, output_y, output_z, and teleport_fidelity,
+  and bind the three-qubit unitary circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["output_x", "output_y", "output_z", "teleport_fidelity"]
+  expected_values:
+    output_x: 0.0
+    output_y: 1.0
+    output_z: 0.0
+    teleport_fidelity: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

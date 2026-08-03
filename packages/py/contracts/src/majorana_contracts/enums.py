@@ -385,6 +385,26 @@ class Role(StrEnum):
     VIEWER = "viewer"
 
 
+class ShareRole(StrEnum):
+    """What a project grant lets someone outside the workspace do (migration 0042).
+
+    Deliberately NOT `Role`, and deliberately not a subset of it. A workspace Role
+    answers "what may this member do anywhere in this tenant"; a ShareRole answers
+    "what may this outsider do to the contents of one project". They are two
+    different questions and the codebase has one gate — `require_write(scope)` —
+    that reads a Role. Sharing the type would make that gate look like it answers
+    both.
+
+    EDITOR is bounded by what the grant maps onto internally: a MEMBER-level scope
+    confined to one project, so every `require_admin` operation (deleting an
+    artifact, making one public) refuses a grantee without a denylist anyone could
+    forget to extend.
+    """
+
+    VIEWER = "viewer"
+    EDITOR = "editor"
+
+
 class JobStatus(StrEnum):
     QUEUED = "queued"
     RUNNING = "running"
@@ -457,6 +477,19 @@ class UsageKind(StrEnum):
     RUN = "run"
     LLM_TOKENS = "llm_tokens"
     SANDBOX_SECONDS = "sandbox_seconds"
+
+
+#: `meta.role` on an `LLM_TOKENS` event that a chat turn spent, as opposed to a
+#: stage of an execute run (whose role is the agent request's `schema_name`).
+#:
+#: Here rather than as a literal in each service because the worker WRITES it
+#: and the API READS it, and a drift between the two is silent in the worst
+#: direction: `/v1/usage` would report zero chat spend on a workspace that had
+#: spent plenty, with every test still green on both sides of the boundary.
+#:
+#: Not a `CONTRACTS_VERSION` bump — the version log tracks the shape of the
+#: exported models, and this changes no schema in `openapi.json`.
+CHAT_USAGE_ROLE = "chat"
 
 
 class QpuProvider(StrEnum):

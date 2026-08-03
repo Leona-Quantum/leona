@@ -14,6 +14,11 @@ from typing import Any, Literal, Mapping
 from majorana_contracts.enums import Framework
 from majorana_contracts.models import ResourceMetrics
 from majorana_frameworks.adapters import NativeOptimization, adapter_for
+from majorana_frameworks.roles import (
+    DERIVE_RESULT_FROM_CIRCUIT,
+    ProgramRole,
+    classify_source,
+)
 
 
 def _normalize_source(source: str) -> str:
@@ -50,6 +55,16 @@ class FrameworkProgram:
         payload = f"{self.framework.value}\0{self.normalized_source}".encode()
         return hashlib.sha256(payload).hexdigest()
 
+    @property
+    def role(self) -> ProgramRole:
+        """Circuit, program, or neither. Read off the source, not the producer.
+
+        See `roles.py` for why this exists. In short: a circuit from the open
+        repository binds no RESULT, so before this the basic execution contract
+        failed it and sent the user's own source to a model to be rewritten.
+        """
+        return classify_source(self.source)
+
     def contract_diagnostics(self, *, circuit_expected: bool) -> list[str]:
         """Return framework execution-contract violations without rewriting source."""
         return adapter_for(self.framework).contract_diagnostics(
@@ -81,18 +96,36 @@ class FrameworkProgram:
         )
 
     def trusted_observer(
-        self, *, circuit_expected: bool, collect_native_evidence: bool = True
+        self,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+        derive_result: bool = False,
     ) -> str:
         """Build provider-owned SDK observation code.
 
         Cirq and PennyLane remain valid framework-native programs without OpenQASM.
         Their future converters belong behind this boundary rather than in the worker.
+
+        `derive_result` lowers a CIRCUIT into a program: the epilogue turns the
+        trusted evidence the observer already computed into `result`, marked as
+        derived. It is appended HERE rather than inside an adapter because the
+        block reads only `_majorana_observation` — one implementation for all
+        three frameworks — and because it must run after everything the adapter
+        emits, which the adapters build front-to-back by concatenation.
+
+        It is inert without an observer to append to: with `circuit_expected`
+        false the adapters emit nothing, no native evidence is collected, and a
+        lone derivation block would reference a dict that was never filled.
         """
-        return adapter_for(self.framework).trusted_observer(
+        observer = adapter_for(self.framework).trusted_observer(
             self.source,
             circuit_expected=circuit_expected,
             collect_native_evidence=collect_native_evidence,
         )
+        if derive_result and observer:
+            observer += DERIVE_RESULT_FROM_CIRCUIT
+        return observer
 
     def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         """Build imports and stable SDK references captured before generated code."""

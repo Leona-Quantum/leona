@@ -5,6 +5,7 @@ import uuid
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Response
+from majorana_contracts import Project as ProjectResource
 from majorana_contracts import Workspace as WorkspaceResource
 from majorana_contracts import WorkspaceFolder as WorkspaceFolderResource
 from majorana_contracts import (
@@ -14,28 +15,32 @@ from majorana_contracts import (
     WorkspaceSummary,
 )
 from majorana_contracts.enums import Role, WorkspaceKind
-from pydantic import BaseModel, ConfigDict, Field, field_validator
+from pydantic import ConfigDict, Field, field_validator
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
-from ..orm import Membership, User
+from ..request_models import RequestModel
+from ..orm import Membership, Project, User
 from ..orm import Workspace as WorkspaceRow
 from ..orm import WorkspaceFolder
+from ..repos import audit as audit_repo
 from ..repos import folders as folders_repo
+from ..repos import projects as projects_repo
+from ..repos import shares as shares_repo
 from ..repos import system
 from ..repos import workspaces as workspaces_repo
 from ..settings import Settings
-from ..tiers import limits_for, resolve_tier
+from ..tiers import limits_for, tier_of
 
 router = APIRouter()
 
 
-class WorkspaceSettingsRequest(BaseModel):
+class WorkspaceSettingsRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     auto_keep_artifacts: bool
 
 
-class WorkspaceRefRequest(BaseModel):
+class WorkspaceRefRequest(RequestModel):
     """A workspace named in a body, never in a path.
 
     The three routes that take one — switch, acknowledge, leave — all act on the
@@ -53,7 +58,7 @@ class SwitchWorkspaceRequest(WorkspaceRefRequest):
     pass
 
 
-class CreateWorkspaceRequest(BaseModel):
+class CreateWorkspaceRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=120)
@@ -74,7 +79,7 @@ class CreateWorkspaceRequest(BaseModel):
 INVITABLE_ROLES = (Role.MEMBER, Role.VIEWER)
 
 
-class InviteMemberRequest(BaseModel):
+class InviteMemberRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     email: str = Field(min_length=3, max_length=320)
@@ -96,7 +101,7 @@ class InviteMemberRequest(BaseModel):
         return value
 
 
-class MemberRoleRequest(BaseModel):
+class MemberRoleRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     role: Role
@@ -112,7 +117,7 @@ class MemberRoleRequest(BaseModel):
         return value
 
 
-class TransferOwnershipRequest(BaseModel):
+class TransferOwnershipRequest(RequestModel):
     """The member who is to receive the workspace, by user id.
 
     Never an email. `add_member_by_email` exists one route away, and accepting an
@@ -125,7 +130,7 @@ class TransferOwnershipRequest(BaseModel):
     user_id: uuid.UUID
 
 
-class CreateFolderRequest(BaseModel):
+class CreateFolderRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     name: str = Field(min_length=1, max_length=80)
@@ -139,13 +144,42 @@ class CreateFolderRequest(BaseModel):
         return normalized
 
 
-class ReorderFoldersRequest(BaseModel):
+class ReorderFoldersRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     #: Every folder the client knows about, in the order it wants them shown.
     #: Not a {folder, index} pair: two tabs dragging against a positional API
     #: interleave into an order neither person chose, whereas last-write-wins on
     #: a whole list is at least an order somebody actually saw.
+    order: list[uuid.UUID] = Field(max_length=500)
+
+
+class CreateProjectRequest(RequestModel):
+    """Separate from `CreateFolderRequest` so the message names what failed.
+
+    The two are structurally identical today. Sharing one model would mean a
+    blank project name is refused with "folder name cannot be blank", which is a
+    sentence about a different part of the product.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str = Field(min_length=1, max_length=80)
+
+    @field_validator("name")
+    @classmethod
+    def require_non_blank_name(cls, value: str) -> str:
+        normalized = " ".join(value.strip().split())
+        if not normalized:
+            raise ValueError("project name cannot be blank")
+        return normalized
+
+
+class ReorderProjectsRequest(RequestModel):
+    model_config = ConfigDict(extra="forbid")
+
+    #: Every project the client knows about, in the order it wants them shown —
+    #: the whole list, for the reason given on `ReorderFoldersRequest`.
     order: list[uuid.UUID] = Field(max_length=500)
 
 
@@ -167,6 +201,21 @@ def _to_folder(folder: WorkspaceFolder) -> WorkspaceFolderResource:
         name=folder.name,
         created_at=folder.created_at or now,
         updated_at=folder.updated_at or now,
+    )
+
+
+def _to_project(project: Project) -> ProjectResource:
+    now = dt.datetime.now(dt.timezone.utc)
+    return ProjectResource(
+        id=project.id,
+        workspace_id=project.workspace_id,
+        name=project.name,
+        # Resolved here, not on the wire as NULL: `shares.project_artifact_limit`
+        # is the one function that knows what an unset column means, and a client
+        # reimplementing it would be a second copy of the default to drift from.
+        max_artifacts=shares_repo.project_artifact_limit(project),
+        created_at=project.created_at or now,
+        updated_at=project.updated_at or now,
     )
 
 
@@ -403,9 +452,7 @@ async def transfer_ownership(
     _membership, target = await workspaces_repo.member_with_user(
         scope, session, user_id=body.user_id
     )
-    limits = limits_for(
-        resolve_tier(target.email, plan=target.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(target, settings))
     try:
         members = await workspaces_repo.transfer_ownership(
             scope,
@@ -466,9 +513,7 @@ async def create_workspace(
     artifact cap at all.
     """
     user, _personal = identity
-    limits = limits_for(
-        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
-    )
+    limits = limits_for(tier_of(user, settings))
     try:
         workspace, membership = await system.create_team_workspace(
             session,
@@ -645,4 +690,133 @@ async def delete_workspace_folder(
 ) -> Response:
     """Delete the folder. The runs inside it survive, unfiled."""
     await folders_repo.delete_folder(scope, session, folder_id)
+    return Response(status_code=204)
+
+
+@router.get("/workspace/projects", response_model=list[ProjectResource])
+async def list_workspace_projects(scope: CurrentScope, session: DbSession) -> list[ProjectResource]:
+    """Studio's projects in the user's chosen order.
+
+    As with folders, the order is carried by the ARRAY and `projects.position`
+    stays server-side. Clients must preserve the order they receive rather than
+    re-sorting — the web's `loadChatFolders` once re-sorted by `createdAt` and
+    made every drag appear to work and then revert.
+    """
+    return [_to_project(project) for project in await projects_repo.list_projects(scope, session)]
+
+
+@router.post("/workspace/projects", response_model=ProjectResource, status_code=201)
+async def create_workspace_project(
+    body: CreateProjectRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ProjectResource:
+    try:
+        project = await projects_repo.create_project(scope, session, name=body.name)
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return _to_project(project)
+
+
+@router.patch("/workspace/projects/order", response_model=list[ProjectResource])
+async def reorder_workspace_projects(
+    body: ReorderProjectsRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> list[ProjectResource]:
+    """Set the whole workspace's project order from the list the client holds.
+
+    Declared BEFORE `/workspace/projects/{project_id}` on purpose: FastAPI
+    matches routes in declaration order, so the parameterised route would
+    otherwise swallow `/order` and try to parse it as a UUID.
+    """
+    try:
+        projects = await projects_repo.reorder_projects(scope, session, list(body.order))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    return [_to_project(project) for project in projects]
+
+
+class UpdateProjectRequest(RequestModel):
+    """A partial update. Omitted means unchanged; there is no way to send NULL.
+
+    `max_artifacts` is deliberately not resettable to the platform default. The
+    column's NULL means "whatever the default is today", and an owner who has
+    chosen 10 must not have that choice re-floated by a later change to the
+    default — so the API can move the number but not un-choose it.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    name: str | None = Field(default=None, min_length=1, max_length=80)
+    max_artifacts: int | None = Field(
+        default=None, ge=0, le=projects_repo.MAX_PROJECT_ARTIFACT_LIMIT
+    )
+
+    @field_validator("name")
+    @classmethod
+    def _name_not_blank(cls, value: str | None) -> str | None:
+        if value is not None and not value.strip():
+            raise ValueError("project name cannot be blank")
+        return value
+
+
+@router.patch("/workspace/projects/{project_id}", response_model=ProjectResource)
+async def update_workspace_project(
+    project_id: uuid.UUID,
+    body: UpdateProjectRequest,
+    scope: CurrentScope,
+    session: DbSession,
+) -> ProjectResource:
+    """Rename the project, change what a share grantee may grow it to, or both.
+
+    Still accepts the rename-only body every existing client sends — `name` was
+    required before and is now optional, which is the widening direction, so a web
+    deploy that lands before this one keeps working.
+    """
+    if body.name is None and body.max_artifacts is None:
+        raise HTTPException(status_code=422, detail="nothing to update")
+    try:
+        project = await projects_repo.get_project(scope, session, project_id)
+        if body.name is not None:
+            project = await projects_repo.rename_project(scope, session, project_id, name=body.name)
+        if body.max_artifacts is not None:
+            project = await projects_repo.set_project_artifact_limit(
+                scope, session, project_id, max_artifacts=body.max_artifacts
+            )
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _to_project(project)
+
+
+@router.delete("/workspace/projects/{project_id}", status_code=204)
+async def delete_workspace_project(
+    project_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+) -> Response:
+    """Delete the project. The artifacts inside it survive, ungrouped.
+
+    The grants go too — `project_shares.project_id` CASCADEs (migration 0042) —
+    and that is worth a line in the audit log, because a cascade writes no
+    history and "a project was deleted" is a different sentence from "four people
+    outside this workspace lost access to it". The count is read BEFORE the
+    delete for the obvious reason.
+
+    Counted rather than listed: `count_shares` needs only the write role that
+    deleting a project already needs, whereas naming the grantees is
+    `list_shares` and admin-only. A member deleting their own project should be
+    able to have the fact recorded without being able to read the guest list.
+    """
+    share_count = await shares_repo.count_shares(scope, session, project_id)
+    await projects_repo.delete_project(scope, session, project_id)
+    if share_count:
+        await audit_repo.record_audit(
+            scope,
+            session,
+            action="project_share.revoked_by_project_delete",
+            target_kind="project",
+            target_id=project_id,
+            meta={"count": share_count},
+        )
     return Response(status_code=204)

@@ -1,0 +1,21 @@
+id: holdout-v1-08
+category: "Holdout — Topological Zak phase"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Compute the lower-band Zak phase of the two-band SSH Bloch Hamiltonian
+  H(k)=[[0, t1+t2*exp(-i*k)], [t1+t2*exp(i*k), 0]] for t1=0.5 and t2=1.0.
+  Use 64 uniformly spaced k points on [0,2*pi), prepare each normalized lower-band
+  eigenvector as a one-qubit Qiskit Statevector, and evaluate the gauge-invariant
+  closed Wilson product of normalized neighboring overlaps. Return the absolute
+  principal phase of that product as the top-level numeric RESULT key zak_phase_abs,
+  and bind the lower-band state-preparation circuit at k=0 to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["zak_phase_abs"]
+  expected_values:
+    zak_phase_abs: 3.141592653589793
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

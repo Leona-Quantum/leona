@@ -1066,6 +1066,7 @@ version = "0.0.0"
 source = { editable = "services/api" }
 dependencies = [
     { name = "alembic" },
+    { name = "cryptography" },
     { name = "fastapi" },
     { name = "majorana-contracts" },
     { name = "majorana-llm" },
@@ -1085,6 +1086,7 @@ dependencies = [
 [package.metadata]
 requires-dist = [
     { name = "alembic", specifier = ">=1.16" },
+    { name = "cryptography", specifier = ">=43" },
     { name = "fastapi", specifier = ">=0.115" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-llm", editable = "packages/py/llm" },
@@ -1121,6 +1123,7 @@ dependencies = [
     { name = "majorana-contracts" },
     { name = "majorana-llm", extra = ["anthropic", "openai"] },
     { name = "majorana-worker" },
+    { name = "numpy" },
     { name = "pydantic" },
     { name = "pyyaml" },
 ]
@@ -1131,6 +1134,7 @@ requires-dist = [
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-llm", extras = ["openai", "anthropic"], editable = "packages/py/llm" },
     { name = "majorana-worker", editable = "services/worker" },
+    { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.8" },
     { name = "pyyaml", specifier = ">=6" },
 ]
@@ -1249,6 +1253,7 @@ dependencies = [
     { name = "majorana-openqasm" },
     { name = "numpy" },
     { name = "pydantic" },
+    { name = "scipy" },
 ]
 
 [package.metadata]
@@ -1257,6 +1262,7 @@ requires-dist = [
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },
     { name = "numpy", specifier = ">=1.26" },
     { name = "pydantic", specifier = ">=2.8" },
+    { name = "scipy", specifier = ">=1.11" },
 ]
 
 [[package]]
@@ -1275,6 +1281,7 @@ name = "majorana-worker"
 version = "0.0.0"
 source = { editable = "services/worker" }
 dependencies = [
+    { name = "cryptography" },
     { name = "majorana-agent" },
     { name = "majorana-api" },
     { name = "majorana-frameworks" },
@@ -1287,6 +1294,7 @@ dependencies = [
 
 [package.metadata]
 requires-dist = [
+    { name = "cryptography", specifier = ">=43" },
     { name = "majorana-agent", editable = "packages/py/agent" },
     { name = "majorana-api", editable = "services/api" },
     { name = "majorana-frameworks", editable = "packages/py/frameworks" },

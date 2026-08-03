@@ -55,15 +55,21 @@ test("code outside the builder subset refuses to parse instead of guessing", () 
   const looped = "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(5)\nqc.h(range(5))\nfor a, b in [(0, 1)]:\n    qc.cx(a, b)";
   assert.equal(parseBuilderCircuit(looped, "qiskit"), null);
 
-  const tooWide = "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(9)\nqc.h(0)";
-  assert.equal(parseBuilderCircuit(tooWide, "qiskit"), null);
-
   const customHelpers = generateBuilderCode(
     [{ id: "c", gate: "CUSTOM", customGateId: "g", qubits: [0, 1] }],
     2,
     [{ id: "g", name: "Bell", qubitCount: 2, steps: [{ id: "d", gate: "H", qubits: [0] }] }],
   );
   assert.equal(parseBuilderCircuit(customHelpers.qiskit, "qiskit"), null);
+});
+
+test("editor parsing has no arbitrary qubit ceiling while callers can impose a budget", () => {
+  const wide = "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(1000)\nqc.h(999)";
+  const parsed = parseBuilderCircuit(wide, "qiskit");
+  assert.ok(parsed);
+  assert.equal(parsed.qubitCount, 1000);
+  assert.deepEqual(parsed.steps[0].qubits, [999]);
+  assert.equal(parseBuilderCircuit(wide, "qiskit", 24), null);
 });
 
 test("malformed angle literals are rejected", () => {

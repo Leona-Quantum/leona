@@ -8,19 +8,22 @@ statements rather than the two answers, and the last one walks the same count
 through both the report and the gate.
 """
 
+import dataclasses
 import datetime as dt
 
 import pytest
 from fastapi import HTTPException
-from majorana_contracts.enums import Framework, RunMode
-from repo_test_helpers import compiled
+from majorana_contracts.enums import CHAT_USAGE_ROLE, Framework, RunMode
+from repo_test_helpers import LockOnlySession, compiled
 
 from majorana_api.orm import User, Workspace
 from majorana_api.repos import runs as runs_repo
+from majorana_api.repos import usage as usage_repo
+from majorana_api.repos.usage import TokenSpendRow
 from majorana_api.routes import runs as runs_routes
 from majorana_api.routes import usage as usage_routes
 from majorana_api.settings import Settings
-from majorana_api.tiers import TIER_LIMITS, TIER_WINDOW
+from majorana_api.tiers import TIER_LIMITS, TIER_WINDOW, TOKENS_PER_RUN_EQUIVALENT
 
 FREE_WEEKLY = TIER_LIMITS["free"].agent_runs_per_week
 FREE_ARTIFACTS = TIER_LIMITS["free"].private_artifacts
@@ -44,8 +47,20 @@ def _identity(email: str = "someone@example.com", plan: str | None = None):
     return User(email=email, plan=plan), Workspace()
 
 
-def _wire(monkeypatch, *, executed: int, oldest: list[dt.datetime], kept: int = 0, owned: int = 1):
-    """Stand in for the three repositories the route reads, recording its calls."""
+def _wire(
+    monkeypatch,
+    *,
+    executed: int,
+    oldest: list[dt.datetime],
+    kept: int = 0,
+    owned: int = 1,
+    shared_projects: int = 0,
+    spend: list[TokenSpendRow] | None = None,
+    hardware_spend_usd: float = 0.0,
+    tokens_used: int = 0,
+    tokens_next_at: dt.datetime | None = None,
+):
+    """Stand in for the repositories the route reads, recording its calls."""
     seen: dict = {}
 
     async def count_execute_runs_since(_scope, _session, since):
@@ -57,11 +72,44 @@ def _wire(monkeypatch, *, executed: int, oldest: list[dt.datetime], kept: int = 
         seen["oldest_count"] = count
         return oldest[:count]
 
-    async def get_overview(_scope, _session):
-        return object(), [], kept, 0
+    async def count_kept_against_quota(_scope, _session):
+        # Named for the function the route actually calls. It used to be
+        # `get_overview`, whose number is the Vault total — the route moved to
+        # the QUOTA count when the two stopped being the same integer, and a
+        # double still standing in for the old one would have kept passing
+        # against a route reading something else.
+        seen["counted_against_quota"] = True
+        return kept
 
     async def count_owned_workspaces(_session, *, user_id):
         return owned
+
+    async def count_shared_projects(_session, user_id):
+        seen["shared_projects_subject"] = user_id
+        return shared_projects
+
+    async def token_spend_since(_scope, _session, since):
+        seen["spend_since"] = since
+        return spend or []
+
+    async def account_tokens_since(_scope, _session, since):
+        # The ENFORCED meter since 2026-08-03, and named for the function the
+        # gate calls (repos.runs.reserve_execute_run_slot reads the same one).
+        # The run count beside it is reported and no longer refuses.
+        seen["tokens_since"] = since
+        return tokens_used
+
+    async def tokens_free_at(_scope, _session, since, *, window, surplus):
+        seen["tokens_free_since"] = since
+        seen["tokens_surplus"] = surplus
+        return None if tokens_next_at is None else tokens_next_at + window
+
+    async def authorized_spend_since(_scope, _session, since):
+        # The reservation's own function, named for it. The hardware allowance is
+        # the one place the endpoint and a 429 must agree on a number, so the
+        # double stands in for the thing the gate calls and nothing else.
+        seen["hardware_spend_since"] = since
+        return hardware_spend_usd
 
     monkeypatch.setattr(
         usage_routes.runs_repo, "count_execute_runs_since", count_execute_runs_since
@@ -69,14 +117,25 @@ def _wire(monkeypatch, *, executed: int, oldest: list[dt.datetime], kept: int = 
     monkeypatch.setattr(
         usage_routes.runs_repo, "oldest_allowance_runs_since", oldest_allowance_runs_since
     )
-    monkeypatch.setattr(usage_routes.workspaces_repo, "get_overview", get_overview)
+    monkeypatch.setattr(
+        usage_routes.artifacts_repo, "count_kept_against_quota", count_kept_against_quota
+    )
     monkeypatch.setattr(usage_routes.system, "count_owned_workspaces", count_owned_workspaces)
+    monkeypatch.setattr(usage_routes.shares_repo, "count_shared_projects", count_shared_projects)
+    monkeypatch.setattr(usage_routes.usage_repo, "token_spend_since", token_spend_since)
+    monkeypatch.setattr(usage_routes.usage_repo, "account_tokens_since", account_tokens_since)
+    monkeypatch.setattr(usage_routes.usage_repo, "tokens_free_at", tokens_free_at)
+    monkeypatch.setattr(
+        usage_routes.qpu_runs_repo, "authorized_spend_since", authorized_spend_since
+    )
     return seen
 
 
-async def _usage(scope, monkeypatch, *, email: str = "someone@example.com", **wiring):
+async def _usage(
+    scope, monkeypatch, *, email: str = "someone@example.com", plan: str | None = None, **wiring
+):
     seen = _wire(monkeypatch, **wiring)
-    result = await usage_routes.usage(_identity(email), scope, object(), _settings())
+    result = await usage_routes.usage(_identity(email, plan=plan), scope, object(), _settings())
     return result, seen
 
 
@@ -248,39 +307,412 @@ async def test_remaining_never_goes_negative(scope, monkeypatch):
     assert result.artifacts.remaining == 0
 
 
+# --- token spend -----------------------------------------------------------
+#
+# The allowance numbers above have a gate to disagree with. This block has no
+# gate at all — nothing refuses on tokens — so its failure mode is different and
+# quieter: a number that is simply wrong, on a screen where nothing else says
+# what the right one would have been. The tests are therefore about the two ways
+# it can be wrong without looking wrong: an event landing in the wrong bucket,
+# and an event landing in no bucket.
+
+
+def _spend(*rows: TokenSpendRow):
+    return usage_routes._fold_spend(rows, window_days=7)
+
+
+def test_the_chat_role_is_the_literal_already_in_the_ledger():
+    """`usage_events` is append-only — this string cannot be migrated.
+
+    Every chat row written since the last release carries `"chat"` in its meta
+    and the table's grant revokes UPDATE, so renaming the constant does not
+    rename the history: it makes every existing chat turn read as a run, on a
+    screen with nothing to check the number against. The pin belongs here and
+    not only in the worker's handler test, which asserts what is written.
+    """
+    assert CHAT_USAGE_ROLE == "chat"
+
+
+def test_chat_and_runs_partition_the_total():
+    report = _spend(
+        TokenSpendRow(role=CHAT_USAGE_ROLE, model="deepseek-chat", calls=4, tokens=9_000),
+        TokenSpendRow(role="circuit_plan", model="deepseek-chat", calls=2, tokens=5_000),
+        TokenSpendRow(role="verification_review", model="deepseek-reasoner", calls=1, tokens=800),
+    )
+
+    assert report.chat.tokens == 9_000
+    assert report.chat.calls == 4
+    assert report.runs.tokens == 5_800, "every non-chat role is a run stage"
+    assert report.runs.calls == 3
+    assert report.total.tokens == report.chat.tokens + report.runs.tokens
+    assert report.total.calls == report.chat.calls + report.runs.calls
+
+
+def test_an_unknown_role_counts_as_a_run_and_not_as_chat():
+    """The bucketing is `== "chat"`, never a list of the stages that exist.
+
+    Roles come from the agent request's `schema_name`, so the pipeline gaining a
+    stage renames this set without touching this file. Bucketing by exclusion
+    means a new stage is counted as a run — visible, if slightly coarse. The
+    other way round it would be counted as chat, and the one number this feature
+    exists to produce would drift upward every time the agent changed.
+    """
+    report = _spend(TokenSpendRow(role="a_stage_added_next_year", model="m", calls=1, tokens=10))
+
+    assert report.chat.tokens == 0
+    assert report.runs.tokens == 10
+
+
+def test_a_role_that_merely_contains_chat_is_not_chat():
+    report = _spend(TokenSpendRow(role="chat_summary_review", model="m", calls=1, tokens=10))
+    assert report.chat.tokens == 0
+
+
+def test_the_per_model_list_accounts_for_every_token():
+    """`by_model` is a partition of `total`, not a highlights list.
+
+    A per-model breakdown that dropped rows would still render, still look
+    plausible, and still be smaller than the total printed above it — the exact
+    shape of wrong that nobody reports.
+    """
+    report = _spend(
+        TokenSpendRow(role=CHAT_USAGE_ROLE, model="deepseek-chat", calls=1, tokens=100),
+        TokenSpendRow(role="circuit_plan", model="deepseek-chat", calls=1, tokens=50),
+        TokenSpendRow(role="circuit_plan", model="deepseek-reasoner", calls=1, tokens=700),
+        TokenSpendRow(role=CHAT_USAGE_ROLE, model="", calls=1, tokens=3),
+    )
+
+    assert sum(entry.tokens for entry in report.by_model) == report.total.tokens
+    assert sum(entry.calls for entry in report.by_model) == report.total.calls
+    # One model, spent by both chat and a run stage, is one row.
+    assert [(entry.model, entry.tokens) for entry in report.by_model] == [
+        ("deepseek-reasoner", 700),
+        ("deepseek-chat", 150),
+        ("", 3),
+    ]
+
+
+def test_an_event_with_no_model_keeps_its_tokens():
+    """A row whose meta never carried a model is unattributed, not absent."""
+    report = _spend(TokenSpendRow(role=CHAT_USAGE_ROLE, model="", calls=1, tokens=42))
+
+    assert report.total.tokens == 42
+    assert [entry.model for entry in report.by_model] == [""]
+
+
+def test_models_that_tie_have_a_stable_order():
+    """Two requests over the same rows must not swap two rows on a screen."""
+    rows = (
+        TokenSpendRow(role="circuit_plan", model="bravo", calls=1, tokens=500),
+        TokenSpendRow(role="circuit_plan", model="alpha", calls=1, tokens=500),
+    )
+    assert [entry.model for entry in _spend(*rows).by_model] == ["alpha", "bravo"]
+    assert [entry.model for entry in _spend(*reversed(rows)).by_model] == ["alpha", "bravo"]
+
+
+def test_a_workspace_that_has_spent_nothing_reports_zeroes_not_nulls():
+    """Null would make the client choose between "none" and "unknown"."""
+    report = _spend()
+
+    assert report.total.tokens == 0 and report.total.calls == 0
+    assert report.chat.tokens == 0 and report.runs.tokens == 0
+    assert report.by_model == []
+    assert report.window_days == 7
+
+
+def test_the_spend_query_is_scoped_to_the_workspace(scope):
+    """Unlike the allowance beside it, which is deliberately account-wide.
+
+    Copying `_spends_the_weekly_allowance`'s exemption into this query would
+    sum a second tenant's chat into this workspace's number — with a 200 and
+    nothing to notice it by.
+    """
+    sql, params = compiled(usage_repo.token_spend_stmt(scope, NOW))
+
+    assert scope.workspace_id in params.values()
+    assert "GROUP BY" in sql
+    assert "llm_tokens" in params.values(), "one kind, not every metered quantity"
+
+
+async def test_the_spend_window_is_the_one_the_runs_figure_used(scope, monkeypatch):
+    """One `now()` for the whole response — the two are read as one sentence."""
+    _result, seen = await _usage(
+        scope, monkeypatch, executed=1, oldest=[NOW - dt.timedelta(days=1)]
+    )
+    assert seen["spend_since"] == seen["count_since"]
+
+
+async def test_the_route_reports_the_folded_ledger(scope, monkeypatch):
+    result, _ = await _usage(
+        scope,
+        monkeypatch,
+        executed=0,
+        oldest=[],
+        spend=[
+            TokenSpendRow(role=CHAT_USAGE_ROLE, model="deepseek-chat", calls=6, tokens=12_345),
+            TokenSpendRow(role="circuit_plan", model="deepseek-chat", calls=2, tokens=2_000),
+        ],
+    )
+
+    assert result.spend.chat.tokens == 12_345
+    assert result.spend.runs.tokens == 2_000
+    assert result.spend.total.calls == 8
+    assert result.spend.window_days == TIER_WINDOW.days
+
+
+async def test_an_unmetered_account_still_gets_its_spend(scope, monkeypatch):
+    """Spend is not an allowance, so being unmetered does not silence it.
+
+    A developer account is the one most likely to want the number, and every
+    other block on this response goes null for it.
+    """
+    _wire(
+        monkeypatch,
+        executed=99,
+        oldest=[NOW],
+        spend=[TokenSpendRow(role=CHAT_USAGE_ROLE, model="m", calls=1, tokens=77)],
+    )
+    result = await usage_routes.usage(
+        _identity("dev@example.invalid", plan="developer"), scope, object(), _settings()
+    )
+
+    assert result.runs.limit is None
+    assert result.spend.chat.tokens == 77
+
+
 # --- the agreement the whole file is about ---------------------------------
 
 
-@pytest.mark.parametrize("executed", list(range(0, 8)))
-async def test_exhausted_says_yes_exactly_when_the_gate_refuses(executed, scope, monkeypatch):
-    """The screen and the gate, walked through the same count.
+#: Free is 5 * TOKENS_PER_RUN_EQUIVALENT. Walked from empty to over the line,
+#: including the exact boundary, because `>=` versus `>` at the limit is the
+#: difference between the last run being offered and being refused.
+_FREE_TOKENS = TIER_LIMITS["free"].agent_tokens_per_week
+assert _FREE_TOKENS is not None
 
-    `exhausted` is what the profile menu will colour red and what stops the
-    composer offering a verified run. If it disagreed with `_enforce_execute_
-    backstop` in either direction the product either refuses a run it advertised
-    or advertises a refusal that never comes.
+
+@pytest.mark.parametrize(
+    "tokens_used",
+    [0, 1, _FREE_TOKENS // 2, _FREE_TOKENS - 1, _FREE_TOKENS, _FREE_TOKENS + 1],
+)
+async def test_exhausted_says_yes_exactly_when_the_gate_refuses(tokens_used, scope, monkeypatch):
+    """The screen and the gate, walked through the same TOKEN count.
+
+    `exhausted` is what the profile menu colours red and what stops the composer
+    offering a verified run. If it disagreed with `_enforce_execute_backstop` in
+    either direction the product either refuses a run it advertised or advertises
+    a refusal that never comes.
+
+    Walked through tokens rather than runs since 2026-08-03, because that is what
+    the gate compares now. Left on runs, this test would have gone on passing
+    while agreeing about a number nothing enforces — the failure it exists to
+    catch, dressed as a pass.
     """
-    reported, _ = await _usage(scope, monkeypatch, executed=executed, oldest=[NOW])
+    reported, _ = await _usage(
+        scope, monkeypatch, executed=0, oldest=[NOW], tokens_used=tokens_used
+    )
 
-    async def counted(_scope, _session, _since):
-        return executed
+    async def spent(_scope, _session, _since):
+        return tokens_used
+
+    async def nothing_in_flight(_scope, _session):
+        return 0
 
     async def no_backstop(*_args, **_kwargs):
         return {}
 
-    monkeypatch.setattr(runs_routes.runs_repo, "count_execute_runs_since", counted)
+    monkeypatch.setattr(runs_routes.runs_repo.usage_repo, "account_tokens_since", spent)
+    monkeypatch.setattr(runs_routes.runs_repo, "count_in_flight_execute_runs", nothing_in_flight)
     monkeypatch.setattr(runs_routes.runs_repo, "count_runs_by_mode_since", no_backstop)
 
     request = runs_routes.CreateRunRequest(
         task_prompt="Build a Bell pair", framework=Framework.QISKIT, mode=RunMode.EXECUTE
     )
+    session = LockOnlySession()
     try:
         await runs_routes._enforce_execute_backstop(
-            request, scope, object(), _identity(), _settings()
+            request, scope, session, _identity(), _settings()
         )
         gate_refused = False
     except HTTPException as refusal:
         assert refusal.detail["reason"] == "run_allowance_exhausted"
         gate_refused = True
 
-    assert reported.runs.exhausted is gate_refused
+    assert reported.tokens.exhausted is gate_refused
+    # The gate reserved rather than merely counted. Without this the double
+    # would happily stand in for a version that dropped the lock again.
+    assert session.statements, "the allowance gate issued no statement of its own"
+
+
+async def test_the_reported_token_allowance_is_the_one_the_plan_was_sold_as(scope, monkeypatch):
+    """The bar's own numbers, and the derivation the client must not repeat."""
+
+    reported, _ = await _usage(scope, monkeypatch, executed=0, oldest=[NOW], tokens_used=45_000)
+
+    assert reported.tokens.limit == _FREE_TOKENS
+    assert reported.tokens.used == 45_000
+    assert reported.tokens.remaining == _FREE_TOKENS - 45_000
+    assert reported.tokens.exhausted is False
+    assert reported.tokens.runs_equivalent == TIER_LIMITS["free"].agent_runs_per_week
+    assert reported.tokens.tokens_per_run == TOKENS_PER_RUN_EQUIVALENT
+    # The client renders a bar from used/limit. Sending the derivation too is
+    # what stops it dividing by a constant of its own.
+    assert reported.tokens.runs_equivalent * reported.tokens.tokens_per_run == reported.tokens.limit
+
+
+# --- the hardware allowance, which is the one denominated in money ----------
+
+
+async def test_hardware_spend_is_reported_even_though_nothing_caps_it(scope, monkeypatch):
+    """The half of this block that survived the ceiling coming off.
+
+    No tier sets a hardware limit since 2026-08-02 — the owner ruled it an
+    individual user's decision — so this line reports a total against a null
+    ceiling. It stays on the response because the amount is the thing that was
+    missing when $96,006.30 was authorized without anybody being able to look at
+    it, and because a budget a user sets for themselves needs a screen.
+    """
+    result, seen = await _usage(
+        scope,
+        monkeypatch,
+        executed=0,
+        oldest=[],
+        hardware_spend_usd=6.25,
+    )
+
+    assert result.hardware_spend.used_usd == pytest.approx(6.25)
+    assert result.hardware_spend.limit_usd is None
+    assert result.hardware_spend.remaining_usd is None
+    assert result.hardware_spend.exhausted is False
+    assert result.hardware_spend.window_days == TIER_WINDOW.days
+    # The same instant the runs figure used: two windows would be two different
+    # weeks presented as one sentence.
+    assert seen["hardware_spend_since"] == seen["count_since"]
+
+
+@pytest.mark.parametrize("plan", [None, "pro", "team", "developer"])
+async def test_no_tier_reports_a_hardware_ceiling(scope, monkeypatch, plan):
+    """Every tier, not just the one that was measured.
+
+    Reported from the tier table rather than hardcoded on the response, so a
+    ceiling put back on any tier shows up here — the endpoint's job is to say
+    what the refusal would be measured against, including "nothing".
+    """
+    result, _ = await _usage(
+        scope,
+        monkeypatch,
+        executed=0,
+        oldest=[],
+        hardware_spend_usd=1234.5,
+        plan=plan,
+    )
+
+    assert result.hardware_spend.limit_usd is None
+    assert result.hardware_spend.remaining_usd is None
+    assert result.hardware_spend.exhausted is False
+    assert result.hardware_spend.used_usd == pytest.approx(1234.5)
+
+
+@pytest.mark.parametrize(
+    ("spent", "exhausted", "remaining"),
+    [
+        (0.0, False, 25.0),
+        (12.0, False, 13.0),
+        (25.0, True, 0.0),  # exactly at the ceiling: nothing priced still fits
+        (30.0, True, 0.0),  # never negative
+    ],
+)
+async def test_remaining_and_exhausted_track_a_ceiling_without_going_negative(
+    scope, monkeypatch, spent, exhausted, remaining
+):
+    """`exhausted` is `>=` where the reservation is `>`, and that is deliberate.
+
+    The reservation asks whether ONE named estimate fits, so at exactly the limit
+    it still admits a $0 free-queue submission. This flag answers the different
+    question a client renders — can anything priced still be submitted — and at
+    exactly the ceiling the answer is no. A free-queue submission is unaffected
+    because that path returns before any comparison, not because of this flag.
+
+    Staged on the tier table, because no tier ships a ceiling any more. The
+    arithmetic stays covered so that a per-user budget — or a ceiling reinstated
+    because customer submissions went back onto an operator-owned token — does
+    not arrive on a code path nothing has exercised in months.
+    """
+    monkeypatch.setitem(
+        TIER_LIMITS, "team", dataclasses.replace(TIER_LIMITS["team"], qpu_spend_usd_per_week=25.0)
+    )
+    result, _ = await _usage(
+        scope, monkeypatch, executed=0, oldest=[], hardware_spend_usd=spent, plan="team"
+    )
+
+    assert result.hardware_spend.limit_usd == pytest.approx(25.0)
+    assert result.hardware_spend.exhausted is exhausted
+    assert result.hardware_spend.remaining_usd == pytest.approx(remaining)
+    assert result.hardware_spend.remaining_usd >= 0.0
+
+
+@pytest.mark.parametrize(
+    "used, limit, expected",
+    [
+        (0, 100, "ok"),
+        (74, 100, "ok"),
+        (75, 100, "approaching"),  # exactly 75% warns
+        (89, 100, "approaching"),
+        (90, 100, "critical"),  # exactly 90% escalates
+        (99, 100, "critical"),
+        (100, 100, "exhausted"),
+        (250, 100, "exhausted"),  # overshoot, not a fifth state
+        (0, None, "ok"),  # unlimited has no ratio to be three quarters of
+        (10**9, None, "ok"),
+        (0, 0, "exhausted"),  # a zero limit refuses before any division
+        # A negative `used` against a zero limit: the one input shape that could
+        # reach `used / limit` and raise. Counts cannot go negative today, so
+        # this pins the guard rather than a behaviour anyone observes — and it
+        # is honest about being cheap insurance, not a regression this has ever
+        # had. It does NOT pin the order of the two exhausted-branches: both
+        # orders return before the division, checked by running them.
+        (-1, 0, "exhausted"),
+    ],
+)
+def test_pressure_thresholds_are_the_servers_and_include_their_boundaries(used, limit, expected):
+    """Owner request: warn at 75% and 90%.
+
+    The boundaries are parametrized because `>=` versus `>` at exactly 75 is the
+    entire difference between warning a person and not, and it is the kind of
+    thing a later refactor flips without noticing.
+
+    A zero limit is here because it is the one input that can raise rather than
+    answer — `used / 0` — and a tier with a zero allowance is a real shape: the
+    web app's `preview` tier ships `agentTokensPerWeek: 0`.
+    """
+    assert usage_routes.pressure_for(used, limit) == expected
+
+
+async def test_pressure_travels_on_every_meter_not_just_tokens(scope, monkeypatch):
+    """Artifacts and workspaces fill up too, and a person deserves the same warning.
+
+    Pinned because `pressure` is computed once in `_allowance`, which is what
+    makes this true — a later change that builds one of these meters by hand
+    would silently ship a field that is always "ok".
+    """
+    result, _ = await _usage(scope, monkeypatch, executed=0, oldest=[])
+
+    for name in ("runs", "tokens", "artifacts", "workspaces", "shared_projects"):
+        meter = getattr(result, name)
+        assert meter.pressure == usage_routes.pressure_for(meter.used, meter.limit), name
+
+
+async def test_a_nearly_spent_week_is_reported_as_critical_before_it_refuses(scope, monkeypatch):
+    """The whole point of the field: `exhausted` is still False here.
+
+    A client watching only `exhausted` says nothing until the submission is
+    already being refused, which is the behaviour the owner asked to change.
+    """
+    limit = TIER_LIMITS["free"].agent_tokens_per_week
+    assert limit is not None
+    result, _ = await _usage(
+        scope, monkeypatch, executed=0, oldest=[], tokens_used=int(limit * 0.95)
+    )
+
+    assert result.tokens.exhausted is False
+    assert result.tokens.pressure == "critical"
+    assert result.tokens.remaining is not None and result.tokens.remaining > 0

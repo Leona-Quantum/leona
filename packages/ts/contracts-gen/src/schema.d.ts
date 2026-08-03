@@ -54,6 +54,11 @@ export interface components {
              */
             parent_artifact_id: string | null;
             /**
+             * Project Id
+             * @default null
+             */
+            project_id: string | null;
+            /**
              * Slug
              * @description Unique; used for public pages
              */
@@ -546,6 +551,50 @@ export interface components {
             type: "compilation.result";
         };
         /**
+         * ComplexCoefficient
+         * @description One finite complex scalar represented without JSON-specific conventions.
+         */
+        ComplexCoefficient: {
+            /**
+             * Imag
+             * @default 0
+             */
+            imag: number;
+            /** Real */
+            real: number;
+        };
+        /**
+         * ConstraintTerm
+         * @description One coefficient of a linear constraint over binary decision variables.
+         */
+        ConstraintTerm: {
+            /**
+             * I
+             * @description Binary variable index, 0-based.
+             */
+            i: number;
+            /**
+             * Weight
+             * @description Finite coefficient multiplying x_i in the constraint's left side.
+             */
+            weight: number;
+        };
+        /** Conversation */
+        Conversation: {
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Turns */
+            turns?: components["schemas"]["ConversationTurn"][];
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /**
          * ConversationTitled
          * @description A short name for the conversation, written by the model on its first turn.
          *
@@ -585,6 +634,14 @@ export interface components {
              */
             type: "conversation.titled";
         };
+        /** ConversationTurn */
+        ConversationTurn: {
+            /** Events */
+            events?: {
+                [key: string]: unknown;
+            }[];
+            run: components["schemas"]["Run"];
+        };
         /**
          * EvidenceStrength
          * @description What a passing run's verdict was actually proved by.
@@ -602,6 +659,108 @@ export interface components {
          * @enum {string}
          */
         EvidenceStrength: "physical" | "structural";
+        /**
+         * ExactDynamicsReference
+         * @description One scalar from bounded exact Pauli-Hamiltonian time evolution.
+         *
+         *     The model transcribes data; the worker independently constructs the dense
+         *     matrices and evolves the declared basis state. This is intentionally narrower
+         *     than general quantum dynamics so unsupported requests fail honestly instead of
+         *     being coerced into a superficially similar metric.
+         */
+        ExactDynamicsReference: {
+            /**
+             * Evolution Time
+             * @description Finite real t in U=exp(-i*t*H), in the request's units.
+             */
+            evolution_time: number;
+            /**
+             * Hamiltonian
+             * @description Real sparse Pauli decomposition of H in U=exp(-i*t*H). Each term lists only non-identity factors by qubit index; an empty list is identity.
+             */
+            hamiltonian: components["schemas"]["IndexedPauliTerm"][];
+            /**
+             * Initial Basis State
+             * @description Computational-basis state written q0 first, matching the Pauli-string tensor convention; for example '0101' means |q0 q1 q2 q3>.
+             */
+            initial_basis_state: string;
+            /**
+             * Metric
+             * @enum {string}
+             */
+            metric: "survival_probability" | "observable_expectation";
+            /**
+             * Num Qubits
+             * @description Register width shared by the state, Hamiltonian, and observable.
+             */
+            num_qubits: number;
+            /**
+             * Observable
+             * @description Hermitian real Pauli sum whose expectation is requested after evolution. Required only for observable_expectation and absent for survival_probability.
+             * @default null
+             */
+            observable: components["schemas"]["IndexedPauliTerm"][] | null;
+            /**
+             * Result Key
+             * @description Top-level protected RESULT key this one scalar verifies; it must equal Plan.success_criteria.primary_metric.
+             */
+            result_key: string;
+        };
+        /**
+         * ExactLindbladReference
+         * @description Bounded exact evolution under one time-independent Lindblad generator.
+         */
+        ExactLindbladReference: {
+            /** Dissipators */
+            dissipators: components["schemas"]["LindbladDissipator"][];
+            /** Evolution Time */
+            evolution_time: number;
+            /** @default null */
+            hamiltonian: components["schemas"]["LindbladOperator"] | null;
+            /** Initial Product State */
+            initial_product_state: ("zero" | "one" | "plus" | "minus" | "plus_i" | "minus_i")[];
+            /** Num Qubits */
+            num_qubits: number;
+            /** Results */
+            results: components["schemas"]["LindbladResultSpec"][];
+        };
+        /**
+         * ExactLinearSystemReference
+         * @description Bounded real-symmetric linear system checked independently with a dense solve.
+         */
+        ExactLinearSystemReference: {
+            /** Matrix */
+            matrix: number[][];
+            /** Results */
+            results: components["schemas"]["LinearSystemResultSpec"][];
+            /** Rhs */
+            rhs: number[];
+        };
+        /**
+         * ExactPhaseEstimationReference
+         * @description Noiseless QPE reference for a phase exactly representable by the register.
+         *
+         *     This is intentionally not a general finite-precision QPE oracle. If the phase is
+         *     not dyadic at the declared width, its sinc-like output distribution needs a
+         *     different statistical specification and this reference must be omitted.
+         */
+        ExactPhaseEstimationReference: {
+            /** Counting Qubits */
+            counting_qubits: number;
+            /** Counts Result Key */
+            counts_result_key: string;
+            /**
+             * Eigenphase
+             * @description Eigenphase phi in U|psi>=exp(2*pi*i*phi)|psi>.
+             */
+            eigenphase: number;
+            /** Peak Probability Result Key */
+            peak_probability_result_key: string;
+            /** Phase Estimate Result Key */
+            phase_estimate_result_key: string;
+            /** Phase Integer Result Key */
+            phase_integer_result_key: string;
+        };
         /** ExportClassified */
         ExportClassified: {
             /** Qasm Available */
@@ -644,6 +803,133 @@ export interface components {
          * @enum {string}
          */
         Framework: "qiskit" | "pennylane" | "cirq";
+        /**
+         * IndexedPauliTerm
+         * @description One real Pauli term written only on the qubits where it acts.
+         *
+         *     An empty factor list is the identity term. The worker, rather than the model,
+         *     pads every other qubit with identity before dense evaluation. This removes a
+         *     transcription step that is especially error-prone for sparse operators.
+         */
+        IndexedPauliTerm: {
+            /** Coefficient */
+            coefficient: number;
+            /** Factors */
+            factors?: components["schemas"]["PauliFactor"][];
+        };
+        /**
+         * LindbladDissipator
+         * @description The literal multiplier of D[L] in a time-independent master equation.
+         */
+        LindbladDissipator: {
+            jump: components["schemas"]["LindbladOperator"];
+            /** Rate */
+            rate: number;
+        };
+        /**
+         * LindbladFactor
+         * @description One non-identity local factor in a sparse open-system operator.
+         */
+        LindbladFactor: {
+            /**
+             * Operator
+             * @enum {string}
+             */
+            operator: "X" | "Y" | "Z" | "lowering" | "raising" | "projector_zero" | "projector_one";
+            /** Qubit */
+            qubit: number;
+        };
+        /**
+         * LindbladOperator
+         * @description A finite complex sum of sparse tensor-product operator terms.
+         */
+        LindbladOperator: {
+            /** Terms */
+            terms: components["schemas"]["LindbladOperatorTerm"][];
+        };
+        /**
+         * LindbladOperatorTerm
+         * @description One complex tensor-product term; an empty factor list is identity.
+         */
+        LindbladOperatorTerm: {
+            coefficient: components["schemas"]["ComplexCoefficient"];
+            /** Factors */
+            factors?: components["schemas"]["LindbladFactor"][];
+        };
+        /**
+         * LindbladResultSpec
+         * @description One protected RESULT scalar derived from the evolved density matrix.
+         */
+        LindbladResultSpec: {
+            /**
+             * Basis State
+             * @default null
+             */
+            basis_state: string | null;
+            /**
+             * Column State
+             * @default null
+             */
+            column_state: string | null;
+            /**
+             * Metric
+             * @enum {string}
+             */
+            metric: "population" | "density_element_real" | "density_element_imag" | "purity" | "observable_expectation";
+            /** @default null */
+            observable: components["schemas"]["LindbladOperator"] | null;
+            /** Result Key */
+            result_key: string;
+            /**
+             * Row State
+             * @default null
+             */
+            row_state: string | null;
+        };
+        /**
+         * LinearConstraint
+         * @description A bounded linear condition the brute-force reference applies to assignments.
+         */
+        LinearConstraint: {
+            /** Rhs */
+            rhs: number;
+            /**
+             * Sense
+             * @description Comparison between sum(weight_i*x_i) and rhs: <=, ==, or >=.
+             * @enum {string}
+             */
+            sense: "le" | "eq" | "ge";
+            /** Terms */
+            terms: components["schemas"]["ConstraintTerm"][];
+        };
+        /**
+         * LinearSystemResultSpec
+         * @description One scalar derived from an exact real linear-system solution.
+         */
+        LinearSystemResultSpec: {
+            /**
+             * Denominator Index
+             * @default null
+             */
+            denominator_index: number | null;
+            /**
+             * Index
+             * @default null
+             */
+            index: number | null;
+            /**
+             * Metric
+             * @enum {string}
+             */
+            metric: "normalized_solution_component" | "solution_component" | "component_ratio" | "residual_norm" | "state_fidelity";
+            /**
+             * Numerator Index
+             * @default null
+             */
+            numerator_index: number | null;
+            /** Result Key */
+            result_key: string;
+        };
         /**
          * LlmCall
          * @description One completed LLM call; every call is logged with token counts (ADR-0009).
@@ -726,6 +1012,23 @@ export interface components {
          */
         Optimizer: "COBYLA" | "SPSA" | "L_BFGS_B";
         /**
+         * PauliFactor
+         * @description One non-identity factor in a sparse Pauli product.
+         */
+        PauliFactor: {
+            /**
+             * Pauli
+             * @description Non-identity Pauli acting on this qubit. Identity factors are omitted.
+             * @enum {string}
+             */
+            pauli: "X" | "Y" | "Z";
+            /**
+             * Qubit
+             * @description 0-based qubit index, with q0 the leftmost tensor factor.
+             */
+            qubit: number;
+        };
+        /**
          * PauliTerm
          * @description One `coefficient * PauliString` term of a Hamiltonian, as data.
          *
@@ -759,7 +1062,7 @@ export interface components {
             domain: string;
             /**
              * Expected Output Keys
-             * @description Keys the executed code prints in its result dict
+             * @description Keys the authored code must return when a compatible backend executes it
              */
             expected_output_keys: string[];
             /** Expected Runtime Sec */
@@ -770,7 +1073,7 @@ export interface components {
             problem_summary: string;
             /**
              * Qubits Estimate
-             * @description Planned qubit count; 27 is the default sandbox lane ceiling
+             * @description Logical qubits required by the authored artifact. Execution providers apply their own capability ceilings; this estimate must not be silently shrunk to fit the local simulator.
              */
             qubits_estimate: number;
             success_criteria: components["schemas"]["SuccessCriteria"];
@@ -854,6 +1157,100 @@ export interface components {
              * @description Real weight of this edge (maxcut) or coefficient (qubo).
              */
             weight: number;
+        };
+        /**
+         * Project
+         * @description Studio's artifact grouping (migration 0041).
+         *
+         *     Deliberately identical in shape to `WorkspaceFolder` and deliberately not the
+         *     same model: Run's Folders group runs, Studio's Projects group artifacts, and
+         *     the owner's distinction between the two words is the reason one locale key
+         *     stopped rendering both sections.
+         *
+         *     `position` is absent for the same reason it is absent from `WorkspaceFolder`:
+         *     the order is carried by the JSON array, and putting the integer on the wire
+         *     would add a shared-contract field to say what the array already says.
+         */
+        Project: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Max Artifacts */
+            max_artifacts: number;
+            /** Name */
+            name: string;
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
+            /**
+             * Workspace Id
+             * Format: uuid
+             */
+            workspace_id: string;
+        };
+        /**
+         * ProjectShare
+         * @description One grant on one project, as the workspace that owns it sees it (0042).
+         *
+         *     Carries the grantee's email because that is what the grant was made with and
+         *     what the person managing it recognises; a user id is not something anybody can
+         *     check a name against. It carries nothing else about the grantee's account —
+         *     the granting workspace learns that this address has access, not what else the
+         *     address is.
+         */
+        ProjectShare: {
+            /**
+             * Created At
+             * Format: date-time
+             */
+            created_at: string;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /**
+             * Granted By Email
+             * @default null
+             */
+            granted_by_email: string | null;
+            /**
+             * Granted By User Id
+             * Format: uuid
+             */
+            granted_by_user_id: string;
+            /**
+             * Grantee Display Name
+             * @default null
+             */
+            grantee_display_name: string | null;
+            /** Grantee Email */
+            grantee_email: string;
+            /**
+             * Grantee User Id
+             * Format: uuid
+             */
+            grantee_user_id: string;
+            /**
+             * Project Id
+             * Format: uuid
+             */
+            project_id: string;
+            role: components["schemas"]["ShareRole"];
+            /**
+             * Updated At
+             * Format: date-time
+             */
+            updated_at: string;
         };
         /**
          * PublicCatalogEntry
@@ -1027,6 +1424,11 @@ export interface components {
          */
         ReferenceProblem: {
             /**
+             * Constraints
+             * @description Linear feasibility conditions over the declared decision variables. Use these for capacity, cardinality, budget, and assignment constraints instead of enumerating an unconstrained surrogate.
+             */
+            constraints?: components["schemas"]["LinearConstraint"][];
+            /**
              * Kind
              * @enum {string}
              */
@@ -1036,6 +1438,18 @@ export interface components {
              * @description Number of binary variables (graph nodes for maxcut). The check enumerates all 2**n assignments, so at most 16.
              */
             num_variables: number;
+            /**
+             * Objective
+             * @description Optimization direction. Omit for legacy semantics: maxcut maximizes and qubo minimizes. Set explicitly when a QUBO-shaped linear/quadratic objective is reported in maximization units.
+             * @default null
+             */
+            objective: ("minimize" | "maximize") | null;
+            /**
+             * Offset
+             * @description Constant added to every objective value. Include constants introduced when expanding penalties such as P*(sum(x)-k)^2.
+             * @default 0
+             */
+            offset: number;
             /**
              * Terms
              * @description maxcut: the weighted edge list; the objective is the MAXIMUM total weight of edges whose endpoints fall on opposite sides. qubo: the coefficients of sum(w_ij * x_i * x_j); the objective is the MINIMUM. Duplicate index pairs add their weights.
@@ -1779,6 +2193,80 @@ export interface components {
             type: "verification.semantic_review";
         };
         /**
+         * ShareRole
+         * @description What a project grant lets someone outside the workspace do (migration 0042).
+         *
+         *     Deliberately NOT `Role`, and deliberately not a subset of it. A workspace Role
+         *     answers "what may this member do anywhere in this tenant"; a ShareRole answers
+         *     "what may this outsider do to the contents of one project". They are two
+         *     different questions and the codebase has one gate — `require_write(scope)` —
+         *     that reads a Role. Sharing the type would make that gate look like it answers
+         *     both.
+         *
+         *     EDITOR is bounded by what the grant maps onto internally: a MEMBER-level scope
+         *     confined to one project, so every `require_admin` operation (deleting an
+         *     artifact, making one public) refuses a grantee without a denylist anyone could
+         *     forget to extend.
+         * @enum {string}
+         */
+        ShareRole: "viewer" | "editor";
+        /**
+         * SharedProject
+         * @description A project someone else's workspace has granted to the caller (0042).
+         *
+         *     Deliberately not a `Project`. A `Project` is a row the caller's workspace owns
+         *     and may rename, reorder and delete; this is a window into somebody else's, and
+         *     the fields that do not apply are absent rather than present-and-ignored. A
+         *     client that receives one of these cannot accidentally send it back to a route
+         *     that writes.
+         */
+        SharedProject: {
+            /** Artifact Count */
+            artifact_count: number;
+            /** Artifact Limit */
+            artifact_limit: number;
+            /**
+             * Expires At
+             * @default null
+             */
+            expires_at: string | null;
+            /**
+             * Id
+             * Format: uuid
+             */
+            id: string;
+            /** Name */
+            name: string;
+            /**
+             * Owner Workspace Id
+             * Format: uuid
+             */
+            owner_workspace_id: string;
+            /** Owner Workspace Name */
+            owner_workspace_name: string;
+            /**
+             * Revision
+             * Format: date-time
+             */
+            revision: string;
+            role: components["schemas"]["ShareRole"];
+            /**
+             * Shared At
+             * Format: date-time
+             */
+            shared_at: string;
+            /**
+             * Shared By Display Name
+             * @default null
+             */
+            shared_by_display_name: string | null;
+            /**
+             * Shared By Email
+             * @default null
+             */
+            shared_by_email: string | null;
+        };
+        /**
          * Stage
          * @description Pipeline stages in execution order; the orchestrator owns transitions.
          * @enum {string}
@@ -1997,6 +2485,26 @@ export interface components {
         /** VerificationPlan */
         VerificationPlan: {
             /**
+             * @description Optional bounded exact-time-evolution reference for success_criteria. Use only for one explicit real Pauli Hamiltonian, a computational-basis initial state, exact U=exp(-i*t*H), and either survival probability or an explicit real-Pauli observable expectation. It is not a general replacement for echoes, OTOCs, thermal traces, channels, or product formulas.
+             * @default null
+             */
+            exact_dynamics_reference: components["schemas"]["ExactDynamicsReference"] | null;
+            /**
+             * @description Optional bounded exact open-system reference. Use only for at most three qubits, a written product initial state, one time-independent Lindblad generator, and scalar density-matrix results represented by the typed schema.
+             * @default null
+             */
+            exact_lindblad_reference: components["schemas"]["ExactLindbladReference"] | null;
+            /**
+             * @description Optional bounded real-symmetric linear-system reference. The worker independently solves the declared matrix and rhs and checks bound scalar components, ratios, residual, or state fidelity.
+             * @default null
+             */
+            exact_linear_system_reference: components["schemas"]["ExactLinearSystemReference"] | null;
+            /**
+             * @description Optional bounded exact-QPE reference for a noiseless eigenphase exactly representable by the declared counting register. It checks the reported integer, phase, peak probability, and protected count distribution.
+             * @default null
+             */
+            exact_phase_estimation_reference: components["schemas"]["ExactPhaseEstimationReference"] | null;
+            /**
              * Expected Metrics
              * @description Metrics the verification result dict must contain
              * @default null
@@ -2036,6 +2544,12 @@ export interface components {
              * @default null
              */
             reference_problem: components["schemas"]["ReferenceProblem"] | null;
+            /**
+             * Reference Result Key
+             * @description RESULT key compared with the exact ground-state energy. Required for new exact_diag Plans; legacy stored Plans fall back to success_criteria.primary_metric.
+             * @default null
+             */
+            reference_result_key: string | null;
             /**
              * Required Invariants
              * @description Invariants that must survive any repair iteration

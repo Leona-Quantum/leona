@@ -30,7 +30,7 @@ cut fails honestly rather than passing inside a slack it never earned.
 from __future__ import annotations
 
 import math
-from typing import Any, Literal
+from typing import Any, Literal, NotRequired, TypedDict
 
 import numpy as np
 
@@ -54,6 +54,20 @@ BRUTE_FORCE_MAX_VARIABLES = 16
 _RELATIVE_TOLERANCE = 1e-9
 
 ProblemKind = Literal["maxcut", "qubo"]
+ObjectiveDirection = Literal["minimize", "maximize"]
+ConstraintSense = Literal["le", "eq", "ge"]
+ConstraintSpec = tuple[list[tuple[int, float]], ConstraintSense | str, float]
+
+
+class ProblemSpecification(TypedDict):
+    """JSON-shaped arguments accepted by the bounded enumerator."""
+
+    kind: ProblemKind
+    num_variables: int
+    terms: list[tuple[int, int, float]]
+    offset: NotRequired[float]
+    objective: NotRequired[ObjectiveDirection | None]
+    constraints: NotRequired[list[ConstraintSpec] | None]
 
 
 class BaselineProblemError(ValueError):
@@ -89,10 +103,104 @@ def _validated(
     return terms
 
 
+def _validated_configuration(
+    kind: str,
+    num_variables: int,
+    terms: list[tuple[int, int, float]],
+    *,
+    offset: float,
+    objective: ObjectiveDirection | str | None,
+    constraints: list[ConstraintSpec],
+) -> ObjectiveDirection:
+    _validated(kind, num_variables, terms)
+    if not math.isfinite(offset):
+        raise BaselineProblemError("objective offset is not a finite number")
+    resolved: ObjectiveDirection = (
+        ("maximize" if kind == "maxcut" else "minimize") if objective is None else objective
+    )  # type: ignore[assignment]
+    if resolved not in ("minimize", "maximize"):
+        raise BaselineProblemError(
+            f"'{objective}' is not an objective direction; use 'minimize' or 'maximize'"
+        )
+    if kind == "maxcut" and resolved != "maximize":
+        raise BaselineProblemError("maxcut has fixed maximize semantics")
+    for constraint_terms, sense, rhs in constraints:
+        if sense not in ("le", "eq", "ge"):
+            raise BaselineProblemError(
+                f"'{sense}' is not a constraint sense; use 'le', 'eq', or 'ge'"
+            )
+        if not math.isfinite(rhs):
+            raise BaselineProblemError("constraint right-hand side is not finite")
+        if not constraint_terms:
+            raise BaselineProblemError("constraint has no terms")
+        for index, weight in constraint_terms:
+            if not 0 <= index < num_variables:
+                raise BaselineProblemError(
+                    f"constraint term {index} names a variable outside 0..{num_variables - 1}"
+                )
+            if not math.isfinite(weight):
+                raise BaselineProblemError(f"constraint weight for variable {index} is not finite")
+    return resolved
+
+
+def _objective_landscape(
+    kind: ProblemKind,
+    num_variables: int,
+    terms: list[tuple[int, int, float]],
+    *,
+    offset: float = 0.0,
+    objective: ObjectiveDirection | None = None,
+    constraints: list[ConstraintSpec] | None = None,
+) -> tuple[np.ndarray, np.ndarray, ObjectiveDirection]:
+    """Values, feasibility mask, and direction for every binary assignment."""
+
+    declared_constraints = constraints or []
+    resolved = _validated_configuration(
+        kind,
+        num_variables,
+        terms,
+        offset=offset,
+        objective=objective,
+        constraints=declared_constraints,
+    )
+    assignments = 1 << num_variables
+    bits = (np.arange(assignments, dtype=np.uint32)[:, None] >> np.arange(num_variables)) & 1
+    values = np.full(assignments, offset, dtype=np.float64)
+    for i, j, weight in terms:
+        if kind == "maxcut":
+            values += weight * (bits[:, i] ^ bits[:, j])
+        else:
+            values += weight * (bits[:, i] & bits[:, j] if i != j else bits[:, i])
+
+    feasible = np.ones(assignments, dtype=bool)
+    for constraint_terms, sense, rhs in declared_constraints:
+        left = np.zeros(assignments, dtype=np.float64)
+        scale = abs(rhs)
+        for index, weight in constraint_terms:
+            left += weight * bits[:, index]
+            scale += abs(weight)
+        tolerance = _RELATIVE_TOLERANCE * max(1.0, scale)
+        if sense == "le":
+            feasible &= left <= rhs + tolerance
+        elif sense == "ge":
+            feasible &= left >= rhs - tolerance
+        else:
+            feasible &= np.abs(left - rhs) <= tolerance
+    if not feasible.any():
+        raise BaselineProblemError("linear constraints admit no feasible assignment")
+    return values, feasible, resolved
+
+
 def objective_values(
-    kind: ProblemKind, num_variables: int, terms: list[tuple[int, int, float]]
+    kind: ProblemKind,
+    num_variables: int,
+    terms: list[tuple[int, int, float]],
+    *,
+    offset: float = 0.0,
+    objective: ObjectiveDirection | None = None,
+    constraints: list[ConstraintSpec] | None = None,
 ) -> np.ndarray:
-    """Objective value of every one of the 2**num_variables assignments.
+    """Objective value of every feasible assignment.
 
     Assignment index k encodes variable v as bit v of k (LSB = variable 0); the
     encoding is unobservable through this module's public results, which only
@@ -104,34 +212,110 @@ def objective_values(
     - `qubo`: sum of `weight * x_i * x_j` — a diagonal term (i == j) is the
       linear coefficient of x_i, since x**2 == x for binary variables.
     """
-    _validated(kind, num_variables, terms)
-    assignments = 1 << num_variables
-    bits = (np.arange(assignments, dtype=np.uint32)[:, None] >> np.arange(num_variables)) & 1
-    values = np.zeros(assignments, dtype=np.float64)
-    for i, j, weight in terms:
-        if kind == "maxcut":
-            values += weight * (bits[:, i] ^ bits[:, j])
-        else:
-            values += weight * (bits[:, i] & bits[:, j] if i != j else bits[:, i])
-    return values
+    values, feasible, _ = _objective_landscape(
+        kind,
+        num_variables,
+        terms,
+        offset=offset,
+        objective=objective,
+        constraints=constraints,
+    )
+    return values[feasible]
+
+
+def reference_problems_equivalent(
+    first: ProblemSpecification,
+    second: ProblemSpecification,
+) -> tuple[bool, dict[str, Any]]:
+    """Compare two bounded references over every assignment, not just their optimum.
+
+    Equal optima are weak evidence: different feasible sets and objectives can share
+    one best value. Consensus requires the same direction, the same feasibility mask,
+    and the same business value on every feasible assignment.
+    """
+
+    first_n = first["num_variables"]
+    second_n = second["num_variables"]
+    if first_n != second_n:
+        return False, {
+            "reason": "num_variables_mismatch",
+            "first": first_n,
+            "second": second_n,
+        }
+    first_values, first_feasible, first_direction = _objective_landscape(**first)
+    second_values, second_feasible, second_direction = _objective_landscape(**second)
+    if first_direction != second_direction:
+        return False, {
+            "reason": "objective_direction_mismatch",
+            "first": first_direction,
+            "second": second_direction,
+        }
+    mask_mismatch = np.flatnonzero(first_feasible != second_feasible)
+    if mask_mismatch.size:
+        assignment = int(mask_mismatch[0])
+        return False, {
+            "reason": "feasible_set_mismatch",
+            "assignment": assignment,
+            "first_feasible": bool(first_feasible[assignment]),
+            "second_feasible": bool(second_feasible[assignment]),
+        }
+    shared_values = first_values[first_feasible]
+    other_values = second_values[second_feasible]
+    first_tolerance = objective_tolerance(first["terms"], offset=first.get("offset", 0.0))
+    second_tolerance = objective_tolerance(second["terms"], offset=second.get("offset", 0.0))
+    tolerance = max(first_tolerance, second_tolerance)
+    errors = np.abs(shared_values - other_values)
+    mismatch = np.flatnonzero(errors > tolerance)
+    if mismatch.size:
+        feasible_index = int(mismatch[0])
+        assignment = int(np.flatnonzero(first_feasible)[feasible_index])
+        return False, {
+            "reason": "objective_value_mismatch",
+            "assignment": assignment,
+            "first_value": float(first_values[assignment]),
+            "second_value": float(second_values[assignment]),
+            "absolute_error": float(errors[feasible_index]),
+            "tolerance": tolerance,
+        }
+    return True, {
+        "reason": "equivalent_on_all_assignments",
+        "assignments_enumerated": 1 << first_n,
+        "feasible_assignments": int(first_feasible.sum()),
+        "objective": first_direction,
+        "tolerance": tolerance,
+    }
 
 
 def optimal_objective(
-    kind: ProblemKind, num_variables: int, terms: list[tuple[int, int, float]]
+    kind: ProblemKind,
+    num_variables: int,
+    terms: list[tuple[int, int, float]],
+    *,
+    offset: float = 0.0,
+    objective: ObjectiveDirection | None = None,
+    constraints: list[ConstraintSpec] | None = None,
 ) -> float:
     """The true optimum: the maximum cut weight, or the minimum QUBO value."""
-    values = objective_values(kind, num_variables, terms)
-    return float(values.max() if kind == "maxcut" else values.min())
+    values = objective_values(
+        kind,
+        num_variables,
+        terms,
+        offset=offset,
+        objective=objective,
+        constraints=constraints,
+    )
+    maximize = objective == "maximize" or (objective is None and kind == "maxcut")
+    return float(values.max() if maximize else values.min())
 
 
-def objective_tolerance(terms: list[tuple[int, int, float]]) -> float:
+def objective_tolerance(terms: list[tuple[int, int, float]], *, offset: float = 0.0) -> float:
     """Floating-point headroom only — see `_RELATIVE_TOLERANCE`.
 
     The honest limit that follows: two distinct achievable values closer
     together than this are indistinguishable. At 1e-9 of the total weight scale
     that requires adversarially chosen weights, not a real instance.
     """
-    scale = sum(abs(weight) for _, _, weight in terms)
+    scale = abs(offset) + sum(abs(weight) for _, _, weight in terms)
     return _RELATIVE_TOLERANCE * max(1.0, scale)
 
 
@@ -140,6 +324,10 @@ def objective_comparison(
     num_variables: int,
     terms: list[tuple[int, int, float]],
     reported_value: float,
+    *,
+    offset: float = 0.0,
+    objective: ObjectiveDirection | None = None,
+    constraints: list[ConstraintSpec] | None = None,
 ) -> tuple[bool, dict[str, Any]]:
     """Compare a reported objective value against the enumerated optimum.
 
@@ -154,10 +342,26 @@ def objective_comparison(
       a value no assignment achieves at all; membership in the enumerated value
       set says which.
     """
-    values = objective_values(kind, num_variables, terms)
-    maximize = kind == "maxcut"
+    declared_constraints = constraints or []
+    resolved_objective = _validated_configuration(
+        kind,
+        num_variables,
+        terms,
+        offset=offset,
+        objective=objective,
+        constraints=declared_constraints,
+    )
+    values = objective_values(
+        kind,
+        num_variables,
+        terms,
+        offset=offset,
+        objective=resolved_objective,
+        constraints=declared_constraints,
+    )
+    maximize = resolved_objective == "maximize"
     optimum = float(values.max() if maximize else values.min())
-    tolerance = objective_tolerance(terms)
+    tolerance = objective_tolerance(terms, offset=offset)
     error = reported_value - optimum
     objective_word = "maximum cut weight" if maximize else "minimum QUBO value"
     details: dict[str, Any] = {
@@ -166,8 +370,11 @@ def objective_comparison(
             "kind": kind,
             "num_variables": num_variables,
             "terms": len(terms),
-            "assignments_enumerated": int(values.size),
-            "objective": "maximize" if maximize else "minimize",
+            "assignments_enumerated": 1 << num_variables,
+            "feasible_assignments": int(values.size),
+            "constraints": len(declared_constraints),
+            "offset": offset,
+            "objective": resolved_objective,
             "tolerance": tolerance,
             "tolerance_source": "floating_point_only",
         },

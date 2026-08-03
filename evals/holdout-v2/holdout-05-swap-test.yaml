@@ -1,0 +1,23 @@
+id: holdout-v2-05
+category: "Holdout v2 — Complex-state SWAP test"
+split: holdout
+difficulty: advanced
+workload: scientific
+prompt: >-
+  In Qiskit, build a SWAP-test circuit for the normalized two-qubit states
+  |psi>=(|00>+i|11>)/sqrt(2) and
+  |phi>=(|00>+|01>+|10>-|11>)/2. Prepare both states by circuit operations, use an
+  ancilla and two controlled swaps, and evaluate the exact statevector probability of
+  ancilla zero before measurement. Return top-level numeric RESULT keys
+  ancilla_zero_probability and squared_overlap, where squared_overlap is inferred from
+  the SWAP-test probability, and bind the complete measurement-free SWAP-test circuit
+  to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["ancilla_zero_probability", "squared_overlap"]
+  expected_values:
+    ancilla_zero_probability: 0.625
+    squared_overlap: 0.25
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

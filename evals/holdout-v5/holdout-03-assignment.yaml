@@ -1,0 +1,23 @@
+id: holdout-v5-03
+category: "Holdout v5 — Minimum-cost assignment"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  Assign three workers to three jobs with one worker per job and one job per worker.
+  The cost matrix by worker row is [[9,2,7],[6,4,3],[5,8,1]]. Encode all six assignment
+  equalities over the nine binary x_worker_job variables in a Qiskit QAOA cost
+  Hamiltonian, optimize a circuit with p at least 2, deterministic seeds, and at least
+  4096 shots, and decode only feasible sampled assignments. Independently enumerate
+  all assignments as a classical baseline. Return top-level numeric RESULT keys
+  qaoa_best_cost and exact_minimum_cost plus counts, and bind the optimized QAOA circuit
+  to FINAL_CIRCUIT. Do not substitute the enumerated assignment for the QAOA sample.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_cost", "exact_minimum_cost", "counts"]
+  expected_values:
+    qaoa_best_cost: 9.0
+    exact_minimum_cost: 9.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

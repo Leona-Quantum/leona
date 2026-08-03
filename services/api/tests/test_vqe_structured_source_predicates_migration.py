@@ -25,16 +25,16 @@ def _module():
         / "db"
         / "migrations"
         / "versions"
-        / "0046_vqe_structured_source_predicates.py"
+        / "0051_vqe_structured_source_predicates.py"
     )
-    spec = importlib.util.spec_from_file_location("migration_0046_vqe_source_predicates", path)
+    spec = importlib.util.spec_from_file_location("migration_0051_vqe_source_predicates", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_0046_widens_only_private_assertion_predicate_and_is_reversible(monkeypatch):
+def test_0051_widens_only_private_assertion_predicate_and_is_reversible(monkeypatch):
     module = _module()
     constraints: list[str] = []
     monkeypatch.setattr(module.op, "get_bind", lambda: _Connection())
@@ -48,13 +48,13 @@ def test_0046_widens_only_private_assertion_predicate_and_is_reversible(monkeypa
     module.upgrade()
     module.downgrade()
 
-    assert module.down_revision == "0045"
+    assert module.down_revision == "0050"
     assert "container_declaration_present" in constraints[0]
     assert "container_declaration_present" not in constraints[1]
     assert all("github_metadata_assertions" not in condition for condition in constraints)
 
 
-def test_0044_downgrade_refuses_to_orphan_container_evidence(monkeypatch):
+def test_0051_downgrade_refuses_to_orphan_container_evidence(monkeypatch):
     module = _module()
     _Connection.evidence_count = 1
     monkeypatch.setattr(module.op, "get_bind", lambda: _Connection())

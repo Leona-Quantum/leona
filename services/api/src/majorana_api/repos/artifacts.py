@@ -14,8 +14,207 @@ from sqlalchemy import func, select, update
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
-from ..orm import Artifact, ArtifactVersion
-from ._base import NotFoundError, require_admin, require_write
+from ..orm import Artifact, ArtifactVersion, Project, Workspace
+from ._base import NotFoundError, RepoError, require_admin, require_write
+from ._project_limits import (
+    ProjectFull,
+    count_project_artifacts,
+    in_a_shared_project,
+    is_project_shared,
+    project_artifact_limit,
+)
+
+
+class ArtifactCapReached(RepoError):
+    """The workspace already holds as many filed artifacts as its plan allows.
+
+    Carries both numbers because the refusal a user reads names them, and a
+    caller that had to recount to build the sentence would be reading outside
+    the lock that made the number true.
+    """
+
+    def __init__(self, held: int, limit: int) -> None:
+        super().__init__(f"workspace holds {held} of its {limit}-artifact plan limit")
+        self.held = held
+        self.limit = limit
+
+
+async def count_kept(scope: Scope, session: AsyncSession) -> int:
+    """Filed artifacts in this scope's workspace — the VAULT total.
+
+    One definition of "filed", in one place. The predicate (not deleted AND
+    `kept_at` set) was written out at three call sites before this existed, and
+    a cap comparing a differently-filtered count to the same limit is a cap that
+    is wrong in one direction without anything failing.
+
+    **This is no longer the number any plan cap compares to.** That is
+    `count_kept_against_quota` below, and the two are deliberately separate
+    functions rather than one with a flag: this one answers "how many artifacts
+    does the Vault list", which is what the account page shows, and that number
+    has to keep counting artifacts inside shared projects because the Vault
+    lists them. Collapsing them would make one of the two surfaces lie.
+
+    `Scope` first, and the workspace comes off it, like every other function in
+    this layer. An earlier draft took a bare `workspace_id` so that `shares.py`
+    could count the OWNING workspace of a shared project — which is a real need
+    and the wrong answer to it: `shares._elevated` already builds a `Scope`
+    pointing at exactly that workspace, and it is what should be passed. A
+    repository function with a raw id parameter is one call site away from being
+    handed an id nothing checked.
+    """
+    return int(
+        (
+            await session.execute(select(func.count(Artifact.id)).where(*_filed_in(scope)))
+        ).scalar_one()
+    )
+
+
+def _filed_in(scope: Scope) -> list[Any]:
+    """One workspace's filed artifacts. The half both counts below share."""
+    return [
+        Artifact.workspace_id == scope.workspace_id,
+        Artifact.deleted_at.is_(None),
+        Artifact.kept_at.is_not(None),
+    ]
+
+
+async def count_kept_against_quota(scope: Scope, session: AsyncSession) -> int:
+    """Filed artifacts that spend this account's individual allowance.
+
+    `count_kept` minus everything sitting in a shared project. That subtraction
+    is the owner's rule (2026-08-02) and the whole of it:
+
+    > "artifacts in nonshared projects count towards the normal artifact count.
+    > only artifacts in shared projects count towards the specifically shared
+    > artifact limit"
+
+    So a shared project's contents are bounded by the project's own limit and by
+    how many shared projects a person may be in — `_project_limits` states that
+    product — and they are invisible to the number below.
+
+    Two consequences, both deliberate and neither a defect:
+
+    - **Sharing a project frees allowance.** Its artifacts leave this count the
+      moment the first live grant exists.
+    - **The last grant expiring spends it back**, possibly putting a workspace
+      over its cap. An allowance is a gate on the next write, never an invariant
+      over rows already written, so that workspace files nothing new until it is
+      under again — the same behaviour as moving down a tier.
+
+    The unshared reading is the one that had to be chosen carefully: counting
+    every artifact here (what shipped) meant a guest's contribution spent the
+    owner's private allowance, which is the reading the owner explicitly ruled
+    out by calling the two limits separate.
+    """
+    return int(
+        (
+            await session.execute(
+                select(func.count(Artifact.id)).where(*_filed_in(scope), ~in_a_shared_project())
+            )
+        ).scalar_one()
+    )
+
+
+async def reserve_artifact_slot(scope: Scope, session: AsyncSession, limit: int | None) -> None:
+    """Take the workspace's cap lock and refuse if it is already full.
+
+    ## Why a lock, and why on the workspace row
+
+    Before this, the cap was a read-then-write across two statements with
+    nothing held between them: the route counted with `get_overview` and the
+    repository wrote. Two callers at the boundary both read `24` and both file,
+    and the workspace ends up holding 26 against a cap of 25. Measured, not
+    reasoned: removing the `with_for_update()` below fails
+    `test_artifact_cap_race_live` with the second caller reporting `filed`.
+
+    That test needs **two connections** to show it, which is the part worth
+    carrying. An earlier version fired eight concurrent requests through one
+    ASGI app and passed against the unlocked code — one event loop runs each
+    request's read and write to completion before starting the next, so a burst
+    in one process cannot interleave. The API autoscales; two real requests are
+    two processes.
+
+    The lock has to be on something all the racers share, and what they share is
+    the workspace: they are filing *different* artifacts into it, so locking the
+    artifact row (which `keep_artifact` already did) serializes nothing. That is
+    the same argument `shares._lock_project` makes for the project cap — this is
+    the tier cap's missing half.
+
+    ## Lock ordering
+
+    **This lock is acquired LAST in every path that takes it**, after the
+    artifact row (`keep`, `set_artifact_project`) or the project row
+    (`contribute`, `keep`, `set_artifact_project`). Nothing acquires a row lock
+    after it. That is what keeps these writers deadlock-free without reordering
+    any of them, and it is the rule to preserve if another is ever added:
+    **artifact → project → workspace → user.**
+
+    `limit is None` means unlimited, and takes no lock at all: an unmetered tier
+    has nothing to serialize, and making every developer-tier keep queue behind
+    one row would be a cost with no purchase.
+    """
+    if limit is None:
+        return
+    await session.execute(
+        select(Workspace.id).where(Workspace.id == scope.workspace_id).with_for_update()
+    )
+    # The QUOTA count, not the Vault total. `count_kept` here would charge this
+    # workspace for every artifact in a project it has shared, which is the
+    # reading the owner ruled out — and it would do it silently, because both
+    # functions return a plausible integer.
+    held = await count_kept_against_quota(scope, session)
+    if held >= limit:
+        raise ArtifactCapReached(held, limit)
+
+
+async def reserve_project_slot(scope: Scope, session: AsyncSession, project_id: uuid.UUID) -> None:
+    """Take the project's lock and refuse if it already holds its limit.
+
+    The per-project cap, applied to EVERY path that can add a filed artifact to
+    a project rather than only to the one a guest takes. Measured before it was
+    written: against `dev`, an owner filed 55 artifacts into their own
+    50-artifact project, and moved 6 into a project whose limit they had set to
+    2 and then shared — the same project `contribute_artifact` was carefully
+    refusing a guest's 3rd artifact from.
+
+    That mattered more than a miscount, because under the owner's rule this cap
+    is half of what bounds the shared bucket: shared-project artifacts spend no
+    individual allowance, so if the per-project limit does not hold, nothing
+    does.
+
+    ## Why the project row, and why locked
+
+    Two callers adding to the same project share no artifact row — they are
+    filing *different* artifacts — so the project is the only thing both touch.
+    Same argument `reserve_artifact_slot` makes for the workspace. The project
+    is locked through a statement that also binds `scope.workspace_id`, so a
+    project id belonging to another tenant locks nothing and raises.
+
+    ## Lock ordering
+
+    Taken AFTER the artifact row and BEFORE the workspace row, which is what
+    `keep_artifact` and `set_artifact_project` do. `contribute_artifact` takes
+    its project lock first and holds no artifact row, so the order is consistent
+    with it too.
+    """
+    project = (
+        await session.execute(
+            select(Project)
+            .where(
+                Project.id == project_id,
+                Project.workspace_id == scope.workspace_id,
+            )
+            .with_for_update()
+        )
+    ).scalar_one_or_none()
+    if project is None:
+        raise NotFoundError("project")
+    limit = project_artifact_limit(project)
+    held = await count_project_artifacts(
+        session, project_id=project.id, workspace_id=scope.workspace_id
+    )
+    if held >= limit:
+        raise ProjectFull(held, limit)
 
 
 async def list_artifacts(
@@ -26,6 +225,7 @@ async def list_artifacts(
     cursor: uuid.UUID | None = None,
     limit: int = 50,
     include_unkept: bool = False,
+    project_id: uuid.UUID | None = None,
 ) -> list[tuple[Artifact, dict[str, Any] | None]]:
     """Artifacts plus each one's current-version metadata (None when no version).
 
@@ -38,6 +238,13 @@ async def list_artifacts(
     it. `include_unkept` exists for callers that reason about everything a
     workspace has produced — quota accounting must NOT use it, or an unkept run
     would spend the user's Vault allowance.
+
+    `project_id` NARROWS, and that is the only reason it is allowed on a
+    workspace-scoped function: it is ANDed onto the workspace predicate, never
+    substituted for it, so no value of it can reach a row the scope could not
+    already reach. `repos/shares.py` passes it with a project it has already
+    proven the caller may see — which is how a shared project's contents get
+    listed without a second copy of this join drifting away from this one.
     """
     stmt = (
         select(Artifact, ArtifactVersion.artifact_metadata)
@@ -54,6 +261,8 @@ async def list_artifacts(
         stmt = stmt.where(Artifact.kept_at.is_not(None))
     if family is not None:
         stmt = stmt.where(Artifact.family == family)
+    if project_id is not None:
+        stmt = stmt.where(Artifact.project_id == project_id)
     if cursor is not None:  # UUIDv7 PKs are time-ordered: id is the cursor
         stmt = stmt.where(Artifact.id < cursor)
     return [
@@ -97,13 +306,38 @@ async def create_artifact(
     family: Algorithm,
     framework: Framework,
     parent_artifact_id: uuid.UUID | None = None,
-    kept: bool = True,
+    kept: bool,
 ) -> Artifact:
-    """Create an artifact.
+    """Create an artifact. Says nothing about allowances, and takes none.
 
-    `kept` defaults True so every existing caller — imports, the catalog staging
-    path, tests — keeps behaving as it did. Only the agent save path passes
-    False, and only when the workspace has not opted into automatic keeping.
+    ## `kept` is REQUIRED, and that is the whole point of this signature
+
+    It defaulted to True — "so every existing caller keeps behaving as it did" —
+    and a default that files an artifact is a default that spends a plan
+    allowance without one being passed. This function takes no limit and calls no
+    reservation, so `kept=True` here is the one way into the Vault that no cap
+    sees. Two callers were in exactly that state, both measured before this
+    changed:
+
+    - **`POST /v1/artifacts/import-public`** — 35 imports over real HTTP, all
+      201, a free-tier workspace holding 36 against a cap of 25. The handler took
+      no `CurrentIdentity` at all, so it had no tier to compare against and could
+      not have checked one.
+    - **The worker's auto-keep path** — `kept=self._auto_keep`, bounded in
+      practice only by the weekly run allowance.
+
+    (`shares.contribute_artifact` also files here and is correct: it lands in a
+    shared project, which is bounded by the project's own limit rather than by an
+    individual allowance.)
+
+    Making the argument required does not itself enforce anything. What it does
+    is stop the enforcement being *forgotten*: a new caller now has to write down
+    whether it is filing, and "filing" is the word that should make somebody ask
+    which allowance it spends. **The place that files with a cap is
+    `keep_artifact`** — it holds the workspace lock across the comparison and the
+    write, and it knows about project limits and shared projects. Prefer
+    `kept=False` here followed by `keep_artifact`; pass `kept=True` only where
+    something else bounds the row, and say what.
     """
     require_write(scope)
     if parent_artifact_id is not None:  # provenance edge must stay in-workspace
@@ -124,17 +358,61 @@ async def create_artifact(
     return artifact
 
 
-async def keep_artifact(scope: Scope, session: AsyncSession, artifact_id: uuid.UUID) -> Artifact:
+async def keep_artifact(
+    scope: Scope,
+    session: AsyncSession,
+    artifact_id: uuid.UUID,
+    *,
+    workspace_artifact_limit: int | None,
+) -> Artifact:
     """Put a materialized-but-unkept artifact into the Vault.
 
     Idempotent, and deliberately does not re-stamp: keeping something twice must
     not move it to the top of a list ordered by when the user kept it. Reuses
     get_artifact, so an out-of-workspace or deleted id raises NotFoundError
     rather than silently keeping nothing.
+
+    `workspace_artifact_limit` is a REQUIRED keyword, not a defaulted one, for
+    the same reason `shares.contribute_artifact` makes it required: a caller
+    that could omit it would silently get no cap check at all, and a cap
+    enforced nowhere looks exactly like a cap that passes. `None` means
+    unlimited and must be passed explicitly.
+
+    The check lives here rather than at the route because it has to happen under
+    `reserve_artifact_slot`'s lock, and a route cannot hold a lock across the
+    repository call it is guarding. Re-keeping something already kept skips it
+    entirely — that spends no new slot, so an account sitting exactly at its cap
+    must not be refused for touching what it already has.
+
+    ## Two caps, and which one a filing spends
+
+    An artifact can already be IN a project when it is filed — `set_artifact_project`
+    accepts unkept artifacts, and `copy_shared_artifact` deliberately creates one
+    unkept and files it into a project before this call. Since the project cap
+    counts kept artifacts only, this is the moment such an artifact starts
+    occupying a project slot, and it was the way past a full project that
+    remained after the project cap was applied to moves.
+
+    Which allowance it spends depends on the project:
+
+    - **In a shared project** — the project's own limit, and nothing else. Its
+      contents do not count against the individual allowance
+      (`count_kept_against_quota`), so charging one here would be charging for a
+      row that number cannot see.
+    - **Anywhere else** (unshared project, or no project) — the individual
+      allowance, plus the project's limit when there is a project.
+
+    Order is project then workspace, never the reverse.
     """
     require_write(scope)
     artifact = await get_artifact(scope, session, artifact_id, for_update=True)
     if artifact.kept_at is None:
+        shared = False
+        if artifact.project_id is not None:
+            await reserve_project_slot(scope, session, artifact.project_id)
+            shared = await is_project_shared(session, artifact.project_id)
+        if not shared:
+            await reserve_artifact_slot(scope, session, workspace_artifact_limit)
         artifact.kept_at = dt.datetime.now(dt.UTC)
         await session.flush()
     return artifact

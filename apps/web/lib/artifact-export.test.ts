@@ -27,6 +27,30 @@ test("export preserves the authoritative verdict and warning", () => {
   assert.match(String(manifest.verification_warning), /correctness has not been confirmed/);
 });
 
+test("a failed artifact is the one export that must not leave without a warning", () => {
+  // `fail` fell through every branch to `null`, so the header said FAIL while the
+  // manifest's own warning field was empty. The repository holds failed-check
+  // artifacts now, so this is a state a reader will actually meet.
+  const failed: LibraryArtifact = {
+    ...BASE,
+    status: "failed",
+    verificationSummary: {
+      ...BASE.verificationSummary!,
+      decision: "fail",
+      candidate_defect_observed: true,
+      failure_class: "candidate_defect",
+      retry_target: "code_generation",
+      reason_code: "deterministic_check_failed",
+      checks: [{ method: "success_criteria", result: "fail" }],
+    },
+  };
+
+  const manifest = artifactExportManifest(failed, { framework: "qiskit", code: BASE.code });
+
+  assert.match(String(manifest.verification_warning), /Do not treat this export as working/);
+  assert.match(artifactExportHeader(failed, "qiskit", AT), /FAILED/);
+});
+
 test("legacy exports never default to Verified", () => {
   const manifest = artifactExportManifest({ ...BASE, status: "legacy_unknown", verificationSummary: null }, { framework: "qiskit", code: BASE.code });
   assert.equal(manifest.verification_summary, null);

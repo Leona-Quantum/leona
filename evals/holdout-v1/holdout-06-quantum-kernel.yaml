@@ -1,0 +1,23 @@
+id: holdout-v1-06
+category: "Holdout — Quantum kernel"
+split: holdout
+difficulty: advanced
+workload: practical
+prompt: >-
+  Build a two-qubit quantum feature map for each point x=(x0,x1) by applying H to both
+  qubits, RZ(2*x0) on qubit 0, RZ(2*x1) on qubit 1, then
+  RZZ(2*(pi-x0)*(pi-x1)) on qubits 0 and 1. For points (0.2,0.4), (0.7,-0.1), and
+  (1.1,0.9), use Qiskit Statevectors to construct K_ij=|<psi(x_i)|psi(x_j)>|^2.
+  Return K[0,2] and the smallest eigenvalue of the complete 3x3 kernel as top-level
+  numeric RESULT keys kernel_02 and minimum_kernel_eigenvalue, return the plain nested
+  list as kernel_matrix, and bind the feature circuit for the first point to
+  FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["kernel_02", "minimum_kernel_eigenvalue", "kernel_matrix"]
+  expected_values:
+    kernel_02: 0.2795164122298165
+    minimum_kernel_eigenvalue: 0.4174457394357139
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

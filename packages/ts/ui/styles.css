@@ -762,11 +762,21 @@
 }
 
 /* pricing */
+/* Four plans since the Enterprise card arrived. The two-column step matters:
+   at four columns a ~1100px window gives each card ~250px, which wraps the
+   longest feature line to four lines and breaks the row heights the reveal
+   wrapper works to keep equal. It is declared BEFORE the 860px rule below, so
+   the single-column rule still wins on phones. */
 .mj-pricing-grid {
   display: grid;
-  grid-template-columns: repeat(3, minmax(0, 1fr));
+  grid-template-columns: repeat(4, minmax(0, 1fr));
   gap: var(--sp-4);
   padding: var(--sp-12) 0;
+}
+@media (max-width: 1180px) {
+  .mj-pricing-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
 }
 .mj-pricing-card {
   display: flex;
@@ -921,7 +931,20 @@
   font-size: var(--fs-12);
   font-weight: 500;
   text-decoration: none;
+  /* Correct for the fixed labels this class was written for — "View ↗",
+     "Contact ↗" — where a wrap would strand the arrow on a line of its own.
+     NOT correct for arbitrary text: see the modifier below. */
   white-space: nowrap;
+}
+/* A link whose text is a URL, which is data and can be any length.
+   `nowrap` on the base class turned one long citation URL into silent
+   horizontal overflow past the card border on the public Atlas entry page —
+   nothing in that subtree sets `overflow: hidden`, so there was no ellipsis and
+   no scrollbar to notice it by. `anywhere` rather than `break-word` because a
+   URL has no spaces to break at, which is the whole problem. */
+.mj-text-link--url {
+  white-space: normal;
+  overflow-wrap: anywhere;
 }
 .mj-text-link:hover {
   text-decoration: underline;
@@ -2090,6 +2113,16 @@
   display: flex;
   gap: 2px;
   opacity: 0;
+  /* Opacity does not remove an element from hit testing. Without this the
+     invisible block sat over the right half of every folder and project row and
+     took the clicks: a click at the centre of a row reached these controls, not
+     the disclosure trigger, which is why a row could look unresponsive when
+     clicked anywhere but its name. `.mj-sidebar-chat-folder` two rules down has
+     always paired the two declarations; this one did not.
+
+     Restored together with the opacity below, so what can be clicked is exactly
+     what can be seen — never the wider set. */
+  pointer-events: none;
   background: linear-gradient(90deg, transparent, var(--bg-2) 18%);
   padding-left: var(--sp-3);
 }
@@ -2101,6 +2134,7 @@
 .mj-sidebar-folder-row:hover .mj-sidebar-folder-actions,
 .mj-sidebar-folder-actions:focus-within {
   opacity: 1;
+  pointer-events: auto;
 }
 .mj-sidebar-folder-actions button[disabled] {
   opacity: 0.35;
@@ -5383,6 +5417,46 @@ div.mj-rail-row:hover {
 .mj-studio-search input::placeholder {
   color: var(--text-2);
 }
+/* Project filter above the discovery list. Rendered only when the workspace
+   has at least one project, so this row does not exist for most people. */
+.mj-studio-projects {
+  display: flex;
+  /* Wraps rather than scrolls: a workspace can hold more projects than fit on
+     one line, and an unbreakable row would clip the last tabs with no error. */
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+  width: min(100%, 840px);
+  margin: 0 auto var(--sp-3);
+}
+.mj-studio-project-tab {
+  display: inline-flex;
+  align-items: baseline;
+  gap: var(--sp-1);
+  padding: 6px var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: transparent;
+  color: var(--text-2);
+  font: inherit;
+  font-size: var(--fs-12);
+  cursor: pointer;
+}
+.mj-studio-project-tab:hover {
+  color: var(--text-0);
+}
+.mj-studio-project-tab.is-active {
+  border-color: var(--accent);
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-studio-project-count {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+}
+.mj-studio-card-project {
+  color: var(--text-1);
+}
 .mj-studio-discovery-list {
   display: grid;
   gap: var(--sp-2);
@@ -5812,9 +5886,12 @@ div.mj-rail-row:hover {
 .mj-circuit-stage {
   min-height: 310px;
   display: grid;
-  place-items: center;
+  place-items: start;
   padding: var(--sp-6);
   background: var(--bg-0);
+  overflow: auto;
+  max-height: 60vh;
+  scrollbar-width: thin;
 }
 .mj-circuit-svg {
   display: block;
@@ -5823,17 +5900,10 @@ div.mj-rail-row:hover {
   height: auto;
   color: var(--text-1);
 }
-/* Read-only wide diagram: a circuit past the six-wire editable limit is drawn
-   at its natural size and scrolled inside the stage, top-left aligned, rather
-   than shrunk to fit (which would make a 20-wire circuit unreadable). */
+/* A circuit is always drawn at its natural size and scrolled. The component
+   virtualizes offscreen wires and columns for both editable and read-only use. */
 .mj-circuit-sync--readonly {
   border-left-color: var(--accent);
-}
-.mj-circuit-stage--readonly {
-  place-items: start;
-  overflow: auto;
-  max-height: 60vh;
-  scrollbar-width: thin;
 }
 .mj-circuit-stage--readonly .mj-circuit-svg {
   width: auto;
@@ -8363,6 +8433,42 @@ div.mj-rail-row:hover {
   color: var(--text-1);
   font-size: var(--fs-13);
 }
+/* /upgrade — the plan cards, and the current plan above them.
+   auto-fit rather than a fixed column count: a free account sees two cards and
+   a Plus account sees one, and a lone card stretched across a 1200px row reads
+   as a mistake. `minmax(0, ...)` on the track because a long feature line in a
+   grid item with an implicit `min-width: auto` widens the column instead of
+   wrapping — the same failure the nowrap audit keeps finding elsewhere. */
+.mj-upgrade-cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(min(280px, 100%), 1fr));
+  gap: var(--sp-4);
+}
+.mj-upgrade-card {
+  display: flex;
+  flex-direction: column;
+  /* The button sits at the bottom of every card whatever the feature list does,
+     so two cards of different heights still line their actions up. */
+  align-items: flex-start;
+}
+.mj-upgrade-card .mj-primary-button {
+  margin-top: auto;
+}
+.mj-upgrade-description {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-upgrade-features {
+  margin: 0 0 var(--sp-4);
+  padding-left: var(--sp-4);
+  display: grid;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
 /* "Right now" — what is spent, under the ceilings that say what is allowed.
    Appears only once the numbers load, so it reserves no space. */
 .mj-usage-now {
@@ -8388,6 +8494,58 @@ div.mj-rail-row:hover {
   color: var(--text-2);
   font-size: var(--fs-12);
   font-variant-numeric: normal;
+}
+/* Model usage — a report, not a fourth allowance. Set apart from the block
+   above it by a rule and its own scope line so it is not read as one. */
+.mj-usage-spend {
+  margin-top: var(--sp-4);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-0);
+}
+.mj-usage-spend h3 {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+}
+.mj-usage-spend-scope,
+.mj-usage-spend-empty,
+.mj-usage-spend-note {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+}
+.mj-usage-spend .mj-usage-list {
+  margin-top: var(--sp-2);
+}
+.mj-usage-spend .mj-usage-list dd {
+  font-variant-numeric: tabular-nums;
+}
+.mj-usage-spend-models {
+  margin: var(--sp-2) 0 0;
+  padding: 0;
+  list-style: none;
+  display: grid;
+  gap: var(--sp-1);
+}
+.mj-usage-spend-models li {
+  display: flex;
+  /* The model id can be long and the count must stay readable, so the row
+     wraps rather than letting either side clip. `nowrap` here would turn a
+     narrow panel into silent overflow. */
+  flex-wrap: wrap;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-usage-spend-models li span:last-child {
+  color: var(--text-1);
+  font-variant-numeric: tabular-nums;
+}
+.mj-usage-spend-note {
+  margin-top: var(--sp-3);
 }
 
 /* studio circuit builder */
@@ -8779,4 +8937,382 @@ div.mj-rail-row:hover {
   background: var(--bg-2);
   font-size: var(--fs-12);
   line-height: 1.5;
+}
+
+/* ---------------------------------------------------------------------------
+   Project sharing (migration 0042).
+
+   The dialog borrows `.mj-delete-dialog`'s geometry deliberately — it is the
+   shape this product already uses for "a decision, in a box" — but it is not
+   that class, because this one is taller, scrolls, and is not destructive.
+   --------------------------------------------------------------------------- */
+.mj-share-dialog-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  padding: var(--sp-6);
+  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+}
+.mj-share-dialog {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  /* `max-height` with its own scroll rather than letting the dialog grow: the
+     list has up to fifty rows in it, and a dialog taller than the viewport puts
+     its Close button somewhere the pointer cannot reach. */
+  width: min(100%, 520px);
+  max-height: min(100%, 640px);
+  padding: var(--sp-6);
+  overflow-y: auto;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-share-dialog h2 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-20);
+  font-weight: 500;
+}
+.mj-share-dialog h3.mj-share-subtitle {
+  margin: var(--sp-3) 0 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-share-dialog p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.5;
+}
+.mj-share-warning {
+  padding: var(--sp-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  font-size: var(--fs-13);
+}
+.mj-share-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: flex-end;
+  gap: var(--sp-2);
+}
+.mj-share-field {
+  display: flex;
+  flex: 1 1 160px;
+  flex-direction: column;
+  gap: var(--sp-1);
+  /* A flex item's default `min-width: auto` refuses to shrink below its
+     content, so without this the three fields push the row wider than the
+     dialog and the whole page scrolls sideways instead of the row wrapping. */
+  min-width: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-share-field input,
+.mj-share-field select {
+  min-height: 32px;
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-size: var(--fs-14);
+}
+.mj-share-role-help {
+  font-size: var(--fs-13);
+}
+.mj-share-error {
+  color: var(--err);
+  font-size: var(--fs-13);
+}
+.mj-share-notice,
+.mj-share-empty {
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-share-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-share-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+.mj-share-person {
+  display: flex;
+  flex: 1 1 160px;
+  flex-direction: column;
+  min-width: 0;
+}
+.mj-share-person strong {
+  overflow: hidden;
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  text-overflow: ellipsis;
+}
+.mj-share-person small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-share-role {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-share-expiry {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-share-expiry[data-state="soon"],
+.mj-share-expiry[data-state="expired"] {
+  color: var(--err);
+}
+.mj-share-confirm {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-share-stop-all,
+.mj-share-close {
+  align-self: flex-start;
+}
+
+/* The grantee's rail row. A link, not a disclosure: what is inside lives on
+   another page, and a row that expands into circuits this workspace does not
+   own would put them one drag away from a project that cannot hold them. */
+.mj-sidebar-shared-project {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  gap: 0 var(--sp-2);
+  padding: var(--sp-2);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  text-decoration: none;
+}
+.mj-sidebar-shared-project:hover {
+  background: var(--bg-2);
+}
+.mj-sidebar-shared-project small {
+  grid-column: 1;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+/* The shared-project page. */
+.mj-shared-project {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+  width: min(100%, 880px);
+  margin: 0 auto;
+  padding: var(--sp-8) var(--sp-4);
+}
+.mj-shared-project-header h1 {
+  margin: var(--sp-1) 0;
+  color: var(--text-0);
+  font-size: var(--fs-28);
+  font-weight: 500;
+}
+.mj-shared-project-meta,
+.mj-shared-project-role {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-shared-project-changed {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-shared-circuit-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-shared-circuit {
+  padding: var(--sp-3);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+}
+.mj-shared-circuit-row {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-shared-circuit-row strong {
+  flex: 1 1 200px;
+  min-width: 0;
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  font-weight: 500;
+}
+.mj-shared-circuit-editor {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+}
+.mj-shared-circuit-editor textarea {
+  width: 100%;
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+  color: var(--text-0);
+  font-family: var(--font-mono, monospace);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+  resize: vertical;
+}
+.mj-shared-circuit-actions {
+  display: flex;
+  gap: var(--sp-2);
+}
+.mj-shared-circuit-conflict {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--err);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-shared-circuit-conflict strong {
+  color: var(--text-0);
+}
+
+/* Weekly allowance meters — the bar a person watches fill up.
+
+   Laid out from the reference the owner supplied: the label and its reset line
+   on the left, the track taking the middle at whatever width is left, and the
+   percentage right-aligned at the end of the same row. Three columns rather
+   than a stack because that is what keeps it uncrowded — one row per meter
+   instead of four, and the percentages line up in a column so two meters can be
+   compared without reading across.
+
+   Below 560px the row becomes a stack: this panel also renders inside the
+   account modal, and three columns there would leave the track a few dozen
+   pixels wide, which is a bar that cannot show anything. */
+.mj-meters {
+  display: grid;
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+}
+.mj-meter {
+  display: grid;
+  grid-template-columns: minmax(130px, 0.34fr) minmax(0, 1fr) auto;
+  align-items: center;
+  gap: var(--sp-3);
+}
+.mj-meter-name {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-meter-sub {
+  margin: 2px 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-meter-pct {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+  /* The figure and its unit are one thing; wrapping "68%" onto a line above
+     "used" reads as two facts. */
+  white-space: nowrap;
+}
+.mj-meter-track {
+  height: 6px;
+  border-radius: 999px;
+  background: var(--bg-2);
+  /* The fill is a child rather than a gradient on the track so a 0% meter is a
+     visible empty rail instead of nothing at all. */
+  overflow: hidden;
+}
+.mj-meter-fill {
+  height: 100%;
+  border-radius: inherit;
+  background: var(--accent);
+  transition: width 240ms ease;
+}
+/* Amber from three quarters onward, not only at the wall.
+   `critical` and `exhausted` share the colour deliberately: the palette has one
+   amber and one red, red means an error, and a person near their limit has not
+   made a mistake. The three levels are distinguished in WORDS on the row above
+   — the sentence changes at each threshold — which is also the only version of
+   this that works for a reader who cannot see the colour at all. */
+.mj-meter-fill[data-pressure="approaching"],
+.mj-meter-fill[data-pressure="critical"],
+.mj-meter-fill[data-pressure="exhausted"],
+.mj-meter-fill[data-exhausted="true"] {
+  background: var(--warn);
+}
+/* An unmetered plan has no track, so its sentence takes the middle column
+   rather than leaving a gap where a bar would be. */
+.mj-meter-unmetered {
+  grid-column: 2 / -1;
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+@media (max-width: 560px) {
+  .mj-meter {
+    grid-template-columns: minmax(0, 1fr) auto;
+    align-items: baseline;
+    gap: var(--sp-2) var(--sp-3);
+  }
+  /* Placed explicitly. Left to flow, the track would take row 2 and push the
+     percentage to a row of its own — which is how the stacked layout lost its
+     bar entirely the first time this was rendered. */
+  .mj-meter > :first-child {
+    grid-row: 1;
+    grid-column: 1;
+  }
+  .mj-meter-pct {
+    grid-row: 1;
+    grid-column: 2;
+  }
+  .mj-meter-track,
+  .mj-meter-unmetered {
+    grid-row: 2;
+    grid-column: 1 / -1;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .mj-meter-fill {
+    transition: none;
+  }
 }

@@ -1,0 +1,16 @@
+id: bench-09
+category: "B — Variational gradients"
+prompt: >-
+  In Cirq, prepare |0>, apply Rx(theta) with theta=0.37, and compute the derivative
+  of the exact Z expectation using the parameter-shift rule from two separately
+  simulated shifted circuits. Return the derivative as the top-level numeric RESULT
+  key gradient and bind the unshifted parameterized circuit, resolved at theta=0.37,
+  to FINAL_CIRCUIT. Do not substitute an analytic derivative for the two simulations.
+framework: cirq
+expect:
+  terminal_reason: ai_review_aligned
+  output_keys: ["gradient"]
+  expected_values:
+    gradient: -0.361615431964962
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

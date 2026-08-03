@@ -1,0 +1,23 @@
+id: holdout-v5-04
+category: "Holdout v5 — Project selection with dependencies"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  Select projects from values [12,10,8,7,6,5] and costs [6,5,4,3,2,2] with total
+  cost at most 10 and between two and three selected projects. Selecting project 0
+  requires project 4, and projects 1 and 2 are mutually exclusive. Encode the budget,
+  cardinality, implication, and exclusion constraints in a Qiskit QAOA cost
+  Hamiltonian, optimize with deterministic seeds and at least 4096 shots, and decode
+  only feasible samples. Independently enumerate all 64 subsets. Return top-level
+  numeric RESULT keys qaoa_best_value and exact_maximum_value plus counts, and bind the
+  optimized QAOA circuit to FINAL_CIRCUIT. Do not substitute enumeration for QAOA.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_value", "exact_maximum_value", "counts"]
+  expected_values:
+    qaoa_best_value: 23.0
+    exact_maximum_value: 23.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

@@ -10,6 +10,12 @@ destructive/visibility operations need owner/admin (see _base.py).
 
 `system.py` is the single deliberate exception: identity bootstrap and the
 worker job loop run before/outside any workspace scope.
+
+`provider_credentials.py` takes a `Scope` like everything else but applies
+`scope.user_id` rather than `scope.workspace_id`, because the rows it owns
+belong to a person rather than a tenant — the same predicate `runs` and
+`qpu_runs` already use for the weekly allowances. Its module docstring carries
+the argument; it is not a licence for anything else here to drop the workspace.
 """
 
 from . import (
@@ -22,7 +28,10 @@ from . import (
     github_import,
     identity_migration,
     research_candidates,
+    projects,
+    provider_credentials,
     runs,
+    shares,
     system,
     usage,
     vqe_source_staging,
@@ -45,7 +54,10 @@ __all__ = [
     "folders",
     "identity_migration",
     "research_candidates",
+    "projects",
+    "provider_credentials",
     "runs",
+    "shares",
     "system",
     "usage",
     "vqe_source_staging",

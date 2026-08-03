@@ -11,7 +11,7 @@ import hashlib
 import json
 from dataclasses import dataclass
 from enum import StrEnum
-from typing import Any, Literal
+from typing import Any, Literal, Mapping
 from uuid import UUID
 
 from majorana_contracts.enums import (
@@ -184,6 +184,27 @@ class ExecutionEvidence(_Record):
             ExecutionFailureKind.RESOURCE_LIMIT,
         }
 
+    @property
+    def was_not_run(self) -> bool:
+        """Whether trusted preflight skipped execution for backend capacity.
+
+        A generic resource failure is not enough: code that started and exhausted
+        memory must still fail.  Artifact-only delivery is reserved for a provider-
+        authored preflight decision that records zero sandbox runs.
+        """
+
+        reason_code = self.observation.get("execution_reason_code")
+        return (
+            self.exit_code != 0
+            and self.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
+            and self.duration_ms == 0
+            and not self.result
+            and self.observation.get("execution_status") == "not_run"
+            and self.observation.get("sandbox_runs") == 0
+            and isinstance(reason_code, str)
+            and bool(reason_code.strip())
+        )
+
     @model_validator(mode="after")
     def failure_kind_matches_exit(self) -> "ExecutionEvidence":
         if self.exit_code == 0 and self.failure_kind is not None:
@@ -251,26 +272,57 @@ class SemanticReviewEvidence(_Record):
         that keeps requesting improvements is expressing a preference, not
         contradicting the evidence.
 
-        Lives on the record rather than in the pipeline because the durable stores
-        enforce the same rule before they will write a conversion or a
-        materialization. Keeping one definition is what stops the store's fail-closed
-        guard from encoding a policy the orchestrator has since changed — which is
-        exactly what happened when the guard still demanded READY.
+        **This RANKS candidates; it no longer admits or refuses them.** It used to
+        back an `is_deliverable()` that the stores, the saver and the fallback filter
+        all called before writing anything, so a run that spent its whole budget and
+        produced a candidate with one failed check delivered nothing at all — the
+        artifact was destroyed at the last step, after every expensive stage had been
+        paid for. The owner's ruling of 2026-08-03 is that the repository classifies
+        rather than excludes, so the candidate is now filed and
+        `simple_pipeline_verification_summary` labels it `VerifierDecision.FAIL` off
+        its real checks. `is_deliverable()` was deleted rather than left unused: a
+        tested predicate one import away from the guards it used to gate is how the
+        old policy comes back.
+
+        What is still refused is a record that would not be TRUE — an unbound review,
+        or an artifact with no recorded opinion at all.
         """
 
         if self.severity in {"major", "blocking"}:
             return False
-        checks = self.feedback.get("basic_checks")
-        if not isinstance(checks, list) or not checks:
+        if not self.has_recorded_checks():
             return False
+        checks = self.feedback["basic_checks"]
         return all(isinstance(check, dict) and check.get("result") == "pass" for check in checks)
 
-    def is_deliverable(self) -> bool:
-        """May this review's candidate be exported and saved?"""
-        # READY is advisory model output, not a substitute for trusted checks.
-        # Production review construction records the checks before this boundary;
-        # missing or failed evidence must therefore fail closed for every decision.
-        return self.evidence_is_complete()
+    def has_recorded_checks(self) -> bool:
+        """Did any deterministic check actually run against this candidate?
+
+        This is the line the repository still refuses to cross. A candidate whose
+        checks FAILED is a labelled record — it says what was examined and what came
+        back wrong, which is exactly what a development workspace should hold. A
+        candidate with no recorded check at all is not a permissive record, it is an
+        unlabelled one, and an unlabelled artifact is the single thing an honest
+        classifier cannot file.
+
+        In production this is always true on the executed path: `fast_checks` records
+        `structural` before the reviewer is ever called. It is a guard against a
+        caller reaching the pipeline with a hand-built review, not against the
+        pipeline itself.
+
+        The element test is not decoration. `feedback` is a free-form dict, and the
+        projection this gate exists to guarantee — `recorded_basic_checks` in the
+        worker's `simple_ports` — keeps only entries that are actually mappings. A
+        bare `bool(checks)` here would admit `basic_checks: ["ok"]`, which is a
+        non-empty list this predicate calls a record and the projection then empties.
+        The gate must be false in exactly the cases where the projection is empty, or
+        it is not guaranteeing the thing it is named for.
+        """
+
+        checks = self.feedback.get("basic_checks")
+        if not isinstance(checks, list):
+            return False
+        return any(isinstance(check, Mapping) for check in checks)
 
     def assert_binding(self, candidate: "CandidateRevision", execution: ExecutionEvidence) -> None:
         if self.candidate_id != candidate.candidate_id:
@@ -311,3 +363,4 @@ class MaterializedArtifact(_Record):
     candidate_id: UUID
     framework: Framework
     source_fingerprint: str = Field(pattern=r"^[0-9a-f]{64}$")
+    execution_status: Literal["executed", "not_run"] = "executed"

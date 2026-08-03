@@ -1,0 +1,24 @@
+id: holdout-v5-01
+category: "Holdout v5 — Bernstein-Vazirani"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Implement Bernstein-Vazirani in Qiskit for five input qubits and one oracle ancilla.
+  Define the hidden bits by (s0,s1,s2,s3,s4)=(1,0,1,1,0), where si is the coefficient
+  of input qubit qi in f(x)=s dot x mod 2. Run the actual phase-kickback oracle and
+  Hadamard decoding with deterministic simulator/transpiler seeds and at least 2048
+  shots. Qiskit displays measured input bits as q4...q0, so derive the decoded integer
+  as sum_i si*2**i from the measured result rather than assigning it directly. Return
+  top-level numeric RESULT keys decoded_integer and success_probability plus counts,
+  and bind the complete measured circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["decoded_integer", "success_probability", "counts"]
+  expected_top_bitstring: "01101"
+  expected_values:
+    decoded_integer: 13.0
+    success_probability: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

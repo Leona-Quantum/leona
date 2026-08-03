@@ -19,7 +19,18 @@ from sqlalchemy import select
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import Artifact
-from majorana_api.repos import artifacts, audit, folders, runs, system, usage, workspaces
+from majorana_api.repos import (
+    artifacts,
+    audit,
+    folders,
+    projects,
+    runs,
+    system,
+    usage,
+    workspaces,
+)
+from majorana_api.repos.shares import ShareAllowance
+from majorana_api.tiers import limits_for
 
 requires_db = pytest.mark.skipif(
     "DATABASE_URL" not in os.environ, reason="authz suite needs DATABASE_URL"
@@ -37,6 +48,7 @@ class WorkspaceData:
     version_id: uuid.UUID
     run_id: uuid.UUID
     folder_id: uuid.UUID
+    project_id: uuid.UUID
     usage_quantity: float
 
 
@@ -74,6 +86,7 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
         title=f"authz probe {tag}",
         family="Bell",
         framework="qiskit",
+        kept=True,
     )
     version = await artifacts.create_version(
         owner_scope,
@@ -91,6 +104,13 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
     )
     folder = await folders.create_folder(owner_scope, session, name=f"{tag} folder")
     await folders.set_run_folder(owner_scope, session, run.id, folder.id)
+    # The artifact is FILED under the project, not merely adjacent to it: a
+    # cross-workspace probe against an empty project proves only that the
+    # container is hidden, and the container is not the thing worth stealing.
+    project = await projects.create_project(owner_scope, session, name=f"{tag} project")
+    await projects.set_artifact_project(
+        owner_scope, session, artifact.id, project.id, workspace_artifact_limit=None
+    )
     await runs.append_run_event(owner_scope, session, run.id, type="run.queued", payload={})
     await runs.append_run_event(owner_scope, session, run.id, type="run.started", payload={})
     await runs.add_verification_record(
@@ -106,6 +126,7 @@ async def _build_workspace(session, tag: str) -> WorkspaceData:
         version_id=version.id,
         run_id=run.id,
         folder_id=folder.id,
+        project_id=project.id,
         usage_quantity=7.0,
     )
 
@@ -120,3 +141,25 @@ async def provision() -> tuple[WorkspaceData, WorkspaceData]:
     finally:
         await engine.dispose()
     return a, b
+
+
+def any_team_grantee(_grantee: object) -> ShareAllowance:
+    """The permissive grantee allowance, DERIVED from the real team tier.
+
+    Written out as `ShareAllowance(may_receive=True, max_shared_projects=None)`
+    it would be a double thinner than the thing it stands in for: `None` is
+    "unlimited", which is the developer tier's number, so every share test in
+    this suite would have been silently exempt from the membership cap and the
+    cap's own tests would have been the only ones that ever saw it.
+
+    Taking the real `team` row instead means these tests grant under the same
+    allowance a paying account has, and a change to that number reaches them.
+
+    Lived in three files as `lambda _grantee: True` before the allowance grew a
+    second field. One copy is one place to be wrong.
+    """
+    limits = limits_for("team")
+    return ShareAllowance(
+        may_receive=limits.project_sharing,
+        max_shared_projects=limits.shared_projects,
+    )

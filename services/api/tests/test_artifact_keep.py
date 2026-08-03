@@ -59,6 +59,7 @@ async def test_a_new_artifact_is_kept_unless_the_caller_says_otherwise(scope, se
         title="t",
         family=Algorithm.BELL,
         framework=Framework.QISKIT,
+        kept=True,
     )
     assert session.added[-1].kept_at is not None
 
@@ -78,7 +79,7 @@ async def test_keeping_is_scoped_and_locks_the_row(scope, session):
     from majorana_api.repos import NotFoundError
 
     with pytest.raises(NotFoundError):
-        await artifacts.keep_artifact(scope, session, uuid.uuid4())
+        await artifacts.keep_artifact(scope, session, uuid.uuid4(), workspace_artifact_limit=None)
     sql = _sql(session.statements[0])
     assert "workspace_id" in sql
     assert "FOR UPDATE" in sql
@@ -89,7 +90,9 @@ async def test_keeping_requires_write(session):
     from majorana_api.repos import AuthzError
 
     with pytest.raises(AuthzError):
-        await artifacts.keep_artifact(make_scope(Role.VIEWER), session, uuid.uuid4())
+        await artifacts.keep_artifact(
+            make_scope(Role.VIEWER), session, uuid.uuid4(), workspace_artifact_limit=None
+        )
 
 
 class _SessionWithWorkspace(RecordingSession):

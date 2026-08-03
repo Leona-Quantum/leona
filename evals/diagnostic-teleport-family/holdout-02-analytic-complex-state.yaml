@@ -1,0 +1,24 @@
+id: diagnostic-teleport-family-02
+category: "Diagnostic — analytic complex-state coherent teleportation"
+split: holdout
+difficulty: intermediate
+workload: educational
+prompt: >-
+  Coherently teleport the Qiskit input state
+  cos(0.52)|0> + exp(0.61i) sin(0.52)|1> using deferred measurement and a fully
+  unitary three-qubit circuit. Compute the receiver's reduced density matrix from the
+  final statevector. Return top-level numeric RESULT keys final_bloch_x,
+  final_bloch_y, final_bloch_z, and reduced_state_fidelity, and bind the complete
+  teleportation circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys:
+    ["final_bloch_x", "final_bloch_y", "final_bloch_z", "reduced_state_fidelity"]
+  expected_values:
+    final_bloch_x: 0.7068679154415649
+    final_bloch_y: 0.4940433192408096
+    final_bloch_z: 0.5062202572327784
+    reduced_state_fidelity: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

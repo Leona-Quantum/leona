@@ -31,10 +31,12 @@ from .enums import (
     RunStatus,
     RetryTarget,
     SemanticReviewDecision,
+    ShareRole,
     SourceKind,
     Stage,
     TopLevelExecution,
     UsageKind,
+    CHAT_USAGE_ROLE,
     VerificationMethod,
     VerificationFailureClass,
     VerificationResultKind,
@@ -86,10 +88,13 @@ from .models import (
     Artifact,
     ArtifactVersion,
     CatalogProvenance,
+    Project,
+    ProjectShare,
     PublicCatalogEntry,
     QpuRunRecord,
     ResourceMetrics,
     Run,
+    SharedProject,
     VerificationRecord,
     VerificationCheckSummary,
     VerificationSummary,
@@ -104,6 +109,19 @@ from .models import (
 )
 from .plan import (
     ArtifactContract,
+    ComplexCoefficient,
+    ExactDynamicsReference,
+    ExactLindbladReference,
+    ExactLinearSystemReference,
+    ExactPhaseEstimationReference,
+    IndexedPauliTerm,
+    LindbladDissipator,
+    LindbladFactor,
+    LindbladOperator,
+    LindbladOperatorTerm,
+    LindbladResultSpec,
+    LinearSystemResultSpec,
+    PauliFactor,
     Plan,
     PlanParameters,
     SuccessCriteria,
@@ -156,7 +174,30 @@ from .lifecycle import (
 # 2.5.0: WorkspaceInvitation — a membership the invited person has not been told
 # about yet, so an invite can announce itself instead of relying on the inviter
 # to mention it out of band (migration 0038).
-CONTRACTS_VERSION = "2.5.0"
+# 2.6.0: Project + Artifact.project_id — Studio's grouping moves out of the
+# browser's localStorage and onto the workspace (migration 0041). Additive: both
+# are optional to read and `project_id` defaults to None, so a client built
+# against 2.5.0 keeps working and simply shows every artifact ungrouped.
+# 2.7.0: ShareRole + ProjectShare + SharedProject — a project can be granted to a
+# person outside the workspace that owns it (migration 0042). Additive: three new
+# names, no existing field changes meaning, and a client built against 2.6.0 never
+# asks for a shared project and so never sees one.
+# 2.8.0: Project.max_artifacts and SharedProject.artifact_limit — how far a share
+# grantee may grow a project (migration 0043). Additive in the sense that matters
+# here: both are server-to-client, so no client stops being able to CALL anything.
+# They are required on the model rather than optional because the server always
+# knows the number — `shares.project_artifact_limit` resolves an unset column — and
+# an optional one would invite a client to reimplement that default. A web build
+# that lands BEFORE the API's sees neither field, so `apps/web/lib/project-shares`
+# reads both defensively rather than parsing them as required.
+# 2.9.0: VerificationPlan gains bounded typed references for practical binary
+# optimization, Pauli dynamics, Lindblad evolution, phase estimation, and dense
+# linear systems, plus explicit RESULT-key binding for exact diagonalization.
+# These additions strengthen existing evidence paths without a new DB enum.
+# 2.10.0: Plan.qubits_estimate is no longer capped by the local sandbox lane;
+# execution providers enforce their own limits so larger unexecuted artifacts can
+# be authored without pretending that they ran.
+CONTRACTS_VERSION = "2.10.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -167,6 +208,18 @@ __all__ = [
     "ArtifactSaved",
     "ArtifactType",
     "ArtifactVersion",
+    "ComplexCoefficient",
+    "ExactDynamicsReference",
+    "ExactLindbladReference",
+    "ExactLinearSystemReference",
+    "ExactPhaseEstimationReference",
+    "IndexedPauliTerm",
+    "LindbladDissipator",
+    "LindbladFactor",
+    "LindbladOperator",
+    "LindbladOperatorTerm",
+    "LindbladResultSpec",
+    "LinearSystemResultSpec",
     "BaselineKind",
     "BaselineResult",
     "CatalogProvenance",
@@ -200,9 +253,12 @@ __all__ = [
     "LlmDelta",
     "MeasurementPolicy",
     "Optimizer",
+    "PauliFactor",
     "Plan",
     "PlanParameters",
     "PlanProduced",
+    "Project",
+    "ProjectShare",
     "PublicCatalogEntry",
     "PlannableVerificationMethod",
     "PublicationState",
@@ -236,6 +292,8 @@ __all__ = [
     "ScreenResult",
     "Scope",
     "SemanticReviewDecision",
+    "ShareRole",
+    "SharedProject",
     "SourceKind",
     "Stage",
     "StageFinished",
@@ -245,6 +303,7 @@ __all__ = [
     "TopLevelExecution",
     "TERMINAL_STATUSES",
     "UsageKind",
+    "CHAT_USAGE_ROLE",
     "VerificationMethod",
     "VerificationFailureClass",
     "VerificationPlan",

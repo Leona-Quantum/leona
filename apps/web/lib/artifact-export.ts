@@ -46,11 +46,13 @@ export function artifactExportHeader(
   const verdict =
     artifact.status === "stale"
       ? "STALE — the source changed after this was verified; correctness not confirmed"
-      : decision === "inconclusive"
-        ? "INCONCLUSIVE — verification could not be completed; correctness not confirmed"
-        : decision === null
-          ? "NONE — no typed verification evidence; do not treat this as verified"
-          : `${String(decision).toUpperCase()} (evidence: ${artifact.verificationSummary?.evidence_strength ?? "unstated"})`;
+      : decision === "fail"
+        ? "FAILED — a deterministic check ran and contradicted this circuit; do not treat it as working"
+        : decision === "inconclusive"
+          ? "INCONCLUSIVE — verification could not be completed; correctness not confirmed"
+          : decision === null
+            ? "NONE — no typed verification evidence; do not treat this as verified"
+            : `${String(decision).toUpperCase()} (evidence: ${artifact.verificationSummary?.evidence_strength ?? "unstated"})`;
 
   return [
     `${comment} ${artifact.title}`,
@@ -84,13 +86,19 @@ export function artifactExportManifest(
     openqasm3: artifact.qasm,
     verification_state: artifact.status,
     verification_summary: artifact.verificationSummary ?? null,
+    // `fail` used to fall through to `null` here, so the ONE artifact whose export
+    // most needed a warning was the only one that carried no warning at all — the
+    // header said FAIL while the manifest's own field said nothing. The repository
+    // holds failed-check artifacts now, so this is a state a reader will meet.
     verification_warning:
       artifact.status === "stale"
         ? "Verification is stale because the source changed."
-        : decision === "inconclusive"
-        ? "Verification unavailable — correctness has not been confirmed."
-        : decision === null
-          ? "No typed verification evidence is available. Do not treat this export as Verified."
-          : null,
+        : decision === "fail"
+          ? "A deterministic check ran and contradicted this circuit. Do not treat this export as working."
+          : decision === "inconclusive"
+            ? "Verification unavailable — correctness has not been confirmed."
+            : decision === null
+              ? "No typed verification evidence is available. Do not treat this export as Verified."
+              : null,
   };
 }

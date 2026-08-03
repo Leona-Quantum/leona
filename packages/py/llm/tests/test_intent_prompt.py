@@ -25,7 +25,7 @@ def test_intent_router_still_names_greetings_as_chat():
     The neutral definition of chat — "asking for information, explanation,
     discussion, advice" — does not describe "ok" or "ありがとう".
     """
-    lowered = INTENT_ROUTER_SYSTEM_PROMPT.lower()
+    lowered = " ".join(INTENT_ROUTER_SYSTEM_PROMPT.lower().split())
     assert "greeting" in lowered
     assert "acknowledgement" in lowered or "acknowledgment" in lowered
     assert "allowance" in lowered, "the prompt should say what a misroute costs"
@@ -40,6 +40,28 @@ def test_intent_router_still_names_the_bare_task_statement():
     assert any(ord(character) > 0x2000 for character in INTENT_ROUTER_SYSTEM_PROMPT), (
         "the prompt carries no Japanese example"
     )
+
+
+def test_intent_router_requires_data_and_supports_capacity_limited_artifacts():
+    """Execution must be possible as stated, not merely phrased as an action.
+
+    This pins the general decision boundary rather than any one benchmark prompt:
+    Missing instance data needs a conversational answer. A supported-framework task
+    that only exceeds local capacity remains executable as an honest unexecuted
+    artifact, while unsupported dependencies still route to chat.
+    """
+    lowered = " ".join(INTENT_ROUTER_SYSTEM_PROMPT.lower().split())
+
+    assert "input readiness" in lowered
+    assert "capability readiness" in lowered
+    assert "do not guess an omitted problem instance" in lowered
+    assert "25 qubits the local execution maximum" in lowered
+    assert "execution explicitly marked not_run" in lowered
+    assert "artifact-only form" in lowered
+    assert "package list is exhaustive" in lowered
+    assert "never silently shrink" in lowered
+    assert "shot count or random seed" in lowered
+    assert "canonical circuit" in lowered
 
 
 def test_render_intent_prompt_passes_the_message_through_unchanged():

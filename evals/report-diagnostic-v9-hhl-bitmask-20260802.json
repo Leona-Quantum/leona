@@ -1,0 +1,121 @@
+{
+  "total": 1,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "pass_rate_ci95_low": 0.0,
+  "pass_rate_ci95_high": 0.7934506856227626,
+  "unique_cases": 1,
+  "stable_passed_cases": 0,
+  "repetitions": 1,
+  "product_accepted": 0,
+  "oracle_cases": 1,
+  "oracle_passed": 0,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "first_candidate_passed": 0,
+  "candidate_revisions": 6,
+  "mean_candidates": 6.0,
+  "recorded_llm_calls": 15,
+  "recorded_input_tokens": 128901,
+  "recorded_output_tokens": 37036,
+  "cases": [
+    {
+      "id": "diagnostic-v9-hhl",
+      "category": "Diagnostic — HHL semantic-reference consensus",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trial": 1,
+      "passed": false,
+      "run_status": "failed",
+      "terminal_reason": "candidate_not_converging",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "product_accepted": false,
+      "oracle_passed": false,
+      "false_positive": false,
+      "false_negative": false,
+      "first_candidate_passed": false,
+      "observed_values": {},
+      "observed_top_bitstring": null,
+      "reasons": [
+        "expected numeric RESULT field 'solution_x0' was not found",
+        "expected numeric RESULT field 'solution_x1' was not found",
+        "expected numeric RESULT field 'amplitude_ratio' was not found",
+        "expected numeric RESULT field 'residual_norm' was not found",
+        "expected numeric RESULT field 'state_fidelity' was not found",
+        "RESULT missing promised key 'solution_x0'",
+        "RESULT missing promised key 'solution_x1'",
+        "RESULT missing promised key 'amplitude_ratio'",
+        "RESULT missing promised key 'residual_norm'",
+        "RESULT missing promised key 'state_fidelity'",
+        "run_status 'failed' != expected 'succeeded'",
+        "expected a saved artifact, none was written"
+      ],
+      "evidence": {
+        "failed_stage": "generate",
+        "error_code": "candidate_not_converging",
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": false,
+        "candidate_id": "e4bbb6b4-79db-5d85-a653-7d0167b7e3d5",
+        "execution_id": null,
+        "result_evidence_error": null,
+        "candidates_considered": 6,
+        "plans_produced": 3,
+        "sandbox_attempts": 5,
+        "semantic_review_attempts": 3,
+        "recorded_llm_calls": 15,
+        "recorded_input_tokens": 128901,
+        "recorded_output_tokens": 37036
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "diagnostic-v9-hhl",
+      "category": "Diagnostic — HHL semantic-reference consensus",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "product_accepted": 0,
+      "oracle_trials": 1,
+      "oracle_passed": 0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 6.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "research",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 6.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "scientific",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 6.0
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local, repetitions=1)"
+}

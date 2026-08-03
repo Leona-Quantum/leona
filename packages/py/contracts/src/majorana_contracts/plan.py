@@ -2,9 +2,10 @@
 Modernized from the legacy nameko plan-schema (Archive); qubit ceiling is the
 27-qubit default sandbox lane (memory/DECISIONS.md 2026-07-09)."""
 
+import math
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
+from pydantic import BaseModel, ConfigDict, Field, FiniteFloat, field_validator, model_validator
 
 from .enums import (
     Algorithm,
@@ -45,6 +46,25 @@ EXACT_DIAG_MAX_QUBITS = 10
 # BRUTE_FORCE_MAX_VARIABLES. Same duplication story and the same drift pin in
 # packages/py/verification/tests.
 BRUTE_FORCE_MAX_VARIABLES = 16
+
+# Ceiling for the dense exact finite-time reference. This is deliberately lower
+# than exact_diag's ceiling: the dynamics check needs eigenvectors and several
+# dense matrix-vector products, not only eigenvalues. The verifier pins this
+# duplicate against drift.
+EXACT_DYNAMICS_MAX_QUBITS = 8
+
+# The Liouvillian acts on a 4**n-dimensional vectorized density matrix. Three
+# qubits keeps the exact matrix exponential small (64x64) and deterministic.
+EXACT_LINDBLAD_MAX_QUBITS = 3
+
+# Exact dyadic QPE uses only integer arithmetic over the counting register. Sixteen
+# bits keeps RESULT counts and integer conversion bounded without excluding normal
+# simulator workloads.
+EXACT_QPE_MAX_COUNTING_QUBITS = 16
+
+# Dense classical solve used only as an independent baseline for simulator-scale
+# quantum linear-system tasks. HHL needs a power-of-two dimension.
+EXACT_LINEAR_SYSTEM_MAX_DIMENSION = 8
 
 
 def _promises_distribution(key: str) -> bool:
@@ -133,6 +153,448 @@ class PauliTerm(_PlanBase):
     )
 
 
+class PauliFactor(_PlanBase):
+    """One non-identity factor in a sparse Pauli product."""
+
+    qubit: int = Field(
+        ge=0,
+        lt=EXACT_DYNAMICS_MAX_QUBITS,
+        description="0-based qubit index, with q0 the leftmost tensor factor.",
+    )
+    pauli: Literal["X", "Y", "Z"] = Field(
+        description="Non-identity Pauli acting on this qubit. Identity factors are omitted."
+    )
+
+
+class IndexedPauliTerm(_PlanBase):
+    """One real Pauli term written only on the qubits where it acts.
+
+    An empty factor list is the identity term. The worker, rather than the model,
+    pads every other qubit with identity before dense evaluation. This removes a
+    transcription step that is especially error-prone for sparse operators.
+    """
+
+    coefficient: float = Field(allow_inf_nan=False)
+    factors: list[PauliFactor] = Field(
+        default_factory=list,
+        max_length=EXACT_DYNAMICS_MAX_QUBITS,
+    )
+
+    @model_validator(mode="after")
+    def _each_qubit_appears_at_most_once(self) -> "IndexedPauliTerm":
+        indices = [factor.qubit for factor in self.factors]
+        if len(indices) != len(set(indices)):
+            raise ValueError("indexed Pauli term contains duplicate qubit factors")
+        return self
+
+
+class ExactDynamicsReference(_PlanBase):
+    """One scalar from bounded exact Pauli-Hamiltonian time evolution.
+
+    The model transcribes data; the worker independently constructs the dense
+    matrices and evolves the declared basis state. This is intentionally narrower
+    than general quantum dynamics so unsupported requests fail honestly instead of
+    being coerced into a superficially similar metric.
+    """
+
+    num_qubits: int = Field(
+        ge=1,
+        le=EXACT_DYNAMICS_MAX_QUBITS,
+        description="Register width shared by the state, Hamiltonian, and observable.",
+    )
+    hamiltonian: list[IndexedPauliTerm] = Field(
+        min_length=1,
+        max_length=256,
+        description=(
+            "Real sparse Pauli decomposition of H in U=exp(-i*t*H). Each term "
+            "lists only non-identity factors by qubit index; an empty list is identity."
+        ),
+    )
+    initial_basis_state: str = Field(
+        min_length=1,
+        max_length=EXACT_DYNAMICS_MAX_QUBITS,
+        pattern="^[01]+$",
+        description=(
+            "Computational-basis state written q0 first, matching the Pauli-string "
+            "tensor convention; for example '0101' means |q0 q1 q2 q3>."
+        ),
+    )
+    evolution_time: float = Field(
+        allow_inf_nan=False,
+        description="Finite real t in U=exp(-i*t*H), in the request's units.",
+    )
+    result_key: str = Field(
+        min_length=1,
+        description=(
+            "Top-level protected RESULT key this one scalar verifies; it must equal "
+            "Plan.success_criteria.primary_metric."
+        ),
+    )
+    metric: Literal["survival_probability", "observable_expectation"]
+    observable: list[IndexedPauliTerm] | None = Field(
+        default=None,
+        min_length=1,
+        max_length=256,
+        description=(
+            "Hermitian real Pauli sum whose expectation is requested after evolution. "
+            "Required only for observable_expectation and absent for survival_probability."
+        ),
+    )
+
+    @model_validator(mode="after")
+    def _operators_and_state_share_one_bounded_register(self) -> "ExactDynamicsReference":
+        if len(self.initial_basis_state) != self.num_qubits:
+            raise ValueError(
+                "exact_dynamics_reference.initial_basis_state must contain one bit "
+                f"per declared qubit ({self.num_qubits})"
+            )
+        for name, terms in (
+            ("hamiltonian", self.hamiltonian),
+            ("observable", self.observable or []),
+        ):
+            for term in terms:
+                outside = [
+                    factor.qubit for factor in term.factors if factor.qubit >= self.num_qubits
+                ]
+                if outside:
+                    raise ValueError(
+                        f"exact_dynamics_reference.{name} factor q{outside[0]} lies outside "
+                        f"the declared {self.num_qubits}-qubit register"
+                    )
+        # A reference whose value does not depend on the evolution proves nothing
+        # about whether the candidate evolved anything. These three shapes are
+        # degenerate in the DECLARED DATA, not merely hard: each one is a constant
+        # that a program printing one number satisfies, under the verdict "the
+        # reported scalar matches exact evolution of the Plan-declared Pauli system".
+        # A plan that carries this reference has asked for the check, so — following
+        # exact_diag's rule for a reference that IS present — each is a hard error
+        # with a corrective objection rather than a silent downgrade.
+        if self.evolution_time == 0.0:
+            raise ValueError(
+                "exact_dynamics_reference.evolution_time is 0, so U=exp(-i*0*H) is the "
+                "identity for every Hamiltonian and the reference is satisfied by any "
+                "candidate that echoes the initial state. Use the request's actual "
+                "evolution time, or drop the reference."
+            )
+        if all(not term.factors for term in self.hamiltonian):
+            raise ValueError(
+                "every exact_dynamics_reference.hamiltonian term is the identity (no "
+                "factors), so U is a global phase and no metric can distinguish an "
+                "evolved state from the initial one. Write the non-identity factors by "
+                "qubit index — an XX coupling on q0,q1 is two factors, not an empty list."
+            )
+        if self.metric == "survival_probability":
+            if self.observable is not None:
+                raise ValueError(
+                    "survival_probability does not use exact_dynamics_reference.observable"
+                )
+            if all(factor.pauli == "Z" for term in self.hamiltonian for factor in term.factors):
+                raise ValueError(
+                    "exact_dynamics_reference.hamiltonian is diagonal (Z factors only), so "
+                    "the computational-basis initial state is an eigenstate and its "
+                    "survival probability is exactly 1 at every time and for every "
+                    "coefficient. Pick a metric the evolution can move — an "
+                    "observable_expectation with an X or Y factor — or drop the reference. "
+                    "An Ising Hamiltonian written with ZZ terms only reaches this."
+                )
+            return self
+        if not self.observable:
+            raise ValueError("observable_expectation requires exact_dynamics_reference.observable")
+        return self
+
+
+class ExactPhaseEstimationReference(_PlanBase):
+    """Noiseless QPE reference for a phase exactly representable by the register.
+
+    This is intentionally not a general finite-precision QPE oracle. If the phase is
+    not dyadic at the declared width, its sinc-like output distribution needs a
+    different statistical specification and this reference must be omitted.
+    """
+
+    counting_qubits: int = Field(ge=1, le=EXACT_QPE_MAX_COUNTING_QUBITS)
+    eigenphase: float = Field(
+        ge=0.0,
+        lt=1.0,
+        allow_inf_nan=False,
+        description="Eigenphase phi in U|psi>=exp(2*pi*i*phi)|psi>.",
+    )
+    phase_integer_result_key: str = Field(min_length=1)
+    phase_estimate_result_key: str = Field(min_length=1)
+    peak_probability_result_key: str = Field(min_length=1)
+    counts_result_key: str = Field(min_length=1)
+
+    @model_validator(mode="after")
+    def _phase_and_result_contract_are_exact(self) -> "ExactPhaseEstimationReference":
+        scaled = self.eigenphase * (1 << self.counting_qubits)
+        if not math.isclose(scaled, round(scaled), rel_tol=0.0, abs_tol=1e-10):
+            raise ValueError(
+                "exact_phase_estimation_reference requires an eigenphase exactly "
+                "representable by the declared counting register"
+            )
+        keys = {
+            self.phase_integer_result_key,
+            self.phase_estimate_result_key,
+            self.peak_probability_result_key,
+            self.counts_result_key,
+        }
+        if len(keys) != 4:
+            raise ValueError("exact_phase_estimation_reference RESULT keys must be unique")
+        return self
+
+
+class LinearSystemResultSpec(_PlanBase):
+    """One scalar derived from an exact real linear-system solution."""
+
+    result_key: str = Field(min_length=1)
+    metric: Literal[
+        "normalized_solution_component",
+        "solution_component",
+        "component_ratio",
+        "residual_norm",
+        "state_fidelity",
+    ]
+    index: int | None = Field(default=None, ge=0, lt=EXACT_LINEAR_SYSTEM_MAX_DIMENSION)
+    numerator_index: int | None = Field(default=None, ge=0, lt=EXACT_LINEAR_SYSTEM_MAX_DIMENSION)
+    denominator_index: int | None = Field(default=None, ge=0, lt=EXACT_LINEAR_SYSTEM_MAX_DIMENSION)
+
+    @model_validator(mode="after")
+    def _indices_match_the_metric(self) -> "LinearSystemResultSpec":
+        if self.metric in {"normalized_solution_component", "solution_component"}:
+            if (
+                self.index is None
+                or self.numerator_index is not None
+                or self.denominator_index is not None
+            ):
+                raise ValueError(f"{self.metric} requires only index")
+            return self
+        if self.metric == "component_ratio":
+            if (
+                self.index is not None
+                or self.numerator_index is None
+                or self.denominator_index is None
+            ):
+                raise ValueError("component_ratio requires numerator_index and denominator_index")
+            return self
+        if any(
+            value is not None
+            for value in (self.index, self.numerator_index, self.denominator_index)
+        ):
+            raise ValueError(f"{self.metric} does not use component indices")
+        return self
+
+
+# The metrics whose reference value is DERIVED from the declared matrix and rhs,
+# rather than being the ideal constant every correct solve reports. `residual_norm`
+# always references 0 and `state_fidelity` always references 1, so neither carries
+# any information about the candidate's own solution vector — a reference built
+# only from them passes a program that prints those two constants and computes
+# nothing. At least one solution-bound metric has to be present for the check to
+# mean what its verdict says.
+_SOLUTION_BOUND_METRICS = frozenset(
+    {"normalized_solution_component", "solution_component", "component_ratio"}
+)
+
+
+class ExactLinearSystemReference(_PlanBase):
+    """Bounded real-symmetric linear system checked independently with a dense solve."""
+
+    matrix: list[list[FiniteFloat]] = Field(
+        min_length=2,
+        max_length=EXACT_LINEAR_SYSTEM_MAX_DIMENSION,
+    )
+    rhs: list[FiniteFloat] = Field(
+        min_length=2,
+        max_length=EXACT_LINEAR_SYSTEM_MAX_DIMENSION,
+    )
+    results: list[LinearSystemResultSpec] = Field(min_length=1, max_length=32)
+
+    @model_validator(mode="after")
+    def _shape_symmetry_and_result_indices_are_bounded(self) -> "ExactLinearSystemReference":
+        dimension = len(self.matrix)
+        if dimension & (dimension - 1):
+            raise ValueError("exact_linear_system_reference dimension must be a power of two")
+        if len(self.rhs) != dimension or any(len(row) != dimension for row in self.matrix):
+            raise ValueError(
+                "exact_linear_system_reference matrix must be square and match rhs length"
+            )
+        for row in range(dimension):
+            for column in range(row + 1, dimension):
+                if not math.isclose(
+                    float(self.matrix[row][column]),
+                    float(self.matrix[column][row]),
+                    rel_tol=0.0,
+                    abs_tol=1e-12,
+                ):
+                    raise ValueError("exact_linear_system_reference matrix must be symmetric")
+        keys = [result.result_key for result in self.results]
+        if len(keys) != len(set(keys)):
+            raise ValueError("exact_linear_system_reference result keys must be unique")
+        for result in self.results:
+            indices = [
+                index
+                for index in (
+                    result.index,
+                    result.numerator_index,
+                    result.denominator_index,
+                )
+                if index is not None
+            ]
+            if any(index >= dimension for index in indices):
+                raise ValueError(
+                    "exact_linear_system_reference result index lies outside the matrix"
+                )
+        if not any(result.metric in _SOLUTION_BOUND_METRICS for result in self.results):
+            raise ValueError(
+                "exact_linear_system_reference must bind at least one of "
+                f"{', '.join(sorted(_SOLUTION_BOUND_METRICS))}; 'residual_norm' and "
+                "'state_fidelity' have the constant references 0 and 1, so a reference "
+                "built only from those asks the candidate to agree with two numbers it "
+                "authored itself and verifies nothing about the solution"
+            )
+        return self
+
+
+class ComplexCoefficient(_PlanBase):
+    """One finite complex scalar represented without JSON-specific conventions."""
+
+    real: float = Field(allow_inf_nan=False)
+    imag: float = Field(default=0.0, allow_inf_nan=False)
+
+
+class LindbladFactor(_PlanBase):
+    """One non-identity local factor in a sparse open-system operator."""
+
+    qubit: int = Field(ge=0, lt=EXACT_LINDBLAD_MAX_QUBITS)
+    operator: Literal[
+        "X",
+        "Y",
+        "Z",
+        "lowering",
+        "raising",
+        "projector_zero",
+        "projector_one",
+    ]
+
+
+class LindbladOperatorTerm(_PlanBase):
+    """One complex tensor-product term; an empty factor list is identity."""
+
+    coefficient: ComplexCoefficient
+    factors: list[LindbladFactor] = Field(
+        default_factory=list,
+        max_length=EXACT_LINDBLAD_MAX_QUBITS,
+    )
+
+    @model_validator(mode="after")
+    def _each_qubit_appears_at_most_once(self) -> "LindbladOperatorTerm":
+        indices = [factor.qubit for factor in self.factors]
+        if len(indices) != len(set(indices)):
+            raise ValueError("Lindblad operator term contains duplicate qubit factors")
+        return self
+
+
+class LindbladOperator(_PlanBase):
+    """A finite complex sum of sparse tensor-product operator terms."""
+
+    terms: list[LindbladOperatorTerm] = Field(min_length=1, max_length=64)
+
+
+class LindbladDissipator(_PlanBase):
+    """The literal multiplier of D[L] in a time-independent master equation."""
+
+    rate: float = Field(gt=0, allow_inf_nan=False)
+    jump: LindbladOperator
+
+
+class LindbladResultSpec(_PlanBase):
+    """One protected RESULT scalar derived from the evolved density matrix."""
+
+    result_key: str = Field(min_length=1)
+    metric: Literal[
+        "population",
+        "density_element_real",
+        "density_element_imag",
+        "purity",
+        "observable_expectation",
+    ]
+    basis_state: str | None = Field(default=None, pattern="^[01]+$")
+    row_state: str | None = Field(default=None, pattern="^[01]+$")
+    column_state: str | None = Field(default=None, pattern="^[01]+$")
+    observable: LindbladOperator | None = None
+
+    @model_validator(mode="after")
+    def _metric_has_exactly_its_required_target(self) -> "LindbladResultSpec":
+        if self.metric == "population":
+            if self.basis_state is None or any(
+                value is not None for value in (self.row_state, self.column_state, self.observable)
+            ):
+                raise ValueError("population requires only basis_state")
+        elif self.metric in {"density_element_real", "density_element_imag"}:
+            if (
+                self.row_state is None
+                or self.column_state is None
+                or self.basis_state is not None
+                or self.observable is not None
+            ):
+                raise ValueError("density element metrics require only row_state and column_state")
+        elif self.metric == "observable_expectation":
+            if self.observable is None or any(
+                value is not None for value in (self.basis_state, self.row_state, self.column_state)
+            ):
+                raise ValueError("observable_expectation requires only observable")
+        elif any(
+            value is not None
+            for value in (self.basis_state, self.row_state, self.column_state, self.observable)
+        ):
+            raise ValueError("purity does not use a target field")
+        return self
+
+
+class ExactLindbladReference(_PlanBase):
+    """Bounded exact evolution under one time-independent Lindblad generator."""
+
+    num_qubits: int = Field(ge=1, le=EXACT_LINDBLAD_MAX_QUBITS)
+    initial_product_state: list[Literal["zero", "one", "plus", "minus", "plus_i", "minus_i"]] = (
+        Field(min_length=1, max_length=EXACT_LINDBLAD_MAX_QUBITS)
+    )
+    hamiltonian: LindbladOperator | None = None
+    dissipators: list[LindbladDissipator] = Field(min_length=1, max_length=32)
+    evolution_time: float = Field(ge=0, allow_inf_nan=False)
+    results: list[LindbladResultSpec] = Field(min_length=1, max_length=16)
+
+    @model_validator(mode="after")
+    def _all_data_uses_the_declared_register(self) -> "ExactLindbladReference":
+        if len(self.initial_product_state) != self.num_qubits:
+            raise ValueError("initial_product_state must contain one state per qubit")
+        keys = [result.result_key for result in self.results]
+        if len(keys) != len(set(keys)):
+            raise ValueError("exact_lindblad_reference result keys must be unique")
+        operators = [dissipator.jump for dissipator in self.dissipators]
+        if self.hamiltonian is not None:
+            operators.append(self.hamiltonian)
+        operators.extend(
+            result.observable for result in self.results if result.observable is not None
+        )
+        for operator in operators:
+            for term in operator.terms:
+                outside = [
+                    factor.qubit for factor in term.factors if factor.qubit >= self.num_qubits
+                ]
+                if outside:
+                    raise ValueError(
+                        f"Lindblad factor q{outside[0]} lies outside the declared "
+                        f"{self.num_qubits}-qubit register"
+                    )
+        for result in self.results:
+            for state in (result.basis_state, result.row_state, result.column_state):
+                if state is not None and len(state) != self.num_qubits:
+                    raise ValueError(
+                        f"Lindblad result {result.result_key!r} state must contain "
+                        f"{self.num_qubits} bits"
+                    )
+        return self
+
+
 class ProblemTerm(_PlanBase):
     """One weighted term of a combinatorial instance, as data.
 
@@ -161,6 +623,30 @@ class ProblemTerm(_PlanBase):
     )
 
 
+class ConstraintTerm(_PlanBase):
+    """One coefficient of a linear constraint over binary decision variables."""
+
+    i: int = Field(
+        ge=0,
+        lt=BRUTE_FORCE_MAX_VARIABLES,
+        description="Binary variable index, 0-based.",
+    )
+    weight: float = Field(
+        allow_inf_nan=False,
+        description="Finite coefficient multiplying x_i in the constraint's left side.",
+    )
+
+
+class LinearConstraint(_PlanBase):
+    """A bounded linear condition the brute-force reference applies to assignments."""
+
+    terms: list[ConstraintTerm] = Field(min_length=1, max_length=512)
+    sense: Literal["le", "eq", "ge"] = Field(
+        description="Comparison between sum(weight_i*x_i) and rhs: <=, ==, or >=."
+    )
+    rhs: float = Field(allow_inf_nan=False)
+
+
 class ReferenceProblem(_PlanBase):
     """The combinatorial instance the `brute_force` check enumerates."""
 
@@ -181,6 +667,31 @@ class ReferenceProblem(_PlanBase):
             "weight of edges whose endpoints fall on opposite sides. qubo: the "
             "coefficients of sum(w_ij * x_i * x_j); the objective is the MINIMUM. "
             "Duplicate index pairs add their weights."
+        ),
+    )
+    offset: float = Field(
+        default=0.0,
+        allow_inf_nan=False,
+        description=(
+            "Constant added to every objective value. Include constants introduced "
+            "when expanding penalties such as P*(sum(x)-k)^2."
+        ),
+    )
+    objective: Literal["minimize", "maximize"] | None = Field(
+        default=None,
+        description=(
+            "Optimization direction. Omit for legacy semantics: maxcut maximizes and "
+            "qubo minimizes. Set explicitly when a QUBO-shaped linear/quadratic "
+            "objective is reported in maximization units."
+        ),
+    )
+    constraints: list[LinearConstraint] = Field(
+        default_factory=list,
+        max_length=32,
+        description=(
+            "Linear feasibility conditions over the declared decision variables. "
+            "Use these for capacity, cardinality, budget, and assignment constraints "
+            "instead of enumerating an unconstrained surrogate."
         ),
     )
 
@@ -240,6 +751,13 @@ class VerificationPlan(_PlanBase):
             "result key holding the energy the run reports."
         ),
     )
+    reference_result_key: str | None = Field(
+        default=None,
+        description=(
+            "RESULT key compared with the exact ground-state energy. Required for new "
+            "exact_diag Plans; legacy stored Plans fall back to success_criteria.primary_metric."
+        ),
+    )
     reference_problem: ReferenceProblem | None = Field(
         default=None,
         description=(
@@ -249,6 +767,40 @@ class VerificationPlan(_PlanBase):
             "— not a transcription of the code you expect back. "
             "success_criteria.primary_metric must name the result key holding the "
             "objective value the run reports."
+        ),
+    )
+    exact_dynamics_reference: ExactDynamicsReference | None = Field(
+        default=None,
+        description=(
+            "Optional bounded exact-time-evolution reference for success_criteria. "
+            "Use only for one explicit real Pauli Hamiltonian, a computational-basis "
+            "initial state, exact U=exp(-i*t*H), and either survival probability or "
+            "an explicit real-Pauli observable expectation. It is not a general "
+            "replacement for echoes, OTOCs, thermal traces, channels, or product formulas."
+        ),
+    )
+    exact_lindblad_reference: ExactLindbladReference | None = Field(
+        default=None,
+        description=(
+            "Optional bounded exact open-system reference. Use only for at most three "
+            "qubits, a written product initial state, one time-independent Lindblad "
+            "generator, and scalar density-matrix results represented by the typed schema."
+        ),
+    )
+    exact_phase_estimation_reference: ExactPhaseEstimationReference | None = Field(
+        default=None,
+        description=(
+            "Optional bounded exact-QPE reference for a noiseless eigenphase exactly "
+            "representable by the declared counting register. It checks the reported "
+            "integer, phase, peak probability, and protected count distribution."
+        ),
+    )
+    exact_linear_system_reference: ExactLinearSystemReference | None = Field(
+        default=None,
+        description=(
+            "Optional bounded real-symmetric linear-system reference. The worker "
+            "independently solves the declared matrix and rhs and checks bound scalar "
+            "components, ratios, residual, or state fidelity."
         ),
     )
     state_preparation_claim: StatePreparationClaim | None = Field(
@@ -376,12 +928,18 @@ class Plan(_PlanBase):
     algorithm_rationale: str = Field(min_length=5)
     parameters: PlanParameters
     qubits_estimate: int = Field(
-        ge=1, le=27, description="Planned qubit count; 27 is the default sandbox lane ceiling"
+        ge=1,
+        description=(
+            "Logical qubits required by the authored artifact. Execution providers "
+            "apply their own capability ceilings; this estimate must not be silently "
+            "shrunk to fit the local simulator."
+        ),
     )
     expected_runtime_sec: int = Field(ge=1, le=300)
     success_criteria: SuccessCriteria
     expected_output_keys: list[str] = Field(
-        min_length=1, description="Keys the executed code prints in its result dict"
+        min_length=1,
+        description="Keys the authored code must return when a compatible backend executes it",
     )
     artifact_contract: ArtifactContract | None = None
     verification_plan: VerificationPlan | None = None
@@ -504,14 +1062,30 @@ class Plan(_PlanBase):
                 "matrix does not fit. Drop 'exact_diag' and verify this run another "
                 "way, or plan a smaller instance."
             )
-        if self.success_criteria.primary_metric not in self.expected_output_keys:
+        result_key = plan.reference_result_key or self.success_criteria.primary_metric
+        if result_key not in self.expected_output_keys:
             raise ValueError(
                 "verification_plan.methods includes 'exact_diag', which reads the "
-                "reported energy out of the result under "
-                f"success_criteria.primary_metric ('{self.success_criteria.primary_metric}'), "
+                "reported energy out of the result under reference_result_key "
+                f"('{result_key}'), "
                 f"but expected_output_keys ({', '.join(self.expected_output_keys)}) "
                 "does not promise that key. Spell the metric exactly as one of the "
                 "keys the code will print."
+            )
+        # `reference_result_key` decoupled the exact_diag reference from the primary
+        # metric, and in doing so it dropped the rule that used to be checked here.
+        # The primary metric is read out of RESULT on EVERY run, whatever the
+        # reference reads — so a Plan that does not promise it validates and then
+        # fails every candidate with "primary metric is missing from RESULT" and no
+        # fault attribution, which sends the repair loop after correct code until the
+        # budget is gone. Both keys have to be promised, not either one.
+        if self.success_criteria.primary_metric not in self.expected_output_keys:
+            raise ValueError(
+                "success_criteria.primary_metric "
+                f"('{self.success_criteria.primary_metric}') is read out of the result "
+                "on every run, but expected_output_keys "
+                f"({', '.join(self.expected_output_keys)}) does not promise that key. "
+                "Promise it alongside reference_result_key, or make them the same key."
             )
         return self
 
@@ -559,6 +1133,20 @@ class Plan(_PlanBase):
                     "distinct variables; if the instance really has a constant "
                     "offset, fold it into the reported metric instead."
                 )
+        if problem.kind == "maxcut" and problem.objective not in {None, "maximize"}:
+            raise ValueError(
+                "verification_plan.reference_problem kind 'maxcut' has fixed "
+                "maximize semantics; objective may be omitted or set to 'maximize'."
+            )
+        for constraint in problem.constraints:
+            for term in constraint.terms:
+                if term.i >= problem.num_variables:
+                    raise ValueError(
+                        "verification_plan.reference_problem constraint term "
+                        f"{term.i} names a variable outside "
+                        f"0..{problem.num_variables - 1}; raise num_variables or fix "
+                        "the constraint."
+                    )
         if self.success_criteria.primary_metric not in self.expected_output_keys:
             raise ValueError(
                 "verification_plan.methods includes 'brute_force', which reads the "
@@ -567,6 +1155,125 @@ class Plan(_PlanBase):
                 f"but expected_output_keys ({', '.join(self.expected_output_keys)}) "
                 "does not promise that key. Spell the metric exactly as one of the "
                 "keys the code will print."
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _exact_dynamics_reference_matches_the_reported_metric(self) -> "Plan":
+        verification = self.verification_plan
+        reference = verification.exact_dynamics_reference if verification else None
+        if reference is None:
+            return self
+        metric = self.success_criteria.primary_metric
+        if reference.result_key != metric:
+            raise ValueError(
+                "verification_plan.exact_dynamics_reference.result_key "
+                f"({reference.result_key!r}) must equal success_criteria.primary_metric "
+                f"({metric!r})"
+            )
+        if metric not in self.expected_output_keys:
+            raise ValueError(
+                "verification_plan.exact_dynamics_reference checks the result under "
+                f"success_criteria.primary_metric ({metric!r}), but expected_output_keys "
+                f"({', '.join(self.expected_output_keys)}) does not promise that key"
+            )
+        width = reference.num_qubits
+        if width > self.qubits_estimate:
+            raise ValueError(
+                "verification_plan.exact_dynamics_reference acts on "
+                f"{width} qubits but Plan.qubits_estimate is {self.qubits_estimate}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _exact_lindblad_reference_matches_the_promised_results(self) -> "Plan":
+        verification = self.verification_plan
+        reference = verification.exact_lindblad_reference if verification else None
+        if reference is None:
+            return self
+        result_keys = {result.result_key for result in reference.results}
+        primary = self.success_criteria.primary_metric
+        if primary not in result_keys:
+            raise ValueError(
+                "verification_plan.exact_lindblad_reference must include "
+                f"success_criteria.primary_metric ({primary!r})"
+            )
+        unpromised = sorted(result_keys - set(self.expected_output_keys))
+        if unpromised:
+            raise ValueError(
+                "verification_plan.exact_lindblad_reference checks unpromised RESULT "
+                f"keys: {', '.join(unpromised)}"
+            )
+        if reference.num_qubits > self.qubits_estimate:
+            raise ValueError(
+                "verification_plan.exact_lindblad_reference acts on "
+                f"{reference.num_qubits} system qubits but Plan.qubits_estimate is "
+                f"{self.qubits_estimate}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _exact_qpe_reference_matches_the_promised_results(self) -> "Plan":
+        verification = self.verification_plan
+        reference = verification.exact_phase_estimation_reference if verification else None
+        if reference is None:
+            return self
+        if self.algorithm is not Algorithm.QPE:
+            raise ValueError(
+                "verification_plan.exact_phase_estimation_reference requires algorithm QPE"
+            )
+        promised = set(self.expected_output_keys)
+        reference_keys = {
+            reference.phase_integer_result_key,
+            reference.phase_estimate_result_key,
+            reference.peak_probability_result_key,
+            reference.counts_result_key,
+        }
+        unpromised = sorted(reference_keys - promised)
+        if unpromised:
+            raise ValueError(
+                "verification_plan.exact_phase_estimation_reference checks unpromised "
+                f"RESULT keys: {', '.join(unpromised)}"
+            )
+        numeric_keys = reference_keys - {reference.counts_result_key}
+        if self.success_criteria.primary_metric not in numeric_keys:
+            raise ValueError(
+                "exact QPE success_criteria.primary_metric must be one of the declared "
+                "numeric phase RESULT keys"
+            )
+        total_qubits = reference.counting_qubits + 1
+        if total_qubits > self.qubits_estimate:
+            raise ValueError(
+                "exact_phase_estimation_reference requires at least one target qubit: "
+                f"{reference.counting_qubits} counting qubits need qubits_estimate >= "
+                f"{total_qubits}"
+            )
+        return self
+
+    @model_validator(mode="after")
+    def _exact_linear_system_reference_matches_the_promised_results(self) -> "Plan":
+        verification = self.verification_plan
+        reference = verification.exact_linear_system_reference if verification else None
+        if reference is None:
+            return self
+        result_keys = {result.result_key for result in reference.results}
+        primary = self.success_criteria.primary_metric
+        if primary not in result_keys:
+            raise ValueError(
+                "verification_plan.exact_linear_system_reference must include "
+                f"success_criteria.primary_metric ({primary!r})"
+            )
+        unpromised = sorted(result_keys - set(self.expected_output_keys))
+        if unpromised:
+            raise ValueError(
+                "verification_plan.exact_linear_system_reference checks unpromised "
+                f"RESULT keys: {', '.join(unpromised)}"
+            )
+        required_system_qubits = (len(reference.matrix) - 1).bit_length()
+        if required_system_qubits > self.qubits_estimate:
+            raise ValueError(
+                "exact_linear_system_reference matrix dimension requires at least "
+                f"{required_system_qubits} system qubits"
             )
         return self
 

@@ -35,9 +35,10 @@ from majorana_contracts.enums import (
 )
 from majorana_contracts.plan import Plan
 from majorana_frameworks import FrameworkProgram
+from majorana_llm import attempt_timeout_seconds, provider_timeout_seconds
 
 
-def _plan() -> Plan:
+def _plan(*, qubits: int = 2) -> Plan:
     return Plan.model_validate(
         {
             "domain": "quantum information",
@@ -46,7 +47,7 @@ def _plan() -> Plan:
             "problem_summary": "Build and execute a Bell circuit",
             "algorithm_rationale": "Entanglement matches the requested state",
             "parameters": {"shots": 100, "seed": 7},
-            "qubits_estimate": 2,
+            "qubits_estimate": qubits,
             "expected_runtime_sec": 10,
             "success_criteria": {"primary_metric": "counts"},
             "expected_output_keys": ["counts"],
@@ -60,8 +61,9 @@ def _plan_revision(
     *,
     parent_plan_id: UUID | None = None,
     reason: str | None = None,
+    qubits: int = 2,
 ) -> PlanRevision:
-    plan = _plan()
+    plan = _plan(qubits=qubits)
     fingerprint = hashlib.sha256(
         json.dumps(plan.model_dump(mode="json"), sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -241,6 +243,23 @@ class FakePorts:
             )
         )
 
+    async def save_unexecuted(self, _run_id, _plan, candidate, execution, review):
+        self.calls.append("save_unexecuted")
+        assert execution.was_not_run
+        if review is not None:
+            review.assert_binding(candidate, execution)
+        return SimplePortResult.success(
+            MaterializedArtifact(
+                artifact_id=uuid4(),
+                version_id=uuid4(),
+                version_seq=1,
+                candidate_id=candidate.candidate_id,
+                framework=candidate.framework,
+                source_fingerprint=candidate.source_fingerprint,
+                execution_status="not_run",
+            )
+        )
+
 
 async def test_fixed_happy_path_has_no_model_selected_transition():
     ports = FakePorts()
@@ -252,6 +271,165 @@ async def test_fixed_happy_path_has_no_model_selected_transition():
     assert outcome.counters.plan_attempts == 1
     assert outcome.counters.generation_attempts == 1
     assert outcome.counters.review_attempts == 1
+
+
+class ArtifactOnlyPorts(FakePorts):
+    async def plan(self, run_id, previous, feedback):
+        self.calls.append("plan")
+        self.plan_feedback.append(feedback)
+        revision = 1 if previous is None else previous.revision + 1
+        return SimplePortResult.success(
+            _plan_revision(
+                run_id,
+                revision,
+                parent_plan_id=previous.plan_id if previous else None,
+                reason=feedback.message if previous and feedback else None,
+                qubits=480,
+            )
+        )
+
+    async def run_execution(self, _run_id, _plan, candidate):
+        self.calls.append("execute")
+        return SimplePortResult.success(
+            ExecutionEvidence(
+                execution_id=uuid4(),
+                candidate_id=candidate.candidate_id,
+                source_fingerprint=candidate.source_fingerprint,
+                environment_fingerprint="e" * 64,
+                sandbox_provider="local",
+                exit_code=75,
+                failure_kind=ExecutionFailureKind.RESOURCE_LIMIT,
+                duration_ms=0,
+                result={},
+                observation={
+                    "execution_status": "not_run",
+                    "execution_reason_code": "local_statevector_capacity_exceeded",
+                    "target_backend": "unassigned_external",
+                    "qubits": 480,
+                    "sandbox_runs": 0,
+                },
+            )
+        )
+
+
+async def test_backend_capacity_limit_delivers_an_honest_unexecuted_artifact():
+    ports = ArtifactOnlyPorts()
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.artifact is not None
+    assert outcome.artifact.execution_status == "not_run"
+    assert outcome.execution is not None and outcome.execution.was_not_run
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.READY
+    assert outcome.conversion is None
+    assert ports.calls == ["plan", "generate", "execute", "review", "save_unexecuted"]
+    assert outcome.counters.execution_attempts == 1
+    assert outcome.counters.review_attempts == 1
+    assert outcome.warnings[0].code == "execution_resource_limit"
+
+
+async def test_artifact_only_static_review_repairs_code_then_reviews_again():
+    ports = ArtifactOnlyPorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR, SemanticReviewDecision.READY],
+        review_feedback={
+            "basic_checks": [{"method": "structural", "result": "pass"}],
+            "critic": {
+                "summary": "backend injection is missing",
+                "mismatches": ["run() constructs its own local simulator"],
+                "repair_instructions": ["accept a backend argument"],
+            },
+        },
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.candidate is not None and outcome.candidate.revision == 2
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.READY
+    assert ports.calls == [
+        "plan",
+        "generate",
+        "execute",
+        "review",
+        "generate",
+        "execute",
+        "review",
+        "save_unexecuted",
+    ]
+    feedback = ports.generation_feedback[1]
+    assert feedback is not None
+    assert feedback.details["critic"]["repair_instructions"] == ["accept a backend argument"]
+
+
+async def test_artifact_only_static_review_can_replan_before_regeneration():
+    ports = ArtifactOnlyPorts(
+        reviews=[SemanticReviewDecision.REPLAN, SemanticReviewDecision.READY],
+        review_feedback={
+            "basic_checks": [{"method": "structural", "result": "pass"}],
+            "critic": {
+                "summary": "the Plan omitted a requested constraint",
+                "mismatches": ["capacity constraint is absent"],
+                "repair_instructions": ["add the capacity constraint to the Plan"],
+            },
+        },
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.plan is not None and outcome.plan.revision == 2
+    assert outcome.candidate is not None and outcome.candidate.revision == 2
+    assert ports.calls[:5] == ["plan", "generate", "execute", "review", "plan"]
+    assert ports.plan_feedback[1] is not None
+    assert ports.plan_feedback[1].details["controller"]["action"] == "replan"
+
+
+async def test_artifact_only_review_exhaustion_saves_with_an_explicit_warning():
+    ports = ArtifactOnlyPorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={
+            "basic_checks": [{"method": "structural", "result": "pass"}],
+            "critic": {
+                "summary": "static review still finds an unresolved mismatch",
+                "mismatches": ["objective sign is reversed"],
+                "repair_instructions": ["reverse the encoded objective sign"],
+            },
+        },
+        review_severity="major",
+    )
+    budget = SimplePipelineBudget(
+        max_plan_attempts=1,
+        max_generation_attempts=2,
+        max_consecutive_code_repairs=2,
+        max_execution_attempts_per_candidate=1,
+        max_review_attempts_per_candidate=1,
+        max_save_attempts=1,
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports, budget=budget).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.review is not None
+    assert outcome.review.decision is SemanticReviewDecision.CODE_REPAIR
+    assert outcome.artifact is not None and outcome.artifact.execution_status == "not_run"
+    assert {warning.code for warning in outcome.warnings} == {
+        "execution_resource_limit",
+        "candidate_budget_exhausted",
+    }
+
+
+async def test_not_run_evidence_cannot_contain_a_reported_result():
+    outcome = await SimpleCircuitPipeline(ports=ArtifactOnlyPorts()).run(uuid4())
+
+    assert outcome.execution is not None
+    execution_with_result = outcome.execution.model_copy(update={"result": {"value": 1}})
+
+    assert not execution_with_result.was_not_run
 
 
 async def test_execution_error_repairs_with_a_new_candidate_revision():
@@ -432,6 +610,7 @@ async def test_repeated_code_repair_escalates_to_replan_with_observed_metric():
         "expected_range": None,
         "review_decision": "code_repair",
         "review_reason_code": "review_code_repair",
+        "execution_status": "executed",
     }
 
 
@@ -724,7 +903,15 @@ async def test_sound_candidate_is_delivered_when_review_never_accepts():
     assert "save" in ports.calls
 
 
-async def test_a_blocking_defect_is_never_delivered_as_a_fallback():
+async def test_a_blocking_defect_is_delivered_and_not_disguised():
+    """Owner ruling, 2026-08-03: the repository classifies, it does not exclude.
+
+    A blocking severity is the reviewer's OPINION, and destroying the run's only
+    candidate over an opinion made the advisory review the strongest gate in the
+    pipeline. It is delivered — and `simple_pipeline_verification_summary` carries
+    the severity into the artifact's unverified claims so nothing reads as accepted.
+    """
+
     ports = FakePorts(
         reviews=[SemanticReviewDecision.CODE_REPAIR],
         review_feedback=_sound_review_feedback(),
@@ -733,13 +920,21 @@ async def test_a_blocking_defect_is_never_delivered_as_a_fallback():
 
     outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
 
-    assert outcome.status is SimplePipelineStatus.FAILED
-    assert "save" not in ports.calls
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert "save" in ports.calls
+    assert outcome.review is not None
+    assert outcome.review.decision is not SemanticReviewDecision.READY
 
 
-async def test_a_failed_deterministic_check_is_never_delivered_as_a_fallback():
-    """The fallback rests on trusted evidence, so a failed check disqualifies it —
-    including a Plan-declared reference the reported number contradicted."""
+async def test_a_failed_deterministic_check_is_delivered_and_labelled():
+    """The case the owner asked about by name, including a Plan-declared reference
+    the reported number contradicted.
+
+    A failed check is EVIDENCE, not an absence of it: the record says what was
+    examined and what came back wrong, which is precisely what a development
+    workspace should hold. What used to happen is that the run failed at the save
+    step and the person got nothing to repair.
+    """
 
     ports = FakePorts(
         reviews=[SemanticReviewDecision.CODE_REPAIR],
@@ -749,6 +944,25 @@ async def test_a_failed_deterministic_check_is_never_delivered_as_a_fallback():
                 {"method": "exact_diag", "result": "fail"},
             ]
         },
+        review_severity="minor",
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert "save" in ports.calls
+    assert outcome.review is not None
+    assert not outcome.review.evidence_is_complete()
+
+
+async def test_a_review_with_no_recorded_check_is_still_never_delivered():
+    """The line that did NOT move. Permissive about the verdict, never about
+    whether there is a record: an artifact filed on a review that examined nothing
+    is unlabelled, and that is the one thing an honest classifier cannot hold."""
+
+    ports = FakePorts(
+        reviews=[SemanticReviewDecision.CODE_REPAIR],
+        review_feedback={},
         review_severity="minor",
     )
 
@@ -1035,6 +1249,40 @@ async def test_slow_optional_export_is_cut_off_so_artifact_can_still_save():
     assert ports.calls[-1] == "save"
 
 
+async def test_an_upstream_timeout_is_not_reported_as_our_budget():
+    """A TimeoutError from inside the operation is not the stage running out of time.
+
+    Since Python 3.10 `socket.timeout` IS `TimeoutError`, so a provider read
+    timeout lands in the same `except` clause as our own `asyncio.timeout`. Both
+    used to claim the stage "stopped to preserve time for finalization" — naming
+    Leona's budget management as the cause when the budget was untouched.
+
+    Measured in production: a post-deploy probe reported
+    `stage_time_budget_exhausted` at the plan stage 97 ms into a stage that had
+    roughly 90 seconds, and the deploy gate's one diagnostic line blamed the
+    budget. Here the budget is enormous and the failure is instant, which is that
+    shape with the ambiguity removed.
+    """
+
+    class InstantlyTimingOutExportPorts(FakePorts):
+        async def export(self, *_args):
+            raise TimeoutError("upstream read timed out")
+
+    ports = InstantlyTimingOutExportPorts()
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=lambda: 10_000.0,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.conversion is None
+    warning = outcome.warnings[-1]
+    assert warning.code == "stage_upstream_timed_out"
+    # The numbers that make the attribution checkable rather than asserted.
+    assert warning.details["elapsed_s"] < warning.details["stage_budget_s"]
+    assert ports.calls[-1] == "save"
+
+
 async def test_export_persistence_failure_does_not_discard_the_artifact():
     """Export is optional interchange data; failing to record it is not a reason to
     throw away the framework-native program the run exists to produce."""
@@ -1204,3 +1452,83 @@ async def test_export_provider_failure_is_best_effort():
     assert outcome.status is SimplePipelineStatus.SUCCEEDED
     assert outcome.conversion is None
     assert outcome.warnings == (failure,)
+
+
+class _BlockingPlanPorts(FakePorts):
+    """A port double that can actually block.
+
+    Every other double here returns immediately, which is why 1709 green tests
+    said nothing about the 2026-08-02 outage: the failure was a plan stage that
+    ran and never came back, and no double in this suite could stay inside a
+    stage long enough to be one. This one waits on an event nobody sets, so the
+    stage budget is the only thing that can end it.
+    """
+
+    def __init__(self, *, block_s: float, **kwargs) -> None:
+        super().__init__(**kwargs)
+        self.plan_attempts = 0
+        self.observed_budgets: list[float | None] = []
+        self._block_s = block_s
+
+    async def plan(self, run_id, previous, feedback):
+        self.plan_attempts += 1
+        self.observed_budgets.append(attempt_timeout_seconds())
+        await asyncio.sleep(self._block_s)
+        return await super().plan(run_id, previous, feedback)
+
+
+async def test_a_blocked_stage_is_ended_by_its_budget_not_by_the_run_deadline():
+    """A stage that never returns must fail as a stage, with the run's tail intact."""
+
+    loop = asyncio.get_running_loop()
+    # 40 s of run left: _estimated_finalization_s reserves 25, so PLANNING gets 15.
+    deadline = loop.time() + 40.0
+    ports = _BlockingPlanPorts(block_s=60.0)
+
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=lambda: deadline - loop.time(),
+        monotonic=loop.time,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert outcome.failure is not None
+    assert outcome.failure.stage is SimplePipelineStage.PLANNING
+    assert outcome.failure.kind is SimpleFailureKind.TIMEOUT
+    # It ended on OUR budget, not on the operation's own timeout.
+    assert outcome.failure.code == "stage_time_budget_exhausted"
+
+
+async def test_a_provider_attempt_may_not_outlive_the_stage_that_owns_it():
+    """The bound that turns an unanswered request into a retry instead of a dead run.
+
+    Production 2026-08-02: the provider ceiling (120 s) sat above the plan stage's
+    budget (~90 s), so a stalled request could only ever end by the stage budget
+    expiring — non-retryable — and the run died with its finalization reserve
+    unspent. Whatever a stage has left, one attempt inside it must ask for less.
+    """
+
+    loop = asyncio.get_running_loop()
+    # The production shape, and the one that makes this test able to fail: a
+    # 120 s run leaves the stage ~95 s, BELOW the 120 s provider ceiling. Pick a
+    # run longer than the ceiling instead and the ceiling alone satisfies the
+    # assertion, which is exactly the blind spot being closed.
+    deadline = loop.time() + 120.0
+    ports = _BlockingPlanPorts(block_s=0.0)
+
+    outcome = await SimpleCircuitPipeline(
+        ports=ports,
+        remaining_time_s=lambda: deadline - loop.time(),
+        monotonic=loop.time,
+    ).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    stage_budget_s = 120.0 - 25.0  # _estimated_finalization_s with no samples yet
+    assert stage_budget_s < provider_timeout_seconds()  # the case that mattered
+    observed = ports.observed_budgets[0]
+    assert observed is not None
+    assert observed < stage_budget_s, (
+        f"one attempt was allowed {observed:.1f}s inside a {stage_budget_s:.1f}s stage"
+    )
+    # And outside any stage the configured ceiling still applies unchanged.
+    assert attempt_timeout_seconds() == provider_timeout_seconds()

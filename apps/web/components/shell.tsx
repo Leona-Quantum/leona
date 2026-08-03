@@ -41,24 +41,30 @@ import {
   type ChatSummary,
 } from "../lib/chat-history";
 import { accountFirstName, accountInitials } from "../lib/account-identity";
-import type { AccountTier } from "../lib/account-tier";
+import { ACCOUNT_TIERS, limitsForTier, type AccountTier } from "../lib/account-tier";
 import { fetchArtifactPages } from "../lib/artifact-page";
 import { describeNextSlot, isMetered, parseUsage, type UsageSummary } from "../lib/usage-summary";
 import { titleFromPrompt } from "../lib/chat-title";
 import {
-  ARTIFACT_FOLDERS_EVENT,
-  assignArtifactToFolder,
-  createArtifactFolder,
-  getArtifactFolderId,
-  loadArtifactFolders,
-  type ArtifactFolder,
-} from "../lib/artifact-folders";
-import { archiveArtifact, artifactFromResource, daysUntilArtifactDeletion, deleteArtifact, isArtifactDeleted, loadLibraryArtifacts, rememberArtifact, restoreArtifact, type LibraryArtifact } from "../lib/library-data";
+  ARTIFACT_PROJECTS_EVENT,
+  ArtifactAssignmentRefused,
+  assignArtifactToRemoteProject,
+  createRemoteArtifactProject,
+  deleteRemoteArtifactProject,
+  hydrateArtifactProjects,
+  loadArtifactProjects,
+  renameRemoteArtifactProject,
+  reorderArtifactProjects,
+  type ArtifactProject,
+} from "../lib/artifact-projects";
+import { loadSharedProjects, type SharedProject } from "../lib/project-shares";
+import { ProjectShareDialog } from "./project-share-dialog";
+import { archiveArtifact, artifactFromResource, daysUntilArtifactDeletion, deleteArtifact, isArtifactDeleted, loadLibraryArtifacts, rememberArtifact, restoreArtifact, setArtifactProjectLocally, type LibraryArtifact } from "../lib/library-data";
 import { verificationFromResource } from "../lib/verification-record";
 import { WORKSPACE_PINS_EVENT, isPinned, setPinned, togglePinned } from "../lib/workspace-pins";
 import { ThemeToggle } from "./theme-toggle";
 import type { PublicLocale } from "../lib/public-locale";
-import { WORKSPACE_COPY } from "../lib/workspace-locale";
+import { PROJECT_SHARE_COPY, WORKSPACE_COPY } from "../lib/workspace-locale";
 
 // A viewport preference, not content: stays device-global rather than
 // per-account (see DEVICE_STORAGE_KEYS in lib/user-storage.ts).
@@ -109,10 +115,21 @@ export function Shell({
   const [chatFolders, setChatFolders] = useState<ChatFolder[]>([]);
   const [artifacts, setArtifacts] = useState<LibraryArtifact[]>([]);
   const [archivedArtifacts, setArchivedArtifacts] = useState<LibraryArtifact[]>([]);
-  const [artifactFolders, setArtifactFolders] = useState<ArtifactFolder[]>([]);
+  const [artifactProjects, setArtifactProjects] = useState<ArtifactProject[]>([]);
   const [folderSyncState, setFolderSyncState] = useState<"local" | "synced" | "error">("local");
+  // Its own state, not a reuse of folderSyncState. The two hydrates are
+  // independent calls against different endpoints: sharing one flag makes a
+  // failed chat-folder read badge the Projects header "local only" while the
+  // projects synced perfectly, and hides a genuinely failed project read behind
+  // a folder list that worked.
+  const [projectSyncState, setProjectSyncState] = useState<"local" | "synced" | "error">("local");
   const [refreshTick, setRefreshTick] = useState(0);
   const [archiveNotice, setArchiveNotice] = useState<ChatSummary | null>(null);
+  // A refusal the server understood and the person can act on — a full project,
+  // or a move that would put the workspace past its plan allowance. Held apart
+  // from `archiveNotice` because it carries a server sentence rather than a
+  // locale string, and because it must not be undoable: the move did not happen.
+  const [assignRefusal, setAssignRefusal] = useState<string | null>(null);
 
   useEffect(() => {
     const saved = window.localStorage.getItem(SIDEBAR_STORAGE_KEY);
@@ -128,7 +145,7 @@ export function Shell({
       );
       const localActiveChats = localHistory.filter((chat) => !chat.archivedAt);
       setChatFolders(loadChatFolders());
-      setArtifactFolders(loadArtifactFolders());
+      setArtifactProjects(loadArtifactProjects());
       setChats(localActiveChats);
       setArchivedChats(localHistory.filter((chat) => Boolean(chat.archivedAt)));
       const localArtifacts = loadLibraryArtifacts({ includeDemo: demoMode, includeArchived: true });
@@ -145,6 +162,21 @@ export function Shell({
         }
       } catch {
         if (active) setFolderSyncState("error");
+      }
+
+      // Separate try from the folders above: Run's Folders and Studio's
+      // Projects are two independent workspace lists, and a control plane that
+      // answers one and not the other must not blank the rail that worked.
+      try {
+        const synced = await hydrateArtifactProjects();
+        if (active) {
+          setArtifactProjects(synced.projects);
+          setProjectSyncState("synced");
+        }
+      } catch {
+        // The mirror set above is what the rail keeps showing, and the header
+        // says so rather than presenting one browser's list as the workspace's.
+        if (active) setProjectSyncState("error");
       }
 
       try {
@@ -186,7 +218,21 @@ export function Shell({
         const mergedChats = collapseConversationChats([...byId.values()]);
         const remoteArtifacts = Array.isArray(artifactPayload) ? artifactPayload.flatMap(artifactFromResource).filter((artifact) => !isArtifactDeleted(artifact.id)) : [];
         const storedArtifacts = loadLibraryArtifacts({ includeArchived: true });
-        const artifactById = new Map([...remoteArtifacts, ...storedArtifacts].map((artifact) => [artifact.id, artifact]));
+        // The stored copy wins the merge — it carries code, description and
+        // archive state the list resource does not. The FILING is the one field
+        // where that is wrong: the server owns `project_id`, and letting a stale
+        // mirror win would make a project change made on another device
+        // invisible here, and an artifact taken OUT of a project stay in it
+        // (the mirror still holds the old id, and `??` would never reach the
+        // server's absent one). So the server's answer is overlaid explicitly
+        // wherever the server knows the artifact at all.
+        const remoteProjectIds = new Map(remoteArtifacts.map((artifact) => [artifact.id, artifact.projectId]));
+        const artifactById = new Map(
+          [...remoteArtifacts, ...storedArtifacts].map((artifact) => [
+            artifact.id,
+            remoteProjectIds.has(artifact.id) ? { ...artifact, projectId: remoteProjectIds.get(artifact.id) } : artifact,
+          ]),
+        );
         if (active) {
           setChats(mergedChats.filter((chat) => !chat.archivedAt));
           setArchivedChats(mergedChats.filter((chat) => Boolean(chat.archivedAt)));
@@ -202,17 +248,24 @@ export function Shell({
     void refreshWorkspace();
     const refreshFolders = () => {
       setChatFolders(loadChatFolders());
-      setArtifactFolders(loadArtifactFolders());
+      setArtifactProjects(loadArtifactProjects());
     };
+    // ARTIFACT_PROJECTS_EVENT goes to the LIGHT handler, and must stay there:
+    // `hydrateArtifactProjects` ends in `replaceArtifactProjects`, which emits
+    // this event, so binding it to `refreshWorkspace` would hydrate → replace →
+    // emit → hydrate without end. CHAT_FOLDERS_EVENT is on the light handler for
+    // the same reason. Artifact rows move between sections through the
+    // `onAssignArtifactProject`/`onProjectDeleted` callbacks, which update the
+    // list the parent holds — not through this listener.
     window.addEventListener(CHAT_HISTORY_EVENT, refreshWorkspace);
     window.addEventListener(CHAT_FOLDERS_EVENT, refreshFolders);
-    window.addEventListener(ARTIFACT_FOLDERS_EVENT, refreshFolders);
+    window.addEventListener(ARTIFACT_PROJECTS_EVENT, refreshFolders);
     window.addEventListener(WORKSPACE_PINS_EVENT, refreshWorkspace);
     return () => {
       active = false;
       window.removeEventListener(CHAT_HISTORY_EVENT, refreshWorkspace);
       window.removeEventListener(CHAT_FOLDERS_EVENT, refreshFolders);
-      window.removeEventListener(ARTIFACT_FOLDERS_EVENT, refreshFolders);
+      window.removeEventListener(ARTIFACT_PROJECTS_EVENT, refreshFolders);
       window.removeEventListener(WORKSPACE_PINS_EVENT, refreshWorkspace);
     };
   }, [demoMode, refreshTick]);
@@ -260,10 +313,11 @@ export function Shell({
           folders={chatFolders}
           artifacts={artifacts}
           archivedArtifacts={archivedArtifacts}
-          artifactFolders={artifactFolders}
+          artifactProjects={artifactProjects}
           collapsed={sidebarCollapsed}
           demoMode={demoMode}
           folderSyncState={folderSyncState}
+          projectSyncState={projectSyncState}
           locale={locale}
           accountName={accountName}
           accountTier={accountTier}
@@ -280,6 +334,45 @@ export function Shell({
           onArchiveArtifact={(artifact) => {
             archiveArtifact(artifact.id, artifact);
             refreshAfterLocalChange();
+          }}
+          /* The row moves from React state, not from a refetch. Bumping
+             refreshTick here instead would re-read the artifact list while the
+             PATCH is still in flight, and the server's not-yet-updated answer
+             overlays `projectId` — so the dragged artifact would snap back to
+             the section it came from and only move again once the round trip
+             landed. Reconciliation happens after, in the finally. */
+          onAssignArtifactProject={async (artifactId, projectId) => {
+            const apply = (list: LibraryArtifact[]) =>
+              list.map((artifact) => (artifact.id === artifactId ? { ...artifact, projectId } : artifact));
+            setArtifacts(apply);
+            setArchivedArtifacts(apply);
+            setArtifactProjectLocally(artifactId, projectId);
+            if (demoMode) return;
+            try {
+              await assignArtifactToRemoteProject(artifactId, projectId);
+              setAssignRefusal(null);
+            } catch (caught) {
+              // A REFUSAL is the one failure with something true to say: the
+              // project is full, or the move would spend a plan slot there is
+              // not one of. Swallowing it left the row snapping back with no
+              // explanation, which is how a rule the person could act on reads
+              // as a bug. Everything else still falls through silently — the
+              // mirror keeps the optimistic answer until the refresh below
+              // replaces it with whatever the workspace actually holds.
+              if (caught instanceof ArtifactAssignmentRefused) setAssignRefusal(caught.message);
+            } finally {
+              refreshAfterLocalChange();
+            }
+          }}
+          /* A deleted project's artifacts are ungrouped, here as well as in the
+             mirror: the rail renders the ungrouped section from `!projectId`, so
+             a row still pointing at a project that no longer exists would be in
+             no section at all. */
+          onProjectDeleted={(projectId) => {
+            const apply = (list: LibraryArtifact[]) =>
+              list.map((artifact) => (artifact.projectId === projectId ? { ...artifact, projectId: undefined } : artifact));
+            setArtifacts(apply);
+            setArchivedArtifacts(apply);
           }}
           onRestoreArtifact={(artifact) => {
             restoreArtifact(artifact.id);
@@ -327,6 +420,26 @@ export function Shell({
           }}
           onDismiss={() => setArchiveNotice(null)}
         />
+      ) : null}
+      {assignRefusal ? (
+        <div className="mj-archive-notice" role="status" aria-live="polite">
+          {/* The server's own sentence, not a locale string. Every refusal this
+              route sends is composed with the numbers the refusal was measured
+              against, and re-writing it here would mean two places deciding what
+              a full project says. `project_sharing_not_in_plan` is the only
+              refusal in the product with a translated twin; the rest reach a
+              Japanese reader in English and that is tracked as one piece of
+              work rather than one sentence at a time. */}
+          <span>{assignRefusal}</span>
+          <button
+            type="button"
+            className="mj-archive-notice-close"
+            aria-label={locale === "ja" ? "閉じる" : "Dismiss"}
+            onClick={() => setAssignRefusal(null)}
+          >
+            ×
+          </button>
+        </div>
       ) : null}
     </AppShell>
   );
@@ -383,10 +496,11 @@ function WorkspaceSidebar({
   folders,
   artifacts,
   archivedArtifacts,
-  artifactFolders,
+  artifactProjects,
   collapsed,
   demoMode,
   folderSyncState,
+  projectSyncState,
   locale,
   accountName,
   accountTier,
@@ -395,6 +509,8 @@ function WorkspaceSidebar({
   onRestore,
   onArchiveArtifact,
   onRestoreArtifact,
+  onAssignArtifactProject,
+  onProjectDeleted,
   onDeleteChat,
   onDeleteArtifact,
   onRenameChat,
@@ -407,10 +523,11 @@ function WorkspaceSidebar({
   folders: ChatFolder[];
   artifacts: LibraryArtifact[];
   archivedArtifacts: LibraryArtifact[];
-  artifactFolders: ArtifactFolder[];
+  artifactProjects: ArtifactProject[];
   collapsed: boolean;
   demoMode: boolean;
   folderSyncState: "local" | "synced" | "error";
+  projectSyncState: "local" | "synced" | "error";
   locale: PublicLocale;
   accountName?: string;
   workspaceName?: string;
@@ -418,6 +535,8 @@ function WorkspaceSidebar({
   onRestore: (chat: ChatSummary) => void;
   onArchiveArtifact: (artifact: LibraryArtifact) => void;
   onRestoreArtifact: (artifact: LibraryArtifact) => void;
+  onAssignArtifactProject: (artifactId: string, projectId?: string) => void;
+  onProjectDeleted: (projectId: string) => void;
   onDeleteChat: (chat: ChatSummary) => void;
   onDeleteArtifact: (artifact: LibraryArtifact) => void;
   onRenameChat: (chat: ChatSummary, name: string) => void;
@@ -433,13 +552,79 @@ function WorkspaceSidebar({
   const usageReadAt = useRef(0);
   const [creatingFolder, setCreatingFolder] = useState(false);
   const [folderName, setFolderName] = useState("");
-  const [creatingArtifactFolder, setCreatingArtifactFolder] = useState(false);
-  const [artifactFolderName, setArtifactFolderName] = useState("");
+  const [creatingProject, setCreatingProject] = useState(false);
+  const [projectName, setProjectName] = useState("");
   const [deleteTarget, setDeleteTarget] = useState<DeleteTarget | null>(null);
   const [folderDeleteTarget, setFolderDeleteTarget] = useState<ChatFolder | null>(null);
+  const [projectDeleteTarget, setProjectDeleteTarget] = useState<ArtifactProject | null>(null);
+  const [shareTarget, setShareTarget] = useState<ArtifactProject | null>(null);
+  // Projects OTHER workspaces have granted to this person. Never merged into
+  // `artifactProjects` and never written to the localStorage mirror: that
+  // mirror is keyed by this workspace's storage scope, and these rows belong
+  // to a workspace this browser has no scope for.
+  const [sharedProjects, setSharedProjects] = useState<SharedProject[]>([]);
   const [folderError, setFolderError] = useState<string | null>(null);
   const [draggingFolder, setDraggingFolder] = useState<string | null>(null);
   const [folderDragOver, setFolderDragOver] = useState<string | null>(null);
+  // The tier the CONTROL PLANE resolved, which is the one that enforces.
+  //
+  // `accountTier` beside it is this app's own answer, resolved from the email
+  // allowlists in `account-tier.ts`. That resolution has no database, so it
+  // cannot see `users.plan` — an account put on the Team plan by its column
+  // reads as `free` here and would be shown a disabled Share button for a
+  // capability the API would have allowed. `/api/me` carries the real one.
+  //
+  // Null until it arrives, and the BFF's answer is used meanwhile: a control
+  // plane that is slow or down must not silently downgrade what the sidebar
+  // offers, and the API refuses anything this gets wrong anyway.
+  const [enforcedTier, setEnforcedTier] = useState<AccountTier | null>(null);
+  useEffect(() => {
+    if (demoMode) return undefined;
+    let active = true;
+    void fetch("/api/me", { cache: "no-store" })
+      .then((response) => (response.ok ? response.json() : null))
+      .then((payload: unknown) => {
+        if (!active || !payload || typeof payload !== "object") return;
+        const tier = (payload as { tier?: unknown }).tier;
+        // An unrecognised tier is not an error and not a downgrade — it means
+        // the control plane is ahead of this build. Keep this app's answer.
+        const known = ACCOUNT_TIERS.find((entry) => entry === tier);
+        if (known) setEnforcedTier(known);
+      })
+      .catch(() => {
+        // Same reasoning as the shared-projects effect below: an outage must
+        // not manufacture a downgrade.
+      });
+    return () => {
+      active = false;
+    };
+  }, [demoMode]);
+
+  const canShareProjects =
+    !demoMode && limitsForTier(enforcedTier ?? accountTier ?? "preview").projectSharing;
+
+  // Fetched on mount and never mirrored. Its own effect rather than a branch of
+  // the projects hydration for the reason that hydration already gives: two
+  // independent lists, and a control plane that answers one and not the other
+  // must not blank the one that worked.
+  useEffect(() => {
+    if (demoMode) return undefined;
+    let active = true;
+    void loadSharedProjects()
+      .then((rows) => {
+        if (active) setSharedProjects(rows);
+      })
+      .catch(() => {
+        // Nothing shown rather than an error row. "Shared with me" is empty for
+        // almost everybody, and an outage must not manufacture a section that
+        // says something went wrong with a feature they do not use.
+        if (active) setSharedProjects([]);
+      });
+    return () => {
+      active = false;
+    };
+  }, [demoMode]);
+
   const [recentsPosition, setRecentsPosition] = useState<RecentsPosition>("below");
   const [recentsOpen, setRecentsOpen] = useState(true);
 
@@ -529,7 +714,7 @@ function WorkspaceSidebar({
   const pinnedArtifacts = artifacts.filter((artifact) => isPinned("artifact", artifact.id));
   const unpinnedArtifacts = artifacts.filter((artifact) => !isPinned("artifact", artifact.id));
   const standaloneChats = unpinnedChats.filter((chat) => !chat.folderId);
-  const standaloneArtifacts = unpinnedArtifacts.filter((artifact) => !getArtifactFolderId(artifact.id));
+  const standaloneArtifacts = unpinnedArtifacts.filter((artifact) => !artifact.projectId);
 
   // The account drawer used to close on mouseleave of its container, and the
   // panel was offset from the trigger by a gap — so the pointer crossed dead
@@ -626,11 +811,55 @@ function WorkspaceSidebar({
     setCreatingFolder(false);
   }
 
-  function submitArtifactFolder(event: FormEvent<HTMLFormElement>) {
+  async function submitProject(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    createArtifactFolder(artifactFolderName);
-    setArtifactFolderName("");
-    setCreatingArtifactFolder(false);
+    const name = projectName.trim();
+    if (!name) return;
+    try {
+      await createRemoteArtifactProject(name);
+      // Cleared only on success. Resetting before the await means a refused
+      // create leaves an error banner and an empty box, so the person has to
+      // remember and retype the name they just lost.
+      setProjectName("");
+      setCreatingProject(false);
+    } catch {
+      setFolderError(copy.projectCreateFailed);
+    }
+  }
+
+  async function moveProject(from: number, to: number) {
+    if (from === to || from < 0 || to < 0 || to >= artifactProjects.length) return;
+    const next = [...artifactProjects];
+    const [moved] = next.splice(from, 1);
+    next.splice(to, 0, moved);
+    try {
+      await reorderArtifactProjects(next);
+    } catch {
+      // reorderArtifactProjects restores the previous order in the mirror before
+      // it rethrows, so the rail re-renders back to what the server still holds
+      // rather than showing an arrangement that was refused.
+      setFolderError(copy.projectOrderFailed);
+    }
+  }
+
+  async function renameProject(projectId: string, name: string) {
+    try {
+      await renameRemoteArtifactProject(projectId, name);
+    } catch {
+      setFolderError(copy.projectRenameFailed);
+    }
+  }
+
+  async function removeProject(project: ArtifactProject) {
+    setProjectDeleteTarget(null);
+    try {
+      await deleteRemoteArtifactProject(project.id);
+      // The artifacts survive, ungrouped. Told to the parent because it owns the
+      // artifact list; the mirror is already updated by the call above.
+      onProjectDeleted(project.id);
+    } catch {
+      setFolderError(copy.projectDeleteFailed);
+    }
   }
 
   function assignFolder(chatId: string, folderId?: string) {
@@ -638,8 +867,8 @@ function WorkspaceSidebar({
     if (!demoMode) void assignChatToRemoteFolder(chatId, folderId).catch(() => undefined);
   }
 
-  function assignArtifact(artifactId: string, folderId?: string) {
-    assignArtifactToFolder(artifactId, folderId);
+  function assignArtifact(artifactId: string, projectId?: string) {
+    onAssignArtifactProject(artifactId, projectId);
   }
 
   // HTML5 drag & drop: rows publish their id under a kind-specific type, folder
@@ -809,43 +1038,84 @@ function WorkspaceSidebar({
             <>
               <SidebarSectionHeader label={copy.pinned} />
               <nav className="mj-sidebar-chats mj-sidebar-pinned-list" aria-label={copy.pinned}>
-                {pinnedArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />)}
+                {pinnedArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactProjects} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />)}
               </nav>
             </>
           ) : null}
 
-          <SidebarSectionHeader label={copy.projects} actionLabel={copy.createArtifactFolder} onAction={() => setCreatingArtifactFolder(true)} />
-          {creatingArtifactFolder ? (
-            <form className="mj-sidebar-folder-form" onSubmit={submitArtifactFolder}>
-              <input aria-label={copy.folderName} autoFocus maxLength={80} value={artifactFolderName} onChange={(event) => setArtifactFolderName(event.target.value)} placeholder={copy.folderName} />
-              <button type="submit" aria-label={copy.saveFolder} disabled={!artifactFolderName.trim()}>✓</button>
-              <button type="button" aria-label={copy.cancelFolder} onClick={() => { setCreatingArtifactFolder(false); setArtifactFolderName(""); }}>×</button>
+          {/* No create action in the public preview. Projects are workspace
+              rows and the demo has no workspace to write to, so offering the
+              button there is a form that accepts a name and produces nothing. */}
+          <SidebarSectionHeader
+            label={copy.projects}
+            status={projectSyncState === "error" ? copy.localOnly : undefined}
+            actionLabel={demoMode ? undefined : copy.createProject}
+            onAction={demoMode ? undefined : () => setCreatingProject(true)}
+          />
+          {creatingProject ? (
+            <form className="mj-sidebar-folder-form" onSubmit={submitProject}>
+              <input aria-label={copy.projectName} autoFocus maxLength={80} value={projectName} onChange={(event) => setProjectName(event.target.value)} placeholder={copy.projectName} />
+              <button type="submit" aria-label={copy.saveFolder} disabled={!projectName.trim()}>✓</button>
+              <button type="button" aria-label={copy.cancelFolder} onClick={() => { setCreatingProject(false); setProjectName(""); }}>×</button>
             </form>
           ) : null}
           <div className="mj-sidebar-folder-list">
-            {artifactFolders.map((folder) => {
-              const folderArtifacts = unpinnedArtifacts.filter((artifact) => getArtifactFolderId(artifact.id) === folder.id);
-              return (
-                <div className="mj-sidebar-disclosure" key={folder.id}>
-                  <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={openFolders.has(folder.id)} onClick={() => toggleFolder(folder.id)} {...dropProps("artifact", `artifact-folder-${folder.id}`, folder.id)}>
-                    <ChevronIcon className={openFolders.has(folder.id) ? "is-open" : ""} size={14} />
-                    <FolderIcon size={15} />
-                    <span className="mj-sidebar-copy">{folder.name}</span>
-                    <span className="mj-sidebar-folder-count">{folderArtifacts.length}</span>
-                  </button>
-                  {openFolders.has(folder.id) ? (
-                    <div className="mj-sidebar-disclosure-items">
-                      {folderArtifacts.length ? folderArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProject}</span>}
-                    </div>
-                  ) : null}
-                </div>
-              );
-            })}
+            {artifactProjects.map((project, index) => (
+              <ProjectRow
+                key={project.id}
+                project={project}
+                index={index}
+                total={artifactProjects.length}
+                artifacts={unpinnedArtifacts.filter((artifact) => artifact.projectId === project.id)}
+                projects={artifactProjects}
+                open={openFolders.has(project.id)}
+                onToggle={() => toggleFolder(project.id)}
+                currentPath={currentPath}
+                demoMode={demoMode}
+                locale={locale}
+                onArchiveArtifact={onArchiveArtifact}
+                onDeleteArtifact={(item) => setDeleteTarget({ kind: "artifact", item })}
+                onRenameArtifact={onRenameArtifact}
+                onAssignProject={assignArtifact}
+                onRenameProject={(name) => void renameProject(project.id, name)}
+                onDeleteProject={() => setProjectDeleteTarget(project)}
+                onShareProject={() => setShareTarget(project)}
+                canShare={canShareProjects}
+                onMove={(delta) => void moveProject(index, index + delta)}
+                dropProps={dropProps("artifact", `artifact-project-${project.id}`, project.id)}
+              />
+            ))}
+            {artifactProjects.length === 0 ? <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProjects}</span> : null}
           </div>
+
+          {/* Only when there is something in it. A permanently-empty section
+              in everybody's sidebar teaches people to skip that part of the
+              rail, which is where the notice will one day be. */}
+          {sharedProjects.length ? (
+            <>
+              <SidebarSectionHeader label={PROJECT_SHARE_COPY[locale].sharedWithMe} />
+              <div className="mj-sidebar-folder-list">
+                {sharedProjects.map((shared) => (
+                  <a
+                    key={shared.id}
+                    className="mj-sidebar-shared-project"
+                    href={`/shared/${encodeURIComponent(shared.id)}`}
+                    title={PROJECT_SHARE_COPY[locale].fromWorkspace(shared.ownerWorkspaceName)}
+                  >
+                    <span className="mj-sidebar-copy">{shared.name}</span>
+                    <small className="mj-sidebar-copy">
+                      {PROJECT_SHARE_COPY[locale].fromWorkspace(shared.ownerWorkspaceName)}
+                    </small>
+                    <span className="mj-sidebar-folder-count">{shared.artifactCount}</span>
+                  </a>
+                ))}
+              </div>
+            </>
+          ) : null}
 
           <SidebarSectionHeader label={copy.artifacts} />
           <nav className="mj-sidebar-chats" aria-label={copy.artifacts} {...dropProps("artifact", "artifact-standalone", undefined)}>
-            {standaloneArtifacts.length ? standaloneArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactFolders} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyArtifacts}</span>}
+            {standaloneArtifacts.length ? standaloneArtifacts.map((artifact) => <ArtifactRow key={artifact.id} artifact={artifact} currentPath={currentPath} folders={artifactProjects} onAssignFolder={assignArtifact} onArchive={onArchiveArtifact} onDelete={(item) => setDeleteTarget({ kind: "artifact", item })} onRename={onRenameArtifact} locale={locale} />) : <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyArtifacts}</span>}
           </nav>
           <ArtifactArchiveSection artifacts={archivedArtifacts} locale={locale} onRestore={onRestoreArtifact} onDelete={onDeleteArtifact} />
           <a className="mj-sidebar-library-link mj-sidebar-library-link--bottom" href={demoMode ? "/demo?view=library" : "/library"} aria-label={copy.viewLibrary} title={copy.viewLibrary}>
@@ -942,6 +1212,25 @@ function WorkspaceSidebar({
           confirmLabel={copy.delete}
           onCancel={() => setFolderDeleteTarget(null)}
           onConfirm={() => void removeFolder(folderDeleteTarget)}
+        />
+      ) : null}
+      {shareTarget ? (
+        <ProjectShareDialog
+          projectId={shareTarget.id}
+          projectName={shareTarget.name}
+          locale={locale}
+          onClose={() => setShareTarget(null)}
+        />
+      ) : null}
+      {projectDeleteTarget ? (
+        <ConfirmDialog
+          eyebrow={copy.projects}
+          title={copy.deleteProjectTitle}
+          body={copy.deleteProjectWarning(projectDeleteTarget.name)}
+          cancelLabel={copy.cancel}
+          confirmLabel={copy.delete}
+          onCancel={() => setProjectDeleteTarget(null)}
+          onConfirm={() => void removeProject(projectDeleteTarget)}
         />
       ) : null}
       {folderError ? (
@@ -1206,7 +1495,184 @@ function ChatRow({ chat, currentPath, demoMode, locale, folders, onArchive, onDe
   );
 }
 
-function ArtifactRow({ artifact, currentPath, folders, onAssignFolder, onArchive, onDelete, onRename, locale }: { artifact: LibraryArtifact; currentPath: string; folders: ArtifactFolder[]; onAssignFolder: (artifactId: string, folderId?: string) => void; onArchive: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void; onRename: (artifact: LibraryArtifact, name: string) => void; locale: PublicLocale }) {
+/**
+ * One Studio project in the rail: a disclosure holding its artifacts, plus the
+ * four things a project can have done to it.
+ *
+ * Deliberately NOT a reuse of `FolderRow`. That component is typed for chats and
+ * carries the folder-to-folder drag reorder; projects reorder with the ↑/↓
+ * buttons only, so sharing one component would mean a `kind` prop threaded
+ * through every branch of both behaviours. The two sections are different words
+ * for different things — the owner's distinction — and this keeps them able to
+ * diverge without a merge conflict in the middle of a drag handler.
+ */
+function ProjectRow({
+  project,
+  index,
+  total,
+  artifacts,
+  projects,
+  open,
+  onToggle,
+  currentPath,
+  demoMode,
+  locale,
+  onArchiveArtifact,
+  onDeleteArtifact,
+  onRenameArtifact,
+  onAssignProject,
+  onRenameProject,
+  onDeleteProject,
+  onShareProject,
+  canShare,
+  onMove,
+  dropProps,
+}: {
+  project: ArtifactProject;
+  index: number;
+  total: number;
+  artifacts: LibraryArtifact[];
+  projects: ArtifactProject[];
+  open: boolean;
+  onToggle: () => void;
+  currentPath: string;
+  demoMode: boolean;
+  locale: PublicLocale;
+  onArchiveArtifact: (artifact: LibraryArtifact) => void;
+  onDeleteArtifact: (artifact: LibraryArtifact) => void;
+  onRenameArtifact: (artifact: LibraryArtifact, name: string) => void;
+  onAssignProject: (artifactId: string, projectId?: string) => void;
+  onRenameProject: (name: string) => void;
+  onDeleteProject: () => void;
+  onShareProject: () => void;
+  /** Whether this account's plan includes sharing a project at all. */
+  canShare: boolean;
+  onMove: (delta: number) => void;
+  dropProps: ChatDropProps;
+}) {
+  const copy = WORKSPACE_COPY[locale].sidebar;
+  const shareCopy = PROJECT_SHARE_COPY[locale];
+  const [renaming, setRenaming] = useState(false);
+  const [name, setName] = useState(project.name);
+
+  return (
+    <div className="mj-sidebar-disclosure" data-chat-drop={dropProps["data-drag-over"] || undefined} {...dropProps}>
+      {renaming ? (
+        <form
+          className="mj-sidebar-folder-form"
+          onSubmit={(event) => {
+            event.preventDefault();
+            const next = name.trim();
+            setRenaming(false);
+            if (next && next !== project.name) onRenameProject(next);
+          }}
+        >
+          <input
+            aria-label={copy.renameProject(project.name)}
+            autoFocus
+            maxLength={80}
+            value={name}
+            onChange={(event) => setName(event.target.value)}
+            onKeyDown={(event) => {
+              if (event.key !== "Escape") return;
+              event.preventDefault();
+              setName(project.name);
+              setRenaming(false);
+            }}
+          />
+          <button type="submit" aria-label={copy.saveFolder} disabled={!name.trim()}>✓</button>
+          <button type="button" aria-label={copy.cancelFolder} onClick={() => { setName(project.name); setRenaming(false); }}>×</button>
+        </form>
+      ) : (
+        <div className="mj-sidebar-folder-row">
+          <button className="mj-sidebar-folder-trigger" type="button" aria-expanded={open} onClick={onToggle}>
+            <FolderIcon size={15} open={open} />
+            <span className="mj-sidebar-copy">{project.name}</span>
+            <span className="mj-sidebar-folder-count">{artifacts.length}</span>
+          </button>
+          {!demoMode ? (
+            <div className="mj-sidebar-folder-actions">
+              {/* No drag-to-reorder here, so these buttons are the ONLY way to
+                  arrange projects rather than a keyboard alternative to a
+                  gesture. They are not optional. */}
+              <button
+                className="mj-sidebar-chat-action"
+                type="button"
+                aria-label={copy.projectMoveUp(project.name)}
+                title={copy.projectMoveUp(project.name)}
+                disabled={index === 0}
+                onClick={() => onMove(-1)}
+              >↑</button>
+              <button
+                className="mj-sidebar-chat-action"
+                type="button"
+                aria-label={copy.projectMoveDown(project.name)}
+                title={copy.projectMoveDown(project.name)}
+                disabled={index === total - 1}
+                onClick={() => onMove(1)}
+              >↓</button>
+              <button
+                className="mj-sidebar-chat-action"
+                type="button"
+                aria-label={copy.renameProject(project.name)}
+                title={copy.renameProject(project.name)}
+                onClick={() => { setName(project.name); setRenaming(true); }}
+              >✎</button>
+              {/* Disabled rather than hidden. A control that is simply absent
+                  reads as a feature the product does not have; one that is
+                  present and says why is the difference between "Leona cannot
+                  do this" and "your plan does not include this". The control
+                  plane refuses it either way — this only decides what the
+                  person is told before they try. */}
+              <button
+                className="mj-sidebar-chat-action"
+                type="button"
+                disabled={!canShare}
+                aria-label={
+                  canShare ? shareCopy.shareProject(project.name) : shareCopy.needsTeamPlanHint
+                }
+                title={
+                  canShare ? shareCopy.shareProject(project.name) : shareCopy.needsTeamPlanHint
+                }
+                onClick={canShare ? onShareProject : undefined}
+              >⤴</button>
+              <button
+                className="mj-sidebar-chat-action mj-sidebar-chat-action--danger"
+                type="button"
+                aria-label={copy.deleteProject(project.name)}
+                title={copy.deleteProject(project.name)}
+                onClick={onDeleteProject}
+              ><TrashIcon size={13} /></button>
+            </div>
+          ) : null}
+        </div>
+      )}
+      {open ? (
+        <div className="mj-sidebar-disclosure-items">
+          {artifacts.length ? (
+            artifacts.map((artifact) => (
+              <ArtifactRow
+                key={artifact.id}
+                artifact={artifact}
+                currentPath={currentPath}
+                folders={projects}
+                onAssignFolder={onAssignProject}
+                onArchive={onArchiveArtifact}
+                onDelete={onDeleteArtifact}
+                onRename={onRenameArtifact}
+                locale={locale}
+              />
+            ))
+          ) : (
+            <span className="mj-sidebar-empty mj-sidebar-copy">{copy.emptyProject}</span>
+          )}
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function ArtifactRow({ artifact, currentPath, folders, onAssignFolder, onArchive, onDelete, onRename, locale }: { artifact: LibraryArtifact; currentPath: string; folders: ArtifactProject[]; onAssignFolder: (artifactId: string, folderId?: string) => void; onArchive: (artifact: LibraryArtifact) => void; onDelete: (artifact: LibraryArtifact) => void; onRename: (artifact: LibraryArtifact, name: string) => void; locale: PublicLocale }) {
   const href = `/studio?artifact=${encodeURIComponent(artifact.id)}`;
   return (
     <div
@@ -1227,7 +1693,7 @@ function ArtifactRow({ artifact, currentPath, folders, onAssignFolder, onArchive
           pinned={isPinned("artifact", artifact.id)}
           locale={locale}
           folders={folders}
-          currentFolderId={getArtifactFolderId(artifact.id) ?? undefined}
+          currentFolderId={artifact.projectId}
           onAssignFolder={(folderId) => onAssignFolder(artifact.id, folderId)}
           onRename={(name) => onRename(artifact, name)}
           onTogglePin={() => togglePinned("artifact", artifact.id)}

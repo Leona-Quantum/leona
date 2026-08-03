@@ -12,9 +12,9 @@ def _module():
         / "db"
         / "migrations"
         / "versions"
-        / "0048_vqe_research_candidate_reviews.py"
+        / "0053_vqe_research_candidate_reviews.py"
     )
-    spec = importlib.util.spec_from_file_location("migration_0048_research_reviews", path)
+    spec = importlib.util.spec_from_file_location("migration_0053_research_reviews", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -31,7 +31,7 @@ class _Connection:
         return _Result()
 
 
-def test_0048_is_linear_append_only_and_does_not_claim_independence(monkeypatch):
+def test_0053_is_linear_append_only_and_does_not_claim_independence(monkeypatch):
     module = _module()
     tables: list[str] = []
     statements: list[str] = []
@@ -51,7 +51,7 @@ def test_0048_is_linear_append_only_and_does_not_claim_independence(monkeypatch)
     module.upgrade()
     module.downgrade()
 
-    assert module.down_revision == "0047"
+    assert module.down_revision == "0052"
     assert tables == [
         "vqe_research_candidate_reviews",
         "vqe_research_candidate_review_requests",

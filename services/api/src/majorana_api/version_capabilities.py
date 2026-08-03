@@ -27,6 +27,7 @@ from dataclasses import dataclass
 from typing import Any
 
 from majorana_contracts.enums import ExportStatus, VerifierDecision
+from majorana_frameworks.roles import ProgramRole, classify_source
 
 from .verification_summary import parse_verification_summary
 
@@ -37,6 +38,11 @@ ORIGIN_STUDIO_DRAFT = "studio_draft"
 ORIGIN_IMPORTED_REFERENCE = "imported_reference"
 ORIGIN_STARTER_EXAMPLE = "starter_example"
 ORIGIN_UNKNOWN = "unknown"
+
+#: Re-exported so a caller reading a capability does not have to import from two
+#: packages to compare it against anything.
+CIRCUIT_ROLE = ProgramRole.CIRCUIT.value
+PROGRAM_ROLE = ProgramRole.PROGRAM.value
 
 #: Loss codes, in the order the UI should read them out.
 LOSS_QASM = "qasm"
@@ -49,6 +55,19 @@ LOSS_VERIFICATION = "verification"
 @dataclass(frozen=True)
 class VersionCapabilities:
     origin: str
+    #: Circuit, program, or neither — read from `code` every time it is asked for.
+    #:
+    #: Deliberately NOT a stored column, and that is the whole point of putting it
+    #: here rather than in a migration: the role is a pure function of the source,
+    #: so deriving it needs no backfill, is automatically right for every row
+    #: written before the concept existed, and cannot drift away from the bytes it
+    #: describes the way a column would after an edit that forgot to update it.
+    #:
+    #: It is also a different question from `origin` beside it. `origin` says which
+    #: of four writers produced the row; this says what the row IS. An agent whose
+    #: generation failed halfway is `agent_run` and not a program, and a circuit a
+    #: user pasted into Studio has no meaningful producer at all.
+    program_role: str
     has_qasm: bool
     has_resource_estimates: bool
     has_framework_variants: bool
@@ -89,6 +108,7 @@ def capabilities_of(version: Any) -> VersionCapabilities:
     )
     return VersionCapabilities(
         origin=_origin(metadata),
+        program_role=classify_source(version.code or "").value,
         has_qasm=bool(version.qasm),
         has_resource_estimates=bool(version.resource_estimates),
         has_framework_variants=bool(version.framework_variants),

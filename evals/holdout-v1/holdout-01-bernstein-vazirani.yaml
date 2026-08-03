@@ -1,0 +1,17 @@
+id: holdout-v1-01
+category: "Holdout — Bernstein-Vazirani"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Implement Bernstein-Vazirani in Qiskit for the five-bit hidden string 10110.
+  Build a phase-kickback oracle rather than writing the answer into the measurement
+  register, use at least 1024 shots with deterministic simulator and transpiler seeds,
+  return the measurement dictionary as the top-level RESULT key counts, and bind the
+  complete measured circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["counts"]
+  expected_top_bitstring: "10110"
+  saves_artifact: true

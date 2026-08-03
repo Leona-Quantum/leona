@@ -25,18 +25,18 @@ def _module():
         / "db"
         / "migrations"
         / "versions"
-        / "0044_vqe_source_evidence_staging.py"
+        / "0049_vqe_source_evidence_staging.py"
     )
-    spec = importlib.util.spec_from_file_location("migration_0044_vqe_source_staging", path)
+    spec = importlib.util.spec_from_file_location("migration_0049_vqe_source_staging", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
     return module
 
 
-def test_0044_is_additive_append_only_and_fail_closed(monkeypatch):
+def test_0049_is_additive_append_only_and_fail_closed(monkeypatch):
     module = _module()
-    assert module.down_revision == "0043"
+    assert module.down_revision == "0048"
     assert set(module._IMMUTABLE_TABLES) == {
         "github_metadata_assertions",
         "vqe_component_implementation_candidates",

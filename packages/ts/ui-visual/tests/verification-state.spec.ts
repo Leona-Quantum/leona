@@ -14,7 +14,10 @@ test("INCONCLUSIVE warning is persistent and exposes all audit fields", async ({
   await loadStory(page, "studio-verification-inconclusive");
   await expect(page.getByText("Verification unavailable — correctness has not been confirmed.")).toBeVisible();
   await expect(page.getByText("required_check_unavailable")).toBeVisible();
-  await expect(page.getByText("Unavailable or errored checks")).toBeVisible();
+  // Renamed from "Unavailable or errored checks" when `skipped` joined the group:
+  // three different reasons a check established nothing, under one honest heading.
+  await expect(page.getByText("Checks that did not establish anything")).toBeVisible();
+  await expect(page.getByText("exact_diag")).toBeVisible();
   await expect(page.getByText("Unverified claims")).toBeVisible();
   await expect(page.getByText("Recommended next action")).toBeVisible();
 });

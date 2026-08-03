@@ -40,7 +40,7 @@ from sqlalchemy import select
 from majorana_api.app import create_app
 from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.catalog_read_model import LIST_VIEW_RECORD_FIELDS
-from majorana_api.routes.catalog import CATALOG_ENTRIES_MAX_LIMIT
+from majorana_api.routes.catalog import CATALOG_ENTRIES_MAX_LIMIT, CATALOG_TOTAL_HEADER
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.ids import uuid7
 from majorana_api.orm import Artifact, ImportItem, ImportJob, Job, Membership
@@ -493,12 +493,20 @@ async def test_the_view_projection_still_applies_to_a_page(env):
     """`view=list` and pagination are independent; combining them must not drop
     the projection and start serving full records under a list request."""
     configured, reviewer_id, factory = env
-    await _publish_new_entry(factory, configured, reviewer_id, slug=f"viewed-{uuid.uuid4()}")
+    slug = f"viewed-{uuid.uuid4()}"
+    await _publish_new_entry(factory, configured, reviewer_id, slug=slug)
 
     async with _client(configured, factory) as client:
-        page = await client.get("/v1/catalog/entries?view=list&limit=1&offset=0")
+        # The listing is oldest-first, so page 0 is whatever was published first
+        # — in a suite run, another file's entry, whose source may legitimately
+        # not be a manifest record (`record=None`, see parse_source_record).
+        # Paginate to THIS entry: the projection is what is under test, not
+        # which entry happens to sort first.
+        total = int((await client.get("/v1/catalog/entries?limit=0")).headers[CATALOG_TOTAL_HEADER])
+        page = await client.get(f"/v1/catalog/entries?view=list&limit=1&offset={total - 1}")
         assert page.status_code == 200
         [entry] = page.json()
+        assert entry["slug"] == slug
         assert set(entry["record"]) <= set(LIST_VIEW_RECORD_FIELDS)
 
 

@@ -1,0 +1,22 @@
+id: holdout-v3-01
+category: "Holdout v3 — Superdense coding"
+split: holdout
+difficulty: basic
+workload: educational
+prompt: >-
+  Implement superdense coding in Qiskit for both classical message bits equal to one.
+  Create the Bell pair, apply the sender's X and Z encodings, perform the receiver's
+  CNOT and Hadamard decoding, and measure both message qubits with at least 1024 shots
+  and deterministic simulator/transpiler seeds. Derive the recovered two-bit integer
+  from the measured register rather than assigning it directly. Return top-level
+  numeric RESULT keys recovered_message_integer and decode_success_probability plus
+  counts, and bind the complete measured protocol to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["recovered_message_integer", "decode_success_probability", "counts"]
+  expected_values:
+    recovered_message_integer: 3.0
+    decode_success_probability: 1.0
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

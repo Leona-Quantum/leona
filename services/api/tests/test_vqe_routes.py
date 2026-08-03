@@ -26,7 +26,84 @@ def _settings():
     return SimpleNamespace(
         catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
         vqe_candidate_execution=False,
+        developer_emails=frozenset(),
+        team_emails=frozenset(),
+        pro_emails=frozenset(),
     )
+
+
+def _identity():
+    return (SimpleNamespace(email="vqe-test@example.com", plan=None), SimpleNamespace())
+
+
+@pytest.fixture(autouse=True)
+def _stub_private_vault_filing(monkeypatch):
+    async def keep_artifact(scope, session, artifact_id, *, workspace_artifact_limit):
+        return SimpleNamespace(id=artifact_id)
+
+    monkeypatch.setattr(vqe_routes.artifacts_repo, "keep_artifact", keep_artifact)
+
+
+@pytest.mark.asyncio
+async def test_private_vqe_filing_uses_the_authenticated_plan_limit(monkeypatch):
+    captured = {}
+
+    async def keep_artifact(scope, session, artifact_id, *, workspace_artifact_limit):
+        captured.update(
+            scope=scope,
+            session=session,
+            artifact_id=artifact_id,
+            limit=workspace_artifact_limit,
+        )
+        return SimpleNamespace(id=artifact_id)
+
+    monkeypatch.setattr(vqe_routes.artifacts_repo, "keep_artifact", keep_artifact)
+    artifact_id = uuid.uuid4()
+    identity = _identity()
+    settings = _settings()
+    await vqe_routes._file_private_artifact(
+        "scope",
+        "session",
+        identity,
+        settings,
+        artifact_id,
+    )
+
+    expected = vqe_routes.limits_for(vqe_routes.tier_of(identity[0], settings)).private_artifacts
+    assert captured == {
+        "scope": "scope",
+        "session": "session",
+        "artifact_id": artifact_id,
+        "limit": expected,
+    }
+
+
+@pytest.mark.asyncio
+async def test_private_vqe_filing_maps_a_full_vault_to_a_structured_refusal(monkeypatch):
+    async def keep_artifact(scope, session, artifact_id, *, workspace_artifact_limit):
+        raise vqe_routes.artifacts_repo.ArtifactCapReached(3, 3)
+
+    monkeypatch.setattr(vqe_routes.artifacts_repo, "keep_artifact", keep_artifact)
+
+    with pytest.raises(HTTPException) as excinfo:
+        await vqe_routes._file_private_artifact(
+            "scope",
+            "session",
+            _identity(),
+            _settings(),
+            uuid.uuid4(),
+        )
+
+    assert excinfo.value.status_code == 429
+    assert excinfo.value.detail == {
+        "error": (
+            "Your Studio holds 3 of 3 artifacts on this plan. "
+            "Archive an artifact you no longer need and this VQE result will file."
+        ),
+        "reason": "artifact_allowance_exhausted",
+        "used": 3,
+        "limit": 3,
+    }
 
 
 def _routes() -> set[tuple[str, str]]:
@@ -193,6 +270,7 @@ async def test_create_workflow_swap_passes_only_bounded_owner_choices(monkeypatc
         body,
         scope=object(),
         session=object(),
+        identity=_identity(),
         settings=_settings(),
         request_idempotency_key="request-1",
     )
@@ -234,6 +312,7 @@ async def test_create_ansatz_migration_passes_only_bounded_owner_choices(monkeyp
         body,
         scope=object(),
         session=object(),
+        identity=_identity(),
         settings=_settings(),
         request_idempotency_key="migration-1",
     )
@@ -280,6 +359,7 @@ async def test_create_hardware_efficient_migration_uses_its_bounded_repository_p
         body,
         scope=object(),
         session=object(),
+        identity=_identity(),
         settings=_settings(),
         request_idempotency_key="hardware-efficient-1",
     )
@@ -514,6 +594,8 @@ async def test_execution_endpoints_remain_honest_without_an_execution(monkeypatc
             uuid.uuid4(),
             scope=object(),
             session=object(),
+            identity=_identity(),
+            settings=_settings(),
         )
     assert excinfo.value.status_code == 409
 
@@ -723,6 +805,8 @@ async def test_materialize_is_bound_to_the_selected_execution(monkeypatch):
         execution_id,
         scope=object(),
         session=object(),
+        identity=_identity(),
+        settings=_settings(),
     )
 
     bundle = json.loads(captured["code"])

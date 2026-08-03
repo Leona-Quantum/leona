@@ -58,6 +58,12 @@ class QubitCeilingExceeded(ValueError):
     sandbox is created."""
 
 
+def _reject_nonfinite_json_constant(value: str) -> None:
+    """Reject Python JSON's non-standard NaN/Infinity extensions."""
+
+    raise ValueError(f"non-finite JSON constant {value}")
+
+
 def preflight(spec: ExecutionSpec) -> None:
     """Enforce pre-dispatch caps. Raises before a sandbox is ever created."""
     if spec.qubits_estimate is not None and spec.qubits_estimate > spec.qubit_ceiling:
@@ -73,8 +79,8 @@ def parse_protected_result(raw: bytes | None) -> dict[str, Any] | None:
     if raw is None or len(raw) > MAX_OUTPUT_BYTES:
         return None
     try:
-        value = json.loads(raw)
-    except (UnicodeDecodeError, json.JSONDecodeError):
+        value = json.loads(raw, parse_constant=_reject_nonfinite_json_constant)
+    except (UnicodeDecodeError, json.JSONDecodeError, ValueError):
         return None
     return value if isinstance(value, dict) else None
 
@@ -100,6 +106,7 @@ def compose_execution(spec: ExecutionSpec) -> str:
     _majorana_getattr = _majorana_builtins.getattr
     _majorana_hasattr = _majorana_builtins.hasattr
     _majorana_int = _majorana_builtins.int
+    _majorana_isinstance = _majorana_builtins.isinstance
     _majorana_len = _majorana_builtins.len
     _majorana_list = _majorana_builtins.list
     _majorana_sorted = _majorana_builtins.sorted
@@ -117,27 +124,81 @@ def compose_execution(spec: ExecutionSpec) -> str:
     _majorana_result = _majorana_namespace.get("RESULT")
     if _majorana_result is not None:
         try:
-            _majorana_json_dumps(_majorana_result)
+            _majorana_json_dumps(_majorana_result, allow_nan=False)
             _majorana_observation["result"] = _majorana_result
         except _majorana_exception:
             _majorana_observation["result_error"] = "not_json_serializable"
 {observer}
     try:
-        _majorana_serialized_observation = _majorana_json_dumps(_majorana_observation)
+        _majorana_serialized_observation = _majorana_json_dumps(
+            _majorana_observation, allow_nan=False
+        )
         if _majorana_len(_majorana_serialized_observation.encode("utf-8")) > {MAX_OUTPUT_BYTES}:
             _majorana_observation = {{
                 "source_fingerprint": {spec.source_fingerprint!r},
                 "evidence_error": "protected_result_too_large",
             }}
     except _majorana_exception:
-        _majorana_observation = {{
-            "source_fingerprint": {spec.source_fingerprint!r},
-            "evidence_error": "protected_result_not_json_serializable",
-        }}
+        # One unserializable VALUE must not cost every other one.
+        #
+        # This used to replace the whole observation with an error, and the cost of
+        # that was found rather than reasoned about: `qml.to_openqasm` returns a
+        # transformed QNode, so `interchange_qasm` held a function, so every
+        # PennyLane run in the product lost its resource metrics, native
+        # statevector, sampled counts and optimization record — all of them
+        # serializable, all discarded for a neighbour. The observation is provider-
+        # owned evidence collected by several independent blocks; they fail
+        # independently and must survive independently.
+        #
+        # The names of the dropped keys are kept, so a gap is legible as a gap
+        # rather than looking like a block that never ran.
+        _majorana_dropped = []
+        _majorana_kept = {{}}
+        for _majorana_key, _majorana_value in _majorana_builtins.sorted(
+            _majorana_observation.items(), key=lambda _pair: _majorana_str(_pair[0])
+        ):
+            try:
+                # `allow_nan=False` HAS to match the final write below. Without it
+                # this probe accepts a key holding inf/NaN — Python's json emits
+                # those by default — the key is kept, and the write that ends this
+                # function then raises OUTSIDE any handler: the process dies, the
+                # sidecar is left truncated, and every serializable key in the
+                # observation is lost along with the run's own RESULT. That is the
+                # exact total loss this recovery block exists to prevent, reached
+                # through the block itself. A diverged optimizer produces NaN
+                # amplitudes, so this is one bad float away on any VQE run.
+                _majorana_json_dumps({{_majorana_key: _majorana_value}}, allow_nan=False)
+            except _majorana_exception:
+                _majorana_dropped.append(_majorana_str(_majorana_key))
+                continue
+            _majorana_kept[_majorana_key] = _majorana_value
+        _majorana_kept["evidence_error"] = "protected_result_not_json_serializable"
+        _majorana_kept["evidence_dropped_keys"] = _majorana_dropped
+        _majorana_kept["source_fingerprint"] = {spec.source_fingerprint!r}
+        try:
+            # The size check above lives INSIDE the try that just raised, so it
+            # never ran for this path. While this handler replaced the observation
+            # with two keys it was bounded by accident; keeping every serializable
+            # key means the ceiling has to be applied again here, or one bad value
+            # in a large observation writes an unbounded sidecar — which the
+            # reader then rejects wholesale, turning a partial loss into a total
+            # one. `test_the_byte_ceiling_still_applies_to_a_RECOVERED_observation`
+            # fails without these three lines.
+            _majorana_recovered = _majorana_json_dumps(_majorana_kept, allow_nan=False)
+            if _majorana_len(_majorana_recovered.encode("utf-8")) > {MAX_OUTPUT_BYTES}:
+                raise _majorana_builtins.ValueError("protected_result_too_large")
+            _majorana_observation = _majorana_kept
+        except _majorana_exception:
+            # A key that serializes alone but not together is not a thing json
+            # does; if it somehow happens, fall back to what this always did.
+            _majorana_observation = {{
+                "source_fingerprint": {spec.source_fingerprint!r},
+                "evidence_error": "protected_result_not_json_serializable",
+            }}
     with _majorana_open(
         {spec.protected_result_path!r}, "w", encoding="utf-8"
     ) as _majorana_result_file:
-        _majorana_json_dump(_majorana_observation, _majorana_result_file)
+        _majorana_json_dump(_majorana_observation, _majorana_result_file, allow_nan=False)
 
 _majorana_host_run()
 """

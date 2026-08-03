@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass
 
 from .catalog_authority import CatalogAuthority
-from .tiers import parse_developer_emails
+from .tiers import TIER_ALLOWLIST_ENV, parse_developer_emails
 
 _MIN_TOKEN_LENGTH = 32
 
@@ -98,6 +98,19 @@ class Settings:
     #: meters collaborators like free accounts; it cannot throttle the operator,
     #: whose identity is recognised without configuration.
     developer_emails: frozenset[str] = frozenset()
+    #: Addresses granted the TEAM tier by this service. Same parsing and the same
+    #: empty default as the developer list above, and the same reason for
+    #: existing: `users.plan` is the durable signal and billing will write it,
+    #: but nothing writes it today, so without this an operator could not put a
+    #: design partner on the tier that unlocks sharing except by hand in SQL.
+    #: An address on both lists resolves to developer — see `resolve_tier`.
+    team_emails: frozenset[str] = frozenset()
+    #: Addresses granted the PRO tier — expanded run and artifact allowances, and
+    #: none of Team's sharing. Third of three, parsed the same way and empty by
+    #: the same default. `from_env` reads all three from `TIER_ALLOWLIST_ENV`
+    #: rather than naming them one by one, because the list that gets forgotten
+    #: at a call site meters its accounts as free without failing anywhere.
+    pro_emails: frozenset[str] = frozenset()
     # Post-deploy probe (NEXT.md §2 item 1, approved session 33). Empty disables
     # it, which is the state every environment except production is in. Unlike
     # the lock, this credential does not open the product: it may create a run
@@ -193,7 +206,13 @@ class Settings:
             local_dev_display_name=os.environ.get(
                 "MAJORANA_LOCAL_DEV_DISPLAY_NAME", "Local developer"
             ),
-            developer_emails=parse_developer_emails(os.environ.get("LEONA_DEVELOPER_EMAILS")),
+            # One table, shared with the worker's `EnvTierSources.from_env`, so
+            # the two services cannot end up reading different variable names
+            # for the same allowlist.
+            **{
+                field: parse_developer_emails(os.environ.get(variable))
+                for field, variable in TIER_ALLOWLIST_ENV.items()
+            },
             deploy_probe_token=os.environ.get("DEPLOY_PROBE_TOKEN", "").strip(),
             catalog_authority=CatalogAuthority.from_env(),
             vqe_candidate_execution=vqe_candidate_execution,

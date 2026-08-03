@@ -38,6 +38,7 @@ PRODUCTION_ROLES: tuple[str, ...] = (
     "route",
     "plan",
     "generate",
+    "audit",
     "verify",
 )
 

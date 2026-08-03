@@ -14,6 +14,7 @@ from typing import Any, Awaitable, Callable
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import (
+    CHAT_USAGE_ROLE,
     EvidenceStrength,
     Framework,
     ImportProvider,
@@ -22,6 +23,7 @@ from majorana_contracts.enums import (
     RunMode,
     RunStatus,
     Stage,
+    UsageKind,
     VerificationFailureClass,
     VerifierDecision,
 )
@@ -52,6 +54,7 @@ from opentelemetry import metrics
 
 from pathlib import Path
 
+from majorana_api import credential_crypto
 from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.catalog_bootstrap_manifest import BootstrapManifestSource
 from majorana_api.catalog_import_fixtures import LocalFixtureSource
@@ -65,13 +68,15 @@ from majorana_api.jobs import (
 )
 from majorana_api.orm import ImportJob, User
 from majorana_api.repos import catalog_import as catalog_import_repo
+from majorana_api.repos import provider_credentials as credentials_repo
 from majorana_api.repos import runs as runs_repo
 from majorana_api.repos import artifacts as artifacts_repo
 from majorana_api.repos import qpu_runs as qpu_runs_repo
 from majorana_api.repos import system
 from majorana_api.repos import vqe as vqe_repo
+from majorana_api.repos import usage as usage_repo
 from majorana_api.repos import workspaces as workspaces_repo
-from majorana_api.tiers import limits_for, parse_developer_emails, resolve_tier
+from majorana_api.tiers import EnvTierSources, limits_for, tier_of
 from majorana_api.vqe_runtime_profiles import profile_for_binding
 from majorana_vqe.models import ExecutionBinding
 from majorana_vqe.result import ExecutionFailureResult
@@ -81,6 +86,8 @@ from .agent_store import RepoAgentStore
 from .context import RunContext
 from .errors import RetryableJobError
 from .intent import resolve_mode
+from majorana_frameworks.roles import result_was_derived
+
 from .runtime_ports import SandboxCandidateExecutor, TrustedOpenQASMConverter
 from .simple_events import SimpleEventObserver
 from .simple_ports import (
@@ -88,7 +95,9 @@ from .simple_ports import (
     RepoReviewArtifactSaver,
     SimpleIntentReviewer,
     passed_reference_methods,
+    recorded_basic_checks,
     simple_pipeline_verification_summary,
+    unexecuted_artifact_verification_summary,
 )
 from .vqe_runtime import (
     OptimizerAlgorithm,
@@ -466,10 +475,17 @@ class _RunAllowanceExhausted(Exception):
     send a finished run into the conversation handler.
     """
 
-    def __init__(self, used: int, limit: int) -> None:
-        super().__init__(f"{used}/{limit} weekly execute runs used")
+    def __init__(self, used: int, limit: int, *, runs: int | None = None) -> None:
+        super().__init__(f"{used}/{limit} weekly agent tokens used")
         self.used = used
         self.limit = limit
+        self.runs = runs
+
+    @property
+    def allowance_phrase(self) -> str:
+        if self.runs is None:
+            return f"{self.limit:,} tokens a week"
+        return f"about {self.runs} verified runs a week ({self.limit:,} tokens)"
 
 
 async def _assert_execute_allowance(scope: Scope, session: AsyncSession) -> None:
@@ -494,21 +510,25 @@ async def _assert_execute_allowance(scope: Scope, session: AsyncSession) -> None
     user = await session.get(User, scope.user_id)
     if user is None:  # pragma: no cover - a run cannot outlive its owner
         return
-    limits = limits_for(
-        resolve_tier(
-            user.email,
-            plan=user.plan,
-            developer_emails=parse_developer_emails(os.environ.get("LEONA_DEVELOPER_EMAILS")),
-        )
-    )
-    if limits.agent_runs_per_week is None:
+    limits = limits_for(tier_of(user, EnvTierSources.from_env()))
+    if limits.agent_tokens_per_week is None:
         return
     since = datetime.now(UTC) - _TIER_WINDOW
-    used = await runs_repo.count_execute_runs_since(scope, session, since)
-    # The run being resolved is still AUTO in the database, so it is not in this
-    # count — `used >= limit` is the correct comparison, not `>`.
-    if used >= limits.agent_runs_per_week:
-        raise _RunAllowanceExhausted(used, limits.agent_runs_per_week)
+    # Tokens, matching the API's admission gate since 2026-08-03. The two must
+    # meter the same thing: this backstop exists precisely for the runs that
+    # never passed the API's tier gate (AUTO ones), so a copy still counting
+    # runs would refuse a different set of people than the front door does.
+    #
+    # No in-flight reservation here, unlike the API's. This is a backstop on a
+    # run that has ALREADY been admitted and is executing; charging it for its
+    # own not-yet-recorded tokens would refuse the run for existing.
+    used = await usage_repo.account_tokens_since(scope, session, since)
+    # The run being resolved has not spent its own tokens yet, so it is not in
+    # this sum — `used >= limit` is the correct comparison, not `>`.
+    if used >= limits.agent_tokens_per_week:
+        raise _RunAllowanceExhausted(
+            used, limits.agent_tokens_per_week, runs=limits.agent_runs_per_week
+        )
 
 
 async def _finish_allowance_exhausted(
@@ -522,9 +542,15 @@ async def _finish_allowance_exhausted(
         {
             "stage": None,
             "code": "run_allowance_exhausted",
+            # Worded from the same two numbers as the API's admission refusal
+            # (routes/runs.tier_allowance_refusal), and for the same reason: the
+            # enforced figure is tokens now, and "your plan includes 150000
+            # verified runs per week" is not a sentence to put in front of a
+            # user. `runs` is carried on the exception so the two surfaces
+            # cannot describe the same allowance differently.
             "message": (
-                f"Your plan includes {exhausted.limit} verified runs per week and all "
-                f"{exhausted.limit} are used. Browser simulation in Studio stays available."
+                f"Your plan includes {exhausted.allowance_phrase}, and this week's "
+                "allowance is used. Browser simulation in Studio stays available."
             ),
         },
         event_id=uuid.uuid5(ctx.run_id, "run.error.run_allowance_exhausted"),
@@ -677,6 +703,17 @@ async def _handle_agent_execution(
     # expensive stage has already succeeded, and is the worst place to introduce
     # a query that can fail (0036).
     auto_keep_artifacts = await workspaces_repo.auto_keep_artifacts(scope, session)
+    # The owner's artifact allowance, resolved here for the same reason and from
+    # the same two environment variables the run allowance uses. `None` when the
+    # owner row is gone, which cannot happen to a live run and which reads as
+    # "unlimited" — the safe direction for a worker: an artifact the account is
+    # entitled to is never lost because a lookup came back empty.
+    owner = await session.get(User, scope.user_id)
+    artifact_limit = (
+        limits_for(tier_of(owner, EnvTierSources.from_env())).private_artifacts
+        if owner is not None
+        else None
+    )
     ports = ProductionSimplePipelinePorts(
         store=agent_store,
         observer=observer,
@@ -699,6 +736,7 @@ async def _handle_agent_execution(
             # keep it only as the last resort it is.
             title=ctx.conversation_title or ctx.task_prompt,
             auto_keep=auto_keep_artifacts,
+            artifact_limit=artifact_limit,
         ),
         task_prompt=ctx.task_prompt,
         framework=ctx.framework,
@@ -798,34 +836,81 @@ async def _finish_simple_pipeline(
         execution = outcome.execution
         review = outcome.review
         artifact = outcome.artifact
-        if candidate is None or execution is None or review is None or artifact is None:
+        if candidate is None or execution is None or artifact is None:
             raise RuntimeError("simple pipeline succeeded without its durable evidence chain")
-        review.assert_binding(candidate, execution)
         if (
             artifact.candidate_id != candidate.candidate_id
             or artifact.source_fingerprint != candidate.source_fingerprint
         ):
-            raise RuntimeError("simple pipeline artifact is not bound to the executed candidate")
+            raise RuntimeError("simple pipeline artifact is not bound to the authored candidate")
+        if getattr(artifact, "execution_status", "executed") == "not_run":
+            if not execution.was_not_run:
+                raise RuntimeError("unexecuted artifact has inconsistent execution evidence")
+            if review is not None:
+                review.assert_binding(candidate, execution)
+            summary = unexecuted_artifact_verification_summary(review)
+            final = await run_store.finish(
+                RunStatus.SUCCEEDED,
+                {
+                    "status": RunStatus.SUCCEEDED,
+                    "verifier_decision": VerifierDecision.INCONCLUSIVE,
+                    "evidence_strength": None,
+                    "reason_code": summary["reason_code"],
+                    "residual_risks": (
+                        "Full execution was not run because no connected backend fits "
+                        "the authored artifact."
+                    ),
+                    "verification_summary": summary,
+                },
+                verifier_decision=VerifierDecision.INCONCLUSIVE,
+                verification_summary=summary,
+                residual_risks=(
+                    "Full execution was not run because no connected backend fits "
+                    "the authored artifact."
+                ),
+            )
+            _record_verification_summary(summary)
+            return final
+        if review is None:
+            raise RuntimeError("executed simple pipeline artifact lacks semantic review")
+        review.assert_binding(candidate, execution)
         critic = review.feedback.get("critic")
         risks = critic.get("residual_risks") if isinstance(critic, dict) else None
         residual_risks = (
             "\n".join(str(item)[:1000] for item in risks[:20]) if isinstance(risks, list) else None
         )
         reference_methods = passed_reference_methods(review)
-        summary = simple_pipeline_verification_summary(reference_methods, review.decision)
+        # The run's summary and the artifact's are two writers of one claim. A
+        # flag passed to one and not the other is how a run says the program
+        # returned its result while the artifact saved from that same execution
+        # says the platform derived it.
+        summary = simple_pipeline_verification_summary(
+            reference_methods,
+            review.decision,
+            result_derived=result_was_derived(execution.observation),
+            recorded_checks=recorded_basic_checks(review),
+            review_severity=review.severity,
+        )
+        # Read the verdict and the grade back OFF the summary rather than deriving
+        # them a second time here. They were restated — INCONCLUSIVE and
+        # `PHYSICAL if reference_methods` — which was true only while the summary
+        # could not say anything else. It can now: a candidate with a failed
+        # deterministic check is filed as FAIL, and a restated INCONCLUSIVE would
+        # have put the run row and its own summary in contradiction, with the row
+        # winning every surface that reads the run instead of the artifact.
+        decision = VerifierDecision(str(summary["decision"]))
+        evidence_strength = EvidenceStrength(str(summary["evidence_strength"]))
         final = await run_store.finish(
             RunStatus.SUCCEEDED,
             {
                 "status": RunStatus.SUCCEEDED,
-                "verifier_decision": VerifierDecision.INCONCLUSIVE,
-                "evidence_strength": (
-                    EvidenceStrength.PHYSICAL if reference_methods else EvidenceStrength.STRUCTURAL
-                ),
+                "verifier_decision": decision,
+                "evidence_strength": evidence_strength,
                 "reason_code": summary["reason_code"],
                 "residual_risks": residual_risks,
                 "verification_summary": summary,
             },
-            verifier_decision=VerifierDecision.INCONCLUSIVE,
+            verifier_decision=decision,
             verification_summary=summary,
             residual_risks=residual_risks,
         )
@@ -852,6 +937,65 @@ async def _finish_simple_pipeline(
             "reason_code": failure.code,
         },
     )
+
+
+def _is_uuid(value: Any) -> bool:
+    try:
+        uuid.UUID(str(value))
+    except (ValueError, AttributeError, TypeError):
+        return False
+    return True
+
+
+async def _record_chat_usage(ctx: RunContext, store: RepoRunStateStore, response: Any) -> None:
+    """Write a chat turn's tokens to the usage ledger.
+
+    Execute runs have always been metered — `MeteredAgentLLM` records every call
+    it wraps. Chat does not go through it: this handler calls the provider
+    directly, so its tokens reached the `chat.completed` event and nowhere
+    durable. That event is a per-run projection, so "what did chat cost last
+    week" had no answer — on the one surface with no allowance, no submission
+    backstop, and up to 8,000 tokens of history per turn.
+
+    Two deliberate choices:
+
+    * The event id is derived from the run, so a redelivered job cannot count
+      the turn twice. It is not the stronger guarantee MeteredAgentLLM gets —
+      that one replays a *stored* response, while a retried chat turn calls the
+      provider again and legitimately spends different tokens. When the counts
+      differ the repository refuses the reused key, which is the honest outcome:
+      the first figure stands and the retry is visible in the logs rather than
+      silently overwriting it.
+    * Failing to meter never fails the turn. The answer has already been
+      generated and streamed to the reader; taking it away because accounting
+      hiccuped would be strictly worse than an incomplete ledger, and metering
+      here is for cost visibility, not enforcement.
+    """
+    scope = getattr(store, "_scope", None)
+    session = getattr(store, "_session", None)
+    if scope is None or session is None:
+        return
+    try:
+        await usage_repo.record_usage(
+            scope,
+            session,
+            kind=UsageKind.LLM_TOKENS,
+            quantity=(response.input_tokens or 0) + (response.output_tokens or 0),
+            meta={
+                "model": response.model,
+                # The one value `/v1/usage` separates chat spend by. Shared
+                # rather than written twice — see CHAT_USAGE_ROLE.
+                "role": CHAT_USAGE_ROLE,
+                "input_tokens": response.input_tokens,
+                "output_tokens": response.output_tokens,
+                "run_id": str(ctx.run_id),
+            },
+            event_id=uuid.uuid5(uuid.UUID(str(ctx.run_id)), "usage:chat")
+            if _is_uuid(ctx.run_id)
+            else None,
+        )
+    except Exception:
+        log.exception("chat turn %s completed but was not metered", ctx.run_id)
 
 
 async def _handle_conversation(
@@ -925,6 +1069,7 @@ async def _handle_conversation(
         )
 
     await flush_deltas()
+    await _record_chat_usage(ctx, store, response)
     interpretation = response.text.strip() or "The assistant returned an empty response."
     await ctx.sink.emit(
         "chat.completed",
@@ -1310,10 +1455,88 @@ QPU_POLL_DELAY_S = 30
 QPU_POLL_DEADLINE_H = 24
 
 
-def _default_qpu_provider() -> Any:
+#: The provider a stored credential names. One today; `routes/qpu.py` holds the
+#: same constant for the API side of the same lookup.
+IBM_PROVIDER = "ibm"
+
+
+def _ibm_provider(token: str, instance: str | None) -> Any:
     from majorana_qpu import IbmRuntimeProvider
 
-    return IbmRuntimeProvider()
+    return IbmRuntimeProvider(token, instance=instance)
+
+
+class _CredentialUnusable(Exception):
+    """The submitting user's credential cannot be used for this record.
+
+    Carries the sentence written onto the durable row, which is the only place
+    the owner of the run will ever see it — `majorana_failure_evidence` applies
+    here too: `error` is the whole of what the person gets. It never carries
+    ciphertext or plaintext, only the row's `key_id` where that helps an
+    operator.
+    """
+
+
+async def _qpu_credential_for(session: AsyncSession, scope: Any) -> tuple[str, str | None]:
+    """The submitting user's IBM token and instance, decrypted.
+
+    Keyed on `scope.user_id`, which `_scope_from_payload` built from the job
+    payload the API wrote out of the submitting scope — so it is the same person
+    the `qpu_runs` row names, and `handle_qpu_run` asserts that rather than
+    assuming it.
+
+    Raises `_CredentialUnusable` for both failure modes, because the record has
+    to close terminally either way: a user who disconnected between submission
+    and execution, and a row whose encryption key is no longer configured. A
+    handler that retried on these would retry forever — neither condition is
+    transient, and the job queue would spend three attempts discovering that.
+    """
+    record = await credentials_repo.get(scope, session, IBM_PROVIDER)
+    if record is None:
+        raise _CredentialUnusable(
+            "the account that submitted this run has no IBM Quantum credential "
+            "connected; it was disconnected before the job ran"
+        )
+    try:
+        cipher = credential_crypto.load_cipher()
+        token = cipher.decrypt(record.ciphertext, key_id=record.key_id)
+    except credential_crypto.CredentialCryptoError:
+        # `from None`, and the message is built from the row's key_id rather
+        # than from the underlying exception: this string is written to a
+        # database column and read by the user.
+        raise _CredentialUnusable(
+            f"the stored IBM Quantum credential for this account (key "
+            f"{record.key_id}) could not be decrypted by the worker"
+        ) from None
+    return token, record.instance
+
+
+def _credential_failure_message(cause: str, qpu_record: Any) -> str:
+    """The failure written onto the attestation row, with the RIGHT consequence.
+
+    The two `_CredentialUnusable` causes state what went wrong and stop there,
+    because what the user should do next does not follow from the cause — it
+    follows from whether IBM already has the job.
+
+    Both messages used to end "nothing was sent to IBM ... submit again", and
+    that block runs for the RUNNING branch too. Driven against a RUNNING record
+    carrying `provider_job_id`, the row was closed with a sentence telling the
+    user that nothing had been sent and to submit again — while their job was
+    running at IBM and spending their own 28-day Open Plan allowance. Doing what
+    the message said would have spent it twice.
+
+    `error` is the entire evidence a user gets for a failed hardware run, so a
+    confident wrong sentence here is worse than a vague right one.
+    """
+    job_id = getattr(qpu_record, "provider_job_id", None)
+    if not job_id:
+        return f"{cause}. Nothing was sent to IBM — reconnect the credential and submit again."
+    return (
+        f"{cause}. IBM job {job_id} had already been submitted and may still be "
+        "running on your IBM account; its result could not be collected. Reconnect "
+        "the credential, and check that job on IBM's dashboard before submitting "
+        "again — resubmitting spends your free-plan allowance a second time."
+    )
 
 
 async def handle_qpu_run(
@@ -1327,7 +1550,22 @@ async def handle_qpu_run(
     The payload is a pointer plus the scope it resumes; every attested value
     is read from and written to the row. The gate re-check is defense in
     depth — the API checked it too, and a deployment that closed the gate
-    after enqueue must close the record rather than contact the provider."""
+    after enqueue must close the record rather than contact the provider.
+
+    **The provider is contacted at most once per record.** A `qpu.run` job is
+    redelivered on failure like any other, and this is the one handler where a
+    redelivery spends money: see `claim_submission_attempt` below, which is
+    stamped and committed before the submit rather than after it.
+
+    **The credential is the submitting user's own** (migration 0045), loaded and
+    decrypted here and passed to the provider explicitly. It is resolved BEFORE
+    `claim_submission_attempt`, which matters for the at-most-once invariant in
+    both directions: a record whose owner has disconnected must never consume the
+    one attempt it gets, and a credential loaded after the claim would turn "you
+    disconnected" into "this record was already attempted and cannot be retried".
+    Either failure to obtain a usable credential closes the record terminally
+    with the cause named — it is not transient, and retrying it three times
+    changes nothing except how long the user waits to be told."""
     try:
         job = QpuRunJobPayload.model_validate(payload)
     except ValidationError as exc:
@@ -1337,7 +1575,12 @@ async def handle_qpu_run(
     status = QpuRunStatus(record.status)
     if status in {QpuRunStatus.DONE, QpuRunStatus.ERROR, QpuRunStatus.CANCELLED}:
         return
-    reason = submission_block_reason()
+    # The DEPLOYMENT-wide half of the gate first — `has_credential=True` because
+    # the caller's half is a database question answered immediately below, and
+    # passing False here would close every record with `credentials_unconfigured`
+    # in a deployment whose flag is simply off. A closed deployment is not the
+    # user's problem and must not be described as their missing key.
+    reason = submission_block_reason(has_credential=True)
     if reason is not None:
         await qpu_runs_repo.transition(
             scope,
@@ -1348,9 +1591,76 @@ async def handle_qpu_run(
         )
         await session.commit()
         return
-    qpu = provider or _default_qpu_provider()
+    # An injected provider carries its own credential and is how the tests drive
+    # this handler without a database of secrets. Real execution takes the other
+    # branch, always: `provider` has no production producer.
+    credential: tuple[str, str | None] | None = None
+    if provider is None:
+        if record.user_id != scope.user_id:
+            # The payload and the row disagree about whose run this is. There is
+            # no correct credential to load, and guessing at one would submit a
+            # job under somebody else's IBM account.
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                error=(
+                    "this record's owner does not match the job that carries it; "
+                    "no credential was loaded and nothing was sent to IBM"
+                ),
+            )
+            await session.commit()
+            return
+        try:
+            credential = await _qpu_credential_for(session, scope)
+        except _CredentialUnusable as unusable:
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                # Not `str(unusable)`. This block runs for the RUNNING branch as
+                # well as the QUEUED one, so the consequence depends on the
+                # record, not on the cause — see `_credential_failure_message`.
+                error=_credential_failure_message(str(unusable), record),
+            )
+            await session.commit()
+            return
+    qpu = provider if provider is not None else _ibm_provider(*credential)
 
     if status is QpuRunStatus.QUEUED:
+        # Claim the attempt and COMMIT it before the provider is contacted, so a
+        # redelivery of this job cannot contact them a second time.
+        #
+        # Without this the handler submitted, and only then wrote. A submit that
+        # reached the provider and failed on the way back — a read timeout, a
+        # reset connection — left the record QUEUED with nothing written, the
+        # queue redelivered the job, and the handler submitted again. Measured
+        # against this handler with a provider that accepts and loses the first
+        # response: two `provider.submit` calls for one record, the row keeping
+        # only the second provider job id. The first job runs, bills, and is
+        # tracked nowhere.
+        #
+        # The commit is what makes it work. Inside this handler's transaction the
+        # stamp would roll back with everything else when the submit raised, and
+        # the redelivery would find the record exactly as it left it.
+        if not await qpu_runs_repo.claim_submission_attempt(scope, session, record.id):
+            await qpu_runs_repo.transition(
+                scope,
+                session,
+                record.id,
+                QpuRunStatus.ERROR,
+                error=(
+                    "a submission for this record was already attempted and did not "
+                    "confirm; it is not retried because the provider may have accepted "
+                    f"it. Check the provider dashboard for {record.source_fingerprint} "
+                    "before submitting again."
+                ),
+            )
+            await session.commit()
+            return
+        await session.commit()
         submitted = await asyncio.to_thread(
             qpu.submit,
             QpuJobRequest(
@@ -1360,14 +1670,26 @@ async def handle_qpu_run(
                 source_fingerprint=record.source_fingerprint,
             ),
         )
+        # No `submitted_at` here: the claim above already stamped it, and that
+        # stamp is the moment the request left this process. Re-stamping now
+        # would move it later by the provider's whole round trip and make the
+        # 24h poll deadline start after the wait it is meant to bound.
         await qpu_runs_repo.transition(
             scope,
             session,
             record.id,
             QpuRunStatus.RUNNING,
             provider_job_id=submitted.provider_job_id,
-            submitted_at=datetime.now(UTC),
         )
+        if credential is not None:
+            # After the provider accepted it, not before. A submit that IBM
+            # accepted is proof the key still authenticates, so this refreshes
+            # `last_verified_at` as well as `last_used_at` — the alternative is a
+            # "Last verified" date that never moves after the day the key was
+            # pasted, which would keep reading as verified for a credential
+            # revoked on IBM's dashboard months ago. Stamping either field on an
+            # attempt that FAILED would be the same lie in the other direction.
+            await credentials_repo.mark_provider_success(scope, session, IBM_PROVIDER)
     else:  # RUNNING: one poll
         if record.provider_job_id is None:
             await qpu_runs_repo.transition(
@@ -1380,6 +1702,11 @@ async def handle_qpu_run(
             await session.commit()
             return
         polled = await asyncio.to_thread(qpu.poll, record.provider_job_id)
+        if credential is not None:
+            # A poll that answered authenticated too. Refreshed here as well as
+            # on submit so `last_verified_at` tracks a long-running job rather
+            # than going stale for the hours it queues at IBM.
+            await credentials_repo.mark_provider_success(scope, session, IBM_PROVIDER)
         if polled.status is QpuJobStatus.DONE:
             await qpu_runs_repo.transition(
                 scope,

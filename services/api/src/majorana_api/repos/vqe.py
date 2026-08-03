@@ -763,6 +763,7 @@ async def save_component_swap_workflow_draft(
             ),
             family=Algorithm.VQE,
             framework=ContractFramework(evaluator_provider),
+            kept=False,
         )
         configured_optimizer_code = json.dumps(
             configured_optimizer_payload,
@@ -843,6 +844,7 @@ async def save_component_swap_workflow_draft(
         family=Algorithm.VQE,
         framework=ContractFramework(evaluator_provider),
         parent_artifact_id=None,
+        kept=False,
     )
     workflow_payload = {
         **request_payload,
@@ -1057,6 +1059,7 @@ async def save_h2_uccsd_migration_workflow_draft(
             title=f"Configured H2 UCCSD {role.value}",
             family=Algorithm.VQE,
             framework=ContractFramework(evaluator_provider),
+            kept=False,
         )
         component_code = json.dumps(configured_payload, sort_keys=True, indent=2)
         component_version = await artifacts_repo.create_version(
@@ -1116,6 +1119,7 @@ async def save_h2_uccsd_migration_workflow_draft(
         title="H2 fixed-excitation to UCCSD migration draft",
         family=Algorithm.VQE,
         framework=ContractFramework(evaluator_provider),
+        kept=False,
     )
     workflow_payload = {
         **request_payload,
@@ -1323,6 +1327,7 @@ async def save_h2_hardware_efficient_migration_workflow_draft(
             title=f"Configured H2 hardware-efficient {role.value}",
             family=Algorithm.VQE,
             framework=ContractFramework(evaluator_provider),
+            kept=False,
         )
         component_version = await artifacts_repo.create_version(
             scope,
@@ -1409,6 +1414,7 @@ async def save_h2_hardware_efficient_migration_workflow_draft(
         title="H2 UCCSD to hardware-efficient migration draft",
         family=Algorithm.VQE,
         framework=ContractFramework(evaluator_provider),
+        kept=False,
     )
     workflow_payload = {
         **request_payload,

@@ -100,6 +100,60 @@ class WorkspaceFolder(Base):
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class Project(Base):
+    """Studio's artifact grouping (migration 0041).
+
+    The Studio counterpart of `WorkspaceFolder`, which groups runs. Two tables
+    rather than one because the owner's distinction is real: Run's *Folders* and
+    Studio's *Projects* are different words for different things, and one row
+    cannot be in both lists without a `kind` column that every query would then
+    have to remember.
+    """
+
+    __tablename__ = "projects"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    name: Mapped[str]
+    # Not unique — see migration 0040's note on folders. Ties fall back to
+    # (created_at, id), the order the table has before anybody drags anything.
+    position: Mapped[int] = mapped_column(Integer, server_default="0")
+    # Migration 0043. How many artifacts this project may hold, checked when a
+    # SHARE grantee contributes one. NULL is the platform default
+    # (shares.DEFAULT_PROJECT_ARTIFACT_LIMIT), never "unlimited" — every project
+    # that predates the column is NULL and every one of them is shareable.
+    max_artifacts: Mapped[int | None] = mapped_column(Integer)
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ProjectShare(Base):
+    """One person's grant on one project (migration 0042).
+
+    The second authorization path to an artifact row, and the only one. Read in
+    exactly one place — `repos/shares.resolve_share` — so that `expires_at`,
+    the deleted-workspace check and the role mapping are evaluated together or
+    not at all.
+
+    There is no `revoked_at`: revoking deletes the row, so no query that reads
+    this table can widen access by forgetting a predicate. The revocation itself
+    is history in `audit_log`.
+    """
+
+    __tablename__ = "project_shares"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    project_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("projects.id", ondelete="CASCADE"))
+    grantee_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    #: A ShareRole ("viewer" | "editor"), never a workspace Role.
+    role: Mapped[str]
+    granted_by_user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id"))
+    #: NULL = never expires.
+    expires_at: Mapped[dt.datetime | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class Artifact(Base):
     __tablename__ = "artifacts"
 
@@ -122,6 +176,10 @@ class Artifact(Base):
     # and can be forked from) but deliberately NOT in the Vault list. This is
     # separate from deleted_at: never kept is not the same as thrown away.
     kept_at: Mapped[dt.datetime | None]
+    # Migration 0041. NULL = ungrouped, which is where every artifact starts and
+    # where it returns when its project is deleted. No cascade on the FK, on
+    # purpose: deleting the container must never delete the contents.
+    project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"))
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
@@ -967,7 +1025,7 @@ class QpuRun(Base):
 
 class VqeComponentSpec(Base):
     """Typed VQE metadata attached to an existing ArtifactVersion (migration
-    0035, ADR-0024). Component identity IS the ArtifactVersion — this table
+    0046, ADR-0024). Component identity IS the ArtifactVersion — this table
     adds VQE-specific typed fields without a second identity/provenance/
     license system alongside the one artifacts/artifact_versions already own."""
 
@@ -988,7 +1046,7 @@ class VqeComponentSpec(Base):
 
 class VqeWorkflowComponent(Base):
     """Links a Workflow ArtifactVersion to one of its component
-    ArtifactVersions with an explicit role and ordinal (migration 0041,
+    ArtifactVersions with an explicit role and ordinal (migration 0046,
     ADR-0024)."""
 
     __tablename__ = "vqe_workflow_components"
@@ -1047,7 +1105,7 @@ class VqeExecution(Base):
 
 
 class VqeObservation(Base):
-    """Append-only execution evidence (migration 0041, ADR-0026) — never
+    """Append-only execution evidence (migration 0046, ADR-0026) — never
     UPDATEd; a retry is a new row with an incremented `attempt`, never a
     mutation of a prior row."""
 
@@ -1103,3 +1161,44 @@ class VqeControlledComparisonRun(Base):
     run_json: Mapped[dict[str, Any]]
     run_sha256: Mapped[str]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class ProviderCredential(Base):
+    """One person's own credential for one third-party provider (migration 0045).
+
+    **Per USER, not per workspace, and that is the point of the table.** A
+    provider account belongs to a person; it follows them into every workspace
+    they act in, exactly as the weekly run allowance and the weekly hardware
+    spend allowance do — both of which are keyed on `user_id` for the same
+    reason, that a provider bill follows the account rather than the tenant.
+    Keying this on `workspace_id` would silently disconnect a user's IBM account
+    every time they switched workspaces.
+
+    Because of that, `repos/provider_credentials.py` scopes on `scope.user_id`
+    rather than `scope.workspace_id`. That is narrower, not weaker: no query in
+    that module admits a user id other than the caller's, so there is no path by
+    which one account reads or deletes another's row.
+
+    `ciphertext` is a Fernet token from `majorana_api.credential_crypto`. The
+    plaintext API key is in no column of this table, is returned by no endpoint,
+    and appears in no error message. `key_id` names the encryption key the row
+    needs, so an operator mid-rotation can tell which rows still depend on the
+    key being retired; it is a truncated digest, not key material.
+    """
+
+    __tablename__ = "provider_credentials"
+    __table_args__ = (
+        UniqueConstraint("user_id", "provider", name="uq_provider_credentials_user_provider"),
+    )
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    user_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("users.id", ondelete="CASCADE"))
+    provider: Mapped[str]
+    ciphertext: Mapped[str]
+    key_id: Mapped[str]
+    instance: Mapped[str | None]
+    label: Mapped[str | None]
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+    last_verified_at: Mapped[dt.datetime | None]
+    last_used_at: Mapped[dt.datetime | None]

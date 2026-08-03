@@ -1,0 +1,22 @@
+id: holdout-v15-03
+category: "Holdout v15 — Two-marked-state Grover amplification"
+split: holdout
+difficulty: advanced
+workload: educational
+prompt: >-
+  Build a five-search-qubit Grover circuit in Qiskit with exactly two marked states,
+  displayed as q4...q0 bitstrings 00101 and 11010. Start from the uniform state and
+  apply exactly three oracle-plus-diffusion iterations. Use an exact Statevector to
+  calculate the total marked-state probability and the absolute difference between
+  the two marked-state probabilities. Return top-level numeric RESULT keys
+  marked_probability and marked_probability_difference, and bind the complete
+  unmeasured Grover circuit to FINAL_CIRCUIT. The values must come from that circuit.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["marked_probability", "marked_probability_difference"]
+  expected_values:
+    marked_probability: 0.9613189697265625
+    marked_probability_difference: 0.0
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

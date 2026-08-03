@@ -79,6 +79,22 @@ jobs:
           uv run python scripts/generate-h2-hardware-efficient-circuit.py --check
           uv run python scripts/generate-h2-hardware-efficient-executable-components.py --check
           uv run python scripts/check-phase5-vqe-snapshot.py
+      # The framework-native sandbox suites EXECUTE generated code through
+      # LocalSubprocessSandbox, so they need the SDK extras that the sync above
+      # deliberately leaves out. Without this step they skip — and they are the
+      # tests that prove a published circuit is runnable at all, so skipping them
+      # is the difference between a gate and a green tick.
+      #
+      # MAJORANA_REQUIRE_SDKS=1 makes a missing SDK a FAILURE rather than a skip,
+      # so this step cannot quietly become a no-op if the extras stop resolving.
+      - name: framework-native execution (needs the SDK extras)
+        env:
+          MAJORANA_REQUIRE_SDKS: "1"
+        run: >
+          uv run --all-extras pytest
+          packages/py/frameworks
+          services/worker/tests/test_circuit_lowering.py
+          -q
       - name: openapi.json is current
         run: uv run python -m majorana_contracts.export --check
       # Authz invariant (02-architecture §4): DB access only via the repository layer
@@ -275,6 +291,12 @@ jobs:
       # and it is why it must never be seeded either.
       - name: create the catalog-free live database
         run: PGPASSWORD=pg psql -h localhost -U pg -d postgres -c 'CREATE DATABASE majorana_live'
+      # The catalog-free `*_live.py` suites, with their explicit list guarded by
+      # services/api/tests/test_live_suite_is_wired_to_ci.py. They run in one
+      # invocation against one database on purpose: that also keeps them honest
+      # about the state they leave behind for each other. Catalog-authority
+      # suites follow on isolated databases below because each suite owns its
+      # authority fixture and must not depend on another suite's UUIDs.
       - name: repository concurrency and integrity
         env:
           DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_live
@@ -282,13 +304,66 @@ jobs:
         run: |
           uv run --package majorana-api alembic -c db/alembic.ini upgrade head
           uv run --all-extras pytest \
+            services/api/tests/test_artifact_cap_race_live.py \
+            services/api/tests/test_artifact_versions_live.py \
+            services/api/tests/test_catalog_attestation_live.py \
+            services/api/tests/test_catalog_bootstrap_import_live.py \
+            services/api/tests/test_catalog_import_live.py \
             services/api/tests/test_catalog_provenance_live.py \
+            services/api/tests/test_catalog_public_read_live.py \
+            services/api/tests/test_catalog_staging_live.py \
+            services/api/tests/test_conversation_turns_live.py \
+            services/api/tests/test_folder_ordering_live.py \
             services/api/tests/test_job_queue_live.py \
-            services/api/tests/test_run_terminal_live.py \
+            services/api/tests/test_membership_cap_race_live.py \
+            services/api/tests/test_project_artifact_ledgers_live.py \
+            services/api/tests/test_project_routes_live.py \
+            services/api/tests/test_project_shares_http_live.py \
+            services/api/tests/test_project_sharing_tier_live.py \
+            services/api/tests/test_projects_live.py \
+            services/api/tests/test_provider_credentials_live.py \
+            services/api/tests/test_qpu_spend_allowance_live.py \
             services/api/tests/test_vqe_repo_live.py \
             services/api/tests/test_research_candidate_persistence_live.py \
             services/api/tests/test_research_candidate_materialization_live.py \
             services/api/tests/test_research_candidate_controlled_e2e_live.py \
+            services/api/tests/test_run_allowance_race_live.py \
+            services/api/tests/test_run_terminal_live.py \
+            services/api/tests/test_usage_allowance_live.py \
+            services/api/tests/test_usage_spend_live.py \
+            services/api/tests/test_workspace_cap_race_live.py \
             services/worker/tests/test_vqe_execution_live.py \
-            services/api/tests/test_artifact_versions_live.py \
+            -q
+      # GitHub snapshot persistence provisions a deterministic authority fixture
+      # of its own. It therefore gets an empty database without environment-level
+      # catalog IDs; sharing a DB with the Phase 7.6 authority would make the
+      # unique system:catalog-importer identity depend on test order.
+      - name: create the GitHub snapshot live database
+        run: PGPASSWORD=pg psql -h localhost -U pg -d postgres -c 'CREATE DATABASE majorana_github_snapshot_live'
+      - name: GitHub snapshot persistence
+        env:
+          DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_github_snapshot_live
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_github_snapshot_live
+        run: |
+          uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+          uv run --all-extras pytest \
+            services/api/tests/test_github_snapshot_persistence_live.py \
+            -q
+      # Phase 7.6 requires the configured, server-owned catalog authority.
+      # Keep it on a separate empty database so its fixed authority identities
+      # cannot alter either the catalog-free or GitHub snapshot fixtures above.
+      - name: create the VQE catalog live database
+        run: PGPASSWORD=pg psql -h localhost -U pg -d postgres -c 'CREATE DATABASE majorana_vqe_live'
+      - name: VQE catalog materialization and controlled comparison
+        env:
+          DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_vqe_live
+          DATABASE_URL: postgresql://pg:pg@localhost:5432/majorana_vqe_live
+          SYSTEM_CATALOG_ENABLED: "true"
+          SYSTEM_CATALOG_WORKSPACE_ID: 10000000-0000-4000-8000-000000000001
+          SYSTEM_CATALOG_IMPORTER_USER_ID: 10000000-0000-4000-8000-000000000002
+          SYSTEM_CATALOG_PUBLIC_READER_USER_ID: 10000000-0000-4000-8000-000000000003
+        run: |
+          uv run --package majorana-api alembic -c db/alembic.ini upgrade head
+          uv run --all-extras pytest \
+            services/api/tests/test_vqe_phase76_neon_live.py \
             -q

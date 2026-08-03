@@ -1,0 +1,22 @@
+id: holdout-v14-07
+category: "Holdout v14 — Complex-Pauli exact dynamics"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor, exactly evolve |0101> to t=0.77 under
+  H=0.18 X0 Y2 -0.16 Z1 X3 +0.14 Z0 Z2 +0.09 X1 X2 -0.07 Z3
+  using an explicit matrix exponential. Return the expectation of
+  0.40 Z1 -0.20 X0 X3 +0.10 Y2 Y3 as top-level numeric RESULT key
+  target_observable and also return return_probability, the squared overlap with
+  |0101>. Bind a Qiskit circuit that prepares |0101> and applies the exact unitary
+  to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["target_observable", "return_probability"]
+  expected_values:
+    target_observable: -0.39622224286802227
+    return_probability: 0.961446110486482
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

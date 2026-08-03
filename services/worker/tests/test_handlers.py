@@ -1,8 +1,10 @@
 import uuid
+from datetime import UTC, datetime
 from types import SimpleNamespace
 
 import pytest
 from majorana_agent import (
+    SemanticReviewEvidence,
     SimpleFailureKind,
     SimplePipelineCounters,
     SimplePipelineFailure,
@@ -14,9 +16,11 @@ from majorana_contracts.enums import (
     Framework,
     RunMode,
     RunStatus,
+    RetryTarget,
     SemanticReviewDecision,
     VerifierDecision,
 )
+from majorana_api import credential_crypto
 from majorana_llm import CHAT_SYSTEM_PROMPT, LLMResponse
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
@@ -102,10 +106,24 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
         candidate_id=candidate_id,
         source_fingerprint="a" * 64,
     )
-    execution = SimpleNamespace()
+    # `ExecutionEvidence.observation` is a required field with a default factory,
+    # so it is never absent on the real type. A double thinner than the thing it
+    # stands in for fails on the first caller that reads a real field.
+    execution = SimpleNamespace(observation={})
     review = SimpleNamespace(
         decision=SemanticReviewDecision.READY,
-        feedback={"critic": {"residual_risks": ["AI review is advisory"]}},
+        severity="none",
+        # `basic_checks` is what the summary projects now, so a double that omits it
+        # describes a run in which nothing was ever examined — which is not the run
+        # this test is about.
+        feedback={
+            "critic": {"residual_risks": ["AI review is advisory"]},
+            "basic_checks": [
+                {"method": "structural", "result": "pass"},
+                {"method": "return_contract", "result": "pass"},
+                {"method": "success_criteria", "result": "pass"},
+            ],
+        },
         assert_binding=lambda _candidate, _execution: None,
     )
     artifact = SimpleNamespace(
@@ -162,6 +180,116 @@ async def test_simple_terminal_success_records_typed_advisory_outcome():
         "verification_summary": summary,
         "residual_risks": "AI review is advisory",
     }
+
+
+async def test_unexecuted_artifact_finishes_successfully_without_result_claims():
+    run_id = uuid.uuid4()
+    candidate = SimpleNamespace(candidate_id=uuid.uuid4(), source_fingerprint="a" * 64)
+    execution = SimpleNamespace(was_not_run=True)
+    artifact = SimpleNamespace(
+        candidate_id=candidate.candidate_id,
+        source_fingerprint=candidate.source_fingerprint,
+        execution_status="not_run",
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.SUCCEEDED,
+        stage=SimplePipelineStage.COMPLETED,
+        counters=SimplePipelineCounters(),
+        candidate=candidate,
+        execution=execution,
+        artifact=artifact,
+    )
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = (status, payload, fields)
+            return status
+
+    run_store = RunStore()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="Build a 480-qubit assignment artifact",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=object(),
+    )
+
+    result = await handlers._finish_simple_pipeline(ctx, run_store, outcome)
+
+    assert result is RunStatus.SUCCEEDED
+    _, payload, fields = run_store.observed
+    assert payload["reason_code"] == "artifact_generated_execution_not_run"
+    assert payload["evidence_strength"] is None
+    assert payload["verification_summary"]["checks"] == []
+    assert "reported output" in payload["verification_summary"]["unverified_claims"]
+    assert fields["verifier_decision"] is VerifierDecision.INCONCLUSIVE
+
+
+async def test_static_reviewed_artifact_remains_inconclusive_until_execution():
+    run_id = uuid.uuid4()
+    candidate = SimpleNamespace(candidate_id=uuid.uuid4(), source_fingerprint="a" * 64)
+    execution = SimpleNamespace(
+        execution_id=uuid.uuid4(),
+        candidate_id=candidate.candidate_id,
+        source_fingerprint=candidate.source_fingerprint,
+        was_not_run=True,
+    )
+    review = SemanticReviewEvidence(
+        review_id=uuid.uuid4(),
+        candidate_id=candidate.candidate_id,
+        execution_id=execution.execution_id,
+        source_fingerprint=candidate.source_fingerprint,
+        attempt_seq=1,
+        decision=SemanticReviewDecision.READY,
+        confidence="high",
+        severity="none",
+        reason_code="static_intent_aligned",
+        retry_target=RetryTarget.NONE,
+        feedback={"basic_checks": [{"method": "structural", "result": "pass"}]},
+    )
+    artifact = SimpleNamespace(
+        candidate_id=candidate.candidate_id,
+        source_fingerprint=candidate.source_fingerprint,
+        execution_status="not_run",
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.SUCCEEDED,
+        stage=SimplePipelineStage.COMPLETED,
+        counters=SimplePipelineCounters(review_attempts=1),
+        candidate=candidate,
+        execution=execution,
+        review=review,
+        artifact=artifact,
+    )
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = (status, payload, fields)
+            return status
+
+    run_store = RunStore()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="Build a reviewed 480-qubit assignment artifact",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=object(),
+    )
+
+    result = await handlers._finish_simple_pipeline(ctx, run_store, outcome)
+
+    assert result is RunStatus.SUCCEEDED
+    _, payload, _ = run_store.observed
+    assert payload["reason_code"] == "artifact_static_review_ready_execution_not_run"
+    assert payload["verifier_decision"] == "inconclusive"
+    assert payload["evidence_strength"] is None
+    assert payload["verification_summary"]["semantic_review_decision"] == "ready"
 
 
 async def test_simple_terminal_failure_emits_typed_sanitized_error():
@@ -507,6 +635,80 @@ class _ConversationLLM:
         )
 
 
+async def test_a_chat_turn_is_written_to_the_usage_ledger(monkeypatch):
+    """Chat is the one unmetered surface by policy — unmetered is not the same
+    as unrecorded. Execute runs go through MeteredAgentLLM; this path calls the
+    provider directly, so without this the tokens existed only inside one run's
+    chat.completed event and no cost question could be answered."""
+    recorded = []
+
+    async def record_usage(scope, session, **values):
+        recorded.append(values)
+
+    monkeypatch.setattr(handlers.usage_repo, "record_usage", record_usage)
+    run_id = uuid.uuid4()
+    sink = _RecordingSink()
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="What is a Bell state?",
+        mode=RunMode.CHAT,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+    )
+    store = _FakeStore()
+    store._scope = object()
+    store._session = object()
+
+    await handlers._handle_conversation(ctx, store, _ConversationLLM())
+
+    assert len(recorded) == 1, "one chat turn is one ledger entry"
+    entry = recorded[0]
+    assert entry["quantity"] == 7, "input + output tokens, not one of them"
+    assert entry["meta"]["role"] == "chat", "chat spend must be separable from run spend"
+    assert entry["meta"]["run_id"] == str(run_id)
+    assert entry["event_id"] == uuid.uuid5(run_id, "usage:chat"), (
+        "a deterministic id is what stops a redelivered job counting the turn twice"
+    )
+
+
+async def test_a_metering_failure_does_not_take_away_the_answer(monkeypatch):
+    """The reader already has the response. Losing the turn because accounting
+    failed would be strictly worse than an incomplete ledger."""
+
+    attempts = []
+
+    async def exploding_usage(*_args, **_kwargs):
+        attempts.append(1)
+        raise RuntimeError("ledger unavailable")
+
+    monkeypatch.setattr(handlers.usage_repo, "record_usage", exploding_usage)
+    sink = _RecordingSink()
+    ctx = RunContext(
+        run_id=uuid.uuid4(),
+        task_prompt="What is a Bell state?",
+        mode=RunMode.CHAT,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+    )
+    store = _FakeStore()
+    store._scope = object()
+    store._session = object()
+
+    final = await handlers._handle_conversation(ctx, store, _ConversationLLM())
+
+    assert attempts, "the ledger must actually be attempted, or this passes vacuously"
+    assert final is RunStatus.SUCCEEDED
+    assert any(name == "chat.completed" for name, _ in sink.events), (
+        "the answer still reaches the reader"
+    )
+
+
 async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     sink = _RecordingSink()
     ctx = RunContext(
@@ -654,9 +856,12 @@ class _FakeQpuSession:
         self.commits += 1
 
 
-def _qpu_record(status: str, *, provider_job_id: str | None = None) -> SimpleNamespace:
+def _qpu_record(
+    status: str, *, provider_job_id: str | None = None, user_id: uuid.UUID | None = None
+) -> SimpleNamespace:
     return SimpleNamespace(
         id=uuid.uuid4(),
+        user_id=user_id or uuid.uuid4(),
         status=status,
         provider_job_id=provider_job_id,
         device_id="braket.ionq.forte",
@@ -681,8 +886,21 @@ def _patch_qpu_repo(monkeypatch, record: SimpleNamespace) -> dict:
     async def fake_enqueue(session, *, kind, payload, **kwargs):
         captured["enqueued"] = {"kind": kind, "payload": payload, **kwargs}
 
+    async def fake_claim(scope, session, record_id):
+        # Behaves like the real conditional UPDATE: the stamp lands once, and a
+        # caller arriving after it matches zero rows. A double that always
+        # returned True would make every test below pass against a handler with
+        # no at-most-once guarantee at all.
+        captured.setdefault("claims", 0)
+        captured["claims"] += 1
+        if record.submitted_at is not None:
+            return False
+        record.submitted_at = datetime.now(UTC)
+        return True
+
     monkeypatch.setattr(handlers.qpu_runs_repo, "get_record", fake_get_record)
     monkeypatch.setattr(handlers.qpu_runs_repo, "transition", fake_transition)
+    monkeypatch.setattr(handlers.qpu_runs_repo, "claim_submission_attempt", fake_claim)
     monkeypatch.setattr(handlers.system, "enqueue_job", fake_enqueue)
     return captured
 
@@ -716,7 +934,7 @@ async def test_qpu_run_closes_the_record_when_the_gate_shut_after_enqueue(monkey
 async def test_qpu_run_submits_a_queued_record_and_schedules_the_poll(monkeypatch):
     from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
 
-    monkeypatch.setattr(handlers, "submission_block_reason", lambda: None)
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
     record = _qpu_record("queued")
     captured = _patch_qpu_repo(monkeypatch, record)
     session = _FakeQpuSession()
@@ -741,13 +959,16 @@ async def test_qpu_run_submits_a_queued_record_and_schedules_the_poll(monkeypatc
     assert captured["transition"]["provider_job_id"] == "prov-123"
     assert captured["enqueued"]["kind"] == "qpu.run"
     assert captured["enqueued"]["run_after"] is not None
-    assert session.commits == 1
+    # TWO commits on the submit path, and the extra one is load-bearing: the
+    # first durably claims the attempt before the provider is contacted, so a
+    # redelivered job cannot contact them again. The second writes the outcome.
+    assert session.commits == 2
 
 
 async def test_qpu_run_poll_completes_the_record_with_raw_counts(monkeypatch):
     from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
 
-    monkeypatch.setattr(handlers, "submission_block_reason", lambda: None)
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
     record = _qpu_record("running", provider_job_id="prov-123")
     captured = _patch_qpu_repo(monkeypatch, record)
     session = _FakeQpuSession()
@@ -771,6 +992,283 @@ async def test_qpu_run_poll_completes_the_record_with_raw_counts(monkeypatch):
     assert "enqueued" not in captured
 
 
+async def test_a_redelivered_job_never_submits_to_the_provider_twice(monkeypatch):
+    """The measurement this guard exists for.
+
+    A `qpu.run` job is redelivered on failure like any other (three attempts by
+    default), and this is the one handler where a redelivery spends money. The
+    provider below accepts the job every time and loses the FIRST response —
+    a read timeout, a reset connection, the ordinary way a network call fails
+    after it has already had its effect.
+
+    Before the claim was stamped ahead of the call, this measured two
+    `provider.submit` calls for one record, with the attestation row keeping
+    only the SECOND provider job id: the first job runs, bills the operator's
+    provider account, and is tracked nowhere.
+    """
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+    submits: list[str] = []
+
+    class FlakyProvider:
+        def submit(self, request):
+            from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+            submits.append(request.source_fingerprint)
+            if len(submits) == 1:
+                raise TimeoutError("provider accepted the job; the response never arrived")
+            return QpuJobRecord(
+                provider=QpuProviderKey.BRAKET,
+                provider_job_id=f"prov-{len(submits)}",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                submitted_at="2026-08-02T00:00:00+00:00",
+                source_fingerprint=request.source_fingerprint,
+            )
+
+    provider = FlakyProvider()
+    body = _qpu_payload(str(record.id))
+
+    with pytest.raises(TimeoutError):
+        await handlers.handle_qpu_run(session, body, provider=provider)
+
+    # The stamp survived the failure, which is the whole mechanism: it was
+    # committed before the provider was contacted, so it did not roll back with
+    # the rest of the handler's transaction.
+    assert record.submitted_at is not None
+
+    await handlers.handle_qpu_run(session, body, provider=provider)
+
+    assert len(submits) == 1, f"the provider was contacted {len(submits)} times for one record"
+    assert captured["transition"]["status"].value == "error"
+    assert "may have accepted" in captured["transition"]["error"]
+    assert "enqueued" not in captured, "a record that cannot be submitted must not schedule polls"
+
+
+async def test_the_claim_is_committed_before_the_provider_is_contacted(monkeypatch):
+    """Ordering, not just presence.
+
+    A claim written inside the handler's transaction rolls back with everything
+    else when the submit raises, and the redelivery finds the record exactly as
+    it left it — which is the bug, with an extra write in front of it.
+    """
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    _patch_qpu_repo(monkeypatch, record)
+    session = _FakeQpuSession()
+    order: list[str] = []
+
+    original_claim = handlers.qpu_runs_repo.claim_submission_attempt
+
+    async def watched_claim(scope, sess, record_id):
+        order.append("claim")
+        return await original_claim(scope, sess, record_id)
+
+    class WatchedSession(_FakeQpuSession):
+        async def commit(self):
+            order.append("commit")
+            await super().commit()
+
+    class FakeProvider:
+        def submit(self, request):
+            from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+            order.append("submit")
+            return QpuJobRecord(
+                provider=QpuProviderKey.BRAKET,
+                provider_job_id="prov-1",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                submitted_at="2026-08-02T00:00:00+00:00",
+                source_fingerprint=request.source_fingerprint,
+            )
+
+    monkeypatch.setattr(handlers.qpu_runs_repo, "claim_submission_attempt", watched_claim)
+    session = WatchedSession()
+    await handlers.handle_qpu_run(session, _qpu_payload(str(record.id)), provider=FakeProvider())
+
+    assert order[:3] == ["claim", "commit", "submit"], order
+
+
+# ------------------------------------------------- the submitting user's key
+
+
+def _qpu_payload_for(record: SimpleNamespace) -> dict:
+    """A payload whose `user_id` matches the record's owner, as the API writes it."""
+    payload = _qpu_payload(str(record.id))
+    payload["user_id"] = str(record.user_id)
+    return payload
+
+
+class _CredentialStore:
+    """Whatever `credentials_repo.get` should answer, plus what was stamped."""
+
+    def __init__(self, row) -> None:
+        self.row = row
+        self.successes = 0
+
+    async def get(self, scope, session, provider):
+        return self.row
+
+    async def mark_provider_success(self, scope, session, provider):
+        self.successes += 1
+
+
+async def test_a_record_whose_owner_disconnected_fails_terminally_and_names_why(monkeypatch):
+    """The disconnected-mid-flight case.
+
+    It is not transient, so retrying it three times changes nothing except how
+    long the user waits to be told. And it must not consume the record's one
+    submission attempt: `claim_submission_attempt` is the at-most-once mark, and
+    a record that spent it on a missing credential would afterwards report "a
+    submission was already attempted and may have reached the provider" —
+    frightening, and false.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    monkeypatch.setattr(handlers, "credentials_repo", _CredentialStore(None))
+    session = _FakeQpuSession()
+
+    await handlers.handle_qpu_run(session, _qpu_payload_for(record))
+
+    assert captured["transition"]["status"].value == "error"
+    assert "no IBM Quantum credential" in captured["transition"]["error"]
+    # Case-insensitive: the consequence is now a sentence of its own, composed
+    # by `_credential_failure_message` from the record rather than baked into
+    # the cause. See the RUNNING-record test below for why it had to move.
+    assert "nothing was sent to ibm" in captured["transition"]["error"].lower()
+    assert captured.get("claims") is None, "a missing credential spent the one attempt"
+    assert "enqueued" not in captured
+    assert session.commits == 1
+
+
+async def test_a_credential_that_cannot_be_decrypted_fails_terminally_naming_the_key(monkeypatch):
+    """The rotation done by replacement rather than by prepending.
+
+    `key_id` is on the row precisely so this failure is diagnosable without
+    decrypting anything, and the message must carry it — never the ciphertext.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    row = SimpleNamespace(ciphertext="gAAAAAB-not-decryptable", key_id="deadbeef", instance=None)
+    monkeypatch.setattr(handlers, "credentials_repo", _CredentialStore(row))
+    monkeypatch.setenv("MAJORANA_CREDENTIAL_KEYS", credential_crypto.generate_key())
+    session = _FakeQpuSession()
+
+    await handlers.handle_qpu_run(session, _qpu_payload_for(record))
+
+    error = captured["transition"]["error"]
+    assert captured["transition"]["status"].value == "error"
+    assert "deadbeef" in error
+    assert "could not be decrypted" in error
+    assert row.ciphertext not in error, "the failure message carried the stored ciphertext"
+    assert captured.get("claims") is None
+    assert session.commits == 1
+
+
+async def test_the_provider_is_built_from_the_submitting_users_key(monkeypatch):
+    """The whole point of the change: the token comes from the ROW, per user.
+
+    A provider built from the environment would put every account's hardware job
+    on one shared IBM identity and one shared ten-minute Open Plan allowance,
+    which is the state this work exists to leave.
+    """
+    from majorana_qpu import QpuJobRecord, QpuJobStatus, QpuProviderKey
+
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    monkeypatch.setenv("MAJORANA_CREDENTIAL_KEYS", credential_crypto.generate_key())
+    cipher = credential_crypto.load_cipher()
+    secret = "z" * 44
+    ciphertext, key_id = cipher.encrypt(secret)
+    row = SimpleNamespace(ciphertext=ciphertext, key_id=key_id, instance="crn:v1:bluemix:x")
+    store = _CredentialStore(row)
+    monkeypatch.setattr(handlers, "credentials_repo", store)
+
+    record = _qpu_record("queued")
+    _patch_qpu_repo(monkeypatch, record)
+    built: dict = {}
+
+    class FakeProvider:
+        def submit(self, request):
+            return QpuJobRecord(
+                provider=QpuProviderKey.BRAKET,
+                provider_job_id="prov-1",
+                device_id=request.device_id,
+                shots=request.shots,
+                status=QpuJobStatus.QUEUED,
+                submitted_at="2026-08-02T00:00:00+00:00",
+                source_fingerprint=request.source_fingerprint,
+            )
+
+    def fake_build(token, instance):
+        built["token"] = token
+        built["instance"] = instance
+        return FakeProvider()
+
+    monkeypatch.setattr(handlers, "_ibm_provider", fake_build)
+    session = _FakeQpuSession()
+
+    await handlers.handle_qpu_run(session, _qpu_payload_for(record))
+
+    assert built["token"] == secret
+    assert built["instance"] == "crn:v1:bluemix:x"
+    assert store.successes == 1, "a submission IBM accepted must refresh the credential's stamps"
+
+
+async def test_a_record_belonging_to_another_user_loads_no_credential(monkeypatch):
+    """Payload and row disagreeing about the owner is not a case to guess at.
+
+    Whichever one is wrong, submitting would run a job under somebody else's IBM
+    account and spend their allowance.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+
+    class _MustNotBeAsked(_CredentialStore):
+        async def get(self, scope, session, provider):
+            raise AssertionError("no credential may be loaded for a mismatched owner")
+
+    monkeypatch.setattr(handlers, "credentials_repo", _MustNotBeAsked(None))
+    session = _FakeQpuSession()
+
+    # `_qpu_payload` mints a fresh user_id, so it does NOT match the record's.
+    await handlers.handle_qpu_run(session, _qpu_payload(str(record.id)))
+
+    assert captured["transition"]["status"].value == "error"
+    assert "does not match" in captured["transition"]["error"]
+    assert captured.get("claims") is None
+
+
+async def test_a_closed_deployment_is_not_described_as_the_users_missing_key(monkeypatch):
+    """Gate ordering. The deployment-wide flag is checked BEFORE the credential,
+    so an operator's closed gate is never reported to a user as their problem."""
+    monkeypatch.delenv("MAJORANA_QPU_SUBMIT_ENABLED", raising=False)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+
+    class _MustNotBeAsked(_CredentialStore):
+        async def get(self, scope, session, provider):
+            raise AssertionError("a closed deployment must not reach the credential store")
+
+    monkeypatch.setattr(handlers, "credentials_repo", _MustNotBeAsked(None))
+    session = _FakeQpuSession()
+
+    await handlers.handle_qpu_run(session, _qpu_payload_for(record))
+
+    assert "submission_disabled" in captured["transition"]["error"]
+
+
 async def test_qpu_dead_letter_closes_an_open_record(monkeypatch):
     record = _qpu_record("running", provider_job_id="prov-123")
     captured = _patch_qpu_repo(monkeypatch, record)
@@ -783,3 +1281,63 @@ async def test_qpu_dead_letter_closes_an_open_record(monkeypatch):
     assert captured["transition"]["status"].value == "error"
     assert "dead-lettered" in captured["transition"]["error"]
     assert session.commits == 1
+
+
+async def test_a_disconnected_credential_on_a_RUNNING_record_does_not_claim_nothing_was_sent(
+    monkeypatch,
+):
+    """The record is already at IBM, and the failure must not say otherwise.
+
+    Every other credential-failure test in this file stages a QUEUED record, and
+    that is how the bug survived: the credential block runs BEFORE the
+    QUEUED/RUNNING branch, so it also fires for a record the provider already
+    accepted. Both messages ended "nothing was sent to IBM ... submit again",
+    unconditionally.
+
+    Driven against a RUNNING record carrying `provider_job_id`, that closed the
+    row with a sentence telling the user nothing had been sent and to submit
+    again — while their job was running on their own IBM account, spending their
+    own ten-minutes-per-28-days Open Plan allowance. A user who did as they were
+    told would have spent it twice.
+
+    `error` is the whole of what a user gets for a failed hardware run, so the
+    assertions here are about what the sentence must NOT claim as much as what
+    it must say.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("running", provider_job_id="ibm-job-abc123")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    monkeypatch.setattr(handlers, "credentials_repo", _CredentialStore(None))
+    session = _FakeQpuSession()
+
+    await handlers.handle_qpu_run(session, _qpu_payload_for(record))
+
+    error = captured["transition"]["error"]
+    assert captured["transition"]["status"].value == "error"
+    assert "no IBM Quantum credential" in error, "the cause must still be named"
+    assert "nothing was sent to IBM" not in error.lower(), (
+        "the job IS at IBM; claiming otherwise is the defect"
+    )
+    assert "ibm-job-abc123" in error, "the user needs the job id to check it themselves"
+    assert "allowance a second time" in error, "resubmitting has a cost worth naming"
+
+
+async def test_the_queued_case_still_says_nothing_was_sent(monkeypatch):
+    """The control for the test above.
+
+    Without this, narrowing the message to the RUNNING case could silently drop
+    the reassurance from the QUEUED one — where "nothing was sent to IBM" is
+    true, load-bearing, and the reason a user can safely retry.
+    """
+    monkeypatch.setenv("MAJORANA_QPU_SUBMIT_ENABLED", "true")
+    monkeypatch.setattr(handlers, "submission_block_reason", lambda **_: None)
+    record = _qpu_record("queued")
+    captured = _patch_qpu_repo(monkeypatch, record)
+    monkeypatch.setattr(handlers, "credentials_repo", _CredentialStore(None))
+
+    await handlers.handle_qpu_run(_FakeQpuSession(), _qpu_payload_for(record))
+
+    error = captured["transition"]["error"]
+    assert "Nothing was sent to IBM" in error
+    assert "submit again" in error

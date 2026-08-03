@@ -12,9 +12,9 @@ def _module():
         / "db"
         / "migrations"
         / "versions"
-        / "0047_vqe_research_candidate_persistence.py"
+        / "0052_vqe_research_candidate_persistence.py"
     )
-    spec = importlib.util.spec_from_file_location("migration_0047_research_candidates", path)
+    spec = importlib.util.spec_from_file_location("migration_0052_research_candidates", path)
     assert spec is not None and spec.loader is not None
     module = importlib.util.module_from_spec(spec)
     spec.loader.exec_module(module)
@@ -31,7 +31,7 @@ class _Connection:
         return _Result()
 
 
-def test_0047_is_linear_append_only_private_and_reversible(monkeypatch):
+def test_0052_is_linear_append_only_private_and_reversible(monkeypatch):
     module = _module()
     tables: list[str] = []
     statements: list[str] = []
@@ -52,7 +52,7 @@ def test_0047_is_linear_append_only_private_and_reversible(monkeypatch):
     module.upgrade()
     module.downgrade()
 
-    assert module.down_revision == "0046"
+    assert module.down_revision == "0051"
     assert tables == [
         "vqe_research_candidate_envelopes",
         "vqe_research_candidate_persist_requests",

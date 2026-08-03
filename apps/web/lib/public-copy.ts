@@ -221,6 +221,20 @@ export const HOME_COPY: Record<PublicLocale, {
   },
 };
 
+/**
+ * The public plan ladder. Four cards; three of them are enforced tiers.
+ *
+ *   Free         → tier `free`
+ *   Plus         → tier `pro`    ← the id is NOT the name
+ *   Professional → tier `team`   ← nor here
+ *   Enterprise   → no tier at all: a sales motion, negotiated per customer
+ *
+ * `account-tier.test.ts` ties every number on the Free, Plus and Professional
+ * cards to `TIER_LIMITS`, in both languages, because prose that overstates an
+ * allowance is a promise the product breaks the first time somebody reaches it.
+ * Enterprise states capabilities and no allowances — there is nothing for a
+ * test to tie it to, and a number on that card would be one nothing enforces.
+ */
 export const PRICING_COPY: Record<PublicLocale, {
   hero: { title: string; body: string };
   plans: Array<{ name: string; price: string; cadence: string; description: string; features: string[]; action: string; tone: "quiet" | "featured" }>;
@@ -229,20 +243,102 @@ export const PRICING_COPY: Record<PublicLocale, {
   en: {
     hero: { title: "A clear path from first run to team work.", body: "Start free, keep private work in Studio, and move up when you need more verification capacity, export tooling, or shared R&D controls." },
     plans: [
-      { name: "Free", price: "$0", cadence: "while early access is open", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "25 private artifacts", "Browser simulation up to 16 qubits"], action: "Try the preview", tone: "quiet" },
-      { name: "Pro", price: "Early access", cadence: "for individual researchers", description: "More room for private research, stronger model tiers, and export-aware workflows.", features: ["Higher run limits", "Private artifacts and versions", "Baselines and export matrix", "Priority access to new capabilities"], action: "Join early access", tone: "featured" },
-      { name: "Team", price: "Let’s talk", cadence: "for shared R&D and governance", description: "Shared workspaces, private corpora, auditability, and evaluation support as the product matures.", features: ["Team workspaces and roles", "Private corpus boundary", "Audit and governance workflows", "Design-partner conversations"], action: "Contact us", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "per user, per month", description: "Enough to browse the public evidence and put the workbench through a real problem.", features: ["The full public Atlas", "5 agent runs a week", "10 private artifacts", "Unlimited private projects, 50 artifacts in each", "Browser simulation up to 8 qubits"], action: "Try the preview", tone: "quiet" },
+      { name: "Plus", price: "$50", cadence: "per user, per month", description: "Room to work at your own pace: enough runs to iterate on a problem all week, room to keep the whole line of work, and a wider browser lane. Sharing a project with someone else starts at Professional.", features: ["75 agent runs a week", "75 private artifacts", "Unlimited private projects, 50 artifacts in each", "Browser simulation up to 12 qubits"], action: "Join early access", tone: "featured" },
+      { name: "Professional", price: "$240", cadence: "per user, per month", description: "Share a project with someone outside your workspace — read-only, or read-and-edit so they can put work back — with a per-project limit you set.", features: ["Share a project with people outside your workspace", "Up to 4 shared projects per person — ones you share and ones shared with you", "Unlimited private projects, 50 artifacts in each", "250 agent runs a week", "250 private artifacts, not counting anything in a shared project", "Browser simulation up to 18 qubits"], action: "Contact us", tone: "quiet" },
+      { name: "Enterprise", price: "$420+", cadence: "per user, per month", description: "Everything in Professional, with the allowances, review path, and terms agreed with your organisation rather than set here.", features: ["Everything in Professional", "Run and artifact allowances agreed with your organisation", "Private-corpus and internal-research conversations", "Named contact for onboarding and evaluation"], action: "Talk to sales", tone: "quiet" },
     ],
-    note: { label: "A transparent starting point", title: "The product is live; paid billing is not.", body: "These plans describe the intended early-access packaging. Exact limits, credits, and checkout will be confirmed before paid billing is enabled. No card is required to explore the public Atlas or discuss a research workflow." },
+    note: { label: "A transparent starting point", title: "The prices are set; checkout is not live yet.", body: "These are the intended early-access prices, per user per month. No payment method can be added in this deployment — there is no card entry, checkout, or charge — so nothing here bills anyone today. Exact credits and enterprise terms are confirmed before paid billing is enabled." },
   },
   ja: {
     hero: { title: "まずは個人で試し、そのままチームで研究へ。", body: "無料で始め、非公開の研究はStudioに保存できます。検証できる実行回数、エクスポート、共同研究の管理が必要になったら次のプランへ進めます。" },
     plans: [
-      { name: "Free", price: "$0", cadence: "早期アクセス期間中", description: "公開されている回路と検証結果を確認し、実際の課題で一連の操作を試せます。", features: ["公開Atlasのすべて", "週5回のエージェント実行", "非公開の回路・実行記録25件", "16量子ビットまでのブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
-      { name: "Pro", price: "早期アクセス", cadence: "個人研究者向け", description: "非公開研究、上位AIモデル、エクスポート機能を利用できます。", features: ["実行上限の拡張", "非公開の回路・実行記録とバージョン管理", "古典計算との比較・各形式での書き出し", "新機能への優先アクセス"], action: "早期アクセスに参加", tone: "featured" },
-      { name: "Team", price: "ご相談ください", cadence: "共同研究と管理機能向け", description: "共有ワークスペース、非公開データ、監査、評価支援を段階的に提供します。", features: ["チームと権限", "非公開データの分離", "監査とガバナンス", "共同開発・導入相談"], action: "お問い合わせ", tone: "quiet" },
+      { name: "Free", price: "$0", cadence: "1ユーザーあたり月額", description: "公開されている回路と検証結果を確認し、実際の課題で一連の操作を試せます。", features: ["公開Atlasのすべて", "週5回のエージェント実行", "非公開の回路・実行記録10件", "非共有プロジェクトは無制限。1プロジェクトあたり50件まで", "8量子ビットまでのブラウザ実行"], action: "プレビューを試す", tone: "quiet" },
+      { name: "Plus", price: "$50", cadence: "1ユーザーあたり月額", description: "個人の非公開研究を自分のペースで進められます。1週間を通して試行を重ねられる実行回数と、その過程をまとめて残せる保存件数、そしてより広いブラウザ実行の枠を用意しています。他の人とのプロジェクト共有はProfessionalからです。", features: ["週75回のエージェント実行", "非公開の回路・実行記録75件", "非共有プロジェクトは無制限。1プロジェクトあたり50件まで", "12量子ビットまでのブラウザ実行"], action: "早期アクセスに参加", tone: "featured" },
+      { name: "Professional", price: "$240", cadence: "1ユーザーあたり月額", description: "ワークスペースの外の相手にプロジェクトを共有できます。閲覧のみ、または編集可能（相手から回路を追加できます）を選べ、追加できる件数はプロジェクトごとに指定できます。", features: ["ワークスペース外の相手とプロジェクトを共有", "共有プロジェクトは1人あたり4件まで（自分が共有したものと、共有されたものの合計）", "非共有プロジェクトは無制限。1プロジェクトあたり50件まで", "週250回のエージェント実行", "非公開の回路・実行記録250件（共有プロジェクト内のものは含みません）", "18量子ビットまでのブラウザ実行"], action: "お問い合わせ", tone: "quiet" },
+      { name: "Enterprise", price: "$420+", cadence: "1ユーザーあたり月額", description: "Professionalのすべての機能に加えて、利用上限、審査の進め方、契約条件を組織ごとに調整します。", features: ["Professionalのすべての機能", "実行回数と保存件数は組織ごとに調整", "社内データや非公開研究に関するご相談", "導入と評価を担当する窓口"], action: "営業担当に相談", tone: "quiet" },
     ],
-    note: { label: "早期アクセス版の提供内容", title: "サービスは利用できますが、有料プランの決済はまだ開始していません。", body: "ここに示すのは提供予定のプラン内容です。利用上限、クレジット、決済条件は、有料提供の開始前に確定します。公開Atlasの閲覧や研究の相談にカードは必要ありません。" },
+    note: { label: "早期アクセス版の提供内容", title: "価格は確定していますが、決済はまだ開始していません。", body: "上記は早期アクセス期間の価格（1ユーザーあたり月額）です。現在の環境では支払い方法を登録できず、カード入力も決済も行われないため、請求は発生しません。クレジットの詳細と法人向け条件は、有料提供の開始前に確定します。" },
+  },
+};
+
+/**
+ * The signed-in upgrade surface.
+ *
+ * Deliberately thin. Every price, cadence and feature line on this screen is
+ * read from `PRICING_COPY` above — the cards a person already saw before they
+ * signed up, and the ones `account-tier.test.ts` ties to `TIER_LIMITS`. This
+ * table holds only the words that are new here: whose plan it is, what they are
+ * currently using, and the fact that nothing on the page can charge them yet.
+ *
+ * A second plan table on this screen was the obvious way to build it and the
+ * wrong one. The pricing page and the upgrade page quoting different numbers is
+ * not a hypothetical in this codebase — the tier ladder alone had three copies
+ * of itself, two of them wrong, inside one month.
+ */
+export const UPGRADE_COPY: Record<PublicLocale, {
+  title: string;
+  lede: string;
+  currentLabel: string;
+  currentSuffix: string;
+  usageTitle: string;
+  usageApproaching: string;
+  usageCritical: string;
+  usageExhausted: string;
+  topOfLadderTitle: string;
+  topOfLadderBody: string;
+  developerTitle: string;
+  developerBody: string;
+  checkoutTitle: string;
+  checkoutBody: string;
+  enterpriseName: string;
+  cta: string;
+  backToAccount: string;
+}> = {
+  en: {
+    title: "Move up a plan",
+    lede: "What each plan adds, measured against what you are using now.",
+    currentLabel: "Your plan",
+    currentSuffix: "— what you have today",
+    usageTitle: "Where you are this week",
+    usageApproaching: "Three quarters of this week's tokens are spent.",
+    usageCritical: "Nine tenths of this week's tokens are spent. A long run may not finish.",
+    usageExhausted: "This week's allowance is used. Browser simulation in Studio stays available.",
+    topOfLadderTitle: "You are on the top published plan.",
+    topOfLadderBody:
+      "Professional is the highest plan with prices set here. Anything beyond it — larger allowances, private-corpus work, terms agreed with your organisation — is arranged directly.",
+    developerTitle: "Your account is unmetered.",
+    developerBody:
+      "Developer accounts are an operator grant, not a purchase. No allowance on this page applies to you.",
+    checkoutTitle: "Checkout is not live yet.",
+    checkoutBody:
+      "No payment method can be added in this deployment — there is no card entry, checkout, or charge. Get in touch and your plan is changed by hand in the meantime.",
+    enterpriseName: "Enterprise",
+    cta: "Get in touch",
+    backToAccount: "Back to account",
+  },
+  ja: {
+    title: "プランを変更する",
+    lede: "現在の使用状況と照らして、各プランで何が増えるかを示します。",
+    currentLabel: "現在のプラン",
+    currentSuffix: "— 現在ご利用中の内容",
+    usageTitle: "今週の使用状況",
+    usageApproaching: "今週のトークンの4分の3を使用しました。",
+    usageCritical: "今週のトークンの9割を使用しました。長い実行は完了しない可能性があります。",
+    usageExhausted:
+      "今週分の上限に達しました。Studioのブラウザ実行は引き続きご利用いただけます。",
+    topOfLadderTitle: "公開されている最上位のプランをご利用中です。",
+    topOfLadderBody:
+      "価格を公開しているプランではProfessionalが最上位です。これを超える利用上限、社内データを扱う運用、組織ごとの契約条件については個別にご相談ください。",
+    developerTitle: "このアカウントには上限がありません。",
+    developerBody:
+      "開発者アカウントは購入ではなく運営側による付与です。このページの上限はいずれも適用されません。",
+    checkoutTitle: "決済はまだ開始していません。",
+    checkoutBody:
+      "現在の環境では支払い方法を登録できず、カード入力も決済も行われません。それまでの間はお問い合わせいただければ手動でプランを変更します。",
+    enterpriseName: "Enterprise",
+    cta: "お問い合わせ",
+    backToAccount: "アカウントに戻る",
   },
 };
 

@@ -1,0 +1,21 @@
+id: diagnostic-dynamics-family-02
+category: "Diagnostic — six-qubit sparse complex dynamics"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Treat q0 as the leftmost tensor factor and exactly evolve |100101> to t=0.58 under
+  H=0.12 X0 Z5 -0.09 Y1 +0.14 X2 Y4 +0.07 Z0 Z3 -0.05 X5
+  +0.11 Y2 Y3 using an explicit dense matrix exponential. Return the expectation of
+  0.30 Z0 -0.18 X2 +0.12 Y1 Y5 +0.09 Z3 Z4 as top-level numeric RESULT key
+  six_body_readout and the squared initial-state overlap as initial_overlap_squared.
+  Bind the exact Qiskit preparation-and-unitary circuit to FINAL_CIRCUIT.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["six_body_readout", "initial_overlap_squared"]
+  expected_values:
+    six_body_readout: -0.38518831651352387
+    initial_overlap_squared: 0.9810865580893054
+  expected_value_tolerance: 0.000000001
+  saves_artifact: true

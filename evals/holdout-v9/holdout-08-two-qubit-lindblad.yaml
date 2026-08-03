@@ -1,0 +1,27 @@
+id: holdout-v9-08
+category: "Holdout v9 — Driven two-qubit Lindblad evolution"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  With q0 as the leftmost tensor factor and basis |0>,|1>, start from |01> and
+  solve at t=0.84 the time-independent master equation with Hamiltonian
+  H=0.23 X0 X1 +0.23 Y0 Y1 +0.07 Z0 and dissipators
+  0.29*D[sigma_minus_0], 0.17*D[sigma_minus_1], and 0.06*D[Z1], where
+  D[L](rho)=L rho L_dagger-0.5*{L_dagger L,rho}. Use an explicit Liouvillian
+  matrix exponential. Return top-level numeric RESULT keys population_01,
+  population_10, population_00, purity, and magnetization=<Z0+Z1>. Bind a
+  Qiskit circuit preparing |01> to FINAL_CIRCUIT; RESULT values must come from
+  the master-equation evolution.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["population_01", "population_10", "population_00", "purity", "magnetization"]
+  expected_values:
+    population_01: 0.7497946166382042
+    population_10: 0.11316897333985142
+    population_00: 0.1370364100219444
+    purity: 0.7518100366681066
+    magnetization: 0.2740728200438888
+  expected_value_tolerance: 0.000001
+  saves_artifact: true

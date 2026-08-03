@@ -180,7 +180,7 @@ mode `0600` behavior.
 
 ## S8 private append-only persistence
 
-Migration `0047` adds two deliberately separate, workspace-scoped records:
+Migration `0052` adds two deliberately separate, workspace-scoped records:
 
 - `vqe_research_candidate_envelopes` stores the canonical validated scientific
   proposal envelope; and
@@ -205,10 +205,10 @@ job and must pass there before S8 is called remotely qualified.
 
 ### DEV migration reconciliation
 
-After merging current `dev`, the DEV migrations own revisions `0039` and
-`0040`. The VQE chain was therefore moved without semantic changes to the
-single linear sequence `0041` through `0047`. Local Alembic inspection reports
-exactly one head at `0047`.
+After the 2026-08-03 synchronization, DEV owns revisions `0041` through
+`0045`. The VQE chain was therefore moved without semantic changes to the
+single linear sequence `0046` through `0052`. Local Alembic inspection reports
+exactly one head at `0052` at the S8 boundary.
 
 The pre-existing disposable Neon VQE test branch reports revision `0039`, but
 read-only schema inspection shows the old VQE registry tables and neither the
@@ -228,7 +228,7 @@ control-plane workflow also passed in run `30681049158`.
 
 ## S9 evidence-bound human review queue
 
-Migration `0048` introduces two append-only records that remain separate from
+Migration `0053` introduces two append-only records that remain separate from
 the original model envelope:
 
 - `vqe_research_candidate_reviews` stores a human decision, a reviewed
@@ -273,7 +273,7 @@ response was accepted or materialized during S10.
 
 ## S10 accepted-review private materialization
 
-Migration `0049` introduces separate append-only materialization evidence and
+Migration `0054` introduces separate append-only materialization evidence and
 transport-idempotency records. Materialization is permitted only for the latest
 `accepted` workspace review, with exact expected review, reviewed-candidate,
 source-snapshot, and reconstructed-evidence digests. The repository rehashes the
@@ -302,7 +302,7 @@ Artifact creation, Artifact version creation, materialization evidence, and the
 idempotency request ledger share the caller's database transaction. A stale
 digest therefore leaves no partial materialization. Local qualification used a
 fresh disposable PostgreSQL database and passed migration
-`upgrade -> downgrade 0048 -> upgrade`, stale-input rollback, successful private
+`upgrade -> downgrade 0053 -> upgrade`, stale-input rollback, successful private
 creation, idempotent replay, cross-workspace denial, and append-only mutation
 rejection. It also confirmed that downgrade is refused after append-only
 materialization evidence exists. The focused DB-free
@@ -366,7 +366,7 @@ production-build, and authenticated browser-contract jobs for commit
 
 S12 used a fresh local PostgreSQL database, not the stale Neon feature-history
 branch. Alembic `upgrade head -> downgrade base -> upgrade head` completed, and
-the repository still has exactly one head at `0049`. The complete Python suite
+the repository still has exactly one head at `0054`. The complete Python suite
 reported 1,695 passed and 207 skipped tests. A fresh-database selection covering
 authz, candidate persistence, materialization, and the S11 integration path
 reported 92 passing tests. The four Phase 9 deterministic replay and prompt-
@@ -410,3 +410,44 @@ candidate data, public execution, performance claims, and scientific claims
 remain blocked. Any later publication requires evidence-backed resolution of
 the unknowns, an explicitly scoped scientific review process, and a separate
 owner-approved release decision; S12 does not provide any of those approvals.
+
+## Post-S12 synchronization with `dev` (2026-08-03)
+
+Before starting an external-source phase, `feature/vqe` was synchronized with
+`origin/dev` commit `89ce101c72f5`. A backup ref,
+`backup/feature-vqe-pre-dev-sync-20260803`, preserves the pre-merge state at
+`d2c3dd0d8609`. The merge retained the `dev` product, project-sharing, Vault,
+provider-credential, request-validation, and evaluation changes while keeping
+the VQE registry and evidence boundaries additive.
+
+The integration audit found and fixed five boundary defects rather than
+changing any VQE energy or resource result:
+
+1. VQE migrations were renumbered after the new `dev` migrations, leaving one
+   linear Alembic head at `0054`.
+2. VQE request bodies now inherit the common NUL-refusing request model.
+3. The web control-plane inventory recognizes the bounded VQE catch-all proxy.
+4. Explicit VQE saves now pass through the authenticated tier's Vault limit;
+   intermediate repository artifacts remain unfiled, while reviewed system
+   catalog seeds remain bounded by their checked-in manifest.
+5. GitHub snapshot and Phase 7.6 catalog live tests now use separate fresh
+   databases because their independently owned authority fixtures intentionally
+   use different UUIDs. Sharing one database made the result test-order
+   dependent through the unique `system:catalog-importer` identity.
+
+A separate flaky `dev` folder-order assertion was also corrected to compare the
+actual legacy `(created_at, id)` order. PostgreSQL `now()` is transaction-stable,
+so rows inserted in one transaction do not promise alphabetical or insertion
+order; the production ordering rule was not changed.
+
+After these fixes, the complete Python suite reported 2,289 passed and 404
+skipped tests. Ruff, formatting, generated OpenAPI, all five import contracts,
+and the raw-query boundary were clean. The full TypeScript graph reported 502
+web tests, and the Next.js production build generated 338 pages. Fresh-database
+migration `upgrade -> downgrade -> upgrade` completed with one head. The
+catalog-free live suite reported 223 passing tests; the isolated GitHub snapshot
+and Phase 7.6 catalog suites reported four and three passing tests respectively.
+
+These results qualify the merged private implementation boundary only. They do
+not turn an unreviewed source into scientific evidence, authorize arbitrary
+repository execution, or unblock public and performance claims.

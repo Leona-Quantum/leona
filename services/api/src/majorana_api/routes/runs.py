@@ -18,9 +18,10 @@ from majorana_contracts import ConversationTurn
 from majorana_contracts import IllegalTransition, assert_transition, is_terminal
 from majorana_contracts import Run as RunResource
 from majorana_contracts.enums import ExportStatus, Framework, RunMode, RunStatus
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import ConfigDict, Field
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
+from ..request_models import RequestModel
 from ..jobs import RUN_EXECUTE_JOB_KIND
 from ..orm import Run as RunRow
 from ..repos import artifacts as artifacts_repo
@@ -29,7 +30,7 @@ from ..repos import runs as runs_repo
 from ..repos import system
 from ..settings import Settings
 from ..tiers import TIER_WINDOW as _TIER_WINDOW
-from ..tiers import limits_for, resolve_tier
+from ..tiers import limits_for, tier_of
 from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
@@ -38,7 +39,7 @@ SSE_POLL_INTERVAL_S = 1.0
 SSE_HEARTBEAT_EVERY_POLLS = 15
 
 
-class CreateRunRequest(BaseModel):
+class CreateRunRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     task_prompt: str = Field(min_length=1, max_length=20_000)
@@ -59,7 +60,7 @@ class CreateRunRequest(BaseModel):
     conversation_id: uuid.UUID | None = None
 
 
-class SetRunFolderRequest(BaseModel):
+class SetRunFolderRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     folder_id: uuid.UUID | None = None
@@ -193,19 +194,35 @@ def _backstop_refusal(reason: str, used: int, limit: int) -> HTTPException:
 TIER_WINDOW = _TIER_WINDOW
 
 
-def tier_allowance_refusal(used: int, limit: int) -> HTTPException:
-    """The refusal a metered account sees when its weekly runs are spent.
+def tier_allowance_refusal(used: int, limit: int, *, runs: int | None) -> HTTPException:
+    """The refusal a metered account sees when its weekly allowance is spent.
 
     Worded like the BFF's `runAllowanceRefusal` rather than like the backstop:
     this one IS the plan allowance, and telling a user they hit "a platform
-    abuse ceiling" when they simply used their five runs would be wrong.
+    abuse ceiling" when they simply used their week would be wrong.
+
+    Both numbers, deliberately. Since the meter became tokens (2026-08-03) the
+    enforced figure is 150,000 rather than 5, and a message built from the
+    enforced figure alone would read "your plan includes 150000 verified runs
+    per week". The run count is what the plan was sold as and what /pricing
+    states, so it leads; the token figure is what the gate actually compared, so
+    it is there to be checked against the usage screen.
+
+    `reason` stays `run_allowance_exhausted`. It is a wire value the web app and
+    two test suites match on, and what the user ran out of has not changed —
+    only the unit it is counted in.
     """
+    allowance = (
+        f"about {runs} verified runs a week ({limit:,} tokens)"
+        if runs is not None
+        else f"{limit:,} tokens a week"
+    )
     return HTTPException(
         status_code=429,
         detail={
             "error": (
-                f"Your plan includes {limit} verified runs per week and all {limit} "
-                "are used. Browser simulation in Studio stays available."
+                f"Your plan includes {allowance}, and this week's allowance is used. "
+                "Browser simulation in Studio stays available."
             ),
             "reason": "run_allowance_exhausted",
             "used": used,
@@ -239,15 +256,25 @@ async def _enforce_execute_backstop(
     # where the decision is actually made, in the worker's mode resolution:
     # majorana_worker.handlers._resolve_mode.
     user, _workspace = identity
-    limits = limits_for(
-        resolve_tier(user.email, plan=user.plan, developer_emails=settings.developer_emails)
-    )
-    if body.mode == RunMode.EXECUTE and limits.agent_runs_per_week is not None:
-        tier_used = await runs_repo.count_execute_runs_since(
-            scope, session, dt.datetime.now(dt.timezone.utc) - TIER_WINDOW
-        )
-        if tier_used >= limits.agent_runs_per_week:
-            raise tier_allowance_refusal(tier_used, limits.agent_runs_per_week)
+    limits = limits_for(tier_of(user, settings))
+    if body.mode == RunMode.EXECUTE:
+        # Reserved under the account's lock rather than merely counted: two
+        # submissions at the boundary used to read the same number and both
+        # pass, and this is the gate with provider spend behind it. The worker's
+        # own allowance check does NOT cover this case — it runs only when it
+        # resolves an AUTO run to EXECUTE, and an explicit mode takes
+        # `resolve_mode`'s passthrough branch.
+        try:
+            await runs_repo.reserve_execute_run_slot(
+                scope,
+                session,
+                dt.datetime.now(dt.timezone.utc) - TIER_WINDOW,
+                limits.agent_tokens_per_week,
+            )
+        except runs_repo.RunAllowanceReached as reached:
+            raise tier_allowance_refusal(
+                reached.used, reached.limit, runs=limits.agent_runs_per_week
+            ) from reached
 
     if body.mode == RunMode.EXECUTE and executed >= EXECUTE_BACKSTOP_LIMIT:
         raise _backstop_refusal("execute_backstop_exhausted", executed, EXECUTE_BACKSTOP_LIMIT)

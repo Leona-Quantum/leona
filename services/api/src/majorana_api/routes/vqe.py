@@ -31,7 +31,7 @@ from majorana_vqe.executable import (
 from majorana_vqe.portable import PortableScientificExperimentSpecV03
 from pydantic import BaseModel, ConfigDict, Field
 
-from ..auth.deps import CurrentScope, DbSession, get_settings
+from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..jobs import VQE_EXECUTE_JOB_KIND
 from ..orm import VqeComponentSpec as VqeComponentSpecRow
 from ..orm import VqeExperiment as VqeExperimentRow
@@ -45,7 +45,9 @@ from ..repos import research_candidates as research_candidates_repo
 from ..repos import runs as runs_repo
 from ..repos import system
 from ..repos import vqe as vqe_repo
+from ..request_models import RequestModel
 from ..settings import Settings
+from ..tiers import limits_for, tier_of
 from ..vqe_runtime_profiles import (
     candidate_runtime_profile,
     hardware_efficient_production_runtime_profile,
@@ -56,6 +58,39 @@ from ..vqe_runtime_profiles import (
 router = APIRouter()
 
 _COMPARISON_ID_PATTERN = r"^[a-zA-Z0-9_]+$"
+
+
+async def _file_private_artifact(
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Settings,
+    artifact_id: uuid.UUID,
+) -> None:
+    """File one explicitly saved VQE result through the normal Vault cap."""
+
+    user, _workspace = identity
+    limits = limits_for(tier_of(user, settings))
+    try:
+        await artifacts_repo.keep_artifact(
+            scope,
+            session,
+            artifact_id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ArtifactCapReached as full:
+        raise HTTPException(
+            status_code=429,
+            detail={
+                "error": (
+                    f"Your Studio holds {full.held} of {full.limit} artifacts on this plan. "
+                    "Archive an artifact you no longer need and this VQE result will file."
+                ),
+                "reason": "artifact_allowance_exhausted",
+                "used": full.held,
+                "limit": full.limit,
+            },
+        ) from full
 
 
 def _catalog_workspace_id(settings: Settings) -> uuid.UUID | None:
@@ -141,7 +176,7 @@ class WorkflowResource(BaseModel):
     components: list[WorkflowComponentResource]
 
 
-class CreateWorkflowSwapRequest(BaseModel):
+class CreateWorkflowSwapRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     baseline_workflow_artifact_version_id: uuid.UUID
@@ -156,7 +191,7 @@ class CreateWorkflowSwapRequest(BaseModel):
     evaluator_provider: Literal["qiskit", "pennylane"]
 
 
-class CreateAnsatzMigrationRequest(BaseModel):
+class CreateAnsatzMigrationRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     baseline_workflow_artifact_version_id: uuid.UUID
@@ -167,7 +202,7 @@ class CreateAnsatzMigrationRequest(BaseModel):
     evaluator_provider: Literal["qiskit", "pennylane"]
 
 
-class ResearchReviewDecisionRequest(BaseModel):
+class ResearchReviewDecisionRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     subject_id: str = Field(min_length=1, max_length=160)
@@ -176,7 +211,7 @@ class ResearchReviewDecisionRequest(BaseModel):
     rationale: str = Field(min_length=1, max_length=1000)
 
 
-class CreateResearchCandidateReviewRequest(BaseModel):
+class CreateResearchCandidateReviewRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     candidate_local_id: str = Field(pattern=r"^candidate_[a-z0-9][a-z0-9_.-]{0,63}$")
@@ -245,7 +280,7 @@ class CreateResearchCandidateReviewResponse(BaseModel):
     replayed_request: bool
 
 
-class MaterializeResearchCandidateReviewRequest(BaseModel):
+class MaterializeResearchCandidateReviewRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     expected_review_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
@@ -304,7 +339,7 @@ class CapabilitiesResponse(BaseModel):
     capabilities: list[CapabilityStatus]
 
 
-class CreateExperimentRequest(BaseModel):
+class CreateExperimentRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     workflow_artifact_version_id: uuid.UUID
@@ -324,7 +359,7 @@ class ExperimentResource(BaseModel):
     created_at: dt.datetime | None
 
 
-class StartExecutionRequest(BaseModel):
+class StartExecutionRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     requested_capability: Capability
@@ -368,7 +403,7 @@ class MaterializedVqeArtifactResource(BaseModel):
     scientific_release: Literal["blocked"] = "blocked"
 
 
-class CreateControlledComparisonRequest(BaseModel):
+class CreateControlledComparisonRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     baseline_workflow_artifact_version_id: uuid.UUID
@@ -392,7 +427,7 @@ class ControlledComparisonRunResource(BaseModel):
     created_at: dt.datetime | None
 
 
-class FinalizeControlledComparisonRunRequest(BaseModel):
+class FinalizeControlledComparisonRunRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     baseline_execution_id: uuid.UUID
@@ -625,6 +660,7 @@ async def create_workflow_swap(
     body: CreateWorkflowSwapRequest,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
     settings: Annotated[Settings, Depends(get_settings)],
     request_idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
@@ -648,6 +684,7 @@ async def create_workflow_swap(
         raise HTTPException(status_code=422, detail=str(exc)) from None
     except vqe_repo.IdempotencyConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    await _file_private_artifact(scope, session, identity, settings, saved.artifact.id)
     return WorkflowSwapResource(
         artifact_id=saved.artifact.id,
         workflow_artifact_version_id=saved.version.id,
@@ -667,6 +704,7 @@ async def create_ansatz_migration(
     body: CreateAnsatzMigrationRequest,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
     settings: Annotated[Settings, Depends(get_settings)],
     request_idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
@@ -690,6 +728,7 @@ async def create_ansatz_migration(
         raise HTTPException(status_code=422, detail=str(exc)) from None
     except vqe_repo.IdempotencyConflictError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from None
+    await _file_private_artifact(scope, session, identity, settings, saved.artifact.id)
     return WorkflowSwapResource(
         artifact_id=saved.artifact.id,
         workflow_artifact_version_id=saved.version.id,
@@ -999,6 +1038,8 @@ async def materialize_research_candidate_review(
     body: MaterializeResearchCandidateReviewRequest,
     scope: CurrentScope,
     session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[
         str,
         Header(alias="Idempotency-Key", min_length=1, max_length=200),
@@ -1026,6 +1067,12 @@ async def materialize_research_candidate_review(
             status_code=422,
             detail={"code": str(exc), "message": "research candidate materialization rejected"},
         ) from None
+    version = await artifacts_repo.get_version(
+        scope,
+        session,
+        persisted.materialization.artifact_version_id,
+    )
+    await _file_private_artifact(scope, session, identity, settings, version.artifact_id)
     return MaterializeResearchCandidateReviewResponse(
         materialization=_to_research_materialization_resource(persisted.materialization),
         request_id=persisted.request_id,
@@ -1359,7 +1406,11 @@ async def experiment_events(
     response_model=MaterializedVqeArtifactResource,
 )
 async def materialize_execution(
-    execution_id: uuid.UUID, scope: CurrentScope, session: DbSession
+    execution_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
 ) -> MaterializedVqeArtifactResource:
     execution = await vqe_repo.get_execution(scope, session, execution_id)
     if execution.status != "succeeded":
@@ -1382,6 +1433,7 @@ async def materialize_execution(
     if run.artifact_version_id is not None:
         version = await artifacts_repo.get_version(scope, session, run.artifact_version_id)
         artifact = await artifacts_repo.get_artifact(scope, session, version.artifact_id)
+        await _file_private_artifact(scope, session, identity, settings, artifact.id)
         return MaterializedVqeArtifactResource(
             artifact_id=artifact.id,
             artifact_version_id=version.id,
@@ -1393,6 +1445,7 @@ async def materialize_execution(
         title=f"H2 STO-3G VQE candidate — {execution.framework}",
         family=Algorithm.VQE,
         framework=ContractFramework(execution.framework),
+        kept=False,
     )
     bundle = {
         "schema_version": "0.1.0",
@@ -1466,6 +1519,7 @@ async def materialize_execution(
         ),
     )
     await runs_repo.set_run_artifact_version(scope, session, run.id, version.id)
+    await _file_private_artifact(scope, session, identity, settings, artifact.id)
     return MaterializedVqeArtifactResource(
         artifact_id=artifact.id,
         artifact_version_id=version.id,

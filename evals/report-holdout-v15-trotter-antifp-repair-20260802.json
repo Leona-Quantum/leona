@@ -1,0 +1,126 @@
+{
+  "total": 1,
+  "passed": 0,
+  "pass_rate": 0.0,
+  "pass_rate_ci95_low": 0.0,
+  "pass_rate_ci95_high": 0.7934506856227626,
+  "unique_cases": 1,
+  "stable_passed_cases": 0,
+  "repetitions": 1,
+  "product_accepted": 0,
+  "oracle_cases": 1,
+  "oracle_passed": 0,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "first_candidate_passed": 0,
+  "candidate_revisions": 7,
+  "mean_candidates": 7.0,
+  "recorded_llm_calls": 20,
+  "recorded_input_tokens": 116921,
+  "recorded_output_tokens": 40981,
+  "cases": [
+    {
+      "id": "holdout-v15-08",
+      "category": "Holdout v15 — Ordered second-order Pauli Trotterization",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "semantic_group_id": null,
+      "prompt_variant": null,
+      "trial": 1,
+      "passed": false,
+      "run_status": "failed",
+      "terminal_reason": "candidate_budget_exhausted",
+      "verifier_decision": null,
+      "export_status": null,
+      "saved": false,
+      "product_accepted": false,
+      "oracle_passed": false,
+      "false_positive": false,
+      "false_negative": false,
+      "first_candidate_passed": false,
+      "observed_values": {
+        "trotter_z1": 1.0000000000000027,
+        "exact_z1": 0.28195064340364634,
+        "exact_trotter_fidelity": 0.6406981856234438
+      },
+      "observed_top_bitstring": null,
+      "reasons": [
+        "RESULT field 'trotter_z1' 1.0000000000000027 is outside expected 0.28310541374335335 ± 1e-09",
+        "RESULT field 'exact_trotter_fidelity' 0.6406981856234438 is outside expected 0.9999981128508361 ± 1e-09",
+        "run_status 'failed' != expected 'succeeded'",
+        "expected a saved artifact, none was written"
+      ],
+      "evidence": {
+        "failed_stage": "verify",
+        "error_code": "candidate_budget_exhausted",
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": true,
+        "candidate_id": "e9eb35c3-7013-5f0d-bc92-e7c2fdd153ac",
+        "execution_id": "3222994a-486c-597b-bd0d-3376800abed7",
+        "result_evidence_error": null,
+        "candidates_considered": 7,
+        "plans_produced": 3,
+        "sandbox_attempts": 7,
+        "semantic_review_attempts": 6,
+        "recorded_llm_calls": 20,
+        "recorded_input_tokens": 116921,
+        "recorded_output_tokens": 40981
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "holdout-v15-08",
+      "category": "Holdout v15 — Ordered second-order Pauli Trotterization",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "product_accepted": 0,
+      "oracle_trials": 1,
+      "oracle_passed": 0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "research",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "scientific",
+      "trials": 1,
+      "passed": 0,
+      "pass_rate": 0.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 0,
+      "mean_candidates": 7.0
+    }
+  ],
+  "metamorphic_groups": 0,
+  "metamorphic_robust_groups": 0,
+  "metamorphic_consistent_groups": 0,
+  "metamorphic_robustness": 0.0,
+  "metamorphic_consistency": 0.0,
+  "by_semantic_group": [],
+  "by_prompt_variant": [],
+  "note": "targeted frozen v15 Trotter rerun after generic q0-leftmost bridge and anti-range-laundering repair (real DeepSeek, local sandbox)"
+}

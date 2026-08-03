@@ -1,6 +1,8 @@
 from uuid import uuid4
 import signal
 
+import pytest
+
 from majorana_agent import CandidateRevision, ExecutionEvidence, ExecutionFailureKind
 from majorana_contracts.enums import Algorithm, Framework
 from majorana_contracts.plan import Plan
@@ -148,7 +150,7 @@ class MustNotCreateSandbox:
         raise AssertionError("memory preflight must run before sandbox creation")
 
 
-async def test_executor_rejects_oversized_statevector_before_provider_creation():
+async def test_executor_marks_oversized_statevector_not_run_before_provider_creation():
     output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
         _candidate(),
         _plan(qubits=27),
@@ -157,6 +159,106 @@ async def test_executor_rejects_oversized_statevector_before_provider_creation()
     assert output.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
     assert output.observation["estimated_memory_mb"] == 4096
     assert output.observation["sandbox_runs"] == 0
+    assert output.observation["execution_status"] == "not_run"
+    assert output.observation["execution_reason_code"] == ("local_statevector_capacity_exceeded")
+    assert output.observation["target_backend"] == "unassigned_external"
+
+
+async def test_industrial_scale_source_is_delivered_before_local_contract_checks():
+    """The module-scope FINAL_CIRCUIT contract is what artifact-only delivery relaxes.
+
+    A `run(backend)` entry point is the shape the generator prompt promises for a
+    circuit too large to build at import, and it is deliverable without ever
+    satisfying the contract the local lane would have checked by executing it.
+    """
+    source = (
+        "from qiskit import QuantumCircuit\n\n"
+        "def run(backend):\n"
+        "    return {'counts': backend.run(QuantumCircuit(480)).result()}\n"
+    )
+
+    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
+        _candidate(source),
+        _plan(qubits=480),
+    )
+
+    assert output.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
+    assert output.observation["qubits"] == 480
+    assert output.observation["execution_status"] == "not_run"
+    assert output.observation["sandbox_runs"] == 0
+
+
+async def test_artifact_only_delivery_refuses_source_with_no_entry_point():
+    """UNKNOWN source is not published as a backend-ready artifact.
+
+    `roles.classify_source` calls source that binds neither FINAL_CIRCUIT nor
+    RESULT "something this product cannot execute". Nothing can be lifted from
+    it, so an artifact holding it could never be exported, submitted, or run
+    when a backend that fits it connects. The check is pure AST and must run
+    BEFORE the resource preflight returns not_run — after it, the candidates it
+    catches are exactly the ones no execution will catch instead.
+    """
+    source = "from qiskit import QuantumCircuit\n\ndef build():\n    return QuantumCircuit(480)\n"
+
+    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
+        _candidate(source),
+        _plan(qubits=480),
+    )
+
+    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR
+    assert output.observation["contract_diagnostics"] == [
+        "contract:qiskit source delivered without execution must bind FINAL_CIRCUIT "
+        "or define a module-scope run(backend) entry point"
+    ]
+    # Routed to the repair loop, not published: a not_run observation here is
+    # what would make it artifact-only eligible downstream.
+    assert "execution_status" not in output.observation
+
+
+async def test_artifact_only_delivery_accepts_a_bound_final_circuit():
+    source = "from qiskit import QuantumCircuit\n\nFINAL_CIRCUIT = QuantumCircuit(480)\n"
+
+    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
+        _candidate(source),
+        _plan(qubits=480),
+    )
+
+    assert output.failure_kind is ExecutionFailureKind.RESOURCE_LIMIT
+    assert output.observation["execution_status"] == "not_run"
+
+
+async def test_a_nested_run_is_not_an_entry_point():
+    """Module scope only — a `run` a caller cannot reach is not one."""
+    source = (
+        "from qiskit import QuantumCircuit\n\n"
+        "def build():\n"
+        "    def run(backend):\n"
+        "        return {}\n"
+        "    return run\n"
+    )
+
+    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
+        _candidate(source),
+        _plan(qubits=480),
+    )
+
+    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR
+    assert "execution_status" not in output.observation
+
+
+async def test_artifact_only_source_still_obeys_selected_framework_boundary():
+    source = "import cirq\n\ndef build():\n    return cirq.Circuit()\n"
+
+    output = await SandboxCandidateExecutor(MustNotCreateSandbox()).run_candidate(
+        _candidate(source),
+        _plan(qubits=480),
+    )
+
+    assert output.failure_kind is ExecutionFailureKind.CODE_ERROR
+    assert output.observation["contract_diagnostics"] == [
+        "contract:qiskit source imports foreign quantum framework `cirq`"
+    ]
+    assert "execution_status" not in output.observation
 
 
 async def test_converter_uses_only_trusted_observation():
@@ -177,3 +279,26 @@ async def test_converter_uses_only_trusted_observation():
 
     assert qasm is None
     assert reason == "framework export unavailable"
+
+
+def test_a_statevector_estimate_stays_a_number_a_json_reader_can_hold():
+    """The figure is copied into resource_metrics and parsed by a browser.
+
+    `qubits_estimate` lost its upper bound when authoring stopped being capped by
+    local capacity, so this estimate is `2**n` scaled — at 1,024 qubits about
+    10^300, and above roughly 1,038 beyond the IEEE 754 double range, where
+    `JSON.parse` yields Infinity and every arithmetic use downstream is poisoned.
+    """
+    executor = SandboxCandidateExecutor(MustNotCreateSandbox())
+    ceiling = SandboxCandidateExecutor._MAX_REPORTABLE_STATEVECTOR_QUBITS
+
+    at_ceiling = executor._statevector_memory_mb(ceiling)
+    assert isinstance(at_ceiling, int)
+    # Representable as a double, which is what every consumer of this field uses.
+    assert float(at_ceiling) != float("inf")
+
+    # And one qubit past a double's range is exactly the case the cap exists for:
+    # the arithmetic still works in Python and stops being reportable.
+    huge = executor._statevector_memory_mb(1_100)
+    with pytest.raises(OverflowError):
+        float(huge)

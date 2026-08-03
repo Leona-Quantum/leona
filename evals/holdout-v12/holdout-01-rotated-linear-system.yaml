@@ -1,0 +1,30 @@
+id: holdout-v12-01
+category: "Holdout v12 — Unseen rotated-eigenbasis HHL"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Solve A*x=b for A=[[0.57,-0.24],[-0.24,0.43]] and b=[0.2,1.0] with a complete
+  Qiskit HHL-style circuit. Use U=exp(2*pi*i*A); its distinct eigenphases 1/4 and
+  3/4 must be resolved exactly with two phase qubits. Include state preparation,
+  controlled powers, inverse QFT, reciprocal controlled rotations, success-ancilla
+  postselection, and exact uncomputation. Extract signed normalized amplitudes from
+  the postselected circuit, and independently solve the same system with NumPy.
+  Return state_component_zero and state_component_one for the circuit amplitudes;
+  zero_over_one=state_component_zero/state_component_one;
+  baseline_residual=||A*x_classical-b||_2; and circuit_fidelity equal to the squared
+  overlap between the postselected circuit state and normalized classical solution.
+  Bind the complete circuit to FINAL_CIRCUIT. Do not substitute baseline amplitudes
+  for the postselected circuit result.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["state_component_zero", "state_component_one", "zero_over_one", "baseline_residual", "circuit_fidelity"]
+  expected_values:
+    state_component_zero: 0.4665720432345494
+    state_component_one: 0.8844831985243913
+    zero_over_one: 0.5275080906148867
+    baseline_residual: 0.0
+    circuit_fidelity: 1.0
+  expected_value_tolerance: 0.01
+  saves_artifact: true

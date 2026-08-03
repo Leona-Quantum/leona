@@ -1,0 +1,111 @@
+{
+  "total": 1,
+  "passed": 1,
+  "pass_rate": 1.0,
+  "pass_rate_ci95_low": 0.20654931437723745,
+  "pass_rate_ci95_high": 1.0,
+  "unique_cases": 1,
+  "stable_passed_cases": 1,
+  "repetitions": 1,
+  "product_accepted": 1,
+  "oracle_cases": 1,
+  "oracle_passed": 1,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "first_candidate_passed": 1,
+  "candidate_revisions": 1,
+  "mean_candidates": 1.0,
+  "recorded_llm_calls": 8,
+  "recorded_input_tokens": 26093,
+  "recorded_output_tokens": 4755,
+  "cases": [
+    {
+      "id": "holdout-v3-04",
+      "category": "Holdout v3 — Minimum-cost set cover",
+      "split": "holdout",
+      "difficulty": "intermediate",
+      "workload": "practical",
+      "trial": 1,
+      "passed": true,
+      "run_status": "succeeded",
+      "terminal_reason": "ai_review_aligned_with_reference_check",
+      "verifier_decision": "inconclusive",
+      "export_status": "lossless",
+      "saved": true,
+      "product_accepted": true,
+      "oracle_passed": true,
+      "false_positive": false,
+      "false_negative": false,
+      "first_candidate_passed": true,
+      "observed_values": {
+        "qaoa_best_cost": 6.0,
+        "exact_minimum_cost": 6.0
+      },
+      "observed_top_bitstring": "01010",
+      "reasons": [],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": true,
+        "candidate_id": "5d9df8f1-e551-554b-90fa-2941d611610e",
+        "execution_id": "c327edb0-7010-5da0-90cc-247947e7471b",
+        "result_evidence_error": null,
+        "candidates_considered": 1,
+        "plans_produced": 1,
+        "sandbox_attempts": 1,
+        "semantic_review_attempts": 1,
+        "recorded_llm_calls": 8,
+        "recorded_input_tokens": 26093,
+        "recorded_output_tokens": 4755
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "holdout-v3-04",
+      "category": "Holdout v3 — Minimum-cost set cover",
+      "split": "holdout",
+      "difficulty": "intermediate",
+      "workload": "practical",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "product_accepted": 1,
+      "oracle_trials": 1,
+      "oracle_passed": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 1,
+      "mean_candidates": 1.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "intermediate",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 1,
+      "mean_candidates": 1.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "practical",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 1,
+      "mean_candidates": 1.0
+    }
+  ],
+  "note": "baseline run against real LLM providers (sandbox=local, repetitions=1)"
+}

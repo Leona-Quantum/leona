@@ -1,0 +1,29 @@
+id: holdout-v11-01
+category: "Holdout v11 — Unseen exact two-dimensional linear system"
+split: holdout
+difficulty: research
+workload: scientific
+prompt: >-
+  Solve A*x=b for A=[[0.5,0.25],[0.25,0.5]] and b=[1,0.2] using a complete Qiskit
+  HHL-style circuit with phase estimation, a controlled reciprocal rotation, and
+  exact uncomputation. Use U=exp(2*pi*i*A), whose eigenphases 1/4 and 3/4 are exactly
+  resolved by two phase qubits, postselect the success ancilla, and extract signed
+  normalized amplitudes from the circuit. Independently solve the same system with
+  NumPy. Return normalized_component_0 and normalized_component_1 for the circuit
+  amplitudes; component_1_over_0=normalized_component_1/normalized_component_0;
+  classical_residual=||A*x_classical-b||_2; and solution_fidelity equal to the squared
+  overlap between the postselected circuit state and normalized classical solution.
+  Bind the complete HHL-style circuit to FINAL_CIRCUIT. Do not substitute the
+  classical solution for the postselected circuit state.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["normalized_component_0", "normalized_component_1", "component_1_over_0", "classical_residual", "solution_fidelity"]
+  expected_values:
+    normalized_component_0: 0.9486832980505138
+    normalized_component_1: -0.3162277660168379
+    component_1_over_0: -0.3333333333333333
+    classical_residual: 0.0
+    solution_fidelity: 1.0
+  expected_value_tolerance: 0.01
+  saves_artifact: true

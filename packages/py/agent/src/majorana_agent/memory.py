@@ -200,8 +200,8 @@ class MemoryAgentStore:
             raise KeyError(evidence.candidate_id)
         review = await self.latest_semantic_review(owner, evidence.candidate_id)
         execution = self._executions.get((owner, evidence.candidate_id))
-        if review is None or not review.is_deliverable():
-            raise ValueError("conversion requires a review whose evidence is deliverable")
+        if review is None or not review.has_recorded_checks():
+            raise ValueError("conversion requires a review with recorded deterministic checks")
         if execution is None or not (
             review.execution_id == evidence.execution_id == execution.execution_id
             and review.source_fingerprint
@@ -234,10 +234,39 @@ class MemoryAgentStore:
             for item in self._candidates[owner]
             if item.candidate_id == materialization.candidate_id
         )
+        execution = self._executions.get((owner, materialization.candidate_id))
         reviews = self._semantic_reviews[(owner, materialization.candidate_id)]
         review = max(reviews, key=lambda item: item.attempt_seq) if reviews else None
-        if review is None or not review.is_deliverable():
-            raise ValueError("materialization requires a review whose evidence is deliverable")
+        if execution is None:
+            raise ValueError("materialization requires execution evidence")
+        if (
+            execution.candidate_id != candidate.candidate_id
+            or execution.source_fingerprint != candidate.source_fingerprint
+        ):
+            raise ValueError("materialization execution evidence does not match candidate")
+        if materialization.execution_status == "not_run":
+            if not execution.was_not_run:
+                raise ValueError(
+                    "unexecuted materialization requires trusted not-run preflight evidence"
+                )
+            if review is not None:
+                # A review that EXISTS must be bound to this candidate and this
+                # execution even when nothing ran. `handlers._finish_simple_pipeline`
+                # already asserts it on the unexecuted path; leaving it out here
+                # meant the store admitted a materialization the worker would
+                # then refuse, and — worse — that a caller reaching the store
+                # directly could file an artifact carrying somebody else's
+                # review. The not-run relaxation is about the review being
+                # OPTIONAL, never about an unbound one being acceptable.
+                review.assert_binding(candidate, execution)
+        else:
+            if not execution.succeeded:
+                raise ValueError("materialization requires successful execution")
+            if review is None or not review.has_recorded_checks():
+                raise ValueError(
+                    "materialization requires a review with recorded deterministic checks"
+                )
+            review.assert_binding(candidate, execution)
         if candidate.source_fingerprint != materialization.source_fingerprint:
             raise ValueError("materialization fingerprint does not match candidate")
         existing = next(

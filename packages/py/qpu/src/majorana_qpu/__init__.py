@@ -18,12 +18,19 @@ from .pricing import (
     list_backends,
 )
 from .provider import QpuDisabledError, QpuError, QpuProvider
+from .iam import (
+    IbmCredentialRejected,
+    IbmVerificationUnavailable,
+    verify_ibm_api_key,
+)
 from .ibm import IbmRuntimeProvider, submission_block_reason
 
 __all__ = [
     "RATE_CARD",
     "EstimateBasis",
+    "IbmCredentialRejected",
     "IbmRuntimeProvider",
+    "IbmVerificationUnavailable",
     "QpuAccess",
     "QpuBackendInfo",
     "QpuCostEstimate",
@@ -41,4 +48,5 @@ __all__ = [
     "estimate",
     "list_backends",
     "submission_block_reason",
+    "verify_ibm_api_key",
 ]

@@ -143,9 +143,32 @@ def test_the_tolerance_shrinks_as_shots_grow():
     assert energy_tolerance(_VQE_TERMS, 1024) > energy_tolerance(_VQE_TERMS, 16384)
 
 
-def test_a_shotless_plan_still_gets_the_optimizer_allowance():
+def test_a_shotless_plan_gets_only_scale_aware_numerical_allowance():
     tolerance = energy_tolerance(_VQE_TERMS, None)
-    assert tolerance == pytest.approx(0.02 * (0.5 + 1.2 + 0.8))
+    assert tolerance == pytest.approx(1e-6 * (0.5 + 1.2 + 0.8))
+
+
+def test_exact_statevector_does_not_accept_the_observed_unconverged_vqe_error():
+    """Regression from a real unseen trial, expressed independently of its task data.
+
+    A noiseless variational result seven millihartree above a known ground state is
+    optimizer/ansatz error, not shot noise. Even an old Plan-authored 0.5% threshold
+    must not widen the fixed verifier's numerical allowance.
+    """
+    outcome = verify_exact_diag(
+        _VQE_TERMS,
+        _VQE_GROUND + 0.007,
+        shots=None,
+        declared_tolerance=0.005 * sum(abs(coefficient) for coefficient, _ in _VQE_TERMS),
+    )
+
+    assert outcome.result is VerificationResultKind.FAIL
+    assert outcome.details["protocol"]["tolerance"] == pytest.approx(2.5e-6)
+    assert outcome.details["protocol"]["tolerance_source"] == (
+        "exact_expectation_numerical_allowance"
+    )
+    assert outcome.details["protocol"]["expectation_mode"] == "exact_statevector"
+    assert outcome.details["failure_mode"] == "reported_above_ground_state"
 
 
 @pytest.mark.parametrize(

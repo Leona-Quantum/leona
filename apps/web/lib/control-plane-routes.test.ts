@@ -183,3 +183,112 @@ test("no route calls fetch directly", () => {
     );
   }
 });
+
+/**
+ * Every `/api/…` path the browser fetches has a route file behind it.
+ *
+ * The BFF is a directory tree, so a missing handler is not a broken import or a
+ * type error — it is a Next 404, and the only place it appears is in a browser
+ * with the feature in front of you. `shared/…/versions/[versionId]/route.ts`
+ * was missing for exactly this reason: the control plane answered 200 at that
+ * path, every Python test passed, the shared-project page listed its circuits
+ * correctly, and opening one silently did nothing.
+ *
+ * The match is by SHAPE. A whole `${…}` segment becomes a wildcard and a
+ * `[param]` directory matches any single segment, so this asserts the tree has
+ * a handler at that depth rather than trying to guess ids.
+ */
+const CLIENT_DIRS = ["lib", "components", "app"];
+const WEB_DIR = fileURLToPath(new URL("..", import.meta.url));
+
+/**
+ * Comments only — the strings are the thing being read here, which is why
+ * `stripCommentsAndStrings` above is the wrong tool. Without this, a path
+ * written in a docstring counts as a fetch.
+ */
+export function stripComments(source: string): string {
+  return source.replace(/\/\*[\s\S]*?\*\//g, " ").replace(/(^|[^:])\/\/[^\n]*/g, "$1 ");
+}
+
+function sourceFiles(dir: string): string[] {
+  return readdirSync(dir, { withFileTypes: true }).flatMap((entry) => {
+    const path = `${dir}/${entry.name}`;
+    if (entry.name === "node_modules" || entry.name.startsWith(".next")) return [];
+    if (entry.isDirectory()) return sourceFiles(path);
+    return /\.tsx?$/.test(entry.name) && !entry.name.endsWith(".test.ts") ? [path] : [];
+  });
+}
+
+/** Route templates the tree can serve, as segment arrays. */
+const servedRoutes = routeFiles(API_DIR).map((path) =>
+  path.slice(API_DIR.length + 1).replace(/\/route\.ts$/, "").split("/"),
+);
+
+/**
+ * `/api/x/${id}/y?q=1` → `["x", "*", "y"]`.
+ *
+ * A `${…}` that is a WHOLE segment is a path parameter and becomes a wildcard.
+ * One glued to the end of a segment — `/api/artifacts${query}` — is a query
+ * string being appended, so it is dropped rather than treated as a segment
+ * nobody serves.
+ */
+export function apiSegments(path: string): string[] {
+  return path
+    .replace(/[?#].*$/, "")
+    .split("/")
+    .slice(2)
+    .map((part) => (/^\$\{[^}]*\}$/.test(part) ? "*" : part.replace(/\$\{[^}]*\}/g, "")))
+    .filter((part) => part.length > 0);
+}
+
+export function isServed(segments: string[]): boolean {
+  return servedRoutes.some((route) => {
+    for (let index = 0; index < route.length; index += 1) {
+      const part = route[index];
+      if (part.startsWith("[[...") && part.endsWith("]]")) return true;
+      if (part.startsWith("[...") && part.endsWith("]")) {
+        return segments.length > index;
+      }
+      if (index >= segments.length) return false;
+      if (!part.startsWith("[") && part !== segments[index]) return false;
+    }
+    return route.length === segments.length;
+  });
+}
+
+const fetched = CLIENT_DIRS.flatMap((dir) => sourceFiles(`${WEB_DIR}${dir}`)).flatMap((path) => {
+  const source = stripComments(readFileSync(path, "utf8"));
+  return [...source.matchAll(/["\'`](\/api\/[^"\'`\s]*)["\'`]/g)].map((match) => ({
+    name: path.slice(WEB_DIR.length),
+    path: match[1],
+  }));
+});
+
+test("the api-path sweep found paths to check", () => {
+  // The same positive control the sweep above has: a regex that stopped
+  // matching would make the assertion below a loop over nothing.
+  assert.ok(fetched.length >= 15, `expected client /api/ paths, found ${fetched.length}`);
+});
+
+test("every /api path the client fetches has a route handler", () => {
+  const missing = fetched
+    .filter(({ path }) => apiSegments(path).length > 0 && !isServed(apiSegments(path)))
+    .map(({ name, path }) => `${path} (from ${name})`);
+  assert.deepEqual(missing, [], `no BFF route handles: ${missing.join(", ")}`);
+});
+
+test("the path matcher is not vacuous", () => {
+  // Without these, a bug making `isServed` always true would hide every missing
+  // route and the test above would pass forever.
+  assert.equal(isServed(["definitely", "not", "a", "route"]), false);
+  assert.equal(isServed(["workspace", "projects"]), true);
+  assert.equal(isServed(["workspace", "projects", "*", "shares"]), true);
+  assert.equal(isServed(["vqe", "experiments", "*", "executions"]), true);
+  assert.equal(isServed(["vqe"]), false);
+  assert.equal(isServed(["not-vqe", "experiments", "*", "executions"]), false);
+  assert.deepEqual(apiSegments("/api/artifacts${query}"), ["artifacts"]);
+  assert.deepEqual(apiSegments("/api/runs/${id}/events/stream"), ["runs", "*", "events", "stream"]);
+  assert.deepEqual(apiSegments("/api/usage?window=7"), ["usage"]);
+  assert.doesNotMatch(stripComments("// see /api/nowhere"), /\/api\/nowhere/);
+  assert.match(stripComments('const u = "/api/usage";'), /\/api\/usage/);
+});

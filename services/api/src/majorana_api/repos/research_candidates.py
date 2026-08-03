@@ -1387,6 +1387,7 @@ async def materialize_research_candidate_review(
             # Legacy storage field only; the compatibility contract is
             # explicitly framework-neutral and non-executable.
             framework=ContractFramework.QISKIT,
+            kept=False,
         )
         version = await artifacts_repo.create_version(
             scope,

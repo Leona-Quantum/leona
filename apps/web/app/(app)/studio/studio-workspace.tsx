@@ -5,6 +5,20 @@ import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationHeadline }
 import { CopyIcon, SearchIcon } from "../../../components/icons";
 import { artifactFromResource, frameworkVariantsFromRemote, getLibraryArtifact, loadLibraryArtifacts, statusFromVerificationSummary, type LibraryArtifact } from "../../../lib/library-data";
 import { fetchArtifactPages } from "../../../lib/artifact-page";
+import {
+  ARTIFACT_PROJECTS_EVENT,
+  loadArtifactProjects,
+  type ArtifactProject,
+} from "../../../lib/artifact-projects";
+import {
+  ALL_PROJECTS,
+  discoveryTabs,
+  filterDiscoveryArtifacts,
+  projectOf,
+  sameFilter,
+  surviveProjectChange,
+  type ProjectFilter,
+} from "../../../lib/studio-discovery";
 import type { PublicLocale } from "../../../lib/public-locale";
 import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCode, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderCodeVariants, type BuilderGate, type BuilderStep, type CustomGateDefinition } from "../../../lib/studio-builder";
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
@@ -12,12 +26,12 @@ import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-syn
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
 import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type StudioDraftBundle } from "../../../lib/studio-drafts";
 import { CircuitDiagram } from "../../../components/circuit-diagram";
-import { MAX_BUILDER_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
+import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
 import { CIRCUIT_FRAMEWORKS, circuitFramework, circuitFrameworkOrNull, isExecutableCircuitFramework, type CircuitFrameworkKey } from "../../../lib/circuit-frameworks";
 import { MAX_CPU_SEED, MAX_CPU_SHOTS, cpuSimulationEligibility, loadCpuSimulationRecords, runCpuSimulation, saveCpuSimulationRecord, sourceFingerprint, type CpuSimulationEligibility, type CpuSimulationLimits, type CpuSimulationRecord } from "../../../lib/studio-simulation";
 import { TIER_LIMITS } from "../../../lib/account-tier";
 import { formatShare, simulationChartData, simulationReading, type SimulationChartData, type SimulationReading } from "../../../lib/simulation-visual";
-import { fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
+import { QpuSubmissionRefused, fetchQpuBackends, fetchQpuEstimate, fetchQpuRun, fetchQpuSubmissionGate, formatUsd, submitQpuRun, type QpuBackendInfo, type QpuCostEstimate, type QpuRunRecord, type QpuSubmissionGate } from "../../../lib/qpu";
 import { WORKSPACE_COPY } from "../../../lib/workspace-locale";
 import { DEFAULT_RUN_SHOTS, sampling } from "../../../lib/studio-run-request";
 import { verificationFromMetadata, verificationFromResource, type VerificationCheck } from "../../../lib/verification-record";
@@ -85,6 +99,13 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [artifact, setArtifact] = useState<LibraryArtifact | null>(null);
   const [showEditor, setShowEditor] = useState(Boolean(artifactId || newDraft));
   const [query, setQuery] = useState("");
+  // The workspace's projects, read from the mirror the sidebar hydrates rather
+  // than fetched again here. `hydrateArtifactProjects` ends in
+  // `replaceArtifactProjects`, which emits ARTIFACT_PROJECTS_EVENT — this page
+  // listens for that and never calls hydrate itself, which is what keeps the
+  // two surfaces from taking turns refreshing each other forever.
+  const [artifactProjects, setArtifactProjects] = useState<ArtifactProject[]>([]);
+  const [projectFilter, setProjectFilter] = useState<ProjectFilter>(ALL_PROJECTS);
   const [title, setTitle] = useState("Untitled circuit");
   const [framework, setFramework] = useState<StudioFramework>("qiskit");
   const [drafts, setDrafts] = useState<BuilderCodeVariants>(() => ({ ...STARTER_CODES }));
@@ -131,6 +152,30 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   const [canvasCircuit, setCanvasCircuit] = useState<{ qubitCount: number; steps: BuilderStep[]; customGates: CustomGateDefinition[] }>(
     () => ({ qubitCount: STARTER_SEED.qubitCount, steps: STARTER_SEED.steps, customGates: STARTER_SEED.customGates }),
   );
+
+  // The project mirror, after mount and on every change the sidebar makes.
+  //
+  // Its own effect with no dependencies, because it must not be torn down and
+  // rebuilt when the route's artifact changes: creating a project in the rail
+  // while a circuit is open has to reach this list, and a listener that
+  // remounted on `artifactId` would still work but would re-read storage for
+  // no reason on every navigation.
+  useEffect(() => {
+    const read = () => {
+      const projects = loadArtifactProjects();
+      setArtifactProjects(projects);
+      // A project deleted from the rail while its tab is selected would
+      // otherwise pin this pane to an id nothing matches — an empty list under
+      // a tab that is no longer in the row, over circuits that still exist.
+      setProjectFilter((current) => {
+        const survived = surviveProjectChange(current, projects);
+        return sameFilter(survived, current) ? current : survived;
+      });
+    };
+    read();
+    window.addEventListener(ARTIFACT_PROJECTS_EVENT, read);
+    return () => window.removeEventListener(ARTIFACT_PROJECTS_EVENT, read);
+  }, []);
 
   // Local storage is read only after mount so the server and client render
   // the same initial markup; the artifact then hydrates through applyArtifact.
@@ -241,17 +286,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     const key = `${next.id}:${seedCounter.current}`;
     const stored = loadStoredCircuit(next.id);
     const artifactIdentity = studioArtifactIdentity(next);
-    // A cached seed is trusted only if it is still drawable. An editable draft
-    // (<= the builder's width) is the user's own work and always kept whatever
-    // its depth. A wider cached seed is a persisted read-only reconstruction —
-    // and one persisted before this change had no step guard, so it can exceed
-    // the current bounds and would render the pathological SVG the guard exists
-    // to prevent. When it does, drop the cache and fall through to fresh
-    // reconstruction, which re-applies the guard (and surfaces too_large).
-    const cachedIsDrawable = stored
-      && (stored.qubitCount <= MAX_BUILDER_QUBITS
-        || (stored.qubitCount <= MAX_VIEWABLE_QUBITS && stored.steps.length <= MAX_VIEWABLE_STEPS));
-    if (stored?.artifactIdentity === artifactIdentity && cachedIsDrawable) {
+    // The diagram virtualizes both axes, so a valid cached user edit remains
+    // drawable regardless of circuit width or depth.
+    if (stored?.artifactIdentity === artifactIdentity) {
       return { seed: { key, artifactIdentity, qubitCount: stored.qubitCount, steps: stored.steps, customGates: stored.customGates }, note: copy.circuitRestored };
     }
     const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm);
@@ -261,24 +298,22 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // it is what left artifacts opening to a blank canvas beside a perfectly
     // drawable circuit one tab away. See canvasSeedCandidates.
     const candidates = canvasSeedCandidates(next, activeDrafts, activeFramework, bundle.fallbacks);
-    // First choice: an editable circuit the six-wire builder can reconstruct.
+    // First choice: source the deterministic builder can reconstruct exactly.
     const parsed = hasOwnCode
       ? candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework)).find(Boolean) ?? null
       : null;
     if (parsed) {
       return { seed: { key, artifactIdentity, qubitCount: parsed.qubitCount, steps: parsed.steps, customGates: [] }, note: copy.circuitRestored };
     }
-    // Fallback: reconstruct a read-only diagram from the stored interchange QASM
+    // Fallback: reconstruct a diagram from the stored interchange QASM
     // (or wider builder-shaped source). LLM-run artifacts store Qiskit qasm3
     // output — richer gates, a `meas` register, per-qubit measurement, and often
     // more than six qubits — which the editable parser rejects, so before this
     // fallback those artifacts opened to an empty canvas and showed no circuit
     // at all. The interchange reader draws the standard-gate subset up to the
-    // *viewing* ceiling (higher than the simulation ceiling — looking costs only
-    // SVG); anything above six qubits opens read-only (below, editable). It can
-    // also decline as too_large — a decomposed gate set that would draw a
-    // pathological diagram — which we surface honestly rather than as an empty
-    // canvas that looks like a bug.
+    // operation budget. Width is unbounded and every successfully reconstructed
+    // circuit is editable. A decomposition past the operation budget still
+    // declines honestly rather than opening a misleading partial canvas.
     // The stored interchange first, then the OpenQASM 3 draft the picker just
     // derived. An artifact whose export never ran has no stored qasm at all, and
     // for those the derived draft is the only interchange there is — without it
@@ -296,15 +331,14 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // wasted work once the primary path succeeds.
     const fallback = interchange?.kind === "ok" || !hasOwnCode
       ? null
-      : candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework, MAX_VIEWABLE_QUBITS)).find(Boolean) ?? null;
+      : candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework)).find(Boolean) ?? null;
     const reconstructed = interchange?.kind === "ok"
       ? interchange.circuit
       : fallback && fallback.steps.length <= MAX_VIEWABLE_STEPS
         ? fallback
         : null;
     if (reconstructed) {
-      const note = reconstructed.qubitCount > MAX_BUILDER_QUBITS ? copy.circuitViewerReadonly : copy.circuitRestored;
-      return { seed: { key, artifactIdentity, qubitCount: reconstructed.qubitCount, steps: reconstructed.steps, customGates: [] }, note };
+      return { seed: { key, artifactIdentity, qubitCount: reconstructed.qubitCount, steps: reconstructed.steps, customGates: [] }, note: copy.circuitRestored };
     }
     const tooLargeToDraw = interchange?.kind === "too_large" || (fallback !== null && fallback.steps.length > MAX_VIEWABLE_STEPS);
     return { seed: { key, ...EMPTY_SEED, artifactIdentity }, note: hasOwnCode ? (tooLargeToDraw ? copy.circuitTooLargeToDraw : copy.circuitNotRebuildable) : null };
@@ -360,10 +394,12 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     setMessage(copy.rebuiltFromCode);
   }
 
-  const filteredArtifacts = artifacts.filter((item) => {
-    const normalized = query.trim().toLowerCase();
-    return !normalized || [item.title, item.family, item.framework, item.description, ...item.tags].join(" ").toLowerCase().includes(normalized);
+  const filteredArtifacts = filterDiscoveryArtifacts(artifacts, {
+    query,
+    filter: projectFilter,
+    projects: artifactProjects,
   });
+  const projectTabs = discoveryTabs(artifacts, artifactProjects);
 
   async function selectArtifact(id: string) {
     setMessage(null);
@@ -547,15 +583,25 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                 <div className="mj-studio-actions">
                   {/* The chip is a shortcut to the evidence panel. On the tab
                       that already renders that panel it would just be the same
-                      sentence twice. */}
-                  {panel === "summary" ? null : (
+                      sentence twice — so it is hidden there, not unmounted.
+                      Unmounting it let the row reflow every time you moved on
+                      or off Summary, and Download export / Verify & save jumped
+                      sideways under the pointer on a plain tab change. Hidden
+                      with `visibility`, so it keeps its box, takes no clicks and
+                      leaves the tab order. */}
+                  <span
+                    className="mj-studio-verdict-slot"
+                    data-hidden={panel === "summary" ? "true" : undefined}
+                    aria-hidden={panel === "summary" ? true : undefined}
+                  >
                     <StudioVerdictChip
                       summary={artifact?.verificationSummary ?? null}
                       state={verificationDisplayState}
                       onOpen={() => selectPanel("summary")}
                       copy={copy}
+                      inert={panel === "summary"}
                     />
-                  )}
+                  </span>
                   {artifact ? <button className="mj-secondary-button" type="button" onClick={downloadDraft}>{copy.downloadExport}</button> : null}
                   <button className="mj-primary-button" type="button" disabled={!code.trim() || busy !== null || !isExecutableCircuitFramework(framework) || !isExecutableCircuitFramework(sourceFramework)} onClick={() => void startRun()}>{busy === "save" ? copy.starting : copy.verifySave}</button>
                 </div>
@@ -695,17 +741,111 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
               <input value={query} onChange={(event) => setQuery(event.target.value)} placeholder={copy.searchPlaceholder} />
               <StudioDots />
             </label>
-            {artifactSyncError ? <p className="mj-studio-empty" role="alert">{copy.remoteSyncUnavailable}</p> : null}
+            {/* No tabs at all until the workspace has a project — a lone "All"
+                is a control that does nothing, and this pane looked exactly as
+                it does now for everybody who has never made one. */}
+            {projectTabs.length ? (
+              <div className="mj-studio-projects" role="group" aria-label={copy.projectFilterLabel}>
+                {projectTabs.map((tab) => {
+                  const label =
+                    tab.filter.kind === "all"
+                      ? copy.projectAll
+                      : tab.filter.kind === "ungrouped"
+                        ? copy.projectUngrouped
+                        : tab.name;
+                  const active = sameFilter(tab.filter, projectFilter);
+                  return (
+                    <button
+                      key={`${tab.filter.kind}:${tab.filter.kind === "project" ? tab.filter.id : ""}`}
+                      type="button"
+                      className={`mj-studio-project-tab${active ? " is-active" : ""}`}
+                      aria-pressed={active}
+                      onClick={() => setProjectFilter(tab.filter)}
+                    >
+                      {label}
+                      <span className="mj-studio-project-count">{tab.count}</span>
+                    </button>
+                  );
+                })}
+              </div>
+            ) : null}
+            {/* How many rows the list below actually holds. A list you have
+                just filtered should say what the filter left, and this is the
+                one number that used to be reachable only by counting cards.
+
+                Rendered unconditionally, with the sentence conditional inside
+                it: the server paints before local storage has been read, so a
+                line that only exists once there are rows appears after
+                hydration and pushes the whole list down. The element reserves
+                its own height (globals.css) whether or not it has anything to
+                say. */}
+            <p className="mj-studio-discovery-count">
+              {filteredArtifacts.length ? copy.countCircuits(filteredArtifacts.length) : null}
+            </p>
+            {/* The sync failure used to render in `.mj-studio-empty`, the same
+                muted 12px the "nothing here yet" sentence uses — so a workspace
+                that could not reach the control plane looked exactly like an
+                empty one, and the difference between "you have nothing" and "we
+                could not read what you have" was invisible. It has its own tone
+                now.
+
+                It sits directly above the list rather than above the search
+                field, because it appears only after the fetch has failed: any
+                higher and it pushes the search box down under whoever is
+                already typing in it. Here the only thing it moves is the list
+                it qualifies. */}
+            {artifactSyncError ? <p className="mj-studio-notice" data-tone="warn" role="alert">{copy.remoteSyncUnavailable}</p> : null}
             <div className="mj-studio-discovery-list">
-              {filteredArtifacts.length ? filteredArtifacts.map((item) => (
+              {filteredArtifacts.length ? filteredArtifacts.map((item) => {
+                // Named on the card only under "All". Repeating one project's
+                // name down a list already filtered to it is noise, and the
+                // tab above the list has just said it.
+                const project = projectFilter.kind === "all" ? projectOf(item, artifactProjects) : null;
+                return (
                 <article className="mj-studio-discovery-card" key={item.id}>
                   <button type="button" onClick={() => void selectArtifact(item.id)}>
-                    <span className="mj-studio-artifact-mark" aria-hidden="true">{item.status === "verified" ? "✓" : "–"}</span><span className="sr-only">{item.status.replaceAll("_", " ")}</span>
-                    <span><strong>{item.title}</strong><small>{item.framework} · {item.family} · {formatDiscoveryDate(item.updatedAt, locale)}</small><em>{item.description}</em></span>
+                    <span className="mj-studio-card-body">
+                      <strong>{item.title}</strong>
+                      <em>{item.description}</em>
+                      <small>
+                        <span className="mj-studio-card-framework">{item.framework}</span>
+                        <span>{item.family}</span>
+                        <span>{formatDiscoveryDate(item.updatedAt, locale)}</span>
+                        {project ? <span className="mj-studio-card-project">{project.name}</span> : null}
+                      </small>
+                    </span>
                   </button>
-                  <a className="mj-secondary-button" href={`/run?artifact=${encodeURIComponent(item.id)}`}>{copy.openRun}</a>
+                  {/* The verdict, in the same words and tone the rest of the
+                      product uses for it. The mark this replaces was one grey
+                      ring whose glyph was "✓" for verified and "–" for
+                      everything else — so a FAILED artifact and a structurally
+                      verified one were the same picture, in the same colour
+                      (`.mj-studio-artifact-mark` is hard-coded to `--ok`). It
+                      is the first thing anybody opens this list to learn. */}
+                  <span className="mj-studio-card-side">
+                    <StudioStatusPill status={item.status} locale={locale} />
+                    <a className="mj-secondary-button" href={`/run?artifact=${encodeURIComponent(item.id)}`}>{copy.openRun}</a>
+                  </span>
                 </article>
-              )) : <p className="mj-studio-empty">{artifacts.length ? copy.noSearchResults : copy.empty}</p>}
+                );
+              }) : (
+                <p className="mj-studio-empty">
+                  {/* Four different nothings. An empty project told the reader
+                      "no results match your search" while the search box was
+                      blank, which reads as the filter being broken — and
+                      Ungrouped is not a project, so it cannot borrow that
+                      sentence either. It is reachable: the tab is dropped once
+                      everything is filed, but the selection is not, so the last
+                      artifact leaving the bucket lands here. */}
+                  {!artifacts.length
+                    ? copy.empty
+                    : query.trim()
+                      ? copy.noSearchResults
+                      : projectFilter.kind === "ungrouped"
+                        ? copy.ungroupedEmpty
+                        : copy.projectEmpty}
+                </p>
+              )}
             </div>
           </section>
         )}
@@ -730,11 +870,14 @@ function StudioVerdictChip({
   state,
   onOpen,
   copy,
+  inert = false,
 }: {
   summary: Parameters<typeof verificationHeadline>[0];
   state: Parameters<typeof verificationHeadline>[1];
   onOpen: () => void;
   copy: StudioCopy;
+  /** Rendered only to hold its width open; not reachable and not announced. */
+  inert?: boolean;
 }) {
   const headline = verificationHeadline(summary, state);
   return (
@@ -744,11 +887,46 @@ function StudioVerdictChip({
       data-tone={headline.tone}
       onClick={onOpen}
       title={copy.openSummary}
+      tabIndex={inert ? -1 : undefined}
     >
       <span aria-hidden="true">{headline.glyph}</span>
       {headline.title}
       <span className="sr-only">— {copy.openSummary}</span>
     </button>
+  );
+}
+
+/**
+ * One artifact's verdict on a discovery card: glyph, word, tone.
+ *
+ * Deliberately reuses `.mj-library-status`, the vocabulary the retired Vault
+ * list already had, rather than inventing a second one — the tone mapping
+ * (verified → ok, failed → err, everything else → warn) and the glyph pairing
+ * that keeps it off hue alone both live in that ruleset. The words come from
+ * `library`, not `studio`, for the same reason: one artifact status has one
+ * name, and a second copy of it in another section is a string that drifts.
+ */
+function StudioStatusPill({ status, locale }: { status: LibraryArtifact["status"]; locale: PublicLocale }) {
+  const copy = WORKSPACE_COPY[locale].library;
+  const label =
+    status === "verified"
+      ? copy.verified
+      : status === "structural"
+        ? copy.structural
+        : status === "verified_caveats"
+          ? copy.caveats
+          : status === "inconclusive"
+            ? copy.inconclusive
+            : status === "legacy_unknown"
+              ? copy.legacyUnknown
+              : status === "stale"
+                ? copy.stale
+                : copy.failed;
+  return (
+    <span className={`mj-library-status mj-studio-card-status mj-library-status--${status}`}>
+      <span aria-hidden="true">{status === "failed" ? "×" : status === "verified" ? "✓" : "–"}</span>
+      {label}
+    </span>
   );
 }
 
@@ -906,12 +1084,6 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   const [builderMessage, setBuilderMessage] = useState<string | null>(null);
   const [applyConfirmPending, setApplyConfirmPending] = useState(false);
 
-  // A circuit wider than the six-wire editable grid opens as a read-only
-  // diagram: the drag-and-drop builder, its palette, and its edit controls all
-  // assume ≤6 wires, so for a reconstructed 10- or 20-qubit circuit we show the
-  // diagram (so it renders at all) but hide every affordance that would edit it.
-  const readOnly = qubitCount > MAX_BUILDER_QUBITS;
-
   // A pending confirmation describes one specific pair of a diagram and a
   // source. If either side moves — the code is edited again, the canvas is
   // changed, or the two come back into agreement — the armed button would be
@@ -959,7 +1131,10 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   }
 
   function changeQubitCount(delta: number) {
-    const next = Math.min(6, Math.max(1, qubitCount + delta));
+    // Bounded by what can be drawn, not by the editor's old six-wire grid:
+    // without a ceiling here, holding "Add qubit" walks the canvas straight past
+    // any width a browser will lay out.
+    const next = Math.min(MAX_VIEWABLE_QUBITS, Math.max(1, qubitCount + delta));
     if (next === qubitCount) return;
     setQubitCount(next);
     setPendingQubits((current) => current.filter((qubit) => qubit < next));
@@ -1062,13 +1237,6 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       hidden={hidden}
       region={region}
     >
-      {readOnly ? (
-        <div className="mj-circuit-sync mj-circuit-sync--readonly" role="status">
-          <span>{copy.readonlyDiagram(qubitCount)}</span>
-        </div>
-      ) : null}
-
-      {readOnly ? null : (
       <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
         {BUILDER_GATES.map((gate) => (
           <button key={gate} type="button" className={`mj-builder-gate${armed === gate ? " is-active" : ""}`} aria-pressed={armed === gate} onClick={() => { onSelectGate(gate); setPendingQubits([]); setBuilderMessage(null); }}>
@@ -1084,9 +1252,8 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
           </label>
         ) : null}
       </div>
-      )}
 
-      {!readOnly && customGates.length ? (
+      {customGates.length ? (
         <div className="mj-builder-custom-gates" aria-label={copy.customGates}>
           <span className="mj-section-label">{copy.customGates}</span>
           {customGates.map((gate) => {
@@ -1103,7 +1270,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </div>
       ) : null}
 
-      {readOnly || syncState.kind === "in_sync" ? null : (
+      {syncState.kind === "in_sync" ? null : (
         <div className={`mj-circuit-sync mj-circuit-sync--${syncState.kind}`} role="status">
           <span>{syncState.kind === "diverged" ? copy.canvasOutOfDate : copy.canvasBeyondBuilder}</span>
           {syncState.kind === "diverged" ? (
@@ -1117,7 +1284,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         steps={steps}
         customGates={customGates}
         ariaLabel={copy.circuitAria(frameworkLabel(framework))}
-        interaction={readOnly ? undefined : {
+        interaction={{
           selectedStepIds,
           pendingQubits,
           selectedLabel,
@@ -1127,9 +1294,8 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         }}
       />
 
-      {readOnly ? null : (
       <div className="mj-builder-controls">
-        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= 6}>{copy.addQubit}</button>
+        <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => { const removed = steps[steps.length - 1]; setSteps((current) => current.slice(0, -1)); if (removed) setSelectedStepIds((current) => current.filter((id) => id !== removed.id)); setPendingQubits([]); }} disabled={!steps.length}>{copy.undo}</button>
         <button className="mj-secondary-button" type="button" onClick={() => { setSteps([]); setSelectedStepIds([]); setPendingQubits([]); setBuilderMessage(null); }} disabled={!steps.length}>{copy.clearAll}</button>
@@ -1161,9 +1327,8 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
           <button className="mj-secondary-button" type="button" onClick={() => { setApplyConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
         ) : null}
       </div>
-      )}
 
-      {!readOnly && showCustomGateForm ? (
+      {showCustomGateForm ? (
         <form className="mj-builder-custom-form" onSubmit={(event) => { event.preventDefault(); createCustomGate(); }}>
           <label>
             <span>{copy.customGates}</span>
@@ -1177,16 +1342,14 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       {/* The gate's description was the inspector's headline card, one panel
           away from the palette it described. Folded away by default because it
           is reference material, not state. */}
-      {readOnly ? null : (
-        <details className="mj-sim-details mj-studio-gate-note">
-          <summary>{copy.selectedGate}: {selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</summary>
-          <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
-        </details>
-      )}
+      <details className="mj-sim-details mj-studio-gate-note">
+        <summary>{copy.selectedGate}: {selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</summary>
+        <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
+      </details>
 
       <div className="mj-studio-canvas-footer" aria-live="polite">
-        <span>{readOnly ? copy.readonlyDiagramHint : (builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty))}</span>
-        <span className="mj-mono-muted">{steps.length ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : "—"}</span>
+        <span>{builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
+        <span className="mj-mono-muted">{steps.length ? (steps.length <= 40 ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : `${steps.slice(0, 20).map((step) => builderStepLabel(step, customGates)).join(" → ")} → … (${steps.length} ops)`) : "—"}</span>
       </div>
     </StudioPanelSurface>
   );
@@ -1497,9 +1660,15 @@ function SimulationPanel({
               </div>
             </div>
           ) : (
-            <button className="mj-primary-button" type="button" disabled={busy} onClick={onRun}>
-              {busy ? copy.starting : currentRecords.length ? copy.rerunCpuSimulation : copy.runCpuSimulation}
-            </button>
+            // Wrapped so the button sizes to its label. The lane is a grid, and
+            // a bare button in it stretched to the full panel width — the
+            // loudest object on the tab was a control for the weakest of the
+            // three lanes.
+            <div className="mj-studio-lane-action">
+              <button className="mj-primary-button" type="button" disabled={busy} onClick={onRun}>
+                {busy ? copy.starting : currentRecords.length ? copy.rerunCpuSimulation : copy.runCpuSimulation}
+              </button>
+            </div>
           )
         ) : (
           <div className="mj-studio-simulation-unavailable" role="alert">
@@ -1543,9 +1712,19 @@ function SimulationPanel({
           <QpuLane artifact={artifact} shots={shots} copy={copy} />
         </div>
 
-        <section className="mj-studio-simulation-records" aria-label={copy.simulationResults}>
-          <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
-          {records.length ? records.map((record) => <SimulationRecordCard record={record} family={artifact?.family ?? null} copy={copy} key={record.id} />) : <p className="mj-studio-empty">{copy.simulationNoRecords}</p>}
+        {/* A heading, a count of zero and a sentence saying the count is zero
+            took a whole band of the tab to say one thing three times. With no
+            records the section is the sentence; the heading and the counter
+            come back the moment there is something to count. */}
+        <section className="mj-studio-simulation-records" data-empty={records.length ? undefined : "true"} aria-label={copy.simulationResults}>
+          {records.length ? (
+            <>
+              <div className="mj-studio-simulation-records-head"><span className="mj-section-label">{copy.simulationResults}</span><span className="mj-mono-muted">{records.length}</span></div>
+              {records.map((record) => <SimulationRecordCard record={record} family={artifact?.family ?? null} copy={copy} key={record.id} />)}
+            </>
+          ) : (
+            <p className="mj-studio-empty">{copy.simulationNoRecords}</p>
+          )}
         </section>
       </div>
     </section>
@@ -1587,6 +1766,37 @@ function SimulationRecordCard({ record, family, copy }: { record: CpuSimulationR
       </details>
     </article>
   );
+}
+
+/**
+ * The sentence a refused hardware submission puts on screen.
+ *
+ * Keyed on the refusal's `reason` rather than on its message, because the
+ * control plane writes English and this lane renders Japanese too — the code is
+ * the only part of a refusal a locale can translate. Anything without a reason
+ * this lane knows falls back to the server's own sentence, which is still far
+ * better than what was there before the client learned to read the problem
+ * document at all: every refusal, whatever it said, arrived as its status code.
+ *
+ * A $0 ceiling gets its own sentence. "0 of your $0 weekly budget is used" is
+ * arithmetic, not an explanation — what a free account needs to be told is that
+ * billed hardware is not in the plan and the free queue still is.
+ */
+function hardwareRefusalText(cause: unknown, copy: StudioCopy): string {
+  if (!(cause instanceof QpuSubmissionRefused)) {
+    return cause instanceof Error ? cause.message : copy.hardwareEstimateFailed;
+  }
+  if (cause.reason === "qpu_spend_exhausted" && cause.estimateUsd !== null && cause.limitUsd !== null) {
+    return cause.limitUsd === 0
+      ? copy.hardwareSpendFreeTier(formatUsd(cause.estimateUsd))
+      : copy.hardwareSpendExhausted(
+          formatUsd(cause.estimateUsd),
+          formatUsd(cause.limitUsd),
+          formatUsd(cause.spentUsd ?? 0),
+        );
+  }
+  if (cause.reason) return copy.hardwareBlockedReason(cause.reason);
+  return cause.message;
 }
 
 function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; shots: string; copy: StudioCopy }) {
@@ -1665,7 +1875,7 @@ function QpuLane({ artifact, shots, copy }: { artifact: LibraryArtifact | null; 
     })
       .then(setQpuRun)
       .catch((cause: unknown) => {
-        setSubmitError(cause instanceof Error ? cause.message : copy.hardwareEstimateFailed);
+        setSubmitError(hardwareRefusalText(cause, copy));
       })
       .finally(() => setSubmitting(false));
   }
@@ -1825,7 +2035,15 @@ function SummaryPanel({
   locale: PublicLocale;
   onRestored: (seq: number) => void;
 }) {
-  const checks: VerificationCheck[] = artifact?.checks ?? [];
+  const summaryChecks = artifact?.verificationSummary?.checks ?? [];
+  // Only the checks the typed summary did NOT already account for. The panel
+  // above groups every check the summary carries into passed / failed /
+  // unavailable, and this list used to print the same methods again underneath
+  // it — the same four rows, twice, in two different shapes. What is left here
+  // is the legacy-metadata case: an artifact whose checks arrived on the older
+  // `metadata` path and have no typed summary to be grouped into.
+  const checks: VerificationCheck[] = summaryChecks.length ? [] : artifact?.checks ?? [];
+  const facts = artifact ? summaryFacts(artifact, locale, copy) : [];
   return (
     <section className="mj-studio-surface mj-studio-version-panel" aria-label={copy.summary} {...panelRegion("studio", "summary")}>
       <div className="mj-studio-surface-head">
@@ -1835,6 +2053,22 @@ function SummaryPanel({
         </div>
         <span className="mj-mono-muted">{artifact?.framework ?? ""}</span>
       </div>
+
+      {/* What the circuit IS, before what was proved about it. The evidence
+          panel below opens with a machine reason code and an evidence-strength
+          enum, which is the vocabulary of the verifier rather than of the
+          person reading it — the width, the depth and the version this verdict
+          belongs to were not on this tab at all. */}
+      {facts.length > 1 ? (
+        <dl className="mj-studio-fact-row">
+          {facts.map((fact) => (
+            <div key={fact.label}>
+              <dt>{fact.label}</dt>
+              <dd>{fact.value}</dd>
+            </div>
+          ))}
+        </dl>
+      ) : null}
 
       <div className="mj-studio-summary-section">
         <span className="mj-section-label">{copy.evidence}</span>
@@ -1851,11 +2085,19 @@ function SummaryPanel({
                 </li>
               ))}
             </ul>
-          ) : (
-            <p className="mj-mono-muted">{copy.evidenceNotLoaded}</p>
-          )
+          ) : null
         ) : null}
-        {artifact?.id ? <p><a href={`/library/${encodeURIComponent(artifact.id)}`}>{copy.openFullRecord}</a></p> : null}
+        {/* One way in, not two. When no checks had loaded, this section printed
+            "Open the full record to load this version's checks." directly above
+            a link reading "Open the full verification record" — the same
+            instruction, twice, one of them not clickable. The sentence is the
+            link's context now. */}
+        {artifact?.id ? (
+          <p className="mj-studio-record-link">
+            <a href={`/library/${encodeURIComponent(artifact.id)}`}>{copy.openFullRecord}</a>
+            {!summaryChecks.length && !checks.length ? <span className="mj-mono-muted">{copy.evidenceNotLoaded}</span> : null}
+          </p>
+        ) : null}
       </div>
 
       <div className="mj-studio-summary-section">
@@ -1879,6 +2121,26 @@ function SummaryPanel({
       </details>
     </section>
   );
+}
+
+/**
+ * The handful of numbers a saved circuit is opened for, in a fixed order.
+ *
+ * Drawn from `resourceRows`, which the artifact already carried and which no
+ * Studio tab rendered — the Summary tab opened on a reason code and an evidence
+ * enum instead. Capped at four so this stays a header strip rather than
+ * becoming the resource table it is a summary of; a circuit with more rows than
+ * that has them in the run record, which the link below this reaches.
+ *
+ * The caller drops the strip below two entries. A version with no stored
+ * estimates leaves only the date, and one labelled cell across the panel is
+ * exactly the kind of row this change exists to remove.
+ */
+function summaryFacts(artifact: LibraryArtifact, locale: PublicLocale, copy: StudioCopy): Array<{ label: string; value: string }> {
+  const facts = artifact.resourceRows.slice(0, 4).map(({ label, value }) => ({ label, value }));
+  const updated = formatDiscoveryDate(artifact.updatedAt, locale);
+  if (updated) facts.push({ label: copy.updated, value: updated });
+  return facts;
 }
 
 function originLabel(origin: VersionOrigin, copy: StudioCopy): string {

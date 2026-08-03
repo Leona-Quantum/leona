@@ -87,6 +87,11 @@ const INCONCLUSIVE_SUMMARY = {
     { method: "return_contract" as const, result: "pass" as const },
     { method: "statistical" as const, result: "unavailable" as const },
     { method: "statistical_reproducibility" as const, result: "error" as const },
+    // `skipped` used to belong to no group in the panel and drew nothing at all,
+    // so a check that did not apply was indistinguishable — to anyone counting
+    // what was examined — from one that passed. The simple pipeline records
+    // exactly this for `return_contract` on a derived result.
+    { method: "exact_diag" as const, result: "skipped" as const },
   ],
   unverified_claims: ["Expected Bell-state distribution", "Relative phase"],
 };

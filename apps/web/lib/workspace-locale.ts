@@ -24,6 +24,25 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     folderOrderFailed: string;
     folderRenameFailed: string;
     folderDeleteFailed: string;
+    /* Studio's Projects (migration 0041). Separate keys from the folder ones
+       above, not shared: one locale key used to render both sections, so
+       renaming it relabelled both — the owner's Folders/Projects distinction
+       only survives while the two have their own words. Every key here is
+       REQUIRED, never optional: `Record<PublicLocale, …>` is the whole of the
+       Japanese-parity gate, and a `?` defeats it silently. */
+    renameProject: (name: string) => string;
+    deleteProject: (name: string) => string;
+    deleteProjectTitle: string;
+    deleteProjectWarning: (name: string) => string;
+    projectMoveUp: (name: string) => string;
+    projectMoveDown: (name: string) => string;
+    projectCreateFailed: string;
+    projectOrderFailed: string;
+    projectRenameFailed: string;
+    projectDeleteFailed: string;
+    projectName: string;
+    createProject: string;
+    emptyProjects: string;
     recentsAbove: string;
     recentsBelow: string;
     recentsPositionLabel: string;
@@ -59,7 +78,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     createChatFolder: string;
     saveFolder: string;
     cancelFolder: string;
-    createArtifactFolder: string;
     emptyProject: string;
     emptyChats: string;
     emptyArtifacts: string;
@@ -101,7 +119,15 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     usageNextSlotOn: (date: string) => string;
     usageNextSlotWhen: (word: string) => string;
     signOut: string;
-    /** Plan name shown beside the person's first name in the sidebar footer. */
+    /**
+     * Plan name shown beside the person's first name in the sidebar footer.
+     *
+     * The PUBLIC name of the tier, which for two of them is not the id: `pro`
+     * is Plus and `team` is Professional. See the mapping at the top of
+     * lib/account-tier.ts — a label written from the id reads as the wrong
+     * plan, one rung off, on the surface a person checks to see what they pay
+     * for.
+     */
     tierLabel: Record<AccountTier, string>;
   };
   run: {
@@ -172,6 +198,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     searchPlaceholder: string;
     noSearchResults: string;
     empty: string;
+    // Project filtering in the discovery pane. Required in both locales — a
+    // `?` here is defeated silently by `Record<PublicLocale, …>`.
+    projectFilterLabel: string;
+    projectAll: string;
+    projectUngrouped: string;
+    projectEmpty: string;
+    ungroupedEmpty: string;
     workingCircuit: string;
     editingVersion: (version: string, framework: string) => string;
     newDraft: string;
@@ -244,6 +277,12 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareJobError: string;
     hardwareRawCounts: string;
     hardwareBlockedReason: (reason: string) => string;
+    //: The weekly hardware BUDGET is spent, which is not the same thing as the
+    //: deployment being switched off — a person can act on this one. Takes the
+    //: formatted amounts rather than raw numbers so the currency renders the
+    //: same way as the estimate directly above it on screen.
+    hardwareSpendExhausted: (estimate: string, limit: string, spent: string) => string;
+    hardwareSpendFreeTier: (estimate: string) => string;
     verifySave: string;
     starting: string;
     view: string;
@@ -268,6 +307,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     uncommittedEditsNote: string;
     footer: string;
     openRun: string;
+    /** How many rows the discovery list holds after the active filter. */
+    countCircuits: (count: number) => string;
+    /** Label for the artifact's last-changed date in the Summary fact strip. */
+    updated: string;
     inspector: string;
     liveDraft: string;
     selectedGate: string;
@@ -381,9 +424,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     circuitNotRebuildable: string;
     sourceFallbackNote: (target: string, source: string) => string;
     circuitTooLargeToDraw: string;
-    circuitViewerReadonly: string;
-    readonlyDiagram: (qubits: number) => string;
-    readonlyDiagramHint: string;
     canvasOutOfDate: string;
     canvasBeyondBuilder: string;
     rebuildFromCode: string;
@@ -416,6 +456,20 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       folderOrderFailed: "That order could not be saved.",
       folderRenameFailed: "That folder could not be renamed.",
       folderDeleteFailed: "That folder could not be deleted.",
+      renameProject: (name) => `Rename ${name}`,
+      deleteProject: (name) => `Delete ${name}`,
+      deleteProjectTitle: "Delete this project?",
+      deleteProjectWarning: (name) =>
+        `“${name}” will be removed. The artifacts inside it stay in your workspace.`,
+      projectMoveUp: (name) => `Move ${name} up`,
+      projectMoveDown: (name) => `Move ${name} down`,
+      projectCreateFailed: "That project could not be created.",
+      projectOrderFailed: "That order could not be saved.",
+      projectRenameFailed: "That project could not be renamed.",
+      projectDeleteFailed: "That project could not be deleted.",
+      projectName: "Project name",
+      createProject: "Create project",
+      emptyProjects: "Group artifacts by dragging them onto a project",
       recentsAbove: "Show recent chats above folders",
       recentsBelow: "Show recent chats below folders",
       recentsPositionLabel: "Recent chats position",
@@ -451,7 +505,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       createChatFolder: "Create chat folder",
       saveFolder: "Save folder",
       cancelFolder: "Cancel folder creation",
-      createArtifactFolder: "Create artifact project",
       emptyProject: "No items yet",
       emptyChats: "Chats without a project appear here",
       emptyArtifacts: "Artifacts without a project appear here",
@@ -497,7 +550,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       usageNextSlotOn: (date: string) => `1 more frees up on ${date}`,
       usageNextSlotWhen: (word: string) => `1 more frees up ${word}`,
       signOut: "Log out",
-      tierLabel: { demo: "Preview", free: "Free", developer: "Developer" },
+      tierLabel: {
+        preview: "Preview",
+        free: "Free",
+        pro: "Plus",
+        team: "Professional",
+        developer: "Developer",
+      },
     },
     run: {
       previewStatus: "Public preview · view-only",
@@ -588,6 +647,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       searchPlaceholder: "Search by name, framework, or tag…",
       noSearchResults: "No artifacts match this search.",
       empty: "No saved artifacts yet. Start with the Bell-state draft.",
+      projectFilterLabel: "Filter by project",
+      projectAll: "All",
+      projectUngrouped: "Ungrouped",
+      projectEmpty: "Nothing filed under this project yet.",
+      ungroupedEmpty: "Every circuit is filed under a project.",
       workingCircuit: "Working circuit",
       editingVersion: (version, framework) => `Editing version ${version} · ${framework}`,
       newDraft: "A clean draft for exploring a circuit before it is saved.",
@@ -671,6 +735,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         credentials_unconfigured: "No provider credentials are configured in this deployment, so nothing can be submitted.",
         provider_dependency_missing: "The provider SDK is not installed in this deployment, so nothing can be submitted.",
       }[reason] ?? "Hardware submission is unavailable in this deployment."),
+      hardwareSpendExhausted: (estimate, limit, spent) =>
+        `This run is estimated at ${estimate}. Your plan includes ${limit} of hardware time per week and ${spent} is already committed. Free-queue devices and browser simulation stay available.`,
+      hardwareSpendFreeTier: (estimate) =>
+        `This run is estimated at ${estimate}, and billed hardware is not part of the free plan. Free-queue devices and browser simulation stay available.`,
       verifySave: "Verify & save",
       starting: "Starting…",
       view: "Studio view",
@@ -695,6 +763,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       uncommittedEditsNote: "These edits exist only in this browser until a verification run saves them as the next version.",
       footer: "Edits stay in this browser until a verification run saves them as the next version.",
       openRun: "Open live run",
+      countCircuits: (count) => (count === 1 ? "1 circuit" : `${count} circuits`),
+      updated: "Updated",
       inspector: "Circuit inspector",
       liveDraft: "live draft",
       selectedGate: "Selected gate",
@@ -820,9 +890,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
       sourceFallbackNote: (target, source) => `No safe ${target} conversion exists for this circuit, so this tab shows the stored ${source} source — it is a source reference, not ${target} code. Exports and runs from this tab use ${source}.`,
       circuitTooLargeToDraw: "This circuit is too large to draw as a diagram — its qubit or gate count would render an unreadable canvas. The Code tab holds the full source to read and run.",
-      circuitViewerReadonly: "This circuit is wider than the editable builder, so it opens as a read-only diagram. Edit the circuit in the Code tab.",
-      readonlyDiagram: (qubits: number) => `Read-only diagram · ${qubits} qubits. Wider than the drag-and-drop builder (max 6) — reconstructed from the saved circuit so you can see it. The Code tab holds the source to edit and run.`,
-      readonlyDiagramHint: "Read-only view — reconstructed from the saved circuit. Edit the source in the Code tab.",
       canvasOutOfDate: "The Code tab has changed since this diagram was drawn, so the diagram no longer shows what will run.",
       canvasBeyondBuilder: "The code in the Code tab is outside what this editor can draw, so the diagram below is not a picture of it. The code is what runs.",
       rebuildFromCode: "Rebuild from code",
@@ -855,6 +922,20 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       folderOrderFailed: "並び順を保存できませんでした。",
       folderRenameFailed: "フォルダの名前を変更できませんでした。",
       folderDeleteFailed: "フォルダを削除できませんでした。",
+      renameProject: (name) => `${name}の名前を変更`,
+      deleteProject: (name) => `${name}を削除`,
+      deleteProjectTitle: "このプロジェクトを削除しますか",
+      deleteProjectWarning: (name) =>
+        `「${name}」を削除します。中の回路・実行記録はワークスペースに残ります。`,
+      projectMoveUp: (name) => `${name}を上へ`,
+      projectMoveDown: (name) => `${name}を下へ`,
+      projectCreateFailed: "プロジェクトを作成できませんでした。",
+      projectOrderFailed: "並び順を保存できませんでした。",
+      projectRenameFailed: "プロジェクトの名前を変更できませんでした。",
+      projectDeleteFailed: "プロジェクトを削除できませんでした。",
+      projectName: "プロジェクト名",
+      createProject: "プロジェクトを作成",
+      emptyProjects: "回路・実行記録をプロジェクトにドラッグしてまとめられます",
       recentsAbove: "最近のチャットをフォルダの上に表示",
       recentsBelow: "最近のチャットをフォルダの下に表示",
       recentsPositionLabel: "最近のチャットの位置",
@@ -890,7 +971,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       createChatFolder: "チャットフォルダを作成",
       saveFolder: "フォルダを保存",
       cancelFolder: "フォルダ作成をキャンセル",
-      createArtifactFolder: "回路・実行記録のプロジェクトを作成",
       emptyProject: "まだ項目がありません",
       emptyChats: "プロジェクトに属さないチャットがここに表示されます",
       emptyArtifacts: "プロジェクトに属さない回路・実行記録がここに表示されます",
@@ -934,7 +1014,13 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       usageNextSlotOn: (date: string) => `${date}に1回分が戻ります`,
       usageNextSlotWhen: (word: string) => `${word}1回分が戻ります`,
       signOut: "ログアウト",
-      tierLabel: { demo: "プレビュー", free: "フリー", developer: "開発者" },
+      tierLabel: {
+        preview: "プレビュー",
+        free: "フリー",
+        pro: "プラス",
+        team: "プロフェッショナル",
+        developer: "開発者",
+      },
     },
     run: {
       previewStatus: "公開プレビュー · 閲覧のみ",
@@ -1021,6 +1107,11 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       searchPlaceholder: "名前、フレームワーク、タグで検索…",
       noSearchResults: "検索に一致する回路・実行記録がありません。",
       empty: "保存された回路はありません。ベル状態の下書きから始められます。",
+      projectFilterLabel: "プロジェクトで絞り込む",
+      projectAll: "すべて",
+      projectUngrouped: "未分類",
+      projectEmpty: "このプロジェクトにはまだ何も入っていません。",
+      ungroupedEmpty: "すべての回路がいずれかのプロジェクトに入っています。",
       workingCircuit: "作業中の回路",
       editingVersion: (version, framework) => `バージョン${version}を編集中 · ${framework}`,
       newDraft: "保存する前の回路を試すための新しい下書きです。",
@@ -1104,6 +1195,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         credentials_unconfigured: "現在の環境には実機提供元の認証情報が設定されていないため、実行できません。",
         provider_dependency_missing: "現在の環境は、この実機提供元に対応していません。",
       }[reason] ?? "現在の環境では量子コンピュータでの実行を利用できません。"),
+      hardwareSpendExhausted: (estimate, limit, spent) =>
+        `この実行の見積もりは${estimate}です。現在のプランに含まれる実機の実行枠は週あたり${limit}で、すでに${spent}を使用しています。無料キューの実機とブラウザ上のシミュレーションは引き続き利用できます。`,
+      hardwareSpendFreeTier: (estimate) =>
+        `この実行の見積もりは${estimate}です。有料の実機実行は無料プランには含まれていません。無料キューの実機とブラウザ上のシミュレーションは引き続き利用できます。`,
       verifySave: "検証して保存",
       starting: "開始中…",
       view: "Studioの表示切り替え",
@@ -1128,6 +1223,8 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       uncommittedEditsNote: "この編集はブラウザ内にのみ存在します。検証を実行すると次のバージョンとして保存されます。",
       footer: "編集内容はこのブラウザ内にのみ保持されます。検証を実行すると次のバージョンとして保存されます。",
       openRun: "実行を開く",
+      countCircuits: (count) => `${count} 件の回路`,
+      updated: "更新",
       inspector: "回路の詳細",
       liveDraft: "編集中",
       selectedGate: "選択中のゲート",
@@ -1253,9 +1350,6 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       circuitNotRebuildable: "この回路のコードは回路エディタの対応範囲を超えています。コードタブで編集してください。",
       sourceFallbackNote: (target, source) => `この回路を${target}へ安全に変換できないため、保存済みの${source}ソースを表示しています。変換後のコードではありません。書き出しと実行には${source}を使用します。`,
       circuitTooLargeToDraw: "この回路は図として描画するには大きすぎます — 量子ビット数またはゲート数が多く、キャンバスが判読不能になります。全ソースはコードタブで確認・実行できます。",
-      circuitViewerReadonly: "この回路は編集可能なビルダーより幅が広いため、読み取り専用の図として開きます。回路の編集はコードタブで行ってください。",
-      readonlyDiagram: (qubits: number) => `読み取り専用の回路図 · ${qubits}量子ビット。ドラッグ＆ドロップの回路エディタ（最大6量子ビット）より広いため、保存された回路から再構成して表示しています。編集・実行するソースはコードタブにあります。`,
-      readonlyDiagramHint: "読み取り専用の表示 — 保存された回路から再構成しています。ソースの編集はコードタブで行ってください。",
       canvasOutOfDate: "この図を描いたあとにコードタブが変更されました。図は実行される内容と一致していません。",
       canvasBeyondBuilder: "コードタブのコードはこのエディタで描ける範囲を超えているため、下の図はその内容を表していません。実行されるのはコードです。",
       rebuildFromCode: "コードから再構築",
@@ -1325,6 +1419,26 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageArtifacts: (count: number) => string;
   usageQubits: (count: number) => string;
   usageNowTitle: string;
+  // The weekly allowance meter. `meterTokens` names what the bar measures;
+  // `meterTokensRuns` is the sentence that makes a six-figure token number mean
+  // something to somebody who bought "5 runs a week". Both take their numbers
+  // from the server so the screen and the refusal cannot state different ones.
+  meterWeeklyTitle: string;
+  meterTokens: string;
+  meterTokensRuns: (runs: number) => string;
+  meterTokensUnmetered: string;
+  meterPercentUsed: (percent: number) => string;
+  meterAmount: (used: string, limit: string) => string;
+  meterResetsOn: (date: string) => string;
+  meterResetsWhen: (word: string) => string;
+  meterExhausted: string;
+  // The two warnings before the wall (75% / 90%). Both say what is left rather
+  // than what is spent — "37,500 left" is the fact a person acts on, and the
+  // percentage is already on the row. The server decides which one applies;
+  // this file only words them.
+  meterApproaching: (remaining: string) => string;
+  meterCritical: (remaining: string) => string;
+  meterUpgradeHint: string;
   usageWorkspaces: string;
   usageSpent: (used: number, limit: number) => string;
   usageSpentUnmetered: (used: number) => string;
@@ -1333,7 +1447,46 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   usageEnforcedAs: (tier: string) => string;
   usageNextSlotOn: (date: string) => string;
   usageNextSlotWhen: (word: string) => string;
-  tierNames: Record<"demo" | "free" | "developer", string>;
+  // Shared projects. The scope line is not decoration: this allowance counts
+  // shared projects only, from both directions, and "2 of 4" printed beside the
+  // word "projects" reads as a cap on every project a person has. It is not
+  // one — unshared projects are unlimited on every tier — and the sentence
+  // saying so has to sit under the number rather than in a help page.
+  usageSharedProjects: string;
+  usageSharedProjectsScope: string;
+  usageSharedProjectsNone: string;
+  // Hardware spend, in dollars, per account. `usageHardwareAuthorized` is the
+  // ORDINARY case: there is no weekly ceiling on any tier, so the sentence has
+  // to read as a complete fact on its own rather than as half of a ratio.
+  usageHardware: string;
+  usageHardwareAuthorized: (amount: string, days: number) => string;
+  usageHardwareRemaining: (remaining: string, limit: string) => string;
+  usageHardwareExhausted: (limit: string) => string;
+  usageHardwareFreeQueuesOnly: string;
+  usageHardwareScope: string;
+  // Model spend. Never optional — a `?` here is how the Japanese principles
+  // section disappeared in PR 194, because `Record<PublicLocale, …>` cannot
+  // catch a field one locale is allowed to omit.
+  spendTitle: string;
+  spendScope: (days: number) => string;
+  spendEmpty: (days: number) => string;
+  spendChat: string;
+  spendRuns: string;
+  spendTotal: string;
+  spendTokens: (tokens: string, calls: number) => string;
+  spendUnattributed: string;
+  spendNotBilled: string;
+  // `Record<AccountTier, …>` rather than a hand-written union of the same
+  // strings. It was the second copy, and a second copy is what let a tier be
+  // added to the product while this table silently kept describing the old set
+  // — the failure surfacing far from here, at whichever line indexes into it.
+  //
+  // The PUBLIC plan name, which for two tiers is not the id: `pro` is **Plus**,
+  // `team` is **Professional**. This table and `sidebar.tierLabel` are the only
+  // two places a tier is named to a person, and account-tier.test.ts pins both
+  // so that "fixing" `pro` to say Professional fails rather than telling every
+  // Plus subscriber they are on the plan above.
+  tierNames: Record<AccountTier, string>;
   usageEnforcement: string;
   billingTitle: string;
   billingHelp: string;
@@ -1354,6 +1507,64 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
   billingPolicyHardware: string;
   billingPolicyHardwareValue: string;
   billingEstimatesLink: string;
+  billingUpgradeLink: string;
+  /**
+   * Connecting your own IBM Quantum key.
+   *
+   * There is no OAuth here and the copy must not imply one. IBM publishes no
+   * way for a third-party application to obtain an API key on somebody's
+   * behalf, so the honest surface is instructions, a paste field and a status —
+   * and a "Connect with IBM" button that redirected nowhere would be worse than
+   * three sentences of prose.
+   *
+   * The four failure sentences are four separate strings because they mean four
+   * different things to the person reading them: fix the key, wait and retry,
+   * stop (nothing you do here helps), and an unclassified failure. Collapsing
+   * any two of them would send somebody to re-paste a key that was never the
+   * problem.
+   */
+  qpuTitle: string;
+  qpuHelp: string;
+  qpuOpenPlan: string;
+  qpuStepAccount: string;
+  qpuStepKey: string;
+  qpuStepPaste: string;
+  qpuDashboardLink: string;
+  qpuStorageNote: string;
+  qpuKeyLabel: string;
+  qpuKeyPlaceholder: string;
+  qpuKeyLengthHint: (length: number) => string;
+  qpuInstanceLabel: string;
+  qpuInstanceHelp: string;
+  qpuLabelLabel: string;
+  qpuLabelHelp: string;
+  qpuConnect: string;
+  qpuConnecting: string;
+  qpuLoading: string;
+  qpuLoadFailed: string;
+  qpuNotConnected: string;
+  qpuConnectedTitle: string;
+  qpuConnectedMessage: string;
+  qpuStatusLabel: string;
+  qpuStatusInstance: string;
+  qpuStatusConnectedAt: string;
+  qpuStatusVerified: string;
+  qpuStatusUsed: string;
+  qpuStatusNone: string;
+  qpuNeverUsed: string;
+  qpuDisconnect: string;
+  qpuDisconnectConfirm: string;
+  qpuDisconnectCancel: string;
+  qpuDisconnecting: string;
+  qpuDisconnectWarning: string;
+  qpuDisconnected: string;
+  qpuErrorRejected: string;
+  qpuErrorVerificationUnavailable: string;
+  qpuErrorStorageUnavailable: string;
+  qpuErrorGeneric: string;
+  qpuErrorDisconnect: string;
+  /** IBM's own sentence, quoted rather than paraphrased. */
+  qpuProviderDetail: (sentence: string) => string;
 }> = {
   en: {
     title: "Settings",
@@ -1409,6 +1620,21 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageArtifacts: (count) => `${count} artifacts`,
     usageQubits: (count) => `Up to ${count} qubits`,
     usageNowTitle: "Right now",
+    meterWeeklyTitle: "Weekly limits",
+    meterTokens: "Agent tokens",
+    // "About", because it is: a run costs what it costs, and the number here is
+    // a measured average. Promising an exact count would be the lie the whole
+    // change exists to avoid.
+    meterTokensRuns: (runs) => `about ${runs} verified runs`,
+    meterTokensUnmetered: "No limit on your plan",
+    meterPercentUsed: (percent) => `${percent}% used`,
+    meterAmount: (used, limit) => `${used} of ${limit}`,
+    meterResetsOn: (date) => `Frees up ${date}`,
+    meterResetsWhen: (word) => `Frees up ${word}`,
+    meterExhausted: "This week's allowance is used",
+    meterApproaching: (remaining) => `${remaining} left this week`,
+    meterCritical: (remaining) => `${remaining} left — a long run may not finish`,
+    meterUpgradeHint: "See what more costs",
     usageWorkspaces: "Workspaces owned",
     usageSpent: (used, limit) => `${used} of ${limit} used`,
     usageSpentUnmetered: (used) => `${used} used — no limit on your plan`,
@@ -1421,7 +1647,44 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
       `Your runs are being enforced as ${tier}. The limits above are what this page resolved; these are what the control plane applies.`,
     usageNextSlotOn: (date) => `1 more frees up on ${date}`,
     usageNextSlotWhen: (word) => `1 more frees up ${word}`,
-    tierNames: { demo: "Preview", free: "Free", developer: "Developer" },
+    usageSharedProjects: "Shared projects",
+    usageSharedProjectsScope:
+      "Counted across your whole account — projects you share plus projects shared with you. Projects you keep to yourself are unlimited on every plan and are not counted here.",
+    usageSharedProjectsNone:
+      "Sharing is not part of your plan. Projects you keep to yourself stay unlimited.",
+    usageHardware: "Hardware spend",
+    // The sentence stands on its own, because on every plan there is now no
+    // weekly hardware ceiling: what you spend on your own provider account is
+    // your decision. "$3.40 of unlimited" would be a ratio with nothing on the
+    // other side of it.
+    usageHardwareAuthorized: (amount, days) => `${amount} authorized in the last ${days} days`,
+    usageHardwareRemaining: (remaining, limit) => `${remaining} left of your ${limit} ceiling`,
+    usageHardwareExhausted: (limit) => `Your ${limit} ceiling for this window is used up`,
+    // A zero ceiling is not a hardware ban, and saying so is the whole point of
+    // this line: free-queue devices estimate nothing, count as $0.00, and are
+    // never refused on it.
+    usageHardwareFreeQueuesOnly:
+      "Free queues only on your plan — priced hardware cannot be submitted, and free-queue devices are unaffected.",
+    usageHardwareScope:
+      "Estimated cost of the hardware you have authorized, for your whole account. Free-queue devices count as $0.00.",
+    spendTitle: "Model usage",
+    spendScope: (days) => `This workspace, last ${days} days`,
+    spendEmpty: (days) => `No model usage in the last ${days} days`,
+    spendChat: "Chat",
+    spendRuns: "Agent runs",
+    spendTotal: "Total",
+    spendTokens: (tokens, calls) => `${tokens} tokens · ${calls} calls`,
+    spendUnattributed: "Unattributed",
+    // Said because a page that suddenly reports six-figure numbers reads like
+    // a bill arriving. Nothing in this deployment prices a token.
+    spendNotBilled: "Shown for visibility. Tokens are not charged for and count against no allowance.",
+    tierNames: {
+      preview: "Preview",
+      free: "Free",
+      pro: "Plus",
+      team: "Professional",
+      developer: "Developer",
+    },
     usageEnforcement: "These allowances are enforced when you submit a run. Browser simulation always stays available on your own hardware.",
     billingTitle: "Billing & credits",
     billingHelp: "How Leona Quantum will charge for agent runs and hardware. Shown for transparency — payments are not enabled.",
@@ -1442,6 +1705,61 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingPolicyHardware: "GPU / QPU hardware",
     billingPolicyHardwareValue: "Owner-gated. Sourced cost estimates appear in Studio's hardware lane before any submission.",
     billingEstimatesLink: "See hardware estimates in Studio",
+    billingUpgradeLink: "Compare plans",
+    qpuTitle: "Connect IBM Quantum",
+    qpuHelp:
+      "Run on IBM hardware with your own IBM account instead of the one Leona shares between everybody.",
+    qpuOpenPlan:
+      "IBM's free Open Plan gives roughly 10 minutes of QPU time per rolling 28 days. Connected here, that allowance is yours on your own IBM account — today every Leona user draws from a single shared pool, so a busy week for someone else is a queue you wait in.",
+    qpuStepAccount: "Create a free account and open the IBM Quantum Platform dashboard.",
+    qpuStepKey: "Create an API key there. It is 44 characters long.",
+    qpuStepPaste: "Paste it below. Leona checks it with IBM before saving it.",
+    qpuDashboardLink: "quantum.cloud.ibm.com",
+    qpuStorageNote:
+      "Leona stores the key encrypted and never shows it again. You can revoke it at any time from IBM's own dashboard, which cuts off this connection whether or not you disconnect it here.",
+    qpuKeyLabel: "IBM API key",
+    qpuKeyPlaceholder: "44 characters",
+    // A hint, not a refusal. IBM decides whether a key is valid, and a length
+    // this page hardcoded would start rejecting real keys the day that changes.
+    qpuKeyLengthHint: (length) => `That is ${length} characters — an IBM API key is 44.`,
+    qpuInstanceLabel: "Instance CRN (optional)",
+    qpuInstanceHelp:
+      "Only needed when your IBM account has more than one instance. Paste the CRN itself — it starts with “crn:” and an instance name is not accepted here. Open Plan instances exist only in IBM's us-east region.",
+    qpuLabelLabel: "Label (optional)",
+    qpuLabelHelp: "A name for your own reference. It is shown here and nowhere else.",
+    qpuConnect: "Connect",
+    qpuConnecting: "Checking with IBM…",
+    qpuLoading: "Checking your connection…",
+    qpuLoadFailed: "Could not check whether a key is connected. Reload the page to try again.",
+    qpuNotConnected: "No IBM key is connected to your account.",
+    qpuConnectedTitle: "Connected",
+    qpuConnectedMessage: "IBM accepted the key. Leona stored it encrypted and will not show it again.",
+    qpuStatusLabel: "Label",
+    qpuStatusInstance: "Instance",
+    qpuStatusConnectedAt: "Connected",
+    qpuStatusVerified: "Last verified",
+    qpuStatusUsed: "Last used",
+    qpuStatusNone: "Not set",
+    qpuNeverUsed: "Not yet used",
+    qpuDisconnect: "Disconnect",
+    qpuDisconnectConfirm: "Yes, disconnect",
+    qpuDisconnectCancel: "Keep it",
+    qpuDisconnecting: "Disconnecting…",
+    qpuDisconnectWarning:
+      "Queued hardware runs will stop submitting until a key is connected again. This removes the key from Leona; it does not revoke it at IBM.",
+    qpuDisconnected: "Your IBM key was removed. Leona no longer holds it.",
+    // Fix the key.
+    qpuErrorRejected:
+      "IBM did not accept that key. Check that you copied all 44 characters, and that the key has not been revoked or deleted on IBM's dashboard.",
+    // Wait and try again — nothing was saved and nothing is wrong with the key.
+    qpuErrorVerificationUnavailable:
+      "Leona could not reach IBM to check the key. Nothing was saved and your key was not stored — try again in a few minutes.",
+    // Stop. There is nothing the person reading this can do about it.
+    qpuErrorStorageUnavailable:
+      "This deployment cannot store credentials yet, so a key cannot be accepted here. Nothing is wrong with your key and there is nothing to retry — it needs a change on our side.",
+    qpuErrorGeneric: "The key could not be saved.",
+    qpuErrorDisconnect: "The key could not be removed. It is still connected.",
+    qpuProviderDetail: (sentence) => `IBM said: ${sentence}`,
   },
   ja: {
     title: "設定",
@@ -1497,6 +1815,21 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     usageArtifacts: (count) => `${count}件`,
     usageQubits: (count) => `${count}量子ビットまで`,
     usageNowTitle: "現在の使用状況",
+    meterWeeklyTitle: "週あたりの上限",
+    meterTokens: "エージェントトークン",
+    // 「約」を外さないこと。1回の実行にかかるトークン数は内容で変わり、ここの
+    // 換算は実測の平均でしかない。正確な回数を約束する書き方にすると、この
+    // 変更が避けようとしている嘘そのものになる。
+    meterTokensRuns: (runs) => `検証付き実行 約${runs}回分`,
+    meterTokensUnmetered: "現在のプランでは上限なし",
+    meterPercentUsed: (percent) => `${percent}% 使用中`,
+    meterAmount: (used, limit) => `${used} / ${limit}`,
+    meterResetsOn: (date) => `${date}に回復`,
+    meterResetsWhen: (word) => `${word}回復`,
+    meterExhausted: "今週分の上限に達しました",
+    meterApproaching: (remaining) => `今週の残りは${remaining}`,
+    meterCritical: (remaining) => `残り${remaining} — 長い実行は完了しない可能性があります`,
+    meterUpgradeHint: "上位プランを見る",
     usageWorkspaces: "所有ワークスペース",
     // 助数詞を持たない形にしてある。実行は「回」、アーティファクトは「件」、
     // ワークスペースは「つ」と数え方が違うので、三つの行で同じ関数を使う以上
@@ -1511,7 +1844,44 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
       `実行は ${tier} として制限されています。上の上限はこのページが判定した値、以下はコントロールプレーンが実際に適用している値です。`,
     usageNextSlotOn: (date) => `${date}に1回分が戻ります`,
     usageNextSlotWhen: (word) => `${word}1回分が戻ります`,
-    tierNames: { demo: "プレビュー", free: "Free", developer: "Developer" },
+    usageSharedProjects: "共有プロジェクト",
+    // 「2 / 4」だけを見ると全プロジェクトの上限に読めてしまう。共有していない
+    // プロジェクトはどのプランでも無制限で、この数には入らない。
+    usageSharedProjectsScope:
+      "アカウント全体での数です。自分が共有しているプロジェクトと、共有されたプロジェクトの両方を数えます。共有していないプロジェクトはどのプランでも無制限で、ここには含まれません。",
+    usageSharedProjectsNone:
+      "現在のプランでは共有をご利用いただけません。共有しないプロジェクトは引き続き無制限です。",
+    usageHardware: "ハードウェア費用",
+    // 上限はどのプランでも設けていない。自分のプロバイダアカウントで
+    // いくら使うかは本人の判断、というのが方針。
+    usageHardwareAuthorized: (amount, days) => `直近${days}日間で${amount}を承認`,
+    usageHardwareRemaining: (remaining, limit) => `上限${limit}のうち${remaining}が残っています`,
+    usageHardwareExhausted: (limit) => `この期間の上限${limit}を使い切りました`,
+    // 上限0は「ハードウェア禁止」ではない。無料キューの実行は見積り0.00ドルとして
+    // 数えられ、この上限で拒否されることはない。
+    usageHardwareFreeQueuesOnly:
+      "現在のプランでは無料キューのみご利用いただけます。有料のハードウェアには送信できませんが、無料キューへの送信は影響を受けません。",
+    usageHardwareScope:
+      "アカウント全体で承認したハードウェア実行の見積り費用です。無料キューの実行は $0.00 として数えます。",
+    spendTitle: "モデル使用量",
+    spendScope: (days) => `このワークスペース・直近${days}日間`,
+    spendEmpty: (days) => `直近${days}日間のモデル使用はありません`,
+    spendChat: "チャット",
+    spendRuns: "エージェント実行",
+    spendTotal: "合計",
+    spendTokens: (tokens, calls) => `${tokens} トークン・${calls} 回の呼び出し`,
+    spendUnattributed: "モデル不明",
+    spendNotBilled: "参考表示です。トークンは課金対象ではなく、いずれの上限にも数えられません。",
+    // Japanese throughout, matching `sidebar.tierLabel` above. These two tables
+    // name the same four tiers to the same reader, and they disagreed before —
+    // フリー in the sidebar, "Free" in account settings.
+    tierNames: {
+      preview: "プレビュー",
+      free: "フリー",
+      pro: "プラス",
+      team: "プロフェッショナル",
+      developer: "開発者",
+    },
     usageEnforcement: "これらの上限は実行の送信時に適用されます。ブラウザーでのシミュレーションはお使いの端末上で常に利用できます。",
     billingTitle: "請求とクレジット",
     billingHelp: "将来予定している Leona Run と量子コンピュータ実行の料金体系です。現在、支払いは発生しません。",
@@ -1532,6 +1902,60 @@ export const ACCOUNT_COPY: Record<PublicLocale, {
     billingPolicyHardware: "GPU・量子コンピュータ実行",
     billingPolicyHardwareValue: "管理者の承認が必要です。送信前に Studio で、出典付きの費用見積もりを確認できます。",
     billingEstimatesLink: "Studio でハードウェア見積もりを見る",
+    billingUpgradeLink: "プランを比較する",
+    qpuTitle: "IBM Quantum と接続",
+    qpuHelp:
+      "全員で共有しているアカウントではなく、ご自身の IBM アカウントで IBM の量子コンピュータを実行できます。",
+    qpuOpenPlan:
+      "IBM の無料 Open Plan では、28日間のローリング期間ごとにおよそ10分の QPU 時間が使えます。ここで接続すると、その枠はご自身の IBM アカウントのものになります。現在は Leona の利用者全員が一つの共有枠を使っているため、他の人が多く使った週はその分だけ順番待ちが長くなります。",
+    qpuStepAccount: "無料のアカウントを作成し、IBM Quantum Platform のダッシュボードを開きます。",
+    qpuStepKey: "そこで API キーを作成します。キーは44文字です。",
+    qpuStepPaste: "下の欄に貼り付けます。保存する前に Leona が IBM に照会して確認します。",
+    qpuDashboardLink: "quantum.cloud.ibm.com",
+    qpuStorageNote:
+      "キーは暗号化して保存し、以後は表示しません。IBM のダッシュボードからいつでも無効化でき、無効化するとこの接続も使えなくなります。",
+    qpuKeyLabel: "IBM API キー",
+    qpuKeyPlaceholder: "44文字",
+    // 目安であって拒否ではない。有効かどうかを決めるのは IBM 側。
+    qpuKeyLengthHint: (length) => `現在${length}文字です。IBM の API キーは44文字です。`,
+    qpuInstanceLabel: "インスタンス CRN（任意）",
+    qpuInstanceHelp:
+      "IBM アカウントに複数のインスタンスがある場合のみ必要です。「crn:」で始まる CRN をそのまま貼り付けてください（インスタンス名は登録できません）。Open Plan のインスタンスは IBM の us-east リージョンにのみ存在します。",
+    qpuLabelLabel: "ラベル（任意）",
+    qpuLabelHelp: "ご自身の覚え書き用の名前です。この画面にのみ表示されます。",
+    qpuConnect: "接続する",
+    qpuConnecting: "IBM に照会しています…",
+    qpuLoading: "接続状況を確認しています…",
+    qpuLoadFailed: "接続状況を確認できませんでした。ページを再読み込みしてください。",
+    qpuNotConnected: "このアカウントには IBM のキーが接続されていません。",
+    qpuConnectedTitle: "接続済み",
+    qpuConnectedMessage: "IBM がキーを受理しました。暗号化して保存し、以後は表示しません。",
+    qpuStatusLabel: "ラベル",
+    qpuStatusInstance: "インスタンス",
+    qpuStatusConnectedAt: "接続日時",
+    qpuStatusVerified: "最終確認",
+    qpuStatusUsed: "最終使用",
+    qpuStatusNone: "未設定",
+    qpuNeverUsed: "未使用",
+    qpuDisconnect: "接続を解除",
+    qpuDisconnectConfirm: "解除する",
+    qpuDisconnectCancel: "そのままにする",
+    qpuDisconnecting: "解除しています…",
+    qpuDisconnectWarning:
+      "解除すると、キーを再接続するまで待機中のハードウェア実行は送信されなくなります。解除は Leona からキーを削除する操作で、IBM 側でキーが無効化されるわけではありません。",
+    qpuDisconnected: "IBM のキーを削除しました。Leona は保持していません。",
+    // キーを直す。
+    qpuErrorRejected:
+      "IBM がこのキーを受理しませんでした。44文字すべてを貼り付けたか、IBM のダッシュボードでキーが無効化・削除されていないかをご確認ください。",
+    // しばらく待って再試行する。キー自体には問題がなく、保存もされていない。
+    qpuErrorVerificationUnavailable:
+      "IBM に照会できなかったため確認できませんでした。キーは保存されていません。数分後にもう一度お試しください。",
+    // ここで待っても直らない。利用者側にできることはない。
+    qpuErrorStorageUnavailable:
+      "この環境では資格情報をまだ保存できないため、キーを登録できません。キーに問題があるわけではなく、再試行しても変わりません。こちら側での対応が必要です。",
+    qpuErrorGeneric: "キーを保存できませんでした。",
+    qpuErrorDisconnect: "キーを削除できませんでした。接続は解除されていません。",
+    qpuProviderDetail: (sentence) => `IBM からの応答: ${sentence}`,
   },
 };
 
@@ -1802,5 +2226,299 @@ export const SHARING_COPY: Record<PublicLocale, {
     adminOnly: "招待と削除ができるのはオーナーと管理者だけです。",
     noMembers: "このワークスペースには他に誰もいません。",
     sharedWith: (count) => `${count}人`,
+  },
+};
+
+/**
+ * Project sharing (migration 0042). Separate from `SHARING_COPY`, which is about
+ * WORKSPACE membership.
+ *
+ * The two are not one block on purpose, and the reason is the same one that
+ * keeps Run's *Folders* and Studio's *Projects* apart: they are different words
+ * for different things, and the last time two surfaces borrowed one another's
+ * sentences a locale key stopped rendering a whole section. A member of your
+ * workspace sees everything in it; someone a project is shared with sees one
+ * project and nothing else, and the copy has to be able to say so without
+ * hedging around a shared string.
+ */
+export const PROJECT_SHARE_COPY: Record<PublicLocale, {
+  share: string;
+  shareProject: (name: string) => string;
+  title: (name: string) => string;
+  help: string;
+  outsideWarning: string;
+  emailLabel: string;
+  emailPlaceholder: string;
+  roleLabel: string;
+  roleViewer: string;
+  roleEditor: string;
+  roleViewerHelp: string;
+  roleEditorHelp: string;
+  expiryLabel: string;
+  expiryNever: string;
+  expiresOn: (date: string) => string;
+  expiringSoon: (date: string) => string;
+  expired: string;
+  grant: string;
+  granting: string;
+  granted: (email: string) => string;
+  grantFailed: string;
+  loading: string;
+  nobody: string;
+  peopleWithAccess: string;
+  invitedBy: (email: string) => string;
+  remove: string;
+  removing: string;
+  removeFailed: string;
+  removed: (email: string) => string;
+  stopAll: string;
+  stopAllConfirm: (count: number) => string;
+  stopAllCancel: string;
+  close: string;
+  adminOnly: string;
+  /** The caller's own plan does not include sharing. Keyed off the control
+   *  plane's `project_sharing_not_in_plan`, never off its English sentence. */
+  needsTeamPlan: string;
+  /** Shown on the disabled share control, before anything is attempted. */
+  needsTeamPlanHint: string;
+  deleteWarning: (count: number) => string;
+  sharedWithMe: string;
+  sharedWithMeEmpty: string;
+  sharedBy: (name: string) => string;
+  fromWorkspace: (name: string) => string;
+  circuits: (count: number) => string;
+  open: string;
+  readOnlyTag: string;
+  canEditTag: string;
+  copyHere: string;
+  copying: string;
+  copied: (title: string) => string;
+  copyFailed: string;
+  save: string;
+  saving: string;
+  saved: string;
+  saveFailed: string;
+  conflictTitle: string;
+  conflictBody: string;
+  reloadTheirs: string;
+  changedElsewhere: string;
+  refresh: string;
+  loadFailed: string;
+  noCircuits: string;
+  backToStudio: string;
+  addCircuit: string;
+  addCircuitTitleLabel: string;
+  addCircuitTitlePlaceholder: string;
+  addCircuitCodeLabel: string;
+  addCircuitSubmit: string;
+  addCircuitSubmitting: string;
+  addCircuitCancel: string;
+  added: (title: string) => string;
+  addFailed: string;
+  roomLeft: (used: number, limit: number) => string;
+  projectFull: string;
+  limitLabel: string;
+  limitHelp: string;
+  limitZeroHelp: string;
+  limitSaved: (limit: number) => string;
+  limitFailed: string;
+  /** Leaving a project somebody shared with you. Never offered to the owner —
+   *  this whole block belongs to the grantee's view. */
+  leave: string;
+  leaveConfirm: string;
+  leaveCancel: string;
+  leaving: string;
+  leaveFailed: string;
+  /** Says what leaving does NOT do, because the reasonable fear is that work
+   *  contributed into the project goes with it. It does not. */
+  leaveHelp: string;
+}> = {
+  en: {
+    share: "Share",
+    shareProject: (name) => `Share ${name}`,
+    title: (name) => `Share “${name}”`,
+    help: "The people below can open this project's circuits. They see nothing else in this workspace.",
+    outsideWarning:
+      "Sharing reaches outside this workspace. Anyone here can read every circuit filed under this project, including ones you add later.",
+    emailLabel: "Email address",
+    emailPlaceholder: "colleague@university.edu",
+    roleLabel: "They can",
+    roleViewer: "Read",
+    roleEditor: "Read and edit",
+    roleViewerHelp: "Open the circuits and their history. Nothing they do changes anything here.",
+    roleEditorHelp:
+      "Open the circuits and save new versions of them. They still cannot rename, delete or publish anything.",
+    expiryLabel: "Access ends",
+    expiryNever: "Never",
+    expiresOn: (date) => `Access ends ${date}`,
+    expiringSoon: (date) => `Access ends ${date} — soon`,
+    expired: "Access has ended",
+    grant: "Share",
+    granting: "Sharing…",
+    granted: (email) => `${email} can now open this project.`,
+    grantFailed: "This project could not be shared.",
+    loading: "Reading who has access…",
+    nobody: "This project is not shared with anyone.",
+    peopleWithAccess: "People with access",
+    invitedBy: (email) => `Shared by ${email}`,
+    remove: "Remove access",
+    removing: "Removing…",
+    removeFailed: "Access could not be removed.",
+    removed: (email) => `${email} can no longer open this project.`,
+    stopAll: "Stop sharing with everyone",
+    stopAllConfirm: (count) =>
+      count === 1
+        ? "One person loses access to this project. Continue?"
+        : `${count} people lose access to this project. Continue?`,
+    stopAllCancel: "Keep sharing",
+    close: "Close",
+    adminOnly: "Only an owner or admin can share a project.",
+    needsTeamPlan: "Sharing a project with someone outside your workspace is part of the Team plan. Your current plan does not include it.",
+    needsTeamPlanHint: "Sharing projects is part of the Team plan",
+    deleteWarning: (count) =>
+      count === 1
+        ? "One person outside this workspace loses access when this project is deleted."
+        : `${count} people outside this workspace lose access when this project is deleted.`,
+    sharedWithMe: "Shared with me",
+    sharedWithMeEmpty: "Nothing has been shared with you yet.",
+    sharedBy: (name) => `Shared by ${name}`,
+    fromWorkspace: (name) => `from ${name}`,
+    circuits: (count) => (count === 1 ? "1 circuit" : `${count} circuits`),
+    open: "Open",
+    readOnlyTag: "Read only",
+    canEditTag: "You can edit",
+    copyHere: "Save a copy to my workspace",
+    copying: "Copying…",
+    copied: (title) => `${title} is now in your Studio. It carries no verification evidence of its own — re-run it.`,
+    copyFailed: "That circuit could not be copied.",
+    save: "Save",
+    saving: "Saving…",
+    saved: "Saved.",
+    saveFailed: "That edit could not be saved.",
+    conflictTitle: "Somebody else saved first",
+    conflictBody:
+      "This circuit changed while you were editing it. Open what they saved before replacing it — your text is still here.",
+    reloadTheirs: "Open theirs",
+    changedElsewhere: "This project changed since you opened it.",
+    refresh: "Refresh",
+    loadFailed: "This shared project could not be opened. The share may have been withdrawn.",
+    noCircuits: "There are no circuits in this project yet.",
+    backToStudio: "Back to Studio",
+    addCircuit: "Add a circuit",
+    addCircuitTitleLabel: "Name",
+    addCircuitTitlePlaceholder: "GHZ state, 4 qubits",
+    addCircuitCodeLabel: "Code",
+    addCircuitSubmit: "Add to this project",
+    addCircuitSubmitting: "Adding…",
+    addCircuitCancel: "Cancel",
+    added: (title) => `“${title}” was added to this project.`,
+    addFailed: "That circuit could not be added.",
+    roomLeft: (used, limit) => `${used} of ${limit} circuits`,
+    projectFull: "This project is full. Its owner can raise the limit or remove a circuit.",
+    limitLabel: "Circuits people you share with may add",
+    limitHelp:
+      "Anything added counts against this workspace's own artifact allowance, so this is the ceiling on what a share can spend.",
+    limitZeroHelp: "Set to 0, so people you share with can edit these circuits but not add any.",
+    limitSaved: (limit) => `Shares may grow this project to ${limit} circuits.`,
+    limitFailed: "That limit could not be saved.",
+    leave: "Leave project",
+    leaveConfirm: "Leave this project?",
+    leaveCancel: "Stay",
+    leaving: "Leaving…",
+    leaveFailed: "You could not be removed from this project.",
+    leaveHelp:
+      "You lose access to these circuits. Anything you added stays with the project, and its owner can share it with you again.",
+  },
+  ja: {
+    share: "共有",
+    shareProject: (name) => `${name} を共有`,
+    title: (name) => `「${name}」を共有`,
+    help: "以下の人はこのプロジェクトの回路を開けます。このワークスペースの他のものは見えません。",
+    outsideWarning:
+      "共有はこのワークスペースの外に及びます。ここに追加した人は、このプロジェクトに入っている回路をすべて閲覧できます。後から追加した回路も含みます。",
+    emailLabel: "メールアドレス",
+    emailPlaceholder: "colleague@university.edu",
+    roleLabel: "できること",
+    roleViewer: "閲覧",
+    roleEditor: "閲覧と編集",
+    roleViewerHelp: "回路とその履歴を開けます。こちらの内容は一切変わりません。",
+    roleEditorHelp:
+      "回路を開き、新しいバージョンを保存できます。名前の変更・削除・公開はできません。",
+    expiryLabel: "アクセス期限",
+    expiryNever: "なし",
+    expiresOn: (date) => `${date} にアクセスが終了します`,
+    expiringSoon: (date) => `${date} にアクセスが終了します — まもなくです`,
+    expired: "アクセスは終了しました",
+    grant: "共有する",
+    granting: "共有中…",
+    granted: (email) => `${email} がこのプロジェクトを開けるようになりました。`,
+    grantFailed: "このプロジェクトを共有できませんでした。",
+    loading: "アクセスできる人を読み込んでいます…",
+    nobody: "このプロジェクトはまだ誰とも共有されていません。",
+    peopleWithAccess: "アクセスできる人",
+    invitedBy: (email) => `${email} が共有`,
+    remove: "アクセスを解除",
+    removing: "解除中…",
+    removeFailed: "アクセスを解除できませんでした。",
+    removed: (email) => `${email} はこのプロジェクトを開けなくなりました。`,
+    stopAll: "全員との共有をやめる",
+    stopAllConfirm: (count) => `${count}人がこのプロジェクトを開けなくなります。続けますか？`,
+    stopAllCancel: "共有を続ける",
+    close: "閉じる",
+    adminOnly: "プロジェクトを共有できるのはオーナーと管理者だけです。",
+    needsTeamPlan: "ワークスペース外の相手への共有は Team プランの機能です。現在のプランには含まれていません。",
+    needsTeamPlanHint: "プロジェクトの共有は Team プランの機能です",
+    deleteWarning: (count) =>
+      `このプロジェクトを削除すると、ワークスペース外の${count}人がアクセスできなくなります。`,
+    sharedWithMe: "共有されたもの",
+    sharedWithMeEmpty: "まだ何も共有されていません。",
+    sharedBy: (name) => `${name} が共有`,
+    fromWorkspace: (name) => `${name} より`,
+    circuits: (count) => `回路 ${count} 件`,
+    open: "開く",
+    readOnlyTag: "閲覧のみ",
+    canEditTag: "編集できます",
+    copyHere: "自分のワークスペースに複製",
+    copying: "複製中…",
+    copied: (title) => `${title} を Studio に複製しました。検証の記録は引き継がれません — 実行し直してください。`,
+    copyFailed: "この回路を複製できませんでした。",
+    save: "保存",
+    saving: "保存中…",
+    saved: "保存しました。",
+    saveFailed: "この編集を保存できませんでした。",
+    conflictTitle: "他の人が先に保存しました",
+    conflictBody:
+      "編集中にこの回路が変更されました。上書きする前に、保存された内容を確認してください。入力した内容は残っています。",
+    reloadTheirs: "保存された内容を開く",
+    changedElsewhere: "開いてからこのプロジェクトが変更されました。",
+    refresh: "再読み込み",
+    loadFailed: "この共有プロジェクトを開けませんでした。共有が解除された可能性があります。",
+    noCircuits: "このプロジェクトにはまだ回路がありません。",
+    backToStudio: "Studio に戻る",
+    addCircuit: "回路を追加",
+    addCircuitTitleLabel: "名前",
+    addCircuitTitlePlaceholder: "GHZ状態・4量子ビット",
+    addCircuitCodeLabel: "コード",
+    addCircuitSubmit: "このプロジェクトに追加",
+    addCircuitSubmitting: "追加中…",
+    addCircuitCancel: "キャンセル",
+    added: (title) => `「${title}」をこのプロジェクトに追加しました。`,
+    addFailed: "この回路を追加できませんでした。",
+    roomLeft: (used, limit) => `${limit}件中${used}件の回路`,
+    projectFull:
+      "このプロジェクトは上限に達しています。上限の引き上げまたは回路の削除は所有者のみ行えます。",
+    limitLabel: "共有相手が追加できる回路数",
+    limitHelp:
+      "追加された回路はこのワークスペースのアーティファクト上限を消費します。共有によって使われる量の上限です。",
+    limitZeroHelp: "0 の場合、共有相手は既存の回路を編集できますが、追加はできません。",
+    limitSaved: (limit) => `共有相手はこのプロジェクトを${limit}件まで増やせます。`,
+    limitFailed: "上限を保存できませんでした。",
+    leave: "このプロジェクトから抜ける",
+    leaveConfirm: "このプロジェクトから抜けますか？",
+    leaveCancel: "そのまま残る",
+    leaving: "処理中…",
+    leaveFailed: "このプロジェクトから抜けられませんでした。",
+    leaveHelp:
+      "これらの回路にはアクセスできなくなります。あなたが追加した回路はプロジェクトに残り、所有者が再度共有することもできます。",
   },
 };

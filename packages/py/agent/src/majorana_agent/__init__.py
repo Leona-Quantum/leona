@@ -32,7 +32,7 @@ from majorana_agent.simple_pipeline import (
     SimpleRepairFeedback,
     SimpleRetryTarget,
 )
-from majorana_agent.simple_plan import SimplePlan, parse_simple_plan
+from majorana_agent.simple_plan import SimplePlan, SimpleReferenceProblem, parse_simple_plan
 
 __all__ = [
     "AgentState",
@@ -59,6 +59,7 @@ __all__ = [
     "SimplePipelineStatus",
     "SimplePortResult",
     "SimplePlan",
+    "SimpleReferenceProblem",
     "SimpleRepairFeedback",
     "SimpleRetryTarget",
     "ToolCall",

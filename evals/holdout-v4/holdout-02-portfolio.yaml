@@ -1,0 +1,23 @@
+id: holdout-v4-02
+category: "Holdout v4 — Constrained portfolio selection"
+split: holdout
+difficulty: intermediate
+workload: practical
+prompt: >-
+  Select exactly three of seven projects with values [9,8,7,6,5,4,3]. Projects 0 and
+  1 are mutually exclusive, projects 2 and 3 are mutually exclusive, and at least one
+  of projects 4,5,6 must be selected. Encode all constraints in a Qiskit QAOA cost
+  Hamiltonian, use deterministic seeds and at least 4096 shots, and decode only
+  feasible samples. Independently enumerate all 128 selections. Return top-level
+  numeric RESULT keys qaoa_best_value and exact_maximum_value plus counts, and bind
+  the optimized QAOA circuit to FINAL_CIRCUIT. Do not substitute exact enumeration for
+  QAOA output.
+framework: qiskit
+expect:
+  terminal_reason: null
+  output_keys: ["qaoa_best_value", "exact_maximum_value", "counts"]
+  expected_values:
+    qaoa_best_value: 21.0
+    exact_maximum_value: 21.0
+  expected_value_tolerance: 0.0
+  saves_artifact: true

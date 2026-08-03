@@ -1619,3 +1619,581 @@ html[lang="ja"] .mj-company-hero-title-line {
   flex-wrap: wrap;
   gap: var(--sp-3);
 }
+
+/* ---------- Connect IBM Quantum (account) ----------
+   Appended rather than merged into the account block above: this file is being
+   edited by more than one lane at a time, and rules added at the end are the
+   ones that merge without a conflict. */
+.mj-qpu-credentials .mj-qpu-open-plan,
+.mj-qpu-credentials .mj-qpu-not-connected,
+.mj-qpu-credentials .mj-qpu-warning {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-qpu-credentials .mj-qpu-warning {
+  margin: var(--sp-2) 0 0;
+  color: var(--warn);
+  font-size: var(--fs-12);
+}
+/* Numbered, explicitly: Tailwind's preflight sets `list-style: none` on every
+   list, so an <ol> of instructions renders as three indented sentences with no
+   order to them — which is the one thing an ordered list is for. */
+.mj-qpu-steps {
+  display: grid;
+  gap: var(--sp-2);
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-5);
+  list-style: decimal;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-qpu-steps li::marker {
+  color: var(--text-2);
+}
+.mj-qpu-steps a {
+  color: var(--accent);
+  text-underline-offset: 3px;
+}
+/* The form inherits .mj-account-profile-form, which already owns the label,
+   input and button geometry. Only the top rule it draws is unwanted here —
+   this panel's fields are the panel, not an addendum to something above them. */
+.mj-qpu-form {
+  margin-top: var(--sp-4);
+  margin-bottom: var(--sp-4);
+  padding-top: 0;
+  border-top: 0;
+  gap: var(--sp-3);
+}
+/* A deployment that cannot store a credential disables the whole form rather
+   than accepting a secret it will refuse. Disabled has to LOOK disabled: these
+   inputs carry their own background, so the browser's default greying does not
+   show through. */
+.mj-qpu-form input:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.mj-qpu-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3);
+  margin-top: var(--sp-3);
+}
+/* An IBM CRN is long enough to overflow a narrow panel. It wraps at any point
+   rather than clipping: a truncated CRN cannot be compared against the one in
+   IBM's own console, which is the only reason it is shown. */
+.mj-qpu-crn {
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  overflow-wrap: anywhere;
+}
+.mj-qpu-message {
+  display: grid;
+  gap: var(--sp-1);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-qpu-message--ok {
+  color: var(--ok);
+}
+.mj-qpu-message--error {
+  color: var(--err);
+}
+/* The provider's own sentence, set apart from ours so a reader can tell which
+   words are IBM's. */
+.mj-qpu-message small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+
+/* ══ Workspace polish ══════════════════════════════════════════════════════
+   Owner ask 2026-08-02: "not just a bunch of rows of unnecessary values but
+   well formatted and smoothly running when clicking in and out and around".
+   Three separable jobs, in order below: information hierarchy (what a
+   researcher came for is prominent, provenance is subordinate), formatting
+   (one spacing/type/density vocabulary, tokens only), and navigation
+   smoothness (no flash, no jump, no unstyled intermediate state).
+
+   Everything here EXTENDS the mj-* vocabulary in packages/ts/ui/styles.css,
+   which is imported above this file — no parallel class set, no new system,
+   no raw values where a token exists. */
+
+/* ── 1. Segment loading skeleton ──────────────────────────────────────────
+   Shaped like the workspace it stands in for, so the swap does not move
+   anything. The generic version was a 1200px column; every route under
+   (app)/ resolves to the 840px discovery column or the full-bleed editor. */
+.mj-loading-screen--workspace {
+  gap: var(--sp-3);
+  width: min(100%, 840px);
+  max-width: none;
+  padding: var(--sp-12) clamp(var(--sp-6), 8vw, var(--sp-12));
+  box-sizing: content-box;
+}
+/* Matches .mj-studio-discovery-heading h1 (--fs-28 at weight 600), not the
+   48px marketing title. */
+.mj-skeleton--workspace-title {
+  width: min(260px, 42%);
+  min-height: 34px;
+  margin-bottom: var(--sp-5);
+}
+/* Matches .mj-studio-search: full column, 44px, card radius. */
+.mj-skeleton--workspace-search {
+  width: 100%;
+  min-height: 44px;
+  border-radius: var(--radius-card);
+  margin-bottom: var(--sp-3);
+}
+/* Matches .mj-studio-discovery-card: sp-4 padding around two lines of text. */
+.mj-skeleton--workspace-row {
+  width: 100%;
+  min-height: 78px;
+  border-radius: var(--radius-card);
+}
+
+/* ── 2. Segment error boundary ────────────────────────────────────────────
+   Same card language as .mj-auth-card, so the one screen where the product
+   has already failed does not also stop looking like the product. */
+.mj-app-error {
+  display: flex;
+  justify-content: center;
+  padding: clamp(var(--sp-8), 6vw, var(--sp-16)) var(--sp-4);
+}
+.mj-app-error-card {
+  display: grid;
+  gap: var(--sp-3);
+  width: 100%;
+  max-width: 480px;
+  padding: clamp(var(--sp-6), 3vw, var(--sp-8));
+  border: 1px solid var(--border-0);
+  border-left: 3px solid var(--err);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-app-error-card h1 {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-20);
+  font-weight: 600;
+}
+.mj-app-error-body {
+  margin: 0;
+  max-width: 46ch;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-app-error-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.mj-app-error-details {
+  margin-top: var(--sp-2);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-0);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-app-error-details > summary {
+  width: fit-content;
+  cursor: pointer;
+}
+.mj-app-error-details p {
+  margin: var(--sp-2) 0 0;
+}
+.mj-app-error-details code {
+  color: var(--mono-tint);
+  font-family: var(--font-mono);
+}
+
+/* ── 3. Studio discovery list ─────────────────────────────────────────────
+   The list is the workspace's front door, so it carries the whole hierarchy
+   change: the verdict first, then what the circuit is, then provenance. */
+
+/* A failed sync is not an empty workspace. Both used to render as
+   `.mj-studio-empty` — 12px --text-2, indistinguishable. */
+.mj-studio-notice {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-2);
+  width: min(100%, 840px);
+  box-sizing: border-box;
+  margin: 0 auto var(--sp-4);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-left: 3px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-studio-notice[data-tone="warn"] { border-left-color: var(--warn); }
+.mj-studio-notice[data-tone="err"] { border-left-color: var(--err); }
+
+/* Height is reserved whether or not there is a count to print, so the line
+   arriving after hydration does not push the list down. */
+.mj-studio-discovery-count {
+  width: min(100%, 840px);
+  min-height: var(--sp-4);
+  margin: 0 auto var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: var(--sp-4);
+  font-variant-numeric: tabular-nums;
+}
+
+/* The dot canvas hangs 26px above the search bar on a negative offset, so the
+   bar needs that much clearance under the heading or the dots overlap it. It
+   was taking the gap from the heading's own bottom margin, which left a band
+   of nothing between the title and the field. */
+.mj-studio-search--dots {
+  margin-top: var(--sp-6);
+}
+
+/* Two columns: the circuit, and the verdict + the one action. Aligning the
+   right column across every row is what stops the list reading as ragged. */
+.mj-studio-discovery-card {
+  align-items: flex-start;
+  gap: var(--sp-5);
+  padding: var(--sp-4) var(--sp-4) var(--sp-3);
+  transition: border-color var(--dur-hover) var(--ease-out-ui),
+    background-color var(--dur-hover) var(--ease-out-ui);
+}
+.mj-studio-discovery-card:hover {
+  background: var(--bg-2);
+}
+.mj-studio-card-body {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+}
+/* Two lines, then an ellipsis. Both of these were `white-space: nowrap` with
+   `text-overflow: ellipsis`, which cuts a title or a description mid-word at
+   any width — every card in the narrow viewport lost its sentence halfway
+   through. A clamp keeps the row height bounded without that. */
+.mj-studio-discovery-card strong {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  font-size: var(--fs-14);
+  line-height: 1.35;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+.mj-studio-discovery-card em {
+  display: -webkit-box;
+  -webkit-box-orient: vertical;
+  -webkit-line-clamp: 2;
+  line-clamp: 2;
+  overflow: hidden;
+  margin-bottom: var(--sp-1);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+  white-space: normal;
+  overflow-wrap: anywhere;
+}
+/* Provenance, demoted: separated items rather than one dot-joined run, at the
+   bottom of the card rather than between the title and the description. */
+.mj-studio-discovery-card small {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-1) var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.4;
+}
+.mj-studio-discovery-card small > span + span::before {
+  margin-right: var(--sp-3);
+  color: var(--border-0);
+  content: "·";
+}
+.mj-studio-card-framework {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+}
+.mj-studio-card-side {
+  display: grid;
+  flex: 0 0 auto;
+  justify-items: end;
+  gap: var(--sp-2);
+}
+.mj-studio-card-status {
+  min-height: 20px;
+}
+
+/* ── 4. Studio Summary tab ────────────────────────────────────────────────
+   The circuit's own numbers, above the verifier's vocabulary. */
+.mj-studio-fact-row {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(120px, 1fr));
+  gap: 1px;
+  margin: 0;
+  border-bottom: 1px solid var(--border-0);
+  background: var(--border-0);
+}
+.mj-studio-fact-row > div {
+  display: grid;
+  gap: var(--sp-1);
+  min-width: 0;
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-1);
+}
+/* Sentence case, not `capitalize`. The labels arrive as de-underscored server
+   keys, so title-casing them produced "Two Qubit Gates" and "Estimated Runtime
+   Ms" beside "Passed checks" and "Evidence strength" on the same panel. */
+.mj-studio-fact-row dt {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: none;
+}
+.mj-studio-fact-row dt::first-letter {
+  text-transform: uppercase;
+}
+.mj-studio-fact-row dd {
+  margin: 0;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-13);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
+/* Holds the verdict chip's width open on the one tab that does not show it, so
+   the action row does not reflow on a tab change. `visibility` rather than
+   `display`: the box stays, the element leaves hit testing and the tab order. */
+.mj-studio-verdict-slot[data-hidden="true"] {
+  visibility: hidden;
+  pointer-events: none;
+}
+
+.mj-studio-record-link {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0;
+  font-size: var(--fs-12);
+}
+/* The raw `reason_code` and the evidence-strength enum are the verifier's
+   words, kept because an auditor needs them — subordinated because a reader
+   arriving at this tab wants the verdict and the checks first. */
+.mj-studio-version-panel .mj-trust-summary dl {
+  order: 2;
+  gap: var(--sp-1);
+  margin-top: var(--sp-1);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-0);
+}
+.mj-studio-version-panel .mj-trust-summary dl > div {
+  border-bottom: 0;
+  padding-bottom: 0;
+}
+.mj-studio-version-panel .mj-trust-summary dt,
+.mj-studio-version-panel .mj-trust-summary dd {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-studio-version-panel .mj-trust-summary dd code {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+}
+
+/* ── 5. Studio Simulation tab ─────────────────────────────────────────────
+   Three lanes that are not interchangeable should not be three identical
+   boxes, and none of them should carry the tab's loudest control. */
+.mj-studio-lane-action {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+/* A lane's explanation is prose. At the panel's full width it ran to about
+   190 characters a line. */
+.mj-studio-lane > p,
+.mj-studio-simulation-unavailable > p {
+  max-width: 72ch;
+}
+.mj-studio-simulation-unavailable .mj-primary-button {
+  justify-self: start;
+  width: fit-content;
+}
+/* With nothing recorded the section is one sentence, so it stops reserving a
+   heading, a zero counter and a band of its own. */
+.mj-studio-simulation-records[data-empty="true"] {
+  padding-top: var(--sp-1);
+}
+
+/* ── 6. Shared project page ───────────────────────────────────────────────
+   `.mj-shared-project` is a stretch column, so every direct-child button and
+   link in it grew to the full 880px: "Add a circuit" and "Back to Studio"
+   were the two heaviest objects on a page whose subject is a list of
+   circuits. Actions now sit in wrappers that size to their label. */
+.mj-shared-project {
+  gap: var(--sp-5);
+}
+.mj-shared-project-back {
+  margin: 0;
+  font-size: var(--fs-12);
+}
+.mj-shared-project-back a {
+  color: var(--text-2);
+  text-decoration: none;
+}
+.mj-shared-project-back a:hover {
+  color: var(--text-0);
+}
+.mj-shared-project-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.mj-shared-project-header {
+  display: grid;
+  gap: var(--sp-3);
+  padding-bottom: var(--sp-5);
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-shared-project-identity {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: var(--sp-4);
+}
+.mj-shared-project-identity > div {
+  min-width: 0;
+}
+.mj-shared-project-identity .mj-eyebrow {
+  margin: 0 0 var(--sp-1);
+}
+.mj-shared-project-header h1 {
+  margin: 0;
+  overflow-wrap: anywhere;
+}
+/* Discrete facts on one line, not a dot-joined sentence that wrapped
+   mid-clause on any viewport narrower than the string. */
+.mj-shared-project-meta {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-shared-project-meta > li {
+  min-width: 0;
+  overflow-wrap: anywhere;
+}
+.mj-shared-project-role {
+  display: inline-flex;
+  align-items: center;
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: 999px;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  white-space: nowrap;
+}
+.mj-shared-project-role[data-role="editor"] {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+.mj-shared-project-leave {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-left: 3px solid var(--warn);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-shared-project-leave p {
+  margin: 0;
+  max-width: 64ch;
+}
+.mj-shared-project-leave-actions {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-1);
+}
+.mj-shared-project-leave-open {
+  flex: 0 0 auto;
+}
+/* One aligned action column down the list. `strong` had `flex: 1 1 200px` and
+   the two buttons were loose siblings, so below ~700px the second one wrapped
+   under the title while the first stayed beside it. */
+.mj-shared-circuit {
+  padding: var(--sp-3) var(--sp-4);
+  background: var(--bg-1);
+  transition: border-color var(--dur-hover) var(--ease-out-ui);
+}
+.mj-shared-circuit:hover {
+  border-color: var(--text-2);
+}
+.mj-shared-circuit-row {
+  gap: var(--sp-3);
+}
+.mj-shared-circuit-row strong {
+  flex: 1 1 240px;
+  font-size: var(--fs-14);
+  line-height: 1.4;
+  overflow-wrap: anywhere;
+}
+.mj-shared-circuit-controls {
+  display: flex;
+  flex: 0 0 auto;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+}
+
+/* ── 7. Narrow viewport ───────────────────────────────────────────────────
+   The workspace has no separate mobile layout; these keep the two list
+   surfaces from going ragged when the column runs out of room. */
+@media (max-width: 720px) {
+  .mj-studio-discovery-card {
+    flex-direction: column;
+    align-items: stretch;
+    gap: var(--sp-3);
+  }
+  .mj-studio-card-side {
+    grid-auto-flow: column;
+    align-items: center;
+    justify-content: space-between;
+    justify-items: stretch;
+  }
+  .mj-studio-discovery-heading {
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--sp-4);
+  }
+  .mj-shared-project-identity {
+    flex-direction: column;
+  }
+  .mj-shared-circuit-row {
+    align-items: stretch;
+  }
+  .mj-shared-circuit-controls {
+    justify-content: flex-start;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .mj-studio-discovery-card,
+  .mj-shared-circuit {
+    transition: none;
+  }
+}

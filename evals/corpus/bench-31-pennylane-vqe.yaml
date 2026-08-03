@@ -1,0 +1,17 @@
+id: bench-31
+category: "D — Cross-framework VQE"
+prompt: >-
+  Use PennyLane with an exact statevector device and a bounded scipy optimizer to
+  estimate the ground-state energy of the explicit three-qubit Hamiltonian
+  -1.1 ZII - 0.7 IZI - 0.3 IIZ + 0.4 XXI + 0.25 IXX. Use an entangling variational
+  ansatz, return the optimized energy as the top-level numeric RESULT key energy,
+  and bind an equivalent PennyLane QuantumTape or QuantumScript at the optimized
+  parameters to FINAL_CIRCUIT.
+framework: pennylane
+expect:
+  terminal_reason: ai_review_aligned_with_reference_check
+  output_keys: ["energy"]
+  expected_values:
+    energy: -2.1756828136740576
+  expected_value_tolerance: 0.03
+  saves_artifact: true
