@@ -145,6 +145,14 @@ violations. GitHub link fields are type-checked but never followed. Successful
 content is bound to the request-plan digest and converted to the existing
 `RetrievedFileEvidence` contract.
 
+The pure `phase10_acquisition_result` aggregate is created only when every
+selected path has exactly one validated response in canonical order and the
+fetch timestamp remains inside the authorization's DNS window. It binds the
+full request plan, retrieval manifest, GitHub blob hashes, response-body hashes,
+and selected-file hashes under one result digest. Missing, duplicate,
+reordered, foreign-plan, expired, or digest-substituted evidence fails closed.
+The serialized aggregate deliberately contains no source bytes.
+
 ## 7. Tests
 
 Targeted validation after the change:

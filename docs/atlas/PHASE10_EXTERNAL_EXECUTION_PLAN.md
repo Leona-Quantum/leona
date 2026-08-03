@@ -180,6 +180,9 @@ Implemented offline preflight contracts:
   API version, identity encoding, no redirects, and a bounded response;
 - `phase10_github_response` validates already-read object JSON as one exact,
   ordinary, bounded UTF-8 selected file and never follows returned links;
+- `phase10_acquisition_result` requires one validated response per selected
+  operation and binds response, file, plan, manifest, and destination-window
+  evidence without retaining source bytes;
 - `phase10_retrieval_manifest` records bounded UTF-8 file evidence and verifies
   the exact repository, commit, selected path set, byte length, and SHA-256;
 - no contract accepts a URL, header, credential, proxy, redirect, command,
