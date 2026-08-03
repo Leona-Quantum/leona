@@ -285,6 +285,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hardwareSpendFreeTier: (estimate: string) => string;
     verifySave: string;
     starting: string;
+    bringYourOwn: string;
+    bringingYourOwn: string;
+    broughtInSaved: string;
+    broughtInFailed: string;
     view: string;
     circuit: string;
     visual: string;
@@ -373,6 +377,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     versionOriginAgentRun: string;
     versionOriginStudioDraft: string;
     versionOriginImportedReference: string;
+    versionOriginUserImport: string;
     versionOriginStarterExample: string;
     versionOriginUnknown: string;
     versionHolds: string;
@@ -741,6 +746,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         `This run is estimated at ${estimate}, and billed hardware is not part of the free plan. Free-queue devices and browser simulation stay available.`,
       verifySave: "Verify & save",
       starting: "Starting…",
+      bringYourOwn: "Save without running",
+      bringingYourOwn: "Saving…",
+      broughtInSaved: "Saved to your Library as written. Nothing has been run, so it carries no verification evidence — use Verify & save when you want some.",
+      broughtInFailed: "Could not save this circuit",
       view: "Studio view",
       circuit: "Circuit",
       visual: "Visual",
@@ -824,6 +833,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       versionOriginAgentRun: "From a verified run",
       versionOriginStudioDraft: "Your Studio edit",
       versionOriginImportedReference: "Imported reference",
+      versionOriginUserImport: "A circuit you brought in",
       versionOriginStarterExample: "Starter example",
       versionOriginUnknown: "Origin not recorded",
       versionHolds: "Holds",
@@ -1201,6 +1211,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
         `この実行の見積もりは${estimate}です。有料の実機実行は無料プランには含まれていません。無料キューの実機とブラウザ上のシミュレーションは引き続き利用できます。`,
       verifySave: "検証して保存",
       starting: "開始中…",
+      bringYourOwn: "実行せずに保存",
+      bringingYourOwn: "保存中…",
+      broughtInSaved: "書かれたままライブラリに保存しました。実行していないため検証結果はありません。必要になったら「検証して保存」を実行してください。",
+      broughtInFailed: "この回路を保存できませんでした",
       view: "Studioの表示切り替え",
       circuit: "回路",
       visual: "回路図",
@@ -1284,6 +1298,7 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       versionOriginAgentRun: "検証付きの実行から作成",
       versionOriginStudioDraft: "Studioでの編集",
       versionOriginImportedReference: "外部から取り込んだ参考回路",
+      versionOriginUserImport: "自分で持ち込んだ回路",
       versionOriginStarterExample: "はじめのサンプル",
       versionOriginUnknown: "作成元の記録なし",
       versionHolds: "含まれるもの",

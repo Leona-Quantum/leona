@@ -159,3 +159,13 @@ test("an absent or unrecognised role falls back to unknown, never to program", (
     assert.equal(parsed.versions[0].programRole, "unknown");
   }
 });
+
+test("a circuit the user brought in is named, not filed under unknown", () => {
+  // The API's fifth writer. Until the web listed it, every user-imported
+  // version arrived as "unknown" — the same word a legacy row gets, sitting
+  // next to a restore button.
+  const page = versionPageFromResource({
+    versions: [{ ...RUN_VERSION, origin: "user_import" }],
+  });
+  assert.equal(page.versions[0].origin, "user_import");
+});

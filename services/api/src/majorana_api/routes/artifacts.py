@@ -5,6 +5,7 @@ the control plane's repository layer.
 """
 
 import datetime as dt
+import hashlib
 import re
 import uuid
 from typing import Annotated, Any
@@ -21,6 +22,8 @@ from majorana_contracts.enums import (
     VerifierDecision,
     Visibility,
 )
+from majorana_frameworks import FrameworkProgram
+from majorana_frameworks.roles import ProgramRole
 from majorana_openqasm import OpenQASMError, fingerprint, normalize
 from pydantic import AnyHttpUrl, BaseModel, ConfigDict, Field
 
@@ -35,7 +38,7 @@ from ..orm import ArtifactVersion as ArtifactVersionRow
 from ..settings import Settings
 from ..tiers import limits_for, tier_of
 from ..verification_summary import parse_verification_summary
-from ..version_capabilities import capabilities_of, restore_losses
+from ..version_capabilities import USER_IMPORT_SOURCE, capabilities_of, restore_losses
 
 router = APIRouter()
 
@@ -94,6 +97,23 @@ def _project_full_refusal(held: int, limit: int) -> HTTPException:
             "limit": limit,
         },
     )
+
+
+class ImportOwnSourceRequest(RequestModel):
+    """A circuit the caller already has, on its way into their own Library.
+
+    `code` shares the 100,000-character ceiling `POST /runs` puts on
+    `source_code`: the same bytes reach the same sandbox by either door, so one
+    door accepting more than the other would only move where the rejection
+    happens.
+    """
+
+    model_config = ConfigDict(extra="forbid")
+
+    title: str = Field(min_length=1, max_length=240)
+    framework: Framework
+    code: str = Field(min_length=1, max_length=100_000)
+    family: Algorithm = Algorithm.OTHER
 
 
 class ImportPublicArtifactRequest(RequestModel):
@@ -318,6 +338,150 @@ async def import_public_artifact(
             "Imported from the public research database. This private copy preserves public "
             "source context but is not a new execution or verification record. Review the "
             "source license and rerun the artifact before relying on it."
+        ),
+    )
+    user, _workspace = identity
+    limits = limits_for(tier_of(user, settings))
+    try:
+        filed = await artifacts_repo.keep_artifact(
+            scope,
+            session,
+            artifact.id,
+            workspace_artifact_limit=limits.private_artifacts,
+        )
+    except artifacts_repo.ArtifactCapReached as full:
+        raise _artifact_cap_refusal(full.held, full.limit) from full
+    return _to_artifact(filed)
+
+
+@router.post("/artifacts/import-source", response_model=ArtifactResource, status_code=201)
+async def import_own_source(
+    body: ImportOwnSourceRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> ArtifactResource:
+    """File a circuit the caller wrote themselves, without an agent run.
+
+    ## The gap this closes
+
+    Until now an artifact could only come from run materialization or from
+    `POST /artifacts/import-public`. Someone arriving with a circuit they had
+    already written had exactly one way in: paste it into Studio and spend a
+    full agent run — a plan call, a review call, and the tokens both cost —
+    to have the pipeline hand back the source it was given. The circuit did not
+    need generating. It needed *keeping*.
+
+    ## What this route does NOT claim
+
+    Nothing here executes. The summary it files says so in the only way this
+    product allows: `decision` is null, `evidence_strength` is null, the reason
+    is `user_supplied_source_not_verified`, and the five things an unexecuted
+    artifact cannot claim are listed by name — the same five
+    `unexecuted_artifact_verification_summary` uses, because it is the same
+    claim. Export is UNSUPPORTED: a trusted interchange QASM is *lifted* from a
+    circuit the sandbox actually built, so there is none to write here, and
+    writing an untrusted one would put a conversion nobody checked behind a
+    download button.
+
+    A user who then wants evidence opens it in Studio and runs Verify & save.
+    That is the same artifact, one version later, with a real verdict on it.
+
+    ## Two refusals, both structural and neither a model's opinion
+
+    `classify_source` reads what the source BINDS. Source binding neither
+    `FINAL_CIRCUIT` nor `RESULT` is `UNKNOWN` — not a circuit with a missing
+    result, but something this product cannot execute — and it is refused by
+    name rather than filed as an artifact that can never be opened. Then the
+    framework's `contract_diagnostics` runs, which is pure AST: one `ast.parse`
+    and no execution, safe in the API process, and the same check the pipeline
+    applies to generated source.
+
+    ## The allowance
+
+    It files an artifact, so it spends the artifact allowance, and it takes
+    `CurrentIdentity` to do it — `import-public` shipped without one and metered
+    nothing at all for 35 imports. Created unkept, then `keep_artifact`, which
+    holds the workspace lock across the comparison and the write.
+
+    Idempotent on the source bytes: re-importing something already imported
+    returns the existing row and spends nothing, so an account at its cap can
+    still re-open what it already has.
+    """
+    fingerprint_hex = hashlib.sha256(body.code.encode()).hexdigest()
+    slug = f"own-{fingerprint_hex[:24]}-{scope.workspace_id.hex}"
+    existing = await artifacts_repo.get_artifact_by_slug(scope, session, slug)
+    if existing is not None:
+        return _to_artifact(existing)
+
+    program = FrameworkProgram(framework=body.framework, source=body.code)
+    role = program.role
+    if role is ProgramRole.UNKNOWN:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": (
+                    "This source binds neither FINAL_CIRCUIT nor RESULT, so Leona cannot "
+                    "tell what it is or run it. Assign your circuit to FINAL_CIRCUIT, or "
+                    "assign what your program computed to RESULT."
+                ),
+                "reason": "source_role_unknown",
+            },
+        )
+    diagnostics = program.contract_diagnostics(circuit_expected=role is ProgramRole.CIRCUIT)
+    if diagnostics:
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "error": "This source does not satisfy the framework contract.",
+                "reason": "source_contract_failed",
+                "diagnostics": diagnostics[:10],
+            },
+        )
+
+    artifact = await artifacts_repo.create_artifact(
+        scope,
+        session,
+        slug=slug,
+        title=body.title,
+        family=body.family,
+        framework=body.framework,
+        kept=False,
+    )
+    await artifacts_repo.create_version(
+        scope,
+        session,
+        artifact.id,
+        qasm_version=None,
+        qasm=None,
+        metadata={
+            "source": USER_IMPORT_SOURCE,
+            "source_fingerprint": fingerprint_hex,
+            "program_role": role.value,
+            "verification_summary": {
+                "verified": False,
+                "decision": None,
+                "evidence_strength": None,
+                "reason_code": "user_supplied_source_not_verified",
+                "unverified_claims": [
+                    "reported output",
+                    "quantum correctness",
+                    "physical fidelity",
+                    "optimality",
+                    "intent alignment",
+                ],
+            },
+        },
+        code=body.code,
+        code_lang=body.framework.value,
+        fingerprint=fingerprint_hex,
+        export_status=ExportStatus.UNSUPPORTED,
+        export_reason="user-supplied source has no trusted interchange export until it runs",
+        limitations=(
+            "Supplied by you and stored as written. Nothing has been executed, so this "
+            "artifact carries no verification evidence. Open it in Studio and run "
+            "Verify & save to produce some."
         ),
     )
     user, _workspace = identity

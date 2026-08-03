@@ -9,7 +9,7 @@ export {
   type StageState,
 } from "./stage-rail";
 export { VerdictBanner, type Verdict } from "./verdict-banner";
-export { VerificationSummaryPanel, verificationHeadline } from "./verification-summary";
+export { VerificationSummaryPanel, verificationHeadline, verificationVocabulary, type VerificationLocale } from "./verification-summary";
 export {
   AgentActivity,
   type AgentActivityIcon,
