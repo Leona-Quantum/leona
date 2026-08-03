@@ -285,6 +285,27 @@ function qmodOperation(step: BuilderStep): string {
   }
 }
 
+/** Executable source for a drawn circuit, in every framework the canvas offers.
+ *
+ * ## Why every variant ends by binding FINAL_CIRCUIT
+ *
+ * `roles.classify_source` reads what source BINDS to decide what it is. Until
+ * this bound it, the canvas emitted code binding only `qc` (or `circuit`),
+ * which classifies as UNKNOWN — "something this product cannot execute". Every
+ * circuit anyone drew therefore failed `contract_diagnostics` with
+ * "must bind FINAL_CIRCUIT", took the repair path, and went to a language model
+ * to be rewritten: the user's own circuit replaced by a model's guess at it,
+ * which is the exact failure `packages/py/frameworks/.../roles.py` was written
+ * to stop.
+ *
+ * It is not decoration. It is the name the sandbox observes to lift interchange
+ * QASM, and the name `DERIVE_RESULT_FROM_CIRCUIT` needs to let a drawn circuit
+ * report what it found instead of being asked for a RESULT a drawing was never
+ * going to bind.
+ *
+ * `studio-parse` skips this line on the way back in — it is a binding, not a
+ * gate, so the canvas round-trip is unchanged.
+ */
 export function generateBuilderCode(
   steps: BuilderStep[],
   qubitCount: number,
@@ -304,6 +325,9 @@ export function generateBuilderCode(
     `qc = QuantumCircuit(${qubitCount})`,
     ...qiskitLines,
     ...(measured ? ["qc.measure_all()"] : []),
+    // See FINAL_CIRCUIT note above the function.
+    "",
+    "FINAL_CIRCUIT = qc",
   ].join("\n");
 
   const pennylaneLines = ordered.map((step) => pennylaneOperation(step, (qubit) => String(qubit), customGates)).filter(Boolean);
@@ -318,6 +342,10 @@ export function generateBuilderCode(
     "def circuit():",
     ...(pennylaneLines.length ? pennylaneLines.map((line) => `    ${line}`) : ["    pass"]),
     measured ? "    return qml.sample()" : "    return qml.state()",
+    // See FINAL_CIRCUIT note above the function. PennyLane's circuit IS the
+    // QNode, which is what its adapter observes.
+    "",
+    "FINAL_CIRCUIT = circuit",
   ].join("\n");
 
   const cirqLines = ordered.map((step) => cirqOperation(step, (qubit) => `qubits[${qubit}]`, customGates)).filter(Boolean);
@@ -331,6 +359,9 @@ export function generateBuilderCode(
     ...cirqLines.map((line) => `    ${line},`),
     ...(measured ? ["    cirq.measure(*qubits, key=\"result\"),"] : []),
     ")",
+    // See FINAL_CIRCUIT note above the function.
+    "",
+    "FINAL_CIRCUIT = circuit",
   ].join("\n");
 
   const flattened = flattenBuilderSteps(steps, customGates);
