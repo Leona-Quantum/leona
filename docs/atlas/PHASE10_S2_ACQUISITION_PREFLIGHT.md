@@ -44,7 +44,23 @@ qualification and must not be used in an API request handler or executor.
 - the fixed GitHub origin, no-redirect, no-environment-proxy, bounded JSON and
   immutable snapshot tests still pass.
 
-## 3. What is not proven
+## 3. Offline destination policy
+
+The pure `phase10_destination_policy` module now provides the testable policy
+boundary for already-resolved A/AAAA answers. It requires the exact server-
+built `api.github.com:443` destination, rejects the complete answer set if any
+answer is non-global or ambiguous, canonicalizes and bounds the remaining set,
+and allows a peer only when it matches that set within a 60-second validity
+window. Tests include loopback, RFC1918, link-local/metadata, shared, multicast,
+documentation/reserved, unique-local, scoped, bracketed, IPv4-mapped, mixed-
+answer, IPv6 transition/translation, duplicate, over-limit, peer-substitution,
+and expiry cases.
+
+This policy still performs no DNS or socket operation. It does not prove that a
+runtime transport connects to the approved IP while retaining
+`api.github.com` for TLS SNI, certificate, and Host validation.
+
+## 4. What is not proven
 
 - there is no separately deployed Phase 10 fetcher identity;
 - the live client does not yet validate and pin every A/AAAA answer;
@@ -55,7 +71,7 @@ qualification and must not be used in an API request handler or executor.
 - an explicit enum is an audit/control aid, not a security boundary against
   arbitrary Python code in the same trusted process.
 
-## 4. Tests
+## 5. Tests
 
 Targeted validation after the change:
 
@@ -70,11 +86,10 @@ The new constructor tests verify the three fail-closed cases above. Normal CI
 continues to use inert `httpx.MockTransport` fixtures and performs no new
 external fetch.
 
-## 5. S2 exit status
+## 6. S2 exit status
 
-S2 is **not complete**. The next permitted network work is a design and
-recorded-response implementation of destination classification. The selected-
-file retrieval-manifest contract is now implemented as the pure, offline
+S2 is **not complete**. The selected-file retrieval-manifest contract is now
+implemented as the pure, offline
 `phase10_retrieval_manifest` module. It:
 
 - accepts only an immutable 40- or 64-hex commit identity;
@@ -94,7 +109,8 @@ remains blocked until:
 
 1. S0/S1 are accepted;
 2. a separate fetcher workload identity and route are selected;
-3. DNS validation/connection pinning passes hostile tests;
+3. the approved runtime transport demonstrably connects to a validated answer
+   while retaining the fixed TLS identity, and live hostile probes pass;
 4. quarantine and credential-separation decisions are approved;
 5. the retrieval manifest is wired to an approved connector and the private
    quarantine round trip is independently verified.

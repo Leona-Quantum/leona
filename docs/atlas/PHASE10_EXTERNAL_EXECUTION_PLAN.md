@@ -428,6 +428,11 @@ contract with canonical SHA-256 evidence, immutable-ref enforcement, strict
 text/path/size bounds, and adversarial round-trip tests. The contract performs
 no I/O and does not satisfy the S2 network or deployment exit gates by itself.
 
+An offline destination policy also rejects any A/AAAA set containing a
+non-global or ambiguous address and binds peer authorization to the canonical
+answer set for 60 seconds. It does not perform DNS or socket I/O; connection
+pinning and TLS-identity preservation remain unqualified live controls.
+
 Request the S0 owner security decision and review the S1 baseline. Until those
 are recorded, only recorded-response acquisition design, inert hostile-fixture
 specification, schema, and documentation work may continue. Fetching or
