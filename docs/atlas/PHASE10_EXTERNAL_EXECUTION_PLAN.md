@@ -200,6 +200,13 @@ publish.
 
 Store fetched bytes outside Postgres and outside the application filesystem.
 
+Offline preflight now exists in `phase10_quarantine_contract`: it derives
+workspace-scoped opaque locators and internal object keys from selected-file
+SHA-256 values, binds them to the complete acquisition-result digest, and
+verifies already-read bytes by length and digest. It performs no storage I/O
+and does not select or configure a provider. See
+`PHASE10_S3_QUARANTINE_PREFLIGHT.md`.
+
 Required controls:
 
 - private bucket/object store, public access prevention, encryption, retention,
