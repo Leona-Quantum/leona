@@ -118,32 +118,3 @@ test("an unmeasured Qmod model synthesizes without an execution call", () => {
   // No angles used, so Classiq's symbolic pi is not imported.
   assert.doesNotMatch(generated.qmod, /symbolic import pi/);
 });
-
-test("every executable variant names what it built, so the canvas is not UNKNOWN", () => {
-  // `roles.classify_source` reads what source BINDS. Source binding only `qc`
-  // is UNKNOWN — "something this product cannot execute" — so before this,
-  // every drawn circuit failed its execution contract and was handed to a model
-  // to be rewritten. The round-trip tests cannot catch a regression here: the
-  // parser skips this line, so they pass whether or not it is emitted.
-  const steps: BuilderStep[] = [
-    { id: "a", gate: "H", qubits: [0] },
-    { id: "b", gate: "CX", qubits: [0, 1] },
-    { id: "c", gate: "M", qubits: [0] },
-  ];
-  const code = generateBuilderCode(steps, 2);
-
-  assert.match(code.qiskit, /^FINAL_CIRCUIT = qc$/m, "qiskit must bind FINAL_CIRCUIT");
-  assert.match(code.cirq, /^FINAL_CIRCUIT = circuit$/m, "cirq must bind FINAL_CIRCUIT");
-  assert.match(code.pennylane, /^FINAL_CIRCUIT = circuit$/m, "pennylane must bind FINAL_CIRCUIT");
-});
-
-test("an unmeasured circuit binds FINAL_CIRCUIT too", () => {
-  // A circuit with no measurement is a legitimate thing to publish, and it is
-  // the case that most needs the binding: it cannot be sampled, so its only
-  // route to a result is the statevector the sandbox reads off FINAL_CIRCUIT.
-  const code = generateBuilderCode([{ id: "a", gate: "H", qubits: [0] }], 1);
-
-  assert.match(code.qiskit, /^FINAL_CIRCUIT = qc$/m);
-  assert.match(code.cirq, /^FINAL_CIRCUIT = circuit$/m);
-  assert.match(code.pennylane, /^FINAL_CIRCUIT = circuit$/m);
-});

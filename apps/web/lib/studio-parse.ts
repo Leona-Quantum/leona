@@ -184,11 +184,6 @@ function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {
   const steps: BuilderStep[] = [];
   for (const line of lines) {
     if (/^(from|import)\s/.test(line)) continue;
-    // The generator's own name for what it built. Skipped BEFORE the
-    // post-measurement guard on purpose: it is emitted last, after
-    // `measure_all()`, and it is a binding rather than a gate — nothing is
-    // applied to the circuit by naming it.
-    if (/^FINAL_CIRCUIT\s*=\s*qc$/.test(line)) continue;
     if (measured) return null;
     const circuit = /^qc\s*=\s*QuantumCircuit\((\d+)\)$/.exec(line);
     if (circuit) { qubitCount = Number(circuit[1]); continue; }
@@ -226,9 +221,6 @@ function parsePennylane(lines: string[]): ParsedBuilderCircuit | null {
   const steps: BuilderStep[] = [];
   for (const line of lines) {
     if (/^(from|import)\s/.test(line)) continue;
-    // A binding, not a gate — see `generateBuilderCode`. Skipped before the
-    // guard below because it is emitted last, after the return.
-    if (/^FINAL_CIRCUIT\s*=\s*circuit$/.test(line)) continue;
     if (returnedSeen) return null;
     if (/^@qml\.qnode\(/.test(line) || /^def\s+\w+\(\s*\)\s*:/.test(line)) continue;
     const device = /^dev\s*=\s*qml\.device\(\s*["']default\.qubit["']\s*,\s*wires\s*=\s*(\d+)/.exec(line);
@@ -285,9 +277,6 @@ function parseCirq(lines: string[]): ParsedBuilderCircuit | null {
   for (const rawLine of lines) {
     const line = rawLine.replace(/,$/, "");
     if (/^(from|import)\s/.test(line)) continue;
-    // A binding, not a gate — see `generateBuilderCode`. Skipped before the
-    // guard below because it is emitted last, after the closing paren.
-    if (/^FINAL_CIRCUIT\s*=\s*circuit$/.test(line)) continue;
     if (closed) return null;
     if (/^circuit\s*=\s*cirq\.Circuit\($/.test(line)) continue;
     if (/^circuit\s*=\s*cirq\.Circuit\(\)$/.test(line)) { closed = true; continue; }
