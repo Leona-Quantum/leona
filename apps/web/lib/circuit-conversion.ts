@@ -134,6 +134,18 @@ type QasmRegister = {
   size: number;
 };
 
+type StaticCustomGate = {
+  parameters: string[];
+  qubits: string[];
+  body: QasmInvocation[];
+};
+
+type QasmInvocation = {
+  name: string;
+  params: string[];
+  operands: string[];
+};
+
 const DIRECT_STANDARD_GATES: Record<string, StandardGate> = {
   h: "H",
   x: "X",
@@ -156,17 +168,22 @@ const ANGLE = /^-?(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/
 
 /**
  * Translate the static OpenQASM 3 standard-gate subset into the Studio's
- * seven target emitters. This deliberately excludes control flow, custom gate
- * bodies, multiple named registers, and symbolic expressions: emitting a
- * target-language-looking approximation for those would be less honest than
- * leaving the original source visible.
+ * seven target emitters. Qiskit's exporter wraps some otherwise-supported
+ * gates (notably bound RZZ gates) in static custom definitions, so accept the
+ * narrow form whose body contains only known standard-gate calls. Control flow,
+ * nested custom calls, multiple named registers, and symbolic expressions stay
+ * outside the subset: emitting a target-language-looking approximation for
+ * those would be less honest than leaving the original source visible.
  */
 function parseOpenQasm3StandardGates(code: string): StandardQasmParse | null {
-  const lines = code
+  const sourceLines = code
     .replace(/\/\*[\s\S]*?\*\//g, "")
     .split(/\r?\n/)
     .map((line) => line.replace(/\/\/.*$/, "").trim())
     .filter(Boolean);
+  const extracted = extractStaticCustomGates(sourceLines);
+  if (!extracted) return null;
+  const { lines, gates: customGates } = extracted;
   const steps: BuilderStep[] = [];
   let qubitRegister: QasmRegister | null = null;
   let bitRegister: QasmRegister | null = null;
@@ -241,6 +258,28 @@ function parseOpenQasm3StandardGates(code: string): StandardQasmParse | null {
     const control = /^ctrl\s*@\s*(.+)$/.exec(line);
     const invocation = parseQasmInvocation(control?.[1] ?? line);
     if (!invocation) return null;
+    const customGate = control ? null : customGates.get(invocation.name);
+    if (customGate) {
+      if (invocation.params.length !== customGate.parameters.length || invocation.operands.length !== customGate.qubits.length) return null;
+      const operands = invocation.operands.map((operand) => resolveQasmOperand(operand, activeQubitRegister));
+      if (operands.some((operand) => !operand)) return null;
+      const applications = broadcastQasmOperands(operands as number[][]);
+      if (!applications || applications.some((application) => application.length !== customGate.qubits.length)) return null;
+      const parameterBindings = new Map(customGate.parameters.map((parameter, index) => [parameter, invocation.params[index]]));
+      for (const application of applications) {
+        const qubitBindings = new Map(customGate.qubits.map((qubit, index) => [qubit, application[index]]));
+        for (const bodyInvocation of customGate.body) {
+          const bodyQubits = bodyInvocation.operands.map((operand) => qubitBindings.get(operand));
+          if (bodyQubits.some((qubit) => qubit === undefined)) return null;
+          const bodyParams = bodyInvocation.params.map((param) => parameterBindings.get(param) ?? param);
+          const result = appendStandardGate(bodyInvocation.name, bodyParams, bodyQubits as number[], emit);
+          if (result === null) return null;
+          operationSeen = true;
+        }
+      }
+      usedDecomposition = true;
+      continue;
+    }
     const gateName = control ? controlledGateName(invocation.name) : invocation.name;
     if (!gateName) return null;
     const operands = invocation.operands.map((operand) => resolveQasmOperand(operand, activeQubitRegister));
@@ -345,13 +384,68 @@ export function parseInterchangeCircuit(
   return result.kind === "ok" ? result.circuit : null;
 }
 
-function parseQasmInvocation(line: string): { name: string; params: string[]; operands: string[] } | null {
+function parseQasmInvocation(line: string): QasmInvocation | null {
   const match = /^([A-Za-z_]\w*)(?:\(([^()]*)\))?\s+(.+)\s*;$/.exec(line);
   if (!match) return null;
   const params = match[2] === undefined ? [] : splitQasmList(match[2]);
   const operands = splitQasmList(match[3]);
   if (!params || !operands?.length) return null;
   return { name: match[1].toLowerCase(), params, operands };
+}
+
+/**
+ * Pull out the exporter-shaped custom gates before parsing the main program.
+ * A definition is accepted only when every body operation is already in the
+ * bounded standard-gate vocabulary and every operand names a formal qubit.
+ * This keeps the importer non-recursive and prevents arbitrary OpenQASM from
+ * being mistaken for an editable circuit.
+ */
+function extractStaticCustomGates(lines: string[]): { lines: string[]; gates: Map<string, StaticCustomGate> } | null {
+  const programLines: string[] = [];
+  const gates = new Map<string, StaticCustomGate>();
+
+  for (let index = 0; index < lines.length; index += 1) {
+    const line = lines[index];
+    if (!/^gate\b/i.test(line)) {
+      programLines.push(line);
+      continue;
+    }
+
+    const header = /^gate\s+([A-Za-z_]\w*)(?:\(([^()]*)\))?\s+([A-Za-z_]\w*(?:\s*,\s*[A-Za-z_]\w*)*)\s*\{$/i.exec(line);
+    if (!header || gates.size >= MAX_VIEWABLE_STEPS) return null;
+    const name = header[1].toLowerCase();
+    const parameters = header[2] === undefined || header[2].trim() === "" ? [] : splitQasmList(header[2]);
+    const qubits = splitQasmList(header[3]);
+    if (!parameters || !qubits || gates.has(name)) return null;
+    const formalNames = [...parameters, ...qubits];
+    if (!formalNames.every((value) => /^[A-Za-z_]\w*$/.test(value)) || new Set(formalNames).size !== formalNames.length) return null;
+
+    const body: QasmInvocation[] = [];
+    let closed = false;
+    while (++index < lines.length) {
+      const bodyLine = lines[index];
+      if (bodyLine === "}") {
+        closed = true;
+        break;
+      }
+      if (/[{}]/.test(bodyLine) || body.length >= MAX_VIEWABLE_STEPS) return null;
+      const invocation = parseQasmInvocation(bodyLine);
+      const arity = invocation ? gateArity(invocation.name) : null;
+      if (!invocation || !arity || invocation.operands.length !== arity) return null;
+      if (invocation.operands.some((operand) => !qubits.includes(operand))) return null;
+      if (invocation.params.some((param) => !parameters.includes(param) && !ANGLE.test(param.replaceAll(/\s+/g, "")))) return null;
+      body.push(invocation);
+    }
+    if (!closed || body.length === 0) return null;
+    gates.set(name, { parameters, qubits, body });
+  }
+
+  // Definitions may appear in any order. Validate after collecting every name
+  // so a call to a later (or shadowing) custom gate cannot slip through as a
+  // standard operation and be expanded with the wrong semantics.
+  if ([...gates.values()].some((gate) => gate.body.some((invocation) => gates.has(invocation.name)))) return null;
+
+  return { lines: programLines, gates };
 }
 
 function splitQasmList(value: string): string[] | null {

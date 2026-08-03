@@ -552,8 +552,13 @@ class QiskitAdapter(PythonFrameworkAdapter):
         if not circuit_expected:
             return ""
         return """_majorana_interchange_dumps = None
+_majorana_interchange_transpile = None
 try:
     from qiskit.qasm3 import dumps as _majorana_interchange_dumps
+except Exception:
+    pass
+try:
+    from qiskit import transpile as _majorana_interchange_transpile
 except Exception:
     pass
 """ + (_QISKIT_NATIVE_SETUP if collect_native_evidence else "")
@@ -581,7 +586,55 @@ else:
         if _majorana_interchange_dumps is not None:
             _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_final_circuit)
     except _majorana_exception as _majorana_interchange_exc:
-        _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
+        # Qiskit's exporter cannot serialize some valid library instructions
+        # directly. DiagonalGate is the common optimization case: its complex
+        # phase vector is executable but not a legal OpenQASM parameter. Retry
+        # with a deterministic universal basis so optional interchange remains
+        # available without rewriting the authoritative framework source.
+        #
+        # Keep the retry bounded. A general wide UnitaryGate expands
+        # exponentially and this observer shares the sandbox's execution
+        # budget; optional export must never turn a successful run into a
+        # timeout. Diagonal decompositions are O(2**n), so ten wires is already
+        # about two thousand primitive operations. Other non-directive
+        # instructions wider than four wires fail closed.
+        _majorana_interchange_can_decompose = (
+            _majorana_interchange_transpile is not None
+            and _majorana_len(_majorana_final_circuit.data) <= 512
+        )
+        if _majorana_interchange_can_decompose:
+            for _majorana_instruction in _majorana_final_circuit.data:
+                _majorana_operation = _majorana_instruction.operation
+                _majorana_width = _majorana_len(_majorana_instruction.qubits)
+                if _majorana_getattr(_majorana_operation, "_directive", False):
+                    continue
+                if _majorana_width <= 4:
+                    continue
+                if _majorana_str(_majorana_operation.name) == "diagonal" and _majorana_width <= 10:
+                    continue
+                _majorana_interchange_can_decompose = False
+                break
+        if _majorana_interchange_can_decompose:
+            try:
+                _majorana_interchange_circuit = _majorana_interchange_transpile(
+                    _majorana_final_circuit,
+                    basis_gates=["rx", "ry", "rz", "cx"],
+                    optimization_level=0,
+                    seed_transpiler=42,
+                )
+                if _majorana_len(_majorana_interchange_circuit.data) > 4096:
+                    raise _majorana_builtins.ValueError("interchange decomposition exceeds limit")
+                _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(
+                    _majorana_interchange_circuit
+                )
+            except _majorana_exception as _majorana_fallback_exc:
+                _majorana_observation["interchange_error"] = _majorana_type(
+                    _majorana_fallback_exc
+                ).__name__
+        else:
+            _majorana_observation["interchange_error"] = _majorana_type(
+                _majorana_interchange_exc
+            ).__name__
     try:
         _majorana_ops = {{_majorana_str(k): _majorana_int(v) for k, v in _majorana_final_circuit.count_ops().items()}}
         # Compiler directives are not gates. `barrier` carries no physical action,
