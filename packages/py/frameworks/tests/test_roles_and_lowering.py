@@ -29,6 +29,7 @@ from majorana_frameworks.roles import (
     RESULT_NAME,
     ProgramRole,
     classify_source,
+    is_python_source,
     result_was_derived,
 )
 
@@ -79,6 +80,32 @@ def test_source_binding_neither_name_is_unknown_and_is_not_guessed():
     # Not CIRCUIT. Unparseable source binds nothing this module can see, and
     # `contract_diagnostics` already refuses it by name with a better message.
     assert classify_source("FINAL_CIRCUIT = (((") is ProgramRole.UNKNOWN
+
+
+def test_unknown_has_two_meanings_and_a_lenient_caller_must_tell_them_apart():
+    """A circuit that forgot to say what it built is repairable source. A record
+    of an operator, written in English, is not source at all.
+
+    `import-public` needs the difference: refusing every UNKNOWN would have taken
+    276 of the 283 live catalog entries out of the Library, because those rows
+    predate the binding fix. It refuses the prose and files the circuit.
+    """
+    forgot_the_binding = "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h(0)"
+    a_record = (
+        "OPERATOR: Fermionic annihilation operator\n"
+        "REPRESENTATIVE FORM: a_p\n\n"
+        "This is a mathematical operator record, not an executable circuit."
+    )
+
+    assert classify_source(forgot_the_binding) is ProgramRole.UNKNOWN
+    assert classify_source(a_record) is ProgramRole.UNKNOWN
+    assert is_python_source(forgot_the_binding) is True
+    assert is_python_source(a_record) is False
+
+    # Empty source parses, and binds nothing. UNKNOWN, but it IS Python — the
+    # distinction is "does this parse", not "is this useful".
+    assert is_python_source("") is True
+    assert is_python_source("FINAL_CIRCUIT = (((") is False
 
 
 def test_a_binding_the_naive_scan_would_miss_still_counts():

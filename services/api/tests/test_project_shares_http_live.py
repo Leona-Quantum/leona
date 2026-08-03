@@ -905,7 +905,7 @@ async def test_a_public_record_that_is_not_a_circuit_never_reaches_the_vault(sta
         },
     )
     assert response.status_code == 422, response.text
-    assert response.json()["reason"] == "public_source_role_unknown"
+    assert response.json()["reason"] == "public_source_not_executable_code"
 
     async with stage["factory"]() as session:
         after = await artifacts_repo.count_kept_against_quota(alice.scope, session)

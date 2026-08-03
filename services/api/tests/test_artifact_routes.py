@@ -248,8 +248,70 @@ async def test_a_public_record_that_is_not_a_circuit_is_refused_not_filed(scope,
         )
 
     assert excinfo.value.status_code == 422
-    assert excinfo.value.detail["reason"] == "public_source_role_unknown"
+    assert excinfo.value.detail["reason"] == "public_source_not_executable_code"
     assert filed == [], "a record this product cannot run must not reach the Vault"
+
+
+async def test_a_public_circuit_missing_its_binding_is_still_filed(scope, monkeypatch):
+    """Deliberately permissive, and it is the coupling that makes it so.
+
+    The catalog rows in production were imported before the source fix, so 189 of
+    283 still bind neither name. Refusing `ProgramRole.UNKNOWN` here — which is
+    what `import-source` does — took the entire repository out of the Library:
+    measured against the live catalog, 276 of 283 entries were refused.
+
+    So the gate refuses source that is not Python at all (prose records, which are
+    not circuits anyone can run either way) and files a circuit that merely forgot
+    to say what it built. **Widen it to the full UNKNOWN check the day the catalog
+    rows carry the bindings the manifest already has** — this test is what will
+    fail then, and its failure is the signal, not a regression.
+    """
+    created = []
+
+    async def get_by_slug(*_args):
+        return None
+
+    async def create_artifact(*_args, **_kwargs):
+        created.append("created")
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def create_version(*_args, **_kwargs):
+        return None
+
+    async def keep_artifact(_scope, _session, artifact_id, **_values):
+        return SimpleNamespace(id=artifact_id)
+
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "get_artifact_by_slug", get_by_slug)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "keep_artifact", keep_artifact)
+    monkeypatch.setattr(artifact_routes, "_to_artifact", lambda row: row.id)
+
+    body = artifact_routes.ImportPublicArtifactRequest(
+        source_slug="bell-state-qiskit",
+        title="Bell state",
+        family="bell",
+        framework=Framework.QISKIT,
+        # Exactly what the live catalog holds today: real Qiskit, no binding.
+        code="from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)",
+        code_lang="python",
+        source_url="https://example.test/reference",
+        source_title="Bell state",
+        source_license="Apache-2.0",
+        introduction="Introduction",
+        explanation="Explanation",
+        verification="Source description only",
+        export_status=ExportStatus.DOWNLOAD_ONLY,
+    )
+
+    await artifact_routes.import_public_artifact(
+        body,
+        scope,
+        object(),
+        (User(email="importer@example.com", plan=None), object()),
+        _settings(),
+    )
+    assert created == ["created"], "a published circuit missing its binding must still file today"
 
 
 # --- version history ---------------------------------------------------------
