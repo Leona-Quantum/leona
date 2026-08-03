@@ -249,26 +249,11 @@ def _file_from_descriptor(value: Any) -> RetrievedFileEvidence:
 
 
 def _validate_manifest_fields(manifest: Phase10RetrievalManifest) -> None:
-    if (
-        not isinstance(manifest.repository_id, int)
-        or isinstance(manifest.repository_id, bool)
-        or manifest.repository_id <= 0
-    ):
-        raise Phase10RetrievalManifestError("invalid_retrieval_repository_id")
-    if not isinstance(manifest.full_name, str) or not _FULL_NAME_RE.fullmatch(manifest.full_name):
-        raise Phase10RetrievalManifestError("invalid_retrieval_repository_name")
-    owner, repository = manifest.full_name.split("/", 1)
-    if (
-        len(owner) > MAX_REPOSITORY_OWNER_LENGTH
-        or len(repository) > MAX_REPOSITORY_NAME_LENGTH
-        or "--" in owner
-        or repository in {".", ".."}
-    ):
-        raise Phase10RetrievalManifestError("invalid_retrieval_repository_name")
-    if not isinstance(manifest.immutable_ref, str) or not _COMMIT_RE.fullmatch(
-        manifest.immutable_ref
-    ):
-        raise Phase10RetrievalManifestError("mutable_or_invalid_retrieval_ref")
+    validate_phase10_repository_coordinate(
+        repository_id=manifest.repository_id,
+        full_name=manifest.full_name,
+        immutable_ref=manifest.immutable_ref,
+    )
     _parse_canonical_timestamp(manifest.fetched_at)
     if manifest.fetcher_version != RETRIEVAL_FETCHER_VERSION:
         raise Phase10RetrievalManifestError("unsupported_retrieval_fetcher_version")
@@ -282,16 +267,53 @@ def _validate_manifest_fields(manifest: Phase10RetrievalManifest) -> None:
         raise Phase10RetrievalManifestError("empty_retrieval_manifest")
     if len(manifest.files) > MAX_SELECTED_FILES:
         raise Phase10RetrievalManifestError("retrieval_file_count_exceeded")
-    paths = []
+    paths = tuple(item.selected_path for item in manifest.files)
+    validate_phase10_selected_paths(paths)
     for item in manifest.files:
         _validate_file_evidence(item)
-        paths.append(item.selected_path)
-    if paths != sorted(paths):
+    if manifest.selected_total_bytes > MAX_SELECTED_TOTAL_BYTES:
+        raise Phase10RetrievalManifestError("retrieval_total_bytes_exceeded")
+
+
+def validate_phase10_repository_coordinate(
+    *,
+    repository_id: int,
+    full_name: str,
+    immutable_ref: str,
+) -> None:
+    """Validate the immutable repository identity shared by request/evidence."""
+
+    if not isinstance(repository_id, int) or isinstance(repository_id, bool) or repository_id <= 0:
+        raise Phase10RetrievalManifestError("invalid_retrieval_repository_id")
+    if not isinstance(full_name, str) or not _FULL_NAME_RE.fullmatch(full_name):
+        raise Phase10RetrievalManifestError("invalid_retrieval_repository_name")
+    owner, repository = full_name.split("/", 1)
+    if (
+        len(owner) > MAX_REPOSITORY_OWNER_LENGTH
+        or len(repository) > MAX_REPOSITORY_NAME_LENGTH
+        or "--" in owner
+        or repository in {".", ".."}
+    ):
+        raise Phase10RetrievalManifestError("invalid_retrieval_repository_name")
+    if not isinstance(immutable_ref, str) or not _COMMIT_RE.fullmatch(immutable_ref):
+        raise Phase10RetrievalManifestError("mutable_or_invalid_retrieval_ref")
+
+
+def validate_phase10_selected_paths(paths: tuple[str, ...]) -> None:
+    """Validate a non-empty, canonical selected-path set without source bytes."""
+
+    if not isinstance(paths, tuple):
+        raise Phase10RetrievalManifestError("invalid_retrieval_paths")
+    if not paths:
+        raise Phase10RetrievalManifestError("empty_retrieval_manifest")
+    if len(paths) > MAX_SELECTED_FILES:
+        raise Phase10RetrievalManifestError("retrieval_file_count_exceeded")
+    for path in paths:
+        _validate_selected_path(path)
+    if paths != tuple(sorted(paths)):
         raise Phase10RetrievalManifestError("noncanonical_retrieval_file_order")
     if len(paths) != len(set(paths)):
         raise Phase10RetrievalManifestError("duplicate_retrieval_path")
-    if manifest.selected_total_bytes > MAX_SELECTED_TOTAL_BYTES:
-        raise Phase10RetrievalManifestError("retrieval_total_bytes_exceeded")
 
 
 def _validate_file_evidence(item: RetrievedFileEvidence) -> None:

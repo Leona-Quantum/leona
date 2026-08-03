@@ -167,6 +167,24 @@ Required controls:
   length, SHA-256, fetcher version, policy version, and timestamp;
 - logs redact credentials, signed URLs, query values, and source contents.
 
+Implemented offline preflight contracts:
+
+- `phase10_destination_policy` validates a complete, bounded A/AAAA answer set
+  and later peer membership without performing DNS or socket I/O;
+- `phase10_acquisition_contract` accepts only a known repository identity,
+  immutable commit, and canonical selected paths; it fixes the connector,
+  operation, `api.github.com:443` destination, policy, and canonical request
+  digest, then binds the request to short-lived destination evidence;
+- `phase10_retrieval_manifest` records bounded UTF-8 file evidence and verifies
+  the exact repository, commit, selected path set, byte length, and SHA-256;
+- no contract accepts a URL, header, credential, proxy, redirect, command,
+  entrypoint, parser, import action, publication action, or execution action.
+
+These contracts do not authorize or perform live acquisition. The future
+transport must still prove DNS-to-peer pinning with the fixed TLS identity,
+one-time job/replay state, credential separation, redacted logging, and
+quarantine delivery.
+
 Exit gate: adversarial network tests pass and the connector cannot execute or
 publish.
 

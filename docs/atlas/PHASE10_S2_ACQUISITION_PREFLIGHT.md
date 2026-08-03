@@ -71,7 +71,37 @@ runtime transport connects to the approved IP while retaining
 - an explicit enum is an audit/control aid, not a security boundary against
   arbitrary Python code in the same trusted process.
 
-## 5. Tests
+## 5. Offline acquisition authorization contract
+
+The pure `phase10_acquisition_contract` module now closes the request-shape
+gap between source intent, destination evidence, and retrieval evidence. A
+request can contain only:
+
+```text
+known repository id and full name
+immutable 40/64-hex commit
+bounded canonical selected paths
+canonical UTC request time
+fixed connector / operation / policy identifiers
+```
+
+It cannot carry a URL, header, credential, proxy, redirect, port, command, or
+entrypoint. The source host and port are always `api.github.com:443`, and the
+only declared operation is selected repository content at the exact commit.
+The canonical request is SHA-256 bound.
+
+A separate authorization object binds that request to the short-lived,
+validated destination evidence. A later retrieval manifest is accepted only
+when repository id, repository name, commit, complete selected-path set, and
+time window match exactly. Both direct construction and serialized round trips
+are fail-closed; unknown fields and self-consistent attempts to change the
+connector, operation, host, or port are rejected.
+
+This does not perform DNS, network, TLS, filesystem, database, quarantine, or
+replay-state operations. A production connector must enforce one-time job
+state and connection pinning outside this pure contract.
+
+## 6. Tests
 
 Targeted validation after the change:
 
@@ -82,11 +112,13 @@ Phase 9 private dry-run helpers
 Phase 10 threat-model validator
 ```
 
-The new constructor tests verify the three fail-closed cases above. Normal CI
-continues to use inert `httpx.MockTransport` fixtures and performs no new
-external fetch.
+The new tests verify the fail-closed client modes, hostile destination classes,
+canonical request/authorization round trips, transport-field injection,
+digest tampering, mutable refs, unsafe/duplicate paths, repository/commit/path
+substitution, pre-request evidence, and expired DNS evidence. Normal CI uses
+inert fixtures and performs no new external fetch.
 
-## 6. S2 exit status
+## 7. S2 exit status
 
 S2 is **not complete**. The selected-file retrieval-manifest contract is now
 implemented as the pure, offline
@@ -103,9 +135,9 @@ implemented as the pure, offline
 - contains no network, database, filesystem, parser, import, publish, or
   execution operation.
 
-This contract is evidence plumbing only. It is not a connector, and it does
-not make the current metadata client a Phase 10 fetcher. Live deployment
-remains blocked until:
+The retrieval and acquisition contracts are evidence plumbing only. They are
+not a connector, and they do not make the current metadata client a Phase 10
+fetcher. Live deployment remains blocked until:
 
 1. S0/S1 are accepted;
 2. a separate fetcher workload identity and route are selected;
