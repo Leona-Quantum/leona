@@ -305,6 +305,16 @@ Define a versioned policy object and its SHA-256. It includes:
 - source/input/result binding requirements;
 - failure taxonomy and retry policy.
 
+An offline fail-closed contract now exists in `phase10_execution_policy`.  It
+canonically binds a digest-only OCI index reference, required `linux/amd64`
+platform, fixed Atlas launcher/protocol surface, proposed sandbox class, the
+complete limit set, deny-all network/no-credential policies, deterministic
+controls, binding rules, failure taxonomy and retry policy.  It also derives a
+source-specific qualification-identity candidate from the exact repository
+commit, S2/S5/S6 evidence and policy digest.  Both objects remain explicitly
+`unqualified`; the client selection schema exposes no individual enforcement
+parameter.  See `PHASE10_S7_EXECUTION_POLICY_PREFLIGHT.md`.
+
 Exit gate: clients can choose only an approved qualification identity, never
 individual enforcement parameters.
 
