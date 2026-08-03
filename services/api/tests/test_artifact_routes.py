@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from majorana_contracts.enums import ExportStatus, Framework
+from pydantic import ValidationError
 
 from majorana_api.orm import User
 from majorana_api.routes import artifacts as artifact_routes
@@ -629,3 +630,25 @@ async def test_two_workspaces_importing_identical_bytes_get_separate_artifacts(s
 
     assert first_slug != captured["slug"]
     assert scope.workspace_id.hex in first_slug
+
+
+@pytest.mark.parametrize("blank", ["   ", "\n\n", "\t", " \n \t "])
+def test_source_that_is_only_whitespace_is_a_bad_request_not_a_crash(blank):
+    """`min_length=1` admits a single space and `FrameworkProgram` raises on one.
+    Unhandled, that is a 500 for what is plainly a bad request — and a 500 is the
+    one response that tells the caller nothing about what to fix."""
+    with pytest.raises(ValidationError):
+        artifact_routes.ImportOwnSourceRequest(
+            title="Blank", framework=Framework.QISKIT, code=blank
+        )
+
+
+def test_source_with_leading_whitespace_is_kept_byte_for_byte():
+    """Only *entirely* blank is refused. Indentation is meaningful in Python and
+    the route's promise is that it stores what you wrote."""
+    indented = "  \nFINAL_CIRCUIT = build()\n"
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="Indented", framework=Framework.QISKIT, code=indented
+    )
+
+    assert body.code == indented
