@@ -1256,6 +1256,10 @@ deterministic baselineのprecision/recall/evidence locator accuracyを測定す�
 
 ## Phase 9 — LLM-assisted extraction and reviewed materialization
 
+Status: S0〜S12はcode/private-schema境界で完了。Human reviewは
+`owner_waived`でスキップ可能だが、独立review済みとは表示せず、公開・科学・性能主張は
+fail-closedのまま維持する。
+
 LLMはdeterministic baseline後にのみ追加する。
 
 - no tools/network/secrets

@@ -1,0 +1,125 @@
+{
+  "schema_version": "atlas.phase9.incremental_release_audit.v1",
+  "audit_date": "2026-08-04",
+  "classification": "code_and_private_schema_requalification_not_scientific_result",
+  "supersedes": {
+    "path": "docs/atlas/evidence/phase9/release_audit_2026-08-03.json",
+    "sha256": "cbc054afe2ab1cc98f20f51b4cc724beb50607d7285c0a6fbdfddcdc38dc5eb5",
+    "reason": "incremental requalification after synchronizing the feature branch with the latest dev migration and product changes"
+  },
+  "audited_source": {
+    "commit": "d49eb19f43ec14faae1ef3e68f341f526a503d7c",
+    "origin_dev_commit": "c5e36b9c653ab1bc54aa476d7e04d94d3468ca87",
+    "origin_dev_divergence": {
+      "behind": 0,
+      "feature_only_commits": 179
+    },
+    "merge_conflict_check": "passed",
+    "feature_branch_push": "passed"
+  },
+  "github_ci": {
+    "standard": {
+      "run_id": 30826945916,
+      "url": "https://github.com/EshMis/majorana/actions/runs/30826945916",
+      "head_sha": "d49eb19f43ec14faae1ef3e68f341f526a503d7c",
+      "conclusion": "success",
+      "jobs": {
+        "py": "success",
+        "ts": "success",
+        "db": "success",
+        "ui_visual": "success"
+      }
+    },
+    "vqe_production_e2e": {
+      "run_id": 30826950904,
+      "url": "https://github.com/EshMis/majorana/actions/runs/30826950904",
+      "head_sha": "d49eb19f43ec14faae1ef3e68f341f526a503d7c",
+      "conclusion": "success",
+      "job": "workos-contract-postgres-oci",
+      "scope": "owner-waived private H2 workflow and approved digest-pinned OCI runtimes"
+    }
+  },
+  "local_gates": {
+    "alembic_up_down_up": "passed",
+    "alembic_heads": [
+      "0054"
+    ],
+    "phase9_db_free_contracts": {
+      "passed": 53
+    },
+    "phase9_live_private_transactions": {
+      "passed": 3
+    },
+    "python_full": {
+      "passed": 2502,
+      "skipped": 405
+    },
+    "web_tests": {
+      "passed": 505
+    },
+    "next_production_build": {
+      "status": "passed",
+      "routes_generated": 338
+    },
+    "ruff_check": "passed",
+    "ruff_format_check": {
+      "status": "passed",
+      "files": 503
+    },
+    "typecheck": "passed",
+    "import_linter": {
+      "kept": 5,
+      "broken": 0
+    },
+    "raw_query_scan": "passed",
+    "generated_openapi": "current",
+    "phase9_offline_evaluation": "current"
+  },
+  "phase9_steps": {
+    "s0_threat_claim_spending_boundary": "complete",
+    "s1_versioned_candidate_envelope": "complete",
+    "s2_prompt_data_isolation": "complete",
+    "s3_bounded_input_assembler": "complete",
+    "s4_response_validator": "complete",
+    "s5_adversarial_prompt_injection_corpus": "complete",
+    "s6_offline_contract_evaluation": "complete",
+    "s7_owner_approved_private_dry_run": "complete_once",
+    "s8_private_append_only_persistence": "complete",
+    "s9_review_queue_mechanism": "complete",
+    "s10_reviewed_materialization_mechanism": "complete",
+    "s11_controlled_private_integration_e2e": "complete",
+    "s12_release_audit": "complete_for_code_and_private_schemas"
+  },
+  "human_review_boundary": {
+    "phase_completion_policy": "owner_waived_private_qualification",
+    "independent_human_review_required_for_this_code_phase": false,
+    "independent_human_review_claimed": false,
+    "s7_live_candidate_review_state": "unreviewed",
+    "synthetic_review_fixture_used_for_transaction_qualification": true,
+    "owner_waiver_relabelled_as_independent_review": false
+  },
+  "scientific_and_release_boundaries": {
+    "new_provider_call_performed_during_requalification": false,
+    "public_candidate_data_released": false,
+    "public_execution_enabled": false,
+    "s7_candidate_accepted": false,
+    "s7_candidate_materialized": false,
+    "independent_scientific_review_claimed": false,
+    "llm_extraction_quality_claimed": false,
+    "scientific_correctness_claimed": false,
+    "compatibility_claimed": false,
+    "performance_claimed": false
+  },
+  "phase9_completion": {
+    "s0_through_s12_complete": true,
+    "code_and_private_schema_boundary_complete": true,
+    "public_scientific_release_complete": false,
+    "public_performance_release_complete": false
+  },
+  "deferred_post_phase9_milestones": [
+    "remove H2-specific assumptions from general workflow paths",
+    "qualify a second scientifically reviewed problem",
+    "exercise provider-version drift",
+    "define public registry authority and release governance"
+  ]
+}

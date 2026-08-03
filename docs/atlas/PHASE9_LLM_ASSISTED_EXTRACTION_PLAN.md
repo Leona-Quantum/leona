@@ -1,6 +1,8 @@
 # Phase 9 — LLM-assisted extraction and reviewed materialization
 
-Status: active on `feature/vqe`
+Status: complete for code and private schemas on `feature/vqe` under an
+owner-waived qualification boundary. Public data, scientific acceptance,
+performance claims, and independent-review claims remain blocked.
 
 ## 1. Purpose and non-goals
 

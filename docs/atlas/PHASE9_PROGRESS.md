@@ -1,6 +1,6 @@
 # Phase 9 progress — LLM-assisted extraction
 
-Updated: 2026-08-03
+Updated: 2026-08-04
 
 ## Current state
 
@@ -451,3 +451,45 @@ and Phase 7.6 catalog suites reported four and three passing tests respectively.
 These results qualify the merged private implementation boundary only. They do
 not turn an unreviewed source into scientific evidence, authorize arbitrary
 repository execution, or unblock public and performance claims.
+
+## Phase 9 completion and latest-dev requalification (2026-08-04)
+
+Phase 9 is complete from S0 through S12 for code, private schemas, and synthetic
+private transaction qualification. The owner elected not to require an
+independent human review for this engineering phase. That decision is recorded
+as `owner_waived_private_qualification`; it is not represented as human review,
+scientific acceptance, compatibility evidence, or publication authority. The
+one real S7 live candidate remains `unreviewed` and unmaterialized.
+
+`feature/vqe` was merged with `origin/dev` commit
+`c5e36b9c653ab1bc54aa476d7e04d94d3468ca87` at audited source commit
+`d49eb19f43ec14faae1ef3e68f341f526a503d7c`. The merge-tree check and the real
+merge both completed without conflicts, and the audited source was zero commits
+behind that `dev` commit. This requalification does not rewrite the immutable
+2026-08-03 audit; it adds an explicitly linked incremental audit.
+
+Local qualification after the merge reported:
+
+- one Alembic head at `0054`, with a fresh disposable PostgreSQL
+  `upgrade -> downgrade base -> upgrade` cycle passing;
+- 53 Phase 9 DB-free extraction, validation, persistence, review, route, and
+  materialization contract tests passing;
+- three Phase 9 live append-only persistence/materialization/controlled-E2E
+  tests passing on the disposable database;
+- 2,502 Python tests passing and 405 skipped;
+- 505 web tests passing, TypeScript typecheck/lint passing, and a production
+  Next.js build generating 338 routes;
+- Ruff check/format, all five import contracts, the raw-query boundary,
+  generated OpenAPI, and the deterministic Phase 9 offline evaluation current.
+
+Remote GitHub run `30826945916` passed the `py`, `ts`, `db`, and `ui-visual`
+jobs for the audited source. Run `30826950904` separately passed the private
+WorkOS-contract -> PostgreSQL 17 -> approved digest-pinned OCI runtime E2E. The
+machine-readable record is
+`docs/atlas/evidence/phase9/incremental_release_audit_2026-08-04.json` and is
+validated by `scripts/check-phase9-release-audit.py --check`.
+
+This closes Phase 9 without claiming that H2 alone establishes scientific
+generality. Removing H2-specific assumptions, qualifying a second reviewed
+problem, provider-version drift, and public registry governance are explicit
+post-Phase-9 milestones rather than hidden Phase 9 acceptance criteria.
