@@ -252,6 +252,13 @@ credentials/routes are absent.
 Convert selected files into a canonical read-only manifest without executing
 source.
 
+An offline initial-release contract now exists in
+`phase10_source_normalizer`. It accepts only an exact S3 selected-file set,
+rechecks the quarantine byte identity, rejects archives, Git LFS pointers,
+common credential-file names, BOMs, and unsafe control bytes, and emits a
+digest-only read-only manifest without materializing source. See
+`PHASE10_S5_SOURCE_NORMALIZER_PREFLIGHT.md`.
+
 Initial release rejects archives. If archive support is later approved, it must
 pre-scan and reject traversal, links, special files, nested archives, excessive
 ratio/count/depth/path length, conflicting normalized paths, and partial
