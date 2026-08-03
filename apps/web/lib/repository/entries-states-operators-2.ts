@@ -104,6 +104,8 @@ print("|+> =", plus.data)   # [0.7071, 0.7071]
 print("|-> =", minus.data)  # [0.7071, -0.7071]
 print("X|+> = +|+>:", np.allclose(X @ plus.data, plus.data))
 print("X|-> = -|->:", np.allclose(X @ minus.data, -minus.data))
+
+FINAL_CIRCUIT = plus_state()
 `,
     filename: "plus_minus_states.py",
     language: "python",
@@ -125,7 +127,7 @@ def plus_minus():
     return qml.state()
 
 print(plus_minus())
-`,
+\n\nFINAL_CIRCUIT = plus_minus`,
       },
     ],
     relatedSlugs: ["hadamard-gate", "bell-state-qiskit", "pauli-x-operator"],
@@ -221,7 +223,7 @@ $$\rho_W(p) = p\,|\Psi^-\rangle\langle\Psi^-| + (1-p)\,\frac{I}{4}, \qquad |\Psi
       { label: "Entangled for p > 1/3", probability: 1 },
     ],
     code: `import numpy as np
-from qiskit.quantum_info import DensityMatrix, partial_transpose
+from qiskit.quantum_info import DensityMatrix
 
 def werner_state(p: float) -> DensityMatrix:
     singlet = np.array([0, 1, -1, 0]) / np.sqrt(2)
@@ -229,12 +231,22 @@ def werner_state(p: float) -> DensityMatrix:
     rho = p * proj_singlet + (1 - p) * np.eye(4) / 4
     return DensityMatrix(rho)
 
+def partial_transpose_second(rho: DensityMatrix) -> np.ndarray:
+    """Transpose the second qubit only. Written out rather than imported:
+    qiskit.quantum_info has no partial_transpose, and the two-qubit case is
+    one index swap on the reshaped density matrix."""
+    return rho.data.reshape(2, 2, 2, 2).transpose(0, 3, 2, 1).reshape(4, 4)
+
+separability = {}
 for p in (0.2, 1 / 3, 0.5, 0.9):
     rho = werner_state(p)
-    pt_eigs = np.linalg.eigvalsh(partial_transpose(rho, [1]).data)
+    pt_eigs = np.linalg.eigvalsh(partial_transpose_second(rho))
     min_rho_eig = min(np.linalg.eigvalsh(rho.data))
+    separability[f"{p:.3f}"] = bool(pt_eigs.min() >= -1e-9)
     print(f"p={p:.3f}  min eig(rho)={min_rho_eig:.4f}  min eig(partial transpose)={pt_eigs.min():.4f}"
           f"  separable(PPT)={pt_eigs.min() >= -1e-9}")
+
+RESULT = {"separable_by_ppt": separability}
 `,
     filename: "werner_state.py",
     language: "python",
@@ -355,6 +367,8 @@ phi = np.pi / (2 * N)
 sv = Statevector.from_instruction(noon_qubit_embedding(N, phi))
 relative_phase = np.angle(sv.data[1]) - np.angle(sv.data[0])
 print(f"Relative phase at phi={phi:.4f}: {relative_phase:.4f}  (expected N*phi = {N * phi:.4f})")
+
+FINAL_CIRCUIT = noon_qubit_embedding(N, phi)
 `,
     filename: "noon_state.py",
     language: "python",
@@ -376,7 +390,7 @@ def noon_qubit_embedding(N, phi):
     return qml.state()
 
 print(noon_qubit_embedding(2, np.pi / 8))
-`,
+\n\nFINAL_CIRCUIT = noon_qubit_embedding`,
       },
     ],
     relatedSlugs: ["ghz-state-pennylane", "quantum-phase-estimation", "amplitude-estimation"],
@@ -488,7 +502,7 @@ qc.cx(0, 1)
 bell = Statevector.from_instruction(qc)
 reduced = partial_trace(bell, [1])  # trace out qubit 1
 print("Reduced state of one Bell-pair qubit:\\n", np.real(reduced.data))  # [[0.5, 0], [0, 0.5]]
-`,
+\n\nFINAL_CIRCUIT = qc`,
     filename: "maximally_mixed_state.py",
     language: "python",
     relatedSlugs: ["thermal-gibbs-state", "werner-state", "bell-state-qiskit"],
@@ -607,6 +621,8 @@ print("Hermitian:", np.allclose(matrix, matrix.conj().T))
 eigvals = np.linalg.eigvalsh(matrix)
 print("Eigenvalues (Hartree):", eigvals)
 print("Ground-state energy:", eigvals.min())
+
+RESULT = {"ground_state_energy_hartree": float(eigvals.min()), "eigenvalues_hartree": [float(v) for v in eigvals]}
 `,
     filename: "h2_molecular_hamiltonian.py",
     language: "python",

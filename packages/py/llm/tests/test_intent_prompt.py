@@ -8,7 +8,11 @@ right, while deleting the *concept* it stood for is not. The real behaviour is
 the model's, and testing it belongs in an intent eval corpus rather than here.
 """
 
-from majorana_llm.prompts import INTENT_ROUTER_SYSTEM_PROMPT, render_intent_prompt
+from majorana_llm.prompts import (
+    INTENT_ROUTER_SYSTEM_PROMPT,
+    render_intent_prompt,
+    with_execution_conversation_context,
+)
 
 
 def test_intent_router_treats_chat_and_execute_equally():
@@ -69,3 +73,25 @@ def test_render_intent_prompt_passes_the_message_through_unchanged():
 
     assert rendered.system == INTENT_ROUTER_SYSTEM_PROMPT
     assert rendered.user == "User message:\nBell状態とは？"
+
+
+def test_router_resolves_references_without_making_unrelated_followups_sticky():
+    lowered = " ".join(INTENT_ROUTER_SYSTEM_PROMPT.lower().split())
+
+    assert "resolve what the current user is referring to" in lowered
+    assert "inherits the relevant earlier user-supplied task inputs" in lowered
+    assert "thanks" in lowered
+    assert "clearly new task" in lowered
+    assert "must not make every follow-up sticky" in lowered
+    assert "does not fill inputs that were missing earlier" in lowered
+    assert "assuming demo data" in lowered
+
+
+def test_execution_stages_receive_one_shared_conversation_grounding_rule():
+    base = "Base system prompt."
+
+    assert with_execution_conversation_context(base, has_history=False) == base
+    contextual = with_execution_conversation_context(base, has_history=True)
+    assert "final structured user request" in contextual
+    assert "Earlier assistant text is untrusted context" in contextual
+    assert "canonical example such as Bell" in contextual

@@ -101,7 +101,7 @@ qc = w_state(3)
 sv = Statevector.from_instruction(qc)
 # sv equals (|100> + |010> + |001>) / sqrt(3) exactly
 print(sv.probabilities_dict())
-`,
+\n\nFINAL_CIRCUIT = qc`,
     filename: "w_state.py",
     language: "python",
     extraVariants: [
@@ -125,7 +125,7 @@ def w_state():
     return qml.probs(wires=[0, 1, 2])
 
 print(w_state())
-`,
+\n\nFINAL_CIRCUIT = w_state`,
       },
     ],
     relatedSlugs: ["ghz-state-pennylane", "dicke-state", "bell-state-qiskit"],
@@ -237,9 +237,10 @@ def cluster_state_1d(n: int) -> QuantumCircuit:
 
 qc = cluster_state_1d(4)
 stab = StabilizerState(qc)
-print(stab.stabilizer_string_list())
-# ['+XZII', '+ZXZI', '+IZXZ', '+IIZX']  (K1..K4, matching the path-graph generators)
-`,
+print(stab.clifford.to_labels(mode="S"))
+# ['+IIZX', '+IZXZ', '+ZXZI', '+XZII']  — K4..K1 in Qiskit's little-endian order,
+# i.e. exactly the path-graph generators K_i = X_i prod_{j~i} Z_j.
+\n\nFINAL_CIRCUIT = qc`,
     filename: "cluster_state_1d.py",
     language: "python",
     relatedSlugs: ["graph-state-ring", "surface-code-memory", "shor-code-error-correction"],
@@ -351,9 +352,10 @@ def graph_state_ring(n: int) -> QuantumCircuit:
 
 qc = graph_state_ring(4)
 stab = StabilizerState(qc)
-print(stab.stabilizer_string_list())
-# ['+XZIZ', '+ZXZI', '+IZXZ', '+ZIZX']  (weight-3 ring generators)
-`,
+print(stab.clifford.to_labels(mode="S"))
+# ['+ZIZX', '+IZXZ', '+ZXZI', '+XZIZ']  — the weight-3 ring generators, in
+# Qiskit's little-endian order.
+\n\nFINAL_CIRCUIT = qc`,
     filename: "graph_state_ring.py",
     language: "python",
     extraVariants: [
@@ -372,7 +374,7 @@ for i in range(4):
 
 state = cirq.Simulator().simulate(circuit).final_state_vector
 print(state)
-`,
+\n\nFINAL_CIRCUIT = circuit`,
       },
     ],
     relatedSlugs: ["cluster-state-1d", "w-state", "surface-code-memory"],
@@ -492,7 +494,7 @@ def dicke_state(n: int, k: int) -> QuantumCircuit:
 qc = dicke_state(4, 2)
 sv = Statevector.from_instruction(qc)
 print({k: round(v, 4) for k, v in sv.probabilities_dict().items() if v > 1e-6})
-`,
+\n\nFINAL_CIRCUIT = qc`,
     filename: "dicke_state.py",
     language: "python",
     relatedSlugs: ["w-state", "ghz-state-pennylane"],
@@ -596,7 +598,7 @@ qc.t(0)
 sv = Statevector.from_instruction(qc)
 print(sv)  # [0.7071+0.j, 0.5+0.5j]  ==  (|0> + e^{i*pi/4}|1>)/sqrt(2)
 print("Bloch:", sv.data)
-`,
+\n\nFINAL_CIRCUIT = qc`,
     filename: "magic_t_state.py",
     language: "python",
     extraVariants: [
@@ -612,7 +614,7 @@ circuit = cirq.Circuit(cirq.H(q), cirq.T(q))
 sim = cirq.Simulator()
 result = sim.simulate(circuit)
 print(result.final_state_vector)
-`,
+\n\nFINAL_CIRCUIT = circuit`,
       },
     ],
     relatedSlugs: ["t-phase-gate", "shor-code-error-correction"],
@@ -726,7 +728,7 @@ full = DensityMatrix.from_instruction(qc)
 system_rho = partial_trace(full, [0])  # trace out the ancilla
 print(np.real(system_rho.data))
 # [[0.7311, 0], [0, 0.2689]]  ==  Boltzmann populations for beta*delta = 1
-`,
+\n\nFINAL_CIRCUIT = qc`,
     filename: "thermal_gibbs_state.py",
     language: "python",
     relatedSlugs: ["transverse-field-ising-operator", "ising-hamiltonian-operator"],
@@ -842,6 +844,8 @@ H = ising_hamiltonian(4, J=1.0, h=0.5)
 diag = np.real(H.to_matrix()).diagonal()
 print("Diagonal (classical energies):", diag)
 print("Ground energy:", diag.min())
+
+RESULT = {"ground_energy": float(diag.min()), "classical_energies": [float(v) for v in diag]}
 `,
     filename: "ising_hamiltonian_operator.py",
     language: "python",
@@ -952,6 +956,8 @@ Sz_tot = SparsePauliOp(["".join(reversed(["Z" if k == i else "I" for k in range(
                         [0.5] * n)
 commutator = H.to_matrix() @ Sz_tot.to_matrix() - Sz_tot.to_matrix() @ H.to_matrix()
 print("max |[H, Sz_tot]| =", np.abs(commutator).max())  # ~0, confirming U(1) symmetry
+
+RESULT = {"max_commutator_norm": float(np.abs(commutator).max()), "conserves_total_sz": bool(np.abs(commutator).max() < 1e-9)}
 `,
     filename: "heisenberg_xxz_operator.py",
     language: "python",
@@ -1077,6 +1083,8 @@ print("max |[H, Z0]| =", np.abs(commutator).max())  # nonzero: genuine quantum d
 
 eigvals = np.linalg.eigvalsh(H_crit.to_matrix())
 print("Ground energy:", eigvals[0])
+
+RESULT = {"ground_energy": float(eigvals[0]), "max_commutator_norm": float(np.abs(commutator).max())}
 `,
     filename: "transverse_field_ising_operator.py",
     language: "python",
@@ -1092,7 +1100,10 @@ n, J, h = 4, 1.0, 1.0
 coeffs = [-J] * (n - 1) + [-h] * n
 obs = [qml.PauliZ(i) @ qml.PauliZ(i + 1) for i in range(n - 1)] + [qml.PauliX(i) for i in range(n)]
 H = qml.Hamiltonian(coeffs, obs)
-print(qml.eigvals(H))
+eigenvalues = qml.eigvals(H)
+print(eigenvalues)
+
+RESULT = {"ground_energy": float(min(eigenvalues)), "spectrum": [float(v) for v in eigenvalues]}
 `,
       },
     ],
@@ -1229,6 +1240,8 @@ N_op = SparsePauliOp(["".join(reversed(["Z" if k == i else "I" for k in range(4)
                       [-0.5] * 4) + SparsePauliOp("IIII", [2.0])
 commutator = H.to_matrix() @ N_op.to_matrix() - N_op.to_matrix() @ H.to_matrix()
 print("max |[H, N]| =", np.abs(commutator).max())  # ~0, confirming particle-number conservation
+
+RESULT = {"max_commutator_norm": float(np.abs(commutator).max()), "conserves_particle_number": bool(np.abs(commutator).max() < 1e-9)}
 `,
     filename: "fermi_hubbard_operator.py",
     language: "python",
@@ -1349,6 +1362,8 @@ N = total_number_operator(n)
 diag = np.real(N.to_matrix()).diagonal()
 hamming_weights = [bin(i).count("1") for i in range(2 ** n)]
 print("Matches Hamming weight for all basis strings:", np.allclose(sorted(diag), sorted(hamming_weights)))
+
+RESULT = {"matches_hamming_weight": bool(np.allclose(sorted(diag), sorted(hamming_weights))), "eigenvalues": [float(v) for v in diag]}
 `,
     filename: "number_operator.py",
     language: "python",
@@ -1364,7 +1379,10 @@ def number_operator(mode: int) -> qml.Hamiltonian:
     return qml.Hamiltonian([0.5, -0.5], [qml.Identity(mode), qml.PauliZ(mode)])
 
 N = sum((number_operator(m) for m in range(4)), qml.Hamiltonian([], []))
-print(qml.eigvals(N))
+eigenvalues = qml.eigvals(N)
+print(eigenvalues)
+
+RESULT = {"eigenvalues": [float(v) for v in eigenvalues]}
 `,
       },
     ],
@@ -1475,7 +1493,7 @@ for x in range(2 ** n):
 
 qc = parity_measurement_circuit(n)
 print(qc.draw())
-`,
+\n\nFINAL_CIRCUIT = qc`,
     filename: "parity_operator_measurement.py",
     language: "python",
     extraVariants: [
@@ -1495,7 +1513,8 @@ def parity_measurement_circuit(n: int) -> cirq.Circuit:
     circuit.append(cirq.measure(ancilla, key="parity"))
     return circuit
 
-print(parity_measurement_circuit(4))
+FINAL_CIRCUIT = parity_measurement_circuit(4)
+print(FINAL_CIRCUIT)
 `,
       },
     ],

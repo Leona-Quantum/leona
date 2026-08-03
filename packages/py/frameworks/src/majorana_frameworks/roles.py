@@ -172,6 +172,27 @@ def classify_source(source: str) -> ProgramRole:
     return ProgramRole.UNKNOWN
 
 
+def is_python_source(source: str) -> bool:
+    """Is this Python at all, before asking what kind of Python it is?
+
+    UNKNOWN covers two different things, and a caller that has to be lenient
+    needs to tell them apart:
+
+    * source that parses and binds neither name — a circuit whose author forgot
+      to say what it built. Real code; the product's contract refuses it, and it
+      can be repaired.
+    * source that does not parse — the open repository publishes 87 records that
+      are English prose (an operator's representative form, a literature method's
+      ingredient list) carried under `framework: "Qiskit"`. Nothing about that is
+      repairable, and filing it as an artifact's executable code was the failure
+      `import-public` now refuses.
+
+    Written here rather than as an `ast.parse` at the call site so the two ways
+    of being UNKNOWN have one definition, next to the classifier they qualify.
+    """
+    return _bound_names(source) is not None
+
+
 #: Provider-owned epilogue that turns a circuit's trusted evidence into its result.
 #:
 #: Appended AFTER everything an adapter emits — it reads only

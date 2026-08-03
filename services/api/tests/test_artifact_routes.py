@@ -16,6 +16,7 @@ from types import SimpleNamespace
 import pytest
 from fastapi import HTTPException
 from majorana_contracts.enums import ExportStatus, Framework
+from pydantic import ValidationError
 
 from majorana_api.orm import User
 from majorana_api.routes import artifacts as artifact_routes
@@ -131,7 +132,11 @@ async def test_imported_public_reference_is_explicitly_not_fresh_verification(sc
         title="Bell reference",
         family="bell",
         framework=Framework.QISKIT,
-        code="print('reference')",
+        # A real published circuit, not a placeholder: the route refuses source
+        # that binds neither FINAL_CIRCUIT nor RESULT, so `print('reference')`
+        # here would be testing the import path with something the catalog can
+        # no longer contain.
+        code="from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)\n\nFINAL_CIRCUIT = qc",
         code_lang="python",
         source_url="https://example.test/reference",
         source_title="Public reference",
@@ -190,6 +195,123 @@ async def test_imported_public_reference_is_explicitly_not_fresh_verification(sc
         "evidence_strength": None,
     }
     assert "verification_attempt_id" not in captured["metadata"]
+
+
+async def test_a_public_record_that_is_not_a_circuit_is_refused_not_filed(scope, monkeypatch):
+    """The catalog published 87 prose records — an operator's representative
+    form, a literature method's ingredient list — under `framework: "Qiskit"`.
+    `getPublicRepositoryLibraryVariant` selected them, and this route filed the
+    paragraph as an artifact's executable code.
+
+    `import-source` has always refused source that binds neither name. This is
+    the same refusal on the catalog's side of the door.
+    """
+    filed = []
+
+    async def get_by_slug(*_args):
+        return None
+
+    async def create_artifact(*_args, **_kwargs):
+        filed.append("created")
+        return SimpleNamespace(id=uuid.uuid4())
+
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "get_artifact_by_slug", get_by_slug)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_artifact", create_artifact)
+
+    body = artifact_routes.ImportPublicArtifactRequest(
+        source_slug="operator-annihilation",
+        title="Fermionic annihilation operator",
+        family="bell",
+        framework=Framework.QISKIT,
+        code=(
+            "OPERATOR: Fermionic annihilation operator\n"
+            "REPRESENTATIVE FORM: a_p\n\n"
+            "This is a mathematical operator record, not an executable circuit."
+        ),
+        code_lang="text",
+        source_url="https://example.test/reference",
+        source_title="Public reference",
+        source_license="Apache-2.0",
+        introduction="Introduction",
+        explanation="Explanation",
+        verification="Source description only",
+        export_status=ExportStatus.DOWNLOAD_ONLY,
+    )
+
+    with pytest.raises(HTTPException) as excinfo:
+        await artifact_routes.import_public_artifact(
+            body,
+            scope,
+            object(),
+            (User(email="importer@example.com", plan=None), object()),
+            _settings(),
+        )
+
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.detail["reason"] == "public_source_not_executable_code"
+    assert filed == [], "a record this product cannot run must not reach the Vault"
+
+
+async def test_a_public_circuit_missing_its_binding_is_still_filed(scope, monkeypatch):
+    """Deliberately permissive, and it is the coupling that makes it so.
+
+    The catalog rows in production were imported before the source fix, so 189 of
+    283 still bind neither name. Refusing `ProgramRole.UNKNOWN` here — which is
+    what `import-source` does — took the entire repository out of the Library:
+    measured against the live catalog, 276 of 283 entries were refused.
+
+    So the gate refuses source that is not Python at all (prose records, which are
+    not circuits anyone can run either way) and files a circuit that merely forgot
+    to say what it built. **Widen it to the full UNKNOWN check the day the catalog
+    rows carry the bindings the manifest already has** — this test is what will
+    fail then, and its failure is the signal, not a regression.
+    """
+    created = []
+
+    async def get_by_slug(*_args):
+        return None
+
+    async def create_artifact(*_args, **_kwargs):
+        created.append("created")
+        return SimpleNamespace(id=uuid.uuid4())
+
+    async def create_version(*_args, **_kwargs):
+        return None
+
+    async def keep_artifact(_scope, _session, artifact_id, **_values):
+        return SimpleNamespace(id=artifact_id)
+
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "get_artifact_by_slug", get_by_slug)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "keep_artifact", keep_artifact)
+    monkeypatch.setattr(artifact_routes, "_to_artifact", lambda row: row.id)
+
+    body = artifact_routes.ImportPublicArtifactRequest(
+        source_slug="bell-state-qiskit",
+        title="Bell state",
+        family="bell",
+        framework=Framework.QISKIT,
+        # Exactly what the live catalog holds today: real Qiskit, no binding.
+        code="from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h(0)\nqc.cx(0, 1)",
+        code_lang="python",
+        source_url="https://example.test/reference",
+        source_title="Bell state",
+        source_license="Apache-2.0",
+        introduction="Introduction",
+        explanation="Explanation",
+        verification="Source description only",
+        export_status=ExportStatus.DOWNLOAD_ONLY,
+    )
+
+    await artifact_routes.import_public_artifact(
+        body,
+        scope,
+        object(),
+        (User(email="importer@example.com", plan=None), object()),
+        _settings(),
+    )
+    assert created == ["created"], "a published circuit missing its binding must still file today"
 
 
 # --- version history ---------------------------------------------------------
@@ -409,3 +531,245 @@ async def test_restore_refuses_a_version_belonging_to_another_artifact(scope, mo
             artifact_id, stray, artifact_routes.RestoreVersionRequest(), scope, object()
         )
     assert refusal.value.status_code == 404
+
+
+# --- POST /artifacts/import-source: a circuit the user wrote themselves --------
+#
+# The route that closes OWNER_TODO §7. Everything here is about what it refuses
+# and what it promises, because the one thing it must never do is file source
+# nobody executed and let anything downstream read it as evidence.
+
+_CIRCUIT = (
+    "from qiskit import QuantumCircuit\n"
+    "FINAL_CIRCUIT = QuantumCircuit(2, 2)\n"
+    "FINAL_CIRCUIT.h(0)\n"
+    "FINAL_CIRCUIT.cx(0, 1)\n"
+    "FINAL_CIRCUIT.measure([0, 1], [0, 1])\n"
+)
+_PROGRAM = _CIRCUIT + "RESULT = {'counts': {'00': 512, '11': 512}}\n"
+
+
+def _import_doubles(monkeypatch, *, existing=None):
+    """Record what the route writes. Returns the capture dict."""
+    artifact_id = uuid.uuid4()
+    captured = {"artifact_id_out": artifact_id}
+
+    async def get_by_slug(_scope, _session, slug):
+        captured["slug"] = slug
+        return existing
+
+    async def create_artifact(*_args, **kwargs):
+        captured["create"] = kwargs
+        return SimpleNamespace(id=artifact_id)
+
+    async def create_version(_scope, _session, supplied_artifact_id, **values):
+        captured.update(values)
+        captured["artifact_id"] = supplied_artifact_id
+
+    async def keep_artifact(_scope, _session, supplied_artifact_id, **values):
+        captured["kept_artifact_id"] = supplied_artifact_id
+        captured["kept_limit"] = values.get("workspace_artifact_limit")
+        return SimpleNamespace(id=supplied_artifact_id)
+
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "get_artifact_by_slug", get_by_slug)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_artifact", create_artifact)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "create_version", create_version)
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "keep_artifact", keep_artifact)
+    monkeypatch.setattr(artifact_routes, "_to_artifact", lambda row: row.id)
+    return captured
+
+
+async def _import(body, scope):
+    return await artifact_routes.import_own_source(
+        body,
+        scope,
+        object(),
+        (User(email="author@example.com", plan=None), object()),
+        _settings(),
+    )
+
+
+def test_bringing_your_own_circuit_is_reachable_over_http():
+    assert ("/artifacts/import-source", "POST") in _routes(), (
+        "a circuit you wrote yourself needs a door that is not the agent pipeline"
+    )
+
+
+@pytest.mark.parametrize("source", [_CIRCUIT, _PROGRAM])
+async def test_a_supplied_circuit_files_without_claiming_any_evidence(scope, monkeypatch, source):
+    captured = _import_doubles(monkeypatch)
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="My Bell state", framework=Framework.QISKIT, code=source
+    )
+
+    result = await _import(body, scope)
+
+    assert result == captured["artifact_id_out"]
+    # Filed under the caller's own allowance, through the one place that holds
+    # the workspace lock across the comparison and the write.
+    assert captured["kept_artifact_id"] == captured["artifact_id_out"]
+    assert captured["kept_limit"] == limits_for("free").private_artifacts
+    assert captured["create"]["kept"] is False, "created unkept, then filed"
+
+    summary = captured["metadata"]["verification_summary"]
+    assert summary["verified"] is False
+    assert summary["decision"] is None
+    assert summary["evidence_strength"] is None
+    assert summary["reason_code"] == "user_supplied_source_not_verified"
+    # The five an unexecuted artifact cannot claim. Same list the pipeline files
+    # for a run that never executed, because it is the same claim.
+    assert summary["unverified_claims"] == [
+        "reported output",
+        "quantum correctness",
+        "physical fidelity",
+        "optimality",
+        "intent alignment",
+    ]
+    # No QASM is lifted without an execution, so nothing may be offered as one.
+    assert captured["qasm"] is None
+    assert captured["export_status"] is ExportStatus.UNSUPPORTED
+
+
+async def test_a_supplied_circuit_is_attributed_to_the_person_who_brought_it(scope, monkeypatch):
+    """`_origin` reads this string. A writer that does not name itself reads as
+    `unknown`, which is what a legacy row reads as, next to a restore button."""
+    from majorana_api.version_capabilities import (
+        ORIGIN_USER_IMPORT,
+        USER_IMPORT_SOURCE,
+        _origin,
+    )
+
+    captured = _import_doubles(monkeypatch)
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="Mine", framework=Framework.QISKIT, code=_CIRCUIT
+    )
+
+    await _import(body, scope)
+
+    assert captured["metadata"]["source"] == USER_IMPORT_SOURCE
+    assert _origin(captured["metadata"]) == ORIGIN_USER_IMPORT
+    assert captured["metadata"]["program_role"] == "circuit"
+
+
+async def test_source_binding_neither_name_is_refused_rather_than_filed(scope, monkeypatch):
+    """UNKNOWN is not a circuit with a missing result — it is something this
+    product cannot execute. Filing it would create an artifact whose only
+    possible future is failing every time anyone opens it."""
+    _import_doubles(monkeypatch)
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="Not a circuit",
+        framework=Framework.QISKIT,
+        code="from qiskit import QuantumCircuit\nqc = QuantumCircuit(2)\nqc.h(0)\n",
+    )
+
+    with pytest.raises(HTTPException) as refusal:
+        await _import(body, scope)
+
+    assert refusal.value.status_code == 422
+    assert refusal.value.detail["reason"] == "source_role_unknown"
+    assert "FINAL_CIRCUIT" in refusal.value.detail["error"]
+
+
+async def test_source_that_will_not_parse_is_refused(scope, monkeypatch):
+    _import_doubles(monkeypatch)
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="Broken", framework=Framework.QISKIT, code="FINAL_CIRCUIT = ((("
+    )
+
+    with pytest.raises(HTTPException) as refusal:
+        await _import(body, scope)
+
+    assert refusal.value.status_code == 422
+
+
+async def test_source_written_for_another_framework_is_refused(scope, monkeypatch):
+    """Submitting Cirq under the Qiskit tab is the mislabelling `startRun`'s
+    `sourceFramework` comment describes. It must fail on the label, here, and
+    not in a sandbox later."""
+    _import_doubles(monkeypatch)
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="Cirq under Qiskit",
+        framework=Framework.QISKIT,
+        code="import cirq\nFINAL_CIRCUIT = cirq.Circuit()\n",
+    )
+
+    with pytest.raises(HTTPException) as refusal:
+        await _import(body, scope)
+
+    assert refusal.value.status_code == 422
+    assert refusal.value.detail["reason"] == "source_contract_failed"
+    assert refusal.value.detail["diagnostics"], "a refusal must say what was wrong"
+
+
+async def test_reimporting_the_same_bytes_spends_nothing(scope, monkeypatch):
+    """An account at its cap must still be able to re-open what it already has,
+    which is the same reason `import-public` is idempotent on its slug."""
+    already = SimpleNamespace(id=uuid.uuid4())
+    captured = _import_doubles(monkeypatch, existing=already)
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="Mine", framework=Framework.QISKIT, code=_CIRCUIT
+    )
+
+    result = await _import(body, scope)
+
+    assert result == already.id
+    assert "kept_artifact_id" not in captured, "an existing import may not spend the allowance"
+    assert "metadata" not in captured, "nor write a second version"
+
+
+async def test_a_full_workspace_refuses_the_import_with_the_cap_sentence(scope, monkeypatch):
+    _import_doubles(monkeypatch)
+
+    async def full(_scope, _session, _artifact_id, **_values):
+        raise artifact_routes.artifacts_repo.ArtifactCapReached(held=3, limit=3)
+
+    monkeypatch.setattr(artifact_routes.artifacts_repo, "keep_artifact", full)
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="One too many", framework=Framework.QISKIT, code=_CIRCUIT
+    )
+
+    with pytest.raises(HTTPException) as refusal:
+        await _import(body, scope)
+
+    assert refusal.value.status_code == 429
+    assert refusal.value.detail["reason"] == "artifact_allowance_exhausted"
+
+
+async def test_two_workspaces_importing_identical_bytes_get_separate_artifacts(scope, monkeypatch):
+    """The idempotency slug carries the workspace. Without it, the second
+    workspace to import a popular circuit would be handed the first one's row."""
+    captured = _import_doubles(monkeypatch)
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="Mine", framework=Framework.QISKIT, code=_CIRCUIT
+    )
+
+    await _import(body, scope)
+    first_slug = captured["slug"]
+
+    other = scope.model_copy(update={"workspace_id": uuid.uuid4()})
+    await _import(body, other)
+
+    assert first_slug != captured["slug"]
+    assert scope.workspace_id.hex in first_slug
+
+
+@pytest.mark.parametrize("blank", ["   ", "\n\n", "\t", " \n \t "])
+def test_source_that_is_only_whitespace_is_a_bad_request_not_a_crash(blank):
+    """`min_length=1` admits a single space and `FrameworkProgram` raises on one.
+    Unhandled, that is a 500 for what is plainly a bad request — and a 500 is the
+    one response that tells the caller nothing about what to fix."""
+    with pytest.raises(ValidationError):
+        artifact_routes.ImportOwnSourceRequest(
+            title="Blank", framework=Framework.QISKIT, code=blank
+        )
+
+
+def test_source_with_leading_whitespace_is_kept_byte_for_byte():
+    """Only *entirely* blank is refused. Indentation is meaningful in Python and
+    the route's promise is that it stores what you wrote."""
+    indented = "  \nFINAL_CIRCUIT = build()\n"
+    body = artifact_routes.ImportOwnSourceRequest(
+        title="Indented", framework=Framework.QISKIT, code=indented
+    )
+
+    assert body.code == indented

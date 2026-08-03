@@ -18,10 +18,12 @@ from majorana_llm import (
     SIMPLE_REVIEW_SYSTEM_PROMPT,
     StageOutputError,
     classify_provider_error,
+    conversation_request_messages,
     endpoint_for,
     extract_json,
     missing_provider_keys,
     model_for,
+    request_messages,
     resolve_provider,
     roles_for_profile,
     simple_generation_system_prompt,
@@ -1212,3 +1214,50 @@ async def test_streamed_response_also_records_the_served_model(monkeypatch):
     )
 
     assert response.model == "deepseek-v4-pro-2026-07-01"
+
+
+def test_a_turn_with_no_history_is_the_same_request_either_way():
+    """The three callers that build a conversation body used to disagree here:
+    chat produced a one-element list, routing and the pipeline produced None.
+    Both reach the provider identically only because `request_messages` falls
+    back to `request.user` — an agreement between two functions, not a rule.
+    This pins it, so the day the fallback changes, one test says so."""
+    prompt = "Create and measure a Bell state."
+
+    assert conversation_request_messages([], prompt) is None
+    assert request_messages(LLMRequest(model="m", system="s", user=prompt)) == [
+        {"role": "user", "content": prompt}
+    ]
+    assert request_messages(
+        LLMRequest(
+            model="m", system="s", user=prompt, messages=[{"role": "user", "content": prompt}]
+        )
+    ) == [{"role": "user", "content": prompt}]
+
+
+def test_history_puts_the_current_request_last_and_keeps_roles():
+    history = [
+        {"role": "user", "content": "Partition six suppliers."},
+        {"role": "assistant", "content": "That is a weighted MaxCut."},
+    ]
+
+    built = conversation_request_messages(history, "Build it now.")
+
+    assert built == [*history, {"role": "user", "content": "Build it now."}]
+    # The wire body must match what was built, or the history is decoration.
+    assert (
+        request_messages(LLMRequest(model="m", system="s", user="Build it now.", messages=built))
+        == built
+    )
+
+
+def test_history_is_copied_not_aliased():
+    """The pipeline holds one history tuple and spends it on every stage. A
+    builder that handed back the caller's own dicts would let one stage's
+    mutation reach the next one's prompt."""
+    history = [{"role": "user", "content": "original"}]
+
+    built = conversation_request_messages(history, "now")
+    built[0]["content"] = "mutated"
+
+    assert history[0]["content"] == "original"

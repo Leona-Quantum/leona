@@ -6,7 +6,7 @@ const qiskitBell = `from qiskit import QuantumCircuit
 qc = QuantumCircuit(2, 2)
 qc.h(0)
 qc.cx(0, 1)
-qc.measure([0, 1], [0, 1])`;
+qc.measure([0, 1], [0, 1])\n\nFINAL_CIRCUIT = qc`;
 
 const openqasmBell = `OPENQASM 3.0;
 include "stdgates.inc";
@@ -25,14 +25,14 @@ def ghz_state():
     qml.Hadamard(wires=0)
     for wire in range(1, 4):
         qml.CNOT(wires=[0, wire])
-    return qml.probs(wires=range(4))`;
+    return qml.probs(wires=range(4))\n\nFINAL_CIRCUIT = ghz_state`;
 
 const qiskitGhz = `from qiskit import QuantumCircuit
 
 qc = QuantumCircuit(4)
 qc.h(0)
 for wire in range(1, 4):
-    qc.cx(0, wire)`;
+    qc.cx(0, wire)\n\nFINAL_CIRCUIT = qc`;
 
 const cirqQft = `import cirq
 import sympy
@@ -43,7 +43,7 @@ circuit = cirq.Circuit()
 for index, qubit in enumerate(qubits):
     circuit.append(cirq.H(qubit))
     for offset, control in enumerate(qubits[index + 1:], start=2):
-        circuit.append(cirq.CZPowGate(exponent=theta / (2 ** offset))(control, qubit))`;
+        circuit.append(cirq.CZPowGate(exponent=theta / (2 ** offset))(control, qubit))\n\nFINAL_CIRCUIT = circuit`;
 
 export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
   {
@@ -113,14 +113,14 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "hadamard.py",
-        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(1)\nqc.h(0)`,
+        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(1)\nqc.h(0)\n\nFINAL_CIRCUIT = qc`,
       },
       {
         framework: "Cirq",
         status: "native",
         language: "python",
         filename: "hadamard.py",
-        code: `import cirq\n\nqubit = cirq.LineQubit(0)\ncircuit = cirq.Circuit(cirq.H(qubit))`,
+        code: `import cirq\n\nqubit = cirq.LineQubit(0)\ncircuit = cirq.Circuit(cirq.H(qubit))\n\nFINAL_CIRCUIT = circuit`,
       },
     ],
     relatedSlugs: ["bell-state-qiskit", "ghz-state-pennylane"],
@@ -189,7 +189,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "pauli-x.py",
-        code: `import pennylane as qml\n\ndev = qml.device("default.qubit", wires=1)\n\n@qml.qnode(dev)\ndef flip():\n    qml.PauliX(wires=0)\n    return qml.probs(wires=0)`,
+        code: `import pennylane as qml\n\ndev = qml.device("default.qubit", wires=1)\n\n@qml.qnode(dev)\ndef flip():\n    qml.PauliX(wires=0)\n    return qml.probs(wires=0)\n\nFINAL_CIRCUIT = flip`,
       },
     ],
     relatedSlugs: ["hadamard-gate", "bell-state-qiskit"],
@@ -272,7 +272,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "bell_state.py",
-        code: `import cirq\n\nq0, q1 = cirq.LineQubit.range(2)\ncircuit = cirq.Circuit(cirq.H(q0), cirq.CNOT(q0, q1))`,
+        code: `import cirq\n\nq0, q1 = cirq.LineQubit.range(2)\ncircuit = cirq.Circuit(cirq.H(q0), cirq.CNOT(q0, q1))\n\nFINAL_CIRCUIT = circuit`,
       },
     ],
     relatedSlugs: ["hadamard-gate", "ghz-state-pennylane"],
@@ -421,7 +421,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "qaoa_maxcut_ring.py",
-        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(5, 5)\nqc.h(range(5))\n# p=1 cost and mixer layers\nfor edge in ((0, 1), (1, 2), (2, 3), (3, 4), (4, 0)):\n    qc.cx(*edge)\nqc.measure(range(5), range(5))`,
+        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(5, 5)\nqc.h(range(5))\n# p=1 cost and mixer layers\nfor edge in ((0, 1), (1, 2), (2, 3), (3, 4), (4, 0)):\n    qc.cx(*edge)\nqc.measure(range(5), range(5))\n\nFINAL_CIRCUIT = qc`,
         note: "The public snippet keeps the graph structure readable; the verified run stores the full parameterized circuit.",
       },
       {
@@ -520,7 +520,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "grover_search.py",
-        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h([0, 1])\n# Oracle marks one basis state.\nqc.cz(0, 1)\nqc.h([0, 1])\nqc.x([0, 1])\nqc.cz(0, 1)\nqc.x([0, 1])\nqc.h([0, 1])`,
+        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h([0, 1])\n# Oracle marks one basis state.\nqc.cz(0, 1)\nqc.h([0, 1])\nqc.x([0, 1])\nqc.cz(0, 1)\nqc.x([0, 1])\nqc.h([0, 1])\n\nFINAL_CIRCUIT = qc`,
         note: "The oracle is intentionally small so the circuit can be inspected. Scaling claims belong to the cited query-complexity result.",
       },
     ],
@@ -604,7 +604,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "shor_period_finding.py",
-        code: `from qiskit import QuantumCircuit\n\n# Reference skeleton: modular multiplication is problem-specific.\nqc = QuantumCircuit(6)\nqc.h(range(3))\n# controlled-U^(2^j) blocks feed inverse QFT.\nqc.barrier()`,
+        code: `from qiskit import QuantumCircuit\n\n# Reference skeleton: modular multiplication is problem-specific.\nqc = QuantumCircuit(6)\nqc.h(range(3))\n# controlled-U^(2^j) blocks feed inverse QFT.\nqc.barrier()\n\nFINAL_CIRCUIT = qc`,
         note: "This is a conceptual skeleton, not a production factoring implementation or security benchmark.",
       },
     ],
@@ -688,7 +688,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "amplitude_estimation.py",
-        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(3)\n# A prepares a Bernoulli amplitude.\nqc.ry(0.7, 0)\n# Grover iterate and phase-estimation controls follow.\nqc.barrier()`,
+        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(3)\n# A prepares a Bernoulli amplitude.\nqc.ry(0.7, 0)\n# Grover iterate and phase-estimation controls follow.\nqc.barrier()\n\nFINAL_CIRCUIT = qc`,
         note: "The circuit is a readable access-model sketch; benchmark data must state the estimator variant and oracle cost.",
       },
     ],
@@ -773,7 +773,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "vqe_energy.py",
-        code: `import pennylane as qml\nfrom pennylane import numpy as np\n\ndev = qml.device("default.qubit", wires=2)\nH = qml.Hamiltonian([0.5, 0.5], [qml.PauliZ(0), qml.PauliZ(1)])\n\n@qml.qnode(dev)\ndef energy(theta):\n    qml.RY(theta[0], wires=0)\n    qml.CNOT(wires=[0, 1])\n    return qml.expval(H)`,
+        code: `import pennylane as qml\nfrom pennylane import numpy as np\n\ndev = qml.device("default.qubit", wires=2)\nH = qml.Hamiltonian([0.5, 0.5], [qml.PauliZ(0), qml.PauliZ(1)])\n\n@qml.qnode(dev)\ndef energy(theta):\n    qml.RY(theta[0], wires=0)\n    qml.CNOT(wires=[0, 1])\n    return qml.expval(H)\n\nFINAL_CIRCUIT = energy`,
         note: "The fixture demonstrates the hybrid loop shape; it is not a molecular chemistry benchmark.",
       },
     ],
@@ -865,7 +865,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "phase_estimation.py",
-        code: `from qiskit import QuantumCircuit\nfrom qiskit.circuit.library import QFT\n\nqc = QuantumCircuit(3)\nqc.h([0, 1])\n# Controlled powers of U occupy the problem-specific block.\nqc.cp(0.5, 0, 2)\nqc.cp(1.0, 1, 2)\nqc.append(QFT(2, inverse=True), [0, 1])`,
+        code: `from qiskit import QuantumCircuit\nfrom qiskit.circuit.library import QFT\n\nqc = QuantumCircuit(3)\nqc.h([0, 1])\n# Controlled powers of U occupy the problem-specific block.\nqc.cp(0.5, 0, 2)\nqc.cp(1.0, 1, 2)\nqc.append(QFT(2, inverse=True), [0, 1])\n\nFINAL_CIRCUIT = qc`,
         note: "The controlled-U block is a phase-rotation toy, not a Hamiltonian simulation implementation.",
       },
     ],
@@ -957,7 +957,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "hhl_reference.py",
-        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(3)\n# Prepare |b⟩ and encode a small Hermitian A.\nqc.h(0)\n# QPE(A), controlled reciprocal rotation, and uncompute\nqc.barrier()`,
+        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(3)\n# Prepare |b⟩ and encode a small Hermitian A.\nqc.h(0)\n# QPE(A), controlled reciprocal rotation, and uncompute\nqc.barrier()\n\nFINAL_CIRCUIT = qc`,
         note: "This is a requirements-oriented skeleton; it does not claim a full HHL implementation or application speedup.",
       },
     ],
@@ -1041,7 +1041,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "quantum_kernel.py",
-        code: `import pennylane as qml\nfrom pennylane import numpy as np\n\ndev = qml.device("default.qubit", wires=2)\n\ndef feature_map(x):\n    qml.AngleEmbedding(x, wires=[0, 1])\n\n@qml.qnode(dev)\ndef kernel(x, y):\n    feature_map(x)\n    qml.adjoint(feature_map)(y)\n    return qml.probs(wires=[0, 1])[0]`,
+        code: `import pennylane as qml\nfrom pennylane import numpy as np\n\ndev = qml.device("default.qubit", wires=2)\n\ndef feature_map(x):\n    qml.AngleEmbedding(x, wires=[0, 1])\n\n@qml.qnode(dev)\ndef kernel(x, y):\n    feature_map(x)\n    qml.adjoint(feature_map)(y)\n    return qml.probs(wires=[0, 1])[0]\n\nFINAL_CIRCUIT = kernel`,
         note: "This returns a toy overlap estimate; training and held-out evaluation are intentionally separate from the circuit record.",
       },
     ],
@@ -1133,7 +1133,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "teleportation.py",
-        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(3, 2)\n# Prepare an input state and a shared Bell pair.\nqc.h(1)\nqc.cx(1, 2)\nqc.cx(0, 1)\nqc.h(0)\nqc.measure([0, 1], [0, 1])\n# Apply classically controlled corrections to q2.`,
+        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(3, 2)\n# Prepare an input state and a shared Bell pair.\nqc.h(1)\nqc.cx(1, 2)\nqc.cx(0, 1)\nqc.h(0)\nqc.measure([0, 1], [0, 1])\n# Apply classically controlled corrections to q2.\n\nFINAL_CIRCUIT = qc`,
         note: "The final corrections are shown as a boundary because the exact dynamic-circuit syntax varies by backend.",
       },
     ],
@@ -1217,7 +1217,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         status: "native",
         language: "python",
         filename: "shor_code_reference.py",
-        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(9)\n# Encode a logical qubit with bit- and phase-flip repetition blocks.\nqc.cx(0, 1)\nqc.cx(0, 2)\nqc.h([0, 1, 2])\n# Syndrome extraction and recovery depend on the chosen decoder.`,
+        code: `from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(9)\n# Encode a logical qubit with bit- and phase-flip repetition blocks.\nqc.cx(0, 1)\nqc.cx(0, 2)\nqc.h([0, 1, 2])\n# Syndrome extraction and recovery depend on the chosen decoder.\n\nFINAL_CIRCUIT = qc`,
         note: "The construction is intentionally a code-level reference; a useful benchmark must add a calibrated noise channel and decoder.",
       },
     ],
@@ -1661,7 +1661,7 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     wires: ["x[0]", "x[1]", "out"],
     operations: [{ label: "H", qubits: [0, 1, 2], tone: "accent" }, { label: "U_f", qubits: [0, 1, 2], tone: "ok" }, { label: "M", qubits: [0, 1], tone: "warn" }],
     outcomes: [{ label: "constant", probability: 0.5 }, { label: "balanced", probability: 0.5 }],
-    code: "import cirq\n\nq0, q1, q2 = cirq.LineQubit.range(3)\ncircuit = cirq.Circuit(\n    cirq.X(q2),\n    cirq.H(q0), cirq.H(q1), cirq.H(q2),\n    cirq.CNOT(q0, q2), cirq.CNOT(q1, q2),\n    cirq.H(q0), cirq.H(q1), cirq.H(q2),\n    cirq.measure(q0, q1, key='input'),\n)",
+    code: "import cirq\n\nq0, q1, q2 = cirq.LineQubit.range(3)\ncircuit = cirq.Circuit(\n    cirq.X(q2),\n    cirq.H(q0), cirq.H(q1), cirq.H(q2),\n    cirq.CNOT(q0, q2), cirq.CNOT(q1, q2),\n    cirq.H(q0), cirq.H(q1), cirq.H(q2),\n    cirq.measure(q0, q1, key='input'),\n)\n\nFINAL_CIRCUIT = circuit",
     filename: "deutsch_jozsa.py",
     language: "python",
     relatedSlugs: ["bernstein-vazirani-qiskit", "grover-unstructured-search"],
@@ -1697,7 +1697,7 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     wires: ["x[0]", "x[1]", "x[2]", "out"],
     operations: [{ label: "H", qubits: [0, 1, 2, 3], tone: "accent" }, { label: "U_s", qubits: [0, 1, 2, 3], tone: "ok" }, { label: "M", qubits: [0, 1, 2], tone: "warn" }],
     outcomes: [{ label: "secret s", probability: 1 }],
-    code: "from qiskit import QuantumCircuit\n\nsecret = '101'\nqc = QuantumCircuit(len(secret) + 1, len(secret))\nqc.x(len(secret))\nqc.h(range(len(secret) + 1))\nfor index, bit in enumerate(reversed(secret)):\n    if bit == '1':\n        qc.cx(index, len(secret))\nqc.h(range(len(secret)))\nqc.measure(range(len(secret)), range(len(secret)))",
+    code: "from qiskit import QuantumCircuit\n\nsecret = '101'\nqc = QuantumCircuit(len(secret) + 1, len(secret))\nqc.x(len(secret))\nqc.h(range(len(secret) + 1))\nfor index, bit in enumerate(reversed(secret)):\n    if bit == '1':\n        qc.cx(index, len(secret))\nqc.h(range(len(secret)))\nqc.measure(range(len(secret)), range(len(secret)))\n\nFINAL_CIRCUIT = qc",
     filename: "bernstein_vazirani.py",
     language: "python",
     relatedSlugs: ["deutsch-jozsa-cirq"],
@@ -1733,7 +1733,7 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     wires: ["Alice", "Bob"],
     operations: [{ label: "H", qubits: [0], tone: "accent" }, { label: "CX", qubits: [0, 1], tone: "ok" }, { label: "ENC", qubits: [0], tone: "warn" }, { label: "DEC", qubits: [0, 1], tone: "neutral" }],
     outcomes: [{ label: "00 / 01 / 10 / 11", probability: 1 }],
-    code: "from qiskit import QuantumCircuit\n\nmessage = '10'\nqc = QuantumCircuit(2, 2)\nqc.h(0)\nqc.cx(0, 1)\nif message[0] == '1': qc.z(0)\nif message[1] == '1': qc.x(0)\nqc.cx(0, 1)\nqc.h(0)\nqc.measure([0, 1], [0, 1])",
+    code: "from qiskit import QuantumCircuit\n\nmessage = '10'\nqc = QuantumCircuit(2, 2)\nqc.h(0)\nqc.cx(0, 1)\nif message[0] == '1': qc.z(0)\nif message[1] == '1': qc.x(0)\nqc.cx(0, 1)\nqc.h(0)\nqc.measure([0, 1], [0, 1])\n\nFINAL_CIRCUIT = qc",
     filename: "superdense_coding.py",
     language: "python",
     relatedSlugs: ["quantum-teleportation", "bell-state-qiskit"],

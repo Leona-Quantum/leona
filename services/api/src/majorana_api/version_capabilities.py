@@ -1,6 +1,6 @@
 """What a stored artifact version can actually do, and what restoring one costs.
 
-Versions are not interchangeable. Four producers write them and they populate
+Versions are not interchangeable. Five producers write them and they populate
 different columns:
 
   * the worker's `RepoReviewArtifactSaver` — QASM only when conversion succeeded,
@@ -11,6 +11,9 @@ different columns:
     verification_summary that exists only to say the evidence is stale.
   * `POST /artifacts/import-public` — whatever the public reference carried,
     including the only framework_variants anything writes.
+  * `POST /artifacts/import-source` — a circuit the user wrote and brought in
+    themselves: code only, no QASM, no estimates, no variants, and a summary
+    that says nothing has been executed.
   * the starter Bell artifact in `repos/system.py` — QASM and estimates but no
     verification_summary at all.
 
@@ -31,13 +34,23 @@ from majorana_frameworks.roles import ProgramRole, classify_source
 
 from .verification_summary import parse_verification_summary
 
-#: Which of the four writers a version came from. `unknown` is a real answer for
+#: Which of the five writers a version came from. `unknown` is a real answer for
 #: legacy rows and is never guessed into one of the others.
+#:
+#: A new writer that does not add itself here does not read as new — it reads as
+#: `unknown`, which is indistinguishable from a legacy row, next to a restore
+#: button. `test_every_origin_is_reachable_and_named` walks these constants.
 ORIGIN_AGENT_RUN = "agent_run"
 ORIGIN_STUDIO_DRAFT = "studio_draft"
 ORIGIN_IMPORTED_REFERENCE = "imported_reference"
+ORIGIN_USER_IMPORT = "user_import"
 ORIGIN_STARTER_EXAMPLE = "starter_example"
 ORIGIN_UNKNOWN = "unknown"
+
+#: The `metadata["source"]` value `POST /artifacts/import-source` writes.
+#: Imported by the route so the writer and the reader cannot drift apart on a
+#: string literal.
+USER_IMPORT_SOURCE = "user_import"
 
 #: Re-exported so a caller reading a capability does not have to import from two
 #: packages to compare it against anything.
@@ -89,6 +102,8 @@ def _origin(metadata: Any) -> str:
         )
     if source == "studio_draft":
         return ORIGIN_STUDIO_DRAFT
+    if source == USER_IMPORT_SOURCE:
+        return ORIGIN_USER_IMPORT
     if source in ("simple_pipeline_candidate", "agent_candidate"):
         return ORIGIN_AGENT_RUN
     return ORIGIN_UNKNOWN
