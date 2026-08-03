@@ -40,7 +40,7 @@ from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..catalog_authority import CatalogAuthority
-from ..catalog_hashing import hash_source_blob
+from ..catalog_hashing import hash_normalized_source, hash_source_blob
 from ..catalog_import_sources import ImportSource, SourceItemRejected
 from ..ids import uuid7
 from ..jobs import CATALOG_IMPORT_JOB_KIND
@@ -315,33 +315,85 @@ async def _advance_item(
         if not normalized.strip():
             raise _ItemRejected("empty_content") from None
 
+        # Reconcile against the record this identity already owns, if it owns
+        # one. Three outcomes, and the comparison happens in Python BEFORE
+        # anything is staged:
+        #
+        #   absent    -> create the artifact, stamped with its upstream identity
+        #   unchanged -> write nothing at all, and keep the existing version
+        #   changed   -> a new version on the artifact that is already public
+        #
+        # The unchanged case is the whole reason this is not a straight insert.
+        # Re-importing a corpus whose content has not moved used to stage a
+        # second artifact holding the same bytes, hit the table-wide unique
+        # constraint on normalized_source_hash, and come back as
+        # `duplicate_source` — a rejection of the record for being itself. Worse,
+        # stage_artifact_version calls session.rollback() before raising, which
+        # discards the stage_artifact INSERT from moments earlier and leaves a
+        # rejected ledger row pointing at no artifact.
+        existing = await catalog.find_staged_artifact_by_upstream_identity(
+            scope, session, authority=authority, upstream_identity=item.upstream_identity
+        )
+        incoming_hash = hash_normalized_source(normalized)
+
         try:
-            artifact = await catalog.stage_artifact(
-                scope,
-                session,
-                authority=authority,
-                slug=f"{slug_prefix}-{item.id.hex}",
-                title=item.upstream_identity,
-                family=staging.family,
-                framework=staging.framework,
-                artifact_kind=staging.artifact_kind,
-                execution_state=staging.execution_state,
-            )
-            version = await catalog.stage_artifact_version(
-                scope,
-                session,
-                artifact.id,
-                authority=authority,
-                raw_source=raw,
-                normalized_source=normalized,
-                code=normalized,
-                code_lang=staging.code_lang,
-                authoritative_framework=staging.authoritative_framework,
-                authoritative_framework_version=staging.authoritative_framework_version,
-                source_language=staging.source_language,
-                metadata_schema_version=staging.metadata_schema_version,
-            )
+            if existing is None:
+                artifact = await catalog.stage_artifact(
+                    scope,
+                    session,
+                    authority=authority,
+                    slug=f"{slug_prefix}-{item.id.hex}",
+                    title=item.upstream_identity,
+                    family=staging.family,
+                    framework=staging.framework,
+                    artifact_kind=staging.artifact_kind,
+                    execution_state=staging.execution_state,
+                    upstream_identity=item.upstream_identity,
+                )
+                version = await catalog.stage_artifact_version(
+                    scope,
+                    session,
+                    artifact.id,
+                    authority=authority,
+                    raw_source=raw,
+                    normalized_source=normalized,
+                    code=normalized,
+                    code_lang=staging.code_lang,
+                    authoritative_framework=staging.authoritative_framework,
+                    authoritative_framework_version=staging.authoritative_framework_version,
+                    source_language=staging.source_language,
+                    metadata_schema_version=staging.metadata_schema_version,
+                )
+            else:
+                artifact, current = existing
+                if current is not None and current.normalized_source_hash == incoming_hash:
+                    # Unchanged. Deliberately no new version: a version row per
+                    # import would grow the history by the whole corpus every
+                    # run, and — because staging resets ACCEPTED to DRAFT — would
+                    # take every record off /repository until it was re-attested,
+                    # for no content change at all.
+                    version = current
+                else:
+                    version = await catalog.stage_artifact_version(
+                        scope,
+                        session,
+                        artifact.id,
+                        authority=authority,
+                        raw_source=raw,
+                        normalized_source=normalized,
+                        code=normalized,
+                        code_lang=staging.code_lang,
+                        authoritative_framework=staging.authoritative_framework,
+                        authoritative_framework_version=staging.authoritative_framework_version,
+                        source_language=staging.source_language,
+                        metadata_schema_version=staging.metadata_schema_version,
+                    )
         except catalog.DuplicateSourceError:
+            # Still reachable, and it now means something narrower: these exact
+            # normalized bytes are already stored under a DIFFERENT artifact, or
+            # under an earlier version of this one. The second case is a revert —
+            # restoring content this record previously had — which the table-wide
+            # unique constraint cannot represent. Rejected rather than guessed at.
             raise _ItemRejected("duplicate_source") from None
 
         assert_import_item_transition(reached, ImportItemState.STAGED)

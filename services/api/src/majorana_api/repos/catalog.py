@@ -44,7 +44,7 @@ from majorana_contracts.enums import (
 )
 from majorana_openqasm import fingerprint as qasm_fingerprint
 from majorana_openqasm import normalize
-from sqlalchemy import func, select
+from sqlalchemy import Select, func, select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
@@ -218,6 +218,47 @@ async def _get_current_license_assertion(
     return (await session.execute(stmt)).scalars().first()
 
 
+async def find_staged_artifact_by_upstream_identity(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    authority: CatalogAuthority,
+    upstream_identity: str,
+) -> tuple[Artifact, ArtifactVersion | None] | None:
+    """The catalog artifact already published under `upstream_identity`, if any.
+
+    This is the importer's reconciliation key: an import that can find the
+    record it created last time updates that record, instead of creating a
+    second artifact and then colliding with itself on the table-wide
+    normalized-source hash.
+
+    Filters `deleted_at IS NULL` to match the partial unique index exactly
+    (migration 0046). If these two ever drift, one of them is wrong in a way
+    nothing reports: a resolver that sees rows the index does not cover fails on
+    insert instead of reconciling, and an index that covers rows the resolver
+    cannot see admits a duplicate identity.
+
+    Returns the artifact together with its current version, because the caller's
+    next question is always "is the incoming content the same as what is already
+    stored" and answering it from a second query would race this one.
+    """
+    workspace = await get_importer_workspace(scope, session, authority=authority)
+    row = (
+        await session.execute(
+            select(Artifact, ArtifactVersion)
+            .outerjoin(ArtifactVersion, ArtifactVersion.id == Artifact.current_version_id)
+            .where(
+                Artifact.workspace_id == workspace.id,
+                Artifact.deleted_at.is_(None),
+                Artifact.upstream_identity == upstream_identity,
+            )
+        )
+    ).first()
+    if row is None:
+        return None
+    return row[0], row[1]
+
+
 async def stage_artifact(
     scope: Scope,
     session: AsyncSession,
@@ -230,8 +271,15 @@ async def stage_artifact(
     artifact_kind: ArtifactKind,
     execution_state: ExecutionState,
     parent_artifact_id: uuid.UUID | None = None,
+    upstream_identity: str | None = None,
 ) -> Artifact:
-    """Create an immutable-identity, non-public staged catalog artifact."""
+    """Create an immutable-identity, non-public staged catalog artifact.
+
+    `upstream_identity` is the public slug the record will be served under and
+    the key a later import reconciles against. It is set at creation and never
+    changed: it is the one thing that has to stay stable across re-imports for a
+    record to keep its URL.
+    """
     workspace = await get_importer_workspace(scope, session, authority=authority)
     if parent_artifact_id is not None:  # provenance edge must stay in-catalog
         await _get_catalog_artifact(
@@ -250,6 +298,7 @@ async def stage_artifact(
         review_state=ReviewState.DRAFT,
         publication_state=PublicationState.PRIVATE,
         parent_artifact_id=parent_artifact_id,
+        upstream_identity=upstream_identity,
         # Curated corpus content, staged deliberately by an importer — never a
         # run result awaiting a keep decision. Set explicitly because this row
         # bypasses create_artifact and would otherwise be invisible (0036).
@@ -419,6 +468,7 @@ async def record_license_assertion(
     license_scope: LicenseScope,
     spdx_id: str | None = None,
     evidence_hash: str | None = None,
+    claim_hash: str | None = None,
     confidence: float | None = None,
     conflicting: bool = False,
 ) -> LicenseAssertion:
@@ -442,6 +492,7 @@ async def record_license_assertion(
         spdx_id=spdx_id,
         assertion_kind=assertion_kind,
         evidence_hash=evidence_hash,
+        claim_hash=claim_hash,
         license_scope=license_scope,
         confidence=confidence,
         reviewer_decision=(LicenseDecision.QUARANTINED if unresolved else LicenseDecision.PENDING),
@@ -462,6 +513,7 @@ async def decide_license_assertion(
     decision: LicenseDecision,
     spdx_id: str | None = None,
     evidence_hash: str | None = None,
+    claim_hash: str | None = None,
 ) -> LicenseAssertion:
     """Reviewer-only append: never updates a prior assertion row.
 
@@ -492,6 +544,7 @@ async def decide_license_assertion(
         spdx_id=resolved_spdx_id,
         assertion_kind=previous.assertion_kind,
         evidence_hash=evidence_hash if evidence_hash is not None else previous.evidence_hash,
+        claim_hash=claim_hash if claim_hash is not None else previous.claim_hash,
         license_scope=previous.license_scope,
         confidence=previous.confidence,
         reviewer_decision=decision,
@@ -631,6 +684,19 @@ async def publish_catalog_artifact(
     validated against the publication lifecycle table and audited. A record that
     is not ready raises PublicationNotReadyError and nothing is mutated, so a
     buggy or premature caller can never expose unreviewed content.
+
+    Publishing an already-public record is a no-op rather than an error. PUBLIC
+    has no self-edge in the lifecycle table — correctly, since it is not a state
+    change — but that made re-running the publication CLI over a corpus die with
+    IllegalPublicationTransition on the first record that was already live,
+    part-way through, leaving the rest unpublished. Re-publishing what is
+    published is what an operator re-running a corpus command means, and it
+    changes nothing.
+
+    The readiness check still runs first, and that ordering is the point: a
+    record that was re-imported has had its review_state reset to DRAFT, so it
+    is public *and* no longer ready, and it must be reported as blocked rather
+    than waved through as "already done".
     """
     workspace = await _get_reviewer_workspace(scope, session, authority=authority)
     artifact = await _get_catalog_artifact(
@@ -639,6 +705,10 @@ async def publish_catalog_artifact(
     readiness = await _artifact_publication_readiness(session, artifact=artifact)
     if not readiness.ready:
         raise PublicationNotReadyError(readiness.blockers)
+    if artifact.publication_state == PublicationState.PUBLIC:
+        # No transition, no audit row: nothing happened, and an audit trail that
+        # records re-runs as publications would misreport when this went live.
+        return artifact
     previous_state = PublicationState(artifact.publication_state or PublicationState.PRIVATE)
     assert_publication_transition(previous_state, PublicationState.PUBLIC)
     artifact.publication_state = PublicationState.PUBLIC
@@ -755,6 +825,7 @@ async def attest_catalog_record(
     path: str | None,
     retrieval_metadata: dict[str, Any],
     attestation_meta: dict[str, Any],
+    claim_hash: str | None = None,
 ) -> tuple[str, ...]:
     """Bind provenance + an approved license onto one staged record (Slice C.5).
 
@@ -823,6 +894,7 @@ async def attest_catalog_record(
             license_scope=license_scope,
             spdx_id=spdx_id,
             evidence_hash=evidence_hash,
+            claim_hash=claim_hash,
         )
         performed.append("declared")
 
@@ -835,6 +907,7 @@ async def attest_catalog_record(
             decision=LicenseDecision.APPROVED,
             spdx_id=spdx_id,
             evidence_hash=evidence_hash,
+            claim_hash=claim_hash,
         )
         await record_audit(
             reviewer_scope,
@@ -863,6 +936,40 @@ async def attest_catalog_record(
         performed.append("accepted")
 
     return tuple(performed)
+
+
+async def latest_license_claim_hash(
+    scope: Scope,
+    session: AsyncSession,
+    artifact_id: uuid.UUID,
+    *,
+    authority: CatalogAuthority,
+) -> str | None:
+    """The claim hash of the newest licence assertion on ANY version of a record.
+
+    This is the "previous claim" side of AttestedRecord.grant_carries_forward.
+    It deliberately looks across versions rather than at the current one: a
+    re-imported record has a brand-new version carrying no assertion at all, and
+    the question being asked is whether the human grant made over the *previous*
+    version still binds. Restricting the lookup to the current version would
+    always answer None and quietly turn every carry-forward into a fresh
+    signature — the rubber stamp the owner's decision exists to avoid.
+
+    Returns None when no assertion exists, and also when the newest one predates
+    migration 0046 and therefore recorded no claim. Both mean "no comparable
+    prior grant", and the caller must require a signature rather than infer one.
+    """
+    workspace = await get_importer_workspace(scope, session, authority=authority)
+    await _get_catalog_artifact(session, workspace_id=workspace.id, artifact_id=artifact_id)
+    return (
+        await session.execute(
+            select(LicenseAssertion.claim_hash)
+            .join(ArtifactVersion, ArtifactVersion.id == LicenseAssertion.artifact_version_id)
+            .where(ArtifactVersion.artifact_id == artifact_id)
+            .order_by(LicenseAssertion.created_at.desc(), LicenseAssertion.id.desc())
+            .limit(1)
+        )
+    ).scalar_one_or_none()
 
 
 async def grant_catalog_reviewer(
@@ -943,6 +1050,53 @@ def _public_catalog_predicate(workspace_id: uuid.UUID) -> list[Any]:
     ]
 
 
+def _from_public_catalog(stmt: Select, workspace_id: uuid.UUID) -> Select:
+    """Apply the public catalog's FROM, joins and filter to `stmt`.
+
+    Sharing the predicate was not enough. The listing also inner-joins
+    ArtifactVersion on `current_version_id` and the count did not, so an
+    accepted+public artifact with no current version would be counted and not
+    rendered — the same disagreement as the ImportItem join, in the opposite
+    direction, and just as invisible.
+
+    Both queries are built through here so the row set has exactly one
+    definition. The web app refuses the corpus and serves static data when the
+    two disagree (repository-source.ts), so any divergence shows up as a page
+    that looks perfectly fine while ignoring the database entirely.
+    """
+    return (
+        stmt.select_from(Artifact)
+        .join(ArtifactVersion, ArtifactVersion.id == Artifact.current_version_id)
+        .where(*_public_catalog_predicate(workspace_id))
+    )
+
+
+def _latest_import_job_column(column: Any) -> Any:
+    """`column` from the import batch that most recently produced this artifact.
+
+    A correlated scalar subquery rather than a join, because it must yield at
+    most one row per artifact no matter how many times the record has been
+    imported. The predecessor — outerjoin(ImportItem).outerjoin(ImportJob) —
+    returned one row per import batch, so a second import of the same corpus
+    rendered every record twice while the count still counted artifacts once.
+
+    Newest wins: it describes the import the current version came from. `id`
+    breaks the tie because ids are uuid7 and therefore ordered by creation.
+    `ix_import_items_artifact_recency` (migration 0046) serves both the
+    correlation and the ordering.
+    """
+    return (
+        select(column)
+        .select_from(ImportItem)
+        .join(ImportJob, ImportJob.id == ImportItem.import_job_id)
+        .where(ImportItem.resulting_artifact_id == Artifact.id)
+        .order_by(ImportItem.created_at.desc(), ImportItem.id.desc())
+        .limit(1)
+        .correlate(Artifact)
+        .scalar_subquery()
+    )
+
+
 async def count_public_catalog_entries(
     scope: Scope,
     session: AsyncSession,
@@ -951,9 +1105,7 @@ async def count_public_catalog_entries(
 ) -> int:
     """How many entries the unpaginated listing would return."""
     workspace = await get_catalog_workspace(scope, session, authority=authority)
-    stmt = (
-        select(func.count()).select_from(Artifact).where(*_public_catalog_predicate(workspace.id))
-    )
+    stmt = _from_public_catalog(select(func.count()), workspace.id)
     return int((await session.execute(stmt)).scalar_one())
 
 
@@ -984,25 +1136,26 @@ async def list_public_catalog_entries(
     weakness — drift when rows are inserted mid-pagination — costs nothing on
     this table, whose only writer is an operator running the publication CLI by
     hand.
+
+    Every join here is either to-one or a scalar subquery, and that is load
+    bearing: this query has to return exactly as many rows as
+    count_public_catalog_entries counts. See _public_provenance for what the
+    outerjoin used to cost.
     """
     workspace = await get_catalog_workspace(scope, session, authority=authority)
-    stmt = (
+    stmt = _from_public_catalog(
         select(
             Artifact.slug,
             Artifact.execution_state,
             Artifact.updated_at,
             ArtifactVersion.code,
             ArtifactVersion.source_blob_sha256,
-            ImportItem.upstream_identity,
-            ImportJob.provider,
-            ImportJob.upstream_ref,
-        )
-        .join(ArtifactVersion, ArtifactVersion.id == Artifact.current_version_id)
-        .outerjoin(ImportItem, ImportItem.resulting_artifact_id == Artifact.id)
-        .outerjoin(ImportJob, ImportJob.id == ImportItem.import_job_id)
-        .where(*_public_catalog_predicate(workspace.id))
-        .order_by(func.coalesce(ImportItem.upstream_identity, Artifact.slug))
-    )
+            Artifact.upstream_identity,
+            _latest_import_job_column(ImportJob.provider).label("provider"),
+            _latest_import_job_column(ImportJob.upstream_ref).label("upstream_ref"),
+        ),
+        workspace.id,
+    ).order_by(func.coalesce(Artifact.upstream_identity, Artifact.slug))
     if offset:
         stmt = stmt.offset(offset)
     if limit is not None:
@@ -1034,30 +1187,25 @@ async def get_public_catalog_entry(
     Same authority validation and the same accepted+public filter as the listing,
     so an unpublished or draft record is a 404 to anonymous callers rather than
     an authorization error that would confirm its existence.
+
+    Built through _from_public_catalog for the same reason the listing is: a
+    detail route that can resolve a slug the listing does not show — or that
+    stops resolving one the listing does — is a 404 nobody can explain.
     """
     workspace = await get_catalog_workspace(scope, session, authority=authority)
-    stmt = (
+    stmt = _from_public_catalog(
         select(
             Artifact.slug,
             Artifact.execution_state,
             Artifact.updated_at,
             ArtifactVersion.code,
             ArtifactVersion.source_blob_sha256,
-            ImportItem.upstream_identity,
-            ImportJob.provider,
-            ImportJob.upstream_ref,
-        )
-        .join(ArtifactVersion, ArtifactVersion.id == Artifact.current_version_id)
-        .outerjoin(ImportItem, ImportItem.resulting_artifact_id == Artifact.id)
-        .outerjoin(ImportJob, ImportJob.id == ImportItem.import_job_id)
-        .where(
-            Artifact.workspace_id == workspace.id,
-            Artifact.deleted_at.is_(None),
-            Artifact.review_state == ReviewState.ACCEPTED,
-            Artifact.publication_state == PublicationState.PUBLIC,
-            func.coalesce(ImportItem.upstream_identity, Artifact.slug) == slug,
-        )
-    )
+            Artifact.upstream_identity,
+            _latest_import_job_column(ImportJob.provider).label("provider"),
+            _latest_import_job_column(ImportJob.upstream_ref).label("upstream_ref"),
+        ),
+        workspace.id,
+    ).where(func.coalesce(Artifact.upstream_identity, Artifact.slug) == slug)
     row = (await session.execute(stmt)).first()
     if row is None:
         raise NotFoundError("catalog entry")
