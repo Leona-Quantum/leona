@@ -173,6 +173,12 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
         web_origin="http://test",
         environment="production",
         vqe_production_execution=True,
+        # This identity exists only inside the disposable CI database. The
+        # E2E deliberately saves more than the free tier's ten artifacts while
+        # proving Qiskit/PennyLane and controlled-swap persistence. Classify
+        # that synthetic operator explicitly instead of weakening the
+        # production artifact cap or making scientific results unkept.
+        developer_emails=frozenset({"vqe-production-e2e@majorana.test"}),
     )
     app = create_app(settings)
     app.state.engine = engine

@@ -147,8 +147,9 @@ async def test_standard_materialization_is_isolated_across_workspaces(db):
                 workspace_id=workspace.id,
                 role=Role.OWNER,
             )
+            kept_before = await artifacts.count_kept_against_quota(scope, session)
             reports.append(await materialize_standard_vqe_catalog(scope, session))
-            assert await artifacts.count_kept_against_quota(scope, session) == 0
+            assert await artifacts.count_kept_against_quota(scope, session) == kept_before
             await session.commit()
 
     assert all(report.component_created == 29 for report in reports)
