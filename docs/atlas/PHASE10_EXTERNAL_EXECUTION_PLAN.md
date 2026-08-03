@@ -178,6 +178,8 @@ Implemented offline preflight contracts:
 - `phase10_github_request_plan` compiles only fixed GitHub Contents API `GET`
   operations with exact-commit `ref`, segment-wise path encoding, object JSON,
   API version, identity encoding, no redirects, and a bounded response;
+- `phase10_github_response` validates already-read object JSON as one exact,
+  ordinary, bounded UTF-8 selected file and never follows returned links;
 - `phase10_retrieval_manifest` records bounded UTF-8 file evidence and verifies
   the exact repository, commit, selected path set, byte length, and SHA-256;
 - no contract accepts a URL, header, credential, proxy, redirect, command,

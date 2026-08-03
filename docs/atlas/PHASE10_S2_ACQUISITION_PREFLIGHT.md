@@ -135,6 +135,16 @@ destination evidence, is SHA-256 bound and rejects even self-consistently
 rehashed changes to the method, route, query, headers, redirect policy, or
 limit. Workload credentials are deliberately absent from the plan.
 
+The pure `phase10_github_response` module now validates already-read response
+bytes. It performs no network operation. It requires a single `200` JSON
+response with identity encoding and an optional exact `Content-Length`, rejects
+redirects, duplicate headers and JSON keys, arrays, unknown object fields,
+directories, symlinks, submodules, path/name substitution, malformed base64,
+declared-size mismatch, binary/NUL content, non-UTF-8 content, and all byte-limit
+violations. GitHub link fields are type-checked but never followed. Successful
+content is bound to the request-plan digest and converted to the existing
+`RetrievedFileEvidence` contract.
+
 ## 7. Tests
 
 Targeted validation after the change:
