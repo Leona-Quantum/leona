@@ -2,7 +2,19 @@ packages:
   - "apps/*"
   - "packages/ts/*"
 overrides:
-  fast-uri: 3.1.4
+  # GHSA-7p8r-x3mc-p8w7 (CVSS 7.5): a backslash is accepted as an authority
+  # introducer, so `https:\\evil.test\path` parses with a host an origin check
+  # would not expect — host confusion. Patched at 3.1.5 on the 3.x line; the pin
+  # was already at 3.1.4 for an earlier advisory, so this is a patch bump.
+  # Traced before pinning rather than assumed: the only dependent is ajv@8.20.0,
+  # reached through schema-utils (webpack loader-option validation) and
+  # ajv-formats/ajv-keywords. That is build tooling — no runtime request path
+  # here parses a URL through it, because request-body validation is pydantic in
+  # the Python API and generated TS types in the web app, neither of which uses
+  # ajv. Upgraded anyway: it is a one-line patch bump with no consumer-visible
+  # change, and "build-time only" is an argument for not panicking, not an
+  # argument for keeping a known-vulnerable URL parser on the tree.
+  fast-uri: 3.1.5
   js-yaml: 4.3.0
   sharp: 0.35.3
   # postcss advisories keep landing on the version Next/Tailwind pull in:
