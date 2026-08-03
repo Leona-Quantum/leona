@@ -79,6 +79,16 @@ test("malformed angle literals are rejected", () => {
   }
 });
 
+test("signed and scientific bound angles round-trip from framework observations", () => {
+  const code = "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(1)\nqc.rx(-1e-05, 0)\nqc.rz(-pi/2, 0)";
+  const parsed = parseBuilderCircuit(code, "qiskit");
+  assert.ok(parsed);
+  assert.deepEqual(shape(parsed.steps), [
+    { gate: "RX", qubits: [0], param: "-1e-05" },
+    { gate: "RZ", qubits: [0], param: "-pi/2" },
+  ]);
+});
+
 test("PennyLane returns must be fully supported before reconstruction", () => {
   const unsupported = "import pennylane as qml\n\ndev = qml.device('default.qubit', wires=2)\n@qml.qnode(dev)\ndef circuit():\n    qml.Hadamard(wires=0)\n    return qml.probs(wires=[0])";
   assert.equal(parseBuilderCircuit(unsupported, "pennylane"), null);

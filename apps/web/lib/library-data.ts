@@ -1,4 +1,5 @@
 import type { RunEvent } from "@majorana/ui";
+import type { CircuitIR } from "./circuit-ir.ts";
 import type { MeasuredResult } from "./measured-result.ts";
 import type { VerificationCheck, VerificationSummary } from "./verification-record.ts";
 import { verificationFromResource, verificationSummaryFromValue } from "./verification-record.ts";
@@ -26,6 +27,8 @@ export interface LibraryArtifact {
   code: string;
   frameworkVariants?: Record<string, string>;
   qasm: string | null;
+  /** Executed framework circuit, normalized for Studio display. */
+  circuitIr?: CircuitIR | null;
   currentVersionId?: string;
   resourceRows: Array<{ label: string; value: string }>;
   runId?: string;
@@ -496,6 +499,7 @@ export function artifactFromResource(value: unknown): LibraryArtifact[] {
     verification: existing?.verification ?? "Verification record available in artifact detail.",
     code: existing?.code ?? "",
     qasm: existing?.qasm ?? null,
+    circuitIr: existing?.circuitIr ?? null,
     currentVersionId: typeof artifact.current_version_id === "string" ? artifact.current_version_id : existing?.currentVersionId,
     resourceRows: existing?.resourceRows ?? [],
     runId: existing?.runId,

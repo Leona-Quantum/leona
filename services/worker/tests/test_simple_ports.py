@@ -1958,6 +1958,27 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
         source=program.normalized_source,
         source_fingerprint=program.fingerprint,
     )
+    circuit_ir = {
+        "schema": "majorana.circuit-ir",
+        "version": 1,
+        "framework": "qiskit",
+        "qubit_count": 2,
+        "clbit_count": 0,
+        "operation_count": 1,
+        "operations": [
+            {
+                "id": "op-0",
+                "name": "h",
+                "display_name": "h",
+                "qubits": [0],
+                "clbits": [],
+                "parameters": [],
+                "editable": True,
+            }
+        ],
+        "truncated": False,
+        "global_phase": None,
+    }
     execution = ExecutionEvidence(
         execution_id=execution_id,
         candidate_id=candidate_id,
@@ -1967,7 +1988,7 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
         exit_code=0,
         duration_ms=1,
         result={"counts": {"00": 50, "11": 50}},
-        observation={"resource_metrics": {"qubits": 2}},
+        observation={"resource_metrics": {"qubits": 2}, "circuit_ir": circuit_ir},
     )
     review = SemanticReviewEvidence(
         review_id=uuid4(),
@@ -2054,6 +2075,7 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
     metadata = captured["version"]["metadata"]
     expected_status = "aligned" if decision is SemanticReviewDecision.READY else "not_accepted"
     assert metadata["review_summary"]["status"] == expected_status
+    assert metadata["circuit_ir"] == circuit_ir
     summary = metadata["verification_summary"]
     assert summary["decision"] == "inconclusive"
     assert summary["semantic_review_decision"] == decision.value
@@ -2110,6 +2132,7 @@ async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeyp
             "qubits": 480,
             "local_execution_ceiling_qubits": 25,
             "sandbox_runs": 0,
+            "circuit_ir": {"schema": "majorana.circuit-ir", "version": 1},
         },
     )
     review = SemanticReviewEvidence(
@@ -2177,6 +2200,7 @@ async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeyp
     }
     assert metadata["measured_result"] is None
     assert metadata["result_origin"] == "not_available"
+    assert "circuit_ir" not in metadata
     assert metadata["review_summary"]["status"] == "static_aligned"
     assert metadata["review_summary"]["decision"] == "ready"
     assert metadata["verification_summary"]["decision"] == "inconclusive"

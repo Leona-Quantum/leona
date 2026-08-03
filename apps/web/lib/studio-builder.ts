@@ -17,6 +17,8 @@ export type CustomGateDefinition = {
   name: string;
   qubitCount: number;
   steps: BuilderStep[];
+  /** Framework-native operation drawn faithfully but not safely regenerable. */
+  opaque?: boolean;
 };
 
 export const BUILDER_GATES: BuiltinBuilderGate[] = ["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CX", "CZ", "SWAP", "M"];
@@ -326,6 +328,10 @@ export function generateBuilderCode(
   const ordered = steps.filter((step) => step.gate !== "M");
   const measured = steps.some((step) => step.gate === "M");
   const activeCustomGates = usedCustomGates(steps, customGates);
+  const opaqueGate = activeCustomGates.find((gate) => gate.opaque);
+  if (opaqueGate) {
+    throw new Error(`cannot generate source for opaque circuit operation: ${opaqueGate.name}`);
+  }
   const usesAngle = steps.some((step) => Boolean(step.param)) || activeCustomGates.some((gate) => gate.steps.some((step) => Boolean(step.param)));
 
   const qiskitLines = ordered.map((step) => qiskitOperation(step, (qubit) => String(qubit), customGates)).filter(Boolean);

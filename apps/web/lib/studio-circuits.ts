@@ -1,4 +1,5 @@
 import { BUILDER_GATES, ROTATION_GATES, TWO_QUBIT_GATES, type BuilderStep, type CustomGateDefinition } from "./studio-builder.ts";
+import { isGateAngle } from "./gate-angle.ts";
 import { scopedStorage } from "./user-storage.ts";
 import { MAX_VIEWABLE_QUBITS } from "./studio-parse.ts";
 
@@ -110,6 +111,10 @@ function isCustomGate(value: unknown): value is CustomGateDefinition {
   if (!isRecord(value)) return false;
   const gate = value as Partial<CustomGateDefinition>;
   const qubitCount = gate.qubitCount;
+  // Circuit-IR opaque gates are canonical artifact observations, not user
+  // edits. They are reseeded from the server and never accepted from mutable
+  // localStorage as though the browser had authored an executable definition.
+  if (gate.opaque !== undefined) return false;
   if (
     !isNonEmptyString(gate.id) ||
     !isNonEmptyString(gate.name) ||
@@ -162,5 +167,5 @@ function hasQubits(value: unknown, limit: number, expectedLength: number): value
 }
 
 function isAngleParameter(value: unknown): value is string {
-  return typeof value === "string" && /^(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/.test(value.trim());
+  return isGateAngle(value);
 }
