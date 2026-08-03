@@ -279,6 +279,14 @@ manifest containing:
 - license/provenance status;
 - proposed prebuilt runtime profile.
 
+An offline structured-only contract now exists in
+`phase10_static_candidate`. It binds selected-file digests, explicit evidence
+paths, a requested Python entrypoint as data, rights/provenance states, and a
+fixed Atlas-owned framework-to-runtime candidate mapping. Candidate commands,
+arguments, package installation and execution are not accepted. Every output
+remains `structured_only`; see
+`PHASE10_S6_STATIC_CANDIDATE_PREFLIGHT.md`.
+
 No candidate-supplied command is executed. An approved mapping—not source
 contents—selects the runtime and fixed launcher.
 
