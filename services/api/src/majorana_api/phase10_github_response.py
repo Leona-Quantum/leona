@@ -118,6 +118,8 @@ def validate_phase10_github_content_response(
     content = _decode_github_base64(payload["content"])
     if len(content) != declared_size:
         raise Phase10GitHubResponseError("github_content_size_mismatch")
+    if _git_object_digest(content, blob_sha) != blob_sha:
+        raise Phase10GitHubResponseError("github_blob_content_digest_mismatch")
     media_type = _media_type_for_path(operation.selected_path)
     try:
         file_evidence = RetrievedFileEvidence.from_bytes(
@@ -307,3 +309,9 @@ def _media_type_for_path(selected_path: str) -> str:
         ".yaml": "application/yaml",
         ".yml": "application/x-yaml",
     }.get(suffix, "text/plain")
+
+
+def _git_object_digest(content: bytes, expected: str) -> str:
+    payload = f"blob {len(content)}\0".encode() + content
+    algorithm = "sha1" if len(expected) == 40 else "sha256"
+    return hashlib.new(algorithm, payload).hexdigest()

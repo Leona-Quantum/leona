@@ -141,9 +141,10 @@ response with identity encoding and an optional exact `Content-Length`, rejects
 redirects, duplicate headers and JSON keys, arrays, unknown object fields,
 directories, symlinks, submodules, path/name substitution, malformed base64,
 declared-size mismatch, binary/NUL content, non-UTF-8 content, and all byte-limit
-violations. GitHub link fields are type-checked but never followed. Successful
-content is bound to the request-plan digest and converted to the existing
-`RetrievedFileEvidence` contract.
+violations. It also recomputes the Git object SHA-1 or SHA-256 over the decoded
+bytes and rejects a mismatch with GitHub's blob identity. GitHub link fields are
+type-checked but never followed. Successful content is bound to the request-plan
+digest and converted to the existing `RetrievedFileEvidence` contract.
 
 The pure `phase10_acquisition_result` aggregate is created only when every
 selected path has exactly one validated response in canonical order and the

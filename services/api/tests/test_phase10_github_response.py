@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import base64
+import hashlib
 import json
 from datetime import UTC, datetime, timedelta
 
@@ -25,6 +26,11 @@ from majorana_api.phase10_retrieval_manifest import MAX_SELECTED_FILE_BYTES
 COMMIT = "a" * 40
 REQUESTED_AT = datetime(2026, 8, 3, 12, 0, 0, tzinfo=UTC)
 CONTENT = b"print('safe')\n"
+
+
+def _blob_sha(content: bytes) -> str:
+    payload = f"blob {len(content)}\0".encode() + content
+    return hashlib.sha1(payload).hexdigest()
 
 
 def _plan():
@@ -60,7 +66,7 @@ def _payload(
         "name": path.rsplit("/", 1)[-1],
         "path": path,
         "content": base64.b64encode(content).decode("ascii"),
-        "sha": "b" * 40,
+        "sha": _blob_sha(content),
         "url": "https://api.github.com/untrusted",
         "git_url": "https://api.github.com/untrusted-git",
         "html_url": "https://github.com/untrusted-html",
@@ -106,7 +112,7 @@ def test_valid_file_becomes_bound_utf8_evidence_without_following_links():
     assert result.file_evidence.selected_path == "src/example.py"
     assert result.file_evidence.media_type == "text/x-python"
     assert result.file_evidence.length == len(CONTENT)
-    assert result.github_blob_sha == "b" * 40
+    assert result.github_blob_sha == _blob_sha(CONTENT)
     assert result.request_plan_sha256 == _plan().plan_sha256
     assert result.response_policy_version == GITHUB_CONTENT_RESPONSE_POLICY_VERSION
 
@@ -195,6 +201,14 @@ def test_invalid_base64_size_and_binary_content_are_rejected():
     too_large["size"] = MAX_SELECTED_FILE_BYTES + 1
     with pytest.raises(Phase10GitHubResponseError, match="invalid_github_content_size"):
         _validate(body=_body(too_large))
+
+    wrong_blob = _payload()
+    wrong_blob["sha"] = "b" * 40
+    with pytest.raises(
+        Phase10GitHubResponseError,
+        match="github_blob_content_digest_mismatch",
+    ):
+        _validate(body=_body(wrong_blob))
 
 
 def test_duplicate_json_keys_arrays_unknown_fields_and_bom_fail_closed():

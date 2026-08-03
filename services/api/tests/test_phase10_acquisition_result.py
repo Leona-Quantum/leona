@@ -45,6 +45,7 @@ def _plan():
 
 
 def _validated(plan, path: str, content: bytes):
+    git_payload = f"blob {len(content)}\0".encode() + content
     payload = {
         "type": "file",
         "encoding": "base64",
@@ -52,7 +53,7 @@ def _validated(plan, path: str, content: bytes):
         "name": path.rsplit("/", 1)[-1],
         "path": path,
         "content": base64.b64encode(content).decode(),
-        "sha": "b" * 40,
+        "sha": hashlib.sha1(git_payload).hexdigest(),
         "url": None,
         "git_url": None,
         "html_url": None,
