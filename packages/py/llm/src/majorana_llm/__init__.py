@@ -13,8 +13,10 @@ from majorana_llm.client import (
     endpoint_for,
     classify_provider_error,
     attempt_timeout_seconds,
+    conversation_request_messages,
     missing_provider_keys,
     provider_timeout_seconds,
+    request_messages,
     stage_budget,
 )
 from majorana_llm.models import model_for, resolve_provider, roles_for_profile
@@ -59,6 +61,8 @@ __all__ = [
     "default_llm",
     "endpoint_for",
     "classify_provider_error",
+    "conversation_request_messages",
+    "request_messages",
     "missing_provider_keys",
     "model_for",
     "resolve_provider",

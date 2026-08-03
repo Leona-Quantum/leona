@@ -21,7 +21,7 @@ from majorana_contracts.enums import (
     VerifierDecision,
 )
 from majorana_api import credential_crypto
-from majorana_llm import CHAT_SYSTEM_PROMPT, LLMResponse
+from majorana_llm import CHAT_SYSTEM_PROMPT, LLMResponse, request_messages
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
@@ -739,9 +739,11 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     # What matters here is that chat uses the assistant prompt and not the
     # planner's (the only other live pipeline prompt in majorana_llm).
     assert llm.request.system == CHAT_SYSTEM_PROMPT
-    assert [message.model_dump() for message in llm.request.messages] == [
-        {"role": "user", "content": "What is a Bell state?"}
-    ]
+    # Asserted through `request_messages` rather than off `.messages`: that is
+    # the body the provider is handed, and a turn with no history carries it in
+    # `.user` with `.messages` unset. Reading the raw field made an equivalent
+    # request look like a changed one.
+    assert request_messages(llm.request) == [{"role": "user", "content": "What is a Bell state?"}]
     assert store.finished == [(RunStatus.SUCCEEDED, {"status": RunStatus.SUCCEEDED}, {})]
 
 

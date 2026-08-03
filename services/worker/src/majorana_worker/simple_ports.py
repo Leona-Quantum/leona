@@ -99,6 +99,7 @@ from majorana_llm import (
     SIMPLE_REVIEW_SYSTEM_PROMPT,
     StageOutputError,
     extract_json,
+    conversation_request_messages,
     model_for,
     simple_generation_system_prompt,
     with_execution_conversation_context,
@@ -121,18 +122,6 @@ log = logging.getLogger("majorana_worker.simple_ports")
 # unaffected: every candidate is stored as its own immutable revision, and the
 # durable LLM-call inbox replays the recorded response rather than re-sampling.
 _REPAIR_TEMPERATURE = 0.4
-
-
-def _conversation_request_messages(
-    history: Sequence[Mapping[str, str]], current_user: str
-) -> list[dict[str, str]] | None:
-    """Preserve bounded turn roles and make the structured request the final turn."""
-    if not history:
-        return None
-    return [
-        *({"role": message["role"], "content": message["content"]} for message in history),
-        {"role": "user", "content": current_user},
-    ]
 
 
 class SimpleStepObserver(Protocol):
@@ -538,7 +527,7 @@ class SimpleIntentReviewer:
                     has_history=bool(self._conversation_messages),
                 ),
                 user=user,
-                messages=_conversation_request_messages(
+                messages=conversation_request_messages(
                     self._conversation_messages,
                     user,
                 ),
@@ -2810,7 +2799,7 @@ class ProductionSimplePipelinePorts:
                         has_history=bool(self._conversation_messages),
                     ),
                     user=user_text,
-                    messages=_conversation_request_messages(
+                    messages=conversation_request_messages(
                         self._conversation_messages,
                         user_text,
                     ),
@@ -2920,7 +2909,7 @@ class ProductionSimplePipelinePorts:
                             has_history=bool(self._conversation_messages),
                         ),
                         user=request_payload,
-                        messages=_conversation_request_messages(
+                        messages=conversation_request_messages(
                             self._conversation_messages,
                             request_payload,
                         ),
@@ -3136,7 +3125,7 @@ class ProductionSimplePipelinePorts:
                         has_history=bool(self._conversation_messages),
                     ),
                     user=request_payload,
-                    messages=_conversation_request_messages(
+                    messages=conversation_request_messages(
                         self._conversation_messages,
                         request_payload,
                     ),
@@ -3202,7 +3191,7 @@ class ProductionSimplePipelinePorts:
                         has_history=bool(self._conversation_messages),
                     ),
                     user=request_payload,
-                    messages=_conversation_request_messages(
+                    messages=conversation_request_messages(
                         self._conversation_messages,
                         request_payload,
                     ),
@@ -3387,7 +3376,7 @@ class ProductionSimplePipelinePorts:
                         has_history=bool(self._conversation_messages),
                     ),
                     user=user_text,
-                    messages=_conversation_request_messages(
+                    messages=conversation_request_messages(
                         self._conversation_messages,
                         user_text,
                     ),
@@ -3554,7 +3543,7 @@ class ProductionSimplePipelinePorts:
                         has_history=bool(self._conversation_messages),
                     ),
                     user=user_text,
-                    messages=_conversation_request_messages(
+                    messages=conversation_request_messages(
                         self._conversation_messages,
                         user_text,
                     ),
@@ -3749,7 +3738,7 @@ class ProductionSimplePipelinePorts:
                             has_history=bool(self._conversation_messages),
                         ),
                         user=user_text,
-                        messages=_conversation_request_messages(
+                        messages=conversation_request_messages(
                             self._conversation_messages,
                             user_text,
                         ),

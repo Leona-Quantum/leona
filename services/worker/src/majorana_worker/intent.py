@@ -33,7 +33,13 @@ from typing import Mapping
 from typing import Literal
 
 from majorana_contracts.enums import RunMode
-from majorana_llm import LLMClient, LLMRequest, model_for, render_intent_prompt
+from majorana_llm import (
+    LLMClient,
+    LLMRequest,
+    conversation_request_messages,
+    model_for,
+    render_intent_prompt,
+)
 
 log = logging.getLogger(__name__)
 
@@ -111,17 +117,7 @@ async def resolve_mode(
         return ModeDecision(requested, requested, "passthrough", "mode explicitly selected")
 
     rendered = render_intent_prompt(prompt)
-    messages = (
-        [
-            *(
-                {"role": message["role"], "content": message["content"]}
-                for message in conversation_messages
-            ),
-            {"role": "user", "content": rendered.user},
-        ]
-        if conversation_messages
-        else None
-    )
+    messages = conversation_request_messages(conversation_messages, rendered.user)
     try:
         # Bounded on purpose. This call is now on the path of every auto message
         # — which is every message the composer sends by default — and it is the
