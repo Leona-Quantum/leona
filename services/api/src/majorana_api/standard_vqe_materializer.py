@@ -156,9 +156,11 @@ async def _persist_spec(
         # Artifact.framework is a legacy required storage field. Scientific
         # framework identity lives in the component/workflow payload.
         framework=ContractFramework.QISKIT,
-        # Server-owned catalog seeds are bounded by the reviewed seed manifest,
-        # not by an end-user Vault allowance.
-        kept=True,
+        # Registry seeds are private backing records, not artifacts the user
+        # chose to file in the Vault.  They remain addressable through the VQE
+        # registry tables while staying outside the end-user allowance; an
+        # explicit workflow/result save is the operation that may file one.
+        kept=False,
     )
     version = await artifacts_repo.create_version(
         scope,

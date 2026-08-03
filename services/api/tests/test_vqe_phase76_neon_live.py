@@ -18,7 +18,7 @@ from sqlalchemy.exc import DBAPIError
 from majorana_api.catalog_authority import CatalogAuthority
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.orm import VqeControlledComparisonSpec
-from majorana_api.repos import NotFoundError, system
+from majorana_api.repos import NotFoundError, artifacts, system
 from majorana_api.repos import vqe as vqe_repo
 from majorana_api.standard_vqe_materializer import (
     materialize_standard_vqe_catalog,
@@ -148,6 +148,7 @@ async def test_standard_materialization_is_isolated_across_workspaces(db):
                 role=Role.OWNER,
             )
             reports.append(await materialize_standard_vqe_catalog(scope, session))
+            assert await artifacts.count_kept_against_quota(scope, session) == 0
             await session.commit()
 
     assert all(report.component_created == 29 for report in reports)
