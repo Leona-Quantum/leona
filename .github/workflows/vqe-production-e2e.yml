@@ -12,6 +12,7 @@ on:
       - services/api/src/majorana_api/repos/vqe.py
       - services/api/src/majorana_api/routes/vqe.py
       - services/api/src/majorana_api/settings.py
+      - services/api/src/majorana_api/standard_vqe_materializer.py
       - services/api/src/majorana_api/vqe_runtime_profiles.py
       - services/api/tests/test_vqe_production_e2e.py
       - services/worker/src/majorana_worker/handlers.py
