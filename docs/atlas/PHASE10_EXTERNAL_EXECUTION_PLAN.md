@@ -335,6 +335,14 @@ Minimum live proof:
 - graceful timeout followed by forced termination and cleanup;
 - stdout/stderr and result captured separately with hard byte limits.
 
+An offline observation contract now exists in `phase10_executor_probe`.  It
+requires an exact ordered result for every runtime, network, identity,
+filesystem, privilege, mount, environment, resource, timeout, cleanup and
+output probe; binds those results to the S7 identity/policy/runtime and a unique
+attempt; and rejects missing, duplicate, reordered, generic or integrity-invalid
+evidence.  A completely passing observation still remains `unqualified`; see
+`PHASE10_S8_EXECUTOR_PROBE_PREFLIGHT.md`.
+
 Exit gate: hostile corpus passes on the exact deployment class. Docker Desktop
 or an unrestricted shared Docker daemon is not production qualification.
 
