@@ -165,15 +165,39 @@ async def test_deliberately_selected_modes_pass_through_untouched(mode):
     assert llm.calls == 0
 
 
-async def test_the_router_sees_only_the_current_message():
-    """No history: after one execute turn, a sticky classifier reads every
-    follow-up ("thanks", "why did that work?") as part of the task."""
+async def test_the_router_sees_only_the_current_message_when_there_is_no_history():
     llm = _ScriptedLLM()
 
     await resolve_mode("Build and run a 4-qubit GHZ state", RunMode.AUTO, llm)
 
     assert llm.request.messages in (None, [])
     assert "Build and run a 4-qubit GHZ state" in llm.request.user
+
+
+async def test_referential_execute_followup_routes_with_bounded_conversation_context():
+    llm = _ScriptedLLM()
+    history = [
+        {
+            "role": "user",
+            "content": "6社の取引先を2組に分け、切る取引を最少にしてください。",
+        },
+        {
+            "role": "assistant",
+            "content": "これはグラフ分割としてQAOA回路にできます。",
+        },
+    ]
+
+    await resolve_mode(
+        "実際に回路を作って",
+        RunMode.AUTO,
+        llm,
+        conversation_messages=history,
+    )
+
+    assert [message.model_dump() for message in llm.request.messages] == [
+        *history,
+        {"role": "user", "content": "User message:\n実際に回路を作って"},
+    ]
 
 
 @pytest.mark.parametrize("status", [RunStatus.CANCELLED, RunStatus.SUCCEEDED, RunStatus.FAILED])

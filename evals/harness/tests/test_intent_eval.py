@@ -17,8 +17,10 @@ from majorana_llm import LLMResponse
 class _ScriptedLLM:
     def __init__(self, responses: list[str]):
         self.responses = list(responses)
+        self.request = None
 
     async def complete(self, request, *, on_delta=None):
+        self.request = request
         return LLMResponse(
             text=self.responses.pop(0),
             model=request.model,
@@ -59,6 +61,49 @@ async def test_intent_eval_scores_modes_and_cohorts():
         "underspecified": {"correct": 0, "total": 1},
     }
     assert [case.correct for case in report.cases] == [True, False]
+
+
+async def test_a_followup_case_reaches_the_router_as_conversation_history():
+    """The corpus can describe a follow-up; this asserts the harness delivers
+    one. If run_intent_corpus drops `history`, every follow-up case silently
+    becomes a standalone prompt and the cohort keeps reporting a score."""
+    case = IntentCase(
+        id="followup",
+        split="holdout",
+        cohort="followup",
+        prompt="Build it now.",
+        expected_mode="execute",
+        history=[
+            {"role": "user", "content": "Partition six suppliers, weights A-B 5, A-C 2."},
+            {"role": "assistant", "content": "That is a weighted MaxCut over six nodes."},
+        ],
+    )
+    llm = _ScriptedLLM(['{"intent":"execute","reason":"referential action"}'])
+
+    report = await run_intent_corpus([case], llm=llm)
+
+    assert report.correct == 1
+    assert [message.model_dump() for message in llm.request.messages] == [
+        {"role": "user", "content": "Partition six suppliers, weights A-B 5, A-C 2."},
+        {"role": "assistant", "content": "That is a weighted MaxCut over six nodes."},
+        {"role": "user", "content": "User message:\nBuild it now."},
+    ]
+
+
+async def test_a_standalone_case_still_reaches_the_router_with_no_history():
+    case = IntentCase(
+        id="standalone",
+        split="holdout",
+        cohort="basic",
+        prompt="Create and measure a Bell state.",
+        expected_mode="execute",
+    )
+    llm = _ScriptedLLM(['{"intent":"execute","reason":"canonical circuit"}'])
+
+    await run_intent_corpus([case], llm=llm)
+
+    assert llm.request.messages is None, "no history must stay the single-user request"
+    assert llm.request.user == "User message:\nCreate and measure a Bell state."
 
 
 def test_intent_corpus_split_is_a_real_holdout_boundary(tmp_path: Path):
@@ -110,8 +155,8 @@ def test_checked_in_corpus_is_balanced_across_splits_and_outcomes():
     assert {case.split for case in corpus} == {"calibration", "holdout"}
     for split in ("calibration", "holdout"):
         selected = [case for case in corpus if case.split == split]
-        assert sum(case.expected_mode == "execute" for case in selected) == 7
-        assert sum(case.expected_mode == "chat" for case in selected) == 7
+        assert sum(case.expected_mode == "execute" for case in selected) == 9
+        assert sum(case.expected_mode == "chat" for case in selected) == 9
         assert {case.cohort for case in selected} >= {
             "basic",
             "intermediate",
@@ -119,7 +164,26 @@ def test_checked_in_corpus_is_balanced_across_splits_and_outcomes():
             "underspecified",
             "resource",
             "capability",
+            "followup",
         }
+
+
+def test_the_followup_cohort_actually_carries_history_both_ways():
+    """A follow-up case with no history is a standalone prompt wearing the
+    cohort's name — it would score the router on something else entirely and
+    still report as coverage of conversation routing."""
+    corpus = load_intent_corpus("evals/intent-corpus.yaml")
+    followups = [case for case in corpus if case.cohort == "followup"]
+
+    assert len(followups) >= 8
+    assert all(case.history for case in followups)
+    assert all(case.history[-1].role == "assistant" for case in followups), (
+        "a follow-up answers the assistant's last turn"
+    )
+    # Both directions, or the cohort only proves history can make routing sticky
+    # and never that it can be resisted.
+    assert sum(case.expected_mode == "execute" for case in followups) >= 3
+    assert sum(case.expected_mode == "chat" for case in followups) >= 3
 
 
 def test_procedural_intent_cases_are_reproducible_seeded_and_balanced():
@@ -175,10 +239,10 @@ def test_intent_loader_merges_static_holdout_and_procedural_cases():
         procedural_cases_per_family=2,
     )
 
-    assert len(cases) == 30
-    assert len({case.id for case in cases}) == 30
-    assert sum(case.expected_mode == "execute" for case in cases) == 19
-    assert sum(case.expected_mode == "chat" for case in cases) == 11
+    assert len(cases) == 34
+    assert len({case.id for case in cases}) == 34
+    assert sum(case.expected_mode == "execute" for case in cases) == 21
+    assert sum(case.expected_mode == "chat" for case in cases) == 13
 
 
 @pytest.mark.parametrize("seed", [-1, 2**63])

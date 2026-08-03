@@ -138,3 +138,114 @@
   cohort: capability
   expected_mode: chat
   prompt: Use QuTiP to simulate this Lindblad master equation.
+# Follow-up routing. These are the cases conversation history exists for, and
+# the cases it can break: a referential message must inherit the earlier task,
+# and an unrelated one must not become another execute run.
+- id: calibration-followup-referential-ja
+  split: calibration
+  cohort: followup
+  expected_mode: execute
+  history:
+    - role: user
+      content: >-
+        6社の取引先を2組に分けたい。取引量は A-B 5, A-C 2, B-D 4, C-E 3, D-F 6, E-F 1
+        です。分断される取引量を最小にする分け方を知りたい。
+    - role: assistant
+      content: >-
+        これは重み付きグラフの最大カット問題として定式化できます。6ノード、
+        6辺の重み付きグラフをQAOAで解くのが素直な方針です。
+  prompt: 実際に回路を作って
+- id: calibration-followup-supplies-the-missing-data
+  split: calibration
+  cohort: followup
+  expected_mode: execute
+  history:
+    - role: user
+      content: 配送ルートを量子アルゴリズムで最適化したい。
+    - role: assistant
+      content: >-
+        できます。ただし地点数と距離行列が必要です。何地点で、
+        各地点間の距離はいくつでしょうか。
+  prompt: >-
+    4地点で、距離行列は [[0,2,9,5],[2,0,4,7],[9,4,0,3],[5,7,3,0]] です。これで回路を作って実行して。
+- id: calibration-followup-thanks-is-not-another-run
+  split: calibration
+  cohort: followup
+  expected_mode: chat
+  history:
+    - role: user
+      content: Cirqで4量子ビットGHZ状態を作って測定して。
+    - role: assistant
+      content: >-
+        4量子ビットGHZ回路を生成して実行しました。RESULT = {'0000': 512, '1111': 512}
+        で、期待どおり2つの状態にほぼ均等に分布しています。
+  prompt: ありがとう、助かりました！
+- id: calibration-followup-still-missing-data
+  split: calibration
+  cohort: followup
+  expected_mode: chat
+  history:
+    - role: user
+      content: うちの取引ネットワークを量子最適化で分割したい。
+    - role: assistant
+      content: >-
+        取り組めます。ただし対象の企業数と、企業間の取引量がわからないと
+        問題を定義できません。具体的な数値を教えてください。
+  prompt: とりあえず回路を作ってみて
+- id: holdout-followup-referential-en
+  split: holdout
+  cohort: followup
+  expected_mode: execute
+  history:
+    - role: user
+      content: >-
+        I have six suppliers and want to split them into two groups so the
+        disrupted trade is as small as possible. Volumes are A-B 5, A-C 2,
+        B-D 4, C-E 3, D-F 6, E-F 1.
+    - role: assistant
+      content: >-
+        That is a weighted MaxCut over a six-node graph. QAOA with a couple of
+        layers is a reasonable formulation for a problem this size.
+  prompt: Go ahead and build and run it.
+- id: holdout-followup-independent-new-task
+  split: holdout
+  cohort: followup
+  expected_mode: execute
+  history:
+    - role: user
+      content: >-
+        Partition six suppliers into two groups minimising cut volume, weights
+        A-B 5, A-C 2, B-D 4, C-E 3, D-F 6, E-F 1.
+    - role: assistant
+      content: >-
+        Generated and ran a 6-qubit QAOA circuit. RESULT reports a cut cost of
+        3.0, matching the exhaustive classical baseline.
+  prompt: Now make a 3-qubit GHZ state in Qiskit and measure it with 1024 shots.
+- id: holdout-followup-explanation-question
+  split: holdout
+  cohort: followup
+  expected_mode: chat
+  history:
+    - role: user
+      content: Solve this 6-node MaxCut with QAOA and report the cut value.
+    - role: assistant
+      content: >-
+        Generated and ran a 6-qubit QAOA circuit with two layers.
+        RESULT reports a cut cost of 3.0.
+  prompt: Why did you pick two layers rather than one?
+- id: holdout-followup-cancelled-then-asked
+  split: holdout
+  cohort: followup
+  expected_mode: chat
+  history:
+    - role: user
+      content: >-
+        Build a VQE for H2 at 0.735 angstrom bond length and report the ground
+        state energy.
+    - role: assistant
+      content: >-
+        That is executable here. I would use a hardware-efficient ansatz on two
+        qubits after a parity mapping.
+  prompt: >-
+    Actually hold off on that. What is the difference between VQE and QAOA in
+    terms of what they optimise?

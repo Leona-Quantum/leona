@@ -319,6 +319,49 @@ def _ports(*, observer=None, rollback=None):
     return ports, llm, executor, reviewer, converter, saver, observer
 
 
+async def test_plan_and_generation_receive_referential_conversation_context():
+    history = [
+        {
+            "role": "user",
+            "content": "Split six companies into two groups while minimizing cut trades.",
+        },
+        {
+            "role": "assistant",
+            "content": "This can be formulated as a weighted graph partition problem.",
+        },
+    ]
+    llm = QueueLLM(
+        [
+            json.dumps(_plan_payload()),
+            json.dumps({"source": _SOURCE}),
+        ]
+    )
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=llm,
+        executor=Executor(),
+        reviewer=Reviewer(),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="Build the actual circuit now.",
+        conversation_messages=history,
+        framework=Framework.QISKIT,
+        requested_shots=100,
+        requested_seed=7,
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert [message.model_dump() for message in llm.requests[0].messages[:-1]] == history
+    plan_request = json.loads(llm.requests[0].messages[-1].content)
+    assert plan_request["task"] == "Build the actual circuit now."
+    assert [message.model_dump() for message in llm.requests[1].messages[:-1]] == history
+    generation_request = json.loads(llm.requests[1].messages[-1].content)
+    assert generation_request["task"] == "Build the actual circuit now."
+
+
 async def test_production_ports_complete_fixed_flow_without_strict_verification():
     ports, llm, executor, reviewer, converter, saver, observer = _ports()
     outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
@@ -1385,6 +1428,54 @@ async def test_simple_intent_reviewer_is_one_advisory_call_over_trusted_evidence
     assert "sandbox_stdout" not in llm.requests[0].user
     assert '"counts"' in llm.requests[0].user
     assert '"review_attempt": 1' in llm.requests[0].user
+
+
+async def test_intent_reviewer_receives_the_same_referential_context_as_planning():
+    ports, *_ = _ports()
+    run_id = uuid4()
+    planned = await ports.plan(run_id, None, None)
+    generated = await ports.generate(run_id, planned.value, None, None)
+    executed = await ports.run_execution(run_id, planned.value, generated.value)
+    assert planned.value is not None
+    assert generated.value is not None
+    assert executed.value is not None
+    history = [
+        {"role": "user", "content": "Optimize the six-company graph partition."},
+        {"role": "assistant", "content": "QAOA is one possible formulation."},
+    ]
+    llm = QueueLLM(
+        [
+            json.dumps(
+                {
+                    "decision": "ready",
+                    "confidence": "high",
+                    "severity": "none",
+                    "summary": "request, plan, code, and protected RESULT align",
+                    "passed_checks": ["request_to_plan"],
+                    "residual_risks": ["AI review is advisory"],
+                }
+            )
+        ]
+    )
+    reviewer = SimpleIntentReviewer(
+        llm=llm,
+        task_prompt="Build it now.",
+        conversation_messages=history,
+    )
+
+    result = await reviewer.review(
+        generated.value,
+        executed.value,
+        planned.value.plan,
+        [{"method": "return_contract", "result": "pass"}],
+        1,
+    )
+
+    assert result.decision is SemanticReviewDecision.READY
+    assert [message.model_dump() for message in llm.requests[0].messages[:-1]] == history
+    review_request = json.loads(llm.requests[0].messages[-1].content)
+    assert review_request["request"] == "Build it now."
+    assert "canonical example such as Bell" in llm.requests[0].system
 
 
 async def test_unexecuted_reviewer_uses_deep_static_prompt_without_result_evidence():

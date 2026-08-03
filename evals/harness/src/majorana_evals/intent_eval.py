@@ -60,7 +60,12 @@ async def run_intent_corpus(
 
     results: list[IntentCaseResult] = []
     for case in cases:
-        decision = await resolve_mode(case.prompt, RunMode.AUTO, llm)
+        decision = await resolve_mode(
+            case.prompt,
+            RunMode.AUTO,
+            llm,
+            conversation_messages=[turn.model_dump() for turn in case.history],
+        )
         observed = decision.resolved.value
         results.append(
             IntentCaseResult(

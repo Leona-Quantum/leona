@@ -327,6 +327,15 @@ class Report(BaseModel):
     note: str | None = None
 
 
+class IntentTurn(BaseModel):
+    """One prior conversation turn a follow-up case routes against."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    role: Literal["user", "assistant"]
+    content: str
+
+
 class IntentCase(BaseModel):
     """One AUTO-mode routing example, separate from end-to-end execution cases."""
 
@@ -337,6 +346,10 @@ class IntentCase(BaseModel):
     cohort: str
     prompt: str
     expected_mode: Literal["chat", "execute"]
+    # Empty for a standalone prompt. A follow-up routes against what came
+    # before it, and the failure mode this exists to catch is the sticky
+    # classifier: history that turns "thanks" into another execute run.
+    history: list[IntentTurn] = Field(default_factory=list)
 
 
 class IntentCaseResult(BaseModel):
