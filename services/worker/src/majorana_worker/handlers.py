@@ -1008,29 +1008,22 @@ async def _handle_conversation(
     store: RepoRunStateStore,
     llm: LLMClient,
     *,
-    conversation_messages: list[dict[str, str]] | None = None,
+    conversation_messages: list[dict[str, str]],
 ) -> RunStatus:
-    """Answer a direct chat turn without invoking the execution pipeline."""
+    """Answer a direct chat turn without invoking the execution pipeline.
+
+    `conversation_messages` is required and has no default: `handle_run_execute`
+    loads the history once and both branches spend it. A default would restore
+    the second loader that used to live here, and two loaders of the same thing
+    is how chat and execute come to disagree about what was said.
+    """
     status = await store.current_status()
     if status is not RunStatus.QUEUED:
         return status
     await store.set_status(RunStatus.RUNNING, started_at_now=True)
     await ctx.sink.emit("run.started", {})
 
-    history = (
-        conversation_messages
-        if conversation_messages is not None
-        else (
-            await runs_repo.list_conversation_messages(
-                store._scope,
-                store._session,
-                ctx.conversation_id,
-                exclude_run_id=ctx.run_id,
-            )
-            if ctx.conversation_id is not None
-            else []
-        )
-    )
+    history = conversation_messages
     model = model_for("chat")
     started = asyncio.get_running_loop().time()
     buffers = {"reasoning": "", "output": ""}

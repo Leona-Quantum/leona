@@ -662,7 +662,7 @@ async def test_a_chat_turn_is_written_to_the_usage_ledger(monkeypatch):
     store._scope = object()
     store._session = object()
 
-    await handlers._handle_conversation(ctx, store, _ConversationLLM())
+    await handlers._handle_conversation(ctx, store, _ConversationLLM(), conversation_messages=[])
 
     assert len(recorded) == 1, "one chat turn is one ledger entry"
     entry = recorded[0]
@@ -700,7 +700,9 @@ async def test_a_metering_failure_does_not_take_away_the_answer(monkeypatch):
     store._scope = object()
     store._session = object()
 
-    final = await handlers._handle_conversation(ctx, store, _ConversationLLM())
+    final = await handlers._handle_conversation(
+        ctx, store, _ConversationLLM(), conversation_messages=[]
+    )
 
     assert attempts, "the ledger must actually be attempted, or this passes vacuously"
     assert final is RunStatus.SUCCEEDED
@@ -724,7 +726,7 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     store = _FakeStore()
 
     llm = _ConversationLLM()
-    final = await handlers._handle_conversation(ctx, store, llm)
+    final = await handlers._handle_conversation(ctx, store, llm, conversation_messages=[])
 
     assert final is RunStatus.SUCCEEDED
     assert store.status is RunStatus.SUCCEEDED
@@ -743,23 +745,86 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     assert store.finished == [(RunStatus.SUCCEEDED, {"status": RunStatus.SUCCEEDED}, {})]
 
 
-async def test_conversation_mode_passes_prior_execute_output_to_the_model(monkeypatch):
+@pytest.mark.parametrize("mode", [RunMode.CHAT, RunMode.EXECUTE])
+async def test_history_is_loaded_once_and_reaches_whichever_branch_runs(monkeypatch, mode):
+    """Both branches used to load their own history and only chat's loader was
+    tested. One loader, one query, and the same list on both paths — otherwise
+    chat and execute can disagree about what was said in the same conversation.
+    """
+    history = [
+        {"role": "user", "content": "Partition six suppliers."},
+        {"role": "assistant", "content": "That is a weighted MaxCut."},
+    ]
+    loads = []
+    delivered = {}
+
+    async def list_messages(scope, session, conversation_id, *, exclude_run_id=None):
+        loads.append((conversation_id, exclude_run_id))
+        return history
+
+    run_id = uuid.uuid4()
+    conversation_id = uuid.uuid4()
+    run = SimpleNamespace(
+        artifact_version_id=None,
+        task_prompt="Build it now.",
+        mode=mode.value,
+        framework=Framework.QISKIT.value,
+        seed=None,
+        shots=None,
+        timeout_s=30,
+        conversation_id=conversation_id,
+    )
+
+    async def get_run(scope, session, requested_id):
+        return run
+
+    async def resolve(ctx, store, **kwargs):
+        delivered["resolve"] = kwargs["conversation_messages"]
+        return ctx
+
+    async def title(ctx, store, **_kwargs):
+        return ctx
+
+    async def conversation(ctx, store, llm, *, conversation_messages):
+        delivered["branch"] = conversation_messages
+        return RunStatus.SUCCEEDED
+
+    async def execution(ctx, store, **kwargs):
+        delivered["branch"] = kwargs["conversation_messages"]
+        return RunStatus.SUCCEEDED
+
+    monkeypatch.setattr(handlers.runs_repo, "get_run", get_run)
+    monkeypatch.setattr(handlers.runs_repo, "list_conversation_messages", list_messages)
+    monkeypatch.setattr(handlers, "_resolve_mode", resolve)
+    monkeypatch.setattr(handlers, "_title_conversation", title)
+    monkeypatch.setattr(handlers, "_handle_conversation", conversation)
+    monkeypatch.setattr(handlers, "_handle_agent_execution", execution)
+
+    await handlers.handle_run_execute(
+        object(),
+        {
+            "run_id": str(run_id),
+            "user_id": str(uuid.uuid4()),
+            "workspace_id": str(uuid.uuid4()),
+        },
+    )
+
+    assert loads == [(conversation_id, run_id)], "exactly one load, excluding this run"
+    assert delivered["resolve"] == history, "routing decides against the same history"
+    assert delivered["branch"] == history
+
+
+async def test_conversation_mode_passes_prior_execute_output_to_the_model():
+    """The loading moved to `handle_run_execute`; what this boundary owes is
+    ordering — history first, the current turn last, roles intact."""
     prior = (
         "[Prior Execute output — durable context from an earlier turn]"
         "\n\nGenerated source (qiskit):\n```python\nenergy = -1.137\n```"
     )
-
-    async def list_messages(scope, session, conversation_id, *, exclude_run_id=None):
-        assert scope is store._scope
-        assert session is store._session
-        assert conversation_id == ctx.conversation_id
-        assert exclude_run_id == ctx.run_id
-        return [
-            {"role": "user", "content": "Find the H2 ground-state energy."},
-            {"role": "assistant", "content": prior},
-        ]
-
-    monkeypatch.setattr(handlers.runs_repo, "list_conversation_messages", list_messages)
+    history = [
+        {"role": "user", "content": "Find the H2 ground-state energy."},
+        {"role": "assistant", "content": prior},
+    ]
     sink = _RecordingSink()
     ctx = RunContext(
         run_id=uuid.uuid4(),
@@ -777,7 +842,7 @@ async def test_conversation_mode_passes_prior_execute_output_to_the_model(monkey
     store._session = object()
     llm = _ConversationLLM()
 
-    final = await handlers._handle_conversation(ctx, store, llm)
+    final = await handlers._handle_conversation(ctx, store, llm, conversation_messages=history)
 
     assert final is RunStatus.SUCCEEDED
     assert [message.model_dump() for message in llm.request.messages] == [
