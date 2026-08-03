@@ -198,3 +198,75 @@ def test_unknown_identity_read_bytes_rejected():
     with pytest.raises(SourceItemRejected) as excinfo:
         source.read_bytes("does-not-exist")
     assert excinfo.value.failure_code == "unknown_identity"
+
+
+# --- What the repository publishes, as source ---------------------------------
+
+
+def _executable_variants() -> list[tuple[str, str, str]]:
+    """(identity, framework, code) for every variant this product can execute.
+
+    The export-only frameworks are excluded: a CUDA-Q or OpenQASM blob is a
+    download, not something the sandbox runs, so `FINAL_CIRCUIT` means nothing
+    there.
+    """
+    manifest = json.loads(COMMITTED.read_text())
+    rows = []
+    for item in manifest["items"]:
+        blob = json.loads(item["source_blob"])
+        for variant in blob.get("codeVariants", []):
+            framework = (variant.get("framework") or "").lower()
+            if framework in {"qiskit", "cirq", "pennylane"}:
+                rows.append((item["upstream_identity"], framework, variant.get("code") or ""))
+    return rows
+
+
+def test_a_published_circuit_that_binds_nothing_is_counted_not_ignored():
+    """The open repository publishes circuits, and `roles.classify_source` is
+    what decides whether a blob IS one.
+
+    A variant binding neither FINAL_CIRCUIT nor RESULT is UNKNOWN — "something
+    this product cannot execute" — so it fails its execution contract and takes
+    the repair path, which hands a published circuit to a language model to be
+    rewritten. That is the failure `roles.py` was written to stop, and it is
+    live for every entry below the count pinned here.
+
+    The number is pinned rather than asserted to be zero because most of the
+    catalog is hand-authored and fixing it is per-entry work (OWNER_TODO).
+    Pinned, so it can only go down: a new entry that binds nothing raises it and
+    fails, and a batch that gets fixed lowers it and fails until the number is
+    updated with the fix.
+    """
+    from majorana_frameworks.roles import ProgramRole, classify_source
+
+    variants = _executable_variants()
+    unknown = [
+        (identity, framework)
+        for identity, framework, code in variants
+        if classify_source(code) is ProgramRole.UNKNOWN
+    ]
+
+    assert len(variants) == 311, "executable variants in the published catalog"
+    assert len(unknown) == 191, (
+        f"{len(unknown)} published variants bind neither FINAL_CIRCUIT nor RESULT. "
+        "If this went DOWN, lower the number with the fix. If it went UP, an entry "
+        "was added that this product cannot execute — bind FINAL_CIRCUIT in it."
+    )
+
+
+def test_builder_generated_entries_all_name_what_they_built():
+    """The 120 the canvas generates are the ones `generateBuilderCode` owns, and
+    it binds FINAL_CIRCUIT now. They are identifiable by shape: the builder's
+    output ends with the binding and nothing else."""
+    from majorana_frameworks.roles import ProgramRole, classify_source
+
+    generated = [
+        (identity, framework, code)
+        for identity, framework, code in _executable_variants()
+        if code.rstrip().endswith(("FINAL_CIRCUIT = qc", "FINAL_CIRCUIT = circuit"))
+    ]
+
+    assert len(generated) == 120
+    assert all(
+        classify_source(code) is ProgramRole.CIRCUIT for _identity, _framework, code in generated
+    ), "a binding the builder emits must classify as a circuit"
