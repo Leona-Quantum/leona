@@ -224,6 +224,14 @@ cross-workspace denial tests pass.
 
 Deploy the fetcher with a dedicated workload identity.
 
+An offline, provider-neutral preflight now exists in
+`phase10_fetcher_identity_contract`. It fixes the fetcher's three permitted
+capabilities and three destination classes, requires distinct digest-only
+references for every sensitive peer identity, and rejects secret environment
+bindings or mounted control-plane paths. It performs no deployment or IAM I/O
+and is not live qualification evidence. See
+`PHASE10_S4_FETCHER_IDENTITY_PREFLIGHT.md`.
+
 It may have:
 
 - allowlisted outbound source access;
