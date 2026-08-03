@@ -25,12 +25,16 @@ The implementation is
   Atlas-owned values.
 - Exact CPU, memory, PID, scratch, file, time, stdout, stderr, and result limits
   are represented together.  The contract does not provide guessed defaults.
-- A qualification-identity candidate binds repository ID/name, immutable commit,
-  retrieval manifest, normalized source manifest, S6 candidate, OCI digest,
-  platform, and policy digest.
-- The client selection schema contains only an opaque qualification identity and
-  expected policy digest.  Unknown fields—including individual limit overrides—
-  are rejected.
+- A qualification-identity candidate derives repository ID/name, immutable
+  commit, and retrieval digest from the actual S2 acquisition result. It also
+  requires the actual S3 quarantine plan, S5 normalized manifest, and S6 static
+  candidate and verifies their workspace, manifest, file, locator, and digest
+  chain before binding the OCI digest, platform, and policy digest. Parallel
+  caller-supplied source scalars are not accepted.
+- Unapproved candidate identities use `phase10-qic:<sha256>`. The client
+  selection schema rejects that namespace and accepts only a distinct
+  authority-issued `phase10-qi:<sha256>` identity plus the expected policy
+  digest. Unknown fields—including individual limit overrides—are rejected.
 - Resolution is possible only against a deployment-owned trusted mapping.  This
   module cannot create or sign an approval.
 
@@ -49,9 +53,11 @@ credential policy, change the platform/launcher, remove blockers, or alter an
 integrity-bound field are rejected.
 
 The trusted mapping accepted by the pure resolver is not itself evidence of an
-approval.  A later deployment layer must load it from an access-controlled,
-reviewed source and retain the corresponding approval evidence.  No such
-deployment or authority exists in this preflight.
+approval. A later deployment layer must issue the separate `phase10-qi`
+identity, load its mapping from an access-controlled reviewed source, and
+retain immutable approval evidence that binds it to the exact `phase10-qic`
+candidate and live probe evidence. This module cannot issue an approved
+identity. No such deployment or authority exists in this preflight.
 
 ## Scientific boundary
 
@@ -70,9 +76,12 @@ identities.
 - digest-only runtime and `linux/amd64` enforcement;
 - positive bounded integer representation for every proposed limit;
 - denial of qualification escalation and policy-surface relaxation;
-- exact source/runtime/policy identity binding;
+- complete S2 acquisition → S3 quarantine → S5 normalization → S6 static
+  candidate → S7 policy binding;
+- rejection of cross-repository and cross-source evidence splicing;
 - runtime-profile mismatch rejection between S6 and S7;
-- rejection of unknown client-selected parameters;
+- rejection of unknown client-selected parameters and unapproved `phase10-qic`
+  candidate IDs;
 - exact trusted-registry resolution and digest mismatch rejection.
 
 ## Remaining S7 exit-gate work
@@ -87,4 +96,3 @@ records all of the following without inference:
 - approved sandbox class and exact limit values;
 - an access-controlled qualification registry and immutable approval evidence;
 - live enforcement probes on the exact deployment class.
-

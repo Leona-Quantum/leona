@@ -15,6 +15,9 @@ import re
 from collections.abc import Mapping
 from typing import Any
 
+from majorana_api.phase10_acquisition_result import Phase10AcquisitionResult
+from majorana_api.phase10_quarantine_contract import Phase10QuarantinePlan
+from majorana_api.phase10_source_normalizer import Phase10NormalizedSourceManifest
 from majorana_api.phase10_static_candidate import (
     FIXED_LAUNCHER_ID,
     INPUT_SCHEMA_ID,
@@ -25,9 +28,9 @@ from majorana_api.phase10_static_candidate import (
 EXECUTION_POLICY_SCHEMA_VERSION = 1
 EXECUTION_POLICY_CONTRACT_VERSION = "phase10-s7-execution-policy/1"
 QUALIFICATION_IDENTITY_SCHEMA_VERSION = 1
-QUALIFICATION_IDENTITY_CONTRACT_VERSION = "phase10-s7-qualification-identity/1"
+QUALIFICATION_IDENTITY_CONTRACT_VERSION = "phase10-s7-qualification-identity/2"
 QUALIFICATION_SELECTION_SCHEMA_VERSION = 1
-QUALIFICATION_SELECTION_CONTRACT_VERSION = "phase10-s7-qualification-selection/1"
+QUALIFICATION_SELECTION_CONTRACT_VERSION = "phase10-s7-qualification-selection/2"
 
 POLICY_STATUS = "unqualified"
 QUALIFICATION_STATUS = "unqualified"
@@ -89,7 +92,7 @@ _SHA256_RE = re.compile(r"[0-9a-f]{64}")
 _COMMIT_RE = re.compile(r"[0-9a-f]{40}|[0-9a-f]{64}")
 _FULL_NAME_RE = re.compile(r"[A-Za-z0-9](?:[A-Za-z0-9-]*[A-Za-z0-9])?/[A-Za-z0-9_.-]+")
 _IDENTIFIER_RE = re.compile(r"[a-z0-9][a-z0-9._/-]{0,127}")
-_QUALIFICATION_ID_RE = re.compile(r"phase10-qic:[0-9a-f]{64}")
+_APPROVED_QUALIFICATION_ID_RE = re.compile(r"phase10-qi:[0-9a-f]{64}")
 _SUPPORTED_RUNTIME_PROFILES = frozenset(
     {
         "phase10-python-pennylane-0.45.1-candidate-v1",
@@ -378,7 +381,12 @@ class Phase10QualificationIdentityCandidate:
 
 @dataclasses.dataclass(frozen=True)
 class Phase10QualificationSelection:
-    """The entire client-selectable surface: one approved opaque identity."""
+    """The entire client-selectable surface: one approved opaque identity.
+
+    Candidate identities use ``phase10-qic:`` and are deliberately rejected.
+    Only a separate approval authority may issue the ``phase10-qi:`` identity
+    accepted by this selection contract.
+    """
 
     qualification_identity: str
     expected_policy_sha256: str
@@ -388,7 +396,7 @@ class Phase10QualificationSelection:
         if (
             self.contract_version != QUALIFICATION_SELECTION_CONTRACT_VERSION
             or not isinstance(self.qualification_identity, str)
-            or _QUALIFICATION_ID_RE.fullmatch(self.qualification_identity) is None
+            or _APPROVED_QUALIFICATION_ID_RE.fullmatch(self.qualification_identity) is None
             or not _is_sha256(self.expected_policy_sha256)
         ):
             raise Phase10ExecutionPolicyError("invalid_qualification_selection")
@@ -438,26 +446,45 @@ def build_phase10_execution_policy_candidate(
 
 def build_phase10_qualification_identity_candidate(
     *,
-    repository_id: int,
-    full_name: str,
-    immutable_ref: str,
-    retrieval_manifest_sha256: str,
+    acquisition_result: Phase10AcquisitionResult,
+    quarantine_plan: Phase10QuarantinePlan,
+    normalized_source: Phase10NormalizedSourceManifest,
     static_candidate: Phase10StaticExecutionCandidate,
     policy: Phase10ExecutionPolicyCandidate,
 ) -> Phase10QualificationIdentityCandidate:
+    """Bind one complete S2-S7 evidence chain into an unapproved candidate.
+
+    Repository coordinates and digests are derived from validated parent
+    objects.  Callers cannot provide parallel scalar values that accidentally
+    or maliciously describe a different repository or source selection.
+    """
+
+    if not isinstance(acquisition_result, Phase10AcquisitionResult):
+        raise Phase10ExecutionPolicyError("invalid_acquisition_result_parent")
+    if not isinstance(quarantine_plan, Phase10QuarantinePlan):
+        raise Phase10ExecutionPolicyError("invalid_quarantine_plan_parent")
+    if not isinstance(normalized_source, Phase10NormalizedSourceManifest):
+        raise Phase10ExecutionPolicyError("invalid_normalized_source_parent")
     if not isinstance(static_candidate, Phase10StaticExecutionCandidate):
         raise Phase10ExecutionPolicyError("invalid_static_candidate_parent")
     if not isinstance(policy, Phase10ExecutionPolicyCandidate):
         raise Phase10ExecutionPolicyError("invalid_execution_policy_parent")
+    _validate_qualification_parent_chain(
+        acquisition_result=acquisition_result,
+        quarantine_plan=quarantine_plan,
+        normalized_source=normalized_source,
+        static_candidate=static_candidate,
+    )
     if static_candidate.proposed_runtime_profile != policy.runtime_profile:
         raise Phase10ExecutionPolicyError("candidate_policy_runtime_mismatch")
+    manifest = acquisition_result.retrieval_manifest
     reasons = tuple(dict.fromkeys((*policy.blocking_reasons, *static_candidate.blocking_reasons)))
     return Phase10QualificationIdentityCandidate(
-        repository_id=repository_id,
-        full_name=full_name,
-        immutable_ref=immutable_ref,
-        retrieval_manifest_sha256=retrieval_manifest_sha256,
-        normalized_source_manifest_sha256=(static_candidate.normalized_source_manifest_sha256),
+        repository_id=manifest.repository_id,
+        full_name=manifest.full_name,
+        immutable_ref=manifest.immutable_ref,
+        retrieval_manifest_sha256=manifest.manifest_sha256,
+        normalized_source_manifest_sha256=normalized_source.manifest_sha256,
         static_candidate_sha256=static_candidate.candidate_sha256,
         policy_sha256=policy.policy_sha256,
         runtime_oci_index_digest=policy.runtime_oci_index_digest,
@@ -489,6 +516,52 @@ def resolve_approved_qualification_selection(
     if approved_digest != selection.expected_policy_sha256:
         raise Phase10ExecutionPolicyError("qualification_policy_digest_mismatch")
     return selection.qualification_identity
+
+
+def _validate_qualification_parent_chain(
+    *,
+    acquisition_result: Phase10AcquisitionResult,
+    quarantine_plan: Phase10QuarantinePlan,
+    normalized_source: Phase10NormalizedSourceManifest,
+    static_candidate: Phase10StaticExecutionCandidate,
+) -> None:
+    """Reject cross-source or cross-workspace evidence splicing."""
+
+    if quarantine_plan.acquisition_result_sha256 != acquisition_result.result_sha256:
+        raise Phase10ExecutionPolicyError("acquisition_quarantine_binding_mismatch")
+    if normalized_source.acquisition_result_sha256 != acquisition_result.result_sha256:
+        raise Phase10ExecutionPolicyError("acquisition_normalized_source_binding_mismatch")
+    if normalized_source.quarantine_plan_sha256 != quarantine_plan.plan_sha256:
+        raise Phase10ExecutionPolicyError("quarantine_normalized_source_binding_mismatch")
+    if normalized_source.workspace_id != quarantine_plan.workspace_id:
+        raise Phase10ExecutionPolicyError("qualification_workspace_binding_mismatch")
+    if static_candidate.normalized_source_manifest_sha256 != normalized_source.manifest_sha256:
+        raise Phase10ExecutionPolicyError("normalized_source_candidate_binding_mismatch")
+
+    retrieval_files = tuple(
+        (item.selected_path, item.media_type, item.length, item.sha256)
+        for item in acquisition_result.retrieval_manifest.files
+    )
+    quarantine_files = tuple(
+        (item.selected_path, item.media_type, item.length, item.sha256)
+        for item in quarantine_plan.objects
+    )
+    normalized_files = tuple(
+        (item.selected_path, item.media_type, item.length, item.sha256)
+        for item in normalized_source.files
+    )
+    candidate_files = tuple(
+        (item.selected_path, item.media_type, item.length, item.sha256)
+        for item in static_candidate.source_files
+    )
+    if not (retrieval_files == quarantine_files == normalized_files == candidate_files):
+        raise Phase10ExecutionPolicyError("qualification_source_files_binding_mismatch")
+
+    quarantine_locators = tuple(item.opaque_locator for item in quarantine_plan.objects)
+    normalized_locators = tuple(item.opaque_locator for item in normalized_source.files)
+    candidate_locators = tuple(item.opaque_locator for item in static_candidate.source_files)
+    if quarantine_locators != normalized_locators or normalized_locators != candidate_locators:
+        raise Phase10ExecutionPolicyError("qualification_source_locators_binding_mismatch")
 
 
 def _validate_policy(policy: Phase10ExecutionPolicyCandidate) -> None:

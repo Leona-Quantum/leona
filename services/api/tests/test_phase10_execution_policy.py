@@ -1,11 +1,20 @@
 from __future__ import annotations
 
+import base64
 import copy
 import hashlib
 import json
+import uuid
+from datetime import UTC, datetime, timedelta
 
 import pytest
 
+from majorana_api.phase10_acquisition_contract import (
+    Phase10AcquisitionAuthorization,
+    build_phase10_acquisition_request,
+)
+from majorana_api.phase10_acquisition_result import build_phase10_acquisition_result
+from majorana_api.phase10_destination_policy import validate_phase10_destination_answers
 from majorana_api.phase10_execution_policy import (
     FIXED_LAUNCHER_ARGUMENTS,
     NETWORK_POLICY,
@@ -20,13 +29,24 @@ from majorana_api.phase10_execution_policy import (
     build_phase10_qualification_identity_candidate,
     resolve_approved_qualification_selection,
 )
+from majorana_api.phase10_github_request_plan import build_phase10_github_request_plan
+from majorana_api.phase10_github_response import validate_phase10_github_content_response
+from majorana_api.phase10_quarantine_contract import build_phase10_quarantine_plan
 from majorana_api.phase10_source_normalizer import (
-    Phase10NormalizedSourceManifest,
-    NormalizedSourceFile,
+    build_phase10_normalized_source_manifest,
 )
 from majorana_api.phase10_static_candidate import (
     build_phase10_static_execution_candidate,
 )
+
+COMMIT = "f" * 40
+REQUESTED_AT = datetime(2026, 8, 3, 12, 0, 0, tzinfo=UTC)
+WORKSPACE_ID = uuid.UUID("019fa990-657d-7c92-a548-5cc1dda7e894")
+SOURCE_BYTES = {
+    "entry.py": b"print('metadata only')\n",
+    "pyproject.toml": b"[project]\nname='demo'\n",
+    "readme.md": b"Qiskit example\n",
+}
 
 
 def _canonical_digest(value: dict) -> str:
@@ -78,42 +98,71 @@ def _policy(
     )
 
 
-def _source() -> Phase10NormalizedSourceManifest:
-    content = b"print('metadata only')\n"
-    digest = hashlib.sha256(content).hexdigest()
-    return Phase10NormalizedSourceManifest(
-        workspace_id="019fa990-657d-7c92-a548-5cc1dda7e894",
-        acquisition_result_sha256="b" * 64,
-        quarantine_plan_sha256="c" * 64,
-        files=(
-            NormalizedSourceFile(
-                selected_path="entry.py",
-                media_type="text/x-python",
-                length=len(content),
-                sha256=digest,
-                opaque_locator=f"qobj:v1:sha256:{digest}",
-            ),
-            NormalizedSourceFile(
-                selected_path="pyproject.toml",
-                media_type="application/toml",
-                length=20,
-                sha256="d" * 64,
-                opaque_locator=f"qobj:v1:sha256:{'d' * 64}",
-            ),
-            NormalizedSourceFile(
-                selected_path="readme.md",
-                media_type="text/markdown",
-                length=20,
-                sha256="e" * 64,
-                opaque_locator=f"qobj:v1:sha256:{'e' * 64}",
-            ),
-        ),
+def _validated(plan, path: str, content: bytes):
+    git_payload = f"blob {len(content)}\0".encode() + content
+    payload = {
+        "type": "file",
+        "encoding": "base64",
+        "size": len(content),
+        "name": path.rsplit("/", 1)[-1],
+        "path": path,
+        "content": base64.b64encode(content).decode(),
+        "sha": hashlib.sha1(git_payload).hexdigest(),
+        "url": None,
+        "git_url": None,
+        "html_url": None,
+        "download_url": None,
+        "_links": {"git": None, "html": None, "self": None},
+    }
+    return validate_phase10_github_content_response(
+        plan=plan,
+        selected_path=path,
+        status_code=200,
+        headers=(("Content-Type", "application/json"),),
+        body=json.dumps(payload).encode(),
     )
 
 
-def _static_candidate(framework: str = "qiskit"):
-    return build_phase10_static_execution_candidate(
-        normalized_source=_source(),
+def _evidence_chain(
+    framework: str = "qiskit",
+    *,
+    repository_id: int = 1234,
+    full_name: str = "example/vqe-source",
+):
+    request = build_phase10_acquisition_request(
+        repository_id=repository_id,
+        full_name=full_name,
+        immutable_ref=COMMIT,
+        selected_paths=tuple(SOURCE_BYTES),
+        requested_at=REQUESTED_AT,
+    )
+    destination = validate_phase10_destination_answers(
+        host="api.github.com",
+        port=443,
+        answers=("93.184.216.34",),
+        resolved_at=REQUESTED_AT + timedelta(seconds=1),
+    )
+    plan = build_phase10_github_request_plan(
+        Phase10AcquisitionAuthorization(request=request, destination=destination)
+    )
+    acquisition_result = build_phase10_acquisition_result(
+        request_plan=plan,
+        fetched_at=REQUESTED_AT + timedelta(seconds=2),
+        validated_files=tuple(
+            _validated(plan, path, content) for path, content in SOURCE_BYTES.items()
+        ),
+    )
+    quarantine_plan = build_phase10_quarantine_plan(
+        workspace_id=WORKSPACE_ID,
+        acquisition_result=acquisition_result,
+    )
+    normalized_source = build_phase10_normalized_source_manifest(
+        workspace_id=WORKSPACE_ID,
+        quarantine_plan=quarantine_plan,
+        source_bytes=SOURCE_BYTES,
+    )
+    static_candidate = build_phase10_static_execution_candidate(
+        normalized_source=normalized_source,
         framework=framework,
         framework_evidence_paths=("readme.md",),
         package_evidence_paths=("pyproject.toml",),
@@ -121,17 +170,29 @@ def _static_candidate(framework: str = "qiskit"):
         license_status="verified_compatible",
         provenance_status="verified",
     )
+    return acquisition_result, quarantine_plan, normalized_source, static_candidate
+
+
+def _static_candidate(framework: str = "qiskit"):
+    return _evidence_chain(framework)[-1]
 
 
 def _identity() -> Phase10QualificationIdentityCandidate:
+    acquisition_result, quarantine_plan, normalized_source, static_candidate = _evidence_chain()
     return build_phase10_qualification_identity_candidate(
-        repository_id=1234,
-        full_name="example/vqe-source",
-        immutable_ref="f" * 40,
-        retrieval_manifest_sha256="1" * 64,
-        static_candidate=_static_candidate(),
+        acquisition_result=acquisition_result,
+        quarantine_plan=quarantine_plan,
+        normalized_source=normalized_source,
+        static_candidate=static_candidate,
         policy=_policy(),
     )
+
+
+def _approved_identity(identity: Phase10QualificationIdentityCandidate) -> str:
+    digest = hashlib.sha256(
+        f"approved:{identity.candidate_qualification_identity}".encode()
+    ).hexdigest()
+    return f"phase10-qi:{digest}"
 
 
 def test_policy_is_canonical_digest_pinned_and_explicitly_unqualified():
@@ -200,13 +261,47 @@ def test_qualification_identity_binds_exact_source_runtime_and_policy():
 
 
 def test_candidate_and_policy_runtime_profiles_must_match():
+    acquisition_result, quarantine_plan, normalized_source, static_candidate = _evidence_chain(
+        "pennylane"
+    )
     with pytest.raises(Phase10ExecutionPolicyError, match="candidate_policy_runtime_mismatch"):
         build_phase10_qualification_identity_candidate(
-            repository_id=1234,
-            full_name="example/vqe-source",
-            immutable_ref="f" * 40,
-            retrieval_manifest_sha256="1" * 64,
-            static_candidate=_static_candidate("pennylane"),
+            acquisition_result=acquisition_result,
+            quarantine_plan=quarantine_plan,
+            normalized_source=normalized_source,
+            static_candidate=static_candidate,
+            policy=_policy(),
+        )
+
+
+def test_qualification_identity_rejects_cross_source_evidence_splicing():
+    acquisition_result, quarantine_plan, normalized_source, static_candidate = _evidence_chain()
+    foreign_acquisition, _, _, foreign_candidate = _evidence_chain(
+        repository_id=5678,
+        full_name="example/other-source",
+    )
+
+    with pytest.raises(
+        Phase10ExecutionPolicyError,
+        match="acquisition_quarantine_binding_mismatch",
+    ):
+        build_phase10_qualification_identity_candidate(
+            acquisition_result=foreign_acquisition,
+            quarantine_plan=quarantine_plan,
+            normalized_source=normalized_source,
+            static_candidate=static_candidate,
+            policy=_policy(),
+        )
+
+    with pytest.raises(
+        Phase10ExecutionPolicyError,
+        match="normalized_source_candidate_binding_mismatch",
+    ):
+        build_phase10_qualification_identity_candidate(
+            acquisition_result=acquisition_result,
+            quarantine_plan=quarantine_plan,
+            normalized_source=normalized_source,
+            static_candidate=foreign_candidate,
             policy=_policy(),
         )
 
@@ -226,8 +321,9 @@ def test_qualification_identity_tampering_or_approval_claim_fails_closed():
 
 def test_client_selection_has_no_individual_policy_override_surface():
     identity = _identity()
+    approved_identity = _approved_identity(identity)
     selection = Phase10QualificationSelection(
-        qualification_identity=identity.candidate_qualification_identity,
+        qualification_identity=approved_identity,
         expected_policy_sha256=identity.policy_sha256,
     )
     payload = selection.to_selection()
@@ -237,11 +333,17 @@ def test_client_selection_has_no_individual_policy_override_surface():
     with pytest.raises(Phase10ExecutionPolicyError, match="invalid_qualification_selection"):
         Phase10QualificationSelection.from_selection(payload)
 
+    with pytest.raises(Phase10ExecutionPolicyError, match="invalid_qualification_selection"):
+        Phase10QualificationSelection(
+            qualification_identity=identity.candidate_qualification_identity,
+            expected_policy_sha256=identity.policy_sha256,
+        )
+
 
 def test_only_deployment_owned_exact_registry_entry_can_resolve_selection():
     identity = _identity()
     selection = Phase10QualificationSelection(
-        qualification_identity=identity.candidate_qualification_identity,
+        qualification_identity=_approved_identity(identity),
         expected_policy_sha256=identity.policy_sha256,
     )
 
