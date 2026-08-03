@@ -2,7 +2,7 @@
 
 import { useEffect, useMemo, useState } from "react";
 import { useRouter } from "next/navigation";
-import { SyntaxHighlightedCode, VerificationSummaryPanel } from "@majorana/ui";
+import { SyntaxHighlightedCode, VerificationSummaryPanel, verificationVocabulary } from "@majorana/ui";
 import { CopyIcon, MoreIcon, StarIcon } from "../../../../components/icons";
 import { archiveArtifact, artifactFromResource, deleteArtifact, frameworkVariantsFromRemote, getLibraryArtifact, loadStarredLibraryArtifactIds, statusFromVerificationSummary, toggleLibraryArtifactStar, type LibraryArtifact } from "../../../../lib/library-data";
 import { verificationFromMetadata, verificationFromResource } from "../../../../lib/verification-record";
@@ -129,21 +129,25 @@ type ArtifactCopy = (typeof DETAIL_COPY)[PublicLocale];
  * return-contract check read exactly like one checked against the physics. See
  * plans/evidence-strength-labelling.md. */
 function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy, locale: PublicLocale): { label: string; glyph: string } {
+  // The verdict words come from the module that renders the panel below, in
+  // both languages. They used to be typed out here a second time, so "Failed"
+  // and 検証失敗 had two definitions and only one of them was ever updated.
+  const words = verificationVocabulary(locale);
   if (artifact.source === "public") return { label: copy.reference, glyph: "–" };
   if (artifact.status === "structural") return { label: copy.structural, glyph: "–" };
   if (artifact.status === "verified") return { label: copy.verified, glyph: "✓" };
-  if (artifact.status === "failed") return { label: locale === "ja" ? "検証失敗" : "Failed", glyph: "×" };
+  if (artifact.status === "failed") return { label: words.failed, glyph: "×" };
   if (
     artifact.status === "inconclusive"
     && artifact.verificationSummary?.reason_code === "ai_review_aligned"
   ) {
-    return { label: locale === "ja" ? "実行済み" : "Executed", glyph: "–" };
+    return { label: words.executed, glyph: "–" };
   }
   if (artifact.status === "inconclusive") {
-    return { label: locale === "ja" ? "検証結果なし" : "Verification unavailable", glyph: "–" };
+    return { label: words.unavailable, glyph: "–" };
   }
-  if (artifact.status === "stale") return { label: locale === "ja" ? "要再検証" : "Verification stale", glyph: "–" };
-  return { label: locale === "ja" ? "旧形式・検証記録なし" : "Legacy evidence unknown", glyph: "–" };
+  if (artifact.status === "stale") return { label: words.stale, glyph: "–" };
+  return { label: words.legacy, glyph: "–" };
 }
 
 export function ArtifactDetail({ artifactId, locale = "en" }: { artifactId: string; locale?: PublicLocale }) {
@@ -396,7 +400,7 @@ function Summary({ artifact, copy, locale }: { artifact: LibraryArtifact; copy: 
 
       <section className="mj-artifact-panel mj-artifact-panel--wide">
         <div className="mj-panel-heading"><h2>{copy.verificationEvidence}</h2><span className="mj-mono-muted">{copy.auditSurface}</span></div>
-        <VerificationSummaryPanel summary={artifact.verificationSummary ?? null} />
+        <VerificationSummaryPanel summary={artifact.verificationSummary ?? null} locale={locale} />
         {!artifact.verificationSummary ? (
           <details>
             <summary>{copy.whatChecked}</summary>

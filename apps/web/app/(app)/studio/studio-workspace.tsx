@@ -599,6 +599,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
                       state={verificationDisplayState}
                       onOpen={() => selectPanel("summary")}
                       copy={copy}
+                      locale={locale}
                       inert={panel === "summary"}
                     />
                   </span>
@@ -870,16 +871,18 @@ function StudioVerdictChip({
   state,
   onOpen,
   copy,
+  locale,
   inert = false,
 }: {
   summary: Parameters<typeof verificationHeadline>[0];
   state: Parameters<typeof verificationHeadline>[1];
   onOpen: () => void;
   copy: StudioCopy;
+  locale: PublicLocale;
   /** Rendered only to hold its width open; not reachable and not announced. */
   inert?: boolean;
 }) {
-  const headline = verificationHeadline(summary, state);
+  const headline = verificationHeadline(summary, state, locale);
   return (
     <button
       className="mj-studio-verdict-chip"
@@ -2072,7 +2075,7 @@ function SummaryPanel({
 
       <div className="mj-studio-summary-section">
         <span className="mj-section-label">{copy.evidence}</span>
-        <VerificationSummaryPanel summary={artifact?.verificationSummary ?? null} state={state} />
+        <VerificationSummaryPanel summary={artifact?.verificationSummary ?? null} state={state} locale={locale} />
         {artifact?.criticSummary ? <p className="mj-studio-evidence-summary">{artifact.criticSummary}</p> : null}
         {artifact ? (
           checks.length ? (
