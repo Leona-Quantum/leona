@@ -1,7 +1,8 @@
 # AGENTS.md — packages/ts/ui
 
 Vendored components + design tokens. Domain home: `docs/ui/` (read its README first).
-Spec of record: `plans/roadmap/04-ui-specifications.md` (until folded into docs/ui/).
+Spec of record: `docs/ui/` itself — `tokens.md` for values, `components.md` for contracts.
+There is no external UI spec any more; a citation to one is stale.
 
 Invariants:
 - `tokens.css` is the ONLY file allowed to contain raw hex colors (CI: `lint` runs
@@ -18,6 +19,6 @@ Invariants:
 - Only permitted animations: rail state transitions (150 ms ease-out), the running-dot
   pulse (spec §2), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` must be honored.
 - Components are pure renderers of typed data (no fetching, no run state) so the replay
-  rule (07-ui-product.md §6) holds and fixtures can drive every state.
+  rule (`docs/ui/screens-acceptance.md` §4) holds and fixtures can drive every state.
 - Copy: verdicts/exports/buttons per `docs/ui/copy.md`. No exclamation marks, no emoji.
 - Nav labels: `src/nav-config.ts` only (owner-revisable surface naming).
