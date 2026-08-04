@@ -17,9 +17,12 @@ from .observability import init_telemetry
 from .rate_limit import (
     EXEMPT_PATHS,
     MAX_REQUEST_BYTES,
+    BodyTooLarge,
     FixedWindowLimiter,
     client_address,
     is_rate_limited_path,
+    read_bounded_body,
+    replay,
 )
 from .repos import AuthzError, NotFoundError
 from .routes.artifacts import router as artifacts_router
@@ -69,6 +72,15 @@ def _problem(
     )
 
 
+def _too_large() -> JSONResponse:
+    return _problem(
+        413,
+        f"Request body exceeds the {MAX_REQUEST_BYTES // 1024} KB limit.",
+        "request_too_large",
+        extra={"reason": "request_too_large", "limit_bytes": MAX_REQUEST_BYTES},
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="majorana-api", lifespan=_lifespan)
     app.state.settings = settings or Settings.from_env()
@@ -92,21 +104,25 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return await call_next(request)
         headers = {k.lower(): v for k, v in request.headers.items()}
 
-        # Total request size, refused on the declared Content-Length before the
-        # body is read. Pydantic bounds each FIELD — `task_prompt` at 20 KB,
-        # `source_code` at 100 KB — but a field limit is applied AFTER the body
-        # has been received and parsed, so nothing before this bounded the whole
-        # document. Cloud Run's own 32 MB ceiling is two orders of magnitude
-        # above anything this API accepts, and is a platform backstop rather
-        # than a statement by the service about what it will take.
+        # Total request size. Pydantic bounds each FIELD — `task_prompt` at
+        # 20 KB, `source_code` at 100 KB — but a field limit applies AFTER the
+        # body has been received and parsed, so nothing before this bounded the
+        # whole document. Cloud Run's 32 MB ceiling is a platform backstop, not a
+        # statement by this service about what it will accept.
+        #
+        # TWO checks, because Content-Length alone is not a bound: a
+        # `Transfer-Encoding: chunked` request declares no length, and a probe
+        # confirmed a 2 MiB chunked body reaching the handler under a 1 MiB
+        # "limit". The declared check stays because it refuses without reading
+        # anything; `read_bounded_body` is what makes the limit true.
         declared = headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
-            return _problem(
-                413,
-                f"Request body exceeds the {MAX_REQUEST_BYTES // 1024} KB limit.",
-                "request_too_large",
-                extra={"reason": "request_too_large", "limit_bytes": MAX_REQUEST_BYTES},
-            )
+            return _too_large()
+        try:
+            buffered = await read_bounded_body(request.receive, MAX_REQUEST_BYTES)
+        except BodyTooLarge:
+            return _too_large()
+        request._receive = replay(buffered, request.receive)
 
         # The anonymous-serving surface, and EVERY caller on it — including one
         # presenting a credential. Skipping header-bearing callers was the first

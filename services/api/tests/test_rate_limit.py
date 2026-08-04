@@ -244,6 +244,46 @@ async def test_an_ordinary_body_is_not_refused():
     assert response.status_code != 413
 
 
+async def test_a_chunked_body_cannot_evade_the_limit():
+    """The bypass a Content-Length check cannot see.
+
+    `Transfer-Encoding: chunked` declares no length, so the header check has
+    nothing to compare — a probe confirmed a 2 MiB chunked body reaching the
+    handler under a 1 MiB "limit". The comment above that check claimed a
+    total-size bound the code did not deliver, which is worse than no bound
+    because it stops anyone looking. Counting arriving chunks is what makes it
+    true.
+    """
+
+    async def oversized():
+        for _ in range(MAX_REQUEST_BYTES // 65536 + 2):
+            yield b"x" * 65536
+
+    app = create_app(_settings())
+    async with _client(app) as client:
+        response = await client.post("/v1/runs", content=oversized())
+
+    assert response.status_code == 413
+    assert response.json()["reason"] == "request_too_large"
+
+
+async def test_a_chunked_body_under_the_limit_still_reaches_the_handler():
+    """The control. A limit that refused every chunked request would pass the
+    test above while breaking the API."""
+
+    async def small():
+        yield b'{"task_prompt":"'
+        yield b"hello"
+        yield b'"}'
+
+    app = create_app(_settings())
+    async with _client(app) as client:
+        response = await client.post("/v1/runs", content=small())
+
+    # 401 — it got past the size gate and reached auth, which is the point.
+    assert response.status_code != 413
+
+
 def test_the_body_limit_clears_the_largest_legitimate_document():
     """`source_code` is capped at 100 KB and an import carries code plus QASM."""
     assert MAX_REQUEST_BYTES > 256 * 1024

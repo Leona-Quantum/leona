@@ -160,6 +160,70 @@ class FixedWindowLimiter:
             del self._windows[key]
 
 
+class BodyTooLarge(Exception):
+    """The request body exceeded MAX_REQUEST_BYTES. Carries no detail — the
+    middleware turns it into a 413 and the caller learns only the limit."""
+
+
+async def read_bounded_body(receive, max_bytes: int) -> list[dict]:
+    """Buffer the request body, refusing as soon as it passes `max_bytes`.
+
+    ## Why this exists rather than a Content-Length check alone
+
+    A `Content-Length` check is free and catches every ordinary client, and it
+    was the whole of this limit until a probe showed what it misses: a request
+    using `Transfer-Encoding: chunked` declares no length at all, so a 2 MiB
+    chunked body sailed through a 1 MiB "limit" and reached the handler. The
+    comment above it claimed a total-size bound the code did not deliver, which
+    is the failure this codebase keeps finding in itself — a guarantee stated and
+    not held is worse than no guarantee, because it stops anyone looking.
+
+    Counting as the chunks arrive is what actually holds the bound. The refusal
+    fires on the chunk that crosses the line, so at most one chunk beyond the
+    limit is ever held.
+
+    Buffering every request body is acceptable here **because this API has no
+    streaming upload**: SSE is a response, and every request is a bounded JSON
+    document. If that ever stops being true, this is the thing to revisit.
+    """
+    messages: list[dict] = []
+    total = 0
+    while True:
+        message = await receive()
+        if message["type"] != "http.request":
+            # http.disconnect — hand it on and stop; there is no body to bound.
+            messages.append(message)
+            return messages
+        total += len(message.get("body", b""))
+        if total > max_bytes:
+            raise BodyTooLarge
+        messages.append(message)
+        if not message.get("more_body", False):
+            return messages
+
+
+def replay(messages: list[dict], receive):
+    """An ASGI `receive` that yields the buffered body, then defers to the real one.
+
+    Deferring is the whole contract, and getting it wrong is silent. A first
+    version returned a synthetic `{"type": "http.disconnect"}` once the buffer
+    was spent, on the reasoning that the body was finished so nothing more could
+    arrive. That is true of the BODY and false of the channel: SSE calls
+    `request.is_disconnected()`, which reads from `receive`, so every stream saw
+    an immediate disconnect and closed before emitting an event. The pipeline
+    e2e caught it — a manual probe of the size limit never would have, because
+    the size limit worked perfectly.
+    """
+    remaining = list(messages)
+
+    async def _receive():
+        if remaining:
+            return remaining.pop(0)
+        return await receive()
+
+    return _receive
+
+
 def client_address(headers: dict[str, str], peer: str | None) -> str:
     """Best available identifier for the caller, given one trusted proxy.
 
