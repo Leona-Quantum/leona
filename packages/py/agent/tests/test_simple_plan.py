@@ -349,6 +349,107 @@ def test_declared_brute_force_instance_reaches_the_durable_plan():
     assert durable.verification_plan.reference_hamiltonian is None
 
 
+def _brute_force_payload(objective: dict, *, num_variables: int) -> dict:
+    payload = _payload()
+    payload["algorithm"] = "QAOA"
+    payload["expected_output_keys"] = ["best_value"]
+    payload["success_criteria"] = {"primary_metric": "best_value"}
+    payload["verification_plan"] = {
+        "methods": ["brute_force"],
+        "reference_problem": {
+            "num_variables": num_variables,
+            "business_objective": objective,
+        },
+    }
+    return payload
+
+
+def _values_of_the_written_objective(objective: dict, *, num_variables: int) -> list[float]:
+    """Enumerate the objective exactly as written, without the plan models.
+
+    Deliberately independent of the code under test: it applies x*x == x here,
+    in the test, so that "the fold changed no value" is checked against binary
+    algebra rather than against the folding itself.
+    """
+    values: list[float] = []
+    for assignment in range(1 << num_variables):
+        bits = [(assignment >> variable) & 1 for variable in range(num_variables)]
+        value = float(objective.get("constant", 0.0))
+        for term in objective.get("linear_coefficients", []):
+            value += term["coefficient"] * bits[term["variable"]]
+        for term in objective.get("quadratic_coefficients", []):
+            value += term["coefficient"] * bits[term["left"]] * bits[term["right"]]
+        values.append(value)
+    return values
+
+
+def test_binary_diagonal_terms_fold_into_the_linear_coefficients():
+    # x_1*x_1 == x_1 for a binary variable, so this used to be rejected for a
+    # distinction the evaluator does not make.
+    objective = {
+        "direction": "maximize",
+        "constant": 1.5,
+        "linear_coefficients": [{"variable": 0, "coefficient": 8.0}],
+        "quadratic_coefficients": [
+            {"left": 1, "right": 1, "coefficient": 5.0},
+            {"left": 0, "right": 0, "coefficient": 2.0},
+            {"left": 0, "right": 1, "coefficient": -3.0},
+        ],
+    }
+
+    durable = _durable(_brute_force_payload(objective, num_variables=2))
+
+    problem = durable.verification_plan.reference_problem
+    assert problem is not None
+    # Variable 0 already had a linear coefficient, so its diagonal term is
+    # summed into it; variable 1 gains one. Only the genuine pair survives as
+    # an off-diagonal term.
+    assert sorted((term.i, term.j, term.weight) for term in problem.terms) == [
+        (0, 0, 10.0),
+        (0, 1, -3.0),
+        (1, 1, 5.0),
+    ]
+
+    # And the durable QUBO scores every assignment the way the objective was
+    # written, which is the property the fold has to preserve.
+    expected = _values_of_the_written_objective(objective, num_variables=2)
+    for assignment in range(4):
+        bits = [(assignment >> variable) & 1 for variable in range(2)]
+        scored = problem.offset + sum(
+            term.weight * (bits[term.i] if term.i == term.j else bits[term.i] * bits[term.j])
+            for term in problem.terms
+        )
+        assert scored == pytest.approx(expected[assignment])
+
+
+def test_a_quadratic_pair_reaches_the_durable_plan_in_one_canonical_order():
+    # Two extractions of one instance must not read as a disagreement over
+    # which endpoint was written first: a reference mismatch drops the
+    # brute-force check silently rather than failing the run.
+    written_one_way = {
+        "direction": "maximize",
+        "linear_coefficients": [{"variable": 0, "coefficient": 8.0}],
+        "quadratic_coefficients": [{"left": 2, "right": 0, "coefficient": -3.0}],
+    }
+    written_the_other_way = {
+        "direction": "maximize",
+        "linear_coefficients": [{"variable": 0, "coefficient": 8.0}],
+        "quadratic_coefficients": [{"left": 0, "right": 2, "coefficient": -3.0}],
+    }
+
+    one = _durable(_brute_force_payload(written_one_way, num_variables=3))
+    other = _durable(_brute_force_payload(written_the_other_way, num_variables=3))
+
+    assert one.verification_plan.reference_problem is not None
+    assert (
+        one.verification_plan.reference_problem.terms
+        == other.verification_plan.reference_problem.terms
+    )
+    assert (2, 0) not in [
+        (term.i, term.j) for term in one.verification_plan.reference_problem.terms
+    ]
+
+
 def test_constrained_reference_fields_reach_the_durable_plan():
     payload = _payload()
     payload["algorithm"] = "QAOA"
