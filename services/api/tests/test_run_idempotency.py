@@ -50,6 +50,7 @@ def test_the_same_request_hashes_the_same():
         ("shots", 512),
         ("timeout_s", 42),
         ("conversation_id", uuid.uuid4()),
+        ("artifact_version_id", uuid.uuid4()),
     ],
 )
 def test_every_field_moves_the_fingerprint(field, value):
@@ -88,7 +89,15 @@ def test_a_different_body_under_the_same_key_is_refused():
     assert refused.value.detail["reason"] == "idempotency_key_reused"
 
 
-def test_a_row_predating_the_migration_cannot_be_compared_and_is_not_refused():
-    """NULL means "no recorded request", not "a request that differs". Refusing
-    on missing data would invent a conflict the row cannot support."""
-    _assert_same_request(_stored(None), _idempotency_request_hash(_body()))
+def test_a_row_predating_the_migration_is_refused_because_it_cannot_be_compared():
+    """Fail closed on NULL — corrected in review, and the correction matters.
+
+    The first version returned the stored run here, reasoning that missing data
+    cannot support a conflict. But "cannot compare" is exactly when handing back
+    a run is unsafe: waving those rows through keeps the defect this whole
+    mechanism exists to close reachable for every pre-migration key.
+    """
+    with pytest.raises(HTTPException) as refused:
+        _assert_same_request(_stored(None), _idempotency_request_hash(_body()))
+
+    assert refused.value.status_code == 409

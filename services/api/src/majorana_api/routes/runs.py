@@ -147,13 +147,19 @@ def _assert_same_request(existing: RunRow, request_hash: str | None) -> None:
     stop: the caller is handed a run it did not ask for, under a 201 that says
     it was created. RFC-wise this is 409 — the key is in use for something else.
 
-    A NULL stored hash predates migration 0047 and cannot be compared. Those
-    rows take the old behaviour rather than a refusal invented from missing
-    data; every one of them is long terminal, so this is a statement about
-    honesty rather than a live path.
+    A NULL stored hash predates migration 0047. It is REFUSED, not waved
+    through, and that is a correction: the first version returned the stored run
+    for those rows on the reasoning that missing data cannot support a conflict.
+    But "cannot compare" is exactly when handing back a run is unsafe — it keeps
+    the defect this function exists to close reachable for every pre-migration
+    key, which is a hole preserved for the convenience of not thinking about it.
+
+    The cost is bounded and visible: a retry of a request created before the
+    migration gets a 409 telling it to use a new key. Runs reach a terminal
+    status in minutes and the migration runs during deploy, so the window where
+    any row has a NULL hash and a live retry is minutes wide. Refusing loudly
+    inside it beats returning a run that may not be the one asked for.
     """
-    if existing.idempotency_request_hash is None:
-        return
     if existing.idempotency_request_hash == request_hash:
         return
     raise HTTPException(

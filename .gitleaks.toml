@@ -3,10 +3,10 @@
 #
 # ## Why this file exists
 #
-# A full-history scan on 2026-08-05 reported 83 leaks. Every one of them was the
-# same false positive: the built-in `generic-api-key` rule fires on an
-# identifier containing "key" next to a quoted value, and this codebase has a
-# domain term shaped exactly like that —
+# The full-history scan that prompted this file (PR #251) reported 83 leaks.
+# Every one of them was the same false positive: the built-in `generic-api-key`
+# rule fires on an identifier containing "key" next to a quoted value, and this
+# codebase has a domain term shaped exactly like that —
 #
 #     component_semantic_key == "optimizer.slsqp.v1"
 #
@@ -39,17 +39,27 @@ id = "generic-api-key"
   regexTarget = "match"
   regexes = [
     # 1. A dotted, version-suffixed scientific identifier — "optimizer.slsqp.v1",
-    #    "ansatz.h2.fixed_excitation.v1". Matched on the VALUE's shape rather
-    #    than the variable's name, because the same identifier is read through
-    #    half a dozen spellings (semantic_key, semanticKey, component_key,
-    #    baseline_component_key, candidate_component_semantic_key). No credential
-    #    format in use here — WorkOS, Stripe, Neon, GCP, Anthropic, OpenAI,
-    #    DeepSeek — is lowercase dotted words ending in `.vN`, so keying on the
-    #    value cannot swallow a real one.
-    #    The `.vN` segment may sit anywhere in the chain, not only at the end:
-    #    "h2.sto3g.actual_vqe.v0_2.measurement" versions the record and then
-    #    names the part of it.
-    '''(?i)["'][a-z][a-z0-9_]*(?:\.[a-z0-9_]+)*\.v[0-9][0-9_]*(?:\.[a-z0-9_]+)*["']''',
+    #    "ansatz.h2.fixed_excitation.v1", "h2.sto3g.actual_vqe.v0_2.measurement"
+    #    (the `.vN` segment may sit mid-chain and then name a part of the record).
+    #
+    #    Anchored to the FIVE namespaces that actually occur, enumerated from the
+    #    83 findings rather than guessed — a first pass by hand got `measurement`
+    #    (which does not occur) and missed `stopping` and `comparison` (which
+    #    account for 18 between them).
+    #
+    #    Shape alone was the first version and it was too permissive: any
+    #    lowercase dotted value carrying a `.vN` was suppressed, which is a wider
+    #    hole than the one being closed, and a custom credential in dotted form
+    #    would have slipped through the full-history gate. Narrowed in review — a
+    #    suppression in a security control should be exactly as wide as its
+    #    evidence and no wider.
+    #
+    #    Matched on the value rather than the field name because the same
+    #    identifier is read through half a dozen spellings (semantic_key,
+    #    semanticKey, component_key, baseline_component_key,
+    #    candidate_component_semantic_key). A NEW namespace must be added here
+    #    deliberately, and the control below re-run.
+    '''(?i)["'](?:optimizer|stopping|ansatz|comparison|h2)(?:\.[a-z0-9_]+)*\.v[0-9][0-9_]*(?:\.[a-z0-9_]+)*["']''',
 
     # 2. Idempotency-Key headers in tests: "phase78-cobyla-swap". A client-chosen
     #    dedupe token, never a credential — it authenticates nothing and grants

@@ -12,9 +12,15 @@ second submission be told apart from a retry and refused with a 409.
 
 Nullable, and deliberately not backfilled. Rows created before this migration
 have no recorded request, and inventing one would mean claiming a comparison
-happened that did not. A NULL hash is read as "cannot compare" and takes the
-old behaviour — the pre-existing runs are all terminal long before this ships,
-so the branch is unreachable in practice and honest where it is not.
+happened that did not.
+
+A NULL hash is therefore **non-comparable, and the route fails closed on it** —
+a reused key against such a row is refused with 409 rather than answered with
+the stored run. "Cannot compare" is precisely when returning a run is unsafe;
+letting those rows through would keep the defect this column exists to close
+reachable for every pre-migration key. The exposure is minutes wide (runs go
+terminal quickly, and this migration runs during deploy), and inside it a loud
+refusal beats a possibly-wrong run.
 """
 
 import sqlalchemy as sa

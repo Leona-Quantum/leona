@@ -30,6 +30,23 @@ import type { NextConfig } from "next";
  */
 const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
+/**
+ * `upgrade-insecure-requests` is omitted when the control plane is plain HTTP.
+ *
+ * The directive rewrites every http:// subresource to https:// *before* the
+ * source list is checked, so with the local default of `http://localhost:8000`
+ * the browser would try `https://localhost:8000`, find no TLS there, and fail
+ * every API and SSE call — the whole product, broken in local dev only, by a
+ * header added for production. Caught in review; the first version of this
+ * emitted it unconditionally.
+ *
+ * Keyed on the control plane's scheme rather than on NODE_ENV: what matters is
+ * whether there is actually an http:// origin in `connect-src` to be upgraded
+ * out from under us, and a developer pointing at a deployed https API should
+ * still get the directive.
+ */
+const CONTROL_PLANE_IS_HTTP = CONTROL_PLANE.startsWith("http://");
+
 const csp = [
   "default-src 'self'",
   "script-src 'self' 'unsafe-inline'",
@@ -41,7 +58,7 @@ const csp = [
   "base-uri 'self'",
   "form-action 'self'",
   "frame-ancestors 'none'",
-  "upgrade-insecure-requests",
+  ...(CONTROL_PLANE_IS_HTTP ? [] : ["upgrade-insecure-requests"]),
 ].join("; ");
 
 const nextConfig: NextConfig = {
