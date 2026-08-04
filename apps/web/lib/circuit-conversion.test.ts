@@ -144,6 +144,93 @@ meas[1] = measure q[1];`;
   assert.deepEqual(circuit.steps.filter((step) => step.gate === "M").flatMap((step) => step.qubits), [0, 1]);
 });
 
+test("interchange reconstruction expands Qiskit exporter custom RZZ gates", () => {
+  // Bound RZZ instructions are emitted as one static gate definition per
+  // distinct instruction. These bodies use only standard operations and can be
+  // expanded faithfully without admitting general OpenQASM control flow.
+  const qasm = `OPENQASM 3.0;
+include "stdgates.inc";
+gate rzz(theta) a, b {
+  cx a, b;
+  rz(theta) b;
+  cx a, b;
+}
+gate rzz_0(theta) a, b {
+  cx a, b;
+  rz(-0.75) b;
+  cx a, b;
+}
+bit[2] meas;
+qubit[2] q;
+h q[0];
+rzz(pi/2) q[0], q[1];
+rzz_0(-0.75) q[0], q[1];
+meas[0] = measure q[0];
+meas[1] = measure q[1];`;
+
+  const circuit = parseInterchangeCircuit(qasm);
+  assert.ok(circuit, "Qiskit custom RZZ definitions must reconstruct");
+  assert.equal(circuit.qubitCount, 2);
+  assert.deepEqual(circuit.steps.map((step) => step.gate), ["H", "CX", "RZ", "CX", "CX", "RZ", "CX", "M", "M"]);
+  assert.deepEqual(circuit.steps.filter((step) => step.gate === "RZ").map((step) => step.param), ["pi/2", "-0.75"]);
+});
+
+test("interchange reconstruction draws an eight-wire basis-decomposed diagonal circuit", () => {
+  // The trusted Qiskit observer lowers an otherwise-unexportable DiagonalGate
+  // to this standard basis. Its 541 operations are representative of the
+  // eight-asset QAOA artifact that previously opened as an empty two-wire
+  // canvas solely because the old display budget stopped at 512.
+  const qasm = [
+    "OPENQASM 3.0;",
+    'include "stdgates.inc";',
+    "bit[8] meas;",
+    "qubit[8] q;",
+    ...Array.from({ length: 255 }, (_, index) => `rz(${(index + 1) / 1000}) q[${index % 8}];`),
+    ...Array.from({ length: 254 }, (_, index) => `cx q[${index % 8}], q[${(index + 1) % 8}];`),
+    ...Array.from({ length: 16 }, (_, index) => `rx(pi/2) q[${index % 8}];`),
+    ...Array.from({ length: 8 }, (_, index) => `ry(pi/2) q[${index}];`),
+    ...Array.from({ length: 8 }, (_, index) => `meas[${index}] = measure q[${index}];`),
+  ].join("\n");
+
+  const result = reconstructInterchangeCircuit(qasm);
+  assert.equal(result.kind, "ok");
+  assert.ok(result.kind === "ok");
+  assert.equal(result.circuit.qubitCount, 8);
+  assert.equal(result.circuit.steps.length, 541);
+});
+
+test("interchange reconstruction still rejects unsafe custom gate bodies", () => {
+  const resetBody = `OPENQASM 3.0;
+include "stdgates.inc";
+gate prepare a {
+  reset a;
+}
+qubit[1] q;
+prepare q[0];`;
+  assert.equal(parseInterchangeCircuit(resetBody), null);
+
+  const symbolicExpression = `OPENQASM 3.0;
+include "stdgates.inc";
+gate half_rx(theta) a {
+  rx(theta/2) a;
+}
+qubit[1] q;
+half_rx(pi/2) q[0];`;
+  assert.equal(parseInterchangeCircuit(symbolicExpression), null);
+
+  const nestedCustomCall = `OPENQASM 3.0;
+include "stdgates.inc";
+gate inner a {
+  h a;
+}
+gate outer a {
+  inner a;
+}
+qubit[1] q;
+outer q[0];`;
+  assert.equal(parseInterchangeCircuit(nestedCustomCall), null);
+});
+
 test("interchange reconstruction accepts permuted per-qubit measurement and the arrow form", () => {
   const assignPermuted = `OPENQASM 3.0;
 include "stdgates.inc";
@@ -255,7 +342,7 @@ test("a width past what a browser can draw reports too_large, not a blank panel"
 test("a decomposed gate set past the step guard reports too_large even when narrow", () => {
   // Each ccx decomposes into ~15 primitive columns; enough of them exceed the
   // step guard on only three wires — the guard is about draw cost, not width.
-  const toffoliCount = 40;
+  const toffoliCount = Math.ceil(MAX_VIEWABLE_STEPS / 15) + 1;
   const deep = [
     "OPENQASM 3.0;",
     "include \"stdgates.inc\";",
