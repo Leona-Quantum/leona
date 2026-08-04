@@ -41,7 +41,7 @@ def test_an_assumption_set_refuses_to_exist_above_threshold():
         AssumptionSet(
             name="broken",
             version=1,
-            citation="none",
+            source_citation="none",
             physical_error_rate=2e-2,
             threshold=1e-2,
             logical_error_prefactor=0.1,
@@ -58,7 +58,7 @@ def test_estimates_under_different_assumption_sets_are_not_comparable():
     other = AssumptionSet(
         name="gidney-2025",
         version=2,  # same name, bumped version
-        citation=GIDNEY_2025.citation,
+        source_citation=GIDNEY_2025.source_citation,
         physical_error_rate=1e-3,
         threshold=1e-2,
         logical_error_prefactor=0.1,
@@ -159,7 +159,7 @@ def test_halving_the_error_rate_cuts_the_footprint():
     better = AssumptionSet(
         name="gidney-2025-halved-error",
         version=1,
-        citation="hypothetical, for a sensitivity check only",
+        source_citation="hypothetical, for a sensitivity check only",
         physical_error_rate=5e-4,
         threshold=1e-2,
         logical_error_prefactor=0.1,
@@ -228,7 +228,7 @@ def test_an_assumption_set_refuses_a_non_finite_number(bad):
         AssumptionSet(
             name="non-finite",
             version=1,
-            citation="none",
+            source_citation="none",
             physical_error_rate=1e-3,
             threshold=1e-2,
             logical_error_prefactor=0.1,
@@ -258,7 +258,7 @@ def test_a_target_no_distance_can_reach_raises_rather_than_returning_a_number():
     marginal = AssumptionSet(
         name="marginal",
         version=1,
-        citation="hypothetical",
+        source_citation="hypothetical",
         physical_error_rate=9.9e-3,  # only just below threshold
         threshold=1e-2,
         logical_error_prefactor=0.1,
@@ -466,3 +466,52 @@ def test_a_circuit_that_does_consume_magic_states_keeps_the_factories_it_was_giv
 
     assert result.runtime.factory_count == 3
     assert result.footprint.factory_qubits > 0
+
+
+# --- the citation a reader actually sees -----------------------------------
+
+
+def test_the_rendered_citation_names_every_value_the_source_does_not_state():
+    """The disclosure has to reach the page, not just the docstring.
+
+    `gidney-2025` takes three of its nine values from common practice rather
+    than from the cited paper. That was recorded in a module docstring while
+    the string rendered on `/repository` said the source stated its assumptions
+    in one place — so a visitor read a citation implying nine sourced numbers
+    where six were. `citation` is composed from the source plus the allowances
+    precisely so the two cannot drift apart again.
+    """
+    rendered = GIDNEY_2025.citation
+
+    assert GIDNEY_2025.working_allowances == (
+        "routing_factor",
+        "factory_footprint_logical",
+        "t_per_toffoli",
+    )
+    for allowance in GIDNEY_2025.working_allowances:
+        assert allowance in rendered, f"{allowance} is undisclosed to the reader"
+    assert GIDNEY_2025.source_citation in rendered
+    assert "working allowances" in rendered
+
+
+def test_a_set_whose_source_states_everything_renders_no_disclosure():
+    """The sentence is a disclosure, not decoration — absent when nothing to disclose."""
+    fully_sourced = dataclasses.replace(GIDNEY_2025, working_allowances=())
+
+    assert fully_sourced.citation == fully_sourced.source_citation
+
+
+def test_a_misspelled_allowance_is_refused_rather_than_silently_undisclosed():
+    """A typo would render a disclosure that discloses nothing.
+
+    `factory_footprint` is not a field; without this check the name would drop
+    out of the rendered string and the set would look more sourced than it is —
+    the exact failure the field exists to end.
+    """
+    with pytest.raises(ValueError, match="no such field"):
+        dataclasses.replace(GIDNEY_2025, working_allowances=("factory_footprint",))
+
+
+def test_an_assumption_set_must_cite_something():
+    with pytest.raises(ValueError, match="must cite its source"):
+        dataclasses.replace(GIDNEY_2025, source_citation="")
