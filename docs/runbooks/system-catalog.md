@@ -127,6 +127,59 @@ private. Expect `published=283 blocked=0`.
 Changing the license, or attesting records the current policy excludes, is a policy-file
 edit plus a normal review. Never a flag and never a command-line override.
 
+## Running these against **production**
+
+Everything above assumes a shell that already holds `DATABASE_URL`. Production's lives in
+Secret Manager and is mounted only into the Cloud Run services, so there is no laptop shell
+that can reach the instance without first copying a production credential onto a laptop.
+Don't. Run the command *inside* the deployment boundary instead, as a throwaway job:
+
+```bash
+gcloud run jobs create leona-admin-oneshot \
+  --project=majorana-core --region=us-west1 \
+  --image="$(gcloud run services describe majorana-api --project=majorana-core \
+      --region=us-west1 --format='value(spec.template.spec.containers[0].image)')" \
+  --service-account=639400385957-compute@developer.gserviceaccount.com \
+  --set-cloudsql-instances=majorana-core:us-west1:majorana-pg \
+  --set-secrets=DATABASE_URL=DATABASE_URL:latest \
+  --set-env-vars="MAJORANA_ENV=production,SYSTEM_CATALOG_ENABLED=true,\
+SYSTEM_CATALOG_WORKSPACE_ID=41599712-a347-494f-a556-c2ced8387408,\
+SYSTEM_CATALOG_IMPORTER_USER_ID=13a0d9bb-b4fd-4ff2-9a16-f0cff72e9f87,\
+SYSTEM_CATALOG_PUBLIC_READER_USER_ID=bb0a3564-598e-463e-9256-425ae2d7dba9" \
+  --memory=2Gi --cpu=2 --max-retries=0 --task-timeout=3600s \
+  --command=python \
+  --args="^~^-m~majorana_api.catalog_admin~sync-bootstrap~--attested-by~<your-user-id>"
+
+gcloud run jobs execute leona-admin-oneshot --project=majorana-core --region=us-west1 --wait
+```
+
+The job's stdout goes to Cloud Logging, not to the terminal — read it back with
+`gcloud logging read` filtered on
+`labels."run.googleapis.com/execution_name"="<execution>"`. A whole `sync-bootstrap` over
+283 records takes well under a minute.
+
+**Delete the job when you are done.** `gcloud run jobs delete leona-admin-oneshot`. Left in
+place it is a standing, re-runnable handle on the production database that anyone with
+`run.jobs.run` can fire, which is a larger grant than the task needed.
+
+**The `^~^` in `--args` is a gcloud delimiter override**, not a typo: the default separator
+is a comma and `--attested-by` values are fine, but any argument containing a comma would be
+silently split into two.
+
+### Finding `--attested-by` when accounts have been through the WorkOS switch
+
+`select id from users where email = '<you>'` can return **two** rows. The environment switch
+(see `plans/` and `memory/DECISIONS.md`) minted new user rows, and the reattachment moved the
+live WorkOS id back onto the *original* row while renaming the duplicate's to
+`retired-workos-env:<timestamp>:<original-id>`. **The live account is the one whose
+`workos_user_id` has no `retired-workos-env:` prefix** — which is the older row, not the
+newer one. Picking by `created_at` gets it backwards, and `attest-bootstrap` grants that
+account ADMIN on the catalog workspace, so the wrong pick is a real grant on a dead row.
+
+```sql
+select id, workos_user_id, created_at from users where email = '<you>' order by created_at;
+```
+
 ## Live gates
 
 ```bash
@@ -149,6 +202,19 @@ loop is: edit the entries → regenerate the manifest
 (`node scripts/generate-catalog-bootstrap-manifest.mjs`) → `bootstrap-import` →
 `attest-bootstrap` → `publish-bootstrap`. There is no automatic sync, by design
 (ADR-0019); a new pinned manifest release plus an explicit import job is the only path.
+
+**Check the manifest is current before running any of it**, or the import faithfully ships
+the last generation's content and reports success:
+
+```bash
+node scripts/generate-catalog-bootstrap-manifest.mjs --check
+```
+
+**`manifest.source_commit` is not a commit you can look up.** It records the HEAD at
+generation time, and every PR here lands squash-merged, so the sha it names stops existing
+the moment the branch is squashed — the current manifest's `1d22cfab` resolves to
+`fatal: bad object`. Content integrity does not depend on it (the whole-manifest checksum
+and the per-item sha256 do), but do not read it as a pointer into this repository's history.
 
 ## Failure and rollback
 
