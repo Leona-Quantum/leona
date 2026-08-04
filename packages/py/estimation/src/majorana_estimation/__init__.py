@@ -14,7 +14,6 @@ authoritative. That is the same defect the UI spec had, found the same way.
 """
 
 from .advantage import (
-    BABBUSH_QUADRATIC_ORACLE_OPERATION_BOUND,
     AdvantageStatus,
     AdvantageVerdict,
     SpeedupClass,
@@ -41,7 +40,6 @@ from .estimate import (
 from .logical import LogicalCost
 
 __all__ = [
-    "BABBUSH_QUADRATIC_ORACLE_OPERATION_BOUND",
     "BUILTIN_ASSUMPTION_SETS",
     "COMPOSED_TRAPPED_ION",
     "GIDNEY_2025",
