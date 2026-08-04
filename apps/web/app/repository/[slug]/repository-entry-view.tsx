@@ -21,6 +21,7 @@ const COPY = {
   en: {
     back: "← Atlas",
     circuit: "Circuit & simulation",
+    cost: "Fault-tolerant cost",
     outcomes: "Expected outcomes",
     how: "How it works",
     code: "Implementation",
@@ -57,6 +58,7 @@ const COPY = {
   ja: {
     back: "← Atlas",
     circuit: "回路とシミュレーション",
+    cost: "誤り耐性計算のコスト",
     outcomes: "期待される出力",
     how: "仕組み",
     code: "実装",
@@ -193,11 +195,23 @@ export function RepositoryEntryView({
   isSignedIn,
   signInHref,
   related,
+  estimate,
 }: {
   entry: PublicRepositoryEntry;
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
+  /**
+   * The cost panel, rendered on the server and passed in as a slot.
+   *
+   * A slot rather than a fetch because this component is a client component and
+   * the estimate comes from the anonymous catalog API, which by standing policy
+   * (see lib/repository-source.ts) is read only by server code — proxying it to
+   * the browser would create a second unauthenticated surface for no gain.
+   * Null when there is no estimate to show, and the section then does not
+   * render at all.
+   */
+  estimate?: ReactNode;
   related: RelatedEntrySummary[];
 }) {
   const copy = COPY[locale];
@@ -268,6 +282,8 @@ export function RepositoryEntryView({
               ))}
             </div>
           </DetailSection>
+
+          {estimate ? <DetailSection title={copy.cost}>{estimate}</DetailSection> : null}
 
           <DetailSection title={copy.how} defaultOpen>
             <MarkdownContent source={explanation} className="mj-repo-markdown" />

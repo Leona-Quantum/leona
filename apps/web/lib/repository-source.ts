@@ -25,6 +25,12 @@ import {
 } from "./catalog-pagination";
 import { isPublicCatalogApiEnabled } from "./public-catalog";
 import { parseCatalogEntries, parseCatalogListEntries } from "./repository/from-catalog";
+import {
+  parseEstimate,
+  parseEstimateList,
+  type RepositoryEstimate,
+  type RepositoryEstimateList,
+} from "./repository/estimate.ts";
 import { PUBLIC_REPOSITORY_ENTRIES } from "./public-repository";
 import type { PublicRepositoryEntry, PublicRepositoryListEntry } from "./repository/types";
 
@@ -155,4 +161,56 @@ export async function getRepositoryEntry(slug: string): Promise<PublicRepository
   // the caller turns that into a real notFound().
   const parsed = payload === null ? null : parseCatalogEntries([payload]).entries[0] ?? null;
   return parsed ?? PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
+}
+
+/**
+ * One entry's fault-tolerant cost under the API's default assumption set (E4),
+ * or null when there is no estimate to show.
+ *
+ * **Null has no static fallback, on purpose.** Every other reader here falls
+ * back to the committed corpus when the API is unreachable, which is safe
+ * because both sides hold the same 283 records — the visitor sees identical
+ * content either way. An estimate is not content: it is derived by the
+ * estimation package from the entry's circuit, that package is Python, and the
+ * web build has no second implementation of it. A TypeScript reimplementation
+ * living here is exactly the drift the estimator's own module comment warns
+ * about, and the copy that drifted would be the one on the public page.
+ *
+ * So when the API is off or unwell this returns null and the section does not
+ * render. A page missing its cost panel is a page missing a panel. A page
+ * showing a cost computed by a second, unversioned implementation of the
+ * arithmetic is a wrong number with a citation under it.
+ */
+export async function getRepositoryEstimate(slug: string): Promise<RepositoryEstimate | null> {
+  if (!isPublicCatalogApiEnabled()) return null;
+  const payload = await fetchCatalogPayload(
+    `${API_URL}/v1/catalog/entries/${encodeURIComponent(slug)}/estimate`,
+    true,
+  );
+  if (payload === null) return null;
+  const parsed = parseEstimate(payload);
+  if (parsed === null) {
+    console.error(`[repository-source] estimate for ${slug} failed validation`);
+  }
+  return parsed;
+}
+
+/**
+ * Every published entry's cost under ONE assumption set, or null.
+ *
+ * One request rather than one per card — not only for the obvious reason, but
+ * because 283 independently-parameterised responses is the shape in which a
+ * client ends up ranking rows costed under different assumptions without ever
+ * deciding to. The identity arrives once, on the container.
+ */
+export async function getRepositoryEstimates(): Promise<RepositoryEstimateList | null> {
+  if (!isPublicCatalogApiEnabled()) return null;
+  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/estimates`);
+  if (payload === null) return null;
+  const parsed = parseEstimateList(payload);
+  if (parsed === null) {
+    console.error("[repository-source] estimate listing failed validation");
+    return null;
+  }
+  return parsed;
 }

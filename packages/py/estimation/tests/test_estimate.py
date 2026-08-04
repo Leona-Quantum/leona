@@ -364,3 +364,105 @@ def test_a_non_finite_rotation_coefficient_is_refused_at_construction(bad):
     positivity check and surface later out of math.ceil in t_per_rotation."""
     with pytest.raises(ValueError):
         dataclasses.replace(GIDNEY_2025, version=2, rotation_t_coefficient=bad)
+
+
+def test_the_precision_is_part_of_the_identity_an_estimate_carries():
+    """Two costings that differ only in eps are different claims.
+
+    A thousand rotations cost 60,000 T at 1e-6 and 100,000 at 1e-10, so a
+    ranking that mixed them would be ordering by an assumption rather than by
+    the circuits.
+    """
+    loose = GIDNEY_2025.with_rotation_precision(1e-6)
+    tight = GIDNEY_2025.with_rotation_precision(1e-10)
+
+    assert loose.identity == "gidney-2025@v1+eps=1e-06"
+    assert tight.identity == "gidney-2025@v1+eps=1e-10"
+    assert not loose.comparable_with(tight)
+
+
+def test_an_estimate_under_a_precision_will_not_rank_against_one_without():
+    """The refusal has to fire on the pair it exists for. Before eps entered
+    the identity this returned True: same name, same version, different cost
+    model for every rotation in the circuit."""
+    rotations = LogicalCost(logical_qubits=4, t_count=60, non_clifford_depth=1)
+
+    stated = estimate(rotations, GIDNEY_2025.with_rotation_precision(1e-6))
+    unstated = estimate(rotations, GIDNEY_2025)
+
+    assert not stated.comparable_with(unstated)
+    assert stated.assumption_set == "gidney-2025@v1+eps=1e-06"
+
+
+def test_naming_a_precision_leaves_the_hardware_untouched():
+    """`with_rotation_precision` must not be a way to edit an assumption set.
+    Only the synthesis budget moves; every sourced number stays put, and the
+    original is unchanged."""
+    derived = GIDNEY_2025.with_rotation_precision(1e-6)
+
+    assert GIDNEY_2025.rotation_synthesis_epsilon is None
+    assert derived.t_per_rotation == 60
+    assert dataclasses.replace(derived, rotation_synthesis_epsilon=None) == GIDNEY_2025
+
+
+def test_a_precision_the_arithmetic_cannot_use_is_refused_at_the_boundary():
+    """Refuse where the caller is, not eight frames later inside math.log2."""
+    for bad in (0.0, 1.0, -1e-6, float("nan")):
+        with pytest.raises(ValueError):
+            GIDNEY_2025.with_rotation_precision(bad)
+
+
+def test_a_clifford_only_circuit_reports_no_runtime_rather_than_zero():
+    """0.0 seconds is the one wrong answer that reads as a measurement.
+
+    Both runtime terms are magic-state terms, so a circuit consuming none
+    drives both to zero — and `max(0, 0)` is a circuit that runs instantly.
+    The footprint is still real and is still reported.
+    """
+    result = estimate(LogicalCost(logical_qubits=50), GIDNEY_2025)
+
+    assert result.runtime.seconds is None
+    assert result.runtime_seconds is None
+    assert result.runtime.binding_term == "unstated"
+    assert result.footprint.total_physical_qubits > 0
+    assert any("runtime is not" in note for note in result.notes)
+
+
+def test_two_precisions_that_round_alike_still_get_different_identities():
+    """`:g` renders six significant figures, so 1.234561e-6 and 1.234562e-6 both
+    become "1.23456e-06" — two budgets, one identity, and `comparable_with`
+    ranking them against each other. The identity has to round-trip the float."""
+    a = GIDNEY_2025.with_rotation_precision(1.234561e-6)
+    b = GIDNEY_2025.with_rotation_precision(1.234562e-6)
+
+    assert a.identity != b.identity
+    assert not a.comparable_with(b)
+    # The common case still reads the way a person would write it.
+    assert GIDNEY_2025.with_rotation_precision(1e-6).identity == "gidney-2025@v1+eps=1e-06"
+
+
+def test_a_clifford_only_circuit_is_costed_with_no_factories_even_when_asked_for_some():
+    """Factories a circuit cannot use are not part of what it needs.
+
+    Honouring the request adds 15 logical patches apiece to a footprint whose
+    own `magic_states` is 0 — a report that contradicts itself line by line.
+    """
+    clifford = LogicalCost(logical_qubits=2)
+
+    asked = estimate(clifford, GIDNEY_2025, factory_count=5)
+    unasked = estimate(clifford, GIDNEY_2025)
+
+    assert asked.runtime.factory_count == 0
+    assert asked.footprint.factory_qubits == 0
+    assert asked.footprint.total_physical_qubits == unasked.footprint.total_physical_qubits
+    assert any("consumes no magic states" in note for note in asked.notes)
+
+
+def test_a_circuit_that_does_consume_magic_states_keeps_the_factories_it_was_given():
+    """The normalisation above must not swallow a real factory count."""
+    costly = LogicalCost(logical_qubits=2, t_count=100, non_clifford_depth=1)
+
+    result = estimate(costly, GIDNEY_2025, factory_count=3)
+
+    assert result.runtime.factory_count == 3
+    assert result.footprint.factory_qubits > 0

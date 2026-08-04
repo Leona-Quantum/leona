@@ -58,9 +58,23 @@ class Runtime:
     factory_count: int
     throughput_seconds: float
     reaction_limited_seconds: float
-    seconds: float
+
+    seconds: float | None
+    """Wall-clock, or `None` when this model cannot state one.
+
+    `None` for a Clifford-only circuit, and that is not a technicality. Both
+    terms here are driven by magic-state consumption: a circuit that consumes
+    none has a throughput term of zero and a reaction-limited term of zero,
+    which multiply out to a runtime of **0.0 seconds** for a circuit that
+    plainly takes time to run. `LogicalCost` already says in as many words that
+    a Clifford-only circuit's wall-clock "is not something this package can
+    state" — returning 0.0 contradicted that, and 0.0 is the one wrong answer
+    that reads as a measurement rather than as a gap. Stating a Clifford depth
+    and its cycle cost is the real fix, and this model does not have it.
+    """
+
     binding_term: str
-    """Either `"throughput"` or `"reaction"` — which term set `seconds`."""
+    """`"throughput"`, `"reaction"`, or `"unstated"` when `seconds` is None."""
 
     factory_crossover: int | None
     """Fewest factories at which throughput stops binding.
@@ -89,7 +103,7 @@ class PhysicalEstimate:
         return self.footprint.total_physical_qubits
 
     @property
-    def runtime_seconds(self) -> float:
+    def runtime_seconds(self) -> float | None:
         return self.runtime.seconds
 
     def comparable_with(self, other: "PhysicalEstimate") -> bool:
@@ -183,7 +197,12 @@ def _runtime(
     if reaction > 0 and magic_states > 0:
         crossover = max(1, math.ceil(magic_states / (rate * reaction)))
 
-    if throughput >= reaction:
+    seconds: float | None
+    if magic_states == 0:
+        # Neither term is about this circuit: both are magic-state terms, and
+        # taking their max would report 0.0 seconds for a circuit that runs.
+        seconds, binding = None, "unstated"
+    elif throughput >= reaction:
         seconds, binding = throughput, "throughput"
     else:
         seconds, binding = reaction, "reaction"
@@ -216,7 +235,9 @@ def estimate(
     if logical.is_clifford_only:
         notes.append(
             "Clifford-only circuit: no magic states, so no distillation and no "
-            "factories. The runtime here is the reaction-limited term alone."
+            "factories. Its footprint is stated; its runtime is not, because "
+            "both runtime terms are magic-state terms and this model has no "
+            "Clifford-depth metric to put in their place."
         )
     if logical.non_clifford_depth == 0 and not logical.is_clifford_only:
         notes.append(
@@ -242,6 +263,19 @@ def estimate(
     require_count(resolved_factories, "factory_count", minimum=0)
     if resolved_factories == 0 and not logical.is_clifford_only:
         raise ValueError("a circuit consuming magic states needs at least one factory")
+    if logical.is_clifford_only and resolved_factories:
+        # A caller may ask for factories a Clifford-only circuit cannot use.
+        # Honouring that adds `factory_footprint_logical` patches apiece to a
+        # footprint whose own `magic_states` is 0 — a report that contradicts
+        # itself line by line, and one an anonymous caller can trigger through
+        # a query parameter. The circuit's cost is what is being stated here,
+        # not the machine somebody happens to own.
+        notes.append(
+            f"factory_count={resolved_factories} was requested but this circuit consumes no "
+            "magic states, so it is costed with none: factories it cannot use are not part "
+            "of what it needs."
+        )
+        resolved_factories = 0
 
     runtime = _runtime(logical, assumptions, factory_count=resolved_factories)
 

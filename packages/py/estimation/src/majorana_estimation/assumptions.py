@@ -13,7 +13,7 @@ than having none, because it makes an incomparable estimate look comparable.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 
 
 def require_count(value: object, name: str, *, minimum: int) -> int:
@@ -161,8 +161,44 @@ class AssumptionSet:
 
     @property
     def identity(self) -> str:
-        """The string an estimate carries so it can never be read set-free."""
-        return f"{self.name}@v{self.version}"
+        """The string an estimate carries so it can never be read set-free.
+
+        **The synthesis precision is part of the identity, not a footnote on
+        it.** A circuit of a thousand arbitrary-angle rotations costs 60,000 T
+        gates at eps=1e-6 and 100,000 at eps=1e-10, so two estimates that differ
+        only in eps are different claims and must not be ranked against each
+        other. Leaving eps out of the identity would let `comparable_with`
+        return True for exactly that pair — a refusal that exists but never
+        fires, which is worse than no refusal because it reads as a guarantee.
+
+        `rotation_t_coefficient` is deliberately *not* here: it is a property of
+        the synthesis algorithm the set commits to, so changing it is a change
+        to the set and belongs in `version`. eps is different in kind — it comes
+        from the algorithm's error budget, which is why it is stated per
+        estimate rather than per set.
+        """
+        base = f"{self.name}@v{self.version}"
+        if self.rotation_synthesis_epsilon is None:
+            return base
+        # `repr`, not `:g`. `:g` renders six significant figures, so 1.234561e-6
+        # and 1.234562e-6 both become "1.23456e-06" — two different budgets with
+        # one identity, and `comparable_with` then ranks them against each other.
+        # That is the exact defect this identity exists to prevent, reintroduced
+        # by the formatting. `repr` round-trips a float exactly.
+        return f"{base}+eps={self.rotation_synthesis_epsilon!r}"
+
+    def with_rotation_precision(self, epsilon: float) -> "AssumptionSet":
+        """The same hardware, held to a stated per-rotation synthesis error.
+
+        Returns a **new** set rather than mutating this one, and the difference
+        shows up in `identity`, so an estimate computed with it can never be
+        mistaken for one computed without.
+
+        This is the supported way to answer "what does this circuit cost", since
+        every built-in set states no precision on purpose and
+        `t_per_rotation` refuses without one.
+        """
+        return replace(self, rotation_synthesis_epsilon=epsilon)
 
     @property
     def t_per_rotation(self) -> int:
@@ -210,9 +246,11 @@ class AssumptionSet:
 
         Deliberately identity-based rather than value-based. Two sets that
         happen to agree on every number today are still separate claims about
-        hardware, and one of them can be revised tomorrow.
+        hardware, and one of them can be revised tomorrow. Since `identity`
+        carries the synthesis precision, this also refuses across two eps values
+        — the case a name-and-version check would have waved through.
         """
-        return self.name == other.name and self.version == other.version
+        return self.identity == other.identity
 
 
 GIDNEY_2025 = AssumptionSet(

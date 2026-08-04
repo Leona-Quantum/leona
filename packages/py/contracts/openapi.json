@@ -489,6 +489,86 @@
         "title": "ArtifactVersion",
         "type": "object"
       },
+      "AssumptionSetSummary": {
+        "additionalProperties": false,
+        "description": "The named hardware+protocol claim an estimate was computed under.\n\nServed with every estimate rather than referenced by id, because an estimate\nread without its assumption set is not a weaker number \u2014 it is a different\nkind of thing, and a client that had to fetch the set separately would\nrender the number first.",
+        "properties": {
+          "citation": {
+            "title": "Citation",
+            "type": "string"
+          },
+          "cycle_time_s": {
+            "title": "Cycle Time S",
+            "type": "number"
+          },
+          "identity": {
+            "description": "Stable identity, e.g. `gidney-2025@v1+eps=1e-06`. Two estimates may be ranked against each other only when these strings match.",
+            "title": "Identity",
+            "type": "string"
+          },
+          "name": {
+            "title": "Name",
+            "type": "string"
+          },
+          "physical_error_rate": {
+            "title": "Physical Error Rate",
+            "type": "number"
+          },
+          "reaction_time_s": {
+            "title": "Reaction Time S",
+            "type": "number"
+          },
+          "rotation_synthesis_epsilon": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Per-rotation approximation error the Clifford+T synthesis is held to. Null when no precision was named, in which case any circuit containing an arbitrary-angle rotation has no T-count at all.",
+            "title": "Rotation Synthesis Epsilon"
+          },
+          "t_per_rotation": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "T gates one arbitrary-angle rotation costs under this precision.",
+            "title": "T Per Rotation"
+          },
+          "t_per_toffoli": {
+            "minimum": 1,
+            "title": "T Per Toffoli",
+            "type": "integer"
+          },
+          "version": {
+            "minimum": 1,
+            "title": "Version",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "identity",
+          "name",
+          "version",
+          "citation",
+          "t_per_toffoli",
+          "physical_error_rate",
+          "cycle_time_s",
+          "reaction_time_s"
+        ],
+        "title": "AssumptionSetSummary",
+        "type": "object"
+      },
       "BaselineKind": {
         "enum": [
           "maxcut",
@@ -561,6 +641,212 @@
           "kind"
         ],
         "title": "BaselineResult",
+        "type": "object"
+      },
+      "CatalogEntryEstimate": {
+        "additionalProperties": false,
+        "description": "A catalogue entry's fault-tolerant cost, or a stated reason there is none (E4).\n\nDerived on read from the published record's own portable circuit \u2014 never\nauthored, never stored \u2014 so it cannot drift from the circuit a visitor is\nlooking at on the same page.\n\n`basis` is the field to branch on. Only EXACT and ESTIMATED carry numbers;\nthe other two carry `reason` and nothing else, and a client that renders a\nnumber without checking `basis` will publish a cost for a circuit that has\nnone.",
+        "properties": {
+          "assumptions": {
+            "$ref": "#/components/schemas/AssumptionSetSummary"
+          },
+          "basis": {
+            "$ref": "#/components/schemas/ResourceEstimateBasis"
+          },
+          "distance": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CodeDistanceSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "footprint": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/FootprintSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "logical": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/LogicalCostSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "notes": {
+            "items": {
+              "type": "string"
+            },
+            "maxItems": 20,
+            "title": "Notes",
+            "type": "array"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why no number is given, in one sentence naming the operations responsible. Present exactly when `basis` is REFUSED or NO_CIRCUIT.",
+            "title": "Reason"
+          },
+          "runtime": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/RuntimeSummary"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "target_failure_probability": {
+            "anyOf": [
+              {
+                "exclusiveMaximum": 1,
+                "exclusiveMinimum": 0,
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Target Failure Probability"
+          }
+        },
+        "required": [
+          "slug",
+          "basis",
+          "assumptions"
+        ],
+        "title": "CatalogEntryEstimate",
+        "type": "object"
+      },
+      "CatalogEstimateList": {
+        "additionalProperties": false,
+        "description": "Every published entry's cost under one assumption set.\n\nThe set is stated **once, for the whole list**, which is the shape that makes\nthe ordering rule enforceable: a client holding this object knows every row\nin it is comparable, and has nothing to compare across. Ranking rows from\ntwo of these \u2014 two epsilons, two hardware sets \u2014 is the thing that must not\nhappen, and it now requires visibly merging two payloads that each announce\na different identity.",
+        "properties": {
+          "assumptions": {
+            "$ref": "#/components/schemas/AssumptionSetSummary"
+          },
+          "estimates": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogEstimateSummary"
+            },
+            "title": "Estimates",
+            "type": "array"
+          }
+        },
+        "required": [
+          "assumptions"
+        ],
+        "title": "CatalogEstimateList",
+        "type": "object"
+      },
+      "CatalogEstimateSummary": {
+        "additionalProperties": false,
+        "description": "One row's worth of a catalogue entry's cost, for the browse list.\n\nA projection of `CatalogEntryEstimate`, not a second computation of it: the\nsame function produces both, so a list row and the detail page it links to\ncannot disagree.\n\n**A row carries no assumption set of its own.** `CatalogEstimateList`\nstates it once for the whole listing, which is what makes the ordering rule\nstructural: every row in one list is comparable with every other by\nconstruction, and there is nothing inside the object to compare across.",
+        "properties": {
+          "basis": {
+            "$ref": "#/components/schemas/ResourceEstimateBasis"
+          },
+          "code_distance": {
+            "anyOf": [
+              {
+                "minimum": 3,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Code Distance"
+          },
+          "logical_qubits": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Logical Qubits"
+          },
+          "magic_states": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Magic States"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Seconds"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "total_physical_qubits": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Total Physical Qubits"
+          }
+        },
+        "required": [
+          "slug",
+          "basis"
+        ],
+        "title": "CatalogEstimateSummary",
         "type": "object"
       },
       "CatalogProvenance": {
@@ -785,6 +1071,44 @@
           "message"
         ],
         "title": "ChatError",
+        "type": "object"
+      },
+      "CodeDistanceSummary": {
+        "additionalProperties": false,
+        "description": "Layer 2's working, not just its answer.",
+        "properties": {
+          "achieved_error_per_operation": {
+            "title": "Achieved Error Per Operation",
+            "type": "number"
+          },
+          "code_distance": {
+            "minimum": 3,
+            "title": "Code Distance",
+            "type": "integer"
+          },
+          "logical_operations": {
+            "minimum": 1,
+            "title": "Logical Operations",
+            "type": "integer"
+          },
+          "physical_per_logical": {
+            "minimum": 1,
+            "title": "Physical Per Logical",
+            "type": "integer"
+          },
+          "required_error_per_operation": {
+            "title": "Required Error Per Operation",
+            "type": "number"
+          }
+        },
+        "required": [
+          "code_distance",
+          "logical_operations",
+          "required_error_per_operation",
+          "achieved_error_per_operation",
+          "physical_per_logical"
+        ],
+        "title": "CodeDistanceSummary",
         "type": "object"
       },
       "CodeFinalized": {
@@ -1579,6 +1903,40 @@
         "title": "ExportStatus",
         "type": "string"
       },
+      "FootprintSummary": {
+        "additionalProperties": false,
+        "description": "Layer 3, split so the data/factory trade stays visible rather than lumped.",
+        "properties": {
+          "data_patch_qubits": {
+            "minimum": 0,
+            "title": "Data Patch Qubits",
+            "type": "integer"
+          },
+          "factory_qubits": {
+            "minimum": 0,
+            "title": "Factory Qubits",
+            "type": "integer"
+          },
+          "routing_qubits": {
+            "minimum": 0,
+            "title": "Routing Qubits",
+            "type": "integer"
+          },
+          "total_physical_qubits": {
+            "minimum": 0,
+            "title": "Total Physical Qubits",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "data_patch_qubits",
+          "routing_qubits",
+          "factory_qubits",
+          "total_physical_qubits"
+        ],
+        "title": "FootprintSummary",
+        "type": "object"
+      },
       "Framework": {
         "enum": [
           "qiskit",
@@ -2001,6 +2359,68 @@
           "text"
         ],
         "title": "LlmDelta",
+        "type": "object"
+      },
+      "LogicalCostSummary": {
+        "additionalProperties": false,
+        "description": "Layer 1: what the algorithm needs, before any hardware is named.",
+        "properties": {
+          "clifford_count": {
+            "description": "Reported so a reader can see the circuit was read.",
+            "minimum": 0,
+            "title": "Clifford Count",
+            "type": "integer"
+          },
+          "logical_qubits": {
+            "minimum": 1,
+            "title": "Logical Qubits",
+            "type": "integer"
+          },
+          "magic_states": {
+            "minimum": 0,
+            "title": "Magic States",
+            "type": "integer"
+          },
+          "non_clifford_depth": {
+            "description": "Longest serial non-Clifford chain.",
+            "minimum": 0,
+            "title": "Non Clifford Depth",
+            "type": "integer"
+          },
+          "synthesis_required": {
+            "description": "Arbitrary-angle rotations whose T-count came from the stated epsilon.",
+            "minimum": 0,
+            "title": "Synthesis Required",
+            "type": "integer"
+          },
+          "t_count": {
+            "minimum": 0,
+            "title": "T Count",
+            "type": "integer"
+          },
+          "t_from_synthesis": {
+            "description": "How much of `t_count` is the epsilon's doing rather than the circuit's. The single number a reader needs to judge how load-bearing the assumption is; without it the two are indistinguishable in the total.",
+            "minimum": 0,
+            "title": "T From Synthesis",
+            "type": "integer"
+          },
+          "toffoli_count": {
+            "minimum": 0,
+            "title": "Toffoli Count",
+            "type": "integer"
+          }
+        },
+        "required": [
+          "logical_qubits",
+          "t_count",
+          "toffoli_count",
+          "non_clifford_depth",
+          "magic_states",
+          "clifford_count",
+          "synthesis_required",
+          "t_from_synthesis"
+        ],
+        "title": "LogicalCostSummary",
         "type": "object"
       },
       "MeasurementPolicy": {
@@ -2896,6 +3316,17 @@
         ],
         "title": "ResearchCompleted",
         "type": "object"
+      },
+      "ResourceEstimateBasis": {
+        "description": "On what footing a catalogue entry's fault-tolerant cost is being reported.\n\nFour values because there are four genuinely different things a page can be\nsaying, and collapsing any pair of them is how an estimate starts reading as\na measurement:\n\n- `EXACT` \u2014 every operation came from a closed vocabulary, so the magic-state\n  count is counted, not approximated. In today's corpus these are all\n  Clifford-only: the honest display is \"consumes no magic states\", not a\n  small number.\n- `ESTIMATED` \u2014 the circuit contains arbitrary-angle rotations, which have no\n  T-count until a synthesis precision is named. The figure is real *under\n  that stated epsilon* and moves with it, so the epsilon travels with the\n  number and is part of the assumption-set identity.\n- `REFUSED` \u2014 the circuit holds an operation this stack cannot classify. No\n  precision fixes that, so there is no number and the reason is given instead.\n- `NO_CIRCUIT` \u2014 the entry carries no portable circuit at all. Distinct from\n  REFUSED on purpose: nothing was attempted and nothing failed, and showing\n  a refusal here would invent a doubt about the entry that does not exist.",
+        "enum": [
+          "exact",
+          "estimated",
+          "refused",
+          "no_circuit"
+        ],
+        "title": "ResourceEstimateBasis",
+        "type": "string"
       },
       "ResourceEstimateResult": {
         "additionalProperties": false,
@@ -4015,6 +4446,83 @@
         ],
         "title": "RunStatus",
         "type": "string"
+      },
+      "RuntimeSummary": {
+        "additionalProperties": false,
+        "description": "Layer 4, with both terms kept apart.\n\nReporting only `seconds` would hide which constraint binds, and that is the\nwhole decision a reader is trying to make: more factories move the\nthroughput term and do nothing whatever to the reaction-limited one.",
+        "properties": {
+          "binding_term": {
+            "enum": [
+              "throughput",
+              "reaction",
+              "unstated"
+            ],
+            "title": "Binding Term",
+            "type": "string"
+          },
+          "factory_count": {
+            "minimum": 0,
+            "title": "Factory Count",
+            "type": "integer"
+          },
+          "factory_crossover": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Fewest factories past which buying more buys nothing. Null when no floor is known.",
+            "title": "Factory Crossover"
+          },
+          "magic_states": {
+            "minimum": 0,
+            "title": "Magic States",
+            "type": "integer"
+          },
+          "reaction_limited_seconds": {
+            "title": "Reaction Limited Seconds",
+            "type": "number"
+          },
+          "seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Null when this model cannot state a wall-clock \u2014 a Clifford-only circuit consumes no magic states, so both terms above are zero and reporting their max would claim the circuit runs instantly.",
+            "title": "Seconds"
+          },
+          "throughput_seconds": {
+            "anyOf": [
+              {
+                "type": "number"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Null when unbounded, i.e. states to distil and no factory.",
+            "title": "Throughput Seconds"
+          }
+        },
+        "required": [
+          "magic_states",
+          "factory_count",
+          "reaction_limited_seconds",
+          "binding_term"
+        ],
+        "title": "RuntimeSummary",
+        "type": "object"
       },
       "SandboxResult": {
         "additionalProperties": false,
@@ -5595,7 +6103,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.10.0"
+    "version": "2.11.0"
   },
   "openapi": "3.1.0",
   "paths": {}
