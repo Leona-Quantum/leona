@@ -84,7 +84,7 @@ from majorana_verification import (
     verify_brute_force,
     verify_exact_diag,
 )
-from majorana_frameworks import FrameworkProgram
+from majorana_frameworks import FrameworkProgram, extract_circuit_ir
 from majorana_frameworks.roles import ProgramRole, result_was_derived
 from majorana_llm import (
     LLMClient,
@@ -1229,6 +1229,15 @@ class RepoReviewArtifactSaver:
                 ),
             },
         }
+        # Studio's display sidecar is derived by provider-owned observer code
+        # from the exact FINAL_CIRCUIT that ran. It is optional like OpenQASM,
+        # but serves a different purpose: unknown framework instructions remain
+        # visible as read-only blocks instead of forcing a lossy decomposition
+        # or an empty canvas. Re-validate the sandbox JSON before persistence;
+        # malformed or user-shaped values never cross into artifact metadata.
+        circuit_ir = None if unexecuted else extract_circuit_ir(execution.observation).circuit_ir
+        if circuit_ir is not None:
+            metadata["circuit_ir"] = circuit_ir
         if save_as_copy:
             metadata["provenance"] = {
                 "kind": "save_as_copy",

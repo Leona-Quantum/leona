@@ -9,6 +9,7 @@ import {
   type BuilderCodeVariants,
   type BuilderStep,
 } from "./studio-builder.ts";
+import { isGateAngle } from "./gate-angle.ts";
 import { MAX_CONVERTIBLE_QUBITS, MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS, parseBuilderCircuit, type ParsedBuilderCircuit } from "./studio-parse.ts";
 
 export type CircuitConversionFidelity = "deterministic_subset" | "standard_gate_decomposition";
@@ -164,8 +165,6 @@ const DIRECT_STANDARD_GATES: Record<string, StandardGate> = {
 const SINGLE_QUBIT_STANDARD_GATES = new Set(["h", "x", "y", "z", "s", "t", "rx", "ry", "rz", "p", "u", "u3", "sx", "id", "sdg", "tdg"]);
 const TWO_QUBIT_STANDARD_GATES = new Set(["cx", "cz", "swap", "cp", "ch", "iswap", "cy", "crz", "rzz", "rxx", "ecr"]);
 const THREE_QUBIT_STANDARD_GATES = new Set(["ccx", "cswap", "ccz"]);
-const ANGLE = /^-?(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/i;
-
 /**
  * Translate the static OpenQASM 3 standard-gate subset into the Studio's
  * seven target emitters. Qiskit's exporter wraps some otherwise-supported
@@ -433,7 +432,7 @@ function extractStaticCustomGates(lines: string[]): { lines: string[]; gates: Ma
       const arity = invocation ? gateArity(invocation.name) : null;
       if (!invocation || !arity || invocation.operands.length !== arity) return null;
       if (invocation.operands.some((operand) => !qubits.includes(operand))) return null;
-      if (invocation.params.some((param) => !parameters.includes(param) && !ANGLE.test(param.replaceAll(/\s+/g, "")))) return null;
+      if (invocation.params.some((param) => !parameters.includes(param) && !isGateAngle(param))) return null;
       body.push(invocation);
     }
     if (!closed || body.length === 0) return null;
@@ -594,7 +593,7 @@ function appendStandardGate(
 }
 
 function validParameters(params: string[], count: number): boolean {
-  return params.length === count && params.every((param) => ANGLE.test(param.replaceAll(/\s+/g, "")));
+  return params.length === count && params.every((param) => isGateAngle(param));
 }
 
 function half(value: string): string {

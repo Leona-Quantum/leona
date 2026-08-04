@@ -20,6 +20,27 @@ _FRAMEWORK_MODULES = {
     "pennylane_lightning": Framework.PENNYLANE,
 }
 
+_CIRCUIT_IR_SETUP = """_majorana_circuit_ir_build = None
+try:
+    from majorana_frameworks.circuit_ir import build_circuit_ir as _majorana_circuit_ir_build
+except Exception:
+    pass
+"""
+
+
+def _circuit_ir_observer(framework: Framework, *, indent: str = "") -> str:
+    """Provider-owned, best-effort Studio observation for one final circuit."""
+    block = f"""try:
+    if _majorana_final_circuit is not None and _majorana_circuit_ir_build is not None:
+        _majorana_observation["circuit_ir"] = _majorana_circuit_ir_build(
+            {framework.value!r}, _majorana_final_circuit
+        )
+except _majorana_exception as _majorana_circuit_ir_exc:
+    _majorana_observation["circuit_ir_error"] = _majorana_type(
+        _majorana_circuit_ir_exc
+    ).__name__"""
+    return "\n".join(indent + line for line in block.splitlines()) + "\n"
+
 
 @dataclass(frozen=True)
 class NativeOptimization:
@@ -201,7 +222,7 @@ class PythonFrameworkAdapter:
         # it undefined keeps a NameError out of a branch that is otherwise dead —
         # the failure would surface as `resource_metrics_error` on a framework that
         # has nothing to do with tapes.
-        return "_majorana_construct_tape = None\n" if circuit_expected else ""
+        return ("_majorana_construct_tape = None\n" + _CIRCUIT_IR_SETUP) if circuit_expected else ""
 
     # `measurement_count` counts measured QUBITS, not measurement operations. Qiskit
     # makes those the same number — `qc.measure_all()` emits one instruction per
@@ -551,7 +572,9 @@ class QiskitAdapter(PythonFrameworkAdapter):
     def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         if not circuit_expected:
             return ""
-        return """_majorana_interchange_dumps = None
+        return (
+            _CIRCUIT_IR_SETUP
+            + """_majorana_interchange_dumps = None
 _majorana_interchange_transpile = None
 try:
     from qiskit.qasm3 import dumps as _majorana_interchange_dumps
@@ -561,7 +584,9 @@ try:
     from qiskit import transpile as _majorana_interchange_transpile
 except Exception:
     pass
-""" + (_QISKIT_NATIVE_SETUP if collect_native_evidence else "")
+"""
+            + (_QISKIT_NATIVE_SETUP if collect_native_evidence else "")
+        )
 
     def trusted_observer(
         self,
@@ -582,6 +607,7 @@ if _majorana_final_circuit is None:
         "FINAL_CIRCUIT was not set (missing or None) — bind it to the constructed circuit object"
     )
 else:
+{_circuit_ir_observer(Framework.QISKIT, indent="    ").rstrip()}
     try:
         if _majorana_interchange_dumps is not None:
             _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_final_circuit)
@@ -846,6 +872,7 @@ class CirqAdapter(PythonFrameworkAdapter):
         )
         return (
             base
+            + _circuit_ir_observer(Framework.CIRQ)
             + """
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 if _majorana_final_circuit is not None:
@@ -986,7 +1013,9 @@ class PennyLaneAdapter(PythonFrameworkAdapter):
     def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         if not circuit_expected:
             return ""
-        return """_majorana_interchange_dumps = None
+        return (
+            _CIRCUIT_IR_SETUP
+            + """_majorana_interchange_dumps = None
 try:
     from pennylane import to_openqasm as _majorana_interchange_dumps
 except Exception:
@@ -996,7 +1025,9 @@ try:
     from pennylane.workflow import construct_tape as _majorana_construct_tape
 except Exception:
     pass
-""" + (_PENNYLANE_NATIVE_SETUP if collect_native_evidence else "")
+"""
+            + (_PENNYLANE_NATIVE_SETUP if collect_native_evidence else "")
+        )
 
     def trusted_observer(
         self,
@@ -1014,6 +1045,7 @@ except Exception:
         )
         return (
             base
+            + _circuit_ir_observer(Framework.PENNYLANE)
             + """
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 try:

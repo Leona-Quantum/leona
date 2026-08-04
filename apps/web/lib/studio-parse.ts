@@ -1,4 +1,5 @@
 import { BUILDER_GATES, createBuilderStepId, TWO_QUBIT_GATES, type BuilderStep, type BuiltinBuilderGate } from "./studio-builder.ts";
+import { parseGateAngle } from "./gate-angle.ts";
 
 export interface ParsedBuilderCircuit {
   qubitCount: number;
@@ -172,10 +173,7 @@ function gateStep(gate: BuiltinBuilderGate, qubits: number[], param?: string): B
 }
 
 function parseAngle(raw: string): string | null {
-  const cleaned = raw.trim().replaceAll(/\s+/g, "");
-  if (!/^(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/.test(cleaned)) return null;
-  const denominator = /\/(\d+(?:\.\d+)?)$/.exec(cleaned);
-  return denominator && Number(denominator[1]) === 0 ? null : cleaned;
+  return parseGateAngle(raw);
 }
 
 function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {
