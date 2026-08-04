@@ -95,6 +95,79 @@ class ValueProvenance:
 
 
 @dataclass(frozen=True)
+class FactoryTiming:
+    """How long one factory takes to deliver one magic state, in code cycles.
+
+    **A function of the code distance, because every source states it as one.**
+    Held as a flat integer until 2026-08-05, which was not a simplification but
+    an error: Litinski's 15-to-1 block takes 11 *time steps* and one time step
+    is `d` code cycles, and Gidney's factory spends six lattice-surgery layers
+    at two-thirds of a distance each. A distance-independent constant drops the
+    `d` from both, which makes distillation throughput optimistic by roughly a
+    factor of the code distance and — because the default factory count is the
+    throughput/reaction crossover — the reported footprint with it.
+
+    `constant_rounds + rounds_per_distance * d`. Two terms rather than one
+    because Gidney's factory genuinely has both: 14.7 rounds of magic state
+    cultivation that do not scale with `d`, plus 4d of lattice surgery that
+    does.
+    """
+
+    constant_rounds: float = 0.0
+    rounds_per_distance: float = 0.0
+
+    def __post_init__(self) -> None:
+        require_finite(self.constant_rounds, "constant_rounds")
+        require_finite(self.rounds_per_distance, "rounds_per_distance")
+        if self.constant_rounds < 0 or self.rounds_per_distance < 0:
+            raise ValueError("factory timing terms cannot be negative")
+        if self.constant_rounds == 0 and self.rounds_per_distance == 0:
+            # Both zero is a factory that delivers states instantaneously, which
+            # divides by zero one line into `magic_states_per_second_per_factory`
+            # and would otherwise surface as a ZeroDivisionError from deep inside
+            # the runtime layer rather than at the set that stated it.
+            raise ValueError("a factory takes some time to deliver a magic state")
+
+    def rounds(self, code_distance: int) -> float:
+        """Surface-code rounds per magic state at this distance."""
+        require_count(code_distance, "code_distance", minimum=1)
+        return self.constant_rounds + self.rounds_per_distance * code_distance
+
+
+@dataclass(frozen=True)
+class PatchFootprint:
+    """Physical qubits one logical patch costs, as `coefficient * (d + offset)^2`.
+
+    **Per set rather than hard-coded, because the sources disagree and both are
+    right about their own machine.** Gidney states 2(d+1)^2 per logical qubit;
+    Litinski and Webber both state 2d^2 per tile. Until 2026-08-05 this package
+    applied `d^2 + (d-1)^2` to every set, which is what an *unrotated* patch
+    costs in data qubits alone — it counts no measure qubits, and lands about
+    10% under the figure either source states (145 against 162 at d=9). No
+    paper cited by either built-in set states it.
+
+    The form is deliberately narrow. It expresses exactly what the two sourced
+    conversions need and nothing else, so a third set cannot smuggle in an
+    arbitrary polynomial without adding a field and having to say where it came
+    from.
+    """
+
+    coefficient: float
+    distance_offset: int = 0
+
+    def __post_init__(self) -> None:
+        require_finite(self.coefficient, "coefficient")
+        if self.coefficient <= 0:
+            raise ValueError("a patch costs a positive number of physical qubits")
+        require_count(self.distance_offset, "distance_offset", minimum=0)
+
+    def physical_qubits(self, code_distance: int) -> int:
+        """Physical qubits for one logical patch at this distance."""
+        require_count(code_distance, "code_distance", minimum=1)
+        return math.ceil(self.coefficient * (code_distance + self.distance_offset) ** 2)
+
+
+@dataclass(frozen=True)
 class AssumptionSet:
     """One hardware+protocol parameter set, named and citable.
 
@@ -130,6 +203,9 @@ class AssumptionSet:
     factory_footprint_logical: float
     """Cost of one magic-state factory, in logical-patch equivalents."""
 
+    physical_qubits_per_patch: PatchFootprint
+    """Physical qubits one logical patch costs at a given code distance."""
+
     # --- Layer 4, runtime --------------------------------------------------
     cycle_time_s: float
     """Wall-clock duration of one surface-code cycle."""
@@ -137,8 +213,13 @@ class AssumptionSet:
     reaction_time_s: float
     """Control-system feed-forward latency. Sets the floor no factory count beats."""
 
-    factory_cycles_per_state: int
-    """Surface-code cycles one factory takes to deliver one magic state."""
+    factory_cycles_per_state: FactoryTiming
+    """Surface-code cycles one factory takes to deliver one magic state.
+
+    Distance-dependent — see `FactoryTiming`. The name is kept from when this
+    was a flat integer so that a `working_allowances` or `value_provenance`
+    entry naming it still reads as a sentence on the public page.
+    """
 
     # --- Decomposition convention -----------------------------------------
     t_per_toffoli: int
@@ -198,8 +279,15 @@ class AssumptionSet:
         if not self.name:
             raise ValueError("an assumption set must be named")
         require_count(self.version, "version", minimum=1)
-        require_count(self.factory_cycles_per_state, "factory_cycles_per_state", minimum=1)
         require_count(self.t_per_toffoli, "t_per_toffoli", minimum=1)
+        # Both are dataclasses that validate themselves, but a caller passing a
+        # bare number — the shape these fields had until 2026-08-05 — would
+        # otherwise reach `rounds()` and fail with AttributeError several layers
+        # away from the set that stated it.
+        if not isinstance(self.factory_cycles_per_state, FactoryTiming):
+            raise TypeError("factory_cycles_per_state must be a FactoryTiming")
+        if not isinstance(self.physical_qubits_per_patch, PatchFootprint):
+            raise TypeError("physical_qubits_per_patch must be a PatchFootprint")
         for name in (
             "physical_error_rate",
             "threshold",
@@ -386,9 +474,15 @@ class AssumptionSet:
             return nearest
         return max(1, math.ceil(ratio))
 
-    @property
-    def magic_states_per_second_per_factory(self) -> float:
-        return 1.0 / (self.factory_cycles_per_state * self.cycle_time_s)
+    def magic_states_per_second_per_factory(self, code_distance: int) -> float:
+        """States one factory delivers per second at this code distance.
+
+        Takes the distance because factory time does. It was a property while
+        `factory_cycles_per_state` was a flat integer, and the signature change
+        is deliberate: a caller that still reads it set-free will fail loudly
+        rather than silently keep a distance-free throughput.
+        """
+        return 1.0 / (self.factory_cycles_per_state.rounds(code_distance) * self.cycle_time_s)
 
     def comparable_with(self, other: "AssumptionSet") -> bool:
         """Two estimates may only be ranked against each other when this holds.
@@ -404,31 +498,70 @@ class AssumptionSet:
 
 GIDNEY_2025 = AssumptionSet(
     name="gidney-2025",
-    version=1,
+    version=2,
     source_citation=(
         "Gidney, How to factor 2048 bit RSA integers with less than a million "
         "noisy qubits (arXiv:2505.15917), which states its hardware assumptions "
         "in one place: square nearest-neighbour grid, uniform 0.1% gate error, "
-        "1 us surface-code cycle, 10 us reaction time."
-    ),
-    working_allowances=(
-        "routing_factor",
-        "factory_footprint_logical",
-        "t_per_toffoli",
+        "1 us surface-code cycle, 10 us reaction time. It also states, in its "
+        "Physical Costs section, the three values this model used to invent: "
+        "2(d+1)^2 physical qubits per logical patch, magic state factories "
+        "covering a 3x4 area of patches, and 8T-to-CCZ distillation, so eight T "
+        "states per Toffoli."
     ),
     value_provenance=(
         ValueProvenance(
+            fields=("threshold", "logical_error_prefactor"),
+            note=(
+                "the logical-error form this model uses, p_L = 0.1(100p)^((d+1)/2) "
+                "with a 1% threshold, is Fowler and Gidney, Low overhead quantum "
+                "computation using lattice surgery (arXiv:1808.06709) — quoted as "
+                "equation (10) of Litinski's A Game of Surface Codes and equation "
+                "(2) of Webber et al. (arXiv:2108.12371). The paper this set is "
+                "named for does not use it: it picks a "
+                "distance by reading a target error rate of 1e-15 per logical qubit "
+                "round off simulated suppression curves (its figure 6), which is a "
+                "shape this model has no field for"
+            ),
+        ),
+        ValueProvenance(
+            fields=("routing_factor",),
+            note=(
+                "the leading term of Litinski's data blocks in A Game of Surface "
+                "Codes (Quantum 3, 128, arXiv:1808.02892) — 2n+4 tiles for the "
+                "intermediate block, 2n+sqrt(8n)+1 for the fast one, both 2n to "
+                "leading order. arXiv:2505.15917 lays out a fixed 7x18 compute "
+                "region with three columns of workspace rather than a multiplier "
+                "on the data block, which is not a shape this field can hold. The "
+                "constant term is dropped, so this is optimistic by a few patches"
+            ),
+        ),
+        ValueProvenance(
             fields=("factory_cycles_per_state",),
             note=(
-                "the paper does state a factory timing and it is not this one — it "
-                "budgets 114.7 surface-code rounds per CCZ state, rounded up to 150 "
-                "for slack, where one CCZ state is one Toffoli and so four magic "
-                "states in this model's accounting. 11 rounds per magic state is "
-                "therefore roughly 3.4x faster than the cited factory, which makes "
-                "the distillation throughput optimistic and, through the default "
-                "factory count, the factory footprint too. Correcting it moves a "
-                "published number, so it is a version bump awaiting an owner "
-                "decision rather than a silent edit"
+                "the paper's own derivation — 14.7 rounds of magic state "
+                "cultivation plus six lattice-surgery layers at 2d/3 rounds each, "
+                "which is 14.7 + 4d rounds per CCZ state and reproduces its stated "
+                "114.7 at its own d = 25 — divided by the eight T states a CCZ "
+                "costs here. The paper then rounds 114.7 up to 150 for slack and "
+                "carries 150 forward, so this model is about 24% faster at "
+                "distillation than the figure the paper reports. The derivation is "
+                "taken rather than the rounded figure because it is the one that "
+                "states how the cost moves with the code distance, which is the "
+                "whole reason this field is not a constant. One distortion follows "
+                "from spreading it over eight states and is worth knowing: the "
+                "paper's factory delivers a CCZ state, not a bare T state, and its "
+                "two terms are not alike — the 14.7 is cultivating the eight input "
+                "T states (independently confirmed here: the paper's 30000 physical "
+                "qubit-rounds per cultivated T state over a 12-patch factory at d = "
+                "25 is 1.85 rounds, which is 14.7/8), while the 4d is the 8T-to-CCZ "
+                "distillation on top. This model has one magic-state currency, so a "
+                "circuit whose states are plain T gates — every synthesised rotation "
+                "in this catalogue — is charged a share of a distillation it never "
+                "performs, and is pessimistic on factory time by roughly 3.4x at d = "
+                "9. A circuit of Toffolis is charged exactly the paper's 114.7. "
+                "Pessimistic is the safe direction for a machine size, and splitting "
+                "the two terms needs a factory model this record does not have"
             ),
         ),
     ),
@@ -436,25 +569,32 @@ GIDNEY_2025 = AssumptionSet(
     threshold=1e-2,
     logical_error_prefactor=0.1,
     routing_factor=2.0,
-    factory_footprint_logical=15.0,
+    factory_footprint_logical=12.0,
     cycle_time_s=1e-6,
     reaction_time_s=10e-6,
-    factory_cycles_per_state=11,
-    t_per_toffoli=4,
+    # 14.7 + 4d rounds per CCZ state, over the 8 T states a CCZ costs below.
+    factory_cycles_per_state=FactoryTiming(
+        constant_rounds=14.7 / 8,
+        rounds_per_distance=4.0 / 8,
+    ),
+    t_per_toffoli=8,
+    physical_qubits_per_patch=PatchFootprint(coefficient=2.0, distance_offset=1),
 )
-"""Superconducting-style hardware, and **not** a fully sourced set.
+"""Superconducting-style hardware. Every value now names a paper.
 
-Five of its nine values come from the paper. Three are in `working_allowances`
-and a fourth, `factory_cycles_per_state`, is a *departure*: the paper states a
-factory timing and this is not it. That last one was counted as sourced until it
-was checked against the paper, which is a reminder that an audit's own count of
-what it fixed is a floor — the pass that added `working_allowances` found three
-and there were four.
+**No `working_allowances` — that is the change in v2.** v1 carried three values
+no source stated and a fourth that contradicted its source; checking the paper
+line by line rather than the docstring found that it states all four, plus the
+patch conversion this package had been applying to every set. What is left is
+three attributions: two values that come from the paper Gidney's own
+bibliography cites for the suppression law, one from the layout paper, and one
+departure — the factory's derivation rather than its slack-padded figure — each
+disclosed in `citation` rather than in a comment nobody reading the page sees.
 """
 
 COMPOSED_TRAPPED_ION = AssumptionSet(
     name="composed-trapped-ion",
-    version=1,
+    version=2,
     source_citation=(
         "Composed from two papers, because no published trapped-ion parameter set "
         "states all of these values in one place. Physical layer: Webber, Elfving, "
@@ -463,31 +603,38 @@ COMPOSED_TRAPPED_ION = AssumptionSet(
         "Quantum Science 4, 013801), which costs a shuttling-based trapped-ion "
         "architecture under the surface code and states a 1% threshold, a 1e-3 base "
         "physical error rate, p_L = 0.1(100p)^((d+1)/2), a 235 us code cycle, a "
-        "reaction time of (code cycle)/4 + 10 us — 68.75 us at that cycle — and a "
-        "Toffoli decomposed into 4 T gates."
+        "reaction time of (code cycle)/4 + 10 us — 68.75 us at that cycle — a "
+        "Toffoli decomposed into 4 T gates, and 2d^2 physical qubits per tile."
     ),
     value_provenance=(
         ValueProvenance(
-            fields=("routing_factor", "factory_footprint_logical"),
+            fields=("routing_factor",),
             note=(
-                "from the layout paper the physical-layer paper builds its "
-                "distillation on, Litinski, A Game of Surface Codes (Quantum 3, 128, "
-                "arXiv:1808.02892), whose intermediate data block stores n logical "
-                "qubits in 2n+4 tiles and whose 15-to-1 distillation block occupies "
-                "11 tiles. This model has no slot for the constant +4, so it charges "
-                "the 2n and is optimistic by four patches"
+                "the leading term of the data blocks in the layout paper the "
+                "physical-layer paper builds on, Litinski, A Game of Surface Codes "
+                "(Quantum 3, 128, arXiv:1808.02892) — 2n+4 tiles for the "
+                "intermediate block and 2n+sqrt(8n)+1 for the fast block Webber et "
+                "al. actually use. This model has no slot for either constant term, "
+                "so it charges the 2n and is optimistic by a few patches"
             ),
         ),
         ValueProvenance(
-            fields=("factory_cycles_per_state",),
+            fields=("factory_footprint_logical", "factory_cycles_per_state"),
             note=(
-                "Litinski states this as 11 time steps, and one time step as d code "
-                "cycles — 11d rounds per magic state, not 11. This model holds a "
-                "distance-independent constant, so it charges 11 and is optimistic "
-                "about distillation throughput by a factor of the code distance. The "
-                "same simplification is in gidney-2025, which is why the two sets "
-                "stay comparable to each other in this respect and neither is "
-                "comparable to the papers"
+                "Litinski's 116-to-12 distillation block, which is the one he "
+                "selects at this set's own physical error rate of 1e-3: 44 tiles "
+                "distilling 12 states in 99 time steps at 89% success, which he "
+                "states as one state every 9.27 time steps, and one time step is d "
+                "code cycles. The 15-to-1 block's 11 tiles were used here until "
+                "2026-08-05, and that block is the one he shows is *not* good "
+                "enough at 1e-3 — its output error of 35p^3 misses the 1e-10 a "
+                "billion-gate circuit needs. Webber et al. instead use the "
+                "separately-calibrated factories of Litinski's Magic state "
+                "distillation: not as costly as you think (Quantum 3, 205), where "
+                "the distillation blocks carry a lower code distance than the data "
+                "blocks; this model has one distance for the whole machine and so "
+                "cannot represent that, which makes these factories more expensive "
+                "than the ones the paper costs"
             ),
         ),
     ),
@@ -495,11 +642,12 @@ COMPOSED_TRAPPED_ION = AssumptionSet(
     threshold=1e-2,
     logical_error_prefactor=0.1,
     routing_factor=2.0,
-    factory_footprint_logical=11.0,
+    factory_footprint_logical=44.0,
     cycle_time_s=235e-6,
     reaction_time_s=68.75e-6,
-    factory_cycles_per_state=11,
+    factory_cycles_per_state=FactoryTiming(rounds_per_distance=9.27),
     t_per_toffoli=4,
+    physical_qubits_per_patch=PatchFootprint(coefficient=2.0),
 )
 """Trapped ions with shuttling: better fidelity is not the axis that decides this.
 
@@ -507,11 +655,17 @@ The second set exists so the machinery that refuses to rank across sets has a
 real pair to refuse, and it earns its place by disagreeing with `gidney-2025`
 somewhere that matters. It shares p, p_th and A, so the *code distance* is
 nearly the same circuit for circuit; everything that differs is in the time
-layer. A 235 us cycle against 1 us makes each factory roughly 235x slower, and
-the factory count this model defaults to — the crossover past which the reaction
-floor binds — rises accordingly. That is the cited paper's own headline finding
-reproduced by our arithmetic rather than quoted from its abstract: slower
-hardware can still reach a target runtime, but only by being far more scalable.
+layer and in distillation. A 235 us cycle against 1 us makes each factory
+roughly 235x slower, and the factory count this model defaults to — the
+crossover past which the reaction floor binds — rises accordingly. That is the
+cited paper's own headline finding reproduced by our arithmetic rather than
+quoted from its abstract: slower hardware can still reach a target runtime, but
+only by being far more scalable.
+
+**In v2 it is also the more honest of the two about distillation**, since its
+factory is the block Litinski selects at 1e-3 rather than the cheaper one he
+rules out there — so the gap between the two sets is now partly a real
+difference in what the sources cost, not only in clock speed.
 
 **It is composed, and the name says so** rather than borrowing one author's
 name for a set they did not write.

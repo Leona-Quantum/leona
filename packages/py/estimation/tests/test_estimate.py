@@ -19,13 +19,46 @@ from majorana_estimation import (
     GIDNEY_2025,
     AdvantageStatus,
     AssumptionSet,
+    FactoryTiming,
     LogicalCost,
+    PatchFootprint,
     SpeedupClass,
     ValueProvenance,
     assess_advantage,
     choose_code_distance,
     estimate,
 )
+
+
+def a_set(**overrides) -> AssumptionSet:
+    """A well-formed set a test can vary in exactly one field.
+
+    The structured fields get their `gidney-2025` shapes rather than invented
+    ones, so a test that builds a set by hand is still costing something a
+    source states — and so adding a field to `AssumptionSet` breaks one helper
+    rather than six literals, which is how the last two fields got added to
+    every hand-built set in this file with a plausible-looking wrong value.
+    """
+    base: dict = {
+        "name": "hypothetical",
+        "version": 1,
+        "source_citation": "hypothetical, constructed by a test",
+        "physical_error_rate": 1e-3,
+        "threshold": 1e-2,
+        "logical_error_prefactor": 0.1,
+        "routing_factor": 2.0,
+        "factory_footprint_logical": 12.0,
+        "cycle_time_s": 1e-6,
+        "reaction_time_s": 10e-6,
+        "factory_cycles_per_state": FactoryTiming(
+            constant_rounds=14.7 / 8, rounds_per_distance=0.5
+        ),
+        "t_per_toffoli": 8,
+        "physical_qubits_per_patch": PatchFootprint(coefficient=2.0, distance_offset=1),
+    }
+    base.update(overrides)
+    return AssumptionSet(**base)
+
 
 # Lee et al. 2021, tensor hypercontraction: the smallest well-costed FTQC
 # chemistry target. ~2,100 logical qubits and ~6e9 Toffolis.
@@ -41,42 +74,16 @@ def test_an_assumption_set_refuses_to_exist_above_threshold():
     # Above threshold, more distance makes things worse. A returned distance
     # would look like an answer, so the set itself must refuse.
     with pytest.raises(ValueError, match="does not converge"):
-        AssumptionSet(
-            name="broken",
-            version=1,
-            source_citation="none",
-            physical_error_rate=2e-2,
-            threshold=1e-2,
-            logical_error_prefactor=0.1,
-            routing_factor=2.0,
-            factory_footprint_logical=15.0,
-            cycle_time_s=1e-6,
-            reaction_time_s=10e-6,
-            factory_cycles_per_state=11,
-            t_per_toffoli=4,
-        )
+        a_set(name="broken", physical_error_rate=2e-2)
 
 
 def test_estimates_under_different_assumption_sets_are_not_comparable():
-    other = AssumptionSet(
-        name="gidney-2025",
-        version=2,  # same name, bumped version
-        source_citation=GIDNEY_2025.source_citation,
-        physical_error_rate=1e-3,
-        threshold=1e-2,
-        logical_error_prefactor=0.1,
-        routing_factor=2.0,
-        factory_footprint_logical=15.0,
-        cycle_time_s=1e-6,
-        reaction_time_s=10e-6,
-        factory_cycles_per_state=11,
-        t_per_toffoli=4,
-    )
+    other = dataclasses.replace(GIDNEY_2025, version=3)
     # Every number is identical; only the version differs. Still not comparable:
     # a version is a separate claim about hardware, and one can be revised.
     assert not GIDNEY_2025.comparable_with(other)
     assert not estimate(FEMOCO, GIDNEY_2025).comparable_with(estimate(FEMOCO, other))
-    assert estimate(FEMOCO, GIDNEY_2025).assumption_set == "gidney-2025@v1"
+    assert estimate(FEMOCO, GIDNEY_2025).assumption_set == "gidney-2025@v2"
 
 
 def test_chosen_distance_actually_clears_the_target_and_is_the_smallest_that_does():
@@ -92,40 +99,44 @@ def test_chosen_distance_actually_clears_the_target_and_is_the_smallest_that_doe
         GIDNEY_2025.logical_error_prefactor * ratio ** ((below + 1) // 2)
         > choice.required_error_per_operation
     ), "a smaller distance would also have cleared the target"
-    assert choice.physical_per_logical == (
-        choice.code_distance**2 + (choice.code_distance - 1) ** 2
-    )
+    # 2(d+1)^2, which is the conversion arXiv:2505.15917 states for itself and
+    # not the one this package applied to every set until 2026-08-05.
+    assert choice.physical_per_logical == 2 * (choice.code_distance + 1) ** 2
 
 
 def test_femoco_reproduces_the_plans_arithmetic():
     """The plan's §1 headline, recomputed from constants inside this test."""
     result = estimate(FEMOCO, GIDNEY_2025)
 
-    # --- magic states: 6e9 Toffoli at 4 states each
-    assert result.runtime.magic_states == 24_000_000_000
+    # --- magic states: 6e9 Toffoli at 8 T states each, which is what the cited
+    # paper's 8T-to-CCZ pipeline costs a Toffoli. Four is the common
+    # measurement-and-fixup figure and is what this set charged until v2.
+    assert result.runtime.magic_states == 48_000_000_000
 
     # --- the reaction-limited floor: ~17 hours, and no factory count beats it
     assert result.runtime.reaction_limited_seconds == pytest.approx(6.0e4)
     assert result.runtime.reaction_limited_seconds / 3600 == pytest.approx(16.67, abs=0.01)
 
-    # --- the crossover, computed here from the rate rather than read back.
-    # Note 11 cycles/state at 1 us gives 90,909 states/s, not the round 1e5 the
-    # plan's prose first used; that rounding is why the crossover is five and
-    # not four, and why this is computed rather than quoted.
-    rate = 1.0 / (11 * 1e-6)
-    assert rate == pytest.approx(90_909.09, abs=0.01)
-    expected_crossover = math.ceil(24_000_000_000 / (rate * 6.0e4))
-    assert result.runtime.factory_crossover == expected_crossover == 5
+    # --- the crossover, computed here from the rate rather than read back, and
+    # now at the chosen distance because factory time depends on it.
+    d = result.distance.code_distance
+    rounds_per_state = 14.7 / 8 + 0.5 * d
+    rate = 1.0 / (rounds_per_state * 1e-6)
+    expected_crossover = math.ceil(48_000_000_000 / (rate * 6.0e4))
+    assert result.runtime.factory_crossover == expected_crossover
 
-    # --- one factory alone: about three days
-    one_factory = estimate(FEMOCO, GIDNEY_2025, factory_count=1)
-    assert one_factory.runtime.seconds / 86_400 == pytest.approx(3.06, abs=0.01)
+    # --- the paper's own figure falls out at the paper's own distance: 14.7
+    # rounds of cultivation plus six lattice-surgery layers at 2d/3 each is
+    # 114.7 rounds per CCZ state at d = 25.
+    assert GIDNEY_2025.factory_cycles_per_state.rounds(25) * GIDNEY_2025.t_per_toffoli == (
+        pytest.approx(114.7)
+    )
 
     # --- at the crossover the reaction floor has taken over
     assert result.runtime.binding_term == "reaction"
     assert result.runtime.throughput_seconds <= result.runtime.reaction_limited_seconds
 
-    # --- footprint: data patches are logical x (d^2 + (d-1)^2)
+    # --- footprint: data patches are logical x 2(d+1)^2
     per_logical = result.distance.physical_per_logical
     assert result.footprint.data_patch_qubits == 2_100 * per_logical
     assert result.footprint.total_physical_qubits == (
@@ -140,8 +151,9 @@ def test_femoco_reproduces_the_plans_arithmetic():
 
 
 def test_more_factories_than_the_crossover_buy_nothing():
-    at_crossover = estimate(FEMOCO, GIDNEY_2025, factory_count=5)
-    far_past_it = estimate(FEMOCO, GIDNEY_2025, factory_count=500)
+    crossover = estimate(FEMOCO, GIDNEY_2025).runtime.factory_crossover
+    at_crossover = estimate(FEMOCO, GIDNEY_2025, factory_count=crossover)
+    far_past_it = estimate(FEMOCO, GIDNEY_2025, factory_count=crossover * 100)
 
     assert at_crossover.runtime.seconds == pytest.approx(far_past_it.runtime.seconds)
     assert far_past_it.runtime.binding_term == "reaction"
@@ -159,19 +171,8 @@ def test_below_the_crossover_the_throughput_term_binds_and_more_factories_help()
 
 def test_halving_the_error_rate_cuts_the_footprint():
     """The claim in the plan's §4 table: error rate has more leverage than anything."""
-    better = AssumptionSet(
-        name="gidney-2025-halved-error",
-        version=1,
-        source_citation="hypothetical, for a sensitivity check only",
-        physical_error_rate=5e-4,
-        threshold=1e-2,
-        logical_error_prefactor=0.1,
-        routing_factor=2.0,
-        factory_footprint_logical=15.0,
-        cycle_time_s=1e-6,
-        reaction_time_s=10e-6,
-        factory_cycles_per_state=11,
-        t_per_toffoli=4,
+    better = dataclasses.replace(
+        GIDNEY_2025, name="gidney-2025-halved-error", physical_error_rate=5e-4
     )
     baseline = estimate(FEMOCO, GIDNEY_2025)
     improved = estimate(FEMOCO, better)
@@ -228,20 +229,7 @@ def test_an_assumption_set_refuses_a_non_finite_number(bad):
     # NaN compares false against every bound below and reaches the arithmetic
     # intact; inf makes the factory rate zero and divides by zero later.
     with pytest.raises(ValueError, match="must be finite"):
-        AssumptionSet(
-            name="non-finite",
-            version=1,
-            source_citation="none",
-            physical_error_rate=1e-3,
-            threshold=1e-2,
-            logical_error_prefactor=0.1,
-            routing_factor=2.0,
-            factory_footprint_logical=15.0,
-            cycle_time_s=bad,
-            reaction_time_s=10e-6,
-            factory_cycles_per_state=11,
-            t_per_toffoli=4,
-        )
+        a_set(name="non-finite", cycle_time_s=bad)
 
 
 def test_idle_patch_rounds_are_charged_in_cycles_not_layers():
@@ -252,26 +240,14 @@ def test_idle_patch_rounds_are_charged_in_cycles_not_layers():
 
     choice = choose_code_distance(FEMOCO, GIDNEY_2025, target_failure_probability=0.01)
 
-    magic_states = 6_000_000_000 * 4
+    magic_states = 6_000_000_000 * GIDNEY_2025.t_per_toffoli
     idle_rounds = 2_100 * 6_000_000_000 * 10
     assert choice.logical_operations == magic_states + idle_rounds
 
 
 def test_a_target_no_distance_can_reach_raises_rather_than_returning_a_number():
-    marginal = AssumptionSet(
-        name="marginal",
-        version=1,
-        source_citation="hypothetical",
-        physical_error_rate=9.9e-3,  # only just below threshold
-        threshold=1e-2,
-        logical_error_prefactor=0.1,
-        routing_factor=2.0,
-        factory_footprint_logical=15.0,
-        cycle_time_s=1e-6,
-        reaction_time_s=10e-6,
-        factory_cycles_per_state=11,
-        t_per_toffoli=4,
-    )
+    # only just below threshold
+    marginal = a_set(name="marginal", physical_error_rate=9.9e-3)
     with pytest.raises(ValueError, match="no code distance"):
         choose_code_distance(FEMOCO, marginal, target_failure_probability=1e-3)
 
@@ -379,8 +355,8 @@ def test_the_precision_is_part_of_the_identity_an_estimate_carries():
     loose = GIDNEY_2025.with_rotation_precision(1e-6)
     tight = GIDNEY_2025.with_rotation_precision(1e-10)
 
-    assert loose.identity == "gidney-2025@v1+eps=1e-06"
-    assert tight.identity == "gidney-2025@v1+eps=1e-10"
+    assert loose.identity == "gidney-2025@v2+eps=1e-06"
+    assert tight.identity == "gidney-2025@v2+eps=1e-10"
     assert not loose.comparable_with(tight)
 
 
@@ -394,7 +370,7 @@ def test_an_estimate_under_a_precision_will_not_rank_against_one_without():
     unstated = estimate(rotations, GIDNEY_2025)
 
     assert not stated.comparable_with(unstated)
-    assert stated.assumption_set == "gidney-2025@v1+eps=1e-06"
+    assert stated.assumption_set == "gidney-2025@v2+eps=1e-06"
 
 
 def test_naming_a_precision_leaves_the_hardware_untouched():
@@ -441,7 +417,7 @@ def test_two_precisions_that_round_alike_still_get_different_identities():
     assert a.identity != b.identity
     assert not a.comparable_with(b)
     # The common case still reads the way a person would write it.
-    assert GIDNEY_2025.with_rotation_precision(1e-6).identity == "gidney-2025@v1+eps=1e-06"
+    assert GIDNEY_2025.with_rotation_precision(1e-6).identity == "gidney-2025@v2+eps=1e-06"
 
 
 def test_a_clifford_only_circuit_is_costed_with_no_factories_even_when_asked_for_some():
@@ -477,24 +453,28 @@ def test_a_circuit_that_does_consume_magic_states_keeps_the_factories_it_was_giv
 def test_the_rendered_citation_names_every_value_the_source_does_not_state():
     """The disclosure has to reach the page, not just the docstring.
 
-    `gidney-2025` takes three of its nine values from common practice rather
-    than from the cited paper. That was recorded in a module docstring while
-    the string rendered on `/repository` said the source stated its assumptions
-    in one place — so a visitor read a citation implying nine sourced numbers
-    where six were. `citation` is composed from the source plus the allowances
-    precisely so the two cannot drift apart again.
-    """
-    rendered = GIDNEY_2025.citation
+    `gidney-2025` used to take three of its nine values from common practice
+    rather than from the cited paper. That was recorded in a module docstring
+    while the string rendered on `/repository` said the source stated its
+    assumptions in one place — so a visitor read a citation implying nine
+    sourced numbers where six were. `citation` is composed from the source plus
+    the allowances precisely so the two cannot drift apart again.
 
-    assert GIDNEY_2025.working_allowances == (
-        "routing_factor",
-        "factory_footprint_logical",
-        "t_per_toffoli",
-    )
-    for allowance in GIDNEY_2025.working_allowances:
+    **Neither built-in set has a working allowance any more**, because reading
+    the papers found a stated value behind each one. The mechanism still has to
+    work for the next set that needs it, so it is exercised on a set built here
+    rather than deleted along with its last user.
+    """
+    unsourced = a_set(working_allowances=("routing_factor", "factory_footprint_logical"))
+    rendered = unsourced.citation
+
+    for allowance in unsourced.working_allowances:
         assert allowance in rendered, f"{allowance} is undisclosed to the reader"
-    assert GIDNEY_2025.source_citation in rendered
+    assert unsourced.source_citation in rendered
     assert "working allowances" in rendered
+
+    assert GIDNEY_2025.working_allowances == ()
+    assert COMPOSED_TRAPPED_ION.working_allowances == ()
 
 
 def test_a_set_whose_source_states_everything_renders_no_disclosure():
@@ -553,8 +533,8 @@ def test_the_two_builtin_sets_are_a_pair_the_ordering_refusal_can_refuse():
     one set, so every test of that path used two epsilons on the same hardware.
     This is the case it was written for: different hardware, same precision."""
     assert sorted(BUILTIN_ASSUMPTION_SETS) == [
-        "composed-trapped-ion@v1",
-        "gidney-2025@v1",
+        "composed-trapped-ion@v2",
+        "gidney-2025@v2",
     ]
 
     superconducting = GIDNEY_2025.with_rotation_precision(1e-6)
@@ -576,12 +556,18 @@ def test_the_trapped_ion_set_costs_its_slower_cycle_in_factories_not_distance():
     superconducting = estimate(FEMOCO, GIDNEY_2025)
     trapped_ion = estimate(FEMOCO, COMPOSED_TRAPPED_ION)
 
-    # One factory is ~235x slower, exactly the cycle-time ratio.
-    rate_ratio = (
-        GIDNEY_2025.magic_states_per_second_per_factory
-        / COMPOSED_TRAPPED_ION.magic_states_per_second_per_factory
-    )
-    assert math.isclose(rate_ratio, 235.0, rel_tol=1e-9)
+    # The cycle-time ratio alone is 235x. In v2 the factories differ too — this
+    # set uses the 116-to-12 block Litinski selects at 1e-3 where gidney-2025
+    # uses the paper's own cultivation-plus-8T-to-CCZ factory — so the delivery
+    # rates are further apart than the clocks. Computed at one distance because
+    # both timings are functions of it.
+    d = 21
+    rate_ratio = GIDNEY_2025.magic_states_per_second_per_factory(
+        d
+    ) / COMPOSED_TRAPPED_ION.magic_states_per_second_per_factory(d)
+    cycle_ratio = COMPOSED_TRAPPED_ION.cycle_time_s / GIDNEY_2025.cycle_time_s
+    assert math.isclose(cycle_ratio, 235.0, rel_tol=1e-9)
+    assert rate_ratio > cycle_ratio
 
     assert trapped_ion.runtime.factory_count > 20 * superconducting.runtime.factory_count
     assert trapped_ion.runtime.seconds > superconducting.runtime.seconds
@@ -643,26 +629,77 @@ def test_an_empty_attribution_is_refused_at_construction(kwargs):
         ValueProvenance(**kwargs)
 
 
-def test_gidney_discloses_the_factory_timing_it_departs_from():
-    """The pass that introduced `working_allowances` found three unsourced
-    values in this set. There were four.
+def test_gidney_states_every_value_this_set_holds():
+    """v1's audit found three unsourced values here, then a fourth. There were six.
 
-    `factory_cycles_per_state=11` was carried as sourced. The paper budgets
-    114.7 rounds per CCZ state and rounds it to 150; one CCZ is one Toffoli, so
-    in this model's per-magic-state accounting that is ~37.5 rounds, not 11.
-    The number is left alone — moving it moves a published estimate — but the
-    citation no longer claims the paper for it.
+    Reading arXiv:2505.15917 rather than the docstring turned up a stated figure
+    behind every one of them — 2(d+1)^2 physical qubits per logical patch, a 3x4
+    factory, 8T-to-CCZ so eight T states per Toffoli, and 14.7 + 4d rounds per
+    CCZ state — plus the fact that the suppression law this model uses is not in
+    that paper at all. So v2 has no `working_allowances`: every value names a
+    paper, and what is left to disclose is which paper, and one departure.
+
+    Fourth time an audit's own count of what it fixed has turned out to be a
+    floor. Treat the next one that way too.
     """
-    assert "factory_cycles_per_state" not in GIDNEY_2025.working_allowances
-    rendered = GIDNEY_2025.citation
-    assert "factory_cycles_per_state" in rendered
-    assert "150" in rendered
+    assert GIDNEY_2025.working_allowances == ()
 
-    # The arithmetic behind "roughly 3.4x", computed here rather than quoted.
-    stated_rounds_per_ccz = 150
-    magic_states_per_ccz = GIDNEY_2025.t_per_toffoli
-    assert math.isclose(
-        stated_rounds_per_ccz / magic_states_per_ccz / GIDNEY_2025.factory_cycles_per_state,
-        3.409,
-        rel_tol=1e-3,
+    rendered = GIDNEY_2025.citation
+    for name in ("threshold", "logical_error_prefactor", "routing_factor"):
+        assert name in rendered, f"{name}'s source is undisclosed to the reader"
+    # The suppression law is Fowler and Gidney, not the paper the set is named
+    # for — which is the sort of thing only reading both turns up.
+    assert "arXiv:1808.06709" in rendered
+
+    # The departure: the paper derives 114.7 rounds per CCZ state and then
+    # rounds it to 150 for slack, carrying 150 forward. This set takes the
+    # derivation, so it is faster at distillation than the figure the paper
+    # reports, and says so.
+    assert "150" in rendered
+    per_ccz = GIDNEY_2025.factory_cycles_per_state.rounds(25) * GIDNEY_2025.t_per_toffoli
+    assert per_ccz == pytest.approx(114.7)
+    assert math.isclose(150 / per_ccz, 1.308, rel_tol=1e-3)
+
+
+def test_the_factory_constant_term_is_the_papers_cultivation_cost():
+    """Checked a second way, because the first way was dividing by eight.
+
+    The paper states 30000 physical qubit-rounds to cultivate one T state, and
+    separately that a factory covers a 3x4 area of patches. Those two numbers
+    never pass through the 14.7, so reproducing the constant term from them is
+    evidence rather than restatement.
+    """
+    factory_qubits = GIDNEY_2025.factory_footprint_logical * (
+        GIDNEY_2025.physical_qubits_per_patch.physical_qubits(25)
     )
+    assert factory_qubits == 3 * 4 * 26**2 * 2  # the paper's own arithmetic
+
+    rounds_to_cultivate_one = 30_000 / factory_qubits
+    assert rounds_to_cultivate_one == pytest.approx(
+        GIDNEY_2025.factory_cycles_per_state.constant_rounds, rel=0.01
+    )
+
+
+def test_a_factory_that_takes_no_time_is_refused_at_the_set():
+    """Both terms zero divides by zero inside the runtime layer, several frames
+    from the set that stated it."""
+    with pytest.raises(ValueError, match="takes some time"):
+        FactoryTiming()
+
+
+def test_a_patch_conversion_must_be_one_of_the_two_sourced_shapes():
+    """`coefficient * (d + offset)^2` holds 2(d+1)^2 and 2d^2 and nothing else.
+
+    The form is narrow on purpose: it was `d^2 + (d-1)^2` hard-coded in
+    `estimate.py` for every set, which is an unrotated patch's data qubits and
+    counts no measure qubits at all — about 10% under either figure a cited
+    source states.
+    """
+    assert GIDNEY_2025.physical_qubits_per_patch.physical_qubits(25) == 2 * 26**2
+    assert COMPOSED_TRAPPED_ION.physical_qubits_per_patch.physical_qubits(9) == 2 * 81
+    # The conversion this package used to apply to both, for the size of it.
+    assert 9**2 + 8**2 == 145
+    assert COMPOSED_TRAPPED_ION.physical_qubits_per_patch.physical_qubits(9) == 162
+
+    with pytest.raises(ValueError, match="positive number"):
+        PatchFootprint(coefficient=0.0)

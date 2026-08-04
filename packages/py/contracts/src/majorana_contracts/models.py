@@ -385,7 +385,7 @@ class AssumptionSetSummary(_ResourceBase):
 
     identity: str = Field(
         description=(
-            "Stable identity, e.g. `gidney-2025@v1+eps=1e-06`. Two estimates may "
+            "Stable identity, e.g. `gidney-2025@v2+eps=1e-06`. Two estimates may "
             "be ranked against each other only when these strings match."
         )
     )

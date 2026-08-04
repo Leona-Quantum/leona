@@ -22,9 +22,9 @@ import { orderByCost } from "./repository/estimate-order.ts";
 
 function assumptions(overrides: Record<string, unknown> = {}): Record<string, unknown> {
   return {
-    identity: "gidney-2025@v1+eps=1e-06",
+    identity: "gidney-2025@v2+eps=1e-06",
     name: "gidney-2025",
-    version: 1,
+    version: 2,
     citation: "Gidney 2025",
     rotation_synthesis_epsilon: 1e-6,
     t_per_rotation: 60,
@@ -87,7 +87,7 @@ test("a complete estimate parses and keeps every layer", () => {
   assert.equal(parsed.footprint?.totalPhysicalQubits, 168_640);
   assert.equal(parsed.logical?.tFromSynthesis, 120);
   assert.equal(parsed.runtime?.bindingTerm, "throughput");
-  assert.equal(parsed.assumptions.identity, "gidney-2025@v1+eps=1e-06");
+  assert.equal(parsed.assumptions.identity, "gidney-2025@v2+eps=1e-06");
 });
 
 test("a priced basis missing a layer is rejected rather than half-rendered", () => {
@@ -191,7 +191,7 @@ test("a listing keeps readable rows and drops only the unreadable ones", () => {
   });
   assert.ok(parsed);
   assert.deepEqual(parsed.estimates.map((row) => row.slug), ["a", "b"]);
-  assert.equal(parsed.assumptions.identity, "gidney-2025@v1+eps=1e-06");
+  assert.equal(parsed.assumptions.identity, "gidney-2025@v2+eps=1e-06");
 });
 
 test("a listing with no readable assumption set is discarded whole", () => {

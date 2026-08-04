@@ -237,7 +237,7 @@ export interface components {
             cycle_time_s: number;
             /**
              * Identity
-             * @description Stable identity, e.g. `gidney-2025@v1+eps=1e-06`. Two estimates may be ranked against each other only when these strings match.
+             * @description Stable identity, e.g. `gidney-2025@v2+eps=1e-06`. Two estimates may be ranked against each other only when these strings match.
              */
             identity: string;
             /** Name */

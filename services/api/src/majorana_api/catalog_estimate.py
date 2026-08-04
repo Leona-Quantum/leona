@@ -112,7 +112,7 @@ def resolve_assumptions(identity: str | None, epsilon: float | None) -> Assumpti
     and what the page *prints* is `AssumptionSet.identity`, which appends
     `+eps=...`. So the one string a reader has in front of them was the one
     string this function refused, and the page and the API disagreed about the
-    name of the same thing. Pasting `gidney-2025@v1+eps=1e-06` back is the
+    name of the same thing. Pasting `gidney-2025@v2+eps=1e-06` back is the
     obvious thing to try and it 422'd.
 
     A precision named twice must agree. Taking either side silently would answer

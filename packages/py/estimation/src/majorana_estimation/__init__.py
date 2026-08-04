@@ -25,6 +25,8 @@ from .assumptions import (
     COMPOSED_TRAPPED_ION,
     GIDNEY_2025,
     AssumptionSet,
+    FactoryTiming,
+    PatchFootprint,
     ValueProvenance,
 )
 from .estimate import (
@@ -48,8 +50,10 @@ __all__ = [
     "AdvantageVerdict",
     "AssumptionSet",
     "DistanceChoice",
+    "FactoryTiming",
     "Footprint",
     "LogicalCost",
+    "PatchFootprint",
     "PhysicalEstimate",
     "Runtime",
     "SpeedupClass",
