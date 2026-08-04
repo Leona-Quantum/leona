@@ -1,0 +1,16 @@
+[project]
+name = "majorana-estimation"
+version = "0.1.0"
+description = "Fault-tolerant resource estimation: logical cost to physical footprint and runtime"
+requires-python = ">=3.12"
+# Deliberately dependency-free. Every layer is arithmetic over stated
+# assumptions, so this package must be importable by the API, the worker and a
+# test without dragging in Qiskit, numpy or a solver.
+dependencies = []
+
+[build-system]
+requires = ["hatchling"]
+build-backend = "hatchling.build"
+
+[tool.hatch.build.targets.wheel]
+packages = ["src/majorana_estimation"]
