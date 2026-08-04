@@ -1,5 +1,5 @@
-// Surface names are owner-revisable (07-ui-product.md: "nav labels centralized in
-// one config file so renaming is trivial"). Rename HERE only — never inline.
+// Surface names are owner-revisable, so nav labels are centralized here and renaming is
+// a one-file change (docs/ui/README.md map). Rename HERE only — never inline.
 export interface NavSurface {
   href: string;
   labels: { en: string; ja: string };

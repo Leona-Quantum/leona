@@ -1,16 +1,19 @@
 # Components (`packages/ts/ui`)
 
-Vendored, owned code. No component libraries; Radix primitives only when a component
-genuinely needs one. Components are pure renderers of typed data — no fetching, no
-run state — so stored-run replay renders identically and fixtures drive every state.
+Vendored, owned code: shadcn/ui-style components copied into this package rather than
+installed, so there is no component-library lock-in. **No component library other than
+this vendored set** — Radix primitives underneath only when a component genuinely needs
+one. Components are pure renderers of typed data — no fetching, no run state — so
+stored-run replay renders identically and fixtures drive every state.
 All states visible at `/dev/ui` (route fixtures; dev/CI only).
 
-Permitted animations: the agent-activity running-ring fade
-(border-color `--accent`↔transparent @ 1.2 s), skeleton shimmer, toast enter/exit,
-and the owner-requested live prose reveal on `/run` (2026-07-13). The prose reveal is
-opt-in (`RunView` receives `animateText`), presentation-only, and `prefers-reduced-motion`
-shows the complete text immediately. Static fixtures keep it off so screenshot and a11y
-stories remain deterministic.
+**Permitted animations, and nothing else.** The agent-activity running-ring fade
+(border-color `--accent`↔transparent @ 1.2 s), stage-rail state transitions
+(150 ms ease-out on opacity/color — `--dur-hover` + `--ease-out-ui`), skeleton shimmer,
+toast enter/exit, and the owner-requested live prose reveal on `/run` (2026-07-13).
+**No parallax. No springs.** The prose reveal is opt-in (`RunView` receives `animateText`),
+presentation-only, and `prefers-reduced-motion` shows the complete text immediately.
+Static fixtures keep it off so screenshot and a11y stories remain deterministic.
 
 ## StageRail (legacy visual reference)
 
@@ -26,18 +29,23 @@ first: it truncates with an ellipsis (`min-width:0`) so it can never collide wit
 elapsed label inside the fixed width; the elapsed label holds its width, and the full name
 stays in the row's aria-label.
 
+*(The retired spec listed twelve canonical rail stages — Plan → Generate → Screen →
+Resource estimate → Verify → Compilation → Compiled resource estimate → Finalize → Final
+simulation/QPU → Baseline → Analysis → Save. That was the pipeline ADR-0023 replaced; the
+four-stage projection above is the current contract. Do not restore the twelve.)*
+
 The dot is never a filled disc (owner directive 2026-07-12): each terminal state is a
 shape glyph in the state color, framed by a thin (1.5 px) same-color ring. The glyph is
 the primary signal — status is not color-only, so it stays colorblind-safe and
 disambiguates the two green dots (running vs pass) even in a static screenshot. Glyphs
-are plain text, not emoji.
+are plain text, not emoji, centered in the 16 px ring.
 
 | state | ring | glyph | text | extra |
 |---|---|---|---|---|
 | pending | `--border-0` hollow ring | — | `--text-1` | text-2 on bg-0 is 3.19:1 (< AA); text-1 keeps pending dim but readable |
 | running | `--accent` ring, fades to transparent @1.2 s (glyph stays solid) | – `--accent` | `--text-0` | live elapsed |
 | pass | `--ok` ring | ✓ `--ok` | `--text-0` | |
-| skipped | `--warn` ring | – `--warn` | `--text-1` | reason inline at 12 px — hover-only info is banned |
+| skipped | `--warn` ring | – `--warn` | `--text-1` | reason inline at 12 px — hover-only info is banned (touch devices) |
 | fail | `--err` ring | ✕ `--err` | `--text-0` | row stays expanded: error summary + "Retry from here" |
 
 `RailStage` is a discriminated union: `skipped` requires `skipReason`, `fail` requires
@@ -50,9 +58,10 @@ Acceptance test: refresh mid-run restores identical state from the event log.
 `RunView` composes `StageRail` + the old result panel for dev fixtures. It holds no state
 and reads no wall clock: `reduceRunEvents(events)` is a **pure fold** of the typed
 `RunEvent` log into a view model, so the same log always yields identical DOM and a
-mid-run refresh just replays a shorter *prefix* of the same log (07 §6). That purity is
-the S3 acceptance test — the `/run/[taskId]` fixtures are built so MID_RUN/QUEUED are
-strict prefixes of the VERIFIED log, making prefix-replay demonstrable without a server.
+mid-run refresh just replays a shorter *prefix* of the same log (the replay rule in
+`screens-acceptance.md` §UI ↔ backend contract). That purity is the S3 acceptance test —
+the `/run/[taskId]` fixtures are built so MID_RUN/QUEUED are strict prefixes of the
+VERIFIED log, making prefix-replay demonstrable without a server.
 
 The unframed `Live output` surface renders bounded `llm.delta` fragments while plan or
 generation is streaming. Plan reasoning is secondary/faint text; the plan itself is
@@ -78,11 +87,11 @@ Reducer rules worth knowing (all deterministic):
 - Key numbers label the verification distance with its **own** metric name (e.g. TVD),
   never the plan's `primary_metric` (a different quantity).
 
-Result panel order is FIXED (spec §3): verdict banner → Generate evidence → Verify evidence →
-Analysis answer and sources → baseline/comparison → export badges → artifact link. Answer is the
-natural-language interpretation from `run.analysis`, including comparison values and any
-residual-risk caveat. Plan reasoning and rationale stay in the live output surface rather than
-becoming a second schema-heavy card. Sources lists bounded public references from
+Result panel order is FIXED (`screens.md` §S4): verdict banner → Generate evidence → Verify
+evidence → Analysis answer and sources → baseline/comparison → export badges → artifact link.
+Answer is the natural-language interpretation from `run.analysis`, including comparison values
+and any residual-risk caveat. Plan reasoning and rationale stay in the live output surface
+rather than becoming a second schema-heavy card. Sources lists bounded public references from
 `research.completed`, including the query and short excerpts; failed or empty research is shown
 honestly. Verification lists each method that actually ran with its measured evidence, so the
 user can see what was checked rather than only seeing a verdict. Each section renders only when
@@ -102,7 +111,7 @@ not one card per low-level check.
 `apps/web/lib/run-activity.ts` owns the pure event reduction and
 `packages/ts/ui/src/agent-activity.tsx` remains a fetch-free renderer. Repeated candidate
 revisions appear as Attempt history inside Generated code, so repair autonomy remains
-visible without producing unexplained “Candidate revision N” cards. Ordinary chat events
+visible without producing unexplained "Candidate revision N" cards. Ordinary chat events
 return no activity model. Code, measured values, verification evidence, stdout/stderr,
 and compilation metrics live in their owning disclosure. Generated code lets the user
 switch among retained revisions and copy the selected source without exposing raw event
@@ -129,7 +138,7 @@ renderer and never derives trust from absent data.
 
 When a failed or inconclusive run still preserved an executable candidate, the result is
 presented as **Best available result** with an explicit not-verified badge and a compact
-reason notice. “No accepted result” is reserved for runs that genuinely produced no
+reason notice. "No accepted result" is reserved for runs that genuinely produced no
 deliverable. This preserves useful work without overstating verification.
 
 When the current run becomes terminal, a reader who was already following the live
@@ -142,7 +151,7 @@ The idle composer is compact and expands its text area on focus. While a request
 flight, the send action becomes Stop and the form exposes `aria-busy`; a polite live
 status announces the current state without duplicating visible text. Keyboard guidance
 is adjacent metadata rather than button-label content, so assistive technology receives
-a stable action name.
+a stable action name. Width is bounded by `--composer-max` (720 px).
 
 ## VerdictBanner (S4)
 
@@ -181,8 +190,11 @@ from the required `ts` job, since it needs a chromium download. Its `a11y` scrip
 deliberately not named `test` so `turbo run … test` in the `ts` job never triggers the
 browser install. First real catches (both fixed in `@majorana/ui`): pending rail-name
 contrast (text-2 → text-1) and the code-block keyboard-focus gap. When axe flags a real
-issue, fix the component — do not relax the rule set. This is slice **a** of roadmap 04 §5
-step 2; the screenshot visual-diff slice (b) reuses the same `dist/*.html`.
+issue, fix the component — do not relax the rule set.
+
+This is slice **a** of the two-part visual gate the UI spec called for: axe over rendered
+stories. **Slice b — screenshot visual-diff (Playwright, ≤ 0.1% tolerance) — is still
+open**, and reuses the same `dist/*.html`. It is the last unbuilt item from that spec.
 
 ## EmptyState
 

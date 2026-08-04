@@ -2,7 +2,7 @@
   "name": "@majorana/ui-visual",
   "version": "0.0.0",
   "private": true,
-  "description": "Visual/a11y test harness: renders the real @majorana/ui components to static HTML (esbuild + renderToStaticMarkup, tokens/styles inlined from source) and asserts zero WCAG violations via @axe-core/playwright. No Next, no auth. Screenshot source for the later visual-diff slice. Spec: plans/roadmap/04-ui-specifications.md §5 step 2.",
+  "description": "Visual/a11y test harness: renders the real @majorana/ui components to static HTML (esbuild + renderToStaticMarkup, tokens/styles inlined from source) and asserts zero WCAG violations via @axe-core/playwright. No Next, no auth. Screenshot source for the later visual-diff slice. Spec: docs/ui/screens-acceptance.md §3.",
   "type": "module",
   "scripts": {
     "render": "node scripts/render.mjs",

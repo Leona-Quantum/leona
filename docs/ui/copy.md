@@ -12,17 +12,27 @@ gets units and, where relevant, tolerance. Never render an unlabeled float.
 - **Export statuses:** "Lossless" / "Lossy — <reason>" / "Download only" /
   "Not supported". Never overclaim (honesty taxonomy binds UI copy too).
 - **Buttons:** verb-first — "Run", "Save", "Open in Run",
-  "Retry from Verify".
+  "Retry from Verify", "Retry from here".
 - **Modes:** user-facing labels are "Execute", "Learn", and "Explain". The
   internal compatibility value `ideate` is never rendered.
 - **Studio:** "Simulate", "Verify", "Save version", "Open in Studio", and
   "Generate version". A draft is never labeled Verified.
+- **Hardware (QPU):** the card is "Run on hardware"; submission always goes through a
+  confirm dialog that restates the estimated cost, and nothing auto-submits. Job states
+  read "queued" / "running" / "done" / "failed". A hardware result that disagrees with
+  the verified simulation is reported as a finding — "Hardware deviation: TVD 0.31
+  (expected ≤ 0.15 for this device class)" — never averaged away or hidden.
 - **Errors:** what happened + what we did + one action. Never a bare stack trace
   outside collapsible details.
 - **Empty states:** one sentence + one action. Artifact list: "Nothing verified yet. Your
   first verified run will appear here." + [Start a run].
 - **Vocabulary (P1):** describe the OpenQASM program or the concrete check performed
   in framework terms. "the artifact list stores, Studio/Run creates" (P2) shapes verbs.
+- **Retired words.** "Nameko", "Quepo", "Majorana" and "Library"/"Vault" are not product
+  vocabulary: the agent is **Nala**, the public catalog is **Atlas**, the product is
+  **Leona Quantum**, and saved work lives in **Studio**. `replaceLegacyBrand()` in
+  `apps/web/lib/public-repository.ts` scrubs the first three at display time for legacy
+  catalog rows — it is a bridge for old data, not permission to write them.
 
 ## Japanese (日本語) term glossary
 

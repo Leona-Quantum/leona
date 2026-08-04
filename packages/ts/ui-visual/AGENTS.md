@@ -1,7 +1,8 @@
 # AGENTS.md — packages/ts/ui-visual
 
 Visual / accessibility test harness for `@majorana/ui`. Not shipped to users. Domain home:
-`docs/ui/` (read its README first). Spec of record: `plans/roadmap/04-ui-specifications.md` §5.
+`docs/ui/` (read its README first). What this harness is required to enforce, and what is
+still unbuilt: `docs/ui/screens-acceptance.md` §3.
 
 What it does:
 - `src/stories.tsx` lists real `@majorana/ui` component instances in fixed states (every
