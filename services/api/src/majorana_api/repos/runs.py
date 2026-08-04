@@ -12,6 +12,7 @@ from typing import Any
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, RunMode, RunStatus, VerificationMethod
 from sqlalchemy import func, select, update
+from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from ..ids import uuid7
@@ -133,6 +134,16 @@ async def count_execute_runs_since(scope: Scope, session: AsyncSession, since: d
     one bounds a tenant rather than an account.
     """
     return int((await session.execute(execute_allowance_stmt(scope, since))).scalar_one())
+
+
+class IdempotencyKeyInFlight(Exception):
+    """Another request holds this Idempotency-Key and won the insert.
+
+    Raised here rather than letting SQLAlchemy's IntegrityError reach a route:
+    the routes layer may not import sqlalchemy at all (AGENTS.md rule 2, and
+    `scripts/check_raw_queries.py` fails the build on it), and a caller does not
+    need to know which index refused it.
+    """
 
 
 class RunAllowanceReached(Exception):
@@ -308,6 +319,7 @@ async def create_run(
     shots: int | None = None,
     timeout_s: int | None = None,
     idempotency_key: str | None = None,
+    idempotency_request_hash: str | None = None,
     conversation_id: uuid.UUID | None = None,
 ) -> Run:
     """Create a queued run with an optional, already-saved Vault context.
@@ -323,6 +335,7 @@ async def create_run(
         await artifacts_repo.get_version(scope, session, artifact_version_id)
     run = Run(
         idempotency_key=idempotency_key,
+        idempotency_request_hash=idempotency_request_hash,
         id=uuid7(),
         conversation_id=conversation_id or uuid7(),
         workspace_id=scope.workspace_id,
@@ -337,7 +350,17 @@ async def create_run(
         timeout_s=timeout_s,
     )
     session.add(run)
-    await session.flush()
+    try:
+        await session.flush()
+    except IntegrityError as exc:
+        # The partial unique index on (workspace_id, idempotency_key) from
+        # migration 0002. Two requests carrying one key both passed the SELECT
+        # and raced to INSERT; exactly one may land. Only that conflict is
+        # translated — any other integrity failure is a real fault and must not
+        # be disguised as a retryable one.
+        if idempotency_key is not None:
+            raise IdempotencyKeyInFlight(idempotency_key) from exc
+        raise
     # Server defaults (status/created_at/updated_at) aren't populated by flush;
     # load them now — a lazy attribute refresh later would MissingGreenlet.
     await session.refresh(run)

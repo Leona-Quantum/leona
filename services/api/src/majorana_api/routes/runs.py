@@ -38,6 +38,17 @@ router = APIRouter()
 SSE_POLL_INTERVAL_S = 1.0
 SSE_HEARTBEAT_EVERY_POLLS = 15
 
+#: Hard ceiling on how long one SSE connection may be held open.
+#:
+#: The loop already closes on `run.finished` and on a run that reached a
+#: terminal status without emitting one, so this is not the normal exit — it is
+#: the case where neither fires. `timeout_s` on a run is capped at 600, and a
+#: stream is resumable by `Last-Event-ID`, so a client cut off here reconnects
+#: and loses nothing. Without it, a connection whose run never resolves is held
+#: for as long as the client keeps the socket open, and the cost of holding
+#: thousands of them is paid by everyone else on the instance.
+SSE_MAX_DURATION_S = 3600.0
+
 
 class CreateRunRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
@@ -109,6 +120,52 @@ async def _create_stale_source_draft(
         limitations="Edited Studio draft; rerun before relying on verification evidence.",
     )
     return draft.id
+
+
+def _idempotency_request_hash(body: CreateRunRequest) -> str:
+    """Fingerprint the whole submitted request, `source_code` included.
+
+    `model_dump(mode="json")` rather than a hand-listed subset: a field added to
+    `CreateRunRequest` later is then covered without anybody remembering to add
+    it here, and the failure mode of forgetting — two different requests hashing
+    the same — is silent. Sorted keys so field order never changes the digest.
+
+    `source_code` matters most and is the reason this is not a comparison
+    against the stored Run's own columns: it is never a column. It travels to
+    the worker in the job payload and into a draft version, so two submissions
+    differing only in the code to run would be indistinguishable from the row.
+    """
+    return hashlib.sha256(
+        json.dumps(body.model_dump(mode="json"), sort_keys=True).encode()
+    ).hexdigest()
+
+
+def _assert_same_request(existing: RunRow, request_hash: str | None) -> None:
+    """A reused key must describe the same request, or it is not a retry.
+
+    Returning the stored run for a different body is the failure this exists to
+    stop: the caller is handed a run it did not ask for, under a 201 that says
+    it was created. RFC-wise this is 409 — the key is in use for something else.
+
+    A NULL stored hash predates migration 0047 and cannot be compared. Those
+    rows take the old behaviour rather than a refusal invented from missing
+    data; every one of them is long terminal, so this is a statement about
+    honesty rather than a live path.
+    """
+    if existing.idempotency_request_hash is None:
+        return
+    if existing.idempotency_request_hash == request_hash:
+        return
+    raise HTTPException(
+        409,
+        detail={
+            "error": (
+                "This Idempotency-Key was used for a different request. Use a new "
+                "key, or resend the original request to receive its run."
+            ),
+            "reason": "idempotency_key_reused",
+        },
+    )
 
 
 def _to_resource(run: RunRow) -> RunResource:
@@ -293,25 +350,45 @@ async def create_run(
     settings: Annotated[Settings, Depends(get_settings)],
     idempotency_key: Annotated[str | None, Header(alias="Idempotency-Key")] = None,
 ) -> RunResource:
+    request_hash = _idempotency_request_hash(body) if idempotency_key else None
     if idempotency_key:
         existing = await runs_repo.find_run_by_idempotency_key(scope, session, idempotency_key)
         if existing is not None:
+            _assert_same_request(existing, request_hash)
             return _to_resource(existing)
     await _enforce_execute_backstop(body, scope, session, identity, settings)
     artifact_version_id = await _create_stale_source_draft(body, scope, session)
-    run = await runs_repo.create_run(
-        scope,
-        session,
-        task_prompt=body.task_prompt,
-        mode=body.mode,
-        framework=body.framework,
-        artifact_version_id=artifact_version_id,
-        seed=body.seed,
-        shots=body.shots,
-        timeout_s=body.timeout_s,
-        idempotency_key=idempotency_key,
-        conversation_id=body.conversation_id,
-    )
+    try:
+        run = await runs_repo.create_run(
+            scope,
+            session,
+            task_prompt=body.task_prompt,
+            mode=body.mode,
+            framework=body.framework,
+            artifact_version_id=artifact_version_id,
+            seed=body.seed,
+            shots=body.shots,
+            timeout_s=body.timeout_s,
+            idempotency_key=idempotency_key,
+            idempotency_request_hash=request_hash,
+            conversation_id=body.conversation_id,
+        )
+    except runs_repo.IdempotencyKeyInFlight:
+        # Two requests carrying the same key raced past the SELECT above and
+        # both reached the INSERT; the partial unique index from migration 0002
+        # let exactly one through. Losing that race is not a server fault, and
+        # answering 500 told the caller to retry a request that had in fact
+        # already succeeded.
+        raise HTTPException(
+            409,
+            detail={
+                "error": (
+                    "A run with this Idempotency-Key is being created by another "
+                    "request. Retry to receive it."
+                ),
+                "reason": "idempotency_key_in_flight",
+            },
+        ) from None
     await runs_repo.append_run_event(
         scope,
         session,
@@ -453,8 +530,15 @@ async def stream_run_events(
     async def gen():
         seq = start_seq
         idle_polls = 0
+        deadline = asyncio.get_running_loop().time() + SSE_MAX_DURATION_S
         while True:
             if await request.is_disconnected():
+                return
+            if asyncio.get_running_loop().time() >= deadline:
+                # Said on the wire rather than dropped silently: a client that
+                # is told why can reconnect from its Last-Event-ID, and one that
+                # simply loses the socket cannot tell this from a network fault.
+                yield ": stream duration limit reached; reconnect with Last-Event-ID\n\n"
                 return
             async with factory() as s:
                 events = await runs_repo.list_run_events(scope, s, run_id, after_seq=seq)

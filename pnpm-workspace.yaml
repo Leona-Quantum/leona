@@ -22,8 +22,20 @@ overrides:
   # source-map path traversal) flagged everything <= 8.5.17. A targeted
   # `8.4.31: x` override can't catch the copy @tailwindcss/postcss resolves by
   # range, so dedupe the whole tree onto the first patched release. All postcss
-  # here is 8.x; 8.5.18 is a backward-compatible patch bump.
-  postcss: 8.5.18
+  # here is 8.x, so each of these is a backward-compatible patch bump.
+  #
+  # Third round, 2026-08-05: GHSA-fxqj-rqcc-2cmp (CVSS 6.3) is the incomplete-fix
+  # follow-up to GHSA-6g55-p6wh-862q and flags everything <= 8.5.22, so 8.5.18
+  # was affected again. Patched at 8.5.23.
+  #
+  # Traced rather than assumed, as with fast-uri above. The advisory needs
+  # postcss to process ATTACKER-CONTROLLED CSS with `map: true` and no `from`,
+  # and then to serve the resulting source map. Every postcss invocation here is
+  # Next/Tailwind compiling this repository's own stylesheets at build time —
+  # there is no path by which a user's bytes reach it. So this is not exposure
+  # being closed; it is a patch bump taken because "build-time only" is a reason
+  # not to panic and not a reason to sit on a known-vulnerable parser.
+  postcss: 8.5.23
   # brace-expansion DoS, twice over: GHSA-mh99-v99m-4gvg (unbounded expansion
   # length OOMs the process) and then GHSA-rgw5-rvv9-x895, which bypasses the
   # first one's mitigation via unbounded *intermediate* arrays. Both CVSS 7.5.
