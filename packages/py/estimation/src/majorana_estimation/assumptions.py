@@ -88,6 +88,26 @@ class AssumptionSet:
     t_per_toffoli: int
     """Magic states charged per Toffoli. 4 with measurement-and-fixup, 7 without."""
 
+    rotation_synthesis_epsilon: float | None = None
+    """Per-rotation approximation error a Clifford+T synthesis is held to.
+
+    ``None`` means no precision has been stated, and a circuit containing an
+    arbitrary-angle rotation then has **no** T-count — which is the honest
+    answer, not zero. Left unset on every built-in set on purpose: the budget
+    is a property of the algorithm's total error allowance divided among its
+    rotations, not of the hardware, so it has to be stated per estimate.
+    """
+
+    rotation_t_coefficient: float = 3.0
+    """Leading coefficient in ``T ~ c * log2(1/eps)`` for z-rotation synthesis.
+
+    3.0 is the Ross-Selinger leading term (arXiv:1403.2975, optimal
+    ancilla-free Clifford+T approximation of z-rotations); the true count is
+    ``3*log2(1/eps) + O(log log 1/eps)``, so this is a floor that gets closer
+    as eps shrinks. Exposed rather than hard-coded because it is the kind of
+    constant that quietly moves an estimate by tens of percent.
+    """
+
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("an assumption set must be named")
@@ -125,11 +145,38 @@ class AssumptionSet:
             raise ValueError("factory_footprint_logical cannot be negative")
         if self.cycle_time_s <= 0 or self.reaction_time_s <= 0:
             raise ValueError("cycle and reaction times must be positive")
+        if self.rotation_synthesis_epsilon is not None:
+            require_finite(self.rotation_synthesis_epsilon, "rotation_synthesis_epsilon")
+            if not 0 < self.rotation_synthesis_epsilon < 1:
+                # eps >= 1 is not a loose budget, it is no approximation at all,
+                # and log2(1/eps) <= 0 would hand back a zero or negative T-count
+                # for a rotation that certainly costs something.
+                raise ValueError("rotation_synthesis_epsilon must lie in (0, 1)")
+        if self.rotation_t_coefficient <= 0:
+            raise ValueError("rotation_t_coefficient must be positive")
 
     @property
     def identity(self) -> str:
         """The string an estimate carries so it can never be read set-free."""
         return f"{self.name}@v{self.version}"
+
+    @property
+    def t_per_rotation(self) -> int:
+        """T gates one arbitrary-angle rotation costs under this set.
+
+        Raises when no precision is stated, because the alternative — picking a
+        default — would turn "this circuit has no stated T-count" into a
+        specific number that no one chose, on a page that shows it next to
+        exactly-counted ones.
+        """
+        if self.rotation_synthesis_epsilon is None:
+            raise ValueError(
+                f"{self.identity} states no rotation_synthesis_epsilon, so an "
+                "arbitrary-angle rotation has no T-count under it"
+            )
+        return math.ceil(
+            self.rotation_t_coefficient * math.log2(1.0 / self.rotation_synthesis_epsilon)
+        )
 
     @property
     def cycles_per_reaction(self) -> int:
