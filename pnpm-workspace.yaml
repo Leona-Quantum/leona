@@ -1,3 +1,17 @@
+# Refuse any npm version published in the last 24 hours (05-security.md §1
+# supply chain, threat 5). Not from the review — semgrep's supply-chain rules
+# raised it, and it is the one control that actually addresses how npm
+# compromises play out: a maintainer account is taken over, a malicious patch
+# version is published, and the damage is done in the hours before anyone
+# notices and yanks it. Lockfiles and Dependabot do not help there, because the
+# compromised version IS the newest one and the tooling is doing its job.
+#
+# 24 hours is the window in which those incidents are typically caught and
+# pulled. The cost is that a genuinely urgent patch cannot be taken for a day —
+# `minimumReleaseAgeExclude` is the escape hatch when that happens, and using it
+# should be a deliberate, reviewed line rather than a lowered global.
+minimumReleaseAge: 1440
+
 packages:
   - "apps/*"
   - "packages/ts/*"
