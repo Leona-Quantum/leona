@@ -59,12 +59,30 @@ from __future__ import annotations
 import time
 from dataclasses import dataclass, field
 
-#: Requests per window per address, for callers presenting no credential.
-#: Deliberately far above a human reading the catalog: the browse list is one
-#: request and a detail page is two, so a person clicking as fast as they can
-#: read stays two orders of magnitude below this. It is sized to refuse a
-#: scraper in a loop, not to shape traffic.
-DEFAULT_ANON_LIMIT = 240
+#: Requests per window per address.
+#:
+#: ## Sized for who is actually on the other end, which is not a browser
+#:
+#: The first value here was 240, reasoned from "a person clicking as fast as
+#: they can read". That reasoning was wrong about the traffic. Nothing in the
+#: browser ever calls `/v1/catalog/*`: `apps/web/lib/repository-source.ts` is
+#: server-side and fetches with `next: { revalidate }`, so this endpoint sees
+#: **Vercel's SSR egress**, not end users — a handful of addresses shared by
+#: every visitor at once.
+#:
+#: At 240/min that limiter was metering our own renderer, and tripping it does
+#: not return an error to anybody: `getRepositoryEntries` catches the failure
+#: and falls back to the static corpus, so the public catalog would quietly
+#: start serving stale data under exactly the load a launch produces. A control
+#: whose failure mode is silent staleness has to have enormous headroom over
+#: legitimate use.
+#:
+#: 1200/min is 20 requests a second from one address. Vercel's cached SSR cannot
+#: approach that; a scraper in a loop does thousands a minute and is still
+#: refused. The proper fix is to stop our own renderer sharing a bucket with
+#: anonymous callers at all — a trusted-caller exemption, written up in
+#: OWNER_TODO — after which this can come back down.
+DEFAULT_ANON_LIMIT = 1200
 DEFAULT_WINDOW_S = 60.0
 
 #: Maximum distinct addresses tracked at once. At ~80 bytes per entry this is
