@@ -67,6 +67,11 @@ usual working choice and costs 60 T gates per rotation.
 MIN_ROTATION_SYNTHESIS_EPSILON = 1e-15
 MAX_ROTATION_SYNTHESIS_EPSILON = 1e-1
 
+#: How `AssumptionSet.identity` appends its precision. Kept next to the parser
+#: that splits it back off, so the two cannot drift into disagreeing about the
+#: format of the string the public page prints.
+_EPS_MARKER = "+eps="
+
 #: Ceiling on a caller-supplied factory count. A factory is 11-15 logical
 #: patches depending on the set, so this is already a machine no one will build;
 #: the bound exists so an anonymous caller cannot ask for a footprint whose only
@@ -89,19 +94,58 @@ class UnknownAssumptionSet(LookupError):
     """The caller named an assumption set this deployment does not have."""
 
 
+class ContradictoryPrecision(ValueError):
+    """The identity carried one epsilon and the `epsilon` parameter another."""
+
+
 def resolve_assumptions(identity: str | None, epsilon: float | None) -> AssumptionSet:
     """The named hardware set, held to a stated synthesis precision.
 
     Raises `UnknownAssumptionSet` rather than falling back to the default: a
     caller who asked for trapped-ion numbers and silently got superconducting
     ones has been given a wrong answer that looks like a right one.
+
+    ## Both the registry key and the full identity are accepted
+
+    The registry is keyed by `name@vN`, because a built-in set states no
+    precision — that is chosen here, per estimate. But what an estimate *carries*
+    and what the page *prints* is `AssumptionSet.identity`, which appends
+    `+eps=...`. So the one string a reader has in front of them was the one
+    string this function refused, and the page and the API disagreed about the
+    name of the same thing. Pasting `gidney-2025@v1+eps=1e-06` back is the
+    obvious thing to try and it 422'd.
+
+    A precision named twice must agree. Taking either side silently would answer
+    a question the caller did not ask: they wrote both because they meant both,
+    and if the two differ the estimate would come back labelled with a budget the
+    caller did not choose — on a page whose whole argument is that the label is
+    the claim.
     """
     wanted = identity or DEFAULT_ASSUMPTION_SET
+    key, marker, stated = wanted.partition(_EPS_MARKER)
     try:
-        base = BUILTIN_ASSUMPTION_SETS[wanted]
+        base = BUILTIN_ASSUMPTION_SETS[key]
     except KeyError as exc:
         raise UnknownAssumptionSet(wanted) from exc
-    resolved = DEFAULT_ROTATION_SYNTHESIS_EPSILON if epsilon is None else epsilon
+
+    from_identity: float | None = None
+    if marker:
+        try:
+            from_identity = float(stated)
+        except ValueError as exc:
+            # Not a precision, so not an identity this deployment ever emitted.
+            raise UnknownAssumptionSet(wanted) from exc
+        if epsilon is not None and epsilon != from_identity:
+            raise ContradictoryPrecision(from_identity, epsilon)
+
+    resolved = from_identity
+    if resolved is None:
+        resolved = DEFAULT_ROTATION_SYNTHESIS_EPSILON if epsilon is None else epsilon
+    if not MIN_ROTATION_SYNTHESIS_EPSILON < resolved < MAX_ROTATION_SYNTHESIS_EPSILON:
+        # The route bounds `epsilon`; nothing bounded one arriving inside an
+        # identity string, and `with_rotation_precision` only refuses values
+        # outside (0, 1). Bounding it here keeps the two doors the same size.
+        raise ContradictoryPrecision(resolved, None)
     return base.with_rotation_precision(resolved)
 
 

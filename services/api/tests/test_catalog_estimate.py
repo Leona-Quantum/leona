@@ -23,6 +23,7 @@ from majorana_estimation import GIDNEY_2025
 
 from majorana_api.catalog_estimate import (
     DEFAULT_ROTATION_SYNTHESIS_EPSILON,
+    ContradictoryPrecision,
     UnknownAssumptionSet,
     _summarize_assumptions,
     estimate_for_record,
@@ -163,6 +164,48 @@ def test_the_default_set_resolves_and_the_sourced_one_still_states_no_precision(
     that package must keep refusing to pick one for itself."""
     assert resolve_assumptions(None, None).name == GIDNEY_2025.name
     assert GIDNEY_2025.rotation_synthesis_epsilon is None
+
+
+def test_the_identity_printed_on_the_page_can_be_handed_straight_back():
+    """The page prints `gidney-2025@v1+eps=1e-06`, and the API used to 422 on it.
+
+    The registry is keyed by `name@vN` because a built-in set states no precision,
+    but what a reader has in front of them is the identity the estimate carries.
+    Pasting it back is the obvious thing to try, and the two halves of the feature
+    disagreed about the name of the same thing.
+    """
+    shown = resolve_assumptions(None, None).identity
+    assert shown == "gidney-2025@v1+eps=1e-06"
+
+    assert resolve_assumptions(shown, None).identity == shown
+    # Restating the same precision is agreement, not a conflict.
+    assert resolve_assumptions(shown, 1e-6).identity == shown
+    assert (
+        resolve_assumptions("composed-trapped-ion@v1+eps=1e-09", None).identity
+        == "composed-trapped-ion@v1+eps=1e-09"
+    )
+
+
+def test_two_stated_precisions_that_disagree_are_refused_rather_than_ranked():
+    """Neither side may quietly win. An estimate is labelled with its precision,
+    so picking one would return a cost under a budget the caller did not choose —
+    on a page whose whole argument is that the label is the claim."""
+    with pytest.raises(ContradictoryPrecision):
+        resolve_assumptions("gidney-2025@v1+eps=1e-06", 1e-9)
+
+
+def test_a_precision_smuggled_through_the_identity_obeys_the_same_bounds():
+    """`epsilon` is bounded at the route; nothing bounded one arriving inside the
+    identity string, which would be a second door of a different size on an
+    anonymous endpoint."""
+    for outside in ("gidney-2025@v1+eps=1e-30", "gidney-2025@v1+eps=0.5"):
+        with pytest.raises(ContradictoryPrecision):
+            resolve_assumptions(outside, None)
+
+
+def test_an_identity_whose_suffix_is_not_a_number_is_simply_unknown():
+    with pytest.raises(UnknownAssumptionSet):
+        resolve_assumptions("gidney-2025@v1+eps=banana", None)
 
 
 def test_the_second_set_is_reachable_by_name_and_the_default_does_not_move():

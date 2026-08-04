@@ -96,7 +96,7 @@ second choice: it is the paper Webber et al. take their distillation blocks from
 | `reaction_time_s` | 68.75e-6 | Webber §2.3 — `RT = (CC/4) + 10 μs`; at CC = 235 μs that is 68.75 μs. Arithmetic on two stated values, not a third assumption. |
 | `t_per_toffoli` | 4 | Webber §2.1 — "A Toffoli gate can be decomposed using 4 T gates" |
 | `routing_factor` | 2.0 | Litinski §2 — the intermediate data block stores n logical qubits in **2n + 4** tiles. This model has no slot for the constant +4, so it charges the 2n and is optimistic by four patches. |
-| `factory_footprint_logical` | 11.0 | Litinski §3.3 — "The 15-to-1 distillation block uses **11 tiles**". One tile is one logical patch; Litinski converts tiles to physical qubits as `2d²`, which is what `d² + (d−1)²` computes. |
+| `factory_footprint_logical` | 11.0 | Litinski §3.3 — "The 15-to-1 distillation block uses **11 tiles**". One tile is one logical patch, which is the unit this field is in. |
 | `factory_cycles_per_state` | 11 | **departure** — Litinski states 11 *time steps*, and one time step as *d* code cycles: **11d** rounds per magic state. This model holds a distance-independent constant. |
 
 ### What it buys, checked against the real corpus
@@ -118,6 +118,24 @@ more scalable — reproduced by this arithmetic rather than quoted from its abst
 These two estimates must never be ranked against each other. `comparable_with` refuses on
 identity, and `/v1/catalog/estimates` states one set once for the whole payload so a client
 holding it has nothing inside it to rank across.
+
+### A patch is not costed the way Litinski costs a tile
+
+Worth stating because the tile counts above are quoted from Litinski and the qubits under
+them are not. `estimate.py` converts one logical patch to `d² + (d−1)²` physical qubits —
+the rotated surface code's data-plus-measure count, and the model's convention everywhere
+including the published `gidney-2025` numbers. Litinski converts a tile to `2d²`.
+
+Those are not the same figure: `d² + (d−1)² = 2d² − 2d + 1`, so at `d = 9` this model
+charges **145** qubits per patch against Litinski's **162**, about 10% lower. Across the
+20,474 factories in the table above that is roughly 3.8 million qubits, so the trapped-ion
+total is a floor rather than Litinski's own arithmetic.
+
+The conversion is not changed here. It is model-wide rather than per-set, it is the
+standard rotated-surface-code cost, and moving it would move every published number under
+`gidney-2025` too — which is the same owner decision as the `factory_cycles_per_state`
+departure above, and belongs with it. **Found in review of PR #257**, where an earlier
+draft of this file asserted the two conversions were the same thing.
 
 ## The model limitation both sets share
 
