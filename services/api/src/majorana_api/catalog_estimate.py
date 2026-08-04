@@ -67,10 +67,10 @@ usual working choice and costs 60 T gates per rotation.
 MIN_ROTATION_SYNTHESIS_EPSILON = 1e-15
 MAX_ROTATION_SYNTHESIS_EPSILON = 1e-1
 
-#: Ceiling on a caller-supplied factory count. Each factory is 15 logical
-#: patches, so this is already a machine no one will build; the bound exists so
-#: an anonymous caller cannot ask for a footprint whose only purpose is to
-#: overflow the arithmetic on the way to being rendered.
+#: Ceiling on a caller-supplied factory count. A factory is 11-15 logical
+#: patches depending on the set, so this is already a machine no one will build;
+#: the bound exists so an anonymous caller cannot ask for a footprint whose only
+#: purpose is to overflow the arithmetic on the way to being rendered.
 MAX_FACTORY_COUNT = 1_000_000
 
 #: Failure probability the whole circuit is costed to succeed within. Reported

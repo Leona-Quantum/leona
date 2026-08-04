@@ -160,7 +160,12 @@ async def get_catalog_entry_estimate(
     assumptions: Annotated[
         str | None,
         Query(
-            description="Assumption-set identity, e.g. `gidney-2025@v1`. Defaults to the only sourced set."
+            description=(
+                "Assumption-set identity, e.g. `gidney-2025@v1` or "
+                "`composed-trapped-ion@v1`. Defaults to `gidney-2025@v1`. Costs "
+                "under two different identities are not comparable and must not "
+                "be ranked against each other."
+            )
         ),
     ] = None,
     epsilon: Annotated[
