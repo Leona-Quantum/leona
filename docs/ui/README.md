@@ -8,6 +8,11 @@ Domain home for the product surface (`apps/web` + `packages/ts/ui`), per
 **Rule zero: taste decisions are made. When in doubt, copy the token/value from
 `tokens.md`; never invent visual design. Deviations need an owner taste-check.**
 
+Competitor surfaces we have looked at — and, per takeaway, whether we adopted the idea or
+deliberately did not — are in `references.md`. Read it before proposing a shell change that
+a competitor already tried on us: three of its five takeaways are already shipped and one is
+recorded as *not adopted for a reason*.
+
 ## Map: concept → code
 
 | Concept | Where |
