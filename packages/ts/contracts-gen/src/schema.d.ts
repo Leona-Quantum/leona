@@ -222,6 +222,48 @@ export interface components {
             verification_summary: components["schemas"]["VerificationSummary"] | null;
         } & unknown;
         /**
+         * AssumptionSetSummary
+         * @description The named hardware+protocol claim an estimate was computed under.
+         *
+         *     Served with every estimate rather than referenced by id, because an estimate
+         *     read without its assumption set is not a weaker number — it is a different
+         *     kind of thing, and a client that had to fetch the set separately would
+         *     render the number first.
+         */
+        AssumptionSetSummary: {
+            /** Citation */
+            citation: string;
+            /** Cycle Time S */
+            cycle_time_s: number;
+            /**
+             * Identity
+             * @description Stable identity, e.g. `gidney-2025@v1+eps=1e-06`. Two estimates may be ranked against each other only when these strings match.
+             */
+            identity: string;
+            /** Name */
+            name: string;
+            /** Physical Error Rate */
+            physical_error_rate: number;
+            /** Reaction Time S */
+            reaction_time_s: number;
+            /**
+             * Rotation Synthesis Epsilon
+             * @description Per-rotation approximation error the Clifford+T synthesis is held to. Null when no precision was named, in which case any circuit containing an arbitrary-angle rotation has no T-count at all.
+             * @default null
+             */
+            rotation_synthesis_epsilon: number | null;
+            /**
+             * T Per Rotation
+             * @description T gates one arbitrary-angle rotation costs under this precision.
+             * @default null
+             */
+            t_per_rotation: number | null;
+            /** T Per Toffoli */
+            t_per_toffoli: number;
+            /** Version */
+            version: number;
+        };
+        /**
          * BaselineKind
          * @enum {string}
          */
@@ -261,6 +303,102 @@ export interface components {
              * @enum {string}
              */
             type: "baseline.result";
+        };
+        /**
+         * CatalogEntryEstimate
+         * @description A catalogue entry's fault-tolerant cost, or a stated reason there is none (E4).
+         *
+         *     Derived on read from the published record's own portable circuit — never
+         *     authored, never stored — so it cannot drift from the circuit a visitor is
+         *     looking at on the same page.
+         *
+         *     `basis` is the field to branch on. Only EXACT and ESTIMATED carry numbers;
+         *     the other two carry `reason` and nothing else, and a client that renders a
+         *     number without checking `basis` will publish a cost for a circuit that has
+         *     none.
+         */
+        CatalogEntryEstimate: {
+            assumptions: components["schemas"]["AssumptionSetSummary"];
+            basis: components["schemas"]["ResourceEstimateBasis"];
+            /** @default null */
+            distance: components["schemas"]["CodeDistanceSummary"] | null;
+            /** @default null */
+            footprint: components["schemas"]["FootprintSummary"] | null;
+            /** @default null */
+            logical: components["schemas"]["LogicalCostSummary"] | null;
+            /** Notes */
+            notes?: string[];
+            /**
+             * Reason
+             * @description Why no number is given, in one sentence naming the operations responsible. Present exactly when `basis` is REFUSED or NO_CIRCUIT.
+             * @default null
+             */
+            reason: string | null;
+            /** @default null */
+            runtime: components["schemas"]["RuntimeSummary"] | null;
+            /** Slug */
+            slug: string;
+            /**
+             * Target Failure Probability
+             * @default null
+             */
+            target_failure_probability: number | null;
+        };
+        /**
+         * CatalogEstimateList
+         * @description Every published entry's cost under one assumption set.
+         *
+         *     The set is stated **once, for the whole list**, which is the shape that makes
+         *     the ordering rule enforceable: a client holding this object knows every row
+         *     in it is comparable, and has nothing to compare across. Ranking rows from
+         *     two of these — two epsilons, two hardware sets — is the thing that must not
+         *     happen, and it now requires visibly merging two payloads that each announce
+         *     a different identity.
+         */
+        CatalogEstimateList: {
+            assumptions: components["schemas"]["AssumptionSetSummary"];
+            /** Estimates */
+            estimates?: components["schemas"]["CatalogEstimateSummary"][];
+        };
+        /**
+         * CatalogEstimateSummary
+         * @description One row's worth of a catalogue entry's cost, for the browse list.
+         *
+         *     A projection of `CatalogEntryEstimate`, not a second computation of it: the
+         *     same function produces both, so a list row and the detail page it links to
+         *     cannot disagree. Carries `assumptions` as a bare identity string because a
+         *     list is costed under one set and repeating the full record 283 times would
+         *     be most of the payload.
+         */
+        CatalogEstimateSummary: {
+            basis: components["schemas"]["ResourceEstimateBasis"];
+            /**
+             * Code Distance
+             * @default null
+             */
+            code_distance: number | null;
+            /**
+             * Logical Qubits
+             * @default null
+             */
+            logical_qubits: number | null;
+            /**
+             * Magic States
+             * @default null
+             */
+            magic_states: number | null;
+            /**
+             * Seconds
+             * @default null
+             */
+            seconds: number | null;
+            /** Slug */
+            slug: string;
+            /**
+             * Total Physical Qubits
+             * @default null
+             */
+            total_physical_qubits: number | null;
         };
         /**
          * CatalogProvenance
@@ -389,6 +527,22 @@ export interface components {
              * @enum {string}
              */
             type: "chat.error";
+        };
+        /**
+         * CodeDistanceSummary
+         * @description Layer 2's working, not just its answer.
+         */
+        CodeDistanceSummary: {
+            /** Achieved Error Per Operation */
+            achieved_error_per_operation: number;
+            /** Code Distance */
+            code_distance: number;
+            /** Logical Operations */
+            logical_operations: number;
+            /** Physical Per Logical */
+            physical_per_logical: number;
+            /** Required Error Per Operation */
+            required_error_per_operation: number;
         };
         /** CodeFinalized */
         CodeFinalized: {
@@ -799,6 +953,20 @@ export interface components {
          */
         ExportStatus: "lossless" | "lossy_with_reason" | "download_only" | "unsupported";
         /**
+         * FootprintSummary
+         * @description Layer 3, split so the data/factory trade stays visible rather than lumped.
+         */
+        FootprintSummary: {
+            /** Data Patch Qubits */
+            data_patch_qubits: number;
+            /** Factory Qubits */
+            factory_qubits: number;
+            /** Routing Qubits */
+            routing_qubits: number;
+            /** Total Physical Qubits */
+            total_physical_qubits: number;
+        };
+        /**
          * Framework
          * @enum {string}
          */
@@ -1000,6 +1168,40 @@ export interface components {
              * @enum {string}
              */
             type: "llm.delta";
+        };
+        /**
+         * LogicalCostSummary
+         * @description Layer 1: what the algorithm needs, before any hardware is named.
+         */
+        LogicalCostSummary: {
+            /**
+             * Clifford Count
+             * @description Reported so a reader can see the circuit was read.
+             */
+            clifford_count: number;
+            /** Logical Qubits */
+            logical_qubits: number;
+            /** Magic States */
+            magic_states: number;
+            /**
+             * Non Clifford Depth
+             * @description Longest serial non-Clifford chain.
+             */
+            non_clifford_depth: number;
+            /**
+             * Synthesis Required
+             * @description Arbitrary-angle rotations whose T-count came from the stated epsilon.
+             */
+            synthesis_required: number;
+            /** T Count */
+            t_count: number;
+            /**
+             * T From Synthesis
+             * @description How much of `t_count` is the epsilon's doing rather than the circuit's. The single number a reader needs to judge how load-bearing the assumption is; without it the two are indistinguishable in the total.
+             */
+            t_from_synthesis: number;
+            /** Toffoli Count */
+            toffoli_count: number;
         };
         /**
          * MeasurementPolicy
@@ -1500,6 +1702,30 @@ export interface components {
              */
             type: "research.completed";
         };
+        /**
+         * ResourceEstimateBasis
+         * @description On what footing a catalogue entry's fault-tolerant cost is being reported.
+         *
+         *     Four values because there are four genuinely different things a page can be
+         *     saying, and collapsing any pair of them is how an estimate starts reading as
+         *     a measurement:
+         *
+         *     - `EXACT` — every operation came from a closed vocabulary, so the magic-state
+         *       count is counted, not approximated. In today's corpus these are all
+         *       Clifford-only: the honest display is "consumes no magic states", not a
+         *       small number.
+         *     - `ESTIMATED` — the circuit contains arbitrary-angle rotations, which have no
+         *       T-count until a synthesis precision is named. The figure is real *under
+         *       that stated epsilon* and moves with it, so the epsilon travels with the
+         *       number and is part of the assumption-set identity.
+         *     - `REFUSED` — the circuit holds an operation this stack cannot classify. No
+         *       precision fixes that, so there is no number and the reason is given instead.
+         *     - `NO_CIRCUIT` — the entry carries no portable circuit at all. Distinct from
+         *       REFUSED on purpose: nothing was attempted and nothing failed, and showing
+         *       a refusal here would invent a doubt about the entry that does not exist.
+         * @enum {string}
+         */
+        ResourceEstimateBasis: "exact" | "estimated" | "refused" | "no_circuit";
         /** ResourceEstimateResult */
         ResourceEstimateResult: {
             metrics: components["schemas"]["ResourceMetrics"];
@@ -2025,6 +2251,45 @@ export interface components {
          * @enum {string}
          */
         RunStatus: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+        /**
+         * RuntimeSummary
+         * @description Layer 4, with both terms kept apart.
+         *
+         *     Reporting only `seconds` would hide which constraint binds, and that is the
+         *     whole decision a reader is trying to make: more factories move the
+         *     throughput term and do nothing whatever to the reaction-limited one.
+         */
+        RuntimeSummary: {
+            /**
+             * Binding Term
+             * @enum {string}
+             */
+            binding_term: "throughput" | "reaction" | "unstated";
+            /** Factory Count */
+            factory_count: number;
+            /**
+             * Factory Crossover
+             * @description Fewest factories past which buying more buys nothing. Null when no floor is known.
+             * @default null
+             */
+            factory_crossover: number | null;
+            /** Magic States */
+            magic_states: number;
+            /** Reaction Limited Seconds */
+            reaction_limited_seconds: number;
+            /**
+             * Seconds
+             * @description Null when this model cannot state a wall-clock — a Clifford-only circuit consumes no magic states, so both terms above are zero and reporting their max would claim the circuit runs instantly.
+             * @default null
+             */
+            seconds: number | null;
+            /**
+             * Throughput Seconds
+             * @description Null when unbounded, i.e. states to distil and no factory.
+             * @default null
+             */
+            throughput_seconds: number | null;
+        };
         /** SandboxResult */
         SandboxResult: {
             /** Duration Ms */

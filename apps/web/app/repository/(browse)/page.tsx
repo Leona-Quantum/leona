@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { getRepositoryListEntries } from "../../../lib/repository-source";
+import { getRepositoryEstimates, getRepositoryListEntries } from "../../../lib/repository-source";
 import { VerificationLegend } from "../../../components/repository-verification";
 import { RepositoryBrowser } from "../repository-browser";
 
@@ -17,6 +17,10 @@ export default async function RepositoryPage() {
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const isJapanese = locale === "ja";
   const entries = await getRepositoryListEntries();
+  // One request for the whole corpus's cost, under one assumption set stated
+  // once on the payload. Null when the catalog API is off, and the cost column
+  // and its ordering option then do not appear at all.
+  const estimates = await getRepositoryEstimates();
 
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
@@ -33,6 +37,7 @@ export default async function RepositoryPage() {
           isSignedIn={Boolean(user)}
           signInHref={signInHref}
           legend={<VerificationLegend locale={locale} />}
+          estimates={estimates}
         />
       </section>
     </PublicSite>

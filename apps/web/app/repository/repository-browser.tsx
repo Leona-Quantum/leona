@@ -15,6 +15,8 @@ import { VerificationTierBadge } from "../../components/repository-verification"
 import { StarIcon } from "../../components/icons";
 import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../lib/repository-stars";
 import { RepositoryExportAction } from "./repository-export";
+import type { RepositoryEstimateList, RepositoryEstimateSummary } from "../../lib/repository/estimate";
+import { orderByCost, type CostOrder } from "../../lib/repository/estimate-order";
 
 const COPY = {
   en: {
@@ -41,6 +43,20 @@ const COPY = {
     emptyTitle: "No entries match those filters.",
     emptyBody: "Try a broader search or return to the full reference set.",
     clear: "Clear filters",
+    sort: "Order by",
+    sortDefault: "Catalog order",
+    sortCost: "Fault-tolerant cost",
+    sortCostDesc: "Fault-tolerant cost (largest first)",
+    costLabel: "physical qubits",
+    costUnknown: "cost not stated",
+    costNoCircuit: "no circuit",
+    costNone: "no magic states",
+    unrankedTitle: "Not ranked",
+    unrankedBody:
+      "These entries carry no stated cost, so they are listed after the ranked ones rather than sorted among them. An unknown cost is not a low cost.",
+    costUnder: "Costed under",
+    costUnderNote:
+      "Every figure in this list was computed under one assumption set. Numbers from a different set — a different synthesis precision, or different hardware — are a different claim and are not ordered against these.",
   },
   ja: {
     search: "Atlasを検索",
@@ -66,6 +82,20 @@ const COPY = {
     emptyTitle: "条件に一致するエントリがありません。",
     emptyBody: "検索条件を減らすか、条件をすべて解除してください。",
     clear: "条件をクリア",
+    sort: "並び順",
+    sortDefault: "カタログ順",
+    sortCost: "誤り耐性計算のコスト",
+    sortCostDesc: "誤り耐性計算のコスト（大きい順）",
+    costLabel: "物理量子ビット",
+    costUnknown: "コスト未提示",
+    costNoCircuit: "回路なし",
+    costNone: "マジックステート不要",
+    unrankedTitle: "順位付けの対象外",
+    unrankedBody:
+      "これらの項目にはコストが提示されていないため、順位付けされた項目の後にまとめて表示しています。コストが不明であることは、コストが低いことではありません。",
+    costUnder: "前提条件",
+    costUnderNote:
+      "この一覧の数値はすべて同一の前提条件のもとで計算されています。前提条件（合成精度やハードウェア）が異なる数値は別の主張であり、これらと並べて順位付けすることはできません。",
   },
 } as const;
 
@@ -211,18 +241,31 @@ export function RepositoryBrowser({
   isSignedIn,
   signInHref,
   legend,
+  estimates,
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
   legend?: ReactNode;
+  /**
+   * Every entry's fault-tolerant cost under ONE assumption set, or null.
+   *
+   * The set arrives on the container rather than per row, and that is what
+   * makes ordering by cost defensible: every row here is comparable with every
+   * other by construction, and there is nothing inside the object to compare
+   * across. Null when the catalog API is off — the cost column and the ordering
+   * option then simply do not appear, because there is no second implementation
+   * of the estimator on this side to fall back to.
+   */
+  estimates?: RepositoryEstimateList | null;
 }) {
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
   const [family, setFamily] = useState<string>("");
   const [framework, setFramework] = useState<"" | PublicRepositoryFramework>("");
+  const [order, setOrder] = useState<CostOrder>("catalog");
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
   // Gate whose circuit is currently showing its basic-gate decomposition.
   const [expandedGates, setExpandedGates] = useState<Set<string>>(new Set());
@@ -270,9 +313,36 @@ export function RepositoryBrowser({
     });
   }, [category, entries, family, framework, query]);
 
+  /** slug -> its cost row, when the API supplied a listing. */
+  const costBySlug = useMemo(() => {
+    const index = new Map<string, RepositoryEstimateSummary>();
+    for (const row of estimates?.estimates ?? []) index.set(row.slug, row);
+    return index;
+  }, [estimates]);
+
+  const canOrderByCost = costBySlug.size > 0;
+
+  /**
+   * Filtered entries in the requested order, with the unpriced ones held out.
+   *
+   * The rule and its reasoning live in lib/repository/estimate-order, where
+   * they are unit-tested — the interesting half of this is a *refusal*, and a
+   * refusal buried in a component body is one nobody exercises.
+   */
+  const { ordered, unranked } = useMemo(
+    () =>
+      orderByCost(
+        filteredEntries,
+        canOrderByCost ? order : "catalog",
+        (entry) => costBySlug.get(entry.slug),
+        (entry) => entry.slug,
+      ),
+    [canOrderByCost, costBySlug, filteredEntries, order],
+  );
+
   const gateEntries = useMemo(
-    () => (category === "gates" ? filteredEntries : []),
-    [category, filteredEntries],
+    () => (category === "gates" ? ordered : []),
+    [category, ordered],
   );
 
   // Keep the selected gate valid as filters change: default to the first, and
@@ -309,6 +379,30 @@ export function RepositoryBrowser({
     return row.members.find((member) => member.slug === chosen) ?? row.members[0];
   }
 
+  /**
+   * One card's cost, in as few characters as a card can carry.
+   *
+   * Renders nothing at all for an entry with no circuit: 163 of the 283
+   * published records are literature and operator entries, and a "no circuit"
+   * chip on every one of them would be noise that says nothing. A *refusal* is
+   * different and does get a chip — there the circuit exists and its cost is
+   * genuinely unknown, which is information.
+   */
+  function renderCostChip(slug: string) {
+    const row = costBySlug.get(slug);
+    if (!row || row.basis === "no_circuit") return null;
+    if (row.basis === "refused") {
+      return <span className="mj-repo-card-cost mj-repo-card-cost--unknown">{copy.costUnknown}</span>;
+    }
+    if (row.totalPhysicalQubits === null) return null;
+    return (
+      <span className={`mj-repo-card-cost mj-repo-card-cost--${row.basis}`}>
+        {row.totalPhysicalQubits.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")} {copy.costLabel}
+        {row.basis === "estimated" ? " ≈" : null}
+      </span>
+    );
+  }
+
   function renderRepoCard(entry: PublicRepositoryListEntry, extraHead?: ReactNode) {
     const title = locale === "ja" ? entry.titleJa : entry.title;
     const description = locale === "ja" ? entry.descriptionJa : entry.description;
@@ -321,6 +415,7 @@ export function RepositoryBrowser({
           <span>{locale === "ja" ? entry.categoryLabelJa : entry.categoryLabel}</span>
           <span>{familyLabel(entry.algorithmFamily, locale)}</span>
           {qubits ? <span className="mj-repo-card-qubits">{qubits} q</span> : null}
+          {renderCostChip(entry.slug)}
           <time dateTime={entry.updatedAt}>{entry.updatedAt}</time>
         </div>
         <h3><a href={`/repository/${entry.slug}`}>{title}</a></h3>
@@ -385,7 +480,7 @@ export function RepositoryBrowser({
   const algorithmGroups = useMemo(() => {
     if (category !== "algorithms") return [];
     const byFamily = new Map<string, PublicRepositoryListEntry[]>();
-    for (const entry of filteredEntries) {
+    for (const entry of ordered) {
       const list = byFamily.get(entry.algorithmFamily) ?? [];
       list.push(entry);
       byFamily.set(entry.algorithmFamily, list);
@@ -396,8 +491,8 @@ export function RepositoryBrowser({
   }, [category, filteredEntries]);
 
   const listRows = useMemo(
-    () => (category === "gates" || category === "algorithms" ? [] : foldVariants(filteredEntries)),
-    [category, filteredEntries],
+    () => (category === "gates" || category === "algorithms" ? [] : foldVariants(ordered)),
+    [category, ordered],
   );
 
   // Fall back to the first gate so the detail pane is populated on the very
@@ -432,7 +527,28 @@ export function RepositoryBrowser({
             {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>
+        {canOrderByCost ? (
+          <label>
+            <span>{copy.sort}</span>
+            <select value={order} onChange={(event) => setOrder(event.target.value as CostOrder)}>
+              <option value="catalog">{copy.sortDefault}</option>
+              <option value="cost-asc">{copy.sortCost}</option>
+              <option value="cost-desc">{copy.sortCostDesc}</option>
+            </select>
+          </label>
+        ) : null}
       </div>
+
+      {/* The assumption set is stated wherever the ordering it justifies is
+          offered — not tucked into a detail page. An ordered list whose basis
+          for ordering is somewhere else is the failure mode this whole feature
+          exists to avoid. */}
+      {canOrderByCost && order !== "catalog" && estimates ? (
+        <p className="mj-repository-cost-basis">
+          <span>{copy.costUnder}</span> <code>{estimates.assumptions.identity}</code>
+          <span className="mj-repository-cost-basis-note">{copy.costUnderNote}</span>
+        </p>
+      ) : null}
 
       <div className="mj-repository-category-nav" aria-label={locale === "ja" ? "カテゴリ" : "Categories"}>
         {PUBLIC_REPOSITORY_CATEGORIES.map((option) => (
@@ -547,6 +663,18 @@ export function RepositoryBrowser({
       ) : (
         <div className="mj-repo-list">{listRows.map((row) => renderRow(row))}</div>
       )}
+
+      {/* Entries the ordering had to leave out, kept visible and kept out of
+          the ranking. An unknown cost is not a low cost, and a list that
+          silently dropped these would read as though the catalog were smaller
+          than it is. */}
+      {unranked.length ? (
+        <section className="mj-repository-unranked">
+          <h3>{copy.unrankedTitle} <span>{unranked.length}</span></h3>
+          <p>{copy.unrankedBody}</p>
+          <div className="mj-repo-list">{unranked.map((entry) => <Fragment key={entry.slug}>{renderRepoCard(entry)}</Fragment>)}</div>
+        </section>
+      ) : null}
     </div>
   );
 }
