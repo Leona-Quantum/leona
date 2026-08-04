@@ -152,6 +152,10 @@ class AssumptionSet:
                 # and log2(1/eps) <= 0 would hand back a zero or negative T-count
                 # for a rotation that certainly costs something.
                 raise ValueError("rotation_synthesis_epsilon must lie in (0, 1)")
+        # NaN fails every comparison and inf passes `> 0`, so both would survive
+        # the positivity check below and surface much later as a ValueError or
+        # OverflowError out of `math.ceil` in `t_per_rotation`.
+        require_finite(self.rotation_t_coefficient, "rotation_t_coefficient")
         if self.rotation_t_coefficient <= 0:
             raise ValueError("rotation_t_coefficient must be positive")
 

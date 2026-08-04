@@ -15,7 +15,7 @@ from majorana_openqasm import (
     portable_circuit_cost,
 )
 from majorana_openqasm.non_clifford import non_clifford_cost as cost_of_circuit
-from qiskit import QuantumCircuit
+from qiskit import QuantumCircuit, QuantumRegister
 from qiskit.circuit import Parameter
 
 
@@ -108,8 +108,8 @@ def test_an_unrecognised_operation_poisons_the_whole_cost_and_is_named():
 
 
 def test_depth_is_the_serial_chain_not_the_total_count():
-    """Four T gates on four separate qubits are simultaneous, not sequential.
-    Reporting 4 here would inflate the reaction-limited runtime fourfold."""
+    """Three T gates on three separate qubits are simultaneous, not sequential.
+    Reporting 3 here would inflate the reaction-limited runtime threefold."""
     parallel = non_clifford_cost(_qasm("t q[0];\nt q[1];\nt q[2];\n", qubits=3))
     serial = non_clifford_cost(_qasm("t q[0];\nt q[0];\nt q[0];\n", qubits=3))
 
@@ -173,7 +173,7 @@ def test_the_width_is_ancilla_inclusive():
     """LogicalCost.logical_qubits is documented as including ancillas; the
     register width alone would understate the patch count the estimator lays out."""
     circuit = QuantumCircuit(2)
-    circuit.add_register(__import__("qiskit").QuantumRegister(3, "anc"))
+    circuit.add_register(QuantumRegister(3, "anc"))
     circuit.t(0)
 
     assert cost_of_circuit(circuit).logical_qubits == 5
@@ -299,3 +299,42 @@ def test_a_synthesis_convention_cannot_rescue_an_unnamed_operation():
 
     with pytest.raises(InexactCostError):
         cost_of_circuit(circuit).logical_cost(t_per_rotation=50)
+
+
+# --- Review findings from #248, each pinned by the case that exposed it -------
+
+
+def test_a_circuit_of_arbitrary_rotations_is_not_reported_as_clifford_only():
+    """`is_clifford_only` once read the two counts alone. A single rz(0.3) has
+    both at zero while costing an unknown number of magic states, so a caller
+    rendering "no magic states" from it called an unknown circuit free."""
+    cost = portable_circuit_cost(
+        {"qubitCount": 1, "steps": [{"gate": "RZ", "qubits": [0], "param": "0.3"}]}
+    )
+
+    assert cost.t_count == 0 and cost.toffoli_count == 0
+    assert cost.synthesis_required == 1
+    assert not cost.is_clifford_only
+    assert not cost.exact
+
+
+def test_a_genuinely_clifford_circuit_is_still_reported_as_one():
+    cost = portable_circuit_cost(
+        {"qubitCount": 2, "steps": [{"gate": "H", "qubits": [0]}, {"gate": "CX", "qubits": [0, 1]}]}
+    )
+
+    assert cost.is_clifford_only
+    assert cost.exact
+
+
+@pytest.mark.parametrize("param", ["nan", "inf", "-inf", float("nan"), float("inf")])
+def test_a_non_finite_angle_is_no_angle_rather_than_a_crash(param):
+    """float() accepts "nan"/"inf". Left through, they reach round() in the
+    classifier and raise ValueError/OverflowError — not the InexactCostError a
+    caller is prepared for."""
+    cost = portable_circuit_cost(
+        {"qubitCount": 1, "steps": [{"gate": "RZ", "qubits": [0], "param": param}]}
+    )
+
+    assert cost.synthesis_required == 1
+    assert not cost.exact

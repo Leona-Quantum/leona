@@ -356,3 +356,11 @@ def test_a_precision_outside_the_unit_interval_is_refused(epsilon):
     or negative T-count for a rotation that certainly costs something."""
     with pytest.raises(ValueError):
         dataclasses.replace(GIDNEY_2025, version=2, rotation_synthesis_epsilon=epsilon)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_a_non_finite_rotation_coefficient_is_refused_at_construction(bad):
+    """NaN fails every comparison and inf passes `> 0`, so both survive a bare
+    positivity check and surface later out of math.ceil in t_per_rotation."""
+    with pytest.raises(ValueError):
+        dataclasses.replace(GIDNEY_2025, version=2, rotation_t_coefficient=bad)

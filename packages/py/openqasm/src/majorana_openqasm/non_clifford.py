@@ -107,7 +107,16 @@ class NonCliffordCost:
 
     @property
     def is_clifford_only(self) -> bool:
-        return self.t_count == 0 and self.toffoli_count == 0
+        """No magic states, and that is *known* rather than merely uncounted.
+
+        `exact` is load-bearing here. A circuit of one `rz(0.3)` has
+        `t_count == 0` and `toffoli_count == 0` while costing an unknown number
+        of magic states, so a count-only predicate would call it Clifford-only —
+        and a caller rendering "no magic states" from that reads a circuit with
+        an unknown cost as free. That is precisely the defect this module exists
+        to prevent, one layer up from where it was being prevented.
+        """
+        return self.exact and self.t_count == 0 and self.toffoli_count == 0
 
     def why_not_exact(self) -> str:
         """The sentence a UI shows instead of a number. Empty when exact."""
@@ -188,9 +197,15 @@ def _angle(param: object) -> float | None:
     circuit has no T-count until it is bound.
     """
     try:
-        return float(param)  # type: ignore[arg-type]
+        value = float(param)  # type: ignore[arg-type]
     except (TypeError, ValueError):
         pass
+    else:
+        # float() accepts "nan", "inf" and "-inf". A non-finite angle is not a
+        # very large angle — it is not an angle, and letting it through reaches
+        # `round()` in the classifier, which raises ValueError/OverflowError
+        # rather than the InexactCostError a caller is prepared to handle.
+        return value if math.isfinite(value) else None
     if not isinstance(param, str):
         return None
     match = _ANGLE_RE.match(param)
