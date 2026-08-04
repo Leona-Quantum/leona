@@ -590,6 +590,53 @@ async def test_import_provenance_surfaces_the_manifest_identity(env):
 
 
 @requires_db
+@pytest.mark.parametrize("imported_first", [True, False])
+async def test_an_imported_identity_wins_over_an_artifact_merely_named_like_it(env, imported_first):
+    """`coalesce(upstream_identity, slug)` is not unique, so the detail route can
+    match two rows: the record that carries the identity, and an unimported
+    artifact whose slug happens to equal it. `.first()` alone would pick one
+    arbitrarily — and possibly a different one per request.
+
+    The imported record must win. It is the one the listing shows under that
+    slug, and a detail page that disagrees with the listing it was reached from
+    is the confusing kind of wrong.
+
+    **Both creation orders are exercised deliberately.** With one order this test
+    passes against an unordered query purely by luck of the scan — which is what
+    a test asserting "the right row came back" is worth when nothing made it come
+    back. Creating the rival first in one case and second in the other means an
+    unordered query has to be wrong in at least one of them.
+    """
+    configured, reviewer_id, factory = env
+    contested = f"contested-{uuid.uuid4()}"
+
+    async def _make_rival():
+        # An artifact whose *slug* is the contested name, carrying no identity.
+        await _publish_new_entry(factory, configured, reviewer_id, slug=contested)
+
+    async def _make_owner():
+        artifact_id = await _publish_new_entry(
+            factory, configured, reviewer_id, slug=f"internal-{uuid.uuid4()}"
+        )
+        await _attach_import_item(
+            factory,
+            artifact_id=artifact_id,
+            manifest_identity=contested,
+            upstream_ref="commit-owning-the-identity",
+        )
+
+    for make in (_make_owner, _make_rival) if imported_first else (_make_rival, _make_owner):
+        await make()
+
+    async with factory() as session:
+        entry = await catalog.get_public_catalog_entry(
+            configured.public_scope(), session, contested, authority=configured
+        )
+    assert entry.slug == contested
+    assert entry.provenance.upstream_ref == "commit-owning-the-identity"
+
+
+@requires_db
 async def test_a_second_import_of_the_same_record_does_not_multiply_public_rows(env):
     """Re-importing a record must not make the listing disagree with its total.
 

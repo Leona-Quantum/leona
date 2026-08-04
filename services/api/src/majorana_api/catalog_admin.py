@@ -224,6 +224,12 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
 
         # One ledger entry for the run itself, so the corpus-level act is
         # auditable without reassembling 283 per-record rows.
+        #
+        # It must describe what this run actually did, not what it set out to do.
+        # Recording len(plan.included) here would claim the whole corpus was
+        # attested even when records were refused — and this row commits before
+        # the refusal exits, so that claim would be the durable one while the
+        # accurate number existed only in a terminal nobody kept.
         async with factory() as session:
             await catalog.record_bulk_attestation(
                 reviewer_scope,
@@ -232,8 +238,12 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
                 meta={
                     **attestation_meta,
                     "manifest_checksum": source.manifest_checksum,
-                    "attested_count": len(plan.included),
+                    "attested_count": len(plan.included) - len(refused),
+                    "carried_forward_count": carried,
                     "excluded": {r.upstream_identity: r.reason for r in plan.excluded},
+                    # Named, not counted: "3 records were refused" sends whoever
+                    # reads this back to the import to work out which three.
+                    "refused_provenance_claim_changed": sorted(refused),
                 },
             )
             await session.commit()

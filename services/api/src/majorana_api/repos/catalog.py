@@ -1191,21 +1191,40 @@ async def get_public_catalog_entry(
     Built through _from_public_catalog for the same reason the listing is: a
     detail route that can resolve a slug the listing does not show — or that
     stops resolving one the listing does — is a 404 nobody can explain.
+
+    The match is on `coalesce(upstream_identity, slug)`, and **nothing enforces
+    that expression as unique.** The partial unique index covers
+    `upstream_identity` alone, so an imported record holding identity "x" and an
+    unimported artifact whose `slug` is literally "x" both answer to /x. A bare
+    `.first()` over that would pick one arbitrarily and could pick a different
+    one on the next request.
+
+    So the ordering below is load bearing, not decoration: an artifact that
+    genuinely carries the identity is preferred over one that merely happens to
+    be named like it, and `slug` breaks any remaining tie so the choice is at
+    least stable. This is a narrowing of the ambiguity, not a fix for it — the
+    real fix is a unique constraint over the coalesced expression, which cannot
+    be written while `slug` is only globally unique and `upstream_identity` is
+    unique per workspace.
     """
     workspace = await get_catalog_workspace(scope, session, authority=authority)
-    stmt = _from_public_catalog(
-        select(
-            Artifact.slug,
-            Artifact.execution_state,
-            Artifact.updated_at,
-            ArtifactVersion.code,
-            ArtifactVersion.source_blob_sha256,
-            Artifact.upstream_identity,
-            _latest_import_job_column(ImportJob.provider).label("provider"),
-            _latest_import_job_column(ImportJob.upstream_ref).label("upstream_ref"),
-        ),
-        workspace.id,
-    ).where(func.coalesce(Artifact.upstream_identity, Artifact.slug) == slug)
+    stmt = (
+        _from_public_catalog(
+            select(
+                Artifact.slug,
+                Artifact.execution_state,
+                Artifact.updated_at,
+                ArtifactVersion.code,
+                ArtifactVersion.source_blob_sha256,
+                Artifact.upstream_identity,
+                _latest_import_job_column(ImportJob.provider).label("provider"),
+                _latest_import_job_column(ImportJob.upstream_ref).label("upstream_ref"),
+            ),
+            workspace.id,
+        )
+        .where(func.coalesce(Artifact.upstream_identity, Artifact.slug) == slug)
+        .order_by(Artifact.upstream_identity.is_(None), Artifact.slug)
+    )
     row = (await session.execute(stmt)).first()
     if row is None:
         raise NotFoundError("catalog entry")

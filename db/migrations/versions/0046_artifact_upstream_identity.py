@@ -148,8 +148,10 @@ _BACKFILL = sa.text(
     """
 )
 
+_DUPLICATE_SAMPLE_SIZE = 20
+
 _DUPLICATES = sa.text(
-    """
+    f"""
     SELECT workspace_id, upstream_identity, count(*) AS n
       FROM artifacts
      WHERE upstream_identity IS NOT NULL
@@ -157,7 +159,23 @@ _DUPLICATES = sa.text(
      GROUP BY workspace_id, upstream_identity
     HAVING count(*) > 1
      ORDER BY n DESC, upstream_identity
-     LIMIT 20
+     LIMIT {_DUPLICATE_SAMPLE_SIZE}
+    """
+)
+
+# The sample above is bounded so the error stays readable; the total is counted
+# separately so the message cannot understate the cleanup. A capped list read as
+# a total is how an operator plans a 20-record fix for a 200-record problem.
+_DUPLICATE_TOTAL = sa.text(
+    """
+    SELECT count(*) FROM (
+           SELECT 1
+             FROM artifacts
+            WHERE upstream_identity IS NOT NULL
+              AND deleted_at IS NULL
+            GROUP BY workspace_id, upstream_identity
+           HAVING count(*) > 1
+           ) AS clashes
     """
 )
 
@@ -169,14 +187,17 @@ def upgrade() -> None:
     bind = op.get_bind()
     bind.execute(_BACKFILL)
 
-    clashes = bind.execute(_DUPLICATES).all()
-    if clashes:
+    total_clashes = int(bind.execute(_DUPLICATE_TOTAL).scalar_one())
+    if total_clashes:
+        sample = bind.execute(_DUPLICATES).all()
         detail = ", ".join(
-            f"{row.upstream_identity!r} x{row.n} in workspace {row.workspace_id}" for row in clashes
+            f"{row.upstream_identity!r} x{row.n} in workspace {row.workspace_id}" for row in sample
         )
+        if total_clashes > len(sample):
+            detail += f", and {total_clashes - len(sample)} more"
         raise RuntimeError(
             "cannot make upstream_identity unique: "
-            f"{len(clashes)} identity/workspace pairs are claimed by more than one artifact "
+            f"{total_clashes} identity/workspace pairs are claimed by more than one artifact "
             f"({detail}). The public catalog is already serving these records under one slug; "
             "decide which artifact keeps the identity before migrating."
         )
