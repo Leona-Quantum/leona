@@ -85,9 +85,9 @@ async def test_a_followup_case_reaches_the_router_as_conversation_history():
     assert report.correct == 1
     assert [message.model_dump() for message in llm.request.messages] == [
         {"role": "user", "content": "Partition six suppliers, weights A-B 5, A-C 2."},
-        {"role": "assistant", "content": "That is a weighted MaxCut over six nodes."},
         {"role": "user", "content": "User message:\nBuild it now."},
     ]
+    assert "weighted MaxCut" not in llm.request.user
 
 
 async def test_a_standalone_case_still_reaches_the_router_with_no_history():

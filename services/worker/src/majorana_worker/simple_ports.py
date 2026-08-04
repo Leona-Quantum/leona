@@ -92,6 +92,7 @@ from majorana_llm import (
     LLMRequest,
     SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT,
     SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
+    SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT,
     SIMPLE_DYNAMICS_REFERENCE_AUDIT_SYSTEM_PROMPT,
     SIMPLE_LINDBLAD_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_LINEAR_SYSTEM_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
@@ -122,6 +123,52 @@ log = logging.getLogger("majorana_worker.simple_ports")
 # unaffected: every candidate is stored as its own immutable revision, and the
 # durable LLM-call inbox replays the recorded response rather than re-sampling.
 _REPAIR_TEMPERATURE = 0.4
+
+
+def _prior_user_requests(
+    conversation_messages: Sequence[Mapping[str, str]],
+) -> list[str]:
+    """Return the authoritative side of prior conversation turns.
+
+    The role-preserving history remains on the provider request so the model can
+    understand the conversation.  This second, structured view exists for a
+    different reason: execution stages end in a large JSON user message, and a
+    short referential instruction such as ``build it`` can otherwise be much
+    more salient there than the concrete task several messages earlier.
+
+    Only user text is copied.  Assistant explanations can help the model follow
+    the dialogue, but they are not allowed to become missing instance data or a
+    changed requirement merely because they are repeated near the current task.
+    Production history is already bounded by the repository before it reaches
+    this adapter; preserving every supplied user turn also lets the model decide
+    whether the current request continues or replaces an older task.
+    """
+
+    return [
+        content.strip()
+        for message in conversation_messages
+        if message.get("role") == "user"
+        and isinstance((content := message.get("content")), str)
+        and content.strip()
+    ]
+
+
+def _conversation_context_payload(
+    prior_user_requests: Sequence[str],
+    *,
+    proposed_plan_summary: str | None = None,
+    current_request: str | None = None,
+) -> dict[str, object]:
+    """Add explicit grounding only when a request actually has prior user turns."""
+
+    if not prior_user_requests:
+        return {}
+    payload: dict[str, object] = {"prior_user_requests": list(prior_user_requests)}
+    if proposed_plan_summary is not None:
+        payload["proposed_plan_summary"] = proposed_plan_summary
+    if current_request is not None:
+        payload["current_request"] = current_request
+    return payload
 
 
 class SimpleStepObserver(Protocol):
@@ -419,6 +466,82 @@ class _IntentReviewOutput(BaseModel):
         return normalized
 
 
+class _ConversationPlanAlignmentChecks(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+
+    objective: bool
+    instance_data: bool
+    constraints: bool
+    scale: bool
+    requested_algorithm_or_framework: bool = Field(
+        description=(
+            "True when every explicitly requested algorithm/framework is preserved, or "
+            "when the user did not constrain that choice; false only for contradiction "
+            "of an explicit user choice"
+        )
+    )
+    requested_outputs: bool
+
+    @property
+    def all_preserved(self) -> bool:
+        return all(self.model_dump().values())
+
+
+class _ConversationPlanAlignmentOutput(BaseModel):
+    """Independent request reconstruction and pre-generation Plan gate."""
+
+    model_config = ConfigDict(extra="forbid")
+
+    ready_for_execution: bool = Field(
+        description=(
+            "Whether authoritative user text supplies the answer-determining task data; "
+            "independent of Plan quality and not contingent on user-supplied quantum design"
+        )
+    )
+    authoritative_task_summary: str = Field(min_length=1, max_length=2_000)
+    missing_inputs: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Missing user problem data only, never Plan defects or design choices",
+    )
+    request_alignment: _ConversationPlanAlignmentChecks
+    mismatches: list[str] = Field(default_factory=list, max_length=8)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_bounded_text(cls, value: Any) -> Any:
+        if not isinstance(value, dict):
+            return value
+        normalized = dict(value)
+        summary = normalized.get("authoritative_task_summary")
+        if isinstance(summary, str):
+            normalized["authoritative_task_summary"] = summary.strip()[:2_000]
+        for name in ("missing_inputs", "mismatches"):
+            entries = normalized.get(name)
+            if isinstance(entries, list):
+                normalized[name] = [
+                    item.strip()[:1_000] if isinstance(item, str) else item for item in entries[:8]
+                ]
+        return normalized
+
+    @model_validator(mode="after")
+    def _validate_decision_evidence(self) -> _ConversationPlanAlignmentOutput:
+        if not self.ready_for_execution:
+            if not self.missing_inputs:
+                raise ValueError("an input-incomplete request must name missing inputs")
+        elif self.missing_inputs:
+            raise ValueError("an execution-ready request cannot retain missing inputs")
+        if (
+            self.ready_for_execution
+            and not self.request_alignment.all_preserved
+            and not self.mismatches
+        ):
+            raise ValueError("a rejected Plan must name at least one mismatch")
+        if self.ready_for_execution and self.request_alignment.all_preserved and self.mismatches:
+            raise ValueError("an accepted Plan cannot retain mismatches")
+        return self
+
+
 class _ArtifactIntentReviewOutput(_IntentReviewOutput):
     """Static-only fields are schema-required only when execution was not run."""
 
@@ -474,6 +597,7 @@ class SimpleIntentReviewer:
         self._llm = llm
         self._task_prompt = task_prompt
         self._conversation_messages = tuple(conversation_messages)
+        self._prior_user_requests = _prior_user_requests(self._conversation_messages)
 
     async def review(
         self,
@@ -488,6 +612,10 @@ class SimpleIntentReviewer:
         user = json.dumps(
             {
                 "request": self._task_prompt,
+                **_conversation_context_payload(
+                    self._prior_user_requests,
+                    proposed_plan_summary=plan.problem_summary,
+                ),
                 "review_attempt": attempt,
                 "plan": plan.model_dump(mode="json"),
                 "candidate": {
@@ -510,7 +638,13 @@ class SimpleIntentReviewer:
                     ),
                 },
                 "basic_checks": basic_checks,
-                "known_reference": known_reference_for_task(self._task_prompt),
+                "known_reference": known_reference_for_task(
+                    (
+                        f"{self._task_prompt}\n{plan.problem_summary}"
+                        if self._prior_user_requests
+                        else self._task_prompt
+                    )
+                ),
             },
             default=str,
             sort_keys=True,
@@ -2762,6 +2896,7 @@ class ProductionSimplePipelinePorts:
         self._saver = saver
         self._task_prompt = task_prompt
         self._conversation_messages = tuple(conversation_messages)
+        self._prior_user_requests = _prior_user_requests(self._conversation_messages)
         self._framework = framework
         self._requested_shots = (
             min(requested_shots, 20_000)
@@ -2791,6 +2926,10 @@ class ProductionSimplePipelinePorts:
         user_text = json.dumps(
             {
                 "request": self._task_prompt,
+                **_conversation_context_payload(
+                    self._prior_user_requests,
+                    proposed_plan_summary=plan.problem_summary,
+                ),
                 "primary_metric": plan.success_criteria.primary_metric,
             },
             sort_keys=True,
@@ -2899,6 +3038,10 @@ class ProductionSimplePipelinePorts:
         request_payload = json.dumps(
             {
                 "request": self._task_prompt,
+                **_conversation_context_payload(
+                    self._prior_user_requests,
+                    proposed_plan_summary=plan.problem_summary,
+                ),
                 "expected_output_keys": plan.expected_output_keys,
                 "primary_metric": plan.success_criteria.primary_metric,
             },
@@ -3120,6 +3263,10 @@ class ProductionSimplePipelinePorts:
         request_payload = json.dumps(
             {
                 "request": self._task_prompt,
+                **_conversation_context_payload(
+                    self._prior_user_requests,
+                    proposed_plan_summary=plan.problem_summary,
+                ),
                 "expected_output_keys": plan.expected_output_keys,
                 "primary_metric": plan.success_criteria.primary_metric,
             },
@@ -3371,6 +3518,10 @@ class ProductionSimplePipelinePorts:
         user_text = json.dumps(
             {
                 "request": self._task_prompt,
+                **_conversation_context_payload(
+                    self._prior_user_requests,
+                    proposed_plan_summary=plan.problem_summary,
+                ),
                 "success_criteria": plan.success_criteria.model_dump(mode="json"),
                 "exact_dynamics_reference": reference.model_dump(mode="json"),
             },
@@ -3486,6 +3637,92 @@ class ProductionSimplePipelinePorts:
             )
         )
 
+    async def _audit_conversation_plan(self, plan: Plan) -> SimplePortResult[Plan]:
+        """Reject an input-incomplete or conversation-divergent Plan before generation.
+
+        The broad planner and the later reviewer both receive the Plan as a large,
+        self-consistent object. That can anchor either model on an unrelated fallback
+        circuit. This deliberately narrow call reconstructs the task from user text
+        first and treats the Plan only as the proposal being audited.
+        """
+
+        if not self._prior_user_requests:
+            return SimplePortResult.success(plan)
+
+        user_text = json.dumps(
+            {
+                "prior_user_requests": list(self._prior_user_requests),
+                "current_request": self._task_prompt,
+                "proposed_plan": plan.model_dump(mode="json"),
+            },
+            sort_keys=True,
+        )
+        try:
+            response = await self._llm.complete(
+                LLMRequest(
+                    # This is semantic request reconstruction, not a cheap keyword
+                    # classification. Use the substantive planning tier so a compact
+                    # follow-up can be resolved across technical or multilingual input.
+                    model=model_for("plan"),
+                    system=SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT,
+                    user=user_text,
+                    temperature=0.0,
+                    response_schema=_ConversationPlanAlignmentOutput.model_json_schema(),
+                    schema_name="conversation_plan_alignment",
+                )
+            )
+            audit = _ConversationPlanAlignmentOutput.model_validate_json(
+                extract_json(response.text)
+            )
+        except (StageOutputError, ValidationError) as exc:
+            return _failure(
+                kind=SimpleFailureKind.MODEL_OUTPUT,
+                stage=SimplePipelineStage.PLANNING,
+                code="conversation_plan_alignment_invalid",
+                message="conversation-to-Plan audit returned invalid structured data",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                exception=exc,
+                details=_model_output_details(exc),
+            )
+        except Exception as exc:
+            return _provider_failure(
+                stage=SimplePipelineStage.PLANNING,
+                role="conversation_plan_alignment",
+                exception=exc,
+            )
+
+        audit_details = {
+            "authoritative_task_summary": audit.authoritative_task_summary,
+            "missing_inputs": audit.missing_inputs,
+            # When inputs are incomplete, missing_inputs is the only actionable
+            # diagnosis. Discard proposal commentary so a model's self-corrected
+            # non-mismatch cannot confuse the user or a later repair controller.
+            "mismatches": audit.mismatches if audit.ready_for_execution else [],
+        }
+        if not audit.ready_for_execution:
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="conversation_inputs_missing",
+                message=(
+                    "the referenced request still needs task-specific inputs before "
+                    "a circuit can be generated"
+                ),
+                details=audit_details,
+            )
+        if not audit.request_alignment.all_preserved:
+            return _failure(
+                kind=SimpleFailureKind.PLAN,
+                stage=SimplePipelineStage.PLANNING,
+                code="conversation_plan_misaligned",
+                message="the proposed Plan does not implement the conversational request",
+                retryable=True,
+                retry_target=SimpleRetryTarget.PLANNING,
+                details=audit_details,
+            )
+        return SimplePortResult.success(plan)
+
     async def plan(
         self,
         run_id: UUID,
@@ -3533,6 +3770,7 @@ class ProductionSimplePipelinePorts:
         schema = SimplePlan.model_json_schema()
         user = {
             "task": self._task_prompt,
+            **_conversation_context_payload(self._prior_user_requests),
             "selected_framework": self._framework.value,
             "requested_shots": self._requested_shots,
             "requested_seed": self._requested_seed,
@@ -3569,7 +3807,11 @@ class ProductionSimplePipelinePorts:
                     requested_shots=self._requested_shots,
                     requested_seed=self._requested_seed,
                 ),
-                self._task_prompt,
+                (
+                    f"{self._task_prompt}\n{draft.problem_summary}"
+                    if self._prior_user_requests
+                    else self._task_prompt
+                ),
             )
         except (StageOutputError, ValidationError) as exc:
             return _failure(
@@ -3588,6 +3830,12 @@ class ProductionSimplePipelinePorts:
                 role="plan",
                 exception=exc,
             )
+
+        aligned = await self._audit_conversation_plan(plan)
+        if aligned.failure is not None:
+            return SimplePortResult.failed(aligned.failure)
+        assert aligned.value is not None
+        plan = aligned.value
 
         reconciled = _reconcile_exact_diag_success_criteria(plan)
         if reconciled.failure is not None:
@@ -3721,7 +3969,19 @@ class ProductionSimplePipelinePorts:
             source = self._initial_source
         else:
             user = {
-                "task": self._task_prompt,
+                # The Plan is the canonical, self-contained handoff after the
+                # planner resolves a referential conversation turn.  Keep the
+                # literal current request separately for override/cancellation
+                # semantics, rather than asking the generator to treat "build
+                # it" as the complete task and inviting a canonical fallback.
+                "task": (
+                    plan.plan.problem_summary if self._prior_user_requests else self._task_prompt
+                ),
+                **_conversation_context_payload(
+                    self._prior_user_requests,
+                    proposed_plan_summary=plan.plan.problem_summary,
+                    current_request=self._task_prompt,
+                ),
                 "selected_framework": self._framework.value,
                 "plan": plan.plan.model_dump(mode="json"),
                 # CandidateRevision already enforces the source-size ceiling. Repairs
@@ -3730,7 +3990,13 @@ class ProductionSimplePipelinePorts:
                 "previous_source": previous.source if previous else None,
                 "previous_execution": await self._previous_execution(run_id, previous),
                 "repair_feedback": asdict(feedback) if feedback else None,
-                "known_reference": known_reference_for_task(self._task_prompt),
+                "known_reference": known_reference_for_task(
+                    (
+                        f"{self._task_prompt}\n{plan.plan.problem_summary}"
+                        if self._prior_user_requests
+                        else self._task_prompt
+                    )
+                ),
             }
             user_text = json.dumps(user, default=str, sort_keys=True)
             try:

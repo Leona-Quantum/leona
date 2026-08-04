@@ -117,7 +117,15 @@ async def resolve_mode(
         return ModeDecision(requested, requested, "passthrough", "mode explicitly selected")
 
     rendered = render_intent_prompt(prompt)
-    messages = conversation_request_messages(conversation_messages, rendered.user)
+    # Routing decides whether USER-SUPPLIED task data is complete. Assistant prose
+    # can explain or propose a formulation, but it cannot fill an omitted instance
+    # or turn that proposal into authorization to execute. Enforce the prompt's
+    # trust boundary structurally instead of relying on the classifier to ignore a
+    # confident assistant message.
+    authoritative_history = [
+        message for message in conversation_messages if message.get("role") == "user"
+    ]
+    messages = conversation_request_messages(authoritative_history, rendered.user)
     try:
         # Bounded on purpose. This call is now on the path of every auto message
         # — which is every message the composer sends by default — and it is the
