@@ -24,6 +24,7 @@ from majorana_estimation import GIDNEY_2025
 from majorana_api.catalog_estimate import (
     DEFAULT_ROTATION_SYNTHESIS_EPSILON,
     UnknownAssumptionSet,
+    _summarize_assumptions,
     estimate_for_record,
     resolve_assumptions,
 )
@@ -281,3 +282,34 @@ def test_a_rotation_circuit_still_refuses_when_no_precision_is_stated():
 
     assert result.basis is ResourceEstimateBasis.REFUSED
     assert "rotation_synthesis_epsilon" in result.reason
+
+
+def test_the_unsourced_values_are_disclosed_in_the_citation_the_page_renders():
+    """Test where the property is consumed, not where it is written.
+
+    `AssumptionSet.citation` composes the disclosure, but the route never hands
+    the page a raw built-in set: it always applies a precision first, and the
+    panel reads the DTO rather than the dataclass. So the two places this could
+    come undone one layer below itself are `with_rotation_precision`, which
+    rebuilds the frozen set, and `_summarize_assumptions`, which copies fields
+    across by hand. Both are exercised here.
+
+    Three of `gidney-2025`'s nine values are working allowances rather than
+    paper values. The string on `/repository` used to say the source stated its
+    assumptions in one place, so a visitor read a citation claiming more
+    sourcing than the set had.
+    """
+    resolved = resolve_assumptions(None, 1e-6)
+    summary = _summarize_assumptions(resolved)
+
+    assert resolved.working_allowances == (
+        "routing_factor",
+        "factory_footprint_logical",
+        "t_per_toffoli",
+    )
+    for allowance in resolved.working_allowances:
+        assert allowance in summary.citation, f"{allowance} never reaches the page"
+    assert "working allowances" in summary.citation
+    # The precision must still be in the identity: the disclosure is additional
+    # to that refusal machinery, not a replacement for it.
+    assert summary.identity == "gidney-2025@v1+eps=1e-06"

@@ -13,7 +13,7 @@ than having none, because it makes an incomparable estimate look comparable.
 from __future__ import annotations
 
 import math
-from dataclasses import dataclass, replace
+from dataclasses import dataclass, fields, replace
 
 
 def require_count(value: object, name: str, *, minimum: int) -> int:
@@ -55,7 +55,13 @@ class AssumptionSet:
 
     name: str
     version: int
-    citation: str
+    source_citation: str
+    """What the source says. **Not what a reader sees** — read `citation`.
+
+    Kept separate from the rendered string because a set is allowed to contain
+    values its source does not state, and the disclosure of which ones must not
+    be optional prose that a later edit can drop.
+    """
 
     # --- Layer 2, code distance -------------------------------------------
     physical_error_rate: float
@@ -108,6 +114,22 @@ class AssumptionSet:
     constant that quietly moves an estimate by tens of percent.
     """
 
+    working_allowances: tuple[str, ...] = ()
+    """Fields in this set that the source does **not** state.
+
+    The module docstring says every field must come from a published set that
+    states it. `gidney-2025` does not meet that bar and never did: three of its
+    values are common working allowances rather than paper values. That was
+    recorded only in a docstring — while the string rendered on the public page
+    said the source "states its assumptions in one place". A visitor saw a
+    citation implying nine sourced numbers where six were.
+
+    Naming them here makes the disclosure structural rather than prose:
+    `citation` cannot render without it, `__post_init__` refuses a name that is
+    not a real field of this class, and a test pins that every name reaches the
+    rendered string.
+    """
+
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("an assumption set must be named")
@@ -158,6 +180,40 @@ class AssumptionSet:
         require_finite(self.rotation_t_coefficient, "rotation_t_coefficient")
         if self.rotation_t_coefficient <= 0:
             raise ValueError("rotation_t_coefficient must be positive")
+        if not self.source_citation:
+            raise ValueError("an assumption set must cite its source")
+        # A misspelled allowance would disclose nothing while looking like a
+        # disclosure — the exact failure this field exists to end. Names are
+        # checked against the real fields, so `factory_footprint` (no `_logical`)
+        # raises here instead of quietly dropping out of the rendered citation.
+        known = {f.name for f in fields(self)}
+        unknown = [name for name in self.working_allowances if name not in known]
+        if unknown:
+            raise ValueError(
+                f"working_allowances names no such field(s): {', '.join(sorted(unknown))}"
+            )
+        if len(set(self.working_allowances)) != len(self.working_allowances):
+            raise ValueError("working_allowances must not repeat a field")
+
+    @property
+    def citation(self) -> str:
+        """What a reader is shown — the source, plus what the source did not say.
+
+        This is the string the public estimate panel renders
+        (`apps/web/components/repository-estimate.tsx`), which is why the
+        disclosure is composed here rather than left to whoever writes the
+        `source_citation`. A caveat that lives only in a docstring is not a
+        caveat: nobody reading the page can see it.
+        """
+        if not self.working_allowances:
+            return self.source_citation
+        named = ", ".join(self.working_allowances)
+        subject = "value" if len(self.working_allowances) == 1 else "values"
+        return (
+            f"{self.source_citation} It does not state the {subject} "
+            f"{named} used here; those are common working allowances rather than "
+            "paper values, and are the first thing to attack if a number looks wrong."
+        )
 
     @property
     def identity(self) -> str:
@@ -256,11 +312,16 @@ class AssumptionSet:
 GIDNEY_2025 = AssumptionSet(
     name="gidney-2025",
     version=1,
-    citation=(
+    source_citation=(
         "Gidney, How to factor 2048 bit RSA integers with less than a million "
-        "noisy qubits (arXiv:2505.15917), which states its assumptions in one "
-        "place: square nearest-neighbour grid, uniform 0.1% gate error, 1 us "
-        "surface-code cycle, 10 us reaction time."
+        "noisy qubits (arXiv:2505.15917), which states its hardware assumptions "
+        "in one place: square nearest-neighbour grid, uniform 0.1% gate error, "
+        "1 us surface-code cycle, 10 us reaction time."
+    ),
+    working_allowances=(
+        "routing_factor",
+        "factory_footprint_logical",
+        "t_per_toffoli",
     ),
     physical_error_rate=1e-3,
     threshold=1e-2,
@@ -272,12 +333,13 @@ GIDNEY_2025 = AssumptionSet(
     factory_cycles_per_state=11,
     t_per_toffoli=4,
 )
-"""The only fully sourced set here.
+"""The only set here, and **not** a fully sourced one.
 
-`routing_factor`, `factory_footprint_logical` and `t_per_toffoli` are the three
-values the paper does not state as such; they are the common working allowances
-and are the first things to attack if a number looks wrong. See
-`plans/leona-resource-estimation.md` §7.
+Six of its nine values come from the paper. The three in `working_allowances`
+do not — they are the common working allowances and the first things to attack
+if a number looks wrong. That fact used to live in this docstring alone while
+the rendered citation said the source stated everything; it is now carried by
+`working_allowances` into the string the public page shows.
 """
 
 # A second, independently-sourced set (e.g. trapped-ion) belongs here and is
