@@ -17,6 +17,8 @@ from __future__ import annotations
 from dataclasses import dataclass
 from enum import Enum
 
+from .assumptions import require_count
+
 BABBUSH_QUADRATIC_ORACLE_OPERATION_BOUND = 68
 """Maximum oracle binary operations for a quadratic speedup to pay, in two weeks."""
 
@@ -50,7 +52,18 @@ class AdvantageVerdict:
 
     @property
     def may_be_ranked_beside_superpolynomial(self) -> bool:
-        return self.status is AdvantageStatus.ADVANTAGE_BEARING
+        """Only a superpolynomial speedup may be sorted beside Shor.
+
+        Note this is deliberately *narrower* than `ADVANTAGE_BEARING`. A
+        quadratic speedup whose oracle fits inside the 68-operation ceiling is
+        genuinely advantage-bearing — Babbush says so — but it is a different
+        and far more fragile claim, and flattening the two into one ordering is
+        exactly what the ledger exists to prevent.
+        """
+        return (
+            self.status is AdvantageStatus.ADVANTAGE_BEARING
+            and self.speedup is SpeedupClass.SUPERPOLYNOMIAL
+        )
 
 
 def assess_advantage(
@@ -71,6 +84,11 @@ def assess_advantage(
         )
 
     if speedup is SpeedupClass.QUADRATIC:
+        if oracle_binary_operations is not None:
+            # A negative count would slip under the ceiling and come back
+            # advantage-bearing, which is the one answer this must never give
+            # by accident.
+            require_count(oracle_binary_operations, "oracle_binary_operations", minimum=0)
         if oracle_binary_operations is None:
             return AdvantageVerdict(
                 status=AdvantageStatus.UNDETERMINED,

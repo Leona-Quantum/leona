@@ -187,13 +187,70 @@ def test_an_unstated_serial_depth_is_reported_rather_than_assumed():
 
 
 def test_a_clifford_only_circuit_needs_no_factory():
-    clifford = LogicalCost(logical_qubits=50, non_clifford_depth=1_000)
+    clifford = LogicalCost(logical_qubits=50)
 
     result = estimate(clifford, GIDNEY_2025)
 
     assert result.runtime.magic_states == 0
     assert result.footprint.factory_qubits == 0
-    assert result.runtime.binding_term == "reaction"
+    assert result.runtime.factory_count == 0
+
+
+def test_a_clifford_only_circuit_cannot_claim_a_non_clifford_depth():
+    # There is no non-Clifford chain to have a depth, and `_runtime` would
+    # otherwise charge a feed-forward reaction per layer for operations that
+    # never wait on a measurement.
+    with pytest.raises(ValueError, match="no non-Clifford dependency chain"):
+        LogicalCost(logical_qubits=50, non_clifford_depth=1_000)
+
+
+@pytest.mark.parametrize(
+    ("field", "value"),
+    [
+        ("logical_qubits", 2.5),
+        ("toffoli_count", 1.5),
+        ("non_clifford_depth", True),
+    ],
+)
+def test_a_discrete_count_refuses_a_float_or_a_bool(field, value):
+    # Annotations do not run. Without this, `t_per_toffoli=1.5` reaches the
+    # arithmetic and a fractional gate count reaches a reported qubit total.
+    with pytest.raises(TypeError, match="must be an int"):
+        LogicalCost(**{"logical_qubits": 10, field: value})
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf")])
+def test_an_assumption_set_refuses_a_non_finite_number(bad):
+    # NaN compares false against every bound below and reaches the arithmetic
+    # intact; inf makes the factory rate zero and divides by zero later.
+    with pytest.raises(ValueError, match="must be finite"):
+        AssumptionSet(
+            name="non-finite",
+            version=1,
+            citation="none",
+            physical_error_rate=1e-3,
+            threshold=1e-2,
+            logical_error_prefactor=0.1,
+            routing_factor=2.0,
+            factory_footprint_logical=15.0,
+            cycle_time_s=bad,
+            reaction_time_s=10e-6,
+            factory_cycles_per_state=11,
+            t_per_toffoli=4,
+        )
+
+
+def test_idle_patch_rounds_are_charged_in_cycles_not_layers():
+    """Layer 4 counts serial layers; Layer 2 counts patch-rounds. One layer is
+    `cycles_per_reaction` rounds, and conflating them understates the volume
+    tenfold under gidney-2025 — which moves `d`, and `d` squares."""
+    assert GIDNEY_2025.cycles_per_reaction == 10
+
+    choice = choose_code_distance(FEMOCO, GIDNEY_2025, target_failure_probability=0.01)
+
+    magic_states = 6_000_000_000 * 4
+    idle_rounds = 2_100 * 6_000_000_000 * 10
+    assert choice.logical_operations == magic_states + idle_rounds
 
 
 def test_a_target_no_distance_can_reach_raises_rather_than_returning_a_number():
@@ -239,3 +296,18 @@ def test_only_a_superpolynomial_speedup_ranks_beside_shor():
     ]
 
     assert ranked == [SpeedupClass.SUPERPOLYNOMIAL]
+
+
+def test_a_quadratic_speedup_inside_the_ceiling_still_does_not_rank_beside_shor():
+    # The case the sweep above misses, because it supplies no oracle size: a
+    # bounded oracle IS advantage-bearing, and is still a different and far more
+    # fragile claim than Shor. Flattening the two is what the ledger prevents.
+    verdict = assess_advantage(SpeedupClass.QUADRATIC, oracle_binary_operations=10)
+
+    assert verdict.status is AdvantageStatus.ADVANTAGE_BEARING
+    assert not verdict.may_be_ranked_beside_superpolynomial
+
+
+def test_a_negative_oracle_size_is_refused_rather_than_slipping_under_the_ceiling():
+    with pytest.raises(ValueError, match="oracle_binary_operations"):
+        assess_advantage(SpeedupClass.QUADRATIC, oracle_binary_operations=-1)

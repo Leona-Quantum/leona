@@ -12,7 +12,36 @@ than having none, because it makes an incomparable estimate look comparable.
 
 from __future__ import annotations
 
+import math
 from dataclasses import dataclass
+
+
+def require_count(value: object, name: str, *, minimum: int) -> int:
+    """A discrete resource count must be a real integer, not a float or a bool.
+
+    Type annotations do not run. Without this, `t_per_toffoli=1.5` yields
+    fractional magic states and `factory_count=True` silently means one factory
+    — both of which would flow all the way into a reported qubit count.
+    """
+    if isinstance(value, bool) or not isinstance(value, int):
+        raise TypeError(f"{name} must be an int, got {type(value).__name__}")
+    if value < minimum:
+        raise ValueError(f"{name} must be at least {minimum}")
+    return value
+
+
+def require_finite(value: float, name: str) -> float:
+    """NaN and infinity pass every comparison below, so exclude them first.
+
+    `cycle_time_s=inf` would make the factory rate zero and divide by zero
+    later; `routing_factor=inf` would blow up `math.ceil`. NaN is worse: it
+    compares false against everything and reaches the arithmetic intact.
+    """
+    if not isinstance(value, (int, float)) or isinstance(value, bool):
+        raise TypeError(f"{name} must be a real number, got {type(value).__name__}")
+    if not math.isfinite(value):
+        raise ValueError(f"{name} must be finite, got {value}")
+    return float(value)
 
 
 @dataclass(frozen=True)
@@ -62,8 +91,19 @@ class AssumptionSet:
     def __post_init__(self) -> None:
         if not self.name:
             raise ValueError("an assumption set must be named")
-        if self.version < 1:
-            raise ValueError("assumption set version starts at 1")
+        require_count(self.version, "version", minimum=1)
+        require_count(self.factory_cycles_per_state, "factory_cycles_per_state", minimum=1)
+        require_count(self.t_per_toffoli, "t_per_toffoli", minimum=1)
+        for name in (
+            "physical_error_rate",
+            "threshold",
+            "logical_error_prefactor",
+            "routing_factor",
+            "factory_footprint_logical",
+            "cycle_time_s",
+            "reaction_time_s",
+        ):
+            require_finite(getattr(self, name), name)
         if not 0 < self.physical_error_rate < 1:
             raise ValueError("physical_error_rate must lie in (0, 1)")
         if not 0 < self.threshold < 1:
@@ -85,15 +125,30 @@ class AssumptionSet:
             raise ValueError("factory_footprint_logical cannot be negative")
         if self.cycle_time_s <= 0 or self.reaction_time_s <= 0:
             raise ValueError("cycle and reaction times must be positive")
-        if self.factory_cycles_per_state < 1:
-            raise ValueError("a factory takes at least one cycle per state")
-        if self.t_per_toffoli < 1:
-            raise ValueError("a Toffoli costs at least one magic state")
 
     @property
     def identity(self) -> str:
         """The string an estimate carries so it can never be read set-free."""
         return f"{self.name}@v{self.version}"
+
+    @property
+    def cycles_per_reaction(self) -> int:
+        """Code cycles that elapse inside one control-system reaction interval.
+
+        The unit bridge between Layer 4 (which counts serial *layers*) and
+        Layer 2 (which counts patch-*rounds*, i.e. cycles). Ten under
+        `gidney-2025`, and omitting it understates the spacetime volume tenfold.
+
+        Snapped to the nearest integer before rounding up, because these are
+        decimal times in binary floating point: `1e-5 / 1e-6` evaluates to
+        10.000000000000002, and a bare `ceil` returns **11**, inflating every
+        volume by 10% for no physical reason.
+        """
+        ratio = self.reaction_time_s / self.cycle_time_s
+        nearest = round(ratio)
+        if nearest >= 1 and math.isclose(ratio, nearest, rel_tol=1e-9):
+            return nearest
+        return max(1, math.ceil(ratio))
 
     @property
     def magic_states_per_second_per_factory(self) -> float:

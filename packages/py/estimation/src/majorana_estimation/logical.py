@@ -12,6 +12,8 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 
+from .assumptions import require_count
+
 
 @dataclass(frozen=True)
 class LogicalCost:
@@ -36,11 +38,24 @@ class LogicalCost:
     label: str = ""
 
     def __post_init__(self) -> None:
-        if self.logical_qubits < 1:
-            raise ValueError("a circuit occupies at least one logical qubit")
+        require_count(self.logical_qubits, "logical_qubits", minimum=1)
         for name in ("toffoli_count", "t_count", "non_clifford_depth"):
-            if getattr(self, name) < 0:
-                raise ValueError(f"{name} cannot be negative")
+            require_count(getattr(self, name), name, minimum=0)
+        if self.is_clifford_only and self.non_clifford_depth:
+            # There is no non-Clifford chain to have a depth. Left unchecked,
+            # `_runtime` would charge a feed-forward reaction per layer for
+            # operations that never wait on a measurement.
+            #
+            # Rejecting is the honest narrow fix; the general answer is a
+            # separate Clifford/logical-cycle depth with its own cycle cost,
+            # which this model does not yet have. Until it does, a Clifford-only
+            # circuit's runtime is not something this package can state.
+            raise ValueError(
+                "non_clifford_depth must be 0 for a circuit with no magic states: "
+                "a Clifford-only circuit has no non-Clifford dependency chain. "
+                "Modelling its wall-clock needs a Clifford-depth metric this "
+                "package does not have yet."
+            )
 
     def magic_states(self, *, t_per_toffoli: int) -> int:
         """Total distilled states consumed, under a stated Toffoli convention.
@@ -49,6 +64,7 @@ class LogicalCost:
         of the three unsourced numbers the whole estimate is sensitive to: 4 per
         Toffoli with measurement-and-fixup, 7 without.
         """
+        require_count(t_per_toffoli, "t_per_toffoli", minimum=1)
         return self.toffoli_count * t_per_toffoli + self.t_count
 
     @property

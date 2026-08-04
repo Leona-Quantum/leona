@@ -17,7 +17,7 @@ from __future__ import annotations
 import math
 from dataclasses import dataclass, field
 
-from .assumptions import AssumptionSet
+from .assumptions import AssumptionSet, require_count
 from .logical import LogicalCost
 
 MAX_CODE_DISTANCE = 101
@@ -103,19 +103,31 @@ def _logical_error_per_operation(distance: int, assumptions: AssumptionSet) -> f
     return assumptions.logical_error_prefactor * ratio ** ((distance + 1) // 2)
 
 
-def _logical_operation_count(logical: LogicalCost, *, magic_states: int) -> int:
+def _logical_operation_count(
+    logical: LogicalCost, assumptions: AssumptionSet, *, magic_states: int
+) -> int:
     """Spacetime volume charged against the per-operation logical error rate.
 
     Magic-state consumptions plus patch-rounds spent idling through the serial
     chain. Both terms matter: a shallow circuit with many states and a deep one
     with few fail for different reasons.
 
-    Known direction of error: this ignores storage error accumulated outside
-    the serial chain, so it is **optimistic** — a real design may need a larger
-    distance than this returns. Stated rather than buried, because an
-    optimistic estimate that reads as conservative is the dangerous kind.
+    **The idle term is in patch-rounds, so the serial layers must be converted
+    to cycles.** Layer 4 charges one *reaction interval* per non-Clifford layer,
+    and a reaction interval is `cycles_per_reaction` code cycles — ten under
+    `gidney-2025`. Counting one round per layer was a unit error that
+    understated the volume tenfold and, through `d`, the machine by ~15%.
+
+    Known direction of error: this still ignores storage error accumulated
+    outside the serial chain, so it remains **optimistic** — a real design may
+    need a larger distance than this returns. Stated rather than buried,
+    because an optimistic estimate that reads as conservative is the dangerous
+    kind.
     """
-    return max(1, magic_states + logical.logical_qubits * logical.non_clifford_depth)
+    idle_rounds = (
+        logical.logical_qubits * logical.non_clifford_depth * assumptions.cycles_per_reaction
+    )
+    return max(1, magic_states + idle_rounds)
 
 
 def choose_code_distance(
@@ -128,7 +140,7 @@ def choose_code_distance(
     if not 0 < target_failure_probability < 1:
         raise ValueError("target_failure_probability must lie in (0, 1)")
     magic_states = logical.magic_states(t_per_toffoli=assumptions.t_per_toffoli)
-    operations = _logical_operation_count(logical, magic_states=magic_states)
+    operations = _logical_operation_count(logical, assumptions, magic_states=magic_states)
     required = target_failure_probability / operations
     for distance in range(3, MAX_CODE_DISTANCE + 1, 2):
         achieved = _logical_error_per_operation(distance, assumptions)
@@ -227,8 +239,7 @@ def estimate(
                 "past it the control-system reaction time binds and more factories "
                 "change nothing."
             )
-    if resolved_factories < 0:
-        raise ValueError("factory_count cannot be negative")
+    require_count(resolved_factories, "factory_count", minimum=0)
     if resolved_factories == 0 and not logical.is_clifford_only:
         raise ValueError("a circuit consuming magic states needs at least one factory")
 
