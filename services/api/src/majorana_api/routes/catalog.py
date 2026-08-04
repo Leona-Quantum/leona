@@ -17,6 +17,7 @@ from majorana_estimation import BUILTIN_ASSUMPTION_SETS
 from ..auth.catalog_deps import PublicCatalogScope
 from ..auth.deps import DbSession, get_settings
 from ..catalog_estimate import (
+    ContradictoryPrecision,
     DEFAULT_ROTATION_SYNTHESIS_EPSILON,
     MAX_FACTORY_COUNT,
     MAX_ROTATION_SYNTHESIS_EPSILON,
@@ -57,6 +58,23 @@ CATALOG_ENTRIES_MAX_LIMIT = 500
 #: Present so a paginating client can tell "I have the whole corpus" from "the
 #: server stopped early", which is otherwise indistinguishable from the outside.
 CATALOG_TOTAL_HEADER = "X-Catalog-Total"
+
+
+def _precision_conflict(exc: ContradictoryPrecision) -> str:
+    """Say which two values disagreed, because the caller supplied both."""
+    from_identity, from_query = exc.args
+    if from_query is None:
+        return (
+            f"the precision {from_identity!r} carried in the assumption-set identity is "
+            f"outside the accepted range "
+            f"({MIN_ROTATION_SYNTHESIS_EPSILON:g}, {MAX_ROTATION_SYNTHESIS_EPSILON:g})"
+        )
+    return (
+        f"the assumption-set identity states eps={from_identity!r} and the epsilon "
+        f"parameter states {from_query!r}. Pass one, or make them agree — an estimate "
+        "is labelled with its precision, so guessing which you meant would label it "
+        "with a budget you did not choose."
+    )
 
 
 @router.get("/catalog/entries", response_model=list[PublicCatalogEntry])
@@ -100,10 +118,14 @@ async def list_catalog_estimates(
     session: DbSession,
     settings: _Settings,
     assumptions: Annotated[str | None, Query()] = None,
+    # `None`, not the default value: `resolve_assumptions` has to be able to tell
+    # "the caller chose this precision" from "nobody said", because an identity
+    # may carry one too and two stated precisions must agree rather than one
+    # quietly winning.
     epsilon: Annotated[
-        float,
+        float | None,
         Query(gt=MIN_ROTATION_SYNTHESIS_EPSILON, lt=MAX_ROTATION_SYNTHESIS_EPSILON),
-    ] = DEFAULT_ROTATION_SYNTHESIS_EPSILON,
+    ] = None,
     factories: Annotated[int | None, Query(ge=0, le=MAX_FACTORY_COUNT)] = None,
 ) -> CatalogEstimateList:
     """Every published entry's cost under **one** assumption set (E4).
@@ -125,6 +147,8 @@ async def list_catalog_estimates(
             status_code=422,
             detail=f"unknown assumption set {exc.args[0]!r}; known: {sorted(BUILTIN_ASSUMPTION_SETS)}",
         ) from exc
+    except ContradictoryPrecision as exc:
+        raise HTTPException(status_code=422, detail=_precision_conflict(exc)) from exc
     entries = await catalog_repo.list_public_catalog_entries(
         scope,
         session,
@@ -160,21 +184,31 @@ async def get_catalog_entry_estimate(
     assumptions: Annotated[
         str | None,
         Query(
-            description="Assumption-set identity, e.g. `gidney-2025@v1`. Defaults to the only sourced set."
+            description=(
+                "Assumption set, as either the registry key (`gidney-2025@v1`, "
+                "`composed-trapped-ion@v1`) or the full identity an estimate carries "
+                "(`gidney-2025@v1+eps=1e-06`). Defaults to `gidney-2025@v1`. A "
+                "precision given both here and in `epsilon` must agree. Costs under "
+                "two different identities are not comparable and must not be ranked "
+                "against each other."
+            )
         ),
     ] = None,
+    # `None` rather than the default value, so `resolve_assumptions` can tell a
+    # chosen precision from an unstated one when the identity carries one too.
     epsilon: Annotated[
-        float,
+        float | None,
         Query(
             gt=MIN_ROTATION_SYNTHESIS_EPSILON,
             lt=MAX_ROTATION_SYNTHESIS_EPSILON,
             description=(
                 "Per-rotation Clifford+T synthesis error. The reader's error budget, "
                 "not a hardware property — it is why an estimate is an estimate, so it "
-                "is a knob rather than a constant and it travels in the response."
+                "is a knob rather than a constant and it travels in the response. "
+                f"Defaults to {DEFAULT_ROTATION_SYNTHESIS_EPSILON:g}."
             ),
         ),
-    ] = DEFAULT_ROTATION_SYNTHESIS_EPSILON,
+    ] = None,
     factories: Annotated[
         int | None,
         Query(
@@ -215,4 +249,6 @@ async def get_catalog_entry_estimate(
             status_code=422,
             detail=f"unknown assumption set {exc.args[0]!r}; known: {sorted(BUILTIN_ASSUMPTION_SETS)}",
         ) from exc
+    except ContradictoryPrecision as exc:
+        raise HTTPException(status_code=422, detail=_precision_conflict(exc)) from exc
     return estimate_for_record(entry.record, entry.slug, resolved, factory_count=factories)

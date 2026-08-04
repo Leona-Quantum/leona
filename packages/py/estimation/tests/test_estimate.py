@@ -14,11 +14,14 @@ import math
 import pytest
 from majorana_estimation import (
     BABBUSH_QUADRATIC_ORACLE_OPERATION_BOUND,
+    BUILTIN_ASSUMPTION_SETS,
+    COMPOSED_TRAPPED_ION,
     GIDNEY_2025,
     AdvantageStatus,
     AssumptionSet,
     LogicalCost,
     SpeedupClass,
+    ValueProvenance,
     assess_advantage,
     choose_code_distance,
     estimate,
@@ -496,7 +499,7 @@ def test_the_rendered_citation_names_every_value_the_source_does_not_state():
 
 def test_a_set_whose_source_states_everything_renders_no_disclosure():
     """The sentence is a disclosure, not decoration — absent when nothing to disclose."""
-    fully_sourced = dataclasses.replace(GIDNEY_2025, working_allowances=())
+    fully_sourced = dataclasses.replace(GIDNEY_2025, working_allowances=(), value_provenance=())
 
     assert fully_sourced.citation == fully_sourced.source_citation
 
@@ -515,3 +518,151 @@ def test_a_misspelled_allowance_is_refused_rather_than_silently_undisclosed():
 def test_an_assumption_set_must_cite_something():
     with pytest.raises(ValueError, match="must cite its source"):
         dataclasses.replace(GIDNEY_2025, source_citation="")
+
+
+# --- a set composed from more than one paper --------------------------------
+
+
+def test_the_second_set_is_composed_and_says_so_per_value():
+    """A composed set has to name which paper each value came from.
+
+    Requiring one paper to state all ten fields is a bar the trapped-ion
+    literature does not clear, so the alternative to composing is having one
+    set — and one set makes the refusal to rank across sets untestable on any
+    real pair. Composing is fine; composing silently is the thing that would
+    turn a citation into a claim the sources do not support.
+    """
+    rendered = COMPOSED_TRAPPED_ION.citation
+
+    assert COMPOSED_TRAPPED_ION.working_allowances == ()
+    attributed = [name for entry in COMPOSED_TRAPPED_ION.value_provenance for name in entry.fields]
+    assert attributed == [
+        "routing_factor",
+        "factory_footprint_logical",
+        "factory_cycles_per_state",
+    ]
+    for name in attributed:
+        assert name in rendered, f"{name}'s source is undisclosed to the reader"
+    # Both papers reachable from the page, not just the primary one.
+    assert "arXiv:2108.12371" in rendered
+    assert "arXiv:1808.02892" in rendered
+
+
+def test_the_two_builtin_sets_are_a_pair_the_ordering_refusal_can_refuse():
+    """E4 built the machinery that refuses to rank across sets and left it with
+    one set, so every test of that path used two epsilons on the same hardware.
+    This is the case it was written for: different hardware, same precision."""
+    assert sorted(BUILTIN_ASSUMPTION_SETS) == [
+        "composed-trapped-ion@v1",
+        "gidney-2025@v1",
+    ]
+
+    superconducting = GIDNEY_2025.with_rotation_precision(1e-6)
+    trapped_ion = COMPOSED_TRAPPED_ION.with_rotation_precision(1e-6)
+
+    assert not superconducting.comparable_with(trapped_ion)
+    assert not estimate(FEMOCO, superconducting).comparable_with(estimate(FEMOCO, trapped_ion))
+
+
+def test_the_trapped_ion_set_costs_its_slower_cycle_in_factories_not_distance():
+    """The second set earns its place by disagreeing where it matters.
+
+    It shares p, p_th and A with `gidney-2025`, so the code distance barely
+    moves; a 235 us cycle against 1 us is the whole difference, and it lands on
+    the factory count and the wall-clock. That is the cited paper's own
+    conclusion — slower hardware can still hit a target runtime, but only by
+    being far more scalable — reproduced by this arithmetic rather than quoted.
+    """
+    superconducting = estimate(FEMOCO, GIDNEY_2025)
+    trapped_ion = estimate(FEMOCO, COMPOSED_TRAPPED_ION)
+
+    # One factory is ~235x slower, exactly the cycle-time ratio.
+    rate_ratio = (
+        GIDNEY_2025.magic_states_per_second_per_factory
+        / COMPOSED_TRAPPED_ION.magic_states_per_second_per_factory
+    )
+    assert math.isclose(rate_ratio, 235.0, rel_tol=1e-9)
+
+    assert trapped_ion.runtime.factory_count > 20 * superconducting.runtime.factory_count
+    assert trapped_ion.runtime.seconds > superconducting.runtime.seconds
+    assert abs(trapped_ion.distance.code_distance - superconducting.distance.code_distance) <= 2
+
+
+def test_a_reaction_faster_than_a_code_cycle_still_charges_one_round():
+    """Trapped ions invert the usual order: 68.75 us feed-forward against a
+    235 us cycle. `cycles_per_reaction` is a patch-round count and rounds to
+    zero here, which would erase the idle term from the spacetime volume."""
+    assert COMPOSED_TRAPPED_ION.reaction_time_s < COMPOSED_TRAPPED_ION.cycle_time_s
+    assert COMPOSED_TRAPPED_ION.cycles_per_reaction == 1
+
+
+def test_a_value_cannot_be_both_unsourced_and_attributed_to_a_source():
+    """The two disclosures are contradictory claims, and a citation that made
+    both would be self-refuting one sentence apart."""
+    with pytest.raises(ValueError, match="both a working allowance"):
+        dataclasses.replace(
+            GIDNEY_2025,
+            working_allowances=("routing_factor",),
+            value_provenance=(ValueProvenance(fields=("routing_factor",), note="from somewhere"),),
+        )
+
+
+def test_a_misspelled_attribution_is_refused_like_a_misspelled_allowance():
+    """Same failure, same guard: a name that is not a field would drop out of
+    the rendered string and leave the set looking better sourced than it is."""
+    with pytest.raises(ValueError, match="no such field"):
+        dataclasses.replace(
+            GIDNEY_2025,
+            value_provenance=(ValueProvenance(fields=("factory_footprint",), note="from a paper"),),
+        )
+
+
+def test_the_same_field_cannot_be_attributed_to_two_sources():
+    with pytest.raises(ValueError, match="attributes the same field twice"):
+        dataclasses.replace(
+            GIDNEY_2025,
+            value_provenance=(
+                ValueProvenance(fields=("routing_factor",), note="paper A"),
+                ValueProvenance(fields=("routing_factor",), note="paper B"),
+            ),
+        )
+
+
+@pytest.mark.parametrize(
+    "kwargs",
+    [
+        {"fields": (), "note": "a source"},
+        {"fields": ("routing_factor", "routing_factor"), "note": "a source"},
+        {"fields": ("routing_factor",), "note": "   "},
+    ],
+)
+def test_an_empty_attribution_is_refused_at_construction(kwargs):
+    """An attribution that names no field, repeats one, or says nothing
+    discloses nothing while occupying the slot where a disclosure would go."""
+    with pytest.raises(ValueError):
+        ValueProvenance(**kwargs)
+
+
+def test_gidney_discloses_the_factory_timing_it_departs_from():
+    """The pass that introduced `working_allowances` found three unsourced
+    values in this set. There were four.
+
+    `factory_cycles_per_state=11` was carried as sourced. The paper budgets
+    114.7 rounds per CCZ state and rounds it to 150; one CCZ is one Toffoli, so
+    in this model's per-magic-state accounting that is ~37.5 rounds, not 11.
+    The number is left alone — moving it moves a published estimate — but the
+    citation no longer claims the paper for it.
+    """
+    assert "factory_cycles_per_state" not in GIDNEY_2025.working_allowances
+    rendered = GIDNEY_2025.citation
+    assert "factory_cycles_per_state" in rendered
+    assert "150" in rendered
+
+    # The arithmetic behind "roughly 3.4x", computed here rather than quoted.
+    stated_rounds_per_ccz = 150
+    magic_states_per_ccz = GIDNEY_2025.t_per_toffoli
+    assert math.isclose(
+        stated_rounds_per_ccz / magic_states_per_ccz / GIDNEY_2025.factory_cycles_per_state,
+        3.409,
+        rel_tol=1e-3,
+    )

@@ -8,6 +8,13 @@ predicate that says so, and callers are expected to refuse to sort across it.
 Adding a set is a sourcing job, not a modelling job: each field must come from a
 published parameter set that states it. A fabricated assumption set is worse
 than having none, because it makes an incomparable estimate look comparable.
+
+**A set may be composed from more than one paper, and then it must say so per
+value.** Requiring one paper to state all ten fields is a bar the trapped-ion
+literature does not clear: the architecture papers that state a physical layer
+either use a different code family or stop short of the magic-state factories
+half this cost model is about. Composing is allowed; composing silently is not,
+which is what `ValueProvenance` exists to prevent.
 """
 
 from __future__ import annotations
@@ -42,6 +49,49 @@ def require_finite(value: float, name: str) -> float:
     if not math.isfinite(value):
         raise ValueError(f"{name} must be finite, got {value}")
     return float(value)
+
+
+def _and_list(names: tuple[str, ...]) -> str:
+    """`a`, `a and b`, `a, b and c` — read aloud on a public page, not logged."""
+    if len(names) == 1:
+        return names[0]
+    return f"{', '.join(names[:-1])} and {names[-1]}"
+
+
+@dataclass(frozen=True)
+class ValueProvenance:
+    """Why named values in a set are not simply "from the cited source".
+
+    Two cases, and they are different claims a reader needs told apart:
+
+    - the value comes from a **second paper** (a composed set), or
+    - the value's own source states something else, and this model holds the
+      number it holds for a reason worth printing.
+
+    Both are legitimate. Neither is legitimate silently, which is the whole
+    point: `working_allowances` can only say "no source states this", and using
+    it for a value whose source states something *different* would print a false
+    sentence — the exact failure `working_allowances` was added to end.
+
+    The disclosure is pinned to field *names* rather than left as prose so
+    `AssumptionSet.__post_init__` can refuse a name that is not a real field,
+    and so a test can assert that every named field reaches the rendered string.
+    """
+
+    fields: tuple[str, ...]
+    note: str
+
+    def __post_init__(self) -> None:
+        if not self.fields:
+            raise ValueError("a ValueProvenance must name at least one field")
+        if len(set(self.fields)) != len(self.fields):
+            raise ValueError("a ValueProvenance must not repeat a field")
+        if not self.note.strip():
+            raise ValueError("a ValueProvenance must say where the value came from")
+
+    @property
+    def sentence(self) -> str:
+        return f"{_and_list(self.fields)}: {self.note}."
 
 
 @dataclass(frozen=True)
@@ -128,6 +178,20 @@ class AssumptionSet:
     `citation` cannot render without it, `__post_init__` refuses a name that is
     not a real field of this class, and a test pins that every name reaches the
     rendered string.
+
+    Use this only for values **no** source states. A value whose source states
+    something different belongs in `value_provenance`, because the sentence this
+    field renders would otherwise be false.
+    """
+
+    value_provenance: tuple[ValueProvenance, ...] = ()
+    """Values that came from somewhere other than `source_citation`.
+
+    Carries composed sets — a physical layer from one paper and a factory layer
+    from another — and any value this model holds differently from the source it
+    otherwise follows. Every field named here is checked against the real fields
+    of this class and must not also appear in `working_allowances`: a value
+    cannot both come from a named paper and come from no paper.
     """
 
     def __post_init__(self) -> None:
@@ -194,6 +258,29 @@ class AssumptionSet:
             )
         if len(set(self.working_allowances)) != len(self.working_allowances):
             raise ValueError("working_allowances must not repeat a field")
+        # Same check for the composed case, and for the same reason: a
+        # misspelled field name renders a disclosure that discloses nothing.
+        attributed: set[str] = set()
+        for entry in self.value_provenance:
+            unknown = [name for name in entry.fields if name not in known]
+            if unknown:
+                raise ValueError(
+                    f"value_provenance names no such field(s): {', '.join(sorted(unknown))}"
+                )
+            clash = attributed.intersection(entry.fields)
+            if clash:
+                raise ValueError(
+                    f"value_provenance attributes the same field twice: {', '.join(sorted(clash))}"
+                )
+            attributed.update(entry.fields)
+        # A value cannot both come from a named paper and come from no paper.
+        # Left unchecked the citation would say both, one sentence apart.
+        contradiction = attributed.intersection(self.working_allowances)
+        if contradiction:
+            raise ValueError(
+                "a field cannot be both a working allowance and attributed to a "
+                f"source: {', '.join(sorted(contradiction))}"
+            )
 
     @property
     def citation(self) -> str:
@@ -204,16 +291,22 @@ class AssumptionSet:
         disclosure is composed here rather than left to whoever writes the
         `source_citation`. A caveat that lives only in a docstring is not a
         caveat: nobody reading the page can see it.
+
+        The allowance sentence stays immediately after `source_citation` because
+        it opens with "It", and the antecedent is the source. Attributions to
+        other papers follow, where their own sentences name their own sources.
         """
-        if not self.working_allowances:
-            return self.source_citation
-        named = ", ".join(self.working_allowances)
-        subject = "value" if len(self.working_allowances) == 1 else "values"
-        return (
-            f"{self.source_citation} It does not state the {subject} "
-            f"{named} used here; those are common working allowances rather than "
-            "paper values, and are the first thing to attack if a number looks wrong."
-        )
+        parts = [self.source_citation]
+        if self.working_allowances:
+            named = ", ".join(self.working_allowances)
+            subject = "value" if len(self.working_allowances) == 1 else "values"
+            parts.append(
+                f"It does not state the {subject} "
+                f"{named} used here; those are common working allowances rather than "
+                "paper values, and are the first thing to attack if a number looks wrong."
+            )
+        parts.extend(entry.sentence for entry in self.value_provenance)
+        return " ".join(parts)
 
     @property
     def identity(self) -> str:
@@ -323,6 +416,22 @@ GIDNEY_2025 = AssumptionSet(
         "factory_footprint_logical",
         "t_per_toffoli",
     ),
+    value_provenance=(
+        ValueProvenance(
+            fields=("factory_cycles_per_state",),
+            note=(
+                "the paper does state a factory timing and it is not this one — it "
+                "budgets 114.7 surface-code rounds per CCZ state, rounded up to 150 "
+                "for slack, where one CCZ state is one Toffoli and so four magic "
+                "states in this model's accounting. 11 rounds per magic state is "
+                "therefore roughly 3.4x faster than the cited factory, which makes "
+                "the distillation throughput optimistic and, through the default "
+                "factory count, the factory footprint too. Correcting it moves a "
+                "published number, so it is a version bump awaiting an owner "
+                "decision rather than a silent edit"
+            ),
+        ),
+    ),
     physical_error_rate=1e-3,
     threshold=1e-2,
     logical_error_prefactor=0.1,
@@ -333,16 +442,82 @@ GIDNEY_2025 = AssumptionSet(
     factory_cycles_per_state=11,
     t_per_toffoli=4,
 )
-"""The only set here, and **not** a fully sourced one.
+"""Superconducting-style hardware, and **not** a fully sourced set.
 
-Six of its nine values come from the paper. The three in `working_allowances`
-do not — they are the common working allowances and the first things to attack
-if a number looks wrong. That fact used to live in this docstring alone while
-the rendered citation said the source stated everything; it is now carried by
-`working_allowances` into the string the public page shows.
+Five of its nine values come from the paper. Three are in `working_allowances`
+and a fourth, `factory_cycles_per_state`, is a *departure*: the paper states a
+factory timing and this is not it. That last one was counted as sourced until it
+was checked against the paper, which is a reminder that an audit's own count of
+what it fixed is a floor — the pass that added `working_allowances` found three
+and there were four.
 """
 
-# A second, independently-sourced set (e.g. trapped-ion) belongs here and is
-# deliberately absent. Do not invent one: an unsourced set makes an
-# incomparable estimate look comparable, which is worse than having only one.
-BUILTIN_ASSUMPTION_SETS: dict[str, AssumptionSet] = {GIDNEY_2025.identity: GIDNEY_2025}
+COMPOSED_TRAPPED_ION = AssumptionSet(
+    name="composed-trapped-ion",
+    version=1,
+    source_citation=(
+        "Composed from two papers, because no published trapped-ion parameter set "
+        "states all of these values in one place. Physical layer: Webber, Elfving, "
+        "Weidt and Hensinger, The impact of hardware specifications on reaching "
+        "quantum advantage in the fault tolerant regime (arXiv:2108.12371, AVS "
+        "Quantum Science 4, 013801), which costs a shuttling-based trapped-ion "
+        "architecture under the surface code and states a 1% threshold, a 1e-3 base "
+        "physical error rate, p_L = 0.1(100p)^((d+1)/2), a 235 us code cycle, a "
+        "reaction time of (code cycle)/4 + 10 us — 68.75 us at that cycle — and a "
+        "Toffoli decomposed into 4 T gates."
+    ),
+    value_provenance=(
+        ValueProvenance(
+            fields=("routing_factor", "factory_footprint_logical"),
+            note=(
+                "from the layout paper the physical-layer paper builds its "
+                "distillation on, Litinski, A Game of Surface Codes (Quantum 3, 128, "
+                "arXiv:1808.02892), whose intermediate data block stores n logical "
+                "qubits in 2n+4 tiles and whose 15-to-1 distillation block occupies "
+                "11 tiles. This model has no slot for the constant +4, so it charges "
+                "the 2n and is optimistic by four patches"
+            ),
+        ),
+        ValueProvenance(
+            fields=("factory_cycles_per_state",),
+            note=(
+                "Litinski states this as 11 time steps, and one time step as d code "
+                "cycles — 11d rounds per magic state, not 11. This model holds a "
+                "distance-independent constant, so it charges 11 and is optimistic "
+                "about distillation throughput by a factor of the code distance. The "
+                "same simplification is in gidney-2025, which is why the two sets "
+                "stay comparable to each other in this respect and neither is "
+                "comparable to the papers"
+            ),
+        ),
+    ),
+    physical_error_rate=1e-3,
+    threshold=1e-2,
+    logical_error_prefactor=0.1,
+    routing_factor=2.0,
+    factory_footprint_logical=11.0,
+    cycle_time_s=235e-6,
+    reaction_time_s=68.75e-6,
+    factory_cycles_per_state=11,
+    t_per_toffoli=4,
+)
+"""Trapped ions with shuttling: better fidelity is not the axis that decides this.
+
+The second set exists so the machinery that refuses to rank across sets has a
+real pair to refuse, and it earns its place by disagreeing with `gidney-2025`
+somewhere that matters. It shares p, p_th and A, so the *code distance* is
+nearly the same circuit for circuit; everything that differs is in the time
+layer. A 235 us cycle against 1 us makes each factory roughly 235x slower, and
+the factory count this model defaults to — the crossover past which the reaction
+floor binds — rises accordingly. That is the cited paper's own headline finding
+reproduced by our arithmetic rather than quoted from its abstract: slower
+hardware can still reach a target runtime, but only by being far more scalable.
+
+**It is composed, and the name says so** rather than borrowing one author's
+name for a set they did not write.
+"""
+
+BUILTIN_ASSUMPTION_SETS: dict[str, AssumptionSet] = {
+    GIDNEY_2025.identity: GIDNEY_2025,
+    COMPOSED_TRAPPED_ION.identity: COMPOSED_TRAPPED_ION,
+}
