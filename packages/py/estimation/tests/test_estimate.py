@@ -8,6 +8,7 @@ tautology.
 
 from __future__ import annotations
 
+import dataclasses
 import math
 
 import pytest
@@ -311,3 +312,55 @@ def test_a_quadratic_speedup_inside_the_ceiling_still_does_not_rank_beside_shor(
 def test_a_negative_oracle_size_is_refused_rather_than_slipping_under_the_ceiling():
     with pytest.raises(ValueError, match="oracle_binary_operations"):
         assess_advantage(SpeedupClass.QUADRATIC, oracle_binary_operations=-1)
+
+
+# --- Rotation synthesis: making an arbitrary angle countable, deliberately ----
+
+
+def test_a_set_with_no_stated_precision_has_no_t_count_per_rotation():
+    """Defaulting here would turn "nobody stated a budget" into a specific
+    number, shown next to exactly-counted ones on the same page."""
+    with pytest.raises(ValueError, match="rotation_synthesis_epsilon"):
+        _ = GIDNEY_2025.t_per_rotation
+
+
+def test_the_sourced_set_states_no_precision():
+    """The budget is the algorithm's error allowance split among its rotations,
+    not a hardware property, so no built-in set may quietly carry one."""
+    assert GIDNEY_2025.rotation_synthesis_epsilon is None
+
+
+def test_t_per_rotation_follows_the_ross_selinger_leading_term():
+    stated = dataclasses.replace(
+        GIDNEY_2025,
+        version=2,
+        rotation_synthesis_epsilon=1e-6,
+        rotation_t_coefficient=3.0,
+    )
+
+    # Computed here rather than quoted: 3 * log2(1/1e-6) = 59.79..., and a
+    # fraction of a T is not something a factory can distil, so it rounds up.
+    assert stated.t_per_rotation == math.ceil(3.0 * math.log2(1e6)) == 60
+
+
+def test_a_tighter_precision_costs_more_t_gates():
+    loose = dataclasses.replace(GIDNEY_2025, version=2, rotation_synthesis_epsilon=1e-3)
+    tight = dataclasses.replace(GIDNEY_2025, version=3, rotation_synthesis_epsilon=1e-12)
+
+    assert tight.t_per_rotation > loose.t_per_rotation
+
+
+@pytest.mark.parametrize("epsilon", [0.0, 1.0, 1.5, -1e-6])
+def test_a_precision_outside_the_unit_interval_is_refused(epsilon):
+    """eps >= 1 is not a loose budget; log2(1/eps) <= 0 would hand back a zero
+    or negative T-count for a rotation that certainly costs something."""
+    with pytest.raises(ValueError):
+        dataclasses.replace(GIDNEY_2025, version=2, rotation_synthesis_epsilon=epsilon)
+
+
+@pytest.mark.parametrize("bad", [float("nan"), float("inf"), float("-inf")])
+def test_a_non_finite_rotation_coefficient_is_refused_at_construction(bad):
+    """NaN fails every comparison and inf passes `> 0`, so both survive a bare
+    positivity check and surface later out of math.ceil in t_per_rotation."""
+    with pytest.raises(ValueError):
+        dataclasses.replace(GIDNEY_2025, version=2, rotation_t_coefficient=bad)

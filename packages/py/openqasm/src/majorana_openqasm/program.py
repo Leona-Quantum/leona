@@ -10,6 +10,9 @@ from majorana_contracts.models import ResourceMetrics
 from qiskit import QuantumCircuit
 from qiskit import qasm2, qasm3
 
+from majorana_openqasm.non_clifford import NonCliffordCost
+from majorana_openqasm.non_clifford import non_clifford_cost as _non_clifford_cost
+
 # The declaration must be the first *statement*, but comments and blank lines may
 # precede it — the OpenQASM grammar allows a comment anywhere, and real emitters
 # put a provenance header there. Cirq is the case that forced this: every Cirq
@@ -89,3 +92,13 @@ def _resource_metrics(circuit: QuantumCircuit) -> ResourceMetrics:
 def resource_metrics(source: str) -> ResourceMetrics:
     """Calculate resource metrics from an OpenQASM string."""
     return _resource_metrics(_load_circuit(source))
+
+
+def non_clifford_cost(source: str) -> NonCliffordCost:
+    """Extract the magic-state cost of an OpenQASM string (E1).
+
+    Separate from `resource_metrics` because the two answer different questions
+    and fail differently: a size metric is always available, a magic-state cost
+    is not (see `non_clifford.py`).
+    """
+    return _non_clifford_cost(_load_circuit(source))
