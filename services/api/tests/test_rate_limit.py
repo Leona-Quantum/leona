@@ -289,7 +289,15 @@ def test_the_body_limit_clears_the_largest_legitimate_document():
     assert MAX_REQUEST_BYTES > 256 * 1024
 
 
-def test_the_default_limit_is_far_above_a_reader():
-    """Sized to refuse a scraper in a loop, not to shape human traffic: the
-    browse list is one request and a detail page two."""
-    assert DEFAULT_ANON_LIMIT >= 120
+def test_the_default_limit_has_headroom_over_our_own_renderer():
+    """The limit is sized for Vercel's SSR egress, not for a browser.
+
+    Nothing in the browser calls `/v1/catalog/*` — `repository-source.ts` is
+    server-side — so this endpoint sees a handful of shared Vercel addresses
+    carrying every visitor. Tripping the limiter there returns no error to
+    anyone: the web catches it and serves the stale static corpus. A control
+    that fails silently to stale data needs enormous headroom, which is why
+    this floor is high and why lowering it needs the trusted-caller exemption
+    first.
+    """
+    assert DEFAULT_ANON_LIMIT >= 1200
