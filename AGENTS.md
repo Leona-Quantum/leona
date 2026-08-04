@@ -37,7 +37,7 @@ lane boundary, highest risk or plan gap, and intended next action. After that, p
 with the user's bounded request unless it requires an owner decision or ask-first action.
 
 Codex's standing lane is non-UI: pressure-test plans; inspect and improve `evals/` and
-`packages/py/{llm,frameworks,openqasm,contracts,verification,sandbox}`; own Lane B
+`packages/py/{llm,frameworks,openqasm,contracts,verification,sandbox,estimation}`; own Lane B
 framework-native circuit execution, optional QASM interchange, and Python test coverage.
 Do not build or restyle `apps/web` or `packages/ts/ui`
 unless Eshaan explicitly overrides the lane. Use `feature/*` branches for repo changes;
