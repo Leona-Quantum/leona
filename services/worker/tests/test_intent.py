@@ -195,7 +195,7 @@ async def test_referential_execute_followup_routes_with_bounded_conversation_con
     )
 
     assert [message.model_dump() for message in llm.request.messages] == [
-        *history,
+        history[0],
         {"role": "user", "content": "User message:\n実際に回路を作って"},
     ]
 

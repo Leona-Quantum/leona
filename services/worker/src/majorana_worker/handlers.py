@@ -29,6 +29,7 @@ from majorana_contracts.enums import (
 )
 from majorana_agent import (
     SimpleCircuitPipeline,
+    SimplePipelineFailure,
     SimplePipelineOutcome,
     SimplePipelineStage,
     SimplePipelineStatus,
@@ -926,6 +927,13 @@ async def _finish_simple_pipeline(
     failure = outcome.failure
     if failure is None:
         raise RuntimeError("failed simple pipeline lacks a typed failure")
+    if failure.code == "conversation_inputs_missing":
+        # This is a successful clarification turn, not a broken quantum run. The
+        # AUTO router normally keeps incomplete tasks in chat, but this downstream
+        # gate is deliberately independent and can catch a classifier miss. Surface
+        # its actionable fields as the assistant answer; emitting run.error here made
+        # the UI replace them with a generic failure sentence.
+        return await _finish_missing_inputs_clarification(ctx, run_store, failure)
     await _emit_failed_candidate(ctx, outcome)
     await ctx.sink.emit(
         "run.error",
@@ -942,6 +950,50 @@ async def _finish_simple_pipeline(
             "status": RunStatus.FAILED,
             "reason_code": failure.code,
         },
+    )
+
+
+def _uses_japanese(text: str) -> bool:
+    """Detect Japanese kana for the small deterministic clarification template."""
+
+    return any("\u3040" <= character <= "\u30ff" for character in text)
+
+
+async def _finish_missing_inputs_clarification(
+    ctx: RunContext,
+    run_store: RepoRunStateStore,
+    failure: SimplePipelineFailure,
+) -> RunStatus:
+    missing = _string_list(failure.details.get("missing_inputs"), limit=8)
+    if not missing:
+        missing = ["the concrete problem instance and constraints"]
+    bullets = "\n".join(f"- {item}" for item in missing)
+    if _uses_japanese(ctx.task_prompt):
+        text = (
+            "量子回路を生成するには、次の問題固有の情報が必要です。\n\n"
+            f"{bullets}\n\n"
+            "不足値を推測して無関係なサンプル回路を生成することはしていません。"
+        )
+    else:
+        text = (
+            "I need the following task-specific inputs before generating the quantum "
+            f"circuit:\n\n{bullets}\n\n"
+            "I did not guess the missing values or substitute an unrelated demo circuit."
+        )
+    await ctx.sink.emit(
+        "chat.completed",
+        {
+            "text": text,
+            "model": "majorana-readiness-gate",
+            "input_tokens": 0,
+            "output_tokens": 0,
+            "duration_ms": 0,
+        },
+        event_id=uuid.uuid5(ctx.run_id, "chat.completed.missing_inputs"),
+    )
+    return await run_store.finish(
+        RunStatus.SUCCEEDED,
+        {"status": RunStatus.SUCCEEDED},
     )
 
 
