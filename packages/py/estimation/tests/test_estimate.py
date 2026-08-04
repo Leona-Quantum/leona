@@ -13,7 +13,7 @@ import math
 
 import pytest
 from majorana_estimation import (
-    BABBUSH_QUADRATIC_ORACLE_OPERATION_BOUND,
+    AdvantageVerdict,
     BUILTIN_ASSUMPTION_SETS,
     COMPOSED_TRAPPED_ION,
     GIDNEY_2025,
@@ -61,12 +61,27 @@ def a_set(**overrides) -> AssumptionSet:
 
 
 # Lee et al. 2021, tensor hypercontraction: the smallest well-costed FTQC
-# chemistry target. ~2,100 logical qubits and ~6e9 Toffolis.
+# chemistry target.
+#
+# **2,196 and 6.7e9, not the round 2,100 and 6e9 this fixture carried until
+# 2026-08-05.** Those were a rounding of the source, applied in the direction
+# that makes the machine smaller, under a label naming the source. Webber et al.
+# (arXiv:2108.12371) figure 1 states them: "The associated logical resources
+# required are 2196 logical qubits and 6.7 billion Toffoli gates", citing Lee et
+# al. for both.
+#
+# `non_clifford_depth` is **ours, not theirs**, and it is the one number here
+# with no source: Webber says in as many words that the measurement depth "was
+# not provided along with the other logical requirements", which is why his
+# figure 1 sweeps T_count, T_count/10 and T_count/100 instead of using one.
+# Charging one serial layer per Toffoli is the worst case, which is the safe
+# direction for a runtime floor and is stated rather than assumed silently.
+FEMOCO_TOFFOLIS = 6_700_000_000
 FEMOCO = LogicalCost(
-    logical_qubits=2_100,
-    toffoli_count=6_000_000_000,
-    non_clifford_depth=6_000_000_000,
-    label="FeMoco ground state (Lee et al. 2021)",
+    logical_qubits=2_196,
+    toffoli_count=FEMOCO_TOFFOLIS,
+    non_clifford_depth=FEMOCO_TOFFOLIS,
+    label="FeMoco ground state (Lee et al. 2021, as costed by Webber et al. fig. 1)",
 )
 
 
@@ -108,21 +123,22 @@ def test_femoco_reproduces_the_plans_arithmetic():
     """The plan's §1 headline, recomputed from constants inside this test."""
     result = estimate(FEMOCO, GIDNEY_2025)
 
-    # --- magic states: 6e9 Toffoli at 8 T states each, which is what the cited
-    # paper's 8T-to-CCZ pipeline costs a Toffoli. Four is the common
+    # --- magic states: 6.7e9 Toffoli at 8 T states each, which is what the
+    # cited paper's 8T-to-CCZ pipeline costs a Toffoli. Four is the common
     # measurement-and-fixup figure and is what this set charged until v2.
-    assert result.runtime.magic_states == 48_000_000_000
+    assert result.runtime.magic_states == FEMOCO_TOFFOLIS * 8
 
-    # --- the reaction-limited floor: ~17 hours, and no factory count beats it
-    assert result.runtime.reaction_limited_seconds == pytest.approx(6.0e4)
-    assert result.runtime.reaction_limited_seconds / 3600 == pytest.approx(16.67, abs=0.01)
+    # --- the reaction-limited floor: ~19 hours, and no factory count beats it
+    reaction_floor = FEMOCO_TOFFOLIS * GIDNEY_2025.reaction_time_s
+    assert result.runtime.reaction_limited_seconds == pytest.approx(reaction_floor)
+    assert result.runtime.reaction_limited_seconds / 3600 == pytest.approx(18.6, abs=0.1)
 
     # --- the crossover, computed here from the rate rather than read back, and
     # now at the chosen distance because factory time depends on it.
     d = result.distance.code_distance
     rounds_per_state = 14.7 / 8 + 0.5 * d
     rate = 1.0 / (rounds_per_state * 1e-6)
-    expected_crossover = math.ceil(48_000_000_000 / (rate * 6.0e4))
+    expected_crossover = math.ceil(FEMOCO_TOFFOLIS * 8 / (rate * reaction_floor))
     assert result.runtime.factory_crossover == expected_crossover
 
     # --- the paper's own figure falls out at the paper's own distance: 14.7
@@ -138,7 +154,7 @@ def test_femoco_reproduces_the_plans_arithmetic():
 
     # --- footprint: data patches are logical x 2(d+1)^2
     per_logical = result.distance.physical_per_logical
-    assert result.footprint.data_patch_qubits == 2_100 * per_logical
+    assert result.footprint.data_patch_qubits == 2_196 * per_logical
     assert result.footprint.total_physical_qubits == (
         result.footprint.data_patch_qubits
         + result.footprint.routing_qubits
@@ -240,8 +256,8 @@ def test_idle_patch_rounds_are_charged_in_cycles_not_layers():
 
     choice = choose_code_distance(FEMOCO, GIDNEY_2025, target_failure_probability=0.01)
 
-    magic_states = 6_000_000_000 * GIDNEY_2025.t_per_toffoli
-    idle_rounds = 2_100 * 6_000_000_000 * 10
+    magic_states = FEMOCO_TOFFOLIS * GIDNEY_2025.t_per_toffoli
+    idle_rounds = 2_196 * FEMOCO_TOFFOLIS * 10
     assert choice.logical_operations == magic_states + idle_rounds
 
 
@@ -252,20 +268,39 @@ def test_a_target_no_distance_can_reach_raises_rather_than_returning_a_number():
         choose_code_distance(FEMOCO, marginal, target_failure_probability=1e-3)
 
 
-def test_quadratic_speedup_is_not_advantage_bearing_at_a_realistic_oracle():
-    verdict = assess_advantage(SpeedupClass.QUADRATIC, oracle_binary_operations=1_000)
+def test_a_quadratic_speedup_is_not_advantage_bearing_and_nothing_makes_it_one():
+    """There is no oracle size that rescues it, because there was never a ceiling.
+
+    This module used to hold `BABBUSH_QUADRATIC_ORACLE_OPERATION_BOUND = 68` and
+    return ADVANTAGE_BEARING below it. arXiv:2011.04149v2 contains no such bound
+    — the words "oracle", "binary operation" and "week" do not appear in it at
+    all — so the escape hatch was returning the one answer this module exists to
+    prevent, on a fabricated threshold.
+    """
+    verdict = assess_advantage(SpeedupClass.QUADRATIC)
 
     assert verdict.status is AdvantageStatus.NOT_ADVANTAGE_BEARING
     assert not verdict.may_be_ranked_beside_superpolynomial
-    assert str(BABBUSH_QUADRATIC_ORACLE_OPERATION_BOUND) in verdict.reason
     assert verdict.citation is not None
 
+    # The signature no longer accepts one, so the old call site fails loudly
+    # rather than silently ignoring the argument.
+    with pytest.raises(TypeError):
+        assess_advantage(SpeedupClass.QUADRATIC, oracle_binary_operations=10)  # type: ignore[call-arg]
 
-def test_an_unstated_oracle_size_is_undetermined_not_advantage_bearing():
-    verdict = assess_advantage(SpeedupClass.QUADRATIC)
 
-    assert verdict.status is AdvantageStatus.UNDETERMINED
-    assert not verdict.may_be_ranked_beside_superpolynomial
+def test_the_quadratic_verdict_states_the_papers_own_breakeven_numbers():
+    """The reason has to carry something checkable, or it is just a mood.
+
+    100 days and 880 years are Table I of the cited paper: its most generous
+    constructed case and its one realistically compiled example, both against a
+    thousand parallel classical cores.
+    """
+    reason = assess_advantage(SpeedupClass.QUADRATIC).reason
+
+    assert "100 days" in reason
+    assert "880 years" in reason
+    assert "100 Toffoli" in reason
 
 
 def test_only_a_superpolynomial_speedup_ranks_beside_shor():
@@ -278,19 +313,25 @@ def test_only_a_superpolynomial_speedup_ranks_beside_shor():
     assert ranked == [SpeedupClass.SUPERPOLYNOMIAL]
 
 
-def test_a_quadratic_speedup_inside_the_ceiling_still_does_not_rank_beside_shor():
-    # The case the sweep above misses, because it supplies no oracle size: a
-    # bounded oracle IS advantage-bearing, and is still a different and far more
-    # fragile claim than Shor. Flattening the two is what the ledger prevents.
-    verdict = assess_advantage(SpeedupClass.QUADRATIC, oracle_binary_operations=10)
+def test_the_ranking_predicate_stays_narrower_than_the_status_it_reads():
+    """`may_be_ranked_beside_superpolynomial` and `status is ADVANTAGE_BEARING`
+    now coincide, and the predicate must not be collapsed into the status.
 
-    assert verdict.status is AdvantageStatus.ADVANTAGE_BEARING
-    assert not verdict.may_be_ranked_beside_superpolynomial
+    They coincide only because nothing but a superpolynomial speedup currently
+    reaches ADVANTAGE_BEARING. The two tests that used to hold them apart both
+    ran through the fabricated 68-operation ceiling, so removing it removed the
+    only case that distinguished them. This pins the *shape* instead: the
+    predicate additionally requires the speedup class, so a future verdict that
+    admits a quartic speedup does not silently start sorting beside Shor.
+    """
+    admitted = AdvantageVerdict(
+        status=AdvantageStatus.ADVANTAGE_BEARING,
+        speedup=SpeedupClass.QUARTIC,
+        reason="hypothetical: a quartic speedup whose crossover was computed",
+    )
 
-
-def test_a_negative_oracle_size_is_refused_rather_than_slipping_under_the_ceiling():
-    with pytest.raises(ValueError, match="oracle_binary_operations"):
-        assess_advantage(SpeedupClass.QUADRATIC, oracle_binary_operations=-1)
+    assert admitted.status is AdvantageStatus.ADVANTAGE_BEARING
+    assert not admitted.may_be_ranked_beside_superpolynomial
 
 
 # --- Rotation synthesis: making an arbitrary angle countable, deliberately ----
