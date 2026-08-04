@@ -23,6 +23,7 @@ from majorana_estimation import GIDNEY_2025
 
 from majorana_api.catalog_estimate import (
     DEFAULT_ROTATION_SYNTHESIS_EPSILON,
+    ContradictoryPrecision,
     UnknownAssumptionSet,
     _summarize_assumptions,
     estimate_for_record,
@@ -165,6 +166,84 @@ def test_the_default_set_resolves_and_the_sourced_one_still_states_no_precision(
     assert GIDNEY_2025.rotation_synthesis_epsilon is None
 
 
+def test_the_identity_printed_on_the_page_can_be_handed_straight_back():
+    """The page prints `gidney-2025@v1+eps=1e-06`, and the API used to 422 on it.
+
+    The registry is keyed by `name@vN` because a built-in set states no precision,
+    but what a reader has in front of them is the identity the estimate carries.
+    Pasting it back is the obvious thing to try, and the two halves of the feature
+    disagreed about the name of the same thing.
+    """
+    shown = resolve_assumptions(None, None).identity
+    assert shown == "gidney-2025@v1+eps=1e-06"
+
+    assert resolve_assumptions(shown, None).identity == shown
+    # Restating the same precision is agreement, not a conflict.
+    assert resolve_assumptions(shown, 1e-6).identity == shown
+    assert (
+        resolve_assumptions("composed-trapped-ion@v1+eps=1e-09", None).identity
+        == "composed-trapped-ion@v1+eps=1e-09"
+    )
+
+
+def test_two_stated_precisions_that_disagree_are_refused_rather_than_ranked():
+    """Neither side may quietly win. An estimate is labelled with its precision,
+    so picking one would return a cost under a budget the caller did not choose —
+    on a page whose whole argument is that the label is the claim."""
+    with pytest.raises(ContradictoryPrecision):
+        resolve_assumptions("gidney-2025@v1+eps=1e-06", 1e-9)
+
+
+def test_a_precision_smuggled_through_the_identity_obeys_the_same_bounds():
+    """`epsilon` is bounded at the route; nothing bounded one arriving inside the
+    identity string, which would be a second door of a different size on an
+    anonymous endpoint."""
+    for outside in ("gidney-2025@v1+eps=1e-30", "gidney-2025@v1+eps=0.5"):
+        with pytest.raises(ContradictoryPrecision):
+            resolve_assumptions(outside, None)
+
+
+def test_an_identity_whose_suffix_is_not_a_number_is_simply_unknown():
+    with pytest.raises(UnknownAssumptionSet):
+        resolve_assumptions("gidney-2025@v1+eps=banana", None)
+
+
+def test_the_second_set_is_reachable_by_name_and_the_default_does_not_move():
+    """Adding a set must not change what an unparameterised caller gets.
+
+    Every published number on `/repository` is rendered without naming a set,
+    so the default is load-bearing: if it drifted, a page nobody edited would
+    start showing different physical qubit counts under a different citation.
+    """
+    trapped_ion = resolve_assumptions("composed-trapped-ion@v1", None)
+
+    assert trapped_ion.identity == "composed-trapped-ion@v1+eps=1e-06"
+    assert resolve_assumptions(None, None).identity == "gidney-2025@v1+eps=1e-06"
+    # The two are the pair the ordering refusal exists for.
+    assert not trapped_ion.comparable_with(resolve_assumptions(None, None))
+
+
+def test_the_same_circuit_costed_under_both_sets_carries_two_identities():
+    """The refusal is only worth anything if the estimates it guards actually
+    differ. Same circuit, same epsilon, different hardware, different answer."""
+    circuit = _record(_gate("ry", 0, param="0.3"), _gate("cx", 0, 1))
+
+    superconducting = estimate_for_record(circuit, "a", resolve_assumptions(None, None))
+    trapped_ion = estimate_for_record(
+        circuit, "a", resolve_assumptions("composed-trapped-ion@v1", None)
+    )
+
+    assert superconducting.assumptions.identity != trapped_ion.assumptions.identity
+    assert (
+        trapped_ion.footprint.total_physical_qubits
+        != superconducting.footprint.total_physical_qubits
+    )
+    # Each estimate carries the citation for the set it was computed under, so a
+    # reader who switches sets is told the sourcing changed with it.
+    assert "arXiv:2108.12371" in trapped_ion.assumptions.citation
+    assert "arXiv:2108.12371" not in superconducting.assumptions.citation
+
+
 # --- Factories: the number that dominates a small circuit's footprint --------
 
 
@@ -245,6 +324,42 @@ def test_the_published_corpus_costs_the_way_the_notes_say():
     # exercised by real data, not that the corpus is frozen.
     assert bases[ResourceEstimateBasis.EXACT] > 0
     assert bases[ResourceEstimateBasis.ESTIMATED] > 0
+
+
+def test_adding_a_second_set_moved_no_number_on_the_published_page():
+    """The regression a new assumption set could plausibly cause.
+
+    `/repository` renders every cost without naming a set, so the default is
+    load-bearing: a drift there would change published physical qubit counts on
+    a page nobody edited. 1,307,465 is the number currently on
+    `/repository/benchmark-hea-rzry-cz-16q`, read off production in session 74.
+
+    The trapped-ion figure beside it is not a rival estimate to rank against it
+    — that is what `comparable_with` refuses — it is the same circuit on
+    hardware whose code cycle is 235x slower, which buys the same 2,320 data
+    qubits 34x as many factories.
+    """
+    flagship = next(
+        (r for r in _manifest_records() if r.get("slug") == "benchmark-hea-rzry-cz-16q"),
+        None,
+    )
+    assert flagship is not None, "the corpus entry this pins is gone; re-pin, do not delete"
+
+    default = estimate_for_record(flagship, "benchmark-hea-rzry-cz-16q", ASSUMPTIONS)
+    assert default.assumptions.identity == "gidney-2025@v1+eps=1e-06"
+    assert default.footprint.total_physical_qubits == 1_307_465
+    assert default.footprint.factory_qubits == 1_302_825
+
+    trapped_ion = estimate_for_record(
+        flagship,
+        "benchmark-hea-rzry-cz-16q",
+        resolve_assumptions("composed-trapped-ion@v1", None),
+    )
+    # Same circuit and same code distance: every qubit of the difference is
+    # factories, which is the finding, not a coincidence.
+    assert trapped_ion.distance.code_distance == default.distance.code_distance
+    assert trapped_ion.footprint.data_patch_qubits == default.footprint.data_patch_qubits
+    assert trapped_ion.runtime.factory_count > 30 * default.runtime.factory_count
 
 
 def test_asking_for_factories_a_clifford_circuit_cannot_use_does_not_inflate_it():
