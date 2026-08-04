@@ -19,7 +19,7 @@ import pathlib
 
 import pytest
 from majorana_contracts import ResourceEstimateBasis
-from majorana_estimation import GIDNEY_2025
+from majorana_estimation import COMPOSED_TRAPPED_ION, GIDNEY_2025
 
 from majorana_api.catalog_estimate import (
     DEFAULT_ROTATION_SYNTHESIS_EPSILON,
@@ -240,8 +240,16 @@ def test_the_same_circuit_costed_under_both_sets_carries_two_identities():
     )
     # Each estimate carries the citation for the set it was computed under, so a
     # reader who switches sets is told the sourcing changed with it.
-    assert "arXiv:2108.12371" in trapped_ion.assumptions.citation
-    assert "arXiv:2108.12371" not in superconducting.assumptions.citation
+    #
+    # Asserted as "each citation opens with its own set's source_citation"
+    # rather than as "Webber's arXiv id appears in one and not the other". That
+    # proxy held until v2 and then broke for a *correct* reason: gidney-2025
+    # cites Webber as one of the two places the Fowler-Gidney suppression law is
+    # quoted, so the id now legitimately appears in both. A proxy that fails on
+    # a correct change was testing the wrong thing.
+    assert trapped_ion.assumptions.citation.startswith(COMPOSED_TRAPPED_ION.source_citation)
+    assert superconducting.assumptions.citation.startswith(GIDNEY_2025.source_citation)
+    assert superconducting.assumptions.citation != trapped_ion.assumptions.citation
 
 
 # --- Factories: the number that dominates a small circuit's footprint --------

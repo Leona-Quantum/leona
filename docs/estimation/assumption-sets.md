@@ -82,9 +82,11 @@ Source: Gidney, *How to factor 2048 bit RSA integers with less than a million no
 
 `p_L = 0.1(100p)^((d+1)/2)` with a 1% threshold is **Fowler and Gidney,
 [arXiv:1808.06709](https://arxiv.org/abs/1808.06709)** — quoted as equation (10) of Litinski
-and equation (2) of Webber et al. arXiv:2505.15917 does not use it: it picks a distance by
-reading a target of 10⁻¹⁵ per logical qubit round off simulated suppression curves (its
-figure 6, fitted as `p_L ∝ 3.5^−d`), which is a shape `AssumptionSet` has no field for.
+([arXiv:1808.02892](https://arxiv.org/abs/1808.02892)) and equation (2) of Webber et al.
+([arXiv:2108.12371](https://arxiv.org/abs/2108.12371)). **arXiv:2505.15917, the paper this set is
+named for, does not use it**: it picks a distance by reading a target of 10⁻¹⁵ per logical qubit
+round off simulated suppression curves (its figure 6, fitted as `p_L ∝ 3.5^−d`), which is a shape
+`AssumptionSet` has no field for.
 Carrying `threshold` and `logical_error_prefactor` as if the named paper stated them was the
 same class of defect as the four the v1 audit found, and it survived that audit because
 nobody checked the two values that looked most standard.

@@ -24,7 +24,7 @@ function assumptions(overrides: Record<string, unknown> = {}): Record<string, un
   return {
     identity: "gidney-2025@v2+eps=1e-06",
     name: "gidney-2025",
-    version: 1,
+    version: 2,
     citation: "Gidney 2025",
     rotation_synthesis_epsilon: 1e-6,
     t_per_rotation: 60,
