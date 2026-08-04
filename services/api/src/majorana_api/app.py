@@ -14,6 +14,16 @@ from fastapi.responses import JSONResponse
 
 from .db import engine_from_env, session_factory
 from .observability import init_telemetry
+from .rate_limit import (
+    EXEMPT_PATHS,
+    MAX_REQUEST_BYTES,
+    BodyTooLarge,
+    FixedWindowLimiter,
+    client_address,
+    is_rate_limited_path,
+    read_bounded_body,
+    replay,
+)
 from .repos import AuthzError, NotFoundError
 from .routes.artifacts import router as artifacts_router
 from .routes.billing import router as billing_router
@@ -62,6 +72,15 @@ def _problem(
     )
 
 
+def _too_large() -> JSONResponse:
+    return _problem(
+        413,
+        f"Request body exceeds the {MAX_REQUEST_BYTES // 1024} KB limit.",
+        "request_too_large",
+        extra={"reason": "request_too_large", "limit_bytes": MAX_REQUEST_BYTES},
+    )
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="majorana-api", lifespan=_lifespan)
     app.state.settings = settings or Settings.from_env()
@@ -72,6 +91,64 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_methods=["*"],
         allow_headers=["Authorization", "Content-Type"],
     )
+
+    # Per-IP admission control for callers presenting no credential — the
+    # `/v1/catalog/*` surface, which has no account to meter (rate_limit.py).
+    # On the app rather than a router: the point is to answer before a handler,
+    # a dependency, or a database session has been created.
+    app.state.anon_limiter = FixedWindowLimiter(limit=app.state.settings.anon_rate_limit_per_minute)
+
+    @app.middleware("http")
+    async def _anon_rate_limit(request: Request, call_next):
+        if request.url.path in EXEMPT_PATHS:
+            return await call_next(request)
+        headers = {k.lower(): v for k, v in request.headers.items()}
+
+        # Total request size. Pydantic bounds each FIELD — `task_prompt` at
+        # 20 KB, `source_code` at 100 KB — but a field limit applies AFTER the
+        # body has been received and parsed, so nothing before this bounded the
+        # whole document. Cloud Run's 32 MB ceiling is a platform backstop, not a
+        # statement by this service about what it will accept.
+        #
+        # TWO checks, because Content-Length alone is not a bound: a
+        # `Transfer-Encoding: chunked` request declares no length, and a probe
+        # confirmed a 2 MiB chunked body reaching the handler under a 1 MiB
+        # "limit". The declared check stays because it refuses without reading
+        # anything; `read_bounded_body` is what makes the limit true.
+        declared = headers.get("content-length")
+        if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
+            return _too_large()
+        try:
+            buffered = await read_bounded_body(request.receive, MAX_REQUEST_BYTES)
+        except BodyTooLarge:
+            return _too_large()
+        request._receive = replay(buffered, request.receive)
+
+        # The anonymous-serving surface, and EVERY caller on it — including one
+        # presenting a credential. Skipping header-bearing callers was the first
+        # shape of this and it defeated the control outright: `Authorization:
+        # Bearer x` is free to send, so a scraper simply sent one. The header is
+        # the caller's to choose, so it cannot be what decides whether the
+        # limiter runs.
+        #
+        # Metering signed-in readers too is the cost, and it is small: this is a
+        # public read surface at 240/min per address, where the concern that
+        # motivated the exemption — an office or lab on one NAT — would need to
+        # sustain four catalog reads a second between them.
+        if not is_rate_limited_path(request.url.path):
+            return await call_next(request)
+        peer = request.client.host if request.client else None
+        decision = request.app.state.anon_limiter.check(client_address(headers, peer))
+        if not decision.allowed:
+            return _problem(
+                429,
+                "Too many requests from this address. This is an anonymous-traffic "
+                "ceiling on the public catalog; sign in for your account's allowance.",
+                "rate_limited",
+                headers={"Retry-After": str(decision.retry_after_s)},
+                extra={"reason": "anonymous_rate_limited"},
+            )
+        return await call_next(request)
 
     @app.exception_handler(HTTPException)
     async def _http_exc(request: Request, exc: HTTPException):

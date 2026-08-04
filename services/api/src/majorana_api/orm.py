@@ -307,6 +307,9 @@ class Run(Base):
     task_prompt: Mapped[str]
     mode: Mapped[str]
     idempotency_key: Mapped[str | None]
+    #: SHA-256 of the request admitted under `idempotency_key` (migration 0047).
+    #: NULL on rows created before it existed, which reads as "cannot compare".
+    idempotency_request_hash: Mapped[str | None]
     status: Mapped[str | None] = mapped_column(server_default="queued")
     framework: Mapped[str]
     seed: Mapped[int | None] = mapped_column(BigInteger)
