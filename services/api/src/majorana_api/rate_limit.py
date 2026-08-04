@@ -8,14 +8,30 @@ per-IP half is this module, and it binds the surface the tier gate cannot see:
 `/v1/catalog/*` takes no credential at all, so there is no account to meter and
 no lock to reserve against. Every anonymous reader is the same anonymous reader.
 
-## Why anonymous only
+## Scoped by PATH, not by whether a credential was presented
 
-An authenticated caller is already bounded, and throttling one by IP would be a
-regression: a university lab, an office, or any carrier-grade NAT presents many
-paying users behind one address, and refusing them because a neighbour was busy
-is exactly the failure `tiers.py` warns about — worse than the abuse it
-prevents. So a request carrying an `Authorization` header is passed straight
-through to the gate that knows who it is.
+The first shape of this metered every route and treated "no `Authorization`
+header" as anonymous. That was wrong twice, and both are worth keeping written
+down because each one looks reasonable until it is tried:
+
+- **The header is the caller's to choose.** `Authorization: Bearer x` costs
+  nothing to send and skipped the limiter entirely, so a scraper defeated the
+  whole control with one header and was merely 401'd on routes that needed a
+  real token — which the public catalog does not.
+- **It metered routes with no anonymous reading at all.** An authz suite that
+  overrides the identity dependency sends no header, so 250 imports by one
+  authenticated user counted as 250 anonymous requests from one address. In
+  production the header is always present, so no real user would ever have seen
+  it: the signal was wrong in the one direction only CI could show.
+
+So `LIMITED_PATH_PREFIXES` decides, and on those paths **every** caller is
+metered. The cost is that a signed-in reader on a shared address is metered too;
+at 240/min on a public read surface, an office would have to sustain four
+catalog reads a second between them to notice. That is the right trade against
+a control that any client can opt out of.
+
+Everywhere else is bounded by the gate that knows whose request it is — the tier
+allowance in `tiers.py`, reserved under the account's own row lock.
 
 ## Why a fixed window, and what it does not do
 
@@ -59,6 +75,11 @@ DEFAULT_MAX_KEYS = 20_000
 #: Never metered: the container's own liveness probe. A refused health check
 #: would take the revision down, which is the one outcome worse than the abuse.
 EXEMPT_PATHS = frozenset({"/health"})
+
+#: The ONLY routes this limiter meters — the surface that serves data to a
+#: caller presenting no credential. See the module docstring for why the path,
+#: rather than the `Authorization` header, is what decides.
+LIMITED_PATH_PREFIXES = ("/v1/catalog",)
 
 #: Ceiling on a single request body, across every route.
 #:
@@ -165,6 +186,6 @@ def client_address(headers: dict[str, str], peer: str | None) -> str:
     return peer or "unknown"
 
 
-def is_anonymous(headers: dict[str, str]) -> bool:
-    """True when no credential is presented, so no per-account gate can apply."""
-    return not headers.get("authorization", "").strip()
+def is_rate_limited_path(path: str) -> bool:
+    """True for the routes that serve data without a credential."""
+    return path.startswith(LIMITED_PATH_PREFIXES)

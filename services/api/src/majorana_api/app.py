@@ -19,7 +19,7 @@ from .rate_limit import (
     MAX_REQUEST_BYTES,
     FixedWindowLimiter,
     client_address,
-    is_anonymous,
+    is_rate_limited_path,
 )
 from .repos import AuthzError, NotFoundError
 from .routes.artifacts import router as artifacts_router
@@ -108,10 +108,18 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 extra={"reason": "request_too_large", "limit_bytes": MAX_REQUEST_BYTES},
             )
 
-        # An authenticated caller is bounded by their tier allowance, which
-        # knows who they are; metering them by address would refuse everyone
-        # behind one NAT because a neighbour was busy.
-        if not is_anonymous(headers):
+        # The anonymous-serving surface, and EVERY caller on it — including one
+        # presenting a credential. Skipping header-bearing callers was the first
+        # shape of this and it defeated the control outright: `Authorization:
+        # Bearer x` is free to send, so a scraper simply sent one. The header is
+        # the caller's to choose, so it cannot be what decides whether the
+        # limiter runs.
+        #
+        # Metering signed-in readers too is the cost, and it is small: this is a
+        # public read surface at 240/min per address, where the concern that
+        # motivated the exemption — an office or lab on one NAT — would need to
+        # sustain four catalog reads a second between them.
+        if not is_rate_limited_path(request.url.path):
             return await call_next(request)
         peer = request.client.host if request.client else None
         decision = request.app.state.anon_limiter.check(client_address(headers, peer))

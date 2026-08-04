@@ -6,7 +6,6 @@ without a test that sleeps for a minute.
 """
 
 import httpx
-import pytest
 
 from majorana_api.app import create_app
 from majorana_api.rate_limit import (
@@ -14,7 +13,7 @@ from majorana_api.rate_limit import (
     MAX_REQUEST_BYTES,
     FixedWindowLimiter,
     client_address,
-    is_anonymous,
+    is_rate_limited_path,
 )
 from majorana_api.settings import Settings
 
@@ -120,19 +119,6 @@ def test_a_caller_with_no_address_at_all_still_gets_a_key():
     assert client_address({}, None) == "unknown"
 
 
-@pytest.mark.parametrize(
-    "headers,anonymous",
-    [
-        ({}, True),
-        ({"authorization": ""}, True),
-        ({"authorization": "   "}, True),
-        ({"authorization": "Bearer abc"}, False),
-    ],
-)
-def test_only_credential_less_callers_are_anonymous(headers, anonymous):
-    assert is_anonymous(headers) is anonymous
-
-
 # --------------------------------------------------------------------------
 # Wired into the app
 # --------------------------------------------------------------------------
@@ -162,16 +148,65 @@ async def test_anonymous_traffic_is_refused_with_a_problem_document():
     assert response.json()["reason"] == "anonymous_rate_limited"
 
 
-async def test_an_authenticated_caller_is_never_metered_by_address():
-    """A lab or an office is many paying users behind one address. Refusing them
-    because a neighbour was busy is worse than the abuse the limiter prevents —
-    they are bounded by their tier allowance, which knows who they are."""
+async def test_a_credentialless_write_route_is_not_metered_by_address():
+    """The failure CI caught, pinned.
+
+    An authz suite overriding the identity dependency sends no `Authorization`
+    header, so 250 imports by ONE authenticated user read as 250 anonymous
+    requests from one address and the 241st was refused. In production the
+    header is always present, so no real user would have seen it — which is why
+    this is pinned rather than tuned around. The signal was wrong, and it was
+    wrong in the one direction nothing outside CI would surface.
+    """
+    app = create_app(_settings(anon_rate_limit_per_minute=2))
+    async with _client(app) as client:
+        statuses = {
+            (await client.post("/v1/artifacts/import-public", json={})).status_code
+            for _ in range(6)
+        }
+
+    assert 429 not in statuses
+
+
+async def test_a_forged_authorization_header_cannot_skip_the_limiter():
+    """`Authorization: Bearer x` is free to send, so it must not exempt anyone.
+
+    The first version of this middleware skipped every header-bearing caller,
+    which meant a scraper defeated the whole control by sending one junk header.
+    Asserted on the FORGED requests themselves — an earlier version of this test
+    sent the forged request and then measured plain ones, which would have
+    passed with the bypass wide open.
+    """
+    app = create_app(_settings(anon_rate_limit_per_minute=2))
+    forged = {"x-forwarded-for": "203.0.113.44", "authorization": "Bearer not-a-real-token"}
+    async with _client(app) as client:
+        statuses = [
+            (await client.get("/v1/catalog/entries", headers=forged)).status_code for _ in range(4)
+        ]
+
+    assert 429 in statuses, "a junk Authorization header bought an exemption"
+
+
+def test_only_the_anonymous_serving_surface_is_metered():
+    assert is_rate_limited_path("/v1/catalog/entries")
+    assert is_rate_limited_path("/v1/catalog/entries/some-slug/estimate")
+    for path in ("/v1/runs", "/v1/artifacts/import-public", "/v1/workspace", "/health"):
+        assert not is_rate_limited_path(path), path
+
+
+async def test_an_authenticated_caller_is_not_metered_off_the_public_surface():
+    """The NAT concern, honoured where it actually applies.
+
+    A lab or an office is many paying users behind one address, and refusing
+    them because a neighbour was busy is worse than the abuse the limiter
+    prevents. They are bounded by their tier allowance, which knows who they
+    are. On the public catalog they are metered like anyone else — see the
+    forged-header test for why no exemption can be made there.
+    """
     app = create_app(_settings(anon_rate_limit_per_minute=1))
     headers = {"x-forwarded-for": "203.0.113.10", "authorization": "Bearer whatever"}
     async with _client(app) as client:
-        statuses = {
-            (await client.get("/v1/catalog/entries", headers=headers)).status_code for _ in range(5)
-        }
+        statuses = {(await client.get("/v1/runs", headers=headers)).status_code for _ in range(5)}
 
     assert 429 not in statuses
 
