@@ -749,7 +749,7 @@ async def test_the_estimate_route_costs_a_published_circuit_under_a_named_set(en
         assert estimated.status_code == 200
         body = estimated.json()
         assert body["basis"] == "estimated"
-        assert body["assumptions"]["identity"] == "gidney-2025@v1+eps=1e-06"
+        assert body["assumptions"]["identity"] == "gidney-2025@v2+eps=1e-06"
         assert body["assumptions"]["t_per_rotation"] == 60
         assert body["logical"]["t_from_synthesis"] == 60
 
@@ -837,7 +837,7 @@ async def test_the_estimate_listing_states_its_assumption_set_once_for_every_row
         response = await client.get("/v1/catalog/estimates")
         assert response.status_code == 200
         body = response.json()
-        assert body["assumptions"]["identity"] == "gidney-2025@v1+eps=1e-06"
+        assert body["assumptions"]["identity"] == "gidney-2025@v2+eps=1e-06"
         row = next(item for item in body["estimates"] if item["slug"] == slug)
         assert row["basis"] == "exact"
         assert row["magic_states"] == 1

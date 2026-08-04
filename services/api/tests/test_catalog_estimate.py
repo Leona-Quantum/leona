@@ -148,7 +148,7 @@ def test_every_entry_is_costed_under_one_identity_so_the_page_can_be_ordered():
     rotation = estimate_for_record(_record(_gate("ry", 0, param="0.3")), "b", ASSUMPTIONS)
 
     assert (
-        clifford.assumptions.identity == rotation.assumptions.identity == "gidney-2025@v1+eps=1e-06"
+        clifford.assumptions.identity == rotation.assumptions.identity == "gidney-2025@v2+eps=1e-06"
     )
 
 
@@ -167,7 +167,7 @@ def test_the_default_set_resolves_and_the_sourced_one_still_states_no_precision(
 
 
 def test_the_identity_printed_on_the_page_can_be_handed_straight_back():
-    """The page prints `gidney-2025@v1+eps=1e-06`, and the API used to 422 on it.
+    """The page prints `gidney-2025@v2+eps=1e-06`, and the API used to 422 on it.
 
     The registry is keyed by `name@vN` because a built-in set states no precision,
     but what a reader has in front of them is the identity the estimate carries.
@@ -175,14 +175,14 @@ def test_the_identity_printed_on_the_page_can_be_handed_straight_back():
     disagreed about the name of the same thing.
     """
     shown = resolve_assumptions(None, None).identity
-    assert shown == "gidney-2025@v1+eps=1e-06"
+    assert shown == "gidney-2025@v2+eps=1e-06"
 
     assert resolve_assumptions(shown, None).identity == shown
     # Restating the same precision is agreement, not a conflict.
     assert resolve_assumptions(shown, 1e-6).identity == shown
     assert (
-        resolve_assumptions("composed-trapped-ion@v1+eps=1e-09", None).identity
-        == "composed-trapped-ion@v1+eps=1e-09"
+        resolve_assumptions("composed-trapped-ion@v2+eps=1e-09", None).identity
+        == "composed-trapped-ion@v2+eps=1e-09"
     )
 
 
@@ -191,21 +191,21 @@ def test_two_stated_precisions_that_disagree_are_refused_rather_than_ranked():
     so picking one would return a cost under a budget the caller did not choose —
     on a page whose whole argument is that the label is the claim."""
     with pytest.raises(ContradictoryPrecision):
-        resolve_assumptions("gidney-2025@v1+eps=1e-06", 1e-9)
+        resolve_assumptions("gidney-2025@v2+eps=1e-06", 1e-9)
 
 
 def test_a_precision_smuggled_through_the_identity_obeys_the_same_bounds():
     """`epsilon` is bounded at the route; nothing bounded one arriving inside the
     identity string, which would be a second door of a different size on an
     anonymous endpoint."""
-    for outside in ("gidney-2025@v1+eps=1e-30", "gidney-2025@v1+eps=0.5"):
+    for outside in ("gidney-2025@v2+eps=1e-30", "gidney-2025@v2+eps=0.5"):
         with pytest.raises(ContradictoryPrecision):
             resolve_assumptions(outside, None)
 
 
 def test_an_identity_whose_suffix_is_not_a_number_is_simply_unknown():
     with pytest.raises(UnknownAssumptionSet):
-        resolve_assumptions("gidney-2025@v1+eps=banana", None)
+        resolve_assumptions("gidney-2025@v2+eps=banana", None)
 
 
 def test_the_second_set_is_reachable_by_name_and_the_default_does_not_move():
@@ -215,10 +215,10 @@ def test_the_second_set_is_reachable_by_name_and_the_default_does_not_move():
     so the default is load-bearing: if it drifted, a page nobody edited would
     start showing different physical qubit counts under a different citation.
     """
-    trapped_ion = resolve_assumptions("composed-trapped-ion@v1", None)
+    trapped_ion = resolve_assumptions("composed-trapped-ion@v2", None)
 
-    assert trapped_ion.identity == "composed-trapped-ion@v1+eps=1e-06"
-    assert resolve_assumptions(None, None).identity == "gidney-2025@v1+eps=1e-06"
+    assert trapped_ion.identity == "composed-trapped-ion@v2+eps=1e-06"
+    assert resolve_assumptions(None, None).identity == "gidney-2025@v2+eps=1e-06"
     # The two are the pair the ordering refusal exists for.
     assert not trapped_ion.comparable_with(resolve_assumptions(None, None))
 
@@ -230,7 +230,7 @@ def test_the_same_circuit_costed_under_both_sets_carries_two_identities():
 
     superconducting = estimate_for_record(circuit, "a", resolve_assumptions(None, None))
     trapped_ion = estimate_for_record(
-        circuit, "a", resolve_assumptions("composed-trapped-ion@v1", None)
+        circuit, "a", resolve_assumptions("composed-trapped-ion@v2", None)
     )
 
     assert superconducting.assumptions.identity != trapped_ion.assumptions.identity
@@ -327,17 +327,21 @@ def test_the_published_corpus_costs_the_way_the_notes_say():
 
 
 def test_adding_a_second_set_moved_no_number_on_the_published_page():
-    """The regression a new assumption set could plausibly cause.
+    """What `/repository/benchmark-hea-rzry-cz-16q` publishes, pinned.
 
     `/repository` renders every cost without naming a set, so the default is
-    load-bearing: a drift there would change published physical qubit counts on
-    a page nobody edited. 1,307,465 is the number currently on
-    `/repository/benchmark-hea-rzry-cz-16q`, read off production in session 74.
+    load-bearing: a drift there changes published physical qubit counts on a
+    page nobody edited.
 
-    The trapped-ion figure beside it is not a rival estimate to rank against it
-    — that is what `comparable_with` refuses — it is the same circuit on
-    hardware whose code cycle is 235x slower, which buys the same 2,320 data
-    qubits 34x as many factories.
+    **This number moved once, deliberately, in the v2 sourcing pass**, from
+    1,307,465 to 836,800. It moved because six values in `gidney-2025` were not
+    the ones arXiv:2505.15917 states, and correcting them pulls in two
+    directions: each patch got *more* expensive (2(d+1)^2 = 200 qubits at d = 9,
+    the paper's own conversion, against the 145 this package applied to every
+    set) while each magic state got *cheaper*, because the paper's factory
+    delivers a CCZ state for eight T states and this model prices one state at a
+    time. Anyone re-pinning this should be able to say which of those two moved
+    and why — if it changed and nobody can, that is the regression.
     """
     flagship = next(
         (r for r in _manifest_records() if r.get("slug") == "benchmark-hea-rzry-cz-16q"),
@@ -346,20 +350,24 @@ def test_adding_a_second_set_moved_no_number_on_the_published_page():
     assert flagship is not None, "the corpus entry this pins is gone; re-pin, do not delete"
 
     default = estimate_for_record(flagship, "benchmark-hea-rzry-cz-16q", ASSUMPTIONS)
-    assert default.assumptions.identity == "gidney-2025@v1+eps=1e-06"
-    assert default.footprint.total_physical_qubits == 1_307_465
-    assert default.footprint.factory_qubits == 1_302_825
+    assert default.assumptions.identity == "gidney-2025@v2+eps=1e-06"
+    assert default.footprint.total_physical_qubits == 836_800
+    assert default.footprint.factory_qubits == 830_400
+    assert default.distance.physical_per_logical == 2 * (default.distance.code_distance + 1) ** 2
 
     trapped_ion = estimate_for_record(
         flagship,
         "benchmark-hea-rzry-cz-16q",
-        resolve_assumptions("composed-trapped-ion@v1", None),
+        resolve_assumptions("composed-trapped-ion@v2", None),
     )
-    # Same circuit and same code distance: every qubit of the difference is
-    # factories, which is the finding, not a coincidence.
+    # Same circuit, same code distance, and now *different* data qubits — the
+    # two sets state different patch conversions (2(d+1)^2 against 2d^2) and v2
+    # stopped applying one paper's to both. The difference is still overwhelmingly
+    # factories: a 235 us code cycle and the distillation block Litinski selects
+    # at this error rate, against a 1 us cycle and the paper's own factory.
     assert trapped_ion.distance.code_distance == default.distance.code_distance
-    assert trapped_ion.footprint.data_patch_qubits == default.footprint.data_patch_qubits
-    assert trapped_ion.runtime.factory_count > 30 * default.runtime.factory_count
+    assert trapped_ion.footprint.data_patch_qubits < default.footprint.data_patch_qubits
+    assert trapped_ion.runtime.factory_count > 400 * default.runtime.factory_count
 
 
 def test_asking_for_factories_a_clifford_circuit_cannot_use_does_not_inflate_it():
@@ -409,22 +417,23 @@ def test_the_unsourced_values_are_disclosed_in_the_citation_the_page_renders():
     rebuilds the frozen set, and `_summarize_assumptions`, which copies fields
     across by hand. Both are exercised here.
 
-    Three of `gidney-2025`'s nine values are working allowances rather than
-    paper values. The string on `/repository` used to say the source stated its
-    assumptions in one place, so a visitor read a citation claiming more
-    sourcing than the set had.
+    In v2 `gidney-2025` has no working allowances — reading the paper found a
+    stated value behind each — but it does have three attributions, and those
+    are the same kind of claim: a value the page would otherwise present as
+    coming from the named source. Every field named in one has to reach the
+    reader.
     """
     resolved = resolve_assumptions(None, 1e-6)
     summary = _summarize_assumptions(resolved)
 
-    assert resolved.working_allowances == (
-        "routing_factor",
-        "factory_footprint_logical",
-        "t_per_toffoli",
-    )
-    for allowance in resolved.working_allowances:
-        assert allowance in summary.citation, f"{allowance} never reaches the page"
-    assert "working allowances" in summary.citation
+    assert resolved.working_allowances == ()
+    attributed = [name for entry in resolved.value_provenance for name in entry.fields]
+    assert attributed, "the set discloses nothing, so this test proves nothing"
+    for name in attributed:
+        assert name in summary.citation, f"{name} never reaches the page"
+    # The suppression law is not from the paper this set is named for, and the
+    # page has to be able to say whose it is.
+    assert "arXiv:1808.06709" in summary.citation
     # The precision must still be in the identity: the disclosure is additional
     # to that refusal machinery, not a replacement for it.
-    assert summary.identity == "gidney-2025@v1+eps=1e-06"
+    assert summary.identity == "gidney-2025@v2+eps=1e-06"

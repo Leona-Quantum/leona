@@ -18,7 +18,7 @@ export type { ResourceEstimateBasis };
 export { PUBLIC_ESTIMATE_BASES };
 
 export interface AssumptionSetSummary {
-  /** e.g. `gidney-2025@v1+eps=1e-06`. Two estimates rank against each other only when these match. */
+  /** e.g. `gidney-2025@v2+eps=1e-06`. Two estimates rank against each other only when these match. */
   identity: string;
   name: string;
   version: number;

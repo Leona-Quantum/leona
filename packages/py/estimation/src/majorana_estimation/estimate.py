@@ -3,8 +3,15 @@
 Layer 1 (logical metrics) is `LogicalCost`. Layers 2-4 are here:
 
     Layer 2  code distance      d from p, p_th and the operation count
-    Layer 3  physical footprint logical_qubits * (d^2 + (d-1)^2) * routing + factories
+    Layer 3  physical footprint logical_qubits * patch(d) * routing + factories
     Layer 4  runtime            max(throughput term, reaction-limited term)
+
+**Layers 3 and 4 both take the code distance from Layer 2 rather than holding
+constants of their own.** `patch(d)` is `AssumptionSet.physical_qubits_per_patch`
+and factory time is `AssumptionSet.factory_cycles_per_state`, both per set and
+both sourced, because the papers state them per machine and as functions of `d`.
+Hard-coding either here is how this package ended up applying one paper's patch
+conversion to a set that states a different one.
 
 **The intermediates are the argument; the final number is just their product.**
 An estimator that returns only a physical-qubit count is a black box producing
@@ -164,7 +171,9 @@ def choose_code_distance(
                 logical_operations=operations,
                 required_error_per_operation=required,
                 achieved_error_per_operation=achieved,
-                physical_per_logical=distance**2 + (distance - 1) ** 2,
+                physical_per_logical=assumptions.physical_qubits_per_patch.physical_qubits(
+                    distance
+                ),
             )
     raise ValueError(
         f"no code distance up to {MAX_CODE_DISTANCE} reaches a per-operation logical "
@@ -178,10 +187,17 @@ def _runtime(
     assumptions: AssumptionSet,
     *,
     factory_count: int,
+    code_distance: int,
 ) -> Runtime:
-    """Layer 4. Both terms, and the crossover between them."""
+    """Layer 4. Both terms, and the crossover between them.
+
+    Takes the distance chosen by Layer 2 because factory time is a function of
+    it under every source this package cites. Layer 2 does not depend on Layer
+    4, so there is no circularity — but the ordering inside `estimate` is now
+    load-bearing rather than incidental.
+    """
     magic_states = logical.magic_states(t_per_toffoli=assumptions.t_per_toffoli)
-    rate = assumptions.magic_states_per_second_per_factory
+    rate = assumptions.magic_states_per_second_per_factory(code_distance)
     if magic_states == 0:
         # A Clifford-only circuit places no demand on distillation at all, so
         # the throughput term is absent rather than infinite. Without this the
@@ -252,7 +268,9 @@ def estimate(
 
     resolved_factories = factory_count
     if resolved_factories is None:
-        probe = _runtime(logical, assumptions, factory_count=1)
+        probe = _runtime(
+            logical, assumptions, factory_count=1, code_distance=distance.code_distance
+        )
         resolved_factories = probe.factory_crossover or (0 if logical.is_clifford_only else 1)
         if probe.factory_crossover is not None:
             notes.append(
@@ -277,7 +295,12 @@ def estimate(
         )
         resolved_factories = 0
 
-    runtime = _runtime(logical, assumptions, factory_count=resolved_factories)
+    runtime = _runtime(
+        logical,
+        assumptions,
+        factory_count=resolved_factories,
+        code_distance=distance.code_distance,
+    )
 
     data = logical.logical_qubits * distance.physical_per_logical
     with_routing = math.ceil(data * assumptions.routing_factor)

@@ -185,9 +185,9 @@ async def get_catalog_entry_estimate(
         str | None,
         Query(
             description=(
-                "Assumption set, as either the registry key (`gidney-2025@v1`, "
-                "`composed-trapped-ion@v1`) or the full identity an estimate carries "
-                "(`gidney-2025@v1+eps=1e-06`). Defaults to `gidney-2025@v1`. A "
+                "Assumption set, as either the registry key (`gidney-2025@v2`, "
+                "`composed-trapped-ion@v2`) or the full identity an estimate carries "
+                "(`gidney-2025@v2+eps=1e-06`). Defaults to `gidney-2025@v2`. A "
                 "precision given both here and in `epsilon` must agree. Costs under "
                 "two different identities are not comparable and must not be ranked "
                 "against each other."
