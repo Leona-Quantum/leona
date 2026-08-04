@@ -1,5 +1,5 @@
 #!/usr/bin/env node
-// Style gate (plans/roadmap/04-ui-specifications.md §5.1): raw hex colors are allowed
+// Style gate (docs/ui/tokens.md): raw hex colors are allowed
 // ONLY in packages/ts/ui/tokens.css. Everything else must use token variables.
 // Scans UI surfaces (apps/web, packages/ts/ui) for hex colors in source/styles.
 import { readdirSync, readFileSync, statSync } from "node:fs";

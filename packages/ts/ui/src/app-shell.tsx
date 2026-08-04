@@ -1,4 +1,4 @@
-// Shared shell: top nav across the three surfaces (07-ui-product.md §1).
+// Shared shell: top nav across the surfaces (docs/ui/screens.md § Route map).
 // Server-compatible; active-link highlighting is the caller's job (pass currentPath).
 import type { ReactNode } from "react";
 import { BRAND_NAME, NAV_SURFACES, navSurfaceLabel } from "./nav-config";
