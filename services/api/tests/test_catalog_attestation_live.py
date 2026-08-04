@@ -194,6 +194,122 @@ async def test_attestation_makes_a_staged_draft_publishable(env):
 
 
 @requires_db
+async def test_the_signed_claim_is_readable_back_across_a_new_version(env):
+    """The carry-forward rule needs a previous claim to compare against, and
+    that means the claim has to have been written down.
+
+    `grant_carries_forward` was tested in isolation and had no call site,
+    because nothing persisted a claim hash: `evidence_hash` covers the claim
+    *and* the content, so it moves on every revision — exactly the case
+    carry-forward exists to permit. Migration 0046 adds
+    `license_assertions.claim_hash`; this is the plumbing that reads it back.
+
+    The lookup deliberately spans versions. A re-imported record has a brand-new
+    version carrying no assertion at all, so a current-version-only lookup would
+    always answer None and turn every carry-forward into a fresh signature.
+    """
+    configured, attester_id, factory = env
+    claim = "a1" * 32
+
+    async with factory() as session:
+        artifact = await _stage_draft(session, configured)
+        await _attest(session, configured, attester_id, artifact.id, claim_hash=claim)
+        await session.commit()
+        artifact_id = artifact.id
+
+    async with factory() as session:
+        assert (
+            await catalog.latest_license_claim_hash(
+                configured.importer_scope(), session, artifact_id, authority=configured
+            )
+            == claim
+        )
+
+    # The record is re-imported with changed content: a new version, no
+    # assertion of its own. The prior claim must still be findable.
+    async with factory() as session:
+        revised = f"revised-{uuid.uuid4()}"
+        await catalog.stage_artifact_version(
+            configured.importer_scope(),
+            session,
+            artifact_id,
+            authority=configured,
+            raw_source=revised.encode(),
+            normalized_source=revised,
+            code=revised,
+            code_lang="python",
+            authoritative_framework=Framework.QISKIT,
+            authoritative_framework_version="1.2.0",
+            source_language="python",
+            metadata_schema_version="1",
+        )
+        await session.commit()
+
+    async with factory() as session:
+        assert (
+            await catalog.latest_license_claim_hash(
+                configured.importer_scope(), session, artifact_id, authority=configured
+            )
+            == claim
+        )
+
+
+@requires_db
+async def test_a_record_never_attested_reports_no_prior_claim(env):
+    """An unsigned record must read as None, not as an empty-string match.
+
+    None is what makes `grant_carries_forward` refuse. If this ever returned
+    something falsy-but-equal for two unsigned records, two records with no
+    grant at all would 'carry forward' from each other.
+    """
+    configured, attester_id, factory = env
+    async with factory() as session:
+        artifact = await _stage_draft(session, configured)
+        await session.commit()
+        artifact_id = artifact.id
+
+    async with factory() as session:
+        assert (
+            await catalog.latest_license_claim_hash(
+                configured.importer_scope(), session, artifact_id, authority=configured
+            )
+            is None
+        )
+
+
+@requires_db
+async def test_publishing_an_already_public_record_is_a_no_op(env):
+    """Re-running the publication CLI over a corpus must not die on record one.
+
+    PUBLIC has no self-edge in the lifecycle table — correctly, it is not a
+    state change — but `publish-bootstrap` caught only PublicationNotReadyError,
+    so the loop raised IllegalPublicationTransition on the first already-live
+    record and left the rest of the corpus unpublished.
+    """
+    configured, attester_id, factory = env
+    reviewer = _reviewer_scope(configured, attester_id)
+    async with factory() as session:
+        artifact = await _stage_draft(session, configured)
+        await _attest(session, configured, attester_id, artifact.id)
+        await session.commit()
+        artifact_id = artifact.id
+
+    async with factory() as session:
+        first = await catalog.publish_catalog_artifact(
+            reviewer, session, artifact_id, authority=configured
+        )
+        assert first.publication_state == PublicationState.PUBLIC
+        await session.commit()
+
+    async with factory() as session:
+        again = await catalog.publish_catalog_artifact(
+            reviewer, session, artifact_id, authority=configured
+        )
+        assert again.publication_state == PublicationState.PUBLIC
+        await session.commit()
+
+
+@requires_db
 async def test_attestation_is_idempotent(env):
     """A run interrupted halfway must be resumable by simply re-running, so the
     second pass has to report no work rather than appending a second source row

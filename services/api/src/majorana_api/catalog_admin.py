@@ -170,19 +170,39 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
 
         attestation_meta = policy.audit_meta()
         touched = 0
+        carried = 0
+        refused: list[str] = []
         for record in plan.included:
+            artifact_id = targets[record.upstream_identity]
+            # Owner decision B: a prior human grant binds to a record's new
+            # version when the provenance claim is unchanged, and refuses when it
+            # changed. A refusal is not a failure to be retried — it is the case
+            # that needs a person, so it is collected and reported rather than
+            # swept into a 283-record bulk run where nobody would see it.
+            async with factory() as session:
+                previous_claim = await catalog.latest_license_claim_hash(
+                    importer_scope, session, artifact_id, authority=authority
+                )
+            carries = record.grant_carries_forward(previous_claim)
+            if previous_claim is not None and not carries:
+                refused.append(record.upstream_identity)
+                continue
+            if carries:
+                carried += 1
+
             async with factory() as session:
                 performed = await catalog.attest_catalog_record(
                     importer_scope,
                     reviewer_scope,
                     session,
-                    targets[record.upstream_identity],
+                    artifact_id,
                     authority=authority,
                     spdx_id=policy.spdx_id,
                     assertion_kind=policy.assertion_kind,
                     license_scope=policy.license_scope,
                     source_kind=policy.source_kind,
                     evidence_hash=record.evidence_hash,
+                    claim_hash=record.claim_hash,
                     repository=None,
                     ref=source.upstream_ref or None,
                     path=record.upstream_identity,
@@ -192,7 +212,11 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
                         "source_kind_claim": record.source_kind_claim,
                         "license_claim": record.license_claim,
                     },
-                    attestation_meta=attestation_meta,
+                    attestation_meta={
+                        **attestation_meta,
+                        "grant_carried_forward": carries,
+                        "previous_claim_hash": previous_claim,
+                    },
                 )
                 await session.commit()
             if performed:
@@ -200,6 +224,12 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
 
         # One ledger entry for the run itself, so the corpus-level act is
         # auditable without reassembling 283 per-record rows.
+        #
+        # It must describe what this run actually did, not what it set out to do.
+        # Recording len(plan.included) here would claim the whole corpus was
+        # attested even when records were refused — and this row commits before
+        # the refusal exits, so that claim would be the durable one while the
+        # accurate number existed only in a terminal nobody kept.
         async with factory() as session:
             await catalog.record_bulk_attestation(
                 reviewer_scope,
@@ -208,19 +238,35 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
                 meta={
                     **attestation_meta,
                     "manifest_checksum": source.manifest_checksum,
-                    "attested_count": len(plan.included),
+                    "attested_count": len(plan.included) - len(refused),
+                    "carried_forward_count": carried,
                     "excluded": {r.upstream_identity: r.reason for r in plan.excluded},
+                    # Named, not counted: "3 records were refused" sends whoever
+                    # reads this back to the import to work out which three.
+                    "refused_provenance_claim_changed": sorted(refused),
                 },
             )
             await session.commit()
 
         print(
             f"bulk attestation complete: spdx={policy.spdx_id} "
-            f"attested={len(plan.included)} changed_this_run={touched} "
+            f"attested={len(plan.included) - len(refused)} changed_this_run={touched} "
+            f"carried_forward={carried} needs_signature={len(refused)} "
             f"excluded={len(plan.excluded)} policy={policy.checksum[:12]}"
         )
         for excluded in plan.excluded:
             print(f"  excluded {excluded.upstream_identity}: {excluded.reason}")
+        for identity in refused[:20]:
+            print(f"  needs a fresh signature (provenance claim changed): {identity}")
+        if refused:
+            # Fail-closed. These records keep their previous version live and
+            # their new version unattested, which is the correct end state for a
+            # record whose stated origin moved: it must not reach a visitor under
+            # a grant made about something else.
+            raise SystemExit(
+                f"{len(refused)} records changed their provenance claim and cannot "
+                "inherit the existing grant; re-attest them deliberately"
+            )
     finally:
         await engine.dispose()
 
@@ -276,20 +322,48 @@ async def _publish_bootstrap(attested_by: uuid.UUID) -> None:
         await engine.dispose()
 
 
+async def _sync_bootstrap(attested_by: uuid.UUID) -> None:
+    """Import, attest and publish the manifest as one operation.
+
+    This exists because the three steps are not independently safe to leave
+    part-done. Staging a new version resets an artifact's review_state from
+    ACCEPTED to DRAFT, and the public predicate requires ACCEPTED *and* PUBLIC —
+    so between `bootstrap-import` and `attest-bootstrap` every record whose
+    content changed is off /repository entirely. Run by hand as three commands,
+    that gap is however long the operator takes to type the next one.
+
+    Each step is separately idempotent and each is the same function the
+    individual subcommands call, so this is a sequencing guarantee, not a second
+    implementation that could drift from them.
+    """
+    await _bootstrap_import()
+    await _attest_bootstrap(attested_by)
+    await _publish_bootstrap(attested_by)
+
+
+_NEEDS_REVIEWER = {"attest-bootstrap", "publish-bootstrap", "sync-bootstrap"}
+
+
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument(
         "command",
-        choices=("provision", "bootstrap-import", "attest-bootstrap", "publish-bootstrap"),
+        choices=(
+            "provision",
+            "bootstrap-import",
+            "attest-bootstrap",
+            "publish-bootstrap",
+            "sync-bootstrap",
+        ),
     )
     parser.add_argument(
         "--attested-by",
         type=uuid.UUID,
         help="user id of the human reviewer making/holding the attestation "
-        "(required by attest-bootstrap and publish-bootstrap)",
+        "(required by attest-bootstrap, publish-bootstrap and sync-bootstrap)",
     )
     args = parser.parse_args()
-    if args.command in {"attest-bootstrap", "publish-bootstrap"} and args.attested_by is None:
+    if args.command in _NEEDS_REVIEWER and args.attested_by is None:
         parser.error(f"{args.command} requires --attested-by")
     if args.command == "provision":
         asyncio.run(_provision())
@@ -299,6 +373,8 @@ def main() -> None:
         asyncio.run(_attest_bootstrap(args.attested_by))
     elif args.command == "publish-bootstrap":
         asyncio.run(_publish_bootstrap(args.attested_by))
+    elif args.command == "sync-bootstrap":
+        asyncio.run(_sync_bootstrap(args.attested_by))
 
 
 if __name__ == "__main__":

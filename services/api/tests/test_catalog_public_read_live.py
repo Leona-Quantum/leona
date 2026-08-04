@@ -510,15 +510,24 @@ async def test_the_view_projection_still_applies_to_a_page(env):
         assert set(entry["record"]) <= set(LIST_VIEW_RECORD_FIELDS)
 
 
-@requires_db
-async def test_import_provenance_surfaces_the_manifest_identity(env):
-    """A bootstrap-imported record is served under its manifest identity, with
-    the pinned provider/source-commit provenance recovered through the import
-    linkage — not under the importer's synthetic internal slug."""
-    configured, reviewer_id, factory = env
-    internal_slug = f"import-internal-{uuid.uuid4()}"
-    manifest_identity = f"amplitude-amplification-{uuid.uuid4()}"
-    artifact_id = await _publish_new_entry(factory, configured, reviewer_id, slug=internal_slug)
+async def _attach_import_item(
+    factory, *, artifact_id: uuid.UUID, manifest_identity: str, upstream_ref: str
+) -> None:
+    """Record one import batch that produced `artifact_id`.
+
+    A reconciling importer writes a fresh ImportItem per batch against the
+    artifact it reused, so calling this twice is what a second import of the
+    same corpus actually leaves behind. The artifact carries the identity itself
+    (migration 0046) — stamping it here is what the importer's stage_artifact
+    does — while the ImportItem rows accumulate one per batch, which is the
+    condition that used to multiply public rows.
+    """
+    async with factory() as session:
+        artifact = (
+            await session.execute(select(Artifact).where(Artifact.id == artifact_id))
+        ).scalar_one()
+        artifact.upstream_identity = manifest_identity
+        await session.commit()
 
     async with factory() as session:
         # status='done': this stands in for an already-completed import, and a
@@ -536,7 +545,7 @@ async def test_import_provenance_surfaces_the_manifest_identity(env):
             id=uuid7(),
             job_id=queue_job.id,
             provider=ImportProvider.CATALOG_BOOTSTRAP,
-            upstream_ref="deadbeefcafe",
+            upstream_ref=upstream_ref,
             idempotency_key=f"catalog-bootstrap-{uuid.uuid4()}",
             status=ImportJobStatus.COMPLETED,
             item_count=1,
@@ -554,6 +563,23 @@ async def test_import_provenance_surfaces_the_manifest_identity(env):
         )
         await session.commit()
 
+
+@requires_db
+async def test_import_provenance_surfaces_the_manifest_identity(env):
+    """A bootstrap-imported record is served under its manifest identity, with
+    the pinned provider/source-commit provenance recovered through the import
+    linkage — not under the importer's synthetic internal slug."""
+    configured, reviewer_id, factory = env
+    internal_slug = f"import-internal-{uuid.uuid4()}"
+    manifest_identity = f"amplitude-amplification-{uuid.uuid4()}"
+    artifact_id = await _publish_new_entry(factory, configured, reviewer_id, slug=internal_slug)
+    await _attach_import_item(
+        factory,
+        artifact_id=artifact_id,
+        manifest_identity=manifest_identity,
+        upstream_ref="deadbeefcafe",
+    )
+
     async with factory() as session:
         entry = await catalog.get_public_catalog_entry(
             configured.public_scope(), session, manifest_identity, authority=configured
@@ -561,3 +587,108 @@ async def test_import_provenance_surfaces_the_manifest_identity(env):
     assert entry.slug == manifest_identity
     assert entry.provenance.import_provider == ImportProvider.CATALOG_BOOTSTRAP
     assert entry.provenance.upstream_ref == "deadbeefcafe"
+
+
+@requires_db
+@pytest.mark.parametrize("imported_first", [True, False])
+async def test_an_imported_identity_wins_over_an_artifact_merely_named_like_it(env, imported_first):
+    """`coalesce(upstream_identity, slug)` is not unique, so the detail route can
+    match two rows: the record that carries the identity, and an unimported
+    artifact whose slug happens to equal it. `.first()` alone would pick one
+    arbitrarily — and possibly a different one per request.
+
+    The imported record must win. It is the one the listing shows under that
+    slug, and a detail page that disagrees with the listing it was reached from
+    is the confusing kind of wrong.
+
+    **Both creation orders are exercised deliberately.** With one order this test
+    passes against an unordered query purely by luck of the scan — which is what
+    a test asserting "the right row came back" is worth when nothing made it come
+    back. Creating the rival first in one case and second in the other means an
+    unordered query has to be wrong in at least one of them.
+    """
+    configured, reviewer_id, factory = env
+    contested = f"contested-{uuid.uuid4()}"
+
+    async def _make_rival():
+        # An artifact whose *slug* is the contested name, carrying no identity.
+        await _publish_new_entry(factory, configured, reviewer_id, slug=contested)
+
+    async def _make_owner():
+        artifact_id = await _publish_new_entry(
+            factory, configured, reviewer_id, slug=f"internal-{uuid.uuid4()}"
+        )
+        await _attach_import_item(
+            factory,
+            artifact_id=artifact_id,
+            manifest_identity=contested,
+            upstream_ref="commit-owning-the-identity",
+        )
+
+    for make in (_make_owner, _make_rival) if imported_first else (_make_rival, _make_owner):
+        await make()
+
+    async with factory() as session:
+        entry = await catalog.get_public_catalog_entry(
+            configured.public_scope(), session, contested, authority=configured
+        )
+    assert entry.slug == contested
+    assert entry.provenance.upstream_ref == "commit-owning-the-identity"
+
+
+@requires_db
+async def test_a_second_import_of_the_same_record_does_not_multiply_public_rows(env):
+    """Re-importing a record must not make the listing disagree with its total.
+
+    This is the failure that would have shipped green. The listing reached
+    ImportItem to recover the manifest identity; the count query never did. They
+    agreed only because every artifact happened to have exactly one import item.
+    A reconciling importer reuses the artifact and writes a **new** ImportItem
+    per batch, so the listing's join goes one-to-many and renders the same record
+    once per import while `X-Catalog-Total` still counts artifacts.
+
+    The web layer compares `collected.length !== total` and, on a mismatch,
+    refuses the corpus and falls back to the *static* entries — which are the
+    fixed ones. So `/repository` would look correct because of the fallback
+    rather than because of the fix, and nothing would report a problem.
+    """
+    configured, reviewer_id, factory = env
+    manifest_identity = f"reimported-{uuid.uuid4()}"
+    artifact_id = await _publish_new_entry(
+        factory, configured, reviewer_id, slug=f"reimport-internal-{uuid.uuid4()}"
+    )
+
+    for upstream_ref in ("commit-first-import", "commit-second-import"):
+        await _attach_import_item(
+            factory,
+            artifact_id=artifact_id,
+            manifest_identity=manifest_identity,
+            upstream_ref=upstream_ref,
+        )
+
+    async with factory() as session:
+        rows = await catalog.list_public_catalog_entries(
+            configured.public_scope(), session, authority=configured
+        )
+        total = await catalog.count_public_catalog_entries(
+            configured.public_scope(), session, authority=configured
+        )
+
+    assert len(rows) == total
+    # The record appears once, under its manifest identity, not once per batch.
+    assert [row.slug for row in rows].count(manifest_identity) == 1
+
+    async with _client(configured, factory) as client:
+        listing = await client.get("/v1/catalog/entries")
+        assert listing.status_code == 200
+        body = listing.json()
+        assert len(body) == int(listing.headers[CATALOG_TOTAL_HEADER])
+        assert [entry["slug"] for entry in body].count(manifest_identity) == 1
+
+    # And the detail route still resolves that identity to exactly one record
+    # rather than failing on a multi-row result.
+    async with factory() as session:
+        entry = await catalog.get_public_catalog_entry(
+            configured.public_scope(), session, manifest_identity, authority=configured
+        )
+    assert entry.slug == manifest_identity

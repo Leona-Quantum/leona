@@ -326,6 +326,166 @@ async def test_retry_creates_no_duplicate_version(env, tmp_path):
     assert version_count_after == version_count_before == 2
 
 
+def _unique_corpus(source_dir: Path, dest_dir: Path) -> Path:
+    """Like _unique_copy, but the file *names* are unique per run too.
+
+    _unique_copy only varies content. That was enough while every import created
+    a fresh artifact, but upstream identity is now a durable key: the file name
+    is the identity, and reconciliation deliberately resolves it across import
+    jobs. Reusing `valid_set/a.json` run-to-run would therefore resolve onto the
+    artifact left behind by the *previous* test run and count its versions —
+    which is the reconciler working correctly and the test lying about what it
+    measured.
+    """
+    dest_dir.mkdir(parents=True, exist_ok=True)
+    run = uuid.uuid4().hex
+    marker = f"\n# test-run-marker: {run}\n".encode()
+    for path in sorted(p for p in source_dir.iterdir() if p.is_file()):
+        (dest_dir / f"{path.stem}-{run}{path.suffix}").write_bytes(path.read_bytes() + marker)
+    return dest_dir
+
+
+async def _import_once(factory, authority, source) -> tuple[uuid.UUID, object]:
+    """One complete import batch under a fresh idempotency key.
+
+    A fresh key is what makes this a *second import* rather than a retry: the
+    same key resumes the existing job (test_retry_creates_no_duplicate_version
+    covers that), a new one creates a new job with a new set of ImportItems —
+    which is what the operator does after regenerating the manifest.
+    """
+    scope = authority.importer_scope()
+    async with factory() as session:
+        job = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            source=source,
+            idempotency_key=f"idem-{uuid.uuid4()}",
+        )
+        await session.commit()
+        finished = await catalog_import.process_import_batch(
+            scope, session, job.id, authority=authority, source=source
+        )
+    return job.id, finished
+
+
+@requires_db
+async def test_reimporting_unchanged_content_reuses_the_record(env, tmp_path):
+    """A second import of a corpus that has not changed writes nothing.
+
+    Before reconciliation this was the importer rejecting a record for being
+    itself: the second run staged a *new* artifact holding the same bytes, hit
+    the table-wide unique constraint on normalized_source_hash, and reported
+    `duplicate_source`. And because stage_artifact_version rolls its session
+    back before raising, the artifact INSERT from moments earlier was discarded
+    too — leaving a rejected ledger row pointing at nothing.
+    """
+    authority, factory = env
+    fixtures_dir = _unique_corpus(FIXTURES_ROOT / "valid_set", tmp_path)
+    source = _fixture_source(fixtures_dir, "valid_set")
+
+    first_job, first = await _import_once(factory, authority, source)
+    assert first.status == ImportJobStatus.COMPLETED
+    assert first.accepted_count == 2
+
+    async with factory() as session:
+        before = await _items_by_identity(session, first_job)
+        artifacts_before = {name: i.resulting_artifact_id for name, i in before.items()}
+        versions_before = {name: i.resulting_version_id for name, i in before.items()}
+
+    second_job, second = await _import_once(factory, authority, source)
+    # The record is accepted, not rejected as a duplicate of itself.
+    assert second.status == ImportJobStatus.COMPLETED
+    assert second.accepted_count == 2
+    assert second.rejected_count == 0
+
+    async with factory() as session:
+        after = await _items_by_identity(session, second_job)
+        assert {i.state for i in after.values()} == {ImportItemState.STAGED}
+        # Same artifacts, same versions: the second import created no rows.
+        assert {n: i.resulting_artifact_id for n, i in after.items()} == artifacts_before
+        assert {n: i.resulting_version_id for n, i in after.items()} == versions_before
+
+        for identity, artifact_id in artifacts_before.items():
+            artifact = await session.get(Artifact, artifact_id)
+            assert artifact.upstream_identity == identity
+            version_count = (
+                await session.execute(
+                    select(func.count(ArtifactVersion.id)).where(
+                        ArtifactVersion.artifact_id == artifact_id
+                    )
+                )
+            ).scalar_one()
+            assert version_count == 1
+
+
+@requires_db
+async def test_reimporting_changed_content_revises_the_same_record(env, tmp_path):
+    """Edited content becomes a new version of the record that already exists,
+    under the same public identity — which is the entire point of R0: the owner
+    can change an entry and have the change reach a visitor.
+
+    The identity is what has to survive. A second artifact would take the same
+    manifest slug and the public listing would then serve two records under one
+    URL, which is what the partial unique index in migration 0046 forbids.
+    """
+    authority, factory = env
+    fixtures_dir = _unique_corpus(FIXTURES_ROOT / "valid_set", tmp_path)
+    source = _fixture_source(fixtures_dir, "valid_set")
+
+    first_job, first = await _import_once(factory, authority, source)
+    assert first.accepted_count == 2
+
+    async with factory() as session:
+        before = await _items_by_identity(session, first_job)
+        artifacts_before = {name: i.resulting_artifact_id for name, i in before.items()}
+
+    # The owner fixes one record's content and regenerates the manifest.
+    edited = sorted(p for p in fixtures_dir.iterdir() if p.is_file())[0]
+    edited.write_bytes(edited.read_bytes() + f"\n# corrected: {uuid.uuid4()}\n".encode())
+
+    second_job, second = await _import_once(factory, authority, source)
+    assert second.status == ImportJobStatus.COMPLETED
+    assert second.accepted_count == 2
+    assert second.rejected_count == 0
+
+    async with factory() as session:
+        after = await _items_by_identity(session, second_job)
+        # Same artifacts throughout — the edit revised a record, it did not
+        # create a rival one.
+        assert {n: i.resulting_artifact_id for n, i in after.items()} == artifacts_before
+
+        changed_id = artifacts_before[edited.name]
+        changed = await session.get(Artifact, changed_id)
+        assert changed.upstream_identity == edited.name
+        assert changed.current_version_id == after[edited.name].resulting_version_id
+        assert changed.current_version_id != before[edited.name].resulting_version_id
+
+        seqs = (
+            (
+                await session.execute(
+                    select(ArtifactVersion.seq)
+                    .where(ArtifactVersion.artifact_id == changed_id)
+                    .order_by(ArtifactVersion.seq)
+                )
+            )
+            .scalars()
+            .all()
+        )
+        assert list(seqs) == [1, 2]
+
+        # The untouched record gained no version.
+        untouched_id = next(a for n, a in artifacts_before.items() if n != edited.name)
+        untouched_versions = (
+            await session.execute(
+                select(func.count(ArtifactVersion.id)).where(
+                    ArtifactVersion.artifact_id == untouched_id
+                )
+            )
+        ).scalar_one()
+        assert untouched_versions == 1
+
+
 @requires_db
 async def test_crashed_import_resumes_from_durable_item_state(env, tmp_path):
     """Simulates a crash mid-batch: one item is already terminal (as if a
