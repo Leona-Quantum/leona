@@ -263,6 +263,19 @@ def estimate(
     require_count(resolved_factories, "factory_count", minimum=0)
     if resolved_factories == 0 and not logical.is_clifford_only:
         raise ValueError("a circuit consuming magic states needs at least one factory")
+    if logical.is_clifford_only and resolved_factories:
+        # A caller may ask for factories a Clifford-only circuit cannot use.
+        # Honouring that adds `factory_footprint_logical` patches apiece to a
+        # footprint whose own `magic_states` is 0 — a report that contradicts
+        # itself line by line, and one an anonymous caller can trigger through
+        # a query parameter. The circuit's cost is what is being stated here,
+        # not the machine somebody happens to own.
+        notes.append(
+            f"factory_count={resolved_factories} was requested but this circuit consumes no "
+            "magic states, so it is costed with none: factories it cannot use are not part "
+            "of what it needs."
+        )
+        resolved_factories = 0
 
     runtime = _runtime(logical, assumptions, factory_count=resolved_factories)
 

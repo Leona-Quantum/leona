@@ -1,6 +1,11 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { isPriced, parseEstimate, parseEstimateList } from "./repository/estimate.ts";
+import {
+  hasVisibleEstimate,
+  isPriced,
+  parseEstimate,
+  parseEstimateList,
+} from "./repository/estimate.ts";
 import { orderByCost } from "./repository/estimate-order.ts";
 
 /**
@@ -263,4 +268,54 @@ test("equal costs break on a stable key rather than on sort stability", () => {
   const second = run(["mid", "zeta", "alpha"], "cost-asc");
   assert.deepEqual(first.ordered, ["alpha", "mid", "zeta"]);
   assert.deepEqual(first.ordered, second.ordered);
+});
+
+// --- what the page is allowed to put a heading over ---------------------------
+
+test("an entry with no circuit has no visible estimate, so no section is built", () => {
+  // A React element is truthy whatever it renders, so a call site that tests the
+  // element instead of the data gives an empty "Fault-tolerant cost" section on
+  // all 163 entries that carry no circuit.
+  const noCircuit = parseEstimate({
+    slug: "prose",
+    basis: "no_circuit",
+    assumptions: assumptions(),
+    reason: "This entry carries no portable circuit.",
+    logical: null,
+    distance: null,
+    footprint: null,
+    runtime: null,
+    notes: [],
+  });
+  assert.ok(noCircuit);
+  assert.equal(hasVisibleEstimate(noCircuit), false);
+  assert.equal(hasVisibleEstimate(null), false);
+});
+
+test("a refusal is visible, because an unknown cost is information", () => {
+  const refused = parseEstimate({
+    slug: "odd",
+    basis: "refused",
+    assumptions: assumptions(),
+    reason: "1 unrecognised operation(s): wibble",
+    logical: null,
+    distance: null,
+    footprint: null,
+    runtime: null,
+    notes: [],
+  });
+  assert.ok(refused);
+  assert.equal(hasVisibleEstimate(refused), true);
+  assert.equal(hasVisibleEstimate(parseEstimate(priced())), true);
+});
+
+test("an estimated cost with no stated precision is rejected", () => {
+  // The producer's model_validator refuses this; accepting it here renders
+  // "Estimated under a stated precision" above a precision row that is hidden
+  // because there is no precision.
+  const bare = priced({ assumptions: assumptions({ rotation_synthesis_epsilon: null, t_per_rotation: null }) });
+  assert.equal(parseEstimate(bare), null);
+
+  // The same payload on an `exact` basis is fine — it never needed one.
+  assert.ok(parseEstimate({ ...bare, basis: "exact" }));
 });

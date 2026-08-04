@@ -244,3 +244,40 @@ def test_the_published_corpus_costs_the_way_the_notes_say():
     # exercised by real data, not that the corpus is frozen.
     assert bases[ResourceEstimateBasis.EXACT] > 0
     assert bases[ResourceEstimateBasis.ESTIMATED] > 0
+
+
+def test_asking_for_factories_a_clifford_circuit_cannot_use_does_not_inflate_it():
+    """Reachable from an anonymous query parameter: `?factories=5` on a
+    Clifford-only entry reported 975 factory qubits beside `magic_states: 0`."""
+    circuit = _record(_gate("h", 0), _gate("cx", 0, 1))
+
+    asked = estimate_for_record(circuit, "bell", ASSUMPTIONS, factory_count=5)
+
+    assert asked.logical.magic_states == 0
+    assert asked.footprint.factory_qubits == 0
+    assert asked.runtime.factory_count == 0
+    assert asked.footprint.total_physical_qubits == (
+        estimate_for_record(circuit, "bell", ASSUMPTIONS).footprint.total_physical_qubits
+    )
+
+
+def test_an_exactly_countable_circuit_is_costed_without_a_stated_precision():
+    """`t_per_rotation` raises when no epsilon is named, and Python evaluates it
+    before `logical_cost` can decide to ignore it — so passing it unconditionally
+    refused a circuit for want of a number that circuit never uses."""
+    unstated = GIDNEY_2025  # states no rotation_synthesis_epsilon, on purpose
+
+    result = estimate_for_record(_record(_gate("t", 0)), "one-t", unstated)
+
+    assert result.basis is ResourceEstimateBasis.EXACT
+    assert result.logical.t_count == 1
+    assert result.assumptions.rotation_synthesis_epsilon is None
+
+
+def test_a_rotation_circuit_still_refuses_when_no_precision_is_stated():
+    """The other side of the same line: a circuit that *does* need the number
+    must still be refused when nobody named one."""
+    result = estimate_for_record(_record(_gate("ry", 0, param="0.3")), "ansatz", GIDNEY_2025)
+
+    assert result.basis is ResourceEstimateBasis.REFUSED
+    assert "rotation_synthesis_epsilon" in result.reason

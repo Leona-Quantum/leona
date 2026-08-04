@@ -9338,7 +9338,7 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   line-height: 1.55;
 }
-.mj-estimate-notes li + li { margin-top: 4px; }
+.mj-estimate-notes li + li { margin-top: var(--sp-1); }
 .mj-estimate-assumptions {
   padding: var(--sp-3);
   border: 1px solid var(--border-0);

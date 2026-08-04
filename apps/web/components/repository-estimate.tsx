@@ -18,6 +18,10 @@ import type { ReactNode } from "react";
 import type { PublicLocale } from "../lib/public-locale";
 import type { RepositoryEstimate } from "../lib/repository/estimate";
 
+// Re-exported so a page importing the panel gets its renderability rule from the
+// same module, without reaching past it.
+export { hasVisibleEstimate } from "../lib/repository/estimate";
+
 const COPY = {
   en: {
     title: "Fault-tolerant cost",
@@ -233,9 +237,9 @@ function Layer({ title, note, children }: { title: string; note?: string; childr
 /**
  * The whole panel, or nothing.
  *
- * Returns null when there is no estimate to render — the API being off is not
- * an error a visitor should read about, and there is deliberately no fallback
- * computation on this side (see getRepositoryEstimate).
+ * Returns null in exactly the cases `hasVisibleEstimate` rejects. That is
+ * belt-and-braces, not the guard: by the time this renders the call site has
+ * already decided there is a section to fill.
  */
 export function RepositoryEstimatePanel({
   estimate,

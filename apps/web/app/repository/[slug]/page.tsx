@@ -4,7 +4,7 @@ import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryEntry, getRepositoryEstimate, getRepositoryListEntries } from "../../../lib/repository-source";
-import { RepositoryEstimatePanel } from "../../../components/repository-estimate";
+import { RepositoryEstimatePanel, hasVisibleEstimate } from "../../../components/repository-estimate";
 import { RepositoryEntryView } from "./repository-entry-view";
 
 export async function generateStaticParams() {
@@ -57,7 +57,12 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
         isSignedIn={Boolean(user)}
         signInHref={signInHref}
         related={related}
-        estimate={<RepositoryEstimatePanel estimate={estimate} locale={locale} />}
+        estimate={
+          // Decided here, not by testing the element: a React element is truthy
+          // whatever it renders, so passing one unconditionally gives an empty
+          // "Fault-tolerant cost" section on the 163 entries with no circuit.
+          hasVisibleEstimate(estimate) ? <RepositoryEstimatePanel estimate={estimate} locale={locale} /> : null
+        }
       />
     </PublicSite>
   );

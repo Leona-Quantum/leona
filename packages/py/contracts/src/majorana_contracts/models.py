@@ -546,9 +546,12 @@ class CatalogEstimateSummary(_ResourceBase):
 
     A projection of `CatalogEntryEstimate`, not a second computation of it: the
     same function produces both, so a list row and the detail page it links to
-    cannot disagree. Carries `assumptions` as a bare identity string because a
-    list is costed under one set and repeating the full record 283 times would
-    be most of the payload.
+    cannot disagree.
+
+    **A row carries no assumption set of its own.** `CatalogEstimateList`
+    states it once for the whole listing, which is what makes the ordering rule
+    structural: every row in one list is comparable with every other by
+    construction, and there is nothing inside the object to compare across.
     """
 
     slug: str

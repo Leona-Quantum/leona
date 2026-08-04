@@ -231,10 +231,15 @@ def estimate_for_record(
 
     basis = ResourceEstimateBasis.EXACT if cost.exact else ResourceEstimateBasis.ESTIMATED
     try:
-        # `t_per_rotation` is passed unconditionally, not only when the circuit
-        # needs it: an exact circuit ignores it, and gating on `cost.exact` here
-        # would put the same decision in two places.
-        logical = cost.logical_cost(label=slug, t_per_rotation=assumptions.t_per_rotation)
+        # Only read `t_per_rotation` when a rotation actually needs pricing.
+        # The property *raises* when no precision is stated, and Python evaluates
+        # it before `logical_cost` can decide to ignore it — so passing it
+        # unconditionally refuses an exactly-countable circuit for want of a
+        # number that circuit never uses. Unreachable through the route today
+        # (`resolve_assumptions` always names one), which is what makes it worth
+        # closing: the trap only springs for the next caller.
+        t_per_rotation = assumptions.t_per_rotation if cost.synthesis_required else None
+        logical = cost.logical_cost(label=slug, t_per_rotation=t_per_rotation)
         physical = estimate(
             logical,
             assumptions,

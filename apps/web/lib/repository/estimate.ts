@@ -178,6 +178,26 @@ export function isPriced(basis: ResourceEstimateBasis): boolean {
   return basis === "exact" || basis === "estimated";
 }
 
+/**
+ * Whether this estimate has anything to put on a page.
+ *
+ * The caller needs this *before* it builds a heading. A React element is truthy
+ * whatever it renders, so a page that wraps the panel in a section and then
+ * tests the element gets an empty collapsible "Fault-tolerant cost" on all 163
+ * entries that carry no circuit, and on every entry when the catalog API is off.
+ * The section is the thing that must not exist, so the decision has to be made
+ * where the section is made — and it lives here, once, rather than as a
+ * condition each call site restates and can drift from.
+ *
+ * A `refused` estimate IS visible: there the circuit exists and its cost is
+ * genuinely unknown, which is information. `no_circuit` is not — 163 literature
+ * and operator records carry no circuit by design, and a refusal on each would
+ * invent a doubt about them the data does not support.
+ */
+export function hasVisibleEstimate(estimate: RepositoryEstimate | null): boolean {
+  return estimate !== null && estimate.basis !== "no_circuit";
+}
+
 function parseLogical(value: unknown): EstimateLogical | null {
   if (!isRecord(value)) return null;
   const fields = [
@@ -303,6 +323,11 @@ export function parseEstimate(payload: unknown): RepositoryEstimate | null {
 
   if (isPriced(basis)) {
     if (layers.some((layer) => layer === null)) return null;
+    // The producer refuses an `estimated` cost that names no precision
+    // (CatalogEntryEstimate's model_validator). Mirror it: without the epsilon
+    // the panel renders "Estimated under a stated precision" above a blurb
+    // pointing at a precision row that is hidden because there is none.
+    if (basis === "estimated" && assumptions.rotationSynthesisEpsilon === null) return null;
   } else if (layers.some((layer) => layer !== null) || reason === null) {
     return null;
   }

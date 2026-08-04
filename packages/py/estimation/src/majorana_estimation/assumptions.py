@@ -180,7 +180,12 @@ class AssumptionSet:
         base = f"{self.name}@v{self.version}"
         if self.rotation_synthesis_epsilon is None:
             return base
-        return f"{base}+eps={self.rotation_synthesis_epsilon:g}"
+        # `repr`, not `:g`. `:g` renders six significant figures, so 1.234561e-6
+        # and 1.234562e-6 both become "1.23456e-06" — two different budgets with
+        # one identity, and `comparable_with` then ranks them against each other.
+        # That is the exact defect this identity exists to prevent, reintroduced
+        # by the formatting. `repr` round-trips a float exactly.
+        return f"{base}+eps={self.rotation_synthesis_epsilon!r}"
 
     def with_rotation_precision(self, epsilon: float) -> "AssumptionSet":
         """The same hardware, held to a stated per-rotation synthesis error.

@@ -426,3 +426,43 @@ def test_a_clifford_only_circuit_reports_no_runtime_rather_than_zero():
     assert result.runtime.binding_term == "unstated"
     assert result.footprint.total_physical_qubits > 0
     assert any("runtime is not" in note for note in result.notes)
+
+
+def test_two_precisions_that_round_alike_still_get_different_identities():
+    """`:g` renders six significant figures, so 1.234561e-6 and 1.234562e-6 both
+    become "1.23456e-06" — two budgets, one identity, and `comparable_with`
+    ranking them against each other. The identity has to round-trip the float."""
+    a = GIDNEY_2025.with_rotation_precision(1.234561e-6)
+    b = GIDNEY_2025.with_rotation_precision(1.234562e-6)
+
+    assert a.identity != b.identity
+    assert not a.comparable_with(b)
+    # The common case still reads the way a person would write it.
+    assert GIDNEY_2025.with_rotation_precision(1e-6).identity == "gidney-2025@v1+eps=1e-06"
+
+
+def test_a_clifford_only_circuit_is_costed_with_no_factories_even_when_asked_for_some():
+    """Factories a circuit cannot use are not part of what it needs.
+
+    Honouring the request adds 15 logical patches apiece to a footprint whose
+    own `magic_states` is 0 — a report that contradicts itself line by line.
+    """
+    clifford = LogicalCost(logical_qubits=2)
+
+    asked = estimate(clifford, GIDNEY_2025, factory_count=5)
+    unasked = estimate(clifford, GIDNEY_2025)
+
+    assert asked.runtime.factory_count == 0
+    assert asked.footprint.factory_qubits == 0
+    assert asked.footprint.total_physical_qubits == unasked.footprint.total_physical_qubits
+    assert any("consumes no magic states" in note for note in asked.notes)
+
+
+def test_a_circuit_that_does_consume_magic_states_keeps_the_factories_it_was_given():
+    """The normalisation above must not swallow a real factory count."""
+    costly = LogicalCost(logical_qubits=2, t_count=100, non_clifford_depth=1)
+
+    result = estimate(costly, GIDNEY_2025, factory_count=3)
+
+    assert result.runtime.factory_count == 3
+    assert result.footprint.factory_qubits > 0

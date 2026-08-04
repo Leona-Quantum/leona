@@ -786,11 +786,22 @@ async def test_the_estimate_route_404s_exactly_where_the_detail_route_does(env):
         importer_user_id=configured.importer_user_id,
         public_reader_user_id=configured.public_reader_user_id,
     )
+    # Asserting 404 on the estimate routes alone would pass even if the detail
+    # route drew its boundary somewhere else entirely — which is the failure the
+    # test is named for. Compare the two, rather than checking one against a
+    # constant that happens to match.
     async with _client(configured, factory) as client:
-        assert (await client.get("/v1/catalog/entries/nope/estimate")).status_code == 404
+        detail = await client.get("/v1/catalog/entries/nope")
+        estimate = await client.get("/v1/catalog/entries/nope/estimate")
+        assert estimate.status_code == detail.status_code == 404
+
     async with _client(disabled, factory) as client:
-        assert (await client.get(f"/v1/catalog/entries/{slug}/estimate")).status_code == 404
-        assert (await client.get("/v1/catalog/estimates")).status_code == 404
+        detail = await client.get(f"/v1/catalog/entries/{slug}")
+        estimate = await client.get(f"/v1/catalog/entries/{slug}/estimate")
+        listing = await client.get("/v1/catalog/entries")
+        estimates = await client.get("/v1/catalog/estimates")
+        assert estimate.status_code == detail.status_code == 404
+        assert estimates.status_code == listing.status_code == 404
 
 
 @requires_db

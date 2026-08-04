@@ -768,7 +768,7 @@
       },
       "CatalogEstimateSummary": {
         "additionalProperties": false,
-        "description": "One row's worth of a catalogue entry's cost, for the browse list.\n\nA projection of `CatalogEntryEstimate`, not a second computation of it: the\nsame function produces both, so a list row and the detail page it links to\ncannot disagree. Carries `assumptions` as a bare identity string because a\nlist is costed under one set and repeating the full record 283 times would\nbe most of the payload.",
+        "description": "One row's worth of a catalogue entry's cost, for the browse list.\n\nA projection of `CatalogEntryEstimate`, not a second computation of it: the\nsame function produces both, so a list row and the detail page it links to\ncannot disagree.\n\n**A row carries no assumption set of its own.** `CatalogEstimateList`\nstates it once for the whole listing, which is what makes the ordering rule\nstructural: every row in one list is comparable with every other by\nconstruction, and there is nothing inside the object to compare across.",
         "properties": {
           "basis": {
             "$ref": "#/components/schemas/ResourceEstimateBasis"
