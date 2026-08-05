@@ -236,7 +236,7 @@ test("profilesBySlug indexes a listing and tolerates a null one", () => {
   assert.equal(profilesBySlug(null).size, 0);
 });
 
-// --- Relationships the five numbers cannot violate (CodeRabbit, #261) --------
+// --- Relationships the five numbers cannot violate (CodeRabbit, PR 261) -----
 
 test("more two-qubit gates than gates is refused", () => {
   // Each value passes its own range check; only the relationship is impossible,
