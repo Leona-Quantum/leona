@@ -23,6 +23,7 @@ const COPY = {
     back: "← Atlas",
     circuit: "Circuit & simulation",
     structure: "Circuit structure",
+    connections: "What this takes and returns",
     cost: "Fault-tolerant cost",
     outcomes: "Expected outcomes",
     how: "How it works",
@@ -61,6 +62,7 @@ const COPY = {
     back: "← Atlas",
     circuit: "回路とシミュレーション",
     structure: "回路の構造",
+    connections: "入力と出力",
     cost: "誤り耐性計算のコスト",
     outcomes: "期待される出力",
     how: "仕組み",
@@ -200,6 +202,7 @@ export function RepositoryEntryView({
   related,
   estimate,
   profile,
+  connections,
 }: {
   entry: PublicRepositoryEntry;
   locale: PublicLocale;
@@ -222,6 +225,15 @@ export function RepositoryEntryView({
    * the section then does not render at all.
    */
   profile?: ReactNode;
+  /**
+   * The interface panel — what this entry takes and returns, and what meets it.
+   *
+   * A slot like the two above, but passed unconditionally: an entry with no
+   * ports has an answer ("not a pipeline stage"), and 121 of the 283 records
+   * are in that position. A missing section would leave a reader looking for
+   * something to compose to infer it from silence.
+   */
+  connections?: ReactNode;
   related: RelatedEntrySummary[];
 }) {
   const copy = COPY[locale];
@@ -324,6 +336,12 @@ export function RepositoryEntryView({
           {profile ? <DetailSection title={copy.structure}>{profile}</DetailSection> : null}
 
           {estimate ? <DetailSection title={copy.cost}>{estimate}</DetailSection> : null}
+
+          {/* After the cost rather than beside the structure. The two panels
+              above answer "what is this circuit"; this one answers "what could
+              it be part of", which is a different question and the one a reader
+              has to have finished the first two to ask. */}
+          {connections ? <DetailSection title={copy.connections}>{connections}</DetailSection> : null}
 
           <DetailSection title={copy.how} defaultOpen>
             <MarkdownContent source={explanation} className="mj-repo-markdown" />

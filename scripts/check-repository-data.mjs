@@ -239,18 +239,27 @@ for (const entry of entries) {
 // packages. The third catches an override written against a slug that has since
 // been renamed, which is invisible in every other way.
 if (!ENTRY_FILE) {
+  // Cleanup in `finally`: a bundle or import that throws would otherwise leave
+  // the temp directory behind, one per failing lint run. Applied to both blocks
+  // in this file rather than only the newer one — fixing one copy of a pattern
+  // and leaving its twin is how the `barrier`/two-qubit-gate bug survived three
+  // sessions (D77.4).
   const topicsOut = mkdtempSync(join(tmpdir(), "repo-topics-"));
   const topicsFile = join(topicsOut, "topics.mjs");
-  await esbuild.build({
-    entryPoints: [join(root, "apps/web/lib/repository/topics.ts")],
-    bundle: true,
-    format: "esm",
-    platform: "neutral",
-    outfile: topicsFile,
-    logLevel: "silent",
-  });
-  const topicsMod = await import(pathToFileURL(topicsFile).href);
-  rmSync(topicsOut, { recursive: true, force: true });
+  let topicsMod;
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/topics.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: topicsFile,
+      logLevel: "silent",
+    });
+    topicsMod = await import(pathToFileURL(topicsFile).href);
+  } finally {
+    rmSync(topicsOut, { recursive: true, force: true });
+  }
   const vocabulary = topicsMod.PUBLIC_REPOSITORY_TOPICS;
   const facetOf = new Map(vocabulary.map((topic) => [topic.id, topic.facet]));
 
@@ -307,6 +316,104 @@ if (!ENTRY_FILE) {
     }
     console.log(`\n${withDomain} of ${entries.length} entries carry a problem domain.`);
   }
+
+  // --- What each entry takes and returns, and what fits it ------------------
+  //
+  // The properties `lib/repository-interface.test.ts` cannot assert, because
+  // they are about the corpus rather than about the derivation: every entry
+  // resolves to a stance, no `compatible` verdict is produced by a consumer that
+  // assumes its input, and — the one that matters most — the connectable set
+  // stays a minority of the catalogue.
+  //
+  // **The last check is a ceiling on a claim, in the same spirit as the domain
+  // ceiling above.** 414 ordered pairs connect, over 38 of 283 entries; every
+  // one of them is a gate primitive or a state feeding a gate primitive. If a
+  // change makes most of the corpus connectable, either the corpus gained real
+  // composable stages — in which case this line is the thing to rewrite, on
+  // purpose — or the predicate has been loosened until a width match reads as a
+  // proof, which is the failure roadmap §6 is about.
+  const interfaceOut = mkdtempSync(join(tmpdir(), "repo-interface-"));
+  const interfaceFile = join(interfaceOut, "interface.mjs");
+  let interfaceMod;
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/interface.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: interfaceFile,
+      logLevel: "silent",
+    });
+    interfaceMod = await import(pathToFileURL(interfaceFile).href);
+  } finally {
+    rmSync(interfaceOut, { recursive: true, force: true });
+  }
+
+  const interfaces = new Map();
+  const stanceCounts = new Map();
+  for (const entry of entries) {
+    const derived = interfaceMod.deriveInterface({
+      slug: entry.slug,
+      topics: entry.topics ?? [],
+      category: entry.category,
+      wireCount: entry.visualization?.wires?.length ?? 0,
+      portableCircuit: entry.portableCircuit,
+    });
+    if (!interfaceMod.isInterfaceStance(derived.stance)) {
+      fail(entry.slug, `interface stance outside the vocabulary: ${derived.stance}`);
+    }
+    // A port with no width would compare equal to another one and read as a
+    // match between two records that state nothing.
+    for (const [side, port] of [["input", derived.input], ["output", derived.output]]) {
+      if (port && !(Number.isInteger(port.width) && port.width > 0)) {
+        fail(entry.slug, `${side} port has a width of ${port.width}`);
+      }
+    }
+    interfaces.set(entry.slug, derived);
+    stanceCounts.set(derived.stance, (stanceCounts.get(derived.stance) ?? 0) + 1);
+  }
+
+  const verdicts = new Map();
+  const connected = new Set();
+  for (const [producerSlug, producer] of interfaces) {
+    for (const [consumerSlug, consumer] of interfaces) {
+      if (producerSlug === consumerSlug) continue;
+      const verdict = interfaceMod.connects(producer, consumer);
+      verdicts.set(verdict, (verdicts.get(verdict) ?? 0) + 1);
+      if (verdict === "compatible") {
+        // The invariant that keeps `compatible` meaning something. Asserted over
+        // the real corpus rather than trusted from the predicate, because this
+        // is the exact place a loosened rule would show up first and nowhere
+        // else: every other symptom of it looks like a bigger graph.
+        if (consumer.assumesZeroInput) {
+          errors.push(
+            `${producerSlug} → ${consumerSlug} is compatible, but the consumer assumes |0…0⟩ on its input`,
+          );
+        }
+        connected.add(producerSlug);
+        connected.add(consumerSlug);
+      }
+    }
+  }
+
+  if (connected.size * 2 >= entries.length) {
+    errors.push(
+      `${connected.size} of ${entries.length} entries appear in a compatible pair. That is most of the ` +
+        "corpus, and the connectable set was 38. Either real composable stages arrived — rewrite this " +
+        "check and the note in lib/repository/interface.ts — or a width match is being read as a proof.",
+    );
+  }
+
+  if (!QUIET) {
+    console.log("\ninterface stance → entries");
+    for (const stance of interfaceMod.INTERFACE_STANCES) {
+      console.log(`  ${String(stanceCounts.get(stance) ?? 0).padStart(4)}  ${stance}`);
+    }
+    console.log(
+      `\nordered pairs: ${[...verdicts].map(([verdict, count]) => `${verdict} ${count}`).join(", ")}` +
+        `\n${connected.size} of ${entries.length} entries appear in at least one compatible pair.`,
+    );
+  }
 }
 
 const resolvableSlugs = new Set([...slugs, ...KNOWN_SLUGS]);
@@ -314,6 +421,75 @@ for (const entry of entries) {
   for (const related of entry.relatedSlugs ?? []) {
     if (related === entry.slug) fail(entry.slug, "relatedSlugs references itself");
     if (!resolvableSlugs.has(related)) fail(entry.slug, `relatedSlugs references unknown slug: ${related}`);
+  }
+}
+
+// ---------------------------------------------------------------------------
+// The search fallback for `algorithmFamily` (s81).
+//
+// The `Algorithm family` browse control was removed on a measured claim: the
+// free-text box already indexes `algorithmFamily`, so typing a family's name
+// still gathers its members. Measured on the 283-entry corpus at the time, no
+// family lost one of its own members — 47 of 57 returned the family exactly,
+// 10 a benign superset, 0 lossy.
+//
+// Two things can quietly falsify that later, and neither has any other symptom.
+// A field can leave the haystack in `lib/repository/search.ts`, which makes 57
+// values unreachable while every test still passes. Or a family can be renamed
+// to something its own members' text does not contain — a family called "Misc"
+// whose entries never say "misc" is invisible the moment the control is gone.
+// So the claim is re-measured here against the real predicate rather than a
+// copy of it: a re-implementation would agree with itself forever.
+//
+// A superset is fine and is not reported. Only a family that cannot gather
+// itself is an error.
+if (!ENTRY_FILE) {
+  const searchOut = mkdtempSync(join(tmpdir(), "repo-search-"));
+  const searchFile = join(searchOut, "search.mjs");
+  let searchMod;
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/search.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: searchFile,
+      logLevel: "silent",
+    });
+    searchMod = await import(pathToFileURL(searchFile).href);
+  } finally {
+    rmSync(searchOut, { recursive: true, force: true });
+  }
+
+  const byFamily = new Map();
+  for (const entry of entries) {
+    const list = byFamily.get(entry.algorithmFamily) ?? [];
+    list.push(entry);
+    byFamily.set(entry.algorithmFamily, list);
+  }
+
+  let exactFamilies = 0;
+  for (const [family, members] of byFamily) {
+    const hits = new Set(
+      entries.filter((e) => searchMod.matchesRepositoryQuery(e, family)).map((e) => e.slug),
+    );
+    const unreachable = members.filter((m) => !hits.has(m.slug));
+    if (unreachable.length) {
+      errors.push(
+        `family "${family}": searching its name misses ${unreachable.length} of its own ${members.length} ` +
+          `members (${unreachable.slice(0, 3).map((m) => m.slug).join(", ")}). The family browse control was ` +
+          "removed because search covered it; for this family it no longer does.",
+      );
+    } else if (hits.size === members.length) {
+      exactFamilies += 1;
+    }
+  }
+
+  if (!QUIET) {
+    console.log(
+      `\nfamily search fallback: ${byFamily.size} families, ${exactFamilies} resolve exactly, ` +
+        `${byFamily.size - exactFamilies} to a superset, 0 lossy`,
+    );
   }
 }
 
