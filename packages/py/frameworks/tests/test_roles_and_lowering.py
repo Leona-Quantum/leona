@@ -245,10 +245,36 @@ def circuit():
 FINAL_CIRCUIT = circuit
 """
 
+BRAKET_CIRCUIT = """from braket.circuits import Circuit
+
+FINAL_CIRCUIT = Circuit().h(0).cnot(0, 1).measure([0, 1])
+"""
+
+QIBO_CIRCUIT = """from qibo import Circuit, gates
+
+FINAL_CIRCUIT = Circuit(2)
+FINAL_CIRCUIT.add(gates.H(0))
+FINAL_CIRCUIT.add(gates.CNOT(0, 1))
+FINAL_CIRCUIT.add(gates.M(0, 1, register_name="ro"))
+"""
+
+QULACS_CIRCUIT = """from qulacs import QuantumCircuit
+from qulacs.gate import CNOT, H, Measurement
+
+FINAL_CIRCUIT = QuantumCircuit(2)
+FINAL_CIRCUIT.add_gate(H(0))
+FINAL_CIRCUIT.add_gate(CNOT(0, 1))
+FINAL_CIRCUIT.add_gate(Measurement(0, 0))
+FINAL_CIRCUIT.add_gate(Measurement(1, 1))
+"""
+
 SANDBOX_CASES = [
     pytest.param(Framework.QISKIT, REPOSITORY_CIRCUIT, "qiskit", id="qiskit"),
     pytest.param(Framework.CIRQ, CIRQ_CIRCUIT, "cirq", id="cirq"),
     pytest.param(Framework.PENNYLANE, PENNYLANE_CIRCUIT, "pennylane", id="pennylane"),
+    pytest.param(Framework.BRAKET, BRAKET_CIRCUIT, "braket", id="braket"),
+    pytest.param(Framework.QIBO, QIBO_CIRCUIT, "qibo", id="qibo"),
+    pytest.param(Framework.QULACS, QULACS_CIRCUIT, "qulacs", id="qulacs"),
 ]
 
 
@@ -256,7 +282,7 @@ SANDBOX_CASES = [
 def test_a_measured_circuit_gains_a_result_in_every_framework(framework, source, module):
     """The feature, end to end, through the real sandbox.
 
-    One block covers all three frameworks because it reads only the observation
+    One block covers every registered framework because it reads only the observation
     dict, which each adapter's native evidence fills in the same shape. That is
     the claim, so it is tested per framework rather than once on Qiskit.
     """

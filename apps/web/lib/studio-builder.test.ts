@@ -18,7 +18,7 @@ const steps: BuilderStep[] = [
   { id: "measurement", gate: "M", qubits: [0] },
 ];
 
-test("custom gates emit named helpers or flattened operations in all seven frameworks", () => {
+test("custom gates emit named helpers or flattened operations in every framework target", () => {
   const generated = generateBuilderCode(steps, 2, [customGate]);
 
   assert.match(generated.qiskit, /def custom_bell_pair_abc123\(qc, qubits\):/);
@@ -34,6 +34,10 @@ test("custom gates emit named helpers or flattened operations in all seven frame
   assert.match(generated.openqasm3, /cx q\[0\], q\[1\];/);
   assert.match(generated.pyquil, /program \+= CNOT\(0, 1\)/);
   assert.match(generated.pyquil, /program \+= MEASURE\(1, ro\[1\]\)/);
+  assert.match(generated.qibo, /circuit\.add\(gates\.CNOT\(0, 1\)\)/);
+  assert.match(generated.qibo, /circuit\.add\(gates\.M\(\*range\(2\), register_name="ro"\)\)/);
+  assert.match(generated.qulacs, /circuit\.add_gate\(CNOT\(0, 1\)\)/);
+  assert.match(generated.qulacs, /circuit\.add_gate\(Measurement\(1, 1\)\)/);
 });
 
 test("nested custom gates flatten recursively and cyclic definitions terminate safely", () => {
@@ -69,8 +73,8 @@ test("nested custom gates flatten recursively and cyclic definitions terminate s
     { id: "cycle-step", gate: "CUSTOM", customGateId: cycleA.id, qubits: [0] },
   ], 2, [outer, inner, cycleA, cycleB]);
 
-  for (const source of [generated.cudaq, generated.braket, generated.openqasm3, generated.pyquil]) {
-    assert.match(source, /(?:h\(q\[1\]\)|circuit\.h\(1\)|h q\[1\];|program \+= H\(1\))/);
+  for (const source of [generated.cudaq, generated.braket, generated.openqasm3, generated.pyquil, generated.qibo, generated.qulacs]) {
+    assert.match(source, /(?:h\(q\[1\]\)|circuit\.h\(1\)|h q\[1\];|program \+= H\(1\)|gates\.H\(1\)|H\(1\))/);
     assert.match(source, /(?:q\[1\].*q\[0\]|1, 0|q\[1\], q\[0\]|CNOT\(1, 0\))/);
     assert.doesNotMatch(source, /cycle_a|cycle_b/i);
   }
@@ -141,6 +145,10 @@ test("every executable variant names what it built, so the canvas is not UNKNOWN
   assert.match(code.qiskit, /^FINAL_CIRCUIT = qc$/m, "qiskit must bind FINAL_CIRCUIT");
   assert.match(code.cirq, /^FINAL_CIRCUIT = circuit$/m, "cirq must bind FINAL_CIRCUIT");
   assert.match(code.pennylane, /^FINAL_CIRCUIT = circuit$/m, "pennylane must bind FINAL_CIRCUIT");
+  assert.match(code.braket, /^FINAL_CIRCUIT = circuit$/m, "braket must bind FINAL_CIRCUIT");
+  assert.match(code.pyquil, /^FINAL_CIRCUIT = program$/m, "pyquil must bind FINAL_CIRCUIT");
+  assert.match(code.qibo, /^FINAL_CIRCUIT = circuit$/m, "qibo must bind FINAL_CIRCUIT");
+  assert.match(code.qulacs, /^FINAL_CIRCUIT = circuit$/m, "qulacs must bind FINAL_CIRCUIT");
 });
 
 test("an unmeasured circuit binds FINAL_CIRCUIT too", () => {
@@ -152,4 +160,8 @@ test("an unmeasured circuit binds FINAL_CIRCUIT too", () => {
   assert.match(code.qiskit, /^FINAL_CIRCUIT = qc$/m);
   assert.match(code.cirq, /^FINAL_CIRCUIT = circuit$/m);
   assert.match(code.pennylane, /^FINAL_CIRCUIT = circuit$/m);
+  assert.match(code.braket, /^FINAL_CIRCUIT = circuit$/m);
+  assert.match(code.pyquil, /^FINAL_CIRCUIT = program$/m);
+  assert.match(code.qibo, /^FINAL_CIRCUIT = circuit$/m);
+  assert.match(code.qulacs, /^FINAL_CIRCUIT = circuit$/m);
 });

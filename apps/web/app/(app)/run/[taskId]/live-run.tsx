@@ -17,6 +17,7 @@ import { runToFollow } from "../../../../lib/conversation-follow";
 import { archiveChat, loadChatHistory, rememberChat, updateChat, type ChatSummary } from "../../../../lib/chat-history";
 import { displayChatTitle, titleFromPrompt } from "../../../../lib/chat-title";
 import { RunComposer, type ComposerFramework } from "../../../../components/run-composer";
+import { hydrateConversationFramework } from "../../../../lib/framework-selection";
 import type { ComposerMode } from "../../../../lib/run-mode";
 import { RUN_FIXTURES } from "./fixtures";
 import { verificationSummaryFromValue, type VerificationSummary } from "../../../../lib/verification-record";
@@ -214,7 +215,14 @@ function artifactIdFromEvents(events: WireEvent[]): string | null {
 type ConversationPayload = {
   id: string;
   turns: Array<{
-    run: { id: string; task_prompt: string; conversation_id: string; verification_summary?: unknown; finished_at?: string | null };
+    run: {
+      id: string;
+      task_prompt: string;
+      conversation_id: string;
+      framework?: string;
+      verification_summary?: unknown;
+      finished_at?: string | null;
+    };
     events: WireEvent[];
   }>;
 };
@@ -372,6 +380,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
   // screen, so they vanished the moment the first message was sent.
   const [mode, setMode] = useState<ComposerMode>("auto");
   const [framework, setFramework] = useState<ComposerFramework>("qiskit");
+  const frameworkTouched = useRef(false);
   // The run this page is following. It starts as the one in the URL and then
   // tracks the conversation's newest turn — see lib/conversation-follow.ts for
   // why the URL is not that run for most of a conversation's life.
@@ -410,6 +419,8 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
     conversationIdRef.current = null;
     setConversationId(null);
     setStopping(false);
+    frameworkTouched.current = false;
+    setFramework("qiskit");
     followRun(taskId);
     shouldAutoScrollRef.current = true;
     // eslint-disable-next-line react-hooks/exhaustive-deps -- followRun is stable by construction
@@ -473,6 +484,11 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
         // conversation has had a second turn. Whether a turn is still generating
         // is a property of the newest one.
         const newest = payload.turns.at(-1);
+        setFramework((current) => hydrateConversationFramework(
+          current,
+          frameworkTouched.current,
+          newest?.run.framework,
+        ));
         const follow = runToFollow(payload.turns.map((turn) => turn.run.id), activeRunIdRef.current);
         if (newest && follow === newest.run.id) {
           if (follow !== activeRunIdRef.current) followRun(follow);
@@ -853,7 +869,10 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
         mode={mode}
         onModeChange={setMode}
         framework={framework}
-        onFrameworkChange={setFramework}
+        onFrameworkChange={(value) => {
+          frameworkTouched.current = true;
+          setFramework(value);
+        }}
         onStop={fixtureEvents ? undefined : () => void stopRun()}
         stopping={stopping}
         locale={locale}

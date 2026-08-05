@@ -237,7 +237,10 @@ from .lifecycle import (
 # Neither end is chosen — the crossover is derived and one factory is the floor
 # the estimator enforces — which is why exactly these two are published and
 # nothing between them.
-CONTRACTS_VERSION = "2.13.0"
+# 2.14.0: Framework adds offline Amazon Braket, Qibo, and Qulacs SDK lanes.
+# Additive: existing framework values keep their meaning and older clients
+# continue to use them.
+CONTRACTS_VERSION = "2.14.0"
 
 __all__ = [
     "CONTRACTS_VERSION",

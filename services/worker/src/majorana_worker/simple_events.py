@@ -62,6 +62,9 @@ class SimpleEventObserver:
             ToolName.SIMULATE_QISKIT,
             ToolName.SIMULATE_CIRQ,
             ToolName.SIMULATE_PENNYLANE,
+            ToolName.SIMULATE_BRAKET,
+            ToolName.SIMULATE_QIBO,
+            ToolName.SIMULATE_QULACS,
         }:
             await self._execution(run_id, result)
             return

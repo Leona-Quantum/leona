@@ -20,6 +20,64 @@ def test_legitimate_quantum_code_passes():
     assert check_python_code(LEGIT).ok
 
 
+def test_braket_local_simulation_passes():
+    local = (
+        "from braket.circuits import Circuit\n"
+        "from braket.devices import LocalSimulator\n"
+        "circuit = Circuit().h(0).measure([0])\n"
+        "counts = LocalSimulator().run(circuit, shots=10).result().measurement_counts\n"
+    )
+    assert check_python_code(local).ok
+
+
+def test_qibo_numpy_and_qulacs_local_simulation_pass():
+    qibo = (
+        "from qibo import Circuit, gates\n"
+        "from qibo.backends import NumpyBackend\n"
+        "circuit = Circuit(1)\n"
+        "circuit.add(gates.H(0))\n"
+        "backend = NumpyBackend()\n"
+    )
+    qulacs = (
+        "from qulacs import QuantumCircuit, QuantumState\n"
+        "from qulacs.gate import H\n"
+        "circuit = QuantumCircuit(1)\n"
+        "circuit.add_gate(H(0))\n"
+    )
+
+    assert check_python_code(qibo).ok
+    assert check_python_code(qulacs).ok
+
+
+def test_optional_qibo_hardware_backend_is_not_importable():
+    result = check_python_code("import qibolab\n")
+    assert not result.ok
+    assert "disallowed_import:qibolab" in result.violations
+
+
+@pytest.mark.parametrize(
+    "cloud",
+    [
+        (
+            "from braket.aws import AwsDevice\n"
+            "device = AwsDevice('arn:aws:braket:::device/quantum-simulator/example')\n"
+        ),
+        (
+            "from braket import aws\n"
+            "device = aws.AwsDevice('arn:aws:braket:::device/quantum-simulator/example')\n"
+        ),
+        (
+            "from braket import aws as cloud\n"
+            "task = cloud.AwsQuantumTask('arn:aws:braket:region:account:quantum-task/id')\n"
+        ),
+    ],
+)
+def test_braket_aws_submission_is_blocked_across_import_styles(cloud):
+    result = check_python_code(cloud)
+    assert not result.ok
+    assert any(violation.startswith("denied_token:") for violation in result.violations)
+
+
 @pytest.mark.parametrize(
     "code, needle",
     [

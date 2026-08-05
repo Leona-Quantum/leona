@@ -29,6 +29,10 @@ test("portable circuits emit non-empty source for every framework target", () =>
   assert.match(generated.braket, /circuit\.cnot/);
   assert.match(generated.openqasm3, /c = measure q;/);
   assert.match(generated.pyquil, /MEASURE/);
+  assert.match(generated.qibo, /gates\.M/);
+  assert.match(generated.qibo, /gates\.RZ\(1, pi\/4\)/);
+  assert.match(generated.qulacs, /Measurement/);
+  assert.match(generated.qulacs, /RZ\(1, -\(pi\/4\)\)/);
   assert.match(generated.qmod, /CX\(q\[0\], q\[1\]\)/);
 });
 
