@@ -9,6 +9,7 @@ import {
 } from "../../../lib/repository-source";
 import { VerificationLegend } from "../../../components/repository-verification";
 import { isTopicId } from "../../../lib/repository/topics";
+import { isInterfaceStance } from "../../../lib/repository/interface";
 import { RepositoryBrowser } from "../repository-browser";
 
 export const metadata: Metadata = {
@@ -34,8 +35,17 @@ export default async function RepositoryPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const wanted = (await searchParams).topic;
+  const params = await searchParams;
+  const wanted = params.topic;
   const initialTopic = typeof wanted === "string" && isTopicId(wanted) ? wanted : "";
+  // `?fits=` on the same terms as `?topic=`, and for the same reason: this page
+  // does not hydrate, so a control whose only state is a `useState` may never
+  // move for anyone. Resolved here, the HTML arrives filtered — which is also
+  // the only version a crawler or a no-JS reader ever sees. An unknown value
+  // resolves to no filter rather than to an empty list.
+  const wantedStance = params.fits;
+  const initialStance =
+    typeof wantedStance === "string" && isInterfaceStance(wantedStance) ? wantedStance : "";
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
@@ -73,6 +83,7 @@ export default async function RepositoryPage({
           estimates={estimates}
           profiles={profiles}
           initialTopic={initialTopic}
+          initialStance={initialStance}
         />
       </section>
     </PublicSite>
