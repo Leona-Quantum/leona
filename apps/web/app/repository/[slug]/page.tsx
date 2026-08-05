@@ -3,8 +3,14 @@ import { notFound } from "next/navigation";
 import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { getRepositoryEntry, getRepositoryEstimate, getRepositoryListEntries } from "../../../lib/repository-source";
+import {
+  getRepositoryEntry,
+  getRepositoryEstimate,
+  getRepositoryListEntries,
+  getRepositoryProfile,
+} from "../../../lib/repository-source";
 import { RepositoryEstimatePanel, hasVisibleEstimate } from "../../../components/repository-estimate";
+import { RepositoryProfilePanel, hasVisibleProfile } from "../../../components/repository-profile";
 import { RepositoryEntryView } from "./repository-entry-view";
 
 export async function generateStaticParams() {
@@ -35,6 +41,9 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
   // deliberately no second, TypeScript implementation of the arithmetic to fall
   // back to (see getRepositoryEstimate).
   const estimate = await getRepositoryEstimate(slug);
+  // Same terms as the estimate above: derived from this entry's own circuit on
+  // read, and null rather than reimplemented in TypeScript when the API is off.
+  const profile = await getRepositoryProfile(slug);
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
@@ -62,6 +71,12 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
           // whatever it renders, so passing one unconditionally gives an empty
           // "Fault-tolerant cost" section on the 163 entries with no circuit.
           hasVisibleEstimate(estimate) ? <RepositoryEstimatePanel estimate={estimate} locale={locale} /> : null
+        }
+        profile={
+          // Decided here for the same reason, and the reason bit once already:
+          // a truthy element would give an empty "Circuit structure" section on
+          // the 163 entries that carry no circuit.
+          hasVisibleProfile(profile) ? <RepositoryProfilePanel profile={profile} locale={locale} /> : null
         }
       />
     </PublicSite>

@@ -11,7 +11,13 @@ CLI (catalog_admin), not a request handler.
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
-from majorana_contracts import CatalogEntryEstimate, CatalogEstimateList, PublicCatalogEntry
+from majorana_contracts import (
+    CatalogEntryEstimate,
+    CatalogEntryProfile,
+    CatalogEstimateList,
+    CatalogProfileList,
+    PublicCatalogEntry,
+)
 from majorana_estimation import BUILTIN_ASSUMPTION_SETS
 
 from ..auth.catalog_deps import PublicCatalogScope
@@ -27,6 +33,7 @@ from ..catalog_estimate import (
     estimate_list_for_records,
     resolve_assumptions,
 )
+from ..catalog_profile import profile_for_record, profile_list_for_records
 from ..catalog_read_model import project_record_for_list_view
 from ..repos import catalog as catalog_repo
 from ..settings import Settings
@@ -163,6 +170,33 @@ async def list_catalog_estimates(
     )
 
 
+@router.get("/catalog/profiles", response_model=CatalogProfileList)
+async def list_catalog_profiles(
+    scope: PublicCatalogScope,
+    session: DbSession,
+    settings: _Settings,
+) -> CatalogProfileList:
+    """Every published entry's circuit size (R1).
+
+    Exists so the browse list can rank by depth and two-qubit count at all —
+    fetching this per card would be 283 requests.
+
+    **No parameters, and that is the difference from `/catalog/estimates`.** A
+    profile is a property of the circuit, so there is no assumption set to state
+    and nothing in the payload that only holds under one: every row here is
+    rankable against every other unconditionally. The arithmetic is a single pass
+    over each step list, which is why this stays safe on an anonymous route.
+    """
+    entries = await catalog_repo.list_public_catalog_entries(
+        scope,
+        session,
+        authority=settings.catalog_authority,
+        limit=CATALOG_ENTRIES_MAX_LIMIT,
+        offset=0,
+    )
+    return profile_list_for_records([(entry.slug, entry.record) for entry in entries])
+
+
 @router.get("/catalog/entries/{slug}", response_model=PublicCatalogEntry)
 async def get_catalog_entry(
     slug: str,
@@ -252,3 +286,28 @@ async def get_catalog_entry_estimate(
     except ContradictoryPrecision as exc:
         raise HTTPException(status_code=422, detail=_precision_conflict(exc)) from exc
     return estimate_for_record(entry.record, entry.slug, resolved, factory_count=factories)
+
+
+@router.get("/catalog/entries/{slug}/profile", response_model=CatalogEntryProfile)
+async def get_catalog_entry_profile(
+    slug: str,
+    scope: PublicCatalogScope,
+    session: DbSession,
+    settings: _Settings,
+) -> CatalogEntryProfile:
+    """This entry's circuit size, or why it has none (R1).
+
+    Derived from the published record's own `portableCircuit` on read — never
+    stored, so it cannot disagree with the circuit rendered beside it.
+
+    Branch on `present` before rendering. An entry with no circuit is not a
+    zero-gate circuit, and printing five zeros for one would state a measurement
+    nobody took.
+
+    The 404 comes from the same lookup the detail and estimate routes use, so a
+    slug that resolves there resolves here.
+    """
+    entry = await catalog_repo.get_public_catalog_entry(
+        scope, session, slug, authority=settings.catalog_authority
+    )
+    return profile_for_record(entry.record, entry.slug)

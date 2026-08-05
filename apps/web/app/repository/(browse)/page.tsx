@@ -2,7 +2,11 @@ import type { Metadata } from "next";
 import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { getRepositoryEstimates, getRepositoryListEntries } from "../../../lib/repository-source";
+import {
+  getRepositoryEstimates,
+  getRepositoryListEntries,
+  getRepositoryProfiles,
+} from "../../../lib/repository-source";
 import { VerificationLegend } from "../../../components/repository-verification";
 import { RepositoryBrowser } from "../repository-browser";
 
@@ -21,6 +25,9 @@ export default async function RepositoryPage() {
   // once on the payload. Null when the catalog API is off, and the cost column
   // and its ordering option then do not appear at all.
   const estimates = await getRepositoryEstimates();
+  // The same shape, minus the assumption set: a profile is a property of the
+  // circuit, so every row here is rankable against every other unconditionally.
+  const profiles = await getRepositoryProfiles();
 
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
@@ -38,6 +45,7 @@ export default async function RepositoryPage() {
           signInHref={signInHref}
           legend={<VerificationLegend locale={locale} />}
           estimates={estimates}
+          profiles={profiles}
         />
       </section>
     </PublicSite>

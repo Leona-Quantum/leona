@@ -745,6 +745,105 @@
         "title": "CatalogEntryEstimate",
         "type": "object"
       },
+      "CatalogEntryProfile": {
+        "additionalProperties": false,
+        "description": "How big a catalogue entry's circuit is, or that it has none (R1).\n\nDerived on read from the published record's own `portableCircuit`, on the\nsame terms as `CatalogEntryEstimate` and for the same reason: a stored\nprofile and a published circuit are two things that can disagree, and the one\na visitor is looking at is the circuit.\n\n**Not an estimate, and deliberately not carried inside one.** These five\nnumbers are properties of the circuit alone \u2014 they do not move when the\nhardware assumptions or the synthesis precision do, so they carry no\nassumption-set identity and, unlike a cost, two of them may always be ranked\nagainst each other. Folding them into the estimate payload would have\nattached a set-independent fact to a set-dependent identity and made\n\"comparable only within one set\" look like it applied to depth.\n\nA separate model from `ResourceMetrics`, which means measurements taken of a\n*run's* selected-framework source and carries a runtime this path cannot\nknow.",
+        "properties": {
+          "depth": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Depth"
+          },
+          "gate_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Gate Count"
+          },
+          "measurement_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Measurement Count"
+          },
+          "present": {
+            "description": "False when the entry carries no portable circuit, or carries one this stack cannot read. The other fields are then absent \u2014 not zero, which is a size a real circuit can have.",
+            "title": "Present",
+            "type": "boolean"
+          },
+          "qubits": {
+            "anyOf": [
+              {
+                "minimum": 1,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Qubits"
+          },
+          "reason": {
+            "anyOf": [
+              {
+                "type": "string"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "Why there is no profile. Present exactly when `present` is false.",
+            "title": "Reason"
+          },
+          "slug": {
+            "title": "Slug",
+            "type": "string"
+          },
+          "two_qubit_gate_count": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "title": "Two Qubit Gate Count"
+          }
+        },
+        "required": [
+          "slug",
+          "present"
+        ],
+        "title": "CatalogEntryProfile",
+        "type": "object"
+      },
       "CatalogEstimateList": {
         "additionalProperties": false,
         "description": "Every published entry's cost under one assumption set.\n\nThe set is stated **once, for the whole list**, which is the shape that makes\nthe ordering rule enforceable: a client holding this object knows every row\nin it is comparable, and has nothing to compare across. Ranking rows from\ntwo of these \u2014 two epsilons, two hardware sets \u2014 is the thing that must not\nhappen, and it now requires visibly merging two payloads that each announce\na different identity.",
@@ -847,6 +946,21 @@
           "basis"
         ],
         "title": "CatalogEstimateSummary",
+        "type": "object"
+      },
+      "CatalogProfileList": {
+        "additionalProperties": false,
+        "description": "Every published entry's circuit size, for the browse list.\n\nNo `assumptions` field, and its absence is the point: unlike\n`CatalogEstimateList` there is nothing here that only holds under one set, so\na client may rank the whole listing without checking what it was computed\nunder.",
+        "properties": {
+          "profiles": {
+            "items": {
+              "$ref": "#/components/schemas/CatalogEntryProfile"
+            },
+            "title": "Profiles",
+            "type": "array"
+          }
+        },
+        "title": "CatalogProfileList",
         "type": "object"
       },
       "CatalogProvenance": {
@@ -6103,7 +6217,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.11.0"
+    "version": "2.12.0"
   },
   "openapi": "3.1.0",
   "paths": {}

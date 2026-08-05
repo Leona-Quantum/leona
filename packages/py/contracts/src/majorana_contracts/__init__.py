@@ -90,7 +90,9 @@ from .models import (
     ArtifactVersion,
     AssumptionSetSummary,
     CatalogEntryEstimate,
+    CatalogEntryProfile,
     CatalogEstimateList,
+    CatalogProfileList,
     CatalogEstimateSummary,
     CatalogProvenance,
     CodeDistanceSummary,
@@ -214,7 +216,16 @@ from .lifecycle import (
 # portable circuit on read, so nothing is stored and no existing field changes
 # meaning. ResourceEstimateBasis is the field to branch on; a client that renders
 # a number without checking it will publish a cost for a circuit that has none.
-CONTRACTS_VERSION = "2.11.0"
+# 2.12.0: CatalogEntryProfile and CatalogProfileList — /repository can show and
+# rank a catalogue entry's circuit size (R1). Additive and read-only, derived on
+# read from the entry's own portable circuit like the estimate beside it, so
+# nothing is stored. Kept OUT of the estimate payload on purpose: these numbers
+# are properties of the circuit, not of an assumption set, so they carry no
+# identity and may be ranked across the whole listing — the opposite of the rule
+# CatalogEstimateList exists to make structural. `present` is the field to branch
+# on; a client that renders a size without checking it will print zeros for an
+# entry that has no circuit at all.
+CONTRACTS_VERSION = "2.12.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -241,7 +252,9 @@ __all__ = [
     "BaselineResult",
     "AssumptionSetSummary",
     "CatalogEntryEstimate",
+    "CatalogEntryProfile",
     "CatalogEstimateList",
+    "CatalogProfileList",
     "CatalogEstimateSummary",
     "CatalogProvenance",
     "CodeDistanceSummary",
