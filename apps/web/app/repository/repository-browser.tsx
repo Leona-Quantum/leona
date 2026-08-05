@@ -324,6 +324,7 @@ export function RepositoryBrowser({
   estimates,
   profiles,
   initialTopic = "",
+  initialStance = "",
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
@@ -349,6 +350,8 @@ export function RepositoryBrowser({
   profiles?: RepositoryProfileList | null;
   /** Resolved from `?topic=` by the server component; "" when absent or unknown. */
   initialTopic?: TopicId | "";
+  /** Resolved from `?fits=` by the server component; "" when absent or unknown. */
+  initialStance?: InterfaceStance | "";
 }) {
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
@@ -360,10 +363,11 @@ export function RepositoryBrowser({
   // it would leave the entry pages' topic chips linking to a filter that never
   // applies. Seeding the initial state means the server's own HTML is filtered.
   const [topic, setTopic] = useState<TopicId | "">(initialTopic);
-  // Derived, not seeded from the URL. `?topic=` is a link entry pages emit, so
-  // it has to survive a page that never hydrates; this control is only ever set
-  // by the reader in front of it, and nothing links to a stance.
-  const [stance, setStance] = useState<InterfaceStance | "">("");
+  // Seeded from `?fits=` by the server component, on exactly the terms `topic`
+  // is and for the same reason: this page does not hydrate, so a filter whose
+  // only state is a `useState` may never move for anyone. Entry pages link to
+  // this control, so the link has to arrive already applied.
+  const [stance, setStance] = useState<InterfaceStance | "">(initialStance);
   const [order, setOrder] = useState<BrowseOrder>("catalog");
   const [circuitOnly, setCircuitOnly] = useState(false);
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());

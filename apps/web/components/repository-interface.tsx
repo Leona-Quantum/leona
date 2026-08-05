@@ -53,6 +53,7 @@ const COPY = {
     more: (n: number) => `and ${n} more`,
     unknownNote:
       "The widths and types line up. What is not established is everything a width does not carry — the basis convention, the normalisation, the state each was written to start from — so this is not a claim that the two compose.",
+    seeAll: (n: number) => `See all ${n} →`,
     stance: {
       source:
         "Prepares a state. Nothing goes in, and what comes out is a register another stage can take.",
@@ -82,6 +83,7 @@ const COPY = {
     more: (n: number) => `ほか ${n} 件`,
     unknownNote:
       "幅と型は一致しています。一致が保証しないもの——基底の取り方、規格化、各エントリが前提とする初期状態——は未確認であり、これは両者が合成可能であるという主張ではありません。",
+    seeAll: (n: number) => `同じ種類の${n}件を見る →`,
     stance: {
       source:
         "状態を準備します。入力はなく、出力は次段が受け取れるレジスタです。",
@@ -171,10 +173,20 @@ export function RepositoryInterfacePanel({
   entry,
   neighbours,
   titleOf,
+  stanceCount,
   locale,
 }: {
   entry: EntryInterface;
   neighbours: InterfaceNeighbours;
+  /**
+   * How many entries in the corpus share this stance.
+   *
+   * Passed in rather than computed here: the caller already holds every
+   * interface, and a component that counted for itself would be a second place
+   * the number is produced — which is how two counts that must agree stop
+   * agreeing.
+   */
+  stanceCount: number;
   /** Resolves a partner slug to its display title. */
   titleOf: (slug: string) => string;
   locale: PublicLocale;
@@ -221,7 +233,16 @@ export function RepositoryInterfacePanel({
         />
       </div>
 
-      <p className="mj-iface-stance">{stanceCopy}</p>
+      <p className="mj-iface-stance">
+        {stanceCopy}{" "}
+        {/* The owner's "people can click on either end to get a preview".
+            A link rather than an onClick, because this page does not hydrate:
+            `/repository?fits=` is resolved server-side, so the browse list
+            arrives already filtered whether or not React ever runs. */}
+        <a className="mj-iface-stance-link" href={`/repository?fits=${encodeURIComponent(entry.stance)}`}>
+          {copy.seeAll(stanceCount)}
+        </a>
+      </p>
 
       {isOnGraph(entry) ? (
         <div className="mj-iface-neighbours">

@@ -91,6 +91,14 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
     portableCircuit: entry.portableCircuit,
   });
   const neighbours = neighboursOf(entry.slug, entryInterface, corpusInterfaces);
+  // Counted here rather than inside the panel: the caller already holds every
+  // interface, and a component that counted for itself would be a second place
+  // this number is produced. The subject is counted with the corpus even when
+  // the listing does not carry it, so the link never promises one fewer row
+  // than the filter it opens.
+  const stanceCount =
+    [...corpusInterfaces.values()].filter((other) => other.stance === entryInterface.stance).length +
+    (corpusInterfaces.has(entry.slug) ? 0 : 1);
   const titleBySlug = new Map(
     entries.map((candidate) => [candidate.slug, locale === "ja" ? candidate.titleJa : candidate.title]),
   );
@@ -135,6 +143,7 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
             entry={entryInterface}
             neighbours={neighbours}
             titleOf={(slug) => titleBySlug.get(slug) ?? slug}
+            stanceCount={stanceCount}
             locale={locale}
           />
         }
