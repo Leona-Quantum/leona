@@ -1,4 +1,5 @@
 import type { NextConfig } from "next";
+import { contentSecurityPolicy } from "./lib/content-security-policy";
 
 /**
  * Content-Security-Policy (05-security.md §1 platform+edge).
@@ -27,6 +28,8 @@ import type { NextConfig } from "next";
  *
  * `connect-src` must name the control plane explicitly: the browser talks to it
  * directly for SSE, so `'self'` alone would break every live run.
+ * React's development runtime uses `eval()` for debugging call stacks, so only
+ * development adds `'unsafe-eval'`; the production policy never receives it.
  */
 const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -45,21 +48,10 @@ const CONTROL_PLANE = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000"
  * out from under us, and a developer pointing at a deployed https API should
  * still get the directive.
  */
-const CONTROL_PLANE_IS_HTTP = CONTROL_PLANE.startsWith("http://");
-
-const csp = [
-  "default-src 'self'",
-  "script-src 'self' 'unsafe-inline'",
-  "style-src 'self' 'unsafe-inline'",
-  "img-src 'self' data: blob:",
-  "font-src 'self' data:",
-  `connect-src 'self' ${CONTROL_PLANE}`,
-  "object-src 'none'",
-  "base-uri 'self'",
-  "form-action 'self'",
-  "frame-ancestors 'none'",
-  ...(CONTROL_PLANE_IS_HTTP ? [] : ["upgrade-insecure-requests"]),
-].join("; ");
+const csp = contentSecurityPolicy({
+  controlPlane: CONTROL_PLANE,
+  development: process.env.NODE_ENV === "development",
+});
 
 const nextConfig: NextConfig = {
   // @majorana/ui ships TS/TSX source (vendored components) — Next transpiles it.

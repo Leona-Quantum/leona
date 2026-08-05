@@ -32,7 +32,7 @@ test("a successful run leads with what it produced, not with a verdict", () => {
 
   assert.ok(result);
   assert.equal(result.summary, "Prepare and measure a Bell state");
-  assert.equal(result.distribution?.shots, 1024);
+  assert.equal(result.distribution?.total, 1024);
   assert.deepEqual(
     result.distribution?.data.bars.map((bar) => bar.bitstring).sort(),
     ["00", "11"],
@@ -74,8 +74,8 @@ test("a distribution is found under whatever key the plan chose", () => {
     ]),
   );
 
-  assert.equal(result?.distribution?.shots, 1000);
-  assert.equal(result?.distribution?.peakLabel, "000");
+  assert.equal(result?.distribution?.total, 1000);
+  assert.equal(result?.distribution?.data.peak.bitstring, "000");
 });
 
 test("a run with no distribution still reports its values and code", () => {
@@ -86,6 +86,31 @@ test("a run with no distribution still reports its values and code", () => {
   assert.equal(result?.distribution, null);
   assert.deepEqual(result?.values, [{ label: "Fidelity", value: "0.998" }]);
   assert.ok(result?.code);
+});
+
+test("a research-style optimization history becomes a convergence visual", () => {
+  const result = runResultFromEvents([
+    { type: "run.queued", mode: "execute" },
+    {
+      type: "plan.produced",
+      plan: {
+        problem_summary: "Estimate a variational ground-state energy",
+        framework: "qiskit",
+        expected_output_keys: ["energy", "optimization_history"],
+      },
+    },
+    { type: "code.generated", revision: 1, code: "run_vqe()" },
+    {
+      type: "sandbox.result",
+      result: { energy: -1.137, optimization_history: [-0.2, -0.8, -1.1, -1.137] },
+    } as OutcomeEvent,
+    { type: "run.finished", status: "succeeded" },
+  ]);
+
+  assert.equal(result?.traces.length, 1);
+  assert.equal(result?.traces[0]?.label, "Optimization History");
+  assert.equal(result?.traces[0]?.end, -1.137);
+  assert.deepEqual(result?.values, [{ label: "Energy", value: "-1.137" }]);
 });
 
 test("a review that did not accept is marked, not hidden", () => {

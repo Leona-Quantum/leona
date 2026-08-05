@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 
-import { formatShare } from "../lib/simulation-visual.ts";
 import type { RunResultView } from "../lib/run-result.ts";
+import { ResultVisualizations } from "./result-visualization";
 import { RunCodeExport } from "./run-code-export";
 
 /**
@@ -41,59 +41,11 @@ export function RunResult({
         </aside>
       ) : null}
 
-      {distribution ? (
-        <div className="mj-sim-chart">
-          <span className="mj-section-label">
-            Measured distribution · {distribution.shots.toLocaleString("en-US")} shots
-          </span>
-          <div className="mj-sim-chart-rows">
-            {distribution.data.bars.map((bar) => (
-              <div
-                className={bar.peak ? "mj-sim-chart-row is-peak" : "mj-sim-chart-row"}
-                title={`|${bar.bitstring}⟩ · ${bar.count.toLocaleString("en-US")} / ${distribution.shots.toLocaleString("en-US")} · ${formatShare(bar.share, "en-US")}`}
-                key={bar.bitstring}
-              >
-                <code>{bar.bitstring}</code>
-                <span className="mj-sim-chart-track">
-                  <span
-                    className="mj-sim-chart-fill"
-                    style={{ width: `${Math.max(bar.share * 100, 0.75)}%` }}
-                  />
-                </span>
-                <span className="mj-sim-chart-value">{formatShare(bar.share, "en-US")}</span>
-              </div>
-            ))}
-            {distribution.data.otherStates ? (
-              <div
-                className="mj-sim-chart-row is-other"
-                title={`${distribution.data.otherStates} further states · ${distribution.data.otherShots.toLocaleString("en-US")} / ${distribution.shots.toLocaleString("en-US")}`}
-              >
-                <code>…</code>
-                <span className="mj-sim-chart-track">
-                  <span
-                    className="mj-sim-chart-fill"
-                    style={{
-                      width: `${Math.max((distribution.data.otherShots / distribution.shots) * 100, 0.75)}%`,
-                    }}
-                  />
-                </span>
-                <span className="mj-sim-chart-value">+{distribution.data.otherStates}</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {result.values.length ? (
-        <dl className="mj-run-result-values">
-          {result.values.map((value) => (
-            <div key={value.label}>
-              <dt>{value.label}</dt>
-              <dd>{value.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
+      <ResultVisualizations
+        distribution={distribution}
+        traces={result.traces}
+        values={result.values}
+      />
 
       {result.facts.length ? (
         <ul className="mj-run-result-facts">

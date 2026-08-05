@@ -1222,6 +1222,111 @@ html[lang="ja"] .mj-company-hero-title-line {
   border-color: var(--warn);
   color: var(--warn);
 }
+.mj-result-visualizations {
+  display: grid;
+  gap: var(--sp-4);
+}
+.mj-result-visual {
+  display: grid;
+  gap: var(--sp-3);
+  min-width: 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-0);
+}
+.mj-result-visual-head {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+}
+.mj-result-visual-head .mj-section-label {
+  margin: 0;
+}
+.mj-result-visual-head > span:last-child,
+.mj-result-visual-note {
+  color: var(--text-1);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-result-visual-note {
+  margin: 0;
+  font-family: var(--font-ui);
+  line-height: 1.5;
+}
+.mj-result-visual .mj-sim-chart-value {
+  display: grid;
+  justify-items: end;
+}
+.mj-result-visual .mj-sim-chart-value small {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 400;
+}
+.mj-result-trace-chart {
+  display: grid;
+  grid-template-columns: minmax(7ch, auto) minmax(160px, 1fr);
+  grid-template-rows: auto auto;
+  gap: var(--sp-1) var(--sp-3);
+  align-items: center;
+}
+.mj-result-trace-chart > span {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  text-align: right;
+}
+.mj-result-trace-chart svg {
+  width: 100%;
+  height: 112px;
+  grid-column: 2;
+  grid-row: 1 / 3;
+  overflow: visible;
+}
+.mj-result-trace-chart line {
+  stroke: var(--border-0);
+  stroke-width: 0.6;
+  vector-effect: non-scaling-stroke;
+}
+.mj-result-trace-chart polyline {
+  fill: none;
+  stroke: var(--accent);
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  stroke-width: 1.5;
+  vector-effect: non-scaling-stroke;
+}
+.mj-result-trace-summary {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 1px;
+  margin: 0;
+  overflow: hidden;
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--border-0);
+}
+.mj-result-trace-summary > div {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  background: var(--bg-1);
+}
+.mj-result-trace-summary dt {
+  color: var(--text-1);
+  font-size: var(--fs-12);
+}
+.mj-result-trace-summary dd {
+  margin: 0;
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  overflow-wrap: anywhere;
+}
 .mj-run-result-values {
   display: grid;
   grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
@@ -1298,6 +1403,17 @@ html[lang="ja"] .mj-company-hero-title-line {
   display: flex;
   flex-wrap: wrap;
   gap: var(--sp-3);
+}
+@media (max-width: 560px) {
+  .mj-result-visual {
+    padding: var(--sp-3);
+  }
+  .mj-result-trace-chart {
+    grid-template-columns: minmax(6ch, auto) minmax(120px, 1fr);
+  }
+  .mj-result-trace-summary {
+    grid-template-columns: 1fr;
+  }
 }
 
 /* ---------- Connect IBM Quantum (account) ----------
