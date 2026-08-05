@@ -1,0 +1,239 @@
+{
+  "authority": {
+    "catalog_schema_version": "1.1.0",
+    "source_order": [
+      "immutable_registry_records",
+      "committed_runtime_evidence",
+      "committed_review_evidence",
+      "committed_deployment_evidence"
+    ]
+  },
+  "capabilities": {
+    "h2_fixed_excitation_cobyla": {
+      "evidence": [
+        "optimizer_private_e2e"
+      ],
+      "implementations": {
+        "pennylane": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.2.0",
+          "runtime_digest": "sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930",
+          "runtime_profile_id": "h2-pennylane-linux-x86_64-production-v2",
+          "runtime_qualification": "qualified_private"
+        },
+        "qiskit": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.2.0",
+          "runtime_digest": "sha256:17a1ee0690ce768a076c370ee17c36de5f536ff4b61d8ebe4ae43b961a277b76",
+          "runtime_profile_id": "h2-qiskit-linux-x86_64-production-v2",
+          "runtime_qualification": "qualified_private"
+        }
+      },
+      "runtime_qualification": "qualified_private",
+      "workflow": "workflow.h2.fixed_excitation.cobyla.v1"
+    },
+    "h2_fixed_excitation_runtime": {
+      "component_definition": "ansatz.h2.fixed_excitation.v1",
+      "evidence": [
+        "fixed_runtime"
+      ],
+      "implementations": {
+        "pennylane": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.2.0",
+          "runtime_digest": "sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930",
+          "runtime_profile_id": "h2-pennylane-linux-x86_64-production-v2",
+          "runtime_qualification": "qualified_private"
+        },
+        "qiskit": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.2.0",
+          "runtime_digest": "sha256:17a1ee0690ce768a076c370ee17c36de5f536ff4b61d8ebe4ae43b961a277b76",
+          "runtime_profile_id": "h2-qiskit-linux-x86_64-production-v2",
+          "runtime_qualification": "qualified_private"
+        }
+      },
+      "runtime_qualification": "qualified_private"
+    },
+    "h2_fixed_excitation_slsqp": {
+      "blocking_reason": "No committed private E2E evidence executes Fixed Excitation with SLSQP.",
+      "evidence": [],
+      "implementations": {
+        "pennylane": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.2.0",
+          "runtime_digest": "sha256:e29149db8efb338c4dd82879909ad8dd4928174309bc0b9fc1b7db0ef2a21930",
+          "runtime_profile_id": "h2-pennylane-linux-x86_64-production-v2",
+          "runtime_qualification": "qualified_private"
+        },
+        "qiskit": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.2.0",
+          "runtime_digest": "sha256:17a1ee0690ce768a076c370ee17c36de5f536ff4b61d8ebe4ae43b961a277b76",
+          "runtime_profile_id": "h2-qiskit-linux-x86_64-production-v2",
+          "runtime_qualification": "qualified_private"
+        }
+      },
+      "runtime_qualification": "adapter_tested",
+      "workflow": "workflow.h2.fixed_excitation.slsqp.v1"
+    },
+    "h2_hardware_efficient": {
+      "comparison_class": "capability_migration_not_one_component_swap",
+      "evidence": [
+        "hardware_efficient_private_oci"
+      ],
+      "implementations": {
+        "pennylane": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.4.0",
+          "runtime_digest": "sha256:f6977dcf8cdd99b198c739f6d1f33c98dcf840235a40f66c5632dd5adddeb207",
+          "runtime_profile_id": "h2-hardware-efficient-pennylane-linux-x86_64-production-v1",
+          "runtime_qualification": "qualified_private"
+        },
+        "qiskit": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.4.0",
+          "runtime_digest": "sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d",
+          "runtime_profile_id": "h2-hardware-efficient-qiskit-linux-x86_64-production-v1",
+          "runtime_qualification": "qualified_private"
+        }
+      },
+      "runtime_qualification": "qualified_private",
+      "workflow": "workflow.h2.hardware_efficient.v1"
+    },
+    "h2_uccsd": {
+      "comparison_class": "secondary_private_smoke",
+      "evidence": [
+        "uccsd_private_oci"
+      ],
+      "implementations": {
+        "pennylane": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.3.0",
+          "runtime_digest": "sha256:daac7c918f277555515bc3a4c5c7fa29e6634a44184db1f04f4cd3ef5d3e9980",
+          "runtime_profile_id": "h2-uccsd-pennylane-linux-x86_64-production-v1",
+          "runtime_qualification": "qualified_private"
+        },
+        "qiskit": {
+          "architecture": "linux-x86_64",
+          "protocol_version": "0.3.0",
+          "runtime_digest": "sha256:9e0d646fd59cee3d51a72a60d36b306619150732cf01bda73de23c1cdbd119d5",
+          "runtime_profile_id": "h2-uccsd-qiskit-linux-x86_64-production-v1",
+          "runtime_qualification": "qualified_private"
+        }
+      },
+      "runtime_qualification": "qualified_private",
+      "workflow": "workflow.h2.uccsd.v1"
+    }
+  },
+  "catalog_inventory": {
+    "controlled_comparison_specifications": 1,
+    "generated_implementation_projections": 21,
+    "implementation_evidence_levels": {
+      "adapter_tested": 10,
+      "documented": 0,
+      "runtime_qualified": 11
+    },
+    "is_qualification_kpi": false,
+    "schema_valid_seed_candidates": 29,
+    "workflow_templates": 7
+  },
+  "claim_boundary": {
+    "external_repository_execution": "blocked",
+    "public_execution": "blocked",
+    "publication": "blocked",
+    "scientific_review": "owner_waived",
+    "scientific_superiority_claim": "blocked",
+    "statement": "Executable interoperability and private persistence only; no optimizer, ansatz, or provider superiority claim."
+  },
+  "evidence": {
+    "fixed_runtime": {
+      "locator": "docs/atlas/evidence/phase76/s12_phase_close_audit.json",
+      "sha256": "d3cac51a5426fc95aed6a005a943f591a07af7a07b12f1d4b9c7e6370771d52e"
+    },
+    "hardware_efficient_private_oci": {
+      "locator": "docs/atlas/evidence/phase78/hardware_efficient_private_oci_qualification.json",
+      "sha256": "4d41e53100a55936ff004b250bc51b5e6b17d64cb055c0d4df43a04d16476e53"
+    },
+    "optimizer_private_e2e": {
+      "locator": "docs/atlas/evidence/phase78/s6_private_oci_e2e.json",
+      "sha256": "fff1e6110c81b3f50b5fd971c2196fbf40db59b8d72723f0e7fd1a588d181687"
+    },
+    "uccsd_private_oci": {
+      "locator": "docs/atlas/evidence/phase78/uccsd_private_oci_qualification.json",
+      "sha256": "caa6bf4704d2bd6b9be67a4ff00745a5a0490d82e75eceeb1745a0023581006b"
+    }
+  },
+  "golden_journeys": {
+    "controlled_slsqp_to_cobyla": {
+      "changed_roles": [
+        "parameter_optimizer"
+      ],
+      "go_decision": "unavailable",
+      "required_evidence": "private_ci_comparison_run_save_reopen",
+      "status": "NOT_RUN"
+    },
+    "live_workos_same_account_reopen": {
+      "go_decision": "unavailable",
+      "required_evidence": "live_workos_staging_same_subject_reopen",
+      "status": "NOT_RUN"
+    },
+    "primary_fixed_excitation_slsqp": {
+      "frameworks": [
+        "qiskit",
+        "pennylane"
+      ],
+      "go_decision": "unavailable",
+      "required_evidence": "private_ci_execution_save_reopen",
+      "status": "NOT_RUN"
+    },
+    "secondary_uccsd_smoke": {
+      "frameworks": [
+        "qiskit",
+        "pennylane"
+      ],
+      "go_decision": "private_only",
+      "status": "qualified_private"
+    },
+    "tertiary_hardware_efficient_smoke": {
+      "frameworks": [
+        "qiskit",
+        "pennylane"
+      ],
+      "go_decision": "private_only",
+      "status": "qualified_private"
+    }
+  },
+  "product_model": "component_first_vqe",
+  "release_scope": "private_technical_mvp",
+  "schema_version": "1.0.0",
+  "status_vocabulary": {
+    "authentication_evidence": [
+      "synthetic_contract",
+      "live_workos_staging",
+      "live_workos_production"
+    ],
+    "deployment": [
+      "local_dev",
+      "private_ci",
+      "private_preview",
+      "permanent_private"
+    ],
+    "publication": [
+      "blocked",
+      "private_only",
+      "approved"
+    ],
+    "runtime_qualification": [
+      "unqualified",
+      "adapter_tested",
+      "qualified_private"
+    ],
+    "scientific_review": [
+      "unreviewed",
+      "owner_waived",
+      "workspace_reviewed",
+      "independently_reviewed"
+    ]
+  }
+}

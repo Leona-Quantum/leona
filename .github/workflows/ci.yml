@@ -82,6 +82,10 @@ jobs:
           uv run python scripts/check-phase5-vqe-snapshot.py
       - name: Phase 9 release audit is internally consistent
         run: uv run python scripts/check-phase9-release-audit.py --check
+      - name: Private Component-First VQE manifests are current
+        run: |
+          uv run python scripts/generate-standard-vqe-catalog.py --check
+          uv run python scripts/generate-vqe-private-mvp-manifest.py --check
       # The framework-native sandbox suites EXECUTE generated code through
       # LocalSubprocessSandbox, so they need the SDK extras that the sync above
       # deliberately leaves out. Without this step they skip — and they are the

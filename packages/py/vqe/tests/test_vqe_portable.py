@@ -1,5 +1,9 @@
 from __future__ import annotations
 
+# The VQE-specific basename is intentional: the workspace also contains an
+# independent OpenQASM portable-contract suite, and pytest's default import
+# mode requires distinct module names during a root-level regression run.
+
 from uuid import uuid4
 
 import pytest

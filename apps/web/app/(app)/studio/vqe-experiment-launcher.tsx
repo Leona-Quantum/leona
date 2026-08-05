@@ -95,6 +95,7 @@ export function VqeExperimentLauncher({
   initialWorkflowKey,
   initialMigration,
   initialSwapComponentKey,
+  initialComparisonBaselineExperimentId,
   locale,
 }: {
   initialFramework: VqeFramework;
@@ -102,6 +103,7 @@ export function VqeExperimentLauncher({
   initialWorkflowKey?: string;
   initialMigration?: string;
   initialSwapComponentKey?: string;
+  initialComparisonBaselineExperimentId?: string;
   locale: PublicLocale;
 }) {
   const ja = locale === "ja";
@@ -168,7 +170,11 @@ export function VqeExperimentLauncher({
       window.location.assign(
         `/studio?vqeExperiment=${encodeURIComponent(
           payload.id,
-        )}&vqeFramework=${encodeURIComponent(initialFramework)}`,
+        )}&vqeFramework=${encodeURIComponent(initialFramework)}${
+          initialComparisonBaselineExperimentId
+            ? `&vqeBaselineExperiment=${encodeURIComponent(initialComparisonBaselineExperimentId)}`
+            : ""
+        }`,
       );
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "experiment creation failed");
@@ -577,7 +583,11 @@ export function VqeExperimentLauncher({
               className="mj-secondary-button"
               href={`/studio?vqe=1&vqeWorkflow=${encodeURIComponent(
                 savedSwap.workflow_artifact_version_id,
-              )}&vqeProvider=${encodeURIComponent(initialFramework)}`}
+              )}&vqeProvider=${encodeURIComponent(initialFramework)}${
+                initialComparisonBaselineExperimentId
+                  ? `&vqeBaselineExperiment=${encodeURIComponent(initialComparisonBaselineExperimentId)}`
+                  : ""
+              }`}
             >
               {ja ? "保存したWorkflowを再表示" : "Reopen saved workflow"}
             </a>

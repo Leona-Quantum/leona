@@ -11,35 +11,46 @@ import {
   type VqeExecution,
   type VqeFramework,
 } from "../../../lib/vqe-proof";
+import {
+  optimizerSemanticKey,
+  parseComparisonExperiment,
+  resolveOptimizerSwapRootWorkflowId,
+  type ComparisonExperiment,
+} from "../../../lib/vqe-controlled-comparison";
 
 const ACTIVE = new Set(["planned", "queued", "running"]);
 
 export function VqeProofPanel({
   experimentId,
   initialFramework,
+  comparisonBaselineExperimentId,
   locale,
 }: {
   experimentId: string;
   initialFramework: VqeFramework;
+  comparisonBaselineExperimentId?: string;
   locale: PublicLocale;
 }) {
   const ja = locale === "ja";
   const [framework, setFramework] = useState<VqeFramework>(initialFramework);
   const [capability, setCapability] = useState<VqeCapability | null>(null);
   const [executions, setExecutions] = useState<VqeExecution[]>([]);
+  const [comparisonIdentity, setComparisonIdentity] = useState<ComparisonExperiment | null>(null);
+  const [rootWorkflowId, setRootWorkflowId] = useState<string | null>(null);
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<"start" | "cancel" | "materialize" | null>(null);
 
   const refresh = useCallback(async () => {
     try {
-      const [experimentResponse, executionResponse] = await Promise.all([
+      const [experimentResponse, executionResponse, workflowResponse] = await Promise.all([
         fetch(`/api/vqe/experiments/${encodeURIComponent(experimentId)}`, {
           cache: "no-store",
         }),
         fetch(`/api/vqe/experiments/${encodeURIComponent(experimentId)}/executions`, {
           cache: "no-store",
         }),
+        fetch("/api/atlas/workflows?limit=50", { cache: "no-store" }),
       ]);
       if (!experimentResponse.ok) {
         throw new Error(`experiment identity unavailable (${experimentResponse.status})`);
@@ -47,7 +58,17 @@ export function VqeProofPanel({
       if (!executionResponse.ok) {
         throw new Error(`execution evidence unavailable (${executionResponse.status})`);
       }
-      setCapability(capabilityFromExperiment(await experimentResponse.json()));
+      if (!workflowResponse.ok) {
+        throw new Error(`workflow identity unavailable (${workflowResponse.status})`);
+      }
+      const experimentPayload = await experimentResponse.json();
+      const identity = parseComparisonExperiment(experimentPayload);
+      setCapability(capabilityFromExperiment(experimentPayload));
+      setComparisonIdentity(identity);
+      setRootWorkflowId(resolveOptimizerSwapRootWorkflowId(
+        await workflowResponse.json(),
+        identity.workflow_artifact_version_id,
+      ));
       setExecutions(parseVqeExecutions(await executionResponse.json()));
       setState("ready");
     } catch (cause) {
@@ -73,6 +94,9 @@ export function VqeProofPanel({
   );
   const success = selected ? latestSuccess(selected) : null;
   const resources = success ? comparableResources(success) : null;
+  const optimizerKey = comparisonIdentity
+    ? optimizerSemanticKey(comparisonIdentity)
+    : null;
 
   async function mutate(action: "start" | "cancel" | "materialize") {
     if (action === "start" && capability === null) return;
@@ -158,9 +182,9 @@ export function VqeProofPanel({
           <div className="mj-studio-inspector-card">
             <span className="mj-section-label">{selected.framework} · {selected.status}</span>
             <dl className="mj-studio-contract">
-              <div><dt>review</dt><dd>{selected.review_state}</dd></div>
-              <div><dt>runtime</dt><dd>{selected.production_runtime_status}</dd></div>
-              <div><dt>public</dt><dd>{selected.public_execution}</dd></div>
+              <div><dt>scientific review</dt><dd>{selected.scientific_review}</dd></div>
+              <div><dt>runtime qualification</dt><dd>{selected.runtime_qualification}</dd></div>
+              <div><dt>publication</dt><dd>{selected.publication}</dd></div>
               {success ? (
                 <>
                   <div><dt>Resource protocol</dt><dd>Canonical ansatz decomposition</dd></div>
@@ -191,11 +215,7 @@ export function VqeProofPanel({
           <button className="mj-primary-button" type="button" disabled={busy !== null || Boolean(selected) || capability === null} onClick={() => void mutate("start")}>
             {busy === "start"
               ? (ja ? "開始中…" : "Starting…")
-              : capability === "h2_sto3g_uccsd_v1"
-                ? (ja ? "private認定候補を実行" : "Run private qualification candidate")
-                : capability === "h2_sto3g_hardware_efficient_ry_cx_v1"
-                  ? (ja ? "private認定候補を実行" : "Run private qualification candidate")
-                : (ja ? "ローカル候補を実行" : "Run local candidate")}
+              : (ja ? "private候補を実行" : "Run private candidate")}
           </button>
           <button className="mj-secondary-button" type="button" disabled={busy !== null || !hasActive} onClick={() => void mutate("cancel")}>
             {ja ? "実行を中止" : "Cancel"}
@@ -206,6 +226,25 @@ export function VqeProofPanel({
           <button className="mj-secondary-button" type="button" disabled={busy !== null} onClick={() => void refresh()}>
             {ja ? "更新" : "Refresh"}
           </button>
+          {success
+            && optimizerKey === "optimizer.slsqp.v1"
+            && rootWorkflowId
+            && !comparisonBaselineExperimentId ? (
+              <a
+                className="mj-secondary-button"
+                href={`/studio?vqe=1&vqeWorkflow=${encodeURIComponent(rootWorkflowId)}&vqeProvider=${encodeURIComponent(framework)}&vqeSwap=optimizer.cobyla.v1&vqeBaselineExperiment=${encodeURIComponent(experimentId)}`}
+              >
+                {ja ? "COBYLAへ一部品交換" : "Swap one component to COBYLA"}
+              </a>
+            ) : null}
+          {success && comparisonBaselineExperimentId ? (
+            <a
+              className="mj-secondary-button"
+              href={`/studio?vqeComparison=build&vqeBaselineExperiment=${encodeURIComponent(comparisonBaselineExperimentId)}&vqeCandidateExperiment=${encodeURIComponent(experimentId)}&vqeFramework=${encodeURIComponent(framework)}`}
+            >
+              {ja ? "統制比較を検証・保存" : "Verify and save controlled comparison"}
+            </a>
+          ) : null}
         </div>
         {message && state !== "error" ? <footer className="mj-studio-footer" aria-live="polite"><span>{message}</span></footer> : null}
       </section>

@@ -2,6 +2,7 @@ import { StudioWorkspace } from "./studio-workspace";
 import { VqeProofPanel } from "./vqe-proof-panel";
 import { VqeExperimentLauncher } from "./vqe-experiment-launcher";
 import { VqeResearchReview } from "./vqe-research-review";
+import { VqeControlledComparisonPanel } from "./vqe-controlled-comparison-panel";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getAccountTier } from "../../../lib/account-tier-server";
 import { parseVqeFramework } from "../../../lib/vqe-workflow-launch";
@@ -13,6 +14,9 @@ type StudioSearchParams = {
   new?: string;
   vqe?: string;
   vqeExperiment?: string;
+  vqeBaselineExperiment?: string;
+  vqeCandidateExperiment?: string;
+  vqeComparison?: string;
   vqeFramework?: string;
   vqeProvider?: string;
   vqeMigration?: string;
@@ -32,11 +36,23 @@ export default async function StudioPage({
     getPublicLocale(),
     getAccountTier(),
   ]);
+  if (params.vqeComparison || (params.vqeBaselineExperiment && params.vqeCandidateExperiment)) {
+    return (
+      <VqeControlledComparisonPanel
+        baselineExperimentId={params.vqeBaselineExperiment}
+        candidateExperimentId={params.vqeCandidateExperiment}
+        comparisonId={params.vqeComparison === "build" ? undefined : params.vqeComparison}
+        framework={parseVqeFramework(params.vqeFramework)}
+        locale={locale}
+      />
+    );
+  }
   if (params.vqeExperiment) {
     return (
       <VqeProofPanel
         experimentId={params.vqeExperiment}
         initialFramework={parseVqeFramework(params.vqeFramework)}
+        comparisonBaselineExperimentId={params.vqeBaselineExperiment}
         locale={locale}
       />
     );
@@ -52,6 +68,7 @@ export default async function StudioPage({
         initialWorkflowKey={params.vqeWorkflowKey}
         initialMigration={params.vqeMigration}
         initialSwapComponentKey={params.vqeSwap}
+        initialComparisonBaselineExperimentId={params.vqeBaselineExperiment}
         locale={locale}
       />
     );

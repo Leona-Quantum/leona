@@ -42,6 +42,9 @@ export type VqeExecution = {
   production_runtime_status: "unqualified" | "qualified";
   public_execution: "blocked";
   review_state: "owner_waived";
+  scientific_review: "owner_waived";
+  runtime_qualification: "unqualified" | "qualified_private";
+  publication: "blocked";
   observations: VqeObservation[];
 };
 
@@ -103,6 +106,10 @@ export function parseVqeExecutions(value: unknown): VqeExecution[] {
       || !["unqualified", "qualified"].includes(String(item.production_runtime_status))
       || item.public_execution !== "blocked"
       || item.review_state !== "owner_waived"
+      || item.scientific_review !== "owner_waived"
+      || !["unqualified", "qualified_private"].includes(String(item.runtime_qualification))
+      || item.publication !== "blocked"
+      || (item.production_runtime_status === "qualified") !== (item.runtime_qualification === "qualified_private")
       || !Array.isArray(item.observations)
     ) {
       throw new Error("VQE execution payload violates the candidate contract");

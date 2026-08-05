@@ -19,6 +19,7 @@ on:
       - services/worker/src/majorana_worker/vqe_runtime.py
       - packages/py/vqe/**
       - scripts/provision-h2-vqe-candidate.py
+      - scripts/run-vqe-private-mvp-gate.py
       - db/migrations/**
 
 permissions:
@@ -81,13 +82,13 @@ jobs:
           MAJORANA_ENV: production
           MAJORANA_VQE_RUNTIME_HOST: dedicated
           MAJORANA_RUN_VQE_PRODUCTION_E2E: "1"
-          MAJORANA_VQE_E2E_EVIDENCE_PATH: /tmp/phase78-private-ci-e2e.json
-        run: uv run pytest services/api/tests/test_vqe_production_e2e.py -q
+          MAJORANA_VQE_E2E_EVIDENCE_PATH: /tmp/private-component-first-mvp-ci-e2e.json
+        run: uv run python scripts/run-vqe-private-mvp-gate.py --mode private-e2e
       - name: upload redacted private E2E evidence
         if: success()
         uses: actions/upload-artifact@v4
         with:
-          name: phase78-private-ci-e2e-${{ github.sha }}
-          path: /tmp/phase78-private-ci-e2e.json
+          name: private-component-first-mvp-ci-e2e-${{ github.sha }}
+          path: /tmp/private-component-first-mvp-ci-e2e.json
           if-no-files-found: error
           retention-days: 30

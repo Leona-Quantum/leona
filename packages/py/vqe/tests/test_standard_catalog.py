@@ -33,7 +33,7 @@ def test_seed_identities_are_unique_and_relationships_are_nonempty():
     assert len({item.workflow_key for item in STANDARD_WORKFLOWS}) == len(STANDARD_WORKFLOWS)
 
 
-def test_only_runtime_qualified_h2_workflow_is_marked_executable():
+def test_only_direct_registry_workflow_is_marked_executable():
     executable = [item for item in STANDARD_WORKFLOWS if item.status is WorkflowStatus.EXECUTABLE]
     assert [item.workflow_key for item in executable] == ["workflow.h2.fixed_excitation.v1"]
     assert executable[0].supported_evaluator_providers == ("qiskit", "pennylane")
@@ -75,8 +75,24 @@ def test_cobyla_binding_records_private_runtime_qualification_without_public_cla
     assert "docs/atlas/evidence/phase78/s6_private_oci_e2e.json" in cobyla.evidence_locators
 
     workflow = workflow_by_key("workflow.h2.fixed_excitation.cobyla.v1")
-    assert workflow.status is WorkflowStatus.STRUCTURED
+    assert workflow.status is WorkflowStatus.EXECUTED
+    assert workflow.supported_evaluator_providers == ("qiskit", "pennylane")
     assert workflow.registry_semantic_key is None
+
+
+def test_secondary_capabilities_are_executed_migrations_not_comparisons():
+    for workflow_key in (
+        "workflow.h2.uccsd.v1",
+        "workflow.h2.hardware_efficient.v1",
+    ):
+        workflow = workflow_by_key(workflow_key)
+        assert workflow.status is WorkflowStatus.EXECUTED
+        assert workflow.supported_evaluator_providers == ("qiskit", "pennylane")
+        assert workflow.registry_semantic_key is None
+
+    assert {item.comparison_key for item in CONTROLLED_COMPARISON_SPECS} == {
+        "comparison.h2.optimizer.slsqp_vs_cobyla.v1"
+    }
 
 
 def test_executable_h2_workflow_is_compatible():

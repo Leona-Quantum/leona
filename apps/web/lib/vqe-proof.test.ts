@@ -18,6 +18,9 @@ const candidate = {
   production_runtime_status: "unqualified",
   public_execution: "blocked",
   review_state: "owner_waived",
+  scientific_review: "owner_waived",
+  runtime_qualification: "unqualified",
+  publication: "blocked",
   observations: [{
     id: "o1",
     attempt: 1,
@@ -97,6 +100,13 @@ describe("VQE proof parsing", () => {
   it("fails closed if the API fabricates a completed human review", () => {
     assert.throws(
       () => parseVqeExecutions([{ ...candidate, review_state: "human_reviewed" }]),
+      /candidate contract/,
+    );
+  });
+
+  it("fails closed if legacy and canonical runtime qualification disagree", () => {
+    assert.throws(
+      () => parseVqeExecutions([{ ...candidate, runtime_qualification: "qualified_private" }]),
       /candidate contract/,
     );
   });

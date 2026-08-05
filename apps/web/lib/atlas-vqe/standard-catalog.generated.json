@@ -7,14 +7,6 @@
       "candidate_workflow_key": "workflow.h2.fixed_excitation.cobyla.v1",
       "changed_role": "parameter_optimizer",
       "comparison_key": "comparison.h2.optimizer.slsqp_vs_cobyla.v1"
-    },
-    {
-      "baseline_component_key": "ansatz.uccsd.v1",
-      "baseline_workflow_key": "workflow.h2.uccsd.v1",
-      "candidate_component_key": "ansatz.hardware_efficient_ry_cx.v1",
-      "candidate_workflow_key": "workflow.h2.hardware_efficient.v1",
-      "changed_role": "ansatz",
-      "comparison_key": "comparison.h2.ansatz.uccsd_vs_hardware_efficient.v1"
     }
   ],
   "components": [
@@ -1488,8 +1480,11 @@
           "role": "compilation_backend"
         }
       ],
-      "status": "compatible",
-      "supported_evaluator_providers": [],
+      "status": "executed",
+      "supported_evaluator_providers": [
+        "qiskit",
+        "pennylane"
+      ],
       "workflow_key": "workflow.h2.uccsd.v1"
     },
     {
@@ -1625,8 +1620,11 @@
           "role": "compilation_backend"
         }
       ],
-      "status": "structured",
-      "supported_evaluator_providers": [],
+      "status": "executed",
+      "supported_evaluator_providers": [
+        "qiskit",
+        "pennylane"
+      ],
       "workflow_key": "workflow.h2.hardware_efficient.v1"
     },
     {
@@ -2055,8 +2053,11 @@
           "role": "compilation_backend"
         }
       ],
-      "status": "structured",
-      "supported_evaluator_providers": [],
+      "status": "compatible",
+      "supported_evaluator_providers": [
+        "qiskit",
+        "pennylane"
+      ],
       "workflow_key": "workflow.h2.fixed_excitation.slsqp.v1"
     },
     {
@@ -2196,8 +2197,11 @@
           "role": "compilation_backend"
         }
       ],
-      "status": "structured",
-      "supported_evaluator_providers": [],
+      "status": "executed",
+      "supported_evaluator_providers": [
+        "qiskit",
+        "pennylane"
+      ],
       "workflow_key": "workflow.h2.fixed_excitation.cobyla.v1"
     }
   ]

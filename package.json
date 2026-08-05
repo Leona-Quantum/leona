@@ -3,6 +3,7 @@
   "private": true,
   "packageManager": "pnpm@11.10.0",
   "scripts": {
+    "atlas:vqe:mvp-gate": "uv run python scripts/run-vqe-private-mvp-gate.py",
     "lint": "turbo run lint",
     "typecheck": "turbo run typecheck",
     "test": "turbo run test",

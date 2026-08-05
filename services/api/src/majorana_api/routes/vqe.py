@@ -390,6 +390,9 @@ class ExecutionResource(BaseModel):
     production_runtime_status: str
     public_execution: Literal["blocked"] = "blocked"
     review_state: Literal["owner_waived"] = "owner_waived"
+    scientific_review: Literal["owner_waived"] = "owner_waived"
+    runtime_qualification: Literal["unqualified", "qualified_private"]
+    publication: Literal["blocked"] = "blocked"
     observations: list[ObservationResource] = Field(default_factory=list)
     created_at: dt.datetime | None
     updated_at: dt.datetime | None
@@ -442,6 +445,9 @@ class ControlledComparisonResource(BaseModel):
     changed_role: str
     spec_json: dict[str, Any]
     spec_sha256: str
+    scientific_review: Literal["owner_waived"] = "owner_waived"
+    visibility: Literal["private"] = "private"
+    publication: Literal["blocked"] = "blocked"
     runs: list[ControlledComparisonRunResource] = Field(default_factory=list)
     created_at: dt.datetime | None
 
@@ -488,6 +494,9 @@ async def _to_controlled_comparison_resource(
         changed_role=row.changed_role,
         spec_json=row.spec_json,
         spec_sha256=row.spec_sha256,
+        scientific_review="owner_waived",
+        visibility="private",
+        publication="blocked",
         runs=[_to_comparison_run_resource(item) for item in runs],
         created_at=row.created_at,
     )
@@ -500,6 +509,10 @@ async def _to_execution_resource(
 ) -> ExecutionResource:
     observations = await vqe_repo.list_observations(scope, session, row.id)
     binding = row.execution_binding_json
+    production_runtime_status = binding.get(
+        "production_runtime_status",
+        "unqualified",
+    )
     return ExecutionResource(
         id=row.id,
         experiment_id=row.experiment_id,
@@ -510,9 +523,9 @@ async def _to_execution_resource(
         adapter_release_id=row.adapter_release_id,
         execution_identity_sha256=row.execution_identity_sha256,
         status=row.status,
-        production_runtime_status=binding.get(
-            "production_runtime_status",
-            "unqualified",
+        production_runtime_status=production_runtime_status,
+        runtime_qualification=(
+            "qualified_private" if production_runtime_status == "qualified" else "unqualified"
         ),
         observations=[_to_observation_resource(item) for item in observations],
         created_at=row.created_at,

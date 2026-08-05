@@ -7,6 +7,7 @@ import type {
   StandardComponentDefinition,
   StandardComponentGroup,
   StandardDefinitionMaturity,
+  PrivateMvpCapabilityManifest,
   StandardVqeCatalogBundle,
   StandardWorkflowStatus,
   StandardWorkflowSelection,
@@ -94,7 +95,7 @@ const COPY = {
     saveHardwareEfficientMigration:
       "Save private hardware-efficient migration in Studio",
     hardwareEfficientMigrationQualification:
-      "This controlled capability migration changes the ansatz and dependent compilation protocol. The frozen RY–CX structure is adapter-tested, but its Linux/amd64 OCI runtime is not yet qualified, so execution, publication, and performance claims remain blocked.",
+      "This controlled capability migration changes the ansatz and dependent compilation protocol. Its Qiskit and PennyLane Linux/amd64 OCI runtimes are privately qualified; publication and performance claims remain blocked.",
   },
   ja: {
     title: "VQE Methods",
@@ -147,7 +148,7 @@ const COPY = {
     saveHardwareEfficientMigration:
       "Hardware-Efficient migrationをStudioへprivate保存",
     hardwareEfficientMigrationQualification:
-      "これはAnsatzと従属するcompilation protocolを変更する統制されたcapability migrationです。固定RY–CX構造はadapterで検証済みですが、Linux/amd64 OCI runtimeは未認定のため、実行・公開・性能主張は停止中です。",
+      "これはAnsatzと従属するcompilation protocolを変更する統制されたcapability migrationです。QiskitとPennyLaneのLinux/amd64 OCI runtimeはprivate認定済みですが、公開と性能主張は引き続き停止されます。",
   },
 } as const;
 
@@ -209,9 +210,11 @@ function formatPort(port: { name: string; value: string }) {
 
 export function VqeMethodsBrowser({
   catalog,
+  capabilityManifest,
   locale,
 }: {
   catalog: StandardVqeCatalogBundle;
+  capabilityManifest: PrivateMvpCapabilityManifest;
   locale: PublicLocale;
 }) {
   const copy = COPY[locale];
@@ -371,6 +374,18 @@ export function VqeMethodsBrowser({
           {locale === "ja" ? "VQEワークフローを組み立てる" : "Build a VQE Workflow"}
         </a>
       </header>
+
+      <div className="mj-studio-empty" role="note">
+        <strong>
+          {locale === "ja" ? "Private technical MVP — 公開停止中" : "Private technical MVP — publication blocked"}
+        </strong>
+        <p>{capabilityManifest.claim_boundary.statement}</p>
+        <p className="mj-mono-muted">
+          Fixed Excitation + SLSQP: {capabilityManifest.golden_journeys.primary_fixed_excitation_slsqp.status}
+          {" · "}SLSQP → COBYLA: {capabilityManifest.golden_journeys.controlled_slsqp_to_cobyla.status}
+          {" · "}WorkOS reopen: {capabilityManifest.golden_journeys.live_workos_same_account_reopen.status}
+        </p>
+      </div>
 
       <div className="mj-vqe-composer">
         <nav className="mj-vqe-component-types" aria-label="Component types">

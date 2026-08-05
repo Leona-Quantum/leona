@@ -12,7 +12,10 @@ import type { PublicLocale } from "../../lib/public-locale";
 import type { PublicRepositoryListEntry } from "../../lib/public-repository";
 import { RepositoryBrowser } from "./repository-browser";
 import { VqeMethodsBrowser } from "./vqe/vqe-methods-browser";
-import type { StandardVqeCatalogBundle } from "../../lib/atlas-vqe/types";
+import type {
+  PrivateMvpCapabilityManifest,
+  StandardVqeCatalogBundle,
+} from "../../lib/atlas-vqe/types";
 import type { RepositoryEstimateList } from "../../lib/repository/estimate";
 import type { RepositoryProfileList } from "../../lib/repository/profile";
 import type { TopicId } from "../../lib/repository/topics";
@@ -25,6 +28,7 @@ const COPY = {
 export function AtlasContentSwitch({
   entries,
   vqeCatalog,
+  vqeCapabilityManifest,
   locale,
   isSignedIn,
   signInHref,
@@ -35,6 +39,7 @@ export function AtlasContentSwitch({
 }: {
   entries: PublicRepositoryListEntry[];
   vqeCatalog: StandardVqeCatalogBundle;
+  vqeCapabilityManifest: PrivateMvpCapabilityManifest;
   locale: PublicLocale;
   isSignedIn: boolean;
   signInHref: string | null;
@@ -79,7 +84,11 @@ export function AtlasContentSwitch({
           initialTopic={initialTopic}
         />
       ) : (
-        <VqeMethodsBrowser catalog={vqeCatalog} locale={locale} />
+        <VqeMethodsBrowser
+          catalog={vqeCatalog}
+          capabilityManifest={vqeCapabilityManifest}
+          locale={locale}
+        />
       )}
     </div>
   );

@@ -8,6 +8,7 @@ import {
   getRepositoryProfiles,
 } from "../../../lib/repository-source";
 import { getStandardVqeCatalog } from "../../../lib/atlas-vqe/standard-source";
+import { getPrivateMvpCapabilityManifest } from "../../../lib/atlas-vqe/private-mvp-source";
 import { VerificationLegend } from "../../../components/repository-verification";
 import { isTopicId } from "../../../lib/repository/topics";
 import { AtlasContentSwitch } from "../atlas-content-switch";
@@ -42,6 +43,7 @@ export default async function RepositoryPage({
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const isJapanese = locale === "ja";
   const vqeCatalog = getStandardVqeCatalog();
+  const vqeCapabilityManifest = getPrivateMvpCapabilityManifest();
   // One request each for the whole corpus's cost and its circuit structure, and
   // concurrently with the listing — they share no inputs, so awaiting them in
   // sequence would put three round trips end to end on every browse render.
@@ -69,6 +71,7 @@ export default async function RepositoryPage({
         <AtlasContentSwitch
           entries={entries}
           vqeCatalog={vqeCatalog}
+          vqeCapabilityManifest={vqeCapabilityManifest}
           locale={locale}
           isSignedIn={Boolean(user)}
           signInHref={signInHref}

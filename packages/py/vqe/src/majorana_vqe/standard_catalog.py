@@ -910,7 +910,10 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.uccsd.v1",
         display_name="H₂ UCCSD VQE",
-        status=WorkflowStatus.COMPATIBLE,
+        # Runtime-qualified private smoke evidence exists for both evaluator
+        # providers.  This is not a public scientific result and is not a
+        # one-component comparison against the hardware-efficient workflow.
+        status=WorkflowStatus.EXECUTED,
         selections=_bind_contracts(
             _mark_not_applicable(
                 _replace_selection(
@@ -929,12 +932,15 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
             ComponentType.ANSATZ,
             "parameters:3",
         ),
-        supported_evaluator_providers=(),
+        supported_evaluator_providers=("qiskit", "pennylane"),
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.hardware_efficient.v1",
         display_name="H₂ hardware-efficient VQE",
-        status=WorkflowStatus.STRUCTURED,
+        # This capability was qualified as a multi-role migration (ansatz plus
+        # its dependent compilation protocol), never as a controlled
+        # one-component swap.
+        status=WorkflowStatus.EXECUTED,
         selections=_mark_not_applicable(
             _replace_selection(
                 _replace_selection(
@@ -949,7 +955,7 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
             ComponentType.SEARCH_SELECTION,
             ComponentType.GROWTH_BATCHING,
         ),
-        supported_evaluator_providers=(),
+        supported_evaluator_providers=("qiskit", "pennylane"),
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.adapt.v1",
@@ -984,24 +990,26 @@ STANDARD_WORKFLOWS: tuple[StandardWorkflowTemplate, ...] = (
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.fixed_excitation.slsqp.v1",
         display_name="H₂ fixed-excitation VQE with SLSQP",
-        status=WorkflowStatus.STRUCTURED,
+        # The adapter is tested, but the exact Fixed-Excitation + SLSQP
+        # Golden Journey has no committed private E2E evidence yet.
+        status=WorkflowStatus.COMPATIBLE,
         selections=_replace_selection(
             _H2_FIXED_SELECTIONS,
             ComponentType.PARAMETER_OPTIMIZER,
             "optimizer.slsqp.v1",
         ),
-        supported_evaluator_providers=(),
+        supported_evaluator_providers=("qiskit", "pennylane"),
     ),
     StandardWorkflowTemplate(
         workflow_key="workflow.h2.fixed_excitation.cobyla.v1",
         display_name="H₂ fixed-excitation VQE with COBYLA",
-        status=WorkflowStatus.STRUCTURED,
+        status=WorkflowStatus.EXECUTED,
         selections=_replace_selection(
             _H2_FIXED_SELECTIONS,
             ComponentType.PARAMETER_OPTIMIZER,
             "optimizer.cobyla.v1",
         ),
-        supported_evaluator_providers=(),
+        supported_evaluator_providers=("qiskit", "pennylane"),
     ),
 )
 
@@ -1123,11 +1131,6 @@ CONTROLLED_COMPARISON_SPECS: tuple[ControlledComparisonSpec, ...] = (
         "comparison.h2.optimizer.slsqp_vs_cobyla.v1",
         workflow_by_key("workflow.h2.fixed_excitation.slsqp.v1"),
         workflow_by_key("workflow.h2.fixed_excitation.cobyla.v1"),
-    ),
-    build_controlled_comparison(
-        "comparison.h2.ansatz.uccsd_vs_hardware_efficient.v1",
-        workflow_by_key("workflow.h2.uccsd.v1"),
-        workflow_by_key("workflow.h2.hardware_efficient.v1"),
     ),
 )
 

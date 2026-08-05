@@ -6,6 +6,7 @@
 import { EmptyState, RunView, StageRail, VerdictBanner, VerificationSummaryPanel, type RailStage } from "@majorana/ui";
 import { RUN_FIXTURES } from "../../(app)/run/[taskId]/fixtures";
 import { getStandardVqeCatalog } from "../../../lib/atlas-vqe/standard-source";
+import { getPrivateMvpCapabilityManifest } from "../../../lib/atlas-vqe/private-mvp-source";
 import { VqeMethodsBrowser } from "../../repository/vqe/vqe-methods-browser";
 import { CircuitDiagram } from "../../../components/circuit-diagram";
 import { reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
@@ -474,13 +475,18 @@ export function UiFixtures() {
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>
           Atlas VQE — canonical components and workflows
         </h2>
-        <VqeMethodsBrowser catalog={getStandardVqeCatalog()} locale="en" />
+        <VqeMethodsBrowser
+          catalog={getStandardVqeCatalog()}
+          capabilityManifest={getPrivateMvpCapabilityManifest()}
+          locale="en"
+        />
       </section>
 
       <section>
         <h2 style={{ fontSize: "var(--fs-16)", fontWeight: 500 }}>Atlas VQE — empty (all filters excluded)</h2>
         <VqeMethodsBrowser
           catalog={{ ...getStandardVqeCatalog(), components: [] }}
+          capabilityManifest={getPrivateMvpCapabilityManifest()}
           locale="en"
         />
       </section>

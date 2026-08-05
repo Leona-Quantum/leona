@@ -113,6 +113,9 @@ async def _execute_and_finish(
     execution = response.json()
     assert execution["production_runtime_status"] == "qualified"
     assert execution["review_state"] == "owner_waived"
+    assert execution["scientific_review"] == "owner_waived"
+    assert execution["runtime_qualification"] == "qualified_private"
+    assert execution["publication"] == "blocked"
 
     async with factory() as session:
         job = await system.claim_job(
@@ -199,13 +202,12 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             me = await client.get("/v1/me")
             assert me.status_code == 200, me.text
 
-            baseline_response = await client.post(
+            seed_response = await client.post(
                 "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "phase78-baseline-experiment"},
+                headers={"Idempotency-Key": "private-mvp-seed-experiment"},
                 json={"workflow_artifact_version_id": os.environ["MAJORANA_VQE_E2E_WORKFLOW_ID"]},
             )
-            assert baseline_response.status_code == 201, baseline_response.text
-            baseline_experiment = baseline_response.json()
+            assert seed_response.status_code == 201, seed_response.text
 
             components_response = await client.get(
                 "/v1/atlas/components",
@@ -222,54 +224,9 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                 for item in components_response.json()["components"]
                 if item["semantic_key"] == "optimizer.slsqp.v1"
             )
-            swap_response = await client.post(
-                "/v1/atlas/workflows/swaps",
-                headers={"Idempotency-Key": "phase78-cobyla-swap"},
-                json={
-                    "baseline_workflow_artifact_version_id": os.environ[
-                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
-                    ],
-                    "baseline_template_key": "workflow.h2.fixed_excitation.v1",
-                    "changed_role": "parameter_optimizer",
-                    "candidate_component_semantic_key": "optimizer.cobyla.v1",
-                    "candidate_component_spec_sha256": cobyla["normalized_spec_sha256"],
-                    "configuration": {},
-                    "evaluator_provider": "qiskit",
-                },
-            )
-            assert swap_response.status_code == 201, swap_response.text
-            swap = swap_response.json()
-            assert swap["execution_status"] == "private_qualification_candidate"
-            assert swap["visibility"] == "private"
-
-            candidate_response = await client.post(
-                "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "phase78-candidate-experiment"},
-                json={"workflow_artifact_version_id": swap["workflow_artifact_version_id"]},
-            )
-            assert candidate_response.status_code == 201, candidate_response.text
-            candidate_experiment = candidate_response.json()
-
-            executions: dict[str, dict] = {}
-            for framework in ("qiskit", "pennylane"):
-                executions[f"baseline_{framework}"] = await _execute_and_finish(
-                    client=client,
-                    factory=factory,
-                    experiment_id=baseline_experiment["id"],
-                    framework=framework,
-                    label="baseline",
-                )
-                executions[f"candidate_{framework}"] = await _execute_and_finish(
-                    client=client,
-                    factory=factory,
-                    experiment_id=candidate_experiment["id"],
-                    framework=framework,
-                    label="candidate",
-                )
-
             slsqp_response = await client.post(
                 "/v1/atlas/workflows/swaps",
-                headers={"Idempotency-Key": "phase78-uccsd-slsqp-prerequisite"},
+                headers={"Idempotency-Key": "private-mvp-slsqp-swap"},
                 json={
                     "baseline_workflow_artifact_version_id": os.environ[
                         "MAJORANA_VQE_E2E_WORKFLOW_ID"
@@ -286,6 +243,75 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             slsqp_workflow = slsqp_response.json()
             assert slsqp_workflow["execution_status"] == "private_qualification_candidate"
             assert slsqp_workflow["visibility"] == "private"
+
+            slsqp_experiment_response = await client.post(
+                "/v1/vqe/experiments",
+                headers={"Idempotency-Key": "private-mvp-slsqp-experiment"},
+                json={
+                    "workflow_artifact_version_id": slsqp_workflow["workflow_artifact_version_id"]
+                },
+            )
+            assert slsqp_experiment_response.status_code == 201, slsqp_experiment_response.text
+            slsqp_experiment = slsqp_experiment_response.json()
+            slsqp_optimizer = next(
+                item
+                for item in slsqp_experiment["scientific_spec_json"]["component_bindings"]
+                if item["role"] == "parameter_optimizer"
+            )
+            assert slsqp_optimizer["component_semantic_key"] == "optimizer.slsqp.v1"
+
+            cobyla_response = await client.post(
+                "/v1/atlas/workflows/swaps",
+                headers={"Idempotency-Key": "private-mvp-cobyla-swap"},
+                json={
+                    "baseline_workflow_artifact_version_id": os.environ[
+                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
+                    ],
+                    "baseline_template_key": "workflow.h2.fixed_excitation.v1",
+                    "changed_role": "parameter_optimizer",
+                    "candidate_component_semantic_key": "optimizer.cobyla.v1",
+                    "candidate_component_spec_sha256": cobyla["normalized_spec_sha256"],
+                    "configuration": {},
+                    "evaluator_provider": "qiskit",
+                },
+            )
+            assert cobyla_response.status_code == 201, cobyla_response.text
+            cobyla_workflow = cobyla_response.json()
+            assert cobyla_workflow["execution_status"] == "private_qualification_candidate"
+            assert cobyla_workflow["visibility"] == "private"
+
+            cobyla_experiment_response = await client.post(
+                "/v1/vqe/experiments",
+                headers={"Idempotency-Key": "private-mvp-cobyla-experiment"},
+                json={
+                    "workflow_artifact_version_id": cobyla_workflow["workflow_artifact_version_id"]
+                },
+            )
+            assert cobyla_experiment_response.status_code == 201, cobyla_experiment_response.text
+            cobyla_experiment = cobyla_experiment_response.json()
+            cobyla_optimizer = next(
+                item
+                for item in cobyla_experiment["scientific_spec_json"]["component_bindings"]
+                if item["role"] == "parameter_optimizer"
+            )
+            assert cobyla_optimizer["component_semantic_key"] == "optimizer.cobyla.v1"
+
+            executions: dict[str, dict] = {}
+            for framework in ("qiskit", "pennylane"):
+                executions[f"slsqp_{framework}"] = await _execute_and_finish(
+                    client=client,
+                    factory=factory,
+                    experiment_id=slsqp_experiment["id"],
+                    framework=framework,
+                    label="slsqp",
+                )
+                executions[f"cobyla_{framework}"] = await _execute_and_finish(
+                    client=client,
+                    factory=factory,
+                    experiment_id=cobyla_experiment["id"],
+                    framework=framework,
+                    label="cobyla",
+                )
 
             migration_response = await client.post(
                 "/v1/atlas/workflows/ansatz-migrations",
@@ -424,20 +450,22 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
 
             fixed_component_digests = {
                 item["role"]: item["component_spec_sha256"]
-                for item in baseline_experiment["scientific_spec_json"]["component_bindings"]
+                for item in slsqp_experiment["scientific_spec_json"]["component_bindings"]
                 if item["role"] != "parameter_optimizer"
             }
             comparison_response = await client.post(
                 "/v1/vqe/controlled-comparisons",
-                headers={"Idempotency-Key": "phase78-controlled-comparison"},
+                headers={"Idempotency-Key": "private-mvp-slsqp-cobyla-comparison"},
                 json={
-                    "baseline_workflow_artifact_version_id": os.environ[
-                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
+                    "baseline_workflow_artifact_version_id": slsqp_workflow[
+                        "workflow_artifact_version_id"
                     ],
-                    "candidate_workflow_artifact_version_id": swap["workflow_artifact_version_id"],
+                    "candidate_workflow_artifact_version_id": cobyla_workflow[
+                        "workflow_artifact_version_id"
+                    ],
                     "changed_role": "parameter_optimizer",
                     "fixed_component_digests": fixed_component_digests,
-                    "baseline_configuration": {"algorithm": "scipy_minimize_scalar_bounded"},
+                    "baseline_configuration": {"algorithm": "scipy_slsqp"},
                     "candidate_configuration": {"algorithm": "scipy_cobyla"},
                     "metric_protocol_sha256": fixed_component_digests["evaluation_protocol"],
                     "budget_protocol_sha256": fixed_component_digests["stopping_protocol"],
@@ -451,21 +479,23 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                 run_response = await client.post(
                     f"/v1/vqe/controlled-comparisons/{comparison['id']}/runs",
                     json={
-                        "baseline_execution_id": executions[f"baseline_{framework}"]["id"],
-                        "candidate_execution_id": executions[f"candidate_{framework}"]["id"],
+                        "baseline_execution_id": executions[f"slsqp_{framework}"]["id"],
+                        "candidate_execution_id": executions[f"cobyla_{framework}"]["id"],
                     },
                 )
                 assert run_response.status_code == 201, run_response.text
                 comparison_runs[framework] = run_response.json()
                 assert comparison_runs[framework]["status"] == "comparable"
                 assert all(comparison_runs[framework]["run_json"]["invariant_audit"].values())
-                materialize_response = await client.post(
-                    f"/v1/vqe/executions/{executions[f'candidate_{framework}']['id']}/materialize"
-                )
-                assert materialize_response.status_code == 200, materialize_response.text
-                artifacts[framework] = materialize_response.json()
-                assert artifacts[framework]["visibility"] == "private"
-                assert artifacts[framework]["publication"] == "blocked"
+                for variant in ("slsqp", "cobyla"):
+                    execution_key = f"{variant}_{framework}"
+                    materialize_response = await client.post(
+                        f"/v1/vqe/executions/{executions[execution_key]['id']}/materialize"
+                    )
+                    assert materialize_response.status_code == 200, materialize_response.text
+                    artifacts[execution_key] = materialize_response.json()
+                    assert artifacts[execution_key]["visibility"] == "private"
+                    assert artifacts[execution_key]["publication"] == "blocked"
 
             negative_response = await client.post(
                 "/v1/atlas/workflows/swaps",
@@ -504,7 +534,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             assert {item["id"] for item in reopened_comparison["runs"]} == {
                 item["id"] for item in comparison_runs.values()
             }
-            for framework, artifact in artifacts.items():
+            for execution_key, artifact in artifacts.items():
                 artifact_response = await reopened_client.get(
                     f"/v1/artifacts/{artifact['artifact_id']}"
                 )
@@ -515,7 +545,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
                 assert version_response.status_code == 200, version_response.text
                 assert version_response.json()["id"] == artifact["artifact_version_id"]
                 execution_response = await reopened_client.get(
-                    f"/v1/vqe/executions/{executions[f'candidate_{framework}']['id']}"
+                    f"/v1/vqe/executions/{executions[execution_key]['id']}"
                 )
                 assert execution_response.status_code == 200
                 assert execution_response.json()["status"] == "succeeded"
@@ -552,14 +582,24 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
 
         evidence = {
             "schema_version": "1.0.0",
-            "kind": "phase78_private_ci_e2e",
+            "kind": "private_component_first_mvp_ci_e2e",
             "source_commit": os.environ.get("GITHUB_SHA"),
-            "workos_auth": "synthetic_contract_only",
+            "authentication_evidence": "synthetic_contract",
             "database": "disposable_postgresql_17",
             "runtime_host": "github_actions_dedicated_docker",
-            "baseline_workflow_artifact_version_id": os.environ["MAJORANA_VQE_E2E_WORKFLOW_ID"],
-            "candidate_workflow_artifact_version_id": swap["workflow_artifact_version_id"],
+            "baseline_workflow_artifact_version_id": slsqp_workflow["workflow_artifact_version_id"],
+            "candidate_workflow_artifact_version_id": cobyla_workflow[
+                "workflow_artifact_version_id"
+            ],
+            "baseline_optimizer": "optimizer.slsqp.v1",
+            "candidate_optimizer": "optimizer.cobyla.v1",
             "changed_roles": ["parameter_optimizer"],
+            "golden_journeys": {
+                "primary_fixed_excitation_slsqp": "passed",
+                "controlled_slsqp_to_cobyla": "passed",
+                "same_subject_session_reopen": "passed",
+                "live_workos_same_account_reopen": "not_run",
+            },
             "execution_ids": {name: item["id"] for name, item in executions.items()},
             "comparison_spec_id": comparison["id"],
             "comparison_run_ids": {name: item["id"] for name, item in comparison_runs.items()},

@@ -226,6 +226,38 @@ export interface StandardVqeCatalogBundle {
   comparison_specs: StandardControlledComparisonSpec[];
 }
 
+export type PrivateMvpJourneyStatus = "NOT_RUN" | "qualified_private";
+export type PrivateMvpGoDecision = "unavailable" | "private_only";
+
+export interface PrivateMvpGoldenJourney {
+  status: PrivateMvpJourneyStatus;
+  go_decision: PrivateMvpGoDecision;
+  frameworks?: string[];
+  changed_roles?: string[];
+  required_evidence?: string;
+}
+
+export interface PrivateMvpCapabilityManifest {
+  schema_version: "1.0.0";
+  release_scope: "private_technical_mvp";
+  product_model: "component_first_vqe";
+  claim_boundary: {
+    scientific_review: "owner_waived";
+    publication: "blocked";
+    public_execution: "blocked";
+    scientific_superiority_claim: "blocked";
+    external_repository_execution: "blocked";
+    statement: string;
+  };
+  golden_journeys: {
+    primary_fixed_excitation_slsqp: PrivateMvpGoldenJourney;
+    controlled_slsqp_to_cobyla: PrivateMvpGoldenJourney;
+    secondary_uccsd_smoke: PrivateMvpGoldenJourney;
+    tertiary_hardware_efficient_smoke: PrivateMvpGoldenJourney;
+    live_workos_same_account_reopen: PrivateMvpGoldenJourney;
+  };
+}
+
 /** Bounded public browse projections. Detail-only evidence stays server-side
  * until a user opens the corresponding route. */
 export type VqePaperListEntry = Pick<

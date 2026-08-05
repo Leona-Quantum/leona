@@ -144,11 +144,13 @@ blocking reason; they are never silently marked executable.
 
 ### 7.5-S5 — Controlled comparison
 
-Minimum comparisons:
+The Private Technical MVP has exactly one primary controlled comparison:
 
-1. fixed-excitation vs UCCSD ansatz;
-2. SLSQP vs COBYLA;
-3. UCCSD vs hardware-efficient ansatz.
+1. Fixed Excitation + SLSQP vs Fixed Excitation + COBYLA.
+
+UCCSD and hardware-efficient RY–CX remain secondary capability migrations.
+They change the ansatz and its dependent compilation protocol and therefore
+must not be counted as one-component comparisons.
 
 A comparison is controlled only when exactly one declared component binding
 changes and the Problem, representation, other components, configuration,
@@ -162,18 +164,18 @@ one composite component.
 
 ## 5.1 Current implementation result
 
-```text
-canonical Component Definitions: 29
-executable provider bindings: 28
-Workflow templates: 7
-Problems/Datasets: 4
-controlled one-component comparisons: 3
-qualified core Workflow providers: Qiskit 1.4.6 and PennyLane 0.45.1
-```
+The generated catalog currently contains 29 schema-valid seed candidates, 21
+provider/neutral-protocol projections, seven Workflow templates, and one
+controlled-comparison specification. These are inventory counts, not
+qualification KPIs.
 
-Only `H₂ fixed-excitation VQE` is marked executable. UCCSD,
-hardware-efficient, ADAPT, LiH, SLSQP, and COBYLA templates remain
-`structured` until their exact adapters and runtime evidence are qualified.
+The committed Capability Manifest is the release authority for demonstrated
+behavior. It currently records Qiskit 1.4.6 and PennyLane 0.45.1 private OCI
+qualification for the fixed-excitation runtime, UCCSD smoke, hardware-efficient
+smoke, and the historical COBYLA execution path. Fixed Excitation + SLSQP and
+the exact SLSQP → COBYLA save/reopen journey remain `NOT_RUN` until a new
+private E2E evidence record is committed. Publication and scientific
+superiority claims remain blocked.
 
 The component-first UI now:
 
@@ -193,16 +195,17 @@ problem swap rejected for the missing `electrons:2` contract, disabled
 execution after that rejection, and a 390 × 844 single-column layout without
 horizontal overflow.
 
-## 6. Public success criteria
+## 6. Private Technical MVP success criteria
 
 ```text
-canonical definitions >= 18
-executable provider bindings >= 12
-Workflow templates >= 4
-Problems/Datasets >= 2
-controlled one-component swaps >= 3
-Qiskit + PennyLane qualified binding for one core Workflow
-compose → compatibility → run → compare → save demonstrable
+Fixed Excitation + SLSQP executes in Qiskit and PennyLane
+SLSQP → COBYLA changes only parameter_optimizer
+both controlled-comparison sides save and reopen privately
+Qiskit/PennyLane execution observations remain separate
+runtime image digests and scientific identities remain immutable
+offline gate passes from a clean checkout
+private E2E gate passes on disposable PostgreSQL 17
+live WorkOS same-account reopen is recorded separately
 ```
 
 ## 7. Academic and engineering gates
@@ -215,7 +218,8 @@ compose → compatibility → run → compare → save demonstrable
 - Compatibility is deterministic, versioned, and evidence-producing.
 - Workflow execution continues through the existing server-resolved,
   digest-pinned, deny-all OCI boundary.
-- Public execution and verified scientific badges remain separately gated.
+- Publication, public execution, verified scientific badges, and scientific
+  superiority claims remain blocked.
 
 ## 8. Remaining operator-gated evidence
 

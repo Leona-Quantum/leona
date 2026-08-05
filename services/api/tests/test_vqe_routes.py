@@ -510,6 +510,45 @@ async def test_get_comparison_404s_for_an_unknown_report():
     assert excinfo.value.status_code == 404
 
 
+async def test_controlled_comparison_resource_is_private_and_publication_blocked(
+    monkeypatch,
+):
+    comparison_id = uuid.uuid4()
+    workspace_id = uuid.uuid4()
+    baseline_id = uuid.uuid4()
+    candidate_id = uuid.uuid4()
+    created_at = dt.datetime.now(dt.UTC)
+
+    async def fake_list_controlled_comparison_runs(scope, session, requested_id):
+        assert requested_id == comparison_id
+        return []
+
+    monkeypatch.setattr(
+        vqe_repo,
+        "list_controlled_comparison_runs",
+        fake_list_controlled_comparison_runs,
+    )
+    resource = await vqe_routes._to_controlled_comparison_resource(
+        object(),
+        object(),
+        SimpleNamespace(
+            id=comparison_id,
+            workspace_id=workspace_id,
+            baseline_workflow_artifact_version_id=baseline_id,
+            candidate_workflow_artifact_version_id=candidate_id,
+            changed_role="parameter_optimizer",
+            spec_json={"schema_version": "1.0.0"},
+            spec_sha256="a" * 64,
+            created_at=created_at,
+        ),
+    )
+
+    assert resource.scientific_review == "owner_waived"
+    assert resource.visibility == "private"
+    assert resource.publication == "blocked"
+    assert resource.runs == []
+
+
 async def test_create_experiment_translates_idempotency_conflict_to_409(monkeypatch):
     body = vqe_routes.CreateExperimentRequest(
         workflow_artifact_version_id=uuid.uuid4(),
@@ -724,6 +763,9 @@ async def test_hardware_efficient_execution_uses_exact_qualified_profile(monkeyp
         "sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d"
     )
     assert result.production_runtime_status == "qualified"
+    assert result.scientific_review == "owner_waived"
+    assert result.runtime_qualification == "qualified_private"
+    assert result.publication == "blocked"
 
 
 async def test_materialize_is_bound_to_the_selected_execution(monkeypatch):
