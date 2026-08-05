@@ -31,6 +31,7 @@ from majorana_contracts import (
     CatalogEstimateList,
     CatalogEstimateSummary,
     CodeDistanceSummary,
+    CostOnSmallestMachine,
     FootprintSummary,
     LogicalCostSummary,
     ResourceEstimateBasis,
@@ -179,12 +180,41 @@ def _refusal(
     )
 
 
+def _footprint_summary(physical: PhysicalEstimate) -> FootprintSummary:
+    return FootprintSummary(
+        data_patch_qubits=physical.footprint.data_patch_qubits,
+        routing_qubits=physical.footprint.routing_qubits,
+        factory_qubits=physical.footprint.factory_qubits,
+        total_physical_qubits=physical.footprint.total_physical_qubits,
+    )
+
+
+def _runtime_summary(physical: PhysicalEstimate) -> RuntimeSummary:
+    return RuntimeSummary(
+        magic_states=physical.runtime.magic_states,
+        factory_count=physical.runtime.factory_count,
+        # `inf` is not JSON, and a client that received it would render
+        # "Infinity" as a duration. It means "no factory, states to distil",
+        # which the null plus factory_count=0 already says.
+        throughput_seconds=(
+            physical.runtime.throughput_seconds
+            if math.isfinite(physical.runtime.throughput_seconds)
+            else None
+        ),
+        reaction_limited_seconds=physical.runtime.reaction_limited_seconds,
+        seconds=physical.runtime.seconds,
+        binding_term=physical.runtime.binding_term,
+        factory_crossover=physical.runtime.factory_crossover,
+    )
+
+
 def _summarize(
     slug: str,
     basis: ResourceEstimateBasis,
     assumptions: AssumptionSet,
     cost: NonCliffordCost,
     physical: PhysicalEstimate,
+    smallest: PhysicalEstimate | None,
 ) -> CatalogEntryEstimate:
     t_from_synthesis = physical.logical.t_count - cost.t_count
     return CatalogEntryEstimate(
@@ -208,27 +238,15 @@ def _summarize(
             achieved_error_per_operation=physical.distance.achieved_error_per_operation,
             physical_per_logical=physical.distance.physical_per_logical,
         ),
-        footprint=FootprintSummary(
-            data_patch_qubits=physical.footprint.data_patch_qubits,
-            routing_qubits=physical.footprint.routing_qubits,
-            factory_qubits=physical.footprint.factory_qubits,
-            total_physical_qubits=physical.footprint.total_physical_qubits,
-        ),
-        runtime=RuntimeSummary(
-            magic_states=physical.runtime.magic_states,
-            factory_count=physical.runtime.factory_count,
-            # `inf` is not JSON, and a client that received it would render
-            # "Infinity" as a duration. It means "no factory, states to distil",
-            # which the null plus factory_count=0 already says.
-            throughput_seconds=(
-                physical.runtime.throughput_seconds
-                if math.isfinite(physical.runtime.throughput_seconds)
-                else None
-            ),
-            reaction_limited_seconds=physical.runtime.reaction_limited_seconds,
-            seconds=physical.runtime.seconds,
-            binding_term=physical.runtime.binding_term,
-            factory_crossover=physical.runtime.factory_crossover,
+        footprint=_footprint_summary(physical),
+        runtime=_runtime_summary(physical),
+        smallest_machine=(
+            None
+            if smallest is None
+            else CostOnSmallestMachine(
+                footprint=_footprint_summary(smallest),
+                runtime=_runtime_summary(smallest),
+            )
         ),
         target_failure_probability=physical.target_failure_probability,
         notes=list(physical.notes),
@@ -256,6 +274,14 @@ def estimate_for_record(
     and a reader shown only their sum will conclude the estimator is broken. So
     the count is a parameter a caller can move, and the split stays visible in
     `FootprintSummary`.
+
+    **A parameter a caller can move is not an answer a reader is given**, which
+    is why the response also carries `smallest_machine`. The default figure is
+    the fastest useful machine and therefore the largest one, and a visitor who
+    reads it as "what this circuit costs" has been misled by a correct number.
+    Costing the same circuit at one factory is a second pass over the same
+    integer arithmetic and turns the headline into one end of a stated trade
+    (owner decision, 2026-08-05, memory/OWNER_TODO.md §2).
     """
     portable = (record or {}).get("portableCircuit")
     if not isinstance(portable, dict):
@@ -297,7 +323,20 @@ def estimate_for_record(
         # gap in the data, so it is reported in the caller's words.
         return _refusal(slug, assumptions, ResourceEstimateBasis.REFUSED, str(exc))
 
-    return _summarize(slug, basis, assumptions, cost, physical)
+    smallest = None
+    if physical.runtime.factory_count > 1:
+        # Not caught: the only factory-dependent failure in `estimate` is the
+        # zero-factory refusal, and one is not zero. If this ever raises, the
+        # model changed and the page should stop rather than publish a headline
+        # whose surrounding copy says it is one end of a trade it cannot show.
+        smallest = estimate(
+            logical,
+            assumptions,
+            target_failure_probability=TARGET_FAILURE_PROBABILITY,
+            factory_count=1,
+        )
+
+    return _summarize(slug, basis, assumptions, cost, physical, smallest)
 
 
 def summarize_for_list(estimate_result: CatalogEntryEstimate) -> CatalogEstimateSummary:
@@ -308,10 +347,12 @@ def summarize_for_list(estimate_result: CatalogEntryEstimate) -> CatalogEstimate
     """
     footprint = estimate_result.footprint
     logical = estimate_result.logical
+    smallest = estimate_result.smallest_machine
     return CatalogEstimateSummary(
         slug=estimate_result.slug,
         basis=estimate_result.basis,
         total_physical_qubits=footprint.total_physical_qubits if footprint else None,
+        smallest_machine_qubits=(smallest.footprint.total_physical_qubits if smallest else None),
         magic_states=logical.magic_states if logical else None,
         logical_qubits=logical.logical_qubits if logical else None,
         code_distance=(

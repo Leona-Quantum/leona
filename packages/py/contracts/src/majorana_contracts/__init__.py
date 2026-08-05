@@ -96,6 +96,7 @@ from .models import (
     CatalogEstimateSummary,
     CatalogProvenance,
     CodeDistanceSummary,
+    CostOnSmallestMachine,
     FootprintSummary,
     LogicalCostSummary,
     Project,
@@ -225,7 +226,18 @@ from .lifecycle import (
 # CatalogEstimateList exists to make structural. `present` is the field to branch
 # on; a client that renders a size without checking it will print zeros for an
 # entry that has no circuit at all.
-CONTRACTS_VERSION = "2.12.0"
+# 2.13.0: CostOnSmallestMachine, CatalogEntryEstimate.smallest_machine and
+# CatalogEstimateSummary.smallest_machine_qubits — an entry's cost is published as
+# the two ends of the magic-state-factory trade rather than one figure. Additive
+# and read-only; every existing field keeps its meaning and the browse list still
+# ranks on total_physical_qubits alone. The headline was costed at the crossover,
+# which is the fastest useful machine and therefore the *largest*: for the
+# 16-qubit ansatz that is 836,800 physical qubits, 99.2% of them factories, and
+# the same circuit runs on 8,800 at one factory in 6.9 ms instead of 20 µs.
+# Neither end is chosen — the crossover is derived and one factory is the floor
+# the estimator enforces — which is why exactly these two are published and
+# nothing between them.
+CONTRACTS_VERSION = "2.13.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -262,6 +274,7 @@ __all__ = [
     "CodeVariant",
     "CodeGenerated",
     "CompilationResult",
+    "CostOnSmallestMachine",
     "ChatCompleted",
     "ChatDelta",
     "ChatError",

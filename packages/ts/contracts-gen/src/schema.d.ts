@@ -339,6 +339,11 @@ export interface components {
             /** Slug */
             slug: string;
             /**
+             * @description The same circuit at one factory, when that is a different machine from the one costed above. Null when there is no trade to show: a Clifford-only circuit uses no factories at all, and an estimate already costed at one factory is its own smallest machine. Present so the headline figure cannot be read as *the* cost — for a small circuit the factories are ~99% of it, and they are hardware bought for speed rather than by the circuit.
+             * @default null
+             */
+            smallest_machine: components["schemas"]["CostOnSmallestMachine"] | null;
+            /**
              * Target Failure Probability
              * @default null
              */
@@ -458,6 +463,12 @@ export interface components {
             seconds: number | null;
             /** Slug */
             slug: string;
+            /**
+             * Smallest Machine Qubits
+             * @description `total_physical_qubits` for the same circuit at one factory. Null on the same terms as `CatalogEntryEstimate.smallest_machine` — no factories, or already costed at one. **The ordering fields are unchanged**: a list is still ranked on `total_physical_qubits`, and this is here so a row can show the span it sits at the top of rather than a single number that reads as the cost.
+             * @default null
+             */
+            smallest_machine_qubits: number | null;
             /**
              * Total Physical Qubits
              * @default null
@@ -872,6 +883,26 @@ export interface components {
                 [key: string]: unknown;
             }[];
             run: components["schemas"]["Run"];
+        };
+        /**
+         * CostOnSmallestMachine
+         * @description The same circuit on the fewest magic-state factories it can run on — one.
+         *
+         *     **Only Layers 3 and 4 are here, because only they move.** `choose_code_distance`
+         *     reads the logical cost and the assumption set and never the factory count, so
+         *     Layers 1 and 2 are identical at both ends of this trade and restating them
+         *     would be a second copy of a number that cannot differ. Measured across the
+         *     published corpus: the code distance moved on zero of the 120 priced entries.
+         *
+         *     **Neither end is a number anybody picked, which is the point.** The default
+         *     estimate is costed at the crossover — past which more factories buy nothing —
+         *     and this one at the floor the estimator itself enforces, since a circuit
+         *     consuming magic states is refused with zero factories. A midpoint would be a
+         *     choice dressed as a cost; these two are forced by the model.
+         */
+        CostOnSmallestMachine: {
+            footprint: components["schemas"]["FootprintSummary"];
+            runtime: components["schemas"]["RuntimeSummary"];
         };
         /**
          * EvidenceStrength

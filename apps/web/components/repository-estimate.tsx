@@ -41,6 +41,16 @@ const COPY = {
     magicStates: "Magic states",
     logicalQubits: "Logical qubits",
     none: "None",
+    tradeTitle: "Two machines, not one number",
+    tradeBlurb:
+      "This circuit does not have a cost; it has a cost per machine, and almost all of the difference is magic-state factories — hardware bought for speed, not asked for by the circuit. Neither end below was chosen by anyone: one factory is the fewest the estimator will cost a magic-state circuit on, and the other is the crossover, derived. Only the footprint and the wall-clock move between them; everything else on this page is a property of the circuit and reads the same on both.",
+    smallestMachine: "Smallest machine",
+    smallestMachineNote: "The fewest factories this circuit can run on at all.",
+    fastestMachine: "Fastest useful machine",
+    fastestMachineNote: "Past this count, the reaction time binds and more factories change nothing.",
+    factoryCount: "Factories",
+    sameOnBoth: "Same on both machines.",
+    detailNote: "The layers below cost the fastest useful machine — the right-hand column above.",
     layer1: "What the algorithm needs",
     layer1Note: "Architecture-independent. Nothing here mentions hardware.",
     layer2: "Error correction",
@@ -109,6 +119,16 @@ const COPY = {
     magicStates: "マジックステート",
     logicalQubits: "論理量子ビット",
     none: "なし",
+    tradeTitle: "1つの数値ではなく、2種類のマシン",
+    tradeBlurb:
+      "この回路に単一のコストはなく、マシンごとのコストがあります。その差のほとんどはマジックステート工場、すなわち回路が要求したものではなく速度のために用意するハードウェアです。以下の2つの端点はいずれも恣意的な選択ではありません。工場1つはマジックステートを消費する回路に対して見積もりが許す下限であり、もう一方は導出されたクロスオーバーです。両者で変わるのは規模と実時間だけであり、このページの他の数値は回路の性質としてどちらでも同じ値になります。",
+    smallestMachine: "最小構成のマシン",
+    smallestMachineNote: "この回路が動作しうる最少の工場数です。",
+    fastestMachine: "有効な最速のマシン",
+    fastestMachineNote: "これを超えると反応時間が律速となり、工場を増やしても変わりません。",
+    factoryCount: "工場数",
+    sameOnBoth: "どちらのマシンでも同じです。",
+    detailNote: "以下の各層は「有効な最速のマシン」、つまり上の右列を対象としています。",
     layer1: "アルゴリズムが必要とするもの",
     layer1Note: "ハードウェアに依存しない量です。",
     layer2: "誤り訂正",
@@ -224,6 +244,44 @@ function Row({ label, value, hint }: { label: string; value: string; hint?: stri
   );
 }
 
+/**
+ * One end of the factory trade: a named machine and what this circuit costs on it.
+ *
+ * Factories, qubits and seconds are on the same column on purpose. Presented as
+ * two ranges instead — "8,800 to 836,800 qubits" beside "20 µs to 6.9 ms" — the
+ * two would read as correlated, and they are the opposite: the small machine is
+ * the slow one. Pairing them per column is what makes that legible.
+ */
+function Machine({
+  name,
+  note,
+  factories,
+  qubits,
+  runtime,
+  copy,
+  emphasis,
+}: {
+  name: string;
+  note: string;
+  factories: string;
+  qubits: string;
+  runtime: string;
+  copy: Copy;
+  emphasis?: boolean;
+}) {
+  return (
+    <div className={`mj-estimate-machine${emphasis ? " mj-estimate-machine--primary" : ""}`}>
+      <h5 className="mj-estimate-machine-name">{name}</h5>
+      <dl className="mj-estimate-rows">
+        <Row label={copy.factoryCount} value={factories} />
+        <Row label={copy.physicalQubits} value={qubits} />
+        <Row label={copy.runtime} value={runtime} />
+      </dl>
+      <p className="mj-estimate-machine-note">{note}</p>
+    </div>
+  );
+}
+
 function Layer({ title, note, children }: { title: string; note?: string; children: ReactNode }) {
   return (
     <section className="mj-estimate-layer">
@@ -265,7 +323,7 @@ export function RepositoryEstimatePanel({
     );
   }
 
-  const { logical, distance, footprint, runtime, assumptions } = estimate;
+  const { logical, distance, footprint, runtime, smallestMachine, assumptions } = estimate;
   // The parser guarantees these are present for a priced basis; the guard is
   // for the type checker and costs nothing.
   if (!logical || !distance || !footprint || !runtime) return null;
@@ -273,6 +331,8 @@ export function RepositoryEstimatePanel({
   const isClifford = logical.magicStates === 0;
   const isEstimated = estimate.basis === "estimated";
   const circuitQubits = footprint.dataPatchQubits + footprint.routingQubits;
+  const duration = (seconds: number | null) =>
+    seconds === null ? copy.runtimeUnstated : formatDuration(seconds, copy);
 
   return (
     <div className={`mj-estimate mj-estimate--${estimate.basis}`}>
@@ -281,23 +341,58 @@ export function RepositoryEstimatePanel({
         {isEstimated ? copy.estimatedBlurb : isClifford ? copy.cliffordBlurb : copy.exactBlurb}
       </p>
 
-      <div className="mj-estimate-headline">
-        <Stat
-          label={copy.physicalQubits}
-          value={count(footprint.totalPhysicalQubits, locale)}
-          tone="accent"
-        />
-        <Stat
-          label={copy.runtime}
-          value={runtime.seconds === null ? copy.runtimeUnstated : formatDuration(runtime.seconds, copy)}
-          tone={runtime.seconds === null ? "muted" : undefined}
-        />
-        <Stat
-          label={copy.magicStates}
-          value={logical.magicStates === 0 ? copy.none : count(logical.magicStates, locale)}
-          tone={logical.magicStates === 0 ? "muted" : undefined}
-        />
-      </div>
+      {/* Two machines when there are two, one headline when there is only one.
+          The single-figure headline is not wrong on the 64 Clifford-only entries
+          — they buy no factories, so there is no trade and nothing to compare —
+          but on the 56 that do have one, a single number IS the misreading this
+          panel exists to prevent, so the comparison replaces it rather than
+          sitting under it. */}
+      {smallestMachine === null ? (
+        <div className="mj-estimate-headline">
+          <Stat
+            label={copy.physicalQubits}
+            value={count(footprint.totalPhysicalQubits, locale)}
+            tone="accent"
+          />
+          <Stat label={copy.runtime} value={duration(runtime.seconds)} tone={runtime.seconds === null ? "muted" : undefined} />
+          <Stat
+            label={copy.magicStates}
+            value={logical.magicStates === 0 ? copy.none : count(logical.magicStates, locale)}
+            tone={logical.magicStates === 0 ? "muted" : undefined}
+          />
+        </div>
+      ) : (
+        <section className="mj-estimate-trade">
+          <h4>{copy.tradeTitle}</h4>
+          <p className="mj-estimate-layer-note">{copy.tradeBlurb}</p>
+          <div className="mj-estimate-machines">
+            <Machine
+              name={copy.smallestMachine}
+              note={copy.smallestMachineNote}
+              factories={count(smallestMachine.runtime.factoryCount, locale)}
+              qubits={count(smallestMachine.footprint.totalPhysicalQubits, locale)}
+              runtime={duration(smallestMachine.runtime.seconds)}
+              copy={copy}
+            />
+            <Machine
+              name={copy.fastestMachine}
+              note={copy.fastestMachineNote}
+              factories={count(runtime.factoryCount, locale)}
+              qubits={count(footprint.totalPhysicalQubits, locale)}
+              runtime={duration(runtime.seconds)}
+              copy={copy}
+              emphasis
+            />
+          </div>
+          <dl className="mj-estimate-rows">
+            <Row
+              label={copy.magicStates}
+              value={count(logical.magicStates, locale)}
+              hint={copy.sameOnBoth}
+            />
+          </dl>
+        </section>
+      )}
 
       <Layer title={copy.layer1} note={copy.layer1Note}>
         <Row label={copy.logicalQubits} value={count(logical.logicalQubits, locale)} />
@@ -331,7 +426,19 @@ export function RepositoryEstimatePanel({
         />
       </Layer>
 
-      <Layer title={copy.layer3} note={footprint.factoryQubits > 0 ? copy.factoryNote : undefined}>
+      {/* Which machine the remaining layers describe. Without this the reader
+          has just been shown two footprints and then meets a third heading
+          called "Physical footprint" with one number under it. */}
+      <Layer
+        title={copy.layer3}
+        note={
+          smallestMachine !== null
+            ? `${copy.detailNote} ${copy.factoryNote}`
+            : footprint.factoryQubits > 0
+              ? copy.factoryNote
+              : undefined
+        }
+      >
         <Row label={copy.dataPatches} value={count(circuitQubits, locale)} />
         <Row
           label={copy.factoryQubits}
