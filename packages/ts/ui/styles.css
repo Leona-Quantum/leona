@@ -9608,6 +9608,11 @@ div.mj-rail-row:hover {
   line-height: 1.55;
   max-width: 68ch;
 }
+.mj-iface-stance-link {
+  color: var(--accent);
+  font-size: var(--fs-13);
+  white-space: nowrap;
+}
 .mj-iface-neighbours {
   display: flex;
   flex-direction: column;
