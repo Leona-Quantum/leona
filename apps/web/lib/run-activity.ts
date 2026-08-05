@@ -4,6 +4,11 @@ import type {
   AgentActivityState,
   AgentActivityView,
 } from "@majorana/ui";
+import type { PublicLocale } from "./public-locale.ts";
+
+function text(locale: PublicLocale, english: string, japanese: string): string {
+  return locale === "ja" ? japanese : english;
+}
 
 export interface RunActivityEvent {
   type: string;
@@ -196,6 +201,7 @@ function attemptSummaries(
   bestEffortIndex: number,
   activeId: ActivityId | null,
   terminalFailed: boolean,
+  locale: PublicLocale,
 ): RunAttemptSummary[] {
   const bestEffort = eventAt(events, bestEffortIndex);
 
@@ -216,16 +222,16 @@ function attemptSummaries(
     const isLatest = !hasLaterAttempt;
 
     if (isLatest && activeId === "code") {
-      return { revision, state: "active", status: "Repairing", eventIndex };
+      return { revision, state: "active", status: text(locale, "Repairing", "修正中"), eventIndex };
     }
     if (bestEffort && bestEffort.revision === revision) {
-      return { revision, state: "warn", status: "Best available", eventIndex };
+      return { revision, state: "warn", status: text(locale, "Best available", "利用可能な最良候補"), eventIndex };
     }
     if (sandbox?.exit_code !== undefined && sandbox.exit_code !== 0) {
       return {
         revision,
         state: hasLaterAttempt ? "warn" : terminalFailed ? "error" : "warn",
-        status: hasLaterAttempt ? "Repair requested" : "Sandbox failed",
+        status: hasLaterAttempt ? text(locale, "Repair requested", "修正要求") : text(locale, "Sandbox failed", "Sandbox失敗"),
         eventIndex,
       };
     }
@@ -233,14 +239,14 @@ function attemptSummaries(
       return {
         revision,
         state: hasLaterAttempt ? "warn" : terminalFailed ? "error" : "warn",
-        status: hasLaterAttempt ? "Repair requested" : "Verification failed",
+        status: hasLaterAttempt ? text(locale, "Repair requested", "修正要求") : text(locale, "Verification failed", "検証失敗"),
         eventIndex,
       };
     }
     return {
       revision,
       state: "done",
-      status: isLatest ? "Selected" : "Completed",
+      status: isLatest ? text(locale, "Selected", "採用") : text(locale, "Completed", "完了"),
       eventIndex,
     };
   });
@@ -301,48 +307,49 @@ function activeHeadline(
   activeId: ActivityId | null,
   stage: string | null,
   nextRevision: number,
+  locale: PublicLocale,
 ): string {
-  if (activeId === "plan") return "Understanding the request and choosing an approach";
-  if (activeId === "code") return `Writing candidate revision ${nextRevision}`;
+  if (activeId === "plan") return text(locale, "Understanding the request and choosing an approach", "依頼を理解し、解法を選んでいます");
+  if (activeId === "code") return text(locale, `Writing candidate revision ${nextRevision}`, `候補リビジョン${nextRevision}を作成しています`);
   if (activeId === "checks") {
     return stage === "resource_estimate"
-      ? "Estimating circuit resources"
-      : "Checking the generated program";
+      ? text(locale, "Estimating circuit resources", "回路リソースを見積もっています")
+      : text(locale, "Checking the generated program", "生成コードを確認しています");
   }
-  if (activeId === "execution") return "Running the candidate in the sandbox";
-  if (activeId === "verification") return "Checking the result against the declared evidence";
-  if (activeId === "compilation") return "Compiling the circuit without changing its behavior";
+  if (activeId === "execution") return text(locale, "Running the candidate in the sandbox", "候補をSandboxで実行しています");
+  if (activeId === "verification") return text(locale, "Checking the result against the declared evidence", "宣言された証拠と結果を照合しています");
+  if (activeId === "compilation") return text(locale, "Compiling the circuit without changing its behavior", "動作を保ったまま回路をコンパイルしています");
   if (activeId === "finalize") {
-    if (stage === "final_execute") return "Re-running the final program";
-    if (stage === "baseline") return "Comparing against the reference baseline";
-    if (stage === "analyze") return "Summarizing the measured result";
-    if (stage === "save") return "Packaging the final result";
-    return "Preparing the final output";
+    if (stage === "final_execute") return text(locale, "Re-running the final program", "最終コードを再実行しています");
+    if (stage === "baseline") return text(locale, "Comparing against the reference baseline", "参照ベースラインと比較しています");
+    if (stage === "analyze") return text(locale, "Summarizing the measured result", "測定結果をまとめています");
+    if (stage === "save") return text(locale, "Packaging the final result", "最終結果をパッケージ化しています");
+    return text(locale, "Preparing the final output", "最終出力を準備しています");
   }
-  return "Replaying recorded activity";
+  return text(locale, "Replaying recorded activity", "記録された実行過程を再生しています");
 }
 
-function failureHeadline(error: RunActivityEvent | null): string {
+function failureHeadline(error: RunActivityEvent | null, locale: PublicLocale): string {
   const message = `${error?.reason_code ?? ""} ${error?.code ?? ""} ${error?.message ?? ""}`.toLowerCase();
   if (message.includes("rate_limit") || message.includes("rate limit") || message.includes("429")) {
-    return "The model provider is temporarily rate-limited";
+    return text(locale, "The model provider is temporarily rate-limited", "モデル提供元が一時的にレート制限中です");
   }
   if (
     message.includes("credential")
     || message.includes("authentication")
     || message.includes("client_unavailable")
   ) {
-    return "The model provider is not configured";
+    return text(locale, "The model provider is not configured", "モデル提供元が設定されていません");
   }
-  if (message.includes("quota_exhausted")) return "The model provider quota is unavailable";
-  if (message.includes("model_not_found")) return "The configured model is unavailable";
+  if (message.includes("quota_exhausted")) return text(locale, "The model provider quota is unavailable", "モデル提供元の利用枠を使用できません");
+  if (message.includes("model_not_found")) return text(locale, "The configured model is unavailable", "設定されたモデルを利用できません");
   if (message.includes("timeout") || message.includes("timed out")) {
-    return "A required provider did not respond before the timeout";
+    return text(locale, "A required provider did not respond before the timeout", "必要な提供元から制限時間内に応答がありませんでした");
   }
   if (message.includes("candidate_budget_exhausted")) {
-    return "No candidate met every acceptance check";
+    return text(locale, "No candidate met every acceptance check", "すべての採用条件を満たす候補がありませんでした");
   }
-  return "The run stopped before every required step completed";
+  return text(locale, "The run stopped before every required step completed", "必要な処理がすべて完了する前に実行が停止しました");
 }
 
 function item(
@@ -372,6 +379,7 @@ function item(
 export function runActivityFromEvents(
   events: readonly RunActivityEvent[],
   running: boolean,
+  locale: PublicLocale = "en",
 ): RunActivityView | null {
   const queued = eventAt(events, lastIndex(events, (event) => event.type === "run.queued"));
   const hasCircuitActivity = events.some((event) =>
@@ -425,15 +433,15 @@ export function runActivityFromEvents(
     items.push(item(
       "plan",
       "plan",
-      planIndices.length > 1 ? "Revised plan" : "Plan",
+      planIndices.length > 1 ? text(locale, "Revised plan", "修正計画") : text(locale, "Plan", "計画"),
       plan?.plan?.problem_summary
         ?? (state === "active"
-          ? "Choosing an algorithm and evidence plan"
+          ? text(locale, "Choosing an algorithm and evidence plan", "アルゴリズムと検証方法を選んでいます")
           : state === "error"
-            ? "No complete circuit plan was recorded"
-            : "Circuit plan recorded"),
+            ? text(locale, "No complete circuit plan was recorded", "完全な回路計画を記録できませんでした")
+            : text(locale, "Circuit plan recorded", "回路計画を記録しました")),
       state,
-      state === "active" ? "Planning" : state === "error" ? "Needs attention" : "Complete",
+      state === "active" ? text(locale, "Planning", "計画中") : state === "error" ? text(locale, "Needs attention", "要確認") : text(locale, "Complete", "完了"),
       {
         kind: "plan",
         eventIndices: planIndices,
@@ -450,6 +458,7 @@ export function runActivityFromEvents(
       bestEffortIndex,
       activeId,
       terminalFailed,
+      locale,
     );
     const state: AgentActivityState = activeId === "code"
       ? "active"
@@ -460,30 +469,30 @@ export function runActivityFromEvents(
           : "done";
     const framework = plan?.plan?.framework;
     const considered = bestEffort?.candidates_considered;
-    const title = state === "active"
+      const title = state === "active"
       ? effectiveRevision > 0
-        ? `Repairing the ${framework ?? "framework-native"} candidate`
-        : `Writing a ${framework ?? "framework-native"} candidate`
+        ? text(locale, `Repairing the ${framework ?? "framework-native"} candidate`, `${framework ?? "フレームワークネイティブ"}候補を修正しています`)
+        : text(locale, `Writing a ${framework ?? "framework-native"} candidate`, `${framework ?? "フレームワークネイティブ"}候補を作成しています`)
       : state === "error" && !latestCode
-        ? "No candidate source was recorded"
+        ? text(locale, "No candidate source was recorded", "候補コードを記録できませんでした")
       : considered
-        ? `${considered} candidates considered; revision ${effectiveRevision} retained`
+        ? text(locale, `${considered} candidates considered; revision ${effectiveRevision} retained`, `${considered}件の候補を検討し、リビジョン${effectiveRevision}を保持しました`)
         : codeIndices.length > 1
-          ? `${codeIndices.length} revisions produced during repair`
-          : `${framework ?? latestCode?.language ?? "Framework-native"} source produced`;
+          ? text(locale, `${codeIndices.length} revisions produced during repair`, `修正中に${codeIndices.length}件のリビジョンを生成しました`)
+          : text(locale, `${framework ?? latestCode?.language ?? "Framework-native"} source produced`, `${framework ?? latestCode?.language ?? "フレームワークネイティブ"}コードを生成しました`);
     items.push(item(
       "code",
       "code",
-      "Generated code",
+      text(locale, "Generated code", "生成コード"),
       title,
       state,
       state === "active"
-        ? `Writing revision ${nextRevision}`
+        ? text(locale, `Writing revision ${nextRevision}`, `リビジョン${nextRevision}を作成中`)
         : state === "error"
-          ? "Generation failed"
+          ? text(locale, "Generation failed", "生成失敗")
           : bestEffort
-            ? `Revision ${effectiveRevision}`
-            : `Revision ${Math.max(1, effectiveRevision)}`,
+            ? text(locale, `Revision ${effectiveRevision}`, `リビジョン${effectiveRevision}`)
+            : text(locale, `Revision ${Math.max(1, effectiveRevision)}`, `リビジョン${Math.max(1, effectiveRevision)}`),
       {
         kind: "code",
         eventIndex: latestCodeIndex >= 0 ? latestCodeIndex : null,
@@ -520,18 +529,18 @@ export function runActivityFromEvents(
     items.push(item(
       "checks",
       "check",
-      "Code quality and resources",
+      text(locale, "Code quality and resources", "コード品質とリソース"),
       state === "active"
-        ? "Inspecting the program before execution"
+        ? text(locale, "Inspecting the program before execution", "実行前にコードを確認しています")
         : state === "error"
-          ? "The pre-execution checks did not complete"
+          ? text(locale, "The pre-execution checks did not complete", "実行前チェックを完了できませんでした")
         : resourceIndex >= 0
-          ? "Static checks passed and resources were bounded"
+          ? text(locale, "Static checks passed and resources were bounded", "静的チェックに合格し、リソース範囲を確認しました")
           : failed
-            ? "Static checks found a blocking issue"
-            : "Static checks completed",
+            ? text(locale, "Static checks found a blocking issue", "静的チェックで実行を妨げる問題が見つかりました")
+            : text(locale, "Static checks completed", "静的チェックが完了しました"),
       state,
-      state === "active" ? "Checking" : state === "error" ? "Needs repair" : "Passed",
+      state === "active" ? text(locale, "Checking", "確認中") : state === "error" ? text(locale, "Needs repair", "要修正") : text(locale, "Passed", "合格"),
       {
         kind: "checks",
         screenIndex: screenIndex >= 0 ? screenIndex : null,
@@ -559,14 +568,14 @@ export function runActivityFromEvents(
     items.push(item(
       "execution",
       "run",
-      "Sandbox execution",
+      text(locale, "Sandbox execution", "Sandbox実行"),
       state === "active"
-        ? `Running revision ${Math.max(1, effectiveRevision)} in the isolated sandbox`
+        ? text(locale, `Running revision ${Math.max(1, effectiveRevision)} in the isolated sandbox`, `隔離Sandboxでリビジョン${Math.max(1, effectiveRevision)}を実行しています`)
         : state === "error"
-          ? `Revision ${Math.max(1, effectiveRevision)} exited with an error`
-          : `Revision ${Math.max(1, effectiveRevision)} produced a structured result`,
+          ? text(locale, `Revision ${Math.max(1, effectiveRevision)} exited with an error`, `リビジョン${Math.max(1, effectiveRevision)}はエラーで終了しました`)
+          : text(locale, `Revision ${Math.max(1, effectiveRevision)} produced a structured result`, `リビジョン${Math.max(1, effectiveRevision)}が構造化結果を生成しました`),
       state,
-      state === "active" ? "Running" : state === "error" ? "Failed" : "Passed",
+      state === "active" ? text(locale, "Running", "実行中") : state === "error" ? text(locale, "Failed", "失敗") : text(locale, "Passed", "合格"),
       {
         kind: "execution",
         eventIndex: executionIndex >= 0 ? executionIndex : null,
@@ -608,29 +617,29 @@ export function runActivityFromEvents(
           : "done";
     const count = verificationIndices.length;
     const status = state === "active"
-      ? "Checking"
+      ? text(locale, "Checking", "確認中")
       : repairRequested
-        ? "Repair requested"
+        ? text(locale, "Repair requested", "修正要求")
         : count
-          ? `${passed}/${count} passed`
+          ? text(locale, `${passed}/${count} passed`, `${count}件中${passed}件合格`)
           : review?.decision === "ready"
-            ? "Aligned"
+            ? text(locale, "Aligned", "整合")
             : strict?.decision === "pass"
-              ? "Passed"
-              : "Reviewed";
+              ? text(locale, "Passed", "合格")
+              : text(locale, "Reviewed", "レビュー済み");
     items.push(item(
       "verification",
       "verify",
-      "Verification",
+      text(locale, "Verification", "検証"),
       state === "active"
-        ? "Checking the result against the declared evidence"
+        ? text(locale, "Checking the result against the declared evidence", "宣言された証拠と結果を照合しています")
         : repairRequested
-          ? "The reviewer requested another bounded attempt"
+          ? text(locale, "The reviewer requested another bounded attempt", "Reviewerが追加の限定試行を要求しました")
           : state === "error"
-            ? "One or more required checks failed"
+            ? text(locale, "One or more required checks failed", "必須チェックの一部が不合格でした")
             : limited
-              ? "Available checks completed with evidence limits"
-              : "The recorded checks support the candidate",
+              ? text(locale, "Available checks completed with evidence limits", "証拠上の制限を伴って確認が完了しました")
+              : text(locale, "The recorded checks support the candidate", "記録された確認結果が候補を支持しています"),
       state,
       status,
       {
@@ -666,22 +675,22 @@ export function runActivityFromEvents(
     items.push(item(
       "compilation",
       "compile",
-      "Compilation",
+      text(locale, "Compilation", "コンパイル"),
       state === "active"
-        ? "Optimizing the circuit while preserving behavior"
+        ? text(locale, "Optimizing the circuit while preserving behavior", "動作を保ったまま回路を最適化しています")
         : state === "error"
-          ? "Compilation stopped before a compatible result was recorded"
+          ? text(locale, "Compilation stopped before a compatible result was recorded", "互換性のある結果を記録する前にコンパイルが停止しました")
         : compilation?.accepted === false
-          ? "The original circuit was retained"
-          : "The compiled circuit remained compatible",
+          ? text(locale, "The original circuit was retained", "元の回路を保持しました")
+          : text(locale, "The compiled circuit remained compatible", "コンパイル後も回路の互換性が保たれました"),
       state,
       state === "active"
-        ? "Compiling"
+        ? text(locale, "Compiling", "コンパイル中")
         : state === "error"
-          ? "Failed"
+          ? text(locale, "Failed", "失敗")
           : compilation?.accepted === false
-            ? "Unchanged"
-            : "Complete",
+            ? text(locale, "Unchanged", "変更なし")
+            : text(locale, "Complete", "完了"),
       {
         kind: "compilation",
         eventIndex: compilationIndex >= 0 ? compilationIndex : null,
@@ -719,56 +728,56 @@ export function runActivityFromEvents(
     items.push(item(
       "finalize",
       "finalize",
-      "Finalize result",
+      text(locale, "Finalize result", "結果を確定"),
       state === "active"
-        ? activeHeadline("finalize", stage, nextRevision)
+        ? activeHeadline("finalize", stage, nextRevision, locale)
         : bestEffort
-          ? "The strongest recorded candidate was preserved for inspection"
+          ? text(locale, "The strongest recorded candidate was preserved for inspection", "最も良い候補を確認用に保持しました")
           : state === "error"
-            ? "Final packaging stopped before all outputs were recorded"
+            ? text(locale, "Final packaging stopped before all outputs were recorded", "すべての出力を記録する前に最終パッケージ化が停止しました")
           : analysis?.summary
-            ?? (artifactIndex >= 0 ? "The result package is ready" : "The final program was prepared"),
+            ?? (artifactIndex >= 0 ? text(locale, "The result package is ready", "結果パッケージの準備ができました") : text(locale, "The final program was prepared", "最終コードを準備しました")),
       state,
       state === "active"
-        ? "Working"
+        ? text(locale, "Working", "処理中")
         : state === "error"
-          ? "Failed"
+          ? text(locale, "Failed", "失敗")
           : bestEffort
-            ? "Best available"
+            ? text(locale, "Best available", "利用可能な最良結果")
             : artifactIndex >= 0
-              ? "Packaged"
-              : "Complete",
+              ? text(locale, "Packaged", "パッケージ済み")
+              : text(locale, "Complete", "完了"),
       {
         kind: "finalize",
         eventIndices: finalizeIndices,
         bestEffortIndex: bestEffortIndex >= 0 ? bestEffortIndex : null,
       },
       bestEffort?.candidates_considered
-        ? `${bestEffort.candidates_considered} candidates`
+        ? text(locale, `${bestEffort.candidates_considered} candidates`, `${bestEffort.candidates_considered}件の候補`)
         : stageDuration(events, "finalize", "final_execute", "baseline", "analyze", "save"),
     ));
   }
 
   const label = terminalSucceeded
-    ? "Run complete"
+    ? text(locale, "Run complete", "実行完了")
     : terminalFailed && bestEffort
-      ? "Run complete with limits"
+      ? text(locale, "Run complete with limits", "制限付きで実行完了")
       : terminalFailed || error
-        ? "Run needs attention"
+        ? text(locale, "Run needs attention", "実行結果の確認が必要です")
         : terminalCancelled
-          ? "Run stopped"
+          ? text(locale, "Run stopped", "実行停止")
         : running
-          ? "Working"
-          : "Run activity";
+          ? text(locale, "Working", "実行中")
+          : text(locale, "Run activity", "実行過程");
   const headline = terminalSucceeded
-    ? "Final output prepared"
+    ? text(locale, "Final output prepared", "最終出力を準備しました")
     : terminalFailed && bestEffort
-      ? "Best available result preserved"
+      ? text(locale, "Best available result preserved", "利用可能な最良結果を保持しました")
       : terminalFailed || error
-        ? failureHeadline(error)
+        ? failureHeadline(error, locale)
         : terminalCancelled
-          ? "The run was cancelled before completion"
-        : activeHeadline(activeId, stage, nextRevision);
+          ? text(locale, "The run was cancelled before completion", "完了前に実行がキャンセルされました")
+        : activeHeadline(activeId, stage, nextRevision, locale);
 
   return { label, headline, items };
 }

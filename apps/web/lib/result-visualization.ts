@@ -2,6 +2,7 @@ import {
   simulationChartData,
   type SimulationChartData,
 } from "./simulation-visual.ts";
+import type { PublicLocale } from "./public-locale.ts";
 
 export type ResultDistributionKind = "counts" | "probabilities" | "weights";
 
@@ -89,16 +90,45 @@ function amplitudeProbability(value: unknown): number | null {
   return null;
 }
 
-export function humanizeResultKey(value: string): string {
+const JAPANESE_RESULT_LABEL: Record<string, string> = {
+  best_bitstring: "最良ビット列",
+  best_objective: "最良目的関数値",
+  converged: "収束",
+  cost: "コスト",
+  energy: "エネルギー",
+  energy_ha: "エネルギー (Ha)",
+  estimated_value: "推定値",
+  expectation_value: "期待値",
+  fidelity: "忠実度",
+  iterations: "反復回数",
+  loss: "損失",
+  notes: "メモ",
+  objective: "目的関数値",
+  optimization_history: "最適化履歴",
+  parameters: "パラメータ",
+  return: "リターン",
+  risk: "リスク",
+  shots: "ショット数",
+  success_probability: "成功確率",
+};
+
+export function humanizeResultKey(
+  value: string,
+  locale: PublicLocale = "en",
+): string {
+  if (locale === "ja") {
+    const translated = JAPANESE_RESULT_LABEL[value.toLowerCase()];
+    if (translated) return translated;
+  }
   return value
     .replaceAll("_", " ")
     .replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-export function formatResultNumber(value: number): string {
+export function formatResultNumber(value: number, locale: PublicLocale = "en"): string {
   if (!Number.isFinite(value)) return String(value);
   if (Number.isInteger(value) && Math.abs(value) < 1e15) {
-    return value.toLocaleString("en-US");
+    return value.toLocaleString(locale === "ja" ? "ja-JP" : "en-US");
   }
   const magnitude = Math.abs(value);
   if (magnitude !== 0 && (magnitude < 1e-4 || magnitude >= 1e6)) {
@@ -127,6 +157,7 @@ function distributionKind(
  */
 export function distributionFromResult(
   result: Record<string, unknown> | null,
+  locale: PublicLocale = "en",
 ): ResultDistributionView | null {
   if (!result) return null;
 
@@ -142,7 +173,7 @@ export function distributionFromResult(
         (value) => typeof value === "number" && Number.isFinite(value) && value >= 0,
       ) ? indexedDistribution(raw as number[]) : null;
       if (values && Object.values(values).some((value) => value > 0)) {
-        candidates.push({ key, values, score: 8, label: "Probability distribution" });
+        candidates.push({ key, values, score: 8, label: locale === "ja" ? "確率分布" : "Probability distribution" });
       }
     }
     if (Array.isArray(raw) && /statevector|amplitudes?/i.test(key)) {
@@ -155,7 +186,7 @@ export function distributionFromResult(
           key: "probabilities",
           values,
           score: 3,
-          label: "State probabilities · derived from amplitudes",
+          label: locale === "ja" ? "状態確率（振幅から算出）" : "State probabilities · derived from amplitudes",
         });
       }
     }
@@ -193,10 +224,12 @@ export function distributionFromResult(
   if (!data) return null;
   const kind = distributionKind(candidate.key, values, total);
   const label = kind === "counts"
-    ? "Measured distribution"
+    ? locale === "ja" ? "測定分布" : "Measured distribution"
     : kind === "probabilities"
-      ? candidate.label ?? "Probability distribution"
-      : `${humanizeResultKey(candidate.key)} distribution`;
+      ? candidate.label ?? (locale === "ja" ? "確率分布" : "Probability distribution")
+      : locale === "ja"
+        ? `${humanizeResultKey(candidate.key, locale)}の分布`
+        : `${humanizeResultKey(candidate.key, locale)} distribution`;
   return { data, kind, label, total };
 }
 
@@ -229,6 +262,7 @@ function sampledTrace(values: readonly number[]): ResultTracePoint[] {
 /** Numeric iteration series are useful evidence; short parameter vectors are not. */
 export function tracesFromResult(
   result: Record<string, unknown> | null,
+  locale: PublicLocale = "en",
 ): ResultTraceView[] {
   if (!result) return [];
   const traces: ResultTraceView[] = [];
@@ -244,7 +278,7 @@ export function tracesFromResult(
       { minimum: values[0], maximum: values[0] },
     );
     traces.push({
-      label: humanizeResultKey(key),
+      label: humanizeResultKey(key, locale),
       points: sampledTrace(values),
       pointCount: values.length,
       start: values[0],
@@ -260,6 +294,7 @@ export function tracesFromResult(
 export function valuesFromResult(
   result: Record<string, unknown> | null,
   expectedKeys: readonly string[] = [],
+  locale: PublicLocale = "en",
 ): ResultValueView[] {
   if (!result) return [];
   const keys = [
@@ -270,11 +305,11 @@ export function valuesFromResult(
   for (const key of keys) {
     const value = result[key];
     if (typeof value === "number" && Number.isFinite(value)) {
-      values.push({ label: humanizeResultKey(key), value: formatResultNumber(value) });
+      values.push({ label: humanizeResultKey(key, locale), value: formatResultNumber(value, locale) });
     } else if (typeof value === "boolean") {
-      values.push({ label: humanizeResultKey(key), value: String(value) });
+      values.push({ label: humanizeResultKey(key, locale), value: String(value) });
     } else if (typeof value === "string" && value.length <= 200) {
-      values.push({ label: humanizeResultKey(key), value });
+      values.push({ label: humanizeResultKey(key, locale), value });
     } else if (
       Array.isArray(value)
       && value.length <= 8
@@ -282,8 +317,8 @@ export function valuesFromResult(
       && value.every((item) => typeof item === "number" && Number.isFinite(item))
     ) {
       values.push({
-        label: humanizeResultKey(key),
-        value: (value as number[]).map(formatResultNumber).join(", "),
+        label: humanizeResultKey(key, locale),
+        value: (value as number[]).map((item) => formatResultNumber(item, locale)).join(", "),
       });
     }
     if (values.length === MAX_RESULT_VALUES) break;
@@ -294,10 +329,11 @@ export function valuesFromResult(
 export function resultVisualizationFromResult(
   result: Record<string, unknown> | null,
   expectedKeys: readonly string[] = [],
+  locale: PublicLocale = "en",
 ): ResultVisualizationView {
   return {
-    distribution: distributionFromResult(result),
-    traces: tracesFromResult(result),
-    values: valuesFromResult(result, expectedKeys),
+    distribution: distributionFromResult(result, locale),
+    traces: tracesFromResult(result, locale),
+    values: valuesFromResult(result, expectedKeys, locale),
   };
 }

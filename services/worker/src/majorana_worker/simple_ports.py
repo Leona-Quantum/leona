@@ -90,6 +90,7 @@ from majorana_llm import (
     LLMClient,
     LLMProviderError,
     LLMRequest,
+    ResponseLocale,
     SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT,
     SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
     SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT,
@@ -104,6 +105,7 @@ from majorana_llm import (
     model_for,
     simple_generation_system_prompt,
     with_execution_conversation_context,
+    with_response_locale,
 )
 from majorana_sandbox import DEFAULT_QUBIT_CEILING
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, model_validator
@@ -440,6 +442,7 @@ class _IntentReviewOutput(BaseModel):
     mismatches: list[str] = Field(default_factory=list, max_length=6)
     repair_instructions: list[str] = Field(default_factory=list, max_length=6)
     residual_risks: list[str] = Field(default_factory=list, max_length=6)
+    suggested_follow_ups: list[str] = Field(default_factory=list, max_length=3)
 
     @model_validator(mode="before")
     @classmethod
@@ -456,11 +459,16 @@ class _IntentReviewOutput(BaseModel):
             "mismatches": 6,
             "repair_instructions": 6,
             "residual_risks": 6,
+            "suggested_follow_ups": 3,
         }.items():
             entries = normalized.get(name)
             if isinstance(entries, list):
                 normalized[name] = [
-                    item.strip()[:1_000] if isinstance(item, str) else item
+                    item.strip()[:240]
+                    if name == "suggested_follow_ups" and isinstance(item, str)
+                    else item.strip()[:1_000]
+                    if isinstance(item, str)
+                    else item
                     for item in entries[:limit]
                 ]
         return normalized
@@ -593,11 +601,13 @@ class SimpleIntentReviewer:
         llm: LLMClient,
         task_prompt: str,
         conversation_messages: Sequence[Mapping[str, str]] = (),
+        response_locale: ResponseLocale = "en",
     ) -> None:
         self._llm = llm
         self._task_prompt = task_prompt
         self._conversation_messages = tuple(conversation_messages)
         self._prior_user_requests = _prior_user_requests(self._conversation_messages)
+        self._response_locale = response_locale
 
     async def review(
         self,
@@ -652,13 +662,17 @@ class SimpleIntentReviewer:
         response = await self._llm.complete(
             LLMRequest(
                 model=model_for("verify"),
-                system=with_execution_conversation_context(
-                    (
-                        SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT
-                        if artifact_only
-                        else SIMPLE_REVIEW_SYSTEM_PROMPT
+                system=with_response_locale(
+                    with_execution_conversation_context(
+                        (
+                            SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT
+                            if artifact_only
+                            else SIMPLE_REVIEW_SYSTEM_PROMPT
+                        ),
+                        has_history=bool(self._conversation_messages),
                     ),
-                    has_history=bool(self._conversation_messages),
+                    self._response_locale,
+                    surface="review",
                 ),
                 user=user,
                 messages=conversation_request_messages(
@@ -2885,6 +2899,7 @@ class ProductionSimplePipelinePorts:
         task_prompt: str,
         framework: Framework,
         conversation_messages: Sequence[Mapping[str, str]] = (),
+        response_locale: ResponseLocale = "en",
         requested_shots: int | None = None,
         requested_seed: int | None = None,
         initial_source: str | None = None,
@@ -2900,6 +2915,7 @@ class ProductionSimplePipelinePorts:
         self._task_prompt = task_prompt
         self._conversation_messages = tuple(conversation_messages)
         self._prior_user_requests = _prior_user_requests(self._conversation_messages)
+        self._response_locale = response_locale
         self._framework = framework
         self._requested_shots = (
             min(requested_shots, 20_000)
@@ -3667,7 +3683,11 @@ class ProductionSimplePipelinePorts:
                     # classification. Use the substantive planning tier so a compact
                     # follow-up can be resolved across technical or multilingual input.
                     model=model_for("plan"),
-                    system=SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT,
+                    system=with_response_locale(
+                        SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT,
+                        self._response_locale,
+                        surface="alignment",
+                    ),
                     user=user_text,
                     temperature=0.0,
                     response_schema=_ConversationPlanAlignmentOutput.model_json_schema(),
@@ -3788,9 +3808,13 @@ class ProductionSimplePipelinePorts:
             response = await self._llm.complete(
                 LLMRequest(
                     model=model_for("plan"),
-                    system=with_execution_conversation_context(
-                        SIMPLE_PLAN_SYSTEM_PROMPT,
-                        has_history=bool(self._conversation_messages),
+                    system=with_response_locale(
+                        with_execution_conversation_context(
+                            SIMPLE_PLAN_SYSTEM_PROMPT,
+                            has_history=bool(self._conversation_messages),
+                        ),
+                        self._response_locale,
+                        surface="plan",
                     ),
                     user=user_text,
                     messages=conversation_request_messages(

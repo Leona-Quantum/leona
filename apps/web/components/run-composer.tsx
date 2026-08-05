@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type Ref } from "react";
 import { ChevronIcon, PaperclipIcon } from "./icons";
 import type { PublicLocale } from "../lib/public-locale";
 import { COMPOSER_MODES, type ComposerMode } from "../lib/run-mode";
@@ -38,6 +38,7 @@ export function RunComposer({
   onStop,
   stopping = false,
   suggestions,
+  inputRef,
   centered = false,
   locale = "en",
 }: {
@@ -61,6 +62,8 @@ export function RunComposer({
   stopping?: boolean;
   /** Prompts the placeholder types out; Tab accepts the one on screen. */
   suggestions?: readonly string[];
+  /** Lets a prompt suggestion return focus to the shared conversation input. */
+  inputRef?: Ref<HTMLTextAreaElement>;
   centered?: boolean;
   locale?: PublicLocale;
 }) {
@@ -141,6 +144,7 @@ export function RunComposer({
           </div>
         ) : null}
         <textarea
+          ref={inputRef}
           className="mj-composer-input"
           value={value}
           onChange={(event) => onChange(event.target.value)}

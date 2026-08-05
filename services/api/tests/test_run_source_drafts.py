@@ -32,6 +32,13 @@ def test_run_request_rejects_values_the_executor_cannot_preserve(field, value):
         runs.CreateRunRequest(task_prompt="Build a Bell circuit", **{field: value})
 
 
+def test_run_request_accepts_only_supported_response_locales():
+    assert runs.CreateRunRequest(task_prompt="Bell").response_locale == "en"
+    assert runs.CreateRunRequest(task_prompt="Bell", response_locale="ja").response_locale == "ja"
+    with pytest.raises(ValidationError):
+        runs.CreateRunRequest(task_prompt="Bell", response_locale="fr")
+
+
 async def test_edited_source_creates_explicitly_unverified_immutable_draft(scope, monkeypatch):
     base_id = uuid.uuid4()
     artifact_id = uuid.uuid4()
@@ -134,3 +141,4 @@ async def test_run_and_job_are_bound_to_the_new_draft_version(scope, monkeypatch
     assert result == run_id
     assert captured["run"]["artifact_version_id"] == draft_id
     assert captured["job"]["payload"]["source_code"] == "edited source"
+    assert captured["job"]["payload"]["response_locale"] == "en"

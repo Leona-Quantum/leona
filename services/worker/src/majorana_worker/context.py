@@ -6,6 +6,7 @@ from dataclasses import dataclass
 from typing import Any, Protocol
 
 from majorana_contracts.enums import Framework, RunMode
+from majorana_llm import ResponseLocale
 
 
 class EventSink(Protocol):
@@ -24,6 +25,7 @@ class RunContext:
     shots: int | None
     timeout_s: int | None
     sink: EventSink
+    response_locale: ResponseLocale = "en"
     conversation_id: Any | None = None
     source_code: str | None = None
     source_framework: Framework | None = None

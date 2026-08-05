@@ -256,3 +256,21 @@ test("an unmapped code still names the stage it stopped in", () => {
 
   assert.match(outcome?.callout?.body ?? "", /Review stopped before the step completed/);
 });
+
+test("a Japanese run explains a durable failure code in Japanese", () => {
+  const outcome = runOutcomeFromEvents(
+    failingRun({
+      type: "run.error",
+      stage: "verify",
+      code: "candidate_budget_exhausted",
+      message: "intent review did not align the candidate",
+    }),
+    null,
+    "ja",
+  );
+
+  assert.equal(outcome?.eyebrow, "利用可能な最良結果");
+  assert.equal(outcome?.callout?.title, "採用されなかった理由");
+  assert.match(outcome?.callout?.body ?? "", /修正回数/);
+  assert.doesNotMatch(outcome?.callout?.body ?? "", /repair attempts/i);
+});

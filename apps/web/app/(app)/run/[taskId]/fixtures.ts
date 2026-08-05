@@ -271,7 +271,7 @@ const VERIFIED: RunEvent[] = [
     seq: 35,
     ts: ts(41),
     summary: "Final simulation reproduced the verified MaxCut result.",
-    interpretation: "The circuit reaches the expected cut value on the sampled ring instance.",
+    interpretation: "The result matches the classical optimum for this sampled ring instance. You can inspect the measured bitstring and reuse the generated circuit above; hardware behavior remains untested.",
     results: { cut_value: 4, bitstring: "01010" },
     comparison: { baseline_cut: 4, final_cut: 4, compilation_mode: "compressed" },
     residual_risks: "Simulation only; no QPU execution was requested.",

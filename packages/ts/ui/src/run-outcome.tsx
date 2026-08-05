@@ -55,9 +55,11 @@ const CHECK_LABEL: Record<RunOutcomeCheckState, string> = {
 export function RunOutcome({
   outcome,
   action,
+  locale = "en",
 }: {
   outcome: RunOutcomeView;
   action?: ReactNode;
+  locale?: "en" | "ja";
 }): ReactNode {
   return (
     <section
@@ -79,7 +81,7 @@ export function RunOutcome({
           </div>
         </div>
         {outcome.badges.length ? (
-          <ul className="mj-run-outcome-badges" aria-label="Result status">
+          <ul className="mj-run-outcome-badges" aria-label={locale === "ja" ? "結果の状態" : "Result status"}>
             {outcome.badges.map((badge) => (
               <li data-tone={badge.tone} key={badge.label}>
                 {badge.label}
@@ -113,14 +115,16 @@ export function RunOutcome({
         {outcome.checks?.length ? (
           <details className="mj-run-outcome-details">
             <summary>
-              <span>Evidence</span>
-              <span>{outcome.checks.length} checks</span>
+              <span>{locale === "ja" ? "証拠" : "Evidence"}</span>
+              <span>{outcome.checks.length}{locale === "ja" ? "件の確認" : " checks"}</span>
             </summary>
             <ul>
               {outcome.checks.map((check, index) => (
                 <li key={`${check.label}-${index}`}>
                   <span className="mj-run-outcome-check" data-state={check.state}>
-                    {CHECK_LABEL[check.state]}
+                    {locale === "ja"
+                      ? check.state === "pass" ? "合格" : check.state === "fail" ? "不合格" : "確認不可"
+                      : CHECK_LABEL[check.state]}
                   </span>
                   <code>{check.label}</code>
                 </li>

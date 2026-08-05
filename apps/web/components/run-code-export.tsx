@@ -40,6 +40,7 @@ import {
 import { statusFromVerificationSummary } from "../lib/library-data";
 import type { LibraryArtifact } from "../lib/library-data";
 import { verificationSummaryFromValue } from "../lib/verification-record";
+import type { PublicLocale } from "../lib/public-locale";
 
 export interface RunCodeFallback {
   label: string;
@@ -109,10 +110,12 @@ export function RunCodeExport({
   artifactId,
   title,
   fallback,
+  locale = "en",
 }: {
   artifactId: string | null;
   title: string;
   fallback: RunCodeFallback | null;
+  locale?: PublicLocale;
 }) {
   const [loaded, setLoaded] = useState<LoadedVersion | null>(null);
   const [selected, setSelected] = useState<string | null>(null);
@@ -158,11 +161,13 @@ export function RunCodeExport({
     <div className="mj-run-result-code">
       <div className="mj-run-code-head">
         <span className="mj-section-label">
-          Program · {option.native ? "as written" : "converted"}
+          {locale === "ja" ? "プログラム" : "Program"} · {option.native
+            ? locale === "ja" ? "生成時のコード" : "as written"
+            : locale === "ja" ? "変換済み" : "converted"}
         </span>
         <div className="mj-run-code-actions">
           <label>
-            <span className="sr-only">Framework</span>
+            <span className="sr-only">{locale === "ja" ? "フレームワーク" : "Framework"}</span>
             <select value={option.key} onChange={(event) => setSelected(event.target.value)}>
               {loaded.options.map((item) => (
                 <option key={item.key} value={item.key}>
@@ -180,7 +185,7 @@ export function RunCodeExport({
             className="mj-secondary-button"
             type="button"
             title={filename}
-            aria-label={`Download ${filename}`}
+            aria-label={locale === "ja" ? `${filename}をダウンロード` : `Download ${filename}`}
             onClick={() =>
               download(
                 artifactExportSource(loaded.exportArtifact, {
@@ -192,7 +197,7 @@ export function RunCodeExport({
               )
             }
           >
-            Download <span className="mj-mono-muted">.{fileExtension(filename)}</span>
+            {locale === "ja" ? "ダウンロード" : "Download"} <span className="mj-mono-muted">.{fileExtension(filename)}</span>
           </button>
         </div>
       </div>
@@ -201,13 +206,19 @@ export function RunCodeExport({
           qubitCount={drawing.circuit.qubitCount}
           steps={drawing.circuit.steps}
           customGates={[]}
-          ariaLabel={`${title} circuit diagram`}
+          ariaLabel={locale === "ja" ? `${title}の回路図` : `${title} circuit diagram`}
         />
       ) : null}
       <pre>
         <SyntaxHighlightedCode code={option.code} language={circuitFramework(option.key).key} />
       </pre>
-      {option.note ? <p className="mj-run-code-note">{option.note}</p> : null}
+      {option.note ? (
+        <p className="mj-run-code-note">
+          {locale === "ja"
+            ? "この変換では標準ゲート分解を使用しています。ターゲットSDKのゲート規約との差異を確認してください。"
+            : option.note}
+        </p>
+      ) : null}
     </div>
   );
 }

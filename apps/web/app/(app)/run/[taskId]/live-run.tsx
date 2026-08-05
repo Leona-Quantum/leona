@@ -21,7 +21,7 @@ import { hydrateConversationFramework } from "../../../../lib/framework-selectio
 import type { ComposerMode } from "../../../../lib/run-mode";
 import { RUN_FIXTURES } from "./fixtures";
 import { verificationSummaryFromValue, type VerificationSummary } from "../../../../lib/verification-record";
-import { runOutcomeFromEvents } from "../../../../lib/run-outcome";
+import { friendlyFailure, runOutcomeFromEvents } from "../../../../lib/run-outcome";
 import { runResultFromEvents } from "../../../../lib/run-result";
 import { RunResult } from "../../../../components/run-result";
 import { ResultVisualizations } from "../../../../components/result-visualization";
@@ -32,6 +32,13 @@ import {
 import { resultVisualizationFromResult } from "../../../../lib/result-visualization";
 import { ThinkingLabel } from "../../../../components/thinking-label";
 import { useSmoothedText } from "../../../../components/use-smoothed-text";
+import type { PublicLocale } from "../../../../lib/public-locale";
+import {
+  contextualReviewFollowUps,
+  followUpPrompts,
+  splitAssistantFollowUps,
+  type FollowUpPromptKind,
+} from "../../../../lib/follow-up-prompts";
 
 type WireEvent = {
   run_id: string;
@@ -108,6 +115,7 @@ type WireEvent = {
       suggestions?: string[];
       repair_instructions?: string[];
       residual_risks?: string[];
+      suggested_follow_ups?: string[];
     };
   };
 };
@@ -130,6 +138,21 @@ const VERIFICATION_METHOD_LABEL: Record<string, string> = {
   success_criteria: "Checked the success threshold",
   structural: "Checked circuit structure",
   native_optimization_evidence: "Checked native optimization",
+};
+
+const VERIFICATION_METHOD_LABEL_JA: Record<string, string> = {
+  return_contract: "戻り値契約を確認",
+  statistical: "測定分布を照合",
+  statistical_native: "信頼できる再実行結果と比較",
+  exact: "参照値と比較",
+  exact_diag: "Hamiltonianを厳密対角化して比較",
+  brute_force: "古典的な全探索と比較",
+  statistical_reproducibility: "回路を再実行して比較",
+  resource_contract: "量子ビット・リソース使用量を確認",
+  measurement_policy: "測定範囲を確認",
+  success_criteria: "成功条件を確認",
+  structural: "回路構造を確認",
+  native_optimization_evidence: "ネイティブ最適化を確認",
 };
 
 function ReviewStage({ event }: { event: WireEvent }) {
@@ -208,6 +231,7 @@ export type Turn = {
   id: string;
   prompt: string;
   answer: string | null;
+  followUps: string[];
   events: WireEvent[];
   verificationSummary: VerificationSummary | null;
   terminal: boolean;
@@ -226,9 +250,9 @@ function parseEvent(block: string): { id: number | null; data: string } | null {
   return { id: Number.isFinite(parsedId) ? parsedId : null, data };
 }
 
-function answerFromEvents(events: WireEvent[]): string | null {
+function answerFromEvents(events: WireEvent[], locale: PublicLocale = "en"): string | null {
   const completed = [...events].reverse().find((event) => event.type === "chat.completed" && event.text);
-  if (completed?.text) return completed.text;
+  if (completed?.text) return splitAssistantFollowUps(completed.text).answer;
   const circuitRun = events.some((event) =>
     [
       "plan.produced",
@@ -244,9 +268,22 @@ function answerFromEvents(events: WireEvent[]): string | null {
   if (legacy?.interpretation) return legacy.interpretation;
   const finished = [...events].reverse().find((event) => event.type === "run.finished");
   if (finished && finished.status !== "succeeded") {
-    return "The run did not complete successfully. Check the run's events for details.";
+    return locale === "ja"
+      ? "実行は正常に完了しませんでした。詳細は実行イベントを確認してください。"
+      : "The run did not complete successfully. Check the run's events for details.";
   }
   return null;
+}
+
+function followUpsFromEvents(events: WireEvent[]): string[] {
+  const completed = [...events].reverse().find(
+    (event) => event.type === "chat.completed" && event.text,
+  );
+  if (completed?.text) {
+    const prompts = splitAssistantFollowUps(completed.text).prompts;
+    if (prompts.length >= 2) return prompts;
+  }
+  return contextualReviewFollowUps(events);
 }
 
 function hasFinished(events: WireEvent[]): boolean {
@@ -282,13 +319,14 @@ function conversationTitleFromPayload(payload: ConversationPayload): string | nu
   return null;
 }
 
-function turnsFromConversation(payload: ConversationPayload): Turn[] {
+function turnsFromConversation(payload: ConversationPayload, locale: PublicLocale = "en"): Turn[] {
   return payload.turns.map((turn) => {
     const events = turn.events.filter(retainRunEvent);
     return {
       id: turn.run.id,
       prompt: turn.run.task_prompt,
-      answer: answerFromEvents(events),
+      answer: answerFromEvents(events, locale),
+      followUps: followUpsFromEvents(events),
       events,
       verificationSummary: verificationSummaryFromValue(turn.run.verification_summary),
       terminal: Boolean(turn.run.finished_at) || hasFinished(events),
@@ -296,27 +334,28 @@ function turnsFromConversation(payload: ConversationPayload): Turn[] {
   });
 }
 
-function fixtureTurns(events: RunEvent[], fixtureId?: string): Turn[] {
+function fixtureTurns(events: RunEvent[], fixtureId?: string, locale: PublicLocale = "en"): Turn[] {
   const queued = events.find((event) => event.type === "run.queued");
   const wireEvents = events as WireEvent[];
   return [{
     id: fixtureId ?? queued?.run_id ?? "example",
     prompt: "Use QAOA to solve MaxCut on a 5-node ring and verify the cut value.",
-    answer: answerFromEvents(wireEvents),
+    answer: answerFromEvents(wireEvents, locale),
+    followUps: followUpsFromEvents(wireEvents),
     events: wireEvents,
     verificationSummary: verificationSummaryFromValue(events.find((event) => event.type === "run.finished")?.verification_summary),
     terminal: hasFinished(wireEvents),
   }];
 }
 
-export function LiveRun({ taskId }: { taskId: string }) {
+export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: PublicLocale }) {
   const router = useRouter();
   const fixtureEvents = RUN_FIXTURES[taskId] ?? null;
   const fixtureIsTerminal = Boolean(
     fixtureEvents?.some((event) => event.type === "run.finished"),
   );
   const [turns, setTurns] = useState<Turn[]>(
-    fixtureEvents ? fixtureTurns(fixtureEvents, taskId) : [],
+    fixtureEvents ? fixtureTurns(fixtureEvents, taskId, locale) : [],
   );
   const [conversationId, setConversationId] = useState<string | null>(null);
   const [streamingText, setStreamingText] = useState("");
@@ -351,6 +390,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const loadSeq = useRef(0);
   const conversationIdRef = useRef<string | null>(null);
   const chatScrollRef = useRef<HTMLDivElement>(null);
+  const composerInputRef = useRef<HTMLTextAreaElement>(null);
   const shouldAutoScrollRef = useRef(true);
 
   /** Move the page onto a run, synchronously for readers inside async callbacks. */
@@ -373,7 +413,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
   const title = conversationTitle
     ?? (existingChat ? displayChatTitle(existingChat) : null)
     ?? (turns[0]?.prompt ? titleFromPrompt(turns[0].prompt) : null)
-    ?? "Quantum chat";
+    ?? (locale === "ja" ? "量子チャット" : "Quantum chat");
 
   useEffect(() => {
     conversationIdRef.current = null;
@@ -432,7 +472,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
       if (!controller.signal.aborted && seq === loadSeq.current) {
         conversationIdRef.current = payload.id;
         setConversationId(payload.id);
-        setTurns(turnsFromConversation(payload));
+        setTurns(turnsFromConversation(payload, locale));
         const named = conversationTitleFromPayload(payload);
         // A reload has no live stream to learn the name from, so it comes off
         // the durable events. Only ever set, never cleared: an older turn that
@@ -454,7 +494,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
           if (follow !== activeRunIdRef.current) followRun(follow);
           setPending(
             !(Boolean(newest.run.finished_at) || hasFinished(newest.events))
-            && !answerFromEvents(newest.events),
+            && !answerFromEvents(newest.events, locale),
           );
         }
       }
@@ -462,7 +502,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
 
     async function consume() {
       void loadConversation().catch((cause) => {
-        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : "Conversation could not be loaded");
+        if (!controller.signal.aborted) setError(cause instanceof Error ? cause.message : locale === "ja" ? "会話を読み込めませんでした" : "Conversation could not be loaded");
       });
 
       while (!controller.signal.aborted) {
@@ -516,7 +556,9 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 if (sidebarChat) updateChat(sidebarChat.id, { modelTitle: named });
               }
               if (event.type === "chat.error") {
-                setError(event.message ?? "The assistant could not complete this response.");
+                setError(locale === "ja"
+                  ? friendlyFailure(event.message, event.stage, event.code, locale)
+                  : event.message ?? "The assistant could not complete this response.");
                 setStreaming(false);
                 setPending(false);
                 setStopping(false);
@@ -548,7 +590,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
                 }
                 void loadConversation().catch((cause) => {
                   if (!controller.signal.aborted) {
-                    setError(cause instanceof Error ? cause.message : "Conversation could not be reloaded");
+                    setError(cause instanceof Error ? cause.message : locale === "ja" ? "会話を再読み込みできませんでした" : "Conversation could not be reloaded");
                   }
                 });
               }
@@ -558,7 +600,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
           throw new Error("Response stream ended before the response finished");
         } catch (cause) {
           if (controller.signal.aborted) return;
-          setError(cause instanceof Error ? cause.message : "Response stream failed");
+          setError(cause instanceof Error ? cause.message : locale === "ja" ? "応答ストリームに失敗しました" : "Response stream failed");
           await new Promise<void>((resolve) => {
             reconnectTimer = setTimeout(resolve, 1000);
           });
@@ -592,13 +634,13 @@ export function LiveRun({ taskId }: { taskId: string }) {
         try {
           candidates.push({ name: file.name, size: file.size, content: await file.text() });
         } catch {
-          errors.push(`${file.name} could not be read.`);
+          errors.push(locale === "ja" ? `${file.name}を読み取れませんでした。` : `${file.name} could not be read.`);
         }
       }
       const nextByName = new Map(attachments.map((item) => [item.name, item]));
       for (const candidate of candidates) {
         if (!nextByName.has(candidate.name) && nextByName.size >= 4) {
-          errors.push("Up to 4 attachments per message.");
+          errors.push(locale === "ja" ? "1メッセージにつき添付は4件までです。" : "Up to 4 attachments per message.");
           continue;
         }
         nextByName.set(candidate.name, candidate);
@@ -630,7 +672,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
       // The event stream receives the durable run.finished/cancelled event and
       // updates the page in place. Do not navigate or delete the conversation.
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Run could not be stopped");
+      setError(cause instanceof Error ? cause.message : locale === "ja" ? "実行を停止できませんでした" : "Run could not be stopped");
       setStopping(false);
     }
   }
@@ -644,11 +686,11 @@ export function LiveRun({ taskId }: { taskId: string }) {
     // run and runs are sequential. Say so instead of swallowing the keystroke,
     // which is what this did while the box was simply disabled.
     if (pending) {
-      setError("One response at a time. Stop the current one, or wait for it to finish.");
+      setError(locale === "ja" ? "一度に実行できる応答は1件です。現在の応答を停止するか、完了までお待ちください。" : "One response at a time. Stop the current one, or wait for it to finish.");
       return;
     }
     if (!conversationId) {
-      setError("The conversation is still loading. Try again in a moment.");
+      setError(locale === "ja" ? "会話を読み込み中です。少し待ってから再試行してください。" : "The conversation is still loading. Try again in a moment.");
       return;
     }
     const previousRunId = activeRunIdRef.current;
@@ -682,6 +724,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
           // had picked on the way in.
           mode,
           framework,
+          response_locale: locale,
         }),
       });
       const payload = (await response.json()) as { id?: string; conversation_id?: string; detail?: string; error?: string };
@@ -714,7 +757,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
         });
       }
     } catch (cause) {
-      setError(cause instanceof Error ? cause.message : "Message submission failed");
+      setError(cause instanceof Error ? cause.message : locale === "ja" ? "メッセージの送信に失敗しました" : "Message submission failed");
       // The turn never started; go back to following the one that was on screen.
       followRun(previousRunId);
       setPending(false);
@@ -738,6 +781,12 @@ export function LiveRun({ taskId }: { taskId: string }) {
     if (settledTurn) setPendingPrompt(null);
   }, [settledTurn]);
 
+  function selectFollowUp(nextPrompt: string) {
+    setPrompt(nextPrompt);
+    setError(null);
+    requestAnimationFrame(() => composerInputRef.current?.focus());
+  }
+
   return (
     <div className="mj-run-task">
       <div
@@ -752,12 +801,18 @@ export function LiveRun({ taskId }: { taskId: string }) {
           <header className="mj-chat-header">
             <div>
               <h1>{title}</h1>
-              <span className="mj-chat-subtitle">{fixtureEvents ? "Example conversation" : streaming || pending ? "Streaming response" : "Conversation"}</span>
+              <span className="mj-chat-subtitle">
+                {fixtureEvents
+                  ? locale === "ja" ? "会話サンプル" : "Example conversation"
+                  : streaming || pending
+                    ? locale === "ja" ? "応答を生成中" : "Streaming response"
+                    : locale === "ja" ? "会話" : "Conversation"}
+              </span>
             </div>
             <div className="mj-run-task-actions">
               <span className="mj-run-home-status">
                 <span className="mj-status-dot" aria-hidden="true" />
-                {fixtureEvents ? "Example" : streaming || pending ? "Live" : "Ready"}
+                {fixtureEvents ? locale === "ja" ? "サンプル" : "Example" : streaming || pending ? locale === "ja" ? "実行中" : "Live" : locale === "ja" ? "準備完了" : "Ready"}
               </span>
               {/* Stop used to live here, and only when this browser happened to
                   have the conversation in local history — so on a cold open of a
@@ -765,7 +820,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
                   composer's send button, which is where a reader's hand already
                   is and which does not depend on localStorage. */}
               {!fixtureEvents && existingChat ? (
-                <button className="mj-secondary-button" type="button" onClick={() => { archiveChat(existingChat.id, existingChat); router.push("/run"); }}>Archive</button>
+                <button className="mj-secondary-button" type="button" onClick={() => { archiveChat(existingChat.id, existingChat); router.push("/run"); }}>{locale === "ja" ? "アーカイブ" : "Archive"}</button>
               ) : null}
             </div>
           </header>
@@ -777,11 +832,15 @@ export function LiveRun({ taskId }: { taskId: string }) {
                   <ChatMarkdown source={turn.prompt} />
                 </div>
                 {turn.answer || turn.terminal ? (
-                  <CompletedAssistant turn={turn} />
+                  <CompletedAssistant
+                    turn={turn}
+                    locale={locale}
+                    onFollowUp={fixtureEvents ? undefined : selectFollowUp}
+                  />
                 ) : turn.id === activeRunId && (streamingText || reasoningText || liveEvents.length > 0) ? (
-                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={turn.id} />
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={turn.id} locale={locale} />
                 ) : turn.id === activeRunId && pending ? (
-                  <AssistantLoading turnId={turn.id} />
+                  <AssistantLoading turnId={turn.id} locale={locale} />
                 ) : null}
               </div>
             ))}
@@ -789,11 +848,11 @@ export function LiveRun({ taskId }: { taskId: string }) {
               <div className="mj-chat-turn">
                 <div className="mj-chat-message mj-chat-message--user"><ChatMarkdown source={activePrompt ?? ""} /></div>
                 {streamingText || reasoningText || liveEvents.length > 0 ? (
-                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={activeRunId} />
-                ) : pending ? <AssistantLoading turnId={activeRunId} /> : null}
+                  <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={activeRunId} locale={locale} />
+                ) : pending ? <AssistantLoading turnId={activeRunId} locale={locale} /> : null}
               </div>
             ) : null}
-            {!turns.length && !activePrompt && !pending ? <p className="mj-run-waiting">Connecting to the conversation…</p> : null}
+            {!turns.length && !activePrompt && !pending ? <p className="mj-run-waiting">{locale === "ja" ? "会話に接続しています…" : "Connecting to the conversation…"}</p> : null}
           </div>
         </div>
       </div>
@@ -802,6 +861,7 @@ export function LiveRun({ taskId }: { taskId: string }) {
         pending={pending}
         error={null}
         onChange={setPrompt}
+        inputRef={composerInputRef}
         onSubmit={submitFollowup}
         onFiles={addFiles}
         attachments={attachments.map(({ name, size }) => ({ name, size }))}
@@ -815,42 +875,101 @@ export function LiveRun({ taskId }: { taskId: string }) {
         }}
         onStop={fixtureEvents ? undefined : () => void stopRun()}
         stopping={stopping}
+        locale={locale}
       />
     </div>
   );
 }
 
-export function CompletedAssistant({ turn }: { turn: Turn }) {
+export function CompletedAssistant({
+  turn,
+  locale = "en",
+  onFollowUp,
+}: {
+  turn: Turn;
+  locale?: PublicLocale;
+  onFollowUp?: (prompt: string) => void;
+}) {
   // Failure context and the best produced output are separate concerns. A rejected
   // candidate still remains inspectable after the reason it was rejected.
-  const activity = runActivityFromEvents(turn.events, false);
-  const result = runResultFromEvents(turn.events, turn.verificationSummary);
-  const outcome = runOutcomeFromEvents(turn.events, turn.verificationSummary);
+  const activity = runActivityFromEvents(turn.events, false, locale);
+  const result = runResultFromEvents(turn.events, turn.verificationSummary, locale);
+  const outcome = runOutcomeFromEvents(turn.events, turn.verificationSummary, locale);
   const outcomeWithoutDuplicateCode = outcome && result
     ? { ...outcome, code: undefined }
     : outcome;
+  const failed = turn.events.some(
+    (event) => event.type === "run.finished" && event.status !== "succeeded",
+  );
+  const followUpKind: FollowUpPromptKind = failed
+    ? "failure"
+    : result
+      ? "result"
+      : "answer";
   return (
     <div className={`mj-chat-message mj-chat-message--assistant${activity || result || outcome ? " mj-chat-message--run" : ""}`}>
-      {chatFallbackNotice(turn.events) ? <ChatFallbackNotice /> : null}
-      {activity ? <RunActivityBlock activity={activity} events={turn.events} /> : null}
+      {chatFallbackNotice(turn.events) ? <ChatFallbackNotice locale={locale} /> : null}
+      {activity ? <RunActivityBlock activity={activity} events={turn.events} locale={locale} /> : null}
       {!result && outcomeWithoutDuplicateCode && turn.events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
-        <RunOutcome outcome={outcomeWithoutDuplicateCode} />
+        <RunOutcome outcome={outcomeWithoutDuplicateCode} locale={locale} />
       ) : null}
       {result ? (
-        <FinalOutput result={result} events={turn.events} runId={turn.id} />
+        <FinalOutput result={result} events={turn.events} runId={turn.id} locale={locale} />
       ) : outcomeWithoutDuplicateCode ? (
-        <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={turn.events} />} />
+        <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={turn.events} locale={locale} />} locale={locale} />
       ) : (
         <>
           {turn.answer ? (
             <ChatMarkdown source={turn.answer} />
           ) : (
-            <p className="mj-run-waiting">The response completed without displayable content.</p>
+            <p className="mj-run-waiting">{locale === "ja" ? "応答は完了しましたが、表示できる内容がありません。" : "The response completed without displayable content."}</p>
           )}
-          <ArtifactLink events={turn.events} />
+          <ArtifactLink events={turn.events} locale={locale} />
         </>
       )}
+      {onFollowUp ? (
+        <FollowUpQuestions
+          kind={followUpKind}
+          locale={locale}
+          onSelect={onFollowUp}
+          prompts={turn.followUps}
+        />
+      ) : null}
     </div>
+  );
+}
+
+function FollowUpQuestions({
+  kind,
+  locale,
+  onSelect,
+  prompts: contextualPrompts,
+}: {
+  kind: FollowUpPromptKind;
+  locale: PublicLocale;
+  onSelect: (prompt: string) => void;
+  prompts?: readonly string[];
+}) {
+  const prompts = contextualPrompts && contextualPrompts.length >= 2
+    ? contextualPrompts.slice(0, 3)
+    : followUpPrompts(kind, locale);
+  return (
+    <section
+      className="mj-run-follow-ups"
+      aria-label={locale === "ja" ? "次に試せる質問" : "Suggested follow-up questions"}
+    >
+      <div className="mj-run-follow-ups-heading">
+        <strong>{locale === "ja" ? "次に試せる質問" : "Suggested Follow-ups"}</strong>
+        <span className="sr-only">{locale === "ja" ? "選ぶと入力欄に入ります" : "Select one to add it to the composer"}</span>
+      </div>
+      <div className="mj-run-follow-ups-list">
+        {prompts.map((prompt) => (
+          <button type="button" key={prompt} onClick={() => onSelect(prompt)}>
+            {prompt}
+          </button>
+        ))}
+      </div>
+    </section>
   );
 }
 
@@ -860,29 +979,31 @@ function AssistantMessage({
   streaming,
   events,
   turnId,
+  locale,
 }: {
   reasoning: string;
   text: string;
   streaming: boolean;
   events: WireEvent[];
   turnId?: string | null;
+  locale: PublicLocale;
 }) {
-  const activity = runActivityFromEvents(events, streaming);
-  const result = runResultFromEvents(events);
-  const outcome = runOutcomeFromEvents(events);
+  const activity = runActivityFromEvents(events, streaming, locale);
+  const result = runResultFromEvents(events, null, locale);
+  const outcome = runOutcomeFromEvents(events, null, locale);
   const outcomeWithoutDuplicateCode = outcome && result
     ? { ...outcome, code: undefined }
     : outcome;
   // Both streams are paced rather than painted in the worker's 160-character
   // lumps. The answer settles when the stream closes; the reasoning settles as
   // soon as answer text starts, because the model has stopped adding to it.
-  const smoothedText = useSmoothedText(text, !streaming);
+  const smoothedText = useSmoothedText(splitAssistantFollowUps(text).answer, !streaming);
   const smoothedReasoning = useSmoothedText(reasoning, !streaming || Boolean(text));
   // null until the reader expresses a preference; see the <details> below.
   const [thoughtOpen, setThoughtOpen] = useState<boolean | null>(null);
   return (
     <div className={`mj-chat-message mj-chat-message--assistant${activity ? " mj-chat-message--run" : ""}`}>
-      {chatFallbackNotice(events) ? <ChatFallbackNotice /> : null}
+      {chatFallbackNotice(events) ? <ChatFallbackNotice locale={locale} /> : null}
       {reasoning ? (
         // Open while it is the only thing there is to read, and folded away by
         // the answer arriving — the thought is context for the answer, not a
@@ -897,26 +1018,26 @@ function AssistantMessage({
         >
           <summary>
             {streaming && !text
-              ? <ThinkingLabel turnId={turnId} className="mj-chat-thinking-label" />
-              : <span className="mj-chat-thinking-word">Thought for a moment</span>}
+              ? <ThinkingLabel turnId={turnId} className="mj-chat-thinking-label" locale={locale} />
+              : <span className="mj-chat-thinking-word">{locale === "ja" ? "少し考えました" : "Thought for a moment"}</span>}
           </summary>
           <ChatMarkdown source={smoothedReasoning} />
         </details>
       ) : null}
-      {activity ? <RunActivityBlock activity={activity} events={events} /> : null}
+      {activity ? <RunActivityBlock activity={activity} events={events} locale={locale} /> : null}
       {!result && outcomeWithoutDuplicateCode && events.some((event) => event.type === "run.finished" && event.status !== "succeeded") ? (
-        <RunOutcome outcome={outcomeWithoutDuplicateCode} />
+        <RunOutcome outcome={outcomeWithoutDuplicateCode} locale={locale} />
       ) : null}
       {result ? (
-        <FinalOutput result={result} events={events} runId={turnId} />
+        <FinalOutput result={result} events={events} runId={turnId} locale={locale} />
       ) : outcomeWithoutDuplicateCode ? (
-        <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={events} />} />
+        <RunOutcome outcome={outcomeWithoutDuplicateCode} action={<ArtifactLink events={events} locale={locale} />} locale={locale} />
       ) : text ? (
         <ChatMarkdown source={smoothedText} />
       ) : activity ? null : (
-        <ThinkingLabel turnId={turnId} className="mj-chat-message--loading mj-chat-thinking-label" />
+        <ThinkingLabel turnId={turnId} className="mj-chat-message--loading mj-chat-thinking-label" locale={locale} />
       )}
-      {!result && !outcomeWithoutDuplicateCode ? <ArtifactLink events={events} /> : null}
+      {!result && !outcomeWithoutDuplicateCode ? <ArtifactLink events={events} locale={locale} /> : null}
     </div>
   );
 }
@@ -925,43 +1046,57 @@ function FinalOutput({
   result,
   events,
   runId,
+  locale,
 }: {
   result: NonNullable<ReturnType<typeof runResultFromEvents>>;
   events: WireEvent[];
   runId?: string | null;
+  locale: PublicLocale;
 }) {
   const accepted = events.some(
     (event) => event.type === "run.finished" && event.status === "succeeded",
   );
-  const heading = accepted ? "Final Output" : "Best available result";
+  const heading = accepted
+    ? locale === "ja" ? "最終出力" : "Final Output"
+    : locale === "ja" ? "利用可能な最良結果" : "Best available result";
+  const [open, setOpen] = useState(true);
   return (
-    <section
-      className="mj-run-final-output"
-      aria-label={heading}
-      data-run-final-output={runId ?? undefined}
-    >
+    <>
       <span className="sr-only" role="status" aria-live="polite" aria-atomic="true">
-        {heading} ready. {result.trust.label}.
+        {locale === "ja" ? `${heading}の準備ができました。` : `${heading} ready.`} {result.trust.label}.
       </span>
-      <header className="mj-run-final-output-heading">
-        <span
-          className="mj-run-final-output-marker"
-          data-tone={result.trust.tone}
-          aria-hidden="true"
-        >
-          {result.trust.tone === "ok" ? "✓" : "–"}
-        </span>
-        <div>
-          <span>{accepted ? "Deliverable" : "Result preserved"}</span>
-          <h2>{heading}</h2>
-        </div>
-      </header>
-      <RunResult
-        result={result}
-        action={<ArtifactLink events={events} />}
-        artifactId={artifactIdFromEvents(events)}
-      />
-    </section>
+      <details
+        className="mj-run-final-output"
+        aria-label={heading}
+        data-run-final-output={runId ?? undefined}
+        open={open}
+        onToggle={(event) => setOpen(event.currentTarget.open)}
+      >
+        <summary className="mj-run-final-output-heading">
+          <span
+            className="mj-run-final-output-marker"
+            data-tone={result.trust.tone}
+            aria-hidden="true"
+          >
+            {result.trust.tone === "ok" ? "✓" : "–"}
+          </span>
+          <span className="mj-run-final-output-heading-copy">
+            <span>{accepted ? locale === "ja" ? "成果物" : "Deliverable" : locale === "ja" ? "結果を保持" : "Result preserved"}</span>
+            <strong>{heading}</strong>
+          </span>
+        </summary>
+        <RunResult
+          result={result}
+          action={<ArtifactLink events={events} locale={locale} />}
+          artifactId={artifactIdFromEvents(events)}
+          locale={locale}
+          showSummary={false}
+        />
+      </details>
+      <div className="mj-run-final-explanation">
+        <ChatMarkdown source={result.summary} />
+      </div>
+    </>
   );
 }
 
@@ -990,11 +1125,14 @@ function chatFallbackNotice(events: WireEvent[]): boolean {
   );
 }
 
-function ChatFallbackNotice() {
+function ChatFallbackNotice({ locale }: { locale: PublicLocale }) {
   return (
     <p className="mj-run-fallback-notice" role="status">
-      Answered in chat. The router could not classify this message, so it was not
-      run — resend it with <strong>Execute</strong> selected to run it.
+      {locale === "ja" ? (
+        <>チャットで回答しました。Routerがメッセージを分類できなかったため実行していません。実行するには<strong>実行</strong>を選んで再送してください。</>
+      ) : (
+        <>Answered in chat. The router could not classify this message, so it was not run — resend it with <strong>Execute</strong> selected to run it.</>
+      )}
     </p>
   );
 }
@@ -1027,12 +1165,14 @@ function durationLabel(durationMs: number | undefined): string | null {
     : `${(durationMs / 1000).toFixed(2)} s`;
 }
 
-function ModelCallMeta({ event }: { event: WireEvent | null }) {
+function ModelCallMeta({ event, locale = "en" }: { event: WireEvent | null; locale?: PublicLocale }) {
   if (!event) return null;
   const parts = [
     durationLabel(event.duration_ms),
     event.input_tokens !== undefined && event.output_tokens !== undefined
-      ? `${event.input_tokens.toLocaleString()} in · ${event.output_tokens.toLocaleString()} out`
+      ? locale === "ja"
+        ? `入力 ${event.input_tokens.toLocaleString("ja-JP")}・出力 ${event.output_tokens.toLocaleString("ja-JP")}`
+        : `${event.input_tokens.toLocaleString()} in · ${event.output_tokens.toLocaleString()} out`
       : null,
   ].filter((part): part is string => Boolean(part));
   return parts.length ? <span>{parts.join(" · ")}</span> : null;
@@ -1044,9 +1184,9 @@ function recordValue(value: unknown): Record<string, unknown> | null {
     : null;
 }
 
-function SimulationResult({ event }: { event: WireEvent }) {
+function SimulationResult({ event, locale }: { event: WireEvent; locale: PublicLocale }) {
   const result = recordValue(event.result);
-  const visualization = resultVisualizationFromResult(result);
+  const visualization = resultVisualizationFromResult(result, [], locale);
   const hasVisualization = Boolean(
     visualization.distribution
     || visualization.traces.length
@@ -1057,38 +1197,38 @@ function SimulationResult({ event }: { event: WireEvent }) {
     <div className="mj-run-live-simulation">
       <section>
         <div className="mj-run-activity-section-head">
-          <strong>Structured result</strong>
-          <span>{event.exit_code === 0 ? "Execution passed" : "Execution output"}</span>
+          <strong>{locale === "ja" ? "構造化結果" : "Structured result"}</strong>
+          <span>{event.exit_code === 0 ? locale === "ja" ? "実行成功" : "Execution passed" : locale === "ja" ? "実行出力" : "Execution output"}</span>
         </div>
         <dl className="mj-run-live-facts">
           <div>
-            <dt>Exit code</dt>
+            <dt>{locale === "ja" ? "終了コード" : "Exit code"}</dt>
             <dd>{event.exit_code ?? "—"}</dd>
           </div>
           <div>
-            <dt>Runtime</dt>
+            <dt>{locale === "ja" ? "実行時間" : "Runtime"}</dt>
             <dd>{durationLabel(event.duration_ms) ?? "—"}</dd>
           </div>
           {visualization.distribution?.kind === "counts" ? (
             <div>
-              <dt>Shots</dt>
-              <dd>{visualization.distribution.total.toLocaleString()}</dd>
+              <dt>{locale === "ja" ? "ショット数" : "Shots"}</dt>
+              <dd>{visualization.distribution.total.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")}</dd>
             </div>
           ) : null}
         </dl>
         {hasVisualization ? (
-          <ResultVisualizations {...visualization} />
+          <ResultVisualizations {...visualization} locale={locale} />
         ) : result && Object.keys(result).length ? (
           <pre className="mj-run-live-result-json">{JSON.stringify(result, null, 2)}</pre>
         ) : (
           <p className="mj-run-live-empty-result">
-            This replay predates structured simulation values. Runtime diagnostics remain below.
+            {locale === "ja" ? "この記録は構造化シミュレーション値に対応していません。実行診断は以下で確認できます。" : "This replay predates structured simulation values. Runtime diagnostics remain below."}
           </p>
         )}
       </section>
       {event.stdout || event.stderr ? (
         <details className="mj-run-live-logs">
-          <summary>Runtime logs</summary>
+          <summary>{locale === "ja" ? "実行ログ" : "Runtime logs"}</summary>
           {event.stdout ? (
             <div>
               <span>stdout</span>
@@ -1116,17 +1256,17 @@ function EventRecord({ value }: { value: unknown }) {
   );
 }
 
-function ScreenStage({ event }: { event: WireEvent }) {
+function ScreenStage({ event, locale }: { event: WireEvent; locale: PublicLocale }) {
   return (
     <div className="mj-run-live-simulation">
       <dl className="mj-run-live-facts">
         <div>
           <dt>Lint</dt>
-          <dd>{event.lint_ok === false ? "Failed" : "Passed"}</dd>
+          <dd>{event.lint_ok === false ? locale === "ja" ? "失敗" : "Failed" : locale === "ja" ? "合格" : "Passed"}</dd>
         </div>
         <div>
-          <dt>Type check</dt>
-          <dd>{event.typecheck_ok === false ? "Failed" : "Passed"}</dd>
+          <dt>{locale === "ja" ? "型チェック" : "Type check"}</dt>
+          <dd>{event.typecheck_ok === false ? locale === "ja" ? "失敗" : "Failed" : locale === "ja" ? "合格" : "Passed"}</dd>
         </div>
       </dl>
       {event.diagnostics?.length ? (
@@ -1151,15 +1291,15 @@ function CompilationStage({ event }: { event: WireEvent }) {
   );
 }
 
-function PlanStage({ event }: { event: WireEvent }) {
+function PlanStage({ event, locale }: { event: WireEvent; locale: PublicLocale }) {
   const plan = event.plan;
   if (!plan) return null;
   const executionFacts = [
-    ["Framework", plan.framework],
-    ["Qubits", plan.qubits_estimate],
-    ["Shots", plan.parameters?.shots],
+    [locale === "ja" ? "フレームワーク" : "Framework", plan.framework],
+    [locale === "ja" ? "量子ビット数" : "Qubits", plan.qubits_estimate],
+    [locale === "ja" ? "ショット数" : "Shots", plan.parameters?.shots],
     ["Seed", plan.parameters?.seed],
-    ["Runtime", plan.expected_runtime_sec !== undefined ? `${plan.expected_runtime_sec} s` : null],
+    [locale === "ja" ? "実行時間" : "Runtime", plan.expected_runtime_sec !== undefined ? `${plan.expected_runtime_sec} s` : null],
   ].filter((entry): entry is [string, string | number] => entry[1] !== undefined && entry[1] !== null && entry[1] !== "");
   const primaryMetric = plan.success_criteria?.primary_metric;
   const outputs = plan.expected_output_keys?.filter(Boolean) ?? [];
@@ -1167,12 +1307,12 @@ function PlanStage({ event }: { event: WireEvent }) {
     <div className="mj-run-plan-overview">
       <header className="mj-run-plan-summary">
         <div className="mj-run-plan-copy">
-          <span>Proposed approach</span>
+          <span>{locale === "ja" ? "提案したアプローチ" : "Proposed approach"}</span>
           {plan.algorithm_rationale ? <p>{plan.algorithm_rationale}</p> : null}
         </div>
         {plan.algorithm ? (
           <div className="mj-run-plan-algorithm">
-            <span>Algorithm</span>
+            <span>{locale === "ja" ? "アルゴリズム" : "Algorithm"}</span>
             <strong>{plan.algorithm}</strong>
           </div>
         ) : null}
@@ -1191,14 +1331,14 @@ function PlanStage({ event }: { event: WireEvent }) {
         <div className="mj-run-plan-contract">
           {primaryMetric ? (
             <div>
-              <span>Optimizes</span>
+              <span>{locale === "ja" ? "最適化対象" : "Optimizes"}</span>
               <strong>{primaryMetric}</strong>
             </div>
           ) : null}
           {outputs.length ? (
             <div>
-              <span>Returns</span>
-              <ul aria-label="Expected outputs">
+              <span>{locale === "ja" ? "返却値" : "Returns"}</span>
+              <ul aria-label={locale === "ja" ? "想定される出力" : "Expected outputs"}>
                 {outputs.map((output) => <li key={output}>{output}</li>)}
               </ul>
             </div>
@@ -1209,7 +1349,7 @@ function PlanStage({ event }: { event: WireEvent }) {
   );
 }
 
-function CodeStage({ event }: { event: WireEvent }) {
+function CodeStage({ event, locale = "en" }: { event: WireEvent; locale?: PublicLocale }) {
   if (!event.code) return null;
   const language = event.language ?? "python";
   return (
@@ -1217,18 +1357,18 @@ function CodeStage({ event }: { event: WireEvent }) {
       className="mj-run-live-code"
       tabIndex={0}
       role="region"
-      aria-label={`Generated ${language} source code`}
+      aria-label={locale === "ja" ? `生成された${language}コード` : `Generated ${language} source code`}
     >
       <SyntaxHighlightedCode code={event.code} language={language} />
     </pre>
   );
 }
 
-function EventMeta({ event }: { event: WireEvent | null }) {
+function EventMeta({ event, locale = "en" }: { event: WireEvent | null; locale?: PublicLocale }) {
   if (!event) return null;
   return (
     <div className="mj-run-activity-call-meta">
-      <ModelCallMeta event={event} />
+      <ModelCallMeta event={event} locale={locale} />
     </div>
   );
 }
@@ -1253,14 +1393,14 @@ function ResourceStage({ event }: { event: WireEvent }) {
   );
 }
 
-function ActivityEmptyDetail({ state }: { state: AgentActivityState }) {
+function ActivityEmptyDetail({ state, locale }: { state: AgentActivityState; locale: PublicLocale }) {
   const copy = state === "active"
-    ? "Work is continuing. New evidence will appear here when it is recorded."
+    ? locale === "ja" ? "処理を続けています。新しい証拠が記録されると、ここに表示されます。" : "Work is continuing. New evidence will appear here when it is recorded."
     : state === "error"
-      ? "This operation stopped before detailed evidence was recorded."
+      ? locale === "ja" ? "詳細な証拠を記録する前に、この処理は停止しました。" : "This operation stopped before detailed evidence was recorded."
       : state === "warn"
-        ? "This operation completed with limited recorded evidence."
-        : "No additional detail was recorded for this operation.";
+        ? locale === "ja" ? "記録された証拠が限定された状態で、この処理は完了しました。" : "This operation completed with limited recorded evidence."
+        : locale === "ja" ? "この処理には追加の詳細が記録されていません。" : "No additional detail was recorded for this operation.";
   return (
     <div className="mj-run-live-active-copy">
       {state === "active" ? <span className="mj-run-live-pulse" aria-hidden="true" /> : null}
@@ -1273,10 +1413,12 @@ function CodeActivityDetail({
   detail,
   events,
   state,
+  locale,
 }: {
   detail: Extract<RunActivityDetail, { kind: "code" }>;
   events: WireEvent[];
   state: AgentActivityState;
+  locale: PublicLocale;
 }) {
   const bestEffort = detail.bestEffortIndex === null ? null : events[detail.bestEffortIndex];
   const retainedAttempt = detail.attempts.find(
@@ -1316,9 +1458,9 @@ function CodeActivityDetail({
       {detail.attempts.length > 1 || bestEffort?.candidates_considered ? (
         <div className="mj-run-attempt-history">
           <div className="mj-run-activity-section-head">
-            <strong>Repair history</strong>
+            <strong>{locale === "ja" ? "修正履歴" : "Repair history"}</strong>
             {bestEffort?.candidates_considered ? (
-              <span>{bestEffort.candidates_considered} candidates considered</span>
+              <span>{bestEffort.candidates_considered}{locale === "ja" ? "件の候補を検討" : " candidates considered"}</span>
             ) : null}
           </div>
           {detail.attempts.length ? (
@@ -1328,7 +1470,7 @@ function CodeActivityDetail({
                   <span aria-hidden="true">
                     {attempt.state === "done" ? "✓" : attempt.state === "error" ? "×" : "–"}
                   </span>
-                  <strong>Revision {attempt.revision}</strong>
+                  <strong>{locale === "ja" ? "リビジョン" : "Revision"} {attempt.revision}</strong>
                   <small>{attempt.status}</small>
                 </li>
               ))}
@@ -1342,15 +1484,15 @@ function CodeActivityDetail({
       <section>
         <div className="mj-run-activity-section-head mj-run-code-section-head">
           <div>
-            <strong>Candidate source</strong>
-            {selectedRevision ? <span>Revision {selectedRevision}</span> : null}
+            <strong>{locale === "ja" ? "候補コード" : "Candidate source"}</strong>
+            {selectedRevision ? <span>{locale === "ja" ? "リビジョン" : "Revision"} {selectedRevision}</span> : null}
           </div>
           <div className="mj-run-code-actions">
             {detail.attempts.length > 1 ? (
               <label>
-                <span className="sr-only">Displayed code revision</span>
+                <span className="sr-only">{locale === "ja" ? "表示するコードリビジョン" : "Displayed code revision"}</span>
                 <select
-                  aria-label="Displayed code revision"
+                  aria-label={locale === "ja" ? "表示するコードリビジョン" : "Displayed code revision"}
                   value={selectedIndex ?? ""}
                   onChange={(event) => {
                     selectionTouched.current = true;
@@ -1360,7 +1502,7 @@ function CodeActivityDetail({
                 >
                   {detail.attempts.map((attempt) => (
                     <option key={`${attempt.revision}-${attempt.eventIndex}`} value={attempt.eventIndex}>
-                      Revision {attempt.revision} · {attempt.status}
+                      {locale === "ja" ? "リビジョン" : "Revision"} {attempt.revision} · {attempt.status}
                     </option>
                   ))}
                 </select>
@@ -1368,13 +1510,13 @@ function CodeActivityDetail({
             ) : null}
             {source?.code ? (
               <button className="mj-secondary-button" type="button" onClick={() => void copySource()}>
-                {copied ? "Copied" : "Copy code"}
+                {copied ? locale === "ja" ? "コピー済み" : "Copied" : locale === "ja" ? "コードをコピー" : "Copy code"}
               </button>
             ) : null}
           </div>
         </div>
-        {source?.code ? <CodeStage event={source} /> : <ActivityEmptyDetail state={state} />}
-        <EventMeta event={call} />
+        {source?.code ? <CodeStage event={source} locale={locale} /> : <ActivityEmptyDetail state={state} locale={locale} />}
+        <EventMeta event={call} locale={locale} />
       </section>
     </div>
   );
@@ -1384,25 +1526,27 @@ function ChecksActivityDetail({
   detail,
   events,
   state,
+  locale,
 }: {
   detail: Extract<RunActivityDetail, { kind: "checks" }>;
   events: WireEvent[];
   state: AgentActivityState;
+  locale: PublicLocale;
 }) {
   const screen = detail.screenIndex === null ? null : events[detail.screenIndex];
   const resources = detail.resourceIndex === null ? null : events[detail.resourceIndex];
-  if (!screen && !resources) return <ActivityEmptyDetail state={state} />;
+  if (!screen && !resources) return <ActivityEmptyDetail state={state} locale={locale} />;
   return (
     <div className="mj-run-activity-detail-stack">
       {screen ? (
         <section>
-          <div className="mj-run-activity-section-head"><strong>Code checks</strong></div>
-          <ScreenStage event={screen} />
+          <div className="mj-run-activity-section-head"><strong>{locale === "ja" ? "コードチェック" : "Code checks"}</strong></div>
+          <ScreenStage event={screen} locale={locale} />
         </section>
       ) : null}
       {resources ? (
         <section>
-          <div className="mj-run-activity-section-head"><strong>Resource estimate</strong></div>
+          <div className="mj-run-activity-section-head"><strong>{locale === "ja" ? "リソース見積もり" : "Resource estimate"}</strong></div>
           <ResourceStage event={resources} />
         </section>
       ) : null}
@@ -1417,25 +1561,27 @@ function checkState(event: WireEvent): "done" | "warn" | "error" {
   return "warn";
 }
 
-function checkStatus(event: WireEvent): string {
+function checkStatus(event: WireEvent, locale: PublicLocale): string {
   const outcome = String(event.result ?? event.decision ?? "unavailable");
-  if (outcome === "pass" || outcome === "ready") return "Passed";
-  if (outcome === "fail" || outcome === "error") return "Failed";
-  if (outcome === "code_repair") return "Repair requested";
-  if (outcome === "replan") return "Replan requested";
-  if (outcome === "skipped") return "Skipped";
-  if (outcome === "inconclusive") return "Inconclusive";
-  return "Unavailable";
+  if (outcome === "pass" || outcome === "ready") return locale === "ja" ? "合格" : "Passed";
+  if (outcome === "fail" || outcome === "error") return locale === "ja" ? "不合格" : "Failed";
+  if (outcome === "code_repair") return locale === "ja" ? "コード修正要求" : "Repair requested";
+  if (outcome === "replan") return locale === "ja" ? "再計画要求" : "Replan requested";
+  if (outcome === "skipped") return locale === "ja" ? "スキップ" : "Skipped";
+  if (outcome === "inconclusive") return locale === "ja" ? "判定不能" : "Inconclusive";
+  return locale === "ja" ? "利用不可" : "Unavailable";
 }
 
 function VerificationRow({
   event,
   label,
   children,
+  locale,
 }: {
   event: WireEvent;
   label: string;
   children?: ReactNode;
+  locale: PublicLocale;
 }) {
   const state = checkState(event);
   return (
@@ -1443,7 +1589,7 @@ function VerificationRow({
       <span aria-hidden="true">{state === "done" ? "✓" : state === "error" ? "×" : "–"}</span>
       <div>
         <strong>{label}</strong>
-        <small>{checkStatus(event)}</small>
+        <small>{checkStatus(event, locale)}</small>
         {children}
       </div>
     </li>
@@ -1454,28 +1600,31 @@ function VerificationActivityDetail({
   detail,
   events,
   state,
+  locale,
 }: {
   detail: Extract<RunActivityDetail, { kind: "verification" }>;
   events: WireEvent[];
   state: AgentActivityState;
+  locale: PublicLocale;
 }) {
   const review = detail.reviewIndex === null ? null : events[detail.reviewIndex];
   const strict = detail.strictIndex === null ? null : events[detail.strictIndex];
   if (!detail.eventIndices.length && !review && !strict) {
-    return <ActivityEmptyDetail state={state} />;
+    return <ActivityEmptyDetail state={state} locale={locale} />;
   }
   return (
     <ol className="mj-run-verification-list">
       {detail.eventIndices.map((index) => {
         const event = events[index];
-        const label = event.method && VERIFICATION_METHOD_LABEL[event.method]
-          ? VERIFICATION_METHOD_LABEL[event.method]
-          : `Verification: ${event.method ?? "check"}`;
+        const methodLabels = locale === "ja" ? VERIFICATION_METHOD_LABEL_JA : VERIFICATION_METHOD_LABEL;
+        const label = event.method && methodLabels[event.method]
+          ? methodLabels[event.method]
+          : locale === "ja" ? `検証: ${event.method ?? "確認"}` : `Verification: ${event.method ?? "check"}`;
         return (
-          <VerificationRow event={event} key={`${event.seq ?? index}-${event.method ?? "check"}`} label={label}>
+          <VerificationRow event={event} key={`${event.seq ?? index}-${event.method ?? "check"}`} label={label} locale={locale}>
             {event.details ? (
               <details className="mj-run-verification-evidence">
-                <summary>Evidence</summary>
+                <summary>{locale === "ja" ? "証拠" : "Evidence"}</summary>
                 <EventRecord value={event.details} />
               </details>
             ) : null}
@@ -1483,13 +1632,13 @@ function VerificationActivityDetail({
         );
       })}
       {review ? (
-        <VerificationRow event={review} label="Intent and result alignment">
+        <VerificationRow event={review} label={locale === "ja" ? "依頼と結果の整合性" : "Intent and result alignment"} locale={locale}>
           <ReviewStage event={review} />
-          <EventMeta event={llmCallBefore(events, detail.reviewIndex ?? 0, "verify", "review")} />
+          <EventMeta event={llmCallBefore(events, detail.reviewIndex ?? 0, "verify", "review")} locale={locale} />
         </VerificationRow>
       ) : null}
       {strict ? (
-        <VerificationRow event={strict} label="Strict acceptance review">
+        <VerificationRow event={strict} label={locale === "ja" ? "厳密な採用レビュー" : "Strict acceptance review"} locale={locale}>
           <StrictVerificationStage event={strict} />
         </VerificationRow>
       ) : null}
@@ -1501,20 +1650,22 @@ function CompilationActivityDetail({
   detail,
   events,
   state,
+  locale,
 }: {
   detail: Extract<RunActivityDetail, { kind: "compilation" }>;
   events: WireEvent[];
   state: AgentActivityState;
+  locale: PublicLocale;
 }) {
   const compilation = detail.eventIndex === null ? null : events[detail.eventIndex];
   const resources = detail.resourceIndex === null ? null : events[detail.resourceIndex];
-  if (!compilation && !resources) return <ActivityEmptyDetail state={state} />;
+  if (!compilation && !resources) return <ActivityEmptyDetail state={state} locale={locale} />;
   return (
     <div className="mj-run-activity-detail-stack">
       {compilation ? <CompilationStage event={compilation} /> : null}
       {resources ? (
         <section>
-          <div className="mj-run-activity-section-head"><strong>Compiled resources</strong></div>
+          <div className="mj-run-activity-section-head"><strong>{locale === "ja" ? "コンパイル後のリソース" : "Compiled resources"}</strong></div>
           <ResourceStage event={resources} />
         </section>
       ) : null}
@@ -1531,35 +1682,46 @@ const FINALIZE_LABEL: Record<string, string> = {
   "run.best_effort": "Best available candidate retained",
 };
 
+const FINALIZE_LABEL_JA: Record<string, string> = {
+  "code.finalized": "最終コードを選択",
+  "sandbox.result": "最終シミュレーション",
+  "baseline.result": "参照ベースラインとの比較",
+  "run.analysis": "結果分析",
+  "artifact.saved": "結果パッケージを作成",
+  "run.best_effort": "利用可能な最良候補を保持",
+};
+
 function finalizeState(event: WireEvent): "done" | "warn" | "error" {
   if (event.type === "run.best_effort" || event.not_applicable_reason) return "warn";
   if (event.type === "sandbox.result" && event.exit_code !== 0) return "error";
   return "done";
 }
 
-function finalizeStatus(event: WireEvent): string {
-  if (event.type === "run.best_effort") return "Not accepted";
-  if (event.not_applicable_reason) return "Not applicable";
-  if (event.type === "sandbox.result") return event.exit_code === 0 ? "Passed" : "Failed";
-  if (event.type === "artifact.saved") return "Packaged";
-  if (event.type === "code.finalized" && event.revision) return `Revision ${event.revision}`;
-  return "Complete";
+function finalizeStatus(event: WireEvent, locale: PublicLocale): string {
+  if (event.type === "run.best_effort") return locale === "ja" ? "不採用" : "Not accepted";
+  if (event.not_applicable_reason) return locale === "ja" ? "対象外" : "Not applicable";
+  if (event.type === "sandbox.result") return event.exit_code === 0 ? locale === "ja" ? "合格" : "Passed" : locale === "ja" ? "失敗" : "Failed";
+  if (event.type === "artifact.saved") return locale === "ja" ? "パッケージ済み" : "Packaged";
+  if (event.type === "code.finalized" && event.revision) return `${locale === "ja" ? "リビジョン" : "Revision"} ${event.revision}`;
+  return locale === "ja" ? "完了" : "Complete";
 }
 
 function FinalizeActivityDetail({
   detail,
   events,
   state,
+  locale,
 }: {
   detail: Extract<RunActivityDetail, { kind: "finalize" }>;
   events: WireEvent[];
   state: AgentActivityState;
+  locale: PublicLocale;
 }) {
   const indices = [...detail.eventIndices];
   if (detail.bestEffortIndex !== null && !indices.includes(detail.bestEffortIndex)) {
     indices.push(detail.bestEffortIndex);
   }
-  if (!indices.length) return <ActivityEmptyDetail state={state} />;
+  if (!indices.length) return <ActivityEmptyDetail state={state} locale={locale} />;
   indices.sort((left, right) => left - right);
   return (
     <ol className="mj-run-finalize-list">
@@ -1575,8 +1737,8 @@ function FinalizeActivityDetail({
           <li data-state={state} key={`${event.seq ?? index}-${event.type}`}>
             <span aria-hidden="true">{state === "done" ? "✓" : state === "error" ? "×" : "–"}</span>
             <div>
-              <strong>{FINALIZE_LABEL[event.type] ?? event.type}</strong>
-              <small>{finalizeStatus(event)}</small>
+              <strong>{(locale === "ja" ? FINALIZE_LABEL_JA : FINALIZE_LABEL)[event.type] ?? event.type}</strong>
+              <small>{finalizeStatus(event, locale)}</small>
               {explanation ? <p>{explanation}</p> : null}
             </div>
           </li>
@@ -1589,9 +1751,11 @@ function FinalizeActivityDetail({
 function RunActivityDetailPanel({
   item,
   events,
+  locale,
 }: {
   item: AgentActivityItem<RunActivityDetail>;
   events: WireEvent[];
+  locale: PublicLocale;
 }) {
   const detail = item.detail;
   if (detail.kind === "plan") {
@@ -1601,48 +1765,51 @@ function RunActivityDetailPanel({
     return event ? (
       <div className="mj-run-activity-detail-stack">
         <section className="mj-run-plan-section">
-          <PlanStage event={event} />
-          <EventMeta event={call} />
+          <PlanStage event={event} locale={locale} />
+          <EventMeta event={call} locale={locale} />
         </section>
       </div>
-    ) : <ActivityEmptyDetail state={item.state} />;
+    ) : <ActivityEmptyDetail state={item.state} locale={locale} />;
   }
   if (detail.kind === "code") {
-    return <CodeActivityDetail detail={detail} events={events} state={item.state} />;
+    return <CodeActivityDetail detail={detail} events={events} state={item.state} locale={locale} />;
   }
   if (detail.kind === "checks") {
-    return <ChecksActivityDetail detail={detail} events={events} state={item.state} />;
+    return <ChecksActivityDetail detail={detail} events={events} state={item.state} locale={locale} />;
   }
   if (detail.kind === "execution") {
     const event = detail.eventIndex === null ? null : events[detail.eventIndex];
     return event
-      ? <SimulationResult event={event} />
-      : <ActivityEmptyDetail state={item.state} />;
+      ? <SimulationResult event={event} locale={locale} />
+      : <ActivityEmptyDetail state={item.state} locale={locale} />;
   }
   if (detail.kind === "verification") {
     return (
-      <VerificationActivityDetail detail={detail} events={events} state={item.state} />
+      <VerificationActivityDetail detail={detail} events={events} state={item.state} locale={locale} />
     );
   }
   if (detail.kind === "compilation") {
     return (
-      <CompilationActivityDetail detail={detail} events={events} state={item.state} />
+      <CompilationActivityDetail detail={detail} events={events} state={item.state} locale={locale} />
     );
   }
-  return <FinalizeActivityDetail detail={detail} events={events} state={item.state} />;
+  return <FinalizeActivityDetail detail={detail} events={events} state={item.state} locale={locale} />;
 }
 
 function RunActivityBlock({
   activity,
   events,
+  locale,
 }: {
   activity: NonNullable<ReturnType<typeof runActivityFromEvents>>;
   events: WireEvent[];
+  locale: PublicLocale;
 }) {
   return (
     <AgentActivity
       activity={activity}
-      renderDetail={(item) => <RunActivityDetailPanel events={events} item={item} />}
+      locale={locale}
+      renderDetail={(item) => <RunActivityDetailPanel events={events} item={item} locale={locale} />}
     />
   );
 }
@@ -1659,7 +1826,7 @@ function RunActivityBlock({
  * While that fetch is in flight nothing is rendered rather than guessing a
  * label, because guessing wrong means offering to keep something already kept.
  */
-function ArtifactLink({ events }: { events: WireEvent[] }) {
+function ArtifactLink({ events, locale }: { events: WireEvent[]; locale: PublicLocale }) {
   const artifactId = artifactIdFromEvents(events);
   const [kept, setKept] = useState<boolean | null>(null);
   const [keeping, setKeeping] = useState(false);
@@ -1688,7 +1855,7 @@ function ArtifactLink({ events }: { events: WireEvent[] }) {
   if (kept) {
     return (
       <Link className="mj-secondary-button" href={`/studio?artifact=${encodeURIComponent(artifactId)}`}>
-        View in Studio →
+        {locale === "ja" ? "Studioで表示" : "View in Studio"} →
       </Link>
     );
   }
@@ -1711,21 +1878,21 @@ function ArtifactLink({ events }: { events: WireEvent[] }) {
   return (
     <span className="mj-run-keep">
       <button className="mj-secondary-button" type="button" disabled={keeping} onClick={keep}>
-        {keeping ? "Keeping…" : "Keep this result"}
+        {keeping ? locale === "ja" ? "保存中…" : "Keeping…" : locale === "ja" ? "この結果を保存" : "Keep this result"}
       </button>
       {failed ? (
-        <small role="alert">Could not keep this — try again.</small>
+        <small role="alert">{locale === "ja" ? "保存できませんでした。もう一度お試しください。" : "Could not keep this — try again."}</small>
       ) : (
-        <small>Not saved to your workspace yet.</small>
+        <small>{locale === "ja" ? "まだWorkspaceに保存されていません。" : "Not saved to your workspace yet."}</small>
       )}
     </span>
   );
 }
 
-function AssistantLoading({ turnId }: { turnId?: string | null }) {
+function AssistantLoading({ turnId, locale }: { turnId?: string | null; locale: PublicLocale }) {
   return (
-    <div className="mj-chat-message mj-chat-message--assistant mj-chat-message--loading" aria-label="Waiting for response">
-      <ThinkingLabel turnId={turnId} />
+    <div className="mj-chat-message mj-chat-message--assistant mj-chat-message--loading" aria-label={locale === "ja" ? "応答を待っています" : "Waiting for response"}>
+      <ThinkingLabel turnId={turnId} locale={locale} />
     </div>
   );
 }

@@ -86,3 +86,19 @@ test("rejects malformed distributions without hiding valid scalar output", () =>
   assert.equal(visualization.distribution, null);
   assert.deepEqual(visualization.values, [{ label: "Fidelity", value: "0.998" }]);
 });
+
+test("localizes presentation labels without changing result keys or values", () => {
+  const result = {
+    measurement_counts: { "00": 700, "11": 300 },
+    energy_Ha: -1.137,
+    optimization_history: [-0.5, -1, -1.137],
+  };
+  const visualization = resultVisualizationFromResult(result, ["energy_Ha"], "ja");
+
+  assert.equal(visualization.distribution?.label, "測定分布");
+  assert.deepEqual(visualization.values, [
+    { label: "エネルギー (Ha)", value: "-1.137" },
+  ]);
+  assert.equal(visualization.traces[0]?.label, "最適化履歴");
+  assert.ok("energy_Ha" in result);
+});
