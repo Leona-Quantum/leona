@@ -882,6 +882,28 @@
   border-color: var(--accent);
   outline: none;
 }
+/* R1's circuit-only filter. The control row is built for stacked label+select
+   pairs, so a checkbox has to opt out of both the column flow and the input
+   sizing above — 36px of padded height and a 12px inset are what a text field
+   needs and what a checkbox must not inherit. The min-height is kept so it
+   still sits on the same baseline as the selects beside it. */
+.mj-repository-controls label.mj-repository-circuit-only {
+  flex-direction: row;
+  align-items: center;
+  align-self: end;
+  gap: var(--sp-2);
+  min-height: 36px;
+  cursor: pointer;
+}
+.mj-repository-controls .mj-repository-circuit-only input[type="checkbox"] {
+  width: var(--sp-4);
+  height: var(--sp-4);
+  min-height: 0;
+  margin: 0;
+  padding: 0;
+  accent-color: var(--accent);
+  cursor: pointer;
+}
 .mj-repository-category-nav {
   display: flex;
   flex-wrap: wrap;

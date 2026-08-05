@@ -31,10 +31,12 @@ from __future__ import annotations
 
 import math
 import re
-from collections.abc import Mapping, Sequence
+from collections.abc import Mapping
 from dataclasses import dataclass, field
 
 from qiskit import QuantumCircuit
+
+from majorana_openqasm.portable import Layering, read_portable_circuit
 
 # Recursion bound for walking composite gate definitions. Qiskit's library
 # nests a handful of levels deep; this exists so a pathological or cyclic
@@ -281,25 +283,16 @@ def portable_circuit_cost(portable: Mapping[str, object]) -> NonCliffordCost:
     classification of what is Clifford and what needs synthesis is written once,
     because two copies of that predicate would drift and only one of them would
     be the one a published estimate was computed with.
+
+    Reading the record's *shape* — the step list and, in particular, the width
+    rule that takes the wider of the declared count and the highest index used —
+    moved to :mod:`majorana_openqasm.portable` when the resource profile started
+    needing the same answer. Same reason as above, one layer out: a profile and
+    a cost that disagreed about how wide a circuit is would print both numbers on
+    one page.
     """
-    steps = portable.get("steps") or ()
-    if not isinstance(steps, Sequence):
-        raise InexactCostError("portableCircuit.steps is not a sequence")
-    width = portable.get("qubitCount")
-    stream: list[tuple[str, tuple[int, ...], list[object]]] = []
-    highest = -1
-    for step in steps:
-        if not isinstance(step, Mapping):
-            raise InexactCostError("portableCircuit step is not an object")
-        name = str(step.get("gate", "")).lower()
-        qubits = tuple(int(q) for q in (step.get("qubits") or ()))
-        highest = max(highest, *qubits) if qubits else highest
-        param = step.get("param")
-        stream.append((name, qubits, [param] if param is not None else []))
-    # A declared width that is narrower than the qubits actually indexed would
-    # understate the patch count, so the wider of the two wins.
-    declared = int(width) if isinstance(width, (int, float)) else 0
-    return _count(stream, max(declared, highest + 1, 1))
+    program = read_portable_circuit(portable)
+    return _count(program.stream, program.width)
 
 
 def _count(
@@ -313,9 +306,10 @@ def _count(
     rotation_names: list[str] = []
     unsupported: set[str] = set()
     # Per-qubit high-water mark of the non-Clifford chain, so the depth is the
-    # longest serial run rather than the total count.
-    reached: dict[int, int] = {}
-    non_clifford_depth = 0
+    # longest serial run rather than the total count. The same machine the
+    # resource profile runs over *every* gate — one filter apart, one
+    # implementation.
+    chain = Layering()
 
     for name, qubits, params in flattened:
         kind: str
@@ -343,16 +337,13 @@ def _count(
             kind = "non_clifford"
 
         if kind == "non_clifford":
-            at = max((reached.get(q, 0) for q in qubits), default=0) + 1
-            for q in qubits:
-                reached[q] = at
-            non_clifford_depth = max(non_clifford_depth, at)
+            chain.place(qubits)
 
     return NonCliffordCost(
         logical_qubits=logical_qubits,
         t_count=t_count,
         toffoli_count=toffoli_count,
-        non_clifford_depth=non_clifford_depth,
+        non_clifford_depth=chain.depth,
         synthesis_required=synthesis_required,
         unsupported=tuple(sorted(unsupported)),
         clifford_count=clifford_count,

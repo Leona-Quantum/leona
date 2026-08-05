@@ -578,6 +578,85 @@ class CatalogEstimateList(_ResourceBase):
     estimates: list[CatalogEstimateSummary] = Field(default_factory=list)
 
 
+class CatalogEntryProfile(_ResourceBase):
+    """How big a catalogue entry's circuit is, or that it has none (R1).
+
+    Derived on read from the published record's own `portableCircuit`, on the
+    same terms as `CatalogEntryEstimate` and for the same reason: a stored
+    profile and a published circuit are two things that can disagree, and the one
+    a visitor is looking at is the circuit.
+
+    **Not an estimate, and deliberately not carried inside one.** These five
+    numbers are properties of the circuit alone — they do not move when the
+    hardware assumptions or the synthesis precision do, so they carry no
+    assumption-set identity and, unlike a cost, two of them may always be ranked
+    against each other. Folding them into the estimate payload would have
+    attached a set-independent fact to a set-dependent identity and made
+    "comparable only within one set" look like it applied to depth.
+
+    A separate model from `ResourceMetrics`, which means measurements taken of a
+    *run's* selected-framework source and carries a runtime this path cannot
+    know.
+    """
+
+    slug: str
+    present: bool = Field(
+        description=(
+            "False when the entry carries no portable circuit, or carries one "
+            "this stack cannot read. The other fields are then absent — not "
+            "zero, which is a size a real circuit can have."
+        )
+    )
+    reason: str | None = Field(
+        default=None,
+        description="Why there is no profile. Present exactly when `present` is false.",
+    )
+    qubits: int | None = Field(default=None, ge=1)
+    depth: int | None = Field(default=None, ge=0)
+    gate_count: int | None = Field(default=None, ge=0)
+    two_qubit_gate_count: int | None = Field(default=None, ge=0)
+    measurement_count: int | None = Field(default=None, ge=0)
+
+    @model_validator(mode="after")
+    def _numbers_and_reasons_are_mutually_exclusive(self) -> Self:
+        """Same invariant `CatalogEntryEstimate` enforces, for the same reason.
+
+        The UI decides what to render from `present`; a payload where `present`
+        disagrees with the fields carried would render a size under a "no
+        circuit" heading or the reverse.
+        """
+        numbers = (
+            self.qubits,
+            self.depth,
+            self.gate_count,
+            self.two_qubit_gate_count,
+            self.measurement_count,
+        )
+        if self.present:
+            if any(value is None for value in numbers):
+                raise ValueError("a present profile states all five measurements")
+            if self.reason is not None:
+                raise ValueError("a present profile states no reason")
+        else:
+            if any(value is not None for value in numbers):
+                raise ValueError("an absent profile states no measurements")
+            if not self.reason:
+                raise ValueError("an absent profile states why")
+        return self
+
+
+class CatalogProfileList(_ResourceBase):
+    """Every published entry's circuit size, for the browse list.
+
+    No `assumptions` field, and its absence is the point: unlike
+    `CatalogEstimateList` there is nothing here that only holds under one set, so
+    a client may rank the whole listing without checking what it was computed
+    under.
+    """
+
+    profiles: list[CatalogEntryProfile] = Field(default_factory=list)
+
+
 class ResourceMetrics(_ResourceBase):
     """Comparable circuit-resource measurements for selected-framework source."""
 

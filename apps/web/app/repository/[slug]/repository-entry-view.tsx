@@ -21,6 +21,7 @@ const COPY = {
   en: {
     back: "← Atlas",
     circuit: "Circuit & simulation",
+    structure: "Circuit structure",
     cost: "Fault-tolerant cost",
     outcomes: "Expected outcomes",
     how: "How it works",
@@ -58,6 +59,7 @@ const COPY = {
   ja: {
     back: "← Atlas",
     circuit: "回路とシミュレーション",
+    structure: "回路の構造",
     cost: "誤り耐性計算のコスト",
     outcomes: "期待される出力",
     how: "仕組み",
@@ -196,6 +198,7 @@ export function RepositoryEntryView({
   signInHref,
   related,
   estimate,
+  profile,
 }: {
   entry: PublicRepositoryEntry;
   locale: PublicLocale;
@@ -212,6 +215,12 @@ export function RepositoryEntryView({
    * render at all.
    */
   estimate?: ReactNode;
+  /**
+   * The circuit-structure panel (R1), on the same slot terms as `estimate`
+   * above and for the same reason. Null when the entry carries no circuit, and
+   * the section then does not render at all.
+   */
+  profile?: ReactNode;
   related: RelatedEntrySummary[];
 }) {
   const copy = COPY[locale];
@@ -282,6 +291,10 @@ export function RepositoryEntryView({
               ))}
             </div>
           </DetailSection>
+
+          {/* Structure before cost: these are measurements of the circuit
+              rendered directly above, and the cost is computed FROM them. */}
+          {profile ? <DetailSection title={copy.structure}>{profile}</DetailSection> : null}
 
           {estimate ? <DetailSection title={copy.cost}>{estimate}</DetailSection> : null}
 

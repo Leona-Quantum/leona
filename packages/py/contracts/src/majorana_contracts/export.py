@@ -52,6 +52,10 @@ EXPORTED = [
     # these and get hoisted as $defs automatically.
     models.CatalogEntryEstimate,
     models.CatalogEstimateList,
+    # R1. Sibling of the two above and deliberately not nested inside them: a
+    # profile is a property of the circuit, not of an assumption set.
+    models.CatalogEntryProfile,
+    models.CatalogProfileList,
     models.Run,
     models.VerificationRecord,
     models.QpuRunRecord,

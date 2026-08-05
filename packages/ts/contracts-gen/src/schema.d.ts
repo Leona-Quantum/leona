@@ -345,6 +345,67 @@ export interface components {
             target_failure_probability: number | null;
         };
         /**
+         * CatalogEntryProfile
+         * @description How big a catalogue entry's circuit is, or that it has none (R1).
+         *
+         *     Derived on read from the published record's own `portableCircuit`, on the
+         *     same terms as `CatalogEntryEstimate` and for the same reason: a stored
+         *     profile and a published circuit are two things that can disagree, and the one
+         *     a visitor is looking at is the circuit.
+         *
+         *     **Not an estimate, and deliberately not carried inside one.** These five
+         *     numbers are properties of the circuit alone — they do not move when the
+         *     hardware assumptions or the synthesis precision do, so they carry no
+         *     assumption-set identity and, unlike a cost, two of them may always be ranked
+         *     against each other. Folding them into the estimate payload would have
+         *     attached a set-independent fact to a set-dependent identity and made
+         *     "comparable only within one set" look like it applied to depth.
+         *
+         *     A separate model from `ResourceMetrics`, which means measurements taken of a
+         *     *run's* selected-framework source and carries a runtime this path cannot
+         *     know.
+         */
+        CatalogEntryProfile: {
+            /**
+             * Depth
+             * @default null
+             */
+            depth: number | null;
+            /**
+             * Gate Count
+             * @default null
+             */
+            gate_count: number | null;
+            /**
+             * Measurement Count
+             * @default null
+             */
+            measurement_count: number | null;
+            /**
+             * Present
+             * @description False when the entry carries no portable circuit, or carries one this stack cannot read. The other fields are then absent — not zero, which is a size a real circuit can have.
+             */
+            present: boolean;
+            /**
+             * Qubits
+             * @default null
+             */
+            qubits: number | null;
+            /**
+             * Reason
+             * @description Why there is no profile. Present exactly when `present` is false.
+             * @default null
+             */
+            reason: string | null;
+            /** Slug */
+            slug: string;
+            /**
+             * Two Qubit Gate Count
+             * @default null
+             */
+            two_qubit_gate_count: number | null;
+        };
+        /**
          * CatalogEstimateList
          * @description Every published entry's cost under one assumption set.
          *
@@ -402,6 +463,19 @@ export interface components {
              * @default null
              */
             total_physical_qubits: number | null;
+        };
+        /**
+         * CatalogProfileList
+         * @description Every published entry's circuit size, for the browse list.
+         *
+         *     No `assumptions` field, and its absence is the point: unlike
+         *     `CatalogEstimateList` there is nothing here that only holds under one set, so
+         *     a client may rank the whole listing without checking what it was computed
+         *     under.
+         */
+        CatalogProfileList: {
+            /** Profiles */
+            profiles?: components["schemas"]["CatalogEntryProfile"][];
         };
         /**
          * CatalogProvenance
