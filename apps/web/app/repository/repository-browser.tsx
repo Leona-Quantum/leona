@@ -54,6 +54,8 @@ const COPY = {
     sortCost: "Fault-tolerant cost",
     sortCostDesc: "Fault-tolerant cost (largest first)",
     costLabel: "physical qubits",
+    costSpanTitle:
+      "Smallest machine that can run it, to the fastest useful one. The difference is magic-state factories. Ranked on the high end.",
     costUnknown: "cost not stated",
     costNoCircuit: "no circuit",
     costNone: "no magic states",
@@ -106,6 +108,8 @@ const COPY = {
     sortCost: "誤り耐性計算のコスト",
     sortCostDesc: "誤り耐性計算のコスト（大きい順）",
     costLabel: "物理量子ビット",
+    costSpanTitle:
+      "この回路が動作しうる最小構成のマシンから、有効な最速のマシンまで。差はマジックステート工場によるものです。並び替えは上限値で行います。",
     costUnknown: "コスト未提示",
     costNoCircuit: "回路なし",
     costNone: "マジックステート不要",
@@ -445,6 +449,16 @@ export function RepositoryBrowser({
    * chip on every one of them would be noise that says nothing. A *refusal* is
    * different and does get a chip — there the circuit exists and its cost is
    * genuinely unknown, which is information.
+   *
+   * **A span where there is one**, for the reason the detail panel gives at
+   * length: the ranked figure is this circuit on the fastest useful machine,
+   * which is also the largest, and on 56 of the 120 priced entries the smallest
+   * machine that runs it is up to 95× smaller. The card is where a visitor meets
+   * the number first, so it is where reading it as *the* cost starts.
+   *
+   * **The ordering is untouched** — the list still ranks on the same figure it
+   * ranked on before, the high end. A card that displayed one number and sorted
+   * on another would be worse than either.
    */
   function renderCostChip(slug: string) {
     const row = costBySlug.get(slug);
@@ -453,9 +467,18 @@ export function RepositoryBrowser({
       return <span className="mj-repo-card-cost mj-repo-card-cost--unknown">{copy.costUnknown}</span>;
     }
     if (row.totalPhysicalQubits === null) return null;
+    const tag = locale === "ja" ? "ja-JP" : "en-US";
+    const high = row.totalPhysicalQubits.toLocaleString(tag);
+    const value =
+      row.smallestMachineQubits === null
+        ? high
+        : `${row.smallestMachineQubits.toLocaleString(tag)}–${high}`;
     return (
-      <span className={`mj-repo-card-cost mj-repo-card-cost--${row.basis}`}>
-        {row.totalPhysicalQubits.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")} {copy.costLabel}
+      <span
+        className={`mj-repo-card-cost mj-repo-card-cost--${row.basis}`}
+        title={row.smallestMachineQubits === null ? undefined : copy.costSpanTitle}
+      >
+        {value} {copy.costLabel}
         {row.basis === "estimated" ? " ≈" : null}
       </span>
     );

@@ -484,6 +484,26 @@ class RuntimeSummary(_ResourceBase):
     )
 
 
+class CostOnSmallestMachine(_ResourceBase):
+    """The same circuit on the fewest magic-state factories it can run on — one.
+
+    **Only Layers 3 and 4 are here, because only they move.** `choose_code_distance`
+    reads the logical cost and the assumption set and never the factory count, so
+    Layers 1 and 2 are identical at both ends of this trade and restating them
+    would be a second copy of a number that cannot differ. Measured across the
+    published corpus: the code distance moved on zero of the 120 priced entries.
+
+    **Neither end is a number anybody picked, which is the point.** The default
+    estimate is costed at the crossover — past which more factories buy nothing —
+    and this one at the floor the estimator itself enforces, since a circuit
+    consuming magic states is refused with zero factories. A midpoint would be a
+    choice dressed as a cost; these two are forced by the model.
+    """
+
+    footprint: FootprintSummary
+    runtime: RuntimeSummary
+
+
 class CatalogEntryEstimate(_ResourceBase):
     """A catalogue entry's fault-tolerant cost, or a stated reason there is none (E4).
 
@@ -511,6 +531,18 @@ class CatalogEntryEstimate(_ResourceBase):
     distance: CodeDistanceSummary | None = None
     footprint: FootprintSummary | None = None
     runtime: RuntimeSummary | None = None
+    smallest_machine: CostOnSmallestMachine | None = Field(
+        default=None,
+        description=(
+            "The same circuit at one factory, when that is a different machine "
+            "from the one costed above. Null when there is no trade to show: a "
+            "Clifford-only circuit uses no factories at all, and an estimate "
+            "already costed at one factory is its own smallest machine. Present "
+            "so the headline figure cannot be read as *the* cost — for a small "
+            "circuit the factories are ~99% of it, and they are hardware bought "
+            "for speed rather than by the circuit."
+        ),
+    )
     target_failure_probability: float | None = Field(default=None, gt=0, lt=1)
     notes: list[str] = Field(default_factory=list, max_length=20)
 
@@ -533,11 +565,42 @@ class CatalogEntryEstimate(_ResourceBase):
         else:
             if any(layer is not None for layer in layers):
                 raise ValueError(f"basis {self.basis} states no cost, so it carries no layers")
+            if self.smallest_machine is not None:
+                raise ValueError(f"basis {self.basis} states no cost, so it costs no machine")
             if not self.reason:
                 raise ValueError(f"basis {self.basis} must say why there is no cost")
         if priced and self.basis is ResourceEstimateBasis.ESTIMATED:
             if self.assumptions.rotation_synthesis_epsilon is None:
                 raise ValueError("an estimated cost must name the precision it was estimated under")
+        return self
+
+    @model_validator(mode="after")
+    def _the_smallest_machine_is_smaller(self) -> Self:
+        """A second figure that is not smaller and slower is not the other end.
+
+        The pair's whole claim is that the headline is one point on a trade, so
+        the two must actually trade: fewer factories, fewer qubits, more seconds.
+        A payload where they do not says the model changed underneath this page,
+        and the honest response to that is to stop rather than to publish two
+        numbers whose relationship the surrounding copy misstates.
+        """
+        other = self.smallest_machine
+        if other is None:
+            return self
+        assert self.footprint is not None and self.runtime is not None  # priced, checked above
+        if other.runtime.factory_count != 1:
+            raise ValueError("the smallest machine is the one-factory machine, by definition")
+        if self.runtime.factory_count <= 1:
+            raise ValueError(
+                "an estimate already costed at one factory is its own smallest machine "
+                "and states no second one"
+            )
+        if other.footprint.total_physical_qubits > self.footprint.total_physical_qubits:
+            raise ValueError("the smallest machine cannot need more physical qubits")
+        if other.runtime.seconds is None or self.runtime.seconds is None:
+            raise ValueError("a machine with factories has a wall-clock under this model")
+        if other.runtime.seconds < self.runtime.seconds:
+            raise ValueError("the smallest machine cannot be the faster one")
         return self
 
 
@@ -557,6 +620,18 @@ class CatalogEstimateSummary(_ResourceBase):
     slug: str
     basis: ResourceEstimateBasis
     total_physical_qubits: int | None = Field(default=None, ge=0)
+    smallest_machine_qubits: int | None = Field(
+        default=None,
+        ge=0,
+        description=(
+            "`total_physical_qubits` for the same circuit at one factory. Null on "
+            "the same terms as `CatalogEntryEstimate.smallest_machine` — no "
+            "factories, or already costed at one. **The ordering fields are "
+            "unchanged**: a list is still ranked on `total_physical_qubits`, and "
+            "this is here so a row can show the span it sits at the top of rather "
+            "than a single number that reads as the cost."
+        ),
+    )
     magic_states: int | None = Field(default=None, ge=0)
     logical_qubits: int | None = Field(default=None, ge=1)
     code_distance: int | None = Field(default=None, ge=3)

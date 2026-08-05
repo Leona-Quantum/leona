@@ -722,6 +722,18 @@
             "title": "Slug",
             "type": "string"
           },
+          "smallest_machine": {
+            "anyOf": [
+              {
+                "$ref": "#/components/schemas/CostOnSmallestMachine"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "The same circuit at one factory, when that is a different machine from the one costed above. Null when there is no trade to show: a Clifford-only circuit uses no factories at all, and an estimate already costed at one factory is its own smallest machine. Present so the headline figure cannot be read as *the* cost \u2014 for a small circuit the factories are ~99% of it, and they are hardware bought for speed rather than by the circuit."
+          },
           "target_failure_probability": {
             "anyOf": [
               {
@@ -926,6 +938,20 @@
           "slug": {
             "title": "Slug",
             "type": "string"
+          },
+          "smallest_machine_qubits": {
+            "anyOf": [
+              {
+                "minimum": 0,
+                "type": "integer"
+              },
+              {
+                "type": "null"
+              }
+            ],
+            "default": null,
+            "description": "`total_physical_qubits` for the same circuit at one factory. Null on the same terms as `CatalogEntryEstimate.smallest_machine` \u2014 no factories, or already costed at one. **The ordering fields are unchanged**: a list is still ranked on `total_physical_qubits`, and this is here so a row can show the span it sits at the top of rather than a single number that reads as the cost.",
+            "title": "Smallest Machine Qubits"
           },
           "total_physical_qubits": {
             "anyOf": [
@@ -1698,6 +1724,24 @@
           "run"
         ],
         "title": "ConversationTurn",
+        "type": "object"
+      },
+      "CostOnSmallestMachine": {
+        "additionalProperties": false,
+        "description": "The same circuit on the fewest magic-state factories it can run on \u2014 one.\n\n**Only Layers 3 and 4 are here, because only they move.** `choose_code_distance`\nreads the logical cost and the assumption set and never the factory count, so\nLayers 1 and 2 are identical at both ends of this trade and restating them\nwould be a second copy of a number that cannot differ. Measured across the\npublished corpus: the code distance moved on zero of the 120 priced entries.\n\n**Neither end is a number anybody picked, which is the point.** The default\nestimate is costed at the crossover \u2014 past which more factories buy nothing \u2014\nand this one at the floor the estimator itself enforces, since a circuit\nconsuming magic states is refused with zero factories. A midpoint would be a\nchoice dressed as a cost; these two are forced by the model.",
+        "properties": {
+          "footprint": {
+            "$ref": "#/components/schemas/FootprintSummary"
+          },
+          "runtime": {
+            "$ref": "#/components/schemas/RuntimeSummary"
+          }
+        },
+        "required": [
+          "footprint",
+          "runtime"
+        ],
+        "title": "CostOnSmallestMachine",
         "type": "object"
       },
       "EvidenceStrength": {
@@ -6217,7 +6261,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.12.0"
+    "version": "2.13.0"
   },
   "openapi": "3.1.0",
   "paths": {}

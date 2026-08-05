@@ -18,7 +18,8 @@ import math
 import pathlib
 
 import pytest
-from majorana_contracts import ResourceEstimateBasis
+from pydantic import ValidationError
+from majorana_contracts import CatalogEntryEstimate, ResourceEstimateBasis
 from majorana_estimation import COMPOSED_TRAPPED_ION, GIDNEY_2025
 
 from majorana_api.catalog_estimate import (
@@ -27,6 +28,7 @@ from majorana_api.catalog_estimate import (
     UnknownAssumptionSet,
     _summarize_assumptions,
     estimate_for_record,
+    estimate_list_for_records,
     resolve_assumptions,
 )
 
@@ -445,3 +447,185 @@ def test_the_unsourced_values_are_disclosed_in_the_citation_the_page_renders():
     # The precision must still be in the identity: the disclosure is additional
     # to that refusal machinery, not a replacement for it.
     assert summary.identity == "gidney-2025@v2+eps=1e-06"
+
+
+# --- Both ends of the factory trade -----------------------------------------
+#
+# Owner decision, 2026-08-05 (memory/OWNER_TODO.md §2): publish the crossover
+# figure and the one-factory figure rather than the crossover alone. The tests
+# below pin the *relationship* between the two rather than either number, because
+# the relationship is the claim the panel makes in prose.
+
+
+def test_a_costed_circuit_carries_the_machine_at_the_other_end_of_the_trade():
+    circuit = _record(_gate("ry", 0, param="0.3"), _gate("cx", 0, 1))
+
+    result = estimate_for_record(circuit, "a", ASSUMPTIONS)
+
+    assert result.smallest_machine is not None
+    other = result.smallest_machine
+    assert other.runtime.factory_count == 1
+    assert result.runtime.factory_count > 1
+    # It trades: fewer factories, fewer qubits, more seconds.
+    assert other.footprint.total_physical_qubits < result.footprint.total_physical_qubits
+    assert other.runtime.seconds > result.runtime.seconds
+    # And the circuit itself did not change, so the parts that are not the
+    # factory term must not have moved.
+    assert other.footprint.data_patch_qubits == result.footprint.data_patch_qubits
+    assert other.footprint.routing_qubits == result.footprint.routing_qubits
+    assert other.runtime.magic_states == result.runtime.magic_states
+
+
+def test_the_second_machine_is_recomputed_rather_than_scaled():
+    """The footprint is a ceiling of a product, so scaling the total by the
+    factory ratio is off by the rounding. Pin against the estimator itself."""
+    circuit = _record(_gate("ry", 0, param="0.3"), _gate("cx", 0, 1))
+
+    result = estimate_for_record(circuit, "a", ASSUMPTIONS)
+    directly = estimate_for_record(circuit, "a", ASSUMPTIONS, factory_count=1)
+
+    assert result.smallest_machine.footprint == directly.footprint
+    assert result.smallest_machine.runtime == directly.runtime
+
+
+def test_a_clifford_circuit_states_no_second_machine_because_it_buys_no_factories():
+    """64 of the 120 priced entries are here. A second column reading '0
+    factories, same qubits, no runtime' would be a comparison with itself."""
+    result = estimate_for_record(_record(_gate("h", 0), _gate("cx", 0, 1)), "bell", ASSUMPTIONS)
+
+    assert result.runtime.factory_count == 0
+    assert result.smallest_machine is None
+
+
+def test_an_estimate_already_costed_at_one_factory_is_its_own_smallest_machine():
+    circuit = _record(_gate("ry", 0, param="0.3"), _gate("cx", 0, 1))
+
+    result = estimate_for_record(circuit, "a", ASSUMPTIONS, factory_count=1)
+
+    assert result.runtime.factory_count == 1
+    assert result.smallest_machine is None
+
+
+def test_a_pinned_factory_count_still_gets_the_floor_to_compare_against():
+    """`?factories=5` is not the crossover and not the floor, so the reader has
+    been shown a machine somebody chose. The floor is what makes it placeable."""
+    circuit = _record(_gate("ry", 0, param="0.3"), _gate("cx", 0, 1))
+
+    result = estimate_for_record(circuit, "a", ASSUMPTIONS, factory_count=5)
+
+    assert result.runtime.factory_count == 5
+    assert result.smallest_machine is not None
+    assert result.smallest_machine.runtime.factory_count == 1
+
+
+def test_a_refusal_costs_no_machine_at_either_end():
+    for record in ({}, _record(_gate("wibble", 0))):
+        result = estimate_for_record(record, "a", ASSUMPTIONS)
+        assert result.basis in (
+            ResourceEstimateBasis.NO_CIRCUIT,
+            ResourceEstimateBasis.REFUSED,
+        )
+        assert result.smallest_machine is None
+
+
+def test_the_browse_row_carries_the_low_end_and_still_ranks_on_the_high_one():
+    circuit = _record(_gate("ry", 0, param="0.3"), _gate("cx", 0, 1))
+    clifford = _record(_gate("h", 0), _gate("cx", 0, 1))
+
+    listing = estimate_list_for_records([("a", circuit), ("bell", clifford)], ASSUMPTIONS)
+    rows = {row.slug: row for row in listing.estimates}
+
+    detail = estimate_for_record(circuit, "a", ASSUMPTIONS)
+    assert rows["a"].total_physical_qubits == detail.footprint.total_physical_qubits
+    assert (
+        rows["a"].smallest_machine_qubits == detail.smallest_machine.footprint.total_physical_qubits
+    )
+    assert rows["a"].smallest_machine_qubits < rows["a"].total_physical_qubits
+    assert rows["bell"].smallest_machine_qubits is None
+
+
+def test_every_published_entry_that_shows_a_span_shows_one_that_trades():
+    """The whole corpus, both sets, through the constructor that validates it.
+
+    A span is only worth printing if it *is* one, and the direction is the part
+    a reader cannot check: the smaller machine has to be the slower one. Run
+    against the real manifest rather than fixtures because the fixtures here are
+    two gates long and the corpus reaches 16 qubits and 346 factories.
+    """
+    records = _manifest_records()
+    for key in ("gidney-2025@v2", "composed-trapped-ion@v2"):
+        assumptions = resolve_assumptions(key, None)
+        spans = 0
+        for record in records:
+            slug = str(record.get("slug", "?"))
+            result = estimate_for_record(record, slug, assumptions)
+            other = result.smallest_machine
+            if other is None:
+                continue
+            spans += 1
+            assert other.footprint.total_physical_qubits <= result.footprint.total_physical_qubits
+            assert other.runtime.seconds >= result.runtime.seconds
+            assert other.runtime.factory_count == 1
+        # Session 78: 56 of the 120 priced entries have a crossover above one.
+        # A floor, not an equality — publishing more entries must not fail this.
+        assert spans >= 56, f"{key} produced {spans} spans; the corpus lost some"
+
+
+def test_the_flagship_entry_publishes_the_span_the_release_notes_quote():
+    """836,800 qubits in 20 us, or 8,800 in 6.9 ms — the same circuit.
+
+    Pinned because this pair is what the panel's copy asserts in prose, and
+    because a 95x span is the whole argument for showing two numbers. If it
+    moves, the prose is what has to be re-read, not just the figure.
+    """
+    flagship = next(
+        (r for r in _manifest_records() if r.get("slug") == "benchmark-hea-rzry-cz-16q"),
+        None,
+    )
+    assert flagship is not None, "the corpus entry this pins is gone; re-pin, do not delete"
+
+    result = estimate_for_record(flagship, "benchmark-hea-rzry-cz-16q", ASSUMPTIONS)
+
+    assert result.footprint.total_physical_qubits == 836_800
+    assert result.runtime.factory_count == 346
+    assert result.smallest_machine.footprint.total_physical_qubits == 8_800
+    assert result.smallest_machine.runtime.factory_count == 1
+    # The circuit's own patches are the part that does not move, and they are
+    # most of the small machine: 6,400 of 8,800.
+    assert result.smallest_machine.footprint.data_patch_qubits == (
+        result.footprint.data_patch_qubits
+    )
+    assert result.smallest_machine.runtime.binding_term == "throughput"
+    assert result.runtime.binding_term == "reaction"
+
+
+def test_a_span_that_runs_backwards_is_refused_rather_than_rendered():
+    """Delete the validator and nothing else in this file fails.
+
+    Every other test here reads what the producer produced, so all of them pass
+    against a producer that has stopped checking. This one hands the contract a
+    pair the model could never build — the big machine labelled as the small one
+    — and requires it to refuse, because the panel's copy names one column the
+    smallest and a reader has no way to tell that it is not.
+    """
+    circuit = _record(_gate("ry", 0, param="0.3"), _gate("cx", 0, 1))
+    good = estimate_for_record(circuit, "a", ASSUMPTIONS).model_dump(mode="json")
+
+    swapped = dict(good)
+    swapped["smallest_machine"] = {"footprint": good["footprint"], "runtime": good["runtime"]}
+    with pytest.raises(ValidationError):
+        CatalogEntryEstimate(**swapped)
+
+    # And the narrower failure: right direction, wrong factory count. A second
+    # column headed "1 factory" that was costed at 5 is a caption on the wrong
+    # picture, which no arithmetic check downstream would catch.
+    mislabelled = dict(good)
+    at_five = estimate_for_record(circuit, "a", ASSUMPTIONS, factory_count=5).model_dump(
+        mode="json"
+    )
+    mislabelled["smallest_machine"] = {
+        "footprint": at_five["footprint"],
+        "runtime": at_five["runtime"],
+    }
+    with pytest.raises(ValidationError):
+        CatalogEntryEstimate(**mislabelled)

@@ -9304,6 +9304,43 @@ div.mj-rail-row:hover {
   color: var(--text-2);
   font-size: var(--fs-12);
 }
+/* The factory trade: the same circuit on the two machines the model forces.
+   Two columns rather than two ranges, because the qubit count and the runtime
+   move in OPPOSITE directions and side-by-side ranges read as though they move
+   together. */
+.mj-estimate-machines {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+}
+.mj-estimate-machine {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-estimate-machine--primary { border-color: var(--accent); }
+.mj-estimate-machine-name {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 600;
+}
+.mj-estimate-machine--primary .mj-estimate-machine-name { color: var(--accent); }
+.mj-estimate-machine-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.5;
+}
+.mj-estimate-trade {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+}
 .mj-estimate-layer h4,
 .mj-estimate-notes h4,
 .mj-estimate-assumptions h4 {
@@ -9435,6 +9472,7 @@ div.mj-rail-row:hover {
 
 @media (max-width: 720px) {
   .mj-estimate-headline { grid-template-columns: 1fr; }
+  .mj-estimate-machines { grid-template-columns: 1fr; }
   .mj-estimate-row {
     flex-direction: column;
     align-items: flex-start;

@@ -319,3 +319,102 @@ test("an estimated cost with no stated precision is rejected", () => {
   // The same payload on an `exact` basis is fine — it never needed one.
   assert.ok(parseEstimate({ ...bare, basis: "exact" }));
 });
+
+/**
+ * The second machine — the other end of the magic-state-factory trade.
+ *
+ * The panel labels one column "Smallest machine" and the other "Fastest
+ * useful", and a reader has no way to check either caption. So the parser holds
+ * the pair to the relationship the captions assert, and drops it when it does
+ * not hold: the panel then renders exactly what it rendered before this field
+ * existed, which is the safe direction to fail in.
+ */
+function smallest(overrides: Record<string, unknown> = {}): Record<string, unknown> {
+  return {
+    footprint: {
+      data_patch_qubits: 170,
+      routing_qubits: 170,
+      factory_qubits: 1_275,
+      total_physical_qubits: 1_615,
+    },
+    runtime: {
+      magic_states: 120,
+      factory_count: 1,
+      throughput_seconds: 1.3e-3,
+      reaction_limited_seconds: 1e-5,
+      seconds: 1.3e-3,
+      binding_term: "throughput",
+      factory_crossover: 132,
+    },
+    ...overrides,
+  };
+}
+
+test("the smallest machine parses beside the machine it is compared with", () => {
+  const parsed = parseEstimate(priced({ smallest_machine: smallest() }));
+  assert.ok(parsed);
+  assert.equal(parsed.smallestMachine?.footprint.totalPhysicalQubits, 1_615);
+  assert.equal(parsed.smallestMachine?.runtime.factoryCount, 1);
+  // The headline machine is untouched by its presence.
+  assert.equal(parsed.footprint?.totalPhysicalQubits, 168_640);
+});
+
+test("an estimate with no second machine parses and simply has none", () => {
+  const parsed = parseEstimate(priced());
+  assert.ok(parsed);
+  assert.equal(parsed.smallestMachine, null);
+});
+
+test("a second machine that does not trade is dropped, not rendered", () => {
+  // Bigger than the machine it is captioned as smaller than.
+  const bigger = smallest({
+    footprint: { data_patch_qubits: 170, routing_qubits: 170, factory_qubits: 999_999, total_physical_qubits: 1_000_339 },
+  });
+  assert.equal(parseEstimate(priced({ smallest_machine: bigger }))?.smallestMachine, null);
+
+  // Faster than the machine captioned "fastest useful".
+  const faster = smallest({
+    runtime: { ...(smallest().runtime as Record<string, unknown>), seconds: 1e-9 },
+  });
+  assert.equal(parseEstimate(priced({ smallest_machine: faster }))?.smallestMachine, null);
+
+  // Right direction, wrong caption: five factories under a "1 factory" heading.
+  const mislabelled = smallest({
+    runtime: { ...(smallest().runtime as Record<string, unknown>), factory_count: 5 },
+  });
+  assert.equal(parseEstimate(priced({ smallest_machine: mislabelled }))?.smallestMachine, null);
+});
+
+test("a refusal carrying a second machine is rejected whole", () => {
+  const contradictory = {
+    slug: "x",
+    basis: "refused",
+    assumptions: assumptions(),
+    reason: "unrecognised operation: wibble",
+    logical: null,
+    distance: null,
+    footprint: null,
+    runtime: null,
+    smallest_machine: smallest(),
+    notes: [],
+  };
+  // The layers are absent, so the refusal itself is well-formed — but a
+  // refusal that costs a machine is the same disagreement, one field over.
+  assert.equal(parseEstimate(contradictory)?.smallestMachine ?? null, null);
+});
+
+test("a browse row keeps the low end only when it is below the ranked figure", () => {
+  const rows = [
+    { ...row("span", "estimated", 168_640), smallest_machine_qubits: 1_615 },
+    { ...row("backwards", "estimated", 1_615), smallest_machine_qubits: 168_640 },
+    { ...row("clifford", "exact", 340), smallest_machine_qubits: null },
+  ];
+  const parsed = parseEstimateList({ assumptions: assumptions(), estimates: rows });
+  assert.ok(parsed);
+  const index = new Map(parsed.estimates.map((entry) => [entry.slug, entry]));
+  assert.equal(index.get("span")?.smallestMachineQubits, 1_615);
+  // Dropped rather than swapped: the row still ranks, it just shows one figure.
+  assert.equal(index.get("backwards")?.smallestMachineQubits, null);
+  assert.equal(index.get("backwards")?.totalPhysicalQubits, 1_615);
+  assert.equal(index.get("clifford")?.smallestMachineQubits, null);
+});
