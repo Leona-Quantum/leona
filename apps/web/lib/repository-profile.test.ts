@@ -235,3 +235,29 @@ test("profilesBySlug indexes a listing and tolerates a null one", () => {
   assert.equal(index.get("prose-only")?.present, false);
   assert.equal(profilesBySlug(null).size, 0);
 });
+
+// --- Relationships the five numbers cannot violate (CodeRabbit, #261) --------
+
+test("more two-qubit gates than gates is refused", () => {
+  // Each value passes its own range check; only the relationship is impossible,
+  // and the browse list would have ranked it happily.
+  assert.equal(parseProfile(measured({ gate_count: 1, two_qubit_gate_count: 2 })), null);
+  // The boundary is legal: every gate may be two-qubit.
+  assert.ok(parseProfile(measured({ gate_count: 2, two_qubit_gate_count: 2, depth: 3 })));
+});
+
+test("a depth deeper than the gates could produce is refused", () => {
+  // Each gate advances the layering by at most one; the terminal measurement
+  // adds at most one more.
+  assert.equal(parseProfile(measured({ gate_count: 2, depth: 4 })), null);
+  assert.ok(parseProfile(measured({ gate_count: 2, depth: 3 })));
+});
+
+test("a partial measurement count is refused", () => {
+  // The portable model measures all qubits or none — there is no per-qubit and
+  // no mid-circuit measurement in it — so anything between means the payload
+  // came from a producer this parser was not written against.
+  assert.equal(parseProfile(measured({ qubits: 4, measurement_count: 2 })), null);
+  assert.ok(parseProfile(measured({ qubits: 4, measurement_count: 4, depth: 3 })));
+  assert.ok(parseProfile(measured({ qubits: 4, measurement_count: 0, depth: 3 })));
+});

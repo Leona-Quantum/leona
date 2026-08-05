@@ -238,6 +238,49 @@ def test_a_circuit_this_module_cannot_read_refuses_rather_than_measuring_zero():
             portable_circuit_metrics(broken)
 
 
+def test_a_falsy_value_where_a_list_belongs_is_not_an_empty_list():
+    """`portable.get("steps") or ()` read `steps: 0` as an empty circuit — a
+    malformed record arriving as a legitimate zero-gate measurement rather than
+    as a refusal, which is the exact failure this module claims to prevent.
+    A *missing* key stays a real shape."""
+    for broken in ({"qubitCount": 2, "steps": 0}, {"qubitCount": 2, "steps": False}):
+        with pytest.raises(MalformedPortableCircuit):
+            portable_circuit_metrics(broken)
+    for broken in (
+        {"qubitCount": 2, "steps": [{"gate": "h", "qubits": 0}]},
+        {"qubitCount": 2, "steps": [{"gate": "h", "qubits": False}]},
+    ):
+        with pytest.raises(MalformedPortableCircuit):
+            portable_circuit_metrics(broken)
+
+    # Absent, rather than present-and-falsy, is still a circuit with no steps.
+    assert portable_circuit_metrics({"qubitCount": 2}).gate_count == 0
+    assert portable_circuit_metrics({"qubitCount": 2, "steps": None}).gate_count == 0
+
+
+def test_a_fractional_index_is_refused_rather_than_truncated():
+    """`int()` truncates: index 1.9 became 1 and `qubitCount` 2.9 became 2, both
+    silently and both successfully. A fractional qubit index is not a near-miss
+    to round toward — it is evidence the producer is not the one this module was
+    written against — and the truncated reading is the dangerous one because it
+    returns a number."""
+    with pytest.raises(MalformedPortableCircuit):
+        portable_circuit_metrics({"qubitCount": 2, "steps": [{"gate": "h", "qubits": [1.9]}]})
+    with pytest.raises(MalformedPortableCircuit):
+        portable_circuit_metrics({"qubitCount": 2.9, "steps": []})
+    with pytest.raises(MalformedPortableCircuit):
+        portable_circuit_metrics({"qubitCount": True, "steps": []})
+
+    # A float that IS whole is a JSON integer with a decimal point on it.
+    assert portable_circuit_metrics({"qubitCount": 4.0, "steps": []}).qubits == 4
+    assert (
+        portable_circuit_metrics(
+            {"qubitCount": 2, "steps": [{"gate": "cx", "qubits": [0, 1.0]}]}
+        ).two_qubit_gate_count
+        == 1
+    )
+
+
 def test_a_negative_index_is_refused_by_the_cost_path_too():
     """It reached the cost path before the shared reader existed, where it did
     two quiet kinds of damage at once: it never raised the high-water mark, so

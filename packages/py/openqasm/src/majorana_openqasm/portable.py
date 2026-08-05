@@ -125,6 +125,30 @@ class Layering:
         return at
 
 
+def _exact_index(value: object) -> int:
+    """A whole-number count or index, or raise.
+
+    `int()` alone **truncates**: a qubit index of 1.9 silently becomes 1 and a
+    `qubitCount` of 2.9 becomes 2. Both are records nobody should be measuring —
+    a fractional qubit index is not a near-miss to round toward, it is evidence
+    the producer is not the one this module was written against — and the
+    truncated reading is the dangerous one, because it succeeds.
+
+    `bool` is rejected outright even though it is an `int` in Python: `qubitCount:
+    true` reading as a one-qubit circuit is a coincidence of the type system, not
+    a measurement.
+    """
+    if isinstance(value, bool):
+        raise TypeError(f"{value!r} is a boolean, not a count")
+    if isinstance(value, int):
+        return value
+    if isinstance(value, float):
+        if not math.isfinite(value) or not value.is_integer():
+            raise ValueError(f"{value!r} is not a whole number")
+        return int(value)
+    raise TypeError(f"{value!r} is not a number")
+
+
 def read_portable_circuit(portable: Mapping[str, object]) -> PortableProgram:
     """Read ``{qubitCount, steps: [{gate, qubits, param}], measure}`` into a program.
 
@@ -133,7 +157,14 @@ def read_portable_circuit(portable: Mapping[str, object]) -> PortableProgram:
     and the alternative to refusing is a number computed over a circuit nobody
     can point at.
     """
-    steps = portable.get("steps") or ()
+    # `or ()` would be wrong here and it is worth saying why: `steps: 0` is
+    # falsy, so it would become an empty tuple and the record would read as a
+    # legitimate empty circuit instead of refusing. A missing key is a real
+    # shape (an entry may carry a width and no steps); a key holding `0` is a
+    # producer this module has never met.
+    steps = portable["steps"] if "steps" in portable else ()
+    if steps is None:
+        steps = ()
     if isinstance(steps, (str, bytes)) or not isinstance(steps, Sequence):
         raise MalformedPortableCircuit("portableCircuit.steps is not a sequence")
 
@@ -143,13 +174,15 @@ def read_portable_circuit(portable: Mapping[str, object]) -> PortableProgram:
         if not isinstance(step, Mapping):
             raise MalformedPortableCircuit("portableCircuit step is not an object")
         name = str(step.get("gate", "")).lower()
-        raw = step.get("qubits") or ()
+        raw = step["qubits"] if "qubits" in step else ()
+        if raw is None:
+            raw = ()
         if isinstance(raw, (str, bytes)) or not isinstance(raw, Sequence):
             raise MalformedPortableCircuit(
                 f"portableCircuit step {index} ({name!r}) has no qubit list"
             )
         try:
-            qubits = tuple(int(qubit) for qubit in raw)
+            qubits = tuple(_exact_index(qubit) for qubit in raw)
         except (TypeError, ValueError) as exc:
             raise MalformedPortableCircuit(
                 f"portableCircuit step {index} ({name!r}) indexes a non-integer qubit"
@@ -167,11 +200,15 @@ def read_portable_circuit(portable: Mapping[str, object]) -> PortableProgram:
         stream.append((name, qubits, [param] if param is not None else []))
 
     declared_raw = portable.get("qubitCount")
-    declared = (
-        int(declared_raw)
-        if isinstance(declared_raw, (int, float)) and math.isfinite(declared_raw)
-        else 0
-    )
+    if declared_raw is None:
+        declared = 0
+    else:
+        try:
+            declared = _exact_index(declared_raw)
+        except (TypeError, ValueError) as exc:
+            raise MalformedPortableCircuit(
+                f"portableCircuit.qubitCount is not a whole number: {declared_raw!r}"
+            ) from exc
     return PortableProgram(
         width=max(declared, highest + 1, 1),
         stream=stream,

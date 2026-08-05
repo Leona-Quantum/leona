@@ -8,6 +8,7 @@ over HTTP: publication is an attributable human action run through the operator
 CLI (catalog_admin), not a request handler.
 """
 
+import logging
 from typing import Annotated, Literal
 
 from fastapi import APIRouter, Depends, HTTPException, Query, Response
@@ -39,6 +40,7 @@ from ..repos import catalog as catalog_repo
 from ..settings import Settings
 
 router = APIRouter()
+logger = logging.getLogger(__name__)
 
 _Settings = Annotated[Settings, Depends(get_settings)]
 
@@ -82,6 +84,45 @@ def _precision_conflict(exc: ContradictoryPrecision) -> str:
         "is labelled with its precision, so guessing which you meant would label it "
         "with a budget you did not choose."
     )
+
+
+async def _whole_published_corpus(scope, session, settings, *, derivation: str):
+    """Every published entry, bounded — and **loud** when the bound bites.
+
+    `/catalog/estimates` and `/catalog/profiles` both derive one row per entry
+    and neither paginates: a client holding the response treats it as the whole
+    corpus, because there is nothing in the payload to say otherwise. At 283
+    published entries against a 500 ceiling that is true. Past 500 it stops being
+    true *silently*, and the visible symptom is the worst possible one — the
+    omitted entries appear in the browse list under "Not ranked", which reads as
+    "this entry has no circuit" when in fact nobody measured it.
+
+    The bound stays: this is an anonymous route and an unbounded response is a
+    DoS surface, which is why the ceiling exists. What must not stay is the
+    silence. Raised as a review finding on #261 (CodeRabbit) and answered this
+    way rather than by paginating, because paginating these two is a payload
+    shape change on both plus the client, and it is not R1's business.
+    """
+    entries = await catalog_repo.list_public_catalog_entries(
+        scope,
+        session,
+        authority=settings.catalog_authority,
+        limit=CATALOG_ENTRIES_MAX_LIMIT,
+        offset=0,
+    )
+    if len(entries) >= CATALOG_ENTRIES_MAX_LIMIT:
+        total = await catalog_repo.count_public_catalog_entries(
+            scope, session, authority=settings.catalog_authority
+        )
+        if total > len(entries):
+            logger.error(
+                "catalog %s listing truncated: served %d of %d published entries; "
+                "the remainder render as unranked, which reads as 'no circuit'",
+                derivation,
+                len(entries),
+                total,
+            )
+    return entries
 
 
 @router.get("/catalog/entries", response_model=list[PublicCatalogEntry])
@@ -156,13 +197,7 @@ async def list_catalog_estimates(
         ) from exc
     except ContradictoryPrecision as exc:
         raise HTTPException(status_code=422, detail=_precision_conflict(exc)) from exc
-    entries = await catalog_repo.list_public_catalog_entries(
-        scope,
-        session,
-        authority=settings.catalog_authority,
-        limit=CATALOG_ENTRIES_MAX_LIMIT,
-        offset=0,
-    )
+    entries = await _whole_published_corpus(scope, session, settings, derivation="estimate")
     return estimate_list_for_records(
         [(entry.slug, entry.record) for entry in entries],
         resolved,
@@ -187,13 +222,7 @@ async def list_catalog_profiles(
     rankable against every other unconditionally. The arithmetic is a single pass
     over each step list, which is why this stays safe on an anonymous route.
     """
-    entries = await catalog_repo.list_public_catalog_entries(
-        scope,
-        session,
-        authority=settings.catalog_authority,
-        limit=CATALOG_ENTRIES_MAX_LIMIT,
-        offset=0,
-    )
+    entries = await _whole_published_corpus(scope, session, settings, derivation="profile")
     return profile_list_for_records([(entry.slug, entry.record) for entry in entries])
 
 

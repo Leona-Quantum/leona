@@ -75,6 +75,25 @@ export function parseProfile(payload: unknown): RepositoryProfile | null {
     // says so (`ge=1`). A zero here means something upstream measured nothing
     // and reported success.
     if (qubits === 0) return null;
+    // Relationships the five numbers cannot violate and still describe a
+    // circuit. Checked here rather than field by field because each value is
+    // individually plausible — `gate_count: 1` beside `two_qubit_gate_count: 2`
+    // passes every range check and is still not a thing that exists, and the
+    // browse list would happily rank it.
+    //
+    // Not mirrored in the Python contract on purpose: there the five numbers are
+    // computed by one function from one step list, so a validator would be
+    // checking that arithmetic against itself. Here they arrive as JSON from
+    // across a network, which is a different question.
+    if (twoQubitGateCount! > gateCount!) return null;
+    // Each gate advances the ASAP layering by at most one, and the terminal
+    // measurement adds at most one more.
+    if (depth! > gateCount! + 1) return null;
+    // The portable model's measurement is all-or-nothing over every qubit —
+    // there is no per-qubit and no mid-circuit measurement in it — so the count
+    // is either none or all of them. Anything between means the producer is not
+    // the one this parser was written against.
+    if (measurementCount !== 0 && measurementCount !== qubits) return null;
   } else if (numbers.some((value) => value !== null) || reason === null) {
     return null;
   }
