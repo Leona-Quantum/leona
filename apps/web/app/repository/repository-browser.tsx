@@ -603,23 +603,33 @@ export function RepositoryBrowser({
    * 2-qubit one, the defect `renderCostChip` already refuses to commit for
    * cost: displaying one number while sorting on another is worse than either.
    *
-   * **Under catalog order nothing earned the position**, so there is no such
-   * constraint and the canonical member is the better default — the smallest
-   * width for a family, the primary slug for a curated cluster, which is
-   * `members[0]` in both. It matters because catalog order is not width order:
-   * the corpus lists `-12q` before `-16q` before `-2q`, so deferring to
-   * placement here would open every benchmark on its 12-qubit member for no
-   * reason a reader could see, and would silently change which record the two
-   * curated clusters have opened on since they shipped.
+   * **When nothing earned the position** the canonical member is the better
+   * default — the smallest width for a family, the primary slug for a curated
+   * cluster, which is `members[0]` in both. It matters because catalog order is
+   * not width order: the corpus lists `-12q` before `-16q` before `-2q`, so
+   * deferring to placement there would open every benchmark on its 12-qubit
+   * member for no reason a reader could see, and would silently change which
+   * record the two curated clusters have opened on since they shipped.
+   *
+   * `ranked` is passed in rather than read off `order` here, because the
+   * "Not ranked" section is the case that gets it wrong: those are precisely
+   * the entries the ordering *excluded*, so their `placedBy` is not a ranking
+   * result even when a ranking is active. Every call site states its own
+   * answer; there is no default to be silently wrong.
    */
-  function activeMember(row: Extract<BrowseRow, { kind: "group" }>): PublicRepositoryListEntry {
+  function activeMember(
+    row: Extract<BrowseRow, { kind: "group" }>,
+    ranked: boolean,
+  ): PublicRepositoryListEntry {
     const chosen = variantActive[row.group.key];
     const picked = row.members.find((member) => member.slug === chosen);
     if (picked) return picked;
-    const ranked = (orderAvailable ? order : "catalog") !== "catalog";
     if (!ranked) return row.members[0];
     return row.members.find((member) => member.slug === row.placedBy) ?? row.members[0];
   }
+
+  /** Whether the list currently ranks on a number at all. */
+  const listIsRanked = (orderAvailable ? order : "catalog") !== "catalog";
 
   /**
    * One card's cost, in as few characters as a card can carry.
@@ -707,9 +717,9 @@ export function RepositoryBrowser({
     );
   }
 
-  function renderRow(row: BrowseRow) {
+  function renderRow(row: BrowseRow, ranked: boolean) {
     if (row.kind === "single") return <Fragment key={row.entry.slug}>{renderRepoCard(row.entry)}</Fragment>;
-    const active = activeMember(row);
+    const active = activeMember(row, ranked);
     // A small variant switcher sits above the active member's card; picking a
     // pill swaps which sibling record the card shows.
     //
@@ -1042,12 +1052,12 @@ export function RepositoryBrowser({
                 <span>{familyLabel(group.familyKey, locale)}</span>
                 <span className="mj-repo-group-count">{group.rows.length}</span>
               </summary>
-              <div className="mj-repo-list">{group.rows.map((row) => renderRow(row))}</div>
+              <div className="mj-repo-list">{group.rows.map((row) => renderRow(row, listIsRanked))}</div>
             </details>
           ))}
         </div>
       ) : (
-        <div className="mj-repo-list">{listRows.map((row) => renderRow(row))}</div>
+        <div className="mj-repo-list">{listRows.map((row) => renderRow(row, listIsRanked))}</div>
       )}
 
       {/* Entries the ordering had to leave out, kept visible and kept out of
@@ -1058,7 +1068,7 @@ export function RepositoryBrowser({
         <section className="mj-repository-unranked">
           <h3>{copy.unrankedTitle} <span>{unranked.length}</span></h3>
           <p>{isProfileOrder(order) ? copy.structureUnrankedBody : copy.unrankedBody}</p>
-          <div className="mj-repo-list">{unrankedRows.map((row) => renderRow(row))}</div>
+          <div className="mj-repo-list">{unrankedRows.map((row) => renderRow(row, false))}</div>
         </section>
       ) : null}
     </div>

@@ -162,11 +162,22 @@ for (const record of records) {
 }
 
 // The suffix the fold reads against the circuit it claims to describe.
+//
+// A missing count is an error, not a skip. A `-Nq` slug asserts "this is the
+// N-qubit member of a family", and a record that publishes no circuit width
+// cannot substantiate it — while a `continue` here would let exactly that
+// record pass the one check that ties the suffix to the circuit, which is the
+// shape where an absent value reads as agreement.
 for (const record of records) {
   const parsed = families.parseWidthSlug(record.slug);
+  if (!parsed) continue;
   const declared = record.portableCircuit?.qubitCount;
-  if (!parsed || declared === undefined) continue;
-  if (declared !== parsed.width) {
+  if (declared === undefined) {
+    errors.push(
+      `${record.slug}: slug declares ${parsed.width} qubits but the record publishes no ` +
+        "circuit width, so nothing ties the suffix the fold reads to a circuit",
+    );
+  } else if (declared !== parsed.width) {
     errors.push(
       `${record.slug}: slug declares ${parsed.width} qubits, its circuit carries ${declared}`,
     );
