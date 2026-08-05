@@ -63,6 +63,11 @@ const COPY = {
     facetDomainCount: "{n} of {total} entries",
     entry: "entry",
     entries: "entries",
+    // Shown only when folding actually removed a row, so the ordinary case
+    // stays the short sentence it was.
+    countFolded: "{rows} entries · {records} records, sized variants folded",
+    countFoldedTitle:
+      "Sized and curated variants of the same circuit are folded into one entry. Every variant is still its own page, and the widths are listed on the card.",
     view: "View",
     gateExpand: "Expand into basic gates",
     gateCollapse: "Collapse to single gate",
@@ -130,6 +135,9 @@ const COPY = {
     facetDomainCount: "{total}件中{n}件",
     entry: "件",
     entries: "件",
+    countFolded: "{rows}件 · レコード{records}件（サイズ違いのバリアントを統合）",
+    countFoldedTitle:
+      "同じ回路のサイズ違い・厳選されたバリアントは1件にまとめています。各バリアントは個別のページとして残り、対応する量子ビット数はカードに表示されます。",
     view: "詳細",
     gateExpand: "基本ゲートに展開",
     gateCollapse: "元のゲート表示に戻す",
@@ -774,6 +782,33 @@ export function RepositoryBrowser({
    */
   const unrankedRows = useMemo(() => foldRows(unranked, groupOfSlug), [groupOfSlug, unranked]);
 
+  /**
+   * How many rows the reader can actually count on the page (s81).
+   *
+   * R2.6 made the header disagree with the page: it said "283 public entries"
+   * over 176 cards, because 120 records fold into 15 width families and 4 more
+   * into 2 curated clusters. Both numbers were true and the gap was never
+   * explained, so it read as "where did the other 107 go".
+   *
+   * Summed from **the same arrays the body renders**, not recomputed from the
+   * fold rule. A second derivation of "how many rows are there" is a second
+   * writer of one fact, and the two would drift the first time a view changed
+   * which set it draws from — the failure being a count that is wrong in a way
+   * only a reader counting cards would ever catch.
+   *
+   * The unranked section renders under every view, so it is added in every
+   * branch rather than only the default one.
+   */
+  const shownRowCount = useMemo(() => {
+    const main =
+      category === "gates"
+        ? gateEntries.length
+        : category === "algorithms"
+          ? algorithmGroups.reduce((total, group) => total + group.rows.length, 0)
+          : listRows.length;
+    return main + unrankedRows.length;
+  }, [algorithmGroups, category, gateEntries, listRows, unrankedRows]);
+
   // Fall back to the first gate so the detail pane is populated on the very
   // first render (before the selection effect runs / without JS), and keep the
   // sidebar highlight in sync with whatever is actually shown.
@@ -950,8 +985,23 @@ export function RepositoryBrowser({
 
       {legend}
 
-      <p className="mj-repository-result-count" aria-live="polite">
-        {locale === "ja" ? `${structureFiltered.length}${copy.entries}` : `${structureFiltered.length} public ${structureFiltered.length === 1 ? copy.entry : copy.entries}`}
+      {/* Two numbers only when they differ. On a filtered view that folded
+          nothing — a single width, or a category with no families in it — the
+          second clause would be "176 entries · 176 records", which is noise
+          that teaches a reader the two can disagree at exactly the moment they
+          do not. */}
+      <p
+        className="mj-repository-result-count"
+        aria-live="polite"
+        title={shownRowCount !== structureFiltered.length ? copy.countFoldedTitle : undefined}
+      >
+        {shownRowCount !== structureFiltered.length
+          ? copy.countFolded
+              .replace("{rows}", String(shownRowCount))
+              .replace("{records}", String(structureFiltered.length))
+          : locale === "ja"
+            ? `${structureFiltered.length}${copy.entries}`
+            : `${structureFiltered.length} public ${structureFiltered.length === 1 ? copy.entry : copy.entries}`}
       </p>
       <p className="mj-repository-star-note">{copy.starNote}</p>
 
