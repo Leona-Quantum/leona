@@ -202,7 +202,14 @@ const CATEGORY_STANCE: Readonly<Record<string, InterfaceStance>> = {
  */
 export function deriveInterface(evidence: InterfaceEvidence): EntryInterface {
   const circuit = evidence.portableCircuit;
-  if (circuit) {
+  // The same width guard the circuit-less path applies below, and it belongs
+  // here for a reason the static corpus hides: `check-repository-data.mjs`
+  // audits the bundled corpus, but this function also runs on records that
+  // arrive from the catalog API at request time, where `from-catalog.ts` shape-
+  // checks `portableCircuit` and never checks that its width is a width. A
+  // zero-wide port compares equal to another zero-wide port and would read as a
+  // match between two records that describe nothing.
+  if (circuit && Number.isInteger(circuit.qubitCount) && circuit.qubitCount > 0) {
     const width = circuit.qubitCount;
     // The portable model has no per-step measurement and no classical control:
     // `measure` is one circuit-level flag meaning "measure every qubit at the

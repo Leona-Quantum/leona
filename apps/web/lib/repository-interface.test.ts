@@ -156,11 +156,43 @@ test("connects is three-valued, and compatible is the one that has to be earned"
   assert.equal(connects(deriveInterface(evidence()), gate2), "off-graph");
 });
 
-test("ignoring the zero-assumption would turn 390 honest unknowns into green checks", () => {
+test("a malformed circuit width falls through rather than entering the graph", () => {
+  // Reaches this function from the catalog API as well as from the bundled
+  // corpus, and only the second is audited at build time.
+  for (const qubitCount of [0, -3, 2.5, Number.NaN]) {
+    const derived = deriveInterface(
+      evidence({
+        slug: "malformed",
+        portableCircuit: { qubitCount, steps: [{ gate: "H", qubits: [0] }], measure: true },
+      }),
+    );
+    assert.equal(derived.stance, "undeclared", `qubitCount ${qubitCount} produced a port`);
+    assert.equal(isOnGraph(derived), false);
+  }
+  // A malformed circuit on a record that DOES state wires falls through to the
+  // wire count rather than to nothing — the record still describes a 2-qubit
+  // gate, and only its circuit is unreadable.
+  const salvaged = deriveInterface(
+    evidence({
+      slug: "malformed-gate",
+      category: "gates",
+      wireCount: 2,
+      portableCircuit: { qubitCount: 0, steps: [], measure: true },
+    }),
+  );
+  assert.equal(salvaged.stance, "transform");
+  assert.deepEqual(salvaged.output, { type: "qubits", width: 2 });
+});
+
+test("ignoring the zero-assumption would turn every honest unknown into a green check", () => {
   // The mutation this file exists to catch. `connects` differs from a
   // shapes-only checker on exactly the pairs where the shapes DO match, so a
   // fixture whose widths differ cannot observe the difference — it is
   // `incompatible` either way — and neither can one whose ports never meet.
+  //
+  // No corpus figure in the title on purpose: the population it would name is
+  // computed in `check-repository-data.mjs`, nothing here asserts it, and a
+  // number with no source in the file that states it drifts silently.
   const shapesOnly = (producer: EntryInterface, consumer: EntryInterface) =>
     producer.output && consumer.input
       ? producer.output.type === consumer.input.type && producer.output.width === consumer.input.width

@@ -239,18 +239,27 @@ for (const entry of entries) {
 // packages. The third catches an override written against a slug that has since
 // been renamed, which is invisible in every other way.
 if (!ENTRY_FILE) {
+  // Cleanup in `finally`: a bundle or import that throws would otherwise leave
+  // the temp directory behind, one per failing lint run. Applied to both blocks
+  // in this file rather than only the newer one — fixing one copy of a pattern
+  // and leaving its twin is how the `barrier`/two-qubit-gate bug survived three
+  // sessions (D77.4).
   const topicsOut = mkdtempSync(join(tmpdir(), "repo-topics-"));
   const topicsFile = join(topicsOut, "topics.mjs");
-  await esbuild.build({
-    entryPoints: [join(root, "apps/web/lib/repository/topics.ts")],
-    bundle: true,
-    format: "esm",
-    platform: "neutral",
-    outfile: topicsFile,
-    logLevel: "silent",
-  });
-  const topicsMod = await import(pathToFileURL(topicsFile).href);
-  rmSync(topicsOut, { recursive: true, force: true });
+  let topicsMod;
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/topics.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: topicsFile,
+      logLevel: "silent",
+    });
+    topicsMod = await import(pathToFileURL(topicsFile).href);
+  } finally {
+    rmSync(topicsOut, { recursive: true, force: true });
+  }
   const vocabulary = topicsMod.PUBLIC_REPOSITORY_TOPICS;
   const facetOf = new Map(vocabulary.map((topic) => [topic.id, topic.facet]));
 
@@ -325,16 +334,20 @@ if (!ENTRY_FILE) {
   // proof, which is the failure roadmap §6 is about.
   const interfaceOut = mkdtempSync(join(tmpdir(), "repo-interface-"));
   const interfaceFile = join(interfaceOut, "interface.mjs");
-  await esbuild.build({
-    entryPoints: [join(root, "apps/web/lib/repository/interface.ts")],
-    bundle: true,
-    format: "esm",
-    platform: "neutral",
-    outfile: interfaceFile,
-    logLevel: "silent",
-  });
-  const interfaceMod = await import(pathToFileURL(interfaceFile).href);
-  rmSync(interfaceOut, { recursive: true, force: true });
+  let interfaceMod;
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/interface.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: interfaceFile,
+      logLevel: "silent",
+    });
+    interfaceMod = await import(pathToFileURL(interfaceFile).href);
+  } finally {
+    rmSync(interfaceOut, { recursive: true, force: true });
+  }
 
   const interfaces = new Map();
   const stanceCounts = new Map();
