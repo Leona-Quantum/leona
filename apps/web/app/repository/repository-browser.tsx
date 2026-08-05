@@ -23,6 +23,8 @@ import {
   type BrowseOrder,
 } from "../../lib/repository/browse-order";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
+import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
+import { roleOf, TOPICS_BY_ID, type TopicId } from "../../lib/repository/topics";
 
 const COPY = {
   en: {
@@ -32,6 +34,12 @@ const COPY = {
     framework: "Framework",
     allFamilies: "All families",
     allFrameworks: "All frameworks",
+    topic: "Topic",
+    allTopics: "All topics",
+    facet_role: "What it is",
+    facet_method: "Technique",
+    facet_domain: "Problem domain",
+    facetDomainCount: "{n} of {total} entries",
     entry: "entry",
     entries: "entries",
     view: "View",
@@ -86,6 +94,12 @@ const COPY = {
     framework: "フレームワーク",
     allFamilies: "すべての分類",
     allFrameworks: "すべてのフレームワーク",
+    topic: "トピック",
+    allTopics: "すべてのトピック",
+    facet_role: "種別",
+    facet_method: "手法",
+    facet_domain: "問題領域",
+    facetDomainCount: "{total}件中{n}件",
     entry: "件",
     entries: "件",
     view: "詳細",
@@ -279,6 +293,7 @@ export function RepositoryBrowser({
   legend,
   estimates,
   profiles,
+  initialTopic = "",
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
@@ -302,12 +317,19 @@ export function RepositoryBrowser({
    * do not appear at all, rather than appearing and ranking nothing.
    */
   profiles?: RepositoryProfileList | null;
+  /** Resolved from `?topic=` by the server component; "" when absent or unknown. */
+  initialTopic?: TopicId | "";
 }) {
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
   const [family, setFamily] = useState<string>("");
   const [framework, setFramework] = useState<"" | PublicRepositoryFramework>("");
+  // Seeded from ?topic= by the server component, never read from `window` here:
+  // this page does not hydrate in either browser surface, so an effect that set
+  // it would leave the entry pages' topic chips linking to a filter that never
+  // applies. Seeding the initial state means the server's own HTML is filtered.
+  const [topic, setTopic] = useState<TopicId | "">(initialTopic);
   const [order, setOrder] = useState<BrowseOrder>("catalog");
   const [circuitOnly, setCircuitOnly] = useState(false);
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
@@ -336,9 +358,27 @@ export function RepositoryBrowser({
   }
 
   const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))).sort(), [entries]);
+  // Counted over the whole corpus rather than over what the other filters have
+  // left, so the control does not renumber itself as a reader narrows — a count
+  // that moves while you are reading it is not a count, it is a hint.
+  const topicGroups = useMemo(() => topicOptions(entries, locale === "ja" ? "ja" : "en"), [entries, locale]);
+  /**
+   * How many entries carry ANY domain — a distinct count, not the sum of the
+   * per-topic ones: HHL is both `finance` and `linear-algebra`, so adding the
+   * options up would overstate the coverage the group heading is there to
+   * qualify. Computed rather than written into the copy, because a number typed
+   * into a translated string is a third copy of a fact and drifts silently.
+   */
+  const entriesWithDomain = useMemo(
+    () =>
+      entries.filter((entry) =>
+        (entry.topics ?? []).some((id) => TOPICS_BY_ID.get(id)?.facet === "domain"),
+      ).length,
+    [entries],
+  );
   const filteredEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return entries.filter((entry) => {
+    const matched = entries.filter((entry) => {
       const matchesQuery = !normalizedQuery || [
         entry.title,
         entry.titleJa,
@@ -355,7 +395,11 @@ export function RepositoryBrowser({
       const matchesFramework = !framework || variant?.status === "native" || variant?.status === "conversion";
       return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
     });
-  }, [category, entries, family, framework, query]);
+    // Applied through the shared helper rather than as another clause here: the
+    // browse <select> does not hydrate in either browser surface, so the rule
+    // has to live where a unit test can reach it (lib/repository/topic-filter).
+    return filterByTopic(matched, topic);
+  }, [category, entries, family, framework, query, topic]);
 
   /** slug -> its cost row, when the API supplied a listing. */
   const costBySlug = useMemo(() => {
@@ -488,12 +532,21 @@ export function RepositoryBrowser({
     const title = locale === "ja" ? entry.titleJa : entry.title;
     const description = locale === "ja" ? entry.descriptionJa : entry.description;
     const qubits = entry.resources.find((resource) => resource.label === "Qubits")?.value;
+    const roleId = roleOf(entry.topics ?? []);
+    const role = roleId ? TOPICS_BY_ID.get(roleId) : undefined;
     return (
       <article className="mj-repo-card">
         {extraHead}
         <div className="mj-repo-card-top">
           <VerificationTierBadge methods={entryVerificationMethods(entry)} locale={locale} />
           <span>{locale === "ja" ? entry.categoryLabelJa : entry.categoryLabel}</span>
+          {/* The role, beside the family, because it is what stops a domain
+              filter from over-promising: the ten entries under "Optimization"
+              are mostly width-scaled MaxCut ring benchmarks, and this is where
+              a reader sees that without opening one. The category above says
+              "Algorithms" for all of them; the role distinguishes the 112
+              benchmark circuits from the 70 algorithm references. */}
+          {role ? <span className="mj-repo-card-role">{locale === "ja" ? role.labelJa : role.label}</span> : null}
           <span>{familyLabel(entry.algorithmFamily, locale)}</span>
           {qubits ? <span className="mj-repo-card-qubits">{qubits} q</span> : null}
           {renderCostChip(entry.slug)}
@@ -610,6 +663,31 @@ export function RepositoryBrowser({
           <select value={framework} onChange={(event) => setFramework(event.target.value as "" | PublicRepositoryFramework)}>
             <option value="">{copy.allFrameworks}</option>
             {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
+          </select>
+        </label>
+        {/* One control for three facets, grouped, because the alternative is
+            three more selects beside four existing ones. Every option carries
+            its count: "Optimization (10)" cannot be read as a promise the way a
+            bare "Optimization" can, and on this corpus that matters — those ten
+            are eight width-scaled MaxCut ring benchmarks. */}
+        <label>
+          <span>{copy.topic}</span>
+          <select value={topic} onChange={(event) => setTopic(event.target.value as TopicId | "")}>
+            <option value="">{copy.allTopics}</option>
+            {topicGroups.map((group) => (
+              <optgroup
+                key={group.facet}
+                label={
+                  group.facet === "domain"
+                    ? `${copy.facet_domain} — ${copy.facetDomainCount.replace("{n}", String(entriesWithDomain)).replace("{total}", String(entries.length))}`
+                    : copy[`facet_${group.facet}`]
+                }
+              >
+                {group.options.map((option) => (
+                  <option key={option.id} value={option.id}>{topicOptionLabel(option)}</option>
+                ))}
+              </optgroup>
+            ))}
           </select>
         </label>
         {canOrderByCost || canOrderByStructure ? (

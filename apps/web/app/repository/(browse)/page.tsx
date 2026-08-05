@@ -8,6 +8,7 @@ import {
   getRepositoryProfiles,
 } from "../../../lib/repository-source";
 import { VerificationLegend } from "../../../components/repository-verification";
+import { isTopicId } from "../../../lib/repository/topics";
 import { RepositoryBrowser } from "../repository-browser";
 
 export const metadata: Metadata = {
@@ -15,7 +16,26 @@ export const metadata: Metadata = {
   description: "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
 };
 
-export default async function RepositoryPage() {
+/**
+ * `/repository?topic=chemistry` — where an entry page's topic chips point.
+ *
+ * Resolved **here**, on the server, rather than from `window.location` in an
+ * effect. This page does not hydrate in either browser surface — confirmed
+ * again this session against a production build, so it is not the dev-mode CSP
+ * — and an effect that never runs is a link that silently does nothing. Reading
+ * it server-side means the HTML arrives already filtered, which is also the
+ * only version of this a crawler or a no-JS reader ever sees.
+ *
+ * An unknown id resolves to no filter rather than to an empty list: a retired
+ * topic in an old bookmark should show the corpus, not a blank page.
+ */
+export default async function RepositoryPage({
+  searchParams,
+}: {
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
+}) {
+  const wanted = (await searchParams).topic;
+  const initialTopic = typeof wanted === "string" && isTopicId(wanted) ? wanted : "";
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
@@ -52,6 +72,7 @@ export default async function RepositoryPage() {
           legend={<VerificationLegend locale={locale} />}
           estimates={estimates}
           profiles={profiles}
+          initialTopic={initialTopic}
         />
       </section>
     </PublicSite>
