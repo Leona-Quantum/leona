@@ -3,7 +3,8 @@
 Framework-native re-execution checks plus optional OpenQASM conversion checks and
 return-contract checks. Every primitive maps to the
 contracts VerificationMethod/VerificationResultKind taxonomy and fails rather than
-fabricates when it cannot run (plans/rebuild/08-phases.md §Phase 2 step 4)."""
+fabricates when it cannot run (plans/archive/rebuild/08-phases.md §Phase 2 step 4,
+archived; the live stage map is plans/roadmap/00-INDEX.md)."""
 
 from majorana_verification.baseline import (
     BRUTE_FORCE_MAX_VARIABLES,

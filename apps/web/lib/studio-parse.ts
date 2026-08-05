@@ -1,4 +1,5 @@
 import { BUILDER_GATES, createBuilderStepId, TWO_QUBIT_GATES, type BuilderStep, type BuiltinBuilderGate } from "./studio-builder.ts";
+import { parseGateAngle } from "./gate-angle.ts";
 
 export interface ParsedBuilderCircuit {
   qubitCount: number;
@@ -35,15 +36,15 @@ export const MAX_VIEWABLE_QUBITS = 4096;
 /**
  * How many decomposed gate columns an interchange import will accept.
  *
- * The diagram gives every reconstructed step its own ~52px column, and the
- * standard-gate reader *decomposes* multi-qubit gates: one `ccx` becomes ~15
- * primitive gates, `cswap` ~17. A wide circuit that is a few dozen Toffolis on
- * paper explodes into thousands of columns — an SVG tens of thousands of pixels
- * wide with a matching node count, which janks the browser and helps no one.
- * Past this bound interchange reconstruction reports `too_large`. Independent
- * of qubit count: a narrow-but-deep circuit trips it too.
+ * The standard-gate reader *decomposes* multi-qubit gates: one `ccx` becomes
+ * ~15 primitive gates, and an eight-wire DiagonalGate becomes about 540. The
+ * diagram virtualizes offscreen columns, so those real optimization circuits do
+ * not need to be rejected at the old 512-step boundary. The remaining bound
+ * limits state, signature, and generated-code work rather than visible DOM
+ * nodes, and matches the trusted Qiskit export fallback's expansion ceiling.
+ * Past it, interchange reconstruction reports `too_large` honestly.
  */
-export const MAX_VIEWABLE_STEPS = 512;
+export const MAX_VIEWABLE_STEPS = 4096;
 
 const QISKIT_GATE_METHODS: Record<string, BuiltinBuilderGate> = {
   h: "H", x: "X", y: "Y", z: "Z", s: "S", t: "T",
@@ -172,10 +173,7 @@ function gateStep(gate: BuiltinBuilderGate, qubits: number[], param?: string): B
 }
 
 function parseAngle(raw: string): string | null {
-  const cleaned = raw.trim().replaceAll(/\s+/g, "");
-  if (!/^(?:(?:\d+(?:\.\d+)?\*)?pi(?:\/\d+(?:\.\d+)?)?|\d+(?:\.\d+)?)$/.test(cleaned)) return null;
-  const denominator = /\/(\d+(?:\.\d+)?)$/.exec(cleaned);
-  return denominator && Number(denominator[1]) === 0 ? null : cleaned;
+  return parseGateAngle(raw);
 }
 
 function parseQiskit(lines: string[]): ParsedBuilderCircuit | null {

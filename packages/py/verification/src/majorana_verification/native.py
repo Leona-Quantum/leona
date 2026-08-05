@@ -1,6 +1,7 @@
 """Framework-native verification evidence, judged on arrays.
 
-plans/framework-native-verification.md: the selected framework's own SDK — inside
+plans/archive/framework-native-verification.md (archived 2026-08-04 as shipped — this
+module is the implementation it names): the selected framework's own SDK — inside
 the trusted observer — computes the statevector and the sampled counts this module
 verifies against. No OpenQASM conversion sits in the trust path: three of the four
 defects in the conversion family were conversion defects, and the interchange

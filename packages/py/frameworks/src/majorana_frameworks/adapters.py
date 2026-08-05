@@ -20,6 +20,27 @@ _FRAMEWORK_MODULES = {
     "pennylane_lightning": Framework.PENNYLANE,
 }
 
+_CIRCUIT_IR_SETUP = """_majorana_circuit_ir_build = None
+try:
+    from majorana_frameworks.circuit_ir import build_circuit_ir as _majorana_circuit_ir_build
+except Exception:
+    pass
+"""
+
+
+def _circuit_ir_observer(framework: Framework, *, indent: str = "") -> str:
+    """Provider-owned, best-effort Studio observation for one final circuit."""
+    block = f"""try:
+    if _majorana_final_circuit is not None and _majorana_circuit_ir_build is not None:
+        _majorana_observation["circuit_ir"] = _majorana_circuit_ir_build(
+            {framework.value!r}, _majorana_final_circuit
+        )
+except _majorana_exception as _majorana_circuit_ir_exc:
+    _majorana_observation["circuit_ir_error"] = _majorana_type(
+        _majorana_circuit_ir_exc
+    ).__name__"""
+    return "\n".join(indent + line for line in block.splitlines()) + "\n"
+
 
 @dataclass(frozen=True)
 class NativeOptimization:
@@ -201,7 +222,7 @@ class PythonFrameworkAdapter:
         # it undefined keeps a NameError out of a branch that is otherwise dead —
         # the failure would surface as `resource_metrics_error` on a framework that
         # has nothing to do with tapes.
-        return "_majorana_construct_tape = None\n" if circuit_expected else ""
+        return ("_majorana_construct_tape = None\n" + _CIRCUIT_IR_SETUP) if circuit_expected else ""
 
     # `measurement_count` counts measured QUBITS, not measurement operations. Qiskit
     # makes those the same number — `qc.measure_all()` emits one instruction per
@@ -290,8 +311,10 @@ if _majorana_final_circuit is not None:
 
 # --- Native verification evidence -------------------------------------------------
 #
-# plans/framework-native-verification.md: the selected framework's own SDK is the
-# substrate correctness is judged on; OpenQASM is an export, not the trust path.
+# plans/archive/framework-native-verification.md (archived as shipped; the implementation
+# is packages/py/verification/src/majorana_verification/native.py): the selected
+# framework's own SDK is the substrate correctness is judged on; OpenQASM is an export,
+# not the trust path.
 # Each adapter's trusted_setup defines a `_majorana_native_evidence(circuit, obs)`
 # helper that writes:
 #
@@ -549,12 +572,21 @@ class QiskitAdapter(PythonFrameworkAdapter):
     def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         if not circuit_expected:
             return ""
-        return """_majorana_interchange_dumps = None
+        return (
+            _CIRCUIT_IR_SETUP
+            + """_majorana_interchange_dumps = None
+_majorana_interchange_transpile = None
 try:
     from qiskit.qasm3 import dumps as _majorana_interchange_dumps
 except Exception:
     pass
-""" + (_QISKIT_NATIVE_SETUP if collect_native_evidence else "")
+try:
+    from qiskit import transpile as _majorana_interchange_transpile
+except Exception:
+    pass
+"""
+            + (_QISKIT_NATIVE_SETUP if collect_native_evidence else "")
+        )
 
     def trusted_observer(
         self,
@@ -575,11 +607,60 @@ if _majorana_final_circuit is None:
         "FINAL_CIRCUIT was not set (missing or None) — bind it to the constructed circuit object"
     )
 else:
+{_circuit_ir_observer(Framework.QISKIT, indent="    ").rstrip()}
     try:
         if _majorana_interchange_dumps is not None:
             _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(_majorana_final_circuit)
     except _majorana_exception as _majorana_interchange_exc:
-        _majorana_observation["interchange_error"] = _majorana_type(_majorana_interchange_exc).__name__
+        # Qiskit's exporter cannot serialize some valid library instructions
+        # directly. DiagonalGate is the common optimization case: its complex
+        # phase vector is executable but not a legal OpenQASM parameter. Retry
+        # with a deterministic universal basis so optional interchange remains
+        # available without rewriting the authoritative framework source.
+        #
+        # Keep the retry bounded. A general wide UnitaryGate expands
+        # exponentially and this observer shares the sandbox's execution
+        # budget; optional export must never turn a successful run into a
+        # timeout. Diagonal decompositions are O(2**n), so ten wires is already
+        # about two thousand primitive operations. Other non-directive
+        # instructions wider than four wires fail closed.
+        _majorana_interchange_can_decompose = (
+            _majorana_interchange_transpile is not None
+            and _majorana_len(_majorana_final_circuit.data) <= 512
+        )
+        if _majorana_interchange_can_decompose:
+            for _majorana_instruction in _majorana_final_circuit.data:
+                _majorana_operation = _majorana_instruction.operation
+                _majorana_width = _majorana_len(_majorana_instruction.qubits)
+                if _majorana_getattr(_majorana_operation, "_directive", False):
+                    continue
+                if _majorana_width <= 4:
+                    continue
+                if _majorana_str(_majorana_operation.name) == "diagonal" and _majorana_width <= 10:
+                    continue
+                _majorana_interchange_can_decompose = False
+                break
+        if _majorana_interchange_can_decompose:
+            try:
+                _majorana_interchange_circuit = _majorana_interchange_transpile(
+                    _majorana_final_circuit,
+                    basis_gates=["rx", "ry", "rz", "cx"],
+                    optimization_level=0,
+                    seed_transpiler=42,
+                )
+                if _majorana_len(_majorana_interchange_circuit.data) > 4096:
+                    raise _majorana_builtins.ValueError("interchange decomposition exceeds limit")
+                _majorana_observation["interchange_qasm"] = _majorana_interchange_dumps(
+                    _majorana_interchange_circuit
+                )
+            except _majorana_exception as _majorana_fallback_exc:
+                _majorana_observation["interchange_error"] = _majorana_type(
+                    _majorana_fallback_exc
+                ).__name__
+        else:
+            _majorana_observation["interchange_error"] = _majorana_type(
+                _majorana_interchange_exc
+            ).__name__
     try:
         _majorana_ops = {{_majorana_str(k): _majorana_int(v) for k, v in _majorana_final_circuit.count_ops().items()}}
         # Compiler directives are not gates. `barrier` carries no physical action,
@@ -791,6 +872,7 @@ class CirqAdapter(PythonFrameworkAdapter):
         )
         return (
             base
+            + _circuit_ir_observer(Framework.CIRQ)
             + """
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 if _majorana_final_circuit is not None:
@@ -931,7 +1013,9 @@ class PennyLaneAdapter(PythonFrameworkAdapter):
     def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
         if not circuit_expected:
             return ""
-        return """_majorana_interchange_dumps = None
+        return (
+            _CIRCUIT_IR_SETUP
+            + """_majorana_interchange_dumps = None
 try:
     from pennylane import to_openqasm as _majorana_interchange_dumps
 except Exception:
@@ -941,7 +1025,9 @@ try:
     from pennylane.workflow import construct_tape as _majorana_construct_tape
 except Exception:
     pass
-""" + (_PENNYLANE_NATIVE_SETUP if collect_native_evidence else "")
+"""
+            + (_PENNYLANE_NATIVE_SETUP if collect_native_evidence else "")
+        )
 
     def trusted_observer(
         self,
@@ -959,6 +1045,7 @@ except Exception:
         )
         return (
             base
+            + _circuit_ir_observer(Framework.PENNYLANE)
             + """
 _majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
 try:

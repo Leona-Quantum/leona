@@ -104,9 +104,14 @@ class SimpleBusinessQuadraticCoefficient(_SimplePlanModel):
     coefficient: float = Field(allow_inf_nan=False)
 
     @model_validator(mode="after")
-    def _uses_two_distinct_variables(self) -> "SimpleBusinessQuadraticCoefficient":
-        if self.left == self.right:
-            raise ValueError("quadratic business coefficient must use distinct variables")
+    def _order_the_pair(self) -> "SimpleBusinessQuadraticCoefficient":
+        # x_i*x_j and x_j*x_i are one term, and the brute-force evaluator reads
+        # the pair symmetrically (`bits[:, i] & bits[:, j]`). Two models
+        # describing the same instance must not be counted as disagreeing over
+        # the write order alone: a reference mismatch drops the brute-force
+        # check without blocking the run, so that disagreement would be silent.
+        if self.left > self.right:
+            self.left, self.right = self.right, self.left
         return self
 
 
@@ -115,6 +120,36 @@ class SimpleBusinessObjective(_SimplePlanModel):
     constant: float = Field(default=0.0, allow_inf_nan=False)
     linear_coefficients: list[SimpleBusinessCoefficient] = Field(default_factory=list)
     quadratic_coefficients: list[SimpleBusinessQuadraticCoefficient] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _fold_binary_diagonal_terms(self) -> "SimpleBusinessObjective":
+        """A diagonal quadratic term is a linear one written differently.
+
+        Every variable here is binary, so x_i*x_i == x_i. `objective_values`
+        already reads it that way — `bits[:, i] & bits[:, j] if i != j else
+        bits[:, i]` — and the durable QUBO writes linear coefficients as
+        `ProblemTerm(i=v, j=v)`, the very shape this used to reject. Folding
+        therefore changes no computed value; it removes a rejection that was
+        stricter than anything downstream, and it gives the two independently
+        extracted objectives one canonical form to be compared in.
+        """
+        if not any(term.left == term.right for term in self.quadratic_coefficients):
+            return self
+        linear = {term.variable: term for term in self.linear_coefficients}
+        for term in self.quadratic_coefficients:
+            if term.left != term.right:
+                continue
+            existing = linear.get(term.left)
+            if existing is None:
+                folded = SimpleBusinessCoefficient(variable=term.left, coefficient=term.coefficient)
+                linear[term.left] = folded
+                self.linear_coefficients.append(folded)
+            else:
+                existing.coefficient += term.coefficient
+        self.quadratic_coefficients = [
+            term for term in self.quadratic_coefficients if term.left != term.right
+        ]
+        return self
 
 
 class SimpleBusinessConstraint(_SimplePlanModel):

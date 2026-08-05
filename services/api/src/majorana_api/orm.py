@@ -180,6 +180,13 @@ class Artifact(Base):
     # where it returns when its project is deleted. No cascade on the FK, on
     # purpose: deleting the container must never delete the contents.
     project_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("projects.id"))
+    # Migration 0046. The public identity an imported record is served under, and
+    # the importer's reconciliation key. NULL for everything a user authors — only
+    # the catalog import path sets it. Unique per workspace among live rows, so
+    # the public catalog can read it straight off the artifact instead of
+    # outerjoining ImportItem, which multiplied rows once a record was imported
+    # twice.
+    upstream_identity: Mapped[str | None]
     deleted_at: Mapped[dt.datetime | None]
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
     updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
@@ -248,6 +255,12 @@ class LicenseAssertion(Base):
     spdx_id: Mapped[str | None]
     assertion_kind: Mapped[str]
     evidence_hash: Mapped[str | None]
+    # Migration 0046. sha256 over the record's canonicalized provenance claim —
+    # what was signed, as distinct from evidence_hash, which also covers the
+    # content and therefore differs on every revision. This is the value
+    # AttestedRecord.grant_carries_forward compares against; NULL means no
+    # comparable prior grant, which requires a fresh signature.
+    claim_hash: Mapped[str | None]
     license_scope: Mapped[str]
     confidence: Mapped[float | None] = mapped_column(Numeric)
     reviewer_decision: Mapped[str] = mapped_column(server_default="pending")
@@ -295,6 +308,9 @@ class Run(Base):
     task_prompt: Mapped[str]
     mode: Mapped[str]
     idempotency_key: Mapped[str | None]
+    #: SHA-256 of the request admitted under `idempotency_key` (migration 0047).
+    #: NULL on rows created before it existed, which reads as "cannot compare".
+    idempotency_request_hash: Mapped[str | None]
     status: Mapped[str | None] = mapped_column(server_default="queued")
     framework: Mapped[str]
     seed: Mapped[int | None] = mapped_column(BigInteger)

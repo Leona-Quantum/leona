@@ -107,6 +107,85 @@ async def test_wrong_client_id_rejected(keypair):
         )
 
 
+# --------------------------------------------------------------------------
+# Audience pinning (05-security.md §1 "audience/issuer pinned")
+#
+# The issuer and JWKS are per-client, so every token reaching this code was
+# signed for our client. `aud` is what separates token PURPOSES signed by that
+# same client — an ID token carries `sub` and `sid` too, so nothing else here
+# tells them apart. Unset is the pre-existing behaviour and stays supported,
+# because requiring a claim production's tokens do not carry refuses sign-in.
+# --------------------------------------------------------------------------
+
+AUDIENCE = "majorana-api"
+
+
+async def test_audience_unset_still_refuses_a_token_carrying_one(keypair):
+    """Measured, not assumed — and it narrows the finding that prompted this.
+
+    pyjwt's `verify_aud` defaults on, and its rule for `audience=None` is to
+    refuse any token that HAS an `aud`. So the unconfigured service was never
+    open to another service's audience-bearing token; the actual gap was only
+    the token with no `aud` at all, and the absence of a positive pin.
+    """
+    token = mint(keypair[0], aud="something-else")
+    with pytest.raises(auth_jwt.TokenError):
+        await auth_jwt.verify_bearer_token(
+            token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+        )
+
+
+async def test_audience_unset_accepts_a_token_without_one(keypair):
+    """The other half of the default, and the reason the pin has to be optional:
+    this is the shape production's tokens are believed to have."""
+    token = mint(keypair[0])
+    verified = await auth_jwt.verify_bearer_token(
+        token, jwks_url=JWKS_URL, issuer=ISSUER, client_id=CLIENT_ID
+    )
+    assert verified.session_id
+
+
+async def test_matching_audience_accepted(keypair):
+    token = mint(keypair[0], aud=AUDIENCE)
+    verified = await auth_jwt.verify_bearer_token(
+        token,
+        jwks_url=JWKS_URL,
+        issuer=ISSUER,
+        client_id=CLIENT_ID,
+        audience=AUDIENCE,
+    )
+    assert verified.session_id
+
+
+async def test_wrong_audience_rejected(keypair):
+    """A token signed by our own client for a different purpose."""
+    token = mint(keypair[0], aud="some-other-service")
+    with pytest.raises(auth_jwt.TokenError):
+        await auth_jwt.verify_bearer_token(
+            token,
+            jwks_url=JWKS_URL,
+            issuer=ISSUER,
+            client_id=CLIENT_ID,
+            audience=AUDIENCE,
+        )
+
+
+async def test_missing_audience_rejected_when_pinned(keypair):
+    """The half that `audience=` alone does not buy: pyjwt only compares the
+    claim when it is present, so without `aud` in the required set a token with
+    the claim stripped would pass the very check added to stop it."""
+    token = mint(keypair[0])
+    assert "aud" not in pyjwt.decode(token, options={"verify_signature": False})
+    with pytest.raises(auth_jwt.TokenError):
+        await auth_jwt.verify_bearer_token(
+            token,
+            jwks_url=JWKS_URL,
+            issuer=ISSUER,
+            client_id=CLIENT_ID,
+            audience=AUDIENCE,
+        )
+
+
 async def test_unsigned_alg_rejected(keypair):
     now = dt.datetime.now(dt.timezone.utc)
     claims = {

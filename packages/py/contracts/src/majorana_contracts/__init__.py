@@ -25,6 +25,7 @@ from .enums import (
     QpuEstimateBasis,
     QpuProvider,
     QpuRunStatus,
+    ResourceEstimateBasis,
     ReviewState,
     Role,
     RunMode,
@@ -87,13 +88,21 @@ from .events import (
 from .models import (
     Artifact,
     ArtifactVersion,
+    AssumptionSetSummary,
+    CatalogEntryEstimate,
+    CatalogEstimateList,
+    CatalogEstimateSummary,
     CatalogProvenance,
+    CodeDistanceSummary,
+    FootprintSummary,
+    LogicalCostSummary,
     Project,
     ProjectShare,
     PublicCatalogEntry,
     QpuRunRecord,
     ResourceMetrics,
     Run,
+    RuntimeSummary,
     SharedProject,
     VerificationRecord,
     VerificationCheckSummary,
@@ -156,7 +165,9 @@ from .lifecycle import (
 # lifts evidence strength.
 # 1.4.0: VerificationMethod gains "statistical_native" (physical) — reported
 # counts vs a trusted framework-native re-execution of the circuit object; the
-# mid-circuit-capable check (plans/framework-native-verification.md).
+# mid-circuit-capable check (plans/archive/framework-native-verification.md, archived
+# as shipped; the implementation is
+# packages/py/verification/src/majorana_verification/native.py).
 # 1.5.0: Artifact (list resource) gains optional verifier_decision /
 # evidence_strength from the current version's verification_summary, so the
 # Vault list stops fabricating "verified" for unopened artifacts.
@@ -197,7 +208,13 @@ from .lifecycle import (
 # 2.10.0: Plan.qubits_estimate is no longer capped by the local sandbox lane;
 # execution providers enforce their own limits so larger unexecuted artifacts can
 # be authored without pretending that they ran.
-CONTRACTS_VERSION = "2.10.0"
+# 2.11.0: CatalogEntryEstimate, CatalogEstimateList and their layer summaries — /repository can show a
+# catalogue entry's fault-tolerant cost under a named assumption set (E4), or the
+# reason it has none. Additive and read-only: derived from the entry's own
+# portable circuit on read, so nothing is stored and no existing field changes
+# meaning. ResourceEstimateBasis is the field to branch on; a client that renders
+# a number without checking it will publish a cost for a circuit that has none.
+CONTRACTS_VERSION = "2.11.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -222,7 +239,12 @@ __all__ = [
     "LinearSystemResultSpec",
     "BaselineKind",
     "BaselineResult",
+    "AssumptionSetSummary",
+    "CatalogEntryEstimate",
+    "CatalogEstimateList",
+    "CatalogEstimateSummary",
     "CatalogProvenance",
+    "CodeDistanceSummary",
     "CodeFinalized",
     "CodeVariant",
     "CodeGenerated",
@@ -259,11 +281,15 @@ __all__ = [
     "PlanProduced",
     "Project",
     "ProjectShare",
+    "FootprintSummary",
+    "LogicalCostSummary",
     "PublicCatalogEntry",
     "PlannableVerificationMethod",
     "PublicationState",
     "QasmEmission",
     "QpuEstimateBasis",
+    "ResourceEstimateBasis",
+    "RuntimeSummary",
     "QpuProvider",
     "QpuRunRecord",
     "QpuRunStatus",

@@ -115,6 +115,7 @@ async def get_verified_token(
             jwks_url=settings.workos_jwks_url,
             issuer=settings.workos_jwt_issuer,
             client_id=settings.workos_client_id,
+            audience=settings.workos_jwt_audience,
         )
     except TokenError:
         raise HTTPException(401, "invalid token", headers=challenge) from None

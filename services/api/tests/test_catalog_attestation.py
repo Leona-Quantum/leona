@@ -82,6 +82,66 @@ def test_evidence_hash_pins_the_claim_it_was_made_against():
     assert first.evidence_hash != second.evidence_hash
 
 
+def test_evidence_hash_also_moves_when_only_the_content_changed():
+    """The gap owner decision B closes.
+
+    A record's `source` object is its provenance claim, and editing the record's
+    code leaves it untouched — that is exactly the shape of the 156 content fixes
+    the reconciling importer exists to carry. With a claim-only hash the audit row
+    said a human approved "this record" while being unable to tell any two
+    revisions of it apart, so the policy's own change-detector was blind to the
+    change being imported.
+    """
+    plan = _policy().plan(RECORDS, {"alpha": "d" * 64})
+    rewritten = _policy().plan(RECORDS, {"alpha": "e" * 64})
+    assert plan.included[0].evidence_hash != rewritten.included[0].evidence_hash
+    # ...and the claim hash does not move, because the claim did not.
+    assert plan.included[0].claim_hash == rewritten.included[0].claim_hash
+
+
+def test_a_grant_carries_forward_when_only_the_content_changed():
+    """Option B: the attestation is about identity and provenance, so a content
+    revision binds to the existing grant without collecting a fresh signature."""
+    before = _policy().plan(RECORDS, {"alpha": "d" * 64}).included[0]
+    after = _policy().plan(RECORDS, {"alpha": "e" * 64}).included[0]
+    assert after.grant_carries_forward(before.claim_hash)
+
+
+def test_a_grant_refuses_to_carry_forward_when_the_provenance_claim_changed():
+    """Where B stops being defensible: a changed claim is the signal that the
+    record's origin may no longer be first-party, which is the one thing the
+    owner's sentence actually asserts. Refuse and fall back to a human signature."""
+    before = _policy().plan(RECORDS, {"alpha": "d" * 64}).included[0]
+    reoriginated = {**RECORDS, "alpha": {**RECORDS["alpha"], "license": "third-party, GPL-3.0"}}
+    after = _policy().plan(reoriginated, {"alpha": "d" * 64}).included[0]
+    assert not after.grant_carries_forward(before.claim_hash)
+
+
+def test_a_record_with_no_prior_grant_is_not_a_carry_forward():
+    """Absence of a previous assertion is a first signature, not a renewal — the
+    difference between 'nobody has objected' and 'somebody approved this'."""
+    record = _policy().plan(RECORDS, {"alpha": "d" * 64}).included[0]
+    assert not record.grant_carries_forward(None)
+
+
+def test_evidence_hash_falls_back_to_the_claim_hash_without_a_digest():
+    """An older manifest offers no content digest. That must degrade to the
+    previous behaviour rather than hashing the string "None" into the audit row."""
+    record = _policy().plan(RECORDS).included[0]
+    assert record.evidence_hash == record.claim_hash
+
+
+def test_the_real_corpus_supplies_a_content_digest_for_every_attested_record():
+    """The widening is only real if the digests actually arrive. A silently empty
+    map would make every evidence_hash fall back to the claim hash and the gate
+    would read as passing while covering nothing."""
+    source = BootstrapManifestSource()
+    plan = _bootstrap_plan(source, AttestationPolicy.load())
+    assert plan.included
+    for record in plan.included:
+        assert record.evidence_hash != record.claim_hash, record.upstream_identity
+
+
 def test_policy_checksum_is_content_derived_and_key_order_independent():
     reordered = dict(reversed(list(BASE_POLICY.items())))
     assert AttestationPolicy.from_dict(reordered).checksum == _policy().checksum

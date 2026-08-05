@@ -10,5 +10,5 @@ OpenAPI export → generated TS types (`openapi-typescript`) in `packages/ts/con
 renderer of the event log, so stored runs replay identically (fixtures for free).
 **Consequences:** Buys end-to-end types and replayable runs. Costs: codegen step in CI
 and generated-code churn in diffs. Contracts changes are orchestrator-only
-(plans/rebuild/09 §2). Reversal trigger: none — mechanism could swap (e.g. different
+(plans/rebuild/09-agent-operating-model.md §2). Reversal trigger: none — mechanism could swap (e.g. different
 generator) without changing the principle.

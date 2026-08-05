@@ -1,8 +1,8 @@
 """Framework-native source programs and the sandbox circuit-observation protocol.
 
-The generated Python source remains authoritative throughout the pipeline.  A sandbox
-epilogue may observe a Qiskit ``FINAL_CIRCUIT`` and serialize it through a provider-read
-sidecar for later conversion, but that optional payload never replaces the source.
+The generated Python source remains authoritative throughout the pipeline. A sandbox
+epilogue may observe a framework-native ``FINAL_CIRCUIT`` and serialize bounded
+display/interchange sidecars, but those optional payloads never replace the source.
 """
 
 from __future__ import annotations

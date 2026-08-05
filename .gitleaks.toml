@@ -1,0 +1,74 @@
+# gitleaks configuration — makes "full-history clean" (05-security.md §2) a gate
+# that can actually be met, and therefore one whose failure means something.
+#
+# ## Why this file exists
+#
+# The full-history scan that prompted this file (PR #251) reported 83 leaks.
+# Every one of them was the same false positive: the built-in `generic-api-key`
+# rule fires on an identifier containing "key" next to a quoted value, and this
+# codebase has a domain term shaped exactly like that —
+#
+#     component_semantic_key == "optimizer.slsqp.v1"
+#
+# `semantic_key` is the scientific identity of a VQE component. It is not a
+# credential, it was never a credential, and it appears in fixtures, tests, web
+# components and evidence manifests across ~20 files of history.
+#
+# The release gate asks for a clean full-history scan. With 83 permanent hits it
+# could never be clean, so it would have been read past every week — and a
+# genuine leak arriving as hit number 84 would have been indistinguishable from
+# the noise. Suppressing a false positive here is not weakening the gate; it is
+# the thing that makes the gate readable.
+#
+# ## The rule for adding to this file
+#
+# An entry needs the reason it is not a secret, written down. "Looks like a test
+# value" is not a reason — `secrets/` rotation history in this project exists
+# because something that looked like a placeholder was not one. If a match
+# cannot be explained, it is treated as live and rotated, not allowlisted.
+
+[extend]
+useDefault = true
+
+[[rules]]
+# The default rule, re-declared so it can carry an allowlist. Everything else
+# about `generic-api-key` is inherited from the default config.
+id = "generic-api-key"
+
+  [rules.allowlist]
+  regexTarget = "match"
+  regexes = [
+    # 1. A dotted, version-suffixed scientific identifier — "optimizer.slsqp.v1",
+    #    "ansatz.h2.fixed_excitation.v1", "h2.sto3g.actual_vqe.v0_2.measurement"
+    #    (the `.vN` segment may sit mid-chain and then name a part of the record).
+    #
+    #    Anchored to the FIVE namespaces that actually occur, enumerated from the
+    #    83 findings rather than guessed — a first pass by hand got `measurement`
+    #    (which does not occur) and missed `stopping` and `comparison` (which
+    #    account for 18 between them).
+    #
+    #    Shape alone was the first version and it was too permissive: any
+    #    lowercase dotted value carrying a `.vN` was suppressed, which is a wider
+    #    hole than the one being closed, and a custom credential in dotted form
+    #    would have slipped through the full-history gate. Narrowed in review — a
+    #    suppression in a security control should be exactly as wide as its
+    #    evidence and no wider.
+    #
+    #    Matched on the value rather than the field name because the same
+    #    identifier is read through half a dozen spellings (semantic_key,
+    #    semanticKey, component_key, baseline_component_key,
+    #    candidate_component_semantic_key). A NEW namespace must be added here
+    #    deliberately, and the control below re-run.
+    '''(?i)["'](?:optimizer|stopping|ansatz|comparison|h2)(?:\.[a-z0-9_]+)*\.v[0-9][0-9_]*(?:\.[a-z0-9_]+)*["']''',
+
+    # 2. Idempotency-Key headers in tests: "phase78-cobyla-swap". A client-chosen
+    #    dedupe token, never a credential — it authenticates nothing and grants
+    #    nothing. Anchored on the header name and restricted to slug-shaped
+    #    values, so a key with a secret pasted into it would still be caught.
+    '''(?i)idempotency[_-]?key["'\s]*[:=]{1,2}[\s"']*[a-z0-9]+(?:-[a-z0-9]+)+["']''',
+
+    # 3. Recorded git commit SHAs in evidence manifests — "final_api_source_commit".
+    #    40 hex characters is also what a hex-encoded secret looks like, so this
+    #    is anchored on a `*_commit`/`*_sha` field name rather than on the shape.
+    '''(?i)[a-z_]*(?:commit|sha)["'\s]*[:=]{1,2}[\s"']*[0-9a-f]{40}["']''',
+  ]

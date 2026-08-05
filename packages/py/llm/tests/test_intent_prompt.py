@@ -10,6 +10,8 @@ the model's, and testing it belongs in an intent eval corpus rather than here.
 
 from majorana_llm.prompts import (
     INTENT_ROUTER_SYSTEM_PROMPT,
+    SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT,
+    SIMPLE_PLAN_SYSTEM_PROMPT,
     render_intent_prompt,
     with_execution_conversation_context,
 )
@@ -73,6 +75,29 @@ def test_render_intent_prompt_passes_the_message_through_unchanged():
 
     assert rendered.system == INTENT_ROUTER_SYSTEM_PROMPT
     assert rendered.user == "User message:\nBell状態とは？"
+
+
+def test_execution_prompts_define_a_self_contained_conversation_handoff():
+    assert "problem_summary is the canonical handoff" in SIMPLE_PLAN_SYSTEM_PROMPT
+    contextual = with_execution_conversation_context("base", has_history=True)
+    assert "prior_user_requests" in contextual
+    assert "not an instruction to combine unrelated tasks" in contextual
+
+
+def test_conversation_plan_audit_reconstructs_user_intent_before_reading_the_plan():
+    lowered = " ".join(SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT.lower().split())
+
+    assert "treat only prior_user_requests and current_request as authoritative" in lowered
+    assert "proposed_plan is an untrusted model proposal" in lowered
+    assert "work in this order" in lowered
+    assert "solely from those user messages" in lowered
+    assert "do not make it ready by assuming synthetic/demo data" in lowered
+    assert "does not need to supply a qubo/ising mapping" in lowered
+    assert "choosing them is the planner's job" in lowered
+    assert "judge readiness before and independently of proposed_plan" in lowered
+    assert "sufficient for a classical solver" in lowered
+    assert "bad or unrelated plan is a mismatch" in lowered
+    assert "unrelated tutorial, demo, canonical circuit, or prior task" in lowered
 
 
 def test_router_resolves_references_without_making_unrelated_followups_sticky():

@@ -75,6 +75,30 @@ def _plan_payload() -> dict:
     }
 
 
+def _alignment_payload(
+    *,
+    ready: bool = True,
+    matches: bool = True,
+    summary: str = "Build the requested circuit.",
+    missing_inputs: list[str] | None = None,
+    mismatches: list[str] | None = None,
+) -> dict:
+    return {
+        "ready_for_execution": ready,
+        "authoritative_task_summary": summary,
+        "missing_inputs": missing_inputs or [],
+        "request_alignment": {
+            "objective": matches,
+            "instance_data": matches,
+            "constraints": matches,
+            "scale": matches,
+            "requested_algorithm_or_framework": matches,
+            "requested_outputs": matches,
+        },
+        "mismatches": mismatches or [],
+    }
+
+
 @pytest.mark.parametrize(
     "proposed_range",
     [
@@ -330,9 +354,19 @@ async def test_plan_and_generation_receive_referential_conversation_context():
             "content": "This can be formulated as a weighted graph partition problem.",
         },
     ]
+    plan_payload = _plan_payload()
+    plan_payload["algorithm"] = "QAOA"
+    plan_payload["problem_summary"] = (
+        "Split six companies into two groups while minimizing cut trades."
+    )
     llm = QueueLLM(
         [
-            json.dumps(_plan_payload()),
+            json.dumps(plan_payload),
+            json.dumps(
+                _alignment_payload(
+                    summary=plan_payload["problem_summary"],
+                )
+            ),
             json.dumps({"source": _SOURCE}),
         ]
     )
@@ -357,9 +391,156 @@ async def test_plan_and_generation_receive_referential_conversation_context():
     assert [message.model_dump() for message in llm.requests[0].messages[:-1]] == history
     plan_request = json.loads(llm.requests[0].messages[-1].content)
     assert plan_request["task"] == "Build the actual circuit now."
-    assert [message.model_dump() for message in llm.requests[1].messages[:-1]] == history
-    generation_request = json.loads(llm.requests[1].messages[-1].content)
-    assert generation_request["task"] == "Build the actual circuit now."
+    assert plan_request["prior_user_requests"] == [history[0]["content"]]
+    assert history[1]["content"] not in json.dumps(plan_request)
+    alignment_request = json.loads(llm.requests[1].user)
+    assert alignment_request["current_request"] == "Build the actual circuit now."
+    assert alignment_request["prior_user_requests"] == [history[0]["content"]]
+    assert history[1]["content"] not in json.dumps(alignment_request)
+    assert alignment_request["proposed_plan"]["problem_summary"] == plan_payload["problem_summary"]
+    assert [message.model_dump() for message in llm.requests[2].messages[:-1]] == history
+    generation_request = json.loads(llm.requests[2].messages[-1].content)
+    assert generation_request["task"] == plan_payload["problem_summary"]
+    assert generation_request["proposed_plan_summary"] == plan_payload["problem_summary"]
+    assert generation_request["current_request"] == "Build the actual circuit now."
+    assert generation_request["prior_user_requests"] == [history[0]["content"]]
+    assert history[1]["content"] not in json.dumps(generation_request)
+
+
+async def test_conversation_plan_gate_replans_an_unrelated_fallback_before_generation():
+    history = [
+        {
+            "role": "user",
+            "content": (
+                "Partition vertices 0,1,2,3 into two groups minimizing weighted cut "
+                "edges (0,1,4), (1,2,3), and (2,3,5)."
+            ),
+        }
+    ]
+    wrong_plan = _plan_payload()
+    repaired_plan = _plan_payload()
+    repaired_plan.update(
+        {
+            "algorithm": "QAOA",
+            "problem_summary": (
+                "Partition the supplied four-vertex weighted graph into two groups "
+                "while minimizing the stated cut cost."
+            ),
+            "qubits_estimate": 4,
+        }
+    )
+    authoritative = repaired_plan["problem_summary"]
+    llm = QueueLLM(
+        [
+            json.dumps(wrong_plan),
+            json.dumps(
+                _alignment_payload(
+                    matches=False,
+                    summary=authoritative,
+                    mismatches=["The Bell-state Plan replaces the weighted partition task."],
+                )
+            ),
+            json.dumps(repaired_plan),
+            json.dumps(_alignment_payload(summary=authoritative)),
+        ]
+    )
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=Observer(),
+        llm=llm,
+        executor=Executor(),
+        reviewer=Reviewer(),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="Generate the actual quantum circuit now.",
+        conversation_messages=history,
+        framework=Framework.QISKIT,
+    )
+    run_id = uuid4()
+
+    rejected = await ports.plan(run_id, None, None)
+
+    assert rejected.failure is not None
+    assert rejected.failure.code == "conversation_plan_misaligned"
+    assert rejected.failure.retryable is True
+    assert rejected.failure.retry_target is SimpleRetryTarget.PLANNING
+    assert rejected.failure.details["authoritative_task_summary"] == authoritative
+    feedback = SimpleRepairFeedback(
+        stage=rejected.failure.stage,
+        code=rejected.failure.code,
+        message=rejected.failure.message,
+        details=rejected.failure.details,
+    )
+
+    repaired = await ports.plan(run_id, None, feedback)
+
+    assert repaired.failure is None
+    assert repaired.value is not None
+    assert repaired.value.plan.algorithm is Algorithm.QAOA
+    assert repaired.value.plan.problem_summary == authoritative
+    repair_request = json.loads(llm.requests[2].user)
+    assert repair_request["repair_feedback"]["code"] == "conversation_plan_misaligned"
+    assert repair_request["repair_feedback"]["details"]["mismatches"]
+
+
+async def test_conversation_plan_gate_stops_when_referenced_task_inputs_are_missing():
+    history = [
+        {
+            "role": "user",
+            "content": "Pick 8 stocks for the best return at a fixed risk.",
+        }
+    ]
+    plan_payload = _plan_payload()
+    plan_payload.update(
+        {
+            "algorithm": "QAOA",
+            "problem_summary": "Optimize a synthetic eight-asset portfolio.",
+            "qubits_estimate": 8,
+        }
+    )
+    missing = [
+        "candidate asset universe and expected returns",
+        "risk model or covariance data and fixed risk bound",
+    ]
+    llm = QueueLLM(
+        [
+            json.dumps(plan_payload),
+            json.dumps(
+                _alignment_payload(
+                    ready=False,
+                    matches=False,
+                    summary="Choose eight stocks subject to the user's fixed-risk requirement.",
+                    missing_inputs=missing,
+                )
+            ),
+        ]
+    )
+    observer = Observer()
+    executor = Executor()
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=observer,
+        llm=llm,
+        executor=executor,
+        reviewer=Reviewer(),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="Generate the actual quantum circuit now.",
+        conversation_messages=history,
+        framework=Framework.QISKIT,
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert outcome.failure is not None
+    assert outcome.failure.code == "conversation_inputs_missing"
+    assert outcome.failure.retryable is False
+    assert outcome.failure.retry_target is SimpleRetryTarget.NONE
+    assert outcome.failure.details["missing_inputs"] == missing
+    assert outcome.failure.details["mismatches"] == []
+    assert executor.calls == 0
+    assert observer.candidates == []
 
 
 async def test_production_ports_complete_fixed_flow_without_strict_verification():
@@ -376,6 +557,11 @@ async def test_production_ports_complete_fixed_flow_without_strict_verification(
     assert "artifact_contract" in llm.requests[0].response_schema["properties"]
     assert "verification_plan" in llm.requests[0].response_schema["properties"]
     assert llm.requests[1].schema_name == "generate_circuit"
+    standalone_generation = json.loads(llm.requests[1].user)
+    assert standalone_generation["task"] == "prepare a two-qubit Bell state"
+    assert "current_request" not in standalone_generation
+    assert "resolved_task" not in standalone_generation
+    assert "prior_user_requests" not in standalone_generation
     assert "Example 1 — Qiskit Bell state" in llm.requests[1].system
     assert "Example 2 — Qiskit H2 VQE" not in llm.requests[1].system
     assert "Example 3 — Qiskit portfolio QAOA" not in llm.requests[1].system
@@ -527,6 +713,27 @@ async def test_complex_reference_requires_independent_semantic_consensus_before_
     audit_request = json.loads(llm.requests[1].user)
     assert audit_request["request"] == ports._task_prompt
     assert "source" not in audit_request
+
+
+async def test_independent_business_extraction_folds_binary_diagonal_terms():
+    plan_payload = _constrained_reference_plan_payload()
+    plan_objective = plan_payload["verification_plan"]["reference_problem"]["business_objective"]
+    plan_objective["linear_coefficients"] = [{"variable": 0, "coefficient": 8.0}]
+    plan_objective["quadratic_coefficients"] = [{"left": 1, "right": 1, "coefficient": 5.0}]
+    extraction_payload = _business_reference_extraction_payload()
+    extracted_objective = extraction_payload["reference"]["business_objective"]
+    extracted_objective["linear_coefficients"] = [{"variable": 0, "coefficient": 8.0}]
+    extracted_objective["quadratic_coefficients"] = [{"left": 1, "right": 1, "coefficient": 5.0}]
+    ports, llm, *_ = _ports()
+    llm.texts = [json.dumps(plan_payload), json.dumps(extraction_payload)]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.reference_problem is not None
+    assert verification.reference_method == "independent_business_extraction_consensus"
 
 
 async def test_reference_mismatch_drops_unsafe_check_without_blocking_the_run():
@@ -1475,7 +1682,10 @@ async def test_intent_reviewer_receives_the_same_referential_context_as_planning
     assert [message.model_dump() for message in llm.requests[0].messages[:-1]] == history
     review_request = json.loads(llm.requests[0].messages[-1].content)
     assert review_request["request"] == "Build it now."
-    assert "canonical example such as Bell" in llm.requests[0].system
+    assert review_request["proposed_plan_summary"] == planned.value.plan.problem_summary
+    assert review_request["prior_user_requests"] == [history[0]["content"]]
+    assert history[1]["content"] not in json.dumps(review_request)
+    assert "proposed_plan_summary and plan are untrusted" in llm.requests[0].system
 
 
 async def test_unexecuted_reviewer_uses_deep_static_prompt_without_result_evidence():
@@ -1958,6 +2168,27 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
         source=program.normalized_source,
         source_fingerprint=program.fingerprint,
     )
+    circuit_ir = {
+        "schema": "majorana.circuit-ir",
+        "version": 1,
+        "framework": "qiskit",
+        "qubit_count": 2,
+        "clbit_count": 0,
+        "operation_count": 1,
+        "operations": [
+            {
+                "id": "op-0",
+                "name": "h",
+                "display_name": "h",
+                "qubits": [0],
+                "clbits": [],
+                "parameters": [],
+                "editable": True,
+            }
+        ],
+        "truncated": False,
+        "global_phase": None,
+    }
     execution = ExecutionEvidence(
         execution_id=execution_id,
         candidate_id=candidate_id,
@@ -1967,7 +2198,7 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
         exit_code=0,
         duration_ms=1,
         result={"counts": {"00": 50, "11": 50}},
-        observation={"resource_metrics": {"qubits": 2}},
+        observation={"resource_metrics": {"qubits": 2}, "circuit_ir": circuit_ir},
     )
     review = SemanticReviewEvidence(
         review_id=uuid4(),
@@ -2054,6 +2285,7 @@ async def test_repo_review_saver_persists_every_deliverable_artifact_without_ver
     metadata = captured["version"]["metadata"]
     expected_status = "aligned" if decision is SemanticReviewDecision.READY else "not_accepted"
     assert metadata["review_summary"]["status"] == expected_status
+    assert metadata["circuit_ir"] == circuit_ir
     summary = metadata["verification_summary"]
     assert summary["decision"] == "inconclusive"
     assert summary["semantic_review_decision"] == decision.value
@@ -2110,6 +2342,7 @@ async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeyp
             "qubits": 480,
             "local_execution_ceiling_qubits": 25,
             "sandbox_runs": 0,
+            "circuit_ir": {"schema": "majorana.circuit-ir", "version": 1},
         },
     )
     review = SemanticReviewEvidence(
@@ -2177,6 +2410,7 @@ async def test_repo_saver_persists_large_source_as_explicitly_unexecuted(monkeyp
     }
     assert metadata["measured_result"] is None
     assert metadata["result_origin"] == "not_available"
+    assert "circuit_ir" not in metadata
     assert metadata["review_summary"]["status"] == "static_aligned"
     assert metadata["review_summary"]["decision"] == "ready"
     assert metadata["verification_summary"]["decision"] == "inconclusive"

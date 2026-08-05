@@ -175,6 +175,85 @@ def test_qiskit_interchange_is_optional_observation(monkeypatch):
     assert extraction.qasm == "OPENQASM 3.0;\nqubit q;"
 
 
+def test_qiskit_interchange_decomposes_diagonal_gate_when_direct_export_is_unavailable():
+    qiskit = pytest.importorskip("qiskit")
+    np = pytest.importorskip("numpy")
+    from qiskit import qasm3
+    from qiskit.circuit.library import DiagonalGate
+    from qiskit.qasm3.exceptions import QASM3ExporterError
+
+    circuit = qiskit.QuantumCircuit(8)
+    phases = np.exp(-1j * np.random.default_rng(42).uniform(-1, 1, 2**8))
+    circuit.h(range(8))
+    circuit.append(DiagonalGate(phases), range(8))
+    circuit.rx(1.0, range(8))
+    circuit.measure_all()
+    with pytest.raises(QASM3ExporterError):
+        qasm3.dumps(circuit)
+
+    program = FrameworkProgram(Framework.QISKIT, "FINAL_CIRCUIT = circuit\n")
+    namespace = {"circuit": circuit}
+    exec(program.source, namespace)
+    observation = {}
+    observer_scope = _observer_scope(namespace, observation)
+    exec(
+        program.trusted_setup(circuit_expected=True, collect_native_evidence=False),
+        observer_scope,
+    )
+    exec(
+        program.trusted_observer(circuit_expected=True, collect_native_evidence=False),
+        observer_scope,
+    )
+
+    extraction = extract_interchange_qasm(observation)
+    assert extraction.source == "sandbox_epilogue"
+    exported = qasm3.loads(extraction.qasm)
+    assert exported.num_qubits == 8
+    assert set(exported.count_ops()) <= {"rx", "ry", "rz", "cx", "barrier", "measure"}
+    assert exported.count_ops()["measure"] == 8
+
+
+def test_qiskit_interchange_does_not_expand_a_wide_general_unitary(monkeypatch):
+    qiskit = pytest.importorskip("qiskit")
+    np = pytest.importorskip("numpy")
+    from qiskit import qasm3
+    from qiskit.circuit.library import UnitaryGate
+
+    circuit = qiskit.QuantumCircuit(5)
+    circuit.append(UnitaryGate(np.eye(2**5)), range(5))
+    transpile_called = False
+
+    def unavailable_export(_circuit):
+        raise RuntimeError("direct export unavailable")
+
+    def expensive_transpile(*_args, **_kwargs):
+        nonlocal transpile_called
+        transpile_called = True
+        raise AssertionError("wide general unitary must not be decomposed")
+
+    monkeypatch.setattr(qasm3, "dumps", unavailable_export)
+    monkeypatch.setattr(qiskit, "transpile", expensive_transpile)
+
+    program = FrameworkProgram(Framework.QISKIT, "FINAL_CIRCUIT = circuit\n")
+    namespace = {"circuit": circuit}
+    exec(program.source, namespace)
+    observation = {}
+    observer_scope = _observer_scope(namespace, observation)
+    exec(
+        program.trusted_setup(circuit_expected=True, collect_native_evidence=False),
+        observer_scope,
+    )
+    exec(
+        program.trusted_observer(circuit_expected=True, collect_native_evidence=False),
+        observer_scope,
+    )
+
+    extraction = extract_interchange_qasm(observation)
+    assert extraction.qasm is None
+    assert extraction.epilogue_error == "RuntimeError"
+    assert not transpile_called
+
+
 def test_non_circuit_program_is_not_forced_through_openqasm():
     program = FrameworkProgram(Framework.PENNYLANE, "FINAL_CIRCUIT = object()\n")
 
@@ -658,12 +737,13 @@ def test_qiskit_get_statevector_without_save_is_caught_before_execution():
 
 # --- Framework-native verification evidence ----------------------------------------
 #
-# plans/framework-native-verification.md: the observer computes the statevector and
-# a trusted sampled-counts re-execution with the framework's OWN simulator, so no
-# OpenQASM conversion sits in the trust path. Every statevector fixture here breaks
-# the qubit-permutation symmetry (the standing rule from PR 100): X on the lowest
-# qubit plus H on the highest, so a wire-relabelling or endianness defect changes
-# the state and cannot hide.
+# plans/archive/framework-native-verification.md (archived as shipped; the implementation
+# is packages/py/verification/src/majorana_verification/native.py): the observer computes
+# the statevector and a trusted sampled-counts re-execution with the framework's OWN
+# simulator, so no OpenQASM conversion sits in the trust path. Every statevector
+# fixture here breaks the qubit-permutation symmetry (the standing rule from PR 100):
+# X on the lowest qubit plus H on the highest, so a wire-relabelling or endianness
+# defect changes the state and cannot hide.
 
 
 def _run_epilogue(framework: Framework, code: str) -> dict:
@@ -839,8 +919,9 @@ def test_qiskit_native_statevector_declares_incapacity_on_feed_forward():
     assert interchange.epilogue_error is None
     assert interchange.qasm is not None
     assert "if (" in interchange.qasm
-    # The register structure the verifier marginalizes on (plans/sampled-counts-
-    # width-mismatch.md). Only present when Aer is installed — it is in the sandbox
+    # The register structure the verifier marginalizes on
+    # (plans/archive/sampled-counts-width-mismatch.md, archived as shipped in PR #113).
+    # Only present when Aer is installed — it is in the sandbox
     # image, not in the dev/CI venv, which is why the ordering claim underneath it
     # gets its own aer-free pin below.
     if "native_sampled" in observation:

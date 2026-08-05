@@ -1,6 +1,28 @@
 # ADR-0022: Three-state verification and private Studio materialization
 
-**Date:** 2026-07-23 · **Status:** proposed
+**Date:** 2026-07-23 · **Status:** partially implemented; partially superseded-by-0023
+
+> **Status corrected 2026-08-04.** This ADR was still marked `proposed` while two of its
+> three parts were live in production. Read it in three pieces:
+>
+> - **Three-state verification — SHIPPED.** `VerifierDecision` is
+>   `PASS`/`FAIL`/`INCONCLUSIVE` (`packages/py/contracts/.../enums.py`), and evidence is
+>   version-bound in migrations `0026_verification_v2_evidence` through
+>   `0033_run_verification_summary`. The rule that an inconclusive check must not consume
+>   a candidate revision as if the code were wrong is in force.
+> - **Private Studio materialization — SHIPPED.** Migration
+>   `0031_private_materialization` separates it from legacy publication state; the record
+>   is additive and immutable at the repository boundary and the downgrade refuses to
+>   discard materialization history. Verified/public eligibility remains PASS-only.
+> - **The strict-verification runtime this ADR specifies — SUPERSEDED BY ADR-0023.**
+>   The model-directed strict-verification stage, its policy negotiation and its
+>   transition graph were not built. ADR-0023's fixed pipeline (`simple_plan.py`,
+>   `simple_ports.py`) is what runs, and this ADR's own implementation plan is
+>   self-marked "superseded by ADR-0023" (archived at
+>   `docs/archive/verification-v2-2026-07/verification-v2-implementation-plan.md`).
+>
+> Nothing below is edited. Where the text describes the runtime rather than the verdict
+> vocabulary or the materialization boundary, ADR-0023 governs.
 
 **Context:** The current pipeline conflates semantic review, deterministic checks, and the final
 trust decision. It can treat a Plan-authored reference circuit or an already-passing parent

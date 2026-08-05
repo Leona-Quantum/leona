@@ -1,8 +1,9 @@
 "use client";
 
-// Pipeline stage rail (S3) — the brand. Spec: plans/roadmap/04-ui-specifications.md §2
-// + docs/ui/components.md. Pure renderer: state comes from the replayed event log
-// (07-ui-product.md §6); this component holds no run state of its own.
+// Pipeline stage rail (S3). Spec: docs/ui/components.md § StageRail — which also records
+// that this is now a legacy visual reference and AgentActivity is the production S3
+// surface. Pure renderer: state comes from the replayed event log
+// (the replay rule, docs/ui/screens-acceptance.md §4); it holds no run state of its own.
 import type { ReactNode } from "react";
 
 export type StageState = "pending" | "running" | "pass" | "skipped" | "fail";

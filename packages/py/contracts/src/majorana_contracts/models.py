@@ -1,4 +1,5 @@
-"""API-facing resource models mirroring plans/rebuild/04-database.md §2. These are
+"""API-facing resource models mirroring plans/archive/rebuild/04-database.md §2 (archived;
+live schema authority is majorana/docs/runbooks/database.md). These are
 the /v1 response shapes, not ORM rows — the repository layer maps between them."""
 
 from datetime import datetime
@@ -14,6 +15,7 @@ from .enums import (
     QpuEstimateBasis,
     QpuProvider,
     QpuRunStatus,
+    ResourceEstimateBasis,
     Role,
     RunMode,
     RunStatus,
@@ -370,6 +372,210 @@ class PublicCatalogEntry(_ResourceBase):
             "claim from the pinned manifest, not execution evidence or legal approval."
         ),
     )
+
+
+class AssumptionSetSummary(_ResourceBase):
+    """The named hardware+protocol claim an estimate was computed under.
+
+    Served with every estimate rather than referenced by id, because an estimate
+    read without its assumption set is not a weaker number — it is a different
+    kind of thing, and a client that had to fetch the set separately would
+    render the number first.
+    """
+
+    identity: str = Field(
+        description=(
+            "Stable identity, e.g. `gidney-2025@v2+eps=1e-06`. Two estimates may "
+            "be ranked against each other only when these strings match."
+        )
+    )
+    name: str
+    version: int = Field(ge=1)
+    citation: str
+    rotation_synthesis_epsilon: float | None = Field(
+        default=None,
+        description=(
+            "Per-rotation approximation error the Clifford+T synthesis is held "
+            "to. Null when no precision was named, in which case any circuit "
+            "containing an arbitrary-angle rotation has no T-count at all."
+        ),
+    )
+    t_per_rotation: int | None = Field(
+        default=None,
+        ge=1,
+        description="T gates one arbitrary-angle rotation costs under this precision.",
+    )
+    t_per_toffoli: int = Field(ge=1)
+    physical_error_rate: float
+    cycle_time_s: float
+    reaction_time_s: float
+
+
+class LogicalCostSummary(_ResourceBase):
+    """Layer 1: what the algorithm needs, before any hardware is named."""
+
+    logical_qubits: int = Field(ge=1)
+    t_count: int = Field(ge=0)
+    toffoli_count: int = Field(ge=0)
+    non_clifford_depth: int = Field(ge=0, description="Longest serial non-Clifford chain.")
+    magic_states: int = Field(ge=0)
+    clifford_count: int = Field(
+        ge=0, description="Reported so a reader can see the circuit was read."
+    )
+    synthesis_required: int = Field(
+        ge=0, description="Arbitrary-angle rotations whose T-count came from the stated epsilon."
+    )
+    t_from_synthesis: int = Field(
+        ge=0,
+        description=(
+            "How much of `t_count` is the epsilon's doing rather than the circuit's. "
+            "The single number a reader needs to judge how load-bearing the "
+            "assumption is; without it the two are indistinguishable in the total."
+        ),
+    )
+
+
+class CodeDistanceSummary(_ResourceBase):
+    """Layer 2's working, not just its answer."""
+
+    code_distance: int = Field(ge=3)
+    logical_operations: int = Field(ge=1)
+    required_error_per_operation: float
+    achieved_error_per_operation: float
+    physical_per_logical: int = Field(ge=1)
+
+
+class FootprintSummary(_ResourceBase):
+    """Layer 3, split so the data/factory trade stays visible rather than lumped."""
+
+    data_patch_qubits: int = Field(ge=0)
+    routing_qubits: int = Field(ge=0)
+    factory_qubits: int = Field(ge=0)
+    total_physical_qubits: int = Field(ge=0)
+
+
+class RuntimeSummary(_ResourceBase):
+    """Layer 4, with both terms kept apart.
+
+    Reporting only `seconds` would hide which constraint binds, and that is the
+    whole decision a reader is trying to make: more factories move the
+    throughput term and do nothing whatever to the reaction-limited one.
+    """
+
+    magic_states: int = Field(ge=0)
+    factory_count: int = Field(ge=0)
+    throughput_seconds: float | None = Field(
+        default=None, description="Null when unbounded, i.e. states to distil and no factory."
+    )
+    reaction_limited_seconds: float
+    seconds: float | None = Field(
+        default=None,
+        description=(
+            "Null when this model cannot state a wall-clock — a Clifford-only "
+            "circuit consumes no magic states, so both terms above are zero and "
+            "reporting their max would claim the circuit runs instantly."
+        ),
+    )
+    binding_term: Literal["throughput", "reaction", "unstated"]
+    factory_crossover: int | None = Field(
+        default=None,
+        ge=1,
+        description="Fewest factories past which buying more buys nothing. Null when no floor is known.",
+    )
+
+
+class CatalogEntryEstimate(_ResourceBase):
+    """A catalogue entry's fault-tolerant cost, or a stated reason there is none (E4).
+
+    Derived on read from the published record's own portable circuit — never
+    authored, never stored — so it cannot drift from the circuit a visitor is
+    looking at on the same page.
+
+    `basis` is the field to branch on. Only EXACT and ESTIMATED carry numbers;
+    the other two carry `reason` and nothing else, and a client that renders a
+    number without checking `basis` will publish a cost for a circuit that has
+    none.
+    """
+
+    slug: str
+    basis: ResourceEstimateBasis
+    assumptions: AssumptionSetSummary
+    reason: str | None = Field(
+        default=None,
+        description=(
+            "Why no number is given, in one sentence naming the operations "
+            "responsible. Present exactly when `basis` is REFUSED or NO_CIRCUIT."
+        ),
+    )
+    logical: LogicalCostSummary | None = None
+    distance: CodeDistanceSummary | None = None
+    footprint: FootprintSummary | None = None
+    runtime: RuntimeSummary | None = None
+    target_failure_probability: float | None = Field(default=None, gt=0, lt=1)
+    notes: list[str] = Field(default_factory=list, max_length=20)
+
+    @model_validator(mode="after")
+    def _numbers_and_reasons_are_mutually_exclusive(self) -> Self:
+        """A response carrying both a cost and a refusal is unrenderable.
+
+        Enforced here rather than trusted to the route, because this is the
+        invariant the whole feature rests on: the UI decides what to show from
+        `basis`, and a payload where `basis` disagrees with the fields present
+        would render a number under a refusal heading or the reverse.
+        """
+        priced = self.basis in (ResourceEstimateBasis.EXACT, ResourceEstimateBasis.ESTIMATED)
+        layers = (self.logical, self.distance, self.footprint, self.runtime)
+        if priced:
+            if any(layer is None for layer in layers):
+                raise ValueError(f"basis {self.basis} must carry every layer of the estimate")
+            if self.reason is not None:
+                raise ValueError(f"basis {self.basis} carries a cost, so it states no reason")
+        else:
+            if any(layer is not None for layer in layers):
+                raise ValueError(f"basis {self.basis} states no cost, so it carries no layers")
+            if not self.reason:
+                raise ValueError(f"basis {self.basis} must say why there is no cost")
+        if priced and self.basis is ResourceEstimateBasis.ESTIMATED:
+            if self.assumptions.rotation_synthesis_epsilon is None:
+                raise ValueError("an estimated cost must name the precision it was estimated under")
+        return self
+
+
+class CatalogEstimateSummary(_ResourceBase):
+    """One row's worth of a catalogue entry's cost, for the browse list.
+
+    A projection of `CatalogEntryEstimate`, not a second computation of it: the
+    same function produces both, so a list row and the detail page it links to
+    cannot disagree.
+
+    **A row carries no assumption set of its own.** `CatalogEstimateList`
+    states it once for the whole listing, which is what makes the ordering rule
+    structural: every row in one list is comparable with every other by
+    construction, and there is nothing inside the object to compare across.
+    """
+
+    slug: str
+    basis: ResourceEstimateBasis
+    total_physical_qubits: int | None = Field(default=None, ge=0)
+    magic_states: int | None = Field(default=None, ge=0)
+    logical_qubits: int | None = Field(default=None, ge=1)
+    code_distance: int | None = Field(default=None, ge=3)
+    seconds: float | None = None
+
+
+class CatalogEstimateList(_ResourceBase):
+    """Every published entry's cost under one assumption set.
+
+    The set is stated **once, for the whole list**, which is the shape that makes
+    the ordering rule enforceable: a client holding this object knows every row
+    in it is comparable, and has nothing to compare across. Ranking rows from
+    two of these — two epsilons, two hardware sets — is the thing that must not
+    happen, and it now requires visibly merging two payloads that each announce
+    a different identity.
+    """
+
+    assumptions: AssumptionSetSummary
+    estimates: list[CatalogEstimateSummary] = Field(default_factory=list)
 
 
 class ResourceMetrics(_ResourceBase):

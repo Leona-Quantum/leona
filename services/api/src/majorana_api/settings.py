@@ -8,6 +8,7 @@ import os
 from dataclasses import dataclass
 
 from .catalog_authority import CatalogAuthority
+from .rate_limit import DEFAULT_ANON_LIMIT
 from .tiers import TIER_ALLOWLIST_ENV, parse_developer_emails
 
 _MIN_TOKEN_LENGTH = 32
@@ -24,6 +25,22 @@ _PUBLIC_PLACEHOLDERS = frozenset(
         "changeme",
     }
 )
+
+
+def _int_env(name: str, default: int) -> int:
+    """Read a non-negative integer, refusing a value that would silently mean
+    something else. An unparseable limit must not fall back to the default in
+    silence: the operator who set it believes it took effect."""
+    raw = os.environ.get(name, "").strip()
+    if not raw:
+        return default
+    try:
+        value = int(raw)
+    except ValueError as exc:
+        raise RuntimeError(f"{name} must be an integer, got {raw!r}") from exc
+    if value < 0:
+        raise RuntimeError(f"{name} must be >= 0, got {value}")
+    return value
 
 
 def _validate_deploy_probe_token(token: str) -> None:
@@ -87,6 +104,12 @@ class Settings:
     workos_jwt_issuer: str
     workos_jwks_url: str
     web_origin: str
+    #: Expected `aud` on access tokens. `None` — the default — leaves the claim
+    #: unchecked, which is what this service did before the audience boundary
+    #: existed at all. Setting it makes `aud` REQUIRED and pinned, so it must be
+    #: read off a real token first: see `auth/jwt.py::_verify` for why this is an
+    #: owner action rather than a constant, and OWNER_TODO for how to read it.
+    workos_jwt_audience: str | None = None
     environment: str = "production"
     local_dev_auth: bool = False
     local_dev_token: str = "majorana-local-dev"
@@ -128,6 +151,12 @@ class Settings:
     # API may enqueue from a managed control plane, but the worker must enforce
     # the dedicated-host marker before it can launch an OCI runtime.
     vqe_production_execution: bool = False
+    #: Anonymous requests per minute per source address (`rate_limit.py`). Only
+    #: credential-less traffic is counted, so this cannot throttle a signed-in
+    #: user. `0` disables the limiter entirely — the escape hatch if it is ever
+    #: refusing real readers, since an unbounded public catalog is recoverable
+    #: and a throttled one looks like an outage.
+    anon_rate_limit_per_minute: int = DEFAULT_ANON_LIMIT
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -198,6 +227,10 @@ class Settings:
                 "WORKOS_JWKS_URL", f"https://api.workos.com/sso/jwks/{client_id}"
             ),
             web_origin=os.environ.get("WEB_ORIGIN", "http://localhost:3000"),
+            # Empty and unset both mean "unchecked". An operator who clears the
+            # variable to roll the pin back should get the rollback, not an
+            # audience of "" that refuses every token.
+            workos_jwt_audience=os.environ.get("WORKOS_JWT_AUDIENCE", "").strip() or None,
             environment=environment,
             local_dev_auth=local_dev_auth,
             local_dev_token=os.environ.get("MAJORANA_LOCAL_DEV_TOKEN", "majorana-local-dev"),
@@ -217,4 +250,5 @@ class Settings:
             catalog_authority=CatalogAuthority.from_env(),
             vqe_candidate_execution=vqe_candidate_execution,
             vqe_production_execution=vqe_production_execution,
+            anon_rate_limit_per_minute=_int_env("ANON_RATE_LIMIT_PER_MINUTE", DEFAULT_ANON_LIMIT),
         )

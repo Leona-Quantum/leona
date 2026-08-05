@@ -46,6 +46,12 @@ EXPORTED = [
     models.ArtifactVersion,
     models.CatalogProvenance,
     models.PublicCatalogEntry,
+    # E4. Only the two top-level shapes are listed; the layer summaries
+    # (AssumptionSetSummary, LogicalCostSummary, CodeDistanceSummary,
+    # FootprintSummary, RuntimeSummary, CatalogEstimateSummary) are referenced by
+    # these and get hoisted as $defs automatically.
+    models.CatalogEntryEstimate,
+    models.CatalogEstimateList,
     models.Run,
     models.VerificationRecord,
     models.QpuRunRecord,

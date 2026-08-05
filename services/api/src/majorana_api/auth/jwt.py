@@ -36,7 +36,45 @@ def _verify(
     jwks_url: str,
     issuer: str,
     client_id: str,
+    audience: str | None = None,
 ) -> VerifiedToken:
+    """Verify a WorkOS access token. `audience`, when given, is pinned and required.
+
+    ## What was actually missing
+
+    Less than the review that prompted this said, and the difference is worth
+    recording. pyjwt verifies `aud` by default, and its rule for `audience=None`
+    is to REFUSE any token that carries one — so this service already rejected
+    another purpose's audience-bearing token before a line of this existed
+    (`tests/test_auth_jwt.py` pins that). The real gap was the token with no
+    `aud` at all, and the absence of any positive statement of who tokens are
+    for. That is what `audience` closes.
+
+    The boundary still matters: the issuer and JWKS are per-client, so every
+    token reaching here was signed for OUR client, and `aud` is the only claim
+    separating token *purposes* signed by it. `sub` and `sid` are on an ID token
+    too.
+
+    Pinning it unconditionally is the tempting fix and is not available: WorkOS
+    AuthKit access tokens are not documented to carry a fixed `aud`, the value
+    depends on the JWT template configured for the environment, and requiring a
+    claim that production's tokens do not carry refuses every request including
+    sign-in. That is the identical total outage `_validate_workos_client_consistency`
+    exists to prevent, and it has the same property of looking perfectly healthy
+    while nobody can log in.
+
+    So the mechanism is here and fails closed the moment it is configured, and
+    the value is an owner action taken against a real token rather than a guess
+    made in this file. `WORKOS_JWT_AUDIENCE` unset is the pre-existing behaviour,
+    stated rather than implied.
+    """
+    required = ["exp", "iat", "sub", "sid", "client_id"]
+    if audience is not None:
+        # Both halves matter. `audience=` alone rejects a WRONG aud but accepts a
+        # token carrying NO aud at all — pyjwt only compares the claim when it is
+        # present — so a stripped-claim token would sail through the check that
+        # was added to stop it.
+        required.append("aud")
     try:
         key = _jwk_client(jwks_url).get_signing_key_from_jwt(token)
         claims = pyjwt.decode(
@@ -44,8 +82,9 @@ def _verify(
             key.key,
             algorithms=["RS256"],
             issuer=issuer,
+            audience=audience,
             leeway=LEEWAY_S,
-            options={"require": ["exp", "iat", "sub", "sid", "client_id"]},
+            options={"require": required},
         )
         if claims["client_id"] != client_id:
             raise TokenError("token client_id does not match this application")
@@ -60,6 +99,7 @@ async def verify_bearer_token(
     jwks_url: str,
     issuer: str,
     client_id: str,
+    audience: str | None = None,
 ) -> VerifiedToken:
     return await anyio.to_thread.run_sync(
         lambda: _verify(
@@ -67,5 +107,6 @@ async def verify_bearer_token(
             jwks_url=jwks_url,
             issuer=issuer,
             client_id=client_id,
+            audience=audience,
         )
     )

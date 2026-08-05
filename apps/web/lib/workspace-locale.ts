@@ -426,6 +426,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
     hideInspector: string;
     showInspector: string;
     circuitRestored: string;
+    circuitReadOnly: string;
+    circuitReadOnlyTruncated: (shown: number, total: number) => string;
+    readOnly: string;
+    readOnlyHint: string;
     circuitNotRebuildable: string;
     sourceFallbackNote: (target: string, source: string) => string;
     circuitTooLargeToDraw: string;
@@ -897,6 +901,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hideInspector: "Hide inspector",
       showInspector: "Inspector",
       circuitRestored: "Circuit loaded from the saved artifact. Edits stay in this draft until you verify & save.",
+      circuitReadOnly: "This is the framework-native circuit that ran. Unsupported operations are preserved as named blocks, so the diagram is read-only and the original code remains unchanged.",
+      circuitReadOnlyTruncated: (shown, total) => `Read-only preview: showing ${shown} of ${total} framework operations. The original code remains complete and unchanged.`,
+      readOnly: "Read-only",
+      readOnlyHint: "Inspect the executed circuit here. Edit the high-level program in the Code tab.",
       circuitNotRebuildable: "This artifact's code goes beyond the visual builder — edit it in the Code tab.",
       sourceFallbackNote: (target, source) => `No safe ${target} conversion exists for this circuit, so this tab shows the stored ${source} source — it is a source reference, not ${target} code. Exports and runs from this tab use ${source}.`,
       circuitTooLargeToDraw: "This circuit is too large to draw as a diagram — its qubit or gate count would render an unreadable canvas. The Code tab holds the full source to read and run.",
@@ -1362,6 +1370,10 @@ export const WORKSPACE_COPY: Record<PublicLocale, {
       hideInspector: "詳細を隠す",
       showInspector: "回路の詳細",
       circuitRestored: "保存済み回路を読み込みました。検証して保存するまで、編集はこの下書きにのみ反映されます。",
+      circuitReadOnly: "実行されたフレームワーク固有の回路を表示しています。未対応の演算も名前付きの箱として保持するため、この図は読み取り専用で、元コードは変更されません。",
+      circuitReadOnlyTruncated: (shown, total) => `読み取り専用プレビュー：${total}個のフレームワーク演算のうち${shown}個を表示しています。元コードは完全な状態で変更されません。`,
+      readOnly: "読み取り専用",
+      readOnlyHint: "実行後の回路を確認できます。高水準プログラムの編集はコードタブで行ってください。",
       circuitNotRebuildable: "この回路のコードは回路エディタの対応範囲を超えています。コードタブで編集してください。",
       sourceFallbackNote: (target, source) => `この回路を${target}へ安全に変換できないため、保存済みの${source}ソースを表示しています。変換後のコードではありません。書き出しと実行には${source}を使用します。`,
       circuitTooLargeToDraw: "この回路は図として描画するには大きすぎます — 量子ビット数またはゲート数が多く、キャンバスが判読不能になります。全ソースはコードタブで確認・実行できます。",

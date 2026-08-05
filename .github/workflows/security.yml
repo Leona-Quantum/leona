@@ -25,16 +25,16 @@ jobs:
   gitleaks:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
         with: { fetch-depth: 0 }
-      - uses: gitleaks/gitleaks-action@v2
+      - uses: gitleaks/gitleaks-action@ff98106e4c7b2bc287b24eaf42907196329070c7 # v2
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
 
   osv:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
       # Downloaded and checksummed rather than run as a third-party action. The
       # binary is what we actually trust, and pinning the hash means a
       # compromised release cannot change what runs here without failing loudly
@@ -60,8 +60,8 @@ jobs:
   semgrep:
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
         with: { python-version: "3.12" }
       # Community Edition: no SEMGREP_APP_TOKEN, no account. `semgrep ci` is the
       # command that wants one; `semgrep scan` does not. The registry ruleset is
@@ -76,3 +76,68 @@ jobs:
         run: |
           semgrep scan --config p/default --severity ERROR --error \
             --metrics=off --exclude=db --exclude=node_modules --exclude=.next
+
+  # 05-security.md §2: "No secret-shaped strings in client bundle or error
+  # responses (CI grep)". Unticked since adoption and never built. The API half
+  # holds by construction (`app._problem()` composes every error body from a
+  # fixed shape and never echoes an exception); this is the bundle half.
+  #
+  # It needs a real `next build` because the thing being checked is what the
+  # build INLINES — `process.env.NEXT_PUBLIC_*` becomes a literal in the client
+  # chunks, which is the documented behaviour and exactly the danger. Reading
+  # source would miss it.
+  #
+  # Its own job rather than a step in `ts`: `ts` is a required check, and hanging
+  # a several-minute build off it would make every PR in the repo wait on this.
+  # Making this one required is a branch-protection change and therefore an
+  # owner action — see memory/OWNER_TODO.md.
+  client-bundle:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - uses: pnpm/action-setup@b906affcce14559ad1aafd4ab0e942779e9f58b1 # v4
+      - uses: actions/setup-node@49933ea5288caeca8642d1e84afbd3f7d6820020 # v4
+        with:
+          node-version: 26
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      # The scanner proves it still works before it is believed. A clean scan
+      # from a broken scanner is indistinguishable from a clean scan, which is
+      # how the gitleaks gate stayed meaningless for months.
+      - name: scanner self-test
+        run: node scripts/check-client-bundle-secrets.mjs --self-test
+      - name: build the web app
+        run: pnpm --filter @majorana/web build
+      - name: no secret-shaped strings in browser-served files
+        run: node scripts/check-client-bundle-secrets.mjs --dist apps/web/.next
+
+  # AGENTS.md hard rule 1 — migrations, contracts, sandbox, workflows and auth are
+  # "never merged on subagent/Codex authority". That rule names `.github/CODEOWNERS`
+  # as its mechanism, and CODEOWNERS was doing nothing: GitHub honours it only under
+  # `required_pull_request_reviews.require_code_owner_reviews`, and neither `dev` nor
+  # `prod` has a `required_pull_request_reviews` block at all (checked 2026-08-05).
+  #
+  # Switching it on is not the fix — the only code owner is the only author and GitHub
+  # refuses self-approval, so the rule would be unsatisfiable and would go the way of
+  # the `snyk` required check. This enforces the enforceable half: a blast-radius change
+  # must be declared in the PR body, so it cannot ride along unnoticed in a PR about
+  # something else. See the script's header for the full reasoning.
+  #
+  # `schedule` runs have no pull_request payload, so this is PR-only.
+  blast-radius:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with: { fetch-depth: 0 }
+      - name: declared in the PR body
+        # Through `env`, never interpolated into the shell. `${{ ... }}` of a PR body
+        # is attacker-controlled text pasted into the script the runner executes, which
+        # is the standard GitHub Actions injection; as an environment variable it is
+        # data that the checker reads with `process.env`.
+        env:
+          PR_BODY: ${{ github.event.pull_request.body }}
+          BASE_REF: ${{ github.event.pull_request.base.ref }}
+        run: |
+          node scripts/check-blast-radius.mjs --self-test
+          node scripts/check-blast-radius.mjs --base "origin/${BASE_REF}"

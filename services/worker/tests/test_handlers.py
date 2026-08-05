@@ -341,6 +341,67 @@ async def test_simple_terminal_failure_emits_typed_sanitized_error():
     assert run_store.observed[1]["reason_code"] == "generation_output_invalid"
 
 
+async def test_missing_conversation_inputs_return_a_clarification_instead_of_run_error():
+    run_id = uuid.uuid4()
+    emitted = []
+
+    class Sink:
+        async def emit(self, event_type, payload, *, event_id=None):
+            emitted.append((event_type, payload, event_id))
+
+    class RunStore:
+        async def finish(self, status, payload, **fields):
+            self.observed = status, payload, fields
+            return status
+
+    failure = SimplePipelineFailure(
+        kind=SimpleFailureKind.PLAN,
+        stage=SimplePipelineStage.PLANNING,
+        code="conversation_inputs_missing",
+        message="the referenced request still needs task-specific inputs",
+        details={
+            "missing_inputs": [
+                "expected returns for each stock",
+                "risk model and fixed risk bound",
+            ]
+        },
+    )
+    outcome = SimplePipelineOutcome(
+        status=SimplePipelineStatus.FAILED,
+        stage=failure.stage,
+        counters=SimplePipelineCounters(plan_attempts=1),
+        failure=failure,
+    )
+    ctx = RunContext(
+        run_id=run_id,
+        task_prompt="実際に量子回路生成して",
+        mode=RunMode.EXECUTE,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=Sink(),
+    )
+    run_store = RunStore()
+
+    result = await handlers._finish_simple_pipeline(ctx, run_store, outcome)
+
+    assert result is RunStatus.SUCCEEDED
+    assert all(event_type != "run.error" for event_type, *_ in emitted)
+    completed = next(
+        payload for event_type, payload, _ in emitted if event_type == "chat.completed"
+    )
+    assert "次の問題固有の情報が必要" in completed["text"]
+    assert "expected returns for each stock" in completed["text"]
+    assert "無関係なサンプル回路" in completed["text"]
+    assert completed["model"] == "majorana-readiness-gate"
+    assert run_store.observed == (
+        RunStatus.SUCCEEDED,
+        {"status": RunStatus.SUCCEEDED},
+        {},
+    )
+
+
 async def test_simple_terminal_failure_exposes_last_candidate_without_strict_lookup():
     run_id = uuid.uuid4()
     emitted = []

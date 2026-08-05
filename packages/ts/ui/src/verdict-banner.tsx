@@ -12,7 +12,8 @@ const VERDICT_COPY: Record<Verdict, { label: string; tone: "ok" | "warn" | "err"
   // A pass whose evidence was contract checks only — nothing compared the circuit
   // against what the physics should do. Distinct from "with caveats", which means a
   // physical check ran and left something unresolved. See
-  // plans/evidence-strength-labelling.md.
+  // plans/archive/evidence-strength-labelling.md (archived as shipped; the live rule is
+  // `evidence_strength_of` in packages/py/contracts/src/majorana_contracts/enums.py).
   structural_only: { label: "Structurally verified", tone: "warn" },
   verified_caveats: { label: "Verified with caveats", tone: "warn" },
   not_verified: { label: "Not verified", tone: "warn" },

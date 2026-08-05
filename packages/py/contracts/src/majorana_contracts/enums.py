@@ -1,5 +1,6 @@
 """Closed enums shared across every boundary. Values match the DB CHECK constraints
-(plans/rebuild/04-database.md §2) — additive changes only within /v1."""
+(plans/archive/rebuild/04-database.md §2, archived; live schema authority is
+majorana/docs/runbooks/database.md) — additive changes only within /v1."""
 
 from collections.abc import Iterable, Mapping
 from enum import StrEnum
@@ -505,6 +506,34 @@ class QpuEstimateBasis(StrEnum):
 
     VENDOR_RATE_CARD = "vendor_rate_card"
     FREE_TIER_ALLOWANCE = "free_tier_allowance"
+
+
+class ResourceEstimateBasis(StrEnum):
+    """On what footing a catalogue entry's fault-tolerant cost is being reported.
+
+    Four values because there are four genuinely different things a page can be
+    saying, and collapsing any pair of them is how an estimate starts reading as
+    a measurement:
+
+    - `EXACT` — every operation came from a closed vocabulary, so the magic-state
+      count is counted, not approximated. In today's corpus these are all
+      Clifford-only: the honest display is "consumes no magic states", not a
+      small number.
+    - `ESTIMATED` — the circuit contains arbitrary-angle rotations, which have no
+      T-count until a synthesis precision is named. The figure is real *under
+      that stated epsilon* and moves with it, so the epsilon travels with the
+      number and is part of the assumption-set identity.
+    - `REFUSED` — the circuit holds an operation this stack cannot classify. No
+      precision fixes that, so there is no number and the reason is given instead.
+    - `NO_CIRCUIT` — the entry carries no portable circuit at all. Distinct from
+      REFUSED on purpose: nothing was attempted and nothing failed, and showing
+      a refusal here would invent a doubt about the entry that does not exist.
+    """
+
+    EXACT = "exact"
+    ESTIMATED = "estimated"
+    REFUSED = "refused"
+    NO_CIRCUIT = "no_circuit"
 
 
 class QpuRunStatus(StrEnum):

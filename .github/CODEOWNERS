@@ -1,4 +1,6 @@
-# Blast-radius surfaces: owner/orchestrator review required (see plans/rebuild/03 §5)
+# Blast-radius surfaces: owner/orchestrator review required
+# (rationale: plans/archive/rebuild/03-repo-structure.md §5, archived — the live repo
+#  layout is the current authority)
 /db/migrations/            @EshMis
 /packages/py/contracts/    @EshMis
 /packages/py/sandbox/      @EshMis

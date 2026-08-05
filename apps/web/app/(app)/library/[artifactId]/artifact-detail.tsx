@@ -127,7 +127,8 @@ type ArtifactCopy = (typeof DETAIL_COPY)[PublicLocale];
  * Four places on this page printed the literal "Verified" off `copy.verified`,
  * independent of the artifact's status, so an artifact whose only evidence was a
  * return-contract check read exactly like one checked against the physics. See
- * plans/evidence-strength-labelling.md. */
+ * plans/archive/evidence-strength-labelling.md (shipped; the live rule is
+ * `evidence_strength_of` in packages/py/contracts/src/majorana_contracts/enums.py). */
 function verdictChip(artifact: LibraryArtifact, copy: ArtifactCopy, locale: PublicLocale): { label: string; glyph: string } {
   // The verdict words come from the module that renders the panel below, in
   // both languages. They used to be typed out here a second time, so "Failed"

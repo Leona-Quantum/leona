@@ -25,6 +25,7 @@ import { BUILDER_GATES, builderStepLabel, createBuilderStepId, generateBuilderCo
 import { loadStoredCircuit, saveStoredCircuit } from "../../../lib/studio-circuits";
 import { circuitSyncState, type CircuitSyncState } from "../../../lib/studio-sync";
 import { looksLikeOpenQasm3, parseCircuitSource, parseInterchangeCircuit, reconstructInterchangeCircuit } from "../../../lib/circuit-conversion";
+import { circuitIRDiagram, circuitIRFromMetadata, validateCircuitIR, type CircuitIRReadOnlyReason } from "../../../lib/circuit-ir";
 import { canvasSeedCandidates, draftSourceFramework, studioDraftBundle, type StudioDraftBundle } from "../../../lib/studio-drafts";
 import { CircuitDiagram } from "../../../components/circuit-diagram";
 import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "../../../lib/studio-parse";
@@ -58,11 +59,22 @@ type BuilderSeed = {
   qubitCount: number;
   steps: BuilderStep[];
   customGates: CustomGateDefinition[];
+  readOnly: boolean;
+  readOnlyReasons: CircuitIRReadOnlyReason[];
+  operationCount: number;
 };
 
 type ArtifactHydration = "loading" | "ready" | "error";
 
-const EMPTY_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCount: 2, steps: [], customGates: [] };
+const EMPTY_SEED: Omit<BuilderSeed, "key"> = {
+  artifactIdentity: null,
+  qubitCount: 2,
+  steps: [],
+  customGates: [],
+  readOnly: false,
+  readOnlyReasons: [],
+  operationCount: 0,
+};
 
 type StudioFramework = CircuitFrameworkKey;
 
@@ -92,7 +104,15 @@ const STARTER_CODES: BuilderCodeVariants = generateBuilderCode(STARTER_STEPS, 2)
  * artifact whose code the builder cannot represent, and drawing a Bell pair
  * for an unrelated circuit would be a far worse lie than drawing nothing.
  */
-const STARTER_SEED: Omit<BuilderSeed, "key"> = { artifactIdentity: null, qubitCount: 2, steps: STARTER_STEPS, customGates: [] };
+const STARTER_SEED: Omit<BuilderSeed, "key"> = {
+  artifactIdentity: null,
+  qubitCount: 2,
+  steps: STARTER_STEPS,
+  customGates: [],
+  readOnly: false,
+  readOnlyReasons: [],
+  operationCount: STARTER_STEPS.length,
+};
 
 export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", limits = TIER_LIMITS.free }: { artifactId?: string; newDraft?: boolean; locale?: PublicLocale; limits?: CpuSimulationLimits }) {
   const copy = WORKSPACE_COPY[locale].studio;
@@ -252,6 +272,10 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
   // and hand-written source differ in imports and spacing while meaning the
   // same circuit, and a warning that fires constantly gets ignored.
   const canvasSync: CircuitSyncState = useMemo(() => {
+    // Circuit IR is a trusted observation of this exact stored version. Opaque
+    // operations intentionally have no builder decomposition, so structural
+    // comparison would erase them and call the faithful read-only view stale.
+    if (builderSeed.readOnly && artifact?.code === code) return { kind: "in_sync" };
     const fromCode = parseCircuitSource(code, sourceFramework);
     if (fromCode) return circuitSyncState(fromCode, canvasCircuit);
     // The active code is outside the builder's subset — an LLM run's Python with
@@ -263,7 +287,7 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // honestly falls back to "the diagram no longer matches the code".
     const fromQasm = artifact?.code === code && artifact.qasm ? parseInterchangeCircuit(artifact.qasm) : null;
     return circuitSyncState(fromQasm, canvasCircuit);
-  }, [code, sourceFramework, canvasCircuit, artifact?.code, artifact?.qasm]);
+  }, [code, sourceFramework, canvasCircuit, artifact?.code, artifact?.qasm, builderSeed.readOnly]);
 
   const cpuEligibility = useMemo(() => cpuSimulationEligibility({
     artifactId: artifact?.id ?? "",
@@ -291,9 +315,21 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
     // The diagram virtualizes both axes, so a valid cached user edit remains
     // drawable regardless of circuit width or depth.
     if (stored?.artifactIdentity === artifactIdentity) {
-      return { seed: { key, artifactIdentity, qubitCount: stored.qubitCount, steps: stored.steps, customGates: stored.customGates }, note: copy.circuitRestored };
+      return {
+        seed: {
+          key,
+          artifactIdentity,
+          qubitCount: stored.qubitCount,
+          steps: stored.steps,
+          customGates: stored.customGates,
+          readOnly: false,
+          readOnlyReasons: [],
+          operationCount: stored.steps.length,
+        },
+        note: copy.circuitRestored,
+      };
     }
-    const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm);
+    const hasOwnCode = Boolean(next.code || next.frameworkVariants || next.qasm || next.circuitIr);
     // Every draft the picker holds, not just the artifact's own stored variants.
     // The OpenQASM 3 draft is very often derived from source the editable parser
     // rejects, and it is exactly what the interchange reader can draw — skipping
@@ -305,7 +341,45 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
       ? candidates.map((candidate) => parseCircuitSource(candidate.code, candidate.framework)).find(Boolean) ?? null
       : null;
     if (parsed) {
-      return { seed: { key, artifactIdentity, qubitCount: parsed.qubitCount, steps: parsed.steps, customGates: [] }, note: copy.circuitRestored };
+      return {
+        seed: {
+          key,
+          artifactIdentity,
+          qubitCount: parsed.qubitCount,
+          steps: parsed.steps,
+          customGates: [],
+          readOnly: false,
+          readOnlyReasons: [],
+          operationCount: parsed.steps.length,
+        },
+        note: copy.circuitRestored,
+      };
+    }
+    // Second choice: the framework-native circuit observation. Unlike QASM it
+    // can retain an unsupported high-level operation (for example one 8-wire
+    // DiagonalGate) as one named block. The mapper permits editing only when
+    // every operation can round-trip through the existing builder; otherwise
+    // the same diagram is intentionally read-only and the source stays intact.
+    const observedCircuit = validateCircuitIR(next.circuitIr);
+    const observed = observedCircuit ? circuitIRDiagram(observedCircuit) : null;
+    if (observed) {
+      return {
+        seed: {
+          key,
+          artifactIdentity,
+          qubitCount: observed.qubitCount,
+          steps: observed.steps,
+          customGates: observed.customGates,
+          readOnly: observed.readOnly,
+          readOnlyReasons: observed.readOnlyReasons,
+          operationCount: observed.operationCount,
+        },
+        note: observed.readOnly
+          ? observed.readOnlyReasons.includes("truncated")
+            ? copy.circuitReadOnlyTruncated(observed.steps.length, observed.operationCount)
+            : copy.circuitReadOnly
+          : copy.circuitRestored,
+      };
     }
     // Fallback: reconstruct a diagram from the stored interchange QASM
     // (or wider builder-shaped source). LLM-run artifacts store Qiskit qasm3
@@ -340,7 +414,19 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
         ? fallback
         : null;
     if (reconstructed) {
-      return { seed: { key, artifactIdentity, qubitCount: reconstructed.qubitCount, steps: reconstructed.steps, customGates: [] }, note: copy.circuitRestored };
+      return {
+        seed: {
+          key,
+          artifactIdentity,
+          qubitCount: reconstructed.qubitCount,
+          steps: reconstructed.steps,
+          customGates: [],
+          readOnly: false,
+          readOnlyReasons: [],
+          operationCount: reconstructed.steps.length,
+        },
+        note: copy.circuitRestored,
+      };
     }
     const tooLargeToDraw = interchange?.kind === "too_large" || (fallback !== null && fallback.steps.length > MAX_VIEWABLE_STEPS);
     return { seed: { key, ...EMPTY_SEED, artifactIdentity }, note: hasOwnCode ? (tooLargeToDraw ? copy.circuitTooLargeToDraw : copy.circuitNotRebuildable) : null };
@@ -392,6 +478,9 @@ export function StudioWorkspace({ artifactId, newDraft = false, locale = "en", l
       qubitCount: parsed.qubitCount,
       steps: parsed.steps,
       customGates: [],
+      readOnly: false,
+      readOnlyReasons: [],
+      operationCount: parsed.steps.length,
     });
     setMessage(copy.rebuiltFromCode);
   }
@@ -1160,6 +1249,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
   const onCircuitChangeRef = useRef(onCircuitChange);
   onCircuitChangeRef.current = onCircuitChange;
   useEffect(() => {
+    if (seed.readOnly) return;
     // The untouched seed is not re-persisted; only user edits are reported.
     // Reference equality is the signal: any edit replaces these arrays, while
     // StrictMode's double-invoked mount effect still sees the seed values.
@@ -1295,14 +1385,19 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       label={copy.canvasLabel}
       eyebrow={copy.canvasLabel}
       heading={copy.generatedPreview}
-      meta={<span className="mj-mono-muted">{frameworkLabel(framework)} · {qubitCount}q · {steps.length} ops</span>}
+      meta={(
+        <span className="mj-mono-muted">
+          {frameworkLabel(framework)} · {qubitCount}q · {seed.operationCount} ops
+          {seed.readOnly ? ` · ${copy.readOnly}` : ""}
+        </span>
+      )}
       popout={popout}
       onTogglePopout={onTogglePopout}
       copy={copy}
       hidden={hidden}
       region={region}
     >
-      <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
+      {seed.readOnly ? null : <div className="mj-builder-palette" role="toolbar" aria-label={copy.palette}>
         {BUILDER_GATES.map((gate) => (
           <button key={gate} type="button" className={`mj-builder-gate${armed === gate ? " is-active" : ""}`} aria-pressed={armed === gate} onClick={() => { onSelectGate(gate); setPendingQubits([]); setBuilderMessage(null); }}>
             {gate}
@@ -1316,9 +1411,9 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
             </select>
           </label>
         ) : null}
-      </div>
+      </div>}
 
-      {customGates.length ? (
+      {!seed.readOnly && customGates.length ? (
         <div className="mj-builder-custom-gates" aria-label={copy.customGates}>
           <span className="mj-section-label">{copy.customGates}</span>
           {customGates.map((gate) => {
@@ -1335,7 +1430,15 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         </div>
       ) : null}
 
-      {syncState.kind === "in_sync" ? null : (
+      {seed.readOnly ? (
+        <div className="mj-circuit-sync mj-circuit-sync--unrepresentable" role="status">
+          <span>
+            {seed.readOnlyReasons.includes("truncated")
+              ? copy.circuitReadOnlyTruncated(steps.length, seed.operationCount)
+              : copy.circuitReadOnly}
+          </span>
+        </div>
+      ) : syncState.kind === "in_sync" ? null : (
         <div className={`mj-circuit-sync mj-circuit-sync--${syncState.kind}`} role="status">
           <span>{syncState.kind === "diverged" ? copy.canvasOutOfDate : copy.canvasBeyondBuilder}</span>
           {syncState.kind === "diverged" ? (
@@ -1349,7 +1452,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         steps={steps}
         customGates={customGates}
         ariaLabel={copy.circuitAria(frameworkLabel(framework))}
-        interaction={{
+        interaction={seed.readOnly ? undefined : {
           selectedStepIds,
           pendingQubits,
           selectedLabel,
@@ -1359,7 +1462,7 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         }}
       />
 
-      <div className="mj-builder-controls">
+      {seed.readOnly ? null : <div className="mj-builder-controls">
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(1)} disabled={qubitCount >= MAX_VIEWABLE_QUBITS}>{copy.addQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => changeQubitCount(-1)} disabled={qubitCount <= 1}>{copy.removeQubit}</button>
         <button className="mj-secondary-button" type="button" onClick={() => { const removed = steps[steps.length - 1]; setSteps((current) => current.slice(0, -1)); if (removed) setSelectedStepIds((current) => current.filter((id) => id !== removed.id)); setPendingQubits([]); }} disabled={!steps.length}>{copy.undo}</button>
@@ -1391,9 +1494,9 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
         {applyConfirmPending ? (
           <button className="mj-secondary-button" type="button" onClick={() => { setApplyConfirmPending(false); setBuilderMessage(null); }}>{copy.cancel}</button>
         ) : null}
-      </div>
+      </div>}
 
-      {showCustomGateForm ? (
+      {!seed.readOnly && showCustomGateForm ? (
         <form className="mj-builder-custom-form" onSubmit={(event) => { event.preventDefault(); createCustomGate(); }}>
           <label>
             <span>{copy.customGates}</span>
@@ -1407,13 +1510,13 @@ function CircuitBuilder({ seed, framework, selectedGate, onSelectGate, onApply, 
       {/* The gate's description was the inspector's headline card, one panel
           away from the palette it described. Folded away by default because it
           is reference material, not state. */}
-      <details className="mj-sim-details mj-studio-gate-note">
+      {seed.readOnly ? null : <details className="mj-sim-details mj-studio-gate-note">
         <summary>{copy.selectedGate}: {selectedGate.startsWith("custom:") ? copy.customGateLabel : selectedGate}</summary>
         <p>{selectedGate.startsWith("custom:") ? copy.customGateInspector : copy.gateDescriptions[selectedGate] ?? copy.gateDescriptions.H}</p>
-      </details>
+      </details>}
 
       <div className="mj-studio-canvas-footer" aria-live="polite">
-        <span>{builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
+        <span>{seed.readOnly ? copy.readOnlyHint : builderMessage ?? (pendingQubits.length ? copy.pickTarget : selectedStepIds.length ? copy.selectedCount(selectedStepIds.length) : steps.length ? copy.builderHint : copy.builderEmpty)}</span>
         <span className="mj-mono-muted">{steps.length ? (steps.length <= 40 ? steps.map((step) => builderStepLabel(step, customGates)).join(" → ") : `${steps.slice(0, 20).map((step) => builderStepLabel(step, customGates)).join(" → ")} → … (${steps.length} ops)`) : "—"}</span>
       </div>
     </StudioPanelSurface>
@@ -2458,6 +2561,7 @@ async function loadArtifact(id: string): Promise<LibraryArtifact | null> {
     artifact.code = typeof version.code === "string" ? version.code : artifact.code;
     artifact.frameworkVariants = frameworkVariantsFromRemote(version.framework_variants) ?? artifact.frameworkVariants;
     artifact.qasm = typeof version.qasm === "string" ? version.qasm : artifact.qasm;
+    artifact.circuitIr = circuitIRFromMetadata(version.metadata);
     artifact.currentVersionId = payload.current_version_id;
     artifact.resourceRows = resourceRowsFromRemote(version.resource_estimates);
     // The Versions panel is only useful if the checks arrive with the artifact.
@@ -2492,6 +2596,7 @@ function studioArtifactIdentity(artifact: LibraryArtifact): string {
     framework: artifact.framework,
     code: artifact.code,
     qasm: artifact.qasm,
+    circuitIr: artifact.circuitIr,
     variants,
   });
   for (const character of identitySource) {

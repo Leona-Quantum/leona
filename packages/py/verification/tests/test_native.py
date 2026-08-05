@@ -1,4 +1,5 @@
-"""Framework-native evidence, judged on arrays (plans/framework-native-verification.md).
+"""Framework-native evidence, judged on arrays (plans/archive/framework-native-verification.md,
+archived as shipped; the implementation is majorana_verification/native.py).
 
 The fixtures break qubit-permutation symmetry on purpose: X on one specific qubit
 plus H on another, so an endianness or wire-relabelling defect changes the state
@@ -236,7 +237,8 @@ def _teleport_sampled() -> dict:
 
 
 def test_sampled_counts_marginalize_onto_the_uniquely_matching_register():
-    """The defect this fixes (plans/sampled-counts-width-mismatch.md): the task
+    """The defect this fixes (plans/archive/sampled-counts-width-mismatch.md, archived
+    as shipped in PR #113): the task
     asked for "the counts of the teleported qubit", the model reported a 1-bit
     marginal over the `out` register, and the width mismatch failed correct code
     on every candidate."""
