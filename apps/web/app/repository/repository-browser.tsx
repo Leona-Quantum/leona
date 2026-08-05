@@ -3,12 +3,9 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   entryVerificationMethods,
-  getPublicRepositoryVariant,
   PUBLIC_REPOSITORY_CATEGORIES,
-  PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryCategory,
   type PublicRepositoryListEntry,
-  type PublicRepositoryFramework,
 } from "../../lib/public-repository";
 import type { PublicLocale } from "../../lib/public-locale";
 import { VerificationTierBadge } from "../../components/repository-verification";
@@ -24,6 +21,7 @@ import {
 } from "../../lib/repository/browse-order";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
 import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
+import { matchesRepositoryQuery } from "../../lib/repository/search";
 import {
   PIPELINE_STANCES,
   connectedCount,
@@ -47,10 +45,6 @@ const COPY = {
   en: {
     search: "Search the Atlas",
     placeholder: "Search algorithms, frameworks, or tags",
-    family: "Algorithm family",
-    framework: "Framework",
-    allFamilies: "All families",
-    allFrameworks: "All frameworks",
     topic: "Topic",
     allTopics: "All topics",
     stance: "Takes / returns",
@@ -69,6 +63,11 @@ const COPY = {
     facetDomainCount: "{n} of {total} entries",
     entry: "entry",
     entries: "entries",
+    // Shown only when folding actually removed a row, so the ordinary case
+    // stays the short sentence it was.
+    countFolded: "{rows} entries · {records} records, sized variants folded",
+    countFoldedTitle:
+      "Sized and curated variants of the same circuit are folded into one entry. Every variant is still its own page, and the widths are listed on the card.",
     view: "View",
     gateExpand: "Expand into basic gates",
     gateCollapse: "Collapse to single gate",
@@ -118,10 +117,6 @@ const COPY = {
   ja: {
     search: "Atlasを検索",
     placeholder: "アルゴリズム、フレームワーク、タグを検索",
-    family: "アルゴリズムの分類",
-    framework: "フレームワーク",
-    allFamilies: "すべての分類",
-    allFrameworks: "すべてのフレームワーク",
     topic: "トピック",
     allTopics: "すべてのトピック",
     stance: "入力 / 出力",
@@ -140,6 +135,9 @@ const COPY = {
     facetDomainCount: "{total}件中{n}件",
     entry: "件",
     entries: "件",
+    countFolded: "{rows}件 · レコード{records}件（サイズ違いのバリアントを統合）",
+    countFoldedTitle:
+      "同じ回路のサイズ違い・厳選されたバリアントは1件にまとめています。各バリアントは個別のページとして残り、対応する量子ビット数はカードに表示されます。",
     view: "詳細",
     gateExpand: "基本ゲートに展開",
     gateCollapse: "元のゲート表示に戻す",
@@ -349,8 +347,6 @@ export function RepositoryBrowser({
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
-  const [family, setFamily] = useState<string>("");
-  const [framework, setFramework] = useState<"" | PublicRepositoryFramework>("");
   // Seeded from ?topic= by the server component, never read from `window` here:
   // this page does not hydrate in either browser surface, so an effect that set
   // it would leave the entry pages' topic chips linking to a filter that never
@@ -388,7 +384,6 @@ export function RepositoryBrowser({
     });
   }
 
-  const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))).sort(), [entries]);
   // Counted over the whole corpus rather than over what the other filters have
   // left, so the control does not renumber itself as a reader narrows — a count
   // that moves while you are reading it is not a count, it is a hint.
@@ -482,29 +477,19 @@ export function RepositoryBrowser({
     [entries],
   );
   const filteredEntries = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
     const matched = entries.filter((entry) => {
-      const matchesQuery = !normalizedQuery || [
-        entry.title,
-        entry.titleJa,
-        entry.algorithmFamily,
-        entry.framework,
-        entry.description,
-        entry.descriptionJa,
-        entry.provenance,
-        ...entry.tags,
-      ].join(" ").toLowerCase().includes(normalizedQuery);
+      // Through the shared predicate, not inline: removing the family control
+      // made this haystack the only way those 57 values stay reachable, so it
+      // has to live where the corpus audit and a unit test can read the real
+      // one (lib/repository/search).
       const matchesCategory = category === "all" || entry.category === category;
-      const matchesFamily = !family || entry.algorithmFamily === family;
-      const variant = framework ? getPublicRepositoryVariant(entry, framework) : null;
-      const matchesFramework = !framework || variant?.status === "native" || variant?.status === "conversion";
-      return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
+      return matchesRepositoryQuery(entry, query) && matchesCategory;
     });
-    // Applied through the shared helper rather than as another clause here: the
-    // browse <select> does not hydrate in either browser surface, so the rule
-    // has to live where a unit test can reach it (lib/repository/topic-filter).
+    // Applied through the shared helpers rather than as more clauses here, so
+    // each rule sits somewhere a unit test can reach it
+    // (lib/repository/topic-filter, lib/repository/interface).
     return filterByStance(filterByTopic(matched, topic), interfaces, stance);
-  }, [category, entries, family, framework, interfaces, query, stance, topic]);
+  }, [category, entries, interfaces, query, stance, topic]);
 
   /** slug -> its cost row, when the API supplied a listing. */
   const costBySlug = useMemo(() => {
@@ -571,8 +556,6 @@ export function RepositoryBrowser({
   function clearFilters() {
     setQuery("");
     setCategory("all");
-    setFamily("");
-    setFramework("");
     // Including one that may have arrived from `?topic=` rather than from this
     // control — the button offered by the empty state has to be able to empty
     // every filter, or it hands back a list that is still filtered.
@@ -799,6 +782,33 @@ export function RepositoryBrowser({
    */
   const unrankedRows = useMemo(() => foldRows(unranked, groupOfSlug), [groupOfSlug, unranked]);
 
+  /**
+   * How many rows the reader can actually count on the page (s81).
+   *
+   * R2.6 made the header disagree with the page: it said "283 public entries"
+   * over 176 cards, because 120 records fold into 15 width families and 4 more
+   * into 2 curated clusters. Both numbers were true and the gap was never
+   * explained, so it read as "where did the other 107 go".
+   *
+   * Summed from **the same arrays the body renders**, not recomputed from the
+   * fold rule. A second derivation of "how many rows are there" is a second
+   * writer of one fact, and the two would drift the first time a view changed
+   * which set it draws from — the failure being a count that is wrong in a way
+   * only a reader counting cards would ever catch.
+   *
+   * The unranked section renders under every view, so it is added in every
+   * branch rather than only the default one.
+   */
+  const shownRowCount = useMemo(() => {
+    const main =
+      category === "gates"
+        ? gateEntries.length
+        : category === "algorithms"
+          ? algorithmGroups.reduce((total, group) => total + group.rows.length, 0)
+          : listRows.length;
+    return main + unrankedRows.length;
+  }, [algorithmGroups, category, gateEntries, listRows, unrankedRows]);
+
   // Fall back to the first gate so the detail pane is populated on the very
   // first render (before the selection effect runs / without JS), and keep the
   // sidebar highlight in sync with whatever is actually shown.
@@ -817,20 +827,32 @@ export function RepositoryBrowser({
             type="search"
           />
         </label>
-        <label>
-          <span>{copy.family}</span>
-          <select value={family} onChange={(event) => setFamily(event.target.value)}>
-            <option value="">{copy.allFamilies}</option>
-            {families.map((option) => <option key={option} value={option}>{familyLabel(option, locale)}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>{copy.framework}</span>
-          <select value={framework} onChange={(event) => setFramework(event.target.value as "" | PublicRepositoryFramework)}>
-            <option value="">{copy.allFrameworks}</option>
-            {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </label>
+        {/* The `Algorithm family` and `Framework` selects stood here until s81.
+            Both were removed rather than restyled, and both removals were
+            measured against the corpus first (roadmap §0.3):
+
+            `algorithmFamily` was 57 free-text values over 283 entries, **33 of
+            them worn by exactly one entry** — a search box implemented as a
+            dropdown. `role` + `method` now cover it by rule, as supersets: 49
+            of the 57 families share a single role+method signature. The 8 that
+            scatter, and the 12 signatures that cover more than one family, are
+            why the fallback matters — and the fallback is exact. The search
+            input above already indexes `algorithmFamily`, and typing a family's
+            name **never misses one of its own members** (0 of 57 lossy; 47
+            return the family exactly, 10 a benign superset). Nothing became
+            unreachable. The value is still on every card, and the algorithm
+            view still groups by it.
+
+            `framework` looked like a filter and was not one. Its eight options
+            produce **five distinct result sets** — CUDA-Q, Amazon Braket,
+            PyQuil and Qmod select the identical 153 entries — and the most
+            selective option still keeps 191 of 283. It asks "can I export this
+            to Cirq", which is a question about an entry already found; the
+            entry page's export section answers it per record. `entry.framework`
+            stays in the search haystack, so the placeholder still holds.
+
+            That takes the bar from five controls to three: search · topic ·
+            takes-returns, which is the owner's "all over the place", answered. */}
         {/* One control for three facets, grouped, because the alternative is
             three more selects beside four existing ones. Every option carries
             its count: "Optimization (10)" cannot be read as a promise the way a
@@ -963,8 +985,23 @@ export function RepositoryBrowser({
 
       {legend}
 
-      <p className="mj-repository-result-count" aria-live="polite">
-        {locale === "ja" ? `${structureFiltered.length}${copy.entries}` : `${structureFiltered.length} public ${structureFiltered.length === 1 ? copy.entry : copy.entries}`}
+      {/* Two numbers only when they differ. On a filtered view that folded
+          nothing — a single width, or a category with no families in it — the
+          second clause would be "176 entries · 176 records", which is noise
+          that teaches a reader the two can disagree at exactly the moment they
+          do not. */}
+      <p
+        className="mj-repository-result-count"
+        aria-live="polite"
+        title={shownRowCount !== structureFiltered.length ? copy.countFoldedTitle : undefined}
+      >
+        {shownRowCount !== structureFiltered.length
+          ? copy.countFolded
+              .replace("{rows}", String(shownRowCount))
+              .replace("{records}", String(structureFiltered.length))
+          : locale === "ja"
+            ? `${structureFiltered.length}${copy.entries}`
+            : `${structureFiltered.length} public ${structureFiltered.length === 1 ? copy.entry : copy.entries}`}
       </p>
       <p className="mj-repository-star-note">{copy.starNote}</p>
 
