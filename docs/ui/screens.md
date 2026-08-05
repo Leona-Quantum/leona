@@ -55,8 +55,8 @@ There is no `/ops/...` admin surface and no `/account/workspace`; workspace live
 |---|---|---|
 | S1 | Landing | **shipped** — `apps/web/app/page.tsx` (8.9 KB) is the formal public landing page, inside the shared company shell/footer alongside pricing, contact, privacy and terms |
 | S2 | Run home | shipped (`/run` composer submits through the authenticated BFF; examples, mode selection, and recent runs are present) |
-| S3 | Agent activity | `AgentActivity` + pure `runActivityFromEvents` shipped at `/run/[taskId]`; live BFF event-stream replay, resumable SSE, repair history, semantic operation disclosures, revision selection/copy, and structured evidence/log details are wired; raw technical transcripts stay off the normal surface |
-| S4 | Result panel | assembled — verdict → key numbers → code → baseline → export → artifact link, in the order below; failed runs preserve and label the best available deliverable without implying verification |
+| S3 | Agent activity | `AgentActivity` + pure `runActivityFromEvents` shipped at `/run/[taskId]`; live BFF event-stream replay, resumable SSE, segmented progress overview, repair history, semantic operation disclosures, revision selection/copy, and structured evidence/log details are wired; raw technical transcripts stay off the normal surface |
+| S4 | Result panel | assembled — measured distributions, derived state probabilities, iterative traces, reported values, code, baseline, export, and artifact link; failed runs preserve and label the best available deliverable without implying verification |
 | S5 | Artifact list | shipped with workspace-scoped API loading, search/filter controls, empty/error states, explicit demo-only fixtures, and storage-only copy |
 | S6 | Artifact detail | shipped — tabs expose "Code & Export" with OpenQASM download; current-version, provenance, copy, and Run handoff are wired |
 | S7 | Studio editor | owner-directed slice — code editor, semantic circuit preview, inspector, output drawer, and persisted framework variants |

@@ -201,6 +201,16 @@ export function AgentActivity<TDetail>({
         </span>
       </header>
 
+      <ol className="mj-agent-activity-progress" aria-label="Agent run progress">
+        {activity.items.map((item) => (
+          <li data-state={item.state} key={item.id}>
+            <span aria-hidden="true" />
+            <small>{item.label}</small>
+            <span className="sr-only">{item.status}</span>
+          </li>
+        ))}
+      </ol>
+
       <div className="mj-agent-activity-list">
         {activity.items.map((item) => (
           <ActivityDisclosure item={item} key={item.id} renderDetail={renderDetail} />

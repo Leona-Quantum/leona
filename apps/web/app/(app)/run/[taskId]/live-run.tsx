@@ -23,11 +23,12 @@ import { verificationSummaryFromValue, type VerificationSummary } from "../../..
 import { runOutcomeFromEvents } from "../../../../lib/run-outcome";
 import { runResultFromEvents } from "../../../../lib/run-result";
 import { RunResult } from "../../../../components/run-result";
+import { ResultVisualizations } from "../../../../components/result-visualization";
 import {
   runActivityFromEvents,
   type RunActivityDetail,
 } from "../../../../lib/run-activity";
-import { formatShare, simulationChartData } from "../../../../lib/simulation-visual";
+import { resultVisualizationFromResult } from "../../../../lib/result-visualization";
 import { ThinkingLabel } from "../../../../components/thinking-label";
 import { useSmoothedText } from "../../../../components/use-smoothed-text";
 
@@ -1026,19 +1027,12 @@ function recordValue(value: unknown): Record<string, unknown> | null {
 
 function SimulationResult({ event }: { event: WireEvent }) {
   const result = recordValue(event.result);
-  const counts = recordValue(result?.counts);
-  const countEntries = counts
-    ? Object.entries(counts)
-      .filter((entry): entry is [string, number] => typeof entry[1] === "number")
-      .sort(([left], [right]) => left.localeCompare(right))
-    : [];
-  const total = countEntries.reduce((sum, [, value]) => sum + value, 0);
-  const chart = total ? simulationChartData(Object.fromEntries(countEntries), total) : null;
-  const scalarEntries = result
-    ? Object.entries(result).filter(
-      ([key, value]) => key !== "counts" && ["string", "number", "boolean"].includes(typeof value),
-    )
-    : [];
+  const visualization = resultVisualizationFromResult(result);
+  const hasVisualization = Boolean(
+    visualization.distribution
+    || visualization.traces.length
+    || visualization.values.length,
+  );
 
   return (
     <div className="mj-run-live-simulation">
@@ -1056,46 +1050,15 @@ function SimulationResult({ event }: { event: WireEvent }) {
             <dt>Runtime</dt>
             <dd>{durationLabel(event.duration_ms) ?? "—"}</dd>
           </div>
-          {total ? (
+          {visualization.distribution?.kind === "counts" ? (
             <div>
               <dt>Shots</dt>
-              <dd>{total.toLocaleString()}</dd>
+              <dd>{visualization.distribution.total.toLocaleString()}</dd>
             </div>
           ) : null}
-          {scalarEntries.map(([key, value]) => (
-            <div key={key}>
-              <dt>{key.replaceAll("_", " ")}</dt>
-              <dd>{String(value)}</dd>
-            </div>
-          ))}
         </dl>
-        {chart ? (
-          // Every other counts chart in the product goes through simulationChartData
-          // and formatShare. This one had its own sort, no cap on how many bars it
-          // would draw, and its own `toFixed(1)` — so a 12-qubit circuit drew
-          // hundreds of rows here and a dozen everywhere else, with the percentages
-          // rounded differently in each. role="group" rather than role="img": every
-          // bitstring, count and percentage below is real text, and role="img"
-          // hid all of it behind a label that only said counts exist.
-          <div className="mj-run-live-chart" role="group" aria-label={`Measured counts from ${total.toLocaleString()} shots`}>
-            {chart.bars.map((bar) => (
-              <div className="mj-run-live-bar" key={bar.bitstring}>
-                <code>{bar.bitstring}</code>
-                <span className="mj-run-live-bar-track" aria-hidden="true">
-                  <span style={{ width: `${(bar.count / chart.peak.count) * 100}%` }} />
-                </span>
-                <span>
-                  {bar.count.toLocaleString()}
-                  <small>{formatShare(bar.share, "en-US")}</small>
-                </span>
-              </div>
-            ))}
-            {chart.otherStates ? (
-              <p className="mj-run-live-chart-note">
-                {`Showing the ${chart.bars.length} heaviest of ${chart.distinctStates.toLocaleString()} measured outcomes.`}
-              </p>
-            ) : null}
-          </div>
+        {hasVisualization ? (
+          <ResultVisualizations {...visualization} />
         ) : result && Object.keys(result).length ? (
           <pre className="mj-run-live-result-json">{JSON.stringify(result, null, 2)}</pre>
         ) : (

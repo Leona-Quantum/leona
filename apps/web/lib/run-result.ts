@@ -14,27 +14,26 @@
  */
 
 import { friendlyFailure, type OutcomeEvent } from "./run-outcome.ts";
-import { simulationChartData, type SimulationChartData } from "./simulation-visual.ts";
+import {
+  resultVisualizationFromResult,
+  type ResultDistributionView,
+  type ResultTraceView,
+  type ResultValueView,
+} from "./result-visualization.ts";
 import {
   verificationSummaryFromValue,
   type VerificationSummary,
 } from "./verification-record.ts";
 
-export interface RunResultValue {
-  label: string;
-  value: string;
-}
+export type RunResultValue = ResultValueView;
 
 export interface RunResultView {
   summary: string;
   /** Short, honest trust marker. Never the headline. */
   trust: { label: string; tone: "ok" | "warn" };
   saved: boolean;
-  distribution: {
-    data: SimulationChartData;
-    shots: number;
-    peakLabel: string;
-  } | null;
+  distribution: ResultDistributionView | null;
+  traces: ResultTraceView[];
   values: RunResultValue[];
   facts: RunResultValue[];
   code: { label: string; language: string; source: string } | null;
@@ -53,14 +52,6 @@ function lastEvent(events: readonly OutcomeEvent[], type: string): OutcomeEvent 
 
 function humanize(value: string): string {
   return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
-}
-
-function formatNumber(value: number): string {
-  if (!Number.isFinite(value)) return String(value);
-  if (Number.isInteger(value) && Math.abs(value) < 1e15) return value.toLocaleString("en-US");
-  const magnitude = Math.abs(value);
-  if (magnitude !== 0 && (magnitude < 1e-4 || magnitude >= 1e6)) return value.toExponential(4);
-  return String(Number(value.toFixed(6)));
 }
 
 /** The protected RESULT for one candidate revision — never stdout or another revision. */
@@ -83,49 +74,6 @@ function protectedResult(
     }
   }
   return selected;
-}
-
-/**
- * A `{bitstring: count}` mapping anywhere in RESULT. The plan names its own keys, so
- * match on shape rather than on a fixed key list — a run that reports `histogram` or
- * `measurement_counts` has just as much a distribution to draw.
- */
-function countsFrom(result: Record<string, unknown> | null): Record<string, number> | null {
-  if (!result) return null;
-  for (const value of Object.values(result)) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (!entries.length) continue;
-    const numeric = entries.every(
-      ([key, count]) => /^[01]+$/.test(key) && typeof count === "number" && Number.isFinite(count),
-    );
-    if (numeric) return Object.fromEntries(entries as [string, number][]);
-  }
-  return null;
-}
-
-/** Scalars the run reported, in the order the plan promised them. */
-function valuesFrom(
-  result: Record<string, unknown> | null,
-  expectedKeys: readonly string[],
-): RunResultValue[] {
-  if (!result) return [];
-  const keys = [
-    ...expectedKeys.filter((key) => key in result),
-    ...Object.keys(result).filter((key) => !expectedKeys.includes(key)),
-  ];
-  const values: RunResultValue[] = [];
-  for (const key of keys) {
-    const value = result[key];
-    if (typeof value === "number") values.push({ label: humanize(key), value: formatNumber(value) });
-    else if (typeof value === "boolean") values.push({ label: humanize(key), value: String(value) });
-    else if (typeof value === "string" && value.length <= 200) {
-      values.push({ label: humanize(key), value });
-    } else if (Array.isArray(value) && value.length <= 8 && value.every((item) => typeof item === "number")) {
-      values.push({ label: humanize(key), value: value.map(formatNumber).join(", ") });
-    }
-  }
-  return values.slice(0, 10);
 }
 
 export function runResultFromEvents(
@@ -155,10 +103,13 @@ export function runResultFromEvents(
   // when review did not accept it; hiding those recreates the old
   // "No accepted result" dead end.
   if (!source?.code && !result) return null;
-  const counts = countsFrom(result);
-
-  const shots = counts ? Object.values(counts).reduce((total, count) => total + count, 0) : 0;
-  const data = counts ? simulationChartData(counts, shots) : null;
+  const visualization = resultVisualizationFromResult(
+    result,
+    plan?.expected_output_keys ?? [],
+  );
+  const shots = visualization.distribution?.kind === "counts"
+    ? visualization.distribution.total
+    : 0;
 
   const reviewAccepted = !failed
     && summary?.semantic_review_decision !== "code_repair"
@@ -201,14 +152,9 @@ export function runResultFromEvents(
         ? { label: "Executed", tone: "ok" }
         : { label: "Executed · needs attention", tone: "warn" },
     saved: Boolean(lastEvent(events, "artifact.saved")),
-    distribution: data
-      ? {
-          data,
-          shots,
-          peakLabel: data.peak.bitstring,
-        }
-      : null,
-    values: valuesFrom(result, plan?.expected_output_keys ?? []),
+    distribution: visualization.distribution,
+    traces: visualization.traces,
+    values: visualization.values,
     facts: [
       ...(plan?.algorithm ? [{ label: "Algorithm", value: plan.algorithm }] : []),
       ...(plan?.framework ? [{ label: "Framework", value: plan.framework }] : []),

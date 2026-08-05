@@ -527,7 +527,23 @@ const INCONCLUSIVE: RunEvent[] = [
   { type: "run.finished", run_id: RUN, seq: 19, ts: ts(25), status: "succeeded", verifier_decision: "inconclusive", evidence_strength: null, reason_code: "required_check_unavailable", residual_risks: "Expected physical distribution was not verified.", verification_summary: INCONCLUSIVE_SUMMARY },
 ];
 
+// One deterministic fixture that exercises the generic result visuals together:
+// a measured distribution, reported business metrics, and an iterative objective
+// trace. Production uses the same event projection; this exists only so visual QA
+// does not need a paid model call or sandbox execution.
+const VISUALIZED: RunEvent[] = VERIFIED.map((event): RunEvent => {
+  if (event.type !== "sandbox.result") return event;
+  return {
+    ...event,
+    result: {
+      ...event.result,
+      objective_history: [3.8, 3.12, 2.66, 2.31, 2.14, 2.04, 2.01],
+    },
+  };
+});
+
 export const RUN_FIXTURES: Record<string, RunEvent[]> = {
+  "demo-visualized": VISUALIZED,
   "demo-verified": VERIFIED,
   "demo-failed": FAILED,
   "demo-exhausted": EXHAUSTED,
@@ -540,6 +556,7 @@ export const RUN_FIXTURES: Record<string, RunEvent[]> = {
 };
 
 export const RUN_FIXTURE_META: { id: string; label: string }[] = [
+  { id: "demo-visualized", label: "Visualized simulation and optimization" },
   { id: "demo-verified", label: "Verified run (full pipeline)" },
   { id: "demo-failed", label: "Failed verification" },
   { id: "demo-exhausted", label: "Budget exhausted (best effort)" },
