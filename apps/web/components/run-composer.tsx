@@ -5,8 +5,12 @@ import { ChevronIcon, PaperclipIcon } from "./icons";
 import type { PublicLocale } from "../lib/public-locale";
 import { COMPOSER_MODES, type ComposerMode } from "../lib/run-mode";
 import { ghostFrame } from "../lib/composer-ghost";
+import {
+  COMPOSER_FRAMEWORKS,
+  type ComposerFramework,
+} from "../lib/framework-selection";
 
-export type ComposerFramework = "qiskit" | "pennylane" | "cirq";
+export type { ComposerFramework } from "../lib/framework-selection";
 
 export interface ComposerAttachment {
   name: string;
@@ -228,9 +232,9 @@ export function RunComposer({
                   value={framework}
                   onChange={(event) => onFrameworkChange(event.target.value as ComposerFramework)}
                 >
-                  <option value="qiskit">Qiskit</option>
-                  <option value="cirq">Cirq</option>
-                  <option value="pennylane">PennyLane</option>
+                  {COMPOSER_FRAMEWORKS.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
                 </select>
                 <ChevronIcon size={12} />
               </label>

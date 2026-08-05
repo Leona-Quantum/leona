@@ -479,6 +479,201 @@ def _pennylane_circuit_ir(circuit: Any) -> dict[str, Any]:
     return builder.finish(operation_count=len(operations) + len(measurements))
 
 
+def _braket_circuit_ir(circuit: Any) -> dict[str, Any]:
+    """Observe a Braket Circuit as bounded read-only Studio data.
+
+    Braket source remains canonical. The current Studio builder cannot emit
+    Braket Python, so even gates it knows how to draw are deliberately marked
+    read-only rather than pretending an edit can be applied back to source.
+    """
+    from braket.circuits import Circuit, CompilerDirective, Measure
+
+    if not isinstance(circuit, Circuit):
+        raise TypeError("FINAL_CIRCUIT is not an Amazon Braket Circuit")
+    qubit_order = sorted(list(circuit.qubits))
+    positions = {qubit: index for index, qubit in enumerate(qubit_order)}
+    instructions = [
+        instruction
+        for instruction in circuit.instructions
+        if not isinstance(instruction.operator, CompilerDirective)
+    ]
+    measurement_count = sum(
+        len(instruction.target)
+        for instruction in instructions
+        if isinstance(instruction.operator, Measure)
+    )
+    aliases = {
+        "i": "i",
+        "h": "h",
+        "x": "x",
+        "y": "y",
+        "z": "z",
+        "s": "s",
+        "t": "t",
+        "rx": "rx",
+        "ry": "ry",
+        "rz": "rz",
+        "cnot": "cx",
+        "cz": "cz",
+        "swap": "swap",
+        "measure": "measure",
+    }
+    builder = _IRBuilder(
+        framework="braket",
+        qubit_count=len(qubit_order),
+        clbit_count=measurement_count,
+    )
+    next_clbit = 0
+    for instruction in instructions:
+        operator = instruction.operator
+        display_name = getattr(operator, "name", type(operator).__name__)
+        raw_name = str(display_name)
+        name = aliases.get(raw_name.casefold(), _safe_name(raw_name))
+        ordered_qubits = [*list(instruction.control), *list(instruction.target)]
+        # A standard Braket controlled gate (for example CNot) stores both wires
+        # in target; explicit control modifiers store controls separately.
+        qubits = list(dict.fromkeys(positions[qubit] for qubit in ordered_qubits))
+        clbits: list[int] = []
+        if isinstance(operator, Measure):
+            clbits = list(range(next_clbit, next_clbit + len(instruction.target)))
+            next_clbit += len(instruction.target)
+        if not builder.append(
+            name=name,
+            display_name=display_name,
+            qubits=qubits,
+            clbits=clbits,
+            parameters=list(getattr(operator, "parameters", [])),
+            editable=False,
+        ):
+            break
+    return builder.finish(operation_count=len(instructions))
+
+
+def _qibo_circuit_ir(circuit: Any) -> dict[str, Any]:
+    """Observe a Qibo circuit while keeping its native Python source canonical."""
+    from qibo import Circuit
+
+    if not isinstance(circuit, Circuit):
+        raise TypeError("FINAL_CIRCUIT is not a Qibo Circuit")
+    operations = list(circuit.queue)
+    clbit_count = sum(
+        len(operation.qubits) for operation in operations if str(operation.name) == "measure"
+    )
+    aliases = {
+        "h": "h",
+        "x": "x",
+        "y": "y",
+        "z": "z",
+        "s": "s",
+        "t": "t",
+        "rx": "rx",
+        "ry": "ry",
+        "rz": "rz",
+        "cx": "cx",
+        "cz": "cz",
+        "swap": "swap",
+    }
+    builder = _IRBuilder(
+        framework="qibo",
+        qubit_count=int(circuit.nqubits),
+        clbit_count=clbit_count,
+    )
+    next_clbit = clbit_count
+    for operation in operations:
+        raw_name = str(operation.name)
+        qubits = [int(qubit) for qubit in operation.qubits]
+        if raw_name == "measure":
+            clbits = list(reversed(range(next_clbit - len(qubits), next_clbit)))
+            next_clbit -= len(qubits)
+            if not builder.append(
+                name="measure",
+                display_name="M",
+                qubits=qubits,
+                clbits=clbits,
+                editable=False,
+            ):
+                break
+            continue
+        if not builder.append(
+            name=aliases.get(raw_name, _safe_name(raw_name)),
+            display_name=type(operation).__name__,
+            qubits=qubits,
+            parameters=list(operation.parameters),
+            editable=False,
+        ):
+            break
+    return builder.finish(operation_count=len(operations))
+
+
+def _qulacs_gate_payload(gate: Any) -> dict[str, Any]:
+    try:
+        payload = json.loads(gate.to_json())
+    except (AttributeError, TypeError, ValueError, json.JSONDecodeError):
+        return {}
+    return payload if isinstance(payload, dict) else {}
+
+
+def _qulacs_circuit_ir(circuit: Any) -> dict[str, Any]:
+    """Observe a Qulacs circuit while keeping its native Python source canonical."""
+    from qulacs import QuantumCircuit
+
+    if not isinstance(circuit, QuantumCircuit):
+        raise TypeError("FINAL_CIRCUIT is not a Qulacs QuantumCircuit")
+    gate_count = int(circuit.get_gate_count())
+    gates = [circuit.get_gate(index) for index in range(gate_count)]
+    payloads = [_qulacs_gate_payload(gate) for gate in gates]
+    clbit_count = max(
+        (
+            int(payload["classical_register_address"]) + 1
+            for payload in payloads
+            if str(payload.get("is_instrument", "")).lower() == "true"
+            and str(payload.get("classical_register_address", "")).isdigit()
+        ),
+        default=0,
+    )
+    aliases = {
+        "H": "h",
+        "X": "x",
+        "Y": "y",
+        "Z": "z",
+        "S": "s",
+        "T": "t",
+        "X-rotation": "rx",
+        "Y-rotation": "ry",
+        "Z-rotation": "rz",
+        "CNOT": "cx",
+        "CZ": "cz",
+        "SWAP": "swap",
+    }
+    builder = _IRBuilder(
+        framework="qulacs",
+        qubit_count=int(circuit.get_qubit_count()),
+        clbit_count=clbit_count,
+    )
+    for gate, payload in zip(gates, payloads, strict=True):
+        raw_name = str(gate.get_name())
+        instrument = str(payload.get("is_instrument", "")).lower() == "true"
+        targets = [int(index) for index in gate.get_target_index_list()]
+        controls = [int(index) for index in gate.get_control_index_list()]
+        parameters: list[Any] = []
+        if "angle" in payload:
+            parameters = [payload["angle"]]
+        if not builder.append(
+            name="measure" if instrument else aliases.get(raw_name, _safe_name(raw_name)),
+            display_name="Measure" if instrument else raw_name,
+            qubits=list(dict.fromkeys([*controls, *targets])),
+            clbits=(
+                [int(payload["classical_register_address"])]
+                if instrument and str(payload.get("classical_register_address", "")).isdigit()
+                else []
+            ),
+            parameters=parameters,
+            editable=False,
+        ):
+            break
+    return builder.finish(operation_count=gate_count)
+
+
 def build_circuit_ir(framework: str, circuit: Any) -> dict[str, Any]:
     """Observe a supported framework object without rewriting or executing it."""
     if framework == "qiskit":
@@ -487,6 +682,12 @@ def build_circuit_ir(framework: str, circuit: Any) -> dict[str, Any]:
         return _cirq_circuit_ir(circuit)
     if framework == "pennylane":
         return _pennylane_circuit_ir(circuit)
+    if framework == "braket":
+        return _braket_circuit_ir(circuit)
+    if framework == "qibo":
+        return _qibo_circuit_ir(circuit)
+    if framework == "qulacs":
+        return _qulacs_circuit_ir(circuit)
     raise ValueError(f"unsupported circuit IR framework: {framework}")
 
 
@@ -517,7 +718,7 @@ def validate_circuit_ir(value: Any) -> dict[str, Any] | None:
     if value.get("schema") != CIRCUIT_IR_SCHEMA or value.get("version") != CIRCUIT_IR_VERSION:
         return None
     framework = value.get("framework")
-    if framework not in {"qiskit", "cirq", "pennylane"}:
+    if framework not in {"qiskit", "cirq", "pennylane", "braket", "qibo", "qulacs"}:
         return None
     qubit_count = _bounded_int(value.get("qubit_count"), minimum=0, maximum=MAX_CIRCUIT_IR_QUBITS)
     clbit_count = _bounded_int(value.get("clbit_count"), minimum=0, maximum=MAX_CIRCUIT_IR_QUBITS)

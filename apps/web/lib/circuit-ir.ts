@@ -28,7 +28,7 @@ export interface CircuitIROperation {
 export interface CircuitIR {
   schema: typeof CIRCUIT_IR_SCHEMA;
   version: typeof CIRCUIT_IR_VERSION;
-  framework: "qiskit" | "cirq" | "pennylane";
+  framework: "qiskit" | "cirq" | "pennylane" | "braket" | "qibo" | "qulacs";
   qubitCount: number;
   clbitCount: number;
   operationCount: number;
@@ -69,7 +69,14 @@ const TWO_QUBIT = new Set(["cx", "cz", "swap"]);
 export function parseCircuitIR(value: unknown): CircuitIR | null {
   const raw = plainRecord(value);
   if (!raw || raw.schema !== CIRCUIT_IR_SCHEMA || raw.version !== CIRCUIT_IR_VERSION) return null;
-  if (raw.framework !== "qiskit" && raw.framework !== "cirq" && raw.framework !== "pennylane") return null;
+  if (
+    raw.framework !== "qiskit"
+    && raw.framework !== "cirq"
+    && raw.framework !== "pennylane"
+    && raw.framework !== "braket"
+    && raw.framework !== "qibo"
+    && raw.framework !== "qulacs"
+  ) return null;
   const qubitCount = boundedInteger(raw.qubit_count, 0, MAX_VIEWABLE_QUBITS);
   const clbitCount = boundedInteger(raw.clbit_count, 0, MAX_VIEWABLE_QUBITS);
   const operationCount = boundedInteger(raw.operation_count, 0, 10_000_000);

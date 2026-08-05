@@ -1514,6 +1514,9 @@ _SIMULATION_TOOL = {
     Framework.QISKIT: ToolName.SIMULATE_QISKIT,
     Framework.CIRQ: ToolName.SIMULATE_CIRQ,
     Framework.PENNYLANE: ToolName.SIMULATE_PENNYLANE,
+    Framework.BRAKET: ToolName.SIMULATE_BRAKET,
+    Framework.QIBO: ToolName.SIMULATE_QIBO,
+    Framework.QULACS: ToolName.SIMULATE_QULACS,
 }
 
 

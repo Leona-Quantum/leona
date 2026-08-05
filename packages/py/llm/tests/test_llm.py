@@ -358,6 +358,9 @@ def test_cirq_vqe_and_pennylane_non_vqe_do_not_receive_the_pennylane_vqe_helper(
             (
                 "cirq.Simulator(dtype=np.complex128",
                 "PennyLane result values, including numpy scalars",
+                "Amazon Braket code uses",
+                "Qibo code uses",
+                "Qulacs code uses",
             ),
         ),
         (
@@ -368,6 +371,9 @@ def test_cirq_vqe_and_pennylane_non_vqe_do_not_receive_the_pennylane_vqe_helper(
                 "rightmost character is qubit 0",
                 "QFTGate(width)",
                 "PennyLane result values, including numpy scalars",
+                "Amazon Braket code uses",
+                "Qibo code uses",
+                "Qulacs code uses",
             ),
         ),
         (
@@ -378,6 +384,56 @@ def test_cirq_vqe_and_pennylane_non_vqe_do_not_receive_the_pennylane_vqe_helper(
                 "rightmost character is qubit 0",
                 "QFTGate(width)",
                 "cirq.Simulator(dtype=np.complex128",
+                "Amazon Braket code uses",
+                "Qibo code uses",
+                "Qulacs code uses",
+            ),
+        ),
+        (
+            Framework.BRAKET,
+            (
+                "Amazon Braket code uses",
+                "Never import braket.aws",
+                "LocalSimulator has no public seed argument",
+            ),
+            (
+                "qiskit_aer.AerSimulator plus transpile/run",
+                "rightmost character is qubit 0",
+                "QFTGate(width)",
+                "cirq.Simulator(dtype=np.complex128",
+                "PennyLane result values, including numpy scalars",
+                "Qibo code uses",
+                "Qulacs code uses",
+            ),
+        ),
+        (
+            Framework.QIBO,
+            (
+                "Qibo code uses",
+                "only `NumpyBackend` from `qibo.backends`",
+                "Do not import qibolab",
+            ),
+            (
+                "qiskit_aer.AerSimulator plus transpile/run",
+                "cirq.Simulator(dtype=np.complex128",
+                "PennyLane result values, including numpy scalars",
+                "Amazon Braket code uses",
+                "Qulacs code uses",
+            ),
+        ),
+        (
+            Framework.QULACS,
+            (
+                "Qulacs code uses",
+                "in-process Qulacs state simulator",
+                "state.sampling(shots, seed)",
+            ),
+            (
+                "qiskit_aer.AerSimulator plus transpile/run",
+                "cirq.Simulator(dtype=np.complex128",
+                "PennyLane result values, including numpy scalars",
+                "Amazon Braket code uses",
+                "Qibo code uses",
             ),
         ),
     ],
@@ -393,6 +449,55 @@ def test_generation_prompt_scopes_sdk_rules_across_every_algorithm(framework, in
 
         assert all(marker in prompt for marker in included), algorithm
         assert all(marker not in prompt for marker in excluded), algorithm
+
+
+def test_braket_bell_uses_a_framework_native_reference_only_for_bell():
+    bell = simple_generation_system_prompt(
+        framework="braket",
+        domain="quantum information",
+        algorithm="Bell",
+        problem_summary="prepare an entangled pair",
+    )
+    unrelated = simple_generation_system_prompt(
+        framework="braket",
+        domain="optimization",
+        algorithm="QAOA",
+        problem_summary="solve a graph partition",
+    )
+
+    assert "Amazon Braket Bell-state reference" in bell
+    assert "Circuit().h(0).cnot(0, 1).measure([0, 1])" in bell
+    assert "from qiskit import QuantumCircuit" not in bell
+    assert "Amazon Braket Bell-state reference" not in unrelated
+
+
+@pytest.mark.parametrize(
+    ("framework", "marker", "native_import"),
+    [
+        ("qibo", "Qibo Bell-state reference", "from qibo import Circuit, gates"),
+        ("qulacs", "Qulacs Bell-state reference", "from qulacs import QuantumCircuit"),
+    ],
+)
+def test_new_framework_bell_references_are_native_and_family_scoped(
+    framework, marker, native_import
+):
+    bell = simple_generation_system_prompt(
+        framework=framework,
+        domain="quantum information",
+        algorithm="Bell",
+        problem_summary="prepare an entangled pair",
+    )
+    unrelated = simple_generation_system_prompt(
+        framework=framework,
+        domain="optimization",
+        algorithm="QAOA",
+        problem_summary="solve a graph partition",
+    )
+
+    assert marker in bell
+    assert native_import in bell
+    assert "from qiskit import QuantumCircuit" not in bell
+    assert marker not in unrelated
 
 
 def test_lindblad_matrix_exponential_does_not_select_closed_system_dynamics_helper():

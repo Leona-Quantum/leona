@@ -1,7 +1,7 @@
 # AGENTS.md — majorana-frameworks
 
 Selected-framework source code is the circuit source of truth. This package owns the
-small execution protocol shared by generated Qiskit, Cirq, and PennyLane programs:
+small execution protocol shared by every generated framework-native program:
 source normalization/fingerprints, final-circuit binding checks, native-optimization
 evidence, and optional OpenQASM interchange extraction.
 

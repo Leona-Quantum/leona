@@ -11,6 +11,9 @@ class Framework(StrEnum):
     QISKIT = "qiskit"
     PENNYLANE = "pennylane"
     CIRQ = "cirq"
+    BRAKET = "braket"
+    QIBO = "qibo"
+    QULACS = "qulacs"
 
 
 class RunMode(StrEnum):
