@@ -1,11 +1,11 @@
-"""Add Amazon Braket to persisted framework and simulation-tool values.
+"""Add offline Braket, Qibo, and Qulacs framework/tool values.
 
 Revision ID: 0048
 Revises: 0047
 
 This is expand-only for the deployed application: existing values remain valid.
-Downgrade fails closed when Braket history exists instead of deleting or rewriting
-immutable candidate and tool evidence.
+Downgrade fails closed when new-framework history exists instead of deleting or
+rewriting immutable candidate and tool evidence.
 """
 
 from alembic import op
@@ -16,7 +16,8 @@ branch_labels = None
 depends_on = None
 
 _FRAMEWORKS_OLD = ("qiskit", "cirq", "pennylane")
-_FRAMEWORKS_NEW = (*_FRAMEWORKS_OLD, "braket")
+_FRAMEWORKS_ADDED = ("braket", "qibo", "qulacs")
+_FRAMEWORKS_NEW = (*_FRAMEWORKS_OLD, *_FRAMEWORKS_ADDED)
 
 _TOOL_NAMES_OLD = (
     "request_plan",
@@ -31,7 +32,8 @@ _TOOL_NAMES_OLD = (
     "strict_verify",
     "materialize_artifact",
 )
-_TOOL_NAMES_NEW = (*_TOOL_NAMES_OLD, "simulate_braket")
+_TOOL_NAMES_ADDED = ("simulate_braket", "simulate_qibo", "simulate_qulacs")
+_TOOL_NAMES_NEW = (*_TOOL_NAMES_OLD, *_TOOL_NAMES_ADDED)
 
 
 def _in(column: str, values: tuple[str, ...]) -> str:
@@ -60,14 +62,16 @@ def downgrade() -> None:
         DO $$
         BEGIN
             IF EXISTS (
-                SELECT 1 FROM run_candidates WHERE framework = 'braket'
+                SELECT 1 FROM run_candidates
+                WHERE framework IN ('braket', 'qibo', 'qulacs')
             ) THEN
-                RAISE EXCEPTION 'cannot downgrade 0048: Amazon Braket candidates exist';
+                RAISE EXCEPTION 'cannot downgrade 0048: additional-framework candidates exist';
             END IF;
             IF EXISTS (
-                SELECT 1 FROM agent_steps WHERE name = 'simulate_braket'
+                SELECT 1 FROM agent_steps
+                WHERE name IN ('simulate_braket', 'simulate_qibo', 'simulate_qulacs')
             ) THEN
-                RAISE EXCEPTION 'cannot downgrade 0048: Amazon Braket tool history exists';
+                RAISE EXCEPTION 'cannot downgrade 0048: additional-framework tool history exists';
             END IF;
         END $$
         """

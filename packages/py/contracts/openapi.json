@@ -2100,7 +2100,9 @@
           "qiskit",
           "pennylane",
           "cirq",
-          "braket"
+          "braket",
+          "qibo",
+          "qulacs"
         ],
         "title": "Framework",
         "type": "string"

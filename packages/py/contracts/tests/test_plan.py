@@ -49,6 +49,13 @@ def test_unknown_framework_rejected():
         Plan.model_validate({**VALID, "framework": "qsharp"})
 
 
+@pytest.mark.parametrize("framework", ["braket", "qibo", "qulacs"])
+def test_additional_frameworks_parse_without_changing_the_plan_contract(framework):
+    plan = Plan.model_validate({**VALID, "framework": framework})
+
+    assert plan.framework.value == framework
+
+
 def test_empty_verification_methods_rejected():
     with pytest.raises(ValidationError):
         Plan.model_validate({**VALID, "verification_plan": {"methods": []}})

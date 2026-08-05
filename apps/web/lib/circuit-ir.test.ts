@@ -114,6 +114,26 @@ test("Amazon Braket circuit IR reaches Studio as an honest read-only diagram", (
   assert.deepEqual(diagram.readOnlyReasons, ["opaque_operations"]);
 });
 
+test("Qibo and Qulacs circuit IR reach Studio without pretending to round-trip", () => {
+  for (const framework of ["qibo", "qulacs"] as const) {
+    const operations = [operation("op-0", "h", [0], { editable: false, displayName: "H" })];
+    const parsed = parseCircuitIR(ir({
+      framework,
+      qubit_count: 1,
+      clbit_count: 0,
+      operation_count: operations.length,
+      operations,
+    }));
+    assert.ok(parsed);
+    const diagram = circuitIRDiagram(parsed);
+
+    assert.equal(parsed.framework, framework);
+    assert.deepEqual(diagram.steps.map((step) => step.gate), ["CUSTOM"]);
+    assert.equal(diagram.readOnly, true);
+    assert.deepEqual(diagram.readOnlyReasons, ["opaque_operations"]);
+  }
+});
+
 test("truncation and global phase make even standard operations read-only", () => {
   const truncated = parseCircuitIR(ir({ operation_count: 5, truncated: true }));
   assert.ok(truncated);

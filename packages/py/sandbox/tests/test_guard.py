@@ -30,6 +30,31 @@ def test_braket_local_simulation_passes():
     assert check_python_code(local).ok
 
 
+def test_qibo_numpy_and_qulacs_local_simulation_pass():
+    qibo = (
+        "from qibo import Circuit, gates\n"
+        "from qibo.backends import NumpyBackend\n"
+        "circuit = Circuit(1)\n"
+        "circuit.add(gates.H(0))\n"
+        "backend = NumpyBackend()\n"
+    )
+    qulacs = (
+        "from qulacs import QuantumCircuit, QuantumState\n"
+        "from qulacs.gate import H\n"
+        "circuit = QuantumCircuit(1)\n"
+        "circuit.add_gate(H(0))\n"
+    )
+
+    assert check_python_code(qibo).ok
+    assert check_python_code(qulacs).ok
+
+
+def test_optional_qibo_hardware_backend_is_not_importable():
+    result = check_python_code("import qibolab\n")
+    assert not result.ok
+    assert "disallowed_import:qibolab" in result.violations
+
+
 @pytest.mark.parametrize(
     "cloud",
     [

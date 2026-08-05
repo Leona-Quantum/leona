@@ -85,6 +85,8 @@ class ToolName(StrEnum):
     SIMULATE_CIRQ = "simulate_cirq"
     SIMULATE_PENNYLANE = "simulate_pennylane"
     SIMULATE_BRAKET = "simulate_braket"
+    SIMULATE_QIBO = "simulate_qibo"
+    SIMULATE_QULACS = "simulate_qulacs"
     VERIFY_INTENT_ALIGNMENT = "verify_intent_alignment"
     REVIEW_CANDIDATE = "review_candidate"
     STRICT_VERIFY = "strict_verify"

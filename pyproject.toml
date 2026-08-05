@@ -34,6 +34,13 @@ dev = [
     "amazon-braket-sdk==1.122.0",
     "amazon-braket-default-simulator==1.39.5",
     "numba==0.66.0",
+    # Qibo stays on its in-process NumPy backend; optional Qibolab hardware
+    # backends are not installed inside the network-locked sandbox.
+    "qibo==0.3.4",
+    # Qulacs supplies the research-oriented high-performance local simulator.
+    # Pin it so the worker's local double and the production image execute the
+    # same native extension and circuit API.
+    "qulacs==0.6.14",
 ]
 
 [tool.uv.workspace]

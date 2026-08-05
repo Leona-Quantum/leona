@@ -79,6 +79,8 @@ def _plan_payload() -> dict:
 def test_every_framework_has_a_persisted_simulation_tool():
     assert set(simple_ports_module._SIMULATION_TOOL) == set(Framework)
     assert simple_ports_module._SIMULATION_TOOL[Framework.BRAKET] is ToolName.SIMULATE_BRAKET
+    assert simple_ports_module._SIMULATION_TOOL[Framework.QIBO] is ToolName.SIMULATE_QIBO
+    assert simple_ports_module._SIMULATION_TOOL[Framework.QULACS] is ToolName.SIMULATE_QULACS
 
 
 def _alignment_payload(

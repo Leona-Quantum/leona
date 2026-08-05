@@ -3,6 +3,8 @@ export const COMPOSER_FRAMEWORKS = [
   { key: "cirq", label: "Cirq" },
   { key: "pennylane", label: "PennyLane" },
   { key: "braket", label: "Amazon Braket" },
+  { key: "qibo", label: "Qibo" },
+  { key: "qulacs", label: "Qulacs" },
 ] as const;
 
 export type ComposerFramework = (typeof COMPOSER_FRAMEWORKS)[number]["key"];

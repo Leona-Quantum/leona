@@ -1078,7 +1078,7 @@ export interface components {
          * Framework
          * @enum {string}
          */
-        Framework: "qiskit" | "pennylane" | "cirq" | "braket";
+        Framework: "qiskit" | "pennylane" | "cirq" | "braket" | "qibo" | "qulacs";
         /**
          * IndexedPauliTerm
          * @description One real Pauli term written only on the qubits where it acts.

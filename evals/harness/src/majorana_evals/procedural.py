@@ -48,6 +48,8 @@ _FAMILIES = (
     "linear-system",
     "pennylane-vqe",
     "braket-statevector",
+    "qibo-statevector",
+    "qulacs-statevector",
 )
 
 
@@ -1533,6 +1535,72 @@ def _braket_statevector_case(seed: int, index: int) -> CorpusCase:
     )
 
 
+def _qibo_statevector_case(seed: int, index: int) -> CorpusCase:
+    rng = _family_rng(seed, "qibo-statevector", index)
+    theta = round(rng.uniform(0.08, math.pi - 0.08), 6)
+    phi = round(rng.uniform(-math.pi, math.pi), 6)
+    return CorpusCase(
+        id=_case_id(seed, "qibo-statevector", index),
+        category="Procedural — Qibo NumPy statevector",
+        split="holdout",
+        difficulty="intermediate",
+        workload="practical",
+        framework=Framework.QIBO,
+        prompt=(
+            "In Qibo, prepare one qubit from |0> by applying "
+            f"RY({theta}) and then RZ({phi}) in that order. Execute only with "
+            "Qibo's in-process NumpyBackend, with no Qibolab or hardware backend. Return "
+            "plain numeric top-level RESULT keys bloch_x, bloch_y, bloch_z, and "
+            "probability_one, computed from Qibo's final state rather than "
+            "hard-coded formulas. Bind the same unmeasured native Qibo Circuit to "
+            "FINAL_CIRCUIT."
+        ),
+        expect=Expect(
+            output_keys=["bloch_x", "bloch_y", "bloch_z", "probability_one"],
+            expected_values={
+                "bloch_x": math.sin(theta) * math.cos(phi),
+                "bloch_y": math.sin(theta) * math.sin(phi),
+                "bloch_z": math.cos(theta),
+                "probability_one": math.sin(theta / 2.0) ** 2,
+            },
+            expected_value_tolerance=1e-10,
+        ),
+    )
+
+
+def _qulacs_statevector_case(seed: int, index: int) -> CorpusCase:
+    rng = _family_rng(seed, "qulacs-statevector", index)
+    theta = round(rng.uniform(0.08, math.pi - 0.08), 6)
+    phi = round(rng.uniform(-math.pi, math.pi), 6)
+    return CorpusCase(
+        id=_case_id(seed, "qulacs-statevector", index),
+        category="Procedural — Qulacs native statevector",
+        split="holdout",
+        difficulty="advanced",
+        workload="scientific",
+        framework=Framework.QULACS,
+        prompt=(
+            "In Qulacs, implement the common mathematical rotations "
+            "R_axis(angle)=exp(-i*angle*Pauli/2) and prepare one qubit from |0> by "
+            f"applying RY({theta}) and then RZ({phi}) in that order. Return plain "
+            "numeric top-level RESULT keys bloch_x, bloch_y, bloch_z, and "
+            "probability_one, computed from the native Qulacs QuantumState rather "
+            "than hard-coded formulas. Bind the native QuantumCircuit to "
+            "FINAL_CIRCUIT and do not convert it to another framework."
+        ),
+        expect=Expect(
+            output_keys=["bloch_x", "bloch_y", "bloch_z", "probability_one"],
+            expected_values={
+                "bloch_x": math.sin(theta) * math.cos(phi),
+                "bloch_y": math.sin(theta) * math.sin(phi),
+                "bloch_z": math.cos(theta),
+                "probability_one": math.sin(theta / 2.0) ** 2,
+            },
+            expected_value_tolerance=1e-10,
+        ),
+    )
+
+
 _GENERATORS: dict[str, Callable[[int, int], CorpusCase]] = {
     "single-qubit-state": _single_qubit_state_case,
     "finite-shot-pauli": _finite_shot_pauli_case,
@@ -1558,6 +1626,8 @@ _GENERATORS: dict[str, Callable[[int, int], CorpusCase]] = {
     "linear-system": _linear_system_case,
     "pennylane-vqe": _pennylane_vqe_case,
     "braket-statevector": _braket_statevector_case,
+    "qibo-statevector": _qibo_statevector_case,
+    "qulacs-statevector": _qulacs_statevector_case,
 }
 
 

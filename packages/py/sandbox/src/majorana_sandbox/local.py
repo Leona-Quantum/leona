@@ -78,6 +78,8 @@ class LocalSubprocessSandbox:
             "cirq",
             "pennylane",
             "amazon-braket-sdk",
+            "qibo",
+            "qulacs",
             "numpy",
             "scipy",
         ):

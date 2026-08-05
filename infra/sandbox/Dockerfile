@@ -28,6 +28,8 @@ RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "amazon-braket-sdk==1.122.0" \
     "amazon-braket-default-simulator==1.39.5" \
     "numba==0.66.0" \
+    "qibo==0.3.4" \
+    "qulacs==0.6.14" \
     "gast==0.7.0"
 
 WORKDIR /tmp/run

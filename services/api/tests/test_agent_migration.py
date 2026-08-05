@@ -220,8 +220,8 @@ def test_audited_state_machine_migration_is_additive_and_fails_closed(monkeypatc
     assert "DELETE FROM" not in statements[-1]
 
 
-def test_amazon_braket_migration_is_additive_and_fails_closed(monkeypatch):
-    module = _load_migration("0048_amazon_braket_framework.py")
+def test_additional_frameworks_migration_is_additive_and_fails_closed(monkeypatch):
+    module = _load_migration("0048_additional_frameworks.py")
     created = []
     statements = []
 
@@ -235,10 +235,18 @@ def test_amazon_braket_migration_is_additive_and_fails_closed(monkeypatch):
 
     module.upgrade()
     assert set(module._FRAMEWORKS_NEW) == {framework.value for framework in Framework}
-    assert set(module._FRAMEWORKS_NEW) - set(module._FRAMEWORKS_OLD) == {"braket"}
-    assert set(module._TOOL_NAMES_NEW) - set(module._TOOL_NAMES_OLD) == {"simulate_braket"}
-    assert "braket" in created[0][2]
-    assert "simulate_braket" in created[1][2]
+    assert set(module._FRAMEWORKS_NEW) - set(module._FRAMEWORKS_OLD) == {
+        "braket",
+        "qibo",
+        "qulacs",
+    }
+    assert set(module._TOOL_NAMES_NEW) - set(module._TOOL_NAMES_OLD) == {
+        "simulate_braket",
+        "simulate_qibo",
+        "simulate_qulacs",
+    }
+    assert all(framework in created[0][2] for framework in module._FRAMEWORKS_ADDED)
+    assert all(tool in created[1][2] for tool in module._TOOL_NAMES_ADDED)
 
     module.downgrade()
     assert "cannot downgrade 0048" in statements[-1]

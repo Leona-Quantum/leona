@@ -15,6 +15,8 @@ test("the run composer offers every executable agent framework", () => {
     { key: "cirq", label: "Cirq" },
     { key: "pennylane", label: "PennyLane" },
     { key: "braket", label: "Amazon Braket" },
+    { key: "qibo", label: "Qibo" },
+    { key: "qulacs", label: "Qulacs" },
   ]);
 });
 
@@ -36,6 +38,19 @@ test("Amazon Braket values hydrate without falling back to Qiskit", () => {
   assert.equal(frameworkValue("Amazon Braket"), "braket");
   assert.deepEqual(hydrateArtifactFramework("qiskit", false, "Amazon Braket"), {
     framework: "braket",
+    error: null,
+  });
+});
+
+test("Qibo and Qulacs values hydrate without falling back to Qiskit", () => {
+  assert.equal(frameworkValue("Qibo"), "qibo");
+  assert.equal(frameworkValue("qulacs"), "qulacs");
+  assert.deepEqual(hydrateArtifactFramework("qiskit", false, "Qibo"), {
+    framework: "qibo",
+    error: null,
+  });
+  assert.deepEqual(hydrateArtifactFramework("qiskit", false, "Qulacs"), {
+    framework: "qulacs",
     error: null,
   });
 });

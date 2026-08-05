@@ -39,6 +39,8 @@ _PROMISED = {
     "Cirq": "cirq",
     "PennyLane": "pennylane",
     "the Amazon Braket SDK with its LocalSimulator": "braket",
+    "Qibo with its NumPy backend": "qibo",
+    "Qulacs": "qulacs",
 }
 
 

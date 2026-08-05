@@ -34,8 +34,8 @@ def test_procedural_cases_are_reproducible_and_seed_sensitive():
         case.model_dump(mode="json") for case in repeated
     ]
     assert [case.prompt for case in first] != [case.prompt for case in different]
-    assert len(first) == 48
-    assert len({case.id for case in first}) == 48
+    assert len(first) == 52
+    assert len({case.id for case in first}) == 52
 
 
 def test_increasing_case_count_does_not_mutate_existing_seeded_cases():
@@ -95,6 +95,8 @@ def test_procedural_corpus_covers_frameworks_difficulties_and_workloads():
         Framework.CIRQ,
         Framework.PENNYLANE,
         Framework.BRAKET,
+        Framework.QIBO,
+        Framework.QULACS,
     }
     assert {case.difficulty for case in cases} == {
         "basic",
@@ -1085,7 +1087,7 @@ framework: qiskit
         procedural_cases_per_family=1,
     )
 
-    assert len(cases) == 25
+    assert len(cases) == 27
     assert cases[0].id == "static-case"
     assert all(
         case.id.startswith(f"procedural-{PROCEDURAL_GENERATOR_VERSION}-s20260802-")
@@ -1098,8 +1100,8 @@ framework: qiskit
         procedural_cases_per_family=1,
         procedural_prompt_variants=3,
     )
-    assert len(varied) == 73
-    assert sum(PROCEDURAL_SURFACE_VERSION in case.id for case in varied) == 48
+    assert len(varied) == 79
+    assert sum(PROCEDURAL_SURFACE_VERSION in case.id for case in varied) == 52
 
 
 def test_cli_case_loader_combines_multiple_unseen_seeds(tmp_path):
@@ -1114,10 +1116,10 @@ def test_cli_case_loader_combines_multiple_unseen_seeds(tmp_path):
         procedural_prompt_variants=2,
     )
 
-    assert len(cases) == 1 + 2 * 24 * 2
+    assert len(cases) == 1 + 2 * 26 * 2
     assert len({case.id for case in cases}) == len(cases)
-    assert sum("-s7319426802-" in case.id for case in cases) == 48
-    assert sum("-s9182746611-" in case.id for case in cases) == 48
+    assert sum("-s7319426802-" in case.id for case in cases) == 52
+    assert sum("-s9182746611-" in case.id for case in cases) == 52
 
 
 def test_cli_case_loader_rejects_partial_configuration_and_duplicate_ids(tmp_path):

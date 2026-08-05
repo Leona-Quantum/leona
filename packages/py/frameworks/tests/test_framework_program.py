@@ -426,6 +426,89 @@ def test_braket_exact_statevector_program_keeps_computed_result_and_trusted_evid
     assert observation["resource_metrics"]["gate_count"] == 2
 
 
+def test_qibo_native_statevector_sampling_and_metrics_stay_in_process():
+    pytest.importorskip("qibo")
+    code = (
+        "from qibo import Circuit, gates\n"
+        "from qibo.backends import NumpyBackend\n"
+        "circuit = Circuit(3)\n"
+        "circuit.add(gates.X(0))\n"
+        "circuit.add(gates.H(2))\n"
+        "circuit.add(gates.M(0, 2, register_name='ro'))\n"
+        "backend = NumpyBackend()\n"
+        "backend.set_seed(7)\n"
+        "result = backend.execute_circuit(circuit, nshots=32)\n"
+        "counts = {str(k): int(v) for k, v in result.frequencies(binary=True).items()}\n"
+        "FINAL_CIRCUIT = circuit\n"
+        "RESULT = {'counts': counts}\n"
+    )
+
+    observation = _run_epilogue(Framework.QIBO, code)
+    payload = observation["native_statevector"]
+
+    assert payload["endianness"] == "q0_msb"
+    assert payload["qubits"] == 3
+    assert payload["clbits"] == 2
+    assert payload["measurement_map"] == {"0": 2, "1": 0}
+    assert _amplitude_support(payload) == [4, 5]
+    sampled = observation["native_sampled"]
+    assert sampled["bit_order"] == "little"
+    assert sampled["seed"] == 1234
+    assert sum(sampled["counts"].values()) == sampled["shots"]
+    assert all(key.startswith("1") for key in sampled["counts"])
+    assert observation["resource_metrics"] == {
+        "qubits": 3,
+        "depth": 2,
+        "gate_count": 2,
+        "two_qubit_gate_count": 0,
+        "measurement_count": 2,
+    }
+
+
+def test_qulacs_native_statevector_sampling_metrics_and_optimization():
+    pytest.importorskip("qulacs")
+    code = (
+        "from qulacs import QuantumCircuit, QuantumState\n"
+        "from qulacs.circuit import QuantumCircuitOptimizer\n"
+        "from qulacs.gate import H, Measurement, X\n"
+        "circuit = QuantumCircuit(3)\n"
+        "circuit.add_gate(X(0))\n"
+        "circuit.add_gate(H(2))\n"
+        "optimizer = QuantumCircuitOptimizer()\n"
+        "optimizer.optimize(circuit, 2)\n"
+        "state = QuantumState(3)\n"
+        "circuit.update_quantum_state(state)\n"
+        "samples = state.sampling(32, 7)\n"
+        "counts = {}\n"
+        "for sample in samples:\n"
+        "    key = format(int(sample), '03b')\n"
+        "    counts[key] = counts.get(key, 0) + 1\n"
+        "circuit.add_gate(Measurement(0, 0))\n"
+        "circuit.add_gate(Measurement(2, 1))\n"
+        "FINAL_CIRCUIT = circuit\n"
+        "RESULT = {'counts': counts}\n"
+    )
+
+    observation = _run_epilogue(Framework.QULACS, code)
+    payload = observation["native_statevector"]
+
+    assert payload["endianness"] == "q0_lsb"
+    assert payload["qubits"] == 3
+    assert payload["clbits"] == 2
+    assert payload["measurement_map"] == {"0": 0, "1": 2}
+    assert _amplitude_support(payload) == [1, 5]
+    sampled = observation["native_sampled"]
+    assert sampled["bit_order"] == "big"
+    assert sampled["seed"] == 1234
+    assert sum(sampled["counts"].values()) == sampled["shots"]
+    assert all(key.endswith("1") for key in sampled["counts"])
+    assert observation["native_optimization"] == {"applied": True}
+    assert observation["resource_metrics"]["qubits"] == 3
+    assert observation["resource_metrics"]["gate_count"] == 1
+    assert observation["resource_metrics"]["two_qubit_gate_count"] == 1
+    assert observation["resource_metrics"]["measurement_count"] == 2
+
+
 def test_cirq_metrics_are_observed_from_final_sandbox_object():
     class Operation:
         def __init__(self, *qubits):

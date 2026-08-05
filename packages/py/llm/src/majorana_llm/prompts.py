@@ -34,8 +34,9 @@ _OPENQASM_CONTRACT = (
 )
 
 FRAMEWORK_DIRECTIVE = (
-    "Default framework is Qiskit for executable Python. Generate PennyLane, Cirq, or "
-    "Amazon Braket only when the user explicitly selects it. If Qiskit cannot express the task, "
+    "Default framework is Qiskit for executable Python. Generate PennyLane, Cirq, Amazon "
+    "Braket, Qibo, or Qulacs only when the user explicitly selects it. If Qiskit cannot "
+    "express the task, "
     "report that limitation rather than switching frameworks; never switch silently. "
     "Generate and optimize code in the selected framework; execute it when a compatible "
     "backend is connected, otherwise preserve it as explicitly not run. OpenQASM must "
@@ -44,9 +45,10 @@ FRAMEWORK_DIRECTIVE = (
 
 _RUNTIME_LIMITS = (
     "The sandbox exposes qiskit, qiskit_aer, numpy, scipy, sympy, networkx, Cirq, "
-    "PennyLane, and the Amazon Braket SDK with its LocalSimulator, plus side-effect-free "
-    "standard-library modules. Amazon Braket cloud devices, AWS credentials, boto3 calls, "
-    "and network task submission are unavailable. It does not "
+    "PennyLane, the Amazon Braket SDK with its LocalSimulator, Qibo with its NumPy backend, "
+    "and Qulacs, plus side-effect-free standard-library modules. Amazon Braket cloud devices, "
+    "AWS credentials, boto3 calls, Qibolab hardware backends, and network task "
+    "submission are unavailable. It does not "
     "install qiskit_algorithms, qiskit_nature, pyscf, or other optional Qiskit "
     "packages. For VQE/QAOA-sized tasks, implement the small reference method with "
     "qiskit plus numpy/scipy instead of importing an unavailable package."
@@ -831,6 +833,36 @@ leftmost. LocalSimulator has no public seed argument; never invent or pass `seed
 its run method. If a request requires seeded samples, expose that limitation honestly
 and rely on exact statevector evidence where the task permits it."""
 
+_QIBO_GENERATION_API_RULES = """Qibo code uses `Circuit` and `gates` from `qibo`,
+and only `NumpyBackend` from `qibo.backends`. The selected-framework source and
+FINAL_CIRCUIT must remain a Qibo Circuit. Do not import qibolab, select a hardware
+backend, or submit a remote job.
+
+Use one terminal `gates.M(*qubits, register_name="ro")` for sampled readout. Create
+`backend = NumpyBackend()`, call `backend.set_seed(seed)`, and execute with
+`backend.execute_circuit(circuit, nshots=shots)`. Convert
+`result.frequencies(binary=True)` to a plain `dict[str, int]`. Qibo's displayed
+bitstrings and statevector use qubit 0 as the leftmost / most-significant qubit;
+preserve that native order and do not silently reverse it."""
+
+_QULACS_GENERATION_API_RULES = """Qulacs code uses `QuantumCircuit` and
+`QuantumState` from `qulacs`, with gates from `qulacs.gate`. The selected-framework
+source and FINAL_CIRCUIT must remain a Qulacs QuantumCircuit. Execute only with the
+in-process Qulacs state simulator; do not convert the circuit to Qiskit/Cirq/PennyLane
+or use a cloud backend.
+
+Qulacs RX/RY/RZ implement exp(+i*theta*Pauli/2), the opposite sign from the common
+mathematical/Qiskit definition exp(-i*theta*Pauli/2). When the request states the
+common mathematical rotation, pass the negated angle to the Qulacs gate exactly once;
+do not silently change the requested physical rotation.
+
+For sampled readout, evolve a zero QuantumState with the unmeasured circuit, call
+`state.sampling(shots, seed)`, and convert each returned basis integer to a fixed-width
+bitstring whose rightmost character is qubit 0. Add terminal `Measurement(qubit,
+classical_address)` gates to FINAL_CIRCUIT so the requested readout and Studio diagram
+remain explicit, but do not apply those measurement gates to the state before calling
+sampling. Convert native numeric values to plain JSON-compatible Python types."""
+
 _QISKIT_REPRESENTATION_RULE = """- In Qiskit Pauli labels and displayed bitstrings, the
   rightmost character is qubit 0. A raw Statevector reshaped into NumPy axes is ordered
   q_(n-1),...,q_0, not q_0,...,q_(n-1). Prefer full-width Pauli labels, partial_trace
@@ -858,6 +890,8 @@ _FRAMEWORK_SCOPED_GENERATION_RULES = {
     "cirq": (_CIRQ_GENERATION_API_RULES,),
     "pennylane": (_PENNYLANE_GENERATION_API_RULES,),
     "braket": (_BRAKET_GENERATION_API_RULES,),
+    "qibo": (_QIBO_GENERATION_API_RULES,),
+    "qulacs": (_QULACS_GENERATION_API_RULES,),
 }
 
 
@@ -933,7 +967,8 @@ RESULT requirements; the promised output keys still apply when that entry point 
   must already be composed only of strings, booleans, null, plain integers/floats,
   lists, and dictionaries before the sandbox epilogue runs;
 - use deterministic framework seeds wherever supported;
-- use current Qiskit 2.x, Cirq, PennyLane, or Amazon Braket APIs and only installed packages;
+- use current Qiskit 2.x, Cirq, PennyLane, Amazon Braket, Qibo, or Qulacs APIs
+  and only installed packages;
 - never use stdout as a result channel and never make network or credential calls.
 
 {_QISKIT_GENERATION_API_RULES}
@@ -943,6 +978,10 @@ RESULT requirements; the promised output keys still apply when that entry point 
 {_PENNYLANE_GENERATION_API_RULES}
 
 {_BRAKET_GENERATION_API_RULES}
+
+{_QIBO_GENERATION_API_RULES}
+
+{_QULACS_GENERATION_API_RULES}
 
 Representation and numerical invariants:
 {_QISKIT_REPRESENTATION_RULE}
@@ -2130,6 +2169,51 @@ counts = LocalSimulator().run(circuit, shots=shots).result().measurement_counts
 FINAL_CIRCUIT = circuit
 RESULT = {"counts": {str(key): int(value) for key, value in counts.items()}}
 """
+_QIBO_BELL_GENERATION_REFERENCE = r"""
+Qibo Bell-state reference
+-------------------------
+from qibo import Circuit, gates
+from qibo.backends import NumpyBackend
+
+shots = 1024
+seed = 42
+circuit = Circuit(2)
+circuit.add(gates.H(0))
+circuit.add(gates.CNOT(0, 1))
+circuit.add(gates.M(0, 1, register_name="ro"))
+backend = NumpyBackend()
+backend.set_seed(seed)
+result = backend.execute_circuit(circuit, nshots=shots)
+counts = {str(key): int(value) for key, value in result.frequencies(binary=True).items()}
+
+FINAL_CIRCUIT = circuit
+RESULT = {"counts": counts}
+"""
+_QULACS_BELL_GENERATION_REFERENCE = r"""
+Qulacs Bell-state reference
+---------------------------
+from qulacs import QuantumCircuit, QuantumState
+from qulacs.gate import CNOT, H, Measurement
+
+shots = 1024
+seed = 42
+circuit = QuantumCircuit(2)
+circuit.add_gate(H(0))
+circuit.add_gate(CNOT(0, 1))
+state = QuantumState(2)
+state.set_zero_state()
+circuit.update_quantum_state(state)
+samples = state.sampling(shots, seed)
+counts = {}
+for sample in samples:
+    key = format(int(sample), "02b")
+    counts[key] = counts.get(key, 0) + 1
+circuit.add_gate(Measurement(0, 0))
+circuit.add_gate(Measurement(1, 1))
+
+FINAL_CIRCUIT = circuit
+RESULT = {"counts": counts}
+"""
 _VQE_GENERATION_REFERENCE = _BOUNDED_STATEVECTOR_VQE_REFERENCE
 _QAOA_GENERATION_REFERENCE = _generation_reference_slice(
     "Example 3 —", "Example 4 —"
@@ -2243,6 +2327,10 @@ def simple_generation_system_prompt(
         selected += _BOUNDED_PENNYLANE_VQE_REFERENCE
     elif framework.lower() == "braket" and family == "bell":
         selected += _BRAKET_BELL_GENERATION_REFERENCE
+    elif framework.lower() == "qibo" and family == "bell":
+        selected += _QIBO_BELL_GENERATION_REFERENCE
+    elif framework.lower() == "qulacs" and family == "bell":
+        selected += _QULACS_BELL_GENERATION_REFERENCE
     prompt = SIMPLE_GENERATION_SYSTEM_PROMPT.replace(
         _GENERATION_REFERENCE_IMPLEMENTATIONS,
         selected.rstrip() + "\n",

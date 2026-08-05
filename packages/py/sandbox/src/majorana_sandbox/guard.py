@@ -27,6 +27,8 @@ ALLOWED_IMPORTS: frozenset[str] = frozenset(
         "pennylane_lightning",
         "cirq",
         "braket",
+        "qibo",
+        "qulacs",
         "numpy",
         "scipy",
         "sympy",

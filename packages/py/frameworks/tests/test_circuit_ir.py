@@ -275,6 +275,66 @@ def test_braket_ir_preserves_sparse_qubits_parameters_and_measurement_order():
     assert all(not operation["editable"] for operation in circuit_ir["operations"])
 
 
+def test_qibo_ir_preserves_circuit_qubits_measurement_order_and_gates():
+    pytest.importorskip("qibo")
+    from qibo import Circuit, gates
+
+    circuit = Circuit(6)
+    circuit.add(gates.H(2))
+    circuit.add(gates.CNOT(2, 5))
+    circuit.add(gates.RZ(5, 0.25))
+    circuit.add(gates.M(5, 2, register_name="ro"))
+
+    circuit_ir = build_circuit_ir("qibo", circuit)
+
+    assert circuit_ir["framework"] == "qibo"
+    assert circuit_ir["qubit_count"] == 6
+    assert circuit_ir["clbit_count"] == 2
+    assert [operation["name"] for operation in circuit_ir["operations"]] == [
+        "h",
+        "cx",
+        "rz",
+        "measure",
+    ]
+    assert circuit_ir["operations"][1]["qubits"] == [2, 5]
+    assert circuit_ir["operations"][3]["qubits"] == [5, 2]
+    assert circuit_ir["operations"][3]["clbits"] == [1, 0]
+    assert all(not operation["editable"] for operation in circuit_ir["operations"])
+
+
+def test_qulacs_ir_preserves_rotation_parameters_and_measurement_addresses():
+    pytest.importorskip("qulacs")
+    from qulacs import QuantumCircuit
+    from qulacs.gate import CNOT, H, Measurement, RZ
+
+    circuit = QuantumCircuit(3)
+    circuit.add_gate(H(0))
+    circuit.add_gate(CNOT(0, 2))
+    circuit.add_gate(RZ(2, 0.25))
+    circuit.add_gate(Measurement(2, 1))
+    circuit.add_gate(Measurement(0, 0))
+
+    circuit_ir = build_circuit_ir("qulacs", circuit)
+
+    assert circuit_ir["framework"] == "qulacs"
+    assert circuit_ir["qubit_count"] == 3
+    assert circuit_ir["clbit_count"] == 2
+    assert [operation["name"] for operation in circuit_ir["operations"]] == [
+        "h",
+        "cx",
+        "rz",
+        "measure",
+        "measure",
+    ]
+    assert circuit_ir["operations"][1]["qubits"] == [0, 2]
+    assert float(circuit_ir["operations"][2]["parameters"][0]) == pytest.approx(0.25)
+    assert circuit_ir["operations"][3]["qubits"] == [2]
+    assert circuit_ir["operations"][3]["clbits"] == [1]
+    assert circuit_ir["operations"][4]["qubits"] == [0]
+    assert circuit_ir["operations"][4]["clbits"] == [0]
+    assert all(not operation["editable"] for operation in circuit_ir["operations"])
+
+
 def test_validation_rejects_partial_malformed_or_oversized_payloads():
     valid = _valid_ir()
     assert validate_circuit_ir(valid) == valid
