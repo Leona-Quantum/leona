@@ -82,7 +82,7 @@ test("tag matching is case-insensitive, which is half of why the vocabulary exis
   // this test: written against "Clifford circuit benchmark", whose family rule
   // yields `stabilizer` on its own, both assertions passed whether or not the
   // tag lookup did anything — including if BOTH cases failed. Raised by
-  // CodeRabbit on #264. With an unclaimed family, `stabilizer` is reachable
+  // CodeRabbit on PR 264. With an unclaimed family, `stabilizer` is reachable
   // only through the tag, so the assertion carries the property it names.
   const upper = deriveTopics({
     slug: "a",

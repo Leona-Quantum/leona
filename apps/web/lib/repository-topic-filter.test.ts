@@ -116,7 +116,7 @@ test("counts are what the filter will actually return", () => {
 test("a record listing a topic twice is still counted once", () => {
   // `deriveTopics` cannot emit a duplicate and CI refuses one in the corpus,
   // but this function is also handed records straight from the API, where
-  // `topics` is shape-checked and nothing more. Raised by CodeRabbit on #264;
+  // `topics` is shape-checked and nothing more. Raised by CodeRabbit on PR 264;
   // the symptom is a label promising more rows than its own filter returns.
   const doubled = [{ slug: "twice", topics: ["materials", "materials"] as TopicId[] }];
 
