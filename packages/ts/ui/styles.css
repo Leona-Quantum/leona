@@ -9512,6 +9512,148 @@ div.mj-rail-row:hover {
   max-width: 62ch;
 }
 
+/* ---------- what an entry takes and returns: the piece ---------- */
+/* The owner asked for the interface as a shape — "puzzle pieces that connect to
+   the corresponding pieces that fit before and after it". The shape earns its
+   place because a FLAT edge is the common case and carries information a chip
+   cannot: 121 of 283 records have no ports at all and 120 more end in a
+   measurement nothing consumes, so most pieces in this catalogue have a
+   straight side, and you can see that before reading a word.
+
+   The two readings are real text inside the piece. The notches are
+   aria-hidden — they restate what the text already says. */
+.mj-iface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.mj-iface-piece {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+  /* Room on both sides for a notch that reaches into the box, and for a tab
+     that reaches out of it. Symmetric so a piece with one open edge does not
+     sit visibly off-centre against one with two. */
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-iface-port {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mj-iface-port--out { text-align: right; }
+.mj-iface-port-label {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-iface-port-value {
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-16);
+  overflow-wrap: anywhere;
+}
+.mj-iface-port-caveat {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+
+/* A closed edge is the default, and it is drawn by drawing nothing: the piece's
+   own border is already a straight side. Only an edge that can meet something
+   gets a notch. */
+.mj-iface-edge {
+  display: none;
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 26px;
+  border: 1px solid var(--border-0);
+  transform: translateY(-50%);
+}
+.mj-iface-edge.is-open { display: block; }
+/* The socket: a half-disc bitten out of the left edge, filled with what is
+   BEHIND the piece so it reads as absence rather than as a second box. */
+.mj-iface-edge--in {
+  left: -1px;
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: var(--bg-1);
+}
+/* An input whose entry was written to start from |0…0⟩. Dashed and muted, not
+   warning-coloured: roadmap §6 is explicit that `unknown` must not render as a
+   near-miss, and an amber notch would say "nearly wrong" where the truth is
+   "not established". */
+.mj-iface-edge--in.is-caveated {
+  border-style: dashed;
+  border-color: var(--text-2);
+}
+/* The tab: the same half-disc pushed out of the right edge, filled with the
+   piece so it reads as part of it. Only qubits out get one — classical bits
+   are what 120 of the corpus's circuits return, and nothing takes them. */
+.mj-iface-edge--out {
+  right: -13px;
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: var(--bg-2);
+}
+.mj-iface-stance {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+  max-width: 68ch;
+}
+.mj-iface-neighbours {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.mj-iface-partners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+}
+/* Earned and unverified are different claims, so they are different boxes. The
+   accent goes on the earned one; the unverified one is deliberately quiet. */
+.mj-iface-partners--ok { border-color: var(--accent); }
+.mj-iface-partners--unknown { border-style: dashed; }
+.mj-iface-partners-title {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-iface-partners--ok .mj-iface-partners-title strong { color: var(--accent); }
+.mj-iface-partner-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-iface-partner-list a {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+}
+.mj-iface-partner-rest {
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-iface-partners-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  max-width: 68ch;
+}
+
 @media (max-width: 720px) {
   .mj-estimate-headline { grid-template-columns: 1fr; }
   .mj-estimate-machines { grid-template-columns: 1fr; }
@@ -9521,4 +9663,8 @@ div.mj-rail-row:hover {
     gap: 2px;
   }
   .mj-estimate-row dd { text-align: left; }
+  /* One column, and the out port loses its right alignment with it: stacked,
+     right-aligned text under left-aligned text reads as two unrelated blocks. */
+  .mj-iface-piece { grid-template-columns: 1fr; }
+  .mj-iface-port--out { text-align: left; }
 }
