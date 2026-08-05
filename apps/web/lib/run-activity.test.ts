@@ -216,3 +216,23 @@ test("keeps an explicit error row when a stage fails before producing its result
   assert.equal(generated?.status, "Generation failed");
   assert.equal(generated?.title, "No candidate source was recorded");
 });
+
+test("presents agent progress in Japanese while preserving technical names", () => {
+  const activity = runActivityFromEvents(
+    [
+      queued,
+      { type: "plan.produced", plan: { algorithm: "VQE", framework: "qiskit" } },
+      { type: "code.generated", revision: 1, language: "python" },
+      { type: "sandbox.result", phase: "verification", exit_code: 0 },
+      { type: "verification.result", method: "exact_diag", result: "pass" },
+      { type: "run.finished", status: "succeeded" },
+    ],
+    false,
+    "ja",
+  );
+
+  assert.equal(activity?.label, "実行完了");
+  assert.equal(activity?.items.find((item) => item.id === "plan")?.label, "計画");
+  assert.match(activity?.items.find((item) => item.id === "code")?.title ?? "", /qiskit/);
+  assert.equal(activity?.items.find((item) => item.id === "verification")?.status, "1件中1件合格");
+});

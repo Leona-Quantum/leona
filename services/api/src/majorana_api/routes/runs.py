@@ -9,7 +9,7 @@ import datetime as dt
 import hashlib
 import json
 import uuid
-from typing import Annotated, Any
+from typing import Annotated, Any, Literal
 
 from fastapi import APIRouter, Depends, Header, HTTPException, Request
 from fastapi.responses import StreamingResponse
@@ -69,6 +69,9 @@ class CreateRunRequest(RequestModel):
     timeout_s: int | None = Field(default=None, ge=1, le=600)
     source_code: str | None = Field(default=None, max_length=100_000)
     conversation_id: uuid.UUID | None = None
+    # Controls user-facing natural language only. Code, identifiers, enum values,
+    # RESULT keys, and verification contracts remain locale-neutral.
+    response_locale: Literal["en", "ja"] = "en"
 
 
 class SetRunFolderRequest(RequestModel):
@@ -411,6 +414,7 @@ async def create_run(
             "run_id": str(run.id),
             "workspace_id": str(scope.workspace_id),
             "user_id": str(scope.user_id),
+            "response_locale": body.response_locale,
             **({"source_code": body.source_code} if body.source_code is not None else {}),
         },
         run_id=run.id,

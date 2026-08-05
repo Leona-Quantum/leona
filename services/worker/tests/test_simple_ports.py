@@ -99,6 +99,40 @@ def _alignment_payload(
     }
 
 
+def test_review_follow_ups_are_optional_but_bounded_for_display():
+    output = simple_ports_module._IntentReviewOutput.model_validate(
+        {
+            "decision": "ready",
+            "confidence": "high",
+            "severity": "none",
+            "summary": "The H2 VQE result matches the requested calculation.",
+            "suggested_follow_ups": [
+                "  How does this ansatz represent H2?  ",
+                "Would a particle-preserving UCCSD ansatz improve the energy?",
+                "How does the result compare with exact diagonalization?",
+                "This fourth suggestion must be dropped.",
+            ],
+        }
+    )
+
+    assert output.suggested_follow_ups == [
+        "How does this ansatz represent H2?",
+        "Would a particle-preserving UCCSD ansatz improve the energy?",
+        "How does the result compare with exact diagonalization?",
+    ]
+    assert (
+        simple_ports_module._IntentReviewOutput.model_validate(
+            {
+                "decision": "ready",
+                "confidence": "medium",
+                "severity": "minor",
+                "summary": "No concrete mismatch was found.",
+            }
+        ).suggested_follow_ups
+        == []
+    )
+
+
 @pytest.mark.parametrize(
     "proposed_range",
     [

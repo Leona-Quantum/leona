@@ -51,6 +51,7 @@ def test_the_same_request_hashes_the_same():
         ("timeout_s", 42),
         ("conversation_id", uuid.uuid4()),
         ("artifact_version_id", uuid.uuid4()),
+        ("response_locale", "ja"),
     ],
 )
 def test_every_field_moves_the_fingerprint(field, value):

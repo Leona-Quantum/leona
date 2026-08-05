@@ -102,6 +102,7 @@ function chatTurn(id: string, prompt: string, answer: string): Turn {
     id,
     prompt,
     answer,
+    followUps: [],
     events: [
       { run_id: id, type: "run.queued", mode: "auto" },
       { run_id: id, type: "run.mode_resolved", requested: "auto", resolved: "chat" },
@@ -252,6 +253,7 @@ const EXECUTE_TURN: Turn = {
   id: "run-ghz",
   prompt: "Build a 3-qubit GHZ state and measure all qubits",
   answer: null,
+  followUps: [],
   events: [
     { run_id: "run-ghz", type: "run.queued", mode: "execute" },
     {

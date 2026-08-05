@@ -56,10 +56,10 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
 
     async function loadContext() {
       const response = await fetch(`/api/artifacts/${encodeURIComponent(selectedArtifactId)}`, { cache: "no-store" });
-      if (!response.ok) throw new Error("Artifact context unavailable");
+      if (!response.ok) throw new Error(locale === "ja" ? "Artifactのコンテキストを利用できません" : "Artifact context unavailable");
       const remote = (await response.json()) as Record<string, unknown>;
       let artifact = artifactFromResource(remote)[0];
-      if (!artifact) throw new Error("Artifact context unavailable");
+      if (!artifact) throw new Error(locale === "ja" ? "Artifactのコンテキストを利用できません" : "Artifact context unavailable");
       if (artifact.currentVersionId && !artifact.code) {
         const versionResponse = await fetch(`/api/artifacts/${encodeURIComponent(artifact.id)}/versions/current`, { cache: "no-store" });
         if (versionResponse.ok) {
@@ -82,12 +82,14 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
       frameworkCurrent.current = hydrated.framework;
       setFramework(hydrated.framework);
       setArtifactHydration("ready");
-      setPrompt(`Use the saved artifact “${artifact.title}” as context for my next question.`);
+      setPrompt(locale === "ja"
+        ? `保存済みArtifact「${artifact.title}」を次の質問のコンテキストとして使用してください。`
+        : `Use the saved artifact “${artifact.title}” as context for my next question.`);
     }
 
     void loadContext().catch(() => {
       if (!active) return;
-      setError("Artifact context unavailable");
+      setError(locale === "ja" ? "Artifactのコンテキストを利用できません" : "Artifact context unavailable");
       setArtifactHydration("error");
     });
     return () => { active = false; };
@@ -140,13 +142,13 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
     if (!canSubmitAfterArtifactHydration(artifactHydration)) {
       setError(
         artifactHydration === "error"
-          ? "Resolve the artifact context error before submitting."
-          : "Wait for the artifact framework to finish loading.",
+          ? locale === "ja" ? "送信前にArtifactコンテキストのエラーを解決してください。" : "Resolve the artifact context error before submitting."
+          : locale === "ja" ? "Artifactのフレームワーク読み込みが完了するまでお待ちください。" : "Wait for the artifact framework to finish loading.",
       );
       return;
     }
     if (demoMode) {
-      setError("Public preview mode is view-only. Sign in to start a real run.");
+      setError(locale === "ja" ? "公開プレビューは閲覧専用です。実際に実行するにはサインインしてください。" : "Public preview mode is view-only. Sign in to start a real run.");
       return;
     }
     if (contextArtifact) {
@@ -174,6 +176,7 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
           // authoritative and bypasses intent reclassification in the worker.
           mode,
           framework,
+          response_locale: locale,
           ...(contextArtifact?.code ? { source_code: contextArtifact.code } : {}),
           ...(contextArtifact?.currentVersionId ? { artifact_version_id: contextArtifact.currentVersionId } : {}),
         }),
@@ -268,10 +271,10 @@ export function RunWorkspace({ demoMode = false, locale = "en" }: { demoMode?: b
           ) : null}
 
           {artifactHydration === "checking" || artifactHydration === "loading" ? (
-            <p className="mj-run-context-link" role="status">Loading artifact context…</p>
+            <p className="mj-run-context-link" role="status">{locale === "ja" ? "Artifactコンテキストを読み込み中…" : "Loading artifact context…"}</p>
           ) : null}
           {artifactHydration === "error" ? (
-            <p className="mj-run-context-link" role="alert">Artifact context could not be loaded.</p>
+            <p className="mj-run-context-link" role="alert">{locale === "ja" ? "Artifactコンテキストを読み込めませんでした。" : "Artifact context could not be loaded."}</p>
           ) : null}
 
           {contextArtifact ? <a className="mj-run-context-link" href={demoMode ? "/demo?view=library" : `/studio?artifact=${encodeURIComponent(contextArtifact.id)}`}>{copy.contextLabel}: {contextArtifact.title} · {copy.viewArtifact}</a> : null}

@@ -24,6 +24,11 @@ from majorana_llm.parsing import (
     StageOutputError,
     extract_json,
 )
+from majorana_llm.prompt_locale import (
+    ResponseLocale,
+    normalize_response_locale,
+    with_response_locale,
+)
 
 from majorana_llm.prompts import (
     CHAT_SYSTEM_PROMPT,
@@ -89,4 +94,7 @@ __all__ = [
     "render_intent_prompt",
     "simple_generation_system_prompt",
     "with_execution_conversation_context",
+    "ResponseLocale",
+    "normalize_response_locale",
+    "with_response_locale",
 ]

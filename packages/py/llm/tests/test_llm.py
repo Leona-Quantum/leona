@@ -40,6 +40,18 @@ def test_artifact_only_review_prompt_demands_deep_static_feedback_without_result
     assert "classical baseline that does not solve the same instance" in prompt
     assert "never means executed, verified, optimal" in prompt
     assert "Never fabricate RESULT" in prompt
+    assert "suggested_follow_ups" in prompt
+    assert "exact request, formulation, generated artifact" in prompt
+
+
+def test_user_facing_prompts_request_contextual_follow_ups_without_an_extra_call():
+    chat = " ".join(CHAT_SYSTEM_PROMPT.split())
+    review = " ".join(SIMPLE_REVIEW_SYSTEM_PROMPT.split())
+
+    assert "<!-- majorana-follow-ups:" in chat
+    assert "directly grounded in the current request and your answer" in chat
+    assert "suggested_follow_ups" in review
+    assert "exact request, algorithm, source, observed RESULT" in review
 
 
 def test_generation_prompt_always_embeds_nameko_style_reference_implementations():
