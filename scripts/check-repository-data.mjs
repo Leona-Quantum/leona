@@ -424,6 +424,75 @@ for (const entry of entries) {
   }
 }
 
+// ---------------------------------------------------------------------------
+// The search fallback for `algorithmFamily` (s81).
+//
+// The `Algorithm family` browse control was removed on a measured claim: the
+// free-text box already indexes `algorithmFamily`, so typing a family's name
+// still gathers its members. Measured on the 283-entry corpus at the time, no
+// family lost one of its own members — 47 of 57 returned the family exactly,
+// 10 a benign superset, 0 lossy.
+//
+// Two things can quietly falsify that later, and neither has any other symptom.
+// A field can leave the haystack in `lib/repository/search.ts`, which makes 57
+// values unreachable while every test still passes. Or a family can be renamed
+// to something its own members' text does not contain — a family called "Misc"
+// whose entries never say "misc" is invisible the moment the control is gone.
+// So the claim is re-measured here against the real predicate rather than a
+// copy of it: a re-implementation would agree with itself forever.
+//
+// A superset is fine and is not reported. Only a family that cannot gather
+// itself is an error.
+if (!ENTRY_FILE) {
+  const searchOut = mkdtempSync(join(tmpdir(), "repo-search-"));
+  const searchFile = join(searchOut, "search.mjs");
+  let searchMod;
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/search.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: searchFile,
+      logLevel: "silent",
+    });
+    searchMod = await import(pathToFileURL(searchFile).href);
+  } finally {
+    rmSync(searchOut, { recursive: true, force: true });
+  }
+
+  const byFamily = new Map();
+  for (const entry of entries) {
+    const list = byFamily.get(entry.algorithmFamily) ?? [];
+    list.push(entry);
+    byFamily.set(entry.algorithmFamily, list);
+  }
+
+  let exactFamilies = 0;
+  for (const [family, members] of byFamily) {
+    const hits = new Set(
+      entries.filter((e) => searchMod.matchesRepositoryQuery(e, family)).map((e) => e.slug),
+    );
+    const unreachable = members.filter((m) => !hits.has(m.slug));
+    if (unreachable.length) {
+      errors.push(
+        `family "${family}": searching its name misses ${unreachable.length} of its own ${members.length} ` +
+          `members (${unreachable.slice(0, 3).map((m) => m.slug).join(", ")}). The family browse control was ` +
+          "removed because search covered it; for this family it no longer does.",
+      );
+    } else if (hits.size === members.length) {
+      exactFamilies += 1;
+    }
+  }
+
+  if (!QUIET) {
+    console.log(
+      `\nfamily search fallback: ${byFamily.size} families, ${exactFamilies} resolve exactly, ` +
+        `${byFamily.size - exactFamilies} to a superset, 0 lossy`,
+    );
+  }
+}
+
 if (entries.length < MIN_ENTRIES) {
   errors.push(`catalog has ${entries.length} entries, below required minimum ${MIN_ENTRIES}`);
 }
