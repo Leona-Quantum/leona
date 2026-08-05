@@ -1,0 +1,109 @@
+{
+  "schema_version": "atlas.phase10.release-audit.v1",
+  "audit_date": "2026-08-05",
+  "classification": "offline_security_contract_audit_not_execution_qualification",
+  "branch": "feature/vqe",
+  "audited_source": {
+    "commit_before_phase10_s9_s12_changes": "5680ccd044eb9b1365f9c61ca8520104a3e4df68",
+    "origin_dev_commit": "561f6a430b74fc56b42456b32b4d08b063c05975",
+    "origin_dev_behind": 0,
+    "feature_only_commits": 181,
+    "dev_merge_conflict_resolution": "completed_and_locally_tested"
+  },
+  "feature_flags": {
+    "external_fetch_enabled": false,
+    "external_execution_enabled": false,
+    "public_materialization_enabled": false,
+    "dynamic_dependency_installation_allowed": false
+  },
+  "stage_status": {
+    "s0_owner_security_decision": "pending",
+    "s1_threat_model": "offline_complete_not_owner_accepted",
+    "s2_acquisition_contract": "offline_complete_live_fetch_disabled",
+    "s3_quarantine_contract": "offline_complete_not_deployed",
+    "s4_rights_contract": "offline_complete_not_legal_approval",
+    "s5_source_normalization": "offline_complete_not_live_qualified",
+    "s6_static_candidate": "offline_complete_not_execution_approval",
+    "s7_policy_and_identity": "offline_complete_unqualified",
+    "s8_executor_probe": "contract_complete_live_probes_not_run",
+    "s9_result_verifier": "offline_complete",
+    "s10_hostile_corpus": "inert_complete_live_exit_gate_not_met",
+    "s11_private_canary": "not_run_blocked",
+    "s12_release_audit": "no_go_recorded"
+  },
+  "evidence": [
+    "docs/atlas/PHASE10_EXTERNAL_EXECUTION_PLAN.md",
+    "docs/atlas/evidence/phase10/threat_control_matrix_v1.json",
+    "docs/atlas/PHASE10_S7_S8_AUDIT_2026-08-03.md",
+    "docs/atlas/PHASE10_S9_RESULT_VERIFIER_PREFLIGHT.md",
+    "docs/atlas/PHASE10_S10_HOSTILE_CORPUS_PREFLIGHT.md",
+    "docs/atlas/PHASE10_S11_PRIVATE_CANARY_BLOCKED.md",
+    "docs/atlas/evidence/phase10/hostile_corpus_manifest_v1.json",
+    "services/api/tests/test_phase10_result_verifier.py",
+    "services/api/tests/test_phase10_hostile_corpus.py",
+    "services/api/tests/test_phase10_release_audit.py"
+  ],
+  "required_artifacts": {
+    "accepted_owner_security_decision": "missing",
+    "connector_fetcher_quarantine_executor_identity_inventory": "incomplete",
+    "exact_runtime_digest": "candidate_identity_contract_only",
+    "sbom": "missing_for_external_source_runtime",
+    "signature_and_attestation": "missing_for_external_source_runtime",
+    "vulnerability_scan": "missing_for_external_source_runtime",
+    "live_hostile_corpus_report": "missing",
+    "private_canary_evidence": "missing",
+    "recovery_rotation_retention_incident_shutdown_runbooks": "incomplete"
+  },
+  "blocking_reasons": [
+    "owner_security_decision_pending",
+    "dedicated_fetcher_identity_not_deployed",
+    "quarantine_storage_not_deployed_and_qualified",
+    "exact_executor_deployment_not_live_qualified",
+    "live_hostile_corpus_not_run",
+    "private_canary_not_run",
+    "external_source_runtime_supply_chain_evidence_incomplete",
+    "operations_runbooks_incomplete"
+  ],
+  "scientific_non_claims": [
+    "No external repository code was executed by Phase 10.",
+    "Offline contract tests do not prove live network or credential isolation.",
+    "No repository compatibility, scientific correctness, performance, or reproducibility claim is made.",
+    "No source-reported metric is promoted to verified or public evidence without independent protocol-bound observation."
+  ],
+  "local_verification": {
+    "phase10_tests": {
+      "passed": 209
+    },
+    "api_tests": {
+      "passed": 1120,
+      "skipped": 406
+    },
+    "python_monorepo_tests": {
+      "passed": 2735,
+      "skipped": 419
+    },
+    "web_tests": {
+      "passed": 538,
+      "failed": 0
+    },
+    "ruff_check": "passed",
+    "ruff_format_check": "passed",
+    "typescript": "passed",
+    "workspace_inventory": "passed_after_documentation_sync",
+    "threat_model_validation": {
+      "passed": true,
+      "threats": 26,
+      "critical": 14,
+      "high": 12,
+      "scope": "schema_and_completeness_only"
+    }
+  },
+  "human_review_policy": {
+    "independent_scientific_review_required_for_this_code_audit": false,
+    "independent_scientific_review_claimed": false,
+    "security_and_operations_approval_waived": false
+  },
+  "decision": "NO-GO",
+  "allowed_next_action": "complete named blockers and repeat S8 through S12 on one exact private deployment class",
+  "automatic_public_transition": false
+}

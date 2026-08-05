@@ -298,11 +298,11 @@
       "detective_control": "Independent validator records exact schema failure without trusting payload status.",
       "failure_code": "result_schema_invalid",
       "fixture_id": "result_malformed_duplicate_nonfinite_oversized",
-      "test_locator": "planned:phase10/hostile/result/schema_corpus",
-      "control_state": "partial_existing",
+      "test_locator": "services/api/tests/test_phase10_result_verifier.py",
+      "control_state": "implemented_existing",
       "target_stage": "S9",
       "owner_role": "security_owner",
-      "residual_risk": "Phase 9 validates LLM candidates and controlled VQE results; no external-source result contract is qualified."
+      "residual_risk": "The strict external-source result contract is tested offline; no live external execution or persistence path is qualified."
     },
     {
       "id": "P10-RES-002",
@@ -313,11 +313,11 @@
       "detective_control": "Append verifier observation containing all expected and observed digest identities.",
       "failure_code": "result_binding_mismatch",
       "fixture_id": "result_digest_substitution_matrix",
-      "test_locator": "planned:phase10/hostile/result/binding_matrix",
-      "control_state": "planned",
+      "test_locator": "services/api/tests/test_phase10_result_verifier.py",
+      "control_state": "implemented_existing",
       "target_stage": "S9",
       "owner_role": "security_owner",
-      "residual_risk": "Complete external-source attestation does not exist."
+      "residual_risk": "Digest binding and append-only observation contracts exist offline; end-to-end external-source attestation is not qualified."
     },
     {
       "id": "P10-RES-003",
@@ -328,11 +328,11 @@
       "detective_control": "Replay and retry tests compare IDs, row history and immutable timestamps/digests.",
       "failure_code": "result_binding_mismatch",
       "fixture_id": "result_cross_request_replay_and_retry",
-      "test_locator": "planned:phase10/hostile/result/replay",
-      "control_state": "partial_existing",
+      "test_locator": "services/api/tests/test_phase10_result_verifier.py",
+      "control_state": "implemented_existing",
       "target_stage": "S9",
       "owner_role": "security_owner",
-      "residual_risk": "Append-only patterns exist; Phase 10 qualification identity is not wired end to end."
+      "residual_risk": "Replay and immutable observation contracts are tested offline; the live persistence path is not qualified."
     },
     {
       "id": "P10-SCI-001",
@@ -343,11 +343,11 @@
       "detective_control": "Verifier recomputes cheap invariants and records disagreement as a scientific failure.",
       "failure_code": "scientific_invariant_failed",
       "fixture_id": "science_forged_reference_and_success",
-      "test_locator": "planned:phase10/hostile/science/forged_reference",
-      "control_state": "planned",
+      "test_locator": "services/api/tests/test_phase10_result_verifier.py",
+      "control_state": "implemented_existing",
       "target_stage": "S9",
       "owner_role": "scientific_owner",
-      "residual_risk": "No general independent verifier exists for arbitrary repository claims."
+      "residual_risk": "Cheap invariant verification exists for the bounded result schema only; arbitrary scientific claims remain unsupported."
     },
     {
       "id": "P10-SCI-002",
@@ -358,11 +358,11 @@
       "detective_control": "Comparison validator rejects protocol mismatch and missing-to-zero coercion.",
       "failure_code": "scientific_invariant_failed",
       "fixture_id": "science_protocol_mismatch_and_unknown_zero",
-      "test_locator": "planned:phase10/hostile/science/protocol_mismatch",
-      "control_state": "partial_existing",
+      "test_locator": "services/api/tests/test_phase10_result_verifier.py",
+      "control_state": "implemented_existing",
       "target_stage": "S9",
       "owner_role": "scientific_owner",
-      "residual_risk": "Controlled VQE protocols exist; arbitrary-source mapping is not approved."
+      "residual_risk": "Protocol identity and unknown-value handling are enforced offline; arbitrary-source metric mapping is not approved."
     },
     {
       "id": "P10-RGT-001",

@@ -1,7 +1,7 @@
 # Phase 10 — External repository execution security plan
 
 Date: 2026-08-03 JST  
-Status: **S0-S8 offline contracts implemented — live external execution remains blocked**  
+Status: **S1-S10 offline contracts implemented; S11 not run; S12 NO-GO — live external execution remains blocked**  
 Branch: `feature/vqe`
 
 ## 1. Purpose and boundary
@@ -367,6 +367,12 @@ It must:
 Exit gate: forged success/result/metric fixtures cannot become verified or
 public evidence.
 
+Offline implementation status: complete. The strict verifier and adversarial
+contract tests are recorded in `phase10_result_verifier.py`,
+`test_phase10_result_verifier.py`, and
+`PHASE10_S9_RESULT_VERIFIER_PREFLIGHT.md`. This does not qualify a live
+external-source persistence or execution path.
+
 ### S10 — Dedicated hostile repository corpus
 
 Build versioned fixtures for every S1 attack, including benign controls. Run
@@ -383,6 +389,11 @@ Required reporting:
 
 Exit gate: all required attacks are rejected, benign controls succeed, and no
 unexplained nondeterminism remains.
+
+Offline implementation status: inert corpus complete. Every S1 threat is
+mapped to an offline, live-blocked, or recorded-only fixture in
+`hostile_corpus_manifest_v1.json`. The live exit gate is not met; see
+`PHASE10_S10_HOSTILE_CORPUS_PREFLIGHT.md`.
 
 ### S11 — Private canary
 
@@ -405,6 +416,10 @@ idempotency, cancellation, cleanup, and cost ceilings.
 Exit gate: the canary succeeds on two clean runs and one intentional failure,
 with all evidence and failure semantics preserved.
 
+Status: not run and blocked. The independent-scientific-review waiver does not
+waive security/operations qualification. See
+`PHASE10_S11_PRIVATE_CANARY_BLOCKED.md`.
+
 ### S12 — Release audit and owner go/no-go
 
 Produce:
@@ -425,6 +440,10 @@ Possible decisions:
 - `REVISE`: return to a named stage.
 
 There is no automatic transition to public execution.
+
+Current decision: `NO-GO`. The machine-readable release audit is
+`docs/atlas/evidence/phase10/release_audit_no_go_v1.json`; the narrative record
+is `PHASE10_S12_RELEASE_AUDIT_2026-08-05.md`.
 
 ## 7. Required failure taxonomy additions
 
