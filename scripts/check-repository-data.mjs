@@ -307,6 +307,100 @@ if (!ENTRY_FILE) {
     }
     console.log(`\n${withDomain} of ${entries.length} entries carry a problem domain.`);
   }
+
+  // --- What each entry takes and returns, and what fits it ------------------
+  //
+  // The properties `lib/repository-interface.test.ts` cannot assert, because
+  // they are about the corpus rather than about the derivation: every entry
+  // resolves to a stance, no `compatible` verdict is produced by a consumer that
+  // assumes its input, and — the one that matters most — the connectable set
+  // stays a minority of the catalogue.
+  //
+  // **The last check is a ceiling on a claim, in the same spirit as the domain
+  // ceiling above.** 414 ordered pairs connect, over 38 of 283 entries; every
+  // one of them is a gate primitive or a state feeding a gate primitive. If a
+  // change makes most of the corpus connectable, either the corpus gained real
+  // composable stages — in which case this line is the thing to rewrite, on
+  // purpose — or the predicate has been loosened until a width match reads as a
+  // proof, which is the failure roadmap §6 is about.
+  const interfaceOut = mkdtempSync(join(tmpdir(), "repo-interface-"));
+  const interfaceFile = join(interfaceOut, "interface.mjs");
+  await esbuild.build({
+    entryPoints: [join(root, "apps/web/lib/repository/interface.ts")],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    outfile: interfaceFile,
+    logLevel: "silent",
+  });
+  const interfaceMod = await import(pathToFileURL(interfaceFile).href);
+  rmSync(interfaceOut, { recursive: true, force: true });
+
+  const interfaces = new Map();
+  const stanceCounts = new Map();
+  for (const entry of entries) {
+    const derived = interfaceMod.deriveInterface({
+      slug: entry.slug,
+      topics: entry.topics ?? [],
+      category: entry.category,
+      wireCount: entry.visualization?.wires?.length ?? 0,
+      portableCircuit: entry.portableCircuit,
+    });
+    if (!interfaceMod.isInterfaceStance(derived.stance)) {
+      fail(entry.slug, `interface stance outside the vocabulary: ${derived.stance}`);
+    }
+    // A port with no width would compare equal to another one and read as a
+    // match between two records that state nothing.
+    for (const [side, port] of [["input", derived.input], ["output", derived.output]]) {
+      if (port && !(Number.isInteger(port.width) && port.width > 0)) {
+        fail(entry.slug, `${side} port has a width of ${port.width}`);
+      }
+    }
+    interfaces.set(entry.slug, derived);
+    stanceCounts.set(derived.stance, (stanceCounts.get(derived.stance) ?? 0) + 1);
+  }
+
+  const verdicts = new Map();
+  const connected = new Set();
+  for (const [producerSlug, producer] of interfaces) {
+    for (const [consumerSlug, consumer] of interfaces) {
+      if (producerSlug === consumerSlug) continue;
+      const verdict = interfaceMod.connects(producer, consumer);
+      verdicts.set(verdict, (verdicts.get(verdict) ?? 0) + 1);
+      if (verdict === "compatible") {
+        // The invariant that keeps `compatible` meaning something. Asserted over
+        // the real corpus rather than trusted from the predicate, because this
+        // is the exact place a loosened rule would show up first and nowhere
+        // else: every other symptom of it looks like a bigger graph.
+        if (consumer.assumesZeroInput) {
+          errors.push(
+            `${producerSlug} → ${consumerSlug} is compatible, but the consumer assumes |0…0⟩ on its input`,
+          );
+        }
+        connected.add(producerSlug);
+        connected.add(consumerSlug);
+      }
+    }
+  }
+
+  if (connected.size * 2 >= entries.length) {
+    errors.push(
+      `${connected.size} of ${entries.length} entries appear in a compatible pair. That is most of the ` +
+        "corpus, and the connectable set was 38. Either real composable stages arrived — rewrite this " +
+        "check and the note in lib/repository/interface.ts — or a width match is being read as a proof.",
+    );
+  }
+
+  if (!QUIET) {
+    console.log("\ninterface stance → entries");
+    for (const stance of interfaceMod.INTERFACE_STANCES) {
+      console.log(`  ${String(stanceCounts.get(stance) ?? 0).padStart(4)}  ${stance}`);
+    }
+    console.log(
+      `\nordered pairs: ${[...verdicts].map(([verdict, count]) => `${verdict} ${count}`).join(", ")}` +
+        `\n${connected.size} of ${entries.length} entries appear in at least one compatible pair.`,
+    );
+  }
 }
 
 const resolvableSlugs = new Set([...slugs, ...KNOWN_SLUGS]);

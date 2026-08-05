@@ -24,6 +24,16 @@ import {
 } from "../../lib/repository/browse-order";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
 import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
+import {
+  PIPELINE_STANCES,
+  connectedCount,
+  deriveInterface,
+  filterByStance,
+  interfaceOptions,
+  isOnGraph,
+  type EntryInterface,
+  type InterfaceStance,
+} from "../../lib/repository/interface";
 import { roleOf, TOPICS_BY_ID, type TopicId } from "../../lib/repository/topics";
 
 const COPY = {
@@ -36,6 +46,16 @@ const COPY = {
     allFrameworks: "All frameworks",
     topic: "Topic",
     allTopics: "All topics",
+    stance: "Takes / returns",
+    allStances: "Any interface",
+    stanceGroupPipeline: "In a pipeline",
+    stanceGroupNot: "Not a pipeline stage",
+    stanceConnectable: "{n} of {total} declare ports · {met} meet another entry",
+    stance_source: "Prepares a state",
+    stance_transform: "Register in, register out",
+    stance_program: "Whole program, measured",
+    stance_observable: "Observable",
+    stance_undeclared: "No declared interface",
     facet_role: "What it is",
     facet_method: "Technique",
     facet_domain: "Problem domain",
@@ -96,6 +116,16 @@ const COPY = {
     allFrameworks: "すべてのフレームワーク",
     topic: "トピック",
     allTopics: "すべてのトピック",
+    stance: "入力 / 出力",
+    allStances: "すべてのインターフェース",
+    stanceGroupPipeline: "パイプラインの段",
+    stanceGroupNot: "段ではないもの",
+    stanceConnectable: "{total}件中{n}件がポートを宣言・うち{met}件が他と接続",
+    stance_source: "状態を準備",
+    stance_transform: "レジスタ入力・レジスタ出力",
+    stance_program: "測定まで含む完結したプログラム",
+    stance_observable: "オブザーバブル",
+    stance_undeclared: "インターフェース未宣言",
     facet_role: "種別",
     facet_method: "手法",
     facet_domain: "問題領域",
@@ -330,6 +360,10 @@ export function RepositoryBrowser({
   // it would leave the entry pages' topic chips linking to a filter that never
   // applies. Seeding the initial state means the server's own HTML is filtered.
   const [topic, setTopic] = useState<TopicId | "">(initialTopic);
+  // Derived, not seeded from the URL. `?topic=` is a link entry pages emit, so
+  // it has to survive a page that never hydrates; this control is only ever set
+  // by the reader in front of it, and nothing links to a stance.
+  const [stance, setStance] = useState<InterfaceStance | "">("");
   const [order, setOrder] = useState<BrowseOrder>("catalog");
   const [circuitOnly, setCircuitOnly] = useState(false);
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
@@ -362,6 +396,50 @@ export function RepositoryBrowser({
   // left, so the control does not renumber itself as a reader narrows — a count
   // that moves while you are reading it is not a count, it is a hint.
   const topicGroups = useMemo(() => topicOptions(entries, locale === "ja" ? "ja" : "en"), [entries, locale]);
+  /**
+   * Every entry's interface, derived once per corpus.
+   *
+   * Over the whole corpus rather than over what the other filters have left, for
+   * the same reason the topic counts are: a number that moves while a reader is
+   * looking at it is a hint, not a count.
+   */
+  const interfaces = useMemo(() => {
+    const index = new Map<string, EntryInterface>();
+    for (const entry of entries) {
+      index.set(
+        entry.slug,
+        deriveInterface({
+          slug: entry.slug,
+          topics: entry.topics ?? [],
+          category: entry.category,
+          wireCount: entry.visualization?.wires?.length ?? 0,
+          portableCircuit: entry.portableCircuit,
+        }),
+      );
+    }
+    return index;
+  }, [entries]);
+  const stanceOptions = useMemo(() => interfaceOptions(interfaces), [interfaces]);
+  /**
+   * How many entries have any port at all — the number that qualifies the whole
+   * control, the way `entriesWithDomain` qualifies the domain group.
+   *
+   * It is 162 of 283 on today's corpus and the group heading says so, because a
+   * filter offering five interface kinds without that number reads as though the
+   * catalogue is a set of connectable parts. Most of it is not.
+   */
+  const connectableEntries = useMemo(
+    () => [...interfaces.values()].filter(isOnGraph).length,
+    [interfaces],
+  );
+  /**
+   * How many of those meet another entry at all — 87 on today's corpus, against
+   * the 162 that declare ports. Both numbers are in the heading because the gap
+   * between them IS the state of the catalogue: 75 entries publish a port that is
+   * the only one of its width and type here, and a control showing only the
+   * larger figure would read as a parts bin.
+   */
+  const meetingEntries = useMemo(() => connectedCount(interfaces), [interfaces]);
   /**
    * How many entries carry ANY domain — a distinct count, not the sum of the
    * per-topic ones: HHL is both `finance` and `linear-algebra`, so adding the
@@ -398,8 +476,8 @@ export function RepositoryBrowser({
     // Applied through the shared helper rather than as another clause here: the
     // browse <select> does not hydrate in either browser surface, so the rule
     // has to live where a unit test can reach it (lib/repository/topic-filter).
-    return filterByTopic(matched, topic);
-  }, [category, entries, family, framework, query, topic]);
+    return filterByStance(filterByTopic(matched, topic), interfaces, stance);
+  }, [category, entries, family, framework, interfaces, query, stance, topic]);
 
   /** slug -> its cost row, when the API supplied a listing. */
   const costBySlug = useMemo(() => {
@@ -472,6 +550,7 @@ export function RepositoryBrowser({
     // control — the button offered by the empty state has to be able to empty
     // every filter, or it hands back a list that is still filtered.
     setTopic("");
+    setStance("");
     setCircuitOnly(false);
   }
 
@@ -692,6 +771,46 @@ export function RepositoryBrowser({
                 ))}
               </optgroup>
             ))}
+          </select>
+        </label>
+        {/* What an entry takes and returns, which is a different question from
+            what it is. Two groups rather than five flat options, because the
+            split that matters is whether a record is on the pipeline graph at
+            all — 121 of the 283 are not, and the group heading carries that
+            number so the control cannot be read as a parts bin. */}
+        <label>
+          <span>{copy.stance}</span>
+          <select value={stance} onChange={(event) => setStance(event.target.value as InterfaceStance | "")}>
+            <option value="">{copy.allStances}</option>
+            {(["pipeline", "not"] as const).map((group) => {
+              // Membership from the module, and the second group is the
+              // complement of the first — never a second list. A stance in
+              // neither would vanish from this control entirely, which is
+              // invisible; in the wrong group it is at least on screen.
+              const inGroup = stanceOptions.filter(
+                (option) => PIPELINE_STANCES.has(option.stance) === (group === "pipeline"),
+              );
+              if (inGroup.length === 0) return null;
+              return (
+                <optgroup
+                  key={group}
+                  label={
+                    group === "pipeline"
+                      ? `${copy.stanceGroupPipeline} — ${copy.stanceConnectable
+                          .replace("{n}", String(connectableEntries))
+                          .replace("{total}", String(entries.length))
+                          .replace("{met}", String(meetingEntries))}`
+                      : copy.stanceGroupNot
+                  }
+                >
+                  {inGroup.map((option) => (
+                    <option key={option.stance} value={option.stance}>
+                      {`${copy[`stance_${option.stance}`]} (${option.count})`}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </label>
         {canOrderByCost || canOrderByStructure ? (
