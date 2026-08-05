@@ -35,6 +35,20 @@
  * written by an agent. Making it deliberate is the enforceable half, and it lands in the
  * permanent PR record where a later reader can see the decision was taken.
  *
+ * ## Editing the PR body does not fix a failed run — you have to push
+ *
+ * The workflow reads the body from `github.event.pull_request.body`, i.e. from the
+ * event payload, and **`gh run rerun` replays the payload that fired the run**. So
+ * adding the `Blast-radius:` line and re-running re-reads the body as it was *before*
+ * the edit and fails again, identically, with no hint that it is looking at a stale
+ * copy. Push a commit instead — `synchronize` fires a fresh `pull_request` event
+ * carrying the current body. (Reopening the PR works too, for the same reason.)
+ *
+ * Recorded 2026-08-05 on the gate's first real firing, PR #261, which cost a rerun
+ * cycle to work out. Reading the body live through the API would avoid this, but it
+ * would also mean giving the job a token and interpolating attacker-controlled text
+ * from a second source; the trade is deliberate and the cost is this paragraph.
+ *
  * ## Paths come from CODEOWNERS, never from a list in here
  *
  * A second copy of "which paths are blast-radius" would drift from the first, and the
