@@ -35,15 +35,19 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
   // ~0.91 MB and, unlike the full payload, is small enough for Next to cache.
   const entry = await getRepositoryEntry(slug);
   if (!entry) notFound();
-  const entries = await getRepositoryListEntries();
-  // Derived on read from this entry's own circuit, so it cannot disagree with
-  // the circuit rendered above it. Null when the catalog API is off — there is
-  // deliberately no second, TypeScript implementation of the arithmetic to fall
-  // back to (see getRepositoryEstimate).
-  const estimate = await getRepositoryEstimate(slug);
-  // Same terms as the estimate above: derived from this entry's own circuit on
-  // read, and null rather than reimplemented in TypeScript when the API is off.
-  const profile = await getRepositoryProfile(slug);
+  // Both derived on read from this entry's own circuit, so neither can disagree
+  // with the circuit rendered above them. Null when the catalog API is off —
+  // there is deliberately no second, TypeScript implementation of either
+  // arithmetic to fall back to (see getRepositoryEstimate).
+  //
+  // Concurrently, and the list with them: these three share no inputs, so
+  // awaiting them in sequence would put three round trips end to end on every
+  // entry render. R1 is what made that worth doing — it added the third.
+  const [entries, estimate, profile] = await Promise.all([
+    getRepositoryListEntries(),
+    getRepositoryEstimate(slug),
+    getRepositoryProfile(slug),
+  ]);
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;

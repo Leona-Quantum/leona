@@ -20,14 +20,20 @@ export default async function RepositoryPage() {
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
   const isJapanese = locale === "ja";
-  const entries = await getRepositoryListEntries();
-  // One request for the whole corpus's cost, under one assumption set stated
-  // once on the payload. Null when the catalog API is off, and the cost column
-  // and its ordering option then do not appear at all.
-  const estimates = await getRepositoryEstimates();
-  // The same shape, minus the assumption set: a profile is a property of the
-  // circuit, so every row here is rankable against every other unconditionally.
-  const profiles = await getRepositoryProfiles();
+  // One request each for the whole corpus's cost and its circuit structure, and
+  // concurrently with the listing — they share no inputs, so awaiting them in
+  // sequence would put three round trips end to end on every browse render.
+  //
+  // Cost carries one assumption set stated once on the payload; the profile
+  // listing carries none, because a profile is a property of the circuit and
+  // every row is rankable against every other unconditionally. Either being null
+  // (the catalog API off) removes its own ordering options rather than showing
+  // options that rank nothing.
+  const [entries, estimates, profiles] = await Promise.all([
+    getRepositoryListEntries(),
+    getRepositoryEstimates(),
+    getRepositoryProfiles(),
+  ]);
 
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
