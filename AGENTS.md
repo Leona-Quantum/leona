@@ -56,8 +56,8 @@ untrusted generated code runs only in ephemeral network-locked sandboxes
 
 - `apps/web` — Next.js App Router UI (Vercel)
 - `services/api`, `services/worker` — FastAPI control plane + job runner (Cloud Run)
-- `packages/py/*` — agent, contracts, estimation, frameworks, llm, openqasm, qpu, sandbox,
-  verification
+- `packages/py/*` — agent, contracts, estimation, frameworks, llm, openqasm, qpu,
+  research-extraction, sandbox, verification, vqe
 - `packages/ts/*` — ui (vendored components), ui-visual (render/diff harness),
   contracts-gen (GENERATED — never hand-edit)
 - `db/migrations` — Alembic, single linear history, every migration reversible
