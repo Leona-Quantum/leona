@@ -125,19 +125,31 @@ def fingerprint(source: str) -> str:
 
 
 def _resource_metrics(circuit: QuantumCircuit) -> ResourceMetrics:
-    operations = circuit.count_ops()
-    measurements = int(operations.get("measure", 0))
-    gate_count = max(0, circuit.size() - measurements)
-    two_qubit = sum(
-        1
+    # Compiler directives are not gates. `barrier` carries no physical action,
+    # but `qc.measure_all()` inserts one spanning every qubit — so on a 2-qubit
+    # circuit the barrier has `len(qubits) == 2` and a raw width test counts it
+    # as an entangling gate. The sandbox observer in majorana_frameworks fixed
+    # exactly this and this copy of the predicate did not, which is how a Bell
+    # circuit read as having two two-qubit gates here and one there. Found by
+    # the R1 cross-check, which compares this function against the portable
+    # reading over the published corpus.
+    #
+    # `circuit.size()` already excludes directives, so `gate_count` was right by
+    # accident while the count beside it was wrong. Both now come off the same
+    # filtered list rather than one trusting Qiskit's convention and the other
+    # re-deriving it.
+    operations = [
+        instruction
         for instruction in circuit.data
-        if instruction.operation.name != "measure" and len(instruction.qubits) == 2
-    )
+        if not getattr(instruction.operation, "_directive", False)
+    ]
+    measurements = sum(1 for i in operations if i.operation.name == "measure")
+    gates = [i for i in operations if i.operation.name != "measure"]
     return ResourceMetrics(
         qubits=circuit.num_qubits,
         depth=circuit.depth(),
-        gate_count=gate_count,
-        two_qubit_gate_count=two_qubit,
+        gate_count=len(gates),
+        two_qubit_gate_count=sum(1 for i in gates if len(i.qubits) == 2),
         measurement_count=measurements,
     )
 

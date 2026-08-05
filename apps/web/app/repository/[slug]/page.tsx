@@ -3,8 +3,14 @@ import { notFound } from "next/navigation";
 import { PublicSite } from "../../../components/public-site";
 import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from "../../../lib/auth";
 import { getPublicLocale } from "../../../lib/public-locale-server";
-import { getRepositoryEntry, getRepositoryEstimate, getRepositoryListEntries } from "../../../lib/repository-source";
+import {
+  getRepositoryEntry,
+  getRepositoryEstimate,
+  getRepositoryListEntries,
+  getRepositoryProfile,
+} from "../../../lib/repository-source";
 import { RepositoryEstimatePanel, hasVisibleEstimate } from "../../../components/repository-estimate";
+import { RepositoryProfilePanel, hasVisibleProfile } from "../../../components/repository-profile";
 import { RepositoryEntryView } from "./repository-entry-view";
 
 export async function generateStaticParams() {
@@ -29,12 +35,19 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
   // ~0.91 MB and, unlike the full payload, is small enough for Next to cache.
   const entry = await getRepositoryEntry(slug);
   if (!entry) notFound();
-  const entries = await getRepositoryListEntries();
-  // Derived on read from this entry's own circuit, so it cannot disagree with
-  // the circuit rendered above it. Null when the catalog API is off — there is
-  // deliberately no second, TypeScript implementation of the arithmetic to fall
-  // back to (see getRepositoryEstimate).
-  const estimate = await getRepositoryEstimate(slug);
+  // Both derived on read from this entry's own circuit, so neither can disagree
+  // with the circuit rendered above them. Null when the catalog API is off —
+  // there is deliberately no second, TypeScript implementation of either
+  // arithmetic to fall back to (see getRepositoryEstimate).
+  //
+  // Concurrently, and the list with them: these three share no inputs, so
+  // awaiting them in sequence would put three round trips end to end on every
+  // entry render. R1 is what made that worth doing — it added the third.
+  const [entries, estimate, profile] = await Promise.all([
+    getRepositoryListEntries(),
+    getRepositoryEstimate(slug),
+    getRepositoryProfile(slug),
+  ]);
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
@@ -62,6 +75,12 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
           // whatever it renders, so passing one unconditionally gives an empty
           // "Fault-tolerant cost" section on the 163 entries with no circuit.
           hasVisibleEstimate(estimate) ? <RepositoryEstimatePanel estimate={estimate} locale={locale} /> : null
+        }
+        profile={
+          // Decided here for the same reason, and the reason bit once already:
+          // a truthy element would give an empty "Circuit structure" section on
+          // the 163 entries that carry no circuit.
+          hasVisibleProfile(profile) ? <RepositoryProfilePanel profile={profile} locale={locale} /> : null
         }
       />
     </PublicSite>

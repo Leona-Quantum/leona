@@ -869,3 +869,112 @@ async def test_a_tighter_precision_moves_the_whole_listing_to_a_new_identity(env
     loose_row = next(item for item in loose["estimates"] if item["slug"] == slug)
     tight_row = next(item for item in tight["estimates"] if item["slug"] == slug)
     assert tight_row["total_physical_qubits"] > loose_row["total_physical_qubits"]
+
+
+# --- R1: the profile routes ---------------------------------------------------
+
+
+@requires_db
+async def test_the_profile_route_measures_a_published_circuit(env):
+    """The route's contract in one pass: a circuit is measured, an entry without
+    one says so, and neither renders as the other."""
+    configured, reviewer_id, factory = env
+    circuit_slug = f"profiled-{uuid.uuid4()}"
+    bare_slug = f"bare-{uuid.uuid4()}"
+    await _publish_new_entry(
+        factory,
+        configured,
+        reviewer_id,
+        slug=circuit_slug,
+        record=_record_with_circuit(
+            circuit_slug,
+            [
+                {"gate": "h", "qubits": [0]},
+                {"gate": "cx", "qubits": [0, 1]},
+                {"gate": "t", "qubits": [1]},
+            ],
+        ),
+    )
+    await _publish_new_entry(factory, configured, reviewer_id, slug=bare_slug)
+
+    async with _client(configured, factory) as client:
+        measured = await client.get(f"/v1/catalog/entries/{circuit_slug}/profile")
+        assert measured.status_code == 200
+        body = measured.json()
+        assert body["present"] is True
+        assert body["reason"] is None
+        assert body["qubits"] == 2
+        assert body["gate_count"] == 3
+        assert body["two_qubit_gate_count"] == 1
+        assert body["depth"] == 3
+        assert body["measurement_count"] == 0
+
+        bare = await client.get(f"/v1/catalog/entries/{bare_slug}/profile")
+        assert bare.status_code == 200
+        body = bare.json()
+        assert body["present"] is False
+        assert body["reason"]
+        # Not zero. A row of zeros is a measurement nobody took.
+        assert body["qubits"] is None and body["depth"] is None
+
+
+@requires_db
+async def test_the_profile_listing_carries_no_assumption_set(env):
+    """The difference from `/catalog/estimates`, asserted rather than described.
+
+    A cost is only comparable within one assumption set, which is why that
+    payload states one. A profile is a property of the circuit, so there is
+    nothing here that only holds under one set — and a client must not have to
+    check an identity before ranking by depth.
+    """
+    configured, reviewer_id, factory = env
+    slug = f"profile-listed-{uuid.uuid4()}"
+    await _publish_new_entry(
+        factory,
+        configured,
+        reviewer_id,
+        slug=slug,
+        record=_record_with_circuit(slug, [{"gate": "cz", "qubits": [0, 1]}]),
+    )
+
+    async with _client(configured, factory) as client:
+        response = await client.get("/v1/catalog/profiles")
+        assert response.status_code == 200
+        body = response.json()
+        assert "assumptions" not in body
+        row = next(item for item in body["profiles"] if item["slug"] == slug)
+        assert row["present"] is True
+        assert row["two_qubit_gate_count"] == 1
+
+        # The row and the detail page behind it are the same object.
+        detail = await client.get(f"/v1/catalog/entries/{slug}/profile")
+        assert detail.json() == row
+
+
+@requires_db
+async def test_the_profile_route_404s_exactly_where_the_detail_route_does(env):
+    """Same parity the estimate routes hold. Compared against the detail route
+    rather than against the constant 404, because asserting one side alone
+    passes even if the detail route draws its boundary somewhere else."""
+    configured, reviewer_id, factory = env
+    slug = f"profile-paired-{uuid.uuid4()}"
+    await _publish_new_entry(factory, configured, reviewer_id, slug=slug)
+
+    disabled = CatalogAuthority(
+        enabled=False,
+        workspace_id=configured.workspace_id,
+        importer_user_id=configured.importer_user_id,
+        public_reader_user_id=configured.public_reader_user_id,
+    )
+    async with _client(configured, factory) as client:
+        detail = await client.get("/v1/catalog/entries/nope")
+        profile = await client.get("/v1/catalog/entries/nope/profile")
+        assert profile.status_code == detail.status_code == 404
+
+    async with _client(disabled, factory) as client:
+        detail = await client.get(f"/v1/catalog/entries/{slug}")
+        profile = await client.get(f"/v1/catalog/entries/{slug}/profile")
+        listing = await client.get("/v1/catalog/entries")
+        profiles = await client.get("/v1/catalog/profiles")
+        assert profile.status_code == detail.status_code == 404
+        assert profiles.status_code == listing.status_code == 404

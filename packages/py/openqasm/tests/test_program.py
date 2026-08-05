@@ -50,6 +50,41 @@ def test_metrics_use_sdk_circuit_semantics():
     assert metrics.measurement_count == 2
 
 
+def test_a_barrier_is_not_counted_as_a_two_qubit_gate():
+    """A compiler directive carries no physical action, but a barrier over two
+    qubits satisfies a raw `len(qubits) == 2` test — so on a 2-qubit circuit it
+    read as an entangling gate, and the two-qubit count is the headline
+    hardware-cost number.
+
+    The sandbox observer in `majorana_frameworks` fixed this and this copy of the
+    predicate did not, so the same Bell circuit reported one two-qubit gate there
+    and two here. Found by the R1 cross-check comparing this function against the
+    portable reading over the published corpus, which disagreed on all 15
+    two-qubit entries in it and on none of the wider ones.
+    """
+    barriered = """OPENQASM 2.0;
+include "qelib1.inc";
+qreg q[2];
+creg c[2];
+h q[0];
+cx q[0], q[1];
+barrier q;
+measure q[0] -> c[0];
+measure q[1] -> c[1];
+"""
+    metrics = resource_metrics(barriered)
+
+    assert metrics.two_qubit_gate_count == 1
+    assert metrics.gate_count == 2
+    assert metrics.measurement_count == 2
+    # And the barrier changes nothing against the same circuit without one.
+    plain = resource_metrics(BELL_2)
+    assert (metrics.gate_count, metrics.two_qubit_gate_count) == (
+        plain.gate_count,
+        plain.two_qubit_gate_count,
+    )
+
+
 def test_qasm3_dynamic_control_is_preserved():
     source = """OPENQASM 3.0;
 include "stdgates.inc";

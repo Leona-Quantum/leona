@@ -339,10 +339,76 @@ export interface components {
             /** Slug */
             slug: string;
             /**
+             * @description The same circuit at one factory, when that is a different machine from the one costed above. Null when there is no trade to show: a Clifford-only circuit uses no factories at all, and an estimate already costed at one factory is its own smallest machine. Present so the headline figure cannot be read as *the* cost — for a small circuit the factories are ~99% of it, and they are hardware bought for speed rather than by the circuit.
+             * @default null
+             */
+            smallest_machine: components["schemas"]["CostOnSmallestMachine"] | null;
+            /**
              * Target Failure Probability
              * @default null
              */
             target_failure_probability: number | null;
+        };
+        /**
+         * CatalogEntryProfile
+         * @description How big a catalogue entry's circuit is, or that it has none (R1).
+         *
+         *     Derived on read from the published record's own `portableCircuit`, on the
+         *     same terms as `CatalogEntryEstimate` and for the same reason: a stored
+         *     profile and a published circuit are two things that can disagree, and the one
+         *     a visitor is looking at is the circuit.
+         *
+         *     **Not an estimate, and deliberately not carried inside one.** These five
+         *     numbers are properties of the circuit alone — they do not move when the
+         *     hardware assumptions or the synthesis precision do, so they carry no
+         *     assumption-set identity and, unlike a cost, two of them may always be ranked
+         *     against each other. Folding them into the estimate payload would have
+         *     attached a set-independent fact to a set-dependent identity and made
+         *     "comparable only within one set" look like it applied to depth.
+         *
+         *     A separate model from `ResourceMetrics`, which means measurements taken of a
+         *     *run's* selected-framework source and carries a runtime this path cannot
+         *     know.
+         */
+        CatalogEntryProfile: {
+            /**
+             * Depth
+             * @default null
+             */
+            depth: number | null;
+            /**
+             * Gate Count
+             * @default null
+             */
+            gate_count: number | null;
+            /**
+             * Measurement Count
+             * @default null
+             */
+            measurement_count: number | null;
+            /**
+             * Present
+             * @description False when the entry carries no portable circuit, or carries one this stack cannot read. The other fields are then absent — not zero, which is a size a real circuit can have.
+             */
+            present: boolean;
+            /**
+             * Qubits
+             * @default null
+             */
+            qubits: number | null;
+            /**
+             * Reason
+             * @description Why there is no profile. Present exactly when `present` is false.
+             * @default null
+             */
+            reason: string | null;
+            /** Slug */
+            slug: string;
+            /**
+             * Two Qubit Gate Count
+             * @default null
+             */
+            two_qubit_gate_count: number | null;
         };
         /**
          * CatalogEstimateList
@@ -398,10 +464,29 @@ export interface components {
             /** Slug */
             slug: string;
             /**
+             * Smallest Machine Qubits
+             * @description `total_physical_qubits` for the same circuit at one factory. Null on the same terms as `CatalogEntryEstimate.smallest_machine` — no factories, or already costed at one. **The ordering fields are unchanged**: a list is still ranked on `total_physical_qubits`, and this is here so a row can show the span it sits at the top of rather than a single number that reads as the cost.
+             * @default null
+             */
+            smallest_machine_qubits: number | null;
+            /**
              * Total Physical Qubits
              * @default null
              */
             total_physical_qubits: number | null;
+        };
+        /**
+         * CatalogProfileList
+         * @description Every published entry's circuit size, for the browse list.
+         *
+         *     No `assumptions` field, and its absence is the point: unlike
+         *     `CatalogEstimateList` there is nothing here that only holds under one set, so
+         *     a client may rank the whole listing without checking what it was computed
+         *     under.
+         */
+        CatalogProfileList: {
+            /** Profiles */
+            profiles?: components["schemas"]["CatalogEntryProfile"][];
         };
         /**
          * CatalogProvenance
@@ -798,6 +883,26 @@ export interface components {
                 [key: string]: unknown;
             }[];
             run: components["schemas"]["Run"];
+        };
+        /**
+         * CostOnSmallestMachine
+         * @description The same circuit on the fewest magic-state factories it can run on — one.
+         *
+         *     **Only Layers 3 and 4 are here, because only they move.** `choose_code_distance`
+         *     reads the logical cost and the assumption set and never the factory count, so
+         *     Layers 1 and 2 are identical at both ends of this trade and restating them
+         *     would be a second copy of a number that cannot differ. Measured across the
+         *     published corpus: the code distance moved on zero of the 120 priced entries.
+         *
+         *     **Neither end is a number anybody picked, which is the point.** The default
+         *     estimate is costed at the crossover — past which more factories buy nothing —
+         *     and this one at the floor the estimator itself enforces, since a circuit
+         *     consuming magic states is refused with zero factories. A midpoint would be a
+         *     choice dressed as a cost; these two are forced by the model.
+         */
+        CostOnSmallestMachine: {
+            footprint: components["schemas"]["FootprintSummary"];
+            runtime: components["schemas"]["RuntimeSummary"];
         };
         /**
          * EvidenceStrength

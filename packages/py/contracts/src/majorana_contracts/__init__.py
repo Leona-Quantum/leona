@@ -90,10 +90,13 @@ from .models import (
     ArtifactVersion,
     AssumptionSetSummary,
     CatalogEntryEstimate,
+    CatalogEntryProfile,
     CatalogEstimateList,
+    CatalogProfileList,
     CatalogEstimateSummary,
     CatalogProvenance,
     CodeDistanceSummary,
+    CostOnSmallestMachine,
     FootprintSummary,
     LogicalCostSummary,
     Project,
@@ -214,7 +217,27 @@ from .lifecycle import (
 # portable circuit on read, so nothing is stored and no existing field changes
 # meaning. ResourceEstimateBasis is the field to branch on; a client that renders
 # a number without checking it will publish a cost for a circuit that has none.
-CONTRACTS_VERSION = "2.11.0"
+# 2.12.0: CatalogEntryProfile and CatalogProfileList — /repository can show and
+# rank a catalogue entry's circuit size (R1). Additive and read-only, derived on
+# read from the entry's own portable circuit like the estimate beside it, so
+# nothing is stored. Kept OUT of the estimate payload on purpose: these numbers
+# are properties of the circuit, not of an assumption set, so they carry no
+# identity and may be ranked across the whole listing — the opposite of the rule
+# CatalogEstimateList exists to make structural. `present` is the field to branch
+# on; a client that renders a size without checking it will print zeros for an
+# entry that has no circuit at all.
+# 2.13.0: CostOnSmallestMachine, CatalogEntryEstimate.smallest_machine and
+# CatalogEstimateSummary.smallest_machine_qubits — an entry's cost is published as
+# the two ends of the magic-state-factory trade rather than one figure. Additive
+# and read-only; every existing field keeps its meaning and the browse list still
+# ranks on total_physical_qubits alone. The headline was costed at the crossover,
+# which is the fastest useful machine and therefore the *largest*: for the
+# 16-qubit ansatz that is 836,800 physical qubits, 99.2% of them factories, and
+# the same circuit runs on 8,800 at one factory in 6.9 ms instead of 20 µs.
+# Neither end is chosen — the crossover is derived and one factory is the floor
+# the estimator enforces — which is why exactly these two are published and
+# nothing between them.
+CONTRACTS_VERSION = "2.13.0"
 
 __all__ = [
     "CONTRACTS_VERSION",
@@ -241,7 +264,9 @@ __all__ = [
     "BaselineResult",
     "AssumptionSetSummary",
     "CatalogEntryEstimate",
+    "CatalogEntryProfile",
     "CatalogEstimateList",
+    "CatalogProfileList",
     "CatalogEstimateSummary",
     "CatalogProvenance",
     "CodeDistanceSummary",
@@ -249,6 +274,7 @@ __all__ = [
     "CodeVariant",
     "CodeGenerated",
     "CompilationResult",
+    "CostOnSmallestMachine",
     "ChatCompleted",
     "ChatDelta",
     "ChatError",

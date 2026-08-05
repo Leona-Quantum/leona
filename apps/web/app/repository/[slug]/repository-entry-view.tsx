@@ -15,12 +15,14 @@ import { MarkdownContent } from "../../../components/chat-markdown";
 import { StarIcon } from "../../../components/icons";
 import { VerificationMethodChips, VerificationTierBadge } from "../../../components/repository-verification";
 import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../../lib/repository-stars";
+import { TOPICS_BY_ID } from "../../../lib/repository/topics";
 import { RepositoryExportAction } from "../repository-export";
 
 const COPY = {
   en: {
     back: "← Atlas",
     circuit: "Circuit & simulation",
+    structure: "Circuit structure",
     cost: "Fault-tolerant cost",
     outcomes: "Expected outcomes",
     how: "How it works",
@@ -58,6 +60,7 @@ const COPY = {
   ja: {
     back: "← Atlas",
     circuit: "回路とシミュレーション",
+    structure: "回路の構造",
     cost: "誤り耐性計算のコスト",
     outcomes: "期待される出力",
     how: "仕組み",
@@ -196,6 +199,7 @@ export function RepositoryEntryView({
   signInHref,
   related,
   estimate,
+  profile,
 }: {
   entry: PublicRepositoryEntry;
   locale: PublicLocale;
@@ -212,6 +216,12 @@ export function RepositoryEntryView({
    * render at all.
    */
   estimate?: ReactNode;
+  /**
+   * The circuit-structure panel (R1), on the same slot terms as `estimate`
+   * above and for the same reason. Null when the entry carries no circuit, and
+   * the section then does not render at all.
+   */
+  profile?: ReactNode;
   related: RelatedEntrySummary[];
 }) {
   const copy = COPY[locale];
@@ -220,6 +230,11 @@ export function RepositoryEntryView({
   const [starred, setStarred] = useState(false);
   const variant = useMemo(() => getPublicRepositoryVariant(entry, framework), [entry, framework]);
   const methods = entryVerificationMethods(entry);
+  // Resolved through the vocabulary rather than rendered from the ids, so an id
+  // the API knows and this build does not is dropped instead of printed raw.
+  const topics = (entry.topics ?? [])
+    .map((id) => TOPICS_BY_ID.get(id))
+    .filter((topic): topic is NonNullable<typeof topic> => topic !== undefined);
   const title = locale === "ja" ? entry.titleJa : entry.title;
   const description = locale === "ja" ? entry.descriptionJa : entry.description;
   const introduction = locale === "ja" ? entry.introductionJa : entry.introduction;
@@ -254,6 +269,27 @@ export function RepositoryEntryView({
         </div>
         <h1>{title}</h1>
         <p>{description}</p>
+        {/* The closed vocabulary above the free keywords, and separated from
+            them, because they are different kinds of claim: a topic is one of
+            twenty-nine values the whole corpus is classified against and is what
+            /repository filters on; a tag is a keyword this record happens to
+            wear, and 217 of the 307 in the corpus are worn by exactly one entry.
+            Each topic carries its definition on hover — a vocabulary whose terms
+            a reader has to guess at is a vocabulary they will read wrong. */}
+        {topics.length > 0 ? (
+          <div className="mj-repository-topics" aria-label={locale === "ja" ? "トピック" : "Topics"}>
+            {topics.map((topic) => (
+              <a
+                key={topic.id}
+                className={`mj-repository-topic mj-repository-topic--${topic.facet}`}
+                href={`/repository?topic=${encodeURIComponent(topic.id)}`}
+                title={locale === "ja" ? topic.definitionJa : topic.definition}
+              >
+                {locale === "ja" ? topic.labelJa : topic.label}
+              </a>
+            ))}
+          </div>
+        ) : null}
         <div className="mj-repo-detail-hero-foot">
           <div className="mj-repository-tags" aria-label={locale === "ja" ? "タグ" : "Tags"}>
             {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}
@@ -282,6 +318,10 @@ export function RepositoryEntryView({
               ))}
             </div>
           </DetailSection>
+
+          {/* Structure before cost: these are measurements of the circuit
+              rendered directly above, and the cost is computed FROM them. */}
+          {profile ? <DetailSection title={copy.structure}>{profile}</DetailSection> : null}
 
           {estimate ? <DetailSection title={copy.cost}>{estimate}</DetailSection> : null}
 

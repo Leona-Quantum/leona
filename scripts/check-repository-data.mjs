@@ -226,6 +226,89 @@ for (const entry of entries) {
   if (longForm.length < 300) warnings.push(`${slug}: long-form explanation is short (${longForm.length} chars)`);
 }
 
+// --- The closed topic vocabulary (R2) ---------------------------------------
+//
+// Skipped for --entry-file runs: a single batch module exports raw entries, and
+// `topics` is applied by the barrel that assembles them, so there is nothing
+// classified to audit there.
+//
+// Three properties, and the first is the one that makes the rule table safe to
+// extend. A family nobody wrote a rule for produces an entry with no role, and
+// a corpus quietly holding unclassified records looks exactly like a working
+// one — the same failure `check-workspace-inventory` exists to stop for
+// packages. The third catches an override written against a slug that has since
+// been renamed, which is invisible in every other way.
+if (!ENTRY_FILE) {
+  const topicsOut = mkdtempSync(join(tmpdir(), "repo-topics-"));
+  const topicsFile = join(topicsOut, "topics.mjs");
+  await esbuild.build({
+    entryPoints: [join(root, "apps/web/lib/repository/topics.ts")],
+    bundle: true,
+    format: "esm",
+    platform: "neutral",
+    outfile: topicsFile,
+    logLevel: "silent",
+  });
+  const topicsMod = await import(pathToFileURL(topicsFile).href);
+  rmSync(topicsOut, { recursive: true, force: true });
+  const vocabulary = topicsMod.PUBLIC_REPOSITORY_TOPICS;
+  const facetOf = new Map(vocabulary.map((topic) => [topic.id, topic.facet]));
+
+  for (const entry of entries) {
+    const topics = entry.topics ?? [];
+    const unknown = topics.filter((topic) => !facetOf.has(topic));
+    if (unknown.length) fail(entry.slug, `topics outside the vocabulary: ${unknown.join(", ")}`);
+    const roles = topics.filter((topic) => facetOf.get(topic) === "role");
+    if (roles.length !== 1) {
+      fail(
+        entry.slug,
+        `expected exactly one role topic, got ${roles.length} [${roles.join(", ")}] ` +
+          `— add a rule for algorithmFamily "${entry.algorithmFamily}" in lib/repository/topics.ts`,
+      );
+    }
+    if (new Set(topics).size !== topics.length) fail(entry.slug, "topics contains a duplicate");
+  }
+
+  for (const slug of Object.keys(topicsMod.TOPIC_OVERRIDES ?? {})) {
+    if (!slugs.has(slug)) {
+      errors.push(`TOPIC_OVERRIDES names ${slug}, which the corpus does not carry`);
+    }
+  }
+
+  const counts = new Map();
+  let withDomain = 0;
+  for (const entry of entries) {
+    if ((entry.topics ?? []).some((topic) => facetOf.get(topic) === "domain")) withDomain += 1;
+    for (const topic of entry.topics ?? []) counts.set(topic, (counts.get(topic) ?? 0) + 1);
+  }
+
+  // A vocabulary member no entry carries is a control offering a filter that
+  // returns nothing — the free-tag problem in a new coat. One entry is honest;
+  // zero is a promise the corpus cannot keep.
+  const empty = vocabulary.filter((topic) => !counts.get(topic.id)).map((topic) => topic.id);
+  if (empty.length) errors.push(`vocabulary members no entry carries: ${empty.join(", ")}`);
+
+  // A ceiling, never a floor. A floor would be a target, and the honest number
+  // is whatever the corpus supports. What this catches is the opposite failure:
+  // rules broadened until everything has a domain, at which point `optimization`
+  // tells a visitor the corpus has portfolio content because something matched.
+  // See the domain note at the top of lib/repository/topics.ts.
+  if (withDomain * 2 >= entries.length) {
+    errors.push(
+      `${withDomain} of ${entries.length} entries carry a problem domain. If that is right, ` +
+        "the sparseness argument in lib/repository/topics.ts is what needs rewriting first.",
+    );
+  }
+
+  if (!QUIET) {
+    console.log("\ntopic → entries");
+    for (const topic of vocabulary) {
+      console.log(`  ${topic.facet.padEnd(6)} ${String(counts.get(topic.id) ?? 0).padStart(4)}  ${topic.id}`);
+    }
+    console.log(`\n${withDomain} of ${entries.length} entries carry a problem domain.`);
+  }
+}
+
 const resolvableSlugs = new Set([...slugs, ...KNOWN_SLUGS]);
 for (const entry of entries) {
   for (const related of entry.relatedSlugs ?? []) {

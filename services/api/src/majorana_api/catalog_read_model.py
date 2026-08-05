@@ -79,6 +79,11 @@ LIST_VIEW_RECORD_FIELDS: frozenset[str] = frozenset(
         "exportStatus",
         "verification",
         "tags",
+        # R2's closed vocabulary. Omitting it does not degrade the browse list —
+        # it removes the topic filter entirely and every card's role chip, with
+        # nothing in the payload to say a field was dropped. `tags` is one line
+        # up and would have looked like coverage.
+        "topics",
         "resources",
         "metadata",
         "verificationMethods",

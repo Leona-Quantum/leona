@@ -70,6 +70,18 @@ export interface EstimateRuntime {
   factoryCrossover: number | null;
 }
 
+/**
+ * The same circuit at one factory — the other end of the factory trade.
+ *
+ * Carries Layers 3 and 4 and nothing else, because nothing else moves: the code
+ * distance is chosen from the logical cost and the assumption set, never from
+ * the factory count, so Layers 1 and 2 are the same numbers on both machines.
+ */
+export interface EstimateSmallestMachine {
+  footprint: EstimateFootprint;
+  runtime: EstimateRuntime;
+}
+
 export interface RepositoryEstimate {
   slug: string;
   basis: ResourceEstimateBasis;
@@ -79,6 +91,8 @@ export interface RepositoryEstimate {
   distance: EstimateDistance | null;
   footprint: EstimateFootprint | null;
   runtime: EstimateRuntime | null;
+  /** Null when there is no trade: no factories at all, or already costed at one. */
+  smallestMachine: EstimateSmallestMachine | null;
   targetFailureProbability: number | null;
   notes: string[];
 }
@@ -88,6 +102,8 @@ export interface RepositoryEstimateSummary {
   slug: string;
   basis: ResourceEstimateBasis;
   totalPhysicalQubits: number | null;
+  /** The low end of the same row's span. Null on the same terms as `smallestMachine`. */
+  smallestMachineQubits: number | null;
   magicStates: number | null;
   logicalQubits: number | null;
   codeDistance: number | null;
@@ -300,6 +316,32 @@ function parseRuntime(value: unknown): EstimateRuntime | null {
 }
 
 /**
+ * Narrow the second machine, holding it to the relationship the copy claims.
+ *
+ * The panel says the two figures are the ends of a trade — fewer factories,
+ * fewer qubits, more seconds. The producer's own validator refuses a pair that
+ * does not trade, and this mirrors it rather than trusting it, because a pair
+ * arriving the wrong way round would be rendered under a heading that misstates
+ * it. Dropping the second figure leaves the panel exactly as it was before this
+ * existed, which is the safe direction to fail in.
+ */
+function parseSmallestMachine(
+  value: unknown,
+  primary: EstimateFootprint | null,
+  primaryRuntime: EstimateRuntime | null,
+): EstimateSmallestMachine | null {
+  if (!isRecord(value) || primary === null || primaryRuntime === null) return null;
+  const footprint = parseFootprint(value.footprint);
+  const runtime = parseRuntime(value.runtime);
+  if (footprint === null || runtime === null) return null;
+  if (runtime.factoryCount !== 1 || primaryRuntime.factoryCount <= 1) return null;
+  if (footprint.totalPhysicalQubits > primary.totalPhysicalQubits) return null;
+  if (runtime.seconds === null || primaryRuntime.seconds === null) return null;
+  if (runtime.seconds < primaryRuntime.seconds) return null;
+  return { footprint, runtime };
+}
+
+/**
  * Narrow one `/estimate` payload, or return null.
  *
  * The final check is the load-bearing one: `basis` and the layers must agree.
@@ -341,6 +383,9 @@ export function parseEstimate(payload: unknown): RepositoryEstimate | null {
     distance,
     footprint,
     runtime,
+    smallestMachine: isPriced(basis)
+      ? parseSmallestMachine(payload.smallest_machine, footprint, runtime)
+      : null,
     targetFailureProbability: num(payload.target_failure_probability),
     notes: Array.isArray(payload.notes)
       ? payload.notes.filter((note): note is string => typeof note === "string")
@@ -357,10 +402,18 @@ function parseEstimateSummary(value: unknown): RepositoryEstimateSummary | null 
   // A priced row with no total is the one shape that must not survive: the
   // browse list sorts on this field, and a null sorts somewhere.
   if (isPriced(basis) && totalPhysicalQubits === null) return null;
+  // Held to the same relationship as the detail page's pair: a low end above
+  // the high end would render a backwards span on a card. Dropped rather than
+  // repaired — the row then shows the single figure it showed before.
+  const smallest = num(value.smallest_machine_qubits);
   return {
     slug,
     basis,
     totalPhysicalQubits,
+    smallestMachineQubits:
+      smallest !== null && totalPhysicalQubits !== null && smallest <= totalPhysicalQubits
+        ? smallest
+        : null,
     magicStates: num(value.magic_states),
     logicalQubits: num(value.logical_qubits),
     codeDistance: num(value.code_distance),

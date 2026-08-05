@@ -31,6 +31,12 @@ import {
   type RepositoryEstimate,
   type RepositoryEstimateList,
 } from "./repository/estimate.ts";
+import {
+  parseProfile,
+  parseProfileList,
+  type RepositoryProfile,
+  type RepositoryProfileList,
+} from "./repository/profile.ts";
 import { PUBLIC_REPOSITORY_ENTRIES } from "./public-repository";
 import type { PublicRepositoryEntry, PublicRepositoryListEntry } from "./repository/types";
 
@@ -210,6 +216,57 @@ export async function getRepositoryEstimates(): Promise<RepositoryEstimateList |
   const parsed = parseEstimateList(payload);
   if (parsed === null) {
     console.error("[repository-source] estimate listing failed validation");
+    return null;
+  }
+  return parsed;
+}
+
+/**
+ * One entry's derived resource profile (R1), or null when there is none to show.
+ *
+ * **Null has no static fallback, for the same reason `getRepositoryEstimate`
+ * has none — and it is worth spelling out, because here the temptation is real.**
+ * The committed corpus carries `portableCircuit` on every entry that has one, so
+ * this file *could* count the steps itself in a dozen lines and never miss. That
+ * is exactly the drift `majorana_openqasm/portable.py` was extracted to prevent:
+ * the width rule alone is subtle enough that a second implementation would agree
+ * on 119 of 120 circuits and be wrong about the one whose declared `qubitCount`
+ * is narrower than its steps — and the copy on the public page would be this one.
+ *
+ * So when the API is off or unwell the panel does not render. A page missing a
+ * panel is a page missing a panel; a page showing a depth from a second,
+ * unversioned implementation is a wrong number under a heading that says
+ * "derived".
+ */
+export async function getRepositoryProfile(slug: string): Promise<RepositoryProfile | null> {
+  if (!isPublicCatalogApiEnabled()) return null;
+  const payload = await fetchCatalogPayload(
+    `${API_URL}/v1/catalog/entries/${encodeURIComponent(slug)}/profile`,
+    true,
+  );
+  if (payload === null) return null;
+  const parsed = parseProfile(payload);
+  if (parsed === null) {
+    console.error(`[repository-source] profile for ${slug} failed validation`);
+  }
+  return parsed;
+}
+
+/**
+ * Every published entry's derived resource profile, or null.
+ *
+ * One request rather than one per card. Unlike the estimate listing there is no
+ * parameter to get wrong and no identity to carry: a profile is a property of
+ * the circuit, so every row in this payload is rankable against every other
+ * unconditionally.
+ */
+export async function getRepositoryProfiles(): Promise<RepositoryProfileList | null> {
+  if (!isPublicCatalogApiEnabled()) return null;
+  const payload = await fetchCatalogPayload(`${API_URL}/v1/catalog/profiles`);
+  if (payload === null) return null;
+  const parsed = parseProfileList(payload);
+  if (parsed === null) {
+    console.error("[repository-source] profile listing failed validation");
     return null;
   }
   return parsed;

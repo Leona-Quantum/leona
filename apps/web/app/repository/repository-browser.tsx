@@ -16,7 +16,15 @@ import { StarIcon } from "../../components/icons";
 import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../lib/repository-stars";
 import { RepositoryExportAction } from "./repository-export";
 import type { RepositoryEstimateList, RepositoryEstimateSummary } from "../../lib/repository/estimate";
-import { orderByCost, type CostOrder } from "../../lib/repository/estimate-order";
+import {
+  orderEntries,
+  withCircuitOnly,
+  isProfileOrder,
+  type BrowseOrder,
+} from "../../lib/repository/browse-order";
+import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
+import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
+import { roleOf, TOPICS_BY_ID, type TopicId } from "../../lib/repository/topics";
 
 const COPY = {
   en: {
@@ -26,6 +34,12 @@ const COPY = {
     framework: "Framework",
     allFamilies: "All families",
     allFrameworks: "All frameworks",
+    topic: "Topic",
+    allTopics: "All topics",
+    facet_role: "What it is",
+    facet_method: "Technique",
+    facet_domain: "Problem domain",
+    facetDomainCount: "{n} of {total} entries",
     entry: "entry",
     entries: "entries",
     view: "View",
@@ -48,12 +62,27 @@ const COPY = {
     sortCost: "Fault-tolerant cost",
     sortCostDesc: "Fault-tolerant cost (largest first)",
     costLabel: "physical qubits",
+    costSpanTitle:
+      "Smallest machine that can run it, to the fastest useful one. The difference is magic-state factories. Ranked on the high end.",
     costUnknown: "cost not stated",
     costNoCircuit: "no circuit",
     costNone: "no magic states",
     unrankedTitle: "Not ranked",
     unrankedBody:
       "These entries carry no stated cost, so they are listed after the ranked ones rather than sorted among them. An unknown cost is not a low cost.",
+    sortQubits: "Qubits",
+    sortQubitsDesc: "Qubits (widest first)",
+    sortDepth: "Circuit depth",
+    sortDepthDesc: "Circuit depth (deepest first)",
+    sortTwoQubit: "Two-qubit gates",
+    sortTwoQubitDesc: "Two-qubit gates (most first)",
+    circuitOnly: "Only entries with a circuit",
+    circuitOnlyHint:
+      "163 of the published entries are literature and operator records that pin no gate sequence, so they have no measurable structure.",
+    structureUnrankedBody:
+      "These entries carry no published gate sequence, so there is nothing to measure. They are listed after the ranked ones rather than sorted among them: an unmeasured circuit is not a small one.",
+    depthLabel: "depth",
+    twoQubitLabel: "2Q",
     costUnder: "Costed under",
     costUnderNote:
       "Every figure in this list was computed under one assumption set. Numbers from a different set — a different synthesis precision, or different hardware — are a different claim and are not ordered against these.",
@@ -65,6 +94,12 @@ const COPY = {
     framework: "フレームワーク",
     allFamilies: "すべての分類",
     allFrameworks: "すべてのフレームワーク",
+    topic: "トピック",
+    allTopics: "すべてのトピック",
+    facet_role: "種別",
+    facet_method: "手法",
+    facet_domain: "問題領域",
+    facetDomainCount: "{total}件中{n}件",
     entry: "件",
     entries: "件",
     view: "詳細",
@@ -87,12 +122,27 @@ const COPY = {
     sortCost: "誤り耐性計算のコスト",
     sortCostDesc: "誤り耐性計算のコスト（大きい順）",
     costLabel: "物理量子ビット",
+    costSpanTitle:
+      "この回路が動作しうる最小構成のマシンから、有効な最速のマシンまで。差はマジックステート工場によるものです。並び替えは上限値で行います。",
     costUnknown: "コスト未提示",
     costNoCircuit: "回路なし",
     costNone: "マジックステート不要",
     unrankedTitle: "順位付けの対象外",
     unrankedBody:
       "これらの項目にはコストが提示されていないため、順位付けされた項目の後にまとめて表示しています。コストが不明であることは、コストが低いことではありません。",
+    sortQubits: "量子ビット数",
+    sortQubitsDesc: "量子ビット数（多い順）",
+    sortDepth: "回路の深さ",
+    sortDepthDesc: "回路の深さ（深い順）",
+    sortTwoQubit: "2量子ビットゲート数",
+    sortTwoQubitDesc: "2量子ビットゲート数（多い順）",
+    circuitOnly: "回路があるエントリのみ",
+    circuitOnlyHint:
+      "公開エントリのうち163件は、ゲート列を持たない文献・演算子の記録です。構造を測定する対象がありません。",
+    structureUnrankedBody:
+      "これらの項目にはゲート列が公開されていないため、測定できる構造がありません。順位付けされた項目の後にまとめて表示しています。測定されていないことは、小さいことではありません。",
+    depthLabel: "深さ",
+    twoQubitLabel: "2Q",
     costUnder: "前提条件",
     costUnderNote:
       "この一覧の数値はすべて同一の前提条件のもとで計算されています。前提条件（合成精度やハードウェア）が異なる数値は別の主張であり、これらと並べて順位付けすることはできません。",
@@ -242,6 +292,8 @@ export function RepositoryBrowser({
   signInHref,
   legend,
   estimates,
+  profiles,
+  initialTopic = "",
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
@@ -259,13 +311,27 @@ export function RepositoryBrowser({
    * of the estimator on this side to fall back to.
    */
   estimates?: RepositoryEstimateList | null;
+  /**
+   * Every entry's derived circuit structure (R1), or null when the catalog API
+   * is off — in which case the structure orderings and the circuit-only filter
+   * do not appear at all, rather than appearing and ranking nothing.
+   */
+  profiles?: RepositoryProfileList | null;
+  /** Resolved from `?topic=` by the server component; "" when absent or unknown. */
+  initialTopic?: TopicId | "";
 }) {
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
   const [family, setFamily] = useState<string>("");
   const [framework, setFramework] = useState<"" | PublicRepositoryFramework>("");
-  const [order, setOrder] = useState<CostOrder>("catalog");
+  // Seeded from ?topic= by the server component, never read from `window` here:
+  // this page does not hydrate in either browser surface, so an effect that set
+  // it would leave the entry pages' topic chips linking to a filter that never
+  // applies. Seeding the initial state means the server's own HTML is filtered.
+  const [topic, setTopic] = useState<TopicId | "">(initialTopic);
+  const [order, setOrder] = useState<BrowseOrder>("catalog");
+  const [circuitOnly, setCircuitOnly] = useState(false);
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
   // Gate whose circuit is currently showing its basic-gate decomposition.
   const [expandedGates, setExpandedGates] = useState<Set<string>>(new Set());
@@ -292,9 +358,27 @@ export function RepositoryBrowser({
   }
 
   const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))).sort(), [entries]);
+  // Counted over the whole corpus rather than over what the other filters have
+  // left, so the control does not renumber itself as a reader narrows — a count
+  // that moves while you are reading it is not a count, it is a hint.
+  const topicGroups = useMemo(() => topicOptions(entries, locale === "ja" ? "ja" : "en"), [entries, locale]);
+  /**
+   * How many entries carry ANY domain — a distinct count, not the sum of the
+   * per-topic ones: HHL is both `finance` and `linear-algebra`, so adding the
+   * options up would overstate the coverage the group heading is there to
+   * qualify. Computed rather than written into the copy, because a number typed
+   * into a translated string is a third copy of a fact and drifts silently.
+   */
+  const entriesWithDomain = useMemo(
+    () =>
+      entries.filter((entry) =>
+        (entry.topics ?? []).some((id) => TOPICS_BY_ID.get(id)?.facet === "domain"),
+      ).length,
+    [entries],
+  );
   const filteredEntries = useMemo(() => {
     const normalizedQuery = query.trim().toLowerCase();
-    return entries.filter((entry) => {
+    const matched = entries.filter((entry) => {
       const matchesQuery = !normalizedQuery || [
         entry.title,
         entry.titleJa,
@@ -311,7 +395,11 @@ export function RepositoryBrowser({
       const matchesFramework = !framework || variant?.status === "native" || variant?.status === "conversion";
       return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
     });
-  }, [category, entries, family, framework, query]);
+    // Applied through the shared helper rather than as another clause here: the
+    // browse <select> does not hydrate in either browser surface, so the rule
+    // has to live where a unit test can reach it (lib/repository/topic-filter).
+    return filterByTopic(matched, topic);
+  }, [category, entries, family, framework, query, topic]);
 
   /** slug -> its cost row, when the API supplied a listing. */
   const costBySlug = useMemo(() => {
@@ -322,22 +410,39 @@ export function RepositoryBrowser({
 
   const canOrderByCost = costBySlug.size > 0;
 
+  /** slug -> its derived circuit structure, when the API supplied a listing. */
+  const profileBySlug = useMemo(() => profilesBySlug(profiles ?? null), [profiles]);
+  const canOrderByStructure = profileBySlug.size > 0;
+
   /**
-   * Filtered entries in the requested order, with the unpriced ones held out.
-   *
-   * The rule and its reasoning live in lib/repository/estimate-order, where
-   * they are unit-tested — the interesting half of this is a *refusal*, and a
-   * refusal buried in a component body is one nobody exercises.
+   * Entries after the circuit-only filter, which is separate from the text and
+   * category filters above because it reads a *derived* property rather than an
+   * authored one — it needs the profile listing to exist at all.
    */
+  const structureFiltered = useMemo(
+    () =>
+      circuitOnly && canOrderByStructure
+        ? withCircuitOnly(filteredEntries, (entry) => profileBySlug.get(entry.slug))
+        : filteredEntries,
+    [canOrderByStructure, circuitOnly, filteredEntries, profileBySlug],
+  );
+
+  /**
+   * Filtered entries in the requested order, with the unrankable ones held out.
+   *
+   * The rule and its reasoning live in lib/repository/browse-order, where they
+   * are unit-tested — the interesting half of this is a *refusal*, and a refusal
+   * buried in a component body is one nobody exercises.
+   */
+  const orderAvailable = isProfileOrder(order) ? canOrderByStructure : canOrderByCost;
   const { ordered, unranked } = useMemo(
     () =>
-      orderByCost(
-        filteredEntries,
-        canOrderByCost ? order : "catalog",
-        (entry) => costBySlug.get(entry.slug),
-        (entry) => entry.slug,
-      ),
-    [canOrderByCost, costBySlug, filteredEntries, order],
+      orderEntries(structureFiltered, orderAvailable ? order : "catalog", {
+        costOf: (entry) => costBySlug.get(entry.slug),
+        profileOf: (entry) => profileBySlug.get(entry.slug),
+        keyOf: (entry) => entry.slug,
+      }),
+    [costBySlug, orderAvailable, order, profileBySlug, structureFiltered],
   );
 
   const gateEntries = useMemo(
@@ -363,6 +468,11 @@ export function RepositoryBrowser({
     setCategory("all");
     setFamily("");
     setFramework("");
+    // Including one that may have arrived from `?topic=` rather than from this
+    // control — the button offered by the empty state has to be able to empty
+    // every filter, or it hands back a list that is still filtered.
+    setTopic("");
+    setCircuitOnly(false);
   }
 
   function toggleGateExpansion(slug: string) {
@@ -387,6 +497,16 @@ export function RepositoryBrowser({
    * chip on every one of them would be noise that says nothing. A *refusal* is
    * different and does get a chip — there the circuit exists and its cost is
    * genuinely unknown, which is information.
+   *
+   * **A span where there is one**, for the reason the detail panel gives at
+   * length: the ranked figure is this circuit on the fastest useful machine,
+   * which is also the largest, and on 56 of the 120 priced entries the smallest
+   * machine that runs it is up to 95× smaller. The card is where a visitor meets
+   * the number first, so it is where reading it as *the* cost starts.
+   *
+   * **The ordering is untouched** — the list still ranks on the same figure it
+   * ranked on before, the high end. A card that displayed one number and sorted
+   * on another would be worse than either.
    */
   function renderCostChip(slug: string) {
     const row = costBySlug.get(slug);
@@ -395,9 +515,18 @@ export function RepositoryBrowser({
       return <span className="mj-repo-card-cost mj-repo-card-cost--unknown">{copy.costUnknown}</span>;
     }
     if (row.totalPhysicalQubits === null) return null;
+    const tag = locale === "ja" ? "ja-JP" : "en-US";
+    const high = row.totalPhysicalQubits.toLocaleString(tag);
+    const value =
+      row.smallestMachineQubits === null
+        ? high
+        : `${row.smallestMachineQubits.toLocaleString(tag)}–${high}`;
     return (
-      <span className={`mj-repo-card-cost mj-repo-card-cost--${row.basis}`}>
-        {row.totalPhysicalQubits.toLocaleString(locale === "ja" ? "ja-JP" : "en-US")} {copy.costLabel}
+      <span
+        className={`mj-repo-card-cost mj-repo-card-cost--${row.basis}`}
+        title={row.smallestMachineQubits === null ? undefined : copy.costSpanTitle}
+      >
+        {value} {copy.costLabel}
         {row.basis === "estimated" ? " ≈" : null}
       </span>
     );
@@ -407,12 +536,21 @@ export function RepositoryBrowser({
     const title = locale === "ja" ? entry.titleJa : entry.title;
     const description = locale === "ja" ? entry.descriptionJa : entry.description;
     const qubits = entry.resources.find((resource) => resource.label === "Qubits")?.value;
+    const roleId = roleOf(entry.topics ?? []);
+    const role = roleId ? TOPICS_BY_ID.get(roleId) : undefined;
     return (
       <article className="mj-repo-card">
         {extraHead}
         <div className="mj-repo-card-top">
           <VerificationTierBadge methods={entryVerificationMethods(entry)} locale={locale} />
           <span>{locale === "ja" ? entry.categoryLabelJa : entry.categoryLabel}</span>
+          {/* The role, beside the family, because it is what stops a domain
+              filter from over-promising: the ten entries under "Optimization"
+              are mostly width-scaled MaxCut ring benchmarks, and this is where
+              a reader sees that without opening one. The category above says
+              "Algorithms" for all of them; the role distinguishes the 112
+              benchmark circuits from the 70 algorithm references. */}
+          {role ? <span className="mj-repo-card-role">{locale === "ja" ? role.labelJa : role.label}</span> : null}
           <span>{familyLabel(entry.algorithmFamily, locale)}</span>
           {qubits ? <span className="mj-repo-card-qubits">{qubits} q</span> : null}
           {renderCostChip(entry.slug)}
@@ -488,7 +626,11 @@ export function RepositoryBrowser({
     return Array.from(byFamily.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
       .map(([familyKey, groupEntries]) => ({ familyKey, rows: foldVariants(groupEntries) }));
-  }, [category, filteredEntries]);
+    // `ordered`, not `filteredEntries`: the body reads the former, and since R1
+    // it is no longer a pure function of the latter — a structure sort or the
+    // circuit-only filter would otherwise leave this grouping showing the
+    // previous ordering.
+  }, [category, ordered]);
 
   const listRows = useMemo(
     () => (category === "gates" || category === "algorithms" ? [] : foldVariants(ordered)),
@@ -527,14 +669,66 @@ export function RepositoryBrowser({
             {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
           </select>
         </label>
-        {canOrderByCost ? (
+        {/* One control for three facets, grouped, because the alternative is
+            three more selects beside four existing ones. Every option carries
+            its count: "Optimization (10)" cannot be read as a promise the way a
+            bare "Optimization" can, and on this corpus that matters — those ten
+            are eight width-scaled MaxCut ring benchmarks. */}
+        <label>
+          <span>{copy.topic}</span>
+          <select value={topic} onChange={(event) => setTopic(event.target.value as TopicId | "")}>
+            <option value="">{copy.allTopics}</option>
+            {topicGroups.map((group) => (
+              <optgroup
+                key={group.facet}
+                label={
+                  group.facet === "domain"
+                    ? `${copy.facet_domain} — ${copy.facetDomainCount.replace("{n}", String(entriesWithDomain)).replace("{total}", String(entries.length))}`
+                    : copy[`facet_${group.facet}`]
+                }
+              >
+                {group.options.map((option) => (
+                  <option key={option.id} value={option.id}>{topicOptionLabel(option)}</option>
+                ))}
+              </optgroup>
+            ))}
+          </select>
+        </label>
+        {canOrderByCost || canOrderByStructure ? (
           <label>
             <span>{copy.sort}</span>
-            <select value={order} onChange={(event) => setOrder(event.target.value as CostOrder)}>
+            <select value={order} onChange={(event) => setOrder(event.target.value as BrowseOrder)}>
               <option value="catalog">{copy.sortDefault}</option>
-              <option value="cost-asc">{copy.sortCost}</option>
-              <option value="cost-desc">{copy.sortCostDesc}</option>
+              {canOrderByCost ? (
+                <>
+                  <option value="cost-asc">{copy.sortCost}</option>
+                  <option value="cost-desc">{copy.sortCostDesc}</option>
+                </>
+              ) : null}
+              {/* Offered only when the listing exists. An ordering option that
+                  ranks nothing is worse than an absent one: it looks like the
+                  corpus has no structure rather than like the API is off. */}
+              {canOrderByStructure ? (
+                <>
+                  <option value="qubits-asc">{copy.sortQubits}</option>
+                  <option value="qubits-desc">{copy.sortQubitsDesc}</option>
+                  <option value="depth-asc">{copy.sortDepth}</option>
+                  <option value="depth-desc">{copy.sortDepthDesc}</option>
+                  <option value="two-qubit-asc">{copy.sortTwoQubit}</option>
+                  <option value="two-qubit-desc">{copy.sortTwoQubitDesc}</option>
+                </>
+              ) : null}
             </select>
+          </label>
+        ) : null}
+        {canOrderByStructure ? (
+          <label className="mj-repository-circuit-only" title={copy.circuitOnlyHint}>
+            <input
+              type="checkbox"
+              checked={circuitOnly}
+              onChange={(event) => setCircuitOnly(event.target.checked)}
+            />
+            <span>{copy.circuitOnly}</span>
           </label>
         ) : null}
       </div>
@@ -543,7 +737,7 @@ export function RepositoryBrowser({
           offered — not tucked into a detail page. An ordered list whose basis
           for ordering is somewhere else is the failure mode this whole feature
           exists to avoid. */}
-      {canOrderByCost && order !== "catalog" && estimates ? (
+      {canOrderByCost && order !== "catalog" && !isProfileOrder(order) && estimates ? (
         <p className="mj-repository-cost-basis">
           <span>{copy.costUnder}</span> <code>{estimates.assumptions.identity}</code>
           <span className="mj-repository-cost-basis-note">{copy.costUnderNote}</span>
@@ -568,11 +762,11 @@ export function RepositoryBrowser({
       {legend}
 
       <p className="mj-repository-result-count" aria-live="polite">
-        {locale === "ja" ? `${filteredEntries.length}${copy.entries}` : `${filteredEntries.length} public ${filteredEntries.length === 1 ? copy.entry : copy.entries}`}
+        {locale === "ja" ? `${structureFiltered.length}${copy.entries}` : `${structureFiltered.length} public ${structureFiltered.length === 1 ? copy.entry : copy.entries}`}
       </p>
       <p className="mj-repository-star-note">{copy.starNote}</p>
 
-      {!filteredEntries.length ? (
+      {!structureFiltered.length ? (
         <div className="mj-repository-empty">
           <h3>{copy.emptyTitle}</h3>
           <p>{copy.emptyBody}</p>
@@ -671,7 +865,7 @@ export function RepositoryBrowser({
       {unranked.length ? (
         <section className="mj-repository-unranked">
           <h3>{copy.unrankedTitle} <span>{unranked.length}</span></h3>
-          <p>{copy.unrankedBody}</p>
+          <p>{isProfileOrder(order) ? copy.structureUnrankedBody : copy.unrankedBody}</p>
           <div className="mj-repo-list">{unranked.map((entry) => <Fragment key={entry.slug}>{renderRepoCard(entry)}</Fragment>)}</div>
         </section>
       ) : null}
