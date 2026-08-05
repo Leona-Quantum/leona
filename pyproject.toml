@@ -27,6 +27,13 @@ dev = [
     # its whole candidate budget on ModuleNotFoundError before any review ran. Pinned
     # to the version in infra/sandbox/Dockerfile so local execution matches production.
     "qiskit-aer==0.17.2",
+    # Amazon Braket is an offline-only framework lane in generated code. Keep the
+    # local subprocess double and production sandbox on the same tested SDK. Pin
+    # the simulator and its otherwise-unbounded numba dependency too: retaining
+    # an old lock selected numba 0.53.1, which cannot install on Python 3.12.
+    "amazon-braket-sdk==1.122.0",
+    "amazon-braket-default-simulator==1.39.5",
+    "numba==0.66.0",
 ]
 
 [tool.uv.workspace]

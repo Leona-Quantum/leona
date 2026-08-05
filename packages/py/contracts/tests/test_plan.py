@@ -46,7 +46,7 @@ def test_qubit_estimate_remains_positive():
 
 def test_unknown_framework_rejected():
     with pytest.raises(ValidationError):
-        Plan.model_validate({**VALID, "framework": "braket"})
+        Plan.model_validate({**VALID, "framework": "qsharp"})
 
 
 def test_empty_verification_methods_rejected():

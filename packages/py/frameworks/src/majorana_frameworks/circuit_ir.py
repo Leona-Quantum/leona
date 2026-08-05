@@ -479,6 +479,76 @@ def _pennylane_circuit_ir(circuit: Any) -> dict[str, Any]:
     return builder.finish(operation_count=len(operations) + len(measurements))
 
 
+def _braket_circuit_ir(circuit: Any) -> dict[str, Any]:
+    """Observe a Braket Circuit as bounded read-only Studio data.
+
+    Braket source remains canonical. The current Studio builder cannot emit
+    Braket Python, so even gates it knows how to draw are deliberately marked
+    read-only rather than pretending an edit can be applied back to source.
+    """
+    from braket.circuits import Circuit, CompilerDirective, Measure
+
+    if not isinstance(circuit, Circuit):
+        raise TypeError("FINAL_CIRCUIT is not an Amazon Braket Circuit")
+    qubit_order = sorted(list(circuit.qubits))
+    positions = {qubit: index for index, qubit in enumerate(qubit_order)}
+    instructions = [
+        instruction
+        for instruction in circuit.instructions
+        if not isinstance(instruction.operator, CompilerDirective)
+    ]
+    measurement_count = sum(
+        len(instruction.target)
+        for instruction in instructions
+        if isinstance(instruction.operator, Measure)
+    )
+    aliases = {
+        "i": "i",
+        "h": "h",
+        "x": "x",
+        "y": "y",
+        "z": "z",
+        "s": "s",
+        "t": "t",
+        "rx": "rx",
+        "ry": "ry",
+        "rz": "rz",
+        "cnot": "cx",
+        "cz": "cz",
+        "swap": "swap",
+        "measure": "measure",
+    }
+    builder = _IRBuilder(
+        framework="braket",
+        qubit_count=len(qubit_order),
+        clbit_count=measurement_count,
+    )
+    next_clbit = 0
+    for instruction in instructions:
+        operator = instruction.operator
+        display_name = getattr(operator, "name", type(operator).__name__)
+        raw_name = str(display_name)
+        name = aliases.get(raw_name.casefold(), _safe_name(raw_name))
+        ordered_qubits = [*list(instruction.control), *list(instruction.target)]
+        # A standard Braket controlled gate (for example CNot) stores both wires
+        # in target; explicit control modifiers store controls separately.
+        qubits = list(dict.fromkeys(positions[qubit] for qubit in ordered_qubits))
+        clbits: list[int] = []
+        if isinstance(operator, Measure):
+            clbits = list(range(next_clbit, next_clbit + len(instruction.target)))
+            next_clbit += len(instruction.target)
+        if not builder.append(
+            name=name,
+            display_name=display_name,
+            qubits=qubits,
+            clbits=clbits,
+            parameters=list(getattr(operator, "parameters", [])),
+            editable=False,
+        ):
+            break
+    return builder.finish(operation_count=len(instructions))
+
+
 def build_circuit_ir(framework: str, circuit: Any) -> dict[str, Any]:
     """Observe a supported framework object without rewriting or executing it."""
     if framework == "qiskit":
@@ -487,6 +557,8 @@ def build_circuit_ir(framework: str, circuit: Any) -> dict[str, Any]:
         return _cirq_circuit_ir(circuit)
     if framework == "pennylane":
         return _pennylane_circuit_ir(circuit)
+    if framework == "braket":
+        return _braket_circuit_ir(circuit)
     raise ValueError(f"unsupported circuit IR framework: {framework}")
 
 
@@ -517,7 +589,7 @@ def validate_circuit_ir(value: Any) -> dict[str, Any] | None:
     if value.get("schema") != CIRCUIT_IR_SCHEMA or value.get("version") != CIRCUIT_IR_VERSION:
         return None
     framework = value.get("framework")
-    if framework not in {"qiskit", "cirq", "pennylane"}:
+    if framework not in {"qiskit", "cirq", "pennylane", "braket"}:
         return None
     qubit_count = _bounded_int(value.get("qubit_count"), minimum=0, maximum=MAX_CIRCUIT_IR_QUBITS)
     clbit_count = _bounded_int(value.get("clbit_count"), minimum=0, maximum=MAX_CIRCUIT_IR_QUBITS)

@@ -82,6 +82,23 @@ async def test_legitimate_run_succeeds_on_local_double():
     assert result.provider == "local-subprocess"
 
 
+async def test_braket_local_simulator_succeeds_on_local_double():
+    sandbox = LocalSubprocessSandbox()
+    code = (
+        "import json\n"
+        "from braket.circuits import Circuit\n"
+        "from braket.devices import LocalSimulator\n"
+        "circuit = Circuit().x(0).measure([0])\n"
+        "counts = LocalSimulator().run(circuit, shots=32).result().measurement_counts\n"
+        "print(json.dumps({str(k): int(v) for k, v in counts.items()}))\n"
+    )
+
+    result = await run(sandbox, ExecutionSpec(code=code, timeout_s=30))
+
+    assert result.ok, result.stderr
+    assert result.stdout.strip() == '{"1": 32}'
+
+
 @pytest.mark.parametrize(
     "hostile_shadow",
     [

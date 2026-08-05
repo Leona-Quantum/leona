@@ -10,7 +10,17 @@ from typing import Any, Literal, Protocol
 from majorana_contracts.enums import Framework
 from majorana_contracts.models import ResourceMetrics
 
-_TWO_QUBIT_OPERATIONS = {"cx", "cz", "swap", "cp", "CNOT", "CZ", "SWAP"}
+_TWO_QUBIT_OPERATIONS = {
+    "cx",
+    "cz",
+    "swap",
+    "cp",
+    "cnot",
+    "CNOT",
+    "CNot",
+    "CZ",
+    "SWAP",
+}
 _MEASUREMENT_OPERATIONS = {"measure", "measure_all"}
 _FRAMEWORK_MODULES = {
     "qiskit": Framework.QISKIT,
@@ -18,6 +28,7 @@ _FRAMEWORK_MODULES = {
     "cirq": Framework.CIRQ,
     "pennylane": Framework.PENNYLANE,
     "pennylane_lightning": Framework.PENNYLANE,
+    "braket": Framework.BRAKET,
 }
 
 _CIRCUIT_IR_SETUP = """_majorana_circuit_ir_build = None
@@ -1111,6 +1122,232 @@ if _majorana_final_circuit is not None and _majorana_interchange_dumps is not No
         )
 
 
+_BRAKET_NATIVE_SETUP = (
+    _NATIVE_LIMITS
+    + """
+_majorana_native_braket_circuit_cls = None
+_majorana_native_braket_gate_cls = None
+_majorana_native_braket_measure_cls = None
+_majorana_native_braket_directive_cls = None
+_majorana_native_braket_simulator_cls = None
+try:
+    from braket.circuits import Circuit as _majorana_native_braket_circuit_cls
+    from braket.circuits import CompilerDirective as _majorana_native_braket_directive_cls
+    from braket.circuits import Gate as _majorana_native_braket_gate_cls
+    from braket.circuits import Measure as _majorana_native_braket_measure_cls
+    from braket.devices import LocalSimulator as _majorana_native_braket_simulator_cls
+except Exception:
+    pass
+
+
+def _majorana_native_evidence(
+    _circuit,
+    _observation,
+    _circuit_cls=_majorana_native_braket_circuit_cls,
+    _gate_cls=_majorana_native_braket_gate_cls,
+    _measure_cls=_majorana_native_braket_measure_cls,
+    _directive_cls=_majorana_native_braket_directive_cls,
+    _simulator_cls=_majorana_native_braket_simulator_cls,
+    _sv_limit=_MAJORANA_NATIVE_SV_QUBITS,
+    _shots=_MAJORANA_NATIVE_SHOTS,
+    _len=len,
+    _int=int,
+    _str=str,
+    _float=float,
+    _isinstance=isinstance,
+    _sorted=sorted,
+    _list=list,
+    _dict=dict,
+    _enumerate=enumerate,
+    _range=range,
+    _type=type,
+    _ex=Exception,
+):
+    if _circuit_cls is None or not _isinstance(_circuit, _circuit_cls):
+        _observation["native_statevector_error"] = "FINAL_CIRCUIT is not a Braket Circuit"
+        _observation["native_sampled_error"] = "FINAL_CIRCUIT is not a Braket Circuit"
+        return
+    try:
+        _instructions = _list(_circuit.instructions)
+        _qubit_order = _sorted(_list(_circuit.qubits))
+        _positions = {_qubit: _index for _index, _qubit in _enumerate(_qubit_order)}
+        _measurements = []
+        _first_measure = None
+        _nonunitary = None
+        for _index, _instruction in _enumerate(_instructions):
+            _operator = _instruction.operator
+            if _measure_cls is not None and _isinstance(_operator, _measure_cls):
+                if _first_measure is None:
+                    _first_measure = _index
+                for _qubit in _list(_instruction.target):
+                    _measurements.append(_positions[_qubit])
+            elif _gate_cls is not None and _isinstance(_operator, _gate_cls):
+                if _first_measure is not None:
+                    _nonunitary = "mid-circuit measurement"
+            elif _directive_cls is None or not _isinstance(_operator, _directive_cls):
+                _nonunitary = _type(_operator).__name__
+        _measurement_map = {
+            _str(_len(_measurements) - 1 - _index): _measurements[_index]
+            for _index in _range(_len(_measurements))
+        }
+        _qubits = _len(_qubit_order)
+    except _ex as _exc:
+        _observation["native_statevector_error"] = _type(_exc).__name__
+        _observation["native_sampled_error"] = _type(_exc).__name__
+        return
+    try:
+        if _simulator_cls is None:
+            _observation["native_statevector_error"] = "Braket LocalSimulator unavailable"
+        elif not _qubits:
+            _observation["native_statevector_error"] = "circuit has no qubits"
+        elif _nonunitary is not None:
+            _observation["native_statevector_error"] = (
+                "not unitary up to final measurements: " + _str(_nonunitary)
+            )
+        elif _qubits > _sv_limit:
+            _observation["native_statevector_error"] = (
+                "circuit exceeds the native statevector limit of "
+                + _str(_sv_limit)
+                + " qubits"
+            )
+        else:
+            _pure = _circuit_cls()
+            for _instruction in _instructions:
+                if _gate_cls is not None and _isinstance(_instruction.operator, _gate_cls):
+                    _pure.add_instruction(_instruction)
+            _pure.state_vector()
+            _values = _simulator_cls().run(_pure, shots=0).result().values
+            _vector = _values[0]
+            _amplitudes = []
+            for _amplitude in _vector:
+                _amplitudes.append(_float(_amplitude.real))
+                _amplitudes.append(_float(_amplitude.imag))
+            _observation["native_statevector"] = {
+                "amplitudes": _amplitudes,
+                "qubits": _qubits,
+                "endianness": "q0_msb",
+                "clbits": _len(_measurements),
+                "measurement_map": _measurement_map,
+            }
+    except _ex as _exc:
+        _observation["native_statevector_error"] = _type(_exc).__name__
+    try:
+        if _simulator_cls is None:
+            _observation["native_sampled_error"] = "Braket LocalSimulator unavailable"
+        elif not _measurements:
+            _observation["native_sampled_error"] = "circuit has no measurements to sample"
+        else:
+            _counts = _simulator_cls().run(_circuit, shots=_shots).result().measurement_counts
+            _observation["native_sampled"] = {
+                "counts": {
+                    _str(_key): _int(_value) for _key, _value in _dict(_counts).items()
+                },
+                "shots": _shots,
+                # Amazon Braket's local simulator does not expose a public seed
+                # argument. Preserve that fact rather than inventing one.
+                "seed": None,
+                "bit_order": "big",
+            }
+    except _ex as _exc:
+        _observation["native_sampled_error"] = _type(_exc).__name__
+"""
+)
+
+
+class BraketAdapter(PythonFrameworkAdapter):
+    """Amazon Braket circuit support restricted to offline local simulation."""
+
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
+        if not circuit_expected:
+            return ""
+        return (
+            _CIRCUIT_IR_SETUP
+            + """_majorana_braket_circuit_cls = None
+_majorana_braket_gate_cls = None
+_majorana_braket_measure_cls = None
+_majorana_braket_ir_type = None
+try:
+    from braket.circuits import Circuit as _majorana_braket_circuit_cls
+    from braket.circuits import Gate as _majorana_braket_gate_cls
+    from braket.circuits import Measure as _majorana_braket_measure_cls
+    from braket.circuits.serialization import IRType as _majorana_braket_ir_type
+except Exception:
+    pass
+"""
+            + (_BRAKET_NATIVE_SETUP if collect_native_evidence else "")
+        )
+
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str:
+        if not circuit_expected:
+            return ""
+        return (
+            """
+_majorana_observation["native_optimization"] = {"applied": False}
+_majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
+if _majorana_final_circuit is None:
+    _majorana_observation["resource_metrics_error"] = (
+        "FINAL_CIRCUIT was not set (missing or None) — bind it to the constructed circuit object"
+    )
+elif _majorana_braket_circuit_cls is None or not _majorana_isinstance(
+    _majorana_final_circuit, _majorana_braket_circuit_cls
+):
+    _majorana_observation["resource_metrics_error"] = "FINAL_CIRCUIT is not a Braket Circuit"
+else:
+"""
+            + _circuit_ir_observer(Framework.BRAKET, indent="    ")
+            + """    try:
+        _majorana_instructions = _majorana_list(_majorana_final_circuit.instructions)
+        _majorana_gate_instructions = [
+            instruction
+            for instruction in _majorana_instructions
+            if _majorana_braket_gate_cls is not None
+            and _majorana_isinstance(instruction.operator, _majorana_braket_gate_cls)
+        ]
+        _majorana_measurements = [
+            instruction
+            for instruction in _majorana_instructions
+            if _majorana_braket_measure_cls is not None
+            and _majorana_isinstance(instruction.operator, _majorana_braket_measure_cls)
+        ]
+        _majorana_observation["resource_metrics"] = {
+            "qubits": _majorana_len(_majorana_final_circuit.qubits),
+            "depth": _majorana_int(_majorana_final_circuit.depth),
+            "gate_count": _majorana_len(_majorana_gate_instructions),
+            "two_qubit_gate_count": _majorana_sum(
+                _majorana_len(instruction.control) + _majorana_len(instruction.target) == 2
+                for instruction in _majorana_gate_instructions
+            ),
+            "measurement_count": _majorana_sum(
+                _majorana_len(instruction.target) for instruction in _majorana_measurements
+            ),
+        }
+    except _majorana_exception as _majorana_resource_exc:
+        _majorana_observation["resource_metrics_error"] = _majorana_type(
+            _majorana_resource_exc
+        ).__name__
+    try:
+        if _majorana_braket_ir_type is not None:
+            _majorana_program = _majorana_final_circuit.to_ir(
+                ir_type=_majorana_braket_ir_type.OPENQASM
+            )
+            _majorana_observation["interchange_qasm"] = _majorana_str(
+                _majorana_program.source
+            )
+    except _majorana_exception as _majorana_interchange_exc:
+        _majorana_observation["interchange_error"] = _majorana_type(
+            _majorana_interchange_exc
+        ).__name__
+"""
+            + (_NATIVE_OBSERVER_CALL if collect_native_evidence else "")
+        )
+
+
 _ADAPTERS: dict[Framework, FrameworkAdapter] = {
     Framework.QISKIT: QiskitAdapter(
         framework=Framework.QISKIT,
@@ -1188,6 +1425,43 @@ _ADAPTERS: dict[Framework, FrameworkAdapter] = {
                 "SWAP",
                 "Toffoli",
                 "CSWAP",
+                "measure",
+            }
+        ),
+    ),
+    Framework.BRAKET: BraketAdapter(
+        framework=Framework.BRAKET,
+        optimization_calls=frozenset(),
+        operation_calls=frozenset(
+            {
+                "i",
+                "x",
+                "y",
+                "z",
+                "h",
+                "s",
+                "si",
+                "t",
+                "ti",
+                "v",
+                "vi",
+                "rx",
+                "ry",
+                "rz",
+                "phaseshift",
+                "u",
+                "cnot",
+                "cy",
+                "cz",
+                "swap",
+                "iswap",
+                "pswap",
+                "xy",
+                "xx",
+                "yy",
+                "zz",
+                "ccnot",
+                "cswap",
                 "measure",
             }
         ),

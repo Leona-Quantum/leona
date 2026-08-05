@@ -34,8 +34,8 @@ _OPENQASM_CONTRACT = (
 )
 
 FRAMEWORK_DIRECTIVE = (
-    "Default framework is Qiskit for executable Python. Generate PennyLane or Cirq "
-    "only when the user explicitly selects it. If Qiskit cannot express the task, "
+    "Default framework is Qiskit for executable Python. Generate PennyLane, Cirq, or "
+    "Amazon Braket only when the user explicitly selects it. If Qiskit cannot express the task, "
     "report that limitation rather than switching frameworks; never switch silently. "
     "Generate and optimize code in the selected framework; execute it when a compatible "
     "backend is connected, otherwise preserve it as explicitly not run. OpenQASM must "
@@ -44,7 +44,9 @@ FRAMEWORK_DIRECTIVE = (
 
 _RUNTIME_LIMITS = (
     "The sandbox exposes qiskit, qiskit_aer, numpy, scipy, sympy, networkx, Cirq, "
-    "and PennyLane plus side-effect-free standard-library modules. It does not "
+    "PennyLane, and the Amazon Braket SDK with its LocalSimulator, plus side-effect-free "
+    "standard-library modules. Amazon Braket cloud devices, AWS credentials, boto3 calls, "
+    "and network task submission are unavailable. It does not "
     "install qiskit_algorithms, qiskit_nature, pyscf, or other optional Qiskit "
     "packages. For VQE/QAOA-sized tasks, implement the small reference method with "
     "qiskit plus numpy/scipy instead of importing an unavailable package."
@@ -809,6 +811,26 @@ tighter declared exact-result tolerance."""
 _PENNYLANE_GENERATION_API_RULES = """PennyLane result values, including numpy scalars,
 must be converted to plain Python types before they enter RESULT."""
 
+_BRAKET_GENERATION_API_RULES = """Amazon Braket code uses
+`from braket.circuits import Circuit` and `from braket.devices import LocalSimulator`.
+The selected-framework source and FINAL_CIRCUIT must remain a Braket Circuit. Execute
+only with LocalSimulator. Never import braket.aws, instantiate AwsDevice, use boto3,
+read AWS credentials, create an S3 destination, or submit a cloud quantum task.
+
+When the Plan requires sampled readout, add explicit terminal
+`circuit.measure([...])`, run `LocalSimulator().run(circuit, shots=shots).result()`,
+and convert `measurement_counts` keys and values to plain Python str/int values for
+RESULT. For an exact statevector, use an unmeasured Circuit with `.state_vector()` and
+run it with shots=0; read the first entry of result.values. A Circuit containing a
+Measure instruction cannot also request a StateVector result, so construct a separate
+unmeasured copy when both outputs are required.
+
+Braket orders a statevector by sorted circuit qubits with the first qubit as the most
+significant bit. Measurement-count strings place the first explicitly measured qubit
+leftmost. LocalSimulator has no public seed argument; never invent or pass `seed=` to
+its run method. If a request requires seeded samples, expose that limitation honestly
+and rely on exact statevector evidence where the task permits it."""
+
 _QISKIT_REPRESENTATION_RULE = """- In Qiskit Pauli labels and displayed bitstrings, the
   rightmost character is qubit 0. A raw Statevector reshaped into NumPy axes is ordered
   q_(n-1),...,q_0, not q_0,...,q_(n-1). Prefer full-width Pauli labels, partial_trace
@@ -835,6 +857,7 @@ _FRAMEWORK_SCOPED_GENERATION_RULES = {
     ),
     "cirq": (_CIRQ_GENERATION_API_RULES,),
     "pennylane": (_PENNYLANE_GENERATION_API_RULES,),
+    "braket": (_BRAKET_GENERATION_API_RULES,),
 }
 
 
@@ -910,7 +933,7 @@ RESULT requirements; the promised output keys still apply when that entry point 
   must already be composed only of strings, booleans, null, plain integers/floats,
   lists, and dictionaries before the sandbox epilogue runs;
 - use deterministic framework seeds wherever supported;
-- use current Qiskit 2.x, Cirq, or PennyLane APIs and only installed packages;
+- use current Qiskit 2.x, Cirq, PennyLane, or Amazon Braket APIs and only installed packages;
 - never use stdout as a result channel and never make network or credential calls.
 
 {_QISKIT_GENERATION_API_RULES}
@@ -918,6 +941,8 @@ RESULT requirements; the promised output keys still apply when that entry point 
 {_CIRQ_GENERATION_API_RULES}
 
 {_PENNYLANE_GENERATION_API_RULES}
+
+{_BRAKET_GENERATION_API_RULES}
 
 Representation and numerical invariants:
 {_QISKIT_REPRESENTATION_RULE}
@@ -2092,6 +2117,19 @@ _GENERATION_REFERENCE_HEADER = _GENERATION_REFERENCE_IMPLEMENTATIONS[
     : _GENERATION_REFERENCE_IMPLEMENTATIONS.index("Example 1 —")
 ]
 _BELL_GENERATION_REFERENCE = _generation_reference_slice("Example 1 —", "Example 2 —")
+_BRAKET_BELL_GENERATION_REFERENCE = r"""
+Amazon Braket Bell-state reference
+----------------------------------
+from braket.circuits import Circuit
+from braket.devices import LocalSimulator
+
+shots = 1024
+circuit = Circuit().h(0).cnot(0, 1).measure([0, 1])
+counts = LocalSimulator().run(circuit, shots=shots).result().measurement_counts
+
+FINAL_CIRCUIT = circuit
+RESULT = {"counts": {str(key): int(value) for key, value in counts.items()}}
+"""
 _VQE_GENERATION_REFERENCE = _BOUNDED_STATEVECTOR_VQE_REFERENCE
 _QAOA_GENERATION_REFERENCE = _generation_reference_slice(
     "Example 3 —", "Example 4 —"
@@ -2203,6 +2241,8 @@ def simple_generation_system_prompt(
             selected += _BELL_GENERATION_REFERENCE
     elif framework.lower() == "pennylane" and family == "vqe":
         selected += _BOUNDED_PENNYLANE_VQE_REFERENCE
+    elif framework.lower() == "braket" and family == "bell":
+        selected += _BRAKET_BELL_GENERATION_REFERENCE
     prompt = SIMPLE_GENERATION_SYSTEM_PROMPT.replace(
         _GENERATION_REFERENCE_IMPLEMENTATIONS,
         selected.rstrip() + "\n",

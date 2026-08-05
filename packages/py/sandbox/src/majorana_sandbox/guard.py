@@ -26,6 +26,7 @@ ALLOWED_IMPORTS: frozenset[str] = frozenset(
         "pennylane",
         "pennylane_lightning",
         "cirq",
+        "braket",
         "numpy",
         "scipy",
         "sympy",
@@ -70,6 +71,14 @@ ALLOWED_IMPORTS: frozenset[str] = frozenset(
 # Attribute/module tokens that must never appear — matched as plain substrings
 # because they do not occur in legitimate quantum-simulation code.
 DENIED_SUBSTRINGS: tuple[str, ...] = (
+    # The Braket SDK is available for offline Circuit construction and
+    # LocalSimulator execution only. AwsDevice submits work through AWS and can
+    # reach credentials/S3, so reject that namespace before isolation runs.
+    "braket.aws",
+    "AwsDevice",
+    "AwsQuantumTask",
+    "AwsQuantumJob",
+    "AwsSession",
     "__import__",
     "importlib",
     "subprocess",

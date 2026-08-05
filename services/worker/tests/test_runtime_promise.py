@@ -38,6 +38,7 @@ _PROMISED = {
     "networkx": "networkx",
     "Cirq": "cirq",
     "PennyLane": "pennylane",
+    "the Amazon Braket SDK with its LocalSimulator": "braket",
 }
 
 

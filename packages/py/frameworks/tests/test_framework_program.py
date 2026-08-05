@@ -340,6 +340,92 @@ def test_pennylane_interchange_uses_trusted_tape_export(monkeypatch):
     assert extraction.qasm == "OPENQASM 2.0;\nqreg q[1];"
 
 
+def test_braket_interchange_and_metrics_use_the_native_final_circuit():
+    pytest.importorskip("braket")
+
+    code = (
+        "from braket.circuits import Circuit\n"
+        "circuit = Circuit().h(2).cnot(2, 5).measure([2, 5])\n"
+        "FINAL_CIRCUIT = circuit\n"
+        "RESULT = {'counts': {'00': 1, '11': 1}}\n"
+    )
+    observation = _run_epilogue(Framework.BRAKET, code)
+    extraction = extract_interchange_qasm(observation)
+
+    assert extraction.source == "sandbox_epilogue"
+    assert extraction.qasm is not None
+    assert extraction.qasm.startswith("OPENQASM 3.0")
+    assert "cnot q[2], q[5]" in extraction.qasm
+    assert observation["resource_metrics"] == {
+        "qubits": 2,
+        "depth": 3,
+        "gate_count": 2,
+        "two_qubit_gate_count": 1,
+        "measurement_count": 2,
+    }
+
+
+def test_braket_native_statevector_and_sampling_preserve_qubit_order():
+    pytest.importorskip("braket")
+
+    code = (
+        "from braket.circuits import Circuit\n"
+        "circuit = Circuit().x(2).h(5).measure([2, 5])\n"
+        "FINAL_CIRCUIT = circuit\n"
+        "RESULT = {'counts': {'10': 1, '11': 1}}\n"
+    )
+    observation = _run_epilogue(Framework.BRAKET, code)
+    payload = observation["native_statevector"]
+
+    assert payload["endianness"] == "q0_msb"
+    assert payload["qubits"] == 2
+    assert payload["measurement_map"] == {"0": 1, "1": 0}
+    # Sorted Braket qubit 2 is the MSB, so X(q2) has support at |10>, |11>.
+    assert _amplitude_support(payload) == [2, 3]
+    sampled = observation["native_sampled"]
+    assert sampled["bit_order"] == "big"
+    assert sampled["seed"] is None
+    assert sum(sampled["counts"].values()) == sampled["shots"]
+    assert all(key.startswith("1") for key in sampled["counts"])
+
+
+def test_braket_exact_statevector_program_keeps_computed_result_and_trusted_evidence():
+    pytest.importorskip("braket")
+
+    code = (
+        "import numpy as np\n"
+        "from braket.circuits import Circuit\n"
+        "from braket.devices import LocalSimulator\n"
+        "theta = 0.83\n"
+        "phi = -0.41\n"
+        "circuit = Circuit().ry(0, theta).rz(0, phi).state_vector()\n"
+        "vector = np.asarray(LocalSimulator().run(circuit, shots=0).result().values[0], "
+        "dtype=complex)\n"
+        "overlap = np.conj(vector[0]) * vector[1]\n"
+        "FINAL_CIRCUIT = circuit\n"
+        "RESULT = {\n"
+        "    'bloch_x': float(2 * np.real(overlap)),\n"
+        "    'bloch_y': float(2 * np.imag(overlap)),\n"
+        "    'bloch_z': float(abs(vector[0])**2 - abs(vector[1])**2),\n"
+        "    'probability_one': float(abs(vector[1])**2),\n"
+        "}\n"
+    )
+    observation = _run_epilogue(Framework.BRAKET, code)
+
+    assert observation["result"] == pytest.approx(
+        {
+            "bloch_x": math.sin(0.83) * math.cos(-0.41),
+            "bloch_y": math.sin(0.83) * math.sin(-0.41),
+            "bloch_z": math.cos(0.83),
+            "probability_one": math.sin(0.83 / 2) ** 2,
+        },
+        abs=1e-12,
+    )
+    assert observation["native_statevector"]["qubits"] == 1
+    assert observation["native_sampled_error"] == "circuit has no measurements to sample"
+    assert observation["resource_metrics"]["gate_count"] == 2
+
+
 def test_cirq_metrics_are_observed_from_final_sandbox_object():
     class Operation:
         def __init__(self, *qubits):

@@ -249,6 +249,32 @@ def test_pennylane_ir_keeps_expectation_observables_visible_and_read_only():
     assert terminal["editable"] is False
 
 
+def test_braket_ir_preserves_sparse_qubits_parameters_and_measurement_order():
+    pytest.importorskip("braket")
+    from braket.circuits import Circuit
+
+    circuit = Circuit().h(2).cnot(2, 5).rz(5, 0.25).measure([5, 2])
+    circuit_ir = build_circuit_ir("braket", circuit)
+
+    assert circuit_ir["framework"] == "braket"
+    assert circuit_ir["qubit_count"] == 2
+    assert circuit_ir["clbit_count"] == 2
+    assert [operation["name"] for operation in circuit_ir["operations"]] == [
+        "h",
+        "cx",
+        "rz",
+        "measure",
+        "measure",
+    ]
+    assert circuit_ir["operations"][1]["qubits"] == [0, 1]
+    assert float(circuit_ir["operations"][2]["parameters"][0]) == pytest.approx(0.25)
+    assert circuit_ir["operations"][3]["qubits"] == [1]
+    assert circuit_ir["operations"][3]["clbits"] == [0]
+    assert circuit_ir["operations"][4]["qubits"] == [0]
+    assert circuit_ir["operations"][4]["clbits"] == [1]
+    assert all(not operation["editable"] for operation in circuit_ir["operations"])
+
+
 def test_validation_rejects_partial_malformed_or_oversized_payloads():
     valid = _valid_ir()
     assert validate_circuit_ir(valid) == valid

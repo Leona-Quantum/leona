@@ -358,6 +358,7 @@ def test_cirq_vqe_and_pennylane_non_vqe_do_not_receive_the_pennylane_vqe_helper(
             (
                 "cirq.Simulator(dtype=np.complex128",
                 "PennyLane result values, including numpy scalars",
+                "Amazon Braket code uses",
             ),
         ),
         (
@@ -368,6 +369,7 @@ def test_cirq_vqe_and_pennylane_non_vqe_do_not_receive_the_pennylane_vqe_helper(
                 "rightmost character is qubit 0",
                 "QFTGate(width)",
                 "PennyLane result values, including numpy scalars",
+                "Amazon Braket code uses",
             ),
         ),
         (
@@ -378,6 +380,22 @@ def test_cirq_vqe_and_pennylane_non_vqe_do_not_receive_the_pennylane_vqe_helper(
                 "rightmost character is qubit 0",
                 "QFTGate(width)",
                 "cirq.Simulator(dtype=np.complex128",
+                "Amazon Braket code uses",
+            ),
+        ),
+        (
+            Framework.BRAKET,
+            (
+                "Amazon Braket code uses",
+                "Never import braket.aws",
+                "LocalSimulator has no public seed argument",
+            ),
+            (
+                "qiskit_aer.AerSimulator plus transpile/run",
+                "rightmost character is qubit 0",
+                "QFTGate(width)",
+                "cirq.Simulator(dtype=np.complex128",
+                "PennyLane result values, including numpy scalars",
             ),
         ),
     ],
@@ -393,6 +411,26 @@ def test_generation_prompt_scopes_sdk_rules_across_every_algorithm(framework, in
 
         assert all(marker in prompt for marker in included), algorithm
         assert all(marker not in prompt for marker in excluded), algorithm
+
+
+def test_braket_bell_uses_a_framework_native_reference_only_for_bell():
+    bell = simple_generation_system_prompt(
+        framework="braket",
+        domain="quantum information",
+        algorithm="Bell",
+        problem_summary="prepare an entangled pair",
+    )
+    unrelated = simple_generation_system_prompt(
+        framework="braket",
+        domain="optimization",
+        algorithm="QAOA",
+        problem_summary="solve a graph partition",
+    )
+
+    assert "Amazon Braket Bell-state reference" in bell
+    assert "Circuit().h(0).cnot(0, 1).measure([0, 1])" in bell
+    assert "from qiskit import QuantumCircuit" not in bell
+    assert "Amazon Braket Bell-state reference" not in unrelated
 
 
 def test_lindblad_matrix_exponential_does_not_select_closed_system_dynamics_helper():
