@@ -3,12 +3,9 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   entryVerificationMethods,
-  getPublicRepositoryVariant,
   PUBLIC_REPOSITORY_CATEGORIES,
-  PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryCategory,
   type PublicRepositoryListEntry,
-  type PublicRepositoryFramework,
 } from "../../lib/public-repository";
 import type { PublicLocale } from "../../lib/public-locale";
 import { VerificationTierBadge } from "../../components/repository-verification";
@@ -24,6 +21,7 @@ import {
 } from "../../lib/repository/browse-order";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
 import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
+import { matchesRepositoryQuery } from "../../lib/repository/search";
 import {
   PIPELINE_STANCES,
   connectedCount,
@@ -47,10 +45,6 @@ const COPY = {
   en: {
     search: "Search the Atlas",
     placeholder: "Search algorithms, frameworks, or tags",
-    family: "Algorithm family",
-    framework: "Framework",
-    allFamilies: "All families",
-    allFrameworks: "All frameworks",
     topic: "Topic",
     allTopics: "All topics",
     stance: "Takes / returns",
@@ -118,10 +112,6 @@ const COPY = {
   ja: {
     search: "Atlasを検索",
     placeholder: "アルゴリズム、フレームワーク、タグを検索",
-    family: "アルゴリズムの分類",
-    framework: "フレームワーク",
-    allFamilies: "すべての分類",
-    allFrameworks: "すべてのフレームワーク",
     topic: "トピック",
     allTopics: "すべてのトピック",
     stance: "入力 / 出力",
@@ -349,8 +339,6 @@ export function RepositoryBrowser({
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
-  const [family, setFamily] = useState<string>("");
-  const [framework, setFramework] = useState<"" | PublicRepositoryFramework>("");
   // Seeded from ?topic= by the server component, never read from `window` here:
   // this page does not hydrate in either browser surface, so an effect that set
   // it would leave the entry pages' topic chips linking to a filter that never
@@ -388,7 +376,6 @@ export function RepositoryBrowser({
     });
   }
 
-  const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))).sort(), [entries]);
   // Counted over the whole corpus rather than over what the other filters have
   // left, so the control does not renumber itself as a reader narrows — a count
   // that moves while you are reading it is not a count, it is a hint.
@@ -482,29 +469,19 @@ export function RepositoryBrowser({
     [entries],
   );
   const filteredEntries = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
     const matched = entries.filter((entry) => {
-      const matchesQuery = !normalizedQuery || [
-        entry.title,
-        entry.titleJa,
-        entry.algorithmFamily,
-        entry.framework,
-        entry.description,
-        entry.descriptionJa,
-        entry.provenance,
-        ...entry.tags,
-      ].join(" ").toLowerCase().includes(normalizedQuery);
+      // Through the shared predicate, not inline: removing the family control
+      // made this haystack the only way those 57 values stay reachable, so it
+      // has to live where the corpus audit and a unit test can read the real
+      // one (lib/repository/search).
       const matchesCategory = category === "all" || entry.category === category;
-      const matchesFamily = !family || entry.algorithmFamily === family;
-      const variant = framework ? getPublicRepositoryVariant(entry, framework) : null;
-      const matchesFramework = !framework || variant?.status === "native" || variant?.status === "conversion";
-      return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
+      return matchesRepositoryQuery(entry, query) && matchesCategory;
     });
-    // Applied through the shared helper rather than as another clause here: the
-    // browse <select> does not hydrate in either browser surface, so the rule
-    // has to live where a unit test can reach it (lib/repository/topic-filter).
+    // Applied through the shared helpers rather than as more clauses here, so
+    // each rule sits somewhere a unit test can reach it
+    // (lib/repository/topic-filter, lib/repository/interface).
     return filterByStance(filterByTopic(matched, topic), interfaces, stance);
-  }, [category, entries, family, framework, interfaces, query, stance, topic]);
+  }, [category, entries, interfaces, query, stance, topic]);
 
   /** slug -> its cost row, when the API supplied a listing. */
   const costBySlug = useMemo(() => {
@@ -571,8 +548,6 @@ export function RepositoryBrowser({
   function clearFilters() {
     setQuery("");
     setCategory("all");
-    setFamily("");
-    setFramework("");
     // Including one that may have arrived from `?topic=` rather than from this
     // control — the button offered by the empty state has to be able to empty
     // every filter, or it hands back a list that is still filtered.
@@ -817,20 +792,32 @@ export function RepositoryBrowser({
             type="search"
           />
         </label>
-        <label>
-          <span>{copy.family}</span>
-          <select value={family} onChange={(event) => setFamily(event.target.value)}>
-            <option value="">{copy.allFamilies}</option>
-            {families.map((option) => <option key={option} value={option}>{familyLabel(option, locale)}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>{copy.framework}</span>
-          <select value={framework} onChange={(event) => setFramework(event.target.value as "" | PublicRepositoryFramework)}>
-            <option value="">{copy.allFrameworks}</option>
-            {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </label>
+        {/* The `Algorithm family` and `Framework` selects stood here until s81.
+            Both were removed rather than restyled, and both removals were
+            measured against the corpus first (roadmap §0.3):
+
+            `algorithmFamily` was 57 free-text values over 283 entries, **33 of
+            them worn by exactly one entry** — a search box implemented as a
+            dropdown. `role` + `method` now cover it by rule, as supersets: 49
+            of the 57 families share a single role+method signature. The 8 that
+            scatter, and the 12 signatures that cover more than one family, are
+            why the fallback matters — and the fallback is exact. The search
+            input above already indexes `algorithmFamily`, and typing a family's
+            name **never misses one of its own members** (0 of 57 lossy; 47
+            return the family exactly, 10 a benign superset). Nothing became
+            unreachable. The value is still on every card, and the algorithm
+            view still groups by it.
+
+            `framework` looked like a filter and was not one. Its eight options
+            produce **five distinct result sets** — CUDA-Q, Amazon Braket,
+            PyQuil and Qmod select the identical 153 entries — and the most
+            selective option still keeps 191 of 283. It asks "can I export this
+            to Cirq", which is a question about an entry already found; the
+            entry page's export section answers it per record. `entry.framework`
+            stays in the search haystack, so the placeholder still holds.
+
+            That takes the bar from five controls to three: search · topic ·
+            takes-returns, which is the owner's "all over the place", answered. */}
         {/* One control for three facets, grouped, because the alternative is
             three more selects beside four existing ones. Every option carries
             its count: "Optimization (10)" cannot be read as a promise the way a
