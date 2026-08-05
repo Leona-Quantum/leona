@@ -15,6 +15,7 @@ import { MarkdownContent } from "../../../components/chat-markdown";
 import { StarIcon } from "../../../components/icons";
 import { VerificationMethodChips, VerificationTierBadge } from "../../../components/repository-verification";
 import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../../lib/repository-stars";
+import { TOPICS_BY_ID } from "../../../lib/repository/topics";
 import { RepositoryExportAction } from "../repository-export";
 
 const COPY = {
@@ -229,6 +230,11 @@ export function RepositoryEntryView({
   const [starred, setStarred] = useState(false);
   const variant = useMemo(() => getPublicRepositoryVariant(entry, framework), [entry, framework]);
   const methods = entryVerificationMethods(entry);
+  // Resolved through the vocabulary rather than rendered from the ids, so an id
+  // the API knows and this build does not is dropped instead of printed raw.
+  const topics = (entry.topics ?? [])
+    .map((id) => TOPICS_BY_ID.get(id))
+    .filter((topic): topic is NonNullable<typeof topic> => topic !== undefined);
   const title = locale === "ja" ? entry.titleJa : entry.title;
   const description = locale === "ja" ? entry.descriptionJa : entry.description;
   const introduction = locale === "ja" ? entry.introductionJa : entry.introduction;
@@ -263,6 +269,27 @@ export function RepositoryEntryView({
         </div>
         <h1>{title}</h1>
         <p>{description}</p>
+        {/* The closed vocabulary above the free keywords, and separated from
+            them, because they are different kinds of claim: a topic is one of
+            twenty-nine values the whole corpus is classified against and is what
+            /repository filters on; a tag is a keyword this record happens to
+            wear, and 217 of the 307 in the corpus are worn by exactly one entry.
+            Each topic carries its definition on hover — a vocabulary whose terms
+            a reader has to guess at is a vocabulary they will read wrong. */}
+        {topics.length > 0 ? (
+          <div className="mj-repository-topics" aria-label={locale === "ja" ? "トピック" : "Topics"}>
+            {topics.map((topic) => (
+              <a
+                key={topic.id}
+                className={`mj-repository-topic mj-repository-topic--${topic.facet}`}
+                href={`/repository?topic=${encodeURIComponent(topic.id)}`}
+                title={locale === "ja" ? topic.definitionJa : topic.definition}
+              >
+                {locale === "ja" ? topic.labelJa : topic.label}
+              </a>
+            ))}
+          </div>
+        ) : null}
         <div className="mj-repo-detail-hero-foot">
           <div className="mj-repository-tags" aria-label={locale === "ja" ? "タグ" : "Tags"}>
             {entry.tags.map((tag) => <span key={tag}>{tag}</span>)}

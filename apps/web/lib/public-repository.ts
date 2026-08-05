@@ -19,6 +19,7 @@ import type {
   PublicRepositoryListEntry,
 } from "./repository/types";
 import { strongestTier, type VerificationMethodId, type VerificationTier } from "./repository/verification";
+import { deriveTopics } from "./repository/topics";
 import { ENTRY_ENRICHMENT } from "./repository/enrichment";
 import {
   circuitFramework,
@@ -164,7 +165,13 @@ export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIE
     enriched.classicalComparison = { ...enriched.classicalComparison, metrics: comparisonMetrics };
   }
   const entry = normalizePublicRepositoryText(enriched) as PublicRepositoryEntry;
-  return { ...entry, verificationMethods: deriveVerificationMethods(entry) };
+  return {
+    ...entry,
+    verificationMethods: deriveVerificationMethods(entry),
+    // Classified from the entry's own labels, on the same terms and for the
+    // same reason as the line above. See ./repository/topics for the rules.
+    topics: entry.topics?.length ? entry.topics : deriveTopics(entry),
+  };
 });
 
 /**

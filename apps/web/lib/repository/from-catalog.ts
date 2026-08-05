@@ -119,6 +119,11 @@ export function parseCatalogRecord(record: unknown): PublicRepositoryEntry | nul
   // an absent one is tolerated (the badge components already handle undefined),
   // a malformed one is not.
   if (record.verificationMethods !== undefined && !isStringArray(record.verificationMethods)) return null;
+  // Same terms as the line above, and needed for the same reason: `topics` is
+  // iterated by the entry page and the browse filter without a shape check. A
+  // string here rather than an array is the dangerous case — `.includes` works
+  // on a string and would quietly match substrings.
+  if (record.topics !== undefined && !isStringArray(record.topics)) return null;
 
   return record as unknown as PublicRepositoryEntry;
 }
@@ -171,6 +176,11 @@ export function parseCatalogListRecord(record: unknown): PublicRepositoryListEnt
   if (!isStringArray(wires) || !Array.isArray(operations) || !Array.isArray(outcomes)) return null;
 
   if (record.verificationMethods !== undefined && !isStringArray(record.verificationMethods)) return null;
+  // Same terms as the line above, and needed for the same reason: `topics` is
+  // iterated by the entry page and the browse filter without a shape check. A
+  // string here rather than an array is the dangerous case — `.includes` works
+  // on a string and would quietly match substrings.
+  if (record.topics !== undefined && !isStringArray(record.topics)) return null;
 
   return record as unknown as PublicRepositoryListEntry;
 }

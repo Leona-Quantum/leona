@@ -1,4 +1,5 @@
 import type { VerificationMethodId } from "./verification";
+import type { TopicId } from "./topics";
 import type { PortableCircuit } from "../circuit-frameworks";
 
 export type PublicRepositoryCategory = "gates" | "algorithms" | "operators" | "states";
@@ -113,7 +114,20 @@ export interface PublicRepositoryEntry {
    */
   explanationMd?: string;
   explanationMdJa?: string;
+  /**
+   * Free-text keywords. Kept, and no longer the thing anybody filters with —
+   * 217 of the 307 distinct values here are worn by exactly one entry. See
+   * ./topics for the closed vocabulary that replaced them as a filter (R2).
+   */
   tags: string[];
+  /**
+   * The closed vocabulary this entry resolves to. Optional in raw data and
+   * classified deterministically in public-repository.ts (see deriveTopics) —
+   * the same arrangement `verificationMethods` has used since session 60, for
+   * the same reason: a corpus the owner may repopulate wholesale should not
+   * carry 283 hand-written labels that a repopulation discards.
+   */
+  topics?: TopicId[];
   resources: Array<{ label: string; value: string }>;
   metadata: Array<{ label: string; value: string }>;
   source: {
@@ -182,6 +196,7 @@ export type PublicRepositoryListEntry = Pick<
   | "description"
   | "descriptionJa"
   | "tags"
+  | "topics"
   | "resources"
   | "metadata"
   | "visualization"

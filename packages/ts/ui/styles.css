@@ -948,6 +948,48 @@
   font-size: var(--fs-12);
 }
 
+/* ---------- the closed topic vocabulary (R2) ---------- */
+/* Visually distinct from the free tags directly beneath, because they are
+   different kinds of claim: a topic is one of twenty-nine values the whole
+   corpus is classified against and links to that filter; a tag is a keyword
+   this record happens to wear. Chips that looked alike would say they are the
+   same thing. */
+.mj-repository-topics {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-4);
+}
+.mj-repository-topic {
+  padding: var(--sp-1) var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-decoration: none;
+}
+.mj-repository-topic:hover { border-color: var(--accent); }
+/* The role is what the record IS, so it leads. The domain is the claim a reader
+   is most likely to over-read, so it is the one that carries the accent and
+   sits beside a role chip that qualifies it. */
+.mj-repository-topic--role {
+  border-color: var(--text-2);
+  font-family: var(--font-mono);
+}
+.mj-repository-topic--domain {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+/* The role on a browse card. Reads as a label rather than a chip — the card's
+   top row already carries four of those, and a fifth bordered box would win
+   attention it does not deserve over the title beneath it. */
+.mj-repo-card-role {
+  color: var(--text-0);
+  font-weight: 500;
+}
+
 .mj-text-link {
   color: var(--accent);
   font-size: var(--fs-12);
