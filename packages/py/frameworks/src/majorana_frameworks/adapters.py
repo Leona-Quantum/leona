@@ -10,14 +10,27 @@ from typing import Any, Literal, Protocol
 from majorana_contracts.enums import Framework
 from majorana_contracts.models import ResourceMetrics
 
-_TWO_QUBIT_OPERATIONS = {"cx", "cz", "swap", "cp", "CNOT", "CZ", "SWAP"}
-_MEASUREMENT_OPERATIONS = {"measure", "measure_all"}
+_TWO_QUBIT_OPERATIONS = {
+    "cx",
+    "cz",
+    "swap",
+    "cp",
+    "cnot",
+    "CNOT",
+    "CNot",
+    "CZ",
+    "SWAP",
+}
+_MEASUREMENT_OPERATIONS = {"M", "measure", "measure_all"}
 _FRAMEWORK_MODULES = {
     "qiskit": Framework.QISKIT,
     "qiskit_aer": Framework.QISKIT,
     "cirq": Framework.CIRQ,
     "pennylane": Framework.PENNYLANE,
     "pennylane_lightning": Framework.PENNYLANE,
+    "braket": Framework.BRAKET,
+    "qibo": Framework.QIBO,
+    "qulacs": Framework.QULACS,
 }
 
 _CIRCUIT_IR_SETUP = """_majorana_circuit_ir_build = None
@@ -1111,6 +1124,691 @@ if _majorana_final_circuit is not None and _majorana_interchange_dumps is not No
         )
 
 
+_BRAKET_NATIVE_SETUP = (
+    _NATIVE_LIMITS
+    + """
+_majorana_native_braket_circuit_cls = None
+_majorana_native_braket_gate_cls = None
+_majorana_native_braket_measure_cls = None
+_majorana_native_braket_directive_cls = None
+_majorana_native_braket_simulator_cls = None
+try:
+    from braket.circuits import Circuit as _majorana_native_braket_circuit_cls
+    from braket.circuits import CompilerDirective as _majorana_native_braket_directive_cls
+    from braket.circuits import Gate as _majorana_native_braket_gate_cls
+    from braket.circuits import Measure as _majorana_native_braket_measure_cls
+    from braket.devices import LocalSimulator as _majorana_native_braket_simulator_cls
+except Exception:
+    pass
+
+
+def _majorana_native_evidence(
+    _circuit,
+    _observation,
+    _circuit_cls=_majorana_native_braket_circuit_cls,
+    _gate_cls=_majorana_native_braket_gate_cls,
+    _measure_cls=_majorana_native_braket_measure_cls,
+    _directive_cls=_majorana_native_braket_directive_cls,
+    _simulator_cls=_majorana_native_braket_simulator_cls,
+    _sv_limit=_MAJORANA_NATIVE_SV_QUBITS,
+    _shots=_MAJORANA_NATIVE_SHOTS,
+    _len=len,
+    _int=int,
+    _str=str,
+    _float=float,
+    _isinstance=isinstance,
+    _sorted=sorted,
+    _list=list,
+    _dict=dict,
+    _enumerate=enumerate,
+    _range=range,
+    _type=type,
+    _ex=Exception,
+):
+    if _circuit_cls is None or not _isinstance(_circuit, _circuit_cls):
+        _observation["native_statevector_error"] = "FINAL_CIRCUIT is not a Braket Circuit"
+        _observation["native_sampled_error"] = "FINAL_CIRCUIT is not a Braket Circuit"
+        return
+    try:
+        _instructions = _list(_circuit.instructions)
+        _qubit_order = _sorted(_list(_circuit.qubits))
+        _positions = {_qubit: _index for _index, _qubit in _enumerate(_qubit_order)}
+        _measurements = []
+        _first_measure = None
+        _nonunitary = None
+        for _index, _instruction in _enumerate(_instructions):
+            _operator = _instruction.operator
+            if _measure_cls is not None and _isinstance(_operator, _measure_cls):
+                if _first_measure is None:
+                    _first_measure = _index
+                for _qubit in _list(_instruction.target):
+                    _measurements.append(_positions[_qubit])
+            elif _gate_cls is not None and _isinstance(_operator, _gate_cls):
+                if _first_measure is not None:
+                    _nonunitary = "mid-circuit measurement"
+            elif _directive_cls is None or not _isinstance(_operator, _directive_cls):
+                _nonunitary = _type(_operator).__name__
+        _measurement_map = {
+            _str(_len(_measurements) - 1 - _index): _measurements[_index]
+            for _index in _range(_len(_measurements))
+        }
+        _qubits = _len(_qubit_order)
+    except _ex as _exc:
+        _observation["native_statevector_error"] = _type(_exc).__name__
+        _observation["native_sampled_error"] = _type(_exc).__name__
+        return
+    try:
+        if _simulator_cls is None:
+            _observation["native_statevector_error"] = "Braket LocalSimulator unavailable"
+        elif not _qubits:
+            _observation["native_statevector_error"] = "circuit has no qubits"
+        elif _nonunitary is not None:
+            _observation["native_statevector_error"] = (
+                "not unitary up to final measurements: " + _str(_nonunitary)
+            )
+        elif _qubits > _sv_limit:
+            _observation["native_statevector_error"] = (
+                "circuit exceeds the native statevector limit of "
+                + _str(_sv_limit)
+                + " qubits"
+            )
+        else:
+            _pure = _circuit_cls()
+            for _instruction in _instructions:
+                if _gate_cls is not None and _isinstance(_instruction.operator, _gate_cls):
+                    _pure.add_instruction(_instruction)
+            _pure.state_vector()
+            _values = _simulator_cls().run(_pure, shots=0).result().values
+            _vector = _values[0]
+            _amplitudes = []
+            for _amplitude in _vector:
+                _amplitudes.append(_float(_amplitude.real))
+                _amplitudes.append(_float(_amplitude.imag))
+            _observation["native_statevector"] = {
+                "amplitudes": _amplitudes,
+                "qubits": _qubits,
+                "endianness": "q0_msb",
+                "clbits": _len(_measurements),
+                "measurement_map": _measurement_map,
+            }
+    except _ex as _exc:
+        _observation["native_statevector_error"] = _type(_exc).__name__
+    try:
+        if _simulator_cls is None:
+            _observation["native_sampled_error"] = "Braket LocalSimulator unavailable"
+        elif not _measurements:
+            _observation["native_sampled_error"] = "circuit has no measurements to sample"
+        else:
+            _counts = _simulator_cls().run(_circuit, shots=_shots).result().measurement_counts
+            _observation["native_sampled"] = {
+                "counts": {
+                    _str(_key): _int(_value) for _key, _value in _dict(_counts).items()
+                },
+                "shots": _shots,
+                # Amazon Braket's local simulator does not expose a public seed
+                # argument. Preserve that fact rather than inventing one.
+                "seed": None,
+                "bit_order": "big",
+            }
+    except _ex as _exc:
+        _observation["native_sampled_error"] = _type(_exc).__name__
+"""
+)
+
+
+class BraketAdapter(PythonFrameworkAdapter):
+    """Amazon Braket circuit support restricted to offline local simulation."""
+
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
+        if not circuit_expected:
+            return ""
+        return (
+            _CIRCUIT_IR_SETUP
+            + """_majorana_braket_circuit_cls = None
+_majorana_braket_gate_cls = None
+_majorana_braket_measure_cls = None
+_majorana_braket_ir_type = None
+try:
+    from braket.circuits import Circuit as _majorana_braket_circuit_cls
+    from braket.circuits import Gate as _majorana_braket_gate_cls
+    from braket.circuits import Measure as _majorana_braket_measure_cls
+    from braket.circuits.serialization import IRType as _majorana_braket_ir_type
+except Exception:
+    pass
+"""
+            + (_BRAKET_NATIVE_SETUP if collect_native_evidence else "")
+        )
+
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str:
+        if not circuit_expected:
+            return ""
+        return (
+            """
+_majorana_observation["native_optimization"] = {"applied": False}
+_majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
+if _majorana_final_circuit is None:
+    _majorana_observation["resource_metrics_error"] = (
+        "FINAL_CIRCUIT was not set (missing or None) — bind it to the constructed circuit object"
+    )
+elif _majorana_braket_circuit_cls is None or not _majorana_isinstance(
+    _majorana_final_circuit, _majorana_braket_circuit_cls
+):
+    _majorana_observation["resource_metrics_error"] = "FINAL_CIRCUIT is not a Braket Circuit"
+else:
+"""
+            + _circuit_ir_observer(Framework.BRAKET, indent="    ")
+            + """    try:
+        _majorana_instructions = _majorana_list(_majorana_final_circuit.instructions)
+        _majorana_gate_instructions = [
+            instruction
+            for instruction in _majorana_instructions
+            if _majorana_braket_gate_cls is not None
+            and _majorana_isinstance(instruction.operator, _majorana_braket_gate_cls)
+        ]
+        _majorana_measurements = [
+            instruction
+            for instruction in _majorana_instructions
+            if _majorana_braket_measure_cls is not None
+            and _majorana_isinstance(instruction.operator, _majorana_braket_measure_cls)
+        ]
+        _majorana_observation["resource_metrics"] = {
+            "qubits": _majorana_len(_majorana_final_circuit.qubits),
+            "depth": _majorana_int(_majorana_final_circuit.depth),
+            "gate_count": _majorana_len(_majorana_gate_instructions),
+            "two_qubit_gate_count": _majorana_sum(
+                _majorana_len(instruction.control) + _majorana_len(instruction.target) == 2
+                for instruction in _majorana_gate_instructions
+            ),
+            "measurement_count": _majorana_sum(
+                _majorana_len(instruction.target) for instruction in _majorana_measurements
+            ),
+        }
+    except _majorana_exception as _majorana_resource_exc:
+        _majorana_observation["resource_metrics_error"] = _majorana_type(
+            _majorana_resource_exc
+        ).__name__
+    try:
+        if _majorana_braket_ir_type is not None:
+            _majorana_program = _majorana_final_circuit.to_ir(
+                ir_type=_majorana_braket_ir_type.OPENQASM
+            )
+            _majorana_observation["interchange_qasm"] = _majorana_str(
+                _majorana_program.source
+            )
+    except _majorana_exception as _majorana_interchange_exc:
+        _majorana_observation["interchange_error"] = _majorana_type(
+            _majorana_interchange_exc
+        ).__name__
+"""
+            + (_NATIVE_OBSERVER_CALL if collect_native_evidence else "")
+        )
+
+
+_QIBO_NATIVE_SETUP = (
+    _NATIVE_LIMITS
+    + """
+_majorana_native_qibo_circuit_cls = None
+_majorana_native_qibo_backend_cls = None
+try:
+    from qibo import Circuit as _majorana_native_qibo_circuit_cls
+    from qibo.backends import NumpyBackend as _majorana_native_qibo_backend_cls
+except Exception:
+    pass
+
+
+def _majorana_native_evidence(
+    _circuit,
+    _observation,
+    _circuit_cls=_majorana_native_qibo_circuit_cls,
+    _backend_cls=_majorana_native_qibo_backend_cls,
+    _sv_limit=_MAJORANA_NATIVE_SV_QUBITS,
+    _shots=_MAJORANA_NATIVE_SHOTS,
+    _seed=_MAJORANA_NATIVE_SEED,
+    _len=len,
+    _int=int,
+    _str=str,
+    _float=float,
+    _bool=bool,
+    _getattr=getattr,
+    _isinstance=isinstance,
+    _list=list,
+    _next=next,
+    _enumerate=enumerate,
+    _any=any,
+    _sorted=sorted,
+    _type=type,
+    _ex=Exception,
+):
+    if _circuit_cls is None or not _isinstance(_circuit, _circuit_cls):
+        _observation["native_statevector_error"] = "FINAL_CIRCUIT is not a Qibo Circuit"
+        _observation["native_sampled_error"] = "FINAL_CIRCUIT is not a Qibo Circuit"
+        return
+    try:
+        _qubits = _int(_circuit.nqubits)
+        _gates = _list(_circuit.queue)
+        _measurements = [_gate for _gate in _gates if _str(_gate.name) == "measure"]
+        _unitary_gates = [_gate for _gate in _gates if _str(_gate.name) != "measure"]
+        _nonunitary = _next(
+            (
+                _str(_gate.name)
+                for _gate in _unitary_gates
+                if not _bool(_getattr(_gate, "unitary", False))
+            ),
+            None,
+        )
+        _first_measure = _next(
+            (
+                _index
+                for _index, _gate in _enumerate(_gates)
+                if _str(_gate.name) == "measure"
+            ),
+            None,
+        )
+        _mid_measurement = _first_measure is not None and _any(
+            _str(_gate.name) != "measure" for _gate in _gates[_first_measure + 1 :]
+        )
+        _measured_qubits = [
+            _int(_qubit) for _gate in _measurements for _qubit in _list(_gate.qubits)
+        ]
+        _clbits = _len(_measured_qubits)
+        _mapping = {
+            _clbits - _index - 1: _qubit
+            for _index, _qubit in _enumerate(_measured_qubits)
+        }
+    except _ex as _exc:
+        _observation["native_statevector_error"] = _type(_exc).__name__
+        _observation["native_sampled_error"] = _type(_exc).__name__
+        return
+    try:
+        if _backend_cls is None or _circuit_cls is None:
+            _observation["native_statevector_error"] = "Qibo NumPy backend unavailable"
+        elif not _qubits:
+            _observation["native_statevector_error"] = "circuit has no qubits"
+        elif _mid_measurement:
+            _observation["native_statevector_error"] = "not unitary up to final measurements"
+        elif _nonunitary is not None:
+            _observation["native_statevector_error"] = "non-unitary operation: " + _nonunitary
+        elif _qubits > _sv_limit:
+            _observation["native_statevector_error"] = (
+                "circuit exceeds the native statevector limit of " + _str(_sv_limit) + " qubits"
+            )
+        else:
+            _pure = _circuit_cls(_qubits)
+            for _gate in _unitary_gates:
+                _pure.add(_gate)
+            _backend = _backend_cls()
+            _backend.set_seed(_seed)
+            _vector = _backend.execute_circuit(_pure).state(numpy=True).reshape(-1)
+            _amplitudes = []
+            for _amplitude in _vector:
+                _amplitudes.append(_float(_amplitude.real))
+                _amplitudes.append(_float(_amplitude.imag))
+            _observation["native_statevector"] = {
+                "amplitudes": _amplitudes,
+                "qubits": _qubits,
+                "endianness": "q0_msb",
+                "clbits": _clbits,
+                "measurement_map": {_str(_key): _value for _key, _value in _mapping.items()},
+            }
+    except _ex as _exc:
+        _observation["native_statevector_error"] = _type(_exc).__name__
+    try:
+        if _backend_cls is None:
+            _observation["native_sampled_error"] = "Qibo NumPy backend unavailable"
+        elif not _measurements:
+            _observation["native_sampled_error"] = "circuit has no measurements to sample"
+        else:
+            _backend = _backend_cls()
+            _backend.set_seed(_seed)
+            _result = _backend.execute_circuit(_circuit, nshots=_shots)
+            _frequencies = _result.frequencies(binary=True)
+            _counts = {_str(_key): _int(_value) for _key, _value in _frequencies.items()}
+            _observation["native_sampled"] = {
+                "counts": _counts,
+                "shots": _shots,
+                "seed": _seed,
+                "bit_order": "little",
+                "measured_clbits": _sorted(_mapping),
+            }
+    except _ex as _exc:
+        _observation["native_sampled_error"] = _type(_exc).__name__
+"""
+)
+
+
+class QiboAdapter(PythonFrameworkAdapter):
+    """Qibo circuits executed only through its in-process NumPy backend."""
+
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
+        if not circuit_expected:
+            return ""
+        return (
+            _CIRCUIT_IR_SETUP
+            + """_majorana_qibo_circuit_cls = None
+try:
+    from qibo import Circuit as _majorana_qibo_circuit_cls
+except Exception:
+    pass
+"""
+            + (_QIBO_NATIVE_SETUP if collect_native_evidence else "")
+        )
+
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str:
+        if not circuit_expected:
+            return ""
+        return (
+            """
+_majorana_observation["native_optimization"] = {"applied": False}
+_majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
+if _majorana_final_circuit is None:
+    _majorana_observation["resource_metrics_error"] = (
+        "FINAL_CIRCUIT was not set (missing or None) — bind it to the constructed circuit"
+    )
+elif _majorana_qibo_circuit_cls is None or not _majorana_isinstance(
+    _majorana_final_circuit, _majorana_qibo_circuit_cls
+):
+    _majorana_observation["resource_metrics_error"] = "FINAL_CIRCUIT is not a Qibo Circuit"
+else:
+"""
+            + _circuit_ir_observer(Framework.QIBO, indent="    ")
+            + """    try:
+        _majorana_gates = _majorana_list(_majorana_final_circuit.queue)
+        _majorana_measurements = [
+            gate for gate in _majorana_gates if _majorana_str(gate.name) == "measure"
+        ]
+        _majorana_unitary_gates = [
+            gate for gate in _majorana_gates if _majorana_str(gate.name) != "measure"
+        ]
+        _majorana_observation["resource_metrics"] = {
+            "qubits": _majorana_int(_majorana_final_circuit.nqubits),
+            "depth": _majorana_int(_majorana_final_circuit.depth),
+            "gate_count": _majorana_len(_majorana_unitary_gates),
+            "two_qubit_gate_count": _majorana_sum(
+                _majorana_len(gate.qubits) == 2 for gate in _majorana_unitary_gates
+            ),
+            "measurement_count": _majorana_sum(
+                _majorana_len(gate.qubits) for gate in _majorana_measurements
+            ),
+        }
+    except _majorana_exception as _majorana_resource_exc:
+        _majorana_observation["resource_metrics_error"] = _majorana_type(
+            _majorana_resource_exc
+        ).__name__
+"""
+            + (_NATIVE_OBSERVER_CALL if collect_native_evidence else "")
+        )
+
+
+_QULACS_NATIVE_SETUP = (
+    _NATIVE_LIMITS
+    + """
+_majorana_native_qulacs_circuit_cls = None
+_majorana_native_qulacs_state_cls = None
+_majorana_native_json_loads = None
+try:
+    from json import loads as _majorana_native_json_loads
+    from qulacs import QuantumCircuit as _majorana_native_qulacs_circuit_cls
+    from qulacs import QuantumState as _majorana_native_qulacs_state_cls
+except Exception:
+    pass
+
+
+def _majorana_qulacs_gate_payload(_gate, _loads=_majorana_native_json_loads):
+    if _loads is None:
+        return {}
+    try:
+        _payload = _loads(_gate.to_json())
+        return _payload if isinstance(_payload, dict) else {}
+    except Exception:
+        return {}
+
+
+def _majorana_native_evidence(
+    _circuit,
+    _observation,
+    _circuit_cls=_majorana_native_qulacs_circuit_cls,
+    _state_cls=_majorana_native_qulacs_state_cls,
+    _payload=_majorana_qulacs_gate_payload,
+    _sv_limit=_MAJORANA_NATIVE_SV_QUBITS,
+    _shots=_MAJORANA_NATIVE_SHOTS,
+    _seed=_MAJORANA_NATIVE_SEED,
+    _len=len,
+    _int=int,
+    _str=str,
+    _float=float,
+    _isinstance=isinstance,
+    _list=list,
+    _dict=dict,
+    _reversed=reversed,
+    _range=range,
+    _type=type,
+    _ex=Exception,
+):
+    if _circuit_cls is None or not _isinstance(_circuit, _circuit_cls):
+        _observation["native_statevector_error"] = "FINAL_CIRCUIT is not a Qulacs QuantumCircuit"
+        _observation["native_sampled_error"] = "FINAL_CIRCUIT is not a Qulacs QuantumCircuit"
+        return
+    try:
+        _qubits = _int(_circuit.get_qubit_count())
+        _gates = [_circuit.get_gate(_index) for _index in _range(_circuit.get_gate_count())]
+        _payloads = [_payload(_gate) for _gate in _gates]
+        _measurements = []
+        _nonunitary = None
+        _first_measure = None
+        for _index, (_gate, _gate_payload) in enumerate(zip(_gates, _payloads)):
+            _instrument = _str(_gate_payload.get("is_instrument", "")).lower() == "true"
+            if _instrument:
+                if _first_measure is None:
+                    _first_measure = _index
+                _targets = _list(_gate.get_target_index_list())
+                if _len(_targets) != 1:
+                    _nonunitary = "instrument with non-single-qubit target"
+                else:
+                    _measurements.append(
+                        (
+                            _index,
+                            _int(_targets[0]),
+                            _int(_gate_payload.get("classical_register_address", -1)),
+                        )
+                    )
+            elif _first_measure is not None:
+                _nonunitary = "mid-circuit measurement"
+            elif _str(_gate.get_name()) in {"CPTP", "Instrument", "Adaptive"}:
+                _nonunitary = _str(_gate.get_name())
+        _clbits = max((_item[2] for _item in _measurements), default=-1) + 1
+        _mapping = {_item[2]: _item[1] for _item in _measurements if _item[2] >= 0}
+    except _ex as _exc:
+        _observation["native_statevector_error"] = _type(_exc).__name__
+        _observation["native_sampled_error"] = _type(_exc).__name__
+        return
+    try:
+        if _state_cls is None:
+            _observation["native_statevector_error"] = "Qulacs QuantumState unavailable"
+        elif not _qubits:
+            _observation["native_statevector_error"] = "circuit has no qubits"
+        elif _nonunitary is not None:
+            _observation["native_statevector_error"] = "not unitary up to final measurements: " + _nonunitary
+        elif _qubits > _sv_limit:
+            _observation["native_statevector_error"] = (
+                "circuit exceeds the native statevector limit of " + _str(_sv_limit) + " qubits"
+            )
+        else:
+            _pure = _circuit.copy()
+            for _index, _qubit, _clbit in _reversed(_measurements):
+                _pure.remove_gate(_index)
+            _state = _state_cls(_qubits)
+            _state.set_zero_state()
+            _pure.update_quantum_state(_state)
+            _vector = _state.get_vector()
+            _amplitudes = []
+            for _amplitude in _vector:
+                _amplitudes.append(_float(_amplitude.real))
+                _amplitudes.append(_float(_amplitude.imag))
+            _observation["native_statevector"] = {
+                "amplitudes": _amplitudes,
+                "qubits": _qubits,
+                "endianness": "q0_lsb",
+                "clbits": _clbits,
+                "measurement_map": {_str(_key): _value for _key, _value in _mapping.items()},
+            }
+    except _ex as _exc:
+        _observation["native_statevector_error"] = _type(_exc).__name__
+    try:
+        if _state_cls is None:
+            _observation["native_sampled_error"] = "Qulacs QuantumState unavailable"
+        elif not _measurements:
+            _observation["native_sampled_error"] = "circuit has no measurements to sample"
+        elif _nonunitary is not None:
+            _observation["native_sampled_error"] = _nonunitary
+        elif _len(_mapping) != _len(_measurements):
+            _observation["native_sampled_error"] = "measurement classical addresses are invalid"
+        else:
+            _pure = _circuit.copy()
+            for _index, _qubit, _clbit in _reversed(_measurements):
+                _pure.remove_gate(_index)
+            _state = _state_cls(_qubits)
+            _state.set_zero_state()
+            _pure.update_quantum_state(_state)
+            _counts = {}
+            for _basis in _state.sampling(_shots, _seed):
+                _bits = [0] * _clbits
+                for _clbit, _qubit in _mapping.items():
+                    _bits[_clbit] = (_int(_basis) >> _qubit) & 1
+                _key = "".join(_str(_bits[_index]) for _index in _reversed(_range(_clbits)))
+                _counts[_key] = _counts.get(_key, 0) + 1
+            _observation["native_sampled"] = {
+                "counts": _counts,
+                "shots": _shots,
+                "seed": _seed,
+                "bit_order": "big",
+            }
+    except _ex as _exc:
+        _observation["native_sampled_error"] = _type(_exc).__name__
+"""
+)
+
+
+class QulacsAdapter(PythonFrameworkAdapter):
+    """Qulacs circuit support with its native in-process statevector engine."""
+
+    def native_optimization(
+        self, source: str, observation: dict[str, Any] | None = None
+    ) -> NativeOptimization:
+        observed = observation.get("native_optimization") if observation else None
+        if isinstance(observed, dict) and type(observed.get("applied")) is bool:
+            applied = observed["applied"]
+        else:
+            applied = "QuantumCircuitOptimizer" in source and any(
+                name.endswith(".optimize") for name in _calls(source)
+            )
+        if applied:
+            return NativeOptimization(
+                applied=True,
+                mode="transpiled",
+                reason="optimization is expressed and executed in qulacs source",
+            )
+        return NativeOptimization(
+            applied=False,
+            mode="unchanged",
+            reason="no safe qulacs-native optimization was present; verified source was retained",
+        )
+
+    def trusted_setup(self, *, circuit_expected: bool, collect_native_evidence: bool = True) -> str:
+        if not circuit_expected:
+            return ""
+        return (
+            _CIRCUIT_IR_SETUP
+            + """_majorana_qulacs_circuit_cls = None
+_majorana_qulacs_json_loads = None
+try:
+    from json import loads as _majorana_qulacs_json_loads
+    from qulacs import QuantumCircuit as _majorana_qulacs_circuit_cls
+except Exception:
+    pass
+"""
+            + (_QULACS_NATIVE_SETUP if collect_native_evidence else "")
+        )
+
+    def trusted_observer(
+        self,
+        source: str,
+        *,
+        circuit_expected: bool,
+        collect_native_evidence: bool = True,
+    ) -> str:
+        if not circuit_expected:
+            return ""
+        optimized = self.native_optimization(source).applied
+        return (
+            f"""
+_majorana_observation["native_optimization"] = {{"applied": {optimized!r}}}
+_majorana_final_circuit = _majorana_namespace.get("FINAL_CIRCUIT")
+if _majorana_final_circuit is None:
+    _majorana_observation["resource_metrics_error"] = (
+        "FINAL_CIRCUIT was not set (missing or None) — bind it to the constructed circuit"
+    )
+elif _majorana_qulacs_circuit_cls is None or not _majorana_isinstance(
+    _majorana_final_circuit, _majorana_qulacs_circuit_cls
+):
+    _majorana_observation["resource_metrics_error"] = "FINAL_CIRCUIT is not a Qulacs QuantumCircuit"
+else:
+"""
+            + _circuit_ir_observer(Framework.QULACS, indent="    ")
+            + """    try:
+        _majorana_gates = [
+            _majorana_final_circuit.get_gate(index)
+            for index in _majorana_builtins.range(_majorana_final_circuit.get_gate_count())
+        ]
+        _majorana_gate_payloads = []
+        for gate in _majorana_gates:
+            try:
+                _majorana_gate_payloads.append(_majorana_qulacs_json_loads(gate.to_json()))
+            except _majorana_exception:
+                _majorana_gate_payloads.append({})
+        _majorana_measurements = [
+            gate
+            for gate, payload in zip(_majorana_gates, _majorana_gate_payloads)
+            if _majorana_str(payload.get("is_instrument", "")).lower() == "true"
+        ]
+        _majorana_unitary_gates = [
+            gate for gate in _majorana_gates if gate not in _majorana_measurements
+        ]
+        _majorana_observation["resource_metrics"] = {
+            "qubits": _majorana_int(_majorana_final_circuit.get_qubit_count()),
+            "depth": _majorana_int(_majorana_final_circuit.calculate_depth()),
+            "gate_count": _majorana_len(_majorana_unitary_gates),
+            "two_qubit_gate_count": _majorana_sum(
+                _majorana_len(gate.get_target_index_list())
+                + _majorana_len(gate.get_control_index_list())
+                == 2
+                for gate in _majorana_unitary_gates
+            ),
+            "measurement_count": _majorana_sum(
+                _majorana_len(gate.get_target_index_list())
+                for gate in _majorana_measurements
+            ),
+        }
+    except _majorana_exception as _majorana_resource_exc:
+        _majorana_observation["resource_metrics_error"] = _majorana_type(
+            _majorana_resource_exc
+        ).__name__
+"""
+            + (_NATIVE_OBSERVER_CALL if collect_native_evidence else "")
+        )
+
+
 _ADAPTERS: dict[Framework, FrameworkAdapter] = {
     Framework.QISKIT: QiskitAdapter(
         framework=Framework.QISKIT,
@@ -1189,6 +1887,87 @@ _ADAPTERS: dict[Framework, FrameworkAdapter] = {
                 "Toffoli",
                 "CSWAP",
                 "measure",
+            }
+        ),
+    ),
+    Framework.BRAKET: BraketAdapter(
+        framework=Framework.BRAKET,
+        optimization_calls=frozenset(),
+        operation_calls=frozenset(
+            {
+                "i",
+                "x",
+                "y",
+                "z",
+                "h",
+                "s",
+                "si",
+                "t",
+                "ti",
+                "v",
+                "vi",
+                "rx",
+                "ry",
+                "rz",
+                "phaseshift",
+                "u",
+                "cnot",
+                "cy",
+                "cz",
+                "swap",
+                "iswap",
+                "pswap",
+                "xy",
+                "xx",
+                "yy",
+                "zz",
+                "ccnot",
+                "cswap",
+                "measure",
+            }
+        ),
+    ),
+    Framework.QIBO: QiboAdapter(
+        framework=Framework.QIBO,
+        optimization_calls=frozenset(),
+        operation_calls=frozenset(
+            {
+                "H",
+                "X",
+                "Y",
+                "Z",
+                "S",
+                "T",
+                "RX",
+                "RY",
+                "RZ",
+                "CNOT",
+                "CZ",
+                "SWAP",
+                "CCNOT",
+                "CSWAP",
+                "M",
+            }
+        ),
+    ),
+    Framework.QULACS: QulacsAdapter(
+        framework=Framework.QULACS,
+        optimization_calls=frozenset(),
+        operation_calls=frozenset(
+            {
+                "H",
+                "X",
+                "Y",
+                "Z",
+                "S",
+                "T",
+                "RX",
+                "RY",
+                "RZ",
+                "CNOT",
+                "CZ",
+                "SWAP",
+                "Measurement",
             }
         ),
     ),

@@ -2099,7 +2099,10 @@
         "enum": [
           "qiskit",
           "pennylane",
-          "cirq"
+          "cirq",
+          "braket",
+          "qibo",
+          "qulacs"
         ],
         "title": "Framework",
         "type": "string"
@@ -6261,7 +6264,7 @@
   "info": {
     "description": "Cross-boundary types only; API paths are owned by services/api.",
     "title": "majorana-contracts",
-    "version": "2.13.0"
+    "version": "2.14.0"
   },
   "openapi": "3.1.0",
   "paths": {}

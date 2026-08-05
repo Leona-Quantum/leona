@@ -319,8 +319,11 @@ function filenameFor(language: string): string {
   if (lang.includes("qasm")) return "circuit.qasm";
   // The framework names are what run.best_effort carries — it reports the
   // candidate's Framework enum value, not the "python" that code.generated uses.
-  // All three frameworks are Python libraries, so they are Python files.
-  if (["qiskit", "cirq", "pennylane"].includes(lang)) return "circuit.py";
+  // Every agent framework is a Python library, so framework-valued events are
+  // Python files even when the event language is not the generic "python".
+  if (["qiskit", "cirq", "pennylane", "braket", "qibo", "qulacs"].includes(lang)) {
+    return "circuit.py";
+  }
   return "circuit.txt";
 }
 

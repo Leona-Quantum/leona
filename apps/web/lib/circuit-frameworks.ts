@@ -6,6 +6,8 @@ export const CIRCUIT_FRAMEWORKS = [
   { key: "braket", label: "Amazon Braket", language: "python", extension: "py", executable: false },
   { key: "openqasm3", label: "OpenQASM 3.0", language: "openqasm", extension: "qasm", executable: false },
   { key: "pyquil", label: "PyQuil", language: "python", extension: "py", executable: false },
+  { key: "qibo", label: "Qibo", language: "python", extension: "py", executable: false },
+  { key: "qulacs", label: "Qulacs", language: "python", extension: "py", executable: false },
   // Classiq's Qmod. The emitter targets the Python-embedded form (`from classiq
   // import *`, `@qfunc def main(...)`), not the standalone `.qmod` file syntax,
   // because that is the form Classiq's own gate reference documents and the one

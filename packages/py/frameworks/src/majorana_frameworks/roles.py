@@ -197,7 +197,8 @@ def is_python_source(source: str) -> bool:
 #:
 #: Appended AFTER everything an adapter emits — it reads only
 #: `_majorana_observation`, which every framework's native evidence fills in the
-#: same shape, so one block covers Qiskit, Cirq and PennyLane rather than three.
+#: same shape, so one block covers every registered framework rather than one
+#: implementation per SDK.
 #:
 #: Three properties it must have, and each one has a way of going wrong:
 #:
