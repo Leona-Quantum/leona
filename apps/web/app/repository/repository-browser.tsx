@@ -35,6 +35,13 @@ import {
   type InterfaceStance,
 } from "../../lib/repository/interface";
 import { roleOf, TOPICS_BY_ID, type TopicId } from "../../lib/repository/topics";
+import {
+  deriveWidthFamilies,
+  foldRows,
+  widthFamilyGroup,
+  type FoldedRow,
+  type RowGroup,
+} from "../../lib/repository/families";
 
 const COPY = {
   en: {
@@ -71,6 +78,7 @@ const COPY = {
     gateDetailHint: "Select a gate to see its circuit and decomposition.",
     variants: "Variants",
     variantOf: "variants",
+    widths: "Widths",
     star: "Star",
     unstar: "Unstar",
     starNote: "Atlas stars stay in this public list. Saving an entry to your workspace starts an unstarred private copy.",
@@ -141,6 +149,7 @@ const COPY = {
     gateDetailHint: "ゲートを選ぶと回路と分解が表示されます。",
     variants: "別の構成",
     variantOf: "構成違い",
+    widths: "量子ビット数",
     star: "スターを付ける",
     unstar: "スターを外す",
     starNote: "スターはAtlasの一覧に保存されます。ワークスペースに追加したコピーには引き継がれません。",
@@ -221,8 +230,19 @@ function familyLabel(family: string, locale: PublicLocale): string {
  * reversible. Each group lists the same algorithm at different sizes/forms; the
  * first slug is the canonical primary. Only hand-picked, genuinely-equivalent
  * clusters are folded, never a fuzzy title match.
+ *
+ * **These two stay hand-picked; the width families do not** (R2.6). The same
+ * inbox note asked for "qubit# variants folded into one entry", and that half is
+ * 120 records — the 15 benchmark circuits this corpus publishes at eight widths
+ * each. Fifteen more entries here would be fifteen hand-written labels that a
+ * corpus repopulation discards, so they are derived by rule in
+ * lib/repository/families and merged with these below. The rule is not a fuzzy
+ * title match either: it reads the `-Nq` slug suffix and then *checks* that the
+ * members agree on every facet a folded card filters or renders on, refusing the
+ * fold when they do not. What stays curated is what no rule can see — that
+ * `qft-resource-screen` is the same algorithm as `quantum-fourier-transform`.
  */
-const VARIANT_GROUPS: Array<{ key: string; label: string; labelJa: string; slugs: string[] }> = [
+const VARIANT_GROUPS: RowGroup[] = [
   {
     key: "qft",
     label: "Quantum Fourier transform",
@@ -237,39 +257,12 @@ const VARIANT_GROUPS: Array<{ key: string; label: string; labelJa: string; slugs
   },
 ];
 
-const SLUG_TO_GROUP = new Map<string, (typeof VARIANT_GROUPS)[number]>();
+const CURATED_SLUG_TO_GROUP = new Map<string, RowGroup>();
 for (const group of VARIANT_GROUPS) {
-  for (const slug of group.slugs) SLUG_TO_GROUP.set(slug, group);
+  for (const slug of group.slugs) CURATED_SLUG_TO_GROUP.set(slug, group);
 }
 
-type FoldedRow =
-  | { kind: "single"; entry: PublicRepositoryListEntry }
-  | { kind: "group"; group: (typeof VARIANT_GROUPS)[number]; members: PublicRepositoryListEntry[] };
-
-/**
- * Collapse curated variant clusters into a single row, preserving order by each
- * cluster's first appearance. A cluster with only one surviving member (after
- * filtering) renders as a plain entry — no pointless toggle.
- */
-function foldVariants(entries: PublicRepositoryListEntry[]): FoldedRow[] {
-  const rows: FoldedRow[] = [];
-  const emitted = new Set<string>();
-  for (const entry of entries) {
-    const group = SLUG_TO_GROUP.get(entry.slug);
-    if (!group) {
-      rows.push({ kind: "single", entry });
-      continue;
-    }
-    if (emitted.has(group.key)) continue;
-    emitted.add(group.key);
-    const members = group.slugs
-      .map((slug) => entries.find((candidate) => candidate.slug === slug))
-      .filter((candidate): candidate is PublicRepositoryListEntry => Boolean(candidate));
-    if (members.length <= 1) rows.push({ kind: "single", entry: members[0] ?? entry });
-    else rows.push({ kind: "group", group, members });
-  }
-  return rows;
-}
+type BrowseRow = FoldedRow<PublicRepositoryListEntry>;
 
 /**
  * Compact moment-aligned circuit for the gates grid — the same layout scheme
@@ -425,6 +418,36 @@ export function RepositoryBrowser({
   }, [entries]);
   const stanceOptions = useMemo(() => interfaceOptions(interfaces), [interfaces]);
   /**
+   * Which slugs fold into one row, curated clusters and width families together.
+   *
+   * Derived over the **whole corpus**, not over what the filters have left, so a
+   * family's membership is a property of the catalogue rather than of the
+   * current query: `foldRows` drops the members a filter removed, and a group
+   * reduced to one survivor renders as a plain card. Deriving over the filtered
+   * set instead would make "8 widths" mean "8 widths that match your search",
+   * which is a different and much less useful claim.
+   *
+   * The stance comes from the same `interfaces` index the filter uses, so a
+   * family whose widths would take two different values of the "Takes /
+   * returns" control does not fold — the card would otherwise stay on screen
+   * under a filter that excludes the member it is showing.
+   *
+   * Curated clusters win a collision. Neither curated slug carries a `-Nq`
+   * suffix today, so the branch is unreachable on this corpus; it is here
+   * because "these two lists never overlap" is a property of the data, and the
+   * merge should not depend on it silently.
+   */
+  const groupOfSlug = useMemo(() => {
+    const { families } = deriveWidthFamilies(entries, (entry) => interfaces.get(entry.slug)?.stance);
+    const index = new Map<string, RowGroup>();
+    for (const family of families) {
+      const group = widthFamilyGroup(family, locale === "ja" ? "ja" : "en");
+      for (const slug of group.slugs) index.set(slug, group);
+    }
+    for (const [slug, group] of CURATED_SLUG_TO_GROUP) index.set(slug, group);
+    return (slug: string) => index.get(slug);
+  }, [entries, interfaces, locale]);
+  /**
    * How many entries have any port at all — the number that qualifies the whole
    * control, the way `entriesWithDomain` qualifies the domain group.
    *
@@ -567,10 +590,46 @@ export function RepositoryBrowser({
     });
   }
 
-  function activeMember(row: Extract<FoldedRow, { kind: "group" }>): PublicRepositoryListEntry {
+  /**
+   * Which member's card a folded row shows.
+   *
+   * A reader's own pick always wins. Absent one it depends on whether the list
+   * is *ranked*, and the two cases are genuinely different:
+   *
+   * **Under a ranking** the row opens on the member that placed it — the first
+   * of its members in the current order, which under "deepest first" is the
+   * deepest and under "shallowest first" the shallowest. Showing `members[0]`
+   * there would rank a row by its 16-qubit circuit and then describe its
+   * 2-qubit one, the defect `renderCostChip` already refuses to commit for
+   * cost: displaying one number while sorting on another is worse than either.
+   *
+   * **When nothing earned the position** the canonical member is the better
+   * default — the smallest width for a family, the primary slug for a curated
+   * cluster, which is `members[0]` in both. It matters because catalog order is
+   * not width order: the corpus lists `-12q` before `-16q` before `-2q`, so
+   * deferring to placement there would open every benchmark on its 12-qubit
+   * member for no reason a reader could see, and would silently change which
+   * record the two curated clusters have opened on since they shipped.
+   *
+   * `ranked` is passed in rather than read off `order` here, because the
+   * "Not ranked" section is the case that gets it wrong: those are precisely
+   * the entries the ordering *excluded*, so their `placedBy` is not a ranking
+   * result even when a ranking is active. Every call site states its own
+   * answer; there is no default to be silently wrong.
+   */
+  function activeMember(
+    row: Extract<BrowseRow, { kind: "group" }>,
+    ranked: boolean,
+  ): PublicRepositoryListEntry {
     const chosen = variantActive[row.group.key];
-    return row.members.find((member) => member.slug === chosen) ?? row.members[0];
+    const picked = row.members.find((member) => member.slug === chosen);
+    if (picked) return picked;
+    if (!ranked) return row.members[0];
+    return row.members.find((member) => member.slug === row.placedBy) ?? row.members[0];
   }
+
+  /** Whether the list currently ranks on a number at all. */
+  const listIsRanked = (orderAvailable ? order : "catalog") !== "catalog";
 
   /**
    * One card's cost, in as few characters as a card can carry.
@@ -658,9 +717,9 @@ export function RepositoryBrowser({
     );
   }
 
-  function renderRow(row: FoldedRow) {
+  function renderRow(row: BrowseRow, ranked: boolean) {
     if (row.kind === "single") return <Fragment key={row.entry.slug}>{renderRepoCard(row.entry)}</Fragment>;
-    const active = activeMember(row);
+    const active = activeMember(row, ranked);
     // A small variant switcher sits above the active member's card; picking a
     // pill swaps which sibling record the card shows.
     //
@@ -674,7 +733,14 @@ export function RepositoryBrowser({
     // visitors follow the href to the record's own page.
     const switcher = (
       <div className="mj-repo-variant-switch" role="group" aria-label={locale === "ja" ? row.group.labelJa : row.group.label}>
-        <span className="mj-repo-variant-label">{copy.variants}</span>
+        {/* "Widths" for a width family, "Variants" for a curated cluster. The
+            pills below read "2 q … 16 q" in the first case, and the switcher
+            labelled "Variants" over a row of bare widths reads as though the
+            eight were eight different circuits — which is the belief R2.6
+            exists to correct. */}
+        <span className="mj-repo-variant-label">
+          {row.group.memberLabels ? copy.widths : copy.variants}
+        </span>
         {row.members.map((member) => (
           <a
             key={member.slug}
@@ -688,7 +754,7 @@ export function RepositoryBrowser({
               setVariantActive((current) => ({ ...current, [row.group.key]: member.slug }));
             }}
           >
-            {locale === "ja" ? member.titleJa : member.title}
+            {row.group.memberLabels?.[member.slug] ?? (locale === "ja" ? member.titleJa : member.title)}
           </a>
         ))}
       </div>
@@ -708,17 +774,30 @@ export function RepositoryBrowser({
     }
     return Array.from(byFamily.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([familyKey, groupEntries]) => ({ familyKey, rows: foldVariants(groupEntries) }));
+      .map(([familyKey, groupEntries]) => ({ familyKey, rows: foldRows(groupEntries, groupOfSlug) }));
     // `ordered`, not `filteredEntries`: the body reads the former, and since R1
     // it is no longer a pure function of the latter — a structure sort or the
     // circuit-only filter would otherwise leave this grouping showing the
     // previous ordering.
-  }, [category, ordered]);
+  }, [category, groupOfSlug, ordered]);
 
   const listRows = useMemo(
-    () => (category === "gates" || category === "algorithms" ? [] : foldVariants(ordered)),
-    [category, ordered],
+    () => (category === "gates" || category === "algorithms" ? [] : foldRows(ordered, groupOfSlug)),
+    [category, groupOfSlug, ordered],
   );
+
+  /**
+   * The held-out entries fold too.
+   *
+   * No width family lands here on today's corpus — all 120 members publish a
+   * circuit, so they are rankable under every order this list offers. That is a
+   * fact about the corpus and not a property of the fold, and leaving this
+   * section unfolded would mean a family that ever *did* lose its ranking came
+   * back as eight cards in a section whose job is to explain why it is not
+   * ranked. A family split across the two sections folds within each, which is
+   * what "these are the members I am showing you" should mean in both.
+   */
+  const unrankedRows = useMemo(() => foldRows(unranked, groupOfSlug), [groupOfSlug, unranked]);
 
   // Fall back to the first gate so the detail pane is populated on the very
   // first render (before the selection effect runs / without JS), and keep the
@@ -973,12 +1052,12 @@ export function RepositoryBrowser({
                 <span>{familyLabel(group.familyKey, locale)}</span>
                 <span className="mj-repo-group-count">{group.rows.length}</span>
               </summary>
-              <div className="mj-repo-list">{group.rows.map((row) => renderRow(row))}</div>
+              <div className="mj-repo-list">{group.rows.map((row) => renderRow(row, listIsRanked))}</div>
             </details>
           ))}
         </div>
       ) : (
-        <div className="mj-repo-list">{listRows.map((row) => renderRow(row))}</div>
+        <div className="mj-repo-list">{listRows.map((row) => renderRow(row, listIsRanked))}</div>
       )}
 
       {/* Entries the ordering had to leave out, kept visible and kept out of
@@ -989,7 +1068,7 @@ export function RepositoryBrowser({
         <section className="mj-repository-unranked">
           <h3>{copy.unrankedTitle} <span>{unranked.length}</span></h3>
           <p>{isProfileOrder(order) ? copy.structureUnrankedBody : copy.unrankedBody}</p>
-          <div className="mj-repo-list">{unranked.map((entry) => <Fragment key={entry.slug}>{renderRepoCard(entry)}</Fragment>)}</div>
+          <div className="mj-repo-list">{unrankedRows.map((row) => renderRow(row, false))}</div>
         </section>
       ) : null}
     </div>
