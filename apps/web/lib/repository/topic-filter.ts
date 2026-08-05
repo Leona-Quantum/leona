@@ -45,7 +45,15 @@ export function topicOptions(
 ): TopicOptionGroup[] {
   const counts = new Map<TopicId, number>();
   for (const entry of entries) {
-    for (const topic of entry.topics ?? []) counts.set(topic, (counts.get(topic) ?? 0) + 1);
+    // Deduplicated per entry, because `filterByTopic` returns each entry once
+    // and these two numbers have to be the same number. `deriveTopics` cannot
+    // emit a duplicate and CI refuses one in the corpus, but this function is
+    // also fed records straight from the API, where `topics` is shape-checked
+    // and nothing more — and the failure is a label promising more rows than
+    // the filter it labels will return.
+    for (const topic of new Set(entry.topics ?? [])) {
+      counts.set(topic, (counts.get(topic) ?? 0) + 1);
+    }
   }
   const groups = new Map<TopicFacet, TopicOption[]>();
   for (const topic of PUBLIC_REPOSITORY_TOPICS) {

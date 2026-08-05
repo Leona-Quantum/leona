@@ -77,21 +77,28 @@ test("tag matching is case-insensitive, which is half of why the vocabulary exis
   // The free-tag set carried `Clifford` on 8 entries and `clifford` on 7, so a
   // reader filtering the obvious spelling missed seven records. A rule table
   // that reproduced that split would have solved nothing.
+  //
+  // **The family here must be one no rule claims**, which was a real defect in
+  // this test: written against "Clifford circuit benchmark", whose family rule
+  // yields `stabilizer` on its own, both assertions passed whether or not the
+  // tag lookup did anything — including if BOTH cases failed. Raised by
+  // CodeRabbit on #264. With an unclaimed family, `stabilizer` is reachable
+  // only through the tag, so the assertion carries the property it names.
   const upper = deriveTopics({
     slug: "a",
     category: "algorithms",
-    algorithmFamily: "Clifford circuit benchmark",
+    algorithmFamily: "A family nobody has written a rule for",
     tags: ["Clifford"],
   });
   const lower = deriveTopics({
     slug: "b",
     category: "algorithms",
-    algorithmFamily: "Clifford circuit benchmark",
+    algorithmFamily: "A family nobody has written a rule for",
     tags: ["clifford"],
   });
 
   assert.deepEqual(upper, lower);
-  assert.ok(upper.includes("stabilizer"));
+  assert.deepEqual(upper, ["stabilizer"]);
 });
 
 test("topics come back in vocabulary order, not in the order the rules fired", () => {

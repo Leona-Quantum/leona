@@ -113,6 +113,21 @@ test("counts are what the filter will actually return", () => {
   }
 });
 
+test("a record listing a topic twice is still counted once", () => {
+  // `deriveTopics` cannot emit a duplicate and CI refuses one in the corpus,
+  // but this function is also handed records straight from the API, where
+  // `topics` is shape-checked and nothing more. Raised by CodeRabbit on #264;
+  // the symptom is a label promising more rows than its own filter returns.
+  const doubled = [{ slug: "twice", topics: ["materials", "materials"] as TopicId[] }];
+
+  const option = topicOptions(doubled, "en")
+    .flatMap((group) => group.options)
+    .find((entry) => entry.id === "materials");
+
+  assert.equal(option?.count, 1);
+  assert.equal(filterByTopic(doubled, "materials").length, 1);
+});
+
 test("the label carries the count, because a bare domain name reads as a promise", () => {
   const materials = topicOptions(CORPUS, "en")
     .flatMap((group) => group.options)

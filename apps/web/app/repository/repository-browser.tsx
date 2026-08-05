@@ -468,6 +468,10 @@ export function RepositoryBrowser({
     setCategory("all");
     setFamily("");
     setFramework("");
+    // Including one that may have arrived from `?topic=` rather than from this
+    // control — the button offered by the empty state has to be able to empty
+    // every filter, or it hands back a list that is still filtered.
+    setTopic("");
     setCircuitOnly(false);
   }
 
