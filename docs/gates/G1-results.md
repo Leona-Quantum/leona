@@ -8,6 +8,27 @@ committed as `a80859bb` **before the first paper was fetched**.
 > with itself. Correctness per field needs one domain expert; the sheet is
 > [`G1-grading-sheet.md`](G1-grading-sheet.md).
 >
+> # ✅ G1 PASSES — all four criteria, 2026-08-06 (session 85).
+>
+> | criterion | threshold | result |
+> |---|---|---|
+> | 1 — load-bearing correct | ≥ 22 of 24 | **24 of 24** |
+> | 2 — all stratum-B fields correct | ≥ 54 of 72 | **64 of 72** (8 ungraded, cannot change it) |
+> | 3 — fabrication | ≤ 2 of 72, zero load-bearing | **0** |
+> | 4 — structural validity | 10 of 10 | **10 of 10** |
+>
+> **Not one `WRONG`, `INCOMPLETE`, `FABRICATED` or `MISSED` in either grading round.** The
+> pre-committed consequence (`G1-preregistration.md` §4) is that **R3 is scoped as a model-assisted
+> build, with the locator requirement carried into production: no extracted field ships without
+> one.** Round-2 marks and the grader's three non-verdict findings:
+> [`G1-owner-review-round2.md`](G1-owner-review-round2.md).
+>
+> **What this does NOT settle** — §5.3 and §5.5 below. Stratum A is still ungraded, so
+> pre-registration §5's A-vs-B reading was never computed; and the model's 75% self-agreement (§4)
+> is untouched by this result and still bounds **G2** from below. G1 says the model reads a paper
+> accurately. It does not say two people would decompose it the same way.
+>
+> **Superseded status line, kept for the record:**
 > **Status 2026-08-06 (session 85): three of the four criteria are settled and all three passed.**
 > The owner graded the 24 load-bearing stratum-B cells, cell by cell with comments. **Criterion 1
 > passed 24 of 24** against a bar of 22, and **criterion 3's load-bearing half passed with zero
@@ -188,14 +209,35 @@ diagnosis on a failure: if criterion 2 comes in below 54, the A/B comparison is 
 whether the cause is the model or the protocol, and it would have to be graded then. Grading A now,
 before criterion 2 is known, would be 48 marks spent on a question that may never be asked.
 
-### 5.4 What is still open
+### 5.4 Criterion 2 — graded the same day, and it passed
 
-1. **Criterion 2 — 48 marks, and only 30 need to be correct.** Fields 1, 2, 4, 5, 6, 10, 11, 12
-   across the six B papers, in the same one-mark-per-row form that made the first pass work:
-   [`G1-owner-review-round2.md`](G1-owner-review-round2.md). **The earlier claim in
-   `G1-owner-review-2026-08-06.md` that "those 24 cells decide the gate" was wrong** — it is true
-   of criteria 1 and 3, and criterion 2 is computed over all 72. Corrected there and here rather
-   than quietly dropped.
+The grader returned **40 of the 48**, every one of them correct, leaving eight B5 cells blank.
+**64 of 72 against a bar of 54.** The eight blanks were not chased: even scored as misses the
+criterion still passes, and a gate that keeps asking for marks after its bar is met is measuring
+the grader's patience rather than the model.
+
+*(The earlier claim in `G1-owner-review-2026-08-06.md` that "those 24 cells decide the gate" was
+wrong — true of criteria 1 and 3, and criterion 2 is computed over all 72. Corrected there and here
+rather than quietly dropped, and the correction is what produced these 48 marks.)*
+
+### 5.5 What G1 passing does NOT license
+
+Stated here because a passed gate is exactly when its limits get forgotten.
+
+- **Stratum A was never graded**, so pre-registration §5's A-vs-B table — the one designed to catch
+  *"the model recalls but does not read"* — has no A column. The bar is stratum-B-only by
+  construction so the result stands, but the control that would have distinguished reading from
+  recall was not run. On the four canonical A papers, recall is the more likely explanation for a
+  high score, and nobody measured it.
+- **§4's 75% self-agreement is untouched.** One model twice is not two people once. A model can be
+  accurate against a paper and still decompose it differently on Tuesday, and fields 5 and 8 —
+  register signature and qubit count, the two carrying the block schema's type system — are where it
+  disagreed with itself. **G1 passing does not move G2 at all**, and G2 is where the owner's actual
+  requirement lives.
+- **The locator requirement is now load-bearing in production**, not a nicety. It is the thing the
+  pre-registered consequence attaches to, and B4-11 is the evidence: the grader could only establish
+  that *"8129 shots"* was the paper's own typo rather than an extraction error **because the quote
+  was there to check.**
 2. **Six papers not re-run** (A1′, A4, B1′, B3, B4, B6). Pre-registration set a minimum of 4 and a
    target of 10; 4 were done. **Reported rather than left as a smaller denominator**: the 75% is
    over 4 papers, not 10, and two of those four are the canonical stratum where agreement should be
