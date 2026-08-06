@@ -108,10 +108,21 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
-      - name: reject `latest`
+      # `inputs.tag` never reaches a `run:` script as an expression — it goes through
+      # env and is then validated. A workflow_dispatch input interpolated into a shell
+      # is a shell injection, and the tag is also the thing that must not be `latest`,
+      # so one step does both.
+      - name: validate the tag
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          case "${{ inputs.tag }}" in
-            latest) echo "latest is promoted by hand after verification — docs/runbooks/sandbox-image.md" >&2; exit 1 ;;
+          if [ "$TAG" = "latest" ]; then
+            echo "latest is promoted by hand after verification — docs/runbooks/sandbox-image.md" >&2
+            exit 1
+          fi
+          case "$TAG" in
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+            *) echo "tag must be YYYY-MM-DD, got: $TAG" >&2; exit 1 ;;
           esac
       # Token auth, not OIDC: the docker username is the TEAM ID, not a username.
       - name: authenticate to VCR
@@ -120,11 +131,15 @@ jobs:
           VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
         run: printf '%s' "$VERCEL_TOKEN" | docker login vcr.vercel.com --username "$VERCEL_TEAM_ID" --password-stdin
       - name: build and push the dated tag
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
           docker buildx build --platform linux/amd64 \
-            --output "type=image,name=vcr.vercel.com/majoranaq/web/majorana-runner:${{ inputs.tag }},push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true" \
+            --output "type=image,name=vcr.vercel.com/majoranaq/web/majorana-runner:${TAG},push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true" \
             infra/sandbox
       - name: what to do next
+        env:
+          TAG: ${{ inputs.tag }}
         run: |
-          echo "Pushed :${{ inputs.tag }}. It is NOT live."
+          echo "Pushed :${TAG}. It is NOT live."
           echo "Verify it in a real sandbox and promote it to :latest — docs/runbooks/sandbox-image.md steps 4 and 5."
