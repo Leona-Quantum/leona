@@ -32,8 +32,10 @@ DENY_ALL_EGRESS = "deny-all"
 # Container Registry.
 #
 # THIS NAME CARRIES NO TAG, so it resolves to `latest` — moving that tag IS the deploy,
-# with no redeploy of anything here. Nothing in .github/workflows/ publishes it; a PR
-# touching infra/sandbox/** only proves the image still builds. The procedure, the
+# with no redeploy of anything here. Nothing publishes it automatically: a PR touching
+# infra/sandbox/** builds the image, imports all six frameworks and runs a Bell pair on
+# each under `--network none`, and stops there. `latest` moves only when a human
+# verifies a dated tag in a real sandbox and promotes it. The procedure, the
 # verification step and the rollback are in docs/runbooks/sandbox-image.md, and they
 # exist because #262 shipped three framework lanes against a rootfs that was never
 # rebuilt: live, inert, and ModuleNotFoundError for every user until it was.

@@ -1,10 +1,12 @@
 # Runbook: rebuilding and publishing the `majorana-runner` sandbox image
 
 `infra/sandbox/Dockerfile` is the root filesystem that untrusted, LLM-generated
-quantum code executes in. **Nothing in `.github/workflows/` publishes it**, and
-until 2026-08-06 the procedure existed nowhere: the only trace in the repo was a
-comment in `packages/py/sandbox/src/majorana_sandbox/vercel.py` saying the image
-is "built + scanned weekly". This file is that procedure.
+quantum code executes in. **Nothing publishes it automatically** — `sandbox-image.yml`
+builds and exercises it on every PR that touches it, and publishes only when a human
+dispatches the workflow, to a dated tag. Until 2026-08-06 the procedure existed
+nowhere at all: the only trace in the repo was a comment in
+`packages/py/sandbox/src/majorana_sandbox/vercel.py` saying the image is
+"built + scanned weekly". This file is that procedure.
 
 **The failure this closes.** PR #262 added five packages to the Dockerfile
 (`amazon-braket-sdk`, `amazon-braket-default-simulator`, `numba`, `qibo`,
@@ -65,9 +67,14 @@ printf '%s' "$VERCEL_TOKEN" | docker login vcr.vercel.com --username "$VERCEL_TE
 
 ### 2. Build and push a dated tag — never straight to `latest`
 
+**Set `TAG` once and keep the shell**, because steps 2, 4 and 5 must name the same
+image. Verifying one tag and promoting another is a silent way to ship an unverified
+rootfs, and the two commands look identical while doing it.
+
 ```bash
+TAG="$(date -u +%F)"
 docker buildx build --platform linux/amd64 --progress plain \
-  --output "type=image,name=vcr.vercel.com/majoranaq/web/majorana-runner:$(date -u +%Y-%m-%d),push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true" \
+  --output "type=image,name=vcr.vercel.com/majoranaq/web/majorana-runner:$TAG,push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true" \
   infra/sandbox
 ```
 
@@ -98,7 +105,7 @@ before promoting, and with the production network policy — `deny-all` also pro
 the packages are baked into the rootfs rather than being fetched at runtime:
 
 ```bash
-npx -y vercel@58.7.1 sandbox run --image majorana-runner:2026-08-06 \
+npx -y vercel@58.7.1 sandbox run --image "majorana-runner:$TAG" \
   --network-policy deny-all --rm \
   --project prj_AtHnlVhlFc1mFNyAb3RvlET2NtBh --scope majoranaq \
   -- python -c "import qiskit, qiskit_aer, pennylane, cirq, braket, numba, qibo, qulacs; print('ok')"
@@ -118,7 +125,7 @@ provably the same bytes:
 ```bash
 docker buildx imagetools create \
   --tag vcr.vercel.com/majoranaq/web/majorana-runner:latest \
-  vcr.vercel.com/majoranaq/web/majorana-runner:2026-08-06
+  "vcr.vercel.com/majoranaq/web/majorana-runner:$TAG"
 ```
 
 Then confirm the tag production actually resolves — the bare name, exactly as
@@ -173,10 +180,13 @@ untested and remains the open half.
 
 ## Why there is still no CI job that publishes this
 
-There is now a CI job that **builds** it (`.github/workflows/sandbox-image.yml`,
-path-filtered to `infra/sandbox/**`), so a Dockerfile that cannot build fails the
-PR instead of failing in production a day later. Publishing stays manual and
-stays behind `workflow_dispatch`: `latest` is the live sandbox rootfs for
+There is now a CI job that **builds the image and exercises it**
+(`.github/workflows/sandbox-image.yml`, path-filtered to `infra/sandbox/**`): it
+imports all six frameworks and runs a Bell pair on each, with `--network none` so a
+package missing from the rootfs fails there rather than in a deny-all sandbox. So a
+Dockerfile that cannot build — or that builds and cannot run a circuit — fails the PR
+instead of failing in production a day later. Publishing stays manual and stays behind
+`workflow_dispatch`: `latest` is the live sandbox rootfs for
 untrusted code, an automatic push on merge would move it before anyone verified
 it, and step 4 above — run a circuit, do not just import — is not a step a merge
 event can decide is unnecessary.
