@@ -13,13 +13,43 @@ function validPrompts(value: unknown): string[] {
     .slice(0, 3);
 }
 
+/**
+ * How many trailing characters of `text` are an *incomplete* follow-ups marker.
+ *
+ * This is called on live streaming text, and the worker emits chat deltas in fixed
+ * 160-character chunks without flushing the shorter tail until the model has
+ * finished. So a chunk boundary landing inside the 25-character marker leaves the
+ * browser holding `…<!-- majorana-foll` until the next 160 characters are generated
+ * — seconds, not a frame. And it is visible: this app configures react-markdown
+ * with no raw-HTML plugin, so an unterminated comment is escaped and rendered as
+ * prose rather than dropped.
+ *
+ * Only a proper prefix is considered; a complete marker is the caller's branch.
+ */
+function trailingMarkerPrefix(text: string): number {
+  const earliest = Math.max(0, text.length - FOLLOW_UP_MARKER.length + 1);
+  for (let index = earliest; index < text.length; index += 1) {
+    if (FOLLOW_UP_MARKER.startsWith(text.slice(index))) return text.length - index;
+  }
+  return 0;
+}
+
 /** Remove model-only metadata from prose and recover its contextual suggestions. */
 export function splitAssistantFollowUps(text: string): {
   answer: string;
   prompts: string[];
 } {
   const markerStart = text.lastIndexOf(FOLLOW_UP_MARKER);
-  if (markerStart < 0) return { answer: text, prompts: [] };
+  if (markerStart < 0) {
+    // A half-written marker is withheld rather than shown. The accepted cost is that
+    // prose whose latest chunk ends on `<` loses that character for one chunk; the
+    // benefit is that model-only metadata never reaches the reader.
+    const partial = trailingMarkerPrefix(text);
+    return {
+      answer: partial ? text.slice(0, text.length - partial).trimEnd() : text,
+      prompts: [],
+    };
+  }
   const answer = text.slice(0, markerStart).trimEnd();
   const markerEnd = text.indexOf("-->", markerStart + FOLLOW_UP_MARKER.length);
   if (markerEnd < 0) return { answer, prompts: [] };

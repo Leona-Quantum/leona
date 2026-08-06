@@ -140,11 +140,11 @@ export function ResultVisualizations({
   return (
     <div className="mj-result-visualizations">
       {distribution ? <DistributionChart distribution={distribution} locale={locale} /> : null}
-      {traces.map((trace) => <TraceChart key={trace.label} trace={trace} locale={locale} />)}
+      {traces.map((trace) => <TraceChart key={trace.key} trace={trace} locale={locale} />)}
       {values.length ? (
         <dl className="mj-run-result-values">
           {values.map((value) => (
-            <div key={value.label}>
+            <div key={value.key}>
               <dt>{value.label}</dt>
               <dd>{value.value}</dd>
             </div>
