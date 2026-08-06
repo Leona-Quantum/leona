@@ -106,7 +106,7 @@ export TRUSTED_CALLER_TOKEN="$TRUSTED_TOKEN"
 # --- the catalog the readers actually read --------------------------------
 # Without this the routes 404 before touching Postgres, and `sustained_readers`
 # would measure an empty middleware chain rather than 120 people reading a
-# 283-record catalog. Idempotent, so a second invocation skips the import.
+# 283-record catalog.
 export SYSTEM_CATALOG_ENABLED=true
 export SYSTEM_CATALOG_WORKSPACE_ID="${SYSTEM_CATALOG_WORKSPACE_ID:-11111111-1111-4111-8111-111111111111}"
 export SYSTEM_CATALOG_IMPORTER_USER_ID="${SYSTEM_CATALOG_IMPORTER_USER_ID:-22222222-2222-4222-8222-222222222222}"
@@ -114,35 +114,35 @@ export SYSTEM_CATALOG_PUBLIC_READER_USER_ID="${SYSTEM_CATALOG_PUBLIC_READER_USER
 
 admin() { uv run --package majorana-api python -m majorana_api.catalog_admin "$@"; }
 
-# A fully-published catalog is reused; ANYTHING else is rebuilt from empty.
+# ALWAYS rebuilt from empty. There is no reuse branch, and that is the second
+# version of this block rather than the first.
 #
-# The middle states are the trap and they are easy to reach: `provision` refuses
-# outright once artifacts exist ("Step 2 requires an empty system catalog"), so a
-# run that imported and then failed before publishing leaves a database that can
-# neither be reused nor re-provisioned. Branching per partial state would be a
-# growing tree of cases nobody re-tests. Dropping is one case, always correct,
-# and costs a minute on a throwaway database whose only content is a manifest
-# committed to this repository.
-published="$(psql_admin "select 1 from pg_database where datname='${K6_DB}'" >/dev/null 2>&1 &&
-  docker exec -e PGPASSWORD="$PGPW" majorana-pg psql -h 127.0.0.1 -U postgres -d "$K6_DB" -tAc \
-    "select count(*) from catalog_entries where published_at is not null" 2>/dev/null || echo 0)"
-published="$(printf '%s' "${published:-0}" | tr -dc '0-9')"
-
-NEEDS_CATALOG=0
-if [ "${published:-0}" -ge 1 ]; then
-  echo "harness database ${K6_DB}: reusing ${published} published entries"
-  uv run --package majorana-api alembic -c db/alembic.ini upgrade head >/dev/null
-else
-  echo "harness database ${K6_DB}: rebuilding from empty"
-  # FORCE so an idle connection left by a previous run cannot block the drop.
-  psql_admin "DROP DATABASE IF EXISTS ${K6_DB} WITH (FORCE)" >/dev/null
-  psql_admin "CREATE DATABASE ${K6_DB}" >/dev/null
-  uv run --package majorana-api alembic -c db/alembic.ini upgrade head >/dev/null
-  NEEDS_CATALOG=1
-  echo "provisioning and importing the catalog (~1 min)"
-  admin provision >/dev/null
-  admin bootstrap-import | tail -1
-fi
+# The first version tried to reuse an already-published catalog, guarded by
+# `select count(*) from catalog_entries where published_at is not null`. **There
+# is no `catalog_entries` table** — the catalog lives in `artifacts` behind an
+# accepted+public filter — so the query errored on every run, `|| echo 0`
+# swallowed the error, and the reuse branch was unreachable. The script did the
+# right thing for two runs while its own output and README described a
+# fast path that did not exist.
+#
+# The fix is to delete the branch, not to correct the query. Any predicate
+# written here would be a hand copy of `repos/catalog.py`'s accepted+public
+# filter, and a second copy of a filter is the thing this session spent its day
+# removing from the rest of the repository. Rebuilding is one code path, always
+# correct, and costs about a minute on a throwaway database whose entire content
+# is a manifest committed to this repo.
+#
+# It also buys determinism, which matters more here than the minute: `provision`
+# refuses outright once artifacts exist ("Step 2 requires an empty system
+# catalog"), so any run that imported and then failed before publishing leaves a
+# database that can be neither reused nor re-provisioned.
+echo "harness database ${K6_DB}: rebuilding from empty (~1 min)"
+# FORCE so an idle connection left by a previous run cannot block the drop.
+psql_admin "DROP DATABASE IF EXISTS ${K6_DB} WITH (FORCE)" >/dev/null
+psql_admin "CREATE DATABASE ${K6_DB}" >/dev/null
+uv run --package majorana-api alembic -c db/alembic.ini upgrade head >/dev/null
+admin provision >/dev/null
+admin bootstrap-import | tail -1
 
 # --- the service under test ------------------------------------------------
 # ONE worker, deliberately. The limiter is an in-process fixed window, so two
@@ -193,12 +193,10 @@ echo "k6 account provisioned on the metered free tier"
 # person approves it. The k6 account is the named person for this throwaway
 # database, and it is created by /v1/me above, which is why the import (slow,
 # identity-free) runs before the API starts and these two run after.
-if [ "$NEEDS_CATALOG" = "1" ]; then
-  attester="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["user_id"])' "$OUT/me.json")"
-  test -n "$attester" || { echo "could not read the attester id out of /v1/me"; exit 1; }
-  admin attest-bootstrap  --attested-by "$attester" | tail -1
-  admin publish-bootstrap --attested-by "$attester" | tail -1
-fi
+attester="$(python3 -c 'import json,sys;print(json.load(open(sys.argv[1]))["user_id"])' "$OUT/me.json")"
+test -n "$attester" || { echo "could not read the attester id out of /v1/me"; exit 1; }
+admin attest-bootstrap  --attested-by "$attester" | tail -1
+admin publish-bootstrap --attested-by "$attester" | tail -1
 
 entries="$(curl -sS "http://127.0.0.1:8000/v1/catalog/entries?limit=1&view=list" \
   -o /dev/null -w '%header{x-catalog-total}')"
