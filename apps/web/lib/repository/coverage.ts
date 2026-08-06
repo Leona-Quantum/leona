@@ -62,15 +62,51 @@ export function isSourceCoverage(value: unknown): value is SourceCoverage {
   return SOURCE_COVERAGE_AXES.every((axis) => isSourceCoverageStatus(blob[axis]));
 }
 
+/**
+ * Shape check for one citation attached to a gap.
+ *
+ * Every field the renderer dereferences is checked, not just the container.
+ * `citations: [null]` is an array and would sail past an `Array.isArray` test,
+ * and `KnownGapsSection` then reads `citation.url` on it and throws while
+ * rendering a published entry page. The blob is `dict[str, Any]` on the API
+ * side, so this is a reachable input rather than a hypothetical one — and a
+ * validator that checks the box but not what is in it is the exact shape this
+ * module exists to prevent one layer up.
+ */
+export function isGapCitation(value: unknown): boolean {
+  if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
+  const citation = value as Record<string, unknown>;
+  // title and url are rendered as the link; authors and year sit beside it.
+  if (typeof citation.title !== "string" || citation.title.trim().length === 0) return false;
+  if (typeof citation.url !== "string" || citation.url.trim().length === 0) return false;
+  if (typeof citation.authors !== "string") return false;
+  if (typeof citation.year !== "string") return false;
+  return true;
+}
+
+/**
+ * Minimum lengths for a gap's prose, measured after trimming.
+ *
+ * A whitespace-only string has length; it does not have content. And the two
+ * locales need different floors because Japanese carries far more meaning per
+ * character — holding it to the English number would either force padding or
+ * make the English floor uselessly low.
+ */
+const MIN_GAP_DETAIL = 40;
+const MIN_GAP_DETAIL_JA = 12;
+
 /** Shape check for one declared gap. */
 export function isKnownGap(value: unknown): value is PublicRepositoryKnownGap {
   if (typeof value !== "object" || value === null || Array.isArray(value)) return false;
   const gap = value as Record<string, unknown>;
   if (!isBlockRole(gap.role)) return false;
   if (!isKnownGapReason(gap.reason)) return false;
-  if (typeof gap.detail !== "string" || gap.detail.length === 0) return false;
-  if (typeof gap.detailJa !== "string" || gap.detailJa.length === 0) return false;
-  if (gap.citations !== undefined && !Array.isArray(gap.citations)) return false;
+  if (typeof gap.detail !== "string" || gap.detail.trim().length < MIN_GAP_DETAIL) return false;
+  if (typeof gap.detailJa !== "string" || gap.detailJa.trim().length < MIN_GAP_DETAIL_JA) return false;
+  if (gap.citations !== undefined) {
+    if (!Array.isArray(gap.citations)) return false;
+    if (!gap.citations.every(isGapCitation)) return false;
+  }
   return true;
 }
 

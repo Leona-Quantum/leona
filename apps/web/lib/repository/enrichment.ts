@@ -106,6 +106,22 @@ export const ENTRY_ENRICHMENT: Record<string, EntryEnrichment> = {
           "The paper reports no error or precision figures for its own 4-qubit simulations — there is no data table behind the simulated results, so the accuracy an implementer should expect is not recoverable from this source. Owner review of arXiv:1810.09434, G1 field B5-9, 2026-08-06.",
         detailJa:
           "本論文は自身の4量子ビットシミュレーションについて誤差・精度の数値を報告していません。結果を裏づけるデータ表がないため、実装者が期待できる精度をこの文献から復元することはできません。arXiv:1810.09434 のオーナーレビュー、G1 フィールド B5-9、2026-08-06。",
+        // The paper itself, because the claim being sourced is a claim ABOUT
+        // this paper — that it is silent on error. A gap whose evidence lives
+        // only in prose gives a reader nothing to check it against, and the
+        // renderer links `citations` and nothing else.
+        citations: [
+          {
+            title: "Subspace-search variational quantum eigensolver for excited states",
+            authors: "K. M. Nakanishi, K. Mitarai, K. Fujii",
+            year: "2019",
+            url: "https://arxiv.org/abs/1810.09434",
+            relevance:
+              "The source this gap is declared against. Read end to end for gate G1 on 2026-08-06; it reports simulated results for 4-qubit Hamiltonians but publishes no error or precision figures for them.",
+            relevanceJa:
+              "この欠落が宣言されている出典です。2026-08-06 にゲート G1 のため全体を精読しました。4量子ビットハミルトニアンのシミュレーション結果は報告されていますが、その誤差・精度の数値は公開されていません。",
+          },
+        ],
       },
     ],
   },

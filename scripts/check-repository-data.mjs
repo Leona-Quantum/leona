@@ -469,11 +469,17 @@ for (const entry of entries) {
       fail(entry.slug, "knownGaps is present but malformed");
       continue;
     }
+    // The length floors live in ./coverage and are enforced by isKnownGap
+    // above, so a too-short detail is already caught as "malformed". What is
+    // asserted here instead is the thing a shape check cannot see: a gap that
+    // is well-formed and still says nothing useful because it carries no
+    // source. §3.6's rule is that an unsourced note is a guess, and the
+    // renderer only ever links `citations` — so prose naming a paper with no
+    // structured citation shows a reader nothing to click.
     for (const gap of entry.knownGaps) {
-      if (gap.detail.length < 40) {
-        fail(entry.slug, `knownGaps[${gap.role}].detail is ${gap.detail.length} chars — too short to be a declaration`);
+      if (!gap.citations?.length) {
+        fail(entry.slug, `knownGaps[${gap.role}] carries no citation — an unsourced gap is a guess (§3.6)`);
       }
-      if (!gap.detailJa) fail(entry.slug, `knownGaps[${gap.role}] has no Japanese detail`);
     }
   }
 

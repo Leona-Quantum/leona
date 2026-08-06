@@ -29,53 +29,53 @@ the one that mattered most in round 1.
 
 | # | field | model's answer | locator | note | verdict |
 |---|---|---|---|---|---|
-| 1 | problem | "Determine the lowest eigenvalue of a quantum Hamiltonian, which can be equated to finding the ground state energy of a molecule." | §I |  | |
-| 2 | problem-domain input type | "Fermionic degrees of freedom of molecules mapped onto a set of qubits; problem dependent Hamiltonian." | §I |  | |
-| 4 | input encoding | "Qubits entangled by passive always-on interaction described by drift Hamiltonian H₀; sequence of rotations U_{i,j} and entanglement operators U_ent." | §III |  | |
-| 5 | register signature | "m qubits; parameter vector θ in [0,2π]^D where D=(3d+2)m; d denotes circuit depth." | §III |  | |
-| 6 | core routine | "Hybrid algorithm: quantum processor manipulates trial state; classical optimization proposes new trial state based on energy measurements." | §I |  | |
-| 10 | readout | "Measure expectation value of Hamiltonian H…decompose as sum of Pauli operator expectation values" | §III |  | |
-| 11 | shots | "Quantum computers require sufficient measurements; simulation requires inner product of matrices and vectors." | §III |  | |
-| 12 | output type | "Trial state energy value; ground state energy of molecule determined through variational optimization" | §I |  | |
+| 1 | problem | "Determine the lowest eigenvalue of a quantum Hamiltonian, which can be equated to finding the ground state energy of a molecule." | §I |  | CORRECT|
+| 2 | problem-domain input type | "Fermionic degrees of freedom of molecules mapped onto a set of qubits; problem dependent Hamiltonian." | §I |  | CORRECT|
+| 4 | input encoding | "Qubits entangled by passive always-on interaction described by drift Hamiltonian H₀; sequence of rotations U_{i,j} and entanglement operators U_ent." | §III |  | CORRECT|
+| 5 | register signature | "m qubits; parameter vector θ in [0,2π]^D where D=(3d+2)m; d denotes circuit depth." | §III |  | CORRECT|
+| 6 | core routine | "Hybrid algorithm: quantum processor manipulates trial state; classical optimization proposes new trial state based on energy measurements." | §I |  |CORRECT |
+| 10 | readout | "Measure expectation value of Hamiltonian H…decompose as sum of Pauli operator expectation values" | §III |  | CORRECT|
+| 11 | shots | "Quantum computers require sufficient measurements; simulation requires inner product of matrices and vectors." | §III |  | CORRECT|
+| 12 | output type | "Trial state energy value; ground state energy of molecule determined through variational optimization" | §I |  | CORRECT|
 
 ## B2 · `1911.10205` · Qubit-ADAPT-VQE
 
 | # | field | model's answer | locator | note | verdict |
 |---|---|---|---|---|---|
-| 1 | problem | "Finding the ground state of a many-body interacting electronic Hamiltonian is one of the most important problems in modern quantum chemistry" | §I | *run 2 instead: "building system-adapted ansätze with substantially fewer variational parameters"* | |
-| 2 | problem-domain input type | "Trial wavefunction constructed by applying gates on a quantum device and estimates average energy by measuring the Hamiltonian" | §I | *run 2: "the ground state of a many-body interacting electronic Hamiltonian"* | |
-| 4 | input encoding | "Applies gates on a quantum device; estimates average energy by measuring the Hamiltonian; optimization performed classically" | §I | *run 2: "e^{θ_k τ̂_k}…e^{θ_1 τ̂_1}\|ψ^{HF}⟩ using exponentiated Pauli operators"* | |
-| 5 | register signature | "n-qubit system; spin-orbitals for H₄, LiH, H₆ molecules; all-to-all qubit connectivity assumed" | §III.1 | *run 2: `NOT_STATED`* | |
-| 6 | core routine | "Ansatz grown iteratively; at each step, operator affecting energy most is selected using gradient" | §II |  | |
-| 10 | readout | "Measures Hamiltonian on quantum device; estimated energy minimized by tuning quantum circuit" | §I | *run 2 was more specific: ⟨ψ\|[Ĥ,τ̂ᵢ]\|ψ⟩ commutator evaluation* | |
-| 11 | shots | "Additional measurements roughly equal to pool size times number of Hamiltonian terms" | §II |  | |
-| 12 | output type | "Ground state energy; trial wavefunction ansatz in parametrized form" | §I |  | |
+| 1 | problem | "Finding the ground state of a many-body interacting electronic Hamiltonian is one of the most important problems in modern quantum chemistry" | §I | *run 2 instead: "building system-adapted ansätze with substantially fewer variational parameters"* | CORRECT both runs make sense together|
+| 2 | problem-domain input type | "Trial wavefunction constructed by applying gates on a quantum device and estimates average energy by measuring the Hamiltonian" | §I | *run 2: "the ground state of a many-body interacting electronic Hamiltonian"* | CORRECT run 1 is better|
+| 4 | input encoding | "Applies gates on a quantum device; estimates average energy by measuring the Hamiltonian; optimization performed classically" | §I | *run 2: "e^{θ_k τ̂_k}…e^{θ_1 τ̂_1}\|ψ^{HF}⟩ using exponentiated Pauli operators"* | CORRECT both runs are the most full together|
+| 5 | register signature | "n-qubit system; spin-orbitals for H₄, LiH, H₆ molecules; all-to-all qubit connectivity assumed" | §III.1 | *run 2: `NOT_STATED`* | CORRECT some info about hardware architecture implementation information- this is important part that could also be tracked that isn't yet a field|
+| 6 | core routine | "Ansatz grown iteratively; at each step, operator affecting energy most is selected using gradient" | §II |  | CORRECT|
+| 10 | readout | "Measures Hamiltonian on quantum device; estimated energy minimized by tuning quantum circuit" | §I | *run 2 was more specific: ⟨ψ\|[Ĥ,τ̂ᵢ]\|ψ⟩ commutator evaluation* | CORRECT both runs are the most full together|
+| 11 | shots | "Additional measurements roughly equal to pool size times number of Hamiltonian terms" | §II |  | CORRECT|
+| 12 | output type | "Ground state energy; trial wavefunction ansatz in parametrized form" | §I |  | CORRECT|
 
 ## B3 · `1907.04769` · Improving Variational Quantum Optimization using CVaR
 
 | # | field | model's answer | locator | note | verdict |
 |---|---|---|---|---|---|
-| 1 | problem | "find solutions for combinatorial optimization problems" using hybrid variational algorithms on NISQ computers | §1 |  | |
-| 2 | problem-domain input type | "quadratic unconstrained binary optimization (QUBO) problem on n variables", or equivalent Ising spin glass | §2 |  | |
-| 4 | input encoding | "Using the variable transformation xᵢ=(1−zᵢ)/2 for zᵢ∈{−1,+1}"; Ising problem "translated into a Hamiltonian for an n-qubit system" | §2 |  | |
-| 🔶 5 | register signature | `NOT_STATED` | — |  | |
-| 6 | core routine | Replace sample mean with "Conditional Value at Risk (CVaR)" as objective; optimizer minimises CVaR_α instead of expected value | §4 |  | |
-| 10 | readout | "Prepare the trial wavefunction \|ψ(θ)⟩ on a quantum processor. Then, measure the qubits, resulting in an n-bit string." | §2 |  | |
-| 11 | shots | "we need to increase the number of samples to K/α"; experiments use "8,192 samples" | §5; §6.2 |  | |
-| 12 | output type | "the bitstring that leads to the smallest H_k among all observed bitstrings and all θ evaluated" | §2 |  | |
+| 1 | problem | "find solutions for combinatorial optimization problems" using hybrid variational algorithms on NISQ computers | §1 |  | CORRECT|
+| 2 | problem-domain input type | "quadratic unconstrained binary optimization (QUBO) problem on n variables", or equivalent Ising spin glass | §2 |  | CORRECT|
+| 4 | input encoding | "Using the variable transformation xᵢ=(1−zᵢ)/2 for zᵢ∈{−1,+1}"; Ising problem "translated into a Hamiltonian for an n-qubit system" | §2 |  | CORRECT|
+| 🔶 5 | register signature | `NOT_STATED` | — |  | CORRECT|
+| 6 | core routine | Replace sample mean with "Conditional Value at Risk (CVaR)" as objective; optimizer minimises CVaR_α instead of expected value | §4 |  | CORRECT|
+| 10 | readout | "Prepare the trial wavefunction \|ψ(θ)⟩ on a quantum processor. Then, measure the qubits, resulting in an n-bit string." | §2 |  | CORRECT|
+| 11 | shots | "we need to increase the number of samples to K/α"; experiments use "8,192 samples" | §5; §6.2 |  | CORRECT|
+| 12 | output type | "the bitstring that leads to the smallest H_k among all observed bitstrings and all θ evaluated" | §2 |  | CORRECT|
 
 ## B4 · `1909.02611` · Quantum classifier with tailored quantum kernel
 
 | # | field | model's answer | locator | note | verdict |
 |---|---|---|---|---|---|
-| 1 | problem | "distance-based quantum classifier whose kernel is based on quantum state fidelity between training and test data" | Abstract |  | |
-| 2 | problem-domain input type | "labelled data set 𝒟={(x₁,y₁),…,(x_m,y_m)}⊂ℂᴺ×{0,1} to classify an unseen data point x̃∈ℂᴺ" | Intro |  | |
-| 4 | input encoding | "training data with labels encoded as specific format in index, data and label registers. Test data prepared separately on input register" | Results — Quantum kernel |  | |
-| 5 | register signature | "ancilla qubit (a), n copies of test datum (x̃), data qubits (d), label qubit (l), index qubits (m)" | Fig. 2 caption |  | |
-| 6 | core routine | "swap-test on n copies of training and test data entangled in specific form followed by two single-qubit measurements" | Results — Quantum kernel |  | |
-| 10 | readout | "expectation value of two-qubit observable σ_z^{(a)}σ_z^{(l)}; test classified as 0 if positive, 1 if negative" | Results — Classification |  | |
-| 11 | shots | "executed with 8129 shots to collect measurement statistics" | Methods | *note the figure as quoted is 8129, not 8192 — check the paper* | |
-| 12 | output type | "label assignment: ỹ = ½(1−sgn(⟨σ_z^{(a)}σ_z^{(l)}⟩)) predicting class of test datum" | Results — Classification |  | |
+| 1 | problem | "distance-based quantum classifier whose kernel is based on quantum state fidelity between training and test data" | Abstract |  | CORRECT|
+| 2 | problem-domain input type | "labelled data set 𝒟={(x₁,y₁),…,(x_m,y_m)}⊂ℂᴺ×{0,1} to classify an unseen data point x̃∈ℂᴺ" | Intro |  | CORRECT|
+| 4 | input encoding | "training data with labels encoded as specific format in index, data and label registers. Test data prepared separately on input register" | Results — Quantum kernel |  | CORRECT|
+| 5 | register signature | "ancilla qubit (a), n copies of test datum (x̃), data qubits (d), label qubit (l), index qubits (m)" | Fig. 2 caption |  | CORRECT figures should also be analyzedif they provide relevant information. they can even be copied and cited into the repository if super directly relevant|
+| 6 | core routine | "swap-test on n copies of training and test data entangled in specific form followed by two single-qubit measurements" | Results — Quantum kernel |  | CORRECT|
+| 10 | readout | "expectation value of two-qubit observable σ_z^{(a)}σ_z^{(l)}; test classified as 0 if positive, 1 if negative" | Results — Classification |  | CORRECT|
+| 11 | shots | "executed with 8129 shots to collect measurement statistics" | Methods | *note the figure as quoted is 8129, not 8192 — check the paper* | CORRECT paper has 8129 so it must be a typo|
+| 12 | output type | "label assignment: ỹ = ½(1−sgn(⟨σ_z^{(a)}σ_z^{(l)}⟩)) predicting class of test datum" | Results — Classification |  | CORRECT|
 
 ## B5 · `1810.09434` · Subspace-search VQE for excited states
 
