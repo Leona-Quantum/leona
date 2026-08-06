@@ -16,6 +16,13 @@ dependencies = [
     "majorana-llm[openai,anthropic]",
 ]
 
+[project.optional-dependencies]
+# Only the PDF leg of paper_source's source-priority chain needs this, and that leg
+# is the last resort — LaTeX source and ar5iv HTML cover everything after 2007.
+# pypdf rather than PyMuPDF: PyMuPDF is AGPL, and every engine tested loses the same
+# glyphs, so the choice is licence and install weight, not extraction quality.
+pdf = ["pypdf>=5.1"]
+
 [build-system]
 requires = ["hatchling"]
 build-backend = "hatchling.build"
