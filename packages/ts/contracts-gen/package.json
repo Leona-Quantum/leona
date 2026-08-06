@@ -2,15 +2,19 @@
   "name": "@majorana/contracts-gen",
   "version": "0.0.0",
   "private": true,
-  "description": "GENERATED TS types from packages/py/contracts/openapi.json — never hand-edit",
+  "description": "GENERATED TS types from packages/py/contracts/openapi.json \u2014 never hand-edit",
   "type": "module",
   "main": "src/schema.d.ts",
   "types": "src/schema.d.ts",
   "scripts": {
-    "gen": "openapi-typescript ../../py/contracts/openapi.json -o src/schema.d.ts"
+    "gen": "openapi-typescript ../../py/contracts/openapi.json -o src/schema.d.ts && node ../../../scripts/generate-contract-enums.mjs"
   },
   "devDependencies": {
     "openapi-typescript": "^7.9.1",
     "typescript": "^5.9.3"
+  },
+  "exports": {
+    ".": "./src/schema.d.ts",
+    "./enums": "./src/enums.ts"
   }
 }
