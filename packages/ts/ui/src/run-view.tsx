@@ -9,6 +9,7 @@
 // the same view every time.
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import type { components } from "@majorana/contracts-gen";
+import { FRAMEWORK_VALUES } from "@majorana/contracts-gen/enums";
 import { SyntaxHighlightedCode } from "./code-block";
 import { StageRail, type RailStage } from "./stage-rail";
 import { VerdictBanner, type Verdict } from "./verdict-banner";
@@ -321,7 +322,13 @@ function filenameFor(language: string): string {
   // candidate's Framework enum value, not the "python" that code.generated uses.
   // Every agent framework is a Python library, so framework-valued events are
   // Python files even when the event language is not the generic "python".
-  if (["qiskit", "cirq", "pennylane", "braket", "qibo", "qulacs"].includes(lang)) {
+  //
+  // From the contract, not restated here: this list was hand-copied, and a
+  // framework added to `Framework` and missed here does not fail anywhere — the
+  // export silently becomes `circuit.txt`, a Python file with the wrong
+  // extension and no error. PR 262 added three frameworks across seven sites and
+  // that is exactly the kind of site that gets missed.
+  if ((FRAMEWORK_VALUES as readonly string[]).includes(lang)) {
     return "circuit.py";
   }
   return "circuit.txt";
