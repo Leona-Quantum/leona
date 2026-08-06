@@ -229,3 +229,43 @@ them.
 grader must judge the record against the *paper*, not against what Leona already says about it —
 otherwise this measures agreement with the corpus, which is not the question, and would quietly
 reward the model for reproducing text it may have been trained on.
+
+---
+
+## Appended 2026-08-06 — three notes. Nothing above this line was edited.
+
+The rule at the top of this file is that a correction is an appended dated note and never a
+rewrite. These are appended for that reason. **The pre-run text is verifiable by hash:** the
+blob at commit `a80859bb` ("add: G1 pre-registration, committed before any paper is fetched",
+2026-08-05 23:06:01, twenty minutes before the run merged) is
+`24897c6239c0e43a62f85ffefddafbcd92aaebcd`, and everything above this line still hashes to it.
+That commit is unreachable from any local ref after the squash merge of #273, so the hash and
+GitHub's record of #273 are the surviving proof of precedence — not the working tree.
+
+**1. A value drawn from a source the paper cites is not a fabrication, provided it says so.**
+The owner's 2026-08-06 direction is that gaps in a paper may be filled from the works it cites,
+*"as long as everything is perfectly cited, sourced, and not hallucinated"*. As written, §4's
+`FABRICATED` rule would score exactly that as the gate's hard failure, because the locator would
+not name a section of *this* paper.
+
+This changes **nothing about the ten records already extracted or the 120 marks** — every field
+in this run was extracted from the paper itself, so the bar above stands unamended for the run it
+was written for. For **any future extraction**, a cross-source fill is a distinct thing from
+both an in-paper answer and a fabrication, and needs its own locator form: the cited work's
+identifier (arXiv id or DOI) *plus* the section and quote inside it, and the record must mark the
+field as sourced from a citation rather than from the paper. A cross-source fill with no named
+work is `FABRICATED` exactly as before. A gap that neither the paper nor its bibliography closes
+stays a declared gap — filling it with plausible text is the failure this gate is built to catch,
+and the owner's phrasing is stricter than the bar here, not looser: *"those gaps should be clear,
+not ignored or filled with nonsense."*
+
+**2. §8's pointer to "OWNER_TODO §9" is stale.** The G1 grading ask moved to OWNER_TODO §2 in
+session 82, and §9 is now a different item entirely (making two CI jobs required). The ask itself
+is unchanged and is now narrowed to 24 marks in
+[`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md).
+
+**3. The gate-definition link at the top of this file does not resolve.**
+`../leona-block-repository-roadmap.md` would be `docs/leona-block-repository-roadmap.md`, which
+does not exist in this repository — the roadmap lives outside it, at
+`~/Documents/Projects/Majorana/plans/leona-block-repository-roadmap.md`, §8 for the gate
+definition and §3.1–3.3 for the block schema.

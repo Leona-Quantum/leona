@@ -6,7 +6,13 @@ committed as `a80859bb` **before the first paper was fetched**.
 > **This file contains no correctness verdicts, and G1 is NOT decided here.**
 > Everything below is mechanical — what was retrieved, what the model emitted, whether it agrees
 > with itself. Correctness per field needs one domain expert; the sheet is
-> [`G1-grading-sheet.md`](G1-grading-sheet.md) and OWNER_TODO §9 still needs a name.
+> [`G1-grading-sheet.md`](G1-grading-sheet.md).
+>
+> **Status 2026-08-06: still undecided, and the remaining ask is now 24 marks rather than 120.**
+> The owner reviewed the extraction and reported it *"pretty much correct"* — a real signal, and
+> not a verdict against any of the four pre-registered criteria. What that statement settles, what
+> it cannot, and the 24 stratum-B cells that actually decide the gate are in
+> [`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md). OWNER_TODO §2.
 
 ---
 
@@ -130,7 +136,11 @@ self-consistent and consistently wrong. It is reported because it is decision-re
 
 ## 5. What is still open
 
-1. **The 120 correctness verdicts.** Not startable without a grader — OWNER_TODO §9.
+1. **The correctness verdicts.** Narrowed 2026-08-06: the bar is stratum-B-only and criteria 1
+   and 3 both key on fields 3, 7, 8, 9, so **24 marks decide the gate** — roughly an hour, laid
+   out in [`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md). Five of those 24 are
+   `NOT_STATED`, and three of them turning out to be `MISSED` fails criterion 1 on its own.
+   OWNER_TODO §2.
 2. **Six papers not re-run** (A1′, A4, B1′, B3, B4, B6). Pre-registration set a minimum of 4 and a
    target of 10; 4 were done. **Reported rather than left as a smaller denominator**: the 75% is
    over 4 papers, not 10, and two of those four are the canonical stratum where agreement should be
