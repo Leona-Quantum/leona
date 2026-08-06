@@ -60,7 +60,7 @@ not against what Leona's corpus says about it. Definitions: `G1-grading-sheet.md
 
 | # | paper | field | model said | verdict |
 |---|---|---|---|---|
-| B1′-7 | `2102.01781` Optimization of the VQE for Quantum Chemistry | complexity claim | `NOT_STATED` | |
+| B1′-7 | `2102.01781` Optimization of the VQE for Quantum Chemistry | complexity claim | `NOT_STATED` | only mention of complexity is "The number of considered orbitals determines the complexity of the problem and with that the number of required qubits. In many practical cases only a select few low energy orbitals are considered while all higher energy atomic orbitals are ignored." naturally this algorithm's complexity is dependent on exact implementations, so other papers may be needed to find any claims on this, even generally. |
 | B5-7 | `1810.09434` Subspace-search VQE | complexity claim | `NOT_STATED` | |
 | B5-8 | `1810.09434` Subspace-search VQE | qubit count | `NOT_STATED` *(the second run answered "works on an n-qubit quantum computer", §II.1)* | |
 | B5-9 | `1810.09434` Subspace-search VQE | error / precision | `NOT_STATED` | |
