@@ -7841,6 +7841,118 @@ div.mj-rail-row:hover {
   display: grid;
   gap: var(--sp-4);
 }
+
+/* Source coverage and declared gaps — roadmap §3.6.
+
+   The three axis states are colour-coded, and the pairing is deliberate:
+   `absent` is NOT a warning. "This paper documents no hardware run" is a fact
+   about the literature, not a defect in the record, and styling it as a
+   near-miss would push authors toward writing `unknown` to avoid the red — the
+   exact opposite of what the field is for. `unknown` is the muted one, because
+   it is the only state that means work has not happened. */
+.mj-repo-coverage {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-repo-coverage-axes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.mj-repo-coverage-axis {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  min-width: 0;
+}
+.mj-repo-coverage-axis dt {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-repo-coverage-axis dd {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-repo-coverage-axis--reported { border-color: var(--ok); }
+.mj-repo-coverage-axis--reported dd { color: var(--ok); }
+.mj-repo-coverage-axis--absent { border-color: var(--border-0); }
+.mj-repo-coverage-axis--unknown { opacity: 0.68; }
+.mj-repo-coverage-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  /* Prose, so it wraps. The nowrap default elsewhere in this file has
+     silently overflowed a card before. */
+  white-space: normal;
+}
+.mj-repo-gaps {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-repo-gap {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-repo-gap header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.mj-repo-gap-reason {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+/* A permanent gap is not a backlog item and must not read like one. */
+.mj-repo-gap-permanent {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-repo-gap p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  white-space: normal;
+}
+.mj-repo-gap-citations {
+  margin: 0;
+  padding-left: var(--sp-4);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-repo-gap-citations a { overflow-wrap: anywhere; }
+.mj-repo-gaps-empty {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  white-space: normal;
+}
+/* "Nobody has looked" is a different claim from "reviewed, none found", and it
+   is the weaker one. It is muted so the two are not read as the same sentence. */
+.mj-repo-gaps-empty--unreviewed {
+  font-style: italic;
+  opacity: 0.8;
+}
 /* Numeric classical-vs-quantum table (Owner Inbox 2026-07-19): concrete
    figures/complexities sit above the prose read. */
 .mj-repo-comparison-table {
