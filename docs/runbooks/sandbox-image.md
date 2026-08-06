@@ -95,8 +95,10 @@ vercel vcr image ls majorana-runner --project prj_AtHnlVhlFc1mFNyAb3RvlET2NtBh -
 ```
 
 The row for the new `amd64` image must read `Ready`. While it reads `Preparing`,
-`Sandbox.create()` returns `image_not_ready`. Preparation took a few minutes for
-the 314 MB image on 2026-08-06.
+`Sandbox.create()` returns `image_not_ready`. On 2026-08-06 the 314 MB image read
+`Preparing` 11 seconds after the push and `Ready` when next checked 11 minutes
+later — the true duration is somewhere in between and was not measured. Poll;
+do not budget from that range.
 
 ### 4. Verify the dated tag in a real sandbox, under deny-all
 
