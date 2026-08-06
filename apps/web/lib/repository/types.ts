@@ -176,33 +176,49 @@ export interface PublicRepositoryEntry {
  * the static-corpus fallback keeps working unchanged. Adding a heavy field to
  * this type means adding it to the API allowlist too — and re-checking the
  * ceiling.
+ *
+ * This list is a VALUE first and a type second, for the same reason
+ * PUBLIC_REPOSITORY_FRAMEWORKS is: a `Pick<>` union exists only at compile
+ * time, and the API's `LIST_VIEW_RECORD_FIELDS` is a second copy of it written
+ * in another language. A union cannot be compared to a frozenset; a tuple can.
+ * `scripts/catalog-bootstrap/from-catalog-validator.test.mjs` asserts the two
+ * are set-equal, which is the only thing standing between "a field was added to
+ * the entry type" and "the browse list silently stops carrying it, in
+ * production only".
+ *
+ * `as const` is what makes both the type derivation and that comparison work,
+ * and it is why nothing may mutate this array in place.
  */
+export const PUBLIC_REPOSITORY_LIST_FIELDS = [
+  "slug",
+  "title",
+  "titleJa",
+  "category",
+  "categoryLabel",
+  "categoryLabelJa",
+  "algorithmFamily",
+  "framework",
+  "status",
+  "verificationMethods",
+  "verification",
+  "exportStatus",
+  "provenance",
+  "updatedAt",
+  "description",
+  "descriptionJa",
+  "tags",
+  "topics",
+  "resources",
+  "metadata",
+  "visualization",
+  "decomposition",
+  "portableCircuit",
+  "codeVariants",
+] as const;
+
 export type PublicRepositoryListEntry = Pick<
   PublicRepositoryEntry,
-  | "slug"
-  | "title"
-  | "titleJa"
-  | "category"
-  | "categoryLabel"
-  | "categoryLabelJa"
-  | "algorithmFamily"
-  | "framework"
-  | "status"
-  | "verificationMethods"
-  | "verification"
-  | "exportStatus"
-  | "provenance"
-  | "updatedAt"
-  | "description"
-  | "descriptionJa"
-  | "tags"
-  | "topics"
-  | "resources"
-  | "metadata"
-  | "visualization"
-  | "decomposition"
-  | "portableCircuit"
-  | "codeVariants"
+  (typeof PUBLIC_REPOSITORY_LIST_FIELDS)[number]
 >;
 
 export const PUBLIC_REPOSITORY_CATEGORIES: Array<{
