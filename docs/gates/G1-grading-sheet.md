@@ -140,13 +140,13 @@ pass.**
 |---|---|---|---|---|---|
 | 1 | problem | "Determine the lowest eigenvalue of a quantum Hamiltonian, which can be equated to finding the ground state energy of a molecule." | §I | | |
 | 2 | problem-domain input type | "Fermionic degrees of freedom of molecules mapped onto a set of qubits; problem dependent Hamiltonian." | §I | | |
-| 3 | **input assumptions** | "Born-Oppenheimer approximation applied; Hartree-Fock method reformulates Hamiltonian; select few low energy orbitals considered." | §II | | |
+| 3 | **input assumptions** | "Born-Oppenheimer approximation applied; Hartree-Fock method reformulates Hamiltonian; select few low energy orbitals considered." | §II | `CORRECT` | |
 | 4 | input encoding | "Qubits entangled by passive always-on interaction described by drift Hamiltonian H₀; sequence of rotations U_{i,j} and entanglement operators U_ent." | §III | | |
 | 5 | register signature | "m qubits; parameter vector θ in [0,2π]^D where D=(3d+2)m; d denotes circuit depth." | §III | | |
 | 6 | core routine | "Hybrid algorithm: quantum processor manipulates trial state; classical optimization proposes new trial state based on energy measurements." | §I | | |
-| 7 | **complexity claim** | `NOT_STATED` | — | | |
-| 8 | **qubit count** | "Symmetry group commuting with m-qubit Hamiltonian requires at most m generators; taper off qubits based on particle and spin number." | §IV | | |
-| 9 | **error / precision** | "Each qubit manipulation has non-negligible probability of error; important to minimize number of necessary manipulations." | §III | | |
+| 7 | **complexity claim** | `NOT_STATED` | — | `CORRECT-REFUSAL` | owner 2026-08-06: the paper's only mention of complexity is qualitative — "the number of considered orbitals determines the complexity of the problem". No complexity claim to state. |
+| 8 | **qubit count** | "Symmetry group commuting with m-qubit Hamiltonian requires at most m generators; taper off qubits based on particle and spin number." | §IV | `CORRECT` | |
+| 9 | **error / precision** | "Each qubit manipulation has non-negligible probability of error; important to minimize number of necessary manipulations." | §III | `CORRECT` | |
 | 10 | readout | "Measure expectation value of Hamiltonian H…decompose as sum of Pauli operator expectation values" | §III | | |
 | 11 | shots | "Quantum computers require sufficient measurements; simulation requires inner product of matrices and vectors." | §III | | |
 | 12 | output type | "Trial state energy value; ground state energy of molecule determined through variational optimization" | §I | | |
@@ -161,13 +161,13 @@ pass.**
 |---|---|---|---|---|---|
 | 1 | problem | "Finding the ground state of a many-body interacting electronic Hamiltonian is one of the most important problems in modern quantum chemistry" | §I | | *run 2 instead: "building system-adapted ansätze with substantially fewer variational parameters"* |
 | 2 | problem-domain input type | "Trial wavefunction constructed by applying gates on a quantum device and estimates average energy by measuring the Hamiltonian" | §I | | *run 2: "the ground state of a many-body interacting electronic Hamiltonian"* |
-| 3 | **input assumptions** | "Time-reversal symmetry is preserved; pool operators restricted to odd Pauli strings; ansatz remains real throughout" | §III | | |
+| 3 | **input assumptions** | "Time-reversal symmetry is preserved; pool operators restricted to odd Pauli strings; ansatz remains real throughout" | §III | `CORRECT` | |
 | 4 | input encoding | "Applies gates on a quantum device; estimates average energy by measuring the Hamiltonian; optimization performed classically" | §I | | *run 2: "e^{θ_k τ̂_k}…e^{θ_1 τ̂_1}\|ψ^{HF}⟩ using exponentiated Pauli operators"* |
 | 5 | register signature | "n-qubit system; spin-orbitals for H₄, LiH, H₆ molecules; all-to-all qubit connectivity assumed" | §III.1 | | *run 2: `NOT_STATED`* |
 | 6 | core routine | "Ansatz grown iteratively; at each step, operator affecting energy most is selected using gradient" | §II | | |
-| 7 | **complexity claim** | "minimal pool size that achieves completeness scales linearly with the number of qubits: minimal complete pools contain only 2n−2 operators" | §III.2 | | |
-| 8 | **qubit count** | "2n−2 operators sufficient; minimal complete pools proven to exist for any n" | §III.2 | | *run 2 instead: "8 spin-orbitals for H₄, 12 for LiH, 12 for H₆". Note run 1 answers with a **pool size**, not a qubit count.* |
-| 9 | **error / precision** | "Threshold ϵ; ansatz keeps growing until norm of gradient vector smaller than chosen threshold ϵ" | §II | | |
+| 7 | **complexity claim** | "minimal pool size that achieves completeness scales linearly with the number of qubits: minimal complete pools contain only 2n−2 operators" | §III.2 | `CORRECT` | |
+| 8 | **qubit count** | "2n−2 operators sufficient; minimal complete pools proven to exist for any n" | §III.2 | `CORRECT` | *run 2 instead: "8 spin-orbitals for H₄, 12 for LiH, 12 for H₆". Note run 1 answers with a **pool size**, not a qubit count.* owner 2026-08-06 marked this CORRECT with the pool-size caveat visible in this column. It was the sheet's one live FABRICATED candidate; the grader declined it. |
+| 9 | **error / precision** | "Threshold ϵ; ansatz keeps growing until norm of gradient vector smaller than chosen threshold ϵ" | §II | `CORRECT` | |
 | 10 | readout | "Measures Hamiltonian on quantum device; estimated energy minimized by tuning quantum circuit" | §I | | *run 2 was more specific: ⟨ψ\|[Ĥ,τ̂ᵢ]\|ψ⟩ commutator evaluation* |
 | 11 | shots | "Additional measurements roughly equal to pool size times number of Hamiltonian terms" | §II | | |
 | 12 | output type | "Ground state energy; trial wavefunction ansatz in parametrized form" | §I | | |
@@ -178,13 +178,13 @@ pass.**
 |---|---|---|---|---|---|
 | 1 | problem | "find solutions for combinatorial optimization problems" using hybrid variational algorithms on NISQ computers | §1 | | |
 | 2 | problem-domain input type | "quadratic unconstrained binary optimization (QUBO) problem on n variables", or equivalent Ising spin glass | §2 | | |
-| 3 | **input assumptions** | Problem Hamiltonian H is diagonal; objective values H_{j,j} are "classically easy" to compute from measurement outcomes | §2 | | |
+| 3 | **input assumptions** | Problem Hamiltonian H is diagonal; objective values H_{j,j} are "classically easy" to compute from measurement outcomes | §2 | `CORRECT` | |
 | 4 | input encoding | "Using the variable transformation xᵢ=(1−zᵢ)/2 for zᵢ∈{−1,+1}"; Ising problem "translated into a Hamiltonian for an n-qubit system" | §2 | | |
 | 5 | register signature | `NOT_STATED` | — | | |
 | 6 | core routine | Replace sample mean with "Conditional Value at Risk (CVaR)" as objective; optimizer minimises CVaR_α instead of expected value | §4 | | |
-| 7 | **complexity claim** | VQE depth "O(np)" with "n(1+p) parametrized Y-rotations"; QAOA needs "O(n²p) single-qubit rotations and O(n²p) CNOT-gates" | §2 | | |
-| 8 | **qubit count** | not stated as a general claim; experiments use "6,8,10,12,14,16 qubits", hardware uses "6 qubits" | §2; §6 | | *model qualified this rather than refusing outright — grade the qualification too* |
-| 9 | **error / precision** | Confidence level α∈(0,1] controls "expected value of the lower α-tail of the distribution"; smaller α emphasises best outcomes | §4 | | |
+| 7 | **complexity claim** | VQE depth "O(np)" with "n(1+p) parametrized Y-rotations"; QAOA needs "O(n²p) single-qubit rotations and O(n²p) CNOT-gates" | §2 | `CORRECT` | |
+| 8 | **qubit count** | not stated as a general claim; experiments use "6,8,10,12,14,16 qubits", hardware uses "6 qubits" | §2; §6 | `CORRECT` | *model qualified this rather than refusing outright — grade the qualification too* owner 2026-08-06: the qualification is graded and stands. |
+| 9 | **error / precision** | Confidence level α∈(0,1] controls "expected value of the lower α-tail of the distribution"; smaller α emphasises best outcomes | §4 | `CORRECT` | |
 | 10 | readout | "Prepare the trial wavefunction \|ψ(θ)⟩ on a quantum processor. Then, measure the qubits, resulting in an n-bit string." | §2 | | |
 | 11 | shots | "we need to increase the number of samples to K/α"; experiments use "8,192 samples" | §5; §6.2 | | |
 | 12 | output type | "the bitstring that leads to the smallest H_k among all observed bitstrings and all θ evaluated" | §2 | | |
@@ -195,13 +195,13 @@ pass.**
 |---|---|---|---|---|---|
 | 1 | problem | "distance-based quantum classifier whose kernel is based on quantum state fidelity between training and test data" | Abstract | | |
 | 2 | problem-domain input type | "labelled data set 𝒟={(x₁,y₁),…,(x_m,y_m)}⊂ℂᴺ×{0,1} to classify an unseen data point x̃∈ℂᴺ" | Intro | | |
-| 3 | **input assumptions** | "all inputs x_m and x̃ have unit length" | Results — Quantum kernel | | |
+| 3 | **input assumptions** | "all inputs x_m and x̃ have unit length" | Results — Quantum kernel | `CORRECT` | |
 | 4 | input encoding | "training data with labels encoded as specific format in index, data and label registers. Test data prepared separately on input register" | Results — Quantum kernel | | |
 | 5 | register signature | "ancilla qubit (a), n copies of test datum (x̃), data qubits (d), label qubit (l), index qubits (m)" | Fig. 2 caption | | |
 | 6 | core routine | "swap-test on n copies of training and test data entangled in specific form followed by two single-qubit measurements" | Results — Quantum kernel | | |
-| 7 | **complexity claim** | "requires only a constant number of repetitions regardless of the number of data" | Abstract | | |
-| 8 | **qubit count** | "n(M+2)⌈log₂(N)⌉+2⌈log₂(M)⌉+M+1 qubits needed" | Supp. Note II | | |
-| 9 | **error / precision** | "Pauli error on ancilla or label qubit becomes (1−2p)⟨σ_z^{(a)}σ_z^{(l)}⟩ where p is error rate" | Results — Connection | | |
+| 7 | **complexity claim** | "requires only a constant number of repetitions regardless of the number of data" | Abstract | `CORRECT` | |
+| 8 | **qubit count** | "n(M+2)⌈log₂(N)⌉+2⌈log₂(M)⌉+M+1 qubits needed" | Supp. Note II | `CORRECT` | |
+| 9 | **error / precision** | "Pauli error on ancilla or label qubit becomes (1−2p)⟨σ_z^{(a)}σ_z^{(l)}⟩ where p is error rate" | Results — Connection | `CORRECT` | |
 | 10 | readout | "expectation value of two-qubit observable σ_z^{(a)}σ_z^{(l)}; test classified as 0 if positive, 1 if negative" | Results — Classification | | |
 | 11 | shots | "executed with 8129 shots to collect measurement statistics" | Methods | | *note the figure as quoted is 8129, not 8192 — check the paper* |
 | 12 | output type | "label assignment: ỹ = ½(1−sgn(⟨σ_z^{(a)}σ_z^{(l)}⟩)) predicting class of test datum" | Results — Classification | | |
@@ -214,13 +214,13 @@ pass.**
 |---|---|---|---|---|---|
 | 1 | problem | "to extend the framework to excited states, we here propose an algorithm, the subspace-search variational quantum eigensolver (SSVQE)" | §I | | |
 | 2 | problem-domain input type | "Our objective here is to find excited states of the Hamiltonian H" | §II | | |
-| 3 | **input assumptions** | "choose input states {\|φⱼ⟩} which are mutually orthogonal (⟨φᵢ\|φⱼ⟩=δᵢⱼ)" | §II.1 | | |
+| 3 | **input assumptions** | "choose input states {\|φⱼ⟩} which are mutually orthogonal (⟨φᵢ\|φⱼ⟩=δᵢⱼ)" | §II.1 | `CORRECT` | |
 | 4 | input encoding | "input states {\|φⱼ⟩} will be chosen from a set of states which are easily preparable, such as the computational basis" | §II.1 | | *run 2 gave the concrete "{\|0000⟩,\|0001⟩,\|0010⟩,\|0011⟩}" (§V)* |
 | 5 | register signature | "n-qubit quantum computer" with "4-qubit Hamiltonians" in simulations | §V | | |
 | 6 | core routine | "Minimize ℒ₁(θ)=∑ⱼ₌₀^k⟨φⱼ\|U†(θ)HU(θ)\|φⱼ⟩" then "maximize ℒ₂(φ)" | §II.1 | | |
-| 7 | **complexity claim** | `NOT_STATED` | — | | |
-| 8 | **qubit count** | `NOT_STATED` | — | | *run 2 answered "works on an n-qubit quantum computer" (§II.1)* |
-| 9 | **error / precision** | `NOT_STATED` | — | | |
+| 7 | **complexity claim** | `NOT_STATED` | — | `CORRECT-REFUSAL` | owner 2026-08-06: "no mention of complexity at all". |
+| 8 | **qubit count** | `NOT_STATED` | — | `CORRECT-REFUSAL` | *run 2 answered "works on an n-qubit quantum computer" (§II.1)* owner 2026-08-06: the paper's qubit mentions are general ("works on an n-qubit quantum computer") or describe a 4-qubit *simulation*, not a qubit count for the method. **The one cell where the grader's own comment cites text pointing the other way — see G1-results §5.2 for the tally computed both ways.** |
+| 9 | **error / precision** | `NOT_STATED` | — | `CORRECT-REFUSAL` | owner 2026-08-06: "no mention or record of error/precision" — the paper publishes no data page for its simulations. |
 | 10 | readout | "Each term of the above equation are measured separately on the NISQ device and summed classically" | §IV | | |
 | 11 | shots | `NOT_STATED` | — | | |
 | 12 | output type | "we find the k-th excited state \|E_k⟩" | §II.1 | | |
@@ -231,42 +231,68 @@ pass.**
 |---|---|---|---|---|---|
 | 1 | problem | "variational quantum eigensolver (VQE) built to utilize quantum resources for the solution of eigenvalue problems and optimizations with minimal coherence time requirements" | Abstract | | |
 | 2 | problem-domain input type | `NOT_STATED` | — | | |
-| 3 | **input assumptions** | "the state that is produced becomes a function of the discrete set of input parameters" | §I.2 | | |
+| 3 | **input assumptions** | "the state that is produced becomes a function of the discrete set of input parameters" | §I.2 | `CORRECT` | |
 | 4 | input encoding | "Jordan-Wigner transformation defined by" fermionic operators mapped to Pauli operators on qubits | §I.1 | | |
 | 5 | register signature | `NOT_STATED` | — | | |
 | 6 | core routine | "find a set of parameters θ such that the expectation value of the energy ⟨H⟩ is a minimum" | §I.2 | | |
-| 7 | **complexity claim** | `NOT_STATED` | — | | |
-| 8 | **qubit count** | "4-qubit quantum state representing H2" | main text | | |
-| 9 | **error / precision** | "Tp/T1=0.05" characterises decoherence; determines channel noise strength | §I.5 | | |
+| 7 | **complexity claim** | `NOT_STATED` | — | `CORRECT-REFUSAL` | owner 2026-08-06: only "while exact diagonalization is not advantageous from a complexity point of view" — not a complexity claim for the method. |
+| 8 | **qubit count** | "4-qubit quantum state representing H2" | main text | `CORRECT` | |
+| 9 | **error / precision** | "Tp/T1=0.05" characterises decoherence; determines channel noise strength | §I.5 | `CORRECT` | |
 | 10 | readout | "repeated state preparation and partial tomography" with "Pauli measurements" | §I.2 | | |
 | 11 | shots | `NOT_STATED` | — | | |
 | 12 | output type | "ground and excited states of a quantum Hamiltonian of interest" with "accurate determination" and error mitigation | Abstract | | |
 
 ---
 
-## Tally (fill in after grading)
+## Tally — partial, 2026-08-06 (session 85)
+
+**24 of the 72 stratum-B cells are graded** (fields 3, 7, 8, 9 — the load-bearing set), by the
+owner, recorded in [`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md). The other 48
+are not, and criterion 2 is arithmetically undecidable until at least 30 of them are.
 
 ### Stratum B — decides the gate
 
 | | count | of | threshold | pass? |
 |---|---|---|---|---|
-| load-bearing correct (fields 3, 7, 8, 9) | | 24 | ≥ 22 | |
-| all fields correct | | 72 | ≥ 54 | |
-| fabricated | | 72 | ≤ 2 | |
-| fabricated among load-bearing | | 24 | **0** | |
+| load-bearing correct (fields 3, 7, 8, 9) | **24** | 24 | ≥ 22 | ✅ **PASS** |
+| all fields correct | **24 graded, 48 ungraded** | 72 | ≥ 54 | ⬜ **undecided** — needs ≥ 30 of the 48 |
+| fabricated | **0 of 24 graded** | 72 | ≤ 2 | ⬜ partial — 0 so far |
+| fabricated among load-bearing | **0** | 24 | **0** | ✅ **PASS** |
 | structural validity | 10 | 10 | 10 | ✅ already passed |
+
+**Criterion 1 passed with two marks to spare and it was the one genuinely at risk.** Five of the 24
+came back `NOT_STATED`; three of those turning out `MISSED` would have failed the gate on its own.
+The grader read all five as correct refusals. Even under the most adversarial available reading —
+B5-8 scored `MISSED`, which the grader's own comment supplies material for — the count is 23 of 24
+and criterion 1 still passes. That contingency is computed in [`G1-results.md`](G1-results.md) §5.2
+rather than left as a worry.
+
+**Criterion 3's load-bearing half passed, and it passed on the cell that could have failed it.**
+B2-8 answers a qubit-count field with a pool size. It was flagged in this sheet's own note column as
+the live `FABRICATED` candidate, the grader saw the flag, and marked `CORRECT`.
+
+### What is still needed to decide G1
+
+Only criterion 2, and only from the 48 ungraded stratum-B cells (fields 1, 2, 4, 5, 6, 10, 11, 12
+across the six B papers). **≥ 30 of those 48 must be correct.** They are laid out in the same
+one-mark-per-row form that made the first pass work, in
+[`G1-owner-review-round2.md`](G1-owner-review-round2.md).
 
 ### Stratum A — control (does not decide, but see pre-registration §5)
 
 | | count | of |
 |---|---|---|
-| all fields correct | | 48 |
-| fabricated | | 48 |
+| all fields correct | ungraded | 48 |
+| fabricated | ungraded | 48 |
 
 **Reading:** A passes / B fails means the model **recalls rather than reads**, and G1 fails. Both
-failing means the *protocol* is wrong — re-run rather than report a gate result.
+failing means the *protocol* is wrong — re-run rather than report a gate result. **Stratum A is
+ungraded, so this reading is not yet available** — see `G1-results.md` §5.3 for why that does not
+block the criteria above, and what it costs.
 
 ### Also record
 
-- `ONTOLOGY` marks (six roles do not fit): ______ → these go to **G2**, not counted as G1 misses.
-- Fields where the quote is real but does not support the claim: ______ (these are `FABRICATED`).
+- `ONTOLOGY` marks (six roles do not fit): **none in the 24 graded** → these go to **G2**, not
+  counted as G1 misses.
+- Fields where the quote is real but does not support the claim: **none in the 24 graded** (B2-8 was
+  the candidate and was declined).
