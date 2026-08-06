@@ -15,12 +15,14 @@ from fastapi.responses import JSONResponse
 from .db import engine_from_env, session_factory
 from .observability import init_telemetry
 from .rate_limit import (
+    CALLER_TRUST_HEADER,
     EXEMPT_PATHS,
     MAX_REQUEST_BYTES,
     BodyTooLarge,
     FixedWindowLimiter,
     client_address,
     is_rate_limited_path,
+    is_trusted_caller,
     read_bounded_body,
     replay,
 )
@@ -97,6 +99,17 @@ def create_app(settings: Settings | None = None) -> FastAPI:
     # On the app rather than a router: the point is to answer before a handler,
     # a dependency, or a database session has been created.
     app.state.anon_limiter = FixedWindowLimiter(limit=app.state.settings.anon_rate_limit_per_minute)
+    # A SECOND bucket, for the one caller we can recognise: our own server-side
+    # renderer. Nothing in a browser reads /v1/catalog/*, so without this the
+    # limiter's entire subject is Vercel's SSR egress — a handful of addresses
+    # shared by every visitor at once — and tripping it is silent, because
+    # `getRepositoryEntries` falls back to the static corpus rather than erroring.
+    # A separate limiter rather than a bigger number so the two ceilings can move
+    # independently: the anonymous one is a security control and wants to come
+    # DOWN, the trusted one is a runaway-loop backstop and wants headroom.
+    app.state.trusted_limiter = FixedWindowLimiter(
+        limit=app.state.settings.trusted_rate_limit_per_minute
+    )
 
     @app.middleware("http")
     async def _anon_rate_limit(request: Request, call_next):
@@ -138,17 +151,51 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         if not is_rate_limited_path(request.url.path):
             return await call_next(request)
         peer = request.client.host if request.client else None
-        decision = request.app.state.anon_limiter.check(client_address(headers, peer))
+
+        # WHICH bucket, never WHETHER to meter. A caller that proves it holds the
+        # renderer's shared secret is counted against a separate, generous
+        # ceiling; everyone else — including a caller that sent a wrong token —
+        # is counted as anonymous. There is no branch here that skips metering.
+        trusted = is_trusted_caller(headers, request.app.state.settings.trusted_caller_token)
+        limiter = request.app.state.trusted_limiter if trusted else request.app.state.anon_limiter
+        # Emitted on the refusal AND on the success, because the question this
+        # answers — "is the deployed renderer actually being seen as trusted?" —
+        # is asked of a healthy service, not a refused one.
+        trust_header = {CALLER_TRUST_HEADER: "trusted" if trusted else "anonymous"}
+
+        decision = limiter.check(client_address(headers, peer))
         if not decision.allowed:
+            # The refusal names the bucket that actually refused. Reporting a
+            # trusted renderer's ceiling as "anonymous" would tell whoever is
+            # reading the log to look at scrapers when the cause is our own
+            # render path looping — which is the only thing the trusted ceiling
+            # exists to catch, so it is the one case where getting this wrong
+            # sends the investigation in exactly the wrong direction. It would
+            # also tell our own server to "sign in".
+            title, reason = (
+                (
+                    "Too many requests from this trusted caller. This is the "
+                    "renderer's own ceiling, not the anonymous one; a render path "
+                    "is looping.",
+                    "trusted_rate_limited",
+                )
+                if trusted
+                else (
+                    "Too many requests from this address. This is an anonymous-traffic "
+                    "ceiling on the public catalog; sign in for your account's allowance.",
+                    "anonymous_rate_limited",
+                )
+            )
             return _problem(
                 429,
-                "Too many requests from this address. This is an anonymous-traffic "
-                "ceiling on the public catalog; sign in for your account's allowance.",
+                title,
                 "rate_limited",
-                headers={"Retry-After": str(decision.retry_after_s)},
-                extra={"reason": "anonymous_rate_limited"},
+                headers={"Retry-After": str(decision.retry_after_s), **trust_header},
+                extra={"reason": reason},
             )
-        return await call_next(request)
+        response = await call_next(request)
+        response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
+        return response
 
     @app.exception_handler(HTTPException)
     async def _http_exc(request: Request, exc: HTTPException):

@@ -39,6 +39,7 @@ import {
 } from "./repository/profile.ts";
 import { PUBLIC_REPOSITORY_ENTRIES } from "./public-repository";
 import type { PublicRepositoryEntry, PublicRepositoryListEntry } from "./repository/types";
+import { reportCallerTrust, withTrustedCallerHeader } from "./trusted-caller";
 
 const API_URL = process.env.NEXT_PUBLIC_API_URL ?? "http://localhost:8000";
 
@@ -57,9 +58,16 @@ const CATALOG_REVALIDATE_SECONDS = 300;
 async function fetchCatalogPage(url: string, expected404 = false): Promise<CatalogPage | null> {
   try {
     const upstream = await fetch(url, {
-      headers: { Accept: "application/json" },
+      // Identifies this as our own renderer so the API meters it in its own
+      // bucket instead of sharing the anonymous per-address ceiling with every
+      // visitor at once (lib/trusted-caller.ts). Absent when unconfigured.
+      headers: withTrustedCallerHeader({ Accept: "application/json" }),
       next: { revalidate: CATALOG_REVALIDATE_SECONDS, tags: ["public-catalog"] },
     });
+    // Before the `ok` check: a 429 is precisely the response whose trust verdict
+    // is worth reading, and returning early on it would skip the one log line
+    // that names the cause.
+    reportCallerTrust(upstream.headers, url);
     if (!upstream.ok) {
       if (!(expected404 && upstream.status === 404)) {
         console.error(`[repository-source] catalog fetch failed: HTTP ${upstream.status} (${url})`);
