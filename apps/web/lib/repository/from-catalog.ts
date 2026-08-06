@@ -18,6 +18,7 @@
 // path literally. The rest of lib/ spells it out for the same reason.
 import { isKnownGapList, isSourceCoverage } from "./coverage.ts";
 import {
+  PUBLIC_REPOSITORY_CATEGORY_IDS,
   PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryCategory,
   type PublicRepositoryEntry,
@@ -36,13 +37,13 @@ import {
 // ./types and stop; there is nothing to add here.
 const FRAMEWORKS: readonly PublicRepositoryFramework[] = PUBLIC_REPOSITORY_FRAMEWORKS;
 
-// Categories and statuses are still written out here, because neither has an
-// exported list to import: ./types exports PUBLIC_REPOSITORY_CATEGORIES, but
-// that is the browse filter's options (it carries an "all" sentinel that is not
-// a category), and a validator that followed a UI control would turn hiding a
-// filter into rejecting every record in that category. Statuses have no
-// exported list at all. Both are hand-kept against the types above.
-const CATEGORIES: readonly PublicRepositoryCategory[] = ["gates", "algorithms", "operators", "states"];
+// Categories now come from ./types, which reifies the vocabulary as a tuple —
+// still NOT from PUBLIC_REPOSITORY_CATEGORIES, which is the browse filter's
+// options (it carries an "all" sentinel that is not a category): a validator
+// following a UI control would turn hiding a filter into rejecting every record
+// in that category. Statuses have no exported list at all and stay hand-kept
+// against the type above.
+const CATEGORIES: readonly PublicRepositoryCategory[] = PUBLIC_REPOSITORY_CATEGORY_IDS;
 const STATUSES: readonly PublicRepositoryStatus[] = ["verified", "verified_caveats", "community_review"];
 
 function isRecord(value: unknown): value is Record<string, unknown> {
