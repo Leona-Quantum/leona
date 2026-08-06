@@ -1,4 +1,15 @@
-# G1 — owner review, 2026-08-06, and the 24 marks that still decide it
+# G1 — owner review, 2026-08-06: the 24 load-bearing marks, graded
+
+> **GRADED 2026-08-06 (session 85). Criterion 1 passed 24 of 24 against a bar of 22; criterion 3's
+> load-bearing half passed with zero fabrications.** The marks below were transcribed into
+> [`G1-grading-sheet.md`](G1-grading-sheet.md) and the tally computed in
+> [`G1-results.md`](G1-results.md) §5.
+>
+> **One correction to this file's own claim.** It said *"those 24 cells decide the gate"*. That is
+> true of criteria 1 and 3 and **false of criterion 2**, which is computed over all 72 stratum-B
+> fields and needs ≥ 54 — so 24 correct marks cannot reach it. G1 is therefore **not** decided by
+> this pass. The remaining 48 cells, of which ≥ 30 must be correct, are in
+> [`G1-owner-review-round2.md`](G1-owner-review-round2.md).
 
 **This is not the grading sheet and G1 is not decided here.** Protocol and bar:
 [`G1-preregistration.md`](G1-preregistration.md) (committed as `a80859bb` before the
@@ -44,10 +55,12 @@ without reading the paper. A statement about how correct the answers are cannot 
 question of whether the *refusals* were right, and the refusals are where this gate is
 currently decided.
 
-## The remaining ask is 24 marks, not 120
+## The load-bearing 24 — graded
 
 The bar is stratum-B-only, and criteria 1 and 3 both key on fields 3, 7, 8 and 9. **Those
-24 cells decide the gate.** Grading them is roughly an hour with the six papers open, not
+24 cells decide criteria 1 and 3** — not, as this heading originally claimed, the whole gate;
+criterion 2 is computed over all 72 and is addressed in the round-2 sheet. Grading them was
+roughly an hour with the six papers open, not
 the half-day the full sheet was sized at. Fields 5 and 8 are also where the model
 disagreed with *itself* (`G1-results.md` §4, 75% mean self-agreement), so these marks are
 the highest-information ones in the sheet by a distance.
@@ -58,39 +71,48 @@ not against what Leona's corpus says about it. Definitions: `G1-grading-sheet.md
 
 ### The five that decide it — grade these first
 
-| # | paper | field | model said | verdict |
+From owner: technically all verdicts are correct, papers are often just missing information, and they may reference useful info but don't strictly provide it themselves. comments added.
+
+**All five graded `CORRECT-REFUSAL`.** Criterion 1 tolerated two non-correct marks here and got
+zero. The `verdict` column below carries the owner's own comment, verbatim, as the support for each
+mark; the marks themselves are in [`G1-grading-sheet.md`](G1-grading-sheet.md).
+
+| # | paper | field | model said | verdict — all `CORRECT-REFUSAL`, owner's reasoning verbatim |
 |---|---|---|---|---|
-| B1′-7 | `2102.01781` Optimization of the VQE for Quantum Chemistry | complexity claim | `NOT_STATED` | |
-| B5-7 | `1810.09434` Subspace-search VQE | complexity claim | `NOT_STATED` | |
-| B5-8 | `1810.09434` Subspace-search VQE | qubit count | `NOT_STATED` *(the second run answered "works on an n-qubit quantum computer", §II.1)* | |
-| B5-9 | `1810.09434` Subspace-search VQE | error / precision | `NOT_STATED` | |
-| B6-7 | `1603.05681` Quantum subspace expansion | complexity claim | `NOT_STATED` | |
+| B1′-7 | `2102.01781` Optimization of the VQE for Quantum Chemistry | complexity claim | `NOT_STATED` | only mention of complexity is "The number of considered orbitals determines the complexity of the problem and with that the number of required qubits. In many practical cases only a select few low energy orbitals are considered while all higher energy atomic orbitals are ignored." naturally this algorithm's complexity is dependent on exact implementations, so other papers may be needed to find any claims on this, even generally. |
+| B5-7 | `1810.09434` Subspace-search VQE | complexity claim | `NOT_STATED` | no mention of complexity at all. |
+| B5-8 | `1810.09434` Subspace-search VQE | qubit count | `NOT_STATED` *(the second run answered "works on an n-qubit quantum computer", §II.1)* | 3-4 general mentions of qubit count. "Below we describe the algorithm to find the k-th excited state that works on an n-qubit quantum computer." this one may probably be extracted further to get some analysis. "To estimate the overlap, their method uses the swap test, which requires us to double the number of qubits with additional gates." reference to something else, could probably find what it is referencing and extract useful information form there. "Here we numerically simulate our algorithms with 4-
+qubit Hamiltonians." this is a simulation run of their algorithm with attached circuit and stuff- definitely useful as a related entry. another quote there they used their SSVQE with results as well.|
+| B5-9 | `1810.09434` Subspace-search VQE | error / precision | `NOT_STATED` | no mention or record of error/precision. looks like there is no actual data page associated with their simulations/calculations. this will definitely be a recurring issue, where papers don't disclose their exact results, and is where we can step in with reproducing their research/results ourselves and publishing the data to get missing sections like this error/results. this is also how we can provide code for these sorts of workflows! something to fold into our plan and product. |
+| B6-7 | `1603.05681` Quantum subspace expansion | complexity claim | `NOT_STATED` | only mention:  "While exact diagonalization is not advantageous from a complexity point of view..." not super useful from this paper alone, may need research from other papers or may not exist yet.|
 
 **Three or more `MISSED` here and G1 fails criterion 1 regardless of everything else.**
 
 ### The other nineteen
 
+From owner: all of these are correct, some very general but just limited by information in the paper itself. comments in verdicts above include considerations we should make. some lines blurred between 'input assumptions' and structure of the workflow itself, but that's okay since the latter isn't really its own section.
+
 | # | paper | field | model's answer | locator | verdict |
 |---|---|---|---|---|---|
-| B1′-3 | `2102.01781` | input assumptions | "Born-Oppenheimer approximation applied; Hartree-Fock method reformulates Hamiltonian; select few low energy orbitals considered." | §II | |
-| B1′-8 | `2102.01781` | qubit count | "Symmetry group commuting with m-qubit Hamiltonian requires at most m generators; taper off qubits based on particle and spin number." | §IV | |
-| B1′-9 | `2102.01781` | error / precision | "Each qubit manipulation has non-negligible probability of error; important to minimize number of necessary manipulations." | §III | |
-| B2-3 | `1911.10205` Qubit-ADAPT-VQE | input assumptions | "Time-reversal symmetry is preserved; pool operators restricted to odd Pauli strings; ansatz remains real throughout" | §III | |
-| B2-7 | `1911.10205` | complexity claim | "minimal pool size that achieves completeness scales linearly with the number of qubits: minimal complete pools contain only 2n−2 operators" | §III.2 | |
-| B2-8 | `1911.10205` | qubit count | "2n−2 operators sufficient; minimal complete pools proven to exist for any n" — **note this answers with a pool size, not a qubit count**; run 2 gave "8 spin-orbitals for H₄, 12 for LiH, 12 for H₆" | §III.2 | |
-| B2-9 | `1911.10205` | error / precision | "Threshold ϵ; ansatz keeps growing until norm of gradient vector smaller than chosen threshold ϵ" | §II | |
-| B3-3 | `1907.04769` CVaR | input assumptions | Problem Hamiltonian H is diagonal; objective values H_{j,j} are "classically easy" to compute from measurement outcomes | §2 | |
-| B3-7 | `1907.04769` | complexity claim | VQE depth "O(np)" with "n(1+p) parametrized Y-rotations"; QAOA needs "O(n²p) single-qubit rotations and O(n²p) CNOT-gates" | §2 | |
-| B3-8 | `1907.04769` | qubit count | not stated as a general claim; experiments use "6,8,10,12,14,16 qubits", hardware uses "6 qubits" — **grade the qualification, not just the number** | §2; §6 | |
-| B3-9 | `1907.04769` | error / precision | Confidence level α∈(0,1] controls "expected value of the lower α-tail of the distribution" | §4 | |
-| B4-3 | `1909.02611` quantum kernel | input assumptions | "all inputs x_m and x̃ have unit length" | Results — Quantum kernel | |
-| B4-7 | `1909.02611` | complexity claim | "requires only a constant number of repetitions regardless of the number of data" | Abstract | |
-| B4-8 | `1909.02611` | qubit count | "n(M+2)⌈log₂(N)⌉+2⌈log₂(M)⌉+M+1 qubits needed" | Supp. Note II | |
-| B4-9 | `1909.02611` | error / precision | "Pauli error on ancilla or label qubit becomes (1−2p)⟨σ_z^{(a)}σ_z^{(l)}⟩ where p is error rate" | Results — Connection | |
-| B5-3 | `1810.09434` | input assumptions | "choose input states {\|φⱼ⟩} which are mutually orthogonal (⟨φᵢ\|φⱼ⟩=δᵢⱼ)" | §II.1 | |
-| B6-3 | `1603.05681` | input assumptions | "the state that is produced becomes a function of the discrete set of input parameters" | §I.2 | |
-| B6-8 | `1603.05681` | qubit count | "4-qubit quantum state representing H2" | main text | |
-| B6-9 | `1603.05681` | error / precision | "Tp/T1=0.05" characterises decoherence; determines channel noise strength | §I.5 | |
+| B1′-3 | `2102.01781` | input assumptions | "Born-Oppenheimer approximation applied; Hartree-Fock method reformulates Hamiltonian; select few low energy orbitals considered." | §II | `CORRECT` |
+| B1′-8 | `2102.01781` | qubit count | "Symmetry group commuting with m-qubit Hamiltonian requires at most m generators; taper off qubits based on particle and spin number." | §IV | `CORRECT` |
+| B1′-9 | `2102.01781` | error / precision | "Each qubit manipulation has non-negligible probability of error; important to minimize number of necessary manipulations." | §III | `CORRECT` |
+| B2-3 | `1911.10205` Qubit-ADAPT-VQE | input assumptions | "Time-reversal symmetry is preserved; pool operators restricted to odd Pauli strings; ansatz remains real throughout" | §III | `CORRECT` |
+| B2-7 | `1911.10205` | complexity claim | "minimal pool size that achieves completeness scales linearly with the number of qubits: minimal complete pools contain only 2n−2 operators" | §III.2 | `CORRECT` |
+| B2-8 | `1911.10205` | qubit count | "2n−2 operators sufficient; minimal complete pools proven to exist for any n" — **note this answers with a pool size, not a qubit count**; run 2 gave "8 spin-orbitals for H₄, 12 for LiH, 12 for H₆" | §III.2 | `CORRECT` |
+| B2-9 | `1911.10205` | error / precision | "Threshold ϵ; ansatz keeps growing until norm of gradient vector smaller than chosen threshold ϵ" | §II | `CORRECT` |
+| B3-3 | `1907.04769` CVaR | input assumptions | Problem Hamiltonian H is diagonal; objective values H_{j,j} are "classically easy" to compute from measurement outcomes | §2 | `CORRECT` |
+| B3-7 | `1907.04769` | complexity claim | VQE depth "O(np)" with "n(1+p) parametrized Y-rotations"; QAOA needs "O(n²p) single-qubit rotations and O(n²p) CNOT-gates" | §2 | `CORRECT` |
+| B3-8 | `1907.04769` | qubit count | not stated as a general claim; experiments use "6,8,10,12,14,16 qubits", hardware uses "6 qubits" — **grade the qualification, not just the number** | §2; §6 | `CORRECT` |
+| B3-9 | `1907.04769` | error / precision | Confidence level α∈(0,1] controls "expected value of the lower α-tail of the distribution" | §4 | `CORRECT` |
+| B4-3 | `1909.02611` quantum kernel | input assumptions | "all inputs x_m and x̃ have unit length" | Results — Quantum kernel | `CORRECT` |
+| B4-7 | `1909.02611` | complexity claim | "requires only a constant number of repetitions regardless of the number of data" | Abstract | `CORRECT` |
+| B4-8 | `1909.02611` | qubit count | "n(M+2)⌈log₂(N)⌉+2⌈log₂(M)⌉+M+1 qubits needed" | Supp. Note II | `CORRECT` |
+| B4-9 | `1909.02611` | error / precision | "Pauli error on ancilla or label qubit becomes (1−2p)⟨σ_z^{(a)}σ_z^{(l)}⟩ where p is error rate" | Results — Connection | `CORRECT` |
+| B5-3 | `1810.09434` | input assumptions | "choose input states {\|φⱼ⟩} which are mutually orthogonal (⟨φᵢ\|φⱼ⟩=δᵢⱼ)" | §II.1 | `CORRECT` |
+| B6-3 | `1603.05681` | input assumptions | "the state that is produced becomes a function of the discrete set of input parameters" | §I.2 | `CORRECT` |
+| B6-8 | `1603.05681` | qubit count | "4-qubit quantum state representing H2" | main text | `CORRECT` |
+| B6-9 | `1603.05681` | error / precision | "Tp/T1=0.05" characterises decoherence; determines channel noise strength | §I.5 | `CORRECT` |
 
 **Fabrication is the one to watch while marking.** A wrong number *with* a real supporting
 quote is `WRONG`. A wrong number with no locator, or with a quote that does not say it, is
