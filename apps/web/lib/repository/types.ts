@@ -75,6 +75,83 @@ export interface PublicRepositoryDecomposition {
   noteJa?: string;
 }
 
+/**
+ * What the SOURCE documents, on each of three independent axes — roadmap §3.6,
+ * owner direction 2026-08-06.
+ *
+ * Three-valued on purpose, and the middle value is the whole point:
+ *
+ * - `reported` — the source documents this axis.
+ * - `absent`   — someone read the source and it is not there. A positive claim.
+ * - `unknown`  — nobody has checked. The honest default, and NOT the same thing.
+ *
+ * Collapsing `absent` into `unknown` is the exact failure §3.6 names: the corpus
+ * could not distinguish "this paper reports no hardware run" from "nobody looked
+ * at whether it does", and both rendered as silence.
+ *
+ * **This is not `verificationMethods` and must never be derived from it.** That
+ * vocabulary says how *Leona* checked a record; this says what the *source*
+ * reports. Keeping them apart is the whole value, because the difference between
+ * them is the reproduction record (§1.3) — the gap Leona's own runs are meant to
+ * close. A derivation from `verificationMethods` would manufacture a claim about
+ * a paper out of a claim about us, which is the guess-in-the-hole §3.6 forbids.
+ */
+export type SourceCoverageStatus = "reported" | "absent" | "unknown";
+
+export const SOURCE_COVERAGE_STATUSES = ["reported", "absent", "unknown"] as const;
+export const SOURCE_COVERAGE_AXES = ["theory", "simulation", "hardware"] as const;
+export type SourceCoverageAxis = (typeof SOURCE_COVERAGE_AXES)[number];
+
+export type SourceCoverage = Record<SourceCoverageAxis, SourceCoverageStatus>;
+
+/**
+ * The six roles a block can play — roadmap §3.1. A gap names the one that is
+ * missing, which is what makes the silences countable rather than merely absent.
+ */
+export const BLOCK_ROLES = [
+  "problem",
+  "input",
+  "input_mapping",
+  "algorithm",
+  "readout",
+  "output",
+] as const;
+export type BlockRole = (typeof BLOCK_ROLES)[number];
+
+/**
+ * Why a role is missing — §3.6's four reasons. The last two are **permanent**
+ * and must render as permanent: they are properties of the field or of the
+ * paper, not of how much work Leona has done yet.
+ */
+export const KNOWN_GAP_REASONS = [
+  /** The source simply does not specify it. Closable by another source, maybe. */
+  "not_stated_in_source",
+  /** The source cites a work that does specify it — a `cited` fill is in scope. */
+  "closable_from_bibliography",
+  /** Permanent: the field genuinely disagrees, and picking one would be editorial. */
+  "field_disagrees",
+  /** Permanent: the implementation is NISQ-specific to that paper's device. */
+  "nisq_specific",
+] as const;
+export type KnownGapReason = (typeof KNOWN_GAP_REASONS)[number];
+
+/**
+ * A declared hole. §3.6's rule, which is the reason this type exists:
+ *
+ * > **A block may ship with a hole. It may never ship with a guess in the hole.**
+ *
+ * `citations` carries the work a fill came from, or the work that would close
+ * the gap — **that other work's identity**, never the paper being described.
+ */
+export interface PublicRepositoryKnownGap {
+  role: BlockRole;
+  reason: KnownGapReason;
+  /** One sentence, sourced. An unsourced detail is not a gap, it is a guess. */
+  detail: string;
+  detailJa: string;
+  citations?: PublicRepositoryCitation[];
+}
+
 export interface PublicRepositoryEntry {
   slug: string;
   title: string;
@@ -128,6 +205,31 @@ export interface PublicRepositoryEntry {
    * carry 283 hand-written labels that a repopulation discards.
    */
   topics?: TopicId[];
+  /**
+   * What the source documents on each of three axes (§3.6). Optional in raw
+   * data and filled to all-`unknown` by the barrel, so every published record
+   * carries an explicit object rather than an absent key — `canonicalize`
+   * drops undefined-valued keys, and a record with no key would be forever
+   * indistinguishable from one that predates the field.
+   *
+   * Never derived. See the SourceCoverage doc comment for why.
+   */
+  sourceCoverage?: SourceCoverage;
+  /**
+   * Declared holes (§3.6). **Deliberately NOT filled in by the barrel**, and
+   * this is a correctness decision rather than an oversight — the three states
+   * must stay distinguishable:
+   *
+   * - a non-empty array — this record declares these specific gaps;
+   * - `[]` — somebody reviewed this record and found none;
+   * - **absent — nobody has looked.**
+   *
+   * Defaulting to `[]` would collapse the third into the second and make all
+   * 283 records assert "reviewed, no gaps" — a false statement in the one field
+   * whose entire purpose is honest disclosure. Renderers must distinguish all
+   * three; `renderableKnownGaps` in ./coverage exists so they cannot forget.
+   */
+  knownGaps?: PublicRepositoryKnownGap[];
   resources: Array<{ label: string; value: string }>;
   metadata: Array<{ label: string; value: string }>;
   source: {
@@ -214,6 +316,12 @@ export const PUBLIC_REPOSITORY_LIST_FIELDS = [
   "decomposition",
   "portableCircuit",
   "codeVariants",
+  // Three enum values per record, ~70 bytes — small, fixed-size, and the browse
+  // list is where "which axes does the source cover" is worth seeing across the
+  // corpus at once. `knownGaps` is deliberately NOT here: it carries prose and
+  // citations, it is unbounded per record, and a declared hole is something you
+  // read on the entry rather than scan the list for.
+  "sourceCoverage",
 ] as const;
 
 export type PublicRepositoryListEntry = Pick<

@@ -16,6 +16,12 @@ import { StarIcon } from "../../../components/icons";
 import { VerificationMethodChips, VerificationTierBadge } from "../../../components/repository-verification";
 import { loadStarredRepositorySlugs, toggleRepositoryStar } from "../../../lib/repository-stars";
 import { TOPICS_BY_ID } from "../../../lib/repository/topics";
+import { isInformative, isPermanentGap, knownGapsState } from "../../../lib/repository/coverage";
+import type {
+  SourceCoverage,
+  SourceCoverageAxis,
+  SourceCoverageStatus,
+} from "../../../lib/repository/types";
 import { RepositoryExportAction } from "../repository-export";
 
 const COPY = {
@@ -42,6 +48,29 @@ const COPY = {
     caveat: "Caveat",
     source: "Source",
     literature: "Literature & references",
+    coverage: "What the source documents",
+    coverageTheory: "Theory",
+    coverageSimulation: "Simulation",
+    coverageHardware: "Hardware",
+    coverageReported: "reported",
+    coverageAbsent: "not in this source",
+    coverageUnknown: "not checked",
+    coverageNote:
+      "What the source itself reports \u2014 not how Leona verified this record. \u201cNot checked\u201d means nobody has read the source for that axis; \u201cnot in this source\u201d means somebody has, and it is not there.",
+    gaps: "Declared gaps",
+    gapsNone: "Reviewed against the source, and no gaps were found.",
+    gapsUnreviewed: "Nobody has reviewed this record for gaps yet.",
+    gapPermanent: "permanent",
+    gapReason_not_stated_in_source: "not stated in the source",
+    gapReason_closable_from_bibliography: "closable from the bibliography",
+    gapReason_field_disagrees: "the field genuinely disagrees",
+    gapReason_nisq_specific: "specific to that paper\u2019s device",
+    gapRole_problem: "Problem",
+    gapRole_input: "Input",
+    gapRole_input_mapping: "Input mapping",
+    gapRole_algorithm: "Algorithm",
+    gapRole_readout: "Readout",
+    gapRole_output: "Output",
     comparison: "Quantum vs classical",
     baseline: "Classical baseline",
     quantum: "Quantum claim",
@@ -81,6 +110,29 @@ const COPY = {
     caveat: "注意点",
     source: "出典",
     literature: "文献と参考資料",
+    coverage: "\u51fa\u5178\u304c\u8a18\u8f09\u3057\u3066\u3044\u308b\u7bc4\u56f2",
+    coverageTheory: "\u7406\u8ad6",
+    coverageSimulation: "\u30b7\u30df\u30e5\u30ec\u30fc\u30b7\u30e7\u30f3",
+    coverageHardware: "\u5b9f\u6a5f",
+    coverageReported: "\u8a18\u8f09\u3042\u308a",
+    coverageAbsent: "\u3053\u306e\u51fa\u5178\u306b\u306f\u306a\u3057",
+    coverageUnknown: "\u672a\u78ba\u8a8d",
+    coverageNote:
+      "\u51fa\u5178\u81ea\u8eab\u304c\u4f55\u3092\u5831\u544a\u3057\u3066\u3044\u308b\u304b\u3067\u3042\u308a\u3001Leona \u304c\u3069\u3046\u691c\u8a3c\u3057\u305f\u304b\u3067\u306f\u3042\u308a\u307e\u305b\u3093\u3002\u300c\u672a\u78ba\u8a8d\u300d\u306f\u305d\u306e\u8ef8\u306b\u3064\u3044\u3066\u8ab0\u3082\u51fa\u5178\u3092\u8aad\u3093\u3067\u3044\u306a\u3044\u3053\u3068\u3001\u300c\u3053\u306e\u51fa\u5178\u306b\u306f\u306a\u3057\u300d\u306f\u8aad\u3093\u3060\u4e0a\u3067\u5b58\u5728\u3057\u306a\u3044\u3053\u3068\u3092\u610f\u5473\u3057\u307e\u3059\u3002",
+    gaps: "\u5ba3\u8a00\u3055\u308c\u305f\u6b20\u843d",
+    gapsNone: "\u51fa\u5178\u3068\u7167\u5408\u6e08\u307f\u3067\u3001\u6b20\u843d\u306f\u898b\u3064\u304b\u308a\u307e\u305b\u3093\u3067\u3057\u305f\u3002",
+    gapsUnreviewed: "\u3053\u306e\u9805\u76ee\u306f\u307e\u3060\u6b20\u843d\u306e\u78ba\u8a8d\u304c\u884c\u308f\u308c\u3066\u3044\u307e\u305b\u3093\u3002",
+    gapPermanent: "\u6052\u4e45\u7684",
+    gapReason_not_stated_in_source: "\u51fa\u5178\u306b\u8a18\u8f09\u304c\u306a\u3044",
+    gapReason_closable_from_bibliography: "\u53c2\u8003\u6587\u732e\u304b\u3089\u88dc\u3048\u308b",
+    gapReason_field_disagrees: "\u5206\u91ce\u5185\u3067\u898b\u89e3\u304c\u5206\u304b\u308c\u3066\u3044\u308b",
+    gapReason_nisq_specific: "\u305d\u306e\u8ad6\u6587\u306e\u5b9f\u6a5f\u56fa\u6709",
+    gapRole_problem: "\u554f\u984c",
+    gapRole_input: "\u5165\u529b",
+    gapRole_input_mapping: "\u5165\u529b\u5909\u63db",
+    gapRole_algorithm: "\u30a2\u30eb\u30b4\u30ea\u30ba\u30e0",
+    gapRole_readout: "\u8aad\u307f\u51fa\u3057",
+    gapRole_output: "\u51fa\u529b",
     comparison: "量子と古典の比較",
     baseline: "古典ベースライン",
     quantum: "量子手法で期待されること",
@@ -381,6 +433,21 @@ export function RepositoryEntryView({
             <ClassicalComparison comparison={entry.classicalComparison ?? defaultClassicalComparison(entry)} locale={locale} copy={copy} />
           </DetailSection>
 
+          {/* Rendered only when the record says something. On a corpus where
+              almost nothing is authored yet, three "not checked" chips on 282
+              pages teach a reader to skip the panel, and the one page that does
+              carry a claim loses by association. When the field goes backwards —
+              a repopulation dropping the authored records — the panel
+              disappears, which is visible, rather than staying put and saying
+              nothing, which is not. */}
+          {isInformative(entry.sourceCoverage) ? (
+            <DetailSection title={copy.coverage}>
+              <SourceCoveragePanel coverage={entry.sourceCoverage!} copy={copy} />
+            </DetailSection>
+          ) : null}
+
+          <KnownGapsSection gaps={entry.knownGaps} locale={locale} copy={copy} />
+
           {entry.literature?.length ? (
             <DetailSection title={copy.literature}>
               <div className="mj-repository-literature-list">
@@ -464,6 +531,110 @@ function DetailSection({ title, defaultOpen, children }: { title: string; defaul
       <summary>{title}</summary>
       <div className="mj-repo-section-body">{children}</div>
     </details>
+  );
+}
+
+/**
+ * What the SOURCE documents, on three axes (roadmap §3.6).
+ *
+ * The note under the chips is not decoration. Without it a reader has no way to
+ * tell this panel from the verification badge above it, and the two answer
+ * opposite questions — this one is about the paper, that one is about us.
+ */
+function SourceCoveragePanel({ coverage, copy }: { coverage: SourceCoverage; copy: RepositoryCopy }) {
+  const axes: Array<[SourceCoverageAxis, string]> = [
+    ["theory", copy.coverageTheory],
+    ["simulation", copy.coverageSimulation],
+    ["hardware", copy.coverageHardware],
+  ];
+  const statusLabel: Record<SourceCoverageStatus, string> = {
+    reported: copy.coverageReported,
+    absent: copy.coverageAbsent,
+    unknown: copy.coverageUnknown,
+  };
+  return (
+    <div className="mj-repo-coverage">
+      <dl className="mj-repo-coverage-axes">
+        {axes.map(([axis, label]) => (
+          <div key={axis} className={`mj-repo-coverage-axis mj-repo-coverage-axis--${coverage[axis]}`}>
+            <dt>{label}</dt>
+            <dd>{statusLabel[coverage[axis]]}</dd>
+          </div>
+        ))}
+      </dl>
+      <p className="mj-repo-coverage-note">{copy.coverageNote}</p>
+    </div>
+  );
+}
+
+/**
+ * Declared gaps, in three states that must stay apart.
+ *
+ * `knownGapsState` resolves them rather than each call site testing
+ * `gaps?.length`, which renders nothing for both `[]` and `undefined` — and
+ * silence in a gap-disclosure panel reads as "this record has no gaps". A
+ * record nobody has examined would be asserting it is complete, which is the
+ * one thing §3.6 exists to prevent.
+ *
+ * The unreviewed state renders as a sentence rather than as an empty panel for
+ * the same reason: "nobody has looked" is information a reader can act on.
+ */
+function KnownGapsSection({
+  gaps,
+  locale,
+  copy,
+}: {
+  gaps: PublicRepositoryEntry["knownGaps"];
+  locale: PublicLocale;
+  copy: RepositoryCopy;
+}) {
+  const state = knownGapsState(gaps);
+  if (state.kind === "none") {
+    return (
+      <DetailSection title={copy.gaps}>
+        <p className="mj-repo-gaps-empty">{copy.gapsNone}</p>
+      </DetailSection>
+    );
+  }
+  if (state.kind === "unreviewed") {
+    return (
+      <DetailSection title={copy.gaps}>
+        <p className="mj-repo-gaps-empty mj-repo-gaps-empty--unreviewed">{copy.gapsUnreviewed}</p>
+      </DetailSection>
+    );
+  }
+  return (
+    <DetailSection title={copy.gaps} defaultOpen>
+      <div className="mj-repo-gaps">
+        {state.gaps.map((gap, index) => (
+          <article key={`${gap.role}-${index}`} className="mj-repo-gap">
+            <header>
+              <strong>{copy[`gapRole_${gap.role}`]}</strong>
+              <span className="mj-repo-gap-reason">{copy[`gapReason_${gap.reason}`]}</span>
+              {/* A permanent reason renders as permanent (§3.6): the field
+                  disagreeing, or an implementation being tied to one paper's
+                  device, is not a backlog item and must not read like one. */}
+              {isPermanentGap(gap.reason) ? (
+                <span className="mj-repo-gap-permanent">{copy.gapPermanent}</span>
+              ) : null}
+            </header>
+            <p>{locale === "ja" ? gap.detailJa : gap.detail}</p>
+            {gap.citations?.length ? (
+              <ul className="mj-repo-gap-citations">
+                {gap.citations.map((citation) => (
+                  <li key={citation.url}>
+                    <a href={citation.url} rel="noreferrer noopener" target="_blank">
+                      {citation.title}
+                    </a>
+                    <span> · {citation.authors}, {citation.year}</span>
+                  </li>
+                ))}
+              </ul>
+            ) : null}
+          </article>
+        ))}
+      </div>
+    </DetailSection>
   );
 }
 

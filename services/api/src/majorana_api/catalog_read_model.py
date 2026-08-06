@@ -91,6 +91,18 @@ LIST_VIEW_RECORD_FIELDS: frozenset[str] = frozenset(
         "visualization",
         "decomposition",
         "portableCircuit",
+        # Roadmap §3.6. Three enum values per record — small and fixed-size, so
+        # it does not move the ceiling above meaningfully. `knownGaps` is
+        # deliberately NOT here: it carries prose and citations, is unbounded per
+        # record, and a declared hole is read on the entry page rather than
+        # scanned for across the list.
+        #
+        # This set and apps/web/lib/repository/types.ts's
+        # PUBLIC_REPOSITORY_LIST_FIELDS are the same list in two languages.
+        # scripts/catalog-bootstrap/from-catalog-validator.test.mjs asserts they
+        # are set-equal — the two assertions in this service's own tests are
+        # `issubset` and `<=`, which cannot see a field missing from here.
+        "sourceCoverage",
     }
 )
 
