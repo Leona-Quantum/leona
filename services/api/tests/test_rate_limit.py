@@ -6,16 +6,24 @@ without a test that sleeps for a minute.
 """
 
 import httpx
+import pytest
 
 from majorana_api.app import create_app
 from majorana_api.rate_limit import (
+    CALLER_TRUST_HEADER,
     DEFAULT_ANON_LIMIT,
+    DEFAULT_TRUSTED_LIMIT,
     MAX_REQUEST_BYTES,
+    TRUSTED_CALLER_HEADER,
     FixedWindowLimiter,
     client_address,
     is_rate_limited_path,
+    is_trusted_caller,
 )
 from majorana_api.settings import Settings
+
+#: Long enough to satisfy the 32-character floor the settings enforce.
+TRUSTED_TOKEN = "trusted-caller-token-for-tests-0123456789"
 
 ISSUER = "https://api.workos.com/user_management/client_test"
 JWKS_URL = "https://api.workos.com/sso/jwks/client_test"
@@ -301,3 +309,196 @@ def test_the_default_limit_has_headroom_over_our_own_renderer():
     first.
     """
     assert DEFAULT_ANON_LIMIT >= 1200
+
+
+# --------------------------------------------------------------------------
+# The trusted-caller exemption
+#
+# Its subject is our own server-side renderer, which is the only traffic
+# `/v1/catalog/*` actually sees. The tests below are written around the one
+# thing that would make the whole feature a liability: a caller who does NOT
+# hold the secret must not reach the trusted bucket. Every positive case here
+# has a negative control next to it, because a test that only proves the token
+# WORKS would pass just as well against an exemption that trusted everybody.
+# --------------------------------------------------------------------------
+
+
+def test_the_matching_token_is_trusted():
+    assert is_trusted_caller({TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}, TRUSTED_TOKEN)
+
+
+def test_a_wrong_token_is_not_trusted():
+    assert not is_trusted_caller({TRUSTED_CALLER_HEADER: "not-the-token"}, TRUSTED_TOKEN)
+
+
+def test_a_token_that_is_a_prefix_of_the_secret_is_not_trusted():
+    """Guards the comparison itself. A membership or `startswith` check would
+    pass the test above and hand the exemption to anyone who guessed one byte."""
+    assert not is_trusted_caller({TRUSTED_CALLER_HEADER: TRUSTED_TOKEN[:10]}, TRUSTED_TOKEN)
+    assert not is_trusted_caller({TRUSTED_CALLER_HEADER: TRUSTED_TOKEN + "x"}, TRUSTED_TOKEN)
+
+
+def test_no_header_is_not_trusted():
+    assert not is_trusted_caller({}, TRUSTED_TOKEN)
+
+
+def test_an_unconfigured_service_trusts_nobody():
+    """The direction that fails safe.
+
+    A deployment that has not set the secret must meter its own renderer as
+    anonymous — which is what it did before the exemption existed. The opposite
+    default, where an empty expectation matches an empty header, would hand the
+    exemption to every anonymous caller in the world the moment the variable
+    went missing from the API's environment.
+    """
+    assert not is_trusted_caller({TRUSTED_CALLER_HEADER: ""}, "")
+    assert not is_trusted_caller({TRUSTED_CALLER_HEADER: "anything"}, "")
+    assert not is_trusted_caller({}, "")
+
+
+async def test_the_trusted_caller_is_metered_in_its_own_bucket():
+    app = create_app(
+        _settings(
+            anon_rate_limit_per_minute=2,
+            trusted_caller_token=TRUSTED_TOKEN,
+            trusted_rate_limit_per_minute=100,
+        )
+    )
+    headers = {"x-forwarded-for": "203.0.113.60", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        statuses = [
+            (await client.get("/v1/catalog/entries", headers=headers)).status_code for _ in range(6)
+        ]
+
+    assert 429 not in statuses
+
+
+async def test_a_wrong_token_is_metered_as_anonymous():
+    """The control for the test above, and the one that matters.
+
+    Same settings, same address, same number of requests — only the secret is
+    wrong. Without this, an exemption that trusted every caller presenting any
+    header at all would pass the positive case perfectly. That is not a
+    hypothetical failure mode in this file: the middleware's first shape
+    exempted every caller who sent an `Authorization` header, and the test that
+    caught it is thirty lines up.
+    """
+    app = create_app(
+        _settings(
+            anon_rate_limit_per_minute=2,
+            trusted_caller_token=TRUSTED_TOKEN,
+            trusted_rate_limit_per_minute=100,
+        )
+    )
+    headers = {"x-forwarded-for": "203.0.113.61", TRUSTED_CALLER_HEADER: "wrong-token"}
+    async with _client(app) as client:
+        statuses = [
+            (await client.get("/v1/catalog/entries", headers=headers)).status_code for _ in range(6)
+        ]
+
+    assert 429 in statuses, "a wrong trusted-caller token bought an exemption"
+
+
+async def test_the_token_does_not_exempt_an_unconfigured_service():
+    """A secret set in the renderer but not on the API buys nothing.
+
+    This is the half-configured state a rotation passes through, and it must
+    degrade to today's behaviour rather than to an open door.
+    """
+    app = create_app(_settings(anon_rate_limit_per_minute=2, trusted_caller_token=""))
+    headers = {"x-forwarded-for": "203.0.113.62", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        statuses = [
+            (await client.get("/v1/catalog/entries", headers=headers)).status_code for _ in range(6)
+        ]
+
+    assert 429 in statuses
+
+
+async def test_the_trusted_bucket_is_bounded():
+    """Exempt from the anonymous ceiling, not from metering.
+
+    The bound is a backstop against our own renderer looping, which is a failure
+    this service has had. An exemption that skipped the limiter entirely would
+    let one runaway render path saturate the API with nothing reporting it.
+    """
+    app = create_app(
+        _settings(
+            anon_rate_limit_per_minute=1000,
+            trusted_caller_token=TRUSTED_TOKEN,
+            trusted_rate_limit_per_minute=3,
+        )
+    )
+    headers = {"x-forwarded-for": "203.0.113.63", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        statuses = [
+            (await client.get("/v1/catalog/entries", headers=headers)).status_code for _ in range(5)
+        ]
+
+    assert 429 in statuses
+
+
+async def test_the_trust_verdict_is_readable_off_a_healthy_response():
+    """The read-back, and the reason the exemption is verifiable at all.
+
+    A token that is missing, misspelled or stale in the renderer's environment
+    presents exactly like a working one: the catalog renders, from the static
+    corpus, until somebody notices the data is old. One header on a 200 turns
+    that into a question anybody can answer with a single request against the
+    live service.
+    """
+    app = create_app(_settings(anon_rate_limit_per_minute=100, trusted_caller_token=TRUSTED_TOKEN))
+    async with _client(app) as client:
+        trusted = await client.get(
+            "/v1/catalog/entries", headers={TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+        )
+        anonymous = await client.get("/v1/catalog/entries")
+
+    assert trusted.headers[CALLER_TRUST_HEADER] == "trusted"
+    assert anonymous.headers[CALLER_TRUST_HEADER] == "anonymous"
+
+
+async def test_the_trust_verdict_is_readable_off_a_refusal():
+    """Emitted on the 429 too. A refused renderer is the exact case where the
+    verdict is the thing you want to know, and returning it only on success
+    would withhold it precisely then."""
+    app = create_app(_settings(anon_rate_limit_per_minute=1, trusted_caller_token=TRUSTED_TOKEN))
+    headers = {"x-forwarded-for": "203.0.113.64"}
+    async with _client(app) as client:
+        await client.get("/v1/catalog/entries", headers=headers)
+        refused = await client.get("/v1/catalog/entries", headers=headers)
+
+    assert refused.status_code == 429
+    assert refused.headers[CALLER_TRUST_HEADER] == "anonymous"
+
+
+def test_the_trusted_ceiling_clears_a_launch_by_a_wide_margin():
+    """283 records at a 300-second revalidate window is single-digit requests a
+    minute from the renderer, whatever the visitor count. The headroom is for
+    cache misses and rolling deploys, not for the traffic itself."""
+    assert DEFAULT_TRUSTED_LIMIT >= 20_000
+
+
+# --------------------------------------------------------------------------
+# Provisioning the secret
+# --------------------------------------------------------------------------
+
+
+def test_a_short_trusted_token_is_refused_at_startup():
+    """It is compared on a route that takes no credential, so an attacker may
+    probe it without limit. Weak here is weak against an unbounded oracle."""
+    with pytest.raises(RuntimeError, match="at least 32 characters"):
+        _settings(trusted_caller_token="short")
+
+
+def test_a_public_placeholder_is_refused_as_a_trusted_token():
+    with pytest.raises(RuntimeError, match="public placeholder"):
+        _settings(trusted_caller_token="changeme")
+
+
+def test_the_trusted_token_may_not_be_the_deploy_probe_token():
+    """Different blast radii: the probe can create a run, this can only pick a
+    rate-limit bucket. Sharing one value silently promotes the weaker one, and
+    the obvious way to provision the second is to copy the first."""
+    with pytest.raises(RuntimeError, match="must be different secrets"):
+        _settings(trusted_caller_token=TRUSTED_TOKEN, deploy_probe_token=TRUSTED_TOKEN)
