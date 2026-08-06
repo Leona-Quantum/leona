@@ -9,8 +9,8 @@ bench/k6/run-abuse.sh
 ```
 
 Needs Docker, `k6` (`brew install k6`), and `.env.db.local` — see
-`docs/runbooks/auth-dev.md § The local database`. Takes about four minutes the first time
-(the catalog import) and about two and a half after.
+`docs/runbooks/auth-dev.md § The local database`. About four minutes, every time: it rebuilds its own
+database from empty on each run rather than reusing one (see below).
 
 ## What each scenario proves, and what controls it
 
@@ -39,6 +39,13 @@ this failure can never again be confused with a limiter that did not refuse.
 
 **A latency threshold here would be measuring this machine.** See the gate document's "What
 this run does NOT establish". The bound is 10s and it is there to catch collapse.
+
+**A guard whose query errors is a guard that always takes one branch.** The harness first tried to
+reuse an already-published catalog, gated on `select count(*) from catalog_entries …`. There is no
+`catalog_entries` table — the catalog lives in `artifacts` behind an accepted+public filter — so the
+query errored every run, `|| echo 0` swallowed it, and the reuse path was unreachable while this file
+advertised it. Deleted rather than corrected: any predicate written here would be a second copy of
+`repos/catalog.py`'s filter, and rebuilding is one code path that is always right.
 
 ## Adding a scenario
 
