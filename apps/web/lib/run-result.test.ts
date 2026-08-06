@@ -56,6 +56,32 @@ test("a chat answer carries contextual follow-ups without showing metadata as pr
   assert.equal(splitAssistantFollowUps("Visible answer only").answer, "Visible answer only");
 });
 
+test("a half-streamed follow-ups marker never reaches the reader as prose", () => {
+  // The worker emits deltas in fixed 160-character chunks and holds the shorter
+  // tail until the model finishes, so a boundary inside the 25-character marker is
+  // on screen for seconds. react-markdown here has no raw-HTML plugin, so an
+  // unterminated comment is escaped and shown rather than dropped.
+  const answer = "The Bell state is maximally entangled.";
+  for (const cut of ["<", "<!", "<!-", "<!--", "<!-- majorana", "<!-- majorana-follow-ups"]) {
+    assert.equal(
+      splitAssistantFollowUps(`${answer}\n\n${cut}`).answer,
+      answer,
+      `partial marker "${cut}" leaked into the answer`,
+    );
+  }
+
+  // A complete marker whose payload is still arriving was already handled; pin it.
+  assert.equal(
+    splitAssistantFollowUps(`${answer}\n\n<!-- majorana-follow-ups: ["How`).answer,
+    answer,
+  );
+
+  // Prose that merely contains `<` is untouched — the cost is one trailing `<`
+  // per chunk, never a word.
+  assert.equal(splitAssistantFollowUps("Use a < b to compare.").answer, "Use a < b to compare.");
+  assert.equal(splitAssistantFollowUps("A tag <div> is fine").answer, "A tag <div> is fine");
+});
+
 test("the latest semantic review supplies task-specific execution follow-ups", () => {
   const prompts = contextualReviewFollowUps([
     {
@@ -141,7 +167,7 @@ test("a run with no distribution still reports its values and code", () => {
   );
 
   assert.equal(result?.distribution, null);
-  assert.deepEqual(result?.values, [{ label: "Fidelity", value: "0.998" }]);
+  assert.deepEqual(result?.values, [{ key: "fidelity", label: "Fidelity", value: "0.998" }]);
   assert.ok(result?.code);
 });
 
@@ -167,7 +193,7 @@ test("a research-style optimization history becomes a convergence visual", () =>
   assert.equal(result?.traces.length, 1);
   assert.equal(result?.traces[0]?.label, "Optimization History");
   assert.equal(result?.traces[0]?.end, -1.137);
-  assert.deepEqual(result?.values, [{ label: "Energy", value: "-1.137" }]);
+  assert.deepEqual(result?.values, [{ key: "energy", label: "Energy", value: "-1.137" }]);
 });
 
 test("a review that did not accept is marked, not hidden", () => {

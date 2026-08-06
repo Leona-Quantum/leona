@@ -19,6 +19,8 @@ export interface ResultTracePoint {
 }
 
 export interface ResultTraceView {
+  /** The result key this came from. `label` is display text and can collide. */
+  key: string;
   label: string;
   points: ResultTracePoint[];
   pointCount: number;
@@ -29,6 +31,8 @@ export interface ResultTraceView {
 }
 
 export interface ResultValueView {
+  /** The result key this came from. `label` is display text and can collide. */
+  key: string;
   label: string;
   value: string;
 }
@@ -112,6 +116,12 @@ const JAPANESE_RESULT_LABEL: Record<string, string> = {
   success_probability: "成功確率",
 };
 
+/**
+ * Display text only — never an identity. `_` and ` ` both become a space and
+ * word-initial letters are uppercased, so `energy_Ha`, `energy_ha` and `energy ha`
+ * all render as "Energy Ha", and the Japanese table is keyed on a lowercased value.
+ * Key React lists on the result key, not on this.
+ */
 export function humanizeResultKey(
   value: string,
   locale: PublicLocale = "en",
@@ -278,6 +288,7 @@ export function tracesFromResult(
       { minimum: values[0], maximum: values[0] },
     );
     traces.push({
+      key,
       label: humanizeResultKey(key, locale),
       points: sampledTrace(values),
       pointCount: values.length,
@@ -297,19 +308,22 @@ export function valuesFromResult(
   locale: PublicLocale = "en",
 ): ResultValueView[] {
   if (!result) return [];
+  // `expected_output_keys` is model-authored and its contract does not require
+  // uniqueness, so a plan naming the same key twice would otherwise report the same
+  // row twice — with the same React key.
   const keys = [
     ...expectedKeys.filter((key) => key in result),
     ...Object.keys(result).filter((key) => !expectedKeys.includes(key)),
-  ];
+  ].filter((key, index, all) => all.indexOf(key) === index);
   const values: ResultValueView[] = [];
   for (const key of keys) {
     const value = result[key];
     if (typeof value === "number" && Number.isFinite(value)) {
-      values.push({ label: humanizeResultKey(key, locale), value: formatResultNumber(value, locale) });
+      values.push({ key, label: humanizeResultKey(key, locale), value: formatResultNumber(value, locale) });
     } else if (typeof value === "boolean") {
-      values.push({ label: humanizeResultKey(key, locale), value: String(value) });
+      values.push({ key, label: humanizeResultKey(key, locale), value: String(value) });
     } else if (typeof value === "string" && value.length <= 200) {
-      values.push({ label: humanizeResultKey(key, locale), value });
+      values.push({ key, label: humanizeResultKey(key, locale), value });
     } else if (
       Array.isArray(value)
       && value.length <= 8
@@ -317,6 +331,7 @@ export function valuesFromResult(
       && value.every((item) => typeof item === "number" && Number.isFinite(item))
     ) {
       values.push({
+        key,
         label: humanizeResultKey(key, locale),
         value: (value as number[]).map((item) => formatResultNumber(item, locale)).join(", "),
       });

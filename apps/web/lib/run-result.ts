@@ -28,6 +28,15 @@ import type { PublicLocale } from "./public-locale.ts";
 
 export type RunResultValue = ResultValueView;
 
+/**
+ * Fixed-label run metadata — algorithm, framework, revision, shots. Authored here
+ * rather than read off a result, so it carries no result key.
+ */
+export interface RunResultFact {
+  label: string;
+  value: string;
+}
+
 export interface RunResultView {
   summary: string;
   /** Short, honest trust marker. Never the headline. */
@@ -36,7 +45,7 @@ export interface RunResultView {
   distribution: ResultDistributionView | null;
   traces: ResultTraceView[];
   values: RunResultValue[];
-  facts: RunResultValue[];
+  facts: RunResultFact[];
   code: { label: string; language: string; source: string } | null;
   /** Unverified claims, kept available but never as the lead. */
   limitations: string[];

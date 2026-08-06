@@ -3,8 +3,10 @@ import { test } from "node:test";
 
 import {
   distributionFromResult,
+  humanizeResultKey,
   resultVisualizationFromResult,
   tracesFromResult,
+  valuesFromResult,
 } from "./result-visualization.ts";
 
 test("finds measured distributions by shape instead of one result key", () => {
@@ -72,8 +74,8 @@ test("does not mistake a parameter vector for an iteration trace", () => {
 
   assert.deepEqual(visualization.traces, []);
   assert.deepEqual(visualization.values, [
-    { label: "Parameters", value: "0.2, 0.7" },
-    { label: "Energy", value: "-1.137" },
+    { key: "parameters", label: "Parameters", value: "0.2, 0.7" },
+    { key: "energy", label: "Energy", value: "-1.137" },
   ]);
 });
 
@@ -84,7 +86,7 @@ test("rejects malformed distributions without hiding valid scalar output", () =>
   });
 
   assert.equal(visualization.distribution, null);
-  assert.deepEqual(visualization.values, [{ label: "Fidelity", value: "0.998" }]);
+  assert.deepEqual(visualization.values, [{ key: "fidelity", label: "Fidelity", value: "0.998" }]);
 });
 
 test("localizes presentation labels without changing result keys or values", () => {
@@ -97,8 +99,39 @@ test("localizes presentation labels without changing result keys or values", () 
 
   assert.equal(visualization.distribution?.label, "測定分布");
   assert.deepEqual(visualization.values, [
-    { label: "エネルギー (Ha)", value: "-1.137" },
+    { key: "energy_Ha", label: "エネルギー (Ha)", value: "-1.137" },
   ]);
   assert.equal(visualization.traces[0]?.label, "最適化履歴");
   assert.ok("energy_Ha" in result);
+});
+
+test("rows carry the result key, because two keys can humanize to one label", () => {
+  // The collision is real in both locales: `_` becomes a space and the Japanese
+  // table is keyed on a lowercased value, so case alone does not separate them.
+  assert.equal(humanizeResultKey("energy_Ha"), humanizeResultKey("energy_ha"));
+  assert.equal(humanizeResultKey("energy_Ha", "ja"), humanizeResultKey("energy_ha", "ja"));
+
+  const values = valuesFromResult({ energy_Ha: -1.1, energy_ha: -1.2 });
+
+  assert.deepEqual(values.map((value) => value.label), ["Energy Ha", "Energy Ha"]);
+  assert.deepEqual(values.map((value) => value.key), ["energy_Ha", "energy_ha"]);
+  assert.equal(new Set(values.map((value) => value.key)).size, values.length);
+});
+
+test("a plan that names the same expected key twice reports it once", () => {
+  // `expected_output_keys` is model-authored and its contract does not require
+  // uniqueness, so the duplicate has to be dropped here.
+  const values = valuesFromResult({ counts: 5, energy: -1 }, ["counts", "counts"]);
+
+  assert.deepEqual(values.map((value) => value.key), ["counts", "energy"]);
+});
+
+test("traces carry their result key too", () => {
+  const traces = tracesFromResult({
+    loss_history: [1, 0.5, 0.2, 0.1],
+    "loss history": [2, 1, 0.4, 0.2],
+  });
+
+  assert.deepEqual(traces.map((trace) => trace.label), ["Loss History", "Loss History"]);
+  assert.deepEqual(traces.map((trace) => trace.key), ["loss_history", "loss history"]);
 });
