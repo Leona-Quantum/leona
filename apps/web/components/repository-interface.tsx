@@ -69,6 +69,18 @@ const COPY = {
     more: (n: number) => `and ${n} more`,
     unknownNote:
       "The widths and types line up. What is not established is everything a width does not carry — the basis convention, the normalisation, the state each was written to start from — so this is not a claim that the two compose.",
+    /**
+     * The note for a list produced by a declared hole, and it exists because the
+     * one above is FALSE there.
+     *
+     * "The widths and types line up" is a claim about two published ports. A
+     * hole publishes a width and withholds the type — that is what the gap
+     * declaration says — so reusing the sentence above would assert agreement on
+     * exactly the field §3.6 recorded as missing. A guess in the hole, written
+     * in the caption rather than in the field.
+     */
+    holeNote:
+      "Only the register widths line up. This entry's source does not state what crosses this edge, so whether it carries qubits or classical bits is unknown — along with everything a width does not carry. These are the entries a filled-in gap could connect to, not entries that connect.",
     seeAll: (n: number) => `See all ${n} →`,
     stance: {
       source:
@@ -102,6 +114,8 @@ const COPY = {
     more: (n: number) => `ほか ${n} 件`,
     unknownNote:
       "幅と型は一致しています。一致が保証しないもの——基底の取り方、規格化、各エントリが前提とする初期状態——は未確認であり、これは両者が合成可能であるという主張ではありません。",
+    holeNote:
+      "一致しているのはレジスタ幅だけです。この端に何が流れるかは出典に記載がないため、量子ビットか古典ビットかも不明であり、幅が保証しないものも当然未確認です。これらは、欠落が埋められれば接続しうる候補であって、接続するエントリではありません。",
     seeAll: (n: number) => `同じ種類の${n}件を見る →`,
     stance: {
       source:
@@ -291,11 +305,20 @@ export function RepositoryInterfacePanel({
             copy={copy}
             tone="ok"
           />
+          {/* The note is keyed to the end the list was produced at, because the
+              two ends can differ: a record may publish a real input port and
+              declare a hole at its output, and one caption for both would be
+              wrong about one of them. Shown once — on the second list only when
+              the first is empty — so a page with both does not say it twice.
+
+              A hole at THIS entry's end is what changes the sentence. A hole on
+              the far side is the partner's disclosure and belongs on the
+              partner's page; the subject's own edge is still fully published. */}
           <PartnerList
             title={copy.unverifiedBefore}
             partners={upstreamUnknown}
             titleOf={titleOf}
-            note={copy.unknownNote}
+            note={entry.inputHole ? copy.holeNote : copy.unknownNote}
             copy={copy}
             tone="unknown"
           />
@@ -303,7 +326,13 @@ export function RepositoryInterfacePanel({
             title={copy.unverifiedAfter}
             partners={downstreamUnknown}
             titleOf={titleOf}
-            note={upstreamUnknown.length > 0 ? undefined : copy.unknownNote}
+            note={
+              upstreamUnknown.length > 0
+                ? undefined
+                : entry.outputHole
+                  ? copy.holeNote
+                  : copy.unknownNote
+            }
             copy={copy}
             tone="unknown"
           />
