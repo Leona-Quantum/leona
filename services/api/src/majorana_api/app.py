@@ -165,13 +165,33 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
         decision = limiter.check(client_address(headers, peer))
         if not decision.allowed:
+            # The refusal names the bucket that actually refused. Reporting a
+            # trusted renderer's ceiling as "anonymous" would tell whoever is
+            # reading the log to look at scrapers when the cause is our own
+            # render path looping — which is the only thing the trusted ceiling
+            # exists to catch, so it is the one case where getting this wrong
+            # sends the investigation in exactly the wrong direction. It would
+            # also tell our own server to "sign in".
+            title, reason = (
+                (
+                    "Too many requests from this trusted caller. This is the "
+                    "renderer's own ceiling, not the anonymous one; a render path "
+                    "is looping.",
+                    "trusted_rate_limited",
+                )
+                if trusted
+                else (
+                    "Too many requests from this address. This is an anonymous-traffic "
+                    "ceiling on the public catalog; sign in for your account's allowance.",
+                    "anonymous_rate_limited",
+                )
+            )
             return _problem(
                 429,
-                "Too many requests from this address. This is an anonymous-traffic "
-                "ceiling on the public catalog; sign in for your account's allowance.",
+                title,
                 "rate_limited",
                 headers={"Retry-After": str(decision.retry_after_s), **trust_header},
-                extra={"reason": "anonymous_rate_limited"},
+                extra={"reason": reason},
             )
         response = await call_next(request)
         response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]

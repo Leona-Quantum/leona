@@ -55,6 +55,17 @@ def _validate_trusted_caller_token(token: str) -> None:
     """
     if token in _PUBLIC_PLACEHOLDERS:
         raise RuntimeError("TRUSTED_CALLER_TOKEN is a public placeholder; generate a real secret")
+    if not token.isascii():
+        # Not style. `is_trusted_caller` refuses a non-ASCII value on BOTH sides,
+        # because `hmac.compare_digest` raises TypeError on one and the raise
+        # became a 500 on the credential-less catalog route. So a non-ASCII token
+        # here is not merely unusual — it is a secret no caller can ever present,
+        # and the service would start perfectly healthy while metering its own
+        # renderer as anonymous forever.
+        raise RuntimeError(
+            "TRUSTED_CALLER_TOKEN must be ASCII; a non-ASCII secret can never match "
+            "a presented header, so the exemption would silently never apply"
+        )
     if len(token) < _MIN_TOKEN_LENGTH:
         raise RuntimeError(
             f"TRUSTED_CALLER_TOKEN must be at least {_MIN_TOKEN_LENGTH} characters "

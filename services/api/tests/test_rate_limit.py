@@ -472,6 +472,65 @@ async def test_the_trust_verdict_is_readable_off_a_refusal():
     assert refused.headers[CALLER_TRUST_HEADER] == "anonymous"
 
 
+async def test_a_non_ascii_token_header_does_not_500_the_public_catalog():
+    """One header byte was an unauthenticated 500. Pinned.
+
+    `hmac.compare_digest` raises TypeError on a non-ASCII `str`, and header bytes
+    arrive here latin-1 decoded — so `X-Majorana-Trusted-Caller: \\x80` reached
+    the comparison, raised, and came back 500 from `/v1/catalog/*`, the one route
+    that takes no credential at all. Anybody could produce it, in a loop, for
+    free.
+
+    Sent as raw BYTES rather than a `str` because that is what a client actually
+    puts on the wire; httpx refuses to ascii-encode the str, which is precisely
+    why an ordinary client-side test would never have found this.
+    """
+    app = create_app(_settings(anon_rate_limit_per_minute=100, trusted_caller_token=TRUSTED_TOKEN))
+    async with _client(app) as client:
+        response = await client.get(
+            "/v1/catalog/entries",
+            headers={b"x-majorana-trusted-caller": bytes([0x80])},
+        )
+
+    assert response.status_code != 500, "a non-ASCII trusted-caller header 500s the API"
+    # And it is metered as anonymous, which is the only correct reading: the
+    # token is ASCII by construction, so a non-ASCII header cannot be ours.
+    assert response.headers[CALLER_TRUST_HEADER] == "anonymous"
+
+
+def test_a_non_ascii_token_is_refused_at_startup():
+    """The other half. A non-ASCII secret matches no header this service will
+    ever accept, so the exemption would silently never apply while the service
+    started perfectly healthy."""
+    with pytest.raises(RuntimeError, match="must be ASCII"):
+        _settings(trusted_caller_token="trusted-caller-token-for-tests-0123456789-ü")
+
+
+async def test_a_refused_trusted_caller_is_not_told_it_is_anonymous():
+    """The refusal names the bucket that refused it.
+
+    Reporting the renderer's own ceiling as an anonymous one points whoever is
+    reading at scrapers, when the only thing that ceiling catches is our own
+    render path looping. It also told our own server to "sign in".
+    """
+    app = create_app(
+        _settings(
+            anon_rate_limit_per_minute=100,
+            trusted_caller_token=TRUSTED_TOKEN,
+            trusted_rate_limit_per_minute=1,
+        )
+    )
+    headers = {"x-forwarded-for": "203.0.113.70", TRUSTED_CALLER_HEADER: TRUSTED_TOKEN}
+    async with _client(app) as client:
+        await client.get("/v1/catalog/entries", headers=headers)
+        refused = await client.get("/v1/catalog/entries", headers=headers)
+
+    assert refused.status_code == 429
+    assert refused.json()["reason"] == "trusted_rate_limited"
+    assert refused.headers[CALLER_TRUST_HEADER] == "trusted"
+    assert "sign in" not in refused.json()["title"]
+
+
 def test_the_trusted_ceiling_clears_a_launch_by_a_wide_margin():
     """283 records at a 300-second revalidate window is single-digit requests a
     minute from the renderer, whatever the visitor count. The headroom is for
