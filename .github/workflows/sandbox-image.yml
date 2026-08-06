@@ -1,0 +1,145 @@
+# The sandbox rootfs for untrusted, LLM-generated code. Procedure and rationale:
+# docs/runbooks/sandbox-image.md.
+#
+# Why this workflow exists: PR #262 added five packages to infra/sandbox/Dockerfile
+# and shipped three agent lanes that depended on them. Nothing built the image, so
+# the lanes were live and inert for a day — every run failed with
+# ModuleNotFoundError inside the sandbox. A merged Dockerfile change was not a
+# shipped Dockerfile change, and no check said so.
+#
+# `build` gates the PR. `publish` is workflow_dispatch only and pushes a DATED tag
+# and nothing else: `latest` is the live rootfs (majorana_sandbox.vercel.DEFAULT_IMAGE
+# is untagged), so moving it is the deploy. Promotion stays manual and stays behind
+# the runbook's step 4 — run a circuit in the real sandbox, do not just import.
+name: sandbox-image
+on:
+  pull_request:
+    paths:
+      - "infra/sandbox/**"
+      - ".github/workflows/sandbox-image.yml"
+  workflow_dispatch:
+    inputs:
+      tag:
+        description: "Tag to publish (YYYY-MM-DD). Never `latest` — promote by hand per the runbook."
+        required: true
+
+permissions:
+  contents: read
+
+jobs:
+  # Runs on every PR that touches the Dockerfile. The runner is amd64, which is the
+  # platform Vercel Sandbox requires, so this builds natively and needs no emulation.
+  build:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      - name: build the sandbox image
+        run: |
+          docker buildx build --platform linux/amd64 --load \
+            -t majorana-runner:ci infra/sandbox
+      # An import is the floor. qulacs and qiskit-aer are compiled wheels and can
+      # import against a mismatched ABI, so every framework also runs a Bell pair —
+      # the same check the runbook asks for against the live sandbox.
+      - name: every framework imports and runs
+        run: |
+          docker run --rm --network none majorana-runner:ci python -c "
+          import qiskit, qiskit_aer, pennylane, cirq, braket, numba, qibo, qulacs, gast
+
+          from braket.circuits import Circuit as BraketCircuit
+          from braket.devices import LocalSimulator
+          counts = LocalSimulator().run(BraketCircuit().h(0).cnot(0, 1), shots=100).result().measurement_counts
+          assert set(counts) <= {'00', '11'} and sum(counts.values()) == 100, counts
+
+          import qibo
+          qibo.set_backend('numpy')
+          from qibo import gates, models
+          qc = models.Circuit(2)
+          qc.add([gates.H(0), gates.CNOT(0, 1), gates.M(0, 1)])
+          freqs = qc(nshots=100).frequencies()
+          assert set(freqs) <= {'00', '11'}, freqs
+
+          state = qulacs.QuantumState(2)
+          circuit = qulacs.QuantumCircuit(2)
+          circuit.add_H_gate(0)
+          circuit.add_CNOT_gate(0, 1)
+          circuit.update_quantum_state(state)
+          probs = [abs(a) ** 2 for a in state.get_vector()]
+          assert abs(probs[0] - 0.5) < 1e-9 and abs(probs[3] - 0.5) < 1e-9, probs
+
+          from qiskit import QuantumCircuit
+          from qiskit_aer import AerSimulator
+          qk = QuantumCircuit(2, 2)
+          qk.h(0)
+          qk.cx(0, 1)
+          qk.measure([0, 1], [0, 1])
+          assert set(AerSimulator().run(qk, shots=100).result().get_counts()) <= {'00', '11'}
+
+          import pennylane as qml
+          dev = qml.device('default.qubit', wires=2)
+
+          @qml.qnode(dev)
+          def bell():
+              qml.Hadamard(0)
+              qml.CNOT([0, 1])
+              return qml.probs(wires=[0, 1])
+
+          p = bell()
+          assert abs(p[0] - 0.5) < 1e-9 and abs(p[3] - 0.5) < 1e-9, p
+
+          cq = cirq.Circuit()
+          q0, q1 = cirq.LineQubit.range(2)
+          cq.append([cirq.H(q0), cirq.CNOT(q0, q1), cirq.measure(q0, q1, key='m')])
+          m = cirq.Simulator().run(cq, repetitions=100).measurements['m']
+          assert all(a == b for a, b in m), 'cirq bell pair is not correlated'
+
+          print('all frameworks import and run')
+          "
+      # --network none above is the point: the production sandbox is created with an
+      # explicit deny-all egress policy and cannot install anything at runtime, so a
+      # package that is missing from the rootfs must fail here rather than there.
+      - name: report the size, because it is a cost nobody sees
+        run: |
+          echo "image size: $(docker image inspect majorana-runner:ci --format '{{.Size}}') bytes"
+
+  # Manual. Pushes a dated tag; does NOT touch `latest`.
+  publish:
+    if: github.event_name == 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+      # `inputs.tag` never reaches a `run:` script as an expression — it goes through
+      # env and is then validated. A workflow_dispatch input interpolated into a shell
+      # is a shell injection, and the tag is also the thing that must not be `latest`,
+      # so one step does both.
+      - name: validate the tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          if [ "$TAG" = "latest" ]; then
+            echo "latest is promoted by hand after verification — docs/runbooks/sandbox-image.md" >&2
+            exit 1
+          fi
+          case "$TAG" in
+            [0-9][0-9][0-9][0-9]-[0-9][0-9]-[0-9][0-9]) ;;
+            *) echo "tag must be YYYY-MM-DD, got: $TAG" >&2; exit 1 ;;
+          esac
+      # Token auth, not OIDC: the docker username is the TEAM ID, not a username.
+      - name: authenticate to VCR
+        env:
+          VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
+          VERCEL_TEAM_ID: ${{ secrets.VERCEL_TEAM_ID }}
+        run: printf '%s' "$VERCEL_TOKEN" | docker login vcr.vercel.com --username "$VERCEL_TEAM_ID" --password-stdin
+      - name: build and push the dated tag
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          docker buildx build --platform linux/amd64 \
+            --output "type=image,name=vcr.vercel.com/majoranaq/web/majorana-runner:${TAG},push=true,oci-mediatypes=true,compression=zstd,compression-level=3,force-compression=true" \
+            infra/sandbox
+      - name: what to do next
+        env:
+          TAG: ${{ inputs.tag }}
+        run: |
+          echo "Pushed :${TAG}. It is NOT live."
+          echo "Verify it in a real sandbox and promote it to :latest — docs/runbooks/sandbox-image.md steps 4 and 5."

@@ -27,8 +27,18 @@ from majorana_sandbox.spec import (
 # The one value that must never change silently. Asserted by CI.
 DENY_ALL_EGRESS = "deny-all"
 
-# Custom OCI image with the pinned scientific/quantum stack (qiskit/pennylane/cirq).
-# The tag is a control-plane constant; the image itself is built + scanned weekly.
+# Custom OCI image with the pinned scientific/quantum stack (qiskit/pennylane/cirq/
+# braket/qibo/qulacs), built from infra/sandbox/Dockerfile and published to the Vercel
+# Container Registry.
+#
+# THIS NAME CARRIES NO TAG, so it resolves to `latest` — moving that tag IS the deploy,
+# with no redeploy of anything here. Nothing publishes it automatically: a PR touching
+# infra/sandbox/** builds the image, imports all six frameworks and runs a Bell pair on
+# each under `--network none`, and stops there. `latest` moves only when a human
+# verifies a dated tag in a real sandbox and promotes it. The procedure, the
+# verification step and the rollback are in docs/runbooks/sandbox-image.md, and they
+# exist because #262 shipped three framework lanes against a rootfs that was never
+# rebuilt: live, inert, and ModuleNotFoundError for every user until it was.
 DEFAULT_IMAGE = "majorana-runner"
 
 _RUN_DIR = "/tmp/run"  # read-only rootfs except /tmp (05-security.md §1)
