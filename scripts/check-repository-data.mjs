@@ -424,6 +424,108 @@ for (const entry of entries) {
   }
 }
 
+// --- Source coverage and declared gaps (roadmap §3.6) --------------------------
+//
+// Three assertions and a census, and the third assertion is the one that
+// matters: a three-valued field whose middle value no record ever takes is a
+// field claiming a distinction it does not make.
+{
+  const coverageOut = mkdtempSync(join(tmpdir(), "repo-coverage-"));
+  const coverageFile = join(coverageOut, "coverage.mjs");
+  let coverageMod;
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/coverage.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: coverageFile,
+      logLevel: "silent",
+    });
+    coverageMod = await import(pathToFileURL(coverageFile).href);
+  } finally {
+    rmSync(coverageOut, { recursive: true, force: true });
+  }
+
+  // 1. Every record carries an explicit, complete coverage object.
+  //
+  // The barrel fills this to all-`unknown`, so a record without it means the
+  // default was removed or bypassed — and an absent key is dropped by
+  // `canonicalize`, making it permanently indistinguishable from a record that
+  // predates the field.
+  for (const entry of entries) {
+    if (!coverageMod.isSourceCoverage(entry.sourceCoverage)) {
+      fail(entry.slug, `sourceCoverage is missing or malformed: ${JSON.stringify(entry.sourceCoverage)}`);
+    }
+  }
+
+  // 2. Declared gaps are well-formed, bilingual, and actually say something.
+  //
+  // A gap with a two-word detail is not a declaration; it is the appearance of
+  // one, in the field whose whole value is that it can be read and acted on.
+  for (const entry of entries) {
+    if (entry.knownGaps === undefined) continue;
+    if (!coverageMod.isKnownGapList(entry.knownGaps)) {
+      fail(entry.slug, "knownGaps is present but malformed");
+      continue;
+    }
+    for (const gap of entry.knownGaps) {
+      if (gap.detail.length < 40) {
+        fail(entry.slug, `knownGaps[${gap.role}].detail is ${gap.detail.length} chars — too short to be a declaration`);
+      }
+      if (!gap.detailJa) fail(entry.slug, `knownGaps[${gap.role}] has no Japanese detail`);
+    }
+  }
+
+  // 3. The field is not inert.
+  //
+  // On the day this shipped exactly one record was informative, and that is a
+  // fine place to start. Zero is not: it means every record says "nobody has
+  // checked" on every axis, and a field that only ever takes one of its three
+  // values is not measuring anything. This fires if the authored records are
+  // dropped by a corpus repopulation — which the owner has explicitly reserved
+  // the right to do — rather than letting the field quietly go blank.
+  const informative = entries.filter((entry) => coverageMod.isInformative(entry.sourceCoverage));
+  if (informative.length === 0) {
+    errors.push(
+      "no entry has any coverage axis other than `unknown`. The field is inert: it claims a " +
+        "three-way distinction the corpus never makes. Either author coverage for a record from a " +
+        "source somebody has actually read, or remove the field.",
+    );
+  }
+
+  // 4. A ceiling, never a floor — the same shape as the problem-domain check
+  // above, and for the same reason. Coverage is AUTHORED from a source somebody
+  // read; it is never derived (§3.6, and the barrel comment says so). If most of
+  // the corpus becomes informative, the likeliest cause is not that somebody
+  // read 140 papers — it is that a derivation crept in, most likely off
+  // `verificationMethods`, which answers a different question and would turn a
+  // claim about Leona into a claim about a paper.
+  if (informative.length * 2 >= entries.length) {
+    errors.push(
+      `${informative.length} of ${entries.length} entries carry authored source coverage. If that is ` +
+        "genuinely authored, rewrite this check and say so. If it is derived, it is fabricating " +
+        "claims about sources — see §3.6 and the barrel comment in lib/public-repository.ts.",
+    );
+  }
+
+  if (!QUIET) {
+    const census = coverageMod.coverageCensus(entries);
+    console.log("\nsource coverage census (axis → reported / absent / unknown)");
+    for (const [axis, counts] of Object.entries(census)) {
+      console.log(
+        `  ${axis.padEnd(11)} ${String(counts.reported).padStart(4)} / ${String(counts.absent).padStart(4)} / ${String(counts.unknown).padStart(4)}`,
+      );
+    }
+    const gapped = entries.filter((entry) => (entry.knownGaps?.length ?? 0) > 0);
+    const reviewedNone = entries.filter((entry) => entry.knownGaps?.length === 0);
+    console.log(
+      `\nknown gaps: ${gapped.length} entries declare one or more, ${reviewedNone.length} reviewed and declare none, ` +
+        `${entries.length - gapped.length - reviewedNone.length} unreviewed.`,
+    );
+  }
+}
+
 // ---------------------------------------------------------------------------
 // The search fallback for `algorithmFamily` (s81).
 //

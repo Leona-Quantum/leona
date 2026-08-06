@@ -16,6 +16,7 @@
 // The specifier carries its `.ts` extension because this is now a VALUE import
 // rather than a type-only one: `node --test` strips the types but resolves the
 // path literally. The rest of lib/ spells it out for the same reason.
+import { isKnownGapList, isSourceCoverage } from "./coverage.ts";
 import {
   PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryCategory,
@@ -125,6 +126,19 @@ export function parseCatalogRecord(record: unknown): PublicRepositoryEntry | nul
   // on a string and would quietly match substrings.
   if (record.topics !== undefined && !isStringArray(record.topics)) return null;
 
+  // §3.6's two fields, on the same undefined-tolerant terms — and the tolerance
+  // is load-bearing rather than stylistic. There is a window between deploying
+  // this code and re-importing the corpus in which every published record still
+  // predates both fields. A guard that REQUIRED them would reject all 283 for
+  // the length of that window, `entries.length` would hit 0, and
+  // repository-source.ts would fall back to the static corpus with only a
+  // console line — a broken cutover that renders as a working site.
+  //
+  // Malformed, however, is not tolerated: a half-populated coverage object or a
+  // gap with no role is a schema disagreement, and rendering should stop.
+  if (record.sourceCoverage !== undefined && !isSourceCoverage(record.sourceCoverage)) return null;
+  if (record.knownGaps !== undefined && !isKnownGapList(record.knownGaps)) return null;
+
   return record as unknown as PublicRepositoryEntry;
 }
 
@@ -181,6 +195,19 @@ export function parseCatalogListRecord(record: unknown): PublicRepositoryListEnt
   // string here rather than an array is the dangerous case — `.includes` works
   // on a string and would quietly match substrings.
   if (record.topics !== undefined && !isStringArray(record.topics)) return null;
+
+  // §3.6's two fields, on the same undefined-tolerant terms — and the tolerance
+  // is load-bearing rather than stylistic. There is a window between deploying
+  // this code and re-importing the corpus in which every published record still
+  // predates both fields. A guard that REQUIRED them would reject all 283 for
+  // the length of that window, `entries.length` would hit 0, and
+  // repository-source.ts would fall back to the static corpus with only a
+  // console line — a broken cutover that renders as a working site.
+  //
+  // Malformed, however, is not tolerated: a half-populated coverage object or a
+  // gap with no role is a schema disagreement, and rendering should stop.
+  if (record.sourceCoverage !== undefined && !isSourceCoverage(record.sourceCoverage)) return null;
+  if (record.knownGaps !== undefined && !isKnownGapList(record.knownGaps)) return null;
 
   return record as unknown as PublicRepositoryListEntry;
 }

@@ -20,6 +20,7 @@ import type {
 } from "./repository/types";
 import { strongestTier, type VerificationMethodId, type VerificationTier } from "./repository/verification";
 import { deriveTopics } from "./repository/topics";
+import { unknownCoverage } from "./repository/coverage";
 import { ENTRY_ENRICHMENT } from "./repository/enrichment";
 import {
   circuitFramework,
@@ -68,11 +69,39 @@ function replaceLegacyBrand(value: string): string {
     .replaceAll("Quepo", "Atlas");
 }
 
+/**
+ * Fields the brand rewrite must not touch.
+ *
+ * `replaceLegacyBrand` rewrites the substring "Majorana" at every depth of every
+ * record. That was safe while the corpus said "Majorana" only as the old product
+ * name — measured 2026-08-06, the entries carry zero occurrences, so this has
+ * never fired in anger.
+ *
+ * It stops being safe the moment a record talks about the physics. **Majorana
+ * fermions and Majorana zero modes are live terms in this field**, and this is a
+ * quantum-computing corpus that the owner intends to populate from papers. A gap
+ * reading "no hardware demonstration on Majorana-based qubits" would ship as
+ * "...on Leona Quantum-based qubits" — a fabricated claim, in the one field whose
+ * entire purpose is honest disclosure — and a citation URL containing the
+ * substring would be rewritten into a dead link.
+ *
+ * So the fields carrying sourced scientific prose are exempt. The exemption is
+ * by key name at any depth, which is blunt, and blunt is right here: the cost of
+ * missing a rename is an unrewritten legacy brand string in one panel; the cost
+ * of rewriting a source's own words is a corpus that misquotes its sources.
+ */
+const BRAND_REWRITE_EXEMPT_KEYS = new Set(["knownGaps", "literature"]);
+
 function normalizePublicRepositoryText(value: unknown): unknown {
   if (typeof value === "string") return replaceLegacyBrand(value);
   if (Array.isArray(value)) return value.map(normalizePublicRepositoryText);
   if (value && typeof value === "object") {
-    return Object.fromEntries(Object.entries(value).map(([key, item]) => [key, normalizePublicRepositoryText(item)]));
+    return Object.fromEntries(
+      Object.entries(value).map(([key, item]) => [
+        key,
+        BRAND_REWRITE_EXEMPT_KEYS.has(key) ? item : normalizePublicRepositoryText(item),
+      ]),
+    );
   }
   return value;
 }
@@ -171,6 +200,19 @@ export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIE
     // Classified from the entry's own labels, on the same terms and for the
     // same reason as the line above. See ./repository/topics for the rules.
     topics: entry.topics?.length ? entry.topics : deriveTopics(entry),
+    // NOT derived, and the contrast with the two lines above is the point
+    // (§3.6). Coverage says what the SOURCE reports; verificationMethods says
+    // how Leona checked. Deriving one from the other would manufacture a claim
+    // about a paper out of a claim about us. So the only thing that happens
+    // here is that an unauthored record is made to say "nobody has checked" in
+    // full rather than by omission — `canonicalize` drops undefined-valued
+    // keys, and an absent key is indistinguishable from a record predating the
+    // field.
+    sourceCoverage: entry.sourceCoverage ?? unknownCoverage(),
+    // `knownGaps` is deliberately absent from this list. Defaulting it to []
+    // would make all 283 records assert "reviewed, declares no gaps" when
+    // nobody has looked at them — see the field's doc comment in
+    // ./repository/types and knownGapsState() in ./repository/coverage.
   };
 });
 
