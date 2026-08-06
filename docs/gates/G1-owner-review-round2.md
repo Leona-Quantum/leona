@@ -81,14 +81,14 @@ the one that mattered most in round 1.
 
 | # | field | model's answer | locator | note | verdict |
 |---|---|---|---|---|---|
-| 1 | problem | "to extend the framework to excited states, we here propose an algorithm, the subspace-search variational quantum eigensolver (SSVQE)" | §I |  | |
-| 2 | problem-domain input type | "Our objective here is to find excited states of the Hamiltonian H" | §II |  | |
-| 4 | input encoding | "input states {\|φⱼ⟩} will be chosen from a set of states which are easily preparable, such as the computational basis" | §II.1 | *run 2 gave the concrete "{\|0000⟩,\|0001⟩,\|0010⟩,\|0011⟩}" (§V)* | |
-| 5 | register signature | "n-qubit quantum computer" with "4-qubit Hamiltonians" in simulations | §V |  | |
-| 6 | core routine | "Minimize ℒ₁(θ)=∑ⱼ₌₀^k⟨φⱼ\|U†(θ)HU(θ)\|φⱼ⟩" then "maximize ℒ₂(φ)" | §II.1 |  | |
-| 10 | readout | "Each term of the above equation are measured separately on the NISQ device and summed classically" | §IV |  | |
-| 🔶 11 | shots | `NOT_STATED` | — |  | |
-| 12 | output type | "we find the k-th excited state \|E_k⟩" | §II.1 |  | |
+| 1 | problem | "to extend the framework to excited states, we here propose an algorithm, the subspace-search variational quantum eigensolver (SSVQE)" | §I |  | CORRECT|
+| 2 | problem-domain input type | "Our objective here is to find excited states of the Hamiltonian H" | §II |  | CORRECT|
+| 4 | input encoding | "input states {\|φⱼ⟩} will be chosen from a set of states which are easily preparable, such as the computational basis" | §II.1 | *run 2 gave the concrete "{\|0000⟩,\|0001⟩,\|0010⟩,\|0011⟩}" (§V)* | CORRECT both seem to point in same direction, just different levels of granularity and context|
+| 5 | register signature | "n-qubit quantum computer" with "4-qubit Hamiltonians" in simulations | §V |  | CORRECT|
+| 6 | core routine | "Minimize ℒ₁(θ)=∑ⱼ₌₀^k⟨φⱼ\|U†(θ)HU(θ)\|φⱼ⟩" then "maximize ℒ₂(φ)" | §II.1 |  | CORRECT|
+| 10 | readout | "Each term of the above equation are measured separately on the NISQ device and summed classically" | §IV |  | CORRECT|
+| 🔶 11 | shots | `NOT_STATED` | — |  | CORRECT|
+| 12 | output type | "we find the k-th excited state \|E_k⟩" | §II.1 |  | CORRECT|
 
 ## B6 · `1603.05681` · Quantum subspace expansion
 
@@ -109,17 +109,22 @@ the one that mattered most in round 1.
 
 | | count | of | threshold | pass? |
 |---|---|---|---|---|
-| correct in this sheet | **40** | 48 (8 left blank) | ≥ 30 | ✅ |
-| **criterion 2 — all stratum-B fields** | **64** (24 + 40) | 72 | ≥ 54 | ✅ **PASS** |
+| correct in this sheet | **48** | 48 | ≥ 30 | ✅ |
+| **criterion 2 — all stratum-B fields** | **72** (24 + 48) | 72 | ≥ 54 | ✅ **PASS** |
 | fabricated in this sheet | **0** | 48 | ≤ 2 total with round 1 | ✅ |
 
 **Every graded cell came back CORRECT. Not one `WRONG`, `INCOMPLETE`, `FABRICATED` or `MISSED` in
 either round.**
 
-**The eight blanks (B5 fields 1, 2, 4, 5, 6, 10, 11, 12) cannot change the outcome and do not need
-grading.** 64 correct already clears 54 with eight to spare; even scoring all eight as misses leaves
-criterion 2 passing. Recorded rather than chased, because a gate that keeps asking for marks after
-its bar is met is measuring the grader's patience rather than the model.
+**Completed the same day: 48 of 48, and stratum B is 72 of 72.** The grader returned the last eight
+(B5) after the tally above was first written at 64. **A perfect score across all 72 gate fields**,
+against a bar of 54.
+
+**A clean sweep is a result to report carefully rather than to celebrate.** It clears the bar by 18,
+which is the outcome the bar was set to detect — and it also means *this sample cannot say where the
+model's accuracy ends*, because nothing in it failed. The bound on where extraction breaks now comes
+entirely from §4's self-agreement (75%, worst 58%) and from G2, neither of which this result
+touches.
 
 Criterion 3's cap is ≤ 2 fabrications across all 72. Round 1 returned zero, so the whole
 allowance of 2 is available here — but a fabrication in *these* fields does not touch the
