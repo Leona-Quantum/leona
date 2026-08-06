@@ -13,7 +13,9 @@ Public product page: `https://web-majoranaq.vercel.app/open-source`
 - OpenAI-compatible and DeepSeek LLM routing, with stage-specific model selection.
 - Vercel Sandbox with explicit deny-all egress for generated code.
 - The reproducible Vercel Sandbox runner image lives in `infra/sandbox/Dockerfile` and
-  carries the pinned Qiskit, Aer, PennyLane, and Cirq runtime used by production.
+  carries the pinned Qiskit, Aer, PennyLane, Cirq, Braket, Qibo, and Qulacs runtime used
+  by production. Editing it is not shipping it — rebuild and publish with
+  `docs/runbooks/sandbox-image.md`.
 - Framework-native Qiskit, Cirq, and PennyLane artifacts; OpenQASM is optional
   interchange data used only for explicit cross-framework conversion.
 
