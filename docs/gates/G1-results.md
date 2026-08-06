@@ -211,10 +211,19 @@ before criterion 2 is known, would be 48 marks spent on a question that may neve
 
 ### 5.4 Criterion 2 — graded the same day, and it passed
 
-The grader returned **40 of the 48**, every one of them correct, leaving eight B5 cells blank.
-**64 of 72 against a bar of 54.** The eight blanks were not chased: even scored as misses the
-criterion still passes, and a gate that keeps asking for marks after its bar is met is measuring
-the grader's patience rather than the model.
+The grader returned **all 48**, every one of them correct. With round 1's 24 that is **72 of 72
+against a bar of 54** — a clean sweep of every field the gate is computed on.
+
+**Which is a result to report carefully rather than to celebrate.** It clears the bar by 18, and it
+also means **this sample cannot locate where the model's accuracy ends**, because nothing in it
+failed. A gate answers the question it was pre-registered to answer and no more: extraction from
+these six papers, on these twelve fields, judged against the papers. The bound on where extraction
+breaks comes entirely from §4's self-agreement and from G2 — see §5.5.
+
+*(It arrived in two parts. The first 40 landed with the eight B5 cells blank, at which point the
+tally read 64 of 72 — already passing, since even scoring the blanks as misses clears 54. The
+grader then returned the last eight the same day. Recorded because a tally that moved is worth
+being able to reconstruct.)*
 
 *(The earlier claim in `G1-owner-review-2026-08-06.md` that "those 24 cells decide the gate" was
 wrong — true of criteria 1 and 3, and criterion 2 is computed over all 72. Corrected there and here

@@ -150,10 +150,25 @@ production: *no extracted field ships without one.*
    was right and the paper has the typo** — which is the strongest single data point in the whole
    gate for the locator rule, because the quote is what made it checkable.
 
-G1 round2 completed. 
-license: B, with an A fallback, and the `evidence_hash` widening in the same PR
-security gate: repoint to `rebuild/05-security.md`, but also update that md file if needed.
-run the CI jobs block command for me and resolve that.
-do the WORKOS_JWT_AUDIENCE for me as well.
-just want to say: nothing of the structure of the current entries and future ones need to stay as-is if there's a better way to systematically present information.
-continue implementing a lot of next steps, full permissions given, push all to production.
+---
+
+## The grader's sign-off, and where each instruction went
+
+The owner closed the sheet with *"G1 round2 completed."* and attached six operational instructions.
+**They are quoted verbatim below because they are part of the record of how this gate closed, and
+each carries a disposition so this file stays an evidence artifact rather than a to-do list.** The
+work itself is tracked in `memory/OWNER_TODO.md` and `memory/NEXT.md`, not here.
+
+| instruction, verbatim | disposition |
+|---|---|
+| *"license: B, with an A fallback, and the `evidence_hash` widening in the same PR"* | **Decision recorded** — roadmap §11 Decision 1 closed, `DECISIONS.md` D85.6. Implementation queued; the widening must not be split out or the gate is decorative. |
+| *"security gate: repoint to `rebuild/05-security.md`, but also update that md file if needed"* | **Done.** The repoint was already live from session 70 and a sweep found no stale reference outside `attic/`; `rebuild/05-security.md` §2 is updated for session 85. |
+| *"run the CI jobs block command for me and resolve that."* | **Done.** `dev` now requires eight contexts — `client-bundle` and `blast-radius` added, read back off the protection API. |
+| *"do the WORKOS_JWT_AUDIENCE for me as well."* | **Not done, deliberately.** It needs a real signed-in token, and both routes to one are credentials. Guessing refuses every request including sign-in on a healthy service. `OWNER_TODO` §3. |
+| *"nothing of the structure of the current entries and future ones need to stay as-is if there's a better way to systematically present information."* | **Recorded** as roadmap §0.5 / `DECISIONS.md` D85.3 — the rework mandate, read as a licence to restructure and not to delete. |
+| *"continue implementing a lot of next steps, full permissions given, push all to production."* | **Session-scoped directive, actioned and now spent.** It authorised session 85's merges and the production corpus re-import. It is **not** a standing grant and confers nothing on a later session. |
+
+**On that last row, because a gate document is the wrong place to leave a blanket authorisation
+lying around.** It was given for one session, against work whose scope was visible at the time.
+Recording it with an expiry rather than as a bare sentence is the difference between a record and an
+instruction — and this file is a record.

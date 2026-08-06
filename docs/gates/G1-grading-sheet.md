@@ -244,19 +244,19 @@ pass.**
 
 ---
 
-## Tally — partial, 2026-08-06 (session 85)
+## Tally — FINAL, 2026-08-06 (session 85). ✅ G1 PASSES
 
-**24 of the 72 stratum-B cells are graded** (fields 3, 7, 8, 9 — the load-bearing set), by the
-owner, recorded in [`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md). The other 48
-are not, and criterion 2 is arithmetically undecidable until at least 30 of them are.
+**All 72 stratum-B cells are graded and every one is correct.** The load-bearing 24 in
+[`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md), the other 48 in
+[`G1-owner-review-round2.md`](G1-owner-review-round2.md).
 
 ### Stratum B — decides the gate
 
 | | count | of | threshold | pass? |
 |---|---|---|---|---|
 | load-bearing correct (fields 3, 7, 8, 9) | **24** | 24 | ≥ 22 | ✅ **PASS** |
-| all fields correct | **24 graded, 48 ungraded** | 72 | ≥ 54 | ⬜ **undecided** — needs ≥ 30 of the 48 |
-| fabricated | **0 of 24 graded** | 72 | ≤ 2 | ⬜ partial — 0 so far |
+| all fields correct | **72** | 72 | ≥ 54 | ✅ **PASS** — a clean sweep |
+| fabricated | **0** | 72 | ≤ 2 | ✅ **PASS** |
 | fabricated among load-bearing | **0** | 24 | **0** | ✅ **PASS** |
 | structural validity | 10 | 10 | 10 | ✅ already passed |
 
@@ -271,12 +271,15 @@ rather than left as a worry.
 B2-8 answers a qubit-count field with a pool size. It was flagged in this sheet's own note column as
 the live `FABRICATED` candidate, the grader saw the flag, and marked `CORRECT`.
 
-### What is still needed to decide G1
+### Nothing is still needed — and what the pass does not license
 
-Only criterion 2, and only from the 48 ungraded stratum-B cells (fields 1, 2, 4, 5, 6, 10, 11, 12
-across the six B papers). **≥ 30 of those 48 must be correct.** They are laid out in the same
-one-mark-per-row form that made the first pass work, in
-[`G1-owner-review-round2.md`](G1-owner-review-round2.md).
+All four criteria pass. By pre-registration §4 that makes **R3 a model-assisted build, with the
+locator requirement carried into production: no extracted field ships without one.**
+
+**A clean sweep clears the bar by 18 and cannot say where the model's accuracy ends**, because
+nothing in the sample failed. Stratum A was never graded, so §5's recalls-vs-reads control was never
+run; and §4's 75% self-agreement is untouched, so **G1 passing does not move G2 at all**. Both
+limits are written out in [`G1-results.md`](G1-results.md) §5.5.
 
 ### Stratum A — control (does not decide, but see pre-registration §5)
 
@@ -292,7 +295,8 @@ block the criteria above, and what it costs.
 
 ### Also record
 
-- `ONTOLOGY` marks (six roles do not fit): **none in the 24 graded** → these go to **G2**, not
-  counted as G1 misses.
-- Fields where the quote is real but does not support the claim: **none in the 24 graded** (B2-8 was
-  the candidate and was declined).
+- `ONTOLOGY` marks (six roles do not fit): **none in the 72** → these would have gone to **G2**,
+  not counted as G1 misses. Worth noting the grader flagged an ontology *gap* in prose instead —
+  hardware architecture is not a field — which is a G2/schema finding rather than a role mismatch.
+- Fields where the quote is real but does not support the claim: **none in the 72** (B2-8 was the
+  candidate and was declined by the grader with the flag visible).
