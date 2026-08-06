@@ -145,6 +145,10 @@ self-consistent and consistently wrong. It is reported because it is decision-re
    target of 10; 4 were done. **Reported rather than left as a smaller denominator**: the 75% is
    over 4 papers, not 10, and two of those four are the canonical stratum where agreement should be
    easiest.
-3. **A PDF retrieval path**, without which 17% of this sample is unreadable and the pre-2007
+3. ~~**A PDF retrieval path**, without which 17% of this sample is unreadable and the pre-2007
    `quant-ph` era — which is most of the foundational citations in the corpus — is entirely
-   unreachable.
+   unreachable.~~ **Closed 2026-08-06, and the diagnosis above was wrong in both directions:
+   `2305.04908` never needed a PDF (its e-print is LaTeX source), and for Grover a PDF is
+   retrievable but its mathematics is not — three extractors delete the radical from
+   "O(√N)". 12 of 12 now retrieve, 11 of them from LaTeX. Measurement and the guard that
+   keeps the corrupted one from asserting anything: [`G1-retrieval-2026-08-06.md`](G1-retrieval-2026-08-06.md).**
