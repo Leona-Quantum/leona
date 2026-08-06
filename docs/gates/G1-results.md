@@ -8,11 +8,13 @@ committed as `a80859bb` **before the first paper was fetched**.
 > with itself. Correctness per field needs one domain expert; the sheet is
 > [`G1-grading-sheet.md`](G1-grading-sheet.md).
 >
-> **Status 2026-08-06: still undecided, and the remaining ask is now 24 marks rather than 120.**
-> The owner reviewed the extraction and reported it *"pretty much correct"* — a real signal, and
-> not a verdict against any of the four pre-registered criteria. What that statement settles, what
-> it cannot, and the 24 stratum-B cells that actually decide the gate are in
-> [`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md). OWNER_TODO §2.
+> **Status 2026-08-06 (session 85): three of the four criteria are settled and all three passed.**
+> The owner graded the 24 load-bearing stratum-B cells, cell by cell with comments. **Criterion 1
+> passed 24 of 24** against a bar of 22, and **criterion 3's load-bearing half passed with zero
+> fabrications** — including on B2-8, the cell the sheet itself flagged as the live candidate.
+> Criterion 4 was already mechanical. **Criterion 2 is the only one left**, it is arithmetically
+> undecidable from these 24 marks alone, and it needs ≥ 30 of the 48 remaining stratum-B cells —
+> laid out in [`G1-owner-review-round2.md`](G1-owner-review-round2.md). Details in §5 below.
 
 ---
 
@@ -134,13 +136,66 @@ self-consistent and consistently wrong. It is reported because it is decision-re
 
 ---
 
-## 5. What is still open
+## 5. The owner's marks, and what is still open — session 85, 2026-08-06
 
-1. **The correctness verdicts.** Narrowed 2026-08-06: the bar is stratum-B-only and criteria 1
-   and 3 both key on fields 3, 7, 8, 9, so **24 marks decide the gate** — roughly an hour, laid
-   out in [`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md). Five of those 24 are
-   `NOT_STATED`, and three of them turning out to be `MISSED` fails criterion 1 on its own.
-   OWNER_TODO §2.
+### 5.1 Three criteria settled, all three passed
+
+The owner graded the 24 load-bearing stratum-B cells (fields 3, 7, 8, 9 × six B papers), with a
+written comment on each of the five refusals. Transcribed into
+[`G1-grading-sheet.md`](G1-grading-sheet.md) with per-row assertions, and into
+[`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md) verbatim.
+
+| criterion | threshold | result | |
+|---|---|---|---|
+| **1** — load-bearing correct | ≥ 22 of 24 | **24 of 24** | ✅ |
+| **3** — zero fabrications among load-bearing | 0 of 24 | **0** | ✅ |
+| **4** — structural validity | 10 of 10 | 10 of 10 | ✅ (mechanical, §2) |
+| **2** — all stratum-B fields correct | ≥ 54 of 72 | 24 graded, **48 ungraded** | ⬜ undecided |
+
+**The refusals were the risk and they came back clean.** §3 of this file said a `CORRECT-REFUSAL`
+and a `MISSED` are indistinguishable without reading the paper, and criterion 1 tolerated only two
+non-correct marks against five refusals in the load-bearing set. All five were read as correct
+refusals, each with the paper's actual text quoted in support — e.g. B5-7, *"no mention of
+complexity at all"*; B6-7, only *"while exact diagonalization is not advantageous from a complexity
+point of view"*, which is not a complexity claim for the method.
+
+**Criterion 3 passed on the cell that could have failed it.** B2-8 answers a qubit-count field with
+a pool size (*"2n−2 operators"*). The sheet flagged it in its own note column as the live
+`FABRICATED` candidate — one of those fails criterion 3 outright at any accuracy — the grader saw
+the flag and marked `CORRECT`.
+
+### 5.2 The one adversarial reading, computed rather than worried about
+
+**B5-8 is the single cell where the grader's own comment cites text pointing the other way.** The
+mark is `CORRECT-REFUSAL`, and the comment supporting it also quotes the paper saying *"works on an
+n-qubit quantum computer"* and *"we numerically simulate our algorithms with 4-qubit
+Hamiltonians"* — the first a general statement rather than a count, the second a property of a
+simulation run rather than of the method. That is a defensible refusal and it is the grader's call.
+It is also the exact cell where the two independent runs disagreed (§4), which is why it gets this
+paragraph.
+
+**It does not change the outcome.** Scored `MISSED` instead, criterion 1 is **23 of 24** against a
+bar of 22 and still passes; criterion 3 is untouched, because a `MISSED` is a miss and not a
+fabrication (pre-registration §4 separates them for this reason). **So criterion 1 passes under
+both readings**, and no further judgement on this cell is needed to decide the gate.
+
+### 5.3 Stratum A is ungraded, and that limits the reading rather than the result
+
+Pre-registration §5 reads A against B to separate *"extraction works"* from *"the model recalls but
+does not read"*. That table needs stratum A graded, and it is not. **This does not weaken any
+criterion above** — all four are computed on stratum B alone, by construction. What it costs is the
+diagnosis on a failure: if criterion 2 comes in below 54, the A/B comparison is what would say
+whether the cause is the model or the protocol, and it would have to be graded then. Grading A now,
+before criterion 2 is known, would be 48 marks spent on a question that may never be asked.
+
+### 5.4 What is still open
+
+1. **Criterion 2 — 48 marks, and only 30 need to be correct.** Fields 1, 2, 4, 5, 6, 10, 11, 12
+   across the six B papers, in the same one-mark-per-row form that made the first pass work:
+   [`G1-owner-review-round2.md`](G1-owner-review-round2.md). **The earlier claim in
+   `G1-owner-review-2026-08-06.md` that "those 24 cells decide the gate" was wrong** — it is true
+   of criteria 1 and 3, and criterion 2 is computed over all 72. Corrected there and here rather
+   than quietly dropped.
 2. **Six papers not re-run** (A1′, A4, B1′, B3, B4, B6). Pre-registration set a minimum of 4 and a
    target of 10; 4 were done. **Reported rather than left as a smaller denominator**: the 75% is
    over 4 papers, not 10, and two of those four are the canonical stratum where agreement should be
