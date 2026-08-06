@@ -16,6 +16,8 @@ export type EntryEnrichment = Partial<
     | "industryUseCases"
     | "industryUseCasesJa"
     | "verificationMethods"
+    | "sourceCoverage"
+    | "knownGaps"
   >
 > & {
   /**
@@ -71,6 +73,42 @@ const BENNETT_WIESNER_1992: PublicRepositoryCitation = {
 };
 
 export const ENTRY_ENRICHMENT: Record<string, EntryEnrichment> = {
+  // The corpus's first authored source coverage and its first declared gap
+  // (roadmap §3.6). Every other record is all-`unknown` by the barrel's
+  // default, which is the honest state of a record nobody has read the source
+  // for — this one has been read, so it can say more.
+  //
+  // The source for these three values is the OWNER'S G1 grading of
+  // `1810.09434`, recorded verbatim in docs/gates/G1-owner-review-2026-08-06.md
+  // (B5-8, B5-9, 2026-08-06). Nothing here is inferred from the record's own
+  // prose, which is exactly the derivation §3.6 forbids.
+  //
+  //   theory     — reported. The paper states the algorithm and its objective
+  //                functions; graded CORRECT on field 3.
+  //   simulation — reported. Owner, on B5-8: "Here we numerically simulate our
+  //                algorithms with 4-qubit Hamiltonians."
+  //   hardware   — absent, NOT unknown. The paper was read end to end for G1
+  //                and documents no device run. That is the distinction the
+  //                three-valued type exists for: somebody looked.
+  //
+  // And the gap is the one the owner named as the product direction (D85.2):
+  // the paper publishes no error data for its own simulations, so the number a
+  // reader needs is missing from the literature rather than from us. Reason is
+  // `not_stated_in_source` rather than a permanent one, because a Leona
+  // reproduction can close it — which is precisely §0.5.4's point.
+  "vqe-ssvqe": {
+    sourceCoverage: { theory: "reported", simulation: "reported", hardware: "absent" },
+    knownGaps: [
+      {
+        role: "readout",
+        reason: "not_stated_in_source",
+        detail:
+          "The paper reports no error or precision figures for its own 4-qubit simulations — there is no data table behind the simulated results, so the accuracy an implementer should expect is not recoverable from this source. Owner review of arXiv:1810.09434, G1 field B5-9, 2026-08-06.",
+        detailJa:
+          "本論文は自身の4量子ビットシミュレーションについて誤差・精度の数値を報告していません。結果を裏づけるデータ表がないため、実装者が期待できる精度をこの文献から復元することはできません。arXiv:1810.09434 のオーナーレビュー、G1 フィールド B5-9、2026-08-06。",
+      },
+    ],
+  },
   // Metrics-only enrichments: these slugs already carry prose comparisons in
   // their raw data; the barrel merges the table in (Owner Inbox 2026-07-19).
   "quantum-fourier-transform": {
