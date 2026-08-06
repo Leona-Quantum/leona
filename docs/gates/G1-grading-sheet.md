@@ -5,6 +5,13 @@ before extraction). Run log: [`G1-results.md`](G1-results.md).
 
 **Time needed: about half a day.** 120 fields, one mark each.
 
+> **Shorter route, added 2026-08-06.** The bar is computed on **stratum B only**, and two of its
+> four criteria key on fields 3, 7, 8 and 9 — so **24 of these cells decide the gate** and the rest
+> are context. They are extracted into
+> [`G1-owner-review-2026-08-06.md`](G1-owner-review-2026-08-06.md), which is about an hour. Grade
+> those first; the remaining 96 are still worth having, and are still worth marking here, but they
+> cannot change the verdict.
+
 ---
 
 ## How to grade
