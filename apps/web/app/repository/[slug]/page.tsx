@@ -75,6 +75,7 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
         category: candidate.category,
         wireCount: candidate.visualization?.wires?.length ?? 0,
         portableCircuit: candidate.portableCircuit,
+        knownGaps: candidate.knownGaps,
       }),
     ]),
   );
@@ -89,6 +90,7 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
     category: entry.category,
     wireCount: entry.visualization?.wires?.length ?? 0,
     portableCircuit: entry.portableCircuit,
+    knownGaps: entry.knownGaps,
   });
   const neighbours = neighboursOf(entry.slug, entryInterface, corpusInterfaces);
   // Counted here rather than inside the panel: the caller already holds every

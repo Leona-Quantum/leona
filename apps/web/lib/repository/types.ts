@@ -318,10 +318,28 @@ export const PUBLIC_REPOSITORY_LIST_FIELDS = [
   "codeVariants",
   // Three enum values per record, ~70 bytes — small, fixed-size, and the browse
   // list is where "which axes does the source cover" is worth seeing across the
-  // corpus at once. `knownGaps` is deliberately NOT here: it carries prose and
-  // citations, it is unbounded per record, and a declared hole is something you
-  // read on the entry rather than scan the list for.
+  // corpus at once.
   "sourceCoverage",
+  // Added when the `declared-hole` stance shipped, reversing the call made when
+  // this field was introduced one session earlier ("a declared hole is
+  // something you read on the entry rather than scan the list for"). That was
+  // right about reading and wrong about deriving: `deriveInterface` reads
+  // `knownGaps[].role` to decide the stance, the browse control's interface
+  // filter is built from those stances, and a field the list does not carry
+  // would make every declared hole render as `undeclared` in the one place a
+  // reader goes to *find* them — silently, and only in production against a
+  // healthy API, which is the failure mode `topics` and this whole allowlist
+  // exist because of.
+  //
+  // The objection it overrides was that this field is unbounded per record, and
+  // that objection is real. It is answered with a measurement rather than a
+  // judgement: +1,037 bytes over the 283-record corpus today (one record
+  // carries gaps), and ~290 KB if every record carried one of that size,
+  // against 770,397 bytes projected and a 2 MB ceiling. The ceiling is now
+  // asserted over the real corpus in
+  // scripts/catalog-bootstrap/from-catalog-validator.test.mjs, so growth here
+  // fails a test rather than a page.
+  "knownGaps",
 ] as const;
 
 export type PublicRepositoryListEntry = Pick<

@@ -9761,6 +9761,17 @@ div.mj-rail-row:hover {
   border-radius: 0 999px 999px 0;
   background: var(--bg-2);
 }
+/* A declared hole (§3.6): the edge is there and its shape is not. Dashed like
+   the caveated input above and for the same reason — roadmap §6 forbids an
+   unverified edge rendering as a near-miss — but hollow rather than filled, so
+   it reads as a socket waiting for something rather than as a finished joint.
+   Muted, never warning-coloured: a sourced declaration of what a paper omits is
+   a contribution, and colouring it as a fault would say the opposite. */
+.mj-iface-edge.is-hole {
+  border-style: dashed;
+  border-color: var(--text-2);
+  background: none;
+}
 .mj-iface-stance {
   margin: 0;
   color: var(--text-1);

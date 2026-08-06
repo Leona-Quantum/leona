@@ -358,6 +358,7 @@ if (!ENTRY_FILE) {
       category: entry.category,
       wireCount: entry.visualization?.wires?.length ?? 0,
       portableCircuit: entry.portableCircuit,
+      knownGaps: entry.knownGaps,
     });
     if (!interfaceMod.isInterfaceStance(derived.stance)) {
       fail(entry.slug, `interface stance outside the vocabulary: ${derived.stance}`);
@@ -373,13 +374,41 @@ if (!ENTRY_FILE) {
     stanceCounts.set(derived.stance, (stanceCounts.get(derived.stance) ?? 0) + 1);
   }
 
+  // A stance no record derives to is the stance version of the empty-vocabulary
+  // error above, and it fails differently — worse, because `interfaceOptions`
+  // already hides an uncarried stance, so the control looks correct while the
+  // class is simply gone from the site.
+  //
+  // `declared-hole` is the reason this check exists and the reason it is not
+  // vacuous. It is derived from `knownGaps[].role`, which is the only stance
+  // input that is NOT free with the record — it has to be authored by somebody
+  // who read a source, and it has to survive the browse-list projection. Both
+  // are things a corpus repopulation or an allowlist edit can remove silently,
+  // and the symptom either way is a record reading "no declared interface"
+  // where it used to say which part its paper omits. One record carries it
+  // today (`vqe-ssvqe`, a `readout` gap); zero means the distinction §3.6
+  // exists to draw is no longer drawn anywhere.
+  const uncarried = interfaceMod.INTERFACE_STANCES.filter((stance) => !stanceCounts.get(stance));
+  if (uncarried.length) {
+    errors.push(
+      `interface stances no entry derives to: ${uncarried.join(", ")}. Either author a record ` +
+        "that carries it, or remove the member — a stance nothing produces is a distinction the " +
+        "site claims and never makes.",
+    );
+  }
+
   const verdicts = new Map();
   const connected = new Set();
+  const meeting = new Set();
   for (const [producerSlug, producer] of interfaces) {
     for (const [consumerSlug, consumer] of interfaces) {
       if (producerSlug === consumerSlug) continue;
       const verdict = interfaceMod.connects(producer, consumer);
       verdicts.set(verdict, (verdicts.get(verdict) ?? 0) + 1);
+      if (verdict === "compatible" || verdict === "unknown") {
+        meeting.add(producerSlug);
+        meeting.add(consumerSlug);
+      }
       if (verdict === "compatible") {
         // The invariant that keeps `compatible` meaning something. Asserted over
         // the real corpus rather than trusted from the predicate, because this
@@ -404,6 +433,27 @@ if (!ENTRY_FILE) {
     );
   }
 
+  // The same ceiling one verdict wider, and it catches what the one above
+  // cannot: a loosening that inflates `unknown` rather than `compatible`.
+  //
+  // This is not hypothetical. §3.6's declared hole was first modelled as a bare
+  // flag — an edge named as missing, matched against anything with a port at
+  // the other end — and one authored gap on a single record took this number
+  // from 88 to 163, because the 75 entries whose port is the only one of its
+  // width in the catalogue all acquired a partner. Every check above stayed
+  // green: no `compatible` pair was added, no stance was wrong, and the browse
+  // heading simply started saying the catalogue was twice as connected as it
+  // is. `unknown` counts as *meeting* everywhere it is read, so it needs a
+  // ceiling of its own.
+  if (meeting.size * 2 >= entries.length) {
+    errors.push(
+      `${meeting.size} of ${entries.length} entries meet another entry on compatible or unknown. ` +
+        "That was 88, and this number is what the browse heading publishes. `unknown` is the verdict " +
+        "a loosened predicate produces first — check what a declared hole or a widened port is being " +
+        "matched against before rewriting this line.",
+    );
+  }
+
   if (!QUIET) {
     console.log("\ninterface stance → entries");
     for (const stance of interfaceMod.INTERFACE_STANCES) {
@@ -411,7 +461,8 @@ if (!ENTRY_FILE) {
     }
     console.log(
       `\nordered pairs: ${[...verdicts].map(([verdict, count]) => `${verdict} ${count}`).join(", ")}` +
-        `\n${connected.size} of ${entries.length} entries appear in at least one compatible pair.`,
+        `\n${connected.size} of ${entries.length} entries appear in at least one compatible pair.` +
+        `\n${meeting.size} of ${entries.length} meet another entry at all (compatible or unknown).`,
     );
   }
 }
