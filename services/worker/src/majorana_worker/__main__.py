@@ -9,21 +9,29 @@ active job before Cloud Run scale-down.
 import asyncio
 import contextlib
 import datetime as dt
+import hashlib
 import json
 import logging
 import math
 import os
 import signal
 import socket
+import uuid
 from typing import Any
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.observability import init_telemetry
 from majorana_api.repos import system
+from majorana_api.vqe_runtime_profiles import (
+    hardware_efficient_production_runtime_profiles,
+    production_runtime_profiles,
+    uccsd_production_runtime_profiles,
+)
 from opentelemetry import metrics
 
 from .errors import RetryableJobError
 from .handlers import DEAD_LETTER_HANDLERS, HANDLERS, close_orphaned_run
+from .vqe_runtime import VqeRuntimeError, probe_runtime_profile
 
 log = logging.getLogger("majorana_worker")
 
@@ -98,6 +106,10 @@ DEAD_LETTER_LEASE_S = _positive_env(
 if DEAD_LETTER_LEASE_S <= DEAD_LETTER_TIMEOUT_S:
     raise ValueError("WORKER_DEAD_LETTER_LEASE_S must exceed WORKER_DEAD_LETTER_TIMEOUT_S")
 DEAD_LETTER_INTERVAL_S = _positive_env("WORKER_DEAD_LETTER_INTERVAL_S", 15.0)
+VQE_READINESS_INTERVAL_S = _positive_env("VQE_READINESS_INTERVAL_S", 20.0)
+VQE_READINESS_TTL_S = _positive_env("VQE_READINESS_TTL_S", 60.0)
+if VQE_READINESS_TTL_S <= VQE_READINESS_INTERVAL_S * 2:
+    raise ValueError("VQE_READINESS_TTL_S must exceed twice VQE_READINESS_INTERVAL_S")
 
 
 class Sweep:
@@ -141,6 +153,7 @@ _job_lease_losses = _meter.create_counter("majorana.jobs.lease_lost")
 _job_attempts = _meter.create_histogram("majorana.jobs.attempts")
 _job_queue_age = _meter.create_histogram("majorana.jobs.queue_age_seconds")
 _runs_reaped = _meter.create_counter("majorana.runs.reaped")
+_vqe_readiness_updates = _meter.create_counter("majorana.vqe.readiness_updates")
 
 
 def _structured_log(severity: str, message: str, **fields: Any) -> None:
@@ -373,6 +386,122 @@ async def _reap_orphaned_runs(factory) -> int:
     return len(orphans)
 
 
+def _vqe_runtime_profiles():
+    """All qualified private profiles this worker can currently advertise."""
+
+    profiles = (
+        *production_runtime_profiles(),
+        *uccsd_production_runtime_profiles(),
+        *hardware_efficient_production_runtime_profiles(),
+    )
+    return tuple(sorted(profiles, key=lambda item: item.binding.runtime_profile_id))
+
+
+async def _publish_vqe_runtime_readiness(factory, *, worker_id: str) -> None:
+    """Probe outside request paths, then persist short-lived readiness leases."""
+
+    generation = uuid.uuid4()
+    for profile in _vqe_runtime_profiles():
+        observed_at = dt.datetime.now(dt.UTC)
+        status = "ready"
+        failure_code = "none"
+        try:
+            detail_sha256 = await probe_runtime_profile(profile)
+        except VqeRuntimeError as exc:
+            status = "unavailable"
+            failure_code = exc.failure_code.value
+            detail_sha256 = hashlib.sha256(
+                json.dumps(
+                    {
+                        "probe": "preprovisioned_oci_image_v1",
+                        "runtime_profile_id": profile.binding.runtime_profile_id,
+                        "failure_code": failure_code,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+        except Exception as exc:
+            # One broken probe must not suppress readiness updates for every
+            # other qualified runtime.  Persist a fail-closed lease and emit
+            # only the exception class, never the exception text (which can
+            # contain host paths or subprocess arguments).
+            status = "unavailable"
+            failure_code = "readiness_probe_internal_error"
+            detail_sha256 = hashlib.sha256(
+                json.dumps(
+                    {
+                        "probe": "preprovisioned_oci_image_v1",
+                        "runtime_profile_id": profile.binding.runtime_profile_id,
+                        "failure_code": failure_code,
+                        "exception_type": type(exc).__name__,
+                    },
+                    sort_keys=True,
+                    separators=(",", ":"),
+                ).encode()
+            ).hexdigest()
+        expires_at = observed_at + dt.timedelta(seconds=VQE_READINESS_TTL_S)
+        async with factory() as session:
+            await system.upsert_vqe_runtime_readiness(
+                session,
+                runtime_profile_id=profile.binding.runtime_profile_id,
+                generation=generation,
+                worker_id=worker_id,
+                status=status,
+                detail_sha256=detail_sha256,
+                observed_at=observed_at,
+                expires_at=expires_at,
+            )
+            await session.commit()
+        _vqe_readiness_updates.add(
+            1,
+            {
+                "status": status,
+                "framework": profile.binding.framework.value,
+                "failure_code": failure_code,
+            },
+        )
+        _structured_log(
+            "ERROR" if status == "unavailable" else "INFO",
+            "VQE runtime readiness probe",
+            event="vqe_runtime_readiness",
+            runtime_profile_id=profile.binding.runtime_profile_id,
+            framework=profile.binding.framework.value,
+            status=status,
+            failure_code=failure_code,
+            generation=str(generation),
+            observed_at=observed_at.isoformat(),
+            expires_at=expires_at.isoformat(),
+            detail_sha256_prefix=detail_sha256[:12],
+        )
+
+
+async def _run_vqe_readiness_loop(factory, *, worker_id: str, stop: asyncio.Event) -> None:
+    """Publish readiness independently from the queue's transaction hot path.
+
+    Runtime probing can involve Docker and a control-plane write can fail.  A
+    failure in either must make readiness expire fail-closed, but must never
+    delay job claims, lease recovery, or dead-letter handling.
+    """
+
+    while not stop.is_set():
+        try:
+            await _publish_vqe_runtime_readiness(factory, worker_id=worker_id)
+        except asyncio.CancelledError:
+            raise
+        except Exception as exc:
+            # Do not include exception text: database and subprocess errors can
+            # contain credentials, host paths, or command arguments.
+            log.error(
+                "VQE readiness publication failed; leases will expire fail-closed (%s)",
+                type(exc).__name__,
+            )
+        try:
+            await asyncio.wait_for(stop.wait(), timeout=VQE_READINESS_INTERVAL_S)
+        except TimeoutError:
+            pass
+
+
 async def _start_liveness() -> asyncio.AbstractServer:
     """Static 200 responder on $PORT — the Cloud Run service model requires a
     listener (AD-7 runs the worker as a second service off the api image).
@@ -405,6 +534,9 @@ async def run_forever() -> None:
     recover_sweep = Sweep(RECOVER_INTERVAL_S)
     dead_letter_sweep = Sweep(DEAD_LETTER_INTERVAL_S)
     reap_sweep = Sweep(REAP_INTERVAL_S)
+    readiness = asyncio.create_task(
+        _run_vqe_readiness_loop(factory, worker_id=worker_id, stop=stop)
+    )
 
     try:
         while not stop.is_set():
@@ -559,8 +691,11 @@ async def run_forever() -> None:
                 pass
     finally:
         preflight.cancel()
+        readiness.cancel()
         with contextlib.suppress(asyncio.CancelledError):
             await preflight
+        with contextlib.suppress(asyncio.CancelledError):
+            await readiness
         if liveness is not None:
             liveness.close()
             await liveness.wait_closed()

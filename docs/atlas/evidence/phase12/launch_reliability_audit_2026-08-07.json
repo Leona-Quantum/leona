@@ -1,0 +1,72 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-07T22:48:08+09:00",
+  "branch": "feature/vqe",
+  "scope": "private_component_first_vqe_launch_reliability",
+  "release_decision": "no_go_pending_digest_pinned_linux_e2e",
+  "claim_boundary": {
+    "private_execution_only": true,
+    "publication_blocked": true,
+    "human_scientific_review": "unreviewed",
+    "performance_claim_allowed": false
+  },
+  "steps": {
+    "S0": "verified_local",
+    "S1": "verified_local",
+    "S2": "verified_local",
+    "S3": "verified_postgresql",
+    "S4": "verified_local",
+    "S5": "verified_local",
+    "S6": "verified_local",
+    "S7": "verified_postgresql",
+    "S8": "verified_local",
+    "S9": "implemented_external_execution_not_run",
+    "S10": "verified_local",
+    "S11": "verified_local",
+    "S12": "verified_local_no_go"
+  },
+  "evidence": {
+    "offline_gate": {
+      "status": "passed",
+      "python_contract_tests": 63,
+      "web_contract_tests": 29
+    },
+    "python_repository_suite": {
+      "status": "passed",
+      "passed": 2911,
+      "skipped": 431,
+      "warnings": 1
+    },
+    "web_unit_suite": {
+      "status": "passed",
+      "passed": 706
+    },
+    "web_typecheck": "passed",
+    "web_lint": "passed",
+    "web_production_build": {
+      "status": "passed",
+      "routes": 338
+    },
+    "authenticated_vqe_playwright": {
+      "status": "passed",
+      "journeys": 6,
+      "evidence_class": "mock_control_plane_regression_only"
+    },
+    "postgresql_17": {
+      "migration_head": "vqe_launch_0057",
+      "empty_upgrade_downgrade_upgrade": "passed",
+      "evidence_preserving_downgrade_refusal": "passed",
+      "live_readiness_and_ledger_tests": 2
+    },
+    "secret_scan": {
+      "status": "passed_with_expected_fixture",
+      "expected_match": ".github/workflows/vqe-production-e2e.yml uses an isolated pg:pg CI service credential",
+      "live_credentials_detected": false
+    },
+    "digest_pinned_linux_amd64_e2e": {
+      "status": "not_run",
+      "reason": "local disk cannot safely hold all six exact OCI images; authoritative CI has not run for this worktree",
+      "counts_as_release_evidence": false
+    }
+  }
+}

@@ -242,7 +242,8 @@ async def handle_vqe_execute(
         evidence=evidence,
         evidence_json={
             "stderr_was_empty": not bool(runtime_output.bounded_stderr),
-            "human_review_state": "owner_waived",
+            "scientific_review_state": "unreviewed",
+            "execution_policy": "owner_waived_private",
             "production_runtime_status": binding.production_runtime_status,
         },
     )

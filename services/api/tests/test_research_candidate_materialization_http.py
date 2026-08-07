@@ -40,9 +40,15 @@ async def test_materialization_route_refuses_anonymous_callers_before_database_u
         )
 
     assert response.status_code == 401
-    assert response.json() == {
+    body = response.json()
+    assert body == {
         "type": "about:blank",
         "title": "missing bearer token",
         "status": 401,
         "code": "http_error",
+        "reason_code": "http_error",
+        "request_id": body["request_id"],
+        "trace_id": body["trace_id"],
     }
+    assert uuid.UUID(body["request_id"])
+    assert body["trace_id"] == body["request_id"]

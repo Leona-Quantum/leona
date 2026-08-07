@@ -41,8 +41,9 @@ export type VqeExecution = {
   status: "planned" | "queued" | "running" | "succeeded" | "failed" | "cancelled";
   production_runtime_status: "unqualified" | "qualified";
   public_execution: "blocked";
-  review_state: "owner_waived";
-  scientific_review: "owner_waived";
+  review_state: "unreviewed";
+  scientific_review: "unreviewed";
+  execution_policy: "owner_waived_private";
   runtime_qualification: "unqualified" | "qualified_private";
   publication: "blocked";
   observations: VqeObservation[];
@@ -82,7 +83,10 @@ export function capabilityFromExperiment(value: unknown): VqeCapability {
   if (semanticKey === "ansatz.hardware_efficient_ry_cx.v1") {
     return "h2_sto3g_hardware_efficient_ry_cx_v1";
   }
-  if (semanticKey === "ansatz.h2.fixed_excitation.v1") {
+  if (
+    semanticKey === "ansatz.h2.fixed_excitation.v1"
+    || semanticKey === "h2.sto3g.actual_vqe.v0_2.ansatz"
+  ) {
     return "h2_sto3g_actual_vqe_v1";
   }
   throw new Error("VQE experiment ansatz is not executable by this private runtime");
@@ -105,8 +109,9 @@ export function parseVqeExecutions(value: unknown): VqeExecution[] {
       || !STATUSES.has(item.status)
       || !["unqualified", "qualified"].includes(String(item.production_runtime_status))
       || item.public_execution !== "blocked"
-      || item.review_state !== "owner_waived"
-      || item.scientific_review !== "owner_waived"
+      || item.review_state !== "unreviewed"
+      || item.scientific_review !== "unreviewed"
+      || item.execution_policy !== "owner_waived_private"
       || !["unqualified", "qualified_private"].includes(String(item.runtime_qualification))
       || item.publication !== "blocked"
       || (item.production_runtime_status === "qualified") !== (item.runtime_qualification === "qualified_private")

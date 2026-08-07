@@ -48,7 +48,7 @@ GPU、QPU、古い論文環境の実行へ進んではならない。
 | 3 | Component Registry + experiment evidence in Neon | yes | contract only | verified_local; Neon/import pending |
 | 4 | Atlas Browse / Compare UI | Phase 3 | yes | implemented_and_browser_verified |
 | 5A | Durable non-public execution product integration | Phase 3 | yes | implemented_and_verified |
-| 5B | Scientific/runtime production qualification | Phase 3 | yes | private_runtime_qualified; scientific_review_owner_waived; public_promotion_blocked |
+| 5B | Scientific/runtime production qualification | Phase 3 | yes | private_runtime_qualified; scientific_review_unreviewed; execution_policy_owner_waived_private; public_promotion_blocked |
 | 6 | Security/scientific/E2E hardening and MVP Go/No-Go | test only | test | private_test_complete; public_release_no_go |
 | 7 | Manual GitHub metadata import | later | minimal | in_progress; execution_and_publication_prohibited |
 | 7.5 | Standard Component MVP and component-first UI | existing registry plus additive contracts | yes | locally implemented; live E2E operator-gated; ADR-0034 |
@@ -1256,9 +1256,10 @@ deterministic baselineのprecision/recall/evidence locator accuracyを測定す�
 
 ## Phase 9 — LLM-assisted extraction and reviewed materialization
 
-Status: S0〜S12はcode/private-schema境界で完了。Human reviewは
-`owner_waived`でスキップ可能だが、独立review済みとは表示せず、公開・科学・性能主張は
-fail-closedのまま維持する。
+Status: S0〜S12はcode/private-schema境界で完了。Human reviewは未実施のため
+`scientific_review=unreviewed`を維持する。Ownerの許可は別の
+`execution_policy=owner_waived_private`として表現し、公開・科学・性能主張は
+fail-closedのまま維持する（ADR-0035）。
 
 LLMはdeterministic baseline後にのみ追加する。
 

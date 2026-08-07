@@ -139,10 +139,11 @@
     "workflow_templates": 7
   },
   "claim_boundary": {
+    "execution_policy": "owner_waived_private",
     "external_repository_execution": "blocked",
     "public_execution": "blocked",
     "publication": "blocked",
-    "scientific_review": "owner_waived",
+    "scientific_review": "unreviewed",
     "scientific_superiority_claim": "blocked",
     "statement": "Executable interoperability and private persistence only; no optimizer, ansatz, or provider superiority claim."
   },
@@ -219,6 +220,10 @@
       "private_preview",
       "permanent_private"
     ],
+    "execution_policy": [
+      "review_required",
+      "owner_waived_private"
+    ],
     "publication": [
       "blocked",
       "private_only",
@@ -231,7 +236,6 @@
     ],
     "scientific_review": [
       "unreviewed",
-      "owner_waived",
       "workspace_reviewed",
       "independently_reviewed"
     ]

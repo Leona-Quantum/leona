@@ -242,7 +242,8 @@ export interface PrivateMvpCapabilityManifest {
   release_scope: "private_technical_mvp";
   product_model: "component_first_vqe";
   claim_boundary: {
-    scientific_review: "owner_waived";
+    scientific_review: "unreviewed";
+    execution_policy: "owner_waived_private";
     publication: "blocked";
     public_execution: "blocked";
     scientific_superiority_claim: "blocked";

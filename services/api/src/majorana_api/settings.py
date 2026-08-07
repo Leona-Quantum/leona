@@ -181,6 +181,10 @@ class Settings:
     # API may enqueue from a managed control plane, but the worker must enforce
     # the dedicated-host marker before it can launch an OCI runtime.
     vqe_production_execution: bool = False
+    # HMAC key for pseudonymising actors in the append-only VQE launch ledger.
+    # It is not an authentication credential, but production still requires an
+    # independently provisioned secret so actor pseudonyms cannot be guessed.
+    vqe_decision_hmac_key: str = ""
     #: Anonymous requests per minute per source address (`rate_limit.py`). Only
     #: credential-less traffic is counted, so this cannot throttle a signed-in
     #: user. `0` disables the limiter entirely — the escape hatch if it is ever
@@ -218,6 +222,11 @@ class Settings:
         if self.vqe_candidate_execution and self.vqe_production_execution:
             raise RuntimeError(
                 "candidate and production VQE execution gates are mutually exclusive"
+            )
+        if self.vqe_production_execution and len(self.vqe_decision_hmac_key) < _MIN_TOKEN_LENGTH:
+            raise RuntimeError(
+                "VQE_DECISION_HMAC_KEY must be at least 32 characters when production "
+                "VQE execution is enabled"
             )
         if self.deploy_probe_token:
             _validate_deploy_probe_token(self.deploy_probe_token)
@@ -305,6 +314,7 @@ class Settings:
             catalog_authority=CatalogAuthority.from_env(),
             vqe_candidate_execution=vqe_candidate_execution,
             vqe_production_execution=vqe_production_execution,
+            vqe_decision_hmac_key=os.environ.get("VQE_DECISION_HMAC_KEY", "").strip(),
             anon_rate_limit_per_minute=_int_env("ANON_RATE_LIMIT_PER_MINUTE", DEFAULT_ANON_LIMIT),
             trusted_caller_token=os.environ.get("TRUSTED_CALLER_TOKEN", "").strip(),
             trusted_rate_limit_per_minute=_int_env(

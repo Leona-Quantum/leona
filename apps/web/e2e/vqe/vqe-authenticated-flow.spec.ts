@@ -11,6 +11,16 @@ async function createExperiment(page: import("@playwright/test").Page) {
   await expect(page.getByRole("heading", { name: "H₂ STO-3G actual-VQE proof" })).toBeVisible();
 }
 
+test("launcher shows blocked workflows and refuses their creation fail-closed", async ({
+  page,
+}) => {
+  await page.goto("/studio?vqe=1");
+  await page.getByLabel("Workflow").selectOption({ label: "workflow.mock.blocked.v1" });
+  await expect(page.getByText("vqe_composition_unvalidated · composition_state"))
+    .toBeVisible();
+  await expect(page.getByRole("button", { name: "Create experiment" })).toBeDisabled();
+});
+
 test("authenticated private candidate happy path preserves the private claim boundary", async ({
   page,
   request,
@@ -159,8 +169,9 @@ test("private hardware-efficient migration runs on its qualified profile", async
   await expect(page.getByLabel("Workflow")).toContainText(
     "workflow.instance.mock.hardware-efficient",
   );
-  await expect(page.getByText("private_qualification_candidate")).toBeVisible();
-  await page.getByRole("button", { name: "Create experiment" }).click();
+  const createExperiment = page.getByRole("button", { name: "Create experiment" });
+  await expect(createExperiment).toBeEnabled();
+  await createExperiment.click();
   await page.waitForURL(/\/studio\?vqeExperiment=/);
   await expect(
     page.getByRole("heading", {

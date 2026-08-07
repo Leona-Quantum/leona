@@ -474,6 +474,30 @@ async def test_production_launcher_requires_preprovisioned_exact_digest(monkeypa
     }
 
 
+async def test_exact_oci_launcher_allows_explicit_local_development_sandbox(monkeypatch):
+    profile = production_runtime_profile(Framework.QISKIT)
+    report = (RAW / "qiskit_vqe_v0.2.json").read_bytes()
+    captured = []
+
+    async def create(*command, **kwargs):
+        captured.append((command, kwargs))
+        if command[1:3] == ("image", "inspect"):
+            return _InspectProcess(json.dumps([profile.image_reference]).encode())
+        return _SuccessfulProcess(report)
+
+    _enable_local_candidate(monkeypatch)
+    monkeypatch.setenv("MAJORANA_SANDBOX", "local")
+    monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
+    monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
+
+    output = await OciDockerVqeRuntimeExecutor().run(profile.binding)
+
+    assert output.payload["framework"] == "qiskit"
+    run_command, _run_kwargs = captured[1]
+    assert profile.image_reference in run_command
+    assert run_command[run_command.index("--network") + 1] == "none"
+
+
 async def test_uccsd_production_launcher_uses_frozen_entrypoint_without_cli_override(
     monkeypatch,
 ):

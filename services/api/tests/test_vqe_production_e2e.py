@@ -27,6 +27,7 @@ from majorana_api.auth import jwt as auth_jwt
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.repos import system
 from majorana_api.settings import Settings
+from majorana_worker import __main__ as worker_main
 from majorana_worker.handlers import handle_vqe_execute
 
 requires_production_e2e = pytest.mark.skipif(
@@ -89,6 +90,35 @@ def _token(private_key: object, issuer: str, *, session_id: str) -> str:
     )
 
 
+async def _launch_projection(
+    client: httpx.AsyncClient,
+    workflow_artifact_version_id: str,
+) -> dict:
+    response = await client.get(
+        f"/v1/vqe/workflow-launch-projections/{workflow_artifact_version_id}"
+    )
+    assert response.status_code == 200, response.text
+    return response.json()
+
+
+async def _create_experiment(
+    *,
+    client: httpx.AsyncClient,
+    workflow_artifact_version_id: str,
+    idempotency_key: str,
+) -> httpx.Response:
+    projection = await _launch_projection(client, workflow_artifact_version_id)
+    assert projection["experiment_creation"]["decision"] == "eligible", projection
+    return await client.post(
+        "/v1/vqe/experiments",
+        headers={"Idempotency-Key": idempotency_key},
+        json={
+            "workflow_artifact_version_id": workflow_artifact_version_id,
+            "expected_projection_sha256": projection["projection_sha256"],
+        },
+    )
+
+
 async def _execute_and_finish(
     *,
     client: httpx.AsyncClient,
@@ -101,19 +131,39 @@ async def _execute_and_finish(
     expected_depth: int = 83,
     expected_parameter_count: int = 1,
 ) -> dict:
+    # Emulate the production worker's periodic readiness publisher immediately
+    # before each start. This probes the exact digest-pinned OCI images already
+    # pulled by CI and persists a fresh, short-lived lease. No API request path
+    # invokes Docker and no availability is hard-coded in the test.
+    await worker_main._publish_vqe_runtime_readiness(
+        factory,
+        worker_id="phase12-production-e2e",
+    )
+    experiment_response = await client.get(f"/v1/vqe/experiments/{experiment_id}")
+    assert experiment_response.status_code == 200, experiment_response.text
+    workflow_artifact_version_id = experiment_response.json()[
+        "workflow_artifact_version_id"
+    ]
+    projection = await _launch_projection(client, workflow_artifact_version_id)
+    framework_projection = next(
+        item for item in projection["frameworks"] if item["framework"] == framework
+    )
+    assert framework_projection["decision"] == "eligible", framework_projection
     response = await client.post(
         f"/v1/vqe/experiments/{experiment_id}/executions",
         headers={"Idempotency-Key": f"phase78-execution-{label}-{framework}"},
         json={
             "requested_capability": requested_capability,
             "preferred_framework": framework,
+            "expected_projection_sha256": projection["projection_sha256"],
         },
     )
     assert response.status_code == 201, response.text
     execution = response.json()
     assert execution["production_runtime_status"] == "qualified"
-    assert execution["review_state"] == "owner_waived"
-    assert execution["scientific_review"] == "owner_waived"
+    assert execution["review_state"] == "unreviewed"
+    assert execution["scientific_review"] == "unreviewed"
+    assert execution["execution_policy"] == "owner_waived_private"
     assert execution["runtime_qualification"] == "qualified_private"
     assert execution["publication"] == "blocked"
 
@@ -202,10 +252,10 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             me = await client.get("/v1/me")
             assert me.status_code == 200, me.text
 
-            seed_response = await client.post(
-                "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "private-mvp-seed-experiment"},
-                json={"workflow_artifact_version_id": os.environ["MAJORANA_VQE_E2E_WORKFLOW_ID"]},
+            seed_response = await _create_experiment(
+                client=client,
+                workflow_artifact_version_id=os.environ["MAJORANA_VQE_E2E_WORKFLOW_ID"],
+                idempotency_key="private-mvp-seed-experiment",
             )
             assert seed_response.status_code == 201, seed_response.text
 
@@ -244,12 +294,10 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             assert slsqp_workflow["execution_status"] == "private_qualification_candidate"
             assert slsqp_workflow["visibility"] == "private"
 
-            slsqp_experiment_response = await client.post(
-                "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "private-mvp-slsqp-experiment"},
-                json={
-                    "workflow_artifact_version_id": slsqp_workflow["workflow_artifact_version_id"]
-                },
+            slsqp_experiment_response = await _create_experiment(
+                client=client,
+                workflow_artifact_version_id=slsqp_workflow["workflow_artifact_version_id"],
+                idempotency_key="private-mvp-slsqp-experiment",
             )
             assert slsqp_experiment_response.status_code == 201, slsqp_experiment_response.text
             slsqp_experiment = slsqp_experiment_response.json()
@@ -280,12 +328,10 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             assert cobyla_workflow["execution_status"] == "private_qualification_candidate"
             assert cobyla_workflow["visibility"] == "private"
 
-            cobyla_experiment_response = await client.post(
-                "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "private-mvp-cobyla-experiment"},
-                json={
-                    "workflow_artifact_version_id": cobyla_workflow["workflow_artifact_version_id"]
-                },
+            cobyla_experiment_response = await _create_experiment(
+                client=client,
+                workflow_artifact_version_id=cobyla_workflow["workflow_artifact_version_id"],
+                idempotency_key="private-mvp-cobyla-experiment",
             )
             assert cobyla_experiment_response.status_code == 201, cobyla_experiment_response.text
             cobyla_experiment = cobyla_experiment_response.json()
@@ -329,10 +375,10 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             assert migration["execution_status"] == "private_qualification_candidate"
             assert migration["visibility"] == "private"
 
-            uccsd_experiment_response = await client.post(
-                "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "phase78-uccsd-experiment"},
-                json={"workflow_artifact_version_id": migration["workflow_artifact_version_id"]},
+            uccsd_experiment_response = await _create_experiment(
+                client=client,
+                workflow_artifact_version_id=migration["workflow_artifact_version_id"],
+                idempotency_key="phase78-uccsd-experiment",
             )
             assert uccsd_experiment_response.status_code == 201, uccsd_experiment_response.text
             uccsd_experiment = uccsd_experiment_response.json()
@@ -393,14 +439,12 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
             )
             assert hardware_efficient_migration["visibility"] == "private"
 
-            hardware_efficient_experiment_response = await client.post(
-                "/v1/vqe/experiments",
-                headers={"Idempotency-Key": "phase79-hardware-efficient-experiment"},
-                json={
-                    "workflow_artifact_version_id": hardware_efficient_migration[
-                        "workflow_artifact_version_id"
-                    ]
-                },
+            hardware_efficient_experiment_response = await _create_experiment(
+                client=client,
+                workflow_artifact_version_id=hardware_efficient_migration[
+                    "workflow_artifact_version_id"
+                ],
+                idempotency_key="phase79-hardware-efficient-experiment",
             )
             assert hardware_efficient_experiment_response.status_code == 201, (
                 hardware_efficient_experiment_response.text

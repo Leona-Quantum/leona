@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useMemo, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
+import { formatVqeProblem } from "../../../lib/vqe-problem";
 import {
   capabilityFromExperiment,
   comparableResources,
@@ -37,6 +38,11 @@ export function VqeProofPanel({
   const [executions, setExecutions] = useState<VqeExecution[]>([]);
   const [comparisonIdentity, setComparisonIdentity] = useState<ComparisonExperiment | null>(null);
   const [rootWorkflowId, setRootWorkflowId] = useState<string | null>(null);
+  const [projectionSha256, setProjectionSha256] = useState<string | null>(null);
+  const [frameworkReady, setFrameworkReady] = useState<Record<VqeFramework, boolean>>({
+    qiskit: false,
+    pennylane: false,
+  });
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState<"start" | "cancel" | "materialize" | null>(null);
@@ -63,6 +69,30 @@ export function VqeProofPanel({
       }
       const experimentPayload = await experimentResponse.json();
       const identity = parseComparisonExperiment(experimentPayload);
+      const projectionResponse = await fetch(
+        `/api/vqe/workflow-launch-projections/${encodeURIComponent(identity.workflow_artifact_version_id)}`,
+        { cache: "no-store" },
+      );
+      const projectionPayload = await projectionResponse.json() as Record<string, unknown>;
+      if (!projectionResponse.ok || typeof projectionPayload.projection_sha256 !== "string") {
+        throw new Error(`workflow launch projection unavailable (${projectionResponse.status})`);
+      }
+      const frameworkRows = Array.isArray(projectionPayload.frameworks)
+        ? projectionPayload.frameworks
+        : [];
+      setProjectionSha256(projectionPayload.projection_sha256);
+      setFrameworkReady({
+        qiskit: frameworkRows.some(
+          (item) => item && typeof item === "object"
+            && (item as Record<string, unknown>).framework === "qiskit"
+            && (item as Record<string, unknown>).decision === "eligible",
+        ),
+        pennylane: frameworkRows.some(
+          (item) => item && typeof item === "object"
+            && (item as Record<string, unknown>).framework === "pennylane"
+            && (item as Record<string, unknown>).decision === "eligible",
+        ),
+      });
       setCapability(capabilityFromExperiment(experimentPayload));
       setComparisonIdentity(identity);
       setRootWorkflowId(resolveOptimizerSwapRootWorkflowId(
@@ -99,7 +129,7 @@ export function VqeProofPanel({
     : null;
 
   async function mutate(action: "start" | "cancel" | "materialize") {
-    if (action === "start" && capability === null) return;
+    if (action === "start" && (capability === null || projectionSha256 === null)) return;
     setBusy(action);
     setMessage(null);
     const path = action === "start"
@@ -118,18 +148,16 @@ export function VqeProofPanel({
           ? JSON.stringify({
               requested_capability: capability,
               preferred_framework: framework,
+              expected_projection_sha256: projectionSha256,
             })
           : "{}",
       });
-      const payload = await response.json() as { detail?: unknown; error?: string; artifact_version_id?: string };
+      const payload = await response.json() as Record<string, unknown>;
       if (!response.ok) {
-        const detail = typeof payload.detail === "string"
-          ? payload.detail
-          : payload.error ?? JSON.stringify(payload.detail);
-        throw new Error(detail || `${action} failed (${response.status})`);
+        throw new Error(formatVqeProblem(payload, `${action} failed (${response.status})`));
       }
       setMessage(action === "materialize"
-        ? `${ja ? "非公開候補を保存しました" : "Private candidate saved"}: ${payload.artifact_version_id ?? ""}`
+        ? `${ja ? "非公開候補を保存しました" : "Private candidate saved"}: ${typeof payload.artifact_version_id === "string" ? payload.artifact_version_id : ""}`
         : ja ? "要求を受け付けました" : "Request accepted");
       await refresh();
     } catch (cause) {
@@ -163,8 +191,8 @@ export function VqeProofPanel({
           <strong>{ja ? "研究候補 — 公開結果ではありません" : "Research candidate — not a public result"}</strong>
           <p>
             {ja
-              ? "独立科学レビューはOwner判断で免除されています。runtime資格状態は実行ごとに表示し、公開実行・公開結果・性能主張は停止中です。保存物はprivate候補のままです。"
-              : "Independent scientific review is owner-waived. Runtime qualification is shown per execution; public execution, public results, and performance claims remain blocked. Materialized evidence stays private."}
+              ? "科学レビュー状態はunreviewedです。Owner方針によりprivate実行のみ許可され、公開実行・公開結果・性能主張は停止中です。保存物はprivate候補のままです。"
+              : "Scientific review remains unreviewed. Owner policy permits private execution only; public execution, public results, and performance claims remain blocked. Materialized evidence stays private."}
           </p>
         </div>
 
@@ -212,7 +240,7 @@ export function VqeProofPanel({
         ) : state === "ready" ? <p className="mj-studio-empty">{ja ? "このフレームワークの実行はまだありません。" : "No execution exists for this framework."}</p> : null}
 
         <div className="mj-studio-actions">
-          <button className="mj-primary-button" type="button" disabled={busy !== null || Boolean(selected) || capability === null} onClick={() => void mutate("start")}>
+          <button className="mj-primary-button" type="button" disabled={busy !== null || Boolean(selected) || capability === null || !projectionSha256 || !frameworkReady[framework]} onClick={() => void mutate("start")}>
             {busy === "start"
               ? (ja ? "開始中…" : "Starting…")
               : (ja ? "private候補を実行" : "Run private candidate")}

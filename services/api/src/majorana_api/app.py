@@ -5,6 +5,9 @@ origin (02-architecture.md §3, 05-security.md §1). Both clients use the
 repository layer owned by this service; no other process may access Postgres.
 """
 
+import logging
+import re
+import uuid
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI, HTTPException, Request
@@ -40,6 +43,18 @@ from .routes.workspaces import router as workspaces_router
 from .settings import Settings
 
 
+logger = logging.getLogger(__name__)
+_REQUEST_ID_RE = re.compile(r"^[A-Za-z0-9._:-]{1,128}$")
+
+
+def _correlation_id(value: str | None) -> str:
+    """Accept only log-safe caller IDs; otherwise generate a server ID."""
+
+    if value and _REQUEST_ID_RE.fullmatch(value):
+        return value
+    return str(uuid.uuid4())
+
+
 def _wire_observability(app: FastAPI) -> None:
     if init_telemetry("majorana-api") is not None:
         from opentelemetry.instrumentation.fastapi import FastAPIInstrumentor
@@ -61,17 +76,35 @@ def _problem(
     code: str,
     headers: dict[str, str] | None = None,
     extra: dict | None = None,
+    request: Request | None = None,
 ) -> JSONResponse:
-    body = {"type": "about:blank", "title": title, "status": status, "code": code}
+    request_id = getattr(request.state, "request_id", None) if request else None
+    trace_id = getattr(request.state, "trace_id", None) if request else None
+    body = {
+        "type": "about:blank",
+        "title": title,
+        "status": status,
+        # `code` is retained for existing clients. `reason_code` is the stable
+        # Phase 12 machine contract and must never contain free-form detail.
+        "code": code,
+        "reason_code": code,
+        "request_id": request_id,
+        "trace_id": trace_id,
+    }
     if extra:
         # Typed-refusal fields (`reason`, and whatever that reason carries) as
         # siblings of `title`, which is what RFC 7807 says extensions are.
         body.update({k: v for k, v in extra.items() if k not in body})
+    response_headers = dict(headers or {})
+    if request_id:
+        response_headers["X-Request-ID"] = request_id
+    if trace_id:
+        response_headers["X-Trace-ID"] = trace_id
     return JSONResponse(
         body,
         status_code=status,
         media_type="application/problem+json",
-        headers=headers,
+        headers=response_headers,
     )
 
 
@@ -84,6 +117,26 @@ def _too_large() -> JSONResponse:
     )
 
 
+def _safe_validation_errors(exc: RequestValidationError) -> list[dict[str, object]]:
+    """Return only structural validation facts, never rejected input values.
+
+    FastAPI's ``RequestValidationError.errors`` does not consistently expose
+    Pydantic's optional ``include_input``/``include_context`` keyword arguments
+    across supported dependency versions.  Selecting the three stable fields
+    ourselves keeps the error contract version-independent and prevents a
+    password, token, or database URL from being reflected in the response.
+    """
+
+    return [
+        {
+            key: error[key]
+            for key in ("type", "loc", "msg")
+            if key in error
+        }
+        for error in exc.errors()
+    ]
+
+
 def create_app(settings: Settings | None = None) -> FastAPI:
     app = FastAPI(title="majorana-api", lifespan=_lifespan)
     app.state.settings = settings or Settings.from_env()
@@ -92,7 +145,8 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         allow_origins=[app.state.settings.web_origin],
         allow_credentials=True,
         allow_methods=["*"],
-        allow_headers=["Authorization", "Content-Type"],
+        allow_headers=["Authorization", "Content-Type", "Idempotency-Key", "X-Request-ID"],
+        expose_headers=["X-Request-ID", "X-Trace-ID"],
     )
 
     # Per-IP admission control for callers presenting no credential — the
@@ -114,8 +168,16 @@ def create_app(settings: Settings | None = None) -> FastAPI:
 
     @app.middleware("http")
     async def _anon_rate_limit(request: Request, call_next):
+        request.state.request_id = _correlation_id(request.headers.get("X-Request-ID"))
+        # OpenTelemetry injects a trace into its own context. Until every
+        # deployment exports it, a separate stable response correlation value
+        # is still more useful than an absent trace identifier.
+        request.state.trace_id = request.state.request_id
         if request.url.path in EXEMPT_PATHS:
-            return await call_next(request)
+            response = await call_next(request)
+            response.headers["X-Request-ID"] = request.state.request_id
+            response.headers["X-Trace-ID"] = request.state.trace_id
+            return response
         headers = {k.lower(): v for k, v in request.headers.items()}
 
         # Total request size. Pydantic bounds each FIELD — `task_prompt` at
@@ -131,11 +193,23 @@ def create_app(settings: Settings | None = None) -> FastAPI:
         # anything; `read_bounded_body` is what makes the limit true.
         declared = headers.get("content-length")
         if declared and declared.isdigit() and int(declared) > MAX_REQUEST_BYTES:
-            return _too_large()
+            return _problem(
+                413,
+                f"Request body exceeds the {MAX_REQUEST_BYTES // 1024} KB limit.",
+                "request_too_large",
+                extra={"reason": "request_too_large", "limit_bytes": MAX_REQUEST_BYTES},
+                request=request,
+            )
         try:
             buffered = await read_bounded_body(request.receive, MAX_REQUEST_BYTES)
         except BodyTooLarge:
-            return _too_large()
+            return _problem(
+                413,
+                f"Request body exceeds the {MAX_REQUEST_BYTES // 1024} KB limit.",
+                "request_too_large",
+                extra={"reason": "request_too_large", "limit_bytes": MAX_REQUEST_BYTES},
+                request=request,
+            )
         request._receive = replay(buffered, request.receive)
 
         # The anonymous-serving surface, and EVERY caller on it — including one
@@ -193,9 +267,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
                 "rate_limited",
                 headers={"Retry-After": str(decision.retry_after_s), **trust_header},
                 extra={"reason": reason},
+                request=request,
             )
         response = await call_next(request)
         response.headers[CALLER_TRUST_HEADER] = trust_header[CALLER_TRUST_HEADER]
+        response.headers["X-Request-ID"] = request.state.request_id
+        response.headers["X-Trace-ID"] = request.state.trace_id
         return response
 
     @app.exception_handler(HTTPException)
@@ -211,29 +288,48 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             # are not the ones the product was demonstrated from.
             return _problem(
                 exc.status_code,
-                str(detail.get("error", "request refused")),
-                "http_error",
+                str(detail.get("message") or detail.get("error") or "request refused"),
+                str(detail.get("reason_code") or detail.get("reason") or detail.get("code") or "http_error"),
                 headers=exc.headers,
-                extra={k: v for k, v in detail.items() if k != "error"},
+                extra={k: v for k, v in detail.items() if k not in {"error", "message"}},
+                request=request,
             )
-        return _problem(exc.status_code, str(detail), "http_error", headers=exc.headers)
+        return _problem(
+            exc.status_code,
+            str(detail),
+            "http_error",
+            headers=exc.headers,
+            request=request,
+        )
 
     @app.exception_handler(NotFoundError)
     async def _not_found(request: Request, exc: NotFoundError):
-        return _problem(404, "not found", "not_found")
+        return _problem(404, "not found", "not_found", request=request)
 
     @app.exception_handler(AuthzError)
     async def _authz(request: Request, exc: AuthzError):
-        return _problem(403, "forbidden", "forbidden")
+        return _problem(403, "forbidden", "forbidden", request=request)
 
     @app.exception_handler(RequestValidationError)
     async def _validation(request: Request, exc: RequestValidationError):
-        return _problem(422, "validation failed", "validation_error")
+        return _problem(
+            422,
+            "validation failed",
+            "validation_error",
+            extra={"errors": _safe_validation_errors(exc)},
+            request=request,
+        )
 
     @app.exception_handler(Exception)
     async def _unhandled(request: Request, exc: Exception):
         # Never leak internals (05-security.md §1); detail lives in logs/Sentry.
-        return _problem(500, "internal error", "internal_error")
+        logger.exception(
+            "unhandled API error request_id=%s trace_id=%s path=%s",
+            request.state.request_id,
+            request.state.trace_id,
+            request.url.path,
+        )
+        return _problem(500, "internal error", "internal_error", request=request)
 
     # /health, not /healthz: Google Front End intercepts /healthz on run.app
     # URLs and returns its own 404 before the container ever sees the request.

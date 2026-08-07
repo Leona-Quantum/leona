@@ -7,6 +7,7 @@ framework executions.
 """
 
 import asyncio
+import datetime as dt
 import hashlib
 import os
 import uuid
@@ -36,7 +37,7 @@ from sqlalchemy import delete, update
 from sqlalchemy.exc import DBAPIError, IntegrityError
 
 from majorana_api.db import engine_from_env, session_factory
-from majorana_api.orm import VqeComponentSpec, VqeObservation
+from majorana_api.orm import VqeComponentSpec, VqeLaunchDecision, VqeObservation
 from majorana_api.repos import (
     NotFoundError,
     artifacts as artifacts_repo,
@@ -449,7 +450,102 @@ async def test_observation_rows_reject_update_and_delete(db):
         await session.rollback()
 
         with pytest.raises(DBAPIError, match="append-only"):
-            await session.execute(delete(VqeObservation).where(VqeObservation.id == observation_id))
+            await session.execute(
+                delete(VqeObservation).where(VqeObservation.id == observation_id)
+            )
+            await session.commit()
+
+
+@requires_db
+async def test_runtime_readiness_rejects_delayed_older_heartbeat(db):
+    """A delayed worker transaction cannot overwrite fresher availability."""
+
+    profile = f"phase12-profile-{uuid.uuid4()}"
+    generation = uuid.uuid4()
+    observed_at = dt.datetime.now(dt.UTC)
+    async with db() as session:
+        await system.upsert_vqe_runtime_readiness(
+            session,
+            runtime_profile_id=profile,
+            generation=generation,
+            worker_id="worker-current",
+            status="ready",
+            detail_sha256=_digest("current-ready"),
+            observed_at=observed_at,
+            expires_at=observed_at + dt.timedelta(minutes=2),
+        )
+        await session.commit()
+
+    async with db() as session:
+        await system.upsert_vqe_runtime_readiness(
+            session,
+            runtime_profile_id=profile,
+            generation=uuid.uuid4(),
+            worker_id="worker-delayed",
+            status="unavailable",
+            detail_sha256=_digest("delayed-unavailable"),
+            observed_at=observed_at - dt.timedelta(seconds=1),
+            expires_at=observed_at + dt.timedelta(seconds=30),
+        )
+        await session.commit()
+
+    async with db() as session:
+        row = await system.get_vqe_runtime_readiness(
+            session,
+            runtime_profile_id=profile,
+        )
+        assert row is not None
+        assert row.generation == generation
+        assert row.worker_id == "worker-current"
+        assert row.status == "ready"
+        assert row.observed_at == observed_at
+
+
+@requires_db
+async def test_launch_decision_rows_reject_update_and_delete(db):
+    """Operational decisions are immutable evidence, not editable status rows."""
+
+    async with db() as session:
+        scope = await _new_scope(session)
+        workflow, _ = await _make_component(scope, session, ComponentType.WORKFLOW)
+        decision = await vqe.append_launch_decision(
+            scope,
+            session,
+            actor_hmac_sha256=_digest("actor"),
+            request_id=f"phase12-{uuid.uuid4()}",
+            action="create_experiment",
+            workflow_artifact_version_id=workflow.id,
+            experiment_id=None,
+            decision="blocked",
+            primary_reason_code="vqe_runtime_readiness_unknown",
+            blockers_json=[
+                {
+                    "reason_code": "vqe_runtime_readiness_unknown",
+                    "field": "live_readiness",
+                    "retryable": True,
+                }
+            ],
+            projection_sha256=_digest("projection"),
+            registry_snapshot_sha256=_digest("registry"),
+            readiness_snapshot_json=[],
+        )
+        await session.commit()
+        decision_id = decision.id
+
+    async with db() as session:
+        with pytest.raises(DBAPIError, match="append-only"):
+            await session.execute(
+                update(VqeLaunchDecision)
+                .where(VqeLaunchDecision.id == decision_id)
+                .values(decision="accepted")
+            )
+            await session.commit()
+        await session.rollback()
+
+        with pytest.raises(DBAPIError, match="append-only"):
+            await session.execute(
+                delete(VqeLaunchDecision).where(VqeLaunchDecision.id == decision_id)
+            )
             await session.commit()
 
 

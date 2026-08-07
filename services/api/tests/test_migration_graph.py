@@ -61,7 +61,7 @@ def test_migration_revision_ids_are_unique_resolved_and_single_headed():
 
     referenced = {parent for values in parents.values() for parent in values}
     static_heads = sorted(set(by_revision) - referenced)
-    assert static_heads == ["vqe_reconcile_0056"]
+    assert static_heads == ["vqe_launch_0057"]
 
     expected_vqe_chain = {
         "vqe_0046": ("0045",),
@@ -76,6 +76,7 @@ def test_migration_revision_ids_are_unique_resolved_and_single_headed():
         "0054": ("vqe_0053",),
         "vqe_merge_0055": ("0048", "0054"),
         "vqe_reconcile_0056": ("vqe_merge_0055",),
+        "vqe_launch_0057": ("vqe_reconcile_0056",),
     }
     assert {revision: parents[revision] for revision in expected_vqe_chain} == expected_vqe_chain
 

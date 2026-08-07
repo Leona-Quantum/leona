@@ -102,6 +102,8 @@ from ..orm import VqeObservation as VqeObservationRow
 from ..orm import VqeControlledComparisonRun as VqeControlledComparisonRunRow
 from ..orm import VqeControlledComparisonSpec as VqeControlledComparisonSpecRow
 from ..orm import VqeWorkflowComponent as VqeWorkflowComponentRow
+from ..orm import VqeLaunchDecision as VqeLaunchDecisionRow
+from ..orm import VqeRuntimeReadiness as VqeRuntimeReadinessRow
 from . import artifacts as artifacts_repo
 from ._base import NotFoundError, RepoError, require_write
 
@@ -121,6 +123,67 @@ class InvalidWorkflowCompositionError(RepoError):
 
 class ComparisonIntegrityError(RepoError):
     """The comparison does not reference one controlled Workflow pair."""
+
+
+async def append_launch_decision(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    actor_hmac_sha256: str,
+    request_id: str,
+    action: str,
+    workflow_artifact_version_id: uuid.UUID,
+    experiment_id: uuid.UUID | None,
+    decision: str,
+    primary_reason_code: str | None,
+    blockers_json: list[dict[str, Any]],
+    projection_sha256: str,
+    registry_snapshot_sha256: str,
+    readiness_snapshot_json: list[dict[str, Any]],
+) -> VqeLaunchDecisionRow:
+    """Append mutation-decision provenance; never update an earlier decision."""
+
+    require_write(scope)
+    digests = (
+        actor_hmac_sha256,
+        projection_sha256,
+        registry_snapshot_sha256,
+    )
+    if any(
+        len(value) != 64 or any(char not in "0123456789abcdef" for char in value)
+        for value in digests
+    ):
+        raise ValueError("launch decision digests must be SHA-256")
+    row = VqeLaunchDecisionRow(
+        id=uuid7(),
+        workspace_id=scope.workspace_id,
+        actor_hmac_sha256=actor_hmac_sha256,
+        request_id=request_id,
+        action=action,
+        workflow_artifact_version_id=workflow_artifact_version_id,
+        experiment_id=experiment_id,
+        decision=decision,
+        primary_reason_code=primary_reason_code,
+        blockers_json=blockers_json,
+        projection_sha256=projection_sha256,
+        registry_snapshot_sha256=registry_snapshot_sha256,
+        readiness_snapshot_json=readiness_snapshot_json,
+    )
+    session.add(row)
+    await session.flush()
+    return row
+
+
+async def get_runtime_readiness(
+    scope: Scope,
+    session: AsyncSession,
+    *,
+    runtime_profile_id: str,
+) -> VqeRuntimeReadinessRow | None:
+    """Read non-tenant runtime status through a Scope-first API boundary."""
+
+    del scope  # explicit: this system row contains no workspace/user data
+    return await session.get(VqeRuntimeReadinessRow, runtime_profile_id)
 
 
 @dataclass(frozen=True)
@@ -502,7 +565,7 @@ async def list_workflow_components(
     return list((await session.execute(stmt)).scalars().all())
 
 
-async def _get_unique_component_by_semantic_digest(
+async def get_unique_component_by_semantic_digest(
     scope: Scope,
     session: AsyncSession,
     *,
@@ -547,6 +610,7 @@ async def save_component_swap_workflow_draft(
     evaluator_provider: Literal["qiskit", "pennylane"],
     request_idempotency_key: str,
     catalog_workspace_id: uuid.UUID | None,
+    source_definition_artifact_version_id: uuid.UUID | None = None,
 ) -> SavedWorkflowDraft:
     """Persist one immutable structured swap draft with server-owned resolution."""
 
@@ -621,7 +685,7 @@ async def save_component_swap_workflow_draft(
         catalog_workspace_id=catalog_workspace_id,
     )
     baseline_by_role = {ComponentType(link.component_role): link for link in baseline_links}
-    candidate_definition_spec = await _get_unique_component_by_semantic_digest(
+    candidate_definition_spec = await get_unique_component_by_semantic_digest(
         scope,
         session,
         semantic_key=candidate_component_semantic_key,
@@ -652,6 +716,10 @@ async def save_component_swap_workflow_draft(
         "configuration": list(migrated.migrated),
         "evaluator_provider": evaluator_provider,
     }
+    if source_definition_artifact_version_id is not None:
+        request_payload["source_definition_artifact_version_id"] = str(
+            source_definition_artifact_version_id
+        )
     request_sha256 = hashlib.sha256(
         json.dumps(request_payload, sort_keys=True, separators=(",", ":")).encode()
     ).hexdigest()
@@ -869,6 +937,11 @@ async def save_component_swap_workflow_draft(
             "source": "vqe_component_swap",
             "request_sha256": request_sha256,
             "baseline_workflow_artifact_version_id": str(baseline_workflow_artifact_version_id),
+            "source_definition_artifact_version_id": (
+                str(source_definition_artifact_version_id)
+                if source_definition_artifact_version_id
+                else None
+            ),
             "publication": "blocked",
             "scientific_release": "blocked",
         },
@@ -878,7 +951,8 @@ async def save_component_swap_workflow_draft(
         export_status=ExportStatus.UNSUPPORTED,
         export_reason="structured VQE Workflow draft is not a circuit export",
         limitations=(
-            "Private owner-waived qualification candidate; public execution and "
+            "Unreviewed private qualification candidate allowed by owner policy; "
+            "public execution and "
             "scientific performance claims remain blocked."
         ),
     )
@@ -1150,7 +1224,8 @@ async def save_h2_uccsd_migration_workflow_draft(
         export_status=ExportStatus.UNSUPPORTED,
         export_reason="structured VQE Workflow migration is not a circuit export",
         limitations=(
-            "Private owner-waived qualification candidate; not a one-component "
+            "Unreviewed private qualification candidate allowed by owner policy; "
+            "not a one-component "
             "comparison; public execution and scientific claims remain blocked."
         ),
     )
@@ -1445,7 +1520,8 @@ async def save_h2_hardware_efficient_migration_workflow_draft(
         export_status=ExportStatus.UNSUPPORTED,
         export_reason="structured VQE Workflow migration is not a circuit export",
         limitations=(
-            "Private owner-waived digest-qualified candidate; not a one-component "
+            "Unreviewed digest-qualified private candidate allowed by owner policy; "
+            "not a one-component "
             "comparison; publication and performance claims remain blocked."
         ),
     )

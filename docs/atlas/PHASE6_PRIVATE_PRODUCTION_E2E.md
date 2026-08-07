@@ -52,11 +52,12 @@ available in repository secrets.
 The owner explicitly excluded Vercel from this phase. No Vercel deployment,
 browser, or runtime claim is made.
 
-Independent H2 scientific review was owner-waived. Evidence is labeled
-`owner_waived`, never `human_reviewed`. Runtime qualification does not turn
+Independent H2 scientific review was not performed. In the current model
+(ADR-0035), evidence remains `scientific_review=unreviewed`; the owner's
+permission is represented separately as
+`execution_policy=owner_waived_private`. Runtime qualification does not turn
 machine-generated H2 evidence into independent scientific validation. Public
-execution, publication, verified badges, and scientific release remain
-blocked.
+execution, publication, verified badges, and scientific release remain blocked.
 
 ## 2026-07-27 revalidation and schema-drift correction
 

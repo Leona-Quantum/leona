@@ -11,6 +11,7 @@ import json
 import uuid
 from pathlib import Path
 from types import SimpleNamespace
+from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
@@ -26,14 +27,173 @@ def _settings():
     return SimpleNamespace(
         catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
         vqe_candidate_execution=False,
+        vqe_production_execution=False,
         developer_emails=frozenset(),
         team_emails=frozenset(),
         pro_emails=frozenset(),
+        vqe_decision_hmac_key="test-vqe-decision-key-that-is-long-enough",
     )
 
 
 def _identity():
     return (SimpleNamespace(email="vqe-test@example.com", plan=None), SimpleNamespace())
+
+
+def test_standard_seed_does_not_claim_an_implementation_resolution():
+    row = SimpleNamespace(
+        semantic_key="workflow.h2.uccsd.v1",
+        spec_json={},
+    )
+    profile = vqe_routes.uccsd_production_runtime_profile(
+        vqe_routes.Framework.QISKIT
+    )
+
+    state = vqe_routes._implementation_resolution_for_profile(
+        row=row,
+        links=[],
+        profile=profile,
+        composition_state=vqe_routes.CompositionState.UNVALIDATED,
+        settings=_settings(),
+    )
+
+    assert state is vqe_routes.ImplementationResolutionState.UNRESOLVED
+
+
+def test_framework_specific_migration_requires_exact_runtime_binding_metadata():
+    profile = vqe_routes.uccsd_production_runtime_profile(
+        vqe_routes.Framework.QISKIT
+    )
+    row = SimpleNamespace(
+        semantic_key="workflow.instance.digest",
+        spec_json={
+            "kind": "ansatz_migration_workflow_draft",
+            "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+            "evaluator_provider": "qiskit",
+        },
+    )
+    metadata = {
+        "runtime_profile_id": profile.binding.runtime_profile_id,
+        "adapter_release_id": profile.binding.adapter_release_id,
+        "evidence_level": "runtime_qualified",
+        "runtime_qualification": "private_qualified",
+    }
+    links = [
+        SimpleNamespace(component_role=role, binding_metadata=metadata)
+        for role in ("ansatz", "compilation_backend")
+    ]
+
+    assert vqe_routes._implementation_resolution_for_profile(
+        row=row,
+        links=links,
+        profile=profile,
+        composition_state=vqe_routes.CompositionState.MACHINE_VALIDATED,
+        settings=SimpleNamespace(
+            vqe_candidate_execution=False,
+            vqe_production_execution=True,
+        ),
+    ) is vqe_routes.ImplementationResolutionState.RESOLVED
+
+    links[0] = SimpleNamespace(
+        component_role="ansatz",
+        binding_metadata={**metadata, "runtime_profile_id": "different-runtime"},
+    )
+    assert vqe_routes._implementation_resolution_for_profile(
+        row=row,
+        links=links,
+        profile=profile,
+        composition_state=vqe_routes.CompositionState.MACHINE_VALIDATED,
+        settings=SimpleNamespace(
+            vqe_candidate_execution=False,
+            vqe_production_execution=True,
+        ),
+    ) is vqe_routes.ImplementationResolutionState.UNRESOLVED
+
+
+def test_framework_specific_migration_exposes_only_the_bound_framework():
+    row = SimpleNamespace(
+        semantic_key="workflow.instance.digest",
+        spec_json={
+            "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+            "evaluator_provider": "pennylane",
+        },
+    )
+
+    profiles = vqe_routes._runtime_profiles_for_workflow(row)
+
+    assert [profile.binding.framework.value for profile in profiles] == ["pennylane"]
+
+
+def _scope() -> SimpleNamespace:
+    return SimpleNamespace(user_id=uuid.uuid4(), workspace_id=uuid.uuid4())
+
+
+def _eligible_projection(
+    workflow_artifact_version_id: uuid.UUID,
+    *,
+    framework: str = "qiskit",
+    projection_sha256: str = "a" * 64,
+) -> vqe_routes.WorkflowLaunchProjectionResource:
+    now = dt.datetime.now(dt.UTC)
+    return vqe_routes.WorkflowLaunchProjectionResource(
+        workflow_artifact_version_id=workflow_artifact_version_id,
+        workflow_semantic_key="h2.sto3g.actual_vqe.workflow.v0_2",
+        registry_semantic_key="h2.sto3g.actual_vqe.workflow.v0_2",
+        machine_validation_state="machine_validated",
+        review_state="unreviewed",
+        definition_state="available",
+        composition_state="machine_validated",
+        execution_policy_state="owner_waived_private",
+        validated_draft_supported=False,
+        experiment_creation=vqe_routes.ExperimentCreationProjectionResource(
+            decision="eligible",
+            launch_mode="direct",
+            primary_reason_code=None,
+            blockers=[],
+        ),
+        frameworks=[
+            vqe_routes.FrameworkLaunchProjectionResource(
+                framework=framework,
+                runtime_profile_id=f"test-{framework}-runtime",
+                implementation_resolution="resolved",
+                runtime_qualification="qualified",
+                live_readiness="ready",
+                readiness_generation=uuid.uuid4(),
+                readiness_expires_at=now + dt.timedelta(minutes=5),
+                decision="eligible",
+                primary_reason_code=None,
+                blockers=[],
+            )
+        ],
+        projection_sha256=projection_sha256,
+        registry_snapshot_sha256="b" * 64,
+        evaluated_at=now,
+        expires_at=now + dt.timedelta(minutes=5),
+    )
+
+
+def _stub_eligible_launch(
+    monkeypatch,
+    workflow_artifact_version_id: uuid.UUID,
+    *,
+    framework: str = "qiskit",
+    projection_sha256: str = "a" * 64,
+) -> None:
+    async def fake_get_component_spec(*args, **kwargs):
+        return SimpleNamespace(artifact_version_id=workflow_artifact_version_id)
+
+    async def fake_projection(*args, **kwargs):
+        return _eligible_projection(
+            workflow_artifact_version_id,
+            framework=framework,
+            projection_sha256=projection_sha256,
+        )
+
+    async def fake_append_launch_decision(*args, **kwargs):
+        return SimpleNamespace(id=uuid.uuid4())
+
+    monkeypatch.setattr(vqe_repo, "get_component_spec", fake_get_component_spec)
+    monkeypatch.setattr(vqe_routes, "_workflow_launch_projection", fake_projection)
+    monkeypatch.setattr(vqe_repo, "append_launch_decision", fake_append_launch_decision)
 
 
 @pytest.fixture(autouse=True)
@@ -124,6 +284,12 @@ def test_every_plan_candidate_endpoint_is_reachable_over_http():
         ("/atlas/workflows/{workflow_artifact_version_id}", "GET"),
         ("/atlas/comparisons/{comparison_id}", "GET"),
         ("/vqe/capabilities", "GET"),
+        ("/vqe/workflow-launch-projections", "GET"),
+        (
+            "/vqe/workflow-launch-projections/{workflow_artifact_version_id}",
+            "GET",
+        ),
+        ("/vqe/validated-workflow-drafts", "POST"),
         ("/vqe/research-candidates", "GET"),
         ("/vqe/research-candidates/{envelope_id}/{candidate_local_id}", "GET"),
         ("/vqe/research-candidates/{envelope_id}/reviews", "POST"),
@@ -156,6 +322,9 @@ def test_every_route_requires_a_scope():
         vqe_routes.get_workflow,
         vqe_routes.get_comparison,
         vqe_routes.vqe_capabilities,
+        vqe_routes.list_workflow_launch_projections,
+        vqe_routes.get_workflow_launch_projection,
+        vqe_routes.create_validated_workflow_draft,
         vqe_routes.list_research_candidate_envelopes,
         vqe_routes.get_research_candidate_review_view,
         vqe_routes.create_research_candidate_review,
@@ -447,7 +616,7 @@ async def test_get_workflow_rejects_a_non_workflow_component(monkeypatch):
         await vqe_routes.get_workflow(
             row.artifact_version_id,
             scope=object(),
-            session=object(),
+            session=SimpleNamespace(rollback=AsyncMock(), commit=AsyncMock()),
             settings=_settings(),
         )
     assert excinfo.value.status_code == 404
@@ -543,15 +712,18 @@ async def test_controlled_comparison_resource_is_private_and_publication_blocked
         ),
     )
 
-    assert resource.scientific_review == "owner_waived"
+    assert resource.scientific_review == "unreviewed"
+    assert resource.execution_policy == "owner_waived_private"
     assert resource.visibility == "private"
     assert resource.publication == "blocked"
     assert resource.runs == []
 
 
 async def test_create_experiment_translates_idempotency_conflict_to_409(monkeypatch):
+    workflow_id = uuid.uuid4()
     body = vqe_routes.CreateExperimentRequest(
-        workflow_artifact_version_id=uuid.uuid4(),
+        workflow_artifact_version_id=workflow_id,
+        expected_projection_sha256="a" * 64,
     )
 
     async def fake_resolve_scientific_experiment_spec(*args, **kwargs):
@@ -564,15 +736,66 @@ async def test_create_experiment_translates_idempotency_conflict_to_409(monkeypa
         vqe_repo, "resolve_scientific_experiment_spec", fake_resolve_scientific_experiment_spec
     )
     monkeypatch.setattr(vqe_repo, "create_experiment", fake_create_experiment)
+    _stub_eligible_launch(monkeypatch, workflow_id)
     with pytest.raises(HTTPException) as excinfo:
         await vqe_routes.create_experiment(
             body,
-            scope=object(),
-            session=object(),
+            scope=_scope(),
+            session=SimpleNamespace(rollback=AsyncMock(), commit=AsyncMock()),
             settings=_settings(),
             request_idempotency_key="dup-key",
         )
     assert excinfo.value.status_code == 409
+
+
+async def test_eligible_projection_scientific_mismatch_is_an_invariant_failure(
+    monkeypatch,
+):
+    """An eligible→strict-resolver contradiction is observable and fail-closed."""
+
+    workflow_id = uuid.uuid4()
+    observed: list[dict] = []
+
+    async def fake_resolve_scientific_experiment_spec(*args, **kwargs):
+        raise vqe_repo.InvalidWorkflowCompositionError("deliberate invariant drift")
+
+    def fake_observe_launch_decision(**kwargs):
+        observed.append(kwargs)
+
+    monkeypatch.setattr(
+        vqe_repo,
+        "resolve_scientific_experiment_spec",
+        fake_resolve_scientific_experiment_spec,
+    )
+    monkeypatch.setattr(
+        vqe_routes,
+        "_observe_launch_decision",
+        fake_observe_launch_decision,
+    )
+    _stub_eligible_launch(monkeypatch, workflow_id)
+    session = SimpleNamespace(rollback=AsyncMock(), commit=AsyncMock())
+
+    with pytest.raises(HTTPException) as excinfo:
+        await vqe_routes.create_experiment(
+            vqe_routes.CreateExperimentRequest(
+                workflow_artifact_version_id=workflow_id,
+                expected_projection_sha256="a" * 64,
+            ),
+            scope=_scope(),
+            session=session,
+            settings=_settings(),
+            request_idempotency_key="eligible-invariant-drift",
+            request_id="phase12-invariant-test",
+        )
+
+    assert excinfo.value.status_code == 422
+    assert excinfo.value.detail["reason_code"] == (
+        "vqe_eligible_create_scientific_mismatch"
+    )
+    assert observed[-1]["decision"] == "invariant_rejected"
+    assert observed[-1]["invariant_failure"] is True
+    session.rollback.assert_awaited_once()
+    session.commit.assert_awaited_once()
 
 
 def test_create_experiment_request_rejects_client_supplied_component_ids():
@@ -647,6 +870,7 @@ async def test_start_execution_is_fail_closed_without_development_gate():
             vqe_routes.StartExecutionRequest(
                 requested_capability="h2_sto3g_actual_vqe_v1",
                 preferred_framework="qiskit",
+                expected_projection_sha256="a" * 64,
             ),
             scope=object(),
             session=object(),
@@ -657,64 +881,31 @@ async def test_start_execution_is_fail_closed_without_development_gate():
     assert excinfo.value.detail["code"] == "candidate_execution_disabled"
 
 
-async def test_hardware_efficient_execution_requires_the_production_gate(
+async def test_local_candidate_execution_binds_recoverable_qualified_oci_profile(
     monkeypatch,
 ):
-    identity = json.loads(
-        (
-            ROOT
-            / "docs"
-            / "atlas"
-            / "fixtures"
-            / "h2_sto3g"
-            / "hardware_efficient_scientific_identity_v0.4.json"
-        ).read_text()
-    )
-
-    async def fake_get_experiment(scope, session, experiment_id):
-        return SimpleNamespace(scientific_spec_json=identity["portable_spec"])
-
-    monkeypatch.setattr(vqe_repo, "get_experiment", fake_get_experiment)
-    settings = SimpleNamespace(
-        catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
-        vqe_candidate_execution=True,
-        vqe_production_execution=False,
-    )
-    with pytest.raises(HTTPException) as excinfo:
-        await vqe_routes.start_execution(
-            uuid.uuid4(),
-            vqe_routes.StartExecutionRequest(
-                requested_capability="h2_sto3g_hardware_efficient_ry_cx_v1",
-                preferred_framework="qiskit",
-            ),
-            scope=object(),
-            session=object(),
-            settings=settings,
-            idempotency_key="hardware-efficient-without-production-gate",
-        )
-
-    assert excinfo.value.status_code == 409
-    assert excinfo.value.detail["code"] == "hardware_efficient_requires_qualified_runtime"
-
-
-async def test_hardware_efficient_execution_uses_exact_qualified_profile(monkeypatch):
-    identity = json.loads(
-        (
-            ROOT
-            / "docs"
-            / "atlas"
-            / "fixtures"
-            / "h2_sto3g"
-            / "hardware_efficient_scientific_identity_v0.4.json"
-        ).read_text()
-    )
     experiment_id = uuid.uuid4()
+    workflow_id = uuid.uuid4()
     run_id = uuid.uuid4()
     captured = {}
 
     async def fake_get_experiment(scope, session, requested_experiment_id):
         assert requested_experiment_id == experiment_id
-        return SimpleNamespace(id=experiment_id, scientific_spec_json=identity["portable_spec"])
+        identity = json.loads(
+            (
+                ROOT
+                / "docs"
+                / "atlas"
+                / "evidence"
+                / "phase76"
+                / "h2_baseline_scientific_identity_v0.1.json"
+            ).read_text()
+        )
+        return SimpleNamespace(
+            id=experiment_id,
+            workflow_artifact_version_id=workflow_id,
+            scientific_spec_json=identity["identity"]["portable_spec"],
+        )
 
     async def fake_create_execution(scope, session, requested_experiment_id, *, binding):
         captured["binding"] = binding
@@ -739,10 +930,135 @@ async def test_hardware_efficient_execution_uses_exact_qualified_profile(monkeyp
     monkeypatch.setattr(vqe_repo, "get_experiment", fake_get_experiment)
     monkeypatch.setattr(vqe_repo, "create_execution", fake_create_execution)
     monkeypatch.setattr(vqe_repo, "list_observations", fake_list_observations)
+    _stub_eligible_launch(monkeypatch, workflow_id)
+    settings = SimpleNamespace(
+        catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
+        vqe_candidate_execution=True,
+        vqe_production_execution=False,
+        vqe_decision_hmac_key="test-vqe-decision-key-that-is-long-enough",
+    )
+
+    result = await vqe_routes.start_execution(
+        experiment_id,
+        vqe_routes.StartExecutionRequest(
+            requested_capability="h2_sto3g_actual_vqe_v1",
+            preferred_framework="qiskit",
+            expected_projection_sha256="a" * 64,
+        ),
+        scope=_scope(),
+        session=SimpleNamespace(commit=AsyncMock()),
+        settings=settings,
+        idempotency_key="local-qualified-oci",
+    )
+
+    binding = captured["binding"]
+    assert binding.runtime_profile_id.endswith("-production-v2")
+    assert binding.container_digest_kind == "oci_manifest_digest"
+    assert binding.production_runtime_status == "qualified"
+    assert result.publication == "blocked"
+
+
+async def test_hardware_efficient_execution_requires_the_production_gate(
+    monkeypatch,
+):
+    identity = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "atlas"
+            / "fixtures"
+            / "h2_sto3g"
+            / "hardware_efficient_scientific_identity_v0.4.json"
+        ).read_text()
+    )
+    workflow_id = uuid.uuid4()
+
+    async def fake_get_experiment(scope, session, experiment_id):
+        return SimpleNamespace(
+            id=experiment_id,
+            workflow_artifact_version_id=workflow_id,
+            scientific_spec_json=identity["portable_spec"],
+        )
+
+    monkeypatch.setattr(vqe_repo, "get_experiment", fake_get_experiment)
+    settings = SimpleNamespace(
+        catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
+        vqe_candidate_execution=True,
+        vqe_production_execution=False,
+        vqe_decision_hmac_key="test-vqe-decision-key-that-is-long-enough",
+    )
+    _stub_eligible_launch(monkeypatch, workflow_id)
+    with pytest.raises(HTTPException) as excinfo:
+        await vqe_routes.start_execution(
+            uuid.uuid4(),
+            vqe_routes.StartExecutionRequest(
+                requested_capability="h2_sto3g_hardware_efficient_ry_cx_v1",
+                preferred_framework="qiskit",
+                expected_projection_sha256="a" * 64,
+            ),
+            scope=_scope(),
+            session=SimpleNamespace(commit=AsyncMock()),
+            settings=settings,
+            idempotency_key="hardware-efficient-without-production-gate",
+        )
+
+    assert excinfo.value.status_code == 409
+    assert excinfo.value.detail["code"] == "hardware_efficient_requires_qualified_runtime"
+
+
+async def test_hardware_efficient_execution_uses_exact_qualified_profile(monkeypatch):
+    identity = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "atlas"
+            / "fixtures"
+            / "h2_sto3g"
+            / "hardware_efficient_scientific_identity_v0.4.json"
+        ).read_text()
+    )
+    experiment_id = uuid.uuid4()
+    workflow_id = uuid.uuid4()
+    run_id = uuid.uuid4()
+    captured = {}
+
+    async def fake_get_experiment(scope, session, requested_experiment_id):
+        assert requested_experiment_id == experiment_id
+        return SimpleNamespace(
+            id=experiment_id,
+            workflow_artifact_version_id=workflow_id,
+            scientific_spec_json=identity["portable_spec"],
+        )
+
+    async def fake_create_execution(scope, session, requested_experiment_id, *, binding):
+        captured["binding"] = binding
+        return SimpleNamespace(
+            id=uuid.uuid4(),
+            experiment_id=requested_experiment_id,
+            run_id=run_id,
+            framework=binding.framework.value,
+            runtime_profile_id=binding.runtime_profile_id,
+            runtime_image_digest=binding.container_digest,
+            adapter_release_id=binding.adapter_release_id,
+            execution_identity_sha256="e" * 64,
+            execution_binding_json=binding.model_dump(mode="json"),
+            status="planned",
+            created_at=None,
+            updated_at=None,
+        )
+
+    async def fake_list_observations(scope, session, execution_id):
+        return []
+
+    monkeypatch.setattr(vqe_repo, "get_experiment", fake_get_experiment)
+    monkeypatch.setattr(vqe_repo, "create_execution", fake_create_execution)
+    monkeypatch.setattr(vqe_repo, "list_observations", fake_list_observations)
+    _stub_eligible_launch(monkeypatch, workflow_id)
     settings = SimpleNamespace(
         catalog_authority=SimpleNamespace(configured=False, workspace_id=None),
         vqe_candidate_execution=False,
         vqe_production_execution=True,
+        vqe_decision_hmac_key="test-vqe-decision-key-that-is-long-enough",
     )
 
     result = await vqe_routes.start_execution(
@@ -750,8 +1066,9 @@ async def test_hardware_efficient_execution_uses_exact_qualified_profile(monkeyp
         vqe_routes.StartExecutionRequest(
             requested_capability="h2_sto3g_hardware_efficient_ry_cx_v1",
             preferred_framework="qiskit",
+            expected_projection_sha256="a" * 64,
         ),
-        scope=object(),
+        scope=_scope(),
         session=object(),
         settings=settings,
         idempotency_key="hardware-efficient-qualified",
@@ -763,7 +1080,8 @@ async def test_hardware_efficient_execution_uses_exact_qualified_profile(monkeyp
         "sha256:1bd4a30499fdb945ee61a89b703d28287eabe2d4dedf610c8a9b4fef6fee555d"
     )
     assert result.production_runtime_status == "qualified"
-    assert result.scientific_review == "owner_waived"
+    assert result.scientific_review == "unreviewed"
+    assert result.execution_policy == "owner_waived_private"
     assert result.runtime_qualification == "qualified_private"
     assert result.publication == "blocked"
 

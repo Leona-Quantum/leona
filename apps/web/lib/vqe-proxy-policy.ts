@@ -3,6 +3,9 @@ const UUID =
 const CANDIDATE = "candidate_[a-z0-9][a-z0-9_.-]{0,63}";
 
 const ALLOWED = [
+  /^workflow-launch-projections$/,
+  new RegExp(`^workflow-launch-projections/${UUID}$`),
+  /^validated-workflow-drafts$/,
   /^experiments$/,
   new RegExp(`^experiments/${UUID}$`),
   new RegExp(`^experiments/${UUID}/executions$`),
@@ -36,6 +39,7 @@ export function isAllowedVqeProxyRequest(path: string, method: string): boolean 
   }
   if (method === "POST") {
     return path === "experiments"
+      || path === "validated-workflow-drafts"
       || path === "controlled-comparisons"
       || path.endsWith("/executions")
       || path.endsWith("/runs")

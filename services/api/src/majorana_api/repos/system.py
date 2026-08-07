@@ -37,7 +37,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from ..ids import uuid7
-from ..orm import Artifact, ArtifactVersion, Job, Membership, Run, User, Workspace
+from ..orm import (
+    Artifact,
+    ArtifactVersion,
+    Job,
+    Membership,
+    Run,
+    User,
+    VqeRuntimeReadiness,
+    Workspace,
+)
 
 STARTER_BELL_SLUG_PREFIX = "starter-bell-state"
 STARTER_BELL_CODE = """from qiskit import QuantumCircuit
@@ -91,6 +100,71 @@ class SystemCatalogAuthority:
     workspace: Workspace
     importer: User
     public_reader: User
+
+
+async def upsert_vqe_runtime_readiness(
+    session: AsyncSession,
+    *,
+    runtime_profile_id: str,
+    generation: uuid.UUID,
+    worker_id: str,
+    status: str,
+    detail_sha256: str,
+    observed_at: dt.datetime,
+    expires_at: dt.datetime,
+) -> None:
+    """Publish a bounded worker-owned readiness lease.
+
+    This unscoped row contains no tenant data.  A later generation always wins;
+    callers derive stale/unknown from ``expires_at`` instead of treating an old
+    green heartbeat as current availability.
+    """
+
+    if status not in {"ready", "unavailable"}:
+        raise ValueError("VQE runtime readiness status must be ready or unavailable")
+    if len(detail_sha256) != 64:
+        raise ValueError("VQE runtime readiness detail digest must be SHA-256")
+    if expires_at <= observed_at:
+        raise ValueError("VQE runtime readiness expiry must follow observation")
+    insert_statement = pg_insert(VqeRuntimeReadiness).values(
+        runtime_profile_id=runtime_profile_id,
+        generation=generation,
+        worker_id=worker_id,
+        status=status,
+        detail_sha256=detail_sha256,
+        observed_at=observed_at,
+        expires_at=expires_at,
+        updated_at=func.now(),
+    )
+    await session.execute(
+        insert_statement.on_conflict_do_update(
+            index_elements=[VqeRuntimeReadiness.runtime_profile_id],
+            set_={
+                "generation": insert_statement.excluded.generation,
+                "worker_id": insert_statement.excluded.worker_id,
+                "status": insert_statement.excluded.status,
+                "detail_sha256": insert_statement.excluded.detail_sha256,
+                "observed_at": insert_statement.excluded.observed_at,
+                "expires_at": insert_statement.excluded.expires_at,
+                "updated_at": func.now(),
+            },
+            # A delayed transaction or an older worker must never turn a fresh
+            # readiness lease back into stale/green state.  Wall-clock order is
+            # the interoperable fence; UUID generation order is intentionally
+            # not assumed across processes.
+            where=insert_statement.excluded.observed_at > VqeRuntimeReadiness.observed_at,
+        )
+    )
+
+
+async def get_vqe_runtime_readiness(
+    session: AsyncSession,
+    *,
+    runtime_profile_id: str,
+) -> VqeRuntimeReadiness | None:
+    """Read system-level availability without exposing any tenant row."""
+
+    return await session.get(VqeRuntimeReadiness, runtime_profile_id)
 
 
 SYSTEM_CATALOG_IMPORTER_SUB = "system:catalog-importer"

@@ -1179,6 +1179,52 @@ class VqeControlledComparisonRun(Base):
     created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
 
 
+class VqeRuntimeReadiness(Base):
+    """Latest worker-authored liveness snapshot for one immutable runtime profile.
+
+    Historical runtime qualification remains in the server-owned profile; this
+    row answers only whether a compatible worker can execute it *now*.
+    """
+
+    __tablename__ = "vqe_runtime_readiness"
+
+    runtime_profile_id: Mapped[str] = mapped_column(primary_key=True)
+    generation: Mapped[uuid.UUID]
+    worker_id: Mapped[str]
+    status: Mapped[str]
+    detail_sha256: Mapped[str]
+    observed_at: Mapped[dt.datetime]
+    expires_at: Mapped[dt.datetime]
+    updated_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
+class VqeLaunchDecision(Base):
+    """Append-only decision evidence for authenticated VQE mutations.
+
+    This is operational/provenance evidence, never scientific result evidence.
+    Actor identity is an HMAC pseudonym rather than a raw user identifier.
+    """
+
+    __tablename__ = "vqe_launch_decisions"
+
+    id: Mapped[uuid.UUID] = mapped_column(primary_key=True)
+    workspace_id: Mapped[uuid.UUID] = mapped_column(ForeignKey("workspaces.id"))
+    actor_hmac_sha256: Mapped[str]
+    request_id: Mapped[str]
+    action: Mapped[str]
+    workflow_artifact_version_id: Mapped[uuid.UUID] = mapped_column(
+        ForeignKey("artifact_versions.id")
+    )
+    experiment_id: Mapped[uuid.UUID | None] = mapped_column(ForeignKey("vqe_experiments.id"))
+    decision: Mapped[str]
+    primary_reason_code: Mapped[str | None]
+    blockers_json: Mapped[list[Any]] = mapped_column(JSONB)
+    projection_sha256: Mapped[str]
+    registry_snapshot_sha256: Mapped[str]
+    readiness_snapshot_json: Mapped[list[Any]] = mapped_column(JSONB)
+    created_at: Mapped[dt.datetime | None] = mapped_column(server_default=func.now())
+
+
 class ProviderCredential(Base):
     """One person's own credential for one third-party provider (migration 0045).
 

@@ -50,7 +50,8 @@ export type ControlledComparison = {
   changed_role: "parameter_optimizer";
   baseline_algorithm: "scipy_slsqp";
   candidate_algorithm: "scipy_cobyla";
-  scientific_review: "owner_waived";
+  scientific_review: "unreviewed";
+  execution_policy: "owner_waived_private";
   publication: "blocked";
   visibility: "private";
   runs: ControlledComparisonRun[];
@@ -382,7 +383,8 @@ export function parseControlledComparison(value: unknown): ControlledComparison 
     || typeof comparison.candidate_workflow_artifact_version_id !== "string"
     || !UUID.test(comparison.candidate_workflow_artifact_version_id)
     || comparison.changed_role !== "parameter_optimizer"
-    || comparison.scientific_review !== "owner_waived"
+    || comparison.scientific_review !== "unreviewed"
+    || comparison.execution_policy !== "owner_waived_private"
     || comparison.publication !== "blocked"
     || comparison.visibility !== "private"
     || typeof comparison.spec_sha256 !== "string"
@@ -465,7 +467,8 @@ export function parseControlledComparison(value: unknown): ControlledComparison 
     changed_role: "parameter_optimizer",
     baseline_algorithm: "scipy_slsqp",
     candidate_algorithm: "scipy_cobyla",
-    scientific_review: "owner_waived",
+    scientific_review: "unreviewed",
+    execution_policy: "owner_waived_private",
     publication: "blocked",
     visibility: "private",
     runs,

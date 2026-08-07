@@ -29,7 +29,7 @@ production-runtime design**
 | Authenticated browser contract E2E | local identity + real Next BFF + deterministic mock API; success/failure | pass_limited |
 | Private production system E2E | WorkOS-shaped JWT verification + disposable Neon + durable worker + real OCI runtime | pass for Qiskit and PennyLane |
 | Live WorkOS tenant/browser control-plane E2E | WorkOS Staging→Vercel Preview→Cloud Run FastAPI→Neon test branch; owner-observed `/api/me` 200 | pass_control_plane |
-| Independent H₂ scientific review | explicitly waived by owner; not relabeled as review | owner_waived |
+| Independent H₂ scientific review | not performed; owner permission is a separate execution policy (ADR-0035) | unreviewed; execution_policy=owner_waived_private |
 | Production runtime provider | pre-provisioned dedicated Docker host, exact digest, `--pull=never` | implemented_private |
 | OCI Registry manifest digest | GHCR Linux/amd64 indexes with SBOM/provenance attestations | pass |
 | GitHub metadata Wrapper | master-plan work has not resumed | not_implemented |

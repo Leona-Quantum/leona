@@ -139,9 +139,12 @@ def build_manifest() -> dict[str, Any]:
         "status_vocabulary": {
             "scientific_review": [
                 "unreviewed",
-                "owner_waived",
                 "workspace_reviewed",
                 "independently_reviewed",
+            ],
+            "execution_policy": [
+                "review_required",
+                "owner_waived_private",
             ],
             "runtime_qualification": [
                 "unqualified",
@@ -162,7 +165,8 @@ def build_manifest() -> dict[str, Any]:
             "publication": ["blocked", "private_only", "approved"],
         },
         "claim_boundary": {
-            "scientific_review": "owner_waived",
+            "scientific_review": "unreviewed",
+            "execution_policy": "owner_waived_private",
             "publication": "blocked",
             "public_execution": "blocked",
             "scientific_superiority_claim": "blocked",

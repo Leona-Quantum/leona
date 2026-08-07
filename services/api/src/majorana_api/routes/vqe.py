@@ -12,8 +12,10 @@ capability and scientific promotion remain blocked.
 """
 
 import datetime as dt
+import hmac
 import hashlib
 import json
+import logging
 import uuid
 from pathlib import Path
 from typing import Annotated, Any, Literal
@@ -22,14 +24,37 @@ from fastapi import APIRouter, Depends, Header, HTTPException, Query
 from fastapi import Path as PathParam
 from majorana_contracts.enums import Algorithm, ExportStatus, RunMode, RunStatus
 from majorana_contracts.enums import Framework as ContractFramework
-from majorana_vqe.models import Capability, ComponentType, Framework
+from majorana_vqe.models import (
+    Capability,
+    ComponentType,
+    Framework,
+    MachineValidationState,
+    ReviewState,
+)
+from majorana_vqe.launch import (
+    CompositionState,
+    DefinitionState,
+    ExecutionPolicyState,
+    FrameworkLaunchInput,
+    ImplementationResolutionState,
+    LiveReadinessState,
+    RuntimeQualificationState,
+    WorkflowLaunchInput,
+    evaluate_workflow_launch,
+)
 from majorana_vqe.controlled_comparison import ControlledComparisonSpecV1
 from majorana_vqe.executable import (
     H2_HARDWARE_EFFICIENT_SUPPORTED_SEMANTIC_KEY_SETS,
+    H2_SUPPORTED_SEMANTIC_KEY_SETS,
     H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS,
 )
-from majorana_vqe.portable import PortableScientificExperimentSpecV03
+from majorana_vqe.portable import (
+    PortableScientificExperimentSpec,
+    PortableScientificExperimentSpecV03,
+    normalized_component_spec_digest,
+)
 from pydantic import BaseModel, ConfigDict, Field
+from opentelemetry import metrics
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..jobs import VQE_EXECUTE_JOB_KIND
@@ -47,17 +72,78 @@ from ..repos import system
 from ..repos import vqe as vqe_repo
 from ..request_models import RequestModel
 from ..settings import Settings
+from ..standard_vqe_materializer import standard_component_payload
 from ..tiers import limits_for, tier_of
 from ..vqe_runtime_profiles import (
-    candidate_runtime_profile,
     hardware_efficient_production_runtime_profile,
+    hardware_efficient_production_runtime_profiles,
     production_runtime_profile,
+    production_runtime_profiles,
     uccsd_production_runtime_profile,
+    uccsd_production_runtime_profiles,
 )
 
 router = APIRouter()
 
+log = logging.getLogger("majorana_api.vqe_launch")
+_launch_meter = metrics.get_meter("majorana.vqe.launch")
+_launch_decisions = _launch_meter.create_counter(
+    "majorana.vqe.launch.decisions",
+    description="VQE launch-gate decisions by action and stable reason code",
+)
+_launch_invariant_failures = _launch_meter.create_counter(
+    "majorana.vqe.launch.invariant_failures",
+    description=(
+        "Scientific or registry contradictions observed after a launch projection "
+        "was declared eligible"
+    ),
+)
+
 _COMPARISON_ID_PATTERN = r"^[a-zA-Z0-9_]+$"
+
+
+def _observe_launch_decision(
+    *,
+    action: str,
+    decision: str,
+    reason_code: str | None,
+    request_id: str,
+    workflow_artifact_version_id: uuid.UUID,
+    projection_sha256: str,
+    framework: str | None = None,
+    experiment_id: uuid.UUID | None = None,
+    invariant_failure: bool = False,
+) -> None:
+    """Record a bounded launch decision without identity or secret material.
+
+    Metric attributes deliberately contain only stable, low-cardinality enums.
+    UUIDs and the projection prefix are useful for an operator trace, so they
+    are present only in the structured log line and never as metric labels.
+    """
+
+    metric_attributes = {
+        "action": action,
+        "decision": decision,
+        "reason_code": reason_code or "none",
+        "framework": framework or "none",
+    }
+    _launch_decisions.add(1, metric_attributes)
+    if invariant_failure:
+        _launch_invariant_failures.add(1, metric_attributes)
+    payload = {
+        "event": "vqe_launch_decision",
+        "action": action,
+        "decision": decision,
+        "reason_code": reason_code,
+        "request_id": request_id,
+        "workflow_artifact_version_id": str(workflow_artifact_version_id),
+        "experiment_id": str(experiment_id) if experiment_id else None,
+        "framework": framework,
+        "projection_sha256_prefix": projection_sha256[:12],
+        "invariant_failure": invariant_failure,
+    }
+    level = logging.ERROR if invariant_failure else logging.INFO
+    log.log(level, "%s", json.dumps(payload, sort_keys=True, separators=(",", ":")))
 
 
 async def _file_private_artifact(
@@ -105,14 +191,8 @@ def _catalog_workspace_id(settings: Settings) -> uuid.UUID | None:
 
 
 def _matches_h2_uccsd_component_identity(scientific_spec_json: dict[str, Any]) -> bool:
-    try:
-        scientific_spec = PortableScientificExperimentSpecV03.model_validate(scientific_spec_json)
-        semantic_keys = {
-            binding.role: binding.component_semantic_key
-            for binding in scientific_spec.component_bindings
-            if binding.applicability == "required"
-        }
-    except (TypeError, ValueError):
+    semantic_keys = _semantic_keys_for_scientific_spec(scientific_spec_json)
+    if semantic_keys is None:
         return False
     return any(
         semantic_keys == supported_keys for supported_keys in H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS
@@ -122,19 +202,57 @@ def _matches_h2_uccsd_component_identity(scientific_spec_json: dict[str, Any]) -
 def _matches_h2_hardware_efficient_component_identity(
     scientific_spec_json: dict[str, Any],
 ) -> bool:
-    try:
-        scientific_spec = PortableScientificExperimentSpecV03.model_validate(scientific_spec_json)
-        semantic_keys = {
-            binding.role: binding.component_semantic_key
-            for binding in scientific_spec.component_bindings
-            if binding.applicability == "required"
-        }
-    except (TypeError, ValueError):
+    semantic_keys = _semantic_keys_for_scientific_spec(scientific_spec_json)
+    if semantic_keys is None:
         return False
     return any(
         semantic_keys == supported_keys
         for supported_keys in H2_HARDWARE_EFFICIENT_SUPPORTED_SEMANTIC_KEY_SETS
     )
+
+
+def _semantic_keys_for_scientific_spec(
+    scientific_spec_json: dict[str, Any],
+) -> dict[ComponentType, str] | None:
+    """Parse either admitted portable identity version without weakening it."""
+
+    try:
+        if scientific_spec_json.get("schema_version") == "0.2.0":
+            scientific_spec = PortableScientificExperimentSpec.model_validate(
+                scientific_spec_json
+            )
+            return {
+                binding.role: binding.component_semantic_key
+                for binding in scientific_spec.component_bindings
+            }
+        scientific_spec_v03 = PortableScientificExperimentSpecV03.model_validate(
+            scientific_spec_json
+        )
+        return {
+            binding.role: binding.component_semantic_key
+            for binding in scientific_spec_v03.component_bindings
+            if binding.applicability == "required"
+            and binding.component_semantic_key is not None
+        }
+    except (TypeError, ValueError):
+        return None
+
+
+def _capability_for_scientific_spec(
+    scientific_spec_json: dict[str, Any],
+) -> Capability | None:
+    """Derive the executable capability from the frozen scientific identity."""
+
+    semantic_keys = _semantic_keys_for_scientific_spec(scientific_spec_json)
+    if semantic_keys is None:
+        return None
+    if semantic_keys in H2_UCCSD_SUPPORTED_SEMANTIC_KEY_SETS:
+        return Capability.H2_STO3G_UCCSD_VQE
+    if semantic_keys in H2_HARDWARE_EFFICIENT_SUPPORTED_SEMANTIC_KEY_SETS:
+        return Capability.H2_STO3G_HARDWARE_EFFICIENT_VQE
+    if semantic_keys in H2_SUPPORTED_SEMANTIC_KEY_SETS:
+        return Capability.H2_STO3G_ACTUAL_VQE
+    return None
 
 
 # --- resource shapes ---------------------------------------------------
@@ -343,6 +461,64 @@ class CreateExperimentRequest(RequestModel):
     model_config = ConfigDict(extra="forbid")
 
     workflow_artifact_version_id: uuid.UUID
+    expected_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+
+
+class CreateValidatedWorkflowDraftRequest(RequestModel):
+    model_config = ConfigDict(extra="forbid")
+
+    source_workflow_artifact_version_id: uuid.UUID
+    expected_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
+    evaluator_provider: Literal["qiskit", "pennylane"] = "qiskit"
+
+
+class LaunchBlockerResource(BaseModel):
+    reason_code: str
+    field: str
+    retryable: bool
+
+
+class ExperimentCreationProjectionResource(BaseModel):
+    decision: Literal["eligible", "draft_required", "blocked"]
+    launch_mode: Literal["direct", "validated_draft_required", "blocked"]
+    primary_reason_code: str | None
+    blockers: list[LaunchBlockerResource]
+
+
+class FrameworkLaunchProjectionResource(BaseModel):
+    framework: Literal["qiskit", "pennylane"]
+    runtime_profile_id: str | None
+    implementation_resolution: str
+    runtime_qualification: str
+    live_readiness: str
+    readiness_generation: uuid.UUID | None
+    readiness_expires_at: dt.datetime | None
+    decision: Literal["eligible", "blocked"]
+    primary_reason_code: str | None
+    blockers: list[LaunchBlockerResource]
+
+
+class WorkflowLaunchProjectionResource(BaseModel):
+    workflow_artifact_version_id: uuid.UUID
+    workflow_semantic_key: str
+    registry_semantic_key: str | None
+    machine_validation_state: str
+    review_state: str
+    definition_state: str
+    composition_state: str
+    execution_policy_state: str
+    validated_draft_supported: bool
+    experiment_creation: ExperimentCreationProjectionResource
+    frameworks: list[FrameworkLaunchProjectionResource]
+    projection_sha256: str
+    registry_snapshot_sha256: str
+    evaluated_at: dt.datetime
+    expires_at: dt.datetime
+
+
+class WorkflowLaunchProjectionListResponse(BaseModel):
+    workflows: list[WorkflowLaunchProjectionResource]
+    next_cursor: uuid.UUID | None
 
 
 class ExperimentResource(BaseModel):
@@ -364,6 +540,7 @@ class StartExecutionRequest(RequestModel):
 
     requested_capability: Capability
     preferred_framework: Framework = Framework.QISKIT
+    expected_projection_sha256: str = Field(pattern=r"^[0-9a-f]{64}$")
 
 
 class ObservationResource(BaseModel):
@@ -389,8 +566,9 @@ class ExecutionResource(BaseModel):
     status: str
     production_runtime_status: str
     public_execution: Literal["blocked"] = "blocked"
-    review_state: Literal["owner_waived"] = "owner_waived"
-    scientific_review: Literal["owner_waived"] = "owner_waived"
+    review_state: Literal["unreviewed"] = "unreviewed"
+    scientific_review: Literal["unreviewed"] = "unreviewed"
+    execution_policy: Literal["owner_waived_private"] = "owner_waived_private"
     runtime_qualification: Literal["unqualified", "qualified_private"]
     publication: Literal["blocked"] = "blocked"
     observations: list[ObservationResource] = Field(default_factory=list)
@@ -445,7 +623,8 @@ class ControlledComparisonResource(BaseModel):
     changed_role: str
     spec_json: dict[str, Any]
     spec_sha256: str
-    scientific_review: Literal["owner_waived"] = "owner_waived"
+    scientific_review: Literal["unreviewed"] = "unreviewed"
+    execution_policy: Literal["owner_waived_private"] = "owner_waived_private"
     visibility: Literal["private"] = "private"
     publication: Literal["blocked"] = "blocked"
     runs: list[ControlledComparisonRunResource] = Field(default_factory=list)
@@ -494,7 +673,8 @@ async def _to_controlled_comparison_resource(
         changed_role=row.changed_role,
         spec_json=row.spec_json,
         spec_sha256=row.spec_sha256,
-        scientific_review="owner_waived",
+        scientific_review="unreviewed",
+        execution_policy="owner_waived_private",
         visibility="private",
         publication="blocked",
         runs=[_to_comparison_run_resource(item) for item in runs],
@@ -572,6 +752,426 @@ def _to_experiment_resource(row: VqeExperimentRow) -> ExperimentResource:
         registry_resolution_sha256=row.registry_resolution_sha256,
         request_idempotency_key=row.request_idempotency_key,
         created_at=row.created_at,
+    )
+
+
+def _canonical_sha256(value: Any) -> str:
+    """Hash one JSON value with the repository-wide canonical JSON rules."""
+
+    return hashlib.sha256(
+        json.dumps(
+            value,
+            sort_keys=True,
+            separators=(",", ":"),
+            ensure_ascii=False,
+            allow_nan=False,
+        ).encode()
+    ).hexdigest()
+
+
+def _launch_actor_hmac(scope: CurrentScope, settings: Settings) -> str:
+    """Pseudonymise actors for the append-only launch ledger.
+
+    Production must provide an independent HMAC key. Local development may
+    derive one from its already-local bearer token, keeping tests and offline
+    demos usable without weakening a deployed environment.
+    """
+
+    actor_key = getattr(settings, "vqe_decision_hmac_key", "")
+    if not actor_key and getattr(settings, "environment", None) == "development":
+        local_token = getattr(settings, "local_dev_token", "")
+        if local_token:
+            actor_key = f"majorana-development-vqe-ledger:{local_token}"
+    if not actor_key:
+        raise HTTPException(
+            status_code=503,
+            detail={
+                "reason_code": "vqe_decision_ledger_unavailable",
+                "message": "the server cannot record an auditable launch decision",
+                "retryable": False,
+            },
+        )
+    return hmac.new(
+        actor_key.encode(),
+        str(scope.user_id).encode(),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+_VALIDATED_DRAFT_WORKFLOW_KEYS = frozenset(
+    {
+        "workflow.h2.fixed_excitation.slsqp.v1",
+        "workflow.h2.fixed_excitation.cobyla.v1",
+        "workflow.h2.uccsd.v1",
+        "workflow.h2.hardware_efficient.v1",
+    }
+)
+
+
+def _runtime_profiles_for_workflow(row: VqeComponentSpecRow) -> tuple[Any, ...]:
+    """Resolve the server-owned implementation family without trusting clients."""
+
+    semantic_key = row.semantic_key
+    migration = row.spec_json.get("migration")
+    if semantic_key == "workflow.h2.uccsd.v1" or migration == (
+        "h2_fixed_excitation_slsqp_to_uccsd_slsqp"
+    ):
+        profiles = uccsd_production_runtime_profiles()
+        evaluator_provider = row.spec_json.get("evaluator_provider")
+        if evaluator_provider in {"qiskit", "pennylane"}:
+            return tuple(
+                profile
+                for profile in profiles
+                if profile.binding.framework.value == evaluator_provider
+            )
+        return profiles
+    if semantic_key == "workflow.h2.hardware_efficient.v1" or migration == (
+        "h2_uccsd_slsqp_to_hardware_efficient_slsqp"
+    ):
+        profiles = hardware_efficient_production_runtime_profiles()
+        evaluator_provider = row.spec_json.get("evaluator_provider")
+        if evaluator_provider in {"qiskit", "pennylane"}:
+            return tuple(
+                profile
+                for profile in profiles
+                if profile.binding.framework.value == evaluator_provider
+            )
+        return profiles
+    if semantic_key.startswith("workflow.lih.") or semantic_key == "workflow.h2.adapt.v1":
+        return ()
+    return production_runtime_profiles()
+
+
+def _implementation_resolution_for_profile(
+    *,
+    row: VqeComponentSpecRow,
+    links: list[VqeWorkflowComponentRow],
+    profile: Any,
+    composition_state: CompositionState,
+    settings: Settings,
+) -> ImplementationResolutionState:
+    """Prove that one validated workflow is bound to one exact runtime.
+
+    A qualified OCI image is not, by itself, evidence that an arbitrary
+    Registry workflow can execute in that image.  Resolution is therefore
+    admitted only for the small server-authored private slice whose strict
+    scientific resolver has succeeded.  Framework-specific migrations must
+    additionally carry exact runtime/adapter binding metadata on every role
+    changed by the migration.
+    """
+
+    if composition_state is not CompositionState.MACHINE_VALIDATED:
+        return ImplementationResolutionState.UNRESOLVED
+
+    migration = row.spec_json.get("migration")
+    if migration in {
+        "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+        "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+    } and not settings.vqe_production_execution:
+        return ImplementationResolutionState.UNRESOLVED
+    if (
+        migration not in {
+            "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+            "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+        }
+        and not (settings.vqe_candidate_execution or settings.vqe_production_execution)
+    ):
+        return ImplementationResolutionState.UNRESOLVED
+
+    # The frozen H2 candidate and its server-validated optimizer swap are the
+    # two portable v0.2 compositions implemented by both production adapters.
+    if row.semantic_key == vqe_repo.H2_REVIEW_CANDIDATE_WORKFLOW_KEY:
+        return ImplementationResolutionState.RESOLVED
+    if (
+        row.spec_json.get("kind") == "component_swap_workflow_draft"
+        and row.spec_json.get("changed_role") == ComponentType.PARAMETER_OPTIMIZER.value
+        and row.spec_json.get("candidate_component_semantic_key")
+        in {"optimizer.slsqp.v1", "optimizer.cobyla.v1"}
+        and row.spec_json.get("execution_status") == "private_qualification_candidate"
+    ):
+        evaluator_provider = row.spec_json.get("evaluator_provider")
+        return (
+            ImplementationResolutionState.RESOLVED
+            if evaluator_provider == profile.binding.framework.value
+            else ImplementationResolutionState.UNRESOLVED
+        )
+
+    required_bound_roles: set[str]
+    if migration == "h2_fixed_excitation_slsqp_to_uccsd_slsqp":
+        required_bound_roles = {
+            ComponentType.ANSATZ.value,
+            ComponentType.COMPILATION_BACKEND.value,
+        }
+    elif migration == "h2_uccsd_slsqp_to_hardware_efficient_slsqp":
+        required_bound_roles = {
+            ComponentType.ANSATZ.value,
+            ComponentType.COMPILATION_BACKEND.value,
+        }
+    else:
+        return ImplementationResolutionState.UNRESOLVED
+
+    if row.spec_json.get("evaluator_provider") != profile.binding.framework.value:
+        return ImplementationResolutionState.UNRESOLVED
+    bindings_by_role = {
+        link.component_role: link.binding_metadata or {}
+        for link in links
+        if link.component_role in required_bound_roles
+    }
+    if set(bindings_by_role) != required_bound_roles:
+        return ImplementationResolutionState.UNRESOLVED
+    for metadata in bindings_by_role.values():
+        if (
+            metadata.get("runtime_profile_id") != profile.binding.runtime_profile_id
+            or metadata.get("adapter_release_id") != profile.binding.adapter_release_id
+            or metadata.get("evidence_level") != "runtime_qualified"
+            or metadata.get("runtime_qualification") != "private_qualified"
+        ):
+            return ImplementationResolutionState.UNRESOLVED
+    return ImplementationResolutionState.RESOLVED
+
+
+def _execution_policy_for_workflow(
+    row: VqeComponentSpecRow,
+    settings: Settings,
+) -> ExecutionPolicyState:
+    # Immutable standard definitions may be transformed into a private
+    # validated draft without claiming scientific review or execution rights.
+    if (
+        row.machine_validation_state == MachineValidationState.UNVALIDATED.value
+        and row.semantic_key in _VALIDATED_DRAFT_WORKFLOW_KEYS
+    ):
+        return ExecutionPolicyState.PERMITTED_PRIVATE
+    if row.review_state in {
+        ReviewState.HUMAN_REVIEWED.value,
+        ReviewState.AUTHOR_CONFIRMED.value,
+    }:
+        return ExecutionPolicyState.PERMITTED_PRIVATE
+    if settings.vqe_candidate_execution or settings.vqe_production_execution:
+        return ExecutionPolicyState.OWNER_WAIVED_PRIVATE
+    return ExecutionPolicyState.REVIEW_REQUIRED
+
+
+async def _workflow_launch_projection(
+    *,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Settings,
+    row: VqeComponentSpecRow,
+    evaluated_at: dt.datetime | None = None,
+) -> WorkflowLaunchProjectionResource:
+    """Adapt durable Registry/worker state into the pure launch evaluator."""
+
+    now = evaluated_at or dt.datetime.now(dt.timezone.utc)
+    catalog_workspace_id = _catalog_workspace_id(settings)
+    definition_state = DefinitionState.AVAILABLE
+    composition_state = (
+        CompositionState.MACHINE_VALIDATED
+        if row.machine_validation_state == MachineValidationState.MACHINE_VALIDATED.value
+        else CompositionState.UNVALIDATED
+    )
+    execution_policy = _execution_policy_for_workflow(row, settings)
+    validated_draft_supported = row.semantic_key in _VALIDATED_DRAFT_WORKFLOW_KEYS
+
+    links: list[VqeWorkflowComponentRow] = []
+    component_snapshot: list[dict[str, Any]] = []
+    try:
+        links = await vqe_repo.list_workflow_components(
+            scope,
+            session,
+            row.artifact_version_id,
+            catalog_workspace_id=catalog_workspace_id,
+        )
+        for link in sorted(links, key=lambda item: (item.component_role, item.ordinal)):
+            component = await vqe_repo.get_component_spec(
+                scope,
+                session,
+                link.component_artifact_version_id,
+                catalog_workspace_id=catalog_workspace_id,
+            )
+            component_snapshot.append(
+                {
+                    "role": link.component_role,
+                    "ordinal": link.ordinal,
+                    "artifact_version_id": str(component.artifact_version_id),
+                    "semantic_key": component.semantic_key,
+                    "normalized_spec_sha256": component.normalized_spec_sha256,
+                    "machine_validation_state": component.machine_validation_state,
+                    "review_state": component.review_state,
+                }
+            )
+    except vqe_repo.NotFoundError:
+        definition_state = DefinitionState.MISSING
+
+    # Re-run the same strict scientific resolver used by creation.  This is a
+    # preflight, not a substitute for the create-time re-evaluation below.
+    if composition_state is CompositionState.MACHINE_VALIDATED:
+        try:
+            await vqe_repo.resolve_scientific_experiment_spec(
+                scope,
+                session,
+                row.artifact_version_id,
+                catalog_workspace_id=catalog_workspace_id,
+                review_policy=(
+                    "approved"
+                    if execution_policy is ExecutionPolicyState.PERMITTED_PRIVATE
+                    else "h2_owner_deferred_candidate"
+                ),
+            )
+        except (vqe_repo.InvalidWorkflowCompositionError, vqe_repo.NotFoundError):
+            composition_state = CompositionState.VALIDATION_FAILED
+
+    framework_inputs: list[FrameworkLaunchInput] = []
+    framework_snapshots: list[dict[str, Any]] = []
+    expiry_candidates: list[dt.datetime] = []
+    for profile in _runtime_profiles_for_workflow(row):
+        binding = profile.binding
+        implementation_resolution = _implementation_resolution_for_profile(
+            row=row,
+            links=links,
+            profile=profile,
+            composition_state=composition_state,
+            settings=settings,
+        )
+        readiness = await vqe_repo.get_runtime_readiness(
+            scope,
+            session,
+            runtime_profile_id=binding.runtime_profile_id,
+        )
+        if readiness is None:
+            readiness_state = LiveReadinessState.UNKNOWN
+            generation = None
+            readiness_expires_at = None
+        else:
+            generation = readiness.generation
+            readiness_expires_at = readiness.expires_at
+            if readiness.expires_at <= now:
+                readiness_state = LiveReadinessState.STALE
+            elif readiness.status == "ready":
+                readiness_state = LiveReadinessState.READY
+            else:
+                readiness_state = LiveReadinessState.UNAVAILABLE
+            expiry_candidates.append(readiness.expires_at)
+        framework_inputs.append(
+            FrameworkLaunchInput(
+                framework=binding.framework.value,
+                implementation_resolution=implementation_resolution,
+                runtime_qualification=(
+                    RuntimeQualificationState.QUALIFIED
+                    if binding.production_runtime_status == "qualified"
+                    else RuntimeQualificationState.UNQUALIFIED
+                ),
+                live_readiness=readiness_state,
+            )
+        )
+        framework_snapshots.append(
+            {
+                "framework": binding.framework.value,
+                "runtime_profile_id": binding.runtime_profile_id,
+                "implementation_resolution": implementation_resolution.value,
+                "runtime_qualification": (
+                    "qualified"
+                    if binding.production_runtime_status == "qualified"
+                    else "unqualified"
+                ),
+                "live_readiness": readiness_state.value,
+                "readiness_generation": str(generation) if generation else None,
+                "readiness_expires_at": (
+                    readiness_expires_at.isoformat() if readiness_expires_at else None
+                ),
+            }
+        )
+
+    decision = evaluate_workflow_launch(
+        WorkflowLaunchInput(
+            definition_state=definition_state,
+            composition_state=composition_state,
+            execution_policy_state=execution_policy,
+            validated_draft_supported=validated_draft_supported,
+            frameworks=tuple(framework_inputs),
+        )
+    )
+    registry_snapshot = {
+        "workflow": {
+            "artifact_version_id": str(row.artifact_version_id),
+            "semantic_key": row.semantic_key,
+            "normalized_spec_sha256": row.normalized_spec_sha256,
+            "machine_validation_state": row.machine_validation_state,
+            "review_state": row.review_state,
+        },
+        "components": component_snapshot,
+    }
+    registry_snapshot_sha256 = _canonical_sha256(registry_snapshot)
+    stable_projection = {
+        "workflow_artifact_version_id": str(row.artifact_version_id),
+        "registry_snapshot_sha256": registry_snapshot_sha256,
+        "definition_state": definition_state.value,
+        "composition_state": composition_state.value,
+        "execution_policy_state": execution_policy.value,
+        "validated_draft_supported": validated_draft_supported,
+        "experiment_creation": decision.experiment_creation.model_dump(mode="json"),
+        "frameworks": [item.model_dump(mode="json") for item in decision.frameworks],
+        "runtime_snapshots": framework_snapshots,
+    }
+    projection_sha256 = _canonical_sha256(stable_projection)
+    expires_at = min(expiry_candidates) if expiry_candidates else now + dt.timedelta(seconds=30)
+    framework_by_name = {item.framework: item for item in decision.frameworks}
+    framework_resources = []
+    for snapshot in framework_snapshots:
+        framework_decision = framework_by_name[snapshot["framework"]]
+        framework_resources.append(
+            FrameworkLaunchProjectionResource(
+                **snapshot,
+                decision=framework_decision.decision.value,
+                primary_reason_code=(
+                    framework_decision.primary_reason_code.value
+                    if framework_decision.primary_reason_code
+                    else None
+                ),
+                blockers=[
+                    LaunchBlockerResource(
+                        reason_code=blocker.reason_code.value,
+                        field=blocker.field,
+                        retryable=blocker.retryable,
+                    )
+                    for blocker in framework_decision.blockers
+                ],
+            )
+        )
+    creation = decision.experiment_creation
+    return WorkflowLaunchProjectionResource(
+        workflow_artifact_version_id=row.artifact_version_id,
+        workflow_semantic_key=row.semantic_key,
+        registry_semantic_key=(
+            row.spec_json.get("registry_semantic_key")
+            if isinstance(row.spec_json.get("registry_semantic_key"), str)
+            else None
+        ),
+        machine_validation_state=row.machine_validation_state,
+        review_state=row.review_state,
+        definition_state=definition_state.value,
+        composition_state=composition_state.value,
+        execution_policy_state=execution_policy.value,
+        validated_draft_supported=validated_draft_supported,
+        experiment_creation=ExperimentCreationProjectionResource(
+            decision=creation.decision.value,
+            launch_mode=creation.launch_mode.value,
+            primary_reason_code=(
+                creation.primary_reason_code.value if creation.primary_reason_code else None
+            ),
+            blockers=[
+                LaunchBlockerResource(
+                    reason_code=blocker.reason_code.value,
+                    field=blocker.field,
+                    retryable=blocker.retryable,
+                )
+                for blocker in creation.blockers
+            ],
+        ),
+        frameworks=framework_resources,
+        projection_sha256=projection_sha256,
+        registry_snapshot_sha256=registry_snapshot_sha256,
+        evaluated_at=now,
+        expires_at=expires_at,
     )
 
 
@@ -804,6 +1404,294 @@ async def get_workflow(
         machine_validation_state=spec.machine_validation_state,
         review_state=spec.review_state,
         components=[_to_workflow_component_resource(c) for c in components],
+    )
+
+
+@router.get(
+    "/vqe/workflow-launch-projections",
+    response_model=WorkflowLaunchProjectionListResponse,
+)
+async def list_workflow_launch_projections(
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+    cursor: uuid.UUID | None = None,
+    limit: Annotated[int, Query(ge=1, le=200)] = 50,
+) -> WorkflowLaunchProjectionListResponse:
+    """List workflow launch truth, not the broader Registry catalog.
+
+    Every item is evaluated from Registry state and the latest persisted
+    worker heartbeat.  Clients must use ``projection_sha256`` when creating
+    an experiment; the mutation recomputes the projection to close TOCTOU.
+    """
+
+    rows = await vqe_repo.list_component_specs(
+        scope,
+        session,
+        component_type=ComponentType.WORKFLOW,
+        cursor=cursor,
+        limit=limit,
+        catalog_workspace_id=_catalog_workspace_id(settings),
+    )
+    evaluated_at = dt.datetime.now(dt.timezone.utc)
+    projections = [
+        await _workflow_launch_projection(
+            scope=scope,
+            session=session,
+            settings=settings,
+            row=row,
+            evaluated_at=evaluated_at,
+        )
+        for row in rows
+    ]
+    return WorkflowLaunchProjectionListResponse(
+        workflows=projections,
+        next_cursor=rows[-1].artifact_version_id if len(rows) == limit else None,
+    )
+
+
+@router.get(
+    "/vqe/workflow-launch-projections/{workflow_artifact_version_id}",
+    response_model=WorkflowLaunchProjectionResource,
+)
+async def get_workflow_launch_projection(
+    workflow_artifact_version_id: uuid.UUID,
+    scope: CurrentScope,
+    session: DbSession,
+    settings: Annotated[Settings, Depends(get_settings)],
+) -> WorkflowLaunchProjectionResource:
+    row = await vqe_repo.get_component_spec(
+        scope,
+        session,
+        workflow_artifact_version_id,
+        catalog_workspace_id=_catalog_workspace_id(settings),
+    )
+    if row.component_type != ComponentType.WORKFLOW.value:
+        raise HTTPException(status_code=404, detail="artifact version is not a workflow")
+    return await _workflow_launch_projection(
+        scope=scope,
+        session=session,
+        settings=settings,
+        row=row,
+    )
+
+
+@router.post(
+    "/vqe/validated-workflow-drafts",
+    response_model=WorkflowSwapResource,
+    status_code=201,
+)
+async def create_validated_workflow_draft(
+    body: CreateValidatedWorkflowDraftRequest,
+    scope: CurrentScope,
+    session: DbSession,
+    identity: CurrentIdentity,
+    settings: Annotated[Settings, Depends(get_settings)],
+    idempotency_key: Annotated[
+        str,
+        Header(alias="Idempotency-Key", min_length=1, max_length=160),
+    ],
+    request_id: Annotated[str | None, Header(alias="X-Request-ID", max_length=200)] = None,
+) -> WorkflowSwapResource:
+    """Derive one immutable, server-validated private draft from a seed.
+
+    The authored standard seed remains unmodified.  The resulting artifact
+    records its source definition, exact configured components, evaluator,
+    and digest; no client can promote arbitrary Registry content.
+    """
+
+    catalog_workspace_id = _catalog_workspace_id(settings)
+    source = await vqe_repo.get_component_spec(
+        scope,
+        session,
+        body.source_workflow_artifact_version_id,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    projection = await _workflow_launch_projection(
+        scope=scope,
+        session=session,
+        settings=settings,
+        row=source,
+    )
+    source_workflow_artifact_version_id = source.artifact_version_id
+    actor_hmac_sha256 = _launch_actor_hmac(scope, settings)
+
+    async def record_draft_decision(
+        *, decision: str, reason_code: str | None, derived_id: uuid.UUID | None = None
+    ) -> None:
+        await vqe_repo.append_launch_decision(
+            scope,
+            session,
+            actor_hmac_sha256=actor_hmac_sha256,
+            request_id=request_id or idempotency_key,
+            action="create_validated_draft",
+            workflow_artifact_version_id=source_workflow_artifact_version_id,
+            experiment_id=None,
+            decision=decision,
+            primary_reason_code=reason_code,
+            blockers_json=[
+                item.model_dump(mode="json")
+                for item in projection.experiment_creation.blockers
+            ],
+            projection_sha256=projection.projection_sha256,
+            registry_snapshot_sha256=projection.registry_snapshot_sha256,
+            readiness_snapshot_json=(
+                [
+                    {
+                        "derived_workflow_artifact_version_id": str(derived_id),
+                        "evaluator_provider": body.evaluator_provider,
+                    }
+                ]
+                if derived_id
+                else []
+            ),
+        )
+        _observe_launch_decision(
+            action="create_validated_draft",
+            decision=decision,
+            reason_code=reason_code,
+            request_id=request_id or idempotency_key,
+            workflow_artifact_version_id=source_workflow_artifact_version_id,
+            projection_sha256=projection.projection_sha256,
+            framework=body.evaluator_provider,
+        )
+
+    if (
+        projection.projection_sha256 != body.expected_projection_sha256
+        or projection.expires_at <= dt.datetime.now(dt.timezone.utc)
+    ):
+        await record_draft_decision(
+            decision="stale_rejected", reason_code="vqe_launch_projection_stale"
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=412,
+            detail={
+                "reason_code": "vqe_launch_projection_stale",
+                "message": "workflow launch state changed; refresh before deriving a draft",
+                "retryable": True,
+            },
+        )
+    if projection.experiment_creation.decision != "draft_required":
+        await record_draft_decision(
+            decision="blocked", reason_code="vqe_validated_draft_not_applicable"
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason_code": "vqe_validated_draft_not_applicable",
+                "message": "this workflow is not an admitted standard seed",
+                "retryable": False,
+                "blockers": [
+                    item.model_dump(mode="json")
+                    for item in projection.experiment_creation.blockers
+                ],
+            },
+        )
+
+    optimizer_key = (
+        "optimizer.cobyla.v1"
+        if source.semantic_key == "workflow.h2.fixed_excitation.cobyla.v1"
+        else "optimizer.slsqp.v1"
+    )
+    optimizer_digest = normalized_component_spec_digest(
+        component_type=ComponentType.PARAMETER_OPTIMIZER,
+        spec_json=standard_component_payload(optimizer_key),
+    )
+    # Resolve both inputs by scientific identity, never by list ordering.
+    await vqe_repo.get_unique_component_by_semantic_digest(
+        scope,
+        session,
+        semantic_key=optimizer_key,
+        normalized_spec_sha256=optimizer_digest,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    baseline = await vqe_repo.get_unique_component_by_semantic_digest(
+        scope,
+        session,
+        semantic_key=vqe_repo.H2_REVIEW_CANDIDATE_WORKFLOW_KEY,
+        normalized_spec_sha256=vqe_repo.H2_REVIEW_CANDIDATE_WORKFLOW_DIGEST,
+        catalog_workspace_id=catalog_workspace_id,
+    )
+    try:
+        saved = await vqe_repo.save_component_swap_workflow_draft(
+            scope,
+            session,
+            baseline_workflow_artifact_version_id=baseline.artifact_version_id,
+            baseline_template_key="workflow.h2.fixed_excitation.v1",
+            changed_role=ComponentType.PARAMETER_OPTIMIZER,
+            candidate_component_semantic_key=optimizer_key,
+            candidate_component_spec_sha256=optimizer_digest,
+            configuration=(),
+            evaluator_provider=body.evaluator_provider,
+            request_idempotency_key=f"{idempotency_key}:optimizer",
+            catalog_workspace_id=catalog_workspace_id,
+            source_definition_artifact_version_id=source.artifact_version_id,
+        )
+        if source.semantic_key in {
+            "workflow.h2.uccsd.v1",
+            "workflow.h2.hardware_efficient.v1",
+        }:
+            saved = await vqe_repo.save_h2_uccsd_migration_workflow_draft(
+                scope,
+                session,
+                baseline_workflow_artifact_version_id=saved.version.id,
+                evaluator_provider=body.evaluator_provider,
+                request_idempotency_key=f"{idempotency_key}:uccsd",
+                catalog_workspace_id=catalog_workspace_id,
+            )
+        if source.semantic_key == "workflow.h2.hardware_efficient.v1":
+            saved = await vqe_repo.save_h2_hardware_efficient_migration_workflow_draft(
+                scope,
+                session,
+                baseline_workflow_artifact_version_id=saved.version.id,
+                evaluator_provider=body.evaluator_provider,
+                request_idempotency_key=f"{idempotency_key}:hardware-efficient",
+                catalog_workspace_id=catalog_workspace_id,
+            )
+    except vqe_repo.InvalidWorkflowCompositionError as exc:
+        await session.rollback()
+        await record_draft_decision(
+            decision="invariant_rejected",
+            reason_code="vqe_validated_draft_derivation_failed",
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason_code": "vqe_validated_draft_derivation_failed",
+                "message": str(exc),
+                "retryable": False,
+            },
+        ) from None
+    except vqe_repo.IdempotencyConflictError as exc:
+        await session.rollback()
+        await record_draft_decision(
+            decision="conflict_rejected",
+            reason_code="vqe_validated_draft_idempotency_conflict",
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason_code": "vqe_validated_draft_idempotency_conflict",
+                "message": str(exc),
+                "retryable": False,
+            },
+        ) from None
+
+    await _file_private_artifact(scope, session, identity, settings, saved.artifact.id)
+    await record_draft_decision(
+        decision="accepted", reason_code=None, derived_id=saved.version.id
+    )
+    return WorkflowSwapResource(
+        artifact_id=saved.artifact.id,
+        workflow_artifact_version_id=saved.version.id,
+        workflow_semantic_key=saved.workflow_spec.semantic_key,
+        request_sha256=saved.version.fingerprint,
+        replayed=saved.replayed,
+        execution_status=saved.workflow_spec.spec_json["execution_status"],
     )
 
 
@@ -1106,7 +1994,111 @@ async def create_experiment(
     request_idempotency_key: Annotated[
         str, Header(alias="Idempotency-Key", min_length=1, max_length=200)
     ],
+    request_id: Annotated[str | None, Header(alias="X-Request-ID", max_length=200)] = None,
 ) -> ExperimentResource:
+    request_id = request_id or request_idempotency_key
+    workflow = await vqe_repo.get_component_spec(
+        scope,
+        session,
+        body.workflow_artifact_version_id,
+        catalog_workspace_id=_catalog_workspace_id(settings),
+    )
+    projection = await _workflow_launch_projection(
+        scope=scope,
+        session=session,
+        settings=settings,
+        row=workflow,
+    )
+    actor_hmac_sha256 = _launch_actor_hmac(scope, settings)
+    readiness_snapshot = [
+        {
+            "framework": item.framework,
+            "runtime_profile_id": item.runtime_profile_id,
+            "live_readiness": item.live_readiness,
+            "readiness_generation": (
+                str(item.readiness_generation) if item.readiness_generation else None
+            ),
+            "readiness_expires_at": (
+                item.readiness_expires_at.isoformat() if item.readiness_expires_at else None
+            ),
+        }
+        for item in projection.frameworks
+    ]
+
+    async def record_decision(
+        *,
+        decision: str,
+        experiment_id: uuid.UUID | None = None,
+        reason_code: str | None = None,
+        invariant_failure: bool = False,
+    ) -> None:
+        recorded_reason = reason_code or projection.experiment_creation.primary_reason_code
+        await vqe_repo.append_launch_decision(
+            scope,
+            session,
+            actor_hmac_sha256=actor_hmac_sha256,
+            request_id=request_id,
+            action="create_experiment",
+            workflow_artifact_version_id=body.workflow_artifact_version_id,
+            experiment_id=experiment_id,
+            decision=decision,
+            primary_reason_code=recorded_reason,
+            blockers_json=[item.model_dump(mode="json") for item in projection.experiment_creation.blockers],
+            projection_sha256=projection.projection_sha256,
+            registry_snapshot_sha256=projection.registry_snapshot_sha256,
+            readiness_snapshot_json=readiness_snapshot,
+        )
+        _observe_launch_decision(
+            action="create_experiment",
+            decision=decision,
+            reason_code=recorded_reason,
+            request_id=request_id,
+            workflow_artifact_version_id=body.workflow_artifact_version_id,
+            experiment_id=experiment_id,
+            projection_sha256=projection.projection_sha256,
+            invariant_failure=invariant_failure,
+        )
+
+    if (
+        projection.projection_sha256 != body.expected_projection_sha256
+        or projection.expires_at <= dt.datetime.now(dt.timezone.utc)
+    ):
+        await record_decision(decision="stale_rejected")
+        # This transaction contains only the operational rejection record.  An
+        # explicit commit is necessary because raising skips the dependency's
+        # post-yield commit; no scientific mutation has occurred at this point.
+        await session.commit()
+        raise HTTPException(
+            status_code=412,
+            detail={
+                "reason_code": "vqe_launch_projection_stale",
+                "message": "workflow launch state changed; refresh the projection",
+                "retryable": True,
+            },
+        )
+    if projection.experiment_creation.decision != "eligible":
+        await record_decision(decision="blocked")
+        await session.commit()
+        raise HTTPException(
+            status_code=(
+                403
+                if projection.experiment_creation.primary_reason_code
+                in {
+                    "vqe_execution_policy_review_required",
+                    "vqe_execution_policy_denied",
+                }
+                else 422
+            ),
+            detail={
+                "reason_code": projection.experiment_creation.primary_reason_code,
+                "message": "workflow is not eligible for direct experiment creation",
+                "retryable": False,
+                "blockers": [
+                    item.model_dump(mode="json")
+                    for item in projection.experiment_creation.blockers
+                ],
+            },
+        )
     try:
         catalog_workspace_id = _catalog_workspace_id(settings)
         resolved = await vqe_repo.resolve_scientific_experiment_spec(
@@ -1131,10 +2123,42 @@ async def create_experiment(
             request_idempotency_key=request_idempotency_key,
             catalog_workspace_id=catalog_workspace_id,
         )
+        await record_decision(decision="accepted", experiment_id=experiment.id)
     except vqe_repo.InvalidWorkflowCompositionError as exc:
-        raise HTTPException(status_code=422, detail=str(exc)) from None
+        # Projection and creation share the strict resolver.  Reaching this
+        # branch after an eligible projection is an operational invariant
+        # failure, not a normal user validation error.  Roll back any partial
+        # scientific mutation, then persist only the rejection decision.
+        await session.rollback()
+        await record_decision(
+            decision="invariant_rejected",
+            reason_code="vqe_eligible_create_scientific_mismatch",
+            invariant_failure=True,
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason_code": "vqe_eligible_create_scientific_mismatch",
+                "message": "eligible projection contradicted the strict scientific resolver",
+                "retryable": False,
+            },
+        ) from exc
     except vqe_repo.IdempotencyConflictError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from None
+        await session.rollback()
+        await record_decision(
+            decision="conflict_rejected",
+            reason_code="vqe_experiment_idempotency_conflict",
+        )
+        await session.commit()
+        raise HTTPException(
+            status_code=409,
+            detail={
+                "reason_code": "vqe_experiment_idempotency_conflict",
+                "message": str(exc),
+                "retryable": False,
+            },
+        ) from None
     return _to_experiment_resource(experiment)
 
 
@@ -1241,6 +2265,7 @@ async def start_execution(
         str,
         Header(alias="Idempotency-Key", min_length=1, max_length=200),
     ],
+    request_id: Annotated[str | None, Header(alias="X-Request-ID", max_length=200)] = None,
 ) -> ExecutionResource:
     if not (
         settings.vqe_candidate_execution or getattr(settings, "vqe_production_execution", False)
@@ -1256,15 +2281,142 @@ async def start_execution(
             },
         )
     experiment = await vqe_repo.get_experiment(scope, session, experiment_id)
-    production_execution = getattr(settings, "vqe_production_execution", False)
-    if body.requested_capability is Capability.H2_STO3G_ACTUAL_VQE:
-        profile = (
-            production_runtime_profile(body.preferred_framework)
-            if production_execution
-            else candidate_runtime_profile(body.preferred_framework)
+    workflow = await vqe_repo.get_component_spec(
+        scope,
+        session,
+        experiment.workflow_artifact_version_id,
+        catalog_workspace_id=_catalog_workspace_id(settings),
+    )
+    projection = await _workflow_launch_projection(
+        scope=scope,
+        session=session,
+        settings=settings,
+        row=workflow,
+    )
+    framework_projection = next(
+        (
+            item
+            for item in projection.frameworks
+            if item.framework == body.preferred_framework.value
+        ),
+        None,
+    )
+    actor_hmac_sha256 = _launch_actor_hmac(scope, settings)
+    readiness_snapshot = [
+        {
+            "framework": item.framework,
+            "runtime_profile_id": item.runtime_profile_id,
+            "live_readiness": item.live_readiness,
+            "readiness_generation": (
+                str(item.readiness_generation) if item.readiness_generation else None
+            ),
+            "readiness_expires_at": (
+                item.readiness_expires_at.isoformat() if item.readiness_expires_at else None
+            ),
+        }
+        for item in projection.frameworks
+    ]
+
+    async def record_start_decision(decision: str, reason_code: str | None) -> None:
+        blockers = framework_projection.blockers if framework_projection else []
+        await vqe_repo.append_launch_decision(
+            scope,
+            session,
+            actor_hmac_sha256=actor_hmac_sha256,
+            request_id=request_id or idempotency_key,
+            action="start_execution",
+            workflow_artifact_version_id=experiment.workflow_artifact_version_id,
+            experiment_id=experiment.id,
+            decision=decision,
+            primary_reason_code=reason_code,
+            blockers_json=[item.model_dump(mode="json") for item in blockers],
+            projection_sha256=projection.projection_sha256,
+            registry_snapshot_sha256=projection.registry_snapshot_sha256,
+            readiness_snapshot_json=readiness_snapshot,
         )
+        _observe_launch_decision(
+            action="start_execution",
+            decision=decision,
+            reason_code=reason_code,
+            request_id=request_id or idempotency_key,
+            workflow_artifact_version_id=experiment.workflow_artifact_version_id,
+            experiment_id=experiment.id,
+            projection_sha256=projection.projection_sha256,
+            framework=body.preferred_framework.value,
+        )
+
+    now = dt.datetime.now(dt.timezone.utc)
+    if (
+        body.expected_projection_sha256 != projection.projection_sha256
+        or projection.expires_at <= now
+    ):
+        await record_start_decision("stale_rejected", "vqe_launch_projection_stale")
+        await session.commit()
+        raise HTTPException(
+            status_code=412,
+            detail={
+                "reason_code": "vqe_launch_projection_stale",
+                "message": "runtime readiness changed; refresh before starting",
+                "retryable": True,
+            },
+        )
+    if framework_projection is None or framework_projection.decision != "eligible":
+        reason_code = (
+            framework_projection.primary_reason_code
+            if framework_projection
+            else "vqe_implementation_unresolved"
+        )
+        await record_start_decision("blocked", reason_code)
+        await session.commit()
+        raise HTTPException(
+            status_code=(
+                503
+                if reason_code
+                in {
+                    "vqe_runtime_unavailable",
+                    "vqe_runtime_readiness_stale",
+                    "vqe_runtime_readiness_unknown",
+                }
+                else 422
+            ),
+            detail={
+                "reason_code": reason_code,
+                "message": "the selected framework is not ready for this workflow",
+                "retryable": bool(
+                    framework_projection
+                    and any(item.retryable for item in framework_projection.blockers)
+                ),
+                "blockers": (
+                    [item.model_dump(mode="json") for item in framework_projection.blockers]
+                    if framework_projection
+                    else []
+                ),
+            },
+        )
+    production_execution = getattr(settings, "vqe_production_execution", False)
+    expected_capability = _capability_for_scientific_spec(experiment.scientific_spec_json)
+    if expected_capability is None or body.requested_capability is not expected_capability:
+        await record_start_decision("blocked", "vqe_capability_identity_mismatch")
+        await session.commit()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason_code": "vqe_capability_identity_mismatch",
+                "message": "requested capability does not match the frozen scientific identity",
+                "retryable": False,
+            },
+        )
+    if body.requested_capability is Capability.H2_STO3G_ACTUAL_VQE:
+        # The old Phase 5A profile used a one-machine Docker image ID.  That
+        # identity cannot be fetched again after Docker storage is reset, even
+        # when the exact source tree is rebuilt.  Both private development and
+        # production therefore bind the published, attested OCI digest.  The
+        # execution/review/publication gates remain separate and fail closed.
+        profile = production_runtime_profile(body.preferred_framework)
     elif body.requested_capability is Capability.H2_STO3G_UCCSD_VQE:
         if not production_execution:
+            await record_start_decision("blocked", "vqe_production_execution_gate_disabled")
+            await session.commit()
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -1276,15 +2428,24 @@ async def start_execution(
                 },
             )
         if not _matches_h2_uccsd_component_identity(experiment.scientific_spec_json):
+            await record_start_decision("blocked", "vqe_capability_identity_mismatch")
+            await session.commit()
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    "requested H2 UCCSD capability does not match the experiment component identity"
-                ),
+                detail={
+                    "reason_code": "vqe_capability_identity_mismatch",
+                    "message": (
+                        "requested H2 UCCSD capability does not match the experiment "
+                        "component identity"
+                    ),
+                    "retryable": False,
+                },
             )
         profile = uccsd_production_runtime_profile(body.preferred_framework)
     elif body.requested_capability is Capability.H2_STO3G_HARDWARE_EFFICIENT_VQE:
         if not production_execution:
+            await record_start_decision("blocked", "vqe_production_execution_gate_disabled")
+            await session.commit()
             raise HTTPException(
                 status_code=409,
                 detail={
@@ -1296,16 +2457,31 @@ async def start_execution(
                 },
             )
         if not _matches_h2_hardware_efficient_component_identity(experiment.scientific_spec_json):
+            await record_start_decision("blocked", "vqe_capability_identity_mismatch")
+            await session.commit()
             raise HTTPException(
                 status_code=422,
-                detail=(
-                    "requested H2 hardware-efficient capability does not match "
-                    "the experiment component identity"
-                ),
+                detail={
+                    "reason_code": "vqe_capability_identity_mismatch",
+                    "message": (
+                        "requested H2 hardware-efficient capability does not match "
+                        "the experiment component identity"
+                    ),
+                    "retryable": False,
+                },
             )
         profile = hardware_efficient_production_runtime_profile(body.preferred_framework)
     else:
-        raise HTTPException(status_code=422, detail="unsupported private VQE capability")
+        await record_start_decision("blocked", "vqe_capability_unsupported")
+        await session.commit()
+        raise HTTPException(
+            status_code=422,
+            detail={
+                "reason_code": "vqe_capability_unsupported",
+                "message": "unsupported private VQE capability",
+                "retryable": False,
+            },
+        )
     execution = await vqe_repo.create_execution(
         scope,
         session,
@@ -1320,7 +2496,7 @@ async def start_execution(
                 scope,
                 session,
                 task_prompt=(
-                    "Execute the frozen owner-waived private "
+                    "Execute the frozen unreviewed, owner-policy private "
                     f"{body.requested_capability.value} "
                     f"candidate with {profile.binding.framework.value}"
                 ),
@@ -1357,6 +2533,7 @@ async def start_execution(
             },
             run_id=run.id,
         )
+    await record_start_decision("accepted", None)
     return await _to_execution_resource(scope, session, execution)
 
 
@@ -1491,7 +2668,8 @@ async def materialize_execution(
         qasm=None,
         metadata={
             "source": "vqe_private_execution",
-            "human_review_state": "owner_waived",
+            "scientific_review_state": "unreviewed",
+            "execution_policy": "owner_waived_private",
             "production_runtime_status": runtime_status,
             "publication": "blocked",
             "scientific_release": "blocked",
@@ -1510,7 +2688,7 @@ async def materialize_execution(
                 "verified": False,
                 "decision": None,
                 "evidence_strength": None,
-                "reason_code": ("independent_human_review_owner_waived_publication_blocked"),
+                "reason_code": "independent_human_review_not_performed",
             },
         },
         code=evidence_bytes.decode(),
@@ -1527,8 +2705,9 @@ async def materialize_execution(
             "stages": observation.result_contract_json.get("resources", []),
         },
         limitations=(
-            "Private VQE evidence; independent human review was owner-waived "
-            "and publication remains blocked."
+            "Private VQE evidence; independent human scientific review was not "
+            "performed. The owner policy permits private execution only, and "
+            "publication remains blocked."
         ),
     )
     await runs_repo.set_run_artifact_version(scope, session, run.id, version.id)

@@ -8,7 +8,8 @@ import {
 const WORKFLOWS = [
   {
     artifact_version_id: "019f-workflow-h2",
-    semantic_key: "h2.sto3g.actual_vqe.workflow.v0_2",
+    semantic_key: "workflow.h2.fixed_excitation.v1",
+    registry_semantic_key: "h2.sto3g.actual_vqe.workflow.v0_2",
   },
 ];
 
@@ -18,6 +19,32 @@ test("component catalog semantic identity resolves to a Registry UUID", () => {
       semanticKey: "h2.sto3g.actual_vqe.workflow.v0_2",
     }),
     "019f-workflow-h2",
+  );
+});
+
+test("authored workflow identity also resolves to the same Registry UUID", () => {
+  assert.equal(
+    resolveInitialWorkflowId(WORKFLOWS, {
+      semanticKey: "workflow.h2.fixed_excitation.v1",
+    }),
+    "019f-workflow-h2",
+  );
+});
+
+test("a duplicated Registry alias fails closed", () => {
+  assert.equal(
+    resolveInitialWorkflowId(
+      [
+        ...WORKFLOWS,
+        {
+          artifact_version_id: "019f-workflow-duplicate",
+          semantic_key: "workflow.h2.duplicate.v1",
+          registry_semantic_key: "h2.sto3g.actual_vqe.workflow.v0_2",
+        },
+      ],
+      { semanticKey: "h2.sto3g.actual_vqe.workflow.v0_2" },
+    ),
+    null,
   );
 });
 

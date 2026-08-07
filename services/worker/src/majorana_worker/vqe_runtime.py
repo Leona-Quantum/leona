@@ -243,6 +243,27 @@ async def _verify_preprovisioned_image(
         )
 
 
+async def probe_runtime_profile(profile: ProductionRuntimeProfile) -> str:
+    """Verify current Docker availability for one exact qualified image.
+
+    The returned digest describes the bounded probe inputs.  The worker stores
+    only this digest and readiness status; request handlers never invoke Docker.
+    """
+
+    docker = _docker_binary()
+    await _verify_preprovisioned_image(docker, profile)
+    return hashlib.sha256(
+        json.dumps(
+            {
+                "probe": "preprovisioned_oci_image_v1",
+                "runtime_profile_id": profile.binding.runtime_profile_id,
+                "image_reference": profile.image_reference,
+                "platform_manifest_digest": profile.platform_manifest_digest,
+            },
+            sort_keys=True,
+            separators=(",", ":"),
+        ).encode()
+    ).hexdigest()
 class LocalDockerVqeRuntimeExecutor:
     """Development transport with bounded streaming and daemon-side cleanup."""
 
@@ -422,7 +443,13 @@ class LocalDockerVqeRuntimeExecutor:
 
 
 class OciDockerVqeRuntimeExecutor(LocalDockerVqeRuntimeExecutor):
-    """Dedicated-host transport for a pre-provisioned, exact OCI digest."""
+    """Transport for a pre-provisioned, exact OCI digest.
+
+    Production remains restricted to the dedicated runtime host.  A local
+    development worker may execute the same immutable image for private
+    qualification/testing when the sandbox is explicitly ``local``.  Cloud
+    markers are rejected in both modes.
+    """
 
     def _profile(
         self,
@@ -445,21 +472,32 @@ class OciDockerVqeRuntimeExecutor(LocalDockerVqeRuntimeExecutor):
         return profile
 
     def _validate_environment(self) -> None:
-        if os.environ.get("MAJORANA_ENV", "").strip().lower() != "production":
+        environment = os.environ.get("MAJORANA_ENV", "").strip().lower()
+        cloud_markers = (
+            "K_SERVICE",
+            "K_REVISION",
+            "K_CONFIGURATION",
+            "VERCEL",
+            "CI",
+        )
+        if any(os.environ.get(name) for name in cloud_markers):
             raise VqeRuntimeError(
-                "OCI runtime transport requires MAJORANA_ENV=production",
+                "OCI Docker transport cannot run in a managed or CI process",
                 failure_code=FailureCode.RUNTIME_UNAVAILABLE,
                 retryable=False,
             )
-        if os.environ.get("MAJORANA_VQE_RUNTIME_HOST", "").strip().lower() != "dedicated":
+        production_host = (
+            environment == "production"
+            and os.environ.get("MAJORANA_VQE_RUNTIME_HOST", "").strip().lower() == "dedicated"
+        )
+        local_development = (
+            environment == "development"
+            and os.environ.get("MAJORANA_SANDBOX", "").strip().lower() == "local"
+        )
+        if not (production_host or local_development):
             raise VqeRuntimeError(
-                "OCI runtime transport requires a dedicated runtime host",
-                failure_code=FailureCode.RUNTIME_UNAVAILABLE,
-                retryable=False,
-            )
-        if any(os.environ.get(name) for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION")):
-            raise VqeRuntimeError(
-                "OCI Docker transport cannot run inside Cloud Run",
+                "OCI runtime transport requires a dedicated production host "
+                "or an explicit local development sandbox",
                 failure_code=FailureCode.RUNTIME_UNAVAILABLE,
                 retryable=False,
             )

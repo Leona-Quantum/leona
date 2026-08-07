@@ -2,6 +2,12 @@
 
 **Date:** 2026-07-26 · **Status:** accepted by owner
 
+> **Partial supersession (2026-08-07):** ADR-0035 supersedes the use of
+> `owner_waived` as a scientific review state. The current model keeps
+> scientific review `unreviewed` and records the permission separately as
+> `execution_policy=owner_waived_private`. The private-runtime and public-block
+> decisions below remain in force.
+
 ## Context
 
 ADR-0032 separated Phase 5A product integration from Phase 5B qualification

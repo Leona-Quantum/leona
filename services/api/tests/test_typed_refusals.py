@@ -15,14 +15,21 @@ the app's REAL registered handler — a probe route is mounted on a real
 test that restates the code it checks passes when the code is deleted.
 """
 
+import re
+
 import httpx
 import pytest
 from fastapi import HTTPException
+from pydantic import BaseModel
 
 from majorana_api.app import _problem, create_app
 from majorana_api.settings import Settings
 
 pytestmark = pytest.mark.anyio
+
+
+class _ValidationProbe(BaseModel):
+    count: int
 
 
 def _settings() -> Settings:
@@ -61,6 +68,21 @@ def _client() -> httpx.AsyncClient:
     @app.get("/probe/plain")
     async def _plain():
         raise HTTPException(404, "workspace not found")
+
+    @app.get("/probe/reason-code")
+    async def _reason_code():
+        raise HTTPException(
+            412,
+            detail={
+                "message": "refresh the launch projection",
+                "reason_code": "vqe_launch_projection_stale",
+                "retryable": True,
+            },
+        )
+
+    @app.post("/probe/validation")
+    async def _validation(_body: _ValidationProbe):
+        return {"ok": True}
 
     return httpx.AsyncClient(
         transport=httpx.ASGITransport(app=app, raise_app_exceptions=False),
@@ -112,3 +134,44 @@ def test_extensions_cannot_overwrite_the_problem_document():
     assert body["status"] == 409
     assert body["title"] == "the real title"
     assert body["reason"] == "kept"
+
+
+async def test_reason_code_and_safe_correlation_ids_are_a_stable_wire_contract():
+    async with _client() as client:
+        response = await client.get(
+            "/probe/reason-code",
+            headers={"X-Request-ID": "launch-request-123"},
+        )
+    body = response.json()
+    assert response.status_code == 412
+    assert response.headers["content-type"].startswith("application/problem+json")
+    assert body["title"] == "refresh the launch projection"
+    assert body["code"] == body["reason_code"] == "vqe_launch_projection_stale"
+    assert body["request_id"] == body["trace_id"] == "launch-request-123"
+    assert response.headers["X-Request-ID"] == "launch-request-123"
+    assert response.headers["X-Trace-ID"] == "launch-request-123"
+    assert body["retryable"] is True
+
+
+async def test_unsafe_caller_correlation_id_is_replaced():
+    async with _client() as client:
+        response = await client.get(
+            "/probe/reason-code",
+            headers={"X-Request-ID": "bad\nlog-forgery"},
+        )
+    body = response.json()
+    assert body["request_id"] != "bad\nlog-forgery"
+    assert re.fullmatch(
+        r"[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}",
+        body["request_id"],
+    )
+
+
+async def test_validation_problem_never_echoes_rejected_input():
+    secret = "do-not-echo-this-database-password"
+    async with _client() as client:
+        response = await client.post("/probe/validation", json={"count": secret})
+    serialized = response.text
+    assert response.status_code == 422
+    assert response.json()["reason_code"] == "validation_error"
+    assert secret not in serialized

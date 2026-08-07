@@ -24,6 +24,8 @@ from majorana_vqe.standard_catalog import (
     STANDARD_COMPONENTS,
     STANDARD_WORKFLOWS,
     check_workflow_compatibility,
+    component_by_key,
+    workflow_by_key,
 )
 from .repos import artifacts as artifacts_repo
 from .repos import vqe as vqe_repo
@@ -55,6 +57,22 @@ def _json_value(value: Any) -> Any:
     if isinstance(value, dict):
         return {str(key): _json_value(item) for key, item in value.items()}
     return value
+
+
+def standard_component_payload(semantic_key: str) -> dict[str, Any]:
+    """Return the exact authored seed payload used for Registry identity."""
+
+    return _json_value(component_by_key(semantic_key))
+
+
+def standard_workflow_payload(workflow_key: str) -> dict[str, Any]:
+    """Return the exact authored workflow seed payload, including compatibility."""
+
+    workflow = workflow_by_key(workflow_key)
+    return {
+        **_json_value(workflow),
+        "compatibility": _json_value(check_workflow_compatibility(workflow)),
+    }
 
 
 def _canonical_bytes(value: Any) -> bytes:
@@ -209,7 +227,7 @@ async def materialize_standard_vqe_catalog(
     component_versions: dict[str, Any] = {}
     component_created = 0
     for definition in STANDARD_COMPONENTS:
-        payload = _json_value(definition)
+        payload = standard_component_payload(definition.semantic_key)
         spec, created = await _persist_spec(
             scope,
             session,
@@ -224,10 +242,7 @@ async def materialize_standard_vqe_catalog(
 
     workflow_created = 0
     for workflow in STANDARD_WORKFLOWS:
-        payload = {
-            **_json_value(workflow),
-            "compatibility": _json_value(check_workflow_compatibility(workflow)),
-        }
+        payload = standard_workflow_payload(workflow.workflow_key)
         spec, created = await _persist_spec(
             scope,
             session,

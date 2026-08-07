@@ -109,6 +109,7 @@ def test_vqe_production_execution_can_be_enabled_for_control_plane(monkeypatch):
     monkeypatch.setenv("MAJORANA_ENV", "production")
     monkeypatch.setenv("WORKOS_CLIENT_ID", "client_x")
     monkeypatch.setenv("MAJORANA_VQE_PRODUCTION_EXECUTION", "true")
+    monkeypatch.setenv("VQE_DECISION_HMAC_KEY", "d" * 48)
     settings = Settings.from_env()
     assert settings.vqe_production_execution is True
     assert settings.vqe_candidate_execution is False

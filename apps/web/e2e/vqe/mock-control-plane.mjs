@@ -1,3 +1,4 @@
+import { createHash } from "node:crypto";
 import { createServer } from "node:http";
 
 const port = Number(process.env.MOCK_VQE_API_PORT ?? "18000");
@@ -6,6 +7,7 @@ const slsqpWorkflowId = "10000000-0000-4000-8000-000000000002";
 const uccsdWorkflowId = "10000000-0000-4000-8000-000000000003";
 const hardwareEfficientWorkflowId = "10000000-0000-4000-8000-000000000004";
 const cobylaWorkflowId = "10000000-0000-4000-8000-000000000005";
+const blockedWorkflowId = "10000000-0000-4000-8000-000000000006";
 const slsqpDigest = "b".repeat(64);
 const cobylaDigest = "c".repeat(64);
 let experimentSequence = 0;
@@ -60,6 +62,90 @@ function componentBindings({
 function json(response, status, body) {
   response.writeHead(status, { "Content-Type": "application/json" });
   response.end(`${JSON.stringify(body)}\n`);
+}
+
+function problem(response, status, title, reasonCode) {
+  return json(response, status, {
+    type: "about:blank",
+    title,
+    status,
+    code: reasonCode,
+    reason_code: reasonCode,
+    request_id: "mock-request-id",
+    trace_id: "mock-request-id",
+  });
+}
+
+function workflowSemanticKey(artifactVersionId) {
+  return new Map([
+    [workflowId, "vqe.workflow.h2_sto3g_actual_vqe_v1"],
+    [slsqpWorkflowId, "workflow.instance.mock.slsqp"],
+    [cobylaWorkflowId, "workflow.instance.mock.cobyla"],
+    [uccsdWorkflowId, "workflow.instance.mock.uccsd"],
+    [hardwareEfficientWorkflowId, "workflow.instance.mock.hardware-efficient"],
+    [blockedWorkflowId, "workflow.mock.blocked.v1"],
+  ]).get(artifactVersionId);
+}
+
+function projection(artifactVersionId) {
+  const blocked = artifactVersionId === blockedWorkflowId;
+  const semanticKey = workflowSemanticKey(artifactVersionId);
+  if (!semanticKey) return null;
+  const projectionSha256 = createHash("sha256")
+    .update(`mock-launch-projection:${artifactVersionId}:${blocked ? "blocked" : "eligible"}`)
+    .digest("hex");
+  const blocker = {
+    reason_code: "vqe_composition_unvalidated",
+    field: "composition_state",
+    retryable: false,
+  };
+  return {
+    workflow_artifact_version_id: artifactVersionId,
+    workflow_semantic_key: semanticKey,
+    registry_semantic_key:
+      artifactVersionId === workflowId ? "h2.sto3g.actual_vqe.workflow.v0_2" : semanticKey,
+    machine_validation_state: blocked ? "unvalidated" : "machine_validated",
+    review_state: "unreviewed",
+    definition_state: "available",
+    composition_state: blocked ? "unvalidated" : "machine_validated",
+    execution_policy_state: "owner_waived_private",
+    validated_draft_supported: false,
+    experiment_creation: {
+      decision: blocked ? "blocked" : "eligible",
+      launch_mode: blocked ? "blocked" : "direct",
+      primary_reason_code: blocked ? blocker.reason_code : null,
+      blockers: blocked ? [blocker] : [],
+    },
+    frameworks: ["qiskit", "pennylane"].map((framework) => ({
+      framework,
+      runtime_profile_id: `mock-${framework}-runtime-v1`,
+      implementation_resolution: "resolved",
+      runtime_qualification: "qualified",
+      live_readiness: "ready",
+      readiness_generation: "90000000-0000-4000-8000-000000000001",
+      readiness_expires_at: "2099-01-01T00:00:00Z",
+      decision: blocked ? "blocked" : "eligible",
+      primary_reason_code: blocked ? blocker.reason_code : null,
+      blockers: blocked ? [blocker] : [],
+    })),
+    projection_sha256: projectionSha256,
+    registry_snapshot_sha256: createHash("sha256")
+      .update(`mock-registry-snapshot:${artifactVersionId}`)
+      .digest("hex"),
+    evaluated_at: "2026-01-01T00:00:00Z",
+    expires_at: "2099-01-01T00:00:00Z",
+  };
+}
+
+function visibleWorkflowIds() {
+  const ids = [workflowId, blockedWorkflowId];
+  if ([...experimentsById.values()].some((item) => item.slsqpSaved)) ids.push(slsqpWorkflowId);
+  if ([...experimentsById.values()].some((item) => item.cobylaSaved)) ids.push(cobylaWorkflowId);
+  if ([...experimentsById.values()].some((item) => item.uccsdSaved)) ids.push(uccsdWorkflowId);
+  if ([...experimentsById.values()].some((item) => item.hardwareEfficientSaved)) {
+    ids.push(hardwareEfficientWorkflowId);
+  }
+  return ids;
 }
 
 async function body(request) {
@@ -155,6 +241,26 @@ const server = createServer(async (request, response) => {
     return json(response, 401, { detail: "missing local development identity" });
   }
   authenticatedRequests += 1;
+
+  if (
+    request.method === "GET"
+    && url.pathname === "/v1/vqe/workflow-launch-projections"
+  ) {
+    return json(response, 200, {
+      workflows: visibleWorkflowIds().map((id) => projection(id)),
+      next_cursor: null,
+    });
+  }
+
+  const projectionDetail = url.pathname.match(
+    /^\/v1\/vqe\/workflow-launch-projections\/([0-9a-f-]+)$/,
+  );
+  if (projectionDetail && request.method === "GET") {
+    const value = projection(projectionDetail[1]);
+    return value
+      ? json(response, 200, value)
+      : problem(response, 404, "workflow launch projection not found", "not_found");
+  }
 
   if (request.method === "GET" && url.pathname === "/v1/atlas/workflows") {
     const components = [{
@@ -314,6 +420,15 @@ const server = createServer(async (request, response) => {
     )) {
       return json(response, 422, { detail: "unexpected workflow" });
     }
+    const currentProjection = projection(payload.workflow_artifact_version_id);
+    if (payload.expected_projection_sha256 !== currentProjection?.projection_sha256) {
+      return problem(
+        response,
+        412,
+        "workflow launch state changed; refresh before creating an experiment",
+        "vqe_launch_projection_stale",
+      );
+    }
     const uccsd = payload.workflow_artifact_version_id === uccsdWorkflowId;
     const hardwareEfficient =
       payload.workflow_artifact_version_id === hardwareEfficientWorkflowId;
@@ -368,6 +483,15 @@ const server = createServer(async (request, response) => {
       return json(response, 422, { detail: "unexpected framework" });
     }
     const experiment = experimentsById.get(experimentId);
+    const currentProjection = projection(experiment?.workflow_artifact_version_id);
+    if (payload.expected_projection_sha256 !== currentProjection?.projection_sha256) {
+      return problem(
+        response,
+        412,
+        "workflow launch state changed; refresh before starting execution",
+        "vqe_launch_projection_stale",
+      );
+    }
     const ansatzKey = experiment?.scientific_spec_json?.component_bindings?.find(
       (binding) => binding.role === "ansatz" && binding.applicability !== "not_applicable",
     )?.component_semantic_key;
@@ -399,8 +523,9 @@ const server = createServer(async (request, response) => {
         ? "unqualified"
         : "qualified",
       public_execution: "blocked",
-      review_state: "owner_waived",
-      scientific_review: "owner_waived",
+      review_state: "unreviewed",
+      scientific_review: "unreviewed",
+      execution_policy: "owner_waived_private",
       runtime_qualification: expectedCapability === "h2_sto3g_actual_vqe_v1"
         ? "unqualified"
         : "qualified_private",
@@ -462,7 +587,8 @@ const server = createServer(async (request, response) => {
       changed_role: "parameter_optimizer",
       spec_json: payload,
       spec_sha256: "9".repeat(64),
-      scientific_review: "owner_waived",
+      scientific_review: "unreviewed",
+      execution_policy: "owner_waived_private",
       visibility: "private",
       publication: "blocked",
       runs: [],

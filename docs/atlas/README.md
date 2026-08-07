@@ -22,6 +22,7 @@ that agents are allowed to execute now.
 | `atlas_vqe_mvp_execution_plan_ja.md` | Executable phase order, scope, gates, Neon/Git workflow, and handoff protocol |
 | `PHASE76_FIRST_EXECUTABLE_COMPONENT_SWAP_PLAN.md` | Active plan for correcting Phase 7.5 claims and completing the first persisted, executed, controlled component swap |
 | `PHASE11_PRIVATE_COMPONENT_FIRST_MVP.md` | Current consolidation plan and acceptance record for the private Component-First MVP |
+| `PHASE12_VQE_LAUNCH_RELIABILITY.md` | Launch truth, live-readiness, observability, and release-evidence contract |
 | `private_mvp/README.md` | Committed capability authority, deterministic gates, failure coverage, and completion audit |
 | `atlas_vqe_github_wrapper_master_plan_ja.md` | Long-term product and research architecture; not permission to implement every table or integration |
 
@@ -35,7 +36,7 @@ override both.
 - Plan date: 2026-08-05 JST
 - Latest reconciled `origin/dev`: `78926da581ab80e94a64427a2e3be8e8d5a01a51`
 - Development branch: `feature/vqe`
-- Baseline Alembic head: `0038`
+- Baseline Alembic head: `vqe_launch_0057`
 - MVP priority: freeze and qualify one coherent Private Component-First VQE
   path; do not add new components or public execution
 - Primary Golden Journey: H2 / STO-3G Fixed Excitation + SLSQP, followed by
@@ -68,6 +69,10 @@ override both.
   `PHASE11_PRIVATE_COMPONENT_FIRST_MVP.md`
 - Phase 11 post-push migration reconciliation audit:
   `private_mvp/migration_reconciliation_audit_2026-08-07.md`
+- Phase 12 launch reliability and observability audit:
+  `PHASE12_VQE_LAUNCH_RELIABILITY.md`
+- Phase 12 operator debugging runbook:
+  `../runbooks/vqe-launch-debugging.md`
 - Phase 6 rollback and disablement runbook: `PHASE6_ROLLBACK.md`
 - Beginner-facing test deployment and dashboard manual:
   `../runbooks/vqe-test-vercel-workos-neon-manual_ja.md`

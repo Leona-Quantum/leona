@@ -17,8 +17,9 @@ const candidate = {
   status: "succeeded",
   production_runtime_status: "unqualified",
   public_execution: "blocked",
-  review_state: "owner_waived",
-  scientific_review: "owner_waived",
+  review_state: "unreviewed",
+  scientific_review: "unreviewed",
+  execution_policy: "owner_waived_private",
   runtime_qualification: "unqualified",
   publication: "blocked",
   observations: [{
@@ -72,6 +73,21 @@ describe("VQE proof parsing", () => {
         },
       }),
       "h2_sto3g_hardware_efficient_ry_cx_v1",
+    );
+  });
+
+  it("recognizes the provisioned H2 v0.2 ansatz identity", () => {
+    assert.equal(
+      capabilityFromExperiment({
+        scientific_spec_json: {
+          component_bindings: [{
+            role: "ansatz",
+            applicability: "required",
+            component_semantic_key: "h2.sto3g.actual_vqe.v0_2.ansatz",
+          }],
+        },
+      }),
+      "h2_sto3g_actual_vqe_v1",
     );
   });
 

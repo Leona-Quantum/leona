@@ -3,14 +3,34 @@
 import { useEffect, useRef, useState } from "react";
 import type { PublicLocale } from "../../../lib/public-locale";
 import type { VqeFramework } from "../../../lib/vqe-proof";
+import { formatVqeProblem } from "../../../lib/vqe-problem";
 import { resolveInitialWorkflowId } from "../../../lib/vqe-workflow-launch";
 
 type Workflow = {
   artifact_version_id: string;
   semantic_key: string;
+  registry_semantic_key?: string;
   machine_validation_state: string;
   review_state: string;
-  execution_status?: string;
+  definition_state: string;
+  composition_state: string;
+  execution_policy_state: string;
+  validated_draft_supported: boolean;
+  projection_sha256: string;
+  expires_at: string;
+  experiment_creation: {
+    decision: "eligible" | "draft_required" | "blocked";
+    launch_mode: "direct" | "validated_draft_required" | "blocked";
+    primary_reason_code: string | null;
+    blockers: Array<{ reason_code: string; field: string; retryable: boolean }>;
+  };
+  frameworks: Array<{
+    framework: VqeFramework;
+    decision: "eligible" | "blocked";
+    live_readiness: string;
+    runtime_qualification: string;
+    primary_reason_code: string | null;
+  }>;
 };
 
 type Component = {
@@ -40,31 +60,64 @@ const H2_HARDWARE_EFFICIENT_MIGRATION =
 
 function parseWorkflows(value: unknown): Workflow[] {
   if (!value || typeof value !== "object") return [];
-  const rows = (value as { components?: unknown }).components;
+  const rows = (value as { workflows?: unknown }).workflows;
   if (!Array.isArray(rows)) return [];
-  return rows.flatMap((row) => {
+  return rows.flatMap(parseWorkflowProjection);
+}
+
+function parseWorkflowProjection(row: unknown): Workflow[] {
     if (!row || typeof row !== "object") return [];
     const item = row as Record<string, unknown>;
+    const creation = item.experiment_creation as Record<string, unknown> | undefined;
     if (
-      typeof item.artifact_version_id !== "string"
-      || typeof item.semantic_key !== "string"
+      typeof item.workflow_artifact_version_id !== "string"
+      || typeof item.workflow_semantic_key !== "string"
       || typeof item.machine_validation_state !== "string"
       || typeof item.review_state !== "string"
+      || typeof item.definition_state !== "string"
+      || typeof item.composition_state !== "string"
+      || typeof item.execution_policy_state !== "string"
+      || typeof item.validated_draft_supported !== "boolean"
+      || typeof item.projection_sha256 !== "string"
+      || typeof item.expires_at !== "string"
+      || !creation
+      || !["eligible", "draft_required", "blocked"].includes(String(creation.decision))
+      || !Array.isArray(creation.blockers)
+      || !Array.isArray(item.frameworks)
     ) return [];
-    const spec = item.spec_json;
-    const executionStatus =
-      spec && typeof spec === "object"
-        && typeof (spec as Record<string, unknown>).execution_status === "string"
-        ? (spec as Record<string, string>).execution_status
-        : undefined;
     return [{
-      artifact_version_id: item.artifact_version_id,
-      semantic_key: item.semantic_key,
+      artifact_version_id: item.workflow_artifact_version_id,
+      semantic_key: item.workflow_semantic_key,
+      registry_semantic_key:
+        typeof item.registry_semantic_key === "string"
+          ? item.registry_semantic_key
+          : undefined,
       machine_validation_state: item.machine_validation_state,
       review_state: item.review_state,
-      execution_status: executionStatus,
+      definition_state: item.definition_state,
+      composition_state: item.composition_state,
+      execution_policy_state: item.execution_policy_state,
+      validated_draft_supported: item.validated_draft_supported,
+      projection_sha256: item.projection_sha256,
+      expires_at: item.expires_at,
+      experiment_creation: creation as Workflow["experiment_creation"],
+      frameworks: item.frameworks as Workflow["frameworks"],
     }];
-  });
+}
+
+async function fetchWorkflowProjection(artifactVersionId: string): Promise<Workflow> {
+  const response = await fetch(
+    `/api/vqe/workflow-launch-projections/${encodeURIComponent(artifactVersionId)}`,
+    { cache: "no-store" },
+  );
+  const payload = await response.json();
+  const [projection] = parseWorkflowProjection(payload);
+  if (!response.ok || !projection) {
+    throw new Error(
+      formatVqeProblem(payload, `workflow launch projection unavailable (${response.status})`),
+    );
+  }
+  return projection;
 }
 
 function parseComponents(value: unknown): Component[] {
@@ -112,14 +165,16 @@ export function VqeExperimentLauncher({
   const [state, setState] = useState<"loading" | "ready" | "error">("loading");
   const [message, setMessage] = useState<string | null>(null);
   const [creating, setCreating] = useState(false);
+  const [derivingDraft, setDerivingDraft] = useState(false);
   const [savingSwap, setSavingSwap] = useState(false);
   const [savedSwap, setSavedSwap] = useState<SavedSwap | null>(null);
   const swapIdempotencyKey = useRef<string | null>(null);
   const uccsdMigrationIdempotencyKey = useRef<string | null>(null);
   const hardwareEfficientMigrationIdempotencyKey = useRef<string | null>(null);
+  const validatedDraftIdempotencyKey = useRef<string | null>(null);
 
   useEffect(() => {
-    void fetch("/api/atlas/workflows?limit=50", { cache: "no-store" })
+    void fetch("/api/vqe/workflow-launch-projections?limit=50", { cache: "no-store" })
       .then(async (response) => {
         if (!response.ok) throw new Error(`workflow registry unavailable (${response.status})`);
         return response.json();
@@ -148,7 +203,8 @@ export function VqeExperimentLauncher({
   }, [initialWorkflowId, initialWorkflowKey, ja]);
 
   async function createExperiment() {
-    if (!workflowId) return;
+    const selected = workflows.find((item) => item.artifact_version_id === workflowId);
+    if (!workflowId || selected?.experiment_creation.decision !== "eligible") return;
     setCreating(true);
     setMessage(null);
     try {
@@ -158,14 +214,14 @@ export function VqeExperimentLauncher({
           "Content-Type": "application/json",
           "Idempotency-Key": crypto.randomUUID(),
         },
-        body: JSON.stringify({ workflow_artifact_version_id: workflowId }),
+        body: JSON.stringify({
+          workflow_artifact_version_id: workflowId,
+          expected_projection_sha256: selected.projection_sha256,
+        }),
       });
-      const payload = await response.json() as { id?: string; detail?: unknown; error?: string };
+      const payload = await response.json() as { id?: string } & Record<string, unknown>;
       if (!response.ok || !payload.id) {
-        const detail = typeof payload.detail === "string"
-          ? payload.detail
-          : payload.error ?? JSON.stringify(payload.detail);
-        throw new Error(detail || `experiment creation failed (${response.status})`);
+        throw new Error(formatVqeProblem(payload, `experiment creation failed (${response.status})`));
       }
       window.location.assign(
         `/studio?vqeExperiment=${encodeURIComponent(
@@ -179,6 +235,49 @@ export function VqeExperimentLauncher({
     } catch (cause) {
       setMessage(cause instanceof Error ? cause.message : "experiment creation failed");
       setCreating(false);
+    }
+  }
+
+  async function deriveValidatedDraft() {
+    const selected = workflows.find((item) => item.artifact_version_id === workflowId);
+    if (!selected || selected.experiment_creation.decision !== "draft_required") return;
+    setDerivingDraft(true);
+    setMessage(null);
+    if (!validatedDraftIdempotencyKey.current) {
+      validatedDraftIdempotencyKey.current = crypto.randomUUID();
+    }
+    try {
+      const response = await fetch("/api/vqe/validated-workflow-drafts", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/json",
+          "Idempotency-Key": validatedDraftIdempotencyKey.current,
+        },
+        body: JSON.stringify({
+          source_workflow_artifact_version_id: selected.artifact_version_id,
+          expected_projection_sha256: selected.projection_sha256,
+          evaluator_provider: initialFramework,
+        }),
+      });
+      const payload = await response.json() as Partial<SavedSwap> & Record<string, unknown>;
+      if (!response.ok || typeof payload.workflow_artifact_version_id !== "string") {
+        throw new Error(formatVqeProblem(payload, `validated draft creation failed (${response.status})`));
+      }
+      const derived = await fetchWorkflowProjection(payload.workflow_artifact_version_id);
+      setWorkflows((current) => [
+        derived,
+        ...current.filter((item) => item.artifact_version_id !== derived.artifact_version_id),
+      ]);
+      setWorkflowId(derived.artifact_version_id);
+      setMessage(
+        ja
+          ? "標準seedから別のmachine-validated private draftを作成しました。元のseedは変更していません。"
+          : "Created a separate machine-validated private draft from the standard seed; the seed remains unchanged.",
+      );
+    } catch (cause) {
+      setMessage(cause instanceof Error ? cause.message : "validated draft creation failed");
+    } finally {
+      setDerivingDraft(false);
     }
   }
 
@@ -257,21 +356,13 @@ export function VqeExperimentLauncher({
         visibility: payload.visibility,
       };
       setSavedSwap(saved);
+      const projection = await fetchWorkflowProjection(saved.workflow_artifact_version_id);
       setWorkflows((current) => [
+        projection,
         ...current.filter(
           (workflow) =>
             workflow.artifact_version_id !== saved.workflow_artifact_version_id,
         ),
-        {
-          artifact_version_id: saved.workflow_artifact_version_id,
-          semantic_key: saved.workflow_semantic_key,
-          machine_validation_state:
-            saved.execution_status === "private_qualification_candidate"
-              ? "machine_validated"
-              : "unvalidated",
-          review_state: "unreviewed",
-          execution_status: saved.execution_status,
-        },
       ]);
       setWorkflowId(saved.workflow_artifact_version_id);
       setMessage(saved.execution_status === "private_qualification_candidate"
@@ -449,18 +540,13 @@ export function VqeExperimentLauncher({
         visibility: payload.visibility,
       };
       setSavedSwap(saved);
+      const projection = await fetchWorkflowProjection(saved.workflow_artifact_version_id);
       setWorkflows((current) => [
+        projection,
         ...current.filter(
           (workflow) =>
             workflow.artifact_version_id !== saved.workflow_artifact_version_id,
         ),
-        {
-          artifact_version_id: saved.workflow_artifact_version_id,
-          semantic_key: saved.workflow_semantic_key,
-          machine_validation_state: "machine_validated",
-          review_state: "unreviewed",
-          execution_status: saved.execution_status,
-        },
       ]);
       setWorkflowId(saved.workflow_artifact_version_id);
       setMessage(
@@ -492,8 +578,7 @@ export function VqeExperimentLauncher({
   const swapOptimizerName = initialSwapComponentKey
     ? PRIVATE_EXECUTABLE_OPTIMIZERS.get(initialSwapComponentKey)
     : undefined;
-  const executionBlocked =
-    selected?.execution_status === "blocked_until_runtime_qualified";
+  const creationDecision = selected?.experiment_creation.decision ?? "blocked";
   return (
     <main className="mj-studio-page">
       <section className="mj-studio-main">
@@ -535,12 +620,29 @@ export function VqeExperimentLauncher({
           <dl className="mj-studio-contract">
             <div><dt>machine validation</dt><dd>{selected.machine_validation_state}</dd></div>
             <div><dt>human review</dt><dd>{selected.review_state}</dd></div>
-            <div>
-              <dt>execution</dt>
-              <dd>{selected.execution_status ?? "registry qualified"}</dd>
-            </div>
+            <div><dt>definition</dt><dd>{selected.definition_state}</dd></div>
+            <div><dt>composition</dt><dd>{selected.composition_state}</dd></div>
+            <div><dt>execution policy</dt><dd>{selected.execution_policy_state}</dd></div>
+            <div><dt>experiment creation</dt><dd>{selected.experiment_creation.decision}</dd></div>
+            {selected.frameworks.map((item) => (
+              <div key={item.framework}>
+                <dt>{item.framework} readiness</dt>
+                <dd>{item.live_readiness} · {item.runtime_qualification} · {item.decision}</dd>
+              </div>
+            ))}
             <div><dt>Registry UUID</dt><dd className="mj-mono-muted">{selected.artifact_version_id}</dd></div>
           </dl>
+        ) : null}
+        {selected?.experiment_creation.blockers.length ? (
+          <div className="mj-studio-empty" role="status">
+            <strong>{ja ? "現在の停止理由" : "Current blockers"}</strong>
+            {selected.experiment_creation.blockers.map((blocker) => (
+              <p key={`${blocker.field}:${blocker.reason_code}`}>
+                {blocker.reason_code} · {blocker.field}
+                {blocker.retryable ? (ja ? " · 再試行可能" : " · retryable") : ""}
+              </p>
+            ))}
+          </div>
         ) : null}
         <div className="mj-studio-actions">
           {(swapRequested || migrationRequested) && !savedSwap ? (
@@ -567,12 +669,23 @@ export function VqeExperimentLauncher({
             <button
               className="mj-primary-button"
               type="button"
-              disabled={!workflowId || creating || executionBlocked}
-              onClick={() => void createExperiment()}
+              disabled={
+                !workflowId
+                || creating
+                || derivingDraft
+                || creationDecision === "blocked"
+              }
+              onClick={() => void (
+                creationDecision === "draft_required"
+                  ? deriveValidatedDraft()
+                  : createExperiment()
+              )}
             >
-              {creating
+              {creating || derivingDraft
                 ? (ja ? "作成中…" : "Creating…")
-                : (ja ? "実験を作成" : "Create experiment")}
+                : creationDecision === "draft_required"
+                  ? (ja ? "検証済みprivate draftを作成" : "Create validated private draft")
+                  : (ja ? "実験を作成" : "Create experiment")}
             </button>
           )}
           <a className="mj-secondary-button" href="/studio?vqeReview=1">

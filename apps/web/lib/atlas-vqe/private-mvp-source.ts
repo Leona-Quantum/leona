@@ -37,7 +37,8 @@ function validateManifest(raw: unknown): PrivateMvpCapabilityManifest {
     || boundary.public_execution !== "blocked"
     || boundary.scientific_superiority_claim !== "blocked"
     || boundary.external_repository_execution !== "blocked"
-    || boundary.scientific_review !== "owner_waived"
+    || boundary.scientific_review !== "unreviewed"
+    || boundary.execution_policy !== "owner_waived_private"
     || typeof boundary.statement !== "string"
   ) {
     fail("claim boundary is missing or unsafe");
