@@ -493,6 +493,14 @@ export function validateLayerGraph(graph: LayerGraph, corpus: ReadonlySet<string
       }
     }
 
+    // The same paper listed twice on one node. Zero today, and worth failing
+    // rather than de-duplicating on render: `Citations` keys on the url, so a
+    // repeat is a React duplicate key as well as a reader seeing one source
+    // twice.
+    const urlsHere = (node.citations ?? []).map((citation) => citation.url);
+    if (new Set(urlsHere).size !== urlsHere.length) {
+      errors.push(`${node.id}: the same citation url is listed twice`);
+    }
     for (const citation of node.citations ?? []) {
       if (!citation.title.trim()) errors.push(`${node.id}: a citation has no title`);
       if (!citation.url.startsWith("https://")) {
