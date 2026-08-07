@@ -1,6 +1,7 @@
 import type { Metadata } from "next";
 import { PublicSite } from "../../../components/public-site";
 import { LayerIndexView } from "../../../components/repository-layers";
+import { ProcessMapView } from "../../../components/repository-process-view";
 import { StrandView, STRAND_DEPTHS, type StrandDepth } from "../../../components/repository-strand-view";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
@@ -31,20 +32,18 @@ export async function generateMetadata(): Promise<Metadata> {
 }
 
 /**
- * `?open=<root id>` — which top-level slot arrives expanded.
+ * `?open=<root id>` — which top-level slot the **list** view arrives expanded.
+ *
+ * The map does not read this. Session 92 briefly merged the two into one set,
+ * for a nesting feature the map ended up not shipping — it drills down by
+ * `?focus=` instead — so the parameter means exactly what it always meant and
+ * belongs to one view.
  *
  * Resolved here, on the server, and validated against the root ids rather than
  * trusted: an unrecognised value means "the default", never an empty page. Same
  * rule `browse-params.ts` states for the four Atlas deep links, and the reason
- * this is a `<details open>` rather than a click handler is D88.2 — a control
- * that only works after hydration has no address at all.
- *
- * The one trap this route does not have is the one the port affordance shipped
- * with (session 88): the
- * `<details>` opened here has no collapsed ancestor, so a reader following the
- * link lands on something they can actually see. That was worth checking rather
- * than assuming, because `curl | grep 'open='` returns the same string either
- * way.
+ * this is a `<details open>` rather than an `onClick` is D88.2 — a control that
+ * only works after hydration has no address at all.
  */
 function resolveOpenRoot(params: Record<string, string | string[] | undefined>): string | null {
   const raw = params.open;
@@ -62,15 +61,24 @@ function one(params: Record<string, string | string[] | undefined>, key: string)
 /**
  * `?view=` — which drawing of the same graph.
  *
- * **Strands is the default**, and that is the session-90 change rather than a
- * detail. The owner's reading of the list was *"this big rectangles structure is
- * just not a good representation"*, and leaving the better surface behind a
- * query parameter would mean nobody arriving at the page ever sees it. The list
- * keeps its address at `?view=list` and loses nothing — D90.2, and reversible in
- * one line.
+ * **The map is the default**, which moves the default a second time. Session 90
+ * made strands the default over the list on the argument that leaving the better
+ * surface behind a query parameter means nobody arriving at the page ever sees
+ * it; the owner's session-91 reading of strands was that the nesting is *"hard
+ * to track and not easy to navigate"* — bubbles inside bubbles, lines through
+ * bubbles, and skip-routes drawn as arcs that follow the thing they skip. The
+ * same argument therefore applies again.
+ *
+ * Both older views keep their addresses and neither is deprecated: `?view=list`
+ * is still the linear, screen-reader and print reading (D90.2), and
+ * `?view=strands` is still the containment picture, which says something the
+ * path picture does not. Reversible in one line.
  */
-function resolveView(params: Record<string, string | string[] | undefined>): "strands" | "list" {
-  return one(params, "view") === "list" ? "list" : "strands";
+function resolveView(params: Record<string, string | string[] | undefined>): "map" | "strands" | "list" {
+  const value = one(params, "view");
+  if (value === "list") return "list";
+  if (value === "strands") return "strands";
+  return "map";
 }
 
 /**
@@ -107,6 +115,7 @@ function resolveDepth(params: Record<string, string | string[] | undefined>): St
   return (STRAND_DEPTHS as readonly number[]).includes(value) ? (value as StrandDepth) : 1;
 }
 
+
 export default async function RepositoryLayersPage({
   searchParams,
 }: {
@@ -120,6 +129,7 @@ export default async function RepositoryLayersPage({
   // The narrow projection the graph needs. Passing the whole listing would let a
   // later change to this surface start reading fields the graph has no business
   // depending on.
+  const view = resolveView(params);
   const corpus: LayerCorpusEntry[] = entries.map((entry) => ({
     slug: entry.slug,
     title: entry.title,
@@ -134,20 +144,27 @@ export default async function RepositoryLayersPage({
       locale={locale}
       showLanguageToggle
     >
-      {resolveView(params) === "list" ? (
+      {view === "list" ? (
         <LayerIndexView
           graph={LAYER_GRAPH}
           corpus={corpus}
           locale={locale}
           openRoot={resolveOpenRoot(params)}
         />
-      ) : (
+      ) : view === "strands" ? (
         <StrandView
           graph={LAYER_GRAPH}
           corpus={corpus}
           locale={locale}
           focusId={resolveFocus(params)}
           depth={resolveDepth(params)}
+        />
+      ) : (
+        <ProcessMapView
+          graph={LAYER_GRAPH}
+          corpus={corpus}
+          locale={locale}
+          focusId={resolveFocus(params)}
         />
       )}
     </PublicSite>

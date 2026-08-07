@@ -53,6 +53,7 @@
 //    set which was empty on the record that motivated the feature.
 // 4. **Never fill a hole.** An unstated applicability condition is `undefined`,
 //    not a plausible sentence. Same rule §3.6 applies to a gap in a record.
+import { stateSatisfies, validateStateVocabulary, type StateVocabulary } from "./states.ts";
 import type { PublicRepositoryCategory } from "./types";
 
 /** A node is one of exactly two things, and the distinction is load-bearing. */
@@ -82,6 +83,27 @@ export interface LayerCitation {
  * publishes contracts for a **reader** and never computes a verdict from them.
  */
 export interface LayerContract {
+  /**
+   * The state this consumes and the state it produces — the two ends of the
+   * process line.
+   *
+   * Added session 92. The prose below is unchanged and is still the contract a
+   * reader reads; these two ids are the part a machine can check. They name the
+   * **object being transformed**, never the parameters riding with it: a
+   * discretisation takes a generator *and* an interval *and* a tolerance, and
+   * only the generator is a state. See `states.ts` for why the prose could not
+   * do this job on its own.
+   */
+  from: string;
+  to: string;
+  /**
+   * Everything crossing the boundary, in full, for a reader.
+   *
+   * Still the authority on what a slot needs — `from` is the object, and this is
+   * the object *plus* every oracle, bound and tolerance that comes with it.
+   * Nothing derives one from the other and nothing may quietly drop this in
+   * favour of the two ids.
+   */
   takes: string;
   takesJa: string;
   returns: string;
@@ -171,6 +193,21 @@ export interface LayerMethod extends LayerNodeBase {
   costJa?: string;
   /** The capabilities this method needs, in the order a reader meets them. */
   steps: readonly string[];
+  /**
+   * Step id → the state this route is actually holding after that step, when it
+   * is narrower than what the step's own slot promises.
+   *
+   * It exists because some routes only work because of *which* method fills a
+   * step. The Koopman-von Neumann route lifts into a **Hermitian** generator,
+   * and only a Hermitian one can be handed straight to a simulator; the slot it
+   * descends into promises a linear generator and no more. Without this the
+   * route reads as having a gap it does not have.
+   *
+   * Narrowing only. `routeOf` ignores an entry that is not a kind of what the
+   * step declares and `validateLayerGraph` rejects it, so this cannot be used to
+   * wish a missing conversion away.
+   */
+  through?: Readonly<Record<string, string>>;
   /**
    * Declared to have no sub-steps **at this level, on purpose** — as opposed to
    * simply not having been decomposed yet. Only meaningful when `steps` is
@@ -333,6 +370,173 @@ export function contractFor(
 }
 
 /**
+ * The processes that touch a state, split by which end they touch it at.
+ *
+ * Only a node's **own** contract counts. A method that inherits its slot's
+ * contract is the same process drawn at a finer grain, and listing both would
+ * tell a reader that two different things arrive here when one does. A method
+ * that narrows the contract itself *is* a second claim, and does appear.
+ *
+ * `narrowedInto` is the third way to arrive and the one a contract cannot say:
+ * a route may record that a step lands somewhere narrower than the slot
+ * promises — `kvn-simulation-route` reaches a Hermitian generator through a slot
+ * that only promises a linear one. That is an arrival, and `unreachedStates`
+ * counts it as one, so this list has to as well.
+ */
+export interface StateTraffic {
+  /** Processes whose own contract returns this state. */
+  arriving: LayerNode[];
+  /** Processes whose own contract takes this state. */
+  leaving: LayerNode[];
+  /** Methods that record a step landing on this state by narrowing it. */
+  narrowedInto: LayerMethod[];
+  /**
+   * Processes that ask for something broader and therefore accept this.
+   *
+   * Without this, `hermitian-generator` reads "nothing leaves from here" while
+   * its own summary says a simulator can run it as it stands — because the
+   * simulator's contract asks for a Hamiltonian, and being one is exactly what
+   * `specializes` records. Narrowing composes in one direction, so this is the
+   * direction it composes in, listed rather than left for a reader to infer.
+   */
+  acceptedBy: LayerNode[];
+}
+
+export function stateTraffic(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  stateId: string,
+): StateTraffic {
+  const own = (node: LayerNode): LayerContract | null =>
+    isCapability(node) ? node.contract : (node.contract ?? null);
+  return {
+    arriving: graph.nodes.filter((node) => own(node)?.to === stateId),
+    leaving: graph.nodes.filter((node) => own(node)?.from === stateId),
+    narrowedInto: graph.nodes.filter(
+      (node): node is LayerMethod =>
+        isMethod(node) && Object.values(node.through ?? {}).includes(stateId),
+    ),
+    acceptedBy: graph.nodes.filter((node) => {
+      const from = own(node)?.from;
+      return from !== undefined && from !== stateId && stateSatisfies(vocabulary, stateId, from);
+    }),
+  };
+}
+
+/** One hop on a route: the process that carries it from one state to the next. */
+export interface RouteSegment {
+  /** The slot filling this hop, or `null` when the method does this part itself. */
+  capabilityId: string | null;
+  /** Set when `capabilityId` is null — the method is the process here. */
+  methodId?: string;
+  /** True when the state after this hop came from `through`, not the slot's contract. */
+  narrowed: boolean;
+}
+
+/**
+ * How much of a route is delegated to slots somebody else could fill.
+ *
+ * This is the ladder's own coverage measure and it is the useful one: a route
+ * built entirely of named slots can be recombined, and a route that is one
+ * undivided act cannot. Neither is a defect — `product-formula-simulation` is
+ * genuinely one act — but they are different claims and a reader deciding what
+ * to reuse needs to see which they are looking at.
+ */
+export type RouteCoverage = "delegated" | "partly-own" | "all-own";
+
+/**
+ * A method as a path: states with processes between them.
+ *
+ * `segments` is always one shorter than `states`. Every route is complete — it
+ * starts at its slot's `from` and ends at its slot's `to`, because that is what
+ * realising a slot means — so nothing here is ever a dangling end.
+ */
+export interface Route {
+  /** Every state the route holds in turn, entry first, exit last. */
+  states: readonly string[];
+  segments: readonly RouteSegment[];
+  /**
+   * Steps that supply an ingredient rather than moving the route along.
+   *
+   * `qsvt-matrix-inversion` needs a prepared |b⟩, and preparing it does not
+   * change what the route is carrying — the block-encoding is still the object
+   * in hand. Drawn hanging off the process that consumes it, never as a stage.
+   */
+  feeds: readonly string[];
+  coverage: RouteCoverage;
+}
+
+export function routeCoverage(route: Route): RouteCoverage {
+  return route.coverage;
+}
+
+/**
+ * The path a method takes through the state vocabulary.
+ *
+ * ## Two things `steps` is not, and both were found by drawing it
+ *
+ * `steps` was authored — correctly, for what it was for — as **the capabilities
+ * this route needs**, and reading it as a path gets two things wrong.
+ *
+ * 1. **It is not ordered as a path.** Measured 2026-08-08, `qsvt-matrix-inversion`
+ *    lists a block-encoding, a state preparation, a matrix function and an
+ *    amplification, and only two of those four move the object along; the state
+ *    preparation is an ingredient a later step consumes. So this walks the list
+ *    greedily: a step whose input is satisfied by what the route already holds
+ *    **advances** it, and one whose input is not is a **feed**. Derived rather
+ *    than authored beside `steps` on purpose — two hand-maintained lists of the
+ *    same steps drift, and the second is silent when it is wrong.
+ *
+ * 2. **It is not the whole method.** `steps` is what a route *delegates*; the
+ *    method also does its own work, and that work was never a step because it
+ *    has no other filler. `direct-sampling-readout` delegates the preparation
+ *    and then *samples*, which is the entire method. So when the delegated steps
+ *    do not reach the slot's output, the last hop is the method itself — a real
+ *    process with a page, not a hole. Twenty-three of the twenty-nine decomposed
+ *    routes are in that shape, which is why the first draft of this function
+ *    reported twenty-three gaps that were never there.
+ *
+ * Total on any input, deliberately — it is reached from a route handler, and an
+ * unresolvable id yields a feed rather than a throw.
+ */
+export function routeOf(graph: LayerGraph, vocabulary: StateVocabulary, method: LayerMethod): Route {
+  const slot = contractFor(graph, method)?.contract ?? null;
+  const entry = slot?.from ?? "";
+  const exit = slot?.to ?? "";
+
+  const states: string[] = [entry];
+  const segments: RouteSegment[] = [];
+  const feeds: string[] = [];
+  let holding = entry;
+
+  for (const id of method.steps) {
+    const node = layerNode(graph, id);
+    const contract = node && isCapability(node) ? node.contract : null;
+    if (contract === null || !stateSatisfies(vocabulary, holding, contract.from)) {
+      feeds.push(id);
+      continue;
+    }
+    const narrowed = method.through?.[id];
+    const useNarrowed = narrowed !== undefined && stateSatisfies(vocabulary, narrowed, contract.to);
+    holding = useNarrowed ? narrowed : contract.to;
+    segments.push({ capabilityId: id, narrowed: useNarrowed });
+    states.push(holding);
+  }
+
+  // What the method does itself. Present whenever the delegated steps have not
+  // arrived at the slot's output — which, on the authored graph, is most routes.
+  if (!stateSatisfies(vocabulary, holding, exit)) {
+    segments.push({ capabilityId: null, methodId: method.id, narrowed: false });
+    states.push(exit);
+  }
+
+  const delegated = segments.filter((segment) => segment.capabilityId !== null).length;
+  const coverage: RouteCoverage =
+    delegated === 0 ? "all-own" : delegated === segments.length ? "delegated" : "partly-own";
+  return { states, segments, feeds, coverage };
+}
+
+/**
  * Distance from the top, by **shortest** path.
  *
  * Shortest rather than longest on purpose: a capability reachable both as a
@@ -429,11 +633,53 @@ export interface LayerCensus {
   cited: number;
   /** Distinct corpus slugs referenced anywhere in the graph. */
   distinctEntries: number;
+  /** States in the vocabulary. */
+  states: number;
+  /**
+   * Routes built entirely of named slots, with no stretch the method does alone.
+   *
+   * Counted beside the other two rather than printed alone, because the three
+   * together are the honest statement about how recombinable the ladder is.
+   */
+  routesDelegated: number;
+  /** Routes where the method closes the last stretch itself. */
+  routesPartlyOwn: number;
+  /** Routes that are one undivided act — every step is an ingredient. */
+  routesAllOwn: number;
+  /** Steps that supply an ingredient rather than advancing the route. */
+  feedSteps: number;
+  /** States nothing produces — a route can start here but never arrive. */
+  unreachedStates: number;
 }
 
-export function layerCensus(graph: LayerGraph, corpus: ReadonlySet<string>): LayerCensus {
+export function layerCensus(
+  graph: LayerGraph,
+  corpus: ReadonlySet<string>,
+  vocabulary: StateVocabulary,
+): LayerCensus {
   const capabilities = graph.nodes.filter(isCapability);
   const methods = graph.nodes.filter(isMethod);
+  // Leaves are excluded: a method with no steps spans its slot by assertion, so
+  // counting it as a route that "closes" would inflate the number with routes
+  // nobody has taken apart. `stepsOutlook` is where that distinction lives.
+  const decomposed = methods
+    .filter((method) => method.steps.length > 0)
+    .map((method) => routeOf(graph, vocabulary, method));
+  // Every state some slot produces. A state nothing produces is either an entry
+  // point a reader arrives with — a nonlinear problem, a matrix, a machine — or
+  // an object the graph mentions and no recorded process ever reaches.
+  const produced = new Set<string>();
+  for (const node of capabilities) produced.add(node.contract.to);
+  for (const method of methods) if (method.contract) produced.add(method.contract.to);
+  // A `through` narrowing is an arrival too. `kvn-simulation-route` records that
+  // its embedding step lands on a *Hermitian* generator, and no contract in the
+  // graph says `to: "hermitian-generator"` — the state exists precisely because
+  // one route reaches a narrower object than the slot promises. Reading only
+  // contracts would report it as a place no route ever arrives at, which is the
+  // opposite of what the route says.
+  for (const method of methods) {
+    for (const narrowed of Object.values(method.through ?? {})) produced.add(narrowed);
+  }
   const referenced = new Set<string>();
   let unresolved = 0;
   for (const node of graph.nodes) {
@@ -451,6 +697,12 @@ export function layerCensus(graph: LayerGraph, corpus: ReadonlySet<string>): Lay
     undecomposedMethods: methods.filter((node) => stepsOutlook(node) === "undecomposed").length,
     cited: methods.filter((node) => (node.citations ?? []).length > 0).length,
     distinctEntries: referenced.size,
+    states: vocabulary.states.length,
+    routesDelegated: decomposed.filter((route) => route.coverage === "delegated").length,
+    routesPartlyOwn: decomposed.filter((route) => route.coverage === "partly-own").length,
+    routesAllOwn: decomposed.filter((route) => route.coverage === "all-own").length,
+    feedSteps: decomposed.reduce((total, route) => total + route.feeds.length, 0),
+    unreachedStates: vocabulary.states.filter((state) => !produced.has(state.id)).length,
   };
 }
 
@@ -465,6 +717,22 @@ export function layerCensus(graph: LayerGraph, corpus: ReadonlySet<string>): Lay
 export const RESERVED_REPOSITORY_SEGMENTS: readonly string[] = ["layers"];
 
 /**
+ * The contract of a step id, for validation, without assuming it resolves.
+ *
+ * Local to the validator: `routeOf` does the same lookup against the graph, and
+ * this one works off the id map the validator has already built so a malformed
+ * graph does not have to be indexed twice.
+ */
+function stepContractOf(
+  byId: ReadonlyMap<string, LayerNode>,
+  id: string | undefined,
+): LayerContract | null {
+  if (id === undefined) return null;
+  const node = byId.get(id);
+  return node && isCapability(node) ? node.contract : null;
+}
+
+/**
  * Everything that must be true of the authored graph, in one place.
  *
  * Called from two callers and written once: `scripts/check-layer-graph.mjs`
@@ -475,9 +743,29 @@ export const RESERVED_REPOSITORY_SEGMENTS: readonly string[] = ["layers"];
  *
  * Returns the errors rather than throwing: the callers want all of them at once.
  */
-export function validateLayerGraph(graph: LayerGraph, corpus: ReadonlySet<string>): string[] {
-  const errors: string[] = [];
+export function validateLayerGraph(
+  graph: LayerGraph,
+  corpus: ReadonlySet<string>,
+  vocabulary: StateVocabulary,
+): string[] {
+  const errors: string[] = [...validateStateVocabulary(vocabulary)];
   const byId = new Map<string, LayerNode>();
+  const stateIds = new Set(vocabulary.states.map((state) => state.id));
+
+  // States and nodes share the `/repository/layers/<id>` namespace, on purpose:
+  // one address per thing a reader can name. That only works while the two id
+  // sets are disjoint, and a collision is a 200 showing the wrong page — the
+  // failure mode nothing notices. Same argument as `RESERVED_REPOSITORY_SEGMENTS`.
+  for (const node of graph.nodes) {
+    if (stateIds.has(node.id)) {
+      errors.push(`${node.id}: a node id and a state id are the same — they share one route`);
+    }
+  }
+  for (const id of stateIds) {
+    if (RESERVED_REPOSITORY_SEGMENTS.includes(id)) {
+      errors.push(`${id}: state id collides with a reserved /repository/ route segment`);
+    }
+  }
 
   for (const node of graph.nodes) {
     if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(node.id)) {
@@ -490,7 +778,28 @@ export function validateLayerGraph(graph: LayerGraph, corpus: ReadonlySet<string
     // UI change verified` is a standing rule; a missing Ja field is the version
     // of that failure a screenshot cannot catch because the page falls back to
     // English and looks fine.
-    const contract = isCapability(node) ? node.contract : node.contract;
+    const contract = node.contract;
+    // A process connects two states, and both ends have to be states this
+    // vocabulary carries. An unresolvable end is worse than a blank: `routeOf`
+    // is total, so it would quietly satisfy nothing and every route through this
+    // slot would report a gap it does not have.
+    if (contract) {
+      for (const [end, id] of [
+        ["from", contract.from],
+        ["to", contract.to],
+      ] as const) {
+        if (typeof id !== "string" || id.trim() === "") {
+          errors.push(`${node.id}: contract.${end} is empty`);
+        } else if (!stateIds.has(id)) {
+          errors.push(`${node.id}: contract.${end} names an unknown state — ${id}`);
+        }
+      }
+      if (contract.from && contract.from === contract.to) {
+        errors.push(
+          `${node.id}: contract.from and contract.to are the same state — a process that changes nothing is not a layer`,
+        );
+      }
+    }
     for (const [field, value] of [
       ["label", node.label],
       ["labelJa", node.labelJa],
@@ -609,6 +918,37 @@ export function validateLayerGraph(graph: LayerGraph, corpus: ReadonlySet<string
         errors.push(`${node.id}: both needs and bypasses ${skipped}`);
       }
     }
+    // `through` narrows a junction. It is checked here rather than trusted,
+    // because the whole value of the composition check is that it cannot be
+    // silenced: a `through` state that is not a kind of what the step declares
+    // is a different claim wearing the word "narrower", and it would erase a
+    // real gap.
+    if (node.through !== undefined) {
+      const entries = Object.entries(node.through);
+      if (entries.length === 0) {
+        errors.push(`${node.id}: through narrows nothing — omit it instead`);
+      }
+      for (const [stepId, narrowed] of entries) {
+        if (!node.steps.includes(stepId)) {
+          errors.push(`${node.id}: through names ${stepId}, which is not one of its steps`);
+          continue;
+        }
+        if (!stateIds.has(narrowed)) {
+          errors.push(`${node.id}: through[${stepId}] names an unknown state — ${narrowed}`);
+          continue;
+        }
+        const declared = stepContractOf(byId, stepId)?.to;
+        if (declared !== undefined && !stateSatisfies(vocabulary, narrowed, declared)) {
+          errors.push(
+            `${node.id}: through[${stepId}] is ${narrowed}, which is not a kind of ${declared} — a step may only be narrowed, never replaced`,
+          );
+        }
+        if (declared === narrowed) {
+          errors.push(`${node.id}: through[${stepId}] repeats what ${stepId} already returns`);
+        }
+      }
+    }
+
     if (node.refines !== undefined) {
       const parent = byId.get(node.refines);
       if (!parent) errors.push(`${node.id}: refines an unknown id — ${node.refines}`);

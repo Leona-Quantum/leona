@@ -10756,3 +10756,182 @@ div.mj-rail-row:hover {
   font-size: var(--fs-13);
   line-height: 1.55;
 }
+
+/* --- the process map ------------------------------------------------------
+   States as circles, processes as the lines between them. The strand canvas
+   drew containment; this draws a path. Both surfaces are kept — `?view=strands`
+   is not deprecated — so these class names are deliberately separate rather
+   than shared: a change meant for one picture must not silently reach the
+   other. */
+.mj-process-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: var(--sp-3);
+  scrollbar-width: thin;
+}
+/* Shrink to fit, but barely, and then scroll.
+   `--process-w` is the diagram's natural width and `--process-min` is 88% of it,
+   both set inline by the renderer because only it knows them. The floor is NOT
+   wrapped in `min(…, 100%)`: that is what the strand canvas does, and with 100%
+   always the smaller value it silently disables the floor — a 2257px map in a
+   1150px column rendered at 51%, which turns 12px labels into 6px ones. A
+   diagram nobody can read is not a smaller diagram, so past 88% this scrolls
+   inside its own box instead. The page body still never scrolls sideways. */
+.mj-process-canvas {
+  display: block;
+  width: 100%;
+  max-width: var(--process-w);
+  min-width: var(--process-min);
+  height: auto;
+  color: var(--text-2);
+}
+
+/* The legend draws the canvas's own shapes at their real proportions, so a
+   stylesheet change reaches the key and the diagram together. It must NOT carry
+   `.mj-process-canvas` — that rule is the scroll-box sizing (width:100%, and a
+   max-width from a custom property only the renderer sets) and it inflated every
+   mark to the full column. It needs the colour from that rule and nothing else. */
+.mj-process-key { color: var(--text-2); }
+
+/* --- an opened slot: a region, never a line ------------------------------ */
+.mj-process-group-field {
+  fill: var(--bg-1);
+  stroke: var(--border-0);
+  stroke-width: 1;
+  opacity: 0.55;
+}
+.mj-process-group[data-depth="0"] > .mj-process-group-field { opacity: 0.75; }
+.mj-process-group-name {
+  fill: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* --- processes ----------------------------------------------------------- */
+.mj-process-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-linecap: round;
+}
+/* A slot is thick and a method is thin, which is the owner's distinction and
+   the only one a reader has to learn to use this picture: thick means there are
+   choices under it, thin means this is one of them. */
+.mj-process--slot .mj-process-line { stroke-width: 3.5; opacity: 0.6; }
+.mj-process--method .mj-process-line { stroke-width: 1.5; opacity: 0.55; }
+/* A slot with ways through it you have not opened. A SECOND line, not a fainter
+   one — "fainter" is not a difference a reader can name, and the state it has
+   to be told apart from is the one below. D90.6. */
+.mj-process-line-inner {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.3;
+}
+/* Nothing recorded fills this slot. Dashed: a different shape, not a dimmer
+   one, because "nobody has written a way through this" and "there are ways and
+   you have not opened them" are opposite claims about how complete this is. */
+.mj-process--unfilled .mj-process-line {
+  stroke-dasharray: 5 4;
+  stroke-width: 2;
+  opacity: 0.4;
+}
+/* A method nobody has taken apart, as against one that bottoms out on purpose.
+   Same pair as `stepsOutlook`, same rule: never one shape at two opacities. */
+.mj-process--leaf .mj-process-line { stroke-dasharray: none; }
+.mj-process-name {
+  fill: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.mj-process--method .mj-process-name {
+  fill: var(--text-2);
+  font-size: 11px;
+  font-style: italic;
+}
+
+/* One alternative's name, in its own band above the row. Distinct type from the
+   process labels below it — the strand view found that position alone was not
+   enough to stop a slot's name and a method's name reading as one two-line
+   title. */
+.mj-process-lane-name {
+  fill: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 12px;
+  font-weight: 500;
+}
+
+/* --- states -------------------------------------------------------------- */
+.mj-process-dot {
+  fill: var(--bg-0);
+  stroke: currentColor;
+  stroke-width: 1.75;
+  opacity: 0.85;
+}
+/* The two ends of the whole map are where a reader arrives and leaves, so they
+   are filled rather than hollow. Everything between is a place you pass. */
+.mj-process-state--terminal .mj-process-dot {
+  fill: currentColor;
+  opacity: 0.9;
+}
+.mj-process-state-name {
+  fill: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+
+/* --- the vertical tie ---------------------------------------------------- */
+/* Solid: the identical object on both routes. Dotted: one is a narrower kind of
+   the other. Two different claims, two different marks. */
+.mj-process-tie line {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.3;
+}
+.mj-process-tie--kind line { stroke-dasharray: 2 3; opacity: 0.35; }
+
+/* --- ingredients --------------------------------------------------------- */
+.mj-process-feed line {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.4;
+}
+.mj-process-feed-name {
+  fill: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 11px;
+}
+
+/* --- hit targets --------------------------------------------------------- */
+/* A fat transparent STROKE, never a fill: a filled region would cover its own
+   interior, where the lanes are drawn, and the parent would eat every click
+   meant for a child. Carried over from the strand canvas, where that was found
+   the hard way. */
+.mj-process-hit-line {
+  stroke: currentColor;
+  stroke-width: 14;
+  fill: none;
+  opacity: 0;
+  pointer-events: stroke;
+}
+.mj-process-hit {
+  fill: currentColor;
+  opacity: 0;
+  pointer-events: fill;
+}
+.mj-process-canvas a { cursor: pointer; }
+.mj-process-canvas a:hover .mj-process-hit-line { opacity: 0.07; }
+.mj-process-canvas a:hover .mj-process-hit { opacity: 0.06; }
+.mj-process-canvas a:hover .mj-process-name,
+.mj-process-canvas a:focus-visible .mj-process-name,
+.mj-process-canvas a:hover .mj-process-state-name,
+.mj-process-canvas a:focus-visible .mj-process-state-name,
+.mj-process-canvas a:hover .mj-process-group-name,
+.mj-process-canvas a:focus-visible .mj-process-group-name {
+  fill: var(--accent);
+}
+.mj-process-canvas a:hover .mj-process-dot { opacity: 1; stroke: var(--accent); }
+.mj-process-canvas a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}

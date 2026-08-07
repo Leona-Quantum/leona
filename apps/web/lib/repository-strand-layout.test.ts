@@ -45,7 +45,7 @@ function capability(id: string, extra: Partial<LayerCapability> = {}): LayerCapa
     labelJa: id,
     summary: "",
     summaryJa: "",
-    contract: { takes: "a", takesJa: "a", returns: "b", returnsJa: "b" },
+    contract: { from: "alpha", to: "beta", takes: "a", takesJa: "a", returns: "b", returnsJa: "b" },
     whyALayer: "",
     whyALayerJa: "",
     ...extra,

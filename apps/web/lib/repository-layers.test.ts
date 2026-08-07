@@ -32,15 +32,42 @@ import {
   refinementsOf,
   rootCapabilities,
   siblingsOf,
+  stateTraffic,
   stepsOutlook,
   validateLayerGraph,
   type LayerCapability,
+  type LayerContract,
   type LayerGraph,
   type LayerMethod,
 } from "./repository/layers.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
+import type { StateVocabulary } from "./repository/states.ts";
+import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 
 const CITE = [{ title: "A paper", authors: "Someone", year: "2020", url: "https://example.org/a" }];
+
+/**
+ * The fixture's own state vocabulary, on the same rule as the graph above it:
+ * a test that names the authored states asserts today's content.
+ *
+ * Three states in a chain is the smallest thing that makes `encode` a real step
+ * of `direct` — a process that carries the route part of the way and leaves the
+ * rest to the method itself. The ids are deliberately unlike any node id in this
+ * file, because `validateLayerGraph` rejects a state and a node answering to one
+ * name and that rule has to stay assertable rather than tripped by the fixture.
+ */
+const FIXTURE_STATES: StateVocabulary = {
+  states: [
+    { id: "alpha", label: "alpha", labelJa: "alpha", summary: "s", summaryJa: "s" },
+    { id: "beta", label: "beta", labelJa: "beta", summary: "s", summaryJa: "s" },
+    { id: "gamma", label: "gamma", labelJa: "gamma", summary: "s", summaryJa: "s" },
+  ],
+};
+
+/** A contract between two of the fixture states; the prose is never read. */
+function contract(from: string, to: string): LayerContract {
+  return { from, to, takes: "t", takesJa: "t", returns: "r", returnsJa: "r" };
+}
 
 function capability(id: string, extra: Partial<LayerCapability> = {}): LayerCapability {
   return {
@@ -50,7 +77,7 @@ function capability(id: string, extra: Partial<LayerCapability> = {}): LayerCapa
     labelJa: id,
     summary: "s",
     summaryJa: "s",
-    contract: { takes: "t", takesJa: "t", returns: "r", returnsJa: "r" },
+    contract: contract("alpha", "beta"),
     whyALayer: "w",
     whyALayerJa: "w",
     ...extra,
@@ -65,7 +92,7 @@ function method(id: string, realizes: string, extra: Partial<LayerMethod> = {}):
     labelJa: id,
     summary: "s",
     summaryJa: "s",
-    contract: { takes: "t", takesJa: "t", returns: "r", returnsJa: "r" },
+    contract: contract("alpha", "beta"),
     realizes,
     steps: [],
     atomic: true,
@@ -80,14 +107,22 @@ function method(id: string, realizes: string, extra: Partial<LayerMethod> = {}):
  * `solve` is filled three ways; `fast` is a narrower version of `direct`, and
  * `other` is an unrelated approach. `via-steps` needs `encode`, and `around`
  * skips it — the two edges the whole surface exists to show.
+ *
+ * As a path: `solve` runs `alpha → gamma` and `encode` runs `alpha → beta`, so
+ * `direct` delegates the first hop and closes the rest itself — the shape most
+ * authored routes are in.
  */
 const FIXTURE: LayerGraph = {
   nodes: [
-    capability("solve"),
+    capability("solve", { contract: contract("alpha", "gamma") }),
     capability("encode"),
-    method("direct", "solve", { steps: ["encode"], atomic: undefined }),
-    method("fast", "solve", { refines: "direct" }),
-    method("other", "solve", { bypasses: ["encode"] }),
+    method("direct", "solve", {
+      contract: contract("alpha", "gamma"),
+      steps: ["encode"],
+      atomic: undefined,
+    }),
+    method("fast", "solve", { contract: contract("alpha", "gamma"), refines: "direct" }),
+    method("other", "solve", { contract: contract("alpha", "gamma"), bypasses: ["encode"] }),
     method("encode-a", "encode", { entries: ["real-slug"] }),
   ],
 };
@@ -174,7 +209,7 @@ test("a corpus slug that does not resolve is dropped rather than linked into a 4
 });
 
 test("the census counts what is there, including what is not", () => {
-  const census = layerCensus(FIXTURE, new Set(["real-slug"]));
+  const census = layerCensus(FIXTURE, new Set(["real-slug"]), FIXTURE_STATES);
   assert.equal(census.nodes, 6);
   assert.equal(census.capabilities, 2);
   assert.equal(census.methods, 4);
@@ -189,14 +224,15 @@ test("a corpus that does not carry a declared slug is counted, not silently abso
   // repo. Nothing proves it against the corpus the API serves at read time, and
   // `anchored` would simply come out lower — a number about our own coverage,
   // quietly wrong. The shortfall is counted so the page can say it.
-  const census = layerCensus(FIXTURE, new Set<string>());
+  const census = layerCensus(FIXTURE, new Set<string>(), FIXTURE_STATES);
   assert.equal(census.anchored, 0);
   assert.equal(census.unresolvedEntries, 1);
 });
 
 test("validation rejects the edges that would make a reading dishonest", () => {
   const corpus = new Set(["real-slug"]);
-  const bad = (nodes: LayerGraph["nodes"]) => validateLayerGraph({ nodes }, corpus);
+  const bad = (nodes: LayerGraph["nodes"]) =>
+    validateLayerGraph({ nodes }, corpus, FIXTURE_STATES);
 
   assert.ok(
     bad([capability("a"), method("m", "missing")]).some((e) => e.includes("realizes an unknown id")),
@@ -251,6 +287,192 @@ test("validation rejects the edges that would make a reading dishonest", () => {
   assert.deepEqual(bad(FIXTURE.nodes), []);
 });
 
+/**
+ * What a state page lists, and the two things it must not do.
+ *
+ * It must not count a method that merely inherits its slot's contract — that is
+ * the same process drawn finer, and listing both tells a reader two things
+ * arrive here when one does. And it must not miss a `through`: a route can
+ * record an arrival no contract states, which is exactly why
+ * `hermitian-generator` exists.
+ */
+test("a state's traffic counts own contracts and narrowings, never an inherited one", () => {
+  const narrowing: StateVocabulary = {
+    states: [
+      ...FIXTURE_STATES.states,
+      {
+        id: "beta-sharp",
+        label: "beta-sharp",
+        labelJa: "beta-sharp",
+        summary: "s",
+        summaryJa: "s",
+        specializes: ["beta"],
+      },
+    ],
+  };
+  const graph: LayerGraph = {
+    nodes: [
+      capability("span", { contract: contract("alpha", "gamma") }),
+      capability("encode"),
+      // Inherits `encode`'s contract rather than restating it, so it is the same
+      // arrival at beta and must not be listed twice.
+      method("plain", "encode", { contract: undefined }),
+      method("narrower", "span", {
+        contract: contract("alpha", "gamma"),
+        steps: ["encode"],
+        atomic: undefined,
+        through: { encode: "beta-sharp" },
+      }),
+    ],
+  };
+  assert.deepEqual(validateLayerGraph(graph, new Set(["real-slug"]), narrowing), []);
+
+  const beta = stateTraffic(graph, narrowing, "beta");
+  assert.deepEqual(
+    beta.arriving.map((n) => n.id),
+    ["encode"],
+  );
+  assert.deepEqual(beta.narrowedInto, []);
+  // beta is the broad one. Nothing narrower than itself accepts *it*.
+  assert.deepEqual(beta.acceptedBy, []);
+
+  const sharp = stateTraffic(graph, narrowing, "beta-sharp");
+  assert.deepEqual(sharp.arriving, []);
+  assert.deepEqual(
+    sharp.narrowedInto.map((n) => n.id),
+    ["narrower"],
+  );
+
+  const alpha = stateTraffic(graph, narrowing, "alpha");
+  assert.deepEqual(
+    alpha.leaving.map((n) => n.id),
+    ["span", "encode", "narrower"],
+  );
+});
+
+/**
+ * The direction of `specializes`, rendered rather than left to be inferred.
+ *
+ * A page that lists only exact `from` matches tells a reader that nothing leaves
+ * from a state whose entire reason for existing is that a broader process takes
+ * it as it stands — which is what `hermitian-generator` said before this existed.
+ * And the asymmetry has to hold: broader must never be listed as accepted where
+ * narrower is asked for.
+ */
+test("a narrower state is accepted where a broader one is asked for, and never the reverse", () => {
+  const vocabulary: StateVocabulary = {
+    states: [
+      { id: "broad", label: "broad", labelJa: "broad", summary: "s", summaryJa: "s" },
+      {
+        id: "narrow",
+        label: "narrow",
+        labelJa: "narrow",
+        summary: "s",
+        summaryJa: "s",
+        specializes: ["broad"],
+      },
+      { id: "end", label: "end", labelJa: "end", summary: "s", summaryJa: "s" },
+    ],
+  };
+  const graph: LayerGraph = {
+    nodes: [capability("consume", { contract: contract("broad", "end") })],
+  };
+
+  // `consume` asks for broad. Holding narrow, you can hand it straight over.
+  const narrow = stateTraffic(graph, vocabulary, "narrow");
+  assert.deepEqual(narrow.leaving, []);
+  assert.deepEqual(
+    narrow.acceptedBy.map((n) => n.id),
+    ["consume"],
+  );
+
+  // Holding broad, `consume` is an exact match — and it is listed once, as an
+  // exact one, never doubled into the accepted list.
+  const broad = stateTraffic(graph, vocabulary, "broad");
+  assert.deepEqual(
+    broad.leaving.map((n) => n.id),
+    ["consume"],
+  );
+  assert.deepEqual(broad.acceptedBy, []);
+
+  // The reverse never composes: nothing asks for narrow, so holding broad opens
+  // nothing extra.
+  const reversed: LayerGraph = {
+    nodes: [capability("wants-narrow", { contract: contract("narrow", "end") })],
+  };
+  assert.deepEqual(stateTraffic(reversed, vocabulary, "broad").acceptedBy, []);
+});
+
+/**
+ * `through` is the one edge whose whole value is that it cannot be silenced.
+ *
+ * A narrowing that is not actually a narrowing erases a real gap — it lets a
+ * route claim it hands on a Hermitian generator when the step it delegates to
+ * promises only a linear one, and the composition check then reads the chain as
+ * closing. So each of the five rejections is asserted here rather than reviewed;
+ * every one of them was live and untested until session 93.
+ */
+test("validation rejects a `through` that is not a narrowing", () => {
+  const corpus = new Set(["real-slug"]);
+  // A vocabulary of its own rather than a `specializes` edge added to
+  // FIXTURE_STATES: those three states are deliberately mutually unrelated, and
+  // giving one of them a parent would quietly change what every other assertion
+  // in this file is measured against.
+  const narrowing: StateVocabulary = {
+    states: [
+      ...FIXTURE_STATES.states,
+      {
+        id: "beta-sharp",
+        label: "beta-sharp",
+        labelJa: "beta-sharp",
+        summary: "s",
+        summaryJa: "s",
+        specializes: ["beta"],
+      },
+    ],
+  };
+  // `a` spans alpha → gamma and delegates its first hop to `b`, which returns
+  // beta. So beta is what a `through` on step `b` has to narrow.
+  const graph = (through: LayerMethod["through"]): LayerGraph["nodes"] => [
+    capability("a", { contract: contract("alpha", "gamma") }),
+    capability("b"),
+    method("m", "a", {
+      contract: contract("alpha", "gamma"),
+      steps: ["b"],
+      atomic: undefined,
+      through,
+    }),
+  ];
+  const errorsFor = (through: LayerMethod["through"]) =>
+    validateLayerGraph({ nodes: graph(through) }, corpus, narrowing);
+
+  assert.ok(errorsFor({}).some((e) => e.includes("through narrows nothing")));
+  assert.ok(
+    errorsFor({ nope: "beta-sharp" }).some((e) =>
+      e.includes("through names nope, which is not one of its steps"),
+    ),
+  );
+  assert.ok(
+    errorsFor({ b: "no-such-state" }).some((e) =>
+      e.includes("through[b] names an unknown state"),
+    ),
+  );
+  // gamma is a real state and is not a kind of beta — a replacement wearing the
+  // word "narrower", which is the case that would erase a gap.
+  assert.ok(
+    errorsFor({ b: "gamma" }).some((e) => e.includes("is not a kind of beta")),
+  );
+  assert.ok(
+    errorsFor({ b: "beta" }).some((e) => e.includes("repeats what b already returns")),
+  );
+  // And the honest one passes: beta-sharp is a kind of beta, so the step really
+  // does land somewhere narrower than it promised.
+  assert.deepEqual(
+    errorsFor({ b: "beta-sharp" }).filter((e) => e.includes("through")),
+    [],
+  );
+});
+
 // --- the authored graph ----------------------------------------------------
 
 /**
@@ -266,7 +488,7 @@ test("validation rejects the edges that would make a reading dishonest", () => {
 const SELF_DECLARED_SLUGS = new Set(LAYER_GRAPH.nodes.flatMap((node) => node.entries ?? []));
 
 test("the authored layer graph satisfies every rule that does not need the corpus", () => {
-  assert.deepEqual(validateLayerGraph(LAYER_GRAPH, SELF_DECLARED_SLUGS), []);
+  assert.deepEqual(validateLayerGraph(LAYER_GRAPH, SELF_DECLARED_SLUGS, STATE_VOCABULARY), []);
 });
 
 test("every authored node is reachable from a root", () => {
