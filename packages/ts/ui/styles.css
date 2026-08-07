@@ -10859,6 +10859,40 @@ div.mj-rail-row:hover {
   font-weight: 500;
 }
 
+/* --- the size control -----------------------------------------------------
+   Six links, never a slider. A slider only works after hydration, so it has no
+   address — nothing to link, send, bookmark or check with `curl` (D88.2). Same
+   move session 91 made when three `<select>`s came off the Atlas. */
+.mj-process-zoom {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2) var(--sp-3);
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-12);
+}
+.mj-process-zoom-label {
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.mj-process-zoom a {
+  color: var(--text-1);
+  text-decoration: none;
+  border-bottom: 1px solid transparent;
+}
+.mj-process-zoom a:hover,
+.mj-process-zoom a:focus-visible {
+  color: var(--accent);
+  border-bottom-color: var(--accent);
+}
+/* The rung you are on is not a link to itself — same "you are here" convention
+   the rail uses for the slot you are standing in. */
+.mj-process-zoom strong {
+  color: var(--text-0);
+  font-weight: 500;
+}
+
 /* --- the figure's own name, top right ------------------------------------
    Only on a zoomed figure — the map has no single subject to name. Bigger than
    anything on the canvas and not a link: everything else here is an address,

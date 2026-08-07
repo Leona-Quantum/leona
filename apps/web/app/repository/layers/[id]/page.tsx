@@ -12,6 +12,7 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PublicSite } from "../../../../components/public-site";
 import { LayerNodeView, LayerStateView } from "../../../../components/repository-layers";
+import { resolveZoom } from "../../../../components/repository-process-view";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../lib/repository/layer-graph";
@@ -52,10 +53,12 @@ export async function generateMetadata({
 
 export default async function RepositoryLayerNodePage({
   params,
+  searchParams,
 }: {
   params: Promise<{ id: string }>;
+  searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
-  const { id } = await params;
+  const [{ id }, query] = await Promise.all([params, searchParams]);
   // Both lookups, unconditionally: the two namespaces are disjoint by validation,
   // so at most one can answer and there is no precedence question to get wrong.
   const node = layerNode(LAYER_GRAPH, id);
@@ -66,6 +69,8 @@ export default async function RepositoryLayerNodePage({
   // touches a record, so making it wait on the Atlas would buy nothing and hand
   // it a dependency that can be slow or short — the failure mode `censusUnresolved`
   // exists to confess elsewhere on this surface.
+  const raw = query.zoom;
+  const zoom = resolveZoom(typeof raw === "string" ? raw : Array.isArray(raw) ? (raw[0] ?? null) : null);
   const [locale, entries] = await Promise.all([
     getPublicLocale(),
     node ? getRepositoryListEntries() : Promise.resolve([]),
@@ -85,7 +90,13 @@ export default async function RepositoryLayerNodePage({
       showLanguageToggle
     >
       {node ? (
-        <LayerNodeView graph={LAYER_GRAPH} node={node} corpus={corpus} locale={locale} />
+        <LayerNodeView
+          graph={LAYER_GRAPH}
+          node={node}
+          corpus={corpus}
+          locale={locale}
+          zoom={zoom}
+        />
       ) : state ? (
         <LayerStateView
           graph={LAYER_GRAPH}

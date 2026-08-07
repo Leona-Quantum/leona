@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { PublicSite } from "../../../components/public-site";
 import { LayerIndexView } from "../../../components/repository-layers";
-import { MAP_OPEN_MAX, ProcessMapView } from "../../../components/repository-process-view";
+import { MAP_OPEN_MAX, ProcessMapView, resolveZoom } from "../../../components/repository-process-view";
 import { StrandView, STRAND_DEPTHS, type StrandDepth } from "../../../components/repository-strand-view";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
@@ -205,6 +205,7 @@ export default async function RepositoryLayersPage({
           focusId={resolveFocus(params)}
           openIds={openSet.open}
           droppedOpen={openSet.dropped}
+          zoom={resolveZoom(one(params, "zoom"))}
         />
       )}
     </PublicSite>

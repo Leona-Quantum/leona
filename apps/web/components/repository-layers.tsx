@@ -61,7 +61,7 @@ import {
   type StateVocabulary,
 } from "../lib/repository/states";
 import { ProcessCanvas } from "./repository-process-map";
-import { mapHref } from "./repository-process-view";
+import { mapHref, ZoomControl, type MapZoom } from "./repository-process-view";
 
 const COPY = {
   en: {
@@ -186,6 +186,9 @@ const COPY = {
       `${n} ${n === 1 ? "line here has ways" : "lines here have ways"} through that this figure does not open. The map opens them in place.`,
     zoomAllShallow: "Nothing drawn here has a recorded way through it that this figure leaves shut.",
     zoomNames: "Circles are named on hover, and each one is a link.",
+    zoomLabel: "Size",
+    zoomFit: "Fit",
+    zoomPercent: (n: number) => `${n}%`,
   },
   ja: {
     indexHeading: "階層",
@@ -293,6 +296,9 @@ const COPY = {
       `この図が開いていない通り道をもつ線が ${n} 本あります。地図ではその場で開けます。`,
     zoomAllShallow: "この図が閉じたままにしている通り道は、ここにはありません。",
     zoomNames: "円の名前はホバーで表示され、それぞれがリンクです。",
+    zoomLabel: "表示倍率",
+    zoomFit: "全体表示",
+    zoomPercent: (n: number) => `${n}%`,
   },
 } as const;
 
@@ -372,11 +378,13 @@ function ProcessZoom({
   node,
   locale,
   copy,
+  zoom,
 }: {
   graph: LayerGraph;
   node: LayerNode;
   locale: PublicLocale;
   copy: LayersCopy;
+  zoom: MapZoom | null;
 }) {
   const resolved = contractFor(graph, node);
   const diagram = layoutProcessZoom(graph, STATE_VOCABULARY, node.id, locale === "ja" ? "ja" : "en");
@@ -394,7 +402,21 @@ function ProcessZoom({
       <h2 className="mj-layers-zoom-heading" id={`zoom-${node.id}`}>
         {copy.zoomHeading}
       </h2>
-      <ProcessCanvas diagram={diagram} locale={locale === "ja" ? "ja" : "en"} title={label(node, locale)} />
+      {/* The reader's own size. A figure can be 1,233px wide in an 868px column:
+          *"they can zoom in and out of the page on their own"*, owner, session
+          92. It applies to this figure and stops at this page — the map below is
+          a different drawing at a different natural width. */}
+      <ZoomControl
+        current={zoom}
+        hrefFor={(next) => (next === null ? href(node.id) : `${href(node.id)}?zoom=${next}`)}
+        copy={copy}
+      />
+      <ProcessCanvas
+        diagram={diagram}
+        locale={locale === "ja" ? "ja" : "en"}
+        title={label(node, locale)}
+        scale={zoom === null ? null : zoom / 100}
+      />
       <figcaption className="mj-layers-zoom-caption">
         {from && to ? (
           <p className="mj-layers-zoom-ends">
@@ -733,11 +755,13 @@ export function LayerNodeView({
   node,
   corpus,
   locale,
+  zoom = null,
 }: {
   graph: LayerGraph;
   node: LayerNode;
   corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
+  zoom?: MapZoom | null;
 }) {
   const copy = copyFor(locale);
   const depth = layerDepths(graph).get(isCapability(node) ? node.id : node.realizes);
@@ -761,7 +785,7 @@ export function LayerNodeView({
       {/* Before the prose, not after it. A reader who clicked a name on the map
           came here to see this one thing drawn; the write-up is what they read
           once they have found it. */}
-      <ProcessZoom graph={graph} node={node} locale={locale} copy={copy} />
+      <ProcessZoom graph={graph} node={node} locale={locale} copy={copy} zoom={zoom} />
       {isCapability(node) ? (
         <CapabilityView graph={graph} node={node} corpus={corpus} locale={locale} copy={copy} />
       ) : (

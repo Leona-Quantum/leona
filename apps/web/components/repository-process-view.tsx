@@ -18,7 +18,14 @@ import {
   type LayerCorpusEntry,
   type LayerGraph,
 } from "../lib/repository/layers";
-import { layoutProcessMap, type ProcessDiagram } from "../lib/repository/process-layout";
+import {
+  layoutProcessMap,
+  resolveZoom,
+  zoomHref,
+  MAP_ZOOMS,
+  type MapZoom,
+  type ProcessDiagram,
+} from "../lib/repository/process-layout";
 import { ancestorPath } from "../lib/repository/strand-layout";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import { layerState, specializationsOf } from "../lib/repository/states";
@@ -80,6 +87,9 @@ interface MapViewCopy {
   legendTie: string;
   legendFeed: string;
   back: string;
+  zoomLabel: string;
+  zoomFit: string;
+  zoomPercent: (n: number) => string;
 }
 
 const COPY: Record<"en" | "ja", MapViewCopy> = {
@@ -115,6 +125,9 @@ const COPY: Record<"en" | "ja", MapViewCopy> = {
     legendTie: "the same object on both routes",
     legendFeed: "an ingredient the route needs",
     back: "All four",
+    zoomLabel: "Size",
+    zoomFit: "Fit",
+    zoomPercent: (n: number) => `${n}%`,
   },
   ja: {
     heading: "階層",
@@ -146,8 +159,16 @@ const COPY: Record<"en" | "ja", MapViewCopy> = {
     legendTie: "どちらの経路でも同じ対象",
     legendFeed: "経路に必要な材料",
     back: "四つすべて",
+    zoomLabel: "表示倍率",
+    zoomFit: "全体表示",
+    zoomPercent: (n: number) => `${n}%`,
   },
 };
+
+// Re-exported so a page importing this surface gets its parameter parser from
+// the same place it gets the view. The definitions live in `process-layout.ts`
+// beside `slotHref`, which builds the other half of the same address.
+export { MAP_ZOOMS, resolveZoom, zoomHref, type MapZoom };
 
 function copyFor(locale: PublicLocale): MapViewCopy {
   return locale === "ja" ? COPY.ja : COPY.en;
@@ -159,10 +180,52 @@ function copyFor(locale: PublicLocale): MapViewCopy {
  * `?focus=` is the whole state: which slot you are standing in, opened. Defaults
  * are omitted so the overview keeps one canonical URL.
  */
-export function mapHref(focus: string | null): string {
+export function mapHref(focus: string | null, zoom: MapZoom | null = null): string {
   const params = new URLSearchParams({ view: "map" });
   if (focus) params.set("focus", focus);
+  if (zoom !== null) params.set("zoom", String(zoom));
   return `/repository/layers?${params.toString()}`;
+}
+
+/**
+ * The size control: six links, one of them the one you are on.
+ *
+ * Deliberately **not** a `<select>` and not a slider. Session 91 took three
+ * `<select>`s off the Atlas for the same reason and replaced them with 45
+ * addressable option links; this is that rule reaching the last surface without
+ * one.
+ *
+ * The current rung is a `<strong aria-current>` rather than a link to itself,
+ * which is the convention the rail already uses for "you are here".
+ */
+export function ZoomControl({
+  current,
+  hrefFor,
+  copy,
+}: {
+  current: MapZoom | null;
+  /** Built by the surface, because only it knows what else is in its URL. */
+  hrefFor: (zoom: MapZoom | null) => string;
+  copy: { zoomLabel: string; zoomFit: string; zoomPercent: (n: number) => string };
+}): React.ReactElement {
+  const rungs: (MapZoom | null)[] = [null, ...MAP_ZOOMS];
+  return (
+    <div className="mj-process-zoom" role="group" aria-label={copy.zoomLabel}>
+      <span className="mj-process-zoom-label">{copy.zoomLabel}</span>
+      {rungs.map((rung) => {
+        const text = rung === null ? copy.zoomFit : copy.zoomPercent(rung);
+        return rung === current ? (
+          <strong key={String(rung)} aria-current="true">
+            {text}
+          </strong>
+        ) : (
+          <Link key={String(rung)} href={hrefFor(rung)}>
+            {text}
+          </Link>
+        );
+      })}
+    </div>
+  );
 }
 
 /**
@@ -250,11 +313,14 @@ function Rail({
   focusId,
   locale,
   copy,
+  zoom,
 }: {
   graph: LayerGraph;
   focusId: string;
   locale: PublicLocale;
   copy: MapViewCopy;
+  /** Carried by the path, which re-focuses this same map. See `ZoomControl`. */
+  zoom: MapZoom | null;
 }): React.ReactElement | null {
   const node = layerNode(graph, focusId);
   if (!node || !isCapability(node)) return null;
@@ -279,7 +345,7 @@ function Rail({
                 {item.id === focusId ? (
                   <strong aria-current="true">{label(item)}</strong>
                 ) : (
-                  <Link href={mapHref(item.id)}>{label(item)}</Link>
+                  <Link href={mapHref(item.id, zoom)}>{label(item)}</Link>
                 )}
               </li>
             ))}
@@ -352,6 +418,7 @@ export function ProcessMapView({
   focusId,
   openIds,
   droppedOpen = 0,
+  zoom = null,
 }: {
   graph: LayerGraph;
   corpus: readonly LayerCorpusEntry[];
@@ -359,6 +426,7 @@ export function ProcessMapView({
   focusId: string | null;
   openIds: ReadonlySet<string>;
   droppedOpen?: number;
+  zoom?: MapZoom | null;
 }): React.ReactElement {
   const copy = copyFor(locale);
   const nav = viewSwitchLabels(locale);
@@ -379,6 +447,7 @@ export function ProcessMapView({
       open,
       MAP_DEPTH,
       focusId,
+      zoom,
     ),
   }));
   const collapsed = diagrams.reduce((total, entry) => total + entry.diagram.collapsedCount, 0);
@@ -403,11 +472,12 @@ export function ProcessMapView({
           <Link href="/repository/layers?view=list">{nav.list}</Link>
         </div>
         {focusId ? (
-          <Link className="mj-strand-back" href={mapHref(null)}>
+          <Link className="mj-strand-back" href={mapHref(null, zoom)}>
             {copy.back}
           </Link>
         ) : null}
       </div>
+
 
       <div className="mj-strand-head">
         <h1 id="layers-heading">{copy.heading}</h1>
@@ -417,6 +487,14 @@ export function ProcessMapView({
 
       <Legend copy={copy} />
 
+      {/* Directly above the thing it sizes, below the legend — a control for the
+          picture, not for the page. The map is 1,046px wide for four routes and
+          wider than that focused, and until now the only answer to a drawing
+          that does not fit the column was to scroll it sideways: *"they can zoom
+          in and out of the page on their own"*, owner, session 92. Every line's
+          toggle carries the choice, so opening a slot does not quietly undo it. */}
+      <ZoomControl current={zoom} hrefFor={(next) => zoomHref(focusId, openIds, next)} copy={copy} />
+
       <div className="mj-strand-body">
         <div>
           {diagrams.map((entry) => (
@@ -425,6 +503,7 @@ export function ProcessMapView({
               diagram={entry.diagram}
               locale={locale}
               title={labelOfNode(graph, entry.id, locale)}
+              scale={zoom === null ? null : zoom / 100}
             />
           ))}
           <p className="mj-strand-note">
@@ -439,7 +518,7 @@ export function ProcessMapView({
           <p className="mj-strand-note">{copy.routes(delegated, partly, whole)}</p>
         </div>
         {focusId ? (
-          <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} />
+          <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} zoom={zoom} />
         ) : null}
       </div>
     </section>
