@@ -484,6 +484,71 @@ export function connects(producer: EntryInterface, consumer: EntryInterface): Co
   return consumer.assumesZeroInput ? "unknown" : "compatible";
 }
 
+/** Which side of the piece. `in` is the left-hand edge, `out` the right. */
+export type PortEnd = "in" | "out";
+
+const PORT_ENDS: readonly PortEnd[] = ["in", "out"];
+
+export function isPortEnd(value: unknown): value is PortEnd {
+  return typeof value === "string" && (PORT_ENDS as readonly string[]).includes(value);
+}
+
+/**
+ * What one end of a piece *is*, as a closed vocabulary rather than a sentence.
+ *
+ * The panel already renders a stance sentence for the block as a whole, and the
+ * owner's ask is one level below it — *"people can click on either end to get a
+ * preview of what it can take as input and what it can take as output"*. The
+ * reason that needs its own vocabulary rather than a second prose field is
+ * roadmap §0.5.2: a port note nobody sourced is a guess in a hole. Everything
+ * here is **derived from the same fields `connects()` reads**, so no value can
+ * assert something the record does not publish, and the six cases are exactly
+ * the ones the block-level sentence collapses.
+ *
+ * The distinction that earns this: a blank edge has four different meanings —
+ * a source starts a pipeline, an observable has no ports on purpose, a prose
+ * record never published any, and a declared hole says the source withheld one.
+ * All four render as an empty `Takes` line today.
+ */
+export type PortOutlook =
+  /** A real port with no stated assumption on it. Anything of the width joins. */
+  | "open"
+  /** A real port whose entry's published behaviour was measured from |0…0⟩. */
+  | "assumed"
+  /** A real port carrying classical bits. Nothing in the corpus takes them. */
+  | "terminal"
+  /** §3.6: the edge is real and the source does not state its shape. */
+  | "hole"
+  /** No input port, and that absence is what `source` means. */
+  | "start"
+  /** No port here on purpose — an observable is measured with, never applied. */
+  | "by-design"
+  /** No port because the record publishes nothing to read one off. */
+  | "undeclared";
+
+/**
+ * The reading for one end.
+ *
+ * Order matters and mirrors `connects()`: a hole is checked before a port
+ * because §3.6 forbids both being set on one side, and reversing them would let
+ * a future record with both silently render as a published port — the collapse
+ * the whole field exists to stop.
+ */
+export function portOutlook(entry: EntryInterface, end: PortEnd): PortOutlook {
+  if (end === "in") {
+    if (entry.inputHole !== null) return "hole";
+    if (entry.input !== null) return entry.assumesZeroInput ? "assumed" : "open";
+    if (entry.stance === "source") return "start";
+    return entry.stance === "observable" ? "by-design" : "undeclared";
+  }
+  if (entry.outputHole !== null) return "hole";
+  // `assumesZeroInput` is deliberately not consulted here. It is a statement
+  // about what this entry was fed, not about what it hands on, and reading it at
+  // the output end would caveat the wrong edge.
+  if (entry.output !== null) return entry.output.type === "bits" ? "terminal" : "open";
+  return entry.stance === "observable" ? "by-design" : "undeclared";
+}
+
 /**
  * Whether this entry has an edge that could ever meet another one.
  *

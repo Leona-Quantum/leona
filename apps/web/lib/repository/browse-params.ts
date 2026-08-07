@@ -31,7 +31,7 @@
 // Explicit `.ts` on every value import: this module is reachable from a
 // `node --test` entry point, which strips types but resolves paths literally.
 // Same convention as the rest of lib/repository.
-import { isInterfaceStance, type InterfaceStance } from "./interface.ts";
+import { isInterfaceStance, isPortEnd, type InterfaceStance, type PortEnd } from "./interface.ts";
 import { isTopicId, type TopicId } from "./topics.ts";
 import { isPublicRepositoryCategory, type PublicRepositoryCategory } from "./types.ts";
 
@@ -71,4 +71,24 @@ export function resolveBrowseParams(params: BrowseSearchParams): ResolvedBrowseP
     // as no param rather than a selection nothing can match.
     gate: gate && gate.trim() ? gate.trim() : null,
   };
+}
+
+/**
+ * `/repository/<slug>?port=in|out` — which end of the piece arrives expanded.
+ *
+ * Here rather than inline in the entry page for the reason the header gives: the
+ * one thing every param on this route has in common is that it is the boundary
+ * where a URL becomes a selection, and `?category=` was missed for two sessions
+ * by being decided at a call site instead. Same fallback rule as its four
+ * neighbours — an unrecognised value is *no selection*, so a stale bookmark
+ * still renders the entry with both ends closed rather than erroring.
+ *
+ * **The param is the address, not the mechanism.** `<details>` toggles natively
+ * with no JavaScript at all, so a reader who clicks an end never navigates. What
+ * this gives is the thing an `onClick` cannot: an expanded end can be linked,
+ * bookmarked, shared and crawled.
+ */
+export function resolveEntryPort(params: BrowseSearchParams): PortEnd | null {
+  const port = first(params.port);
+  return port !== undefined && isPortEnd(port) ? port : null;
 }

@@ -33,8 +33,10 @@ import type {
   InterfacePartner,
   Hole,
   Port,
+  PortEnd,
+  PortOutlook,
 } from "../lib/repository/interface";
-import { isOnGraph } from "../lib/repository/interface";
+import { isOnGraph, portOutlook } from "../lib/repository/interface";
 
 /** How many partners to name before the count carries the rest. */
 const NAMED_PARTNERS = 6;
@@ -82,6 +84,79 @@ const COPY = {
     holeNote:
       "Only the register widths line up. This entry's source does not state what crosses this edge, so whether it carries qubits or classical bits is unknown — along with everything a width does not carry. These are the entries a filled-in gap could connect to, not entries that connect.",
     seeAll: (n: number) => `See all ${n} →`,
+    /** The affordance line inside each `<summary>`. */
+    openHint: "What joins here",
+    fitsHere: (n: number) => (n === 1 ? "1 entry meets this end" : `${n} entries meet this end`),
+    /**
+     * No "more", and no "of those" — the two counts are a **partition**, and
+     * either side can be zero.
+     *
+     * The first draft read "18 more line up on shape", which is false on the
+     * exact record that motivated the panel: `vqe-ssvqe` has 0 compatible
+     * partners and 18 unverified ones, so "more" pointed at a number that was
+     * not there. That is the same false relation as session 87's `うち` and
+     * session 86's before it — a quantifier asserting a containment the data
+     * does not have, invisible whenever the common case makes it read true.
+     */
+    unverifiedHere: (n: number) =>
+      n === 1
+        ? "1 entry lines up on shape, composition unverified"
+        : `${n} entries line up on shape, composition unverified`,
+    noneHere: "Nothing in the Atlas meets this end.",
+    countEnd: ". ",
+    listedBelow: "Named below.",
+    /**
+     * One sentence per end per outlook — the level below the stance sentence.
+     *
+     * Exhaustive over `PortOutlook` at **both** ends rather than partial, even
+     * though four of the fourteen cannot be produced today (`start` at the
+     * output end, `assumed` at it, `terminal` at the input end, and `by-design`
+     * is symmetric). A partial map would put a `?? ""` at the call site, and an
+     * empty string is what a reader sees when a later stance makes one of those
+     * reachable. Every cell here is true if it ever renders.
+     */
+    outlook: {
+      in: {
+        open: (n: number) =>
+          `Takes a ${n}-qubit register and states no assumption about what is on it. That is the whole condition: anything returning ${n} qubits can feed it.`,
+        assumed: (n: number) =>
+          `Takes a ${n}-qubit register, and this entry's published behaviour was measured from |0…0⟩. Putting another stage in front is a defined circuit and is no longer the thing this entry measured — the results on this page were not produced that way.`,
+        terminal: (n: number) =>
+          `Takes ${n} classical bits. Nothing in this catalogue returns classical bits, so nothing here can feed it.`,
+        hole: (n: number) =>
+          `The edge is real and its shape is not. Somebody read the source and recorded that it does not state what crosses here. The record still publishes a ${n}-wire register, so what is withheld is the rest: whether it carries qubits or classical bits, and what a stage in front would have to assume.`,
+        start: () =>
+          "Nothing goes in, and that is what this entry is: a pipeline starts here. There is no upstream to choose — what you pick is what comes after.",
+        "by-design": () =>
+          "No input port, deliberately. You measure a state with this entry; you do not apply it and pass a register on.",
+        /**
+         * Scoped to *this edge*, and the scoping is the point.
+         *
+         * A declared-hole record reaches this cell at whichever end it did not
+         * declare, so a sentence reading "nobody recorded why" as a statement
+         * about the record would be flatly false there — somebody did, about the
+         * other edge, with a citation, and it is rendered further down the same
+         * page. Two false sentences have already shipped on this panel by being
+         * true of the common case and wrong about a hole.
+         */
+        undeclared: () =>
+          "No input port at this edge: the record publishes no gate sequence and no register, so there is nothing here to read one off — and unlike a declared hole, nothing has been recorded about what belongs here.",
+      },
+      out: {
+        open: (n: number) =>
+          `Returns a ${n}-qubit register a next stage can take. This is the end that joins.`,
+        assumed: (n: number) => `Returns a ${n}-qubit register a next stage can take.`,
+        terminal: (n: number) =>
+          `Returns ${n} classical bits. Nothing in this catalogue takes classical bits, so this end closes a pipeline rather than continuing one — what is worth having here is the measurement, not a register to pass on.`,
+        hole: (n: number) =>
+          `The edge is real and its shape is not. Somebody read the source and recorded that it does not state what leaves here. The record still publishes a ${n}-wire register, so what is withheld is the rest: whether it carries qubits or classical bits, and what a next stage would have to assume.`,
+        start: () => "Nothing comes out that a next stage could take.",
+        "by-design": () =>
+          "No output port, deliberately. An observable is measured with, never applied, so there is no register to hand on.",
+        undeclared: () =>
+          "No output port at this edge: the record publishes no gate sequence and no register, so there is nothing here to read one off — and unlike a declared hole, nothing has been recorded about what belongs here.",
+      },
+    },
     stance: {
       source:
         "Prepares a state. Nothing goes in, and what comes out is a register another stage can take.",
@@ -117,6 +192,45 @@ const COPY = {
     holeNote:
       "一致しているのはレジスタ幅だけです。この端に何が流れるかは出典に記載がないため、量子ビットか古典ビットかも不明であり、幅が保証しないものも当然未確認です。これらは、欠落が埋められれば接続しうる候補であって、接続するエントリではありません。",
     seeAll: (n: number) => `同じ種類の${n}件を見る →`,
+    openHint: "ここに接続できるもの",
+    fitsHere: (n: number) => `この端に接続できるエントリ ${n} 件`,
+    // 「ほか」 would be the same false containment as the English "more" above:
+    // it presupposes a preceding set, and on `vqe-ssvqe` there is none.
+    unverifiedHere: (n: number) => `形状のみ一致するもの ${n} 件（合成は未検証）`,
+    noneHere: "この端に接続できるエントリはありません。",
+    countEnd: "。",
+    listedBelow: "下に一覧があります。",
+    outlook: {
+      in: {
+        open: (n: number) =>
+          `${n} 量子ビットのレジスタを受け取ります。その内容について前提を置きません。条件はそれだけであり、${n} 量子ビットを返すものであれば接続できます。`,
+        assumed: (n: number) =>
+          `${n} 量子ビットのレジスタを受け取りますが、このエントリが公開している挙動は |0…0⟩ から測定されたものです。前段を接続した回路も定義できますが、それはこのエントリが測定した対象ではなく、このページの結果はその形で得られたものではありません。`,
+        terminal: (n: number) =>
+          `${n} 古典ビットを受け取ります。このカタログに古典ビットを返すものはないため、ここに接続できるものはありません。`,
+        hole: (n: number) =>
+          `端は実在しますが、その形状は不明です。出典を読んだ上で、ここに何が流れるか記載がないことが記録されています。レコードは ${n} 本のレジスタを公開しており、公開されていないのは残りの部分——量子ビットか古典ビットか、そして前段が何を前提とすべきか——です。`,
+        start: () =>
+          "入力はありません。それがこのエントリの性質であり、パイプラインはここから始まります。前段を選ぶ余地はなく、選ぶのは後段です。",
+        "by-design": () =>
+          "入力ポートは意図的にありません。このエントリは状態を測定するために用いるものであり、適用してレジスタを次に渡すものではありません。",
+        undeclared: () =>
+          "この端に入力ポートはありません。このレコードはゲート列もレジスタも公開しておらず、読み取る対象がないためです。宣言された欠落とは異なり、ここに何が入るべきかは記録されていません。",
+      },
+      out: {
+        open: (n: number) => `次段が受け取れる ${n} 量子ビットのレジスタを返します。接続が成立するのはこの端です。`,
+        assumed: (n: number) => `次段が受け取れる ${n} 量子ビットのレジスタを返します。`,
+        terminal: (n: number) =>
+          `${n} 古典ビットを返します。このカタログに古典ビットを受け取るものはないため、この端はパイプラインを継続せず終端します。ここで意味を持つのは測定結果であり、次に渡すレジスタではありません。`,
+        hole: (n: number) =>
+          `端は実在しますが、その形状は不明です。出典を読んだ上で、ここから何が出るか記載がないことが記録されています。レコードは ${n} 本のレジスタを公開しており、公開されていないのは残りの部分——量子ビットか古典ビットか、そして後段が何を前提とすべきか——です。`,
+        start: () => "次段が受け取れる出力はありません。",
+        "by-design": () =>
+          "出力ポートは意図的にありません。オブザーバブルは測定に用いるものであって適用するものではないため、次に渡すレジスタがありません。",
+        undeclared: () =>
+          "この端に出力ポートはありません。このレコードはゲート列もレジスタも公開しておらず、読み取る対象がないためです。宣言された欠落とは異なり、ここから何が出るべきかは記録されていません。",
+      },
+    },
     stance: {
       source:
         "状態を準備します。入力はなく、出力は次段が受け取れるレジスタです。",
@@ -154,6 +268,90 @@ type InterfaceCopy = (typeof COPY)[keyof typeof COPY];
 function portLabel(port: Port | null, copy: InterfaceCopy, hole: Hole | null = null): string {
   if (port === null) return hole ? copy.hole(hole.width) : copy.nothing;
   return port.type === "bits" ? copy.bits(port.width) : copy.qubits(port.width);
+}
+
+/**
+ * One end of the piece, as a disclosure.
+ *
+ * The owner's ask, twice: *"people can click on either end to get a preview of
+ * what it can take as input and what it can take as output."* Roadmap §0.3 sized
+ * it at half a day and deferred it on the belief that `/repository` does not
+ * hydrate — **which was measured false in session 81** (it was a `next dev`
+ * artifact of an agent browser pane whose CSP blocks the `eval()` dev-mode React
+ * needs). So an `onClick` would work now.
+ *
+ * It is still a `<details>`, for a different and better reason. A control that
+ * works only after hydration looks *identical* to one that works, to anyone
+ * looking at a hydrated page — and it has **no address**: nothing links to it,
+ * no crawler sees it, and a reader with JS off cannot reach it. That exact bug
+ * cost two sessions on `?category=`. `<details>` toggles with no JavaScript at
+ * all, is keyboard-operable and screen-reader-announced for free, and the
+ * `?port=` param above it gives the expanded state a URL that can be shared.
+ *
+ * Closed by default, and nothing that was visible before moved in here: the
+ * neighbour lists still render below. What is inside is new — the reading of
+ * this end, and the four different things a blank edge can mean.
+ */
+function PortEndDetail({
+  end,
+  entry,
+  copy,
+  open,
+  fits,
+  unverified,
+  label,
+  value,
+  caveat,
+}: {
+  end: PortEnd;
+  entry: EntryInterface;
+  copy: InterfaceCopy;
+  open: boolean;
+  /** This end's partners, passed in: the panel already computed all four lists. */
+  fits: InterfacePartner[];
+  unverified: InterfacePartner[];
+  label: string;
+  value: string;
+  caveat: string | null;
+}) {
+  const outlook: PortOutlook = portOutlook(entry, end);
+  // The width the sentence names. A hole publishes one and no port; a port
+  // publishes its own; and the four blank outlooks name none, which is why every
+  // one of their sentences takes no argument.
+  const port = end === "in" ? entry.input : entry.output;
+  const hole = end === "in" ? entry.inputHole : entry.outputHole;
+  const width = port?.width ?? hole?.width ?? 0;
+  return (
+    <details className={`mj-iface-port-detail mj-iface-port-detail--${end}`} open={open}>
+      <summary className={`mj-iface-port${end === "out" ? " mj-iface-port--out" : ""}`}>
+        <span className="mj-iface-port-label">{label}</span>
+        <strong className="mj-iface-port-value">{value}</strong>
+        {caveat ? <span className="mj-iface-port-caveat">{caveat}</span> : null}
+        <span className="mj-iface-port-hint">{copy.openHint}</span>
+      </summary>
+      <div className="mj-iface-port-preview">
+        <p className="mj-iface-port-outlook">{copy.outlook[end][outlook](width)}</p>
+        {/* The counts, and they are counted from the same two arrays the lists
+            below render — not recounted here. Two places producing one number is
+            how two numbers that must agree stop agreeing. */}
+        <p className="mj-iface-port-count">
+          {fits.length === 0 && unverified.length === 0 ? (
+            copy.noneHere
+          ) : (
+            <>
+              {fits.length > 0 ? <strong>{copy.fitsHere(fits.length)}</strong> : null}
+              {fits.length > 0 && unverified.length > 0 ? " · " : null}
+              {unverified.length > 0 ? copy.unverifiedHere(unverified.length) : null}
+              {/* Locale-owned, not a hardcoded ". " — Japanese ends a sentence
+                  with 。 and takes no following space. */}
+              {copy.countEnd}
+              {copy.listedBelow}
+            </>
+          )}
+        </p>
+      </div>
+    </details>
+  );
 }
 
 function PartnerList({
@@ -216,6 +414,7 @@ export function RepositoryInterfacePanel({
   titleOf,
   stanceCount,
   locale,
+  openPort,
 }: {
   entry: EntryInterface;
   neighbours: InterfaceNeighbours;
@@ -231,6 +430,11 @@ export function RepositoryInterfacePanel({
   /** Resolves a partner slug to its display title. */
   titleOf: (slug: string) => string;
   locale: PublicLocale;
+  /**
+   * Which end arrives expanded, from `?port=`. Null is both closed, which is
+   * also what an unrecognised value resolves to — see `resolveEntryPort`.
+   */
+  openPort: PortEnd | null;
 }) {
   const copy = COPY[locale === "ja" ? "ja" : "en"];
   const stanceCopy =
@@ -259,17 +463,28 @@ export function RepositoryInterfacePanel({
           }${entry.inputHole ? " is-hole" : ""}`}
           aria-hidden="true"
         />
-        <div className="mj-iface-port">
-          <span className="mj-iface-port-label">{copy.takes}</span>
-          <strong className="mj-iface-port-value">{portLabel(entry.input, copy, entry.inputHole)}</strong>
-          {entry.input && entry.assumesZeroInput ? (
-            <span className="mj-iface-port-caveat">{copy.assumed}</span>
-          ) : null}
-        </div>
-        <div className="mj-iface-port mj-iface-port--out">
-          <span className="mj-iface-port-label">{copy.returns}</span>
-          <strong className="mj-iface-port-value">{portLabel(entry.output, copy, entry.outputHole)}</strong>
-        </div>
+        <PortEndDetail
+          end="in"
+          entry={entry}
+          copy={copy}
+          open={openPort === "in"}
+          fits={upstreamFits}
+          unverified={upstreamUnknown}
+          label={copy.takes}
+          value={portLabel(entry.input, copy, entry.inputHole)}
+          caveat={entry.input && entry.assumesZeroInput ? copy.assumed : null}
+        />
+        <PortEndDetail
+          end="out"
+          entry={entry}
+          copy={copy}
+          open={openPort === "out"}
+          fits={downstreamFits}
+          unverified={downstreamUnknown}
+          label={copy.returns}
+          value={portLabel(entry.output, copy, entry.outputHole)}
+          caveat={null}
+        />
         <span
           className={`mj-iface-edge mj-iface-edge--out${
             entry.output?.type === "qubits" || entry.outputHole ? " is-open" : ""

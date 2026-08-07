@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { resolveBrowseParams } from "./repository/browse-params.ts";
+import { resolveBrowseParams, resolveEntryPort } from "./repository/browse-params.ts";
 import { INTERFACE_STANCES } from "./repository/interface.ts";
 import { PUBLIC_REPOSITORY_CATEGORY_IDS } from "./repository/types.ts";
 import { PUBLIC_REPOSITORY_TOPICS } from "./repository/topics.ts";
@@ -86,4 +86,17 @@ test("the gate slug is passed through unvalidated, and trimmed", () => {
   assert.equal(resolveBrowseParams({ gate: "toffoli-ccx-gate" }).gate, "toffoli-ccx-gate");
   assert.equal(resolveBrowseParams({ gate: "  swap-gate  " }).gate, "swap-gate");
   assert.equal(resolveBrowseParams({ gate: "" }).gate, null);
+});
+
+test("?port= resolves an end, and an unrecognised one is no selection", () => {
+  // Same fallback as its four neighbours, and it matters more here than it looks:
+  // the value ends up as `open` on a <details>, so "unrecognised" must mean
+  // "closed" rather than an exception on a page a stale bookmark can reach.
+  assert.equal(resolveEntryPort({ port: "in" }), "in");
+  assert.equal(resolveEntryPort({ port: "out" }), "out");
+  assert.equal(resolveEntryPort({}), null);
+  assert.equal(resolveEntryPort({ port: "input" }), null);
+  assert.equal(resolveEntryPort({ port: "" }), null);
+  // Repeated params take the first, like every other param on this route.
+  assert.equal(resolveEntryPort({ port: ["out", "in"] }), "out");
 });

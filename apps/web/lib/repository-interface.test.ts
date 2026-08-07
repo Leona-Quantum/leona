@@ -10,8 +10,10 @@ import {
   interfaceOptions,
   isInterfaceStance,
   isOnGraph,
+  isPortEnd,
   neighboursOf,
   nonPipelineStances,
+  portOutlook,
   type EntryInterface,
   type InterfaceEvidence,
   declaresPort,
@@ -515,4 +517,84 @@ test("the hole stance is offered as a pipeline stage", () => {
     { stance: "transform", count: 1 },
     { stance: "declared-hole", count: 1 },
   ]);
+});
+
+// ---------- The two ends, read one level below the stance sentence (§0.3) ----------
+
+test("a blank edge has four different meanings, and portOutlook tells them apart", () => {
+  // This is the whole reason the preview exists. `Takes: Nothing` is what a
+  // reader sees today for a source, an observable and a prose record alike, and
+  // a declared hole reads as a fourth near-identical line. One of those four is
+  // "a pipeline starts here", one is "deliberately not a stage", one is "nobody
+  // published anything", and one is "somebody read the source and recorded what
+  // it withholds". Collapsing them is the same failure §3.6 exists to stop, one
+  // layer up from the field that stores it.
+  assert.equal(portOutlook(deriveInterface(STATE(3)), "in"), "start");
+  assert.equal(portOutlook(deriveInterface(evidence({ category: "operators", wireCount: 3 })), "in"), "by-design");
+  assert.equal(portOutlook(deriveInterface(evidence({ category: "papers", wireCount: 0 })), "in"), "undeclared");
+  assert.equal(portOutlook(deriveInterface(HOLE(3, "input")), "in"), "hole");
+});
+
+test("assumesZeroInput caveats the input end and never the output end", () => {
+  // The field is a statement about what this entry was FED. Reading it at the
+  // output end would caveat the wrong edge — it would tell a reader that what
+  // this hands on is provisional, when what is provisional is what it was
+  // handed. A program is the case that would show it: it is the one stance in
+  // the corpus where the flag is true and both ends carry a real port.
+  const program = deriveInterface(PROGRAM(4));
+  assert.equal(program.assumesZeroInput, true);
+  assert.equal(portOutlook(program, "in"), "assumed");
+  assert.equal(portOutlook(program, "out"), "terminal");
+  // And a gate primitive, which is the corpus's only unassumed input.
+  const gate = deriveInterface(GATE(2));
+  assert.equal(portOutlook(gate, "in"), "open");
+  assert.equal(portOutlook(gate, "out"), "open");
+});
+
+test("a hole is read as a hole at the end it was declared, and not at the other", () => {
+  // A record may declare one edge and publish nothing at the other, and the two
+  // ends must not borrow each other's reading: saying "the source does not state
+  // this" about an edge nobody declared is exactly the unattributed fill §3.6
+  // forbids, written into the copy instead of into the field.
+  const readout = deriveInterface(HOLE(2, "readout"));
+  assert.equal(portOutlook(readout, "out"), "hole");
+  assert.equal(portOutlook(readout, "in"), "undeclared");
+  const input = deriveInterface(HOLE(2, "input"));
+  assert.equal(portOutlook(input, "in"), "hole");
+  assert.equal(portOutlook(input, "out"), "undeclared");
+});
+
+test("the port end vocabulary is closed", () => {
+  assert.ok(isPortEnd("in"));
+  assert.ok(isPortEnd("out"));
+  assert.ok(!isPortEnd("input"));
+  assert.ok(!isPortEnd(""));
+  assert.ok(!isPortEnd(undefined));
+});
+
+test("an end's two counts are a partition, and the unverified side can stand alone", () => {
+  // The reason this is a test and not a reading. The port preview names both
+  // counts in one line, and the obvious phrasings for the second — "N more",
+  // 「ほか N 件」 — presuppose a first. `vqe-ssvqe` is the record that refutes
+  // them: a declared readout hole earns `unknown` against every partner and
+  // `compatible` against none, so the compatible side is empty and the sentence
+  // would point at a number that is not on the page.
+  //
+  // Third time this shape has shipped a false sentence (s86, s87), so the
+  // property is pinned rather than the wording: the two lists are disjoint,
+  // neither contains the other, and either may be zero.
+  const corpus = new Map([
+    ["hole", deriveInterface(HOLE(2, "readout"))],
+    ["gate-a", deriveInterface(GATE(2))],
+    ["gate-b", deriveInterface(evidence({ slug: "gate-b", category: "gates", wireCount: 2 }))],
+  ]);
+  const hole = neighboursOf("hole", corpus.get("hole")!, corpus);
+  const fits = hole.downstream.filter((p) => p.verdict === "compatible");
+  const unverified = hole.downstream.filter((p) => p.verdict === "unknown");
+  assert.equal(fits.length, 0, "a hole can never earn compatible");
+  assert.ok(unverified.length > 0, "and still has partners to name");
+  // Disjoint by construction, so neither count is a subset of the other and no
+  // copy may say "of those" or "more" about either.
+  assert.equal(fits.length + unverified.length, hole.downstream.length);
+  assert.equal(fits.filter((p) => unverified.some((u) => u.slug === p.slug)).length, 0);
 });

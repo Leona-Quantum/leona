@@ -9809,13 +9809,54 @@ div.mj-rail-row:hover {
   border-radius: var(--radius-control);
   background: var(--bg-2);
 }
+/* Each end is a <details>, so the grid item is the disclosure rather than the
+   port block — the expanded preview then flows inside its own column, which is
+   what keeps the left/right correspondence the piece exists to draw. */
+.mj-iface-port-detail { min-width: 0; }
 .mj-iface-port {
   display: flex;
   flex-direction: column;
   gap: 2px;
   min-width: 0;
+  cursor: pointer;
+  /* The default marker is a triangle beside a two-line block, which sits on the
+     first line and reads as a bullet. The affordance is the hint line below. */
+  list-style: none;
 }
+.mj-iface-port::-webkit-details-marker { display: none; }
 .mj-iface-port--out { text-align: right; }
+/* Visible on hover/focus and always in a touch context, because a disclosure
+   with no marker and no hint is a control nobody knows is there. */
+.mj-iface-port-hint {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  opacity: 0.75;
+}
+.mj-iface-port-hint::after { content: " ▸"; }
+.mj-iface-port-detail[open] .mj-iface-port-hint::after { content: " ▾"; }
+.mj-iface-port:hover .mj-iface-port-hint,
+.mj-iface-port:focus-visible .mj-iface-port-hint { color: var(--accent); opacity: 1; }
+.mj-iface-port-preview {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-0);
+}
+/* The summary is right-aligned to mirror the piece; the preview under it is not.
+   Ragged-left prose is harder to read at any length, and this is two sentences
+   plus a count — the mirroring is worth a label and not worth a paragraph. */
+.mj-iface-port-detail--out .mj-iface-port-preview { text-align: left; }
+.mj-iface-port-outlook,
+.mj-iface-port-count {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-iface-port-count { color: var(--text-2); font-size: var(--fs-12); }
+.mj-iface-port-count strong { color: var(--accent); }
 .mj-iface-port-label {
   color: var(--text-2);
   font-size: var(--fs-12);
@@ -9835,14 +9876,18 @@ div.mj-rail-row:hover {
 /* A closed edge is the default, and it is drawn by drawing nothing: the piece's
    own border is already a straight side. Only an edge that can meet something
    gets a notch. */
+/* Anchored to the top rather than centred, because the piece is no longer a
+   fixed height: an open preview can triple it, and a notch at 50% then floats
+   in the middle of a paragraph instead of sitting beside the port it belongs
+   to. 38px is the value row's centre, which is where it lands when both ends
+   are closed — so the joint does not move when a reader opens one. */
 .mj-iface-edge {
   display: none;
   position: absolute;
-  top: 50%;
+  top: 38px;
   width: 13px;
   height: 26px;
   border: 1px solid var(--border-0);
-  transform: translateY(-50%);
 }
 .mj-iface-edge.is-open { display: block; }
 /* The socket: a half-disc bitten out of the left edge, filled with what is
@@ -9952,6 +9997,7 @@ div.mj-rail-row:hover {
      right-aligned text under left-aligned text reads as two unrelated blocks. */
   .mj-iface-piece { grid-template-columns: 1fr; }
   .mj-iface-port--out { text-align: left; }
+  .mj-iface-port-detail--out .mj-iface-port-preview { text-align: left; }
 }
 
 /* ---------- /repository preface (roadmap §0.5.1) ---------- */
