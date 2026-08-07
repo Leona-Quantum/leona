@@ -1,7 +1,7 @@
 """Persist private, validated LLM research candidates as append-only evidence.
 
-Revision ID: 0052
-Revises: 0051
+Revision ID: vqe_0052
+Revises: vqe_0051
 
 Scientific envelope identity and transport replay identity are intentionally
 separate. A candidate remains unreviewed, private, and ineligible for
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0052"
-down_revision = "0051"
+revision = "vqe_0052"
+down_revision = "vqe_0051"
 branch_labels = None
 depends_on = None
 

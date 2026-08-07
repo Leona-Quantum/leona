@@ -48,7 +48,8 @@ def test_0051_widens_only_private_assertion_predicate_and_is_reversible(monkeypa
     module.upgrade()
     module.downgrade()
 
-    assert module.down_revision == "0050"
+    assert module.revision == "vqe_0051"
+    assert module.down_revision == "vqe_0050"
     assert "container_declaration_present" in constraints[0]
     assert "container_declaration_present" not in constraints[1]
     assert all("github_metadata_assertions" not in condition for condition in constraints)

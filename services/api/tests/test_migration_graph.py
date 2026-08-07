@@ -61,7 +61,23 @@ def test_migration_revision_ids_are_unique_resolved_and_single_headed():
 
     referenced = {parent for values in parents.values() for parent in values}
     static_heads = sorted(set(by_revision) - referenced)
-    assert static_heads == ["0055"]
+    assert static_heads == ["vqe_reconcile_0056"]
+
+    expected_vqe_chain = {
+        "vqe_0046": ("0045",),
+        "vqe_0047": ("vqe_0046",),
+        "vqe_0048": ("vqe_0047",),
+        "vqe_0049": ("vqe_0048",),
+        "vqe_0050": ("vqe_0049",),
+        "vqe_0051": ("vqe_0050",),
+        "vqe_0052": ("vqe_0051",),
+        "vqe_0053": ("vqe_0052",),
+        # Kept addressable for databases stamped by the historical feature graph.
+        "0054": ("vqe_0053",),
+        "vqe_merge_0055": ("0048", "0054"),
+        "vqe_reconcile_0056": ("vqe_merge_0055",),
+    }
+    assert {revision: parents[revision] for revision in expected_vqe_chain} == expected_vqe_chain
 
     config = Config(str(ROOT / "db" / "alembic.ini"))
     assert sorted(ScriptDirectory.from_config(config).get_heads()) == static_heads

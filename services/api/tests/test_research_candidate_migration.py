@@ -52,7 +52,8 @@ def test_0052_is_linear_append_only_private_and_reversible(monkeypatch):
     module.upgrade()
     module.downgrade()
 
-    assert module.down_revision == "0051"
+    assert module.revision == "vqe_0052"
+    assert module.down_revision == "vqe_0051"
     assert tables == [
         "vqe_research_candidate_envelopes",
         "vqe_research_candidate_persist_requests",

@@ -1,7 +1,7 @@
 """Add append-only VQE source assertions and implementation candidates.
 
-Revision ID: 0049
-Revises: 0048
+Revision ID: vqe_0049
+Revises: vqe_0048
 
 This is private staging. Rows are observations and proposals, not published
 Component Definitions, verified implementations, or scientific claims.
@@ -13,8 +13,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0049"
-down_revision = "0048"
+revision = "vqe_0049"
+down_revision = "vqe_0048"
 branch_labels = None
 depends_on = None
 

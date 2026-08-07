@@ -1,7 +1,7 @@
 """Append-only, evidence-bound human review records for research candidates.
 
-Revision ID: 0053
-Revises: 0052
+Revision ID: vqe_0053
+Revises: vqe_0052
 
 Review evidence never mutates an LLM envelope. A human edit creates a new
 reviewed candidate version, while transport replay identity remains separate
@@ -14,8 +14,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0053"
-down_revision = "0052"
+revision = "vqe_0053"
+down_revision = "vqe_0052"
 branch_labels = None
 depends_on = None
 

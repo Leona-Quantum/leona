@@ -72,15 +72,24 @@ journey passed, but the database and production-E2E jobs stopped before
 qualification because the graph had multiple heads.  No failed job is counted
 as scientific or deployment evidence.
 
-The repair gives the VQE branch unique revision identities, makes `0048` the
-explicit merge point, and adds a `0055` reconciliation revision for private
-databases previously stamped by the old feature-only `0054` history.  Historical
-Phase 9 evidence remains immutable: its recorded `0054` head must still resolve,
-while the present graph is independently required to have exactly one head.
+The first repair was superseded when current `dev` added its own numeric `0048`.
+The durable repair therefore gives every continuing VQE revision a `vqe_`
+namespace, keeps only the historical VQE terminal stamp `0054` addressable,
+merges dev `0048` and VQE `0054` at `vqe_merge_0055`, and reconciles legacy
+private databases at `vqe_reconcile_0056`. Historical Phase 9 evidence remains
+immutable: its recorded `0054` head must still resolve, while the present graph
+is independently required to have exactly one head.
 
 Detailed root cause, compatibility paths, tests, and remaining remote PostgreSQL
 17 qualification are recorded in
 [`private_mvp/migration_reconciliation_audit_2026-08-07.md`](private_mvp/migration_reconciliation_audit_2026-08-07.md).
+
+After integration with current `dev`, the repaired working tree passed 2895
+Python tests, 693 Web tests, the 338-route production build, five authenticated
+VQE browser journeys, the deterministic Private MVP gate, and all three real
+PostgreSQL 14.18 migration paths. These are local/private qualification results,
+not public scientific performance evidence; skipped tests and PostgreSQL 17 are
+not inferred from them.
 
 ## Scientific acceptance
 

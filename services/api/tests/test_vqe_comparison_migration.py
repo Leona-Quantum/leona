@@ -26,7 +26,8 @@ def test_migration_is_linear_append_only_and_downgrade_guarded(monkeypatch):
     monkeypatch.setattr(module.op, "create_index", lambda *a, **k: None)
     monkeypatch.setattr(module.op, "execute", lambda sql: executed.append(str(sql)))
 
-    assert module.down_revision == "0049"
+    assert module.revision == "vqe_0050"
+    assert module.down_revision == "vqe_0049"
     module.upgrade()
     assert any("before update or delete" in sql for sql in executed)
     assert any("revoke update, delete" in sql for sql in executed)

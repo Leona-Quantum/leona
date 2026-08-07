@@ -1,7 +1,7 @@
 """Append-only reviewed research-candidate materialization evidence.
 
 Revision ID: 0054
-Revises: 0053
+Revises: vqe_0053
 
 Materialization is an explicit private action over one accepted review.  It is
 not component publication or execution qualification.  The request ledger is
@@ -15,7 +15,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0054"
-down_revision = "0053"
+down_revision = "vqe_0053"
 branch_labels = None
 depends_on = None
 

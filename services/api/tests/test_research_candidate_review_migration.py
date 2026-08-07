@@ -51,7 +51,8 @@ def test_0053_is_linear_append_only_and_does_not_claim_independence(monkeypatch)
     module.upgrade()
     module.downgrade()
 
-    assert module.down_revision == "0052"
+    assert module.revision == "vqe_0053"
+    assert module.down_revision == "vqe_0052"
     assert tables == [
         "vqe_research_candidate_reviews",
         "vqe_research_candidate_review_requests",

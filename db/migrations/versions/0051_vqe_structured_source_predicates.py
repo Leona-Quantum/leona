@@ -1,7 +1,7 @@
 """Add the container predicate for deterministic source extraction.
 
-Revision ID: 0051
-Revises: 0050
+Revision ID: vqe_0051
+Revises: vqe_0050
 
 This migration widens only the private append-only metadata assertion
 predicate allowlist. It creates no public component, claim, or artifact.
@@ -12,8 +12,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0051"
-down_revision = "0050"
+revision = "vqe_0051"
+down_revision = "vqe_0050"
 branch_labels = None
 depends_on = None
 

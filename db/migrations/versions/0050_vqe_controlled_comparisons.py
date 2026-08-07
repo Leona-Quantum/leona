@@ -1,7 +1,7 @@
 """Add immutable controlled VQE comparison plans and results.
 
-Revision ID: 0050
-Revises: 0049
+Revision ID: vqe_0050
+Revises: vqe_0049
 """
 
 from __future__ import annotations
@@ -10,8 +10,8 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0050"
-down_revision = "0049"
+revision = "vqe_0050"
+down_revision = "vqe_0049"
 branch_labels = None
 depends_on = None
 

@@ -49,7 +49,8 @@ def test_github_snapshot_migration_is_additive_append_only_and_reversible(monkey
     module.upgrade()
     module.downgrade()
 
-    assert module.down_revision == ("0047", "vqe_0047")
+    assert module.revision == "vqe_0048"
+    assert module.down_revision == "vqe_0047"
     assert tables == [
         "github_repository_snapshots",
         "github_repository_snapshot_files",

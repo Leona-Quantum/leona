@@ -36,7 +36,8 @@ def _module():
 
 def test_0049_is_additive_append_only_and_fail_closed(monkeypatch):
     module = _module()
-    assert module.down_revision == "0048"
+    assert module.revision == "vqe_0049"
+    assert module.down_revision == "vqe_0048"
     assert set(module._IMMUTABLE_TABLES) == {
         "github_metadata_assertions",
         "vqe_component_implementation_candidates",
