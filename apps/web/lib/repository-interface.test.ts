@@ -480,6 +480,28 @@ test("a hole counts as meeting, and the count does not double it", () => {
   assert.deepEqual(neighbours.upstream, []);
 });
 
+test("the meeting count is NOT a subset of the port-declaring count", () => {
+  // The fact the browse heading's two numbers are governed by, pinned because a
+  // copy string asserted the opposite and no test noticed. `{n}` counts
+  // `declaresPort`; `{met}` counts `connectedCount`, which includes declared
+  // holes — and a hole meets things without declaring a port. So `met ⊆ n` does
+  // not hold, and no locale may say it does.
+  //
+  // The English is two clauses joined by a middle dot and claims nothing. The
+  // Japanese said 「うち{met}件」 — "of those, {met}" — which is the containment
+  // claim. On today's corpus 88 < 162 makes the sentence look fine, which is
+  // exactly why this is a test and not a reading.
+  const corpus = new Map([
+    ["hole", deriveInterface(HOLE(2, "readout"))],
+    ["gate", deriveInterface(GATE(2))],
+  ]);
+  const met = connectedCount(corpus);
+  const declaring = [...corpus.values()].filter(declaresPort).length;
+  assert.equal(met, 2);
+  assert.equal(declaring, 1);
+  assert.ok(met > declaring, "a hole that meets something is counted by one and not the other");
+});
+
 test("the hole stance is offered as a pipeline stage", () => {
   // Filing it under "not a pipeline stage" would put the corpus's inventory of
   // silences beside the pipeline rather than in it — §3.6's whole argument is
