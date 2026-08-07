@@ -14,8 +14,10 @@ import {
   nonPipelineStances,
   type EntryInterface,
   type InterfaceEvidence,
+  declaresPort,
 } from "./repository/interface.ts";
 import type { TopicId } from "./repository/topics.ts";
+import type { BlockRole, PublicRepositoryKnownGap } from "./repository/types.ts";
 
 /**
  * What each entry takes and returns, and the three-valued predicate over it.
@@ -62,6 +64,27 @@ const PROGRAM = (width: number): InterfaceEvidence =>
     topics: ["benchmark-circuit"] as TopicId[],
     wireCount: width,
     portableCircuit: { qubitCount: width, steps: [{ gate: "H", qubits: [0] }], measure: true },
+  });
+
+/**
+ * A record with no publishable interface that declares which edge its source
+ * omits (§3.6). `role` is the only field this module may read — the prose is
+ * filled in anyway so the fixture is a shape the guards would accept.
+ */
+const gap = (role: BlockRole): PublicRepositoryKnownGap => ({
+  role,
+  reason: "not_stated_in_source",
+  detail: "The source does not state this, and the fixture says so at length.",
+  detailJa: "出典に記載がありません。",
+});
+
+const HOLE = (width: number, ...roles: BlockRole[]): InterfaceEvidence =>
+  evidence({
+    slug: `hole-${roles.join("-")}-${width}`,
+    category: "algorithms",
+    topics: ["algorithm-reference"] as TopicId[],
+    wireCount: width,
+    knownGaps: roles.map(gap),
   });
 
 test("a measuring circuit is a program: bits out, and a left edge that carries a caveat", () => {
@@ -312,6 +335,7 @@ test("the stance vocabulary is closed", () => {
     deriveInterface(PROGRAM(1)).stance,
     deriveInterface(evidence({ category: "operators", topics: ["operator"] as TopicId[], wireCount: 2 })).stance,
     deriveInterface(evidence()).stance,
+    deriveInterface(HOLE(3, "readout")).stance,
   ]);
   assert.equal(produced.size, INTERFACE_STANCES.length);
   for (const stance of produced) assert.ok(INTERFACE_STANCES.includes(stance));
@@ -334,4 +358,161 @@ test("the browse groups cover the vocabulary and neither names a stance that is 
   // Not a vacuous split: both sides are non-empty on the real vocabulary.
   assert.ok(PIPELINE_STANCES.size > 0);
   assert.ok(nonPipelineStances().length > 0);
+});
+
+// --- §3.6's declared hole ----------------------------------------------------
+//
+// The stance exists to keep two silences apart, and every test below is about
+// one of the ways they could quietly collapse back together.
+
+test("a declared edge gap is a hole, and a bare literature record is not", () => {
+  const hole = deriveInterface(HOLE(3, "readout"));
+  assert.equal(hole.stance, "declared-hole");
+  // No port. The record publishes no gate sequence, and inventing one from the
+  // wire count is the guess in the hole §3.6 forbids.
+  assert.equal(hole.output, null);
+  assert.equal(hole.input, null);
+  // What it does publish is the register, and that is what bounds the graph.
+  assert.deepEqual(hole.outputHole, { width: 3 });
+  assert.equal(hole.inputHole, null);
+
+  // The same record without the declaration. Identical evidence otherwise, and
+  // it must NOT read as a hole: absence cannot say "the paper omits this".
+  const bare = deriveInterface(
+    evidence({ category: "algorithms", topics: ["algorithm-reference"] as TopicId[], wireCount: 3 }),
+  );
+  assert.equal(bare.stance, "undeclared");
+  assert.equal(bare.outputHole, null);
+});
+
+test("a gap in the middle of a block is a gap and not an edge", () => {
+  // `problem` and `algorithm` are real declared gaps that the entry page
+  // renders. They say nothing about whether anything could meet this block, so
+  // they must not put it on the graph — otherwise the stance drifts from "an
+  // edge is missing" to "this record has any gap at all", and the filter starts
+  // offering records nothing can connect to.
+  for (const role of ["problem", "algorithm"] as BlockRole[]) {
+    const middle = deriveInterface(HOLE(3, role));
+    assert.equal(middle.stance, "undeclared", `${role} should not open an edge`);
+    assert.equal(isOnGraph(middle), false);
+  }
+  // And a record declaring both a middle gap and an edge gap is still a hole.
+  assert.equal(deriveInterface(HOLE(3, "problem", "input")).stance, "declared-hole");
+});
+
+test("a hole is a candidate at the width it publishes, and nowhere else", () => {
+  const hole = deriveInterface(HOLE(3, "readout"));
+  // Feeds a 3-wide consumer: shapes cannot be compared past the width, so this
+  // is the reachable middle rather than a green check.
+  assert.equal(connects(hole, deriveInterface(GATE(3))), "unknown");
+  assert.equal(connects(hole, deriveInterface(PROGRAM(3))), "unknown");
+  // A width mismatch is a refutation, not an excuse. The register size IS
+  // stated, so it can say no — and this is the assertion that keeps one
+  // authored gap from making the whole catalogue look connectable: without it
+  // the hole met 149 entries instead of 18, and the browse heading went from
+  // "87 of 283 meet another entry" to 163.
+  assert.equal(connects(hole, deriveInterface(GATE(4))), "incompatible");
+  // Nothing reaches it from the left: only its readout is declared missing.
+  assert.equal(connects(deriveInterface(STATE(3)), hole), "off-graph");
+  // The mirror case, so neither side is special-cased into working.
+  const inHole = deriveInterface(HOLE(3, "input_mapping"));
+  assert.equal(connects(deriveInterface(STATE(3)), inHole), "unknown");
+  assert.equal(connects(deriveInterface(STATE(5)), inHole), "incompatible");
+  assert.equal(connects(inHole, deriveInterface(GATE(3))), "off-graph");
+});
+
+test("two holes are not a pair, and a hole with no width is not on the graph", () => {
+  // A candidate needs something to be a candidate FOR. Two records that both
+  // say "this edge is unstated" have not described a pair, and calling it
+  // `unknown` would let holes multiply into a graph of their own.
+  const producer = deriveInterface(HOLE(3, "readout"));
+  const consumer = deriveInterface(HOLE(3, "input"));
+  assert.equal(connects(producer, consumer), "off-graph");
+
+  // A record that declares a gap and publishes no register keeps the stance —
+  // the disclosure is true whether or not there is a width — but has no edge to
+  // meet anything with. Stance and graph membership are different questions.
+  const widthless = deriveInterface(HOLE(0, "readout"));
+  assert.equal(widthless.stance, "declared-hole");
+  assert.equal(widthless.outputHole, null);
+  assert.equal(isOnGraph(widthless), false);
+  assert.equal(connects(widthless, deriveInterface(GATE(3))), "off-graph");
+});
+
+test("a hole is on the graph without declaring a port", () => {
+  // The two questions the browse heading asks separately, and the reason
+  // `declaresPort` exists: its sentence says "declare ports", and a hole does
+  // not. `isOnGraph` gates whether the entry page renders a partner list, and
+  // a hole has partners.
+  const hole = deriveInterface(HOLE(3, "readout"));
+  assert.equal(isOnGraph(hole), true);
+  assert.equal(declaresPort(hole), false);
+  const gate = deriveInterface(GATE(3));
+  assert.equal(isOnGraph(gate), true);
+  assert.equal(declaresPort(gate), true);
+});
+
+test("a hole never earns compatible, however the pair is arranged", () => {
+  // The invariant that keeps `compatible` meaning something, asserted against
+  // the new stance directly: a hole withholds the port type and everything a
+  // type does not carry, so no arrangement of it may produce a green check.
+  const holes = [HOLE(2, "readout"), HOLE(2, "input"), HOLE(2, "output"), HOLE(2, "input_mapping")]
+    .map(deriveInterface);
+  const others = [GATE(2), STATE(2), PROGRAM(2), GATE(3)].map(deriveInterface);
+  for (const hole of holes) {
+    for (const other of others) {
+      assert.notEqual(connects(hole, other), "compatible");
+      assert.notEqual(connects(other, hole), "compatible");
+    }
+  }
+});
+
+test("a hole counts as meeting, and the count does not double it", () => {
+  const corpus = new Map([
+    ["hole", deriveInterface(HOLE(2, "readout"))],
+    ["gate", deriveInterface(GATE(2))],
+    // Width 5: nothing here meets it, including the hole.
+    ["lonely", deriveInterface(GATE(5))],
+  ]);
+  assert.equal(connectedCount(corpus), 2);
+  const neighbours = neighboursOf("hole", corpus.get("hole")!, corpus);
+  assert.deepEqual(neighbours.downstream, [{ slug: "gate", verdict: "unknown" }]);
+  assert.deepEqual(neighbours.upstream, []);
+});
+
+test("the meeting count is NOT a subset of the port-declaring count", () => {
+  // The fact the browse heading's two numbers are governed by, pinned because a
+  // copy string asserted the opposite and no test noticed. `{n}` counts
+  // `declaresPort`; `{met}` counts `connectedCount`, which includes declared
+  // holes — and a hole meets things without declaring a port. So `met ⊆ n` does
+  // not hold, and no locale may say it does.
+  //
+  // The English is two clauses joined by a middle dot and claims nothing. The
+  // Japanese said 「うち{met}件」 — "of those, {met}" — which is the containment
+  // claim. On today's corpus 88 < 162 makes the sentence look fine, which is
+  // exactly why this is a test and not a reading.
+  const corpus = new Map([
+    ["hole", deriveInterface(HOLE(2, "readout"))],
+    ["gate", deriveInterface(GATE(2))],
+  ]);
+  const met = connectedCount(corpus);
+  const declaring = [...corpus.values()].filter(declaresPort).length;
+  assert.equal(met, 2);
+  assert.equal(declaring, 1);
+  assert.ok(met > declaring, "a hole that meets something is counted by one and not the other");
+});
+
+test("the hole stance is offered as a pipeline stage", () => {
+  // Filing it under "not a pipeline stage" would put the corpus's inventory of
+  // silences beside the pipeline rather than in it — §3.6's whole argument is
+  // that a declared hole is a candidate.
+  assert.ok(PIPELINE_STANCES.has("declared-hole"));
+  assert.ok(!nonPipelineStances().includes("declared-hole"));
+  const options = interfaceOptions(
+    new Map([["h", deriveInterface(HOLE(2, "readout"))], ["g", deriveInterface(GATE(2))]]),
+  );
+  assert.deepEqual(options, [
+    { stance: "transform", count: 1 },
+    { stance: "declared-hole", count: 1 },
+  ]);
 });
