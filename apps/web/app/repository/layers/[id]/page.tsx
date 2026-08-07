@@ -61,7 +61,15 @@ export default async function RepositoryLayerNodePage({
   const node = layerNode(LAYER_GRAPH, id);
   const state = layerState(STATE_VOCABULARY, id);
   if (!node && !state) notFound();
-  const [locale, entries] = await Promise.all([getPublicLocale(), getRepositoryListEntries()]);
+  // The catalogue is fetched only for a node page, which is the only one that
+  // cross-links into it. A state page names processes and other states and never
+  // touches a record, so making it wait on the Atlas would buy nothing and hand
+  // it a dependency that can be slow or short — the failure mode `censusUnresolved`
+  // exists to confess elsewhere on this surface.
+  const [locale, entries] = await Promise.all([
+    getPublicLocale(),
+    node ? getRepositoryListEntries() : Promise.resolve([]),
+  ]);
   const corpus: LayerCorpusEntry[] = entries.map((entry) => ({
     slug: entry.slug,
     title: entry.title,
