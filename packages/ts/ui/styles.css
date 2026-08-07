@@ -9745,7 +9745,10 @@ div.mj-rail-row:hover {
   padding-top: var(--sp-3);
   border-top: 1px solid var(--border-0);
 }
-.mj-iface-port-detail--out .mj-iface-port-preview { text-align: right; }
+/* The summary is right-aligned to mirror the piece; the preview under it is not.
+   Ragged-left prose is harder to read at any length, and this is two sentences
+   plus a count — the mirroring is worth a label and not worth a paragraph. */
+.mj-iface-port-detail--out .mj-iface-port-preview { text-align: left; }
 .mj-iface-port-outlook,
 .mj-iface-port-count {
   margin: 0;
@@ -9774,14 +9777,18 @@ div.mj-rail-row:hover {
 /* A closed edge is the default, and it is drawn by drawing nothing: the piece's
    own border is already a straight side. Only an edge that can meet something
    gets a notch. */
+/* Anchored to the top rather than centred, because the piece is no longer a
+   fixed height: an open preview can triple it, and a notch at 50% then floats
+   in the middle of a paragraph instead of sitting beside the port it belongs
+   to. 38px is the value row's centre, which is where it lands when both ends
+   are closed — so the joint does not move when a reader opens one. */
 .mj-iface-edge {
   display: none;
   position: absolute;
-  top: 50%;
+  top: 38px;
   width: 13px;
   height: 26px;
   border: 1px solid var(--border-0);
-  transform: translateY(-50%);
 }
 .mj-iface-edge.is-open { display: block; }
 /* The socket: a half-disc bitten out of the left edge, filled with what is

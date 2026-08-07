@@ -140,6 +140,7 @@ export default async function RepositoryEntryPage({
         isSignedIn={Boolean(user)}
         signInHref={signInHref}
         related={related}
+        connectionsOpen={openPort !== null}
         estimate={
           // Decided here, not by testing the element: a React element is truthy
           // whatever it renders, so passing one unconditionally gives an empty

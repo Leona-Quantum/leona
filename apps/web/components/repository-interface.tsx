@@ -103,6 +103,7 @@ const COPY = {
         ? "1 entry lines up on shape, composition unverified"
         : `${n} entries line up on shape, composition unverified`,
     noneHere: "Nothing in the Atlas meets this end.",
+    countEnd: ". ",
     listedBelow: "Named below.",
     /**
      * One sentence per end per outlook — the level below the stance sentence.
@@ -197,6 +198,7 @@ const COPY = {
     // it presupposes a preceding set, and on `vqe-ssvqe` there is none.
     unverifiedHere: (n: number) => `形状のみ一致するもの ${n} 件（合成は未検証）`,
     noneHere: "この端に接続できるエントリはありません。",
+    countEnd: "。",
     listedBelow: "下に一覧があります。",
     outlook: {
       in: {
@@ -339,7 +341,10 @@ function PortEndDetail({
             <>
               {fits.length > 0 ? <strong>{copy.fitsHere(fits.length)}</strong> : null}
               {fits.length > 0 && unverified.length > 0 ? " · " : null}
-              {unverified.length > 0 ? `${copy.unverifiedHere(unverified.length)} ` : " "}
+              {unverified.length > 0 ? copy.unverifiedHere(unverified.length) : null}
+              {/* Locale-owned, not a hardcoded ". " — Japanese ends a sentence
+                  with 。 and takes no following space. */}
+              {copy.countEnd}
               {copy.listedBelow}
             </>
           )}
