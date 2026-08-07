@@ -19,7 +19,7 @@ import {
   isProfileOrder,
   type BrowseOrder,
 } from "../../lib/repository/browse-order";
-import { capRows, DEFAULT_ROW_LIMIT, type RowLimit } from "../../lib/repository/browse-page";
+import { capRows, DEFAULT_ROW_LIMIT, splitCapped, type RowLimit } from "../../lib/repository/browse-page";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
 import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
 import { matchesRepositoryQuery } from "../../lib/repository/search";
@@ -856,15 +856,45 @@ export function RepositoryBrowser({
   const unrankedRows = useMemo(() => foldRows(unranked, groupOfSlug), [groupOfSlug, unranked]);
 
   /**
-   * The list, cut to the cap (s91).
+   * Every row the cap governs, in the order the page draws them.
    *
-   * Only the default view. The other two are already short by construction and
-   * a cap would be the wrong tool for either: `gates` is a sidebar and one
-   * detail pane, and `algorithms` is `<details>` groups with only the first
-   * open, so neither ever put 176 cards on the page. Capping them would hide
-   * rows inside a collapsed group, where the control saying so is not visible.
+   * **The ranked list and the held-out tail are one sequence, not two.** The
+   * first draft capped `listRows` alone and left `unrankedRows` rendering in
+   * full underneath. Nothing showed it on today's corpus — all 120 circuit
+   * members rank under every order this list offers, so `unranked` is empty —
+   * but under a cost or structure order that ever *did* hold rows back, the
+   * "first 24" view would have rendered 24 cards plus the entire unranked
+   * section, and the control above it would have said "Showing 24 of 24" while
+   * the reader scrolled past ninety more. A cap that only governs part of the
+   * page is not a cap; it is a cap-shaped label.
+   *
+   * `gates` and `algorithms` contribute nothing to the sequence, so under those
+   * views the whole budget goes to the tail. Neither ever put 176 cards on the
+   * page: `gates` is a sidebar and one detail pane, and `algorithms` is
+   * `<details>` groups with only the first open. Capping *their* main bodies
+   * would hide rows inside a collapsed group, where a control saying so is not
+   * visible — which is why they are out of the sequence rather than in it.
    */
-  const cappedList = useMemo(() => capRows(listRows, rowLimit), [listRows, rowLimit]);
+  const cappableRows = useMemo(
+    () =>
+      category === "gates" || category === "algorithms"
+        ? unrankedRows
+        : [...listRows, ...unrankedRows],
+    [category, listRows, unrankedRows],
+  );
+  const cappedList = useMemo(() => capRows(cappableRows, rowLimit), [cappableRows, rowLimit]);
+  /**
+   * The cut sequence, split back into the two sections that render it.
+   *
+   * By position, from the one `shown` array — never by capping each section
+   * against its own budget. Two caps are two places that have to agree on how
+   * much is left, and the number the control prints comes from only one of
+   * them.
+   */
+  const { first: shownListRows, second: shownUnrankedRows } = splitCapped(
+    cappedList.shown,
+    listRows.length,
+  );
 
   /**
    * The URL of this view, with `overrides` applied.
@@ -976,9 +1006,18 @@ export function RepositoryBrowser({
       <div className="mj-repository-controls">
         <label>
           <span>{copy.search}</span>
+          {/* The address follows the box. A reader who types "grover", finds
+              what they wanted and copies the URL used to get the *unfiltered*
+              Atlas — `?q=` was resolved on the way in and never written on the
+              way out, so the one control people use most was the one whose
+              state a link could not carry. `replaceState`, so a search is not
+              twelve history entries and Back still leaves the page. */}
           <input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              syncUrl(browseHref({ query: event.target.value }));
+            }}
             placeholder={copy.placeholder}
             type="search"
           />
@@ -1278,77 +1317,87 @@ export function RepositoryBrowser({
           ))}
         </div>
       ) : (
-        <>
-          <div className="mj-repo-list">{cappedList.shown.map((row) => renderRow(row, listIsRanked))}</div>
-          {/* The rest of the list, and its address.
-
-              Two links, not one. "Show more" walks the doubling chain for a
-              reader who is browsing; "show everything" is for the reader who
-              knew from the first screen that they wanted the lot, and without
-              it the cap would cost them three clicks it never used to.
-
-              Real `<a href>`s. A reader with JS off follows them and the server
-              renders the longer list; a hydrated click is intercepted and grows
-              the list in place, which keeps the scroll position where a
-              navigation would lose it. Both land on the same view — the href is
-              exactly the state the click produces. */}
-          {cappedList.next !== null ? (
-            <div className="mj-repo-more">
-              <p className="mj-repo-more-count">
-                {copy.showingOf
-                  .replace("{shown}", String(cappedList.shown.length))
-                  .replace("{total}", String(listRows.length))}
-              </p>
-              <div className="mj-repo-more-actions">
-                <a
-                  className="mj-repo-more-link"
-                  href={browseHref({ rows: cappedList.next })}
-                  onClick={(event) => {
-                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-                      return;
-                    }
-                    event.preventDefault();
-                    setRowLimit(cappedList.next as RowLimit);
-                    syncUrl(browseHref({ rows: cappedList.next as RowLimit }));
-                  }}
-                >
-                  {copy.showMore}
-                </a>
-                {/* Only when it says something the other link does not — when
-                    the next step already is everything, two controls with one
-                    destination is chrome, and chrome is the complaint. */}
-                {cappedList.next !== "all" ? (
-                  <a
-                    className="mj-text-link"
-                    href={browseHref({ rows: "all" })}
-                    onClick={(event) => {
-                      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
-                        return;
-                      }
-                      event.preventDefault();
-                      setRowLimit("all");
-                      syncUrl(browseHref({ rows: "all" }));
-                    }}
-                  >
-                    {copy.showAll.replace("{total}", String(listRows.length))}
-                  </a>
-                ) : null}
-              </div>
-            </div>
-          ) : null}
-        </>
+        <div className="mj-repo-list">{shownListRows.map((row) => renderRow(row, listIsRanked))}</div>
       )}
 
       {/* Entries the ordering had to leave out, kept visible and kept out of
           the ranking. An unknown cost is not a low cost, and a list that
           silently dropped these would read as though the catalog were smaller
           than it is. */}
-      {unranked.length ? (
+      {/* The heading counts the entries the ORDERING held back, not the ones on
+          screen. Those are different questions and the section exists to answer
+          the first: "an unknown cost is not a low cost" is a statement about the
+          ranking, true whether or not the cap has reached this far down. How
+          many are rendered is the control below's job, and it counts both
+          sections together. */}
+      {unranked.length && shownUnrankedRows.length ? (
         <section className="mj-repository-unranked">
           <h3>{copy.unrankedTitle} <span>{unranked.length}</span></h3>
           <p>{isProfileOrder(order) ? copy.structureUnrankedBody : copy.unrankedBody}</p>
-          <div className="mj-repo-list">{unrankedRows.map((row) => renderRow(row, false))}</div>
+          <div className="mj-repo-list">{shownUnrankedRows.map((row) => renderRow(row, false))}</div>
         </section>
+      ) : null}
+
+      {/* The rest of the page, and its address.
+
+          **Below everything the cap governs**, which is why it moved down here
+          from between the two lists: a "show more" printed above a section that
+          the cap is also cutting reads as though the section under it were
+          complete.
+
+          Two links, not one. "Show more" walks the doubling chain for a reader
+          who is browsing; "show everything" is for the reader who knew from the
+          first screen that they wanted the lot, and without it the cap would
+          cost them three clicks it never used to.
+
+          Real `<a href>`s. A reader with JS off follows them and the server
+          renders the longer page; a hydrated click is intercepted and grows the
+          list in place, which keeps the scroll position where a navigation
+          would lose it. Both land on the same view — the href is exactly the
+          state the click produces. */}
+      {cappedList.next !== null ? (
+        <div className="mj-repo-more">
+          <p className="mj-repo-more-count">
+            {copy.showingOf
+              .replace("{shown}", String(cappedList.shown.length))
+              .replace("{total}", String(cappableRows.length))}
+          </p>
+          <div className="mj-repo-more-actions">
+            <a
+              className="mj-repo-more-link"
+              href={browseHref({ rows: cappedList.next })}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                  return;
+                }
+                event.preventDefault();
+                setRowLimit(cappedList.next as RowLimit);
+                syncUrl(browseHref({ rows: cappedList.next as RowLimit }));
+              }}
+            >
+              {copy.showMore}
+            </a>
+            {/* Only when it says something the other link does not — when the
+                next step already is everything, two controls with one
+                destination is chrome, and chrome is the complaint. */}
+            {cappedList.next !== "all" ? (
+              <a
+                className="mj-text-link"
+                href={browseHref({ rows: "all" })}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                    return;
+                  }
+                  event.preventDefault();
+                  setRowLimit("all");
+                  syncUrl(browseHref({ rows: "all" }));
+                }}
+              >
+                {copy.showAll.replace("{total}", String(cappableRows.length))}
+              </a>
+            ) : null}
+          </div>
+        </div>
       ) : null}
     </div>
   );

@@ -115,6 +115,29 @@ export interface CappedRows<T> {
  * would be a second place that had to agree with `foldRows`. It counts rows —
  * the same things the reader counts on the page — and nothing else.
  */
+/**
+ * Split a capped sequence back into the two sections that render it.
+ *
+ * The browse page draws the ranked list and then the held-out tail, and the cap
+ * governs both as one sequence — a cap that stops at the first section leaves
+ * the second rendering in full underneath a control that says everything is
+ * shown. So the two are concatenated, cut once, and split back **by position**.
+ *
+ * By position, and never by capping each section against its own budget: two
+ * caps are two places that have to agree on how much is left, and the number
+ * the control prints comes from only one of them.
+ */
+export function splitCapped<T>(
+  shown: readonly T[],
+  firstSectionLength: number,
+): { first: T[]; second: T[] } {
+  // `min` because the cut may land inside the first section, in which case the
+  // second gets nothing rather than a negative slice — `slice(-3)` would
+  // silently return the last three rows of the first section.
+  const take = Math.max(0, Math.min(firstSectionLength, shown.length));
+  return { first: shown.slice(0, take), second: shown.slice(take) };
+}
+
 export function capRows<T>(rows: readonly T[], limit: RowLimit): CappedRows<T> {
   if (limit === "all" || rows.length <= limit) {
     return { shown: [...rows], hidden: 0, next: null };

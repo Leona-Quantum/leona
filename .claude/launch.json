@@ -12,14 +12,11 @@
       }
     },
     {
+      "_comment": "next start, for checking a public page the way a reader gets it. next dev does NOT hydrate under an agent browser pane (its CSP blocks the eval() dev-mode React needs), so a dev server cannot verify an interactive control. Deliberately carries no env: `next start` sets NODE_ENV=production, where isLocalDevAuthEnabled() and isPublicDemoEnabled() both refuse by construction — the flags would be inert, and an inert flag in a config reads as an enabled one. Signed-in routes therefore 307 to WorkOS here; this entry is for /repository, /pricing and the rest of the public site.",
       "name": "web-prod",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": ["--filter", "@majorana/web", "start", "--port", "3456"],
-      "port": 3456,
-      "env": {
-        "MAJORANA_LOCAL_DEV_AUTH": "true",
-        "MAJORANA_PUBLIC_DEMO": "true"
-      }
+      "port": 3456
     },
     {
       "name": "web-agent",

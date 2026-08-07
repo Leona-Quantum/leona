@@ -6,6 +6,7 @@ import {
   DEFAULT_ROW_LIMIT,
   MAX_ROW_LIMIT,
   resolveRowLimit,
+  splitCapped,
   ROW_LIMIT_GROWTH,
 } from "./repository/browse-page.ts";
 
@@ -112,12 +113,13 @@ test("following next repeatedly terminates, and in few enough presses to be wort
   const last = seen[seen.length - 1];
   assert.equal(last.hidden, 0, "the chain never reached a view with nothing held back");
   assert.equal(limit, "all");
-  // 24 → 48 → 96 → all: three presses to everything on today's 176-row corpus.
+  // 24 → 48 → 96 → all: four views, so three presses to everything on today's
+  // 176-row corpus. `seen` records the view the reader is looking at, and the
+  // last of them is the one where nothing is held back.
+  //
   // Pinned because this is the number that decides whether the cap helps or
   // taxes — a fixed 24-row step needed seven, which is worse than the scroll it
   // replaced, and nothing but this assertion would have said so.
-  // Four views, so three presses. `seen` records the view the reader is looking
-  // at, and the last of them is the one where everything is on the page.
   assert.deepEqual(seen.map((step) => step.limit), [24, 48, 96, "all"]);
   assert.ok(seen.length - 1 <= 3, `${seen.length - 1} presses to see the whole list is too many`);
 });
@@ -136,4 +138,57 @@ test("the default cap is a real cut against the measured corpus", () => {
     `default cap shows ${capped.shown.length} rows, which is not a short page`,
   );
   assert.equal(capped.hidden, 176 - DEFAULT_ROW_LIMIT);
+});
+
+// ---------------------------------------------------------------------------
+// splitCapped — the wiring defect, not the arithmetic one.
+//
+// The first draft capped the ranked list and rendered the held-out tail in full
+// underneath it. `capRows` was correct throughout; what was wrong was that only
+// half the page went through it. These pin the half that CI could not see,
+// because the corpus holds nothing back today and the section is empty.
+// ---------------------------------------------------------------------------
+
+test("a cut inside the first section leaves the second empty, not negative", () => {
+  // `slice(-n)` is the bug this guards: a negative take silently returns the
+  // LAST rows of the first section, so the tail would render rows that belong
+  // to the list above it.
+  const { first, second } = splitCapped(rows(10), 24);
+  assert.equal(first.length, 10);
+  assert.deepEqual(second, []);
+});
+
+test("a cut past the first section fills the second with the remainder", () => {
+  const shown = rows(30);
+  const { first, second } = splitCapped(shown, 24);
+  assert.equal(first.length, 24);
+  assert.equal(second.length, 6);
+  assert.deepEqual([...first, ...second], shown);
+});
+
+test("every row is in exactly one section, at every cut point", () => {
+  const shown = rows(24);
+  for (let firstLength = 0; firstLength <= 40; firstLength += 1) {
+    const { first, second } = splitCapped(shown, firstLength);
+    assert.deepEqual([...first, ...second], shown, `cut at ${firstLength} lost or reordered a row`);
+    assert.equal(
+      new Set([...first, ...second]).size,
+      shown.length,
+      `cut at ${firstLength} rendered a row twice`,
+    );
+  }
+});
+
+test("the two sections together are what the cap governs", () => {
+  // The end-to-end shape: ranked + unranked capped as ONE sequence. 20 ranked
+  // and 30 unranked at a cap of 24 must show 24 cards, not 24 + 30.
+  const ranked = rows(20);
+  const unranked = rows(30).map((r) => `un-${r}`);
+  const capped = capRows([...ranked, ...unranked], DEFAULT_ROW_LIMIT);
+  const { first, second } = splitCapped(capped.shown, ranked.length);
+  assert.equal(first.length + second.length, DEFAULT_ROW_LIMIT);
+  assert.equal(first.length, 20, "the whole ranked list fits under the cap");
+  assert.equal(second.length, 4, "the tail gets only what is left");
+  assert.equal(capped.hidden, 26);
+  assert.notEqual(capped.next, null, "26 rows are held back, so there must be a way to reach them");
 });
