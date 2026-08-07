@@ -910,7 +910,12 @@
   gap: var(--sp-2);
   margin-bottom: var(--sp-4);
 }
-.mj-repository-category-nav button {
+/* Anchors since §0.5.1 — each category is a URL, so a section can be linked and
+   reached without JS. Styled as the buttons they replaced: the affordance the
+   reader learned did not change, only what happens on a middle-click. */
+.mj-repository-category-nav a {
+  display: inline-flex;
+  align-items: center;
   min-height: 30px;
   padding: 0 var(--sp-3);
   border: 1px solid var(--border-0);
@@ -919,10 +924,11 @@
   background: var(--bg-1);
   font: inherit;
   font-size: var(--fs-12);
+  text-decoration: none;
   cursor: pointer;
 }
-.mj-repository-category-nav button:hover,
-.mj-repository-category-nav button.is-active {
+.mj-repository-category-nav a:hover,
+.mj-repository-category-nav a.is-active {
   border-color: var(--accent);
   color: var(--text-0);
   background: var(--bg-2);
@@ -8233,7 +8239,10 @@ div.mj-rail-row:hover {
   overflow-y: auto;
   padding-right: var(--sp-1);
 }
-.mj-gate-sidebar button {
+/* Anchors since §0.5.1 — every gate is a URL, so the section is crawlable and
+   a particular gate can be sent to somebody. Styled exactly as the buttons they
+   replaced. */
+.mj-gate-sidebar a {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -8245,11 +8254,12 @@ div.mj-rail-row:hover {
   background: transparent;
   color: var(--text-1);
   font: inherit;
+  text-decoration: none;
   cursor: pointer;
   transition: background 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
 }
-.mj-gate-sidebar button:hover { background: var(--bg-1); color: var(--text-0); }
-.mj-gate-sidebar button.is-active {
+.mj-gate-sidebar a:hover { background: var(--bg-1); color: var(--text-0); }
+.mj-gate-sidebar a.is-active {
   background: var(--bg-1);
   border-color: var(--border-0);
   color: var(--text-0);
@@ -8356,7 +8366,7 @@ div.mj-rail-row:hover {
   .mj-gate-grid { grid-template-columns: minmax(0, 1fr); }
   .mj-gate-master { grid-template-columns: minmax(0, 1fr); }
   .mj-gate-sidebar { flex-direction: row; flex-wrap: wrap; max-height: none; }
-  .mj-gate-sidebar button { width: auto; }
+  .mj-gate-sidebar a { width: auto; }
   .mj-vlegend-tier dl > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .mj-repo-comparison-prose > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .mj-repo-card-top time { margin-left: 0; }
@@ -9843,4 +9853,71 @@ div.mj-rail-row:hover {
      right-aligned text under left-aligned text reads as two unrelated blocks. */
   .mj-iface-piece { grid-template-columns: 1fr; }
   .mj-iface-port--out { text-align: left; }
+}
+
+/* ---------- /repository preface (roadmap §0.5.1) ---------- */
+.mj-repo-preface {
+  max-width: 760px;
+  margin: var(--sp-8) 0 0;
+}
+.mj-repo-preface h2 {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-display);
+  font-size: var(--fs-display-3);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.mj-repo-preface p {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.65;
+}
+.mj-repo-preface-kinds {
+  margin: var(--sp-5) 0 var(--sp-3);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mj-repo-preface-list {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Two columns once there is room for the blurbs to stay readable. Four short
+   sections stacked on a wide screen read as a list of links rather than as the
+   map of the catalogue they are. */
+@media (min-width: 900px) {
+  .mj-repo-preface-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.mj-repo-preface-list li {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-repo-preface-list li > a {
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  text-decoration: none;
+}
+.mj-repo-preface-list li > a:hover { color: var(--accent); }
+.mj-repo-preface-count {
+  margin-left: var(--sp-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  /* The count belongs to the link beside it and must not wrap away from it. */
+  white-space: nowrap;
+}
+.mj-repo-preface-list li p {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.55;
 }

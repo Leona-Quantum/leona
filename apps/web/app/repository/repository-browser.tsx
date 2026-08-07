@@ -330,6 +330,8 @@ export function RepositoryBrowser({
   profiles,
   initialTopic = "",
   initialStance = "",
+  initialCategory = "all",
+  initialGate = null,
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
@@ -357,10 +359,19 @@ export function RepositoryBrowser({
   initialTopic?: TopicId | "";
   /** Resolved from `?fits=` by the server component; "" when absent or unknown. */
   initialStance?: InterfaceStance | "";
+  /** Resolved from `?category=`; "all" when absent or unknown. */
+  initialCategory?: "all" | PublicRepositoryCategory;
+  /** Resolved from `?gate=`; null when absent. An unknown slug falls back to the first gate. */
+  initialGate?: string | null;
 }) {
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
+  // Seeded from `?category=` for the reason the two below give, plus one this
+  // control has and they do not: `gates` does not narrow the same view, it
+  // swaps it for a sidebar and a detail pane. Without an address that whole
+  // reading surface existed only after a click, so it had no link, no bookmark,
+  // no crawler, and nothing at all for a reader with JS off (§0.5.1).
+  const [category, setCategory] = useState<"all" | PublicRepositoryCategory>(initialCategory);
   // Seeded from ?topic= by the server component, never read from `window` here:
   // this page does not hydrate in either browser surface, so an effect that set
   // it would leave the entry pages' topic chips linking to a filter that never
@@ -377,7 +388,11 @@ export function RepositoryBrowser({
   // Gate whose circuit is currently showing its basic-gate decomposition.
   const [expandedGates, setExpandedGates] = useState<Set<string>>(new Set());
   // Gate master/detail: the gate shown in the right-hand pane.
-  const [selectedGate, setSelectedGate] = useState<string | null>(null);
+  // Seeded from `?gate=` so the gates section is deep-linkable at the gate as
+  // well as at the section: the sidebar's links point at exactly this, so what a
+  // middle-click opens and what a plain click shows are the same view rather
+  // than two different readings of one control.
+  const [selectedGate, setSelectedGate] = useState<string | null>(initialGate);
   // Variant folding: the active member slug per variant group.
   const [variantActive, setVariantActive] = useState<Record<string, string>>({});
 
@@ -988,20 +1003,36 @@ export function RepositoryBrowser({
         </p>
       ) : null}
 
-      <div className="mj-repository-category-nav" aria-label={locale === "ja" ? "カテゴリ" : "Categories"}>
+      {/* Anchors that also behave as buttons, and both halves are load-bearing.
+          The `href` is what makes each category a **section** rather than a
+          view: it is a URL to link, share, bookmark and crawl, and it is the
+          only way a reader without JS reaches the gates sidebar at all — before
+          this the whole surface lived behind an onClick. The `preventDefault`
+          is what keeps the hydrated experience unchanged: switching sections
+          must not throw away the search box, the topic and the ordering the
+          reader has already set, which a real navigation would. */}
+      <nav className="mj-repository-category-nav" aria-label={locale === "ja" ? "カテゴリ" : "Categories"}>
         {PUBLIC_REPOSITORY_CATEGORIES.map((option) => (
-          <button
+          <a
             className={category === option.value ? "is-active" : ""}
             key={option.value}
-            type="button"
-            aria-pressed={category === option.value}
+            href={option.value === "all" ? "/repository" : `/repository?category=${option.value}`}
+            aria-current={category === option.value ? "page" : undefined}
             title={locale === "ja" ? option.labelJa : option.label}
-            onClick={() => setCategory(option.value)}
+            onClick={(event) => {
+              // Leave modified clicks alone — a middle-click or ⌘-click means
+              // "open this somewhere else", and it now has somewhere to go.
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                return;
+              }
+              event.preventDefault();
+              setCategory(option.value);
+            }}
           >
             {locale === "ja" ? option.labelJa : option.label}
-          </button>
+          </a>
         ))}
-      </div>
+      </nav>
 
       {legend}
 
@@ -1036,17 +1067,29 @@ export function RepositoryBrowser({
         // in the large pane on the right (Owner Inbox 2026-07-19).
         <div className="mj-gate-master">
           <nav className="mj-gate-sidebar" aria-label={copy.gateListLabel}>
+            {/* Links, on the same terms as the category strip above and for a
+                sharper version of the same reason. As buttons, 28 of the 29
+                gates existed only after a click: no crawler saw them, no reader
+                without JS could open one, and there was no way to send somebody
+                a particular gate. The href is the exact view the click produces,
+                so the two paths cannot drift into showing different things. */}
             {gateEntries.map((entry) => (
-              <button
+              <a
                 key={entry.slug}
-                type="button"
+                href={`/repository?category=gates&gate=${encodeURIComponent(entry.slug)}`}
                 className={entry.slug === activeGateSlug ? "is-active" : ""}
-                aria-current={entry.slug === activeGateSlug}
-                onClick={() => setSelectedGate(entry.slug)}
+                aria-current={entry.slug === activeGateSlug ? "true" : undefined}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                    return;
+                  }
+                  event.preventDefault();
+                  setSelectedGate(entry.slug);
+                }}
               >
                 <span>{locale === "ja" ? entry.titleJa : entry.title}</span>
                 <span className="mj-gate-sidebar-family">{familyLabel(entry.algorithmFamily, locale)}</span>
-              </button>
+              </a>
             ))}
           </nav>
           <div className="mj-gate-detail">

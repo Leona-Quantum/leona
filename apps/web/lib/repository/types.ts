@@ -2,7 +2,31 @@ import type { VerificationMethodId } from "./verification";
 import type { TopicId } from "./topics";
 import type { PortableCircuit } from "../circuit-frameworks";
 
-export type PublicRepositoryCategory = "gates" | "algorithms" | "operators" | "states";
+/**
+ * The four kinds of record, as a runtime tuple.
+ *
+ * The type is derived from this rather than written beside it, on the same
+ * terms as `PUBLIC_REPOSITORY_FRAMEWORKS` below, and for a reason that had
+ * already come true twice by the time this was reified: `from-catalog.ts` kept
+ * its own hand-written copy because there was no exported list to import, and
+ * `?category=` needed a third. A vocabulary written out once per consumer is a
+ * vocabulary that drifts silently — nothing fails when a copy is short, the
+ * records in the missing category are simply rejected, or hidden, or not
+ * addressable, depending on which copy it was.
+ *
+ * **Not `PUBLIC_REPOSITORY_CATEGORIES`**, which is the browse control's option
+ * list and carries an `"all"` sentinel that is not a category. A validator
+ * following a UI control would turn hiding a filter into rejecting every record
+ * behind it.
+ */
+export const PUBLIC_REPOSITORY_CATEGORY_IDS = ["gates", "algorithms", "operators", "states"] as const;
+export type PublicRepositoryCategory = (typeof PUBLIC_REPOSITORY_CATEGORY_IDS)[number];
+
+export function isPublicRepositoryCategory(value: unknown): value is PublicRepositoryCategory {
+  return (
+    typeof value === "string" && (PUBLIC_REPOSITORY_CATEGORY_IDS as readonly string[]).includes(value)
+  );
+}
 export type PublicRepositoryStatus = "verified" | "verified_caveats" | "community_review";
 /**
  * Derived from PUBLIC_REPOSITORY_FRAMEWORKS (bottom of this file) rather than
