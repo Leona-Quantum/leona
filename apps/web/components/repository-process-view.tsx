@@ -26,14 +26,22 @@ import { viewSwitchLabels } from "./repository-strand-view";
 import type { PublicLocale } from "../lib/public-locale";
 
 /**
- * The map opens exactly one slot at a time and there is no depth control.
+ * How deep the map will draw an expansion it has been asked for.
  *
- * Not a simplification for its own sake: nesting a second slot inside a lane
- * puts the parent's circles on a line running through the middle of the nested
- * block, and their names spill sideways into it. Drilling down instead is the
- * owner's own model and it is the version that keeps the no-overlap guarantee.
+ * It was 1, with a comment saying nesting a slot inside a lane puts the parent's
+ * circles on a line running through the middle of the nested block and their
+ * names spill sideways into it. That was true and it was a diagnosis about
+ * **names**: state names are now in `<title>` on the owner's brief, so they have
+ * no extent to spill. What is left is circles and lines, which the column model
+ * has always kept apart.
+ *
+ * This is a ceiling, not a setting. Nothing expands unless its id is in `?open=`,
+ * so what a reader sees is what they clicked; this only says how far a chain of
+ * deliberate clicks may go before the map stops following. Four is past anything
+ * in the graph today — the deepest recorded chain is three — so it binds on a
+ * hand-written URL rather than on a reader.
  */
-export const MAP_DEPTH = 1;
+export const MAP_DEPTH = 4;
 
 interface MapViewCopy {
   heading: string;
@@ -325,22 +333,36 @@ export function ProcessMapView({
   corpus: _corpus,
   locale,
   focusId,
+  openIds,
+  droppedOpen = 0,
 }: {
   graph: LayerGraph;
   corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
   focusId: string | null;
+  openIds: ReadonlySet<string>;
+  droppedOpen?: number;
 }): React.ReactElement {
   const copy = copyFor(locale);
   const nav = viewSwitchLabels(locale);
   const roots = rootCapabilities(graph);
   const shown = focusId ? [layerNode(graph, focusId)].filter(isCapabilityNode) : roots;
 
-  // The focused slot is the one that opens; on the overview nothing does.
-  const open: ReadonlySet<string> = new Set(focusId ? [focusId] : []);
+  // `?open=` is what a reader clicked; the focused slot joins it because arriving
+  // at a slot's own view with it shut would show a reader the one line they just
+  // asked to see the inside of.
+  const open: ReadonlySet<string> = new Set([...openIds, ...(focusId ? [focusId] : [])]);
   const diagrams: { id: string; diagram: ProcessDiagram }[] = shown.map((capability) => ({
     id: capability.id,
-    diagram: layoutProcessMap(graph, STATE_VOCABULARY, capability.id, locale, open, MAP_DEPTH),
+    diagram: layoutProcessMap(
+      graph,
+      STATE_VOCABULARY,
+      capability.id,
+      locale,
+      open,
+      MAP_DEPTH,
+      focusId,
+    ),
   }));
   const collapsed = diagrams.reduce((total, entry) => total + entry.diagram.collapsedCount, 0);
 

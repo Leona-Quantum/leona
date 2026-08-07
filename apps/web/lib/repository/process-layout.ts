@@ -74,20 +74,31 @@ import { layerState, stateSatisfies, type StateVocabulary } from "./states.ts";
 
 /** Every tunable in one place, because the test file asserts against them. */
 export const PROCESS_METRICS = {
-  /** A state circle's radius. The label sits beside it, not in it. */
+  /** A state circle's radius. Its name is in a tooltip and has no extent here. */
   stateRadius: 9,
   /**
-   * A state's name sits **below** its circle, not beside it.
+   * Slack either side of a state circle so two adjacent ones do not touch.
    *
-   * Beside was drawn first and it collides by construction: the name extends
-   * rightward into the run, the process's own name is centred over that run just
-   * above the line, and two 12px boxes eleven pixels apart overlap. Nothing in
-   * the geometry noticed, because the overlap is between two `<text>` elements
-   * and every invariant was about lines and circles. Below the circle, the two
-   * label bands are on opposite sides of the line and cannot meet.
+   * This replaced a 24px label band and a 200px name allowance. Both existed
+   * because a state's name was drawn on the canvas, and the comment they carried
+   * is worth keeping because it is the reason the name is not drawn any more:
+   * the name was first placed *beside* the circle, where it extended rightward
+   * into the run while the process's own name sat centred over that run just
+   * above the line — two 12px boxes eleven pixels apart, overlapping. Nothing in
+   * the geometry noticed, because the overlap was between two `<text>` elements
+   * and every invariant was about lines and circles. Moving it below the circle
+   * fixed that pair and created the sideways spill that made in-place expansion
+   * undrawable. A name with no extent has neither failure.
    */
-  stateLabelBand: 24,
-  stateLabelMax: 200,
+  stateGap: 14,
+  /**
+   * Room below a lane's line for the bottom of its circles, and for a tie to
+   * leave one. Was `stateLabelBand: 24`, which was the name's room; a circle of
+   * radius 9 needs less, and the lane heights come down with it.
+   */
+  stateBelow: 14,
+  /** An ingredient's name is still drawn, so it still needs a ceiling. */
+  feedLabelMax: 200,
   /** The shortest a process line may be drawn, before its label is considered. */
   minRun: 64,
   /** Slack around a process label so the line is legible under it. */
@@ -96,6 +107,22 @@ export const PROCESS_METRICS = {
   laneGap: 26,
   /** A lane carries its method's name in a band above its line. */
   laneLabelBand: 34,
+  /**
+   * An opened slot carries its own name, and has to own the room it uses.
+   *
+   * It did not, and nothing noticed while only one slot could ever be open: the
+   * name was drawn at `top - 5`, five pixels *outside* the measured box, into
+   * space that at depth 0 is the canvas margin and therefore free. The moment a
+   * slot could open inside another, that space belonged to an ancestor's lane
+   * name, and the deep-nesting sweep found 40 of those collisions on the
+   * authored graph.
+   *
+   * Reserved on **both** sides rather than only the top. The band below is slack
+   * nothing draws in, and buying it costs one number; the alternative is an
+   * asymmetric box, and `lineOffset` and `tallest/2` are computed in three places
+   * that each assume a segment is centred on its own line.
+   */
+  groupLabelBand: 18,
   /** A lane with ingredients reserves a band below its line for them. */
   feedBand: 19,
   feedGap: 14,
@@ -167,15 +194,25 @@ export type ProcessState =
   | "unfilled";
 
 /**
- * An opened slot. **Not a line** — which is the whole reason it is a separate
- * type rather than a fourth `ProcessState`.
+ * An opened slot: still a span, still a separate type from a drawn line.
  *
- * The first draft kept an opened slot in `processes` with its own `x0..x1` at
- * the group's centre line, and that line ran horizontally straight through every
- * lane drawn inside it. It was invisible in the numbers because nothing compared
- * a line against a lane, and it is exactly the crossing the owner asked not to
- * exist. Once a slot is opened, the thing on the canvas is the region its
- * alternatives occupy; the name goes above the region, and there is no line.
+ * The history is worth keeping because it is what changed. The first draft kept
+ * an opened slot in `processes` with its own `x0..x1` at the group's centre line,
+ * and that line ran horizontally straight through every lane drawn inside it —
+ * invisible in the numbers, because nothing compared a line against a lane, and
+ * exactly the crossing the owner asked not to exist. Session 92's answer was to
+ * stop drawing the line at all and paint a **region** behind the lanes instead.
+ *
+ * The owner's answer is better and is what ships now: *"the straight original
+ * process line turns into a faint line, and there are muscle strand-shapes lines
+ * around it."* The line comes back, faint, and it no longer crosses anything —
+ * because the lanes converge onto its two endpoints rather than being stacked
+ * independently across its span, so the faint line and the strands around it are
+ * two drawings of the same journey between the same two circles.
+ *
+ * This stays a distinct type because a group is a *span with a height*, and a
+ * `ProcessBox` is a span at a `y`. The renderer derives the spine from
+ * `(top + bottom) / 2`, which is the `y` the slot would have had.
  */
 export interface ProcessGroup {
   kind: "group";
@@ -185,7 +222,10 @@ export interface ProcessGroup {
   fullLabel: string;
   labelTruncated: boolean;
   summary: string;
+  /** Where the **name** goes: this slot's own page. */
   href: string;
+  /** Where the **faint line** goes: the same map with this slot shut again. */
+  closeHref: string | null;
   x0: number;
   x1: number;
   top: number;
@@ -199,9 +239,15 @@ export interface StateBox {
   stateId: string;
   /** Unique per occurrence — the same state drawn on three lanes is three boxes. */
   key: string;
-  label: string;
+  /**
+   * The name, whole — there is no truncated twin, because it is never drawn.
+   *
+   * Every other box here carries a `label`/`fullLabel` pair, one fitted to the
+   * space and one for the `<title>`. A state has only the second: its name lives
+   * in the tooltip, and a tooltip has no width to fit to. Keeping a `label` field
+   * that nothing renders would be an invitation to render it.
+   */
   fullLabel: string;
-  labelTruncated: boolean;
   summary: string;
   href: string;
   cx: number;
@@ -223,7 +269,17 @@ export interface ProcessBox {
   fullLabel: string;
   labelTruncated: boolean;
   summary: string;
-  href: string;
+  /**
+   * Where the **line** goes: the same map with this slot toggled open.
+   *
+   * `null` on a method, and that absence is the point. A method has no ways
+   * through it, so there is nothing for a click on its line to open — and a
+   * shape that looks like a control but is not one is worse than no control.
+   * The name is still a link; only the line stops being one.
+   */
+  href: string | null;
+  /** Where the **name** goes: this process's own page. Never null. */
+  pageHref: string;
   /** The straight run. `y` is the line; the label sits above it. */
   x0: number;
   x1: number;
@@ -407,20 +463,26 @@ export function columnRanks(lanes: readonly (readonly string[])[]): {
 }
 
 /**
- * How much of a column one state occurrence claims.
+ * How much of a column one state occurrence claims: the circle, and nothing else.
  *
- * The name is centred under the circle, so the column has to be as wide as
- * whichever is bigger — and a little wider still, or two neighbouring columns'
- * names touch even though their circles do not.
+ * It used to be the **name**, centred under the circle and reserved up to
+ * `stateLabelMax` = 200px wide. That single number was most of the canvas — the
+ * four-route ODE map came out 1,811px across inside an 868px column, so a reader
+ * scrolled sideways through a picture whose point is that you can see it at once.
+ * It is also what made in-place expansion impossible: every one of the nine
+ * depth-2 collisions session 92 found was a wide centred state name spilling into
+ * a neighbour.
+ *
+ * The name is in `<title>` now, on the owner's brief. A name in a tooltip has no
+ * extent on the canvas, so a column is the circle plus enough slack that two
+ * adjacent circles are not touching.
+ *
+ * `vocabulary`, `id` and `locale` stay in the signature: this is a per-occurrence
+ * measurement and the day a state gets a mark of its own — a badge, a differently
+ * sized dot — it will need to know which state it is measuring.
  */
-function stateWidth(vocabulary: StateVocabulary, id: string, locale: Locale): number {
-  const state = layerState(vocabulary, id);
-  const text = state ? labelOf(state, locale) : id;
-  const label = Math.min(
-    estimateTextWidth(text, PROCESS_METRICS.stateFont),
-    PROCESS_METRICS.stateLabelMax,
-  );
-  return Math.max(PROCESS_METRICS.stateRadius * 2, label) + 14;
+function stateWidth(_vocabulary: StateVocabulary, _id: string, _locale: Locale): number {
+  return PROCESS_METRICS.stateRadius * 2 + PROCESS_METRICS.stateGap;
 }
 
 function processRunWidth(text: string): number {
@@ -451,9 +513,12 @@ function measureProcess(capabilityId: string, depth: number, options: Options): 
   if (lanes.length === 0) return collapsed;
 
   const width = Math.max(collapsed.width, ...lanes.map((lane) => lane.measured.width));
-  const height =
+  const stack =
     lanes.reduce((total, lane) => total + lane.measured.height, 0) +
     PROCESS_METRICS.laneGap * (lanes.length - 1);
+  // The lanes are centred on the slot's line by `placeLanes`, so the band its own
+  // name needs is reserved at both ends to keep the box symmetric about that line.
+  const height = stack + PROCESS_METRICS.groupLabelBand * 2;
   return { width, height, lineOffset: height / 2 };
 }
 
@@ -572,7 +637,7 @@ function measureLanes(
       measured: {
         width: totalWidth,
         height:
-          PROCESS_METRICS.laneLabelBand + tallest + PROCESS_METRICS.stateLabelBand + feedRoom,
+          PROCESS_METRICS.laneLabelBand + tallest + PROCESS_METRICS.stateBelow + feedRoom,
         lineOffset: PROCESS_METRICS.laneLabelBand + tallest / 2,
       },
     };
@@ -604,23 +669,58 @@ export function stateHref(id: string): string {
 }
 
 /**
- * Where a process line links to, and the two destinations are deliberately
- * different — carried over from the strand canvas, where it worked.
+ * Where the **name** on a process links to: its own page, always.
  *
- * A **slot** navigates: it re-centres the map on itself, opened, with its own
- * alternatives fanned out. A **method** reads: it links to its write-up.
+ * *"Clicking on the label of a process zooms in… but clicking on the line
+ * expands the line within the page/visualization itself."* — owner, session 92.
+ * Two shapes, two verbs, and this is the reading one. It never depends on what
+ * is open, so it is the same address from every state of the map — which is what
+ * makes it the thing to link to from elsewhere.
+ */
+export function processPageHref(id: string): string {
+  return `/repository/layers/${id}`;
+}
+
+/**
+ * Where the **line** on a slot links to: the same map with that slot toggled.
  *
- * Drilling down rather than nesting in place, which is the owner's own model
- * (*"clicking into something puts people in zoomed in view which they can easily
- * escape from to get back to the last layer they were in"*) and also the only
- * one that holds the no-overlap guarantee. Expanding a slot *inside* a lane puts
+ * This is the owner's *"expands the line within the page/visualization itself
+ * without any more granular zooming in… everything else still in view"*, and it
+ * is a set rather than a single id because they were explicit that opening one
+ * thing must not close another: *"they can still click on process lines on
+ * whatever zoomed in layer you are in to see more connections without rendering
+ * a layer deeper."*
+ *
+ * Session 92 shipped this as `?focus=` — one id, replacing whatever was open —
+ * and rejected in-place expansion because *"expanding a slot inside a lane puts
  * the parent's own circles on a line that runs through the middle of the nested
  * block, and their names — drawn centred and wide — spill sideways into it. The
- * label-collision invariant found nine of those at depth 2. One level at a time
- * has no such case, and the rail's Path is the way back up.
+ * label-collision invariant found nine of those at depth 2."*
+ *
+ * **That diagnosis named the labels, and the labels are now gone.** A state's
+ * name moved into `<title>` on the owner's brief, `stateWidth` no longer reserves
+ * a column for it, and the nine collisions were every one of them a name against
+ * something else. `?focus=` survives as the zoom level; `?open=` is what a line
+ * toggles inside it.
+ *
+ * Returns `null` when there is nothing to toggle — a method has no ways through
+ * it, so its line is not a control and must not be drawn as one.
  */
-export function slotHref(id: string, _open: ReadonlySet<string>, _focus: string | null): string {
-  return `/repository/layers?view=map&focus=${encodeURIComponent(id)}`;
+export function slotHref(
+  id: string,
+  open: ReadonlySet<string>,
+  focus: string | null,
+): string {
+  const next = new Set(open);
+  if (next.has(id)) next.delete(id);
+  else next.add(id);
+  const params: string[] = ["view=map"];
+  if (focus !== null) params.push(`focus=${encodeURIComponent(focus)}`);
+  // Sorted so one arrangement of the map has exactly one URL: two readers who
+  // opened the same three slots in different orders must be able to compare
+  // links, and a cache must not hold the same page twice.
+  for (const openId of [...next].sort()) params.push(`open=${encodeURIComponent(openId)}`);
+  return `/repository/layers?${params.join("&")}`;
 }
 
 function placeStates(
@@ -638,7 +738,6 @@ function placeStates(
     const column = lane.ranks[index]!;
     const state = layerState(options.vocabulary, stateId);
     const full = state ? labelOf(state, options.locale) : stateId;
-    const fitted = fitLabel(full, PROCESS_METRICS.stateFont, PROCESS_METRICS.stateLabelMax);
     const terminal =
       terminalsAt === null
         ? null
@@ -651,9 +750,7 @@ function placeStates(
       kind: "state",
       stateId,
       key: `${laneKey}:s${index}`,
-      label: fitted.text,
       fullLabel: full,
-      labelTruncated: fitted.truncated,
       summary: state ? summaryOf(state, options.locale) : "",
       href: stateHref(stateId),
       cx: columnCentres[column]!,
@@ -690,7 +787,7 @@ function placeProcess(
   const expanded = open && methods.length > 0 && !unfilled;
 
   if (expanded) {
-    // A region, not a line. The measure pass already knows how tall the lanes
+    // A span with a height. The measure pass already knows how tall the lanes
     // will stack, and the two must agree or the name sits over the wrong band —
     // the same discipline the strand engine needed for its depth predicate.
     const measured = measureProcess(capabilityId, depth, options);
@@ -702,7 +799,8 @@ function placeProcess(
       fullLabel: full,
       labelTruncated: fitted.truncated,
       summary: summaryOf(node, options.locale),
-      href: slotHref(capabilityId, options.open, focus),
+      href: processPageHref(capabilityId),
+      closeHref: slotHref(capabilityId, options.open, focus),
       x0,
       x1,
       top: y - measured.height / 2,
@@ -726,7 +824,10 @@ function placeProcess(
     fullLabel: full,
     labelTruncated: fitted.truncated,
     summary: summaryOf(node, options.locale),
-    href: slotHref(capabilityId, options.open, focus),
+    // A slot with nothing recorded in it has nothing to open, so its line is not
+    // a control. Only a shut slot with ways through it gets one.
+    href: state === "collapsed" ? slotHref(capabilityId, options.open, focus) : null,
+    pageHref: processPageHref(capabilityId),
     x0,
     x1,
     y,
@@ -788,9 +889,15 @@ function placeLanes(
       fullLabel: laneFull,
       labelTruncated: laneFitted.truncated,
       summary: summaryOf(lane.method, options.locale),
-      href: `/repository/layers/${lane.method.id}`,
+      href: processPageHref(lane.method.id),
       x: x0,
-      y: lineY - PROCESS_METRICS.edgeBand / 2 - 12,
+      // Anchored to the **top of the lane's band**, where `laneLabelBand` reserved
+      // the room, not to the lane's line. Those are 23px apart for a shallow lane
+      // and they were the same expression, so nothing showed until a lane's
+      // tallest segment became a whole nested expansion: `lineOffset` is
+      // `laneLabelBand + tallest / 2`, so a 400px-tall nested slot put this
+      // method's own name two hundred pixels down, in the middle of it.
+      y: top + PROCESS_METRICS.laneLabelBand - 12,
       outlook: stepsOutlook(lane.method),
       coverage: lane.route.coverage,
     });
@@ -824,7 +931,10 @@ function placeLanes(
           fullLabel: full,
           labelTruncated: fitted.truncated,
           summary: summaryOf(method, options.locale),
-          href: `/repository/layers/${method.id}`,
+          // A method's own work: nothing under it to open, so the line is inert
+          // and only the name is a link.
+          href: null,
+          pageHref: processPageHref(method.id),
           x0: sx0,
           x1: sx1,
           y: lineY,
@@ -855,7 +965,7 @@ function placeLanes(
       const node = layerNode(options.graph, feedId);
       if (!node) return;
       const full = labelOf(node, options.locale);
-      const fitted = fitLabel(full, PROCESS_METRICS.feedFont, PROCESS_METRICS.stateLabelMax);
+      const fitted = fitLabel(full, PROCESS_METRICS.feedFont, PROCESS_METRICS.feedLabelMax);
       // Stacked at the lane's left edge, one per row. Which process consumes an
       // ingredient is not recorded, so hanging it under a particular hop would
       // assert something the graph does not say; it belongs to the route.
@@ -866,12 +976,20 @@ function placeLanes(
         fullLabel: full,
         labelTruncated: fitted.truncated,
         summary: summaryOf(node, options.locale),
-        href: `/repository/layers/${feedId}`,
+        href: processPageHref(feedId),
         x: x0,
-        y0: lineY + PROCESS_METRICS.stateLabelBand,
+        // Same correction as the lane name, at the other edge. The room for these
+        // is `feedRoom`, reserved at the **bottom** of the lane's band; hanging
+        // them a fixed distance below the *line* put them inside the lane's own
+        // content the moment that content was taller than one hop. The bottom of
+        // that content is `lineY + tallest / 2`, and `tallest / 2` is exactly
+        // `lineOffset - laneLabelBand` — derived rather than a second copy of the
+        // formula `measureLanes` already computes.
+        y0: lineY,
         y1:
           lineY +
-          PROCESS_METRICS.stateLabelBand +
+          (lane.measured.lineOffset - PROCESS_METRICS.laneLabelBand) +
+          PROCESS_METRICS.stateBelow +
           PROCESS_METRICS.feedGap +
           index * PROCESS_METRICS.feedBand,
       });
@@ -920,6 +1038,18 @@ export function layoutProcessMap(
   locale: Locale,
   open: ReadonlySet<string>,
   depthCap: number,
+  /**
+   * The zoom level this canvas is being drawn at — the page's `?focus=`, not the
+   * root being drawn.
+   *
+   * It used to be `rootId`, passed down and then ignored, because `slotHref`
+   * took the argument and never read it. Now that a line toggles rather than
+   * drills, the difference is visible: on the four-root overview `focus` is
+   * `null`, and passing the root instead would make every toggle navigate the
+   * reader *into* that root — dropping the other three from the page, which is
+   * the opposite of "everything else still in view".
+   */
+  focus: string | null = null,
 ): ProcessDiagram {
   const options: Options = { graph, vocabulary, locale, open, depthCap };
   const node = layerNode(graph, rootId);
@@ -987,7 +1117,7 @@ export function layoutProcessMap(
     options,
     canvas,
     `root:${rootId}`,
-    rootId,
+    focus,
   );
 
   return {
@@ -1007,10 +1137,11 @@ export function layoutProcessMap(
 /**
  * One of the two ends of the whole map.
  *
- * Centred in the width its column reserved, not placed a radius in from the
- * left. A name is drawn centred *under* its circle, so left-anchoring the
- * circle pushes half the name off the canvas — which is what the first draft did
- * to `Nonlinear initial-value problem`, by 58px.
+ * Still centred in the width its column reserved rather than placed a radius in
+ * from the left. The original reason is gone — a name drawn centred under the
+ * circle used to push half of `Nonlinear initial-value problem` off the canvas,
+ * by 58px — but the reserved width is now symmetric slack around the circle, and
+ * sitting in the middle of it is what keeps the margin even at both ends.
  */
 function terminalState(
   stateId: string,
@@ -1023,14 +1154,11 @@ function terminalState(
 ): StateBox {
   const state = layerState(options.vocabulary, stateId);
   const full = state ? labelOf(state, options.locale) : stateId;
-  const fitted = fitLabel(full, PROCESS_METRICS.stateFont, PROCESS_METRICS.stateLabelMax);
   return {
     kind: "state",
     stateId,
     key: `${keyPrefix}:${terminal}`,
-    label: fitted.text,
     fullLabel: full,
-    labelTruncated: fitted.truncated,
     summary: state ? summaryOf(state, options.locale) : "",
     href: stateHref(stateId),
     cx: left + reserved / 2,

@@ -56,6 +56,17 @@ interface MapCopy {
   kindOf: string;
   start: string;
   end: string;
+  /**
+   * The three destinations, said out loud on every shape that has one.
+   *
+   * A line and the name above it now go to different places, and nothing about
+   * their appearance says so. On a canvas where the only text is the process
+   * names, the `<title>` is the whole affordance — so it names the action, not
+   * just the thing.
+   */
+  openHere: string;
+  closeHere: string;
+  readAbout: string;
 }
 
 const COPY: Record<"en" | "ja", MapCopy> = {
@@ -70,6 +81,9 @@ const COPY: Record<"en" | "ja", MapCopy> = {
     kindOf: "a narrower kind of the object above",
     start: "you start here",
     end: "you finish here",
+    openHere: "click the line to open it here",
+    closeHere: "click the line to close it",
+    readAbout: "click the name to read about it",
   },
   ja: {
     ways: (n: number) => `通り道 ${n} 件`,
@@ -82,6 +96,9 @@ const COPY: Record<"en" | "ja", MapCopy> = {
     kindOf: "上の対象の、より狭い種類",
     start: "ここから始まります",
     end: "ここで終わります",
+    openHere: "線をクリックするとこの場で展開します",
+    closeHere: "線をクリックすると畳みます",
+    readAbout: "名前をクリックすると解説を開きます",
   },
 };
 
@@ -91,33 +108,65 @@ function n(value: number): string {
 }
 
 /**
- * An opened slot: a region with a name, drawn behind everything it contains.
+ * An opened slot: the same line it always was, gone faint, with its ways drawn
+ * around it.
  *
- * Deliberately not a line. `ProcessGroup` exists because the first draft drew
- * one, and it ran straight through every lane inside it.
+ * It used to be a filled region — a `<rect>` a shade off the page, behind
+ * everything it contained. The owner's session-92 verdict was direct: *"I don't
+ * like how clicking into processes opens up the expanded version that sits on a
+ * different colored square in the back — get rid of that square and keep it on
+ * the page itself."* And they said what replaces it: *"the straight original
+ * process line turns into a faint line, and there are muscle strand-shapes lines
+ * around it that are the new methods/subprocesses."*
+ *
+ * That reads as styling and is not. The rect existed because session 92 drew the
+ * opened slot as a line **and** its lanes, and the line ran straight through
+ * them; a region was the way to stop claiming the parent was a hop you could
+ * take. It works now because the lanes converge on the slot's own two endpoints
+ * instead of being stacked independently inside it — the faint line and the
+ * strands share their ends, so the faint line is not crossing anything, it is
+ * the thing the strands are alternatives to.
+ *
+ * The name still opens the slot's own page; only the region is gone.
  */
 function Group({ group, copy }: { group: ProcessGroup; copy: MapCopy }): React.ReactElement {
   const label = `${group.fullLabel} — ${copy.opened(group.methodCount)}`;
+  const spineY = (group.top + group.bottom) / 2;
   return (
     <g className="mj-process-group" data-depth={group.depth}>
-      <rect
-        className="mj-process-group-field"
-        x={n(group.x0)}
-        y={n(group.top)}
-        width={n(Math.max(0, group.x1 - group.x0))}
-        height={n(Math.max(0, group.bottom - group.top))}
-        rx="10"
+      <line
+        className="mj-process-spine"
+        x1={n(group.x0)}
+        y1={n(spineY)}
+        x2={n(group.x1)}
+        y2={n(spineY)}
       />
-      <a href={group.href}>
+      {group.closeHref === null ? null : (
+        <a href={group.closeHref} aria-label={`${group.fullLabel} — ${copy.closeHere}`}>
+          <title>{`${label} — ${copy.closeHere}`}</title>
+          <line
+            className="mj-process-hit-line"
+            x1={n(group.x0)}
+            y1={n(spineY)}
+            x2={n(group.x1)}
+            y2={n(spineY)}
+          />
+        </a>
+      )}
+      <a href={group.href} aria-label={`${group.fullLabel} — ${copy.readAbout}`}>
         <title>{group.summary ? `${label} — ${group.summary}` : label}</title>
+        {/* Inside the box, not five pixels above it. The name used to hang over
+            the top edge into whatever was there, which was the canvas margin
+            while only one slot could be open and an ancestor's lane name as
+            soon as two could. */}
         <rect
           className="mj-process-hit"
           x={n(group.x0)}
-          y={n(group.top - 15)}
+          y={n(group.top)}
           width={n(Math.max(0, group.x1 - group.x0))}
-          height="15"
+          height="17"
         />
-        <text className="mj-process-group-name" x={n(group.x0 + 4)} y={n(group.top - 5)}>
+        <text className="mj-process-group-name" x={n(group.x0 + 4)} y={n(group.top + 13)}>
           {group.label}
         </text>
       </a>
@@ -171,15 +220,26 @@ function Process({ process, copy }: { process: ProcessBox; copy: MapCopy }): Rea
           y2={n(process.y + 3.5)}
         />
       ) : null}
-      <a href={process.href}>
-        <title>{title}</title>
-        <line
-          className="mj-process-hit-line"
-          x1={n(process.x0)}
-          y1={n(process.y)}
-          x2={n(process.x1)}
-          y2={n(process.y)}
-        />
+      {/* Two targets, two destinations — the owner's session-92 brief.
+          *"They can click on labels to see a specific expanded process and
+          description, while they can click on the line itself to expand with
+          everything else still in view."* So the line opens it **here**, in
+          place, and the name goes **there**, to the process's own page. One
+          shape, one thing it does, and the `<title>` on each says which. */}
+      {process.href === null ? null : (
+        <a href={process.href} aria-label={`${process.fullLabel} — ${copy.openHere}`}>
+          <title>{`${title} — ${copy.openHere}`}</title>
+          <line
+            className="mj-process-hit-line"
+            x1={n(process.x0)}
+            y1={n(process.y)}
+            x2={n(process.x1)}
+            y2={n(process.y)}
+          />
+        </a>
+      )}
+      <a href={process.pageHref} aria-label={`${process.fullLabel} — ${copy.readAbout}`}>
+        <title>{`${title} — ${copy.readAbout}`}</title>
         <rect
           className="mj-process-hit"
           x={n(process.x0)}
@@ -195,7 +255,24 @@ function Process({ process, copy }: { process: ProcessBox; copy: MapCopy }): Rea
   );
 }
 
-/** A state: a circle with its name centred beneath it. */
+/**
+ * A state: a circle, and its name only on hover.
+ *
+ * The name is in `<title>`, not in a `<text>`, on the owner's session-92 brief —
+ * *"states do not have written labels, only tool-tipped labels if hovered on"* —
+ * and it is the change that makes the rest of this surface possible. A state's
+ * written name was the widest thing on the canvas: `stateWidth` reserved up to
+ * 200px per column for it, and session 92 abandoned inline expansion precisely
+ * because *"the parent's own circles sat on a line running through the middle of
+ * the nested block and their centred, wide names spilled sideways into it"*.
+ * Take the names off the canvas and that collision has nothing to collide with.
+ *
+ * `<title>` rather than a hover script for the usual reason (D88.2): a tooltip
+ * that needs hydration is not a tooltip for a crawler, a reader with JS off, or
+ * `curl`. The cost is real and is paid on purpose — there is no hover on a touch
+ * screen, so on a phone the name is one tap away on the state's own page rather
+ * than one hover away here. The circle is a link either way.
+ */
 function State({ state, copy }: { state: StateBox; copy: MapCopy }): React.ReactElement {
   const note = state.terminal === "entry" ? copy.start : state.terminal === "exit" ? copy.end : null;
   const title = [state.fullLabel, note ? ` (${note})` : "", state.summary ? ` — ${state.summary}` : ""].join(
@@ -203,17 +280,17 @@ function State({ state, copy }: { state: StateBox; copy: MapCopy }): React.React
   );
   return (
     <g className={`mj-process-state${state.terminal ? " mj-process-state--terminal" : ""}`}>
-      <a href={state.href}>
+      <a href={state.href} aria-label={state.fullLabel}>
         <title>{title}</title>
         <circle className="mj-process-dot" cx={n(state.cx)} cy={n(state.cy)} r={n(state.r)} />
-        <text
-          className="mj-process-state-name"
-          x={n(state.cx)}
-          y={n(state.cy + state.r + 13)}
-          textAnchor="middle"
-        >
-          {state.label}
-        </text>
+        {/* An invisible disc wider than the dot: a 9px circle is under the 24px
+            minimum for a touch target, and the name now lives behind the hover. */}
+        <circle
+          className="mj-process-hit-dot"
+          cx={n(state.cx)}
+          cy={n(state.cy)}
+          r={n(Math.max(state.r + 6, 13))}
+        />
       </a>
     </g>
   );
