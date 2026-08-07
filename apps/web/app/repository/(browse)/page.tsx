@@ -8,8 +8,8 @@ import {
   getRepositoryProfiles,
 } from "../../../lib/repository-source";
 import { VerificationLegend } from "../../../components/repository-verification";
-import { isTopicId } from "../../../lib/repository/topics";
-import { isInterfaceStance } from "../../../lib/repository/interface";
+import { RepositoryPreface } from "../../../components/repository-preface";
+import { resolveBrowseParams } from "../../../lib/repository/browse-params";
 import { RepositoryBrowser } from "../repository-browser";
 
 export const metadata: Metadata = {
@@ -18,17 +18,13 @@ export const metadata: Metadata = {
 };
 
 /**
- * `/repository?topic=chemistry` — where an entry page's topic chips point.
+ * The Atlas browse page: a preface, then the controls over the corpus.
  *
- * Resolved **here**, on the server, rather than from `window.location` in an
- * effect. This page does not hydrate in either browser surface — confirmed
- * again this session against a production build, so it is not the dev-mode CSP
- * — and an effect that never runs is a link that silently does nothing. Reading
- * it server-side means the HTML arrives already filtered, which is also the
- * only version of this a crawler or a no-JS reader ever sees.
- *
- * An unknown id resolves to no filter rather than to an empty list: a retired
- * topic in an old bookmark should show the corpus, not a blank page.
+ * Four deep links arrive here — `?topic=` from an entry page's chips, `?fits=`
+ * from its interface panel, and since §0.5.1 `?category=` and `?gate=` from the
+ * preface and the gate sidebar. `lib/repository/browse-params.ts` holds the one
+ * rule all of them follow and the reason it is one function rather than four
+ * ternaries.
  */
 export default async function RepositoryPage({
   searchParams,
@@ -36,16 +32,16 @@ export default async function RepositoryPage({
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
   const params = await searchParams;
-  const wanted = params.topic;
-  const initialTopic = typeof wanted === "string" && isTopicId(wanted) ? wanted : "";
-  // `?fits=` on the same terms as `?topic=`, and for the same reason: this page
-  // does not hydrate, so a control whose only state is a `useState` may never
-  // move for anyone. Resolved here, the HTML arrives filtered — which is also
-  // the only version a crawler or a no-JS reader ever sees. An unknown value
-  // resolves to no filter rather than to an empty list.
-  const wantedStance = params.fits;
-  const initialStance =
-    typeof wantedStance === "string" && isInterfaceStance(wantedStance) ? wantedStance : "";
+  // All four deep links in one call — see lib/repository/browse-params.ts for
+  // the rule they share and for why `?category=` was the one that went two
+  // sessions without an address.
+  //
+  // Resolved **here**, on the server, rather than from `window.location` in an
+  // effect. The HTML then arrives already filtered, which is the only version a
+  // crawler or a no-JS reader ever sees, and it is verifiable with `curl` rather
+  // than a browser.
+  const { topic: initialTopic, stance: initialStance, category: initialCategory, gate: initialGate } =
+    resolveBrowseParams(params);
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
@@ -74,6 +70,12 @@ export default async function RepositoryPage({
             ? "回路とアルゴリズムを検索し、仕組み、シミュレーション結果、コード、出典、ライセンス、どこまで検証済みかを確認できます。"
             : "Search circuits and algorithms, then inspect how they work, what simulation shows, which code is available, and where source, license, and verification boundaries begin."}
         </p>
+        {/* Between the one-line hero and the controls, and it is deliberately
+            above them: a reader who scrolls past it has still been told what
+            these records are, and a reader who starts filtering does not need
+            it. Rendered from `entries`, which is already in hand, so every
+            number on it is counted rather than typed. */}
+        <RepositoryPreface entries={entries} locale={locale} />
         <RepositoryBrowser
           entries={entries}
           locale={locale}
@@ -84,6 +86,8 @@ export default async function RepositoryPage({
           profiles={profiles}
           initialTopic={initialTopic}
           initialStance={initialStance}
+          initialCategory={initialCategory}
+          initialGate={initialGate}
         />
       </section>
     </PublicSite>
