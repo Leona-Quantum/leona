@@ -10295,3 +10295,301 @@ div.mj-rail-row:hover {
   border-top: 1px dashed var(--border-0);
   color: var(--text-2);
 }
+
+/* ---------------------------------------------------------------------------
+   The strand canvas — /repository/layers?view=strands
+   ---------------------------------------------------------------------------
+   Everything here styles server-rendered SVG. There is no client component
+   behind this surface, so every state a reader can reach is either a link, a
+   `:hover`/`:focus-visible`, or a `<details>` — which is also why the hover
+   affordance is done in CSS rather than by a handler.
+
+   Colour comes entirely from the token set, so the canvas follows the site's
+   light/dark toggle with no per-theme rules of its own. `currentColor` does the
+   work: strokes inherit from the group, and the two states that must be
+   distinguishable at a glance — a slot drawn shut versus a slot nothing fills —
+   differ in dash pattern as well as in opacity, because opacity alone is not a
+   difference a reader can name.
+   --------------------------------------------------------------------------- */
+/* Wider than `--content-max`, deliberately. That token is a measure for prose
+   and this surface is a canvas: at 1200px the diagram is clipped at the rail on
+   a screen with room to spare. The prose blocks on the page keep their own
+   measure with `max-width` in ch, so nothing here becomes a 96rem line of text. */
+.mj-strand-view {
+  max-width: min(96rem, 100%);
+  margin: 0 auto;
+  padding: var(--sp-8) var(--sp-5) var(--sp-12);
+}
+.mj-strand-head h1 {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-display);
+  /* The display face is only set at 400 anywhere in this stylesheet; an h1 would
+     otherwise inherit the user-agent 700 and synthesise a weight it does not have. */
+  font-weight: 400;
+  font-size: var(--fs-28);
+  line-height: 1.2;
+}
+.mj-strand-lede {
+  margin: 0 0 var(--sp-6);
+  max-width: 62ch;
+  color: var(--text-1);
+  font-size: var(--fs-16);
+  line-height: 1.6;
+}
+.mj-strand-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.mj-strand-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px;
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-13);
+}
+.mj-strand-switch-label {
+  padding: 0 var(--sp-2);
+  color: var(--text-2);
+  text-transform: lowercase;
+}
+.mj-strand-switch a,
+.mj-strand-switch-on {
+  padding: 3px var(--sp-3);
+  border-radius: calc(var(--radius-control) - 2px);
+  text-decoration: none;
+}
+.mj-strand-switch a { color: var(--text-2); }
+.mj-strand-switch a:hover { color: var(--text-0); background: var(--bg-2); }
+.mj-strand-switch-on { color: var(--text-0); background: var(--bg-2); }
+.mj-strand-back {
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  text-decoration: none;
+}
+.mj-strand-back:hover { color: var(--accent); }
+
+.mj-strand-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-5);
+  margin: 0 0 var(--sp-5);
+  padding: 0;
+  list-style: none;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-strand-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-strand-legend-mark {
+  width: 38px;
+  height: 18px;
+  flex: none;
+  overflow: visible;
+}
+
+/* The canvas is the one thing on the page allowed to be wider than the column,
+   so it scrolls inside its own box. The page body must never scroll sideways. */
+.mj-strand-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14rem;
+  gap: var(--sp-5);
+  align-items: start;
+}
+@media (max-width: 60rem) {
+  .mj-strand-body { grid-template-columns: minmax(0, 1fr); }
+}
+/* The canvas may legitimately be wider than the column, so it scrolls inside its
+   own box and the page body never scrolls sideways. */
+.mj-strand-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: var(--sp-3);
+  scrollbar-width: thin;
+}
+/* Shrink to fit, but only so far.
+   `--strand-w` is the diagram's natural width and `--strand-min` is 72% of it,
+   both set inline by the renderer because only it knows them. So: a diagram that
+   fits renders at its true size; one slightly too wide scales down rather than
+   forcing a scrollbar; one far too wide (depth 3 is 4005px) stops shrinking at
+   72% and scrolls instead, because past that the 11px labels stop being
+   readable and a diagram nobody can read is not a smaller diagram. */
+.mj-strand-canvas {
+  display: block;
+  width: 100%;
+  max-width: var(--strand-w);
+  min-width: min(var(--strand-min), 100%);
+  height: auto;
+  color: var(--text-2);
+}
+
+/* --- the shapes ---------------------------------------------------------- */
+.mj-strand-lens {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.55;
+}
+/* The outermost slot contains everything else on the canvas, so it is the one
+   outline that has to read as an envelope rather than as another shape among
+   them. At the shared opacity it disappeared into the background entirely. */
+.mj-strand-canvas > .mj-strand-fascicle > .mj-strand-lens {
+  opacity: 0.8;
+  stroke-width: 1.25;
+}
+.mj-strand-fascicle--closed > .mj-strand-lens { opacity: 0.75; }
+.mj-strand-lens-inner {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.3;
+}
+/* Nothing recorded fills this slot. Dashed, so it is not merely "fainter than"
+   the shut state — the two say different things and must look different. */
+.mj-strand-fascicle--empty > .mj-strand-lens {
+  stroke-dasharray: 4 4;
+  opacity: 0.4;
+}
+.mj-strand-pinch {
+  fill: currentColor;
+  opacity: 0.75;
+}
+/* A slot's name and a method's name sit two lines apart on the canvas and were
+   reading as one two-line title. They are different kinds of thing, so they get
+   different type: a slot is named in the text colour at a normal size, a method
+   in the muted colour, smaller, and italic. Position alone was not enough. */
+.mj-strand-fascicle-label {
+  fill: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  letter-spacing: 0.005em;
+}
+.mj-strand-count {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-anchor: middle;
+  opacity: 0.85;
+}
+.mj-strand-fiber-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.5;
+}
+.mj-strand-fiber--undecomposed > .mj-strand-fiber-line {
+  stroke-dasharray: 2 3;
+  opacity: 0.45;
+}
+.mj-strand-fiber-label {
+  fill: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-style: italic;
+  opacity: 0.92;
+}
+.mj-strand-bypass-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+  opacity: 0.4;
+}
+
+/* An invisible band, not a hidden one: `opacity: 0` still takes the pointer,
+   `visibility: hidden` would not. */
+.mj-strand-hit {
+  fill: currentColor;
+  opacity: 0;
+}
+.mj-strand-canvas a { cursor: pointer; }
+.mj-strand-canvas a:hover .mj-strand-fascicle-label,
+.mj-strand-canvas a:focus-visible .mj-strand-fascicle-label,
+.mj-strand-canvas a:hover .mj-strand-fiber-label,
+.mj-strand-canvas a:focus-visible .mj-strand-fiber-label {
+  fill: var(--accent);
+}
+.mj-strand-canvas a:hover .mj-strand-hit { opacity: 0.06; }
+.mj-strand-canvas a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-strand-fascicle:hover > .mj-strand-lens { opacity: 0.9; }
+.mj-strand-bypass:hover .mj-strand-bypass-line {
+  opacity: 0.9;
+  stroke: var(--accent);
+}
+
+/* --- the rail ------------------------------------------------------------ */
+.mj-strand-rail {
+  min-width: 0;
+  padding: var(--sp-4);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  font-size: var(--fs-13);
+}
+.mj-strand-rail > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.mj-strand-rail-body > section { margin-top: var(--sp-4); }
+.mj-strand-rail h3 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  text-transform: lowercase;
+}
+.mj-strand-rail-count {
+  font-family: var(--font-mono);
+  opacity: 0.7;
+}
+.mj-strand-rail ul,
+.mj-strand-rail-path {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-strand-rail li { margin-bottom: var(--sp-2); line-height: 1.4; }
+.mj-strand-rail a { color: var(--text-1); text-decoration: none; }
+.mj-strand-rail a:hover { color: var(--accent); }
+.mj-strand-rail-path li { padding-left: var(--sp-3); position: relative; }
+.mj-strand-rail-path li::before {
+  content: "└";
+  position: absolute;
+  left: 0;
+  color: var(--text-2);
+  opacity: 0.5;
+}
+.mj-strand-rail-path li:first-child { padding-left: 0; }
+.mj-strand-rail-path li:first-child::before { content: none; }
+.mj-strand-rail-path strong { color: var(--text-0); font-weight: 500; }
+/* An empty list here is a finding, not a blank. It gets the same weight as a
+   populated one so a reader never has to guess whether the panel failed. */
+.mj-strand-rail-none {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.mj-strand-rail-writeup {
+  display: inline-block;
+  margin-top: var(--sp-5);
+  color: var(--accent) !important;
+}
+.mj-strand-note {
+  max-width: 68ch;
+  margin: var(--sp-4) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}

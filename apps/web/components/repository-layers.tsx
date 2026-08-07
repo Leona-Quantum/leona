@@ -645,6 +645,14 @@ export function LayerIndexView({
       <nav className="mj-layers-crumbs" aria-label={copy.backToAtlas}>
         <a href="/repository">← {copy.backToAtlas}</a>
       </nav>
+      {/* The other drawing of this same graph. Both views have an address, and
+          neither is reachable only from the other — a reader who lands on
+          `?view=list` from a bookmark can still get to the canvas. */}
+      <div className="mj-strand-switch" role="group" aria-label={locale === "ja" ? "表示" : "View"}>
+        <span className="mj-strand-switch-label">{locale === "ja" ? "表示" : "View"}</span>
+        <a href="/repository/layers?view=strands">{locale === "ja" ? "ストランド" : "Strands"}</a>
+        <span className="mj-strand-switch-on">{locale === "ja" ? "リスト" : "List"}</span>
+      </div>
       <h1 id="layers-heading">{copy.indexHeading}</h1>
       <p className="mj-layers-lede">{copy.indexLead}</p>
 
