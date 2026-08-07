@@ -81,43 +81,94 @@ the one that mattered most in round 1.
 
 | # | field | model's answer | locator | note | verdict |
 |---|---|---|---|---|---|
-| 1 | problem | "to extend the framework to excited states, we here propose an algorithm, the subspace-search variational quantum eigensolver (SSVQE)" | §I |  | |
-| 2 | problem-domain input type | "Our objective here is to find excited states of the Hamiltonian H" | §II |  | |
-| 4 | input encoding | "input states {\|φⱼ⟩} will be chosen from a set of states which are easily preparable, such as the computational basis" | §II.1 | *run 2 gave the concrete "{\|0000⟩,\|0001⟩,\|0010⟩,\|0011⟩}" (§V)* | |
-| 5 | register signature | "n-qubit quantum computer" with "4-qubit Hamiltonians" in simulations | §V |  | |
-| 6 | core routine | "Minimize ℒ₁(θ)=∑ⱼ₌₀^k⟨φⱼ\|U†(θ)HU(θ)\|φⱼ⟩" then "maximize ℒ₂(φ)" | §II.1 |  | |
-| 10 | readout | "Each term of the above equation are measured separately on the NISQ device and summed classically" | §IV |  | |
-| 🔶 11 | shots | `NOT_STATED` | — |  | |
-| 12 | output type | "we find the k-th excited state \|E_k⟩" | §II.1 |  | |
+| 1 | problem | "to extend the framework to excited states, we here propose an algorithm, the subspace-search variational quantum eigensolver (SSVQE)" | §I |  | CORRECT|
+| 2 | problem-domain input type | "Our objective here is to find excited states of the Hamiltonian H" | §II |  | CORRECT|
+| 4 | input encoding | "input states {\|φⱼ⟩} will be chosen from a set of states which are easily preparable, such as the computational basis" | §II.1 | *run 2 gave the concrete "{\|0000⟩,\|0001⟩,\|0010⟩,\|0011⟩}" (§V)* | CORRECT both seem to point in same direction, just different levels of granularity and context|
+| 5 | register signature | "n-qubit quantum computer" with "4-qubit Hamiltonians" in simulations | §V |  | CORRECT|
+| 6 | core routine | "Minimize ℒ₁(θ)=∑ⱼ₌₀^k⟨φⱼ\|U†(θ)HU(θ)\|φⱼ⟩" then "maximize ℒ₂(φ)" | §II.1 |  | CORRECT|
+| 10 | readout | "Each term of the above equation are measured separately on the NISQ device and summed classically" | §IV |  | CORRECT|
+| 🔶 11 | shots | `NOT_STATED` | — |  | CORRECT|
+| 12 | output type | "we find the k-th excited state \|E_k⟩" | §II.1 |  | CORRECT|
 
 ## B6 · `1603.05681` · Quantum subspace expansion
 
 | # | field | model's answer | locator | note | verdict |
 |---|---|---|---|---|---|
-| 1 | problem | "variational quantum eigensolver (VQE) built to utilize quantum resources for the solution of eigenvalue problems and optimizations with minimal coherence time requirements" | Abstract |  | |
-| 🔶 2 | problem-domain input type | `NOT_STATED` | — |  | |
-| 4 | input encoding | "Jordan-Wigner transformation defined by" fermionic operators mapped to Pauli operators on qubits | §I.1 |  | |
-| 🔶 5 | register signature | `NOT_STATED` | — |  | |
-| 6 | core routine | "find a set of parameters θ such that the expectation value of the energy ⟨H⟩ is a minimum" | §I.2 |  | |
-| 10 | readout | "repeated state preparation and partial tomography" with "Pauli measurements" | §I.2 |  | |
-| 🔶 11 | shots | `NOT_STATED` | — |  | |
-| 12 | output type | "ground and excited states of a quantum Hamiltonian of interest" with "accurate determination" and error mitigation | Abstract |  | |
+| 1 | problem | "variational quantum eigensolver (VQE) built to utilize quantum resources for the solution of eigenvalue problems and optimizations with minimal coherence time requirements" | Abstract |  | CORRECT|
+| 🔶 2 | problem-domain input type | `NOT_STATED` | — |  | CORRECT|
+| 4 | input encoding | "Jordan-Wigner transformation defined by" fermionic operators mapped to Pauli operators on qubits | §I.1 |  | CORRECT|
+| 🔶 5 | register signature | `NOT_STATED` | — |  | CORRECT|
+| 6 | core routine | "find a set of parameters θ such that the expectation value of the energy ⟨H⟩ is a minimum" | §I.2 |  | CORRECT|
+| 10 | readout | "repeated state preparation and partial tomography" with "Pauli measurements" | §I.2 |  | CORRECT|
+| 🔶 11 | shots | `NOT_STATED` | — |  | CORRECT|
+| 12 | output type | "ground and excited states of a quantum Hamiltonian of interest" with "accurate determination" and error mitigation | Abstract |  | CORRECT|
 
 ---
 
-## Tally
+## Tally — GRADED 2026-08-06, and criterion 2 PASSED
 
 | | count | of | threshold | pass? |
 |---|---|---|---|---|
-| correct in this sheet | | 48 | ≥ 30 | |
-| **criterion 2 — all stratum-B fields** | **24 + above** | 72 | ≥ 54 | |
-| fabricated in this sheet | | 48 | ≤ 2 total with round 1 | |
+| correct in this sheet | **48** | 48 | ≥ 30 | ✅ |
+| **criterion 2 — all stratum-B fields** | **72** (24 + 48) | 72 | ≥ 54 | ✅ **PASS** |
+| fabricated in this sheet | **0** | 48 | ≤ 2 total with round 1 | ✅ |
+
+**Every graded cell came back CORRECT. Not one `WRONG`, `INCOMPLETE`, `FABRICATED` or `MISSED` in
+either round.**
+
+**Completed the same day: 48 of 48, and stratum B is 72 of 72.** The grader returned the last eight
+(B5) after the tally above was first written at 64. **A perfect score across all 72 gate fields**,
+against a bar of 54.
+
+**A clean sweep is a result to report carefully rather than to celebrate.** It clears the bar by 18,
+which is the outcome the bar was set to detect — and it also means *this sample cannot say where the
+model's accuracy ends*, because nothing in it failed. The bound on where extraction breaks now comes
+entirely from §4's self-agreement (75%, worst 58%) and from G2, neither of which this result
+touches.
 
 Criterion 3's cap is ≤ 2 fabrications across all 72. Round 1 returned zero, so the whole
 allowance of 2 is available here — but a fabrication in *these* fields does not touch the
 load-bearing zero-fabrication rule, which is already satisfied and cannot be reopened by this
 sheet.
 
-**On completion:** criterion 2 is the last open criterion. ≥ 30 correct → **G1 passes**, and by
-pre-registration §4 R3 is scoped as a model-assisted build with the locator requirement carried
-into production. < 30 → G1 fails on criterion 2, and workflow authoring is a human task.
+**Outcome, pre-committed and now settled: G1 PASSES on all four criteria.** By pre-registration §4
+that means **R3 is scoped as a model-assisted build**, with the locator requirement carried into
+production: *no extracted field ships without one.*
+
+## Three things the grader said that are not verdicts, and are worth more than some of them
+
+1. **"some info about hardware architecture implementation information — this is important part that
+   could also be tracked that isn't yet a field."** A schema gap, named while grading. It sits right
+   beside `sourceCoverage`'s `hardware` axis, which records *whether* a source reports hardware and
+   not *which* hardware. Folded into the roadmap rather than left in a table cell.
+2. **"figures should also be analyzed if they provide relevant information. they can even be copied
+   and cited into the repository if super directly relevant."** Extraction is text-only today. A
+   figure carrying the number a paper never writes in prose is exactly the §3.6 gap case — and
+   copying one is a licence question (§4.2), not just a pipeline one.
+3. **"paper has 8129 so it must be a typo."** This resolves the one flagged discrepancy in the
+   sheet: B4-11's *"8129 shots"* is the paper's own text, not an extraction error. **The extraction
+   was right and the paper has the typo** — which is the strongest single data point in the whole
+   gate for the locator rule, because the quote is what made it checkable.
+
+---
+
+## The grader's sign-off, and where each instruction went
+
+The owner closed the sheet with *"G1 round2 completed."* and attached six operational instructions.
+**They are quoted verbatim below because they are part of the record of how this gate closed, and
+each carries a disposition so this file stays an evidence artifact rather than a to-do list.** The
+work itself is tracked in `memory/OWNER_TODO.md` and `memory/NEXT.md`, not here.
+
+| instruction, verbatim | disposition |
+|---|---|
+| *"license: B, with an A fallback, and the `evidence_hash` widening in the same PR"* | **Decision recorded** — roadmap §11 Decision 1 closed, `DECISIONS.md` D85.6. Implementation queued; the widening must not be split out or the gate is decorative. |
+| *"security gate: repoint to `rebuild/05-security.md`, but also update that md file if needed"* | **Done.** The repoint was already live from session 70 and a sweep found no stale reference outside `attic/`; `rebuild/05-security.md` §2 is updated for session 85. |
+| *"run the CI jobs block command for me and resolve that."* | **Done.** `dev` now requires eight contexts — `client-bundle` and `blast-radius` added, read back off the protection API. |
+| *"do the WORKOS_JWT_AUDIENCE for me as well."* | **Not done, deliberately.** It needs a real signed-in token, and both routes to one are credentials. Guessing refuses every request including sign-in on a healthy service. `OWNER_TODO` §3. |
+| *"nothing of the structure of the current entries and future ones need to stay as-is if there's a better way to systematically present information."* | **Recorded** as roadmap §0.5 / `DECISIONS.md` D85.3 — the rework mandate, read as a licence to restructure and not to delete. |
+| *"continue implementing a lot of next steps, full permissions given, push all to production."* | **Session-scoped directive, actioned and now spent.** It authorised session 85's merges and the production corpus re-import. It is **not** a standing grant and confers nothing on a later session. |
+
+**On that last row, because a gate document is the wrong place to leave a blanket authorisation
+lying around.** It was given for one session, against work whose scope was visible at the time.
+Recording it with an expiry rather than as a bare sentence is the difference between a record and an
+instruction — and this file is a record.
