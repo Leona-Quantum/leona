@@ -1,10 +1,16 @@
 // Filtering the browse list by a topic, and building the control that offers it (R2).
 //
-// A pure module rather than a condition inside the component, for the reason
-// session 77 wrote down after the browse ordering: React does not hydrate
-// /repository in either browser surface, so a `<select>` there cannot be driven
-// by automation and the behaviour behind it cannot be verified by clicking. The
-// durable answer is to put the rule somewhere a unit test can reach.
+// A pure module rather than a condition inside the component. Session 77 gave
+// the reason as "React does not hydrate /repository in either browser surface,
+// so the control cannot be driven by automation" — **that premise is false**,
+// measured on production in s81; it came from `next dev` in an agent browser
+// pane, whose CSP blocks the `eval()` dev-mode React needs.
+//
+// The conclusion outlives the premise, on better grounds: a filter rule inside
+// a component body can only be exercised by rendering that component, which
+// makes verifying it cost a browser and a hydration. Here it costs a `node
+// --test` run. Since s91 the control offering these options is a list of links
+// rather than a `<select>`, so the rule is also reachable by reading the HTML.
 //
 // The counts are the honest half of this file. A control that offers
 // "Optimization" with no number beside it invites the reader to assume the

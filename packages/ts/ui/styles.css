@@ -847,9 +847,13 @@
   font-weight: 600;
 }
 
+/* One column since s91: the search field, then the facet rail under it. The
+   three-column grid existed to stand three <select>s side by side, and there
+   are no selects left — the rail is one line closed and a set of columns
+   open, so it needs the full width rather than a third of it. */
 .mj-repository-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(150px, 0.65fr));
+  display: flex;
+  flex-direction: column;
   gap: var(--sp-3);
   padding: var(--sp-4);
   border: 1px solid var(--border-0);
@@ -882,28 +886,127 @@
   border-color: var(--accent);
   outline: none;
 }
-/* R1's circuit-only filter. The control row is built for stacked label+select
-   pairs, so a checkbox has to opt out of both the column flow and the input
-   sizing above — 36px of padded height and a 12px inset are what a text field
-   needs and what a checkbox must not inherit. The min-height is kept so it
-   still sits on the same baseline as the selects beside it. */
-.mj-repository-controls label.mj-repository-circuit-only {
-  flex-direction: row;
-  align-items: center;
-  align-self: end;
+/* ---------- the facet rail ---------- */
+/* Replaced three <select>s and a checkbox (s91, OWNER_TODO §4b). Closed it is
+   one line; open it is the whole vocabulary with counts. The chips above the
+   disclosure are load-bearing rather than decorative — they are what stops a
+   collapsed control from filtering the page silently, which is the one hazard
+   a disclosure has that a dropdown does not. */
+.mj-facet-rail {
+  display: flex;
+  flex-direction: column;
   gap: var(--sp-2);
-  min-height: 36px;
+}
+.mj-facet-active {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-facet-active-label {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-facet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 26px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-2);
+  font-size: var(--fs-12);
+  text-decoration: none;
+}
+.mj-facet-chip:hover {
+  background: var(--bg-1);
+}
+.mj-facet-chip span:last-child {
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-facet-chip:hover span:last-child {
+  color: var(--accent);
+}
+.mj-facet-clear {
+  font-size: var(--fs-12);
+}
+.mj-facet-disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: fit-content;
+  padding: var(--sp-1) 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
   cursor: pointer;
 }
-.mj-repository-controls .mj-repository-circuit-only input[type="checkbox"] {
-  width: var(--sp-4);
-  height: var(--sp-4);
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
+.mj-facet-summary-state {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
 }
+.mj-facet-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-0);
+}
+.mj-facet-group h4 {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 var(--sp-2);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+.mj-facet-group-note {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-weight: 400;
+}
+.mj-facet-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* Anchor and span share every rule but the interaction, so the list does not
+   reflow when the selection moves — the active option is a <span> because a
+   link to the page you are already on is a control that looks operable and
+   does nothing. */
+.mj-facet-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 3px var(--sp-2);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  text-decoration: none;
+}
+a.mj-facet-option:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-facet-option.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.mj-facet-option-count {
+  flex: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+
 .mj-repository-category-nav {
   display: flex;
   flex-wrap: wrap;

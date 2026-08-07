@@ -17,11 +17,12 @@ import {
   orderEntries,
   withCircuitOnly,
   isProfileOrder,
+  PROFILE_ORDERS,
   type BrowseOrder,
 } from "../../lib/repository/browse-order";
 import { capRows, DEFAULT_ROW_LIMIT, splitCapped, type RowLimit } from "../../lib/repository/browse-page";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
-import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
+import { filterByTopic, topicOptions } from "../../lib/repository/topic-filter";
 import { matchesRepositoryQuery } from "../../lib/repository/search";
 import {
   PIPELINE_STANCES,
@@ -80,6 +81,16 @@ const COPY = {
     showingOf: "Showing {shown} of {total}",
     showMore: "Show more",
     showAll: "Show all {total}",
+    // The rail. Its summary has to say two things at once — that there is more
+    // behind it, and whether anything behind it is currently doing something —
+    // because a collapsed control that is silently filtering the page is the
+    // one failure a disclosure can introduce that a dropdown cannot.
+    refine: "Refine",
+    refineActive: "{n} active",
+    refineNone: "Topic · interface · order",
+    activeFilters: "Filtering by",
+    removeFilter: "Remove",
+    clearAll: "Clear all",
     view: "View",
     gateExpand: "Expand into basic gates",
     gateCollapse: "Collapse to single gate",
@@ -162,6 +173,12 @@ const COPY = {
     showingOf: "{total}件中{shown}件を表示",
     showMore: "さらに表示",
     showAll: "全{total}件を表示",
+    refine: "絞り込み",
+    refineActive: "{n}件適用中",
+    refineNone: "トピック・入出力・並び順",
+    activeFilters: "適用中の条件",
+    removeFilter: "解除",
+    clearAll: "すべて解除",
     view: "詳細",
     gateExpand: "基本ゲートに展開",
     gateCollapse: "元のゲート表示に戻す",
@@ -244,6 +261,28 @@ const FAMILY_LABELS_JA: Record<string, string> = {
 function familyLabel(family: string, locale: PublicLocale): string {
   return locale === "ja" ? FAMILY_LABELS_JA[family] ?? family : family;
 }
+
+/**
+ * Which copy key names each order.
+ *
+ * The nine orders and their labels used to be paired only by the JSX writing
+ * them out one `<option>` at a time. The rail needs the same pairing in two
+ * more places — an option in the list and a chip when it is active — so a third
+ * hand-written copy is exactly the drift this codebase keeps finding. Typed as
+ * a total `Record<BrowseOrder, …>`, so an order added without a label is a
+ * compile error rather than a blank chip.
+ */
+const ORDER_COPY_KEY = {
+  catalog: "sortDefault",
+  "cost-asc": "sortCost",
+  "cost-desc": "sortCostDesc",
+  "qubits-asc": "sortQubits",
+  "qubits-desc": "sortQubitsDesc",
+  "depth-asc": "sortDepth",
+  "depth-desc": "sortDepthDesc",
+  "two-qubit-asc": "sortTwoQubit",
+  "two-qubit-desc": "sortTwoQubitDesc",
+} as const satisfies Record<BrowseOrder, keyof (typeof COPY)["en"]>;
 
 /**
  * Curated variant groups (Owner Inbox 2026-07-19: "qubit# variants should be
@@ -1001,6 +1040,346 @@ export function RepositoryBrowser({
   const selectedGateEntry = gateEntries.find((entry) => entry.slug === selectedGate) ?? gateEntries[0] ?? null;
   const activeGateSlug = selectedGateEntry?.slug ?? null;
 
+  // ---------------------------------------------------------------------------
+  // The facet rail (s91) — OWNER_TODO §4b, "one facet rail instead of three
+  // dropdowns; counts and current state without a page of chrome".
+  //
+  // What it replaces: `Topic`, `Takes / returns` and `Order by` as three
+  // `<select>`s, plus a `circuit only` checkbox, standing permanently across
+  // the top of the page. The owner's words were "terribly hard to navigate and
+  // not minimalist enough from the get-go", and the controls were the part of
+  // that complaint this page could actually answer.
+  //
+  // **Three properties a `<select>` could not have, and they are the argument:**
+  //
+  // 1. **Every option is a URL.** A `<select>` option is not addressable, not
+  //    crawlable, and does not exist for a reader without JS. Forty topics were
+  //    reachable only by hydrating and clicking. As links they are forty
+  //    addresses — the same correction §0.5.1 made for `?category=` and s91
+  //    made for `?q=`/`?order=`.
+  // 2. **Current state survives collapse.** A closed dropdown showing
+  //    "Optimization" is one glance; a rail that is closed still shows its
+  //    active filters as chips, each with the URL that removes it. This is the
+  //    one hazard a disclosure introduces that a dropdown does not — a
+  //    collapsed control silently filtering the page — and the chips are the
+  //    answer to it, not decoration.
+  // 3. **The whole vocabulary is legible at once.** A `<select>` shows one
+  //    option; opening the rail shows every option with its count, grouped, so
+  //    a reader can see that "Optimization" is 10 of 176 before spending a
+  //    click on it.
+  //
+  // **Counts stay global** — over the whole corpus, not over what the other
+  // filters have left. That was decided deliberately before this rail existed
+  // ("a count that moves while you are reading it is not a count, it is a
+  // hint") and this change does not reverse it. The tension is real and is
+  // worth the owner's steer rather than a quiet flip: co-filtered counts would
+  // predict the click, and stable counts describe the catalogue. Raised in
+  // OWNER_TODO rather than settled here.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The filters currently narrowing the list, each with the URL that drops it
+   * AND the state change that drops it.
+   *
+   * Both, on the same object, rather than an href here and a `switch` on the
+   * key somewhere else. The two have to agree — a chip whose link removes the
+   * topic while its click removes the stance is a defect nothing would catch,
+   * because each path looks right on its own.
+   */
+  const activeFilters: Array<{ key: string; label: string; href: string; apply: () => void }> = [];
+  if (topic) {
+    const option = TOPICS_BY_ID.get(topic);
+    activeFilters.push({
+      key: `topic:${topic}`,
+      label: option ? (locale === "ja" ? option.labelJa : option.label) : topic,
+      href: browseHref({ topic: "" }),
+      apply: () => setTopic(""),
+    });
+  }
+  if (stance) {
+    activeFilters.push({
+      key: `stance:${stance}`,
+      label: copy[`stance_${stance}`],
+      href: browseHref({ stance: "" }),
+      apply: () => setStance(""),
+    });
+  }
+  // Only when the ordering is actually applied. An `?order=` the data cannot
+  // supply is downgraded to `catalog` further up, and a chip claiming a sort
+  // that is not in effect is worse than no chip.
+  if (order !== "catalog" && orderAvailable) {
+    activeFilters.push({
+      key: `order:${order}`,
+      label: copy[ORDER_COPY_KEY[order]],
+      href: browseHref({ order: "catalog" }),
+      apply: () => setOrder("catalog"),
+    });
+  }
+  if (circuitOnly && canOrderByStructure) {
+    activeFilters.push({
+      key: "circuit",
+      label: copy.circuitOnly,
+      href: browseHref({ circuitOnly: false }),
+      apply: () => setCircuitOnly(false),
+    });
+  }
+
+  /**
+   * One option in the rail: a link, unless it is the one already chosen.
+   *
+   * The current option renders as a `<span>` rather than a link to itself. A
+   * link whose destination is the page you are on is a control that looks
+   * operable and does nothing, and `aria-current` on an anchor still leaves it
+   * in the tab order as a dead stop.
+   */
+  function facetOption(args: {
+    key: string;
+    label: string;
+    count?: number;
+    active: boolean;
+    href: string;
+    /** The state change a hydrated click makes, matching what `href` renders. */
+    apply: () => void;
+  }) {
+    const body = (
+      <>
+        <span className="mj-facet-option-label">{args.label}</span>
+        {args.count !== undefined ? (
+          <span className="mj-facet-option-count">{args.count}</span>
+        ) : null}
+      </>
+    );
+    if (args.active) {
+      return (
+        <span className="mj-facet-option is-active" key={args.key} aria-current="true">
+          {body}
+        </span>
+      );
+    }
+    return (
+      <a
+        className="mj-facet-option"
+        key={args.key}
+        href={args.href}
+        onClick={(event) => {
+          // Modified clicks keep their meaning: the href is a real destination.
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+            return;
+          }
+          event.preventDefault();
+          args.apply();
+          syncUrl(args.href);
+        }}
+      >
+        {body}
+      </a>
+    );
+  }
+
+  function FacetRail() {
+    return (
+      <div className="mj-facet-rail">
+        {/* Always visible, open or closed. See property 2 above. */}
+        {activeFilters.length ? (
+          <div className="mj-facet-active" aria-label={copy.activeFilters}>
+            <span className="mj-facet-active-label">{copy.activeFilters}</span>
+            {activeFilters.map((filter) => (
+              <a
+                className="mj-facet-chip"
+                key={filter.key}
+                href={filter.href}
+                title={`${copy.removeFilter}: ${filter.label}`}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                    return;
+                  }
+                  event.preventDefault();
+                  filter.apply();
+                  syncUrl(filter.href);
+                }}
+              >
+                <span>{filter.label}</span>
+                <span aria-hidden="true">×</span>
+              </a>
+            ))}
+            <a
+              className="mj-text-link mj-facet-clear"
+              href={browseHref({ topic: "", stance: "", query: "", order: "catalog", circuitOnly: false })}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                  return;
+                }
+                event.preventDefault();
+                clearFilters();
+                syncUrl(browseHref({ topic: "", stance: "", query: "", order: "catalog", circuitOnly: false }));
+              }}
+            >
+              {copy.clearAll}
+            </a>
+          </div>
+        ) : null}
+
+        {/* A native <details>, so opening the rail needs no JavaScript and no
+            state. Its open-ness is deliberately NOT a URL param: the params on
+            this route address the *data* a reader is looking at, and whether a
+            control panel happens to be unfolded is not that. The chips above
+            carry the part of this that is data. */}
+        <details className="mj-facet-disclosure">
+          <summary>
+            <span className="mj-facet-summary-label">{copy.refine}</span>
+            <span className="mj-facet-summary-state">
+              {activeFilters.length
+                ? copy.refineActive.replace("{n}", String(activeFilters.length))
+                : copy.refineNone}
+            </span>
+          </summary>
+          <div className="mj-facet-groups">
+            {/* Topic, by facet. The domain heading carries how much of the
+                corpus is domain-tagged at all, because a domain list read
+                without that number looks like a taxonomy of the catalogue
+                rather than of a slice of it. */}
+            {topicGroups.map((group, groupIndex) => (
+              <section className="mj-facet-group" key={group.facet}>
+                <h4>
+                  {copy[`facet_${group.facet}`]}
+                  {group.facet === "domain" ? (
+                    <span className="mj-facet-group-note">
+                      {copy.facetDomainCount
+                        .replace("{n}", String(entriesWithDomain))
+                        .replace("{total}", String(entries.length))}
+                    </span>
+                  ) : null}
+                </h4>
+                <div className="mj-facet-options">
+                  {/* Once, in the first group — not once per facet. The three
+                      facets are three views of ONE selection, so three "All
+                      topics" rows would read as three separate filters to
+                      clear, and clearing any one of them clears all three. */}
+                  {groupIndex === 0
+                    ? facetOption({
+                        key: "topic-all",
+                        label: copy.allTopics,
+                        active: topic === "",
+                        href: browseHref({ topic: "" }),
+                        apply: () => setTopic(""),
+                      })
+                    : null}
+                  {group.options.map((option) =>
+                    facetOption({
+                      key: option.id,
+                      // `option.label` rather than `topicOptionLabel`, which
+                      // bakes the count into the string for a `<select>` that
+                      // can only hold text. The rail has a slot for the number,
+                      // so putting it in the label too would print it twice.
+                      label: option.label,
+                      count: option.count,
+                      active: topic === option.id,
+                      href: browseHref({ topic: option.id }),
+                      apply: () => setTopic(option.id),
+                    }),
+                  )}
+                </div>
+              </section>
+            ))}
+
+            {/* Takes / returns. Two groups, and the second is the complement of
+                the first rather than a second list — a stance in neither would
+                vanish from the control entirely, which is invisible. */}
+            {(["pipeline", "not"] as const).map((group) => {
+              const inGroup = stanceOptions.filter(
+                (option) => PIPELINE_STANCES.has(option.stance) === (group === "pipeline"),
+              );
+              if (inGroup.length === 0) return null;
+              return (
+                <section className="mj-facet-group" key={`stance-${group}`}>
+                  <h4>
+                    {group === "pipeline" ? copy.stanceGroupPipeline : copy.stanceGroupNot}
+                    {group === "pipeline" ? (
+                      <span className="mj-facet-group-note">
+                        {copy.stanceConnectable
+                          .replace("{n}", String(connectableEntries))
+                          .replace("{total}", String(entries.length))
+                          .replace("{met}", String(meetingEntries))}
+                      </span>
+                    ) : null}
+                  </h4>
+                  <div className="mj-facet-options">
+                    {group === "pipeline"
+                      ? facetOption({
+                          key: "stance-any",
+                          label: copy.allStances,
+                          active: stance === "",
+                          href: browseHref({ stance: "" }),
+                          apply: () => setStance(""),
+                        })
+                      : null}
+                    {inGroup.map((option) =>
+                      facetOption({
+                        key: option.stance,
+                        label: copy[`stance_${option.stance}`],
+                        count: option.count,
+                        active: stance === option.stance,
+                        href: browseHref({ stance: option.stance }),
+                        apply: () => setStance(option.stance),
+                      }),
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+
+            {/* Order, and the circuit-only filter beside it because both read
+                the derived listings and both disappear together when the
+                catalog API is off. An ordering option that ranks nothing is
+                worse than an absent one: it looks like the corpus has no
+                structure rather than like the API is off. */}
+            {canOrderByCost || canOrderByStructure ? (
+              <section className="mj-facet-group" key="order">
+                <h4>{copy.sort}</h4>
+                <div className="mj-facet-options">
+                  {facetOption({
+                    key: "catalog",
+                    label: copy.sortDefault,
+                    active: order === "catalog",
+                    href: browseHref({ order: "catalog" }),
+                    apply: () => setOrder("catalog"),
+                  })}
+                  {(canOrderByCost ? (["cost-asc", "cost-desc"] as const) : []).map((value) =>
+                    facetOption({
+                      key: value,
+                      label: copy[ORDER_COPY_KEY[value]],
+                      active: order === value,
+                      href: browseHref({ order: value }),
+                      apply: () => setOrder(value),
+                    }),
+                  )}
+                  {(canOrderByStructure ? PROFILE_ORDERS : []).map((value) =>
+                    facetOption({
+                      key: value,
+                      label: copy[ORDER_COPY_KEY[value]],
+                      active: order === value,
+                      href: browseHref({ order: value }),
+                      apply: () => setOrder(value),
+                    }),
+                  )}
+                  {canOrderByStructure
+                    ? facetOption({
+                        key: "circuit-only",
+                        label: copy.circuitOnly,
+                        active: circuitOnly,
+                        href: browseHref({ circuitOnly: !circuitOnly }),
+                        apply: () => setCircuitOnly(!circuitOnly),
+                      })
+                    : null}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        </details>
+      </div>
+    );
+  }
+
   return (
     <div className="mj-repository-browser">
       <div className="mj-repository-controls">
@@ -1048,108 +1427,12 @@ export function RepositoryBrowser({
 
             That takes the bar from five controls to three: search · topic ·
             takes-returns, which is the owner's "all over the place", answered. */}
-        {/* One control for three facets, grouped, because the alternative is
-            three more selects beside four existing ones. Every option carries
-            its count: "Optimization (10)" cannot be read as a promise the way a
-            bare "Optimization" can, and on this corpus that matters — those ten
-            are eight width-scaled MaxCut ring benchmarks. */}
-        <label>
-          <span>{copy.topic}</span>
-          <select value={topic} onChange={(event) => setTopic(event.target.value as TopicId | "")}>
-            <option value="">{copy.allTopics}</option>
-            {topicGroups.map((group) => (
-              <optgroup
-                key={group.facet}
-                label={
-                  group.facet === "domain"
-                    ? `${copy.facet_domain} — ${copy.facetDomainCount.replace("{n}", String(entriesWithDomain)).replace("{total}", String(entries.length))}`
-                    : copy[`facet_${group.facet}`]
-                }
-              >
-                {group.options.map((option) => (
-                  <option key={option.id} value={option.id}>{topicOptionLabel(option)}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-        {/* What an entry takes and returns, which is a different question from
-            what it is. Two groups rather than five flat options, because the
-            split that matters is whether a record is on the pipeline graph at
-            all — 121 of the 283 are not, and the group heading carries that
-            number so the control cannot be read as a parts bin. */}
-        <label>
-          <span>{copy.stance}</span>
-          <select value={stance} onChange={(event) => setStance(event.target.value as InterfaceStance | "")}>
-            <option value="">{copy.allStances}</option>
-            {(["pipeline", "not"] as const).map((group) => {
-              // Membership from the module, and the second group is the
-              // complement of the first — never a second list. A stance in
-              // neither would vanish from this control entirely, which is
-              // invisible; in the wrong group it is at least on screen.
-              const inGroup = stanceOptions.filter(
-                (option) => PIPELINE_STANCES.has(option.stance) === (group === "pipeline"),
-              );
-              if (inGroup.length === 0) return null;
-              return (
-                <optgroup
-                  key={group}
-                  label={
-                    group === "pipeline"
-                      ? `${copy.stanceGroupPipeline} — ${copy.stanceConnectable
-                          .replace("{n}", String(connectableEntries))
-                          .replace("{total}", String(entries.length))
-                          .replace("{met}", String(meetingEntries))}`
-                      : copy.stanceGroupNot
-                  }
-                >
-                  {inGroup.map((option) => (
-                    <option key={option.stance} value={option.stance}>
-                      {`${copy[`stance_${option.stance}`]} (${option.count})`}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </select>
-        </label>
-        {canOrderByCost || canOrderByStructure ? (
-          <label>
-            <span>{copy.sort}</span>
-            <select value={order} onChange={(event) => setOrder(event.target.value as BrowseOrder)}>
-              <option value="catalog">{copy.sortDefault}</option>
-              {canOrderByCost ? (
-                <>
-                  <option value="cost-asc">{copy.sortCost}</option>
-                  <option value="cost-desc">{copy.sortCostDesc}</option>
-                </>
-              ) : null}
-              {/* Offered only when the listing exists. An ordering option that
-                  ranks nothing is worse than an absent one: it looks like the
-                  corpus has no structure rather than like the API is off. */}
-              {canOrderByStructure ? (
-                <>
-                  <option value="qubits-asc">{copy.sortQubits}</option>
-                  <option value="qubits-desc">{copy.sortQubitsDesc}</option>
-                  <option value="depth-asc">{copy.sortDepth}</option>
-                  <option value="depth-desc">{copy.sortDepthDesc}</option>
-                  <option value="two-qubit-asc">{copy.sortTwoQubit}</option>
-                  <option value="two-qubit-desc">{copy.sortTwoQubitDesc}</option>
-                </>
-              ) : null}
-            </select>
-          </label>
-        ) : null}
-        {canOrderByStructure ? (
-          <label className="mj-repository-circuit-only" title={copy.circuitOnlyHint}>
-            <input
-              type="checkbox"
-              checked={circuitOnly}
-              onChange={(event) => setCircuitOnly(event.target.checked)}
-            />
-            <span>{copy.circuitOnly}</span>
-          </label>
-        ) : null}
+        {/* Everything that was three <select>s and a checkbox (s91). Every
+            option still carries its count: "Optimization (10)" cannot be read
+            as a promise the way a bare "Optimization" can, and on this corpus
+            that matters — those ten are eight width-scaled MaxCut ring
+            benchmarks. */}
+        <FacetRail />
       </div>
 
       {/* The assumption set is stated wherever the ordering it justifies is
