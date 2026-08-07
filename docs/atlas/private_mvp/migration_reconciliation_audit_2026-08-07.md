@@ -96,9 +96,9 @@ namespace repair. Skips are reported but are not counted as successful evidence.
 | immutable Phase 9 release audit | internally consistent without rewriting historical evidence |
 
 The earlier full-regression counts were obtained before the latest dev merge and
-are retained only as historical diagnostic evidence. PostgreSQL 17 and the exact
-pushed commit still require remote CI; local PostgreSQL 14.18 is not substituted
-for that gate.
+are retained only as historical diagnostic evidence. Local PostgreSQL 14.18 was
+not substituted for PostgreSQL 17; the exact corrective commit was separately
+qualified by the remote runs recorded below.
 
 ## Scientific and release boundaries
 
@@ -106,11 +106,21 @@ for that gate.
 - No optimizer, ansatz, framework, or component-performance claim is made.
 - Human review remains owner-waived and is not relabelled as independent review.
 - Public execution and publication remain blocked.
-- A Private Technical MVP corrective candidate is not qualified until the exact
-  pushed commit passes PostgreSQL 17 migration CI and the configured private
-  production-E2E gate.
+- This corrective qualification applies to the Private Technical MVP code and
+  contract boundary only. It does not authorize public execution, publication,
+  or a scientific performance claim.
 
 ## Remote completion record
 
-Pending the corrective push.  Successful run IDs and exact head commit must be
-added only after GitHub reports them; this section must not predict success.
+Corrective code commit `c179a001112689580b0ce0813a860426e002a472` passed both
+required push-triggered workflows on 2026-08-07:
+
+| Remote gate | Result |
+|---|---|
+| [standard CI run 31146034335](https://github.com/EshMis/majorana/actions/runs/31146034335) | success: Python, TypeScript, build, PostgreSQL 17 migrations/live suites, catalog comparison, accessibility, and authenticated browser contracts |
+| [private production-E2E run 31146034351](https://github.com/EshMis/majorana/actions/runs/31146034351) | success: PostgreSQL 17, frozen owner-waived H2 workflow, approved OCI digests, WorkOS JWT contract, isolated database, real OCI runtime, and redacted evidence upload |
+
+The optional `vqe-interchange` job was skipped and is not counted as evidence.
+GitHub also reported a non-blocking future-maintenance warning that several
+pinned actions still target the deprecated Node.js 20 action runtime; the runner
+forced them onto Node.js 24 and both workflows completed successfully.

@@ -80,8 +80,8 @@ private databases at `vqe_reconcile_0056`. Historical Phase 9 evidence remains
 immutable: its recorded `0054` head must still resolve, while the present graph
 is independently required to have exactly one head.
 
-Detailed root cause, compatibility paths, tests, and remaining remote PostgreSQL
-17 qualification are recorded in
+Detailed root cause, compatibility paths, tests, and the completed remote
+PostgreSQL 17 qualification are recorded in
 [`private_mvp/migration_reconciliation_audit_2026-08-07.md`](private_mvp/migration_reconciliation_audit_2026-08-07.md).
 
 After integration with current `dev`, the repaired working tree passed 2895
@@ -116,15 +116,17 @@ not inferred from them.
 | Private save and reopen are covered in browser E2E | GO (synthetic auth) |
 | Full Python, TypeScript, lint, format, import, build, and browser regressions | GO |
 | Missing private credentials become a successful skip | prohibited and verified |
-| Digest-pinned remote runtime execution | NOT_RUN |
-| Live WorkOS same-subject reopen | NOT_RUN |
+| Digest-pinned remote runtime execution | GO (corrective commit `c179a00`, production-E2E run 31146034351) |
+| Live WorkOS same-subject browser reopen | not requalified by this corrective code run; external deployment validation only |
 
 ## Release decision
 
-The deterministic implementation is locally coherent and may be treated as a
-Private Technical MVP candidate. It is not a release-qualified RC until the
-exact candidate commit passes the digest-pinned private E2E gate and the live
-WorkOS same-subject reopen check.
+The deterministic implementation and corrective migration history are qualified
+as a Private Technical MVP at the code-and-contract boundary: exact corrective
+commit `c179a00` passed standard CI run 31146034335 and digest-pinned private E2E
+run 31146034351. This is not a public release or scientific-performance
+qualification. A fresh live-tenant browser session remains deployment evidence,
+not a prerequisite for this owner-scoped development MVP.
 
 The authoritative command results and defect log are in
 [`private_mvp/phase_completion_audit_2026-08-05.md`](private_mvp/phase_completion_audit_2026-08-05.md).
