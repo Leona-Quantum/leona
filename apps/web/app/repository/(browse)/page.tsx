@@ -40,8 +40,24 @@ export default async function RepositoryPage({
   // effect. The HTML then arrives already filtered, which is the only version a
   // crawler or a no-JS reader ever sees, and it is verifiable with `curl` rather
   // than a browser.
-  const { topic: initialTopic, stance: initialStance, category: initialCategory, gate: initialGate } =
-    resolveBrowseParams(params);
+  //
+  // Since s91 this is every control on the page, not four of them. `?q=`,
+  // `?order=`, `?circuit=` and `?rows=` were client `useState` with no address,
+  // which is the same defect `?category=` had: a reader could not bookmark a
+  // sort, could not send one, and a crawler saw exactly one view of the
+  // catalogue. The list is capped at `rows`, so the address of "the rest of it"
+  // had to exist before the cap could ship — a cap with no link is a list with
+  // rows nothing can reach.
+  const {
+    topic: initialTopic,
+    stance: initialStance,
+    category: initialCategory,
+    gate: initialGate,
+    query: initialQuery,
+    order: initialOrder,
+    circuitOnly: initialCircuitOnly,
+    rows: initialRows,
+  } = resolveBrowseParams(params);
   const locale = await getPublicLocale();
   const { user } = await getMajoranaAuth();
   const signInHref = !user && isMajoranaAuthConfigured() ? await getMajoranaSignInUrl() : null;
@@ -88,6 +104,10 @@ export default async function RepositoryPage({
           initialStance={initialStance}
           initialCategory={initialCategory}
           initialGate={initialGate}
+          initialQuery={initialQuery}
+          initialOrder={initialOrder}
+          initialCircuitOnly={initialCircuitOnly}
+          initialRows={initialRows}
         />
       </section>
     </PublicSite>

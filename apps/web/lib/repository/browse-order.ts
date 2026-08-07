@@ -39,6 +39,41 @@ export const PROFILE_ORDERS = [
 export type ProfileOrder = (typeof PROFILE_ORDERS)[number];
 export type BrowseOrder = CostOrder | ProfileOrder;
 
+/**
+ * Every order this build understands, as values.
+ *
+ * The type alone cannot answer "is this string from a URL an order?", so the
+ * vocabulary needs a value form — and it needs to be the *same* vocabulary, in
+ * both directions. A missing entry does not throw: it makes a bookmark of an
+ * order the select still offers resolve silently to `catalog`, so the reader
+ * gets a list ranked by something other than what their URL says.
+ *
+ * Both directions are checked at compile time. `satisfies` rejects an entry
+ * that is not an order; `Exhaustive` below rejects an order that is not an
+ * entry. Profile orders are spread rather than retyped, so only the three cost
+ * spellings are hand-written here — and those three are exactly what the second
+ * check covers.
+ */
+export const BROWSE_ORDERS = [
+  "catalog",
+  "cost-asc",
+  "cost-desc",
+  ...PROFILE_ORDERS,
+] as const satisfies readonly BrowseOrder[];
+
+/**
+ * Compile-time proof that `BROWSE_ORDERS` names every `BrowseOrder`.
+ *
+ * Type-level only — it emits nothing. `Exclude` is `never` when the two agree,
+ * and `T extends never` is what makes a leftover member a *failure* rather than
+ * an unused alias: an empty-array or `void` form of this check typechecks
+ * happily against a non-`never`, which would have made it decoration.
+ */
+type AssertNoneLeftOver<T extends never> = T;
+export type EveryBrowseOrderIsListed = AssertNoneLeftOver<
+  Exclude<BrowseOrder, (typeof BROWSE_ORDERS)[number]>
+>;
+
 export type { CostOrdered };
 
 /** Which measurement each profile order reads. Exhaustive by construction. */
