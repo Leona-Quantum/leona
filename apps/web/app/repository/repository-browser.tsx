@@ -128,7 +128,15 @@ const COPY = {
     allStances: "すべてのインターフェース",
     stanceGroupPipeline: "パイプラインの段",
     stanceGroupNot: "段ではないもの",
-    stanceConnectable: "{total}件中{n}件がポートを宣言・うち{met}件が他と接続",
+    // NOT 「うち」. That word scopes {met} inside {n}, and since §3.6 the two
+    // counts are drawn from different sets: {n} is `declaresPort` (ports only)
+    // while {met} is `connectedCount`, which counts declared holes too — and a
+    // hole is on the graph without declaring a port. The English joins the
+    // clauses with a middle dot and asserts no such containment; this now
+    // matches. Second time this locale has claimed a relationship the data does
+    // not have (the first was the unknown-verdict caption in 92dc87cb), so the
+    // rule is in NEXT.md: render `ja` before calling a UI change verified.
+    stanceConnectable: "{total}件中{n}件がポートを宣言・{met}件が他と接続",
     stance_source: "状態を準備",
     stance_transform: "レジスタ入力・レジスタ出力",
     stance_program: "測定まで含む完結したプログラム",
