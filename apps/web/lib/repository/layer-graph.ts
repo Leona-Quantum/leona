@@ -36,6 +36,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given access to a nonlinear vector field F — in practice quadratic or polynomial — and a preparation unitary for the initial state, produce a quantum state proportional to y(T) or an estimate of an observable of it. Quantum time evolution is linear, so no quantum primitive acts on this contract directly.",
     summaryJa: "非線形ベクトル場 F（実際には二次または多項式のもの）へのアクセスと初期状態の準備ユニタリが与えられたとき、y(T) に比例する量子状態、またはその観測量の推定値を返します。量子力学の時間発展は線形であるため、この層の入出力をそのまま満たす量子プリミティブは存在しません。",
     contract: {
+      from: "nonlinear-ivp",
+      to: "solution-answer",
+
       takes: "Access oracles for the components of F (for example a linear part F_1, a quadratic part F_2, a forcing term F_0), a preparation unitary for y_in, the evolution time T, and an error tolerance ε.",
       takesJa: "F の各成分（例えば線形部 F_1、二次部 F_2、強制項 F_0）へのアクセスオラクル、y_in の準備ユニタリ、発展時間 T、誤差許容度 ε。",
       returns: "A normalized state ε-close to y(T)/||y(T)||, a history state over [0,T], or an estimate of an observable of the solution.",
@@ -78,6 +81,11 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Exponentially more efficient than a deterministic Eulerian discretization of the Liouville equation if the Koopman-von Neumann Hamiltonian is sparse. Joseph also reports a quadratic improvement over classical probabilistic Monte Carlo algorithms when quantum walk techniques are used for state preparation and amplitude estimation for the calculation of observables.",
     costJa: "Koopman-von Neumann ハミルトニアンが疎であれば、Liouville 方程式の決定論的なオイラー的（格子上の）離散化より指数的に効率的です。Joseph はまた、状態準備に量子ウォークの技法を、観測量の計算に振幅推定を用いた場合、古典的な確率的モンテカルロ法に対して二次の改善が得られると報告しています。",
     steps: ["nonlinear-linear-embedding", "hamiltonian-simulation"],
+    // The lift this route uses returns a *Hermitian* generator, and that is the
+    // whole reason a simulator can be handed it directly. The slot it descends
+    // into promises a linear generator and no more, so without this the route
+    // reads as skipping a conversion it does not skip.
+    through: { "nonlinear-linear-embedding": "hermitian-generator" },
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["amplitude-estimation"],
     citations: [
@@ -127,6 +135,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given a nonlinear vector field F, produce a (truncated) linear generator on a lifted space, a lift of the initial condition into that space, and a decoding of the target quantity, such that linear evolution reproduces the nonlinear dynamics to accuracy ε. The truncation or lift parameter fixes both the accuracy and the dimension.",
     summaryJa: "非線形ベクトル場 F に対して、持ち上げた空間上の（打ち切られた）線形生成子、初期条件の持ち上げ写像、目的量の復号写像を構成し、線形発展が元の非線形ダイナミクスを精度 ε で再現するようにします。打ち切り・持ち上げのパラメータが精度と次元の両方を決めます。",
     contract: {
+      from: "nonlinear-ivp",
+      to: "linear-ivp",
+
       takes: "F, y_in, T, ε, and a truncation or lift parameter (Carleman truncation level N, a phase-space grid, the level-set dimension, the homotopy order).",
       takesJa: "F、y_in、T、ε、および打ち切り・持ち上げパラメータ（Carleman の打ち切り水準 N、位相空間の格子、レベルセットの次元、ホモトピーの次数）。",
       returns: "A linear generator with any inhomogeneity, a lift map, a readout map, and an error bound as a function of the truncation parameter.",
@@ -216,6 +227,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given block-encoding access to A(t) and b(t) and a preparation unitary for u_0, output a normalized state ε-close to u(T)/||u(T)||. Matrix-query and state-preparation-query counts are stated separately, because methods here differ in them independently.",
     summaryJa: "A(t) と b(t) のブロック符号化と u_0 の準備ユニタリが与えられたとき、u(T)/||u(T)|| に ε-近い正規化された状態を出力します。行列クエリ数と初期状態準備クエリ数は別々に示します。この二つは手法ごとに独立に変わるためです。",
     contract: {
+      from: "linear-ivp",
+      to: "solution-answer",
+
       takes: "A block-encoding of A(t) with a normalization α_A ≥ max_t ||A(t)||, preparation unitaries for u_0 and b, the evolution time T, and an error tolerance ε.",
       takesJa: "α_A ≥ max_t ||A(t)|| を満たす A(t) のブロック符号化、u_0 と b の準備ユニタリ、発展時間 T、誤差許容度 ε。",
       returns: "A state proportional to u(T), or a history state, together with separately stated matrix-query and initial-state-query complexity.",
@@ -360,6 +374,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Reduce continuous evolution over [0,T] to a finite algebraic object — a banded linear system, a product of step propagators, or a spectral coefficient system — with a stated truncation error. When a linear system is formed, a conditioning bound is stated with it.",
     summaryJa: "[0,T] 上の連続的な発展を、有限の代数的対象（帯行列の線形系、ステップ伝播子の積、スペクトル係数の方程式系）に落とし、打ち切り誤差を明示します。線形系を組む場合は、条件数の評価もあわせて示します。",
     contract: {
+      from: "linear-ivp",
+      to: "linear-system",
+
       takes: "The generator A(t), the interval [0,T], an error tolerance ε, and a target algebraic form.",
       takesJa: "生成子 A(t)、区間 [0,T]、誤差許容度 ε、目標とする代数的形式。",
       returns: "The discrete object, its truncation-error bound, and its conditioning bound.",
@@ -440,6 +457,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given access to a matrix A and a unitary that prepares |b>, produce a flagged quantum state that is ε-close in l2 to the normalised A^{-1}b. The deliverable is a state, not a classical vector.",
     summaryJa: "行列 A へのアクセスと |b> を用意するユニタリが与えられたとき、正規化した A^{-1}b に l2 距離で ε まで近い量子状態を、成功フラグ付きで出力します。得られるのは量子状態であって、古典的なベクトルではありません。",
     contract: {
+      from: "linear-system",
+      to: "solution-state",
+
       takes: "An access model for A — sparse row/column entry oracles, or a block-encoding; a unitary preparing |b>; a known upper bound κ on the condition number; the normalisation ‖A‖ ≤ 1; and a target state error ε.",
       takesJa: "A へのアクセス方式（疎行列の行・列エントリのオラクル、またはブロック符号化）、|b> を用意するユニタリ、条件数の上界 κ（既知であること）、正規化 ‖A‖ ≤ 1、そして目標とする状態の誤差 ε を受け取ります。",
       returns: "A flagged state ε-close in l2 to A^{-1}|b>/‖A^{-1}|b>‖. It does not return ‖x‖, any entry of x, or any classical functional of x — those cost extra and are decided a layer above.",
@@ -558,6 +578,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given a block-encoding of A and a target function f bounded on [-1,1], produce a circuit whose designated block is an ε-approximation of f applied to the singular values (or eigenvalues) of A.",
     summaryJa: "A のブロック符号化と、[-1,1] 上で有界な目標関数 f が与えられたとき、指定ブロックが f を A の特異値（または固有値）に適用した結果の ε 近似となる回路を構成します。",
     contract: {
+      from: "block-encoding",
+      to: "transformed-block-encoding",
+
       takes: "A block-encoding of A together with its subnormalisation α; a target function f on [-1,1]; an error budget ε.",
       takesJa: "A のブロック符号化とその正規化因子 α、[-1,1] 上の目標関数 f、誤差の予算 ε を受け取ります。",
       returns: "A circuit implementing a block-encoding of f(A) to error ε, together with the query count in U and U†.",
@@ -614,6 +637,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given an admissible polynomial, compute the phase sequence Φ that makes the quantum-signal-processing product reproduce it to accuracy ε in classical finite-precision arithmetic.",
     summaryJa: "許容条件を満たす多項式が与えられたとき、量子信号処理の積がその多項式を精度 ε で再現するような位相列 Φ を、古典計算機の有限精度演算で求めます。",
     contract: {
+      from: "polynomial",
+      to: "phase-sequence",
+
       takes: "Chebyshev coefficients of a real polynomial P of degree d with definite parity and |P(x)| ≤ 1 on [-1,1], plus a target accuracy ε.",
       takesJa: "[-1,1] 上で |P(x)| ≤ 1 を満たし偶奇が揃った実多項式 P（次数 d）のチェビシェフ係数と、目標精度 ε を受け取ります。",
       returns: "A phase sequence Φ ∈ R^{d+1}, often symmetric (φ_j = φ_{d-j}), together with the classical running time and the arithmetic precision the method requires.",
@@ -707,6 +733,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given a target function, a domain and an error ε, return a polynomial of definite parity, bounded on [-1,1], that is ε-close to the target on that domain, with an explicit degree.",
     summaryJa: "目標関数、定義域、誤差 ε が与えられたとき、その定義域上で目標関数に ε まで近く、偶奇が揃い [-1,1] 上で有界な多項式を、次数を明示して返します。",
     contract: {
+      from: "target-function",
+      to: "polynomial",
+
       takes: "A target function f (1/x, sign, e^{-ixt} and so on); a domain such as [-1,1] \\ (-1/κ, 1/κ); an error ε; the required parity.",
       takesJa: "目標関数 f（1/x、sign、e^{-ixt} など）、[-1,1] \\ (-1/κ, 1/κ) のような定義域、誤差 ε、要求される偶奇を受け取ります。",
       returns: "Chebyshev coefficients of the polynomial and its degree d, plus the bound on |P| over [-1,1] before any rescaling.",
@@ -759,6 +788,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Wrap an operator A inside a larger unitary U so that A/α sits in U's top-left block, giving every routine above it one uniform way to touch the matrix. The subnormalization α and the ancilla count are outputs of this layer, not free parameters.",
     summaryJa: "演算子 A をより大きなユニタリ U の左上ブロックに A/α として埋め込み、上位のルーチンが行列に触れる経路を一本化します。副正規化係数 α とアンシラ数はこの層が返す値であり、自由に決められる定数ではありません。",
     contract: {
+      from: "matrix-access",
+      to: "block-encoding",
+
       takes: "An access model for A — sparse-access oracles, a Pauli or LCU decomposition, a purification, or an explicit arithmetic description — plus a target precision ε.",
       takesJa: "A へのアクセスモデル（スパースアクセスのオラクル、Pauli/LCU 分解、純粋化、明示的な算術的記述のいずれか）と、目標精度 ε。",
       returns: "A unitary U on s+a qubits, its subnormalization α, and its ancilla/flag count a. Because ||U|| = 1, Gilyén, Su, Low and Wiebe's Definition 43 forces ||A|| ≤ α + ε.",
@@ -835,6 +867,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Map |0…0⟩ to a state whose amplitudes are proportional to a specified vector b, to within ε. The cost is set by which description of b you hold, not by the algorithm that consumes it.",
     summaryJa: "|0…0⟩ を、指定されたベクトル b に比例する振幅を持つ状態へ、誤差 ε 以内で写します。コストを決めるのは b がどの形で与えられているかであり、その状態を使う上位アルゴリズムではありません。",
     contract: {
+      from: "state-description",
+      to: "prepared-state",
+
       takes: "A description of b — an explicit list of 2^n amplitudes, an analytic density, a list of d nonzero entries, or a low-bond-dimension tensor network — plus a target ε.",
       takesJa: "b の記述（2^n 個の振幅の明示的なリスト、解析的な確率密度、d 個の非ゼロ成分のリスト、結合次元の小さいテンソルネットワークのいずれか）と、目標精度 ε。",
       returns: "An n-qubit circuit, possibly using ancillas, with a stated gate count, depth, ancilla count, and — where the circuit is not deterministic — a success probability.",
@@ -909,6 +944,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Take a routine whose output lands in the wanted subspace only with probability a, and raise that probability to near 1 using quadratically fewer repetitions than restarting the routine would need.",
     summaryJa: "出力が目的の部分空間に確率 a でしか入らないルーチンを受け取り、単純にやり直す場合に比べて二次的に少ない繰り返し回数で、その確率を 1 近くまで引き上げます。",
     contract: {
+      from: "flagged-routine",
+      to: "reliable-routine",
+
       takes: "The preparation unitary A and its inverse, a reflection about |0⟩, and a reflection marking the good subspace — the Grover operator Q = −A S_0 A^{-1} S_χ must be applicable at arbitrary powers. Individual variants additionally require a lower bound on a, or a per-branch stopping flag.",
       takesJa: "準備ユニタリ A とその逆、|0⟩ に関する反射、そして良い部分空間に印を付ける反射。すなわち Grover 演算子 Q = −A S_0 A^{-1} S_χ を任意のべき乗で適用できる必要があります。方式によっては、これに加えて a の下界、あるいは分岐ごとの停止フラグが必要です。",
       returns: "A routine that produces the wanted branch with a stated failure probability, together with the query count and the maximum sequential depth consumed.",
@@ -961,6 +999,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Implement e^{-iHt} to error ε given some access model for H. It is an application in its own right and also the engine inside phase estimation and several linear-system solvers.",
     summaryJa: "H へのアクセスモデルが与えられたとき、e^{-iHt} を誤差 ε 以内で実装します。これ自体が応用であると同時に、位相推定やいくつかの線形方程式ソルバの内部機構でもあります。",
     contract: {
+      from: "hamiltonian-access",
+      to: "evolution-circuit",
+
       takes: "An access model for H — a sum of efficiently exponentiable terms, sparse-access oracles, or a block-encoding — plus an evolution time t and a target error ε.",
       takesJa: "H へのアクセスモデル（直接指数化できる項の和、スパースアクセスのオラクル、ブロックエンコーディングのいずれか）と、発展時間 t、目標誤差 ε。",
       returns: "A circuit approximating e^{-iHt} to within ε, with a stated query or gate count, an ancilla count, and the norm parameter — sparsity times ||H||_max, or the LCU 1-norm — that the cost is measured against.",
@@ -1042,6 +1083,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given the ability to prepare |ψ⟩ and a description of an observable O, return a classical scalar within ε of ⟨O⟩ at confidence 1−δ. The state is never returned; only the number is.",
     summaryJa: "|ψ⟩ を準備できることとオブザーバブル O の記述が与えられたとき、⟨O⟩ から誤差 ε 以内の古典的なスカラー値を、信頼度 1−δ で返します。状態そのものは返らず、返るのは数値だけです。",
     contract: {
+      from: "prepared-state",
+      to: "observable-value",
+
       takes: "A preparation routine A with A|0⟩ = |ψ⟩, or repeated copies of ρ; a description of O; a target additive error ε and a confidence 1−δ. Coherent, controlled access to A and A† is required by some methods here and by none of the sampling-based ones.",
       takesJa: "A|0⟩ = |ψ⟩ となる準備ルーチン A、または ρ のコピーの繰り返し供給。オブザーバブル O の記述。目標加法誤差 ε と信頼度 1−δ。A および A† へのコヒーレントな制御アクセスを要求する方式もありますが、サンプリングに基づく方式は要求しません。",
       returns: "A scalar estimate with a stated additive-error guarantee, plus the shot or query budget and the maximum circuit depth actually consumed.",
@@ -1122,6 +1166,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Turn a circuit written as arbitrary unitaries over abstract qubits into an executable instruction sequence for one machine's own gate set and connectivity graph. The result is functionally equivalent, or equivalent to within a stated approximation error.",
     summaryJa: "抽象的な量子ビット上で任意のユニタリとして書かれた回路を、特定の実機がもつゲート集合と結合グラフに合わせた実行可能な命令列へ変換します。得られる命令列は元の回路と等価か、明示された近似誤差の範囲で等価です。",
     contract: {
+      from: "abstract-circuit",
+      to: "device-circuit",
+
       takes: "An abstract circuit (arbitrary-angle rotations, arbitrary two-qubit gates, all-to-all qubit indices); a device model giving the native gate set, coupling graph and calibration data; an approximation budget ε.",
       takesJa: "任意角の回転、任意の 2 量子ビットゲート、全結合を前提とした量子ビット番号からなる抽象回路。装置固有のゲート集合・結合グラフ・較正データを含む装置モデル。近似誤差の許容量 ε。",
       returns: "A native-gate instruction sequence obeying the connectivity constraint, plus the overhead it added (SWAP count, T-count, depth) and the accumulated synthesis error.",
@@ -1173,6 +1220,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Place logical qubits on physical ones and schedule connectivity-repair operations — usually SWAPs — so that every two-qubit gate acts on a coupled pair. The problem combines subgraph isomorphism with token swapping.",
     summaryJa: "論理量子ビットを物理量子ビットに配置し、SWAP などの結合修復操作を差し込んで、すべての 2 量子ビットゲートが結合済みの対の上で動くようにします。部分グラフ同型判定とトークン交換を組み合わせた組合せ問題です。",
     contract: {
+      from: "abstract-circuit",
+      to: "routed-circuit",
+
       takes: "The circuit's two-qubit interaction graph or DAG; the device coupling graph; optionally per-edge error rates and gate durations.",
       takesJa: "回路の 2 量子ビット相互作用グラフまたはゲートの DAG、装置の結合グラフ、必要に応じて辺ごとの誤り率とゲート実行時間。",
       returns: "An initial logical-to-physical mapping and a routed circuit, costed in added SWAP count and added depth.",
@@ -1245,6 +1295,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given a target single-qubit unitary — typically a z-rotation by an arbitrary angle — and a precision ε, produce a finite word over a fixed discrete gate set such as Clifford+T whose product is within ε of the target in a stated metric. The cost is charged in non-Clifford gates.",
     summaryJa: "目標となる 1 量子ビットユニタリ（多くは任意角の z 回転）と精度 ε を与えると、Clifford+T のような固定された離散ゲート集合上の有限語を返します。積は指定した距離で目標の ε 以内に入り、費用は非 Clifford ゲートの本数で数えます。",
     contract: {
+      from: "abstract-circuit",
+      to: "discrete-circuit",
+
       takes: "A target unitary or channel; a precision ε; a metric (operator norm or diamond norm); the gate set; and whether ancillas, measurement or mixing are permitted.",
       takesJa: "目標のユニタリまたはチャネル、精度 ε、用いる距離（作用素ノルムかダイヤモンドノルムか）、ゲート集合、そしてアンシラ・測定・混合を許すかどうか。",
       returns: "A gate word, costed in T-count (or non-Clifford count).",
@@ -1302,6 +1355,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Estimate what an observable would have measured on a noiseless device by running modified or repeated circuits on the noisy one and combining the results classically. No qubits are spent on redundancy; the whole price is paid in shots.",
     summaryJa: "雑音のある実機で回路を変形・反復して実行し、その結果を古典的に組み合わせることで、雑音がなければ観測量が示したはずの値を推定します。冗長化に量子ビットは使わず、代価はすべてショット数で支払います。",
     contract: {
+      from: "noisy-estimate",
+      to: "mitigated-estimate",
+
       takes: "A circuit, a target observable, a noisy device, a shot budget, and — for the model-based methods — a learned characterization of the device noise.",
       takesJa: "回路、対象の観測量、雑音のある実機、ショット数の予算。モデルに基づく手法ではさらに、学習によって得た装置雑音の特性評価。",
       returns: "A bias-reduced expectation-value estimate, with a variance — equivalently a sampling overhead — that grows with circuit volume.",
@@ -1373,6 +1429,9 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Encode physical qubits whose error rate p sits below a code- and decoder-specific threshold into logical qubits meeting a target logical error rate per round, by spending qubits and time on redundancy and decoding syndromes in real time. Which code sits underneath reaches the layers above only as a physical-qubit count and a demand on connectivity.",
     summaryJa: "符号と復号器に固有のしきい値を下回る物理誤り率 p の量子ビットを符号化し、冗長化と実時間の症候群復号に量子ビットと時間を投じて、1 ラウンドあたりの論理誤り率が目標を満たす論理量子ビットを返します。下に敷かれる符号が何であるかは、必要な物理量子ビット数と要求される結合の豊かさとしてのみ上位に現れます。",
     contract: {
+      from: "physical-qubits",
+      to: "logical-qubits",
+
       takes: "A physical error rate p and noise model; a target logical error rate P_L; a connectivity constraint; a measurement and feedback cycle time.",
       takesJa: "物理誤り率 p と雑音モデル、目標の論理誤り率 P_L、結合の制約、測定とフィードバックの周期。",
       returns: "Logical qubits, together with the code and code distance d that were chosen for them, a physical-qubits-per-logical-qubit figure, and a decoding latency requirement.",

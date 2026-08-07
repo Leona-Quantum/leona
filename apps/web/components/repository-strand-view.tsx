@@ -29,6 +29,7 @@ import {
   rootCapabilities,
   type LayerGraph,
 } from "../lib/repository/layers";
+import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import { StrandCanvas } from "./repository-strands";
 import type { PublicLocale } from "../lib/public-locale";
 
@@ -37,7 +38,7 @@ export const STRAND_DEPTHS = [1, 2, 3] as const;
 export type StrandDepth = (typeof STRAND_DEPTHS)[number];
 
 /**
- * The switch's three words, in one place, because two surfaces render it.
+ * The switch's words, in one place, because three surfaces render it.
  *
  * `LayerIndexView` draws the same control from the other side and had its own
  * inline locale conditions for the same three strings. Two copies of a
@@ -46,12 +47,13 @@ export type StrandDepth = (typeof STRAND_DEPTHS)[number];
  */
 export function viewSwitchLabels(locale: PublicLocale): {
   view: string;
+  map: string;
   strands: string;
   list: string;
 } {
   return locale === "ja"
-    ? { view: "表示", strands: "ストランド", list: "リスト" }
-    : { view: "View", strands: "Strands", list: "List" };
+    ? { view: "表示", map: "マップ", strands: "ストランド", list: "リスト" }
+    : { view: "View", map: "Map", strands: "Strands", list: "List" };
 }
 
 /**
@@ -345,7 +347,7 @@ export function StrandView({
   const nav = viewSwitchLabels(locale);
   const lang: "en" | "ja" = locale === "ja" ? "ja" : "en";
   const roots = rootCapabilities(graph);
-  const census = layerCensus(graph, new Set(corpus.map((entry) => entry.slug)));
+  const census = layerCensus(graph, new Set(corpus.map((entry) => entry.slug)), STATE_VOCABULARY);
 
   const diagram: StrandDiagram = focusId
     ? layoutFocus(graph, focusId, lang, depth)
@@ -369,6 +371,7 @@ export function StrandView({
       <div className="mj-strand-controls">
         <div className="mj-strand-switch" role="group" aria-label={nav.view}>
           <span className="mj-strand-switch-label">{nav.view}</span>
+          <Link href="/repository/layers?view=map">{nav.map}</Link>
           <span className="mj-strand-switch-on">{nav.strands}</span>
           <Link href="/repository/layers?view=list">{nav.list}</Link>
         </div>

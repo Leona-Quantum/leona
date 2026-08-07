@@ -4,7 +4,11 @@
     {
       "name": "web",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@majorana/web", "dev"],
+      "runtimeArgs": [
+        "--filter",
+        "@majorana/web",
+        "dev"
+      ],
       "port": 3000,
       "env": {
         "MAJORANA_LOCAL_DEV_AUTH": "true",
@@ -12,20 +16,48 @@
       }
     },
     {
-      "_comment": "next start, for checking a public page the way a reader gets it. next dev does NOT hydrate under an agent browser pane (its CSP blocks the eval() dev-mode React needs), so a dev server cannot verify an interactive control. Deliberately carries no env: `next start` sets NODE_ENV=production, where isLocalDevAuthEnabled() and isPublicDemoEnabled() both refuse by construction — the flags would be inert, and an inert flag in a config reads as an enabled one. Signed-in routes therefore 307 to WorkOS here; this entry is for /repository, /pricing and the rest of the public site.",
+      "_comment": "next start, for checking a public page the way a reader gets it. next dev does NOT hydrate under an agent browser pane (its CSP blocks the eval() dev-mode React needs), so a dev server cannot verify an interactive control. Deliberately carries no env: `next start` sets NODE_ENV=production, where isLocalDevAuthEnabled() and isPublicDemoEnabled() both refuse by construction \u2014 the flags would be inert, and an inert flag in a config reads as an enabled one. Signed-in routes therefore 307 to WorkOS here; this entry is for /repository, /pricing and the rest of the public site.",
       "name": "web-prod",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@majorana/web", "start", "--port", "3456"],
+      "runtimeArgs": [
+        "--filter",
+        "@majorana/web",
+        "start",
+        "--port",
+        "3456"
+      ],
       "port": 3456
     },
     {
       "name": "web-agent",
       "runtimeExecutable": "pnpm",
-      "runtimeArgs": ["--filter", "@majorana/web", "dev", "--port", "3100"],
+      "runtimeArgs": [
+        "--filter",
+        "@majorana/web",
+        "dev",
+        "--port",
+        "3100"
+      ],
       "port": 3100,
       "env": {
         "MAJORANA_LOCAL_DEV_AUTH": "true",
         "MAJORANA_PUBLIC_DEMO": "true",
+        "NEXT_DIST_DIR": ".next-agent"
+      }
+    },
+    {
+      "_comment": "web-prod, but built into .next-agent on its own port so it cannot collide with a `next dev` another session is already running in this folder (the two share .next and clobber each other). Build first: NEXT_DIST_DIR=.next-agent pnpm --filter @majorana/web build. Same reason as web-prod for using `next start` over `next dev`: dev-mode React needs eval(), which the agent browser pane's CSP blocks, so an interactive control cannot be verified on a dev server.",
+      "name": "web-prod-agent",
+      "runtimeExecutable": "pnpm",
+      "runtimeArgs": [
+        "--filter",
+        "@majorana/web",
+        "start",
+        "--port",
+        "3457"
+      ],
+      "port": 3457,
+      "env": {
         "NEXT_DIST_DIR": ".next-agent"
       }
     }

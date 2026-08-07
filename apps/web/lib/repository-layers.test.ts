@@ -35,12 +35,38 @@ import {
   stepsOutlook,
   validateLayerGraph,
   type LayerCapability,
+  type LayerContract,
   type LayerGraph,
   type LayerMethod,
 } from "./repository/layers.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
+import type { StateVocabulary } from "./repository/states.ts";
+import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 
 const CITE = [{ title: "A paper", authors: "Someone", year: "2020", url: "https://example.org/a" }];
+
+/**
+ * The fixture's own state vocabulary, on the same rule as the graph above it:
+ * a test that names the authored states asserts today's content.
+ *
+ * Three states in a chain is the smallest thing that makes `encode` a real step
+ * of `direct` — a process that carries the route part of the way and leaves the
+ * rest to the method itself. The ids are deliberately unlike any node id in this
+ * file, because `validateLayerGraph` rejects a state and a node answering to one
+ * name and that rule has to stay assertable rather than tripped by the fixture.
+ */
+const FIXTURE_STATES: StateVocabulary = {
+  states: [
+    { id: "alpha", label: "alpha", labelJa: "alpha", summary: "s", summaryJa: "s" },
+    { id: "beta", label: "beta", labelJa: "beta", summary: "s", summaryJa: "s" },
+    { id: "gamma", label: "gamma", labelJa: "gamma", summary: "s", summaryJa: "s" },
+  ],
+};
+
+/** A contract between two of the fixture states; the prose is never read. */
+function contract(from: string, to: string): LayerContract {
+  return { from, to, takes: "t", takesJa: "t", returns: "r", returnsJa: "r" };
+}
 
 function capability(id: string, extra: Partial<LayerCapability> = {}): LayerCapability {
   return {
@@ -50,7 +76,7 @@ function capability(id: string, extra: Partial<LayerCapability> = {}): LayerCapa
     labelJa: id,
     summary: "s",
     summaryJa: "s",
-    contract: { takes: "t", takesJa: "t", returns: "r", returnsJa: "r" },
+    contract: contract("alpha", "beta"),
     whyALayer: "w",
     whyALayerJa: "w",
     ...extra,
@@ -65,7 +91,7 @@ function method(id: string, realizes: string, extra: Partial<LayerMethod> = {}):
     labelJa: id,
     summary: "s",
     summaryJa: "s",
-    contract: { takes: "t", takesJa: "t", returns: "r", returnsJa: "r" },
+    contract: contract("alpha", "beta"),
     realizes,
     steps: [],
     atomic: true,
@@ -80,14 +106,22 @@ function method(id: string, realizes: string, extra: Partial<LayerMethod> = {}):
  * `solve` is filled three ways; `fast` is a narrower version of `direct`, and
  * `other` is an unrelated approach. `via-steps` needs `encode`, and `around`
  * skips it — the two edges the whole surface exists to show.
+ *
+ * As a path: `solve` runs `alpha → gamma` and `encode` runs `alpha → beta`, so
+ * `direct` delegates the first hop and closes the rest itself — the shape most
+ * authored routes are in.
  */
 const FIXTURE: LayerGraph = {
   nodes: [
-    capability("solve"),
+    capability("solve", { contract: contract("alpha", "gamma") }),
     capability("encode"),
-    method("direct", "solve", { steps: ["encode"], atomic: undefined }),
-    method("fast", "solve", { refines: "direct" }),
-    method("other", "solve", { bypasses: ["encode"] }),
+    method("direct", "solve", {
+      contract: contract("alpha", "gamma"),
+      steps: ["encode"],
+      atomic: undefined,
+    }),
+    method("fast", "solve", { contract: contract("alpha", "gamma"), refines: "direct" }),
+    method("other", "solve", { contract: contract("alpha", "gamma"), bypasses: ["encode"] }),
     method("encode-a", "encode", { entries: ["real-slug"] }),
   ],
 };
@@ -174,7 +208,7 @@ test("a corpus slug that does not resolve is dropped rather than linked into a 4
 });
 
 test("the census counts what is there, including what is not", () => {
-  const census = layerCensus(FIXTURE, new Set(["real-slug"]));
+  const census = layerCensus(FIXTURE, new Set(["real-slug"]), FIXTURE_STATES);
   assert.equal(census.nodes, 6);
   assert.equal(census.capabilities, 2);
   assert.equal(census.methods, 4);
@@ -189,14 +223,15 @@ test("a corpus that does not carry a declared slug is counted, not silently abso
   // repo. Nothing proves it against the corpus the API serves at read time, and
   // `anchored` would simply come out lower — a number about our own coverage,
   // quietly wrong. The shortfall is counted so the page can say it.
-  const census = layerCensus(FIXTURE, new Set<string>());
+  const census = layerCensus(FIXTURE, new Set<string>(), FIXTURE_STATES);
   assert.equal(census.anchored, 0);
   assert.equal(census.unresolvedEntries, 1);
 });
 
 test("validation rejects the edges that would make a reading dishonest", () => {
   const corpus = new Set(["real-slug"]);
-  const bad = (nodes: LayerGraph["nodes"]) => validateLayerGraph({ nodes }, corpus);
+  const bad = (nodes: LayerGraph["nodes"]) =>
+    validateLayerGraph({ nodes }, corpus, FIXTURE_STATES);
 
   assert.ok(
     bad([capability("a"), method("m", "missing")]).some((e) => e.includes("realizes an unknown id")),
@@ -266,7 +301,7 @@ test("validation rejects the edges that would make a reading dishonest", () => {
 const SELF_DECLARED_SLUGS = new Set(LAYER_GRAPH.nodes.flatMap((node) => node.entries ?? []));
 
 test("the authored layer graph satisfies every rule that does not need the corpus", () => {
-  assert.deepEqual(validateLayerGraph(LAYER_GRAPH, SELF_DECLARED_SLUGS), []);
+  assert.deepEqual(validateLayerGraph(LAYER_GRAPH, SELF_DECLARED_SLUGS, STATE_VOCABULARY), []);
 });
 
 test("every authored node is reachable from a root", () => {

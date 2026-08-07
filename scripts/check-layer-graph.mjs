@@ -55,14 +55,32 @@ async function bundle(relativePath, label) {
 const graphMod = await bundle("apps/web/lib/repository/layer-graph.ts", "layer-graph");
 const layersMod = await bundle("apps/web/lib/repository/layers.ts", "layers");
 const corpusMod = await bundle("apps/web/lib/public-repository.ts", "public-repository");
+const statesMod = await bundle("apps/web/lib/repository/state-vocabulary.ts", "state-vocabulary");
 
 const { LAYER_GRAPH } = graphMod;
-const { validateLayerGraph, layerCensus, layerDepths, isCapability, isMethod, stepsOutlook } =
-  layersMod;
+const {
+  validateLayerGraph,
+  layerCensus,
+  layerDepths,
+  isCapability,
+  isMethod,
+  stepsOutlook,
+  routeOf,
+} = layersMod;
 const { PUBLIC_REPOSITORY_ENTRIES } = corpusMod;
+const { STATE_VOCABULARY } = statesMod;
 
 const corpus = new Set(PUBLIC_REPOSITORY_ENTRIES.map((entry) => entry.slug));
-const errors = validateLayerGraph(LAYER_GRAPH, corpus);
+const errors = validateLayerGraph(LAYER_GRAPH, corpus, STATE_VOCABULARY);
+
+// A state id that is also a corpus slug has the same problem as a node id that
+// is: two different things answering to one name. Only checkable here, for the
+// same reason — it needs both sides.
+for (const state of STATE_VOCABULARY.states) {
+  if (corpus.has(state.id)) {
+    errors.push(`${state.id}: a state id collides with a corpus slug of the same name`);
+  }
+}
 
 // A layer id that is also a corpus slug makes two different things answer to one
 // name — in prose, in search, and in anything a reader pastes into a message.
@@ -91,7 +109,7 @@ if (errors.length > 0) {
 }
 
 if (!QUIET) {
-  const census = layerCensus(LAYER_GRAPH, corpus);
+  const census = layerCensus(LAYER_GRAPH, corpus, STATE_VOCABULARY);
   const depths = layerDepths(LAYER_GRAPH);
   const byDepth = new Map();
   for (const [id, depth] of depths) {
@@ -113,6 +131,22 @@ if (!QUIET) {
       .map(([depth, count]) => `${depth}:${count}`)
       .join(" ")}`,
   );
+  // Where the ladder does not join up. A gap is a conversion no recorded step
+  // names, and it is content rather than a defect — but it is invisible unless
+  // something prints it, and it is the R3.5 reading list in the most concrete
+  // form this repository has.
+  console.log(
+    `  ${census.states} states · routes: ${census.routesDelegated} all delegated, ${census.routesPartlyOwn} close the last stretch themselves, ${census.routesAllOwn} are one undivided act`,
+  );
+  console.log(
+    `  ${census.feedSteps} steps supply an ingredient rather than advancing a route`,
+  );
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node) || node.steps.length === 0) continue;
+    const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, node);
+    if (route.coverage !== "all-own") continue;
+    console.log(`  ${node.id} delegates nothing in sequence — every step is an ingredient`);
+  }
   // The bypass edges are the reason this surface exists, so they are printed
   // rather than merely counted — a route that silently stops skipping a layer is
   // a content regression nothing else would show.

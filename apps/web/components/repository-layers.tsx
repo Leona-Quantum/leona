@@ -50,6 +50,7 @@ import {
   type LayerMethod,
   type LayerNode,
 } from "../lib/repository/layers";
+import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 
 const COPY = {
   en: {
@@ -639,6 +640,7 @@ export function LayerIndexView({
   const census = layerCensus(
     graph,
     new Set(corpus.map((entry) => entry.slug)),
+    STATE_VOCABULARY,
   );
   const roots = rootCapabilities(graph);
   return (
@@ -650,11 +652,12 @@ export function LayerIndexView({
           neither is reachable only from the other — a reader who lands on
           `?view=list` from a bookmark can still get to the canvas.
 
-          The three words come from `viewSwitchLabels` rather than from inline
+          The words come from `viewSwitchLabels` rather than from inline
           conditions here: two copies of a translated label is the shape that
           drifts, and this control is rendered from both sides. */}
       <div className="mj-strand-switch" role="group" aria-label={viewSwitchLabels(locale).view}>
         <span className="mj-strand-switch-label">{viewSwitchLabels(locale).view}</span>
+        <a href="/repository/layers?view=map">{viewSwitchLabels(locale).map}</a>
         <a href="/repository/layers?view=strands">{viewSwitchLabels(locale).strands}</a>
         <span className="mj-strand-switch-on">{viewSwitchLabels(locale).list}</span>
       </div>
