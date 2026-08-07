@@ -598,6 +598,42 @@ export function validateLayerGraph(graph: LayerGraph, corpus: ReadonlySet<string
     }
   }
 
+  // One paper, one set of metadata.
+  //
+  // A citation is repeated across nodes by design — GSLW is cited by four of
+  // them — and repetition is where a fact drifts. The first pass shipped
+  // arXiv:1806.01838 as both 2018 and 2019 and as both "Gilyén" and "Gilyen",
+  // so a reader comparing two method pages saw one paper presented as two, and
+  // the four-digit-year check was happy with both. The rule that holds is the
+  // one the URL already implies: same paper, same title, same authors, same
+  // year, everywhere.
+  const citationByUrl = new Map<string, { node: string; title: string; authors: string; year: string }>();
+  for (const node of graph.nodes) {
+    for (const citation of node.citations ?? []) {
+      const seen = citationByUrl.get(citation.url);
+      if (!seen) {
+        citationByUrl.set(citation.url, {
+          node: node.id,
+          title: citation.title,
+          authors: citation.authors,
+          year: citation.year,
+        });
+        continue;
+      }
+      for (const [field, here, there] of [
+        ["title", citation.title, seen.title],
+        ["authors", citation.authors, seen.authors],
+        ["year", citation.year, seen.year],
+      ] as const) {
+        if (here !== there) {
+          errors.push(
+            `${node.id}: ${citation.url} has ${field} ${JSON.stringify(here)} here and ${JSON.stringify(there)} on ${seen.node} — one paper, one set of metadata`,
+          );
+        }
+      }
+    }
+  }
+
   // A `refines` chain that loops has no top, and every reader-facing sentence
   // about "a variant of X" would recurse.
   for (const node of graph.nodes) {

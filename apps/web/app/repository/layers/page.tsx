@@ -6,11 +6,28 @@ import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { rootCapabilities, type LayerCorpusEntry } from "../../../lib/repository/layers";
 
-export const metadata: Metadata = {
-  title: "Layers",
-  description:
-    "How the pieces fit: the slots a quantum pipeline is made of, the methods recorded for each, and the routes that skip a layer entirely.",
-};
+/**
+ * Localised, because the node route beside it already is.
+ *
+ * A static English `metadata` export here would give a Japanese reader an
+ * English title and description on the index and a Japanese one on every node
+ * page — the inconsistency being the tell, since the two surfaces are one
+ * reading. The page reads the locale cookie anyway, so this costs nothing.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getPublicLocale();
+  return locale === "ja"
+    ? {
+        title: "階層",
+        description:
+          "部品どうしの組み合わさり方。パイプラインを構成する枠、各枠に記録された手法、そして階層そのものを飛ばす経路を示します。",
+      }
+    : {
+        title: "Layers",
+        description:
+          "How the pieces fit: the slots a quantum pipeline is made of, the methods recorded for each, and the routes that skip a layer entirely.",
+      };
+}
 
 /**
  * `?open=<root id>` — which top-level slot arrives expanded.

@@ -466,7 +466,7 @@ export const LAYER_GRAPH: LayerGraph = {
     bypasses: ["polynomial-approximation", "qsp-phase-factors"],
     entries: ["hhl-linear-systems"],
     citations: [
-      { title: "Quantum algorithm for solving linear systems of equations", authors: "Harrow, Hassidim, Lloyd", year: "2009", url: "https://arxiv.org/abs/0811.3171" },
+      { title: "Quantum algorithm for solving linear systems of equations", authors: "Harrow, Hassidim, Lloyd", year: "2008", url: "https://arxiv.org/abs/0811.3171" },
       { title: "Quantum tomography using state-preparation unitaries", authors: "van Apeldoorn, Cornelissen, Gilyén, Nannicini", year: "2022", url: "https://arxiv.org/abs/2207.08800" },
       { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Costa, An, Sanders, Su, Babbush, Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
     ],
@@ -487,9 +487,9 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "O(κ log(1/ε)) という数字はブロック符号化への問い合わせ回数であってゲート数ではなく、α も増幅ぶんも含んでいません。Lin と Tong は QSP/QSVT の全体としての問い合わせ計算量を O(κ² polylog(κ/ε)) と整理し、O(κ polylog(κ/ε)) まで下がるのは可変時間振幅増幅を用いた場合だけだとしています。さらに両氏は、この問題に対するその技法の性能は定量的に報告されていないと述べています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function", "success-amplification"],
     citations: [
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2019", url: "https://arxiv.org/abs/1806.01838" },
-      { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Chakraborty, Gilyén, Jeffery", year: "2019", url: "https://arxiv.org/abs/1804.01973" },
-      { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin, Tong", year: "2020", url: "https://arxiv.org/abs/1910.14596" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Chakraborty, Gilyén, Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
+      { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin, Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
     ],
   },
   {
@@ -509,7 +509,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["state-preparation", "matrix-function", "success-amplification"],
     bypasses: ["hamiltonian-simulation"],
     citations: [
-      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2017", url: "https://arxiv.org/abs/1511.02306" },
+      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],
   },
   {
@@ -529,7 +529,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
     citations: [
       { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Costa, An, Sanders, Su, Babbush, Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
-      { title: "The discrete adiabatic quantum linear system solver has lower constant factors than the randomized adiabatic solver", authors: "Costa, An, Babbush, Berry", year: "2025", url: "https://arxiv.org/abs/2312.07690" },
+      { title: "The discrete adiabatic quantum linear system solver has lower constant factors than the randomized adiabatic solver", authors: "Costa, An, Babbush, Berry", year: "2023", url: "https://arxiv.org/abs/2312.07690" },
     ],
   },
   {
@@ -547,7 +547,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
     bypasses: ["success-amplification"],
     citations: [
-      { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin, Tong", year: "2020", url: "https://arxiv.org/abs/1910.14596" },
+      { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin, Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
     ],
   },
   {
@@ -583,7 +583,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["block-encode-matrix", "polynomial-approximation", "qsp-phase-factors"],
     entries: ["quantum-singular-value-transformation"],
     citations: [
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2019", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "A Grand Unification of Quantum Algorithms", authors: "Martyn, Rossi, Tan, Chuang", year: "2021", url: "https://arxiv.org/abs/2105.02859" },
       { title: "Sampling-based sublinear low-rank matrix arithmetic framework for dequantizing quantum machine learning", authors: "Chia, Gilyén, Li, Lin, Tang, Wang", year: "2019", url: "https://arxiv.org/abs/1910.06151" },
     ],
@@ -603,7 +603,7 @@ export const LAYER_GRAPH: LayerGraph = {
     entries: ["linear-combination-unitaries"],
     citations: [
       { title: "Hamiltonian Simulation Using Linear Combinations of Unitary Operations", authors: "Childs, Wiebe", year: "2012", url: "https://arxiv.org/abs/1202.5822" },
-      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2017", url: "https://arxiv.org/abs/1511.02306" },
+      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],
   },
   {
@@ -639,7 +639,7 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "要求される精度をめぐっては見解の対立が残っています。上記の整理は Chao・Ding・Gilyén・Huang・Szegedy の halving と capitalization による手法を O(d polylog(d/ε)) ビットを要する求根系に位置づけていますが、当の論文自身は、標準的な倍精度演算で 3000 を超える角度列を 5 分以内に求めたと報告しています。この 2 つの主張は現時点で整合していません。",
     steps: [],
     citations: [
-      { title: "Product Decomposition of Periodic Functions in Quantum Signal Processing", authors: "Haah", year: "2019", url: "https://arxiv.org/abs/1806.10236" },
+      { title: "Product Decomposition of Periodic Functions in Quantum Signal Processing", authors: "Haah", year: "2018", url: "https://arxiv.org/abs/1806.10236" },
       { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Ni, Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
       { title: "Finding Angles for Quantum Signal Processing with Machine Precision", authors: "Chao, Ding, Gilyén, Huang, Szegedy", year: "2020", url: "https://arxiv.org/abs/2003.02831" },
     ],
@@ -660,8 +660,8 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "この系統は倍精度で効率的かつ安定ですが、‖f‖_∞ → 1 となる完全コヒーレント領域では性能が落ちると理解されています。対称 QSP に対するニュートン法や非線形フーリエ変換に基づく経路は、まさにその領域のために開発されました。標準的な初期値を正当化する強凸性の保証も ‖f‖_∞ = O(d^{-1}) のもとでのみ証明されており、その領域には届きません。",
     steps: [],
     citations: [
-      { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Dong, Meng, Whaley, Lin", year: "2021", url: "https://arxiv.org/abs/2002.11649" },
-      { title: "On the energy landscape of symmetric quantum signal processing", authors: "Wang, Dong, Lin", year: "2022", url: "https://arxiv.org/abs/2110.04993" },
+      { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Dong, Meng, Whaley, Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
+      { title: "On the energy landscape of symmetric quantum signal processing", authors: "Wang, Dong, Lin", year: "2021", url: "https://arxiv.org/abs/2110.04993" },
     ],
   },
   {
@@ -730,9 +730,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2017", url: "https://arxiv.org/abs/1511.02306" },
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2019", url: "https://arxiv.org/abs/1806.01838" },
-      { title: "Optimal Hamiltonian Simulation by Quantum Signal Processing", authors: "Low, Chuang", year: "2017", url: "https://arxiv.org/abs/1606.02685" },
+      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "Optimal Hamiltonian Simulation by Quantum Signal Processing", authors: "Low, Chuang", year: "2016", url: "https://arxiv.org/abs/1606.02685" },
     ],
   },
   {
@@ -748,7 +748,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Dong, Meng, Whaley, Lin", year: "2021", url: "https://arxiv.org/abs/2002.11649" },
+      { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Dong, Meng, Whaley, Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
     ],
   },
   {
@@ -783,7 +783,7 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "Lemma 48 が数えているのはクエリ数であって、ゲート数ではありません。Zhang と Yuan はそのオラクルの中身を開き、「一般の行列については（スパースなものを含めても）、スパースアクセス入力モデルとブロックエンコーディングのいずれも、行列次元に対してほぼ線形の回路計算量を必要とすることを証明する」と述べています。オラクルへのクエリ数が対数的でも、そのオラクル自身の回路が N に線形であれば、全体としては線形コストのルーチンです。",
     steps: [],
     citations: [
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyen, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "Circuit complexity of quantum access models for encoding classical data", authors: "Zhang, Yuan", year: "2023", url: "https://arxiv.org/abs/2311.11365" },
     ],
   },
@@ -802,7 +802,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["state-preparation"],
     entries: ["linear-combination-unitaries"],
     citations: [
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyen, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "Encoding Electronic Spectra in Quantum Circuits with Linear T Complexity", authors: "Babbush, Gidney, Berry, Wiebe, McClean, Paler, Fowler, Neven", year: "2018", url: "https://arxiv.org/abs/1805.03662" },
     ],
   },
@@ -824,7 +824,7 @@ export const LAYER_GRAPH: LayerGraph = {
     atomic: true,
     citations: [
       { title: "FABLE: Fast Approximate Quantum Circuits for Block-Encodings", authors: "Camps, Van Beeumen", year: "2022", url: "https://arxiv.org/abs/2205.00081" },
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyen, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
     ],
   },
   {
@@ -950,7 +950,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     citations: [
       { title: "Variable time amplitude amplification and a faster quantum algorithm for solving systems of linear equations", authors: "Ambainis", year: "2010", url: "https://arxiv.org/abs/1010.4458" },
-      { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Chakraborty, Gilyen, Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
+      { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Chakraborty, Gilyén, Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
     ],
   },
   {
