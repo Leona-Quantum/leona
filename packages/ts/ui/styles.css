@@ -10285,3 +10285,13 @@ div.mj-rail-row:hover {
   border-bottom: 1px solid var(--border-0);
 }
 .mj-repo-preface-layers a:hover { border-bottom-color: var(--accent); }
+/* Only rendered when a cross-link did not resolve at read time — so it is a
+   statement about the catalogue, not a status field, and it is absent on a
+   healthy one. Dashed rather than tinted: the same rule the contested section
+   follows, since it is a different KIND of sentence, not a warning. */
+.mj-layers-census-warn {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px dashed var(--border-0);
+  color: var(--text-2);
+}

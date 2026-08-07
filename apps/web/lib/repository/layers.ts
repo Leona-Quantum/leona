@@ -407,6 +407,20 @@ export interface LayerCensus {
   methods: number;
   /** Nodes with at least one resolving corpus slug. */
   anchored: number;
+  /**
+   * Declared slugs the corpus in hand does not carry.
+   *
+   * **Zero at build time and not guaranteed at read time**, which is the whole
+   * reason it is counted. `check-layer-graph.mjs` proves every slug resolves
+   * against the corpus in the repo; the page is served against whatever
+   * `getRepositoryListEntries()` returns, which is the catalog API in
+   * production and falls back to the static corpus without failing. A short or
+   * mid-import corpus would silently drop cross-links and quietly lower
+   * `anchored` — and the sentence built on it asks a visitor to believe a
+   * number about our own coverage. Counting the shortfall turns that into a
+   * statement the page can make out loud.
+   */
+  unresolvedEntries: number;
   /** Capabilities nothing realises yet. */
   openCapabilities: number;
   /** Methods nobody has decomposed and which are not declared atomic. */
@@ -421,14 +435,17 @@ export function layerCensus(graph: LayerGraph, corpus: ReadonlySet<string>): Lay
   const capabilities = graph.nodes.filter(isCapability);
   const methods = graph.nodes.filter(isMethod);
   const referenced = new Set<string>();
+  let unresolved = 0;
   for (const node of graph.nodes) {
     for (const slug of entriesFor(node, corpus)) referenced.add(slug);
+    unresolved += (node.entries ?? []).filter((slug) => !corpus.has(slug)).length;
   }
   return {
     nodes: graph.nodes.length,
     capabilities: capabilities.length,
     methods: methods.length,
     anchored: graph.nodes.filter((node) => entriesFor(node, corpus).length > 0).length,
+    unresolvedEntries: unresolved,
     openCapabilities: capabilities.filter((node) => capabilityOutlook(graph, node.id) === "open")
       .length,
     undecomposedMethods: methods.filter((node) => stepsOutlook(node) === "undecomposed").length,

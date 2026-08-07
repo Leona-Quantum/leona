@@ -181,6 +181,17 @@ test("the census counts what is there, including what is not", () => {
   assert.equal(census.anchored, 1);
   assert.equal(census.openCapabilities, 0);
   assert.equal(census.distinctEntries, 1);
+  assert.equal(census.unresolvedEntries, 0);
+});
+
+test("a corpus that does not carry a declared slug is counted, not silently absorbed", () => {
+  // The lint script proves every cross-link resolves against the corpus in the
+  // repo. Nothing proves it against the corpus the API serves at read time, and
+  // `anchored` would simply come out lower — a number about our own coverage,
+  // quietly wrong. The shortfall is counted so the page can say it.
+  const census = layerCensus(FIXTURE, new Set<string>());
+  assert.equal(census.anchored, 0);
+  assert.equal(census.unresolvedEntries, 1);
 });
 
 test("validation rejects the edges that would make a reading dishonest", () => {

@@ -75,6 +75,18 @@ const COPY = {
       `${anchored} of the ${nodes} link to a record in the Atlas, between them naming ${records} ${records === 1 ? "record" : "records"}. The rest name papers and nothing else: this graph describes work the catalogue has not got yet, and the nodes with no record are the list of what a corpus pass has to go and read.`,
     censusOpen: (open: number, undecomposed: number) =>
       `${open} ${open === 1 ? "slot has" : "slots have"} no method recorded, and ${undecomposed} ${undecomposed === 1 ? "method has" : "methods have"} not been taken apart. Both are shown as what they are rather than left blank.`,
+    /**
+     * Rendered only when it is non-zero, and it is zero on a healthy catalogue.
+     *
+     * The sentence above asks a visitor to believe a number about our own
+     * coverage. That number is computed against whatever the catalogue served
+     * this request — which is the API in production, with a silent fall back to
+     * the static corpus — so a short or mid-import catalogue would lower it
+     * without saying anything. This is the alternative to a number that quietly
+     * goes wrong.
+     */
+    censusUnresolved: (n: number) =>
+      `${n} cross-${n === 1 ? "link points" : "links point"} at a record the catalogue did not return for this page, so the count above is lower than what this graph declares. That is a catalogue problem, not a gap in the graph.`,
     startHeading: "Start here",
     depth: (n: number) => `Layer ${n}`,
     kindCapability: "Slot",
@@ -143,6 +155,8 @@ const COPY = {
       `${nodes}件のうち${anchored}件が Atlas の項目に接続しており、指している項目は延べ${records}件です。残りは論文のみを挙げています。このグラフはカタログにまだ入っていない仕事を記述しており、項目のないノードこそ、これから読むべき文献の一覧です。`,
     censusOpen: (open: number, undecomposed: number) =>
       `手法が記録されていない枠が${open}件、分解されていない手法が${undecomposed}件あります。どちらも空欄にせず、その状態のまま表示します。`,
+    censusUnresolved: (n: number) =>
+      `このページの表示時にカタログが返さなかった項目を指す相互リンクが${n}件あります。そのため上の件数は、このグラフが宣言している数より少なくなっています。これはカタログ側の問題であって、グラフの欠落ではありません。`,
     startHeading: "ここから",
     depth: (n: number) => `第${n}層`,
     kindCapability: "枠",
@@ -654,6 +668,14 @@ export function LayerIndexView({
         <p>{copy.census(census.nodes, census.capabilities, census.methods)}</p>
         <p>{copy.censusAnchored(census.anchored, census.nodes, census.distinctEntries)}</p>
         <p>{copy.censusOpen(census.openCapabilities, census.undecomposedMethods)}</p>
+        {/* Absent on a healthy catalogue, and that absence is correct: this is
+            not a status field, it is the sentence that stops the number above
+            from going quietly wrong when the catalogue serves less than the
+            repo does. `check-layer-graph.mjs` proves the links resolve at build
+            time; nothing proves it at read time. */}
+        {census.unresolvedEntries > 0 ? (
+          <p className="mj-layers-census-warn">{copy.censusUnresolved(census.unresolvedEntries)}</p>
+        ) : null}
       </section>
 
       <h2 className="mj-layers-start">{copy.startHeading}</h2>
