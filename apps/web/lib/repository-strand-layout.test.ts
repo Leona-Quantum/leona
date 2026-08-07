@@ -66,6 +66,51 @@ function method(id: string, realizes: string, extra: Partial<LayerMethod> = {}):
   };
 }
 
+/** Room a fascicle's bypass bundle takes below its outline, or zero. */
+function bypassRoom(node: StrandFascicle): number {
+  return node.bypasses.length
+    ? STRAND_METRICS.bypassArcBase + node.bypasses.length * STRAND_METRICS.bypassArcStep
+    : 0;
+}
+
+/**
+ * Everything a fascicle actually occupies: its outline, its name above it, and
+ * the strands routed under it.
+ */
+function fascicleExtent(node: StrandFascicle): [number, number] {
+  return [
+    node.y - node.halfHeight - STRAND_METRICS.fascicleLabelBand,
+    node.y + node.halfHeight + bypassRoom(node),
+  ];
+}
+
+/**
+ * Everything a fiber occupies — and this is the measurement that matters.
+ *
+ * Comparing lane *centres* was the first version of the sibling check and it is
+ * far too weak: two lanes 30px apart with 30px-tall content have centres 30
+ * apart and content that touches. Deleting the lane gap from the placement
+ * cursor survived that check completely. What has to be compared is the bands,
+ * label bands included, because that is what a reader sees collide.
+ */
+function fiberExtent(fiber: StrandFiber): [number, number] {
+  if (fiber.steps.length === 0) {
+    return [
+      fiber.laneY - STRAND_METRICS.leafHeight / 2,
+      fiber.laneY + STRAND_METRICS.leafHeight / 2,
+    ];
+  }
+  // The label band sits above the chain; the ascent of an 11.5px face is ~11.
+  let top = fiber.labelY - 11;
+  let bottom = fiber.labelY;
+  for (const step of fiber.steps) {
+    const [stepTop, stepBottom] = fascicleExtent(step);
+    top = Math.min(top, stepTop);
+    bottom = Math.max(bottom, stepBottom);
+  }
+  return [top, bottom];
+}
+
 /**
  * Every invariant that must hold of any diagram, collected rather than thrown.
  *
@@ -113,7 +158,7 @@ function violations(diagram: StrandDiagram): string[] {
       }
     }
 
-    const lanes: number[] = [];
+    const lanes: StrandFiber[] = [];
     for (const fiber of node.fibers) {
       // Both ends of every fiber meet the fascicle's two pinches. This is the
       // claim the shape makes — "these are alternatives, not stages" — and it is
@@ -141,16 +186,33 @@ function violations(diagram: StrandDiagram): string[] {
       if ((fiber.outlook === "decomposed") !== fiber.steps.length > 0) {
         found.push(`${fiber.id}: outlook "${fiber.outlook}" disagrees with ${fiber.steps.length} steps`);
       }
-      lanes.push(fiber.laneY);
+      // A sub-fascicle's name must clear the name of the fiber carrying it.
+      // Without this, dropping the child's own `liftTop` from the placement
+      // draws the two labels through each other and nothing else notices.
+      for (const step of fiber.steps) {
+        const [stepTop] = fascicleExtent(step);
+        if (stepTop < fiber.labelY - 0.5) {
+          found.push(
+            `${step.id}: its name band (${stepTop}) runs into ${fiber.id}'s name (${fiber.labelY})`,
+          );
+        }
+      }
+
+      lanes.push(fiber);
       for (const step of fiber.steps) walkFascicle(step, fiber);
     }
 
-    // Sibling lanes never collide. `laneGap` is the floor by construction, so
-    // anything under it means the stacking arithmetic drifted.
-    const sorted = [...lanes].sort((a, b) => a - b);
+    // Sibling fibers are separated by at least `laneGap` — measured between the
+    // bands they occupy, not between their centre lines.
+    const sorted = [...lanes].sort((a, b) => a.laneY - b.laneY);
     for (let i = 1; i < sorted.length; i += 1) {
-      if (sorted[i]! - sorted[i - 1]! < STRAND_METRICS.laneGap) {
-        found.push(`${node.id}: lanes ${sorted[i - 1]} and ${sorted[i]} collide`);
+      const [, previousBottom] = fiberExtent(sorted[i - 1]!);
+      const [thisTop] = fiberExtent(sorted[i]!);
+      if (thisTop - previousBottom < STRAND_METRICS.laneGap - 0.5) {
+        found.push(
+          `${node.id}: ${sorted[i - 1]!.id} ends at ${previousBottom} and ` +
+            `${sorted[i]!.id} starts at ${thisTop} — under the ${STRAND_METRICS.laneGap} lane gap`,
+        );
       }
     }
   }
