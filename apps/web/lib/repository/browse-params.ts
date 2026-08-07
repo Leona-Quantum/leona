@@ -31,6 +31,8 @@
 // Explicit `.ts` on every value import: this module is reachable from a
 // `node --test` entry point, which strips types but resolves paths literally.
 // Same convention as the rest of lib/repository.
+import { resolveRowLimit, type RowLimit } from "./browse-page.ts";
+import { BROWSE_ORDERS, type BrowseOrder } from "./browse-order.ts";
 import { isInterfaceStance, isPortEnd, type InterfaceStance, type PortEnd } from "./interface.ts";
 import { isTopicId, type TopicId } from "./topics.ts";
 import { isPublicRepositoryCategory, type PublicRepositoryCategory } from "./types.ts";
@@ -43,7 +45,27 @@ export interface ResolvedBrowseParams {
   stance: InterfaceStance | "";
   category: "all" | PublicRepositoryCategory;
   gate: string | null;
+  /** `?q=` — the text filter. Empty string means no filter. */
+  query: string;
+  /** `?order=` — which derived number ranks the list. */
+  order: BrowseOrder;
+  /** `?circuit=1` — hold back the records that pin no gate sequence. */
+  circuitOnly: boolean;
+  /** `?rows=` — how much of the list arrives on first paint. */
+  rows: RowLimit;
 }
+
+/**
+ * The longest `?q=` this route will act on.
+ *
+ * `matchesRepositoryQuery` walks every entry for every keystroke, so an
+ * arbitrarily long string from a URL is work an anonymous request can ask for.
+ * 200 characters is far past any real search of a catalogue whose longest title
+ * is under 80 — a longer one is truncated rather than rejected, because
+ * rejecting it would show the whole catalogue to somebody who plainly meant to
+ * filter, and truncation at least narrows.
+ */
+export const MAX_QUERY_LENGTH = 200;
 
 /**
  * The first value, when a param was repeated.
@@ -63,6 +85,9 @@ export function resolveBrowseParams(params: BrowseSearchParams): ResolvedBrowseP
   const stance = first(params.fits);
   const category = first(params.category);
   const gate = first(params.gate);
+  const query = first(params.q);
+  const order = first(params.order);
+  const circuit = first(params.circuit);
   return {
     topic: topic !== undefined && isTopicId(topic) ? topic : "",
     stance: stance !== undefined && isInterfaceStance(stance) ? stance : "",
@@ -70,7 +95,27 @@ export function resolveBrowseParams(params: BrowseSearchParams): ResolvedBrowseP
     // Trimmed and emptied to null, so `?gate=` with nothing after it is the same
     // as no param rather than a selection nothing can match.
     gate: gate && gate.trim() ? gate.trim() : null,
+    // Not validated against anything — a search string has no vocabulary, and
+    // the corpus answering nothing is a legitimate result rather than a stale
+    // bookmark. Bounded, though: see MAX_QUERY_LENGTH.
+    query: query ? query.trim().slice(0, MAX_QUERY_LENGTH) : "",
+    // `catalog` is the authored order and the default the page has always had,
+    // so an unrecognised or retired sort key lands on it rather than on an
+    // arbitrary ranking. The component may still override this to `catalog`
+    // when the listing that would rank it did not load — an order the data
+    // cannot supply is not an order.
+    order: order !== undefined && isBrowseOrder(order) ? order : "catalog",
+    // Only the two spellings a link of ours produces. Anything else is off,
+    // because this filter *removes* 163 of 283 records and a typo should not
+    // silently hide most of the catalogue.
+    circuitOnly: circuit === "1" || circuit === "true",
+    rows: resolveRowLimit(first(params.rows)),
   };
+}
+
+/** Whether `value` names an order this build can apply. */
+export function isBrowseOrder(value: string): value is BrowseOrder {
+  return (BROWSE_ORDERS as readonly string[]).includes(value);
 }
 
 /**

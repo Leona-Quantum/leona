@@ -19,6 +19,7 @@ import {
   isProfileOrder,
   type BrowseOrder,
 } from "../../lib/repository/browse-order";
+import { capRows, DEFAULT_ROW_LIMIT, type RowLimit } from "../../lib/repository/browse-page";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
 import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
 import { matchesRepositoryQuery } from "../../lib/repository/search";
@@ -73,6 +74,12 @@ const COPY = {
     countFolded: "{rows} entries · {records} records, sized variants folded",
     countFoldedTitle:
       "Sized and curated variants of the same circuit are folded into one entry. Every variant is still its own page, and the widths are listed on the card.",
+    // The cap, stated as two numbers rather than as "more below". A reader who
+    // cannot see how much is held back cannot tell a short list from a filtered
+    // one, and those mean opposite things about the catalogue.
+    showingOf: "Showing {shown} of {total}",
+    showMore: "Show more",
+    showAll: "Show all {total}",
     view: "View",
     gateExpand: "Expand into basic gates",
     gateCollapse: "Collapse to single gate",
@@ -152,6 +159,9 @@ const COPY = {
     countFolded: "{rows}件 · レコード{records}件（サイズ違いのバリアントを統合）",
     countFoldedTitle:
       "同じ回路のサイズ違い・厳選されたバリアントは1件にまとめています。各バリアントは個別のページとして残り、対応する量子ビット数はカードに表示されます。",
+    showingOf: "{total}件中{shown}件を表示",
+    showMore: "さらに表示",
+    showAll: "全{total}件を表示",
     view: "詳細",
     gateExpand: "基本ゲートに展開",
     gateCollapse: "元のゲート表示に戻す",
@@ -332,6 +342,10 @@ export function RepositoryBrowser({
   initialStance = "",
   initialCategory = "all",
   initialGate = null,
+  initialQuery = "",
+  initialOrder = "catalog",
+  initialCircuitOnly = false,
+  initialRows = DEFAULT_ROW_LIMIT,
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
@@ -363,27 +377,51 @@ export function RepositoryBrowser({
   initialCategory?: "all" | PublicRepositoryCategory;
   /** Resolved from `?gate=`; null when absent. An unknown slug falls back to the first gate. */
   initialGate?: string | null;
+  /** Resolved from `?q=`; "" when absent. */
+  initialQuery?: string;
+  /** Resolved from `?order=`; "catalog" when absent or unknown. */
+  initialOrder?: BrowseOrder;
+  /** Resolved from `?circuit=`; false unless the param says 1 or true. */
+  initialCircuitOnly?: boolean;
+  /** Resolved from `?rows=`; the default cap when absent or unrecognised. */
+  initialRows?: RowLimit;
 }) {
   const copy = COPY[locale];
-  const [query, setQuery] = useState("");
+  // Seeded from `?q=`, so a search is a thing you can send somebody. It was the
+  // only control on this page whose state a reader could see and not address.
+  const [query, setQuery] = useState(initialQuery);
   // Seeded from `?category=` for the reason the two below give, plus one this
   // control has and they do not: `gates` does not narrow the same view, it
   // swaps it for a sidebar and a detail pane. Without an address that whole
   // reading surface existed only after a click, so it had no link, no bookmark,
   // no crawler, and nothing at all for a reader with JS off (§0.5.1).
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>(initialCategory);
-  // Seeded from ?topic= by the server component, never read from `window` here:
-  // this page does not hydrate in either browser surface, so an effect that set
-  // it would leave the entry pages' topic chips linking to a filter that never
-  // applies. Seeding the initial state means the server's own HTML is filtered.
+  // Seeded from `?topic=` by the server component, never read from `window` in
+  // an effect. The reason is NOT that this page fails to hydrate — sessions
+  // 77–80 said that and session 81 measured the opposite on production; the
+  // claim came from `next dev` in an agent browser pane, whose CSP blocks the
+  // `eval()` that dev-mode React needs. The real reason survives the
+  // correction and is better: SSR'd HTML is the only version a crawler or a
+  // no-JS reader ever sees, and `curl | grep -c 'mj-repo-card'` can check it
+  // without a browser. An effect would filter the page a beat *after* paint,
+  // for readers who run JS, and not at all for anyone else.
   const [topic, setTopic] = useState<TopicId | "">(initialTopic);
-  // Seeded from `?fits=` by the server component, on exactly the terms `topic`
-  // is and for the same reason: this page does not hydrate, so a filter whose
-  // only state is a `useState` may never move for anyone. Entry pages link to
-  // this control, so the link has to arrive already applied.
+  // Seeded from `?fits=` on exactly the terms `topic` is, and for the same
+  // reason. Entry pages link to this control, so the link has to arrive already
+  // applied rather than applied on hydration.
   const [stance, setStance] = useState<InterfaceStance | "">(initialStance);
-  const [order, setOrder] = useState<BrowseOrder>("catalog");
-  const [circuitOnly, setCircuitOnly] = useState(false);
+  const [order, setOrder] = useState<BrowseOrder>(initialOrder);
+  const [circuitOnly, setCircuitOnly] = useState(initialCircuitOnly);
+  /**
+   * How much of the list is on the page (s91).
+   *
+   * Seeded from `?rows=` and moved by the control under the list, which is a
+   * real link *and* a click handler: following it navigates and re-renders on
+   * the server, clicking it grows the list in place without losing the scroll
+   * position. Both paths land on the same view, which is the rule the category
+   * strip and the gate sidebar already follow here.
+   */
+  const [rowLimit, setRowLimit] = useState<RowLimit>(initialRows);
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
   // Gate whose circuit is currently showing its basic-gate decomposition.
   const [expandedGates, setExpandedGates] = useState<Set<string>>(new Set());
@@ -818,18 +856,101 @@ export function RepositoryBrowser({
   const unrankedRows = useMemo(() => foldRows(unranked, groupOfSlug), [groupOfSlug, unranked]);
 
   /**
-   * How many rows the reader can actually count on the page (s81).
+   * The list, cut to the cap (s91).
+   *
+   * Only the default view. The other two are already short by construction and
+   * a cap would be the wrong tool for either: `gates` is a sidebar and one
+   * detail pane, and `algorithms` is `<details>` groups with only the first
+   * open, so neither ever put 176 cards on the page. Capping them would hide
+   * rows inside a collapsed group, where the control saying so is not visible.
+   */
+  const cappedList = useMemo(() => capRows(listRows, rowLimit), [listRows, rowLimit]);
+
+  /**
+   * The URL of this view, with `overrides` applied.
+   *
+   * Every filter now has a param, so this can build the *whole* address rather
+   * than a link that quietly drops the reader's search on the way to a longer
+   * list. Built from the live state and not from the incoming `searchParams`,
+   * which is the half that matters after hydration: a reader who typed a query
+   * and then middle-clicks "show everything" gets their query, because the href
+   * was rebuilt when they typed.
+   *
+   * Defaults are omitted, so the common address stays `/repository` rather than
+   * `/repository?q=&order=catalog&circuit=0&rows=24` — one canonical URL for
+   * the default view, which is what a crawler and a share link both want.
+   */
+  function browseHref(overrides: {
+    category?: "all" | PublicRepositoryCategory;
+    topic?: TopicId | "";
+    stance?: InterfaceStance | "";
+    query?: string;
+    order?: BrowseOrder;
+    circuitOnly?: boolean;
+    rows?: RowLimit;
+    gate?: string | null;
+  } = {}): string {
+    const next = {
+      category, topic, stance, query, order, circuitOnly, rows: rowLimit,
+      gate: selectedGate, ...overrides,
+    };
+    const params = new URLSearchParams();
+    if (next.category !== "all") params.set("category", next.category);
+    if (next.topic) params.set("topic", next.topic);
+    if (next.stance) params.set("fits", next.stance);
+    if (next.query) params.set("q", next.query);
+    if (next.order !== "catalog") params.set("order", next.order);
+    if (next.circuitOnly) params.set("circuit", "1");
+    if (next.rows !== DEFAULT_ROW_LIMIT) params.set("rows", String(next.rows));
+    // Only where it means something. `?gate=` selects within the gates view and
+    // is inert everywhere else, so carrying it onto an algorithms link would
+    // put a param in the URL that the page cannot act on.
+    if (next.category === "gates" && next.gate) params.set("gate", next.gate);
+    const search = params.toString();
+    return search ? `/repository?${search}` : "/repository";
+  }
+
+  /**
+   * Put `href` in the address bar without navigating.
+   *
+   * The intercepted click and the link have to end at the same place, and until
+   * this existed they did not: following the link gave `?rows=48`, clicking it
+   * grew the list and left the URL saying `/repository`. Nothing looked wrong —
+   * the page was right either way — but a reader who expanded the list and then
+   * copied the URL shared the *short* view, which is the quiet kind of wrong
+   * this route keeps finding.
+   *
+   * `replaceState` rather than `pushState`: growing a list is not a place, and
+   * a reader who pressed Back after three expansions should leave the Atlas
+   * rather than walk back down the chain. Guarded because this same component
+   * renders on the server, where there is no history.
+   */
+  function syncUrl(href: string) {
+    if (typeof window === "undefined") return;
+    window.history.replaceState(window.history.state, "", href);
+  }
+
+  /**
+   * How many rows the fold produced (s81).
+   *
+   * Deliberately **before** the cap: this number's whole job is to explain the
+   * gap between records and rows, and a capped count would attribute the cap's
+   * 152 missing rows to variant folding. How much of it is on the page is a
+   * different fact, and it is stated by the control under the list.
    *
    * R2.6 made the header disagree with the page: it said "283 public entries"
    * over 176 cards, because 120 records fold into 15 width families and 4 more
    * into 2 curated clusters. Both numbers were true and the gap was never
    * explained, so it read as "where did the other 107 go".
    *
-   * Summed from **the same arrays the body renders**, not recomputed from the
+   * Summed from **the arrays the body draws from**, not recomputed from the
    * fold rule. A second derivation of "how many rows are there" is a second
    * writer of one fact, and the two would drift the first time a view changed
    * which set it draws from — the failure being a count that is wrong in a way
-   * only a reader counting cards would ever catch.
+   * only a reader counting cards would ever catch. Since s91 the default branch
+   * renders a *prefix* of `listRows`, so this is no longer the number of cards
+   * on the screen; `cappedList` is the only thing that may state that, and it
+   * derives from this same array rather than from a second count.
    *
    * The unranked section renders under every view, so it is added in every
    * branch rather than only the default one.
@@ -1157,7 +1278,65 @@ export function RepositoryBrowser({
           ))}
         </div>
       ) : (
-        <div className="mj-repo-list">{listRows.map((row) => renderRow(row, listIsRanked))}</div>
+        <>
+          <div className="mj-repo-list">{cappedList.shown.map((row) => renderRow(row, listIsRanked))}</div>
+          {/* The rest of the list, and its address.
+
+              Two links, not one. "Show more" walks the doubling chain for a
+              reader who is browsing; "show everything" is for the reader who
+              knew from the first screen that they wanted the lot, and without
+              it the cap would cost them three clicks it never used to.
+
+              Real `<a href>`s. A reader with JS off follows them and the server
+              renders the longer list; a hydrated click is intercepted and grows
+              the list in place, which keeps the scroll position where a
+              navigation would lose it. Both land on the same view — the href is
+              exactly the state the click produces. */}
+          {cappedList.next !== null ? (
+            <div className="mj-repo-more">
+              <p className="mj-repo-more-count">
+                {copy.showingOf
+                  .replace("{shown}", String(cappedList.shown.length))
+                  .replace("{total}", String(listRows.length))}
+              </p>
+              <div className="mj-repo-more-actions">
+                <a
+                  className="mj-repo-more-link"
+                  href={browseHref({ rows: cappedList.next })}
+                  onClick={(event) => {
+                    if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                      return;
+                    }
+                    event.preventDefault();
+                    setRowLimit(cappedList.next as RowLimit);
+                    syncUrl(browseHref({ rows: cappedList.next as RowLimit }));
+                  }}
+                >
+                  {copy.showMore}
+                </a>
+                {/* Only when it says something the other link does not — when
+                    the next step already is everything, two controls with one
+                    destination is chrome, and chrome is the complaint. */}
+                {cappedList.next !== "all" ? (
+                  <a
+                    className="mj-text-link"
+                    href={browseHref({ rows: "all" })}
+                    onClick={(event) => {
+                      if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                        return;
+                      }
+                      event.preventDefault();
+                      setRowLimit("all");
+                      syncUrl(browseHref({ rows: "all" }));
+                    }}
+                  >
+                    {copy.showAll.replace("{total}", String(listRows.length))}
+                  </a>
+                ) : null}
+              </div>
+            </div>
+          ) : null}
+        </>
       )}
 
       {/* Entries the ordering had to leave out, kept visible and kept out of

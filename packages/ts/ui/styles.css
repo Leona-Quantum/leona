@@ -9682,6 +9682,52 @@ div.mj-rail-row:hover {
   max-width: 62ch;
 }
 
+/* ---------- the end of the list, and the way past it ---------- */
+/* `/repository` rendered all 176 rows: 22,825px of document, measured on
+   production. The cap is in lib/repository/browse-page.ts; this is the control
+   that states it. Centred and given air on both sides, because it is the one
+   thing below the fold that has to be found rather than scrolled past — the
+   failure it replaces is a reader who assumes 24 rows IS the catalogue. */
+.mj-repo-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-0);
+}
+.mj-repo-more-count {
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-repo-more-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+}
+/* A real button-sized target, because this is the primary action of the whole
+   page below the first screen. `--sp-2`/`--sp-4` rather than a bespoke pair so
+   it lines up with every other control on the route. */
+.mj-repo-more-link {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  text-decoration: none;
+}
+.mj-repo-more-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ---------- what an entry takes and returns: the piece ---------- */
 /* The owner asked for the interface as a shape — "puzzle pieces that connect to
    the corresponding pieces that fit before and after it". The shape earns its
