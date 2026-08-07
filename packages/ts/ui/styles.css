@@ -10508,7 +10508,21 @@ div.mj-rail-row:hover {
 .mj-strand-hit {
   fill: currentColor;
   opacity: 0;
+  pointer-events: fill;
 }
+/* The shape's own edge, made thick enough to hit.
+   `pointer-events: stroke` is load-bearing — it keeps the target on the outline
+   and off the interior, so a slot never steals the clicks meant for the fibres
+   drawn inside it. `fill: none` alone would not: `pointer-events` defaults to
+   `visiblePainted`, which for a zero-opacity path means nothing is hit at all. */
+.mj-strand-hit-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 13;
+  opacity: 0;
+  pointer-events: stroke;
+}
+.mj-strand-canvas a:hover .mj-strand-hit-line { opacity: 0.07; }
 .mj-strand-canvas a { cursor: pointer; }
 .mj-strand-canvas a:hover .mj-strand-fascicle-label,
 .mj-strand-canvas a:focus-visible .mj-strand-fascicle-label,

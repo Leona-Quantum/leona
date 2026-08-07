@@ -158,6 +158,17 @@ function Fascicle({
 
       <a className="mj-strand-fascicle-link" href={node.href}>
         <title>{tooltip}</title>
+        {/* The outline itself, as a hit target.
+            A fat transparent **stroke** rather than a fill, and the difference is
+            the whole point: a filled lens would cover its own interior, and the
+            interior is where this slot's fibres and their sub-slots are drawn —
+            the parent would eat every click meant for a child. Stroking only the
+            edge leaves the inside free, and since children are rendered after
+            this group they sit above it anyway. */}
+        <path
+          className="mj-strand-hit-line"
+          d={lensPath(node.x, node.y, node.width, node.halfHeight, node.pinchRun)}
+        />
         <text
           className="mj-strand-fascicle-label"
           x={n(node.x + 3)}
@@ -205,6 +216,11 @@ function Fiber({ fiber, copy }: { fiber: StrandFiber; copy: StrandCopy }) {
       <path className="mj-strand-fiber-line" d={fiberPath(fiber)} />
       <a className="mj-strand-fiber-link" href={fiber.href}>
         <title>{tooltip}</title>
+        {/* Same idea on the strand: the fibre's own line is thin, so its hit
+            target is a fat transparent stroke following it. Its sub-fascicles
+            are rendered after this and therefore win the pointer where they
+            overlap it. */}
+        <path className="mj-strand-hit-line" d={fiberPath(fiber)} />
         <text
           className="mj-strand-fiber-label"
           x={n(isLeaf ? (fiber.laneX0 + fiber.laneX1) / 2 : fiber.laneX0 + 2)}

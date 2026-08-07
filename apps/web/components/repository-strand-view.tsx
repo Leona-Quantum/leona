@@ -37,15 +37,30 @@ export const STRAND_DEPTHS = [1, 2, 3] as const;
 export type StrandDepth = (typeof STRAND_DEPTHS)[number];
 
 /**
+ * The switch's three words, in one place, because two surfaces render it.
+ *
+ * `LayerIndexView` draws the same control from the other side and had its own
+ * inline locale conditions for the same three strings. Two copies of a
+ * translated label is the shape that drifts: one of them gets reworded and the
+ * two views start disagreeing about what the reader is looking at.
+ */
+export function viewSwitchLabels(locale: PublicLocale): {
+  view: string;
+  strands: string;
+  list: string;
+} {
+  return locale === "ja"
+    ? { view: "表示", strands: "ストランド", list: "リスト" }
+    : { view: "View", strands: "Strands", list: "List" };
+}
+
+/**
  * Named for the reason `repository-strands.tsx` gives: `as const` on a
  * two-locale record narrows each string to its own literal type and the
  * Japanese half stops being assignable to the English one.
  */
 interface StrandViewCopy {
   heading: string;
-  strands: string;
-  list: string;
-  view: string;
   depth: string;
   lede: string;
   ledeOverview: string;
@@ -56,6 +71,7 @@ interface StrandViewCopy {
   inside: string;
   around: string;
   noneAround: string;
+  noneInside: string;
   noneBeside: string;
   writeUp: string;
   closed: (n: number) => string;
@@ -73,9 +89,6 @@ interface StrandViewCopy {
 const COPY: Record<"en" | "ja", StrandViewCopy> = {
   en: {
     heading: "Layers",
-    strands: "Strands",
-    list: "List",
-    view: "View",
     depth: "Depth",
     lede: "Every slot is a shape you enter and leave through one point — its contract. The fibres inside it are the recorded ways through. A fibre made of smaller shapes is a method whose own steps are slots.",
     ledeOverview:
@@ -87,6 +100,7 @@ const COPY: Record<"en" | "ja", StrandViewCopy> = {
     inside: "Ways through",
     around: "Routes that skip it",
     noneAround: "No recorded route avoids this step.",
+    noneInside: "No method is recorded for this slot yet.",
     noneBeside: "Nothing contains this slot — it is a place to start.",
     writeUp: "Read the full write-up",
     closed: (n: number) =>
@@ -104,9 +118,6 @@ const COPY: Record<"en" | "ja", StrandViewCopy> = {
   },
   ja: {
     heading: "階層",
-    strands: "ストランド",
-    list: "リスト",
-    view: "表示",
     depth: "深さ",
     lede: "各枠は、入口と出口がそれぞれ一点に絞られた形で表されます。その一点が契約です。内部の繊維は記録された通り道であり、さらに小さな形からなる繊維は、その手順自体が枠である手法を表します。",
     ledeOverview:
@@ -119,6 +130,7 @@ const COPY: Record<"en" | "ja", StrandViewCopy> = {
     inside: "通り道",
     around: "この枠を飛ばす経路",
     noneAround: "この手順を回避する経路は記録されていません。",
+    noneInside: "この枠を満たす手法はまだ記録されていません。",
     noneBeside: "この枠を含むものはありません — ここが出発点です。",
     writeUp: "解説を全文読む",
     closed: (n: number) => `この深さでは ${n} 件の枠を閉じて描いています — 開くか、深さを上げてください。`,
@@ -276,13 +288,21 @@ function Rail({
           <h3>
             {copy.inside} <span className="mj-strand-rail-count">{methods.length}</span>
           </h3>
-          <ul>
-            {methods.map((item) => (
-              <li key={item.id}>
-                <Link href={`/repository/layers/${item.id}`}>{label(item)}</Link>
-              </li>
-            ))}
-          </ul>
+          {/* A slot nothing realises is a supported state of the diagram — it is
+              drawn with a dashed outline — so the rail has to say so rather than
+              render an empty list. Three of the four sections here already did;
+              this one was the omission. */}
+          {methods.length === 0 ? (
+            <p className="mj-strand-rail-none">{copy.noneInside}</p>
+          ) : (
+            <ul>
+              {methods.map((item) => (
+                <li key={item.id}>
+                  <Link href={`/repository/layers/${item.id}`}>{label(item)}</Link>
+                </li>
+              ))}
+            </ul>
+          )}
         </section>
 
         <section>
@@ -322,6 +342,7 @@ export function StrandView({
   depth: StrandDepth;
 }) {
   const copy = copyFor(locale);
+  const nav = viewSwitchLabels(locale);
   const lang: "en" | "ja" = locale === "ja" ? "ja" : "en";
   const roots = rootCapabilities(graph);
   const census = layerCensus(graph, new Set(corpus.map((entry) => entry.slug)));
@@ -346,10 +367,10 @@ export function StrandView({
       </header>
 
       <div className="mj-strand-controls">
-        <div className="mj-strand-switch" role="group" aria-label={copy.view}>
-          <span className="mj-strand-switch-label">{copy.view}</span>
-          <span className="mj-strand-switch-on">{copy.strands}</span>
-          <Link href="/repository/layers?view=list">{copy.list}</Link>
+        <div className="mj-strand-switch" role="group" aria-label={nav.view}>
+          <span className="mj-strand-switch-label">{nav.view}</span>
+          <span className="mj-strand-switch-on">{nav.strands}</span>
+          <Link href="/repository/layers?view=list">{nav.list}</Link>
         </div>
         <div className="mj-strand-switch" role="group" aria-label={copy.depth}>
           <span className="mj-strand-switch-label">{copy.depth}</span>
