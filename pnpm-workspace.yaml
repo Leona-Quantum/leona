@@ -29,7 +29,29 @@ overrides:
   # change, and "build-time only" is an argument for not panicking, not an
   # argument for keeping a known-vulnerable URL parser on the tree.
   fast-uri: 3.1.5
-  js-yaml: 4.3.0
+  # GHSA-5p4m-2wfm-xmqj (CVSS 7.5, published 2026-08-06): `resolveYamlOmap()`
+  # enforces key uniqueness with `objectKeys.indexOf()` inside the per-element
+  # loop, so resolving an n-entry `!!omap` is O(n²) and blocks the event loop
+  # inside `yaml.load()`. `!!omap` is in the DEFAULT schema, so a bare
+  # `yaml.load(input)` is affected with no custom configuration. It is the same
+  # weakness as CVE-2026-59870, fixed in 5.2.1 and never backported; 4.3.0 was
+  # the newest 4.x release when the advisory landed, so this is not a
+  # you-are-on-an-old-version finding. Patched at 4.3.1 (and 3.15.1).
+  #
+  # Traced, as with fast-uri and postcss below. `@redocly/openapi-core` is the
+  # only dependent on the tree, reached through openapi-typescript, which is a
+  # devDependency of packages/ts/contracts-gen — the contracts codegen reading
+  # this repository's own OpenAPI spec at build time. No runtime path parses a
+  # user's YAML: nothing in the API or the web app calls js-yaml at all. So the
+  # DoS is not reachable, and the bump is taken anyway on the standing rule that
+  # "build-time only" is a reason not to panic and not a reason to sit on a
+  # known-vulnerable parser.
+  #
+  # The 4.3.0 pin it replaces arrived inside a broad "refresh security lock"
+  # commit (591215e9) with no advisory recorded, which is why this line now
+  # carries one. 4.3.1 published 2026-07-31, so it clears `minimumReleaseAge`
+  # above without the exclude hatch.
+  js-yaml: 4.3.1
   sharp: 0.35.3
   # postcss advisories keep landing on the version Next/Tailwind pull in:
   # GHSA-6g55-p6wh-862q flagged 8.4.31, then GHSA-r28c-9q8g-f849 (CVSS 7.5,
