@@ -255,6 +255,7 @@ export function RepositoryEntryView({
   estimate,
   profile,
   connections,
+  connectionsOpen,
 }: {
   entry: PublicRepositoryEntry;
   locale: PublicLocale;
@@ -286,6 +287,17 @@ export function RepositoryEntryView({
    * something to compose to infer it from silence.
    */
   connections?: ReactNode;
+  /**
+   * Whether `?port=` named an end, which forces the connections section open.
+   *
+   * Without this the address is decorative: `?port=in` expands a `<details>`
+   * *inside* a section that is itself collapsed by default, so a reader
+   * following the link arrives at a page where the thing they were linked to is
+   * hidden — and `curl | grep` still shows `open=""` on the inner element, so
+   * the check that proves the param works passes either way. Found by looking
+   * at the rendered page rather than at the markup.
+   */
+  connectionsOpen?: boolean;
   related: RelatedEntrySummary[];
 }) {
   const copy = COPY[locale];
@@ -393,7 +405,11 @@ export function RepositoryEntryView({
               above answer "what is this circuit"; this one answers "what could
               it be part of", which is a different question and the one a reader
               has to have finished the first two to ask. */}
-          {connections ? <DetailSection title={copy.connections}>{connections}</DetailSection> : null}
+          {connections ? (
+            <DetailSection title={copy.connections} defaultOpen={connectionsOpen}>
+              {connections}
+            </DetailSection>
+          ) : null}
 
           <DetailSection title={copy.how} defaultOpen>
             <MarkdownContent source={explanation} className="mj-repo-markdown" />
