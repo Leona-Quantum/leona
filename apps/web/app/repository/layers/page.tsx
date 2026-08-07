@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { PublicSite } from "../../../components/public-site";
 import { LayerIndexView } from "../../../components/repository-layers";
-import { ProcessMapView } from "../../../components/repository-process-view";
+import { MAP_OPEN_MAX, ProcessMapView } from "../../../components/repository-process-view";
 import { StrandView, STRAND_DEPTHS, type StrandDepth } from "../../../components/repository-strand-view";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
@@ -34,22 +34,59 @@ export async function generateMetadata(): Promise<Metadata> {
 /**
  * `?open=<root id>` — which top-level slot the **list** view arrives expanded.
  *
- * The map does not read this. Session 92 briefly merged the two into one set,
- * for a nesting feature the map ended up not shipping — it drills down by
- * `?focus=` instead — so the parameter means exactly what it always meant and
- * belongs to one view.
+ * The list takes one, because a `<details>` is one disclosure and the list's
+ * roots are the only things it discloses. The map takes a set — see
+ * `resolveOpenSet` — and the two readings of one parameter name are deliberate:
+ * on both views it means "this is showing its insides", and on both it is a real
+ * address rather than an `onClick`, which is D88.2's rule.
  *
  * Resolved here, on the server, and validated against the root ids rather than
  * trusted: an unrecognised value means "the default", never an empty page. Same
- * rule `browse-params.ts` states for the four Atlas deep links, and the reason
- * this is a `<details open>` rather than an `onClick` is D88.2 — a control that
- * only works after hydration has no address at all.
+ * rule `browse-params.ts` states for the four Atlas deep links.
  */
 function resolveOpenRoot(params: Record<string, string | string[] | undefined>): string | null {
   const raw = params.open;
   const value = Array.isArray(raw) ? raw[0] : raw;
   if (typeof value !== "string") return null;
   return rootCapabilities(LAYER_GRAPH).some((root) => root.id === value) ? value : null;
+}
+
+/**
+ * `?open=` on the **map**: every slot drawn expanded in place, as a set.
+ *
+ * A set rather than one id because the owner asked for exactly that, twice:
+ * *"clicking on the line expands the line within the page/visualization itself
+ * … with everything else still in view"*, and *"they can still click on process
+ * lines on whatever zoomed in layer you are in to see more connections without
+ * rendering a layer deeper."* One id would mean opening a second thing shuts the
+ * first, which is the surface session 92 shipped and the one this replaces.
+ *
+ * Every id is validated against the graph's capabilities and unknown ones are
+ * dropped rather than rejected — a URL naming four slots, one of which has since
+ * been renamed, opens the other three instead of failing. `MAP_OPEN_MAX` bounds
+ * it, because the parameter is user-supplied and the layout it drives is
+ * recursive; the count over the cap is handed to the view, which prints it. The
+ * constant is imported rather than repeated: the number that enforces and the
+ * number that is reported have to be one number.
+ */
+function resolveOpenSet(params: Record<string, string | string[] | undefined>): {
+  open: ReadonlySet<string>;
+  dropped: number;
+} {
+  const raw = params.open;
+  const values = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
+  const open = new Set<string>();
+  let dropped = 0;
+  for (const value of values) {
+    const node = layerNode(LAYER_GRAPH, value);
+    if (!node || !isCapability(node)) continue;
+    if (open.size >= MAP_OPEN_MAX) {
+      dropped += 1;
+      continue;
+    }
+    open.add(value);
+  }
+  return { open, dropped };
 }
 
 function one(params: Record<string, string | string[] | undefined>, key: string): string | null {
@@ -130,6 +167,7 @@ export default async function RepositoryLayersPage({
   // later change to this surface start reading fields the graph has no business
   // depending on.
   const view = resolveView(params);
+  const openSet = resolveOpenSet(params);
   const corpus: LayerCorpusEntry[] = entries.map((entry) => ({
     slug: entry.slug,
     title: entry.title,
@@ -165,6 +203,8 @@ export default async function RepositoryLayersPage({
           corpus={corpus}
           locale={locale}
           focusId={resolveFocus(params)}
+          openIds={openSet.open}
+          droppedOpen={openSet.dropped}
         />
       )}
     </PublicSite>

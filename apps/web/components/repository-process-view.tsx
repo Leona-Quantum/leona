@@ -26,14 +26,33 @@ import { viewSwitchLabels } from "./repository-strand-view";
 import type { PublicLocale } from "../lib/public-locale";
 
 /**
- * The map opens exactly one slot at a time and there is no depth control.
+ * How deep the map will draw an expansion it has been asked for.
  *
- * Not a simplification for its own sake: nesting a second slot inside a lane
- * puts the parent's circles on a line running through the middle of the nested
- * block, and their names spill sideways into it. Drilling down instead is the
- * owner's own model and it is the version that keeps the no-overlap guarantee.
+ * It was 1, with a comment saying nesting a slot inside a lane puts the parent's
+ * circles on a line running through the middle of the nested block and their
+ * names spill sideways into it. That was true and it was a diagnosis about
+ * **names**: state names are now in `<title>` on the owner's brief, so they have
+ * no extent to spill. What is left is circles and lines, which the column model
+ * has always kept apart.
+ *
+ * This is a ceiling, not a setting. Nothing expands unless its id is in `?open=`,
+ * so what a reader sees is what they clicked; this only says how far a chain of
+ * deliberate clicks may go before the map stops following. Four is past anything
+ * in the graph today — the deepest recorded chain is three — so it binds on a
+ * hand-written URL rather than on a reader.
  */
-export const MAP_DEPTH = 1;
+export const MAP_DEPTH = 4;
+
+/**
+ * How many slots `?open=` may name at once.
+ *
+ * The parameter is user-supplied and drives a recursive layout, so it is
+ * bounded. It lives here rather than in the page because the page enforces it
+ * and this component *reports* it, and those two numbers must be one number.
+ * Twenty-four is past anything a reader reaches by clicking — the whole authored
+ * graph fully opened from its widest root names fewer.
+ */
+export const MAP_OPEN_MAX = 24;
 
 interface MapViewCopy {
   heading: string;
@@ -51,6 +70,7 @@ interface MapViewCopy {
   writeUp: string;
   collapsed: (n: number) => string;
   allOpen: string;
+  droppedOpen: (n: number, max: number) => string;
   routes: (delegated: number, partly: number, whole: number) => string;
   legendSlot: string;
   legendMethod: string;
@@ -82,6 +102,9 @@ const COPY: Record<"en" | "ja", MapViewCopy> = {
     collapsed: (n: number) =>
       `${n} line${n === 1 ? " has" : "s have"} ways through that you have not opened.`,
     allOpen: "Everything on this map is open.",
+    droppedOpen: (n: number, max: number) =>
+      `This link asked for ${n} more ${n === 1 ? "slot" : "slots"} than the map will open at once. `
+      + `${max} are drawn; the rest are shown shut. Open them from the map instead of the address bar.`,
     routes: (delegated: number, partly: number, whole: number) =>
       `Of the routes that have been taken apart, ${delegated} are built entirely from named slots, ${partly} hand off part of the work and finish the rest themselves, and ${whole} are one undivided act. None of the three is a defect; they are different things to reuse.`,
     legendSlot: "a slot — click to open",
@@ -111,6 +134,8 @@ const COPY: Record<"en" | "ja", MapViewCopy> = {
     writeUp: "解説を全文読む",
     collapsed: (n: number) => `まだ開いていない通り道をもつ線が ${n} 本あります。`,
     allOpen: "このマップ上で閉じているものはありません。",
+    droppedOpen: (n: number, max: number) =>
+      `このリンクは、同時に開ける上限より ${n} 件多くの枠を要求しました。${max} 件を描画し、残りは閉じたまま表示しています。アドレスバーではなくマップ上から開いてください。`,
     routes: (delegated: number, partly: number, whole: number) =>
       `分解されている経路のうち、${delegated} 件は名前のついた枠だけで構成され、${partly} 件は一部を枠に委ね残りを自身で行い、${whole} 件は分けられないひとつの作業です。いずれも欠陥ではなく、再利用の単位が違うということです。`,
     legendSlot: "枠 — クリックで展開",
@@ -325,22 +350,36 @@ export function ProcessMapView({
   corpus: _corpus,
   locale,
   focusId,
+  openIds,
+  droppedOpen = 0,
 }: {
   graph: LayerGraph;
   corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
   focusId: string | null;
+  openIds: ReadonlySet<string>;
+  droppedOpen?: number;
 }): React.ReactElement {
   const copy = copyFor(locale);
   const nav = viewSwitchLabels(locale);
   const roots = rootCapabilities(graph);
   const shown = focusId ? [layerNode(graph, focusId)].filter(isCapabilityNode) : roots;
 
-  // The focused slot is the one that opens; on the overview nothing does.
-  const open: ReadonlySet<string> = new Set(focusId ? [focusId] : []);
+  // `?open=` is what a reader clicked; the focused slot joins it because arriving
+  // at a slot's own view with it shut would show a reader the one line they just
+  // asked to see the inside of.
+  const open: ReadonlySet<string> = new Set([...openIds, ...(focusId ? [focusId] : [])]);
   const diagrams: { id: string; diagram: ProcessDiagram }[] = shown.map((capability) => ({
     id: capability.id,
-    diagram: layoutProcessMap(graph, STATE_VOCABULARY, capability.id, locale, open, MAP_DEPTH),
+    diagram: layoutProcessMap(
+      graph,
+      STATE_VOCABULARY,
+      capability.id,
+      locale,
+      open,
+      MAP_DEPTH,
+      focusId,
+    ),
   }));
   const collapsed = diagrams.reduce((total, entry) => total + entry.diagram.collapsedCount, 0);
 
@@ -391,6 +430,12 @@ export function ProcessMapView({
           <p className="mj-strand-note">
             {collapsed > 0 ? copy.collapsed(collapsed) : copy.allOpen}
           </p>
+          {/* The `?open=` cap, said out loud. It is bounded because the parameter
+              is user-supplied and drives a recursive layout, and a cap a reader
+              cannot see is a map quietly missing something they asked for. */}
+          {droppedOpen > 0 ? (
+            <p className="mj-strand-note">{copy.droppedOpen(droppedOpen, MAP_OPEN_MAX)}</p>
+          ) : null}
           <p className="mj-strand-note">{copy.routes(delegated, partly, whole)}</p>
         </div>
         {focusId ? (

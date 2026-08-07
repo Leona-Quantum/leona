@@ -67,6 +67,7 @@ import {
   estimateTextWidth,
   fitLabel,
   layoutProcessMap,
+  processPageHref,
   slotHref,
   stateHref,
   PROCESS_METRICS,
@@ -217,10 +218,11 @@ function textBox(
 /** Every name on the canvas, in the place the renderer puts it. */
 function textBoxes(diagram: ProcessDiagram): TextBox[] {
   const boxes: TextBox[] = [];
-  // `<text className="mj-process-state-name" x={cx} y={cy + r + 13} textAnchor="middle">`
-  for (const box of diagram.states) {
-    boxes.push(textBox(box.key, "state name", box.cx, box.cy + box.r + 13, box.label, M.stateFont, "middle"));
-  }
+  // A state contributes **no** text box: its name is in `<title>`, which the
+  // browser draws in its own tooltip layer and which therefore has no extent on
+  // the canvas. This used to be the first loop here, over
+  // `<text className="mj-process-state-name" …>`, and between them those boxes
+  // were three of the four real collisions session 92 found.
   // `<text className="mj-process-name" x={midX} y={y - 7} textAnchor="middle">`
   for (const process of diagram.processes) {
     boxes.push(
@@ -235,9 +237,9 @@ function textBoxes(diagram: ProcessDiagram): TextBox[] {
       ),
     );
   }
-  // `<text className="mj-process-group-name" x={x0 + 4} y={top - 5}>`
+  // `<text className="mj-process-group-name" x={x0 + 4} y={top + 13}>`
   for (const group of diagram.groups) {
-    boxes.push(textBox(group.key, "group name", group.x0 + 4, group.top - 5, group.label, M.processFont, "start"));
+    boxes.push(textBox(group.key, "group name", group.x0 + 4, group.top + 13, group.label, M.processFont, "start"));
   }
   // `<text className="mj-process-lane-name" x={lane.x} y={lane.y}>`
   for (const lane of diagram.lanes) {
@@ -428,8 +430,10 @@ function violations(diagram: ProcessDiagram, open: ReadonlySet<string>): string[
   // because it is the flag the renderer uses to decide whether the shape needs
   // its full name anywhere at all. A cut label whose flag says otherwise is a
   // name that has been silently lost, not abbreviated.
-  for (const shape of [...processes, ...states, ...groups, ...lanes, ...feeds]) {
+  for (const shape of [...groups, ...lanes, ...feeds]) {
     if (!shape.href) found.push(`${shape.key}: no href`);
+  }
+  for (const shape of [...processes, ...groups, ...lanes, ...feeds]) {
     if (!shape.fullLabel) found.push(`${shape.key}: no fullLabel`);
     if (shape.labelTruncated) {
       if (shape.label === shape.fullLabel) found.push(`${shape.key}: flagged cut but nothing was cut`);
@@ -439,6 +443,28 @@ function violations(diagram: ProcessDiagram, open: ReadonlySet<string>): string[
       }
     } else if (shape.label !== shape.fullLabel) {
       found.push(`${shape.key}: label differs from fullLabel but is not flagged cut`);
+    }
+  }
+  // A state has a name and a destination but no drawn label, so it is checked for
+  // the two it has. Losing `fullLabel` here would be worse than on any other
+  // shape: it is the *only* place a state's name appears.
+  for (const state of states) {
+    if (!state.href) found.push(`${state.key}: no href`);
+    if (!state.fullLabel) found.push(`${state.key}: no fullLabel`);
+  }
+  // A process's line and its name go to different places, and the name's address
+  // is the one that must always exist — a line may legitimately be inert.
+  for (const process of processes) {
+    if (!process.pageHref) found.push(`${process.key}: no pageHref`);
+    if (process.href !== null && process.href === process.pageHref) {
+      found.push(`${process.key}: line and name lead to the same place`);
+    }
+    // Only a slot with recorded ways through it can be opened. A method's line
+    // and an empty slot's line must not look like controls.
+    const openable = process.weight === "slot" && process.state === "collapsed";
+    if (openable && process.href === null) found.push(`${process.key}: openable but its line is inert`);
+    if (!openable && process.href !== null) {
+      found.push(`${process.key}: nothing to open but its line is a control`);
     }
   }
 
@@ -883,61 +909,151 @@ test("an id that is not a capability yields an empty diagram rather than a throw
 // Where the shapes link to
 // ---------------------------------------------------------------------------
 
-test("a slot drills down to its own map; a state links to its own page", () => {
+test("a line toggles one slot and leaves the rest of the map alone", () => {
   assert.equal(stateHref("linear-generator"), "/repository/layers/linear-generator");
+  assert.equal(processPageHref("qls"), "/repository/layers/qls");
 
-  // Clicking a slot re-centres the map on it rather than expanding it where it
-  // stands. The destination therefore depends on **nothing but the id** — not on
-  // what is currently open, not on where the reader came from — which is what
-  // makes every shape on the canvas a plain, crawlable, idempotent address.
-  const target = "/repository/layers?view=map&focus=qls";
-  assert.equal(slotHref("qls", new Set(), null), target);
-  assert.equal(slotHref("qls", new Set(["ode"]), "ode"), target);
-  assert.equal(slotHref("qls", new Set(["ode", "qls"]), "other"), target);
+  // Opening adds; it does not replace. This is the owner's *"everything else
+  // still in view"*, and it is the whole difference from the `?focus=`-only
+  // surface session 92 shipped, where opening a second slot shut the first.
+  assert.equal(slotHref("qls", new Set(), null), "/repository/layers?view=map&open=qls");
+  assert.equal(
+    slotHref("qls", new Set(["ode"]), null),
+    "/repository/layers?view=map&open=ode&open=qls",
+  );
+
+  // Clicking an open one shuts it, and shuts only it.
+  assert.equal(
+    slotHref("qls", new Set(["ode", "qls"]), null),
+    "/repository/layers?view=map&open=ode",
+  );
+  assert.equal(slotHref("qls", new Set(["qls"]), null), "/repository/layers?view=map");
+
+  // The zoom level rides along untouched — opening something inside a focused
+  // slot must not throw the reader back out to the overview.
+  assert.equal(
+    slotHref("qls", new Set(["ode"]), "ode"),
+    "/repository/layers?view=map&focus=ode&open=ode&open=qls",
+  );
+
+  // One arrangement, one URL: the order ids arrive in must not change the
+  // address, or two readers who opened the same three slots cannot compare links
+  // and a cache holds the same page twice.
+  assert.equal(
+    slotHref("c", new Set(["b", "a"]), null),
+    slotHref("c", new Set(["a", "b"]), null),
+  );
+  assert.equal(slotHref("c", new Set(["b", "a"]), null), "/repository/layers?view=map&open=a&open=b&open=c");
+
   // An id needing escaping still produces one link rather than a broken query.
-  assert.ok(slotHref("a b", new Set(), null).endsWith("focus=a%20b"));
+  assert.ok(slotHref("a b", new Set(), null).endsWith("open=a%20b"));
+  assert.ok(slotHref("x", new Set(), "a b").includes("focus=a%20b"));
+});
+
+test("a toggle on the overview stays on the overview", () => {
+  // The bug this pins, found on the rendered page: `layoutProcessMap` passed
+  // `rootId` where the page's `?focus=` belonged — harmless while `slotHref`
+  // ignored the argument, and wrong the moment a line started toggling. Every
+  // link on the four-root overview came out carrying `focus=<that root>`, so
+  // opening one thing navigated into its root and took the other three roots
+  // off the page. That is precisely what "everything else still in view" is not.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("top", "alpha", "gamma"),
+      method("way", "top", { steps: ["hop"] }),
+      capability("hop", "alpha", "beta"),
+      method("hop-way", "hop", { atomic: true }),
+    ],
+  };
+  const states = vocabulary(state("alpha"), state("beta"), state("gamma"));
+
+  // Drawn with no focus — the overview. No link may invent one.
+  const overview = layoutProcessMap(graph, states, "top", "en", new Set(["top"]), 3);
+  const links = [
+    ...overview.processes.map((p) => p.href),
+    ...overview.groups.map((g) => g.closeHref),
+  ].filter((href): href is string => href !== null);
+  assert.ok(links.length > 0, "nothing to check");
+  for (const href of links) assert.ok(!href.includes("focus="), href);
+
+  // Drawn at a zoom level — every link keeps it, so opening something inside a
+  // focused slot does not throw the reader back out.
+  const zoomed = layoutProcessMap(graph, states, "top", "en", new Set(["top"]), 3, "top");
+  const zoomedLinks = [
+    ...zoomed.processes.map((p) => p.href),
+    ...zoomed.groups.map((g) => g.closeHref),
+  ].filter((href): href is string => href !== null);
+  for (const href of zoomedLinks) assert.ok(href.includes("focus=top"), href);
+});
+
+test("toggling the same line twice is the address you started from", () => {
+  // The property behind the assertions above, stated once and read back off the
+  // URL rather than off the set that produced it: a toggle is its own inverse.
+  // A scheme where it is not strands a reader on a map they cannot leave by
+  // clicking the thing they just clicked.
+  const openIn = (href: string): Set<string> =>
+    new Set(
+      href
+        .split("?")[1]!
+        .split("&")
+        .filter((pair) => pair.startsWith("open="))
+        .map((pair) => decodeURIComponent(pair.slice("open=".length))),
+    );
+
+  for (const start of [[], ["a"], ["a", "b"], ["q"], ["a", "q", "b"]]) {
+    for (const focus of [null, "a"]) {
+      const once = openIn(slotHref("q", new Set(start), focus));
+      const twice = openIn(slotHref("q", once, focus));
+      assert.deepEqual([...twice].sort(), [...start].sort(), `start=${start} focus=${focus}`);
+      // And the first click really did change something, or "its own inverse"
+      // would be satisfied by a link that does nothing at all.
+      assert.notDeepEqual([...once].sort(), [...start].sort());
+    }
+  }
 });
 
 // ---------------------------------------------------------------------------
 // Truncation — cut in the shape, never lost
 // ---------------------------------------------------------------------------
 
-test("a state name too long for its column is cut on the canvas and kept whole in fullLabel", () => {
-  // A state name is the one label with a hard ceiling — `stateLabelMax`, because
-  // otherwise a single object's name would set the width of a whole column and
-  // therefore of the canvas. A slot's name has no such cap: its run is sized
-  // *from* its name by `processRunWidth`, so it is not cut, and the asymmetry is
-  // deliberate. Both halves are asserted, because "nothing is ever truncated"
-  // and "the cap works" look identical from a passing test of only one of them.
+test("a state's name is never cut, because it is never drawn — and it never widens a column", () => {
+  // This replaced a test that a long state name is truncated to `stateLabelMax`.
+  // The cap existed because a single object's name set the width of a column and
+  // therefore of the canvas; the name is in `<title>` now, so it is kept **whole**
+  // and costs nothing. Both halves matter and each looks fine alone: "the name
+  // survives" without "the column did not grow" is the old behaviour with the cut
+  // removed, which is how the canvas got to 1,811px in the first place.
   const long =
     "Embed a nonlinear initial-value problem into a linear one whose solution carries it";
   const longState =
     "The generator of a linear system of ordinary differential equations, with an inhomogeneity and a stated error budget";
-  const graph: LayerGraph = {
+  const graph = (stateLabel: string): LayerGraph => ({
     nodes: [
       capability("top", "wordy", "gamma", { label: long, labelJa: long }),
       method("way", "top", { atomic: true }),
     ],
-  };
-  const states = vocabulary(state("wordy", { label: longState, labelJa: longState }), state("gamma"));
+  });
+  const withName = (name: string) => vocabulary(state("wordy", { label: name, labelJa: name }), state("gamma"));
 
-  const diagram = layoutProcessMap(graph, states, "top", "en", new Set(), 3);
-
+  const diagram = layoutProcessMap(graph(longState), withName(longState), "top", "en", new Set(), 3);
   const entry = diagram.states.find((box) => box.stateId === "wordy")!;
-  assert.equal(entry.labelTruncated, true);
-  assert.ok(entry.label.endsWith("…"));
-  assert.ok(entry.label.length < longState.length);
-  assert.ok(estimateTextWidth(entry.label, M.stateFont) <= M.stateLabelMax);
-  // Cut in the shape, never lost: the renderer puts this in the `<title>`, and
-  // losing it makes the circle unreadable rather than merely abbreviated.
-  assert.equal(entry.fullLabel, longState);
+  assert.equal(entry.fullLabel, longState, "the whole name reaches the title, uncut");
+
+  // The same map with a one-character state name is exactly as wide. That is the
+  // property — not "narrower than before", which any smaller constant satisfies.
+  const tiny = layoutProcessMap(graph("x"), withName("x"), "top", "en", new Set(), 3);
+  assert.equal(
+    diagram.width,
+    tiny.width,
+    "a state's name must not be able to change the width of the canvas",
+  );
+  assert.equal(diagram.height, tiny.height);
 
   const slot = diagram.processes[0]!;
-  assert.equal(slot.labelTruncated, false, "a slot's run is sized for its own name");
+  assert.equal(slot.labelTruncated, false, "a slot's run is still sized for its own name");
   assert.equal(slot.label, long);
   assert.equal(slot.fullLabel, long);
 
-  // And a name at the ceiling is never an excuse to overflow anything else.
   assert.deepEqual(violations(diagram, new Set()), []);
 });
 
@@ -1131,16 +1247,26 @@ test("an ingredient hangs inside its own lane's band and reaches no other lane",
   );
 });
 
-test("a state whose name is far wider than its circle widens its column instead of colliding", () => {
-  // The check that a column is sized for its labels rather than its discs. With
-  // the label dropped from the width the circles stay ninety pixels apart and
-  // the two names are drawn through each other.
+test("three enormous state names cost the canvas nothing, in either script", () => {
+  // This test used to be called "a state whose name is far wider than its circle
+  // widens its column instead of colliding", and it asserted that a column is
+  // sized for its labels rather than its discs. That is the behaviour session 93
+  // removed, so the old test kept passing while guarding nothing: with no state
+  // name drawn, three identical wide names have nothing to collide with, and
+  // `violations() == []` was true for a reason unrelated to its own title.
+  //
+  // What is worth pinning now is the opposite claim, and it is not free — the
+  // widths still flow through `stateWidth`, and one `estimateTextWidth` call
+  // reintroduced there would put 200px per column back without failing anything
+  // else in this file.
   const wide = "An extremely long name for one state that no circle could ever hold on its own";
-  const states = vocabulary(
-    state("alpha", { label: wide, labelJa: wide }),
-    state("beta", { label: wide, labelJa: wide }),
-    state("delta", { label: wide, labelJa: wide }),
-  );
+  const wideJa = "どの円にも到底収まりきらないほど長い、ひとつの対象のための名前という名前";
+  const build = (label: string, labelJa: string) =>
+    vocabulary(
+      state("alpha", { label, labelJa }),
+      state("beta", { label, labelJa }),
+      state("delta", { label, labelJa }),
+    );
   const graph: LayerGraph = {
     nodes: [
       capability("top", "alpha", "delta"),
@@ -1149,8 +1275,17 @@ test("a state whose name is far wider than its circle widens its column instead 
     ],
   };
   const open: ReadonlySet<string> = new Set(["top"]);
-  const diagram = layoutProcessMap(graph, states, "top", "en", open, 3);
-  assert.deepEqual(violations(diagram, open), []);
+
+  const short = layoutProcessMap(graph, build("x", "x"), "top", "en", open, 3);
+  for (const [locale, names] of [
+    ["en", build(wide, wide)],
+    ["ja", build(wideJa, wideJa)],
+  ] as const) {
+    const diagram = layoutProcessMap(graph, names, "top", locale, open, 3);
+    assert.deepEqual(violations(diagram, open), [], `${locale} overlaps`);
+    assert.equal(diagram.width, short.width, `${locale}: a state's name changed the canvas width`);
+    assert.equal(diagram.height, short.height, `${locale}: a state's name changed the canvas height`);
+  }
 });
 
 test("a cycle in the steps graph terminates and is drawn shut rather than followed", () => {
@@ -1190,31 +1325,31 @@ test("a cycle in the steps graph terminates and is drawn shut rather than follow
 // ---------------------------------------------------------------------------
 
 /**
- * The one depth the page serves.
+ * The depth the page serves.
  *
  * `MAP_DEPTH` in `repository-process-view.tsx` is the authority and it lives in
  * a component, which a `node --test` run cannot import — so this is a second
  * copy, and a second copy drifts. It is a *one-line* second copy of a constant
- * whose whole point is that it does not move, and the test below would go on
+ * whose whole point is that it does not move, and the tests below would go on
  * asserting the old value in silence if it did; naming that here is the only
  * guard available from `lib/`.
  *
- * It is 1 because the map **drills down** rather than nesting in place. Nesting
- * an opened slot inside a lane puts the enclosing route's own circles on a line
- * running through the middle of the nested block, and their names — centred,
- * and as wide as `stateLabelMax` — spill sideways into it. The label-collision
- * sweep below found nine of those at depth 2 on the authored graph. One level at
- * a time has no such case, by construction rather than by measurement.
+ * It was 1, because the map drilled down rather than nesting in place, and the
+ * reason given was that nesting puts the enclosing route's circles on a line
+ * running through the middle of the nested block while their names — centred,
+ * and as wide as `stateLabelMax` — spill sideways into it. **That reason named
+ * the names.** State names moved into `<title>` in session 93 on the owner's
+ * brief, `stateLabelMax` is gone, and what is left is circles and lines, which
+ * the column model has always kept apart. The nesting sweep below is now the
+ * evidence for that, rather than the depth cap being the evidence.
  */
-const SERVED_DEPTH = 1;
+const SERVED_DEPTH = 4;
 
 /**
- * The two configurations the page can actually produce, for every capability.
+ * Every capability, drawn shut and drawn open, in both locales.
  *
- * `repository-process-view.tsx` builds exactly one open set: the focused slot,
- * or nothing at all on the overview. There is no `?depth=` and no free-form
- * `?open=` any more, so this sweep is not a sample of a large space — it *is*
- * the space, and it is asserted exhaustively in both locales.
+ * Not a sample: this is every single-slot configuration the page can produce,
+ * asserted exhaustively. The nested cases are the test after it.
  */
 test("every capability the page can focus draws cleanly, in both locales", () => {
   const capabilities = LAYER_GRAPH.nodes.filter(isCapability);
@@ -1251,37 +1386,54 @@ test("every capability the page can focus draws cleanly, in both locales", () =>
   }
 });
 
-test("at the depth the page serves, no opened slot is ever drawn inside another", () => {
-  // This is the property that makes the label collision impossible rather than
-  // merely absent, so it is the one worth guarding directly. A nested group is
-  // not a cosmetic problem: the enclosing route's circles sit on the line that
-  // runs through the middle of it, and a centred name two hundred pixels wide
-  // has nowhere to go but sideways into the block.
+test("an opened slot inside an opened slot still collides with nothing, in both locales", () => {
+  // The replacement for "no opened slot is ever drawn inside another", which was
+  // true when the map drilled down and is deliberately false now. That test kept
+  // passing after the change — its fixture opened a single id, so only one group
+  // could ever form — which is exactly the shape of a guard that has stopped
+  // guarding: green, and unrelated to its own title.
+  //
+  // What matters is the thing the old cap was standing in for. So: open every
+  // slot **together with everything reachable underneath it**, which is the
+  // deepest arrangement a reader can click their way into, and sweep the whole
+  // canvas for overlaps in both scripts. Nine collisions were found this way at
+  // depth 2 in session 92; the state names that caused all nine are gone.
+  const stepsUnder = (id: string, seen: Set<string>): void => {
+    if (seen.has(id)) return;
+    seen.add(id);
+    for (const node of LAYER_GRAPH.nodes) {
+      if (node.kind !== "method" || node.realizes !== id) continue;
+      for (const step of node.steps) stepsUnder(step, seen);
+    }
+  };
+
+  let nested = 0;
   for (const node of LAYER_GRAPH.nodes) {
     if (!isCapability(node)) continue;
+    const open = new Set<string>();
+    stepsUnder(node.id, open);
     for (const locale of ["en", "ja"] as const) {
-      const open: ReadonlySet<string> = new Set([node.id]);
-      const diagram = layoutProcessMap(LAYER_GRAPH, STATE_VOCABULARY, node.id, locale, open, SERVED_DEPTH);
-      assert.ok(
-        diagram.groups.length <= 1,
-        `${node.id} (${locale}) drew ${diagram.groups.length} regions at depth ${SERVED_DEPTH}`,
+      const diagram = layoutProcessMap(
+        LAYER_GRAPH,
+        STATE_VOCABULARY,
+        node.id,
+        locale,
+        open,
+        SERVED_DEPTH,
       );
-      // Belt and braces, and not a restatement: a second region that happened to
-      // be a sibling rather than a child would pass the count above on a graph
-      // with two roots on one canvas, and still be wrong if it were contained.
-      for (const outer of diagram.groups) {
-        for (const inner of diagram.groups) {
-          if (inner === outer) continue;
-          const contained =
-            inner.top >= outer.top - EPS &&
-            inner.bottom <= outer.bottom + EPS &&
-            inner.x0 >= outer.x0 - EPS &&
-            inner.x1 <= outer.x1 + EPS;
-          assert.equal(contained, false, `${inner.key} is drawn inside ${outer.key}`);
-        }
-      }
+      assert.deepEqual(violations(diagram, open), [], `${node.id} (${locale}) fully opened`);
+      // `groups.length > 1` would **not** prove this. Two sibling slots opened in
+      // one lane are two groups, both at depth 0, and the assertion below would
+      // then be satisfied by a canvas with no nesting on it at all — the same
+      // shape of hollow guard this test was written to replace. `depth` says it
+      // directly, so ask `depth`.
+      if (diagram.groups.some((group) => group.depth > 0)) nested += 1;
     }
   }
+  // And the sweep has to have actually drawn the case it is about. Without this
+  // the assertion above is satisfied by a graph that never nests at all, which
+  // is the state the old test was left in.
+  assert.ok(nested > 0, "no capability produced a nested expansion — nothing was tested");
 });
 
 test("opening a slot never draws fewer shapes than leaving it shut", () => {

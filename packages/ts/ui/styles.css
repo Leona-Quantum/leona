@@ -10793,14 +10793,20 @@ div.mj-rail-row:hover {
    mark to the full column. It needs the colour from that rule and nothing else. */
 .mj-process-key { color: var(--text-2); }
 
-/* --- an opened slot: a region, never a line ------------------------------ */
-.mj-process-group-field {
-  fill: var(--bg-1);
-  stroke: var(--border-0);
-  stroke-width: 1;
-  opacity: 0.55;
+/* --- an opened slot: the same line, gone faint --------------------------- */
+/* Was `.mj-process-group-field`, a `var(--bg-1)` rect behind the lanes. The
+   owner's session-92 verdict: "get rid of that square and keep it on the page
+   itself… the straight original process line turns into a faint line, and there
+   are muscle strand-shapes lines around it". Fainter than an unopened slot's
+   line on purpose — it is no longer the thing you are looking at, it is what the
+   strands around it are alternatives to. */
+.mj-process-spine {
+  stroke: currentColor;
+  stroke-width: 3.5;
+  fill: none;
+  stroke-linecap: round;
+  opacity: 0.16;
 }
-.mj-process-group[data-depth="0"] > .mj-process-group-field { opacity: 0.75; }
 .mj-process-group-name {
   fill: var(--text-0);
   font-family: var(--font-ui);
@@ -10874,11 +10880,15 @@ div.mj-rail-row:hover {
   fill: currentColor;
   opacity: 0.9;
 }
-.mj-process-state-name {
-  fill: var(--text-0);
-  font-family: var(--font-ui);
-  font-size: 12px;
+/* A state has no drawn name — it is in the `<title>`, on the owner's brief. What
+   it needs instead is a target big enough to hover and to tap: a 9px circle is
+   well under the 24px a finger needs, and the name is now behind that gesture. */
+.mj-process-hit-dot {
+  fill: currentColor;
+  opacity: 0;
+  pointer-events: fill;
 }
+.mj-process-canvas a:hover .mj-process-hit-dot { opacity: 0.08; }
 
 /* --- the vertical tie ---------------------------------------------------- */
 /* Solid: the identical object on both routes. Dotted: one is a narrower kind of
@@ -10907,9 +10917,16 @@ div.mj-rail-row:hover {
    interior, where the lanes are drawn, and the parent would eat every click
    meant for a child. Carried over from the strand canvas, where that was found
    the hard way. */
+/* 24, for WCAG 2.5.8. It was 14, and the spacing exception did cover it —
+   measured over every capability fully opened in both locales, the nearest other
+   clickable line whose span overlaps this one is **154px** away. But the room is
+   there, so take it rather than argue it.
+   The name's own 14px band sits directly above the line and is painted after it,
+   so it keeps the top half; the split between the two destinations is unchanged
+   and the pair together is a 26px target for "this process". */
 .mj-process-hit-line {
   stroke: currentColor;
-  stroke-width: 14;
+  stroke-width: 24;
   fill: none;
   opacity: 0;
   pointer-events: stroke;
@@ -10924,12 +10941,16 @@ div.mj-rail-row:hover {
 .mj-process-canvas a:hover .mj-process-hit { opacity: 0.06; }
 .mj-process-canvas a:hover .mj-process-name,
 .mj-process-canvas a:focus-visible .mj-process-name,
-.mj-process-canvas a:hover .mj-process-state-name,
-.mj-process-canvas a:focus-visible .mj-process-state-name,
 .mj-process-canvas a:hover .mj-process-group-name,
 .mj-process-canvas a:focus-visible .mj-process-group-name {
   fill: var(--accent);
 }
+/* Hovering the faint line of an opened slot says what clicking it does — shut
+   it. Scoped to the link that actually shuts it, which is why the spine is
+   rendered inside that anchor: the name above goes somewhere else entirely, and
+   a group-wide `:hover` made hovering the name promise the wrong action. */
+.mj-process-canvas a:hover > .mj-process-spine,
+.mj-process-canvas a:focus-visible > .mj-process-spine { opacity: 0.34; }
 .mj-process-canvas a:hover .mj-process-dot { opacity: 1; stroke: var(--accent); }
 .mj-process-canvas a:focus-visible {
   outline: 2px solid var(--accent);
