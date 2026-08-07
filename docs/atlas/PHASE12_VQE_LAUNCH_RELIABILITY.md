@@ -2,7 +2,7 @@
 
 **Branch:** `feature/vqe`  
 **Phase 12 checkpoint:** `8a7aad0f`  
-**Integrated dev baseline:** `0197600dc759a3ebe5760a86c47eabc98023b859`  
+**Integrated dev baseline:** `a8a0750379f48630944367e730791b6867150307`  
 **Scope:** private component-first VQE MVP; no public or performance claim
 
 ## Outcome
