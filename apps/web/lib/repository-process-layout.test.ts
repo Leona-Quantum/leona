@@ -69,6 +69,9 @@ import {
   layoutProcessMap,
   layoutProcessZoom,
   processPageHref,
+  resolveZoom,
+  zoomHref,
+  MAP_ZOOMS,
   slotHref,
   stateHref,
   PROCESS_METRICS,
@@ -1588,6 +1591,104 @@ const ZOOM_GRAPH: LayerGraph = {
     method("inner-way", "inner", { atomic: true }),
   ],
 };
+
+// ---------------------------------------------------------------------------
+// `?zoom=` — the size the reader chose
+// ---------------------------------------------------------------------------
+
+test("a size that is not a rung is not a size", () => {
+  // Validated against the ladder, never clamped. `?zoom=17` is not a request for
+  // 50%; it is a URL that names no rung, and the honest answer to that is the
+  // default. Clamping would silently answer a question nobody asked.
+  for (const rung of MAP_ZOOMS) assert.equal(resolveZoom(String(rung)), rung);
+  for (const bad of ["17", "0", "-100", "1000", "100%", "fit", "", " 100", "1e2", null]) {
+    assert.equal(resolveZoom(bad), null, JSON.stringify(bad));
+  }
+});
+
+test("a line's toggle carries the size, so opening a slot does not undo it", () => {
+  // The failure this exists for: a control that appears to work once and then
+  // undoes itself. A reader sets 150%, clicks a line to open it, and the map
+  // comes back at "fit" — with nothing to tell them the click did that.
+  assert.equal(
+    slotHref("qls", new Set(), null, 150),
+    "/repository/layers?view=map&zoom=150&open=qls",
+  );
+  assert.equal(
+    slotHref("qls", new Set(["ode"]), "ode", 75),
+    "/repository/layers?view=map&focus=ode&zoom=75&open=ode&open=qls",
+  );
+  // Absent by default, so "fit" keeps one canonical URL rather than two.
+  assert.equal(slotHref("qls", new Set(), null), "/repository/layers?view=map&open=qls");
+  assert.equal(slotHref("qls", new Set(), null, null), "/repository/layers?view=map&open=qls");
+});
+
+test("every control the drawn map emits carries the size, and nothing else does", () => {
+  // `slotHref` taking the argument is not the same claim as the canvas passing
+  // it. That gap is the one this graph has been bitten by before — a parameter
+  // threaded to a function nothing calls with it — so this asserts the shapes
+  // that are actually drawn.
+  //
+  // The rule, stated once: **the size belongs to the page it was set on.** A
+  // toggle stays on the map and keeps it. A name goes to a different subject's
+  // page, where "fit" is the right first look, and a circle goes to a state page
+  // which draws no canvas at all — a size parameter there would be a URL making
+  // a promise the page does not keep.
+  const root = rootCapabilities(LAYER_GRAPH)[0]!;
+  const open: ReadonlySet<string> = new Set([root.id]);
+  const diagram = layoutProcessMap(LAYER_GRAPH, STATE_VOCABULARY, root.id, "en", open, 3, null, 150);
+
+  const toggles = [
+    ...diagram.processes.map((process) => process.href),
+    ...diagram.groups.map((group) => group.closeHref),
+  ].filter((href): href is string => href !== null);
+  assert.ok(toggles.length > 0, "nothing on this map was a control");
+  for (const href of toggles) {
+    assert.match(href, /[?&]zoom=150(&|$)/, `a toggle dropped the reader's size: ${href}`);
+  }
+
+  const departures = [
+    ...diagram.processes.map((process) => process.pageHref),
+    ...diagram.lanes.map((lane) => lane.href),
+    ...diagram.states.map((state) => state.href),
+    ...diagram.feeds.map((feed) => feed.href),
+    ...diagram.groups.map((group) => group.href).filter((href): href is string => href !== null),
+  ];
+  assert.ok(departures.length > 0);
+  for (const href of departures) {
+    assert.ok(!href.includes("zoom="), `a link off this page carried a size it cannot honour: ${href}`);
+  }
+
+  // And with no size asked for, no address mentions one.
+  const fit = layoutProcessMap(LAYER_GRAPH, STATE_VOCABULARY, root.id, "en", open, 3, null);
+  for (const href of [
+    ...fit.processes.map((process) => process.href),
+    ...fit.groups.map((group) => group.closeHref),
+  ]) {
+    if (href !== null) assert.ok(!href.includes("zoom="), href);
+  }
+});
+
+test("changing the size keeps everything the reader had open", () => {
+  // The other direction of the same address. `slotHref` toggles a slot and keeps
+  // the size; this changes the size and keeps the slots — and both sort `open`,
+  // so one arrangement of the map is still exactly one URL whichever route the
+  // reader took to it.
+  assert.equal(
+    zoomHref("ode", new Set(["qls", "ode"]), 200),
+    "/repository/layers?view=map&focus=ode&zoom=200&open=ode&open=qls",
+  );
+  assert.equal(
+    zoomHref("ode", new Set(["ode", "qls"]), 200),
+    zoomHref("ode", new Set(["qls", "ode"]), 200),
+  );
+  // Back to "fit" is the URL with no size on it at all, not `zoom=100`.
+  assert.equal(zoomHref(null, new Set(), null), "/repository/layers?view=map");
+  // And the two builders agree about the map they are describing: opening `qls`
+  // from here, then asking for the same size, is the address the reader is on.
+  const opened = slotHref("qls", new Set(["ode"]), "ode", 150);
+  assert.equal(opened, zoomHref("ode", new Set(["ode", "qls"]), 150));
+});
 
 test("a one-hop row does not write its method's name twice, and a longer row does", () => {
   // The symptom, from `get_page_text` on the rendered page: every method name in

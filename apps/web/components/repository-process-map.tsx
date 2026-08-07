@@ -416,23 +416,39 @@ export function ProcessCanvas({
   diagram,
   locale,
   title,
+  scale = null,
 }: {
   diagram: ProcessDiagram;
   locale: "en" | "ja";
   title: string;
+  /**
+   * The size the reader asked for, as a multiplier, or `null` for "fit".
+   *
+   * Nothing in the geometry moves. The `viewBox` is unchanged and the drawing is
+   * identical at every size — this only changes how much of the page one SVG
+   * user-unit is worth, which is what makes it a *zoom* rather than a relayout.
+   *
+   * "Fit" is the behaviour that shipped before there was a control: shrink to
+   * the column, but no further than 88%, and scroll past that. It is still the
+   * default, because it is right until a reader says otherwise. With a scale the
+   * floor and the ceiling become the same number — the reader has named a size,
+   * so the box stops negotiating and starts scrolling.
+   */
+  scale?: number | null;
 }): React.ReactElement {
   const copy = COPY[locale];
+  const drawn = diagram.width * (scale ?? 1);
   return (
     <div className="mj-process-scroll">
       <svg
         className="mj-process-canvas"
         viewBox={`0 0 ${n(diagram.width)} ${n(diagram.height)}`}
-        width={n(diagram.width)}
-        height={n(diagram.height)}
+        width={n(drawn)}
+        height={n(diagram.height * (scale ?? 1))}
         style={
           {
-            "--process-w": `${diagram.width}px`,
-            "--process-min": `${diagram.width * 0.88}px`,
+            "--process-w": `${drawn}px`,
+            "--process-min": `${scale === null ? diagram.width * 0.88 : drawn}px`,
           } as React.CSSProperties
         }
       >

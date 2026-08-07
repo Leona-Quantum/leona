@@ -414,6 +414,14 @@ interface Options {
   /** Capability ids the reader has opened. */
   open: ReadonlySet<string>;
   depthCap: number;
+  /**
+   * The percentage the reader chose to draw this at, or `null` for "fit".
+   *
+   * The layout does not scale — the geometry is identical at every size, and the
+   * SVG's `viewBox` does the scaling. This is here for one reason: every href
+   * the canvas emits has to carry it, or the first click undoes it.
+   */
+  zoom: number | null;
 }
 
 // --- measure -------------------------------------------------------------
@@ -751,16 +759,77 @@ export function slotHref(
   id: string,
   open: ReadonlySet<string>,
   focus: string | null,
+  /**
+   * The size the reader chose, carried through.
+   *
+   * A toggle that dropped it would zoom the map back out under a reader every
+   * time they opened a line — the control would appear to work once and then
+   * undo itself, which is worse than not having one.
+   */
+  zoom: number | null = null,
 ): string {
   const next = new Set(open);
   if (next.has(id)) next.delete(id);
   else next.add(id);
   const params: string[] = ["view=map"];
   if (focus !== null) params.push(`focus=${encodeURIComponent(focus)}`);
+  if (zoom !== null) params.push(`zoom=${zoom}`);
   // Sorted so one arrangement of the map has exactly one URL: two readers who
   // opened the same three slots in different orders must be able to compare
   // links, and a cache must not hold the same page twice.
   for (const openId of [...next].sort()) params.push(`open=${encodeURIComponent(openId)}`);
+  return `/repository/layers?${params.join("&")}`;
+}
+
+/**
+ * The sizes a reader may ask for, as percentages.
+ *
+ * A short ladder rather than a slider, and that is D88.2 rather than taste: a
+ * slider is a control that only works after hydration, so it has no address —
+ * nothing to link, send, bookmark or check with `curl`. Five rungs and "fit" is
+ * six links, and any of the six can be pasted to somebody else.
+ *
+ * Bounded at both ends deliberately. Below 50% a 12px label is 6px and the
+ * picture is not smaller, it is unreadable — which is the argument
+ * `.mj-process-canvas`'s floor has always made, now made once rather than
+ * enforced silently. Above 200% the scroll box is doing all the work and the
+ * browser's own zoom is the better tool.
+ */
+export const MAP_ZOOMS = [50, 75, 100, 150, 200] as const;
+
+export type MapZoom = (typeof MAP_ZOOMS)[number];
+
+/**
+ * `?zoom=` — the size the reader chose, or `null` for "fit".
+ *
+ * Validated against the ladder rather than clamped: `?zoom=17` is not a request
+ * for 50%, it is a URL that does not name a rung, and the honest answer is the
+ * default. Same rule `browse-params.ts` states for the Atlas deep links.
+ */
+export function resolveZoom(value: string | null): MapZoom | null {
+  // Compared as strings, never through `Number()`. `Number(" 100")` is 100, and
+  // `Number("1e2")` is 100 — so a coercing parser gives one arrangement of this
+  // map three different URLs that all render identically, which is the thing
+  // sorting `open` exists to prevent. One rung, one spelling, one address.
+  return MAP_ZOOMS.find((rung) => String(rung) === value) ?? null;
+}
+
+/**
+ * The map's address with a different size on it, and everything else kept.
+ *
+ * `slotHref` builds the same URL for the *toggle* direction; this is the size
+ * direction. Both sort `open`, so one arrangement of the map is still one URL
+ * whichever of the two got the reader there.
+ */
+export function zoomHref(
+  focus: string | null,
+  open: ReadonlySet<string>,
+  zoom: MapZoom | null,
+): string {
+  const params: string[] = ["view=map"];
+  if (focus !== null) params.push(`focus=${encodeURIComponent(focus)}`);
+  if (zoom !== null) params.push(`zoom=${zoom}`);
+  for (const id of [...open].sort()) params.push(`open=${encodeURIComponent(id)}`);
   return `/repository/layers?${params.join("&")}`;
 }
 
@@ -841,7 +910,7 @@ function placeProcess(
       labelTruncated: fitted.truncated,
       summary: summaryOf(node, options.locale),
       href: processPageHref(capabilityId),
-      closeHref: slotHref(capabilityId, options.open, focus),
+      closeHref: slotHref(capabilityId, options.open, focus, options.zoom),
       x0,
       x1,
       top: y - measured.height / 2,
@@ -867,7 +936,7 @@ function placeProcess(
     summary: summaryOf(node, options.locale),
     // A slot with nothing recorded in it has nothing to open, so its line is not
     // a control. Only a shut slot with ways through it gets one.
-    href: state === "collapsed" ? slotHref(capabilityId, options.open, focus) : null,
+    href: state === "collapsed" ? slotHref(capabilityId, options.open, focus, options.zoom) : null,
     pageHref: processPageHref(capabilityId),
     x0,
     x1,
@@ -1088,8 +1157,9 @@ export function layoutProcessMap(
   open: ReadonlySet<string>,
   depthCap: number,
   /**
-   * The zoom level this canvas is being drawn at — the page's `?focus=`, not the
-   * root being drawn.
+   * Which slot the reader is standing in — the page's `?focus=`, not the root
+   * being drawn. (It used to be called the canvas's "zoom level" here; `?zoom=`
+   * below is now a real and different thing, so this says what it is.)
    *
    * It used to be `rootId`, passed down and then ignored, because `slotHref`
    * took the argument and never read it. Now that a line toggles rather than
@@ -1099,8 +1169,10 @@ export function layoutProcessMap(
    * the opposite of "everything else still in view".
    */
   focus: string | null = null,
+  /** Carried into every href this canvas emits. See `slotHref`. */
+  zoom: number | null = null,
 ): ProcessDiagram {
-  const options: Options = { graph, vocabulary, locale, open, depthCap };
+  const options: Options = { graph, vocabulary, locale, open, depthCap, zoom };
   const node = layerNode(graph, rootId);
   const canvas: Canvas = {
     states: [],
