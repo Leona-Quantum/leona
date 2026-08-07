@@ -762,6 +762,14 @@ export function slotHref(
   /**
    * The size the reader chose, carried through.
    *
+   * **The rule, and it has no exceptions: the size belongs to the page it was
+   * set on.** Everything that stays there carries it — every toggle, the close
+   * link, the "all four" link, the rail's path back up. Nothing that leaves
+   * carries it: a name goes to a different subject at a different natural width,
+   * where "fit" is the right first look, and a circle goes to a state page that
+   * draws no canvas at all, where a size would be a URL making a promise the
+   * page cannot keep.
+   *
    * A toggle that dropped it would zoom the map back out under a reader every
    * time they opened a line — the control would appear to work once and then
    * undo itself, which is worse than not having one.

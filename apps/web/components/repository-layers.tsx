@@ -402,9 +402,10 @@ function ProcessZoom({
       <h2 className="mj-layers-zoom-heading" id={`zoom-${node.id}`}>
         {copy.zoomHeading}
       </h2>
-      {/* The reader's own size. A figure can be 1,233px wide in an 868px column
-          — *"they can zoom in and out of the page on their own"*, owner, session
-          92 — and the size travels with them onto the map below. */}
+      {/* The reader's own size. A figure can be 1,233px wide in an 868px column:
+          *"they can zoom in and out of the page on their own"*, owner, session
+          92. It applies to this figure and stops at this page — the map below is
+          a different drawing at a different natural width. */}
       <ZoomControl
         current={zoom}
         hrefFor={(next) => (next === null ? href(node.id) : `${href(node.id)}?zoom=${next}`)}
@@ -429,7 +430,7 @@ function ProcessZoom({
         </p>
         <p>
           {diagram.collapsedCount > 0 ? copy.zoomDeeper(diagram.collapsedCount) : copy.zoomAllShallow}{" "}
-          <a href={mapHref(mapId, zoom)}>{copy.stateOnMap}</a>
+          <a href={mapHref(mapId)}>{copy.stateOnMap}</a>
         </p>
       </figcaption>
     </figure>

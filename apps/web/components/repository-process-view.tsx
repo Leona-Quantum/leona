@@ -313,11 +313,14 @@ function Rail({
   focusId,
   locale,
   copy,
+  zoom,
 }: {
   graph: LayerGraph;
   focusId: string;
   locale: PublicLocale;
   copy: MapViewCopy;
+  /** Carried by the path, which re-focuses this same map. See `ZoomControl`. */
+  zoom: MapZoom | null;
 }): React.ReactElement | null {
   const node = layerNode(graph, focusId);
   if (!node || !isCapability(node)) return null;
@@ -342,7 +345,7 @@ function Rail({
                 {item.id === focusId ? (
                   <strong aria-current="true">{label(item)}</strong>
                 ) : (
-                  <Link href={mapHref(item.id)}>{label(item)}</Link>
+                  <Link href={mapHref(item.id, zoom)}>{label(item)}</Link>
                 )}
               </li>
             ))}
@@ -515,7 +518,7 @@ export function ProcessMapView({
           <p className="mj-strand-note">{copy.routes(delegated, partly, whole)}</p>
         </div>
         {focusId ? (
-          <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} />
+          <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} zoom={zoom} />
         ) : null}
       </div>
     </section>
