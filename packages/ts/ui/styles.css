@@ -10917,9 +10917,16 @@ div.mj-rail-row:hover {
    interior, where the lanes are drawn, and the parent would eat every click
    meant for a child. Carried over from the strand canvas, where that was found
    the hard way. */
+/* 24, for WCAG 2.5.8. It was 14, and the spacing exception did cover it —
+   measured over every capability fully opened in both locales, the nearest other
+   clickable line whose span overlaps this one is **154px** away. But the room is
+   there, so take it rather than argue it.
+   The name's own 14px band sits directly above the line and is painted after it,
+   so it keeps the top half; the split between the two destinations is unchanged
+   and the pair together is a 26px target for "this process". */
 .mj-process-hit-line {
   stroke: currentColor;
-  stroke-width: 14;
+  stroke-width: 24;
   fill: none;
   opacity: 0;
   pointer-events: stroke;
@@ -10939,10 +10946,11 @@ div.mj-rail-row:hover {
   fill: var(--accent);
 }
 /* Hovering the faint line of an opened slot says what clicking it does — shut
-   it — by brightening the line rather than the name above it, because the name
-   goes somewhere else entirely. */
-.mj-process-group a:hover ~ .mj-process-spine,
-.mj-process-group:hover > .mj-process-spine { opacity: 0.34; }
+   it. Scoped to the link that actually shuts it, which is why the spine is
+   rendered inside that anchor: the name above goes somewhere else entirely, and
+   a group-wide `:hover` made hovering the name promise the wrong action. */
+.mj-process-canvas a:hover > .mj-process-spine,
+.mj-process-canvas a:focus-visible > .mj-process-spine { opacity: 0.34; }
 .mj-process-canvas a:hover .mj-process-dot { opacity: 1; stroke: var(--accent); }
 .mj-process-canvas a:focus-visible {
   outline: 2px solid var(--accent);

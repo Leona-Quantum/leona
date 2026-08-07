@@ -1422,7 +1422,12 @@ test("an opened slot inside an opened slot still collides with nothing, in both 
         SERVED_DEPTH,
       );
       assert.deepEqual(violations(diagram, open), [], `${node.id} (${locale}) fully opened`);
-      if (diagram.groups.length > 1) nested += 1;
+      // `groups.length > 1` would **not** prove this. Two sibling slots opened in
+      // one lane are two groups, both at depth 0, and the assertion below would
+      // then be satisfied by a canvas with no nesting on it at all — the same
+      // shape of hollow guard this test was written to replace. `depth` says it
+      // directly, so ask `depth`.
+      if (diagram.groups.some((group) => group.depth > 0)) nested += 1;
     }
   }
   // And the sweep has to have actually drawn the case it is about. Without this

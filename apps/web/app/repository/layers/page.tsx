@@ -1,7 +1,7 @@
 import type { Metadata } from "next";
 import { PublicSite } from "../../../components/public-site";
 import { LayerIndexView } from "../../../components/repository-layers";
-import { ProcessMapView } from "../../../components/repository-process-view";
+import { MAP_OPEN_MAX, ProcessMapView } from "../../../components/repository-process-view";
 import { StrandView, STRAND_DEPTHS, type StrandDepth } from "../../../components/repository-strand-view";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
@@ -65,10 +65,10 @@ function resolveOpenRoot(params: Record<string, string | string[] | undefined>):
  * dropped rather than rejected — a URL naming four slots, one of which has since
  * been renamed, opens the other three instead of failing. `MAP_OPEN_MAX` bounds
  * it, because the parameter is user-supplied and the layout it drives is
- * recursive; the cap is reported rather than applied silently.
+ * recursive; the count over the cap is handed to the view, which prints it. The
+ * constant is imported rather than repeated: the number that enforces and the
+ * number that is reported have to be one number.
  */
-const MAP_OPEN_MAX = 24;
-
 function resolveOpenSet(params: Record<string, string | string[] | undefined>): {
   open: ReadonlySet<string>;
   dropped: number;

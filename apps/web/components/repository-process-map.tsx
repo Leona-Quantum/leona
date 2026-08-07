@@ -134,16 +134,30 @@ function Group({ group, copy }: { group: ProcessGroup; copy: MapCopy }): React.R
   const spineY = (group.top + group.bottom) / 2;
   return (
     <g className="mj-process-group" data-depth={group.depth}>
-      <line
-        className="mj-process-spine"
-        x1={n(group.x0)}
-        y1={n(spineY)}
-        x2={n(group.x1)}
-        y2={n(spineY)}
-      />
-      {group.closeHref === null ? null : (
+      {/* The faint line sits **inside** the link that shuts it, so `a:hover` can
+          reach it. Drawn as a sibling first, it could not: a hover rule needs a
+          combinator, `~` only matches what follows the hovered element, and the
+          spine was rendered before both anchors. Scoping to the group instead
+          made the *name* brighten the line — telling a reader that clicking will
+          shut the slot, when clicking the name navigates away from it. */}
+      {group.closeHref === null ? (
+        <line
+          className="mj-process-spine"
+          x1={n(group.x0)}
+          y1={n(spineY)}
+          x2={n(group.x1)}
+          y2={n(spineY)}
+        />
+      ) : (
         <a href={group.closeHref} aria-label={`${group.fullLabel} — ${copy.closeHere}`}>
           <title>{`${label} — ${copy.closeHere}`}</title>
+          <line
+            className="mj-process-spine"
+            x1={n(group.x0)}
+            y1={n(spineY)}
+            x2={n(group.x1)}
+            y2={n(spineY)}
+          />
           <line
             className="mj-process-hit-line"
             x1={n(group.x0)}
