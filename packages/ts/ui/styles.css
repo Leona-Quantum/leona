@@ -9991,6 +9991,10 @@ div.mj-rail-row:hover {
 .mj-layers-node-head h1 {
   margin: 0 0 var(--sp-3);
   font-family: var(--font-display);
+  /* The display face is only ever set at 400 in this stylesheet — eight other
+     rules say so and there is no global h1 reset, so an h1 would inherit the
+     user-agent 700 and synthesise a bold weight the family does not have. */
+  font-weight: 400;
   font-size: var(--fs-28);
   line-height: 1.2;
 }
@@ -10220,6 +10224,7 @@ div.mj-rail-row:hover {
 .mj-layers-root > summary:hover .mj-layers-root-title { color: var(--accent); }
 .mj-layers-root-title {
   font-family: var(--font-display);
+  font-weight: 400;
   font-size: var(--fs-16);
   color: var(--text-0);
 }
