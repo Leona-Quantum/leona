@@ -202,10 +202,11 @@ function textBox(
   baselineY: number,
   text: string,
   fontSize: number,
-  anchor: "start" | "middle",
+  anchor: "start" | "middle" | "end",
 ): TextBox {
   const width = estimateTextWidth(text, fontSize);
-  const left = anchor === "middle" ? anchorX - width / 2 : anchorX;
+  const left =
+    anchor === "middle" ? anchorX - width / 2 : anchor === "end" ? anchorX - width : anchorX;
   return {
     key,
     what,
@@ -256,17 +257,38 @@ function textBoxes(diagram: ProcessDiagram): TextBox[] {
   // not know about is a name nothing checks, which is how three of session 92's
   // four real collisions got onto a page with a green suite.
   if (diagram.caption) {
-    const width = estimateTextWidth(diagram.caption.text, M.captionFont);
-    boxes.push({
-      key: "caption",
-      what: "caption",
-      left: diagram.caption.x - width,
-      right: diagram.caption.x,
-      top: diagram.caption.y - M.captionFont * 0.8,
-      bottom: diagram.caption.y + M.captionFont * 0.25,
-    });
+    boxes.push(
+      textBox(
+        "caption",
+        "caption",
+        diagram.caption.x,
+        diagram.caption.y,
+        diagram.caption.text,
+        M.captionFont,
+        "end",
+      ),
+    );
   }
   return boxes;
+}
+
+/**
+ * The lane a run belongs to, from the run's own key.
+ *
+ * Keys are paths — `root:<slot>/<method>:own0` — and a run's lane is its key
+ * with the `:ownN` suffix taken off. Written once: two copies of a key
+ * convention is two things to update, and the copy that is missed does not fail,
+ * it stops matching and quietly asserts nothing.
+ */
+function laneKeyOf(key: string): string {
+  return key.replace(/:own\d+$/, "");
+}
+
+/** Every hop drawn inside one lane — its runs and its opened slots alike. */
+function hopsIn(diagram: ProcessDiagram, laneKey: string): { key: string }[] {
+  return [...diagram.processes, ...diagram.groups].filter((shape) =>
+    shape.key.startsWith(`${laneKey}:`),
+  );
 }
 
 function boxesIntersect(a: TextBox, b: TextBox): boolean {
@@ -491,12 +513,12 @@ function violations(
     // parents is drawn twice, and matching on `methodId` picked whichever came
     // first — which put a name three hundred pixels below its own line and read
     // as a violation of a rule nothing had broken. Keys are paths; use the path.
-    const laneKey = process.key.replace(/:own\d+$/, "");
+    const laneKey = laneKeyOf(process.key);
     // A row with more than one hop keeps the name on its own-work line. There it
     // is not a repetition of the row's title — it says which hop is the part the
     // method does itself, and without it that hop is a bare line between two
     // circles with nothing on the canvas saying what happens along it.
-    const hops = [...processes, ...groups].filter((shape) => shape.key.startsWith(`${laneKey}:`));
+    const hops = hopsIn(diagram, laneKey);
     if (hops.length > 1) {
       found.push(`${process.key}: draws no name although its row has ${hops.length} hops`);
     }
@@ -1587,10 +1609,7 @@ test("a one-hop row does not write its method's name twice, and a longer row doe
     );
     for (const process of diagram.processes) {
       if (process.methodId === null || process.capabilityId !== null) continue;
-      const laneKey = process.key.replace(/:own\d+$/, "");
-      const hops = [...diagram.processes, ...diagram.groups].filter((shape) =>
-        shape.key.startsWith(`${laneKey}:`),
-      );
+      const hops = hopsIn(diagram, laneKeyOf(process.key));
       if (hops.length === 1) {
         assert.equal(process.label, "", `${process.key} repeats its row's title`);
         single += 1;
@@ -1664,13 +1683,13 @@ test("the lens that hides a method's siblings does not touch the graph", () => {
   // The zoom for a method restricts what fills one slot so that the lane code
   // draws one lane. A lens that leaked would silently delete a method from every
   // page rendered after it in the same process.
-  const before = ZOOM_GRAPH.nodes.map((node) => node.id);
+  // The whole graph, deeply. A list of ids survives a lens that mutated a node
+  // in place — filtered its `steps`, rewrote its `realizes` — which is the same
+  // leak with a quieter symptom.
+  const before = structuredClone(ZOOM_GRAPH);
   layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, "first-way", "en");
   layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, "second-way", "ja");
-  assert.deepEqual(
-    ZOOM_GRAPH.nodes.map((node) => node.id),
-    before,
-  );
+  assert.deepEqual(ZOOM_GRAPH, before);
   // And the slot's own figure still has both ways through it afterwards.
   const after = layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, "slot", "en");
   assert.equal(after.lanes.length, 2);
