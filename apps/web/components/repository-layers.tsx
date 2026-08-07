@@ -27,6 +27,7 @@
 // panel reads as "there is nothing to say" — the same reason `knownGaps` prints
 // a sentence on the 282 records nobody has reviewed.
 import type { PublicLocale } from "../lib/public-locale";
+import { viewSwitchLabels } from "./repository-strand-view";
 import {
   alternativesTo,
   bypassersOf,
@@ -645,6 +646,18 @@ export function LayerIndexView({
       <nav className="mj-layers-crumbs" aria-label={copy.backToAtlas}>
         <a href="/repository">← {copy.backToAtlas}</a>
       </nav>
+      {/* The other drawing of this same graph. Both views have an address, and
+          neither is reachable only from the other — a reader who lands on
+          `?view=list` from a bookmark can still get to the canvas.
+
+          The three words come from `viewSwitchLabels` rather than from inline
+          conditions here: two copies of a translated label is the shape that
+          drifts, and this control is rendered from both sides. */}
+      <div className="mj-strand-switch" role="group" aria-label={viewSwitchLabels(locale).view}>
+        <span className="mj-strand-switch-label">{viewSwitchLabels(locale).view}</span>
+        <a href="/repository/layers?view=strands">{viewSwitchLabels(locale).strands}</a>
+        <span className="mj-strand-switch-on">{viewSwitchLabels(locale).list}</span>
+      </div>
       <h1 id="layers-heading">{copy.indexHeading}</h1>
       <p className="mj-layers-lede">{copy.indexLead}</p>
 
