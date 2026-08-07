@@ -77,6 +77,9 @@ const COPY = {
       "Records also declare what they take and return, so you can see which ones meet. A shape match is not a proof that two things compose — a basis convention or an unstated assumption can still break it — so the site distinguishes “these fit” from “these could fit and nothing has established it”, and never rounds the second up to the first.",
     kinds: "The four kinds",
     entriesLabel: (n: number) => `${n} ${n === 1 ? "record" : "records"}`,
+    layersLead:
+      "A record says what one circuit is. It does not say what a piece is made of, or what else could fill its place — for that there is a second surface:",
+    layersLink: "Layers — the slots a pipeline is made of, and what fills each",
   },
   ja: {
     heading: "Atlasに収録しているもの",
@@ -88,6 +91,9 @@ const COPY = {
       "各レコードは入力と出力も宣言しているため、どれとどれが接続しうるかを見ることができます。形状の一致は合成可能であることの証明ではありません——基底の取り方や明示されていない前提によって成り立たなくなることがあります。そのため本サイトは「接続できる」と「接続しうるが未確認である」を区別し、後者を前者に切り上げることはしません。",
     kinds: "四つの種別",
     entriesLabel: (n: number) => `${n}件`,
+    layersLead:
+      "各項目は、ひとつの回路が何であるかを述べます。ある部品が何から成り立っているか、その場所を他に何が埋めうるかは述べません。そのための画面が別にあります。",
+    layersLink: "階層 — パイプラインを構成する枠と、それを埋めるもの",
   },
 } as const;
 
@@ -122,6 +128,16 @@ export function RepositoryPreface({
       <p>{copy.lead(total)}</p>
       <p>{copy.structure(withCircuit, total)}</p>
       <p>{copy.compose}</p>
+
+      {/* Above the four kinds, not below them. The kinds list answers "which of
+          these records do I want"; this answers "is a record even the thing I
+          am looking for", and a reader who scrolls past the whole preface has
+          at least been told the second surface exists. It is a plain link with
+          an address — the gates section spent two sessions unreachable because
+          the only route to it was a control with no href. */}
+      <p className="mj-repo-preface-layers">
+        {copy.layersLead} <a href="/repository/layers">{copy.layersLink}</a>
+      </p>
 
       <h3 className="mj-repo-preface-kinds">{copy.kinds}</h3>
       <ul className="mj-repo-preface-list">

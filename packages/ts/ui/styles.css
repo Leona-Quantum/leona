@@ -9967,3 +9967,331 @@ div.mj-rail-row:hover {
   font-size: var(--fs-13);
   line-height: 1.55;
 }
+
+/* --- Layers: /repository/layers and one node ------------------------------
+   The Atlas draws a piece with notched edges because a register width either
+   meets another width or does not. A layer's contract is prose, and nothing
+   here computes a verdict from it — so the piece keeps the visual grammar and
+   drops the notch, which is the honest version of the same picture. */
+.mj-layers-site .mj-layers-index,
+.mj-layers-site .mj-layers-node {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--sp-8) var(--sp-5) var(--sp-12);
+}
+.mj-layers-crumbs {
+  display: flex;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+  font-size: var(--fs-13);
+}
+.mj-layers-crumbs a { color: var(--text-2); text-decoration: none; }
+.mj-layers-crumbs a:hover { color: var(--accent); }
+.mj-layers-index h1,
+.mj-layers-node-head h1 {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-display);
+  /* The display face is only ever set at 400 in this stylesheet — eight other
+     rules say so and there is no global h1 reset, so an h1 would inherit the
+     user-agent 700 and synthesise a bold weight the family does not have. */
+  font-weight: 400;
+  font-size: var(--fs-28);
+  line-height: 1.2;
+}
+.mj-layers-lede {
+  margin: 0 0 var(--sp-6);
+  color: var(--text-1);
+  font-size: var(--fs-16);
+  line-height: 1.6;
+}
+.mj-layers-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-layers-kind {
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--accent);
+}
+.mj-layers-model,
+.mj-layers-census {
+  margin: 0 0 var(--sp-6);
+  padding: var(--sp-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-layers-model h2,
+.mj-layers-census h2,
+.mj-layers-start,
+.mj-layers-section h2 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+.mj-layers-model ul { margin: 0; padding-left: var(--sp-5); }
+.mj-layers-model li,
+.mj-layers-census p {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-layers-census p:last-child { margin-bottom: 0; }
+
+/* The piece. Two edges, prose on each, and no verdict drawn between them. */
+.mj-layers-piece {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+  margin: var(--sp-5) 0 0;
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-layers-edge { min-width: 0; }
+.mj-layers-edge--out { text-align: right; }
+.mj-layers-edge-label {
+  display: block;
+  margin-bottom: var(--sp-1);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-layers-edge p {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-layers-piece-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-layers-section {
+  margin: 0 0 var(--sp-6);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--border-hairline);
+}
+.mj-layers-section h3 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-13);
+  color: var(--text-1);
+}
+.mj-layers-section p {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.6;
+}
+/* A contested claim is set apart rather than tinted: the point is that it is a
+   different KIND of statement, not that it is a warning. */
+.mj-layers-section--contested {
+  padding: var(--sp-5);
+  border: 1px dashed var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+/* An empty list says what the emptiness means, and says it in the voice of a
+   fact rather than a defect — muted, never warning-coloured. */
+.mj-layers-empty {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  font-style: italic;
+}
+.mj-layers-count {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-layers-list,
+.mj-layers-records,
+.mj-layers-sources,
+.mj-layers-steps,
+.mj-layers-substeps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-layers-steps { counter-reset: mj-layer-step; }
+.mj-layers-item,
+.mj-layers-steps li,
+.mj-layers-list li {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.mj-layers-list li:last-child,
+.mj-layers-steps li:last-child { border-bottom: none; }
+.mj-layers-steps li { counter-increment: mj-layer-step; }
+.mj-layers-steps li > a::before {
+  content: counter(mj-layer-step) ". ";
+  color: var(--text-2);
+}
+.mj-layers-list li > a,
+.mj-layers-steps li > a,
+.mj-layers-records li > a,
+.mj-layers-sources li > a {
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-layers-list li > a:hover,
+.mj-layers-steps li > a:hover,
+.mj-layers-records li > a:hover,
+.mj-layers-sources li > a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.mj-layers-item-kind {
+  margin-left: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-layers-list li p,
+.mj-layers-steps li p {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-layers-substeps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.mj-layers-substeps li {
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+.mj-layers-substeps li a {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-decoration: none;
+  border-bottom: none;
+}
+.mj-layers-substeps li a:hover { color: var(--accent); }
+.mj-layers-refines { margin: var(--sp-3) 0 0; font-size: var(--fs-13); }
+.mj-layers-source-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-layers-roots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.mj-layers-root {
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-layers-root > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  /* 44px of vertical target at the 13px type scale, which is what
+     check-invisible-hit-targets.mjs is looking for on a control this wide. */
+  padding: var(--sp-4) var(--sp-5);
+  cursor: pointer;
+  list-style: none;
+}
+.mj-layers-root > summary::-webkit-details-marker { display: none; }
+.mj-layers-root > summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--text-2);
+}
+.mj-layers-root[open] > summary::after { content: "−"; }
+.mj-layers-root > summary:hover .mj-layers-root-title { color: var(--accent); }
+.mj-layers-root-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-16);
+  color: var(--text-0);
+}
+.mj-layers-root-body {
+  padding: 0 var(--sp-5) var(--sp-5);
+  border-top: 1px solid var(--border-hairline);
+}
+.mj-layers-root-body > p {
+  margin: var(--sp-4) 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-layers-root-link a {
+  color: var(--accent);
+  font-size: var(--fs-13);
+  text-decoration: none;
+}
+/* The strip on an Atlas entry that the graph names. Rendered inside the entry
+   page's main column, so it borrows that surface's spacing rather than this
+   page's. */
+.mj-layers-entry-strip {
+  margin: var(--sp-6) 0 0;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-layers-entry-strip h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-13);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+.mj-layers-entry-strip p {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+@media (max-width: 640px) {
+  .mj-layers-piece { grid-template-columns: 1fr; }
+  .mj-layers-edge--out { text-align: left; }
+}
+/* The one link out of the Atlas preface into the Layers surface. Set apart from
+   the paragraphs above it so it does not read as a fourth sentence of prose. */
+.mj-repo-preface-layers {
+  margin: var(--sp-4) 0 0;
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-repo-preface-layers a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-repo-preface-layers a:hover { border-bottom-color: var(--accent); }
+/* Only rendered when a cross-link did not resolve at read time — so it is a
+   statement about the catalogue, not a status field, and it is absent on a
+   healthy one. Dashed rather than tinted: the same rule the contested section
+   follows, since it is a different KIND of sentence, not a warning. */
+.mj-layers-census-warn {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px dashed var(--border-0);
+  color: var(--text-2);
+}
