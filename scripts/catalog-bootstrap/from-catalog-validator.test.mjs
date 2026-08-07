@@ -213,3 +213,93 @@ test("a record with a corrupted closed-vocabulary field is rejected", () => {
   assert.equal(parseCatalogRecord({ ...good, framework: "NotAFramework" }), null);
   assert.notEqual(parseCatalogRecord(good), null);
 });
+
+// --- What the browse list must still be able to derive ----------------------
+
+const { deriveInterface } = await loadModule("apps/web/lib/repository/interface.ts");
+
+/** Exactly what `project_record_for_list_view` does: intersection, no defaults. */
+function projectForList(record, allowed) {
+  return Object.fromEntries(Object.entries(record).filter(([key]) => allowed.has(key)));
+}
+
+function stanceOf(record) {
+  return deriveInterface({
+    slug: record.slug,
+    topics: record.topics ?? [],
+    category: record.category,
+    wireCount: record.visualization?.wires?.length ?? 0,
+    portableCircuit: record.portableCircuit,
+    knownGaps: record.knownGaps,
+  }).stance;
+}
+
+// The invariant lib/repository/interface.ts's header claims and nothing checked:
+// "every input this module reads is already in the browse-list projection".
+//
+// It is not a claim about a list of field names — it is a claim about behaviour,
+// so it is tested as one: derive every record's stance twice, once from the full
+// record and once from the projected one, and require the two censuses to be
+// identical. A field the derivation reads and the allowlist drops shows up here
+// as a stance that changes, whatever the field is called and whichever of the
+// two allowlists lost it. A name-list assertion would be a third hand-maintained
+// copy and would pass if both allowlists were edited together.
+//
+// `knownGaps` is why this exists now. It decides `declared-hole` vs
+// `undeclared`, and dropping it does not blank a chip — it silently reclassifies
+// every record that names a hole in its source as one that never described an
+// interface, in the one view a reader uses to find them, and only in production
+// against a healthy API.
+test("the browse list derives the same interface stance as the entry page", () => {
+  const allowed = apiListViewFields();
+  const disagreed = [];
+  for (const item of manifest.items) {
+    const record = JSON.parse(item.source_blob);
+    const full = stanceOf(record);
+    const listed = stanceOf(projectForList(record, allowed));
+    if (full !== listed) disagreed.push(`${item.upstream_identity}: ${full} → ${listed}`);
+  }
+  assert.deepEqual(
+    disagreed,
+    [],
+    "the list projection drops a field deriveInterface reads: these records take one stance on " +
+      "their entry page and another in the browse list, in production only",
+  );
+
+  // Not vacuous: the corpus must actually exercise the field this guards. If
+  // every record derived the same stance either way for want of any gap data,
+  // the assertion above would hold forever while proving nothing.
+  const holes = manifest.items.filter(
+    (item) => stanceOf(JSON.parse(item.source_blob)) === "declared-hole",
+  );
+  assert.ok(
+    holes.length > 0,
+    "no record derives to `declared-hole`, so this test cannot see the field it exists to protect",
+  );
+});
+
+// The 2 MB Next.js data-cache ceiling, measured rather than remembered.
+//
+// Every comment about it in this repo quotes a number, and every one of those
+// numbers has gone stale at least once. This asserts the real projection over
+// the real corpus, and it is here rather than in a comment because the two
+// fields §3.6 added are the first prose-bearing, unbounded-per-record entries on
+// the allowlist: `knownGaps` costs ~1 KB per record that carries one, and one
+// record carries one today.
+test("the projected browse payload stays under the data-cache ceiling", () => {
+  const allowed = apiListViewFields();
+  const CEILING = 2 * 1024 * 1024;
+  // Well under the ceiling, so this fails while there is still room to decide
+  // what to do rather than on the deploy that breaks the page.
+  const BUDGET = Math.floor(CEILING * 0.75);
+  const projected = manifest.items.reduce(
+    (bytes, item) =>
+      bytes + Buffer.byteLength(JSON.stringify(projectForList(JSON.parse(item.source_blob), allowed)), "utf8"),
+    0,
+  );
+  assert.ok(
+    projected < BUDGET,
+    `the projected list payload is ${projected} bytes, over the ${BUDGET}-byte budget (75% of the ` +
+      `${CEILING}-byte ceiling). Either drop a field from the allowlist or stop projecting prose.`,
+  );
+});

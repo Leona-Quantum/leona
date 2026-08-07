@@ -21,7 +21,7 @@
 //
 // ## What the panel must never do
 //
-// Round `unknown` up. It is the verdict on 390 of the 804 ordered pairs that
+// Round `unknown` up. It is the verdict on 408 of the 822 ordered pairs that
 // meet at all, it means "the shapes fit and something unstated might not", and
 // roadmap §6 is explicit that it has to render as its own thing rather than as a
 // warning-coloured near-miss. So the two lists are separate, they are labelled
@@ -31,6 +31,7 @@ import type {
   EntryInterface,
   InterfaceNeighbours,
   InterfacePartner,
+  Hole,
   Port,
 } from "../lib/repository/interface";
 import { isOnGraph } from "../lib/repository/interface";
@@ -43,6 +44,21 @@ const COPY = {
     takes: "Takes",
     returns: "Returns",
     nothing: "Nothing",
+    /**
+     * The reading for a declared hole, and it must not be "Nothing".
+     *
+     * "Nothing" is a statement about the block — it takes no input. A hole is a
+     * statement about the *source*: this edge exists and the paper does not say
+     * what is on it. Rendering both as the same word is the collapse §3.6 exists
+     * to stop, one layer down from the field that stores it.
+     *
+     * The width is named because the record publishes it — the register is in
+     * `visualization.wires` and `connects()` compares against it. What the gap
+     * withholds is the rest: whether that edge carries qubits or classical bits,
+     * and what a next stage would have to assume. Saying only "not stated" would
+     * hide the one thing that is.
+     */
+    hole: (n: number) => `${n}-wire register, not stated in the source`,
     qubits: (n: number) => `${n} ${n === 1 ? "qubit" : "qubits"}`,
     bits: (n: number) => `${n} classical ${n === 1 ? "bit" : "bits"}`,
     assumed: "assumed |0…0⟩",
@@ -53,6 +69,18 @@ const COPY = {
     more: (n: number) => `and ${n} more`,
     unknownNote:
       "The widths and types line up. What is not established is everything a width does not carry — the basis convention, the normalisation, the state each was written to start from — so this is not a claim that the two compose.",
+    /**
+     * The note for a list produced by a declared hole, and it exists because the
+     * one above is FALSE there.
+     *
+     * "The widths and types line up" is a claim about two published ports. A
+     * hole publishes a width and withholds the type — that is what the gap
+     * declaration says — so reusing the sentence above would assert agreement on
+     * exactly the field §3.6 recorded as missing. A guess in the hole, written
+     * in the caption rather than in the field.
+     */
+    holeNote:
+      "Only the register widths line up. This entry's source does not state what crosses this edge, so whether it carries qubits or classical bits is unknown — along with everything a width does not carry. These are the entries a filled-in gap could connect to, not entries that connect.",
     seeAll: (n: number) => `See all ${n} →`,
     stance: {
       source:
@@ -67,12 +95,15 @@ const COPY = {
         "Not a stage. You measure a state with this; you do not apply it and pass a register on. It has a width and deliberately no ports.",
       undeclared:
         "This record publishes no gate sequence and no register, so there is nothing here to read an interface off. Absent rather than empty.",
+      "declared-hole":
+        "This record publishes no gate sequence, and unlike a bare literature entry it says so on purpose: somebody read the source and recorded which part is missing and why, with a citation — the gap is listed further down this page. The register width above is what the record does publish. What it withholds is the rest of that edge, so the entries below are candidates whose widths line up and nothing more; a block may ship with a hole, but never with a guess in the hole.",
     },
   },
   ja: {
     takes: "入力",
     returns: "出力",
     nothing: "なし",
+    hole: (n: number) => `${n} 本のレジスタ・出典に記載なし`,
     qubits: (n: number) => `${n} 量子ビット`,
     bits: (n: number) => `${n} 古典ビット`,
     assumed: "|0…0⟩ を前提",
@@ -83,6 +114,8 @@ const COPY = {
     more: (n: number) => `ほか ${n} 件`,
     unknownNote:
       "幅と型は一致しています。一致が保証しないもの——基底の取り方、規格化、各エントリが前提とする初期状態——は未確認であり、これは両者が合成可能であるという主張ではありません。",
+    holeNote:
+      "一致しているのはレジスタ幅だけです。この端に何が流れるかは出典に記載がないため、量子ビットか古典ビットかも不明であり、幅が保証しないものも当然未確認です。これらは、欠落が埋められれば接続しうる候補であって、接続するエントリではありません。",
     seeAll: (n: number) => `同じ種類の${n}件を見る →`,
     stance: {
       source:
@@ -97,6 +130,8 @@ const COPY = {
         "パイプラインの段ではありません。これを用いて状態を測定するものであり、適用してレジスタを次に渡すものではありません。幅は持ちますが、ポートは意図的に持ちません。",
       undeclared:
         "このレコードはゲート列もレジスタも公開していないため、インターフェースを読み取る対象がありません。空ではなく、不在です。",
+      "declared-hole":
+        "このレコードもゲート列を公開していませんが、単なる文献レコードとは異なり、その欠落が意図的に明示されています。出典を読んだ上で、どの部分が欠けているか、その理由は何かが出典付きで記録されており、該当箇所はこのページの下に列挙されています。上に示したレジスタ幅はレコードが公開している情報です。公開されていないのはその端の残りの部分であり、下に挙がるエントリは幅が一致するというだけの候補にすぎません。ブロックは穴を持ったまま公開してよく、穴を推測で埋めてはなりません。",
     },
   },
 } as const;
@@ -110,8 +145,14 @@ const COPY = {
  */
 type InterfaceCopy = (typeof COPY)[keyof typeof COPY];
 
-function portLabel(port: Port | null, copy: InterfaceCopy): string {
-  if (port === null) return copy.nothing;
+/**
+ * `hole` is passed separately rather than read off the port, because a hole is
+ * precisely the case where there is no port to read it off — and the two blanks
+ * it distinguishes ("takes nothing" vs "the source does not say") are the same
+ * `null` here.
+ */
+function portLabel(port: Port | null, copy: InterfaceCopy, hole: Hole | null = null): string {
+  if (port === null) return hole ? copy.hole(hole.width) : copy.nothing;
   return port.type === "bits" ? copy.bits(port.width) : copy.qubits(port.width);
 }
 
@@ -208,27 +249,31 @@ export function RepositoryInterfacePanel({
           real text inside it, so a screen reader gets the interface without the
           shapes, and the shapes add nothing it would have to describe. */}
       <div className={`mj-iface-piece mj-iface-piece--${entry.stance}`}>
+        {/* A declared hole draws the notch too — the edge is real, and only its
+            shape is missing. Drawn dashed and hollow rather than omitted: a
+            straight side means "nothing joins here", which is the opposite of
+            what the record says. */}
         <span
-          className={`mj-iface-edge mj-iface-edge--in${entry.input ? " is-open" : ""}${
+          className={`mj-iface-edge mj-iface-edge--in${entry.input || entry.inputHole ? " is-open" : ""}${
             entry.assumesZeroInput && entry.input ? " is-caveated" : ""
-          }`}
+          }${entry.inputHole ? " is-hole" : ""}`}
           aria-hidden="true"
         />
         <div className="mj-iface-port">
           <span className="mj-iface-port-label">{copy.takes}</span>
-          <strong className="mj-iface-port-value">{portLabel(entry.input, copy)}</strong>
+          <strong className="mj-iface-port-value">{portLabel(entry.input, copy, entry.inputHole)}</strong>
           {entry.input && entry.assumesZeroInput ? (
             <span className="mj-iface-port-caveat">{copy.assumed}</span>
           ) : null}
         </div>
         <div className="mj-iface-port mj-iface-port--out">
           <span className="mj-iface-port-label">{copy.returns}</span>
-          <strong className="mj-iface-port-value">{portLabel(entry.output, copy)}</strong>
+          <strong className="mj-iface-port-value">{portLabel(entry.output, copy, entry.outputHole)}</strong>
         </div>
         <span
           className={`mj-iface-edge mj-iface-edge--out${
-            entry.output?.type === "qubits" ? " is-open" : ""
-          }`}
+            entry.output?.type === "qubits" || entry.outputHole ? " is-open" : ""
+          }${entry.outputHole ? " is-hole" : ""}`}
           aria-hidden="true"
         />
       </div>
@@ -260,11 +305,20 @@ export function RepositoryInterfacePanel({
             copy={copy}
             tone="ok"
           />
+          {/* The note is keyed to the end the list was produced at, because the
+              two ends can differ: a record may publish a real input port and
+              declare a hole at its output, and one caption for both would be
+              wrong about one of them. Shown once — on the second list only when
+              the first is empty — so a page with both does not say it twice.
+
+              A hole at THIS entry's end is what changes the sentence. A hole on
+              the far side is the partner's disclosure and belongs on the
+              partner's page; the subject's own edge is still fully published. */}
           <PartnerList
             title={copy.unverifiedBefore}
             partners={upstreamUnknown}
             titleOf={titleOf}
-            note={copy.unknownNote}
+            note={entry.inputHole ? copy.holeNote : copy.unknownNote}
             copy={copy}
             tone="unknown"
           />
@@ -272,7 +326,13 @@ export function RepositoryInterfacePanel({
             title={copy.unverifiedAfter}
             partners={downstreamUnknown}
             titleOf={titleOf}
-            note={upstreamUnknown.length > 0 ? undefined : copy.unknownNote}
+            note={
+              upstreamUnknown.length > 0
+                ? undefined
+                : entry.outputHole
+                  ? copy.holeNote
+                  : copy.unknownNote
+            }
             copy={copy}
             tone="unknown"
           />

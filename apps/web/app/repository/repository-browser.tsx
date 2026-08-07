@@ -28,7 +28,7 @@ import {
   deriveInterface,
   filterByStance,
   interfaceOptions,
-  isOnGraph,
+  declaresPort,
   type EntryInterface,
   type InterfaceStance,
 } from "../../lib/repository/interface";
@@ -55,6 +55,11 @@ const COPY = {
     stance_source: "Prepares a state",
     stance_transform: "Register in, register out",
     stance_program: "Whole program, measured",
+    // Reads as a contribution rather than a defect, because §3.6 says it is
+    // one: the record names which part its source does not state, with a
+    // citation. "Missing" or "Incomplete" would file it with `undeclared`,
+    // which is the one distinction the field exists to make.
+    "stance_declared-hole": "Declared hole, sourced",
     stance_observable: "Observable",
     stance_undeclared: "No declared interface",
     facet_role: "What it is",
@@ -123,10 +128,19 @@ const COPY = {
     allStances: "すべてのインターフェース",
     stanceGroupPipeline: "パイプラインの段",
     stanceGroupNot: "段ではないもの",
-    stanceConnectable: "{total}件中{n}件がポートを宣言・うち{met}件が他と接続",
+    // NOT 「うち」. That word scopes {met} inside {n}, and since §3.6 the two
+    // counts are drawn from different sets: {n} is `declaresPort` (ports only)
+    // while {met} is `connectedCount`, which counts declared holes too — and a
+    // hole is on the graph without declaring a port. The English joins the
+    // clauses with a middle dot and asserts no such containment; this now
+    // matches. Second time this locale has claimed a relationship the data does
+    // not have (the first was the unknown-verdict caption in 92dc87cb), so the
+    // rule is in NEXT.md: render `ja` before calling a UI change verified.
+    stanceConnectable: "{total}件中{n}件がポートを宣言・{met}件が他と接続",
     stance_source: "状態を準備",
     stance_transform: "レジスタ入力・レジスタ出力",
     stance_program: "測定まで含む完結したプログラム",
+    "stance_declared-hole": "欠落を出典付きで明示",
     stance_observable: "オブザーバブル",
     stance_undeclared: "インターフェース未宣言",
     facet_role: "種別",
@@ -406,6 +420,7 @@ export function RepositoryBrowser({
           category: entry.category,
           wireCount: entry.visualization?.wires?.length ?? 0,
           portableCircuit: entry.portableCircuit,
+          knownGaps: entry.knownGaps,
         }),
       );
     }
@@ -447,11 +462,16 @@ export function RepositoryBrowser({
    * control, the way `entriesWithDomain` qualifies the domain group.
    *
    * It is 162 of 283 on today's corpus and the group heading says so, because a
-   * filter offering five interface kinds without that number reads as though the
+   * filter offering six interface kinds without that number reads as though the
    * catalogue is a set of connectable parts. Most of it is not.
+   *
+   * `declaresPort`, not `isOnGraph`: since §3.6 a declared hole is on the graph
+   * without declaring a port, and the sentence beside this number says "declare
+   * ports". `isOnGraph` here would have made the copy false the day the first
+   * hole was authored, with nothing failing.
    */
   const connectableEntries = useMemo(
-    () => [...interfaces.values()].filter(isOnGraph).length,
+    () => [...interfaces.values()].filter(declaresPort).length,
     [interfaces],
   );
   /**
