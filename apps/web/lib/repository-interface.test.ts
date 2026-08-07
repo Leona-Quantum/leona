@@ -598,3 +598,41 @@ test("an end's two counts are a partition, and the unverified side can stand alo
   assert.equal(fits.length + unverified.length, hole.downstream.length);
   assert.equal(fits.filter((p) => unverified.some((u) => u.slug === p.slug)).length, 0);
 });
+
+test("exactly three outlook cells are unreachable, and the copy map documents which", () => {
+  // The panel carries a fourteen-cell copy map (7 outlooks × 2 ends) and a
+  // comment naming the cells the corpus cannot currently produce. That comment
+  // was wrong on its first draft — it said four — and a wrong count there is
+  // acted on by whoever next decides the map is over-built and trims it.
+  //
+  // So the claim is enumerated rather than read. If a later stance makes one of
+  // the three reachable, this fails and the comment gets corrected with it.
+  const fixtures: InterfaceEvidence[] = [
+    GATE(2),
+    STATE(2),
+    evidence({ slug: "obs", category: "operators", topics: ["operator"] as TopicId[], wireCount: 3 }),
+    evidence({ slug: "prose", wireCount: 0 }),
+    PROGRAM(4),
+    evidence({
+      slug: "unmeasured",
+      wireCount: 3,
+      portableCircuit: { qubitCount: 3, steps: [{ gate: "H", qubits: [0] }], measure: false },
+    }),
+    HOLE(2, "input"),
+    HOLE(2, "readout"),
+  ];
+  const reachable = new Set<string>();
+  for (const fixture of fixtures) {
+    const derived = deriveInterface(fixture);
+    for (const end of ["in", "out"] as const) reachable.add(`${end}.${portOutlook(derived, end)}`);
+  }
+  const every = (["in", "out"] as const).flatMap((end) =>
+    (["open", "assumed", "terminal", "hole", "start", "by-design", "undeclared"] as const).map(
+      (outlook) => `${end}.${outlook}`,
+    ),
+  );
+  assert.deepEqual(
+    every.filter((cell) => !reachable.has(cell)).sort(),
+    ["in.terminal", "out.assumed", "out.start"],
+  );
+});
