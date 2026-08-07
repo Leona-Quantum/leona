@@ -109,11 +109,16 @@ const COPY = {
      * One sentence per end per outlook — the level below the stance sentence.
      *
      * Exhaustive over `PortOutlook` at **both** ends rather than partial, even
-     * though four of the fourteen cannot be produced today (`start` at the
-     * output end, `assumed` at it, `terminal` at the input end, and `by-design`
-     * is symmetric). A partial map would put a `?? ""` at the call site, and an
-     * empty string is what a reader sees when a later stance makes one of those
-     * reachable. Every cell here is true if it ever renders.
+     * though **three of the fourteen cells cannot be produced today**:
+     * `in.terminal`, `out.assumed` and `out.start`. That list is not a reading
+     * of the code — `repository-interface.test.ts` enumerates the reachable set
+     * over the derivation and fails if it changes, because a comment counting
+     * dead cells is exactly the kind of claim that drifts and then gets acted on
+     * by someone deleting the wrong one.
+     *
+     * A partial map would put a `?? ""` at the call site, and an empty string is
+     * what a reader sees when a later stance makes one of the three reachable.
+     * Every cell here is true if it ever renders.
      */
     outlook: {
       in: {
