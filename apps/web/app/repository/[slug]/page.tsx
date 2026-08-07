@@ -13,6 +13,7 @@ import { RepositoryEstimatePanel, hasVisibleEstimate } from "../../../components
 import { RepositoryProfilePanel, hasVisibleProfile } from "../../../components/repository-profile";
 import { RepositoryInterfacePanel } from "../../../components/repository-interface";
 import { deriveInterface, neighboursOf, type EntryInterface } from "../../../lib/repository/interface";
+import { resolveEntryPort, type BrowseSearchParams } from "../../../lib/repository/browse-params";
 import { RepositoryEntryView } from "./repository-entry-view";
 
 export async function generateStaticParams() {
@@ -29,8 +30,23 @@ export async function generateMetadata({ params }: { params: Promise<{ slug: str
     : { title: locale === "ja" ? "Atlasエントリ" : "Atlas entry" };
 }
 
-export default async function RepositoryEntryPage({ params }: { params: Promise<{ slug: string }> }) {
+export default async function RepositoryEntryPage({
+  params,
+  searchParams,
+}: {
+  params: Promise<{ slug: string }>;
+  /**
+   * `?port=in|out` — which end of the interface piece arrives expanded.
+   *
+   * Reading this does not cost a static render: `generateStaticParams` above
+   * enumerates the slugs, but this page already awaits `getPublicLocale()` and
+   * `getMajoranaAuth()`, both of which read cookies, so it has been dynamic
+   * since it was written.
+   */
+  searchParams: Promise<BrowseSearchParams>;
+}) {
   const { slug } = await params;
+  const openPort = resolveEntryPort(await searchParams);
   // The full record for this one slug, then the slim list for the related-links
   // strip. Previously this pulled the ENTIRE corpus with full records (~2.37 MB)
   // just to find one entry and read a few sibling titles; the list projection is
@@ -147,6 +163,7 @@ export default async function RepositoryEntryPage({ params }: { params: Promise<
             titleOf={(slug) => titleBySlug.get(slug) ?? slug}
             stanceCount={stanceCount}
             locale={locale}
+            openPort={openPort}
           />
         }
       />
