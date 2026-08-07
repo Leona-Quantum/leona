@@ -32,6 +32,7 @@ import {
   refinementsOf,
   rootCapabilities,
   siblingsOf,
+  stateTraffic,
   stepsOutlook,
   validateLayerGraph,
   type LayerCapability,
@@ -284,6 +285,192 @@ test("validation rejects the edges that would make a reading dishonest", () => {
     ]).some((e) => e.includes("cycle")),
   );
   assert.deepEqual(bad(FIXTURE.nodes), []);
+});
+
+/**
+ * What a state page lists, and the two things it must not do.
+ *
+ * It must not count a method that merely inherits its slot's contract — that is
+ * the same process drawn finer, and listing both tells a reader two things
+ * arrive here when one does. And it must not miss a `through`: a route can
+ * record an arrival no contract states, which is exactly why
+ * `hermitian-generator` exists.
+ */
+test("a state's traffic counts own contracts and narrowings, never an inherited one", () => {
+  const narrowing: StateVocabulary = {
+    states: [
+      ...FIXTURE_STATES.states,
+      {
+        id: "beta-sharp",
+        label: "beta-sharp",
+        labelJa: "beta-sharp",
+        summary: "s",
+        summaryJa: "s",
+        specializes: ["beta"],
+      },
+    ],
+  };
+  const graph: LayerGraph = {
+    nodes: [
+      capability("span", { contract: contract("alpha", "gamma") }),
+      capability("encode"),
+      // Inherits `encode`'s contract rather than restating it, so it is the same
+      // arrival at beta and must not be listed twice.
+      method("plain", "encode", { contract: undefined }),
+      method("narrower", "span", {
+        contract: contract("alpha", "gamma"),
+        steps: ["encode"],
+        atomic: undefined,
+        through: { encode: "beta-sharp" },
+      }),
+    ],
+  };
+  assert.deepEqual(validateLayerGraph(graph, new Set(["real-slug"]), narrowing), []);
+
+  const beta = stateTraffic(graph, narrowing, "beta");
+  assert.deepEqual(
+    beta.arriving.map((n) => n.id),
+    ["encode"],
+  );
+  assert.deepEqual(beta.narrowedInto, []);
+  // beta is the broad one. Nothing narrower than itself accepts *it*.
+  assert.deepEqual(beta.acceptedBy, []);
+
+  const sharp = stateTraffic(graph, narrowing, "beta-sharp");
+  assert.deepEqual(sharp.arriving, []);
+  assert.deepEqual(
+    sharp.narrowedInto.map((n) => n.id),
+    ["narrower"],
+  );
+
+  const alpha = stateTraffic(graph, narrowing, "alpha");
+  assert.deepEqual(
+    alpha.leaving.map((n) => n.id),
+    ["span", "encode", "narrower"],
+  );
+});
+
+/**
+ * The direction of `specializes`, rendered rather than left to be inferred.
+ *
+ * A page that lists only exact `from` matches tells a reader that nothing leaves
+ * from a state whose entire reason for existing is that a broader process takes
+ * it as it stands — which is what `hermitian-generator` said before this existed.
+ * And the asymmetry has to hold: broader must never be listed as accepted where
+ * narrower is asked for.
+ */
+test("a narrower state is accepted where a broader one is asked for, and never the reverse", () => {
+  const vocabulary: StateVocabulary = {
+    states: [
+      { id: "broad", label: "broad", labelJa: "broad", summary: "s", summaryJa: "s" },
+      {
+        id: "narrow",
+        label: "narrow",
+        labelJa: "narrow",
+        summary: "s",
+        summaryJa: "s",
+        specializes: ["broad"],
+      },
+      { id: "end", label: "end", labelJa: "end", summary: "s", summaryJa: "s" },
+    ],
+  };
+  const graph: LayerGraph = {
+    nodes: [capability("consume", { contract: contract("broad", "end") })],
+  };
+
+  // `consume` asks for broad. Holding narrow, you can hand it straight over.
+  const narrow = stateTraffic(graph, vocabulary, "narrow");
+  assert.deepEqual(narrow.leaving, []);
+  assert.deepEqual(
+    narrow.acceptedBy.map((n) => n.id),
+    ["consume"],
+  );
+
+  // Holding broad, `consume` is an exact match — and it is listed once, as an
+  // exact one, never doubled into the accepted list.
+  const broad = stateTraffic(graph, vocabulary, "broad");
+  assert.deepEqual(
+    broad.leaving.map((n) => n.id),
+    ["consume"],
+  );
+  assert.deepEqual(broad.acceptedBy, []);
+
+  // The reverse never composes: nothing asks for narrow, so holding broad opens
+  // nothing extra.
+  const reversed: LayerGraph = {
+    nodes: [capability("wants-narrow", { contract: contract("narrow", "end") })],
+  };
+  assert.deepEqual(stateTraffic(reversed, vocabulary, "broad").acceptedBy, []);
+});
+
+/**
+ * `through` is the one edge whose whole value is that it cannot be silenced.
+ *
+ * A narrowing that is not actually a narrowing erases a real gap — it lets a
+ * route claim it hands on a Hermitian generator when the step it delegates to
+ * promises only a linear one, and the composition check then reads the chain as
+ * closing. So each of the five rejections is asserted here rather than reviewed;
+ * every one of them was live and untested until session 93.
+ */
+test("validation rejects a `through` that is not a narrowing", () => {
+  const corpus = new Set(["real-slug"]);
+  // A vocabulary of its own rather than a `specializes` edge added to
+  // FIXTURE_STATES: those three states are deliberately mutually unrelated, and
+  // giving one of them a parent would quietly change what every other assertion
+  // in this file is measured against.
+  const narrowing: StateVocabulary = {
+    states: [
+      ...FIXTURE_STATES.states,
+      {
+        id: "beta-sharp",
+        label: "beta-sharp",
+        labelJa: "beta-sharp",
+        summary: "s",
+        summaryJa: "s",
+        specializes: ["beta"],
+      },
+    ],
+  };
+  // `a` spans alpha → gamma and delegates its first hop to `b`, which returns
+  // beta. So beta is what a `through` on step `b` has to narrow.
+  const graph = (through: LayerMethod["through"]): LayerGraph["nodes"] => [
+    capability("a", { contract: contract("alpha", "gamma") }),
+    capability("b"),
+    method("m", "a", {
+      contract: contract("alpha", "gamma"),
+      steps: ["b"],
+      atomic: undefined,
+      through,
+    }),
+  ];
+  const errorsFor = (through: LayerMethod["through"]) =>
+    validateLayerGraph({ nodes: graph(through) }, corpus, narrowing);
+
+  assert.ok(errorsFor({}).some((e) => e.includes("through narrows nothing")));
+  assert.ok(
+    errorsFor({ nope: "beta-sharp" }).some((e) =>
+      e.includes("through names nope, which is not one of its steps"),
+    ),
+  );
+  assert.ok(
+    errorsFor({ b: "no-such-state" }).some((e) =>
+      e.includes("through[b] names an unknown state"),
+    ),
+  );
+  // gamma is a real state and is not a kind of beta — a replacement wearing the
+  // word "narrower", which is the case that would erase a gap.
+  assert.ok(
+    errorsFor({ b: "gamma" }).some((e) => e.includes("is not a kind of beta")),
+  );
+  assert.ok(
+    errorsFor({ b: "beta" }).some((e) => e.includes("repeats what b already returns")),
+  );
+  // And the honest one passes: beta-sharp is a kind of beta, so the step really
+  // does land somewhere narrower than it promised.
+  assert.deepEqual(
+    errorsFor({ b: "beta-sharp" }).filter((e) => e.includes("through")),
+    [],
+  );
 });
 
 // --- the authored graph ----------------------------------------------------

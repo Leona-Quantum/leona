@@ -369,6 +369,60 @@ export function contractFor(
   return capability ? { contract: capability.contract, source: "inherited" } : null;
 }
 
+/**
+ * The processes that touch a state, split by which end they touch it at.
+ *
+ * Only a node's **own** contract counts. A method that inherits its slot's
+ * contract is the same process drawn at a finer grain, and listing both would
+ * tell a reader that two different things arrive here when one does. A method
+ * that narrows the contract itself *is* a second claim, and does appear.
+ *
+ * `narrowedInto` is the third way to arrive and the one a contract cannot say:
+ * a route may record that a step lands somewhere narrower than the slot
+ * promises — `kvn-simulation-route` reaches a Hermitian generator through a slot
+ * that only promises a linear one. That is an arrival, and `unreachedStates`
+ * counts it as one, so this list has to as well.
+ */
+export interface StateTraffic {
+  /** Processes whose own contract returns this state. */
+  arriving: LayerNode[];
+  /** Processes whose own contract takes this state. */
+  leaving: LayerNode[];
+  /** Methods that record a step landing on this state by narrowing it. */
+  narrowedInto: LayerMethod[];
+  /**
+   * Processes that ask for something broader and therefore accept this.
+   *
+   * Without this, `hermitian-generator` reads "nothing leaves from here" while
+   * its own summary says a simulator can run it as it stands — because the
+   * simulator's contract asks for a Hamiltonian, and being one is exactly what
+   * `specializes` records. Narrowing composes in one direction, so this is the
+   * direction it composes in, listed rather than left for a reader to infer.
+   */
+  acceptedBy: LayerNode[];
+}
+
+export function stateTraffic(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  stateId: string,
+): StateTraffic {
+  const own = (node: LayerNode): LayerContract | null =>
+    isCapability(node) ? node.contract : (node.contract ?? null);
+  return {
+    arriving: graph.nodes.filter((node) => own(node)?.to === stateId),
+    leaving: graph.nodes.filter((node) => own(node)?.from === stateId),
+    narrowedInto: graph.nodes.filter(
+      (node): node is LayerMethod =>
+        isMethod(node) && Object.values(node.through ?? {}).includes(stateId),
+    ),
+    acceptedBy: graph.nodes.filter((node) => {
+      const from = own(node)?.from;
+      return from !== undefined && from !== stateId && stateSatisfies(vocabulary, stateId, from);
+    }),
+  };
+}
+
 /** One hop on a route: the process that carries it from one state to the next. */
 export interface RouteSegment {
   /** The slot filling this hop, or `null` when the method does this part itself. */
@@ -617,6 +671,15 @@ export function layerCensus(
   const produced = new Set<string>();
   for (const node of capabilities) produced.add(node.contract.to);
   for (const method of methods) if (method.contract) produced.add(method.contract.to);
+  // A `through` narrowing is an arrival too. `kvn-simulation-route` records that
+  // its embedding step lands on a *Hermitian* generator, and no contract in the
+  // graph says `to: "hermitian-generator"` — the state exists precisely because
+  // one route reaches a narrower object than the slot promises. Reading only
+  // contracts would report it as a place no route ever arrives at, which is the
+  // opposite of what the route says.
+  for (const method of methods) {
+    for (const narrowed of Object.values(method.through ?? {})) produced.add(narrowed);
+  }
   const referenced = new Set<string>();
   let unresolved = 0;
   for (const node of graph.nodes) {

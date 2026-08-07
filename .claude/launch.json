@@ -46,7 +46,7 @@
       }
     },
     {
-      "_comment": "web-prod, but built into .next-agent on its own port so it cannot collide with a `next dev` another session is already running in this folder (the two share .next and clobber each other). Build first: NEXT_DIST_DIR=.next-agent pnpm --filter @majorana/web build. Same reason as web-prod for using `next start` over `next dev`: dev-mode React needs eval(), which the agent browser pane's CSP blocks, so an interactive control cannot be verified on a dev server.",
+      "_comment": "web-prod, but built into .next-prod-agent on its own port so it cannot collide with a `next dev` another session is already running in this folder (the two share .next and clobber each other). It must also not share .next-agent with the `web-agent` dev profile above, for the same reason: `next dev` and `next start` in one dist dir clobber each other's cache and output. Build first: NEXT_DIST_DIR=.next-prod-agent pnpm --filter @majorana/web build. Same reason as web-prod for using `next start` over `next dev`: dev-mode React needs eval(), which the agent browser pane's CSP blocks, so an interactive control cannot be verified on a dev server.",
       "name": "web-prod-agent",
       "runtimeExecutable": "pnpm",
       "runtimeArgs": [
@@ -58,7 +58,7 @@
       ],
       "port": 3457,
       "env": {
-        "NEXT_DIST_DIR": ".next-agent"
+        "NEXT_DIST_DIR": ".next-prod-agent"
       }
     }
   ]

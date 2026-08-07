@@ -44,6 +44,7 @@ import {
   realizedBy,
   refinementsOf,
   rootCapabilities,
+  stateTraffic,
   stepsOutlook,
   type LayerCorpusEntry,
   type LayerGraph,
@@ -51,6 +52,12 @@ import {
   type LayerNode,
 } from "../lib/repository/layers";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
+import {
+  kindsOf,
+  specializationsOf,
+  type LayerState,
+  type StateVocabulary,
+} from "../lib/repository/states";
 
 const COPY = {
   en: {
@@ -136,6 +143,32 @@ const COPY = {
     layersLink: "Layers — how the pieces fit together",
     onLayers: "Where this sits",
     onLayersLead: "This record is named by the layer graph at:",
+    kindState: "State",
+    stateLede:
+      "A state is an object you can be holding, named once so that two routes reaching the same thing are drawn as reaching the same thing. It says nothing about how you got here or where you can go next — that is entirely in the processes below.",
+    stateKindsHeading: "This is a kind of",
+    stateKindsNone:
+      "This state is not recorded as a kind of anything else. It stands on its own in the vocabulary.",
+    stateKindsLead:
+      "Anything that asks for one of these will accept this, because it is narrower. The reverse does not hold.",
+    stateNarrowerHeading: "Narrower kinds of this",
+    stateNarrowerNone: "No state in the vocabulary is recorded as a narrower kind of this one.",
+    stateArrivingHeading: "Work that arrives here",
+    stateArrivingNone:
+      "No recorded process returns this. Either it is where a reader starts — a problem, a matrix, a machine — or it is an object this graph names and no route yet reaches.",
+    stateArrivingOnlyNarrowed:
+      "No contract in this graph returns this. It is reached only by narrowing, below — which is a real arrival, and the reason the state is named at all.",
+    stateLeavingHeading: "Work that starts here",
+    stateLeavingNone: "No recorded process takes this as its input. Nothing in this graph leaves from here.",
+    stateLeavingOnlyAccepted:
+      "No process asks for this by name. The ones below ask for something broader, and this is a kind of it — so they take it as it stands.",
+    stateAcceptedHeading: "Also accepted where something broader is wanted",
+    stateAcceptedLead:
+      "These ask for an object this one is a kind of. Narrowing composes in that direction and only that direction: handing on something broader than a process asks for would be a skipped conversion.",
+    stateNarrowedHeading: "Routes that reach it by narrowing",
+    stateNarrowedLead:
+      "These do not declare it in a contract. They record that one of their steps lands on something narrower than the slot promises, and this is that narrower thing.",
+    stateOnMap: "See it on the map",
   },
   ja: {
     indexHeading: "階層",
@@ -205,6 +238,31 @@ const COPY = {
     layersLink: "階層 — 部品どうしの組み合わさり方",
     onLayers: "この項目の位置",
     onLayersLead: "この項目は階層グラフの次の箇所から参照されています：",
+    kindState: "対象",
+    stateLede:
+      "対象とは、手にしている当のものです。名前をひとつに定めてあるため、同じものに到達する二つの経路は、同じものに到達しているものとして描かれます。どうやってここへ来たか、ここからどこへ行けるかについては何も述べません。それはすべて下に並ぶ処理の側にあります。",
+    stateKindsHeading: "これが属する種類",
+    stateKindsNone: "この対象は、他の何かの一種としては記録されていません。語彙のなかで単独に立っています。",
+    stateKindsLead:
+      "これらのいずれかを要求する処理は、この対象を受け取れます。より狭いからです。逆は成り立ちません。",
+    stateNarrowerHeading: "これをより狭めた種類",
+    stateNarrowerNone: "これをより狭めた種類として記録されている対象はありません。",
+    stateArrivingHeading: "ここへ到達する処理",
+    stateArrivingNone:
+      "これを返す処理は記録されていません。読み手が最初から手にしている対象——問題、行列、装置——であるか、あるいはこのグラフが名前を与えたもののどの経路もまだ到達していない対象です。",
+    stateArrivingOnlyNarrowed:
+      "このグラフの契約でこれを返すものはありません。到達は下の「狭めること」によってのみ起こります。それも実際の到達であり、この対象に名前がある理由そのものです。",
+    stateLeavingNone: "これを入力として受け取る処理は記録されていません。ここから出発するものはこのグラフにありません。",
+    stateLeavingOnlyAccepted:
+      "この対象を名指しで要求する処理はありません。下に挙げるものはより広い対象を要求しており、これはその一種です。したがって、そのまま受け取られます。",
+    stateAcceptedHeading: "より広い対象を要求する箇所でも受け取られる",
+    stateAcceptedLead:
+      "これらは、この対象が属する種類を要求します。狭めることはその向きにのみ合成でき、逆向きには合成できません。要求より広い対象を渡すことは、変換をひとつ飛ばしていることになります。",
+    stateLeavingHeading: "ここから出発する処理",
+    stateNarrowedHeading: "狭めることで到達する経路",
+    stateNarrowedLead:
+      "これらは契約でこの対象を宣言しているわけではありません。ステップのひとつが枠の約束よりも狭い対象に着地することを記録しており、その狭い対象がこれです。",
+    stateOnMap: "地図上で見る",
   },
 } as const;
 
@@ -611,6 +669,161 @@ export function LayerNodeView({
         <CapabilityView graph={graph} node={node} corpus={corpus} locale={locale} copy={copy} />
       ) : (
         <MethodView graph={graph} node={node} corpus={corpus} locale={locale} copy={copy} />
+      )}
+    </article>
+  );
+}
+
+function stateLabel(state: LayerState, locale: PublicLocale): string {
+  return locale === "ja" ? state.labelJa : state.label;
+}
+
+function stateSummary(state: LayerState, locale: PublicLocale): string {
+  return locale === "ja" ? state.summaryJa : state.summary;
+}
+
+function StateList({
+  states,
+  locale,
+  empty,
+  lead,
+}: {
+  states: readonly LayerState[];
+  locale: PublicLocale;
+  empty: string;
+  lead?: string;
+}) {
+  if (states.length === 0) return <EmptyNote>{empty}</EmptyNote>;
+  return (
+    <>
+      {lead ? <p>{lead}</p> : null}
+      <ul className="mj-layers-list">
+        {states.map((state) => (
+          <li className="mj-layers-item" key={state.id}>
+            <a href={href(state.id)}>{stateLabel(state, locale)}</a>
+            <p>{stateSummary(state, locale)}</p>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
+/**
+ * A state's own page — the thing a circle on the map is a link to.
+ *
+ * It exists because the map draws every state as an `<a href>` and until now
+ * every one of those was a 404: `layers/[id]` only ever resolved node ids, and
+ * `validateLayerGraph` guarantees a state id is never a node id, so the two
+ * facts together made every circle on the surface a dead end.
+ *
+ * What it says is deliberately narrow. A state is not a step, so this page never
+ * describes a journey: it names the object, says what it is a kind of and what
+ * kinds it has, and then lists the processes that touch it at either end — which
+ * is the Markov framing the vocabulary is built on, rendered rather than
+ * asserted.
+ */
+export function LayerStateView({
+  graph,
+  vocabulary,
+  state,
+  locale,
+}: {
+  graph: LayerGraph;
+  vocabulary: StateVocabulary;
+  state: LayerState;
+  locale: PublicLocale;
+}) {
+  const copy = copyFor(locale);
+  const index = new Map(vocabulary.states.map((entry) => [entry.id, entry]));
+  // `kindsOf` includes the state itself — it answers "what does this satisfy?",
+  // and a state satisfies itself. On this page the reader is being told what
+  // *else* it is, so the state itself comes out.
+  const broader = [...kindsOf(vocabulary, state.id)]
+    .filter((id) => id !== state.id)
+    .map((id) => index.get(id))
+    .filter((entry): entry is LayerState => entry !== undefined);
+  const narrower = specializationsOf(vocabulary, state.id);
+  const traffic = stateTraffic(graph, vocabulary, state.id);
+  return (
+    <article className="mj-layers-node">
+      <nav className="mj-layers-crumbs" aria-label={copy.indexHeading}>
+        <a href="/repository/layers">{copy.backToLayers}</a>
+        <a href="/repository/layers?view=map">{copy.stateOnMap}</a>
+        <a href="/repository">{copy.backToAtlas}</a>
+      </nav>
+      <header className="mj-layers-node-head">
+        <p className="mj-layers-kicker">
+          <span className="mj-layers-kind">{copy.kindState}</span>
+        </p>
+        <h1>{stateLabel(state, locale)}</h1>
+        <p className="mj-layers-lede">{stateSummary(state, locale)}</p>
+        <p className="mj-layers-piece-note">{copy.stateLede}</p>
+      </header>
+      <section className="mj-layers-section" aria-labelledby={`kinds-${state.id}`}>
+        <h2 id={`kinds-${state.id}`}>{copy.stateKindsHeading}</h2>
+        <StateList
+          states={broader}
+          locale={locale}
+          empty={copy.stateKindsNone}
+          lead={broader.length > 0 ? copy.stateKindsLead : undefined}
+        />
+      </section>
+      <section className="mj-layers-section" aria-labelledby={`narrower-${state.id}`}>
+        <h2 id={`narrower-${state.id}`}>{copy.stateNarrowerHeading}</h2>
+        <StateList states={narrower} locale={locale} empty={copy.stateNarrowerNone} />
+      </section>
+      <section className="mj-layers-section" aria-labelledby={`arriving-${state.id}`}>
+        <h2 id={`arriving-${state.id}`}>{copy.stateArrivingHeading}</h2>
+        {traffic.arriving.length === 0 ? (
+          <EmptyNote>
+            {traffic.narrowedInto.length > 0
+              ? copy.stateArrivingOnlyNarrowed
+              : copy.stateArrivingNone}
+          </EmptyNote>
+        ) : (
+          <ul className="mj-layers-list">
+            {traffic.arriving.map((node) => (
+              <NodeLink graph={graph} node={node} locale={locale} copy={copy} key={node.id} />
+            ))}
+          </ul>
+        )}
+      </section>
+      {traffic.narrowedInto.length === 0 ? null : (
+        <section className="mj-layers-section" aria-labelledby={`narrowed-${state.id}`}>
+          <h2 id={`narrowed-${state.id}`}>{copy.stateNarrowedHeading}</h2>
+          <p>{copy.stateNarrowedLead}</p>
+          <ul className="mj-layers-list">
+            {traffic.narrowedInto.map((node) => (
+              <NodeLink graph={graph} node={node} locale={locale} copy={copy} key={node.id} />
+            ))}
+          </ul>
+        </section>
+      )}
+      <section className="mj-layers-section" aria-labelledby={`leaving-${state.id}`}>
+        <h2 id={`leaving-${state.id}`}>{copy.stateLeavingHeading}</h2>
+        {traffic.leaving.length === 0 ? (
+          <EmptyNote>
+            {traffic.acceptedBy.length > 0 ? copy.stateLeavingOnlyAccepted : copy.stateLeavingNone}
+          </EmptyNote>
+        ) : (
+          <ul className="mj-layers-list">
+            {traffic.leaving.map((node) => (
+              <NodeLink graph={graph} node={node} locale={locale} copy={copy} key={node.id} />
+            ))}
+          </ul>
+        )}
+      </section>
+      {traffic.acceptedBy.length === 0 ? null : (
+        <section className="mj-layers-section" aria-labelledby={`accepted-${state.id}`}>
+          <h2 id={`accepted-${state.id}`}>{copy.stateAcceptedHeading}</h2>
+          <p>{copy.stateAcceptedLead}</p>
+          <ul className="mj-layers-list">
+            {traffic.acceptedBy.map((node) => (
+              <NodeLink graph={graph} node={node} locale={locale} copy={copy} key={node.id} />
+            ))}
+          </ul>
+        </section>
       )}
     </article>
   );

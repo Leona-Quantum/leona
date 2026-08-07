@@ -60,7 +60,6 @@
 // a low guess puts a Japanese label outside its own circle.
 import {
   capabilityOutlook,
-  contractFor,
   isCapability,
   layerNode,
   methodsRealizing,
@@ -948,7 +947,11 @@ export function layoutProcessMap(
     };
   }
 
-  const contract = contractFor(graph, node)!.contract;
+  // `node` is a capability by the guard above, and a capability's contract is a
+  // required field — so this is `node.contract` rather than `contractFor(...)!`,
+  // which routes through the method-oriented own-vs-inherited API only to assert
+  // away a null that branch can never return.
+  const contract = node.contract;
   const measured = measureProcess(rootId, 0, options);
   const entryWidth = stateWidth(vocabulary, contract.from, locale);
   const exitWidth = stateWidth(vocabulary, contract.to, locale);
