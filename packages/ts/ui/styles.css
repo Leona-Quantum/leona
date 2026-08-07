@@ -847,9 +847,13 @@
   font-weight: 600;
 }
 
+/* One column since s91: the search field, then the facet rail under it. The
+   three-column grid existed to stand three <select>s side by side, and there
+   are no selects left — the rail is one line closed and a set of columns
+   open, so it needs the full width rather than a third of it. */
 .mj-repository-controls {
-  display: grid;
-  grid-template-columns: minmax(0, 1.7fr) repeat(2, minmax(150px, 0.65fr));
+  display: flex;
+  flex-direction: column;
   gap: var(--sp-3);
   padding: var(--sp-4);
   border: 1px solid var(--border-0);
@@ -882,28 +886,127 @@
   border-color: var(--accent);
   outline: none;
 }
-/* R1's circuit-only filter. The control row is built for stacked label+select
-   pairs, so a checkbox has to opt out of both the column flow and the input
-   sizing above — 36px of padded height and a 12px inset are what a text field
-   needs and what a checkbox must not inherit. The min-height is kept so it
-   still sits on the same baseline as the selects beside it. */
-.mj-repository-controls label.mj-repository-circuit-only {
-  flex-direction: row;
-  align-items: center;
-  align-self: end;
+/* ---------- the facet rail ---------- */
+/* Replaced three <select>s and a checkbox (s91, OWNER_TODO §4b). Closed it is
+   one line; open it is the whole vocabulary with counts. The chips above the
+   disclosure are load-bearing rather than decorative — they are what stops a
+   collapsed control from filtering the page silently, which is the one hazard
+   a disclosure has that a dropdown does not. */
+.mj-facet-rail {
+  display: flex;
+  flex-direction: column;
   gap: var(--sp-2);
-  min-height: 36px;
+}
+.mj-facet-active {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-facet-active-label {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-facet-chip {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  min-height: 26px;
+  padding: 0 var(--sp-2) 0 var(--sp-3);
+  border: 1px solid var(--accent);
+  border-radius: var(--radius-control);
+  color: var(--text-0);
+  background: var(--bg-2);
+  font-size: var(--fs-12);
+  text-decoration: none;
+}
+.mj-facet-chip:hover {
+  background: var(--bg-1);
+}
+.mj-facet-chip span:last-child {
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-facet-chip:hover span:last-child {
+  color: var(--accent);
+}
+.mj-facet-clear {
+  font-size: var(--fs-12);
+}
+.mj-facet-disclosure > summary {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  width: fit-content;
+  padding: var(--sp-1) 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
   cursor: pointer;
 }
-.mj-repository-controls .mj-repository-circuit-only input[type="checkbox"] {
-  width: var(--sp-4);
-  height: var(--sp-4);
-  min-height: 0;
-  margin: 0;
-  padding: 0;
-  accent-color: var(--accent);
-  cursor: pointer;
+.mj-facet-summary-state {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
 }
+.mj-facet-groups {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+  gap: var(--sp-4);
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-0);
+}
+.mj-facet-group h4 {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  margin: 0 0 var(--sp-2);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-weight: 600;
+}
+.mj-facet-group-note {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-weight: 400;
+}
+.mj-facet-options {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+/* Anchor and span share every rule but the interaction, so the list does not
+   reflow when the selection moves — the active option is a <span> because a
+   link to the page you are already on is a control that looks operable and
+   does nothing. */
+.mj-facet-option {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: var(--sp-2);
+  padding: 3px var(--sp-2);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  text-decoration: none;
+}
+a.mj-facet-option:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-facet-option.is-active {
+  color: var(--accent);
+  font-weight: 600;
+}
+.mj-facet-option-count {
+  flex: none;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+
 .mj-repository-category-nav {
   display: flex;
   flex-wrap: wrap;
@@ -9781,6 +9884,52 @@ div.mj-rail-row:hover {
   max-width: 62ch;
 }
 
+/* ---------- the end of the list, and the way past it ---------- */
+/* `/repository` rendered all 176 rows: 22,825px of document, measured on
+   production. The cap is in lib/repository/browse-page.ts; this is the control
+   that states it. Centred and given air on both sides, because it is the one
+   thing below the fold that has to be found rather than scrolled past — the
+   failure it replaces is a reader who assumes 24 rows IS the catalogue. */
+.mj-repo-more {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: var(--sp-2);
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-0);
+}
+.mj-repo-more-count {
+  margin: 0;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-repo-more-actions {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+  gap: var(--sp-3);
+}
+/* A real button-sized target, because this is the primary action of the whole
+   page below the first screen. `--sp-2`/`--sp-4` rather than a bespoke pair so
+   it lines up with every other control on the route. */
+.mj-repo-more-link {
+  padding: var(--sp-2) var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-1);
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 600;
+  text-decoration: none;
+}
+.mj-repo-more-link:hover {
+  border-color: var(--accent);
+  color: var(--accent);
+}
+
 /* ---------- what an entry takes and returns: the piece ---------- */
 /* The owner asked for the interface as a shape — "puzzle pieces that connect to
    the corresponding pieces that fit before and after it". The shape earns its
@@ -10062,6 +10211,646 @@ div.mj-rail-row:hover {
 }
 .mj-repo-preface-list li p {
   margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+
+/* --- Layers: /repository/layers and one node ------------------------------
+   The Atlas draws a piece with notched edges because a register width either
+   meets another width or does not. A layer's contract is prose, and nothing
+   here computes a verdict from it — so the piece keeps the visual grammar and
+   drops the notch, which is the honest version of the same picture. */
+.mj-layers-site .mj-layers-index,
+.mj-layers-site .mj-layers-node {
+  max-width: var(--content-max);
+  margin: 0 auto;
+  padding: var(--sp-8) var(--sp-5) var(--sp-12);
+}
+.mj-layers-crumbs {
+  display: flex;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-6);
+  font-size: var(--fs-13);
+}
+.mj-layers-crumbs a { color: var(--text-2); text-decoration: none; }
+.mj-layers-crumbs a:hover { color: var(--accent); }
+.mj-layers-index h1,
+.mj-layers-node-head h1 {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-display);
+  /* The display face is only ever set at 400 in this stylesheet — eight other
+     rules say so and there is no global h1 reset, so an h1 would inherit the
+     user-agent 700 and synthesise a bold weight the family does not have. */
+  font-weight: 400;
+  font-size: var(--fs-28);
+  line-height: 1.2;
+}
+.mj-layers-lede {
+  margin: 0 0 var(--sp-6);
+  color: var(--text-1);
+  font-size: var(--fs-16);
+  line-height: 1.6;
+}
+.mj-layers-kicker {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-layers-kind {
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--accent);
+}
+.mj-layers-model,
+.mj-layers-census {
+  margin: 0 0 var(--sp-6);
+  padding: var(--sp-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-layers-model h2,
+.mj-layers-census h2,
+.mj-layers-start,
+.mj-layers-section h2 {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-14);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+.mj-layers-model ul { margin: 0; padding-left: var(--sp-5); }
+.mj-layers-model li,
+.mj-layers-census p {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-layers-census p:last-child { margin-bottom: 0; }
+
+/* The piece. Two edges, prose on each, and no verdict drawn between them. */
+.mj-layers-piece {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-4);
+  margin: var(--sp-5) 0 0;
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-layers-edge { min-width: 0; }
+.mj-layers-edge--out { text-align: right; }
+.mj-layers-edge-label {
+  display: block;
+  margin-bottom: var(--sp-1);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-layers-edge p {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-layers-piece-note {
+  grid-column: 1 / -1;
+  margin: 0;
+  padding-top: var(--sp-3);
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-layers-section {
+  margin: 0 0 var(--sp-6);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--border-hairline);
+}
+.mj-layers-section h3 {
+  margin: var(--sp-4) 0 var(--sp-2);
+  font-size: var(--fs-13);
+  color: var(--text-1);
+}
+.mj-layers-section p {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.6;
+}
+/* A contested claim is set apart rather than tinted: the point is that it is a
+   different KIND of statement, not that it is a warning. */
+.mj-layers-section--contested {
+  padding: var(--sp-5);
+  border: 1px dashed var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+/* An empty list says what the emptiness means, and says it in the voice of a
+   fact rather than a defect — muted, never warning-coloured. */
+.mj-layers-empty {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  font-style: italic;
+}
+.mj-layers-count {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-layers-list,
+.mj-layers-records,
+.mj-layers-sources,
+.mj-layers-steps,
+.mj-layers-substeps {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-layers-steps { counter-reset: mj-layer-step; }
+.mj-layers-item,
+.mj-layers-steps li,
+.mj-layers-list li {
+  padding: var(--sp-3) 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.mj-layers-list li:last-child,
+.mj-layers-steps li:last-child { border-bottom: none; }
+.mj-layers-steps li { counter-increment: mj-layer-step; }
+.mj-layers-steps li > a::before {
+  content: counter(mj-layer-step) ". ";
+  color: var(--text-2);
+}
+.mj-layers-list li > a,
+.mj-layers-steps li > a,
+.mj-layers-records li > a,
+.mj-layers-sources li > a {
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-layers-list li > a:hover,
+.mj-layers-steps li > a:hover,
+.mj-layers-records li > a:hover,
+.mj-layers-sources li > a:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.mj-layers-item-kind {
+  margin-left: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-layers-list li p,
+.mj-layers-steps li p {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+}
+.mj-layers-substeps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin-top: var(--sp-2);
+}
+.mj-layers-substeps li {
+  padding: 2px var(--sp-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+}
+.mj-layers-substeps li a {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-decoration: none;
+  border-bottom: none;
+}
+.mj-layers-substeps li a:hover { color: var(--accent); }
+.mj-layers-refines { margin: var(--sp-3) 0 0; font-size: var(--fs-13); }
+.mj-layers-source-meta {
+  display: block;
+  margin-top: 2px;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-layers-roots {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.mj-layers-root {
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-layers-root > summary {
+  display: flex;
+  align-items: baseline;
+  gap: var(--sp-3);
+  /* 44px of vertical target at the 13px type scale, which is what
+     check-invisible-hit-targets.mjs is looking for on a control this wide. */
+  padding: var(--sp-4) var(--sp-5);
+  cursor: pointer;
+  list-style: none;
+}
+.mj-layers-root > summary::-webkit-details-marker { display: none; }
+.mj-layers-root > summary::after {
+  content: "+";
+  margin-left: auto;
+  color: var(--text-2);
+}
+.mj-layers-root[open] > summary::after { content: "−"; }
+.mj-layers-root > summary:hover .mj-layers-root-title { color: var(--accent); }
+.mj-layers-root-title {
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-16);
+  color: var(--text-0);
+}
+.mj-layers-root-body {
+  padding: 0 var(--sp-5) var(--sp-5);
+  border-top: 1px solid var(--border-hairline);
+}
+.mj-layers-root-body > p {
+  margin: var(--sp-4) 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-layers-root-link a {
+  color: var(--accent);
+  font-size: var(--fs-13);
+  text-decoration: none;
+}
+/* The strip on an Atlas entry that the graph names. Rendered inside the entry
+   page's main column, so it borrows that surface's spacing rather than this
+   page's. */
+.mj-layers-entry-strip {
+  margin: var(--sp-6) 0 0;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-layers-entry-strip h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-13);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--text-2);
+}
+.mj-layers-entry-strip p {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+@media (max-width: 640px) {
+  .mj-layers-piece { grid-template-columns: 1fr; }
+  .mj-layers-edge--out { text-align: left; }
+}
+/* The one link out of the Atlas preface into the Layers surface. Set apart from
+   the paragraphs above it so it does not read as a fourth sentence of prose. */
+.mj-repo-preface-layers {
+  margin: var(--sp-4) 0 0;
+  padding-top: var(--sp-4);
+  border-top: 1px solid var(--border-hairline);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-repo-preface-layers a {
+  color: var(--accent);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-repo-preface-layers a:hover { border-bottom-color: var(--accent); }
+/* Only rendered when a cross-link did not resolve at read time — so it is a
+   statement about the catalogue, not a status field, and it is absent on a
+   healthy one. Dashed rather than tinted: the same rule the contested section
+   follows, since it is a different KIND of sentence, not a warning. */
+.mj-layers-census-warn {
+  margin-top: var(--sp-3);
+  padding-top: var(--sp-3);
+  border-top: 1px dashed var(--border-0);
+  color: var(--text-2);
+}
+
+/* ---------------------------------------------------------------------------
+   The strand canvas — /repository/layers?view=strands
+   ---------------------------------------------------------------------------
+   Everything here styles server-rendered SVG. There is no client component
+   behind this surface, so every state a reader can reach is either a link, a
+   `:hover`/`:focus-visible`, or a `<details>` — which is also why the hover
+   affordance is done in CSS rather than by a handler.
+
+   Colour comes entirely from the token set, so the canvas follows the site's
+   light/dark toggle with no per-theme rules of its own. `currentColor` does the
+   work: strokes inherit from the group, and the two states that must be
+   distinguishable at a glance — a slot drawn shut versus a slot nothing fills —
+   differ in dash pattern as well as in opacity, because opacity alone is not a
+   difference a reader can name.
+   --------------------------------------------------------------------------- */
+/* Wider than `--content-max`, deliberately. That token is a measure for prose
+   and this surface is a canvas: at 1200px the diagram is clipped at the rail on
+   a screen with room to spare. The prose blocks on the page keep their own
+   measure with `max-width` in ch, so nothing here becomes a 96rem line of text. */
+.mj-strand-view {
+  max-width: min(96rem, 100%);
+  margin: 0 auto;
+  padding: var(--sp-8) var(--sp-5) var(--sp-12);
+}
+.mj-strand-head h1 {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-display);
+  /* The display face is only set at 400 anywhere in this stylesheet; an h1 would
+     otherwise inherit the user-agent 700 and synthesise a weight it does not have. */
+  font-weight: 400;
+  font-size: var(--fs-28);
+  line-height: 1.2;
+}
+.mj-strand-lede {
+  margin: 0 0 var(--sp-6);
+  max-width: 62ch;
+  color: var(--text-1);
+  font-size: var(--fs-16);
+  line-height: 1.6;
+}
+.mj-strand-controls {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-4);
+  margin-bottom: var(--sp-4);
+}
+.mj-strand-switch {
+  display: inline-flex;
+  align-items: center;
+  gap: var(--sp-2);
+  padding: 3px;
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-13);
+}
+.mj-strand-switch-label {
+  padding: 0 var(--sp-2);
+  color: var(--text-2);
+  text-transform: lowercase;
+}
+.mj-strand-switch a,
+.mj-strand-switch-on {
+  padding: 3px var(--sp-3);
+  border-radius: calc(var(--radius-control) - 2px);
+  text-decoration: none;
+}
+.mj-strand-switch a { color: var(--text-2); }
+.mj-strand-switch a:hover { color: var(--text-0); background: var(--bg-2); }
+.mj-strand-switch-on { color: var(--text-0); background: var(--bg-2); }
+.mj-strand-back {
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  text-decoration: none;
+}
+.mj-strand-back:hover { color: var(--accent); }
+
+.mj-strand-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-3) var(--sp-5);
+  margin: 0 0 var(--sp-5);
+  padding: 0;
+  list-style: none;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-strand-legend li {
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+.mj-strand-legend-mark {
+  width: 38px;
+  height: 18px;
+  flex: none;
+  overflow: visible;
+}
+
+/* The canvas is the one thing on the page allowed to be wider than the column,
+   so it scrolls inside its own box. The page body must never scroll sideways. */
+.mj-strand-body {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 14rem;
+  gap: var(--sp-5);
+  align-items: start;
+}
+@media (max-width: 60rem) {
+  .mj-strand-body { grid-template-columns: minmax(0, 1fr); }
+}
+/* The canvas may legitimately be wider than the column, so it scrolls inside its
+   own box and the page body never scrolls sideways. */
+.mj-strand-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: var(--sp-3);
+  scrollbar-width: thin;
+}
+/* Shrink to fit, but only so far.
+   `--strand-w` is the diagram's natural width and `--strand-min` is 72% of it,
+   both set inline by the renderer because only it knows them. So: a diagram that
+   fits renders at its true size; one slightly too wide scales down rather than
+   forcing a scrollbar; one far too wide (depth 3 is 4005px) stops shrinking at
+   72% and scrolls instead, because past that the 11px labels stop being
+   readable and a diagram nobody can read is not a smaller diagram. */
+.mj-strand-canvas {
+  display: block;
+  width: 100%;
+  max-width: var(--strand-w);
+  min-width: min(var(--strand-min), 100%);
+  height: auto;
+  color: var(--text-2);
+}
+
+/* --- the shapes ---------------------------------------------------------- */
+.mj-strand-lens {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.55;
+}
+/* The outermost slot contains everything else on the canvas, so it is the one
+   outline that has to read as an envelope rather than as another shape among
+   them. At the shared opacity it disappeared into the background entirely. */
+.mj-strand-canvas > .mj-strand-fascicle > .mj-strand-lens {
+  opacity: 0.8;
+  stroke-width: 1.25;
+}
+.mj-strand-fascicle--closed > .mj-strand-lens { opacity: 0.75; }
+.mj-strand-lens-inner {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.3;
+}
+/* Nothing recorded fills this slot. Dashed, so it is not merely "fainter than"
+   the shut state — the two say different things and must look different. */
+.mj-strand-fascicle--empty > .mj-strand-lens {
+  stroke-dasharray: 4 4;
+  opacity: 0.4;
+}
+.mj-strand-pinch {
+  fill: currentColor;
+  opacity: 0.75;
+}
+/* A slot's name and a method's name sit two lines apart on the canvas and were
+   reading as one two-line title. They are different kinds of thing, so they get
+   different type: a slot is named in the text colour at a normal size, a method
+   in the muted colour, smaller, and italic. Position alone was not enough. */
+.mj-strand-fascicle-label {
+  fill: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  letter-spacing: 0.005em;
+}
+.mj-strand-count {
+  fill: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  text-anchor: middle;
+  opacity: 0.85;
+}
+.mj-strand-fiber-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.5;
+}
+.mj-strand-fiber--undecomposed > .mj-strand-fiber-line {
+  stroke-dasharray: 2 3;
+  opacity: 0.45;
+}
+.mj-strand-fiber-label {
+  fill: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 11.5px;
+  font-style: italic;
+  opacity: 0.92;
+}
+.mj-strand-bypass-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 6 4;
+  opacity: 0.4;
+}
+
+/* An invisible band, not a hidden one: `opacity: 0` still takes the pointer,
+   `visibility: hidden` would not. */
+.mj-strand-hit {
+  fill: currentColor;
+  opacity: 0;
+  pointer-events: fill;
+}
+/* The shape's own edge, made thick enough to hit.
+   `pointer-events: stroke` is load-bearing — it keeps the target on the outline
+   and off the interior, so a slot never steals the clicks meant for the fibres
+   drawn inside it. `fill: none` alone would not: `pointer-events` defaults to
+   `visiblePainted`, which for a zero-opacity path means nothing is hit at all. */
+.mj-strand-hit-line {
+  fill: none;
+  stroke: currentColor;
+  stroke-width: 13;
+  opacity: 0;
+  pointer-events: stroke;
+}
+.mj-strand-canvas a:hover .mj-strand-hit-line { opacity: 0.07; }
+.mj-strand-canvas a { cursor: pointer; }
+.mj-strand-canvas a:hover .mj-strand-fascicle-label,
+.mj-strand-canvas a:focus-visible .mj-strand-fascicle-label,
+.mj-strand-canvas a:hover .mj-strand-fiber-label,
+.mj-strand-canvas a:focus-visible .mj-strand-fiber-label {
+  fill: var(--accent);
+}
+.mj-strand-canvas a:hover .mj-strand-hit { opacity: 0.06; }
+.mj-strand-canvas a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-strand-fascicle:hover > .mj-strand-lens { opacity: 0.9; }
+.mj-strand-bypass:hover .mj-strand-bypass-line {
+  opacity: 0.9;
+  stroke: var(--accent);
+}
+
+/* --- the rail ------------------------------------------------------------ */
+.mj-strand-rail {
+  min-width: 0;
+  padding: var(--sp-4);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  font-size: var(--fs-13);
+}
+.mj-strand-rail > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  text-transform: lowercase;
+  letter-spacing: 0.02em;
+}
+.mj-strand-rail-body > section { margin-top: var(--sp-4); }
+.mj-strand-rail h3 {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  text-transform: lowercase;
+}
+.mj-strand-rail-count {
+  font-family: var(--font-mono);
+  opacity: 0.7;
+}
+.mj-strand-rail ul,
+.mj-strand-rail-path {
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-strand-rail li { margin-bottom: var(--sp-2); line-height: 1.4; }
+.mj-strand-rail a { color: var(--text-1); text-decoration: none; }
+.mj-strand-rail a:hover { color: var(--accent); }
+.mj-strand-rail-path li { padding-left: var(--sp-3); position: relative; }
+.mj-strand-rail-path li::before {
+  content: "└";
+  position: absolute;
+  left: 0;
+  color: var(--text-2);
+  opacity: 0.5;
+}
+.mj-strand-rail-path li:first-child { padding-left: 0; }
+.mj-strand-rail-path li:first-child::before { content: none; }
+.mj-strand-rail-path strong { color: var(--text-0); font-weight: 500; }
+/* An empty list here is a finding, not a blank. It gets the same weight as a
+   populated one so a reader never has to guess whether the panel failed. */
+.mj-strand-rail-none {
+  margin: 0;
+  color: var(--text-2);
+  line-height: 1.4;
+}
+.mj-strand-rail-writeup {
+  display: inline-block;
+  margin-top: var(--sp-5);
+  color: var(--accent) !important;
+}
+.mj-strand-note {
+  max-width: 68ch;
+  margin: var(--sp-4) 0 0;
   color: var(--text-2);
   font-size: var(--fs-13);
   line-height: 1.55;

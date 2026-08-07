@@ -17,10 +17,12 @@ import {
   orderEntries,
   withCircuitOnly,
   isProfileOrder,
+  PROFILE_ORDERS,
   type BrowseOrder,
 } from "../../lib/repository/browse-order";
+import { capRows, DEFAULT_ROW_LIMIT, splitCapped, type RowLimit } from "../../lib/repository/browse-page";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
-import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
+import { filterByTopic, topicOptions } from "../../lib/repository/topic-filter";
 import { matchesRepositoryQuery } from "../../lib/repository/search";
 import {
   PIPELINE_STANCES,
@@ -73,6 +75,22 @@ const COPY = {
     countFolded: "{rows} entries · {records} records, sized variants folded",
     countFoldedTitle:
       "Sized and curated variants of the same circuit are folded into one entry. Every variant is still its own page, and the widths are listed on the card.",
+    // The cap, stated as two numbers rather than as "more below". A reader who
+    // cannot see how much is held back cannot tell a short list from a filtered
+    // one, and those mean opposite things about the catalogue.
+    showingOf: "Showing {shown} of {total}",
+    showMore: "Show more",
+    showAll: "Show all {total}",
+    // The rail. Its summary has to say two things at once — that there is more
+    // behind it, and whether anything behind it is currently doing something —
+    // because a collapsed control that is silently filtering the page is the
+    // one failure a disclosure can introduce that a dropdown cannot.
+    refine: "Refine",
+    refineActive: "{n} active",
+    refineNone: "Topic · interface · order",
+    activeFilters: "Filtering by",
+    removeFilter: "Remove",
+    clearAll: "Clear all",
     view: "View",
     gateExpand: "Expand into basic gates",
     gateCollapse: "Collapse to single gate",
@@ -152,6 +170,15 @@ const COPY = {
     countFolded: "{rows}件 · レコード{records}件（サイズ違いのバリアントを統合）",
     countFoldedTitle:
       "同じ回路のサイズ違い・厳選されたバリアントは1件にまとめています。各バリアントは個別のページとして残り、対応する量子ビット数はカードに表示されます。",
+    showingOf: "{total}件中{shown}件を表示",
+    showMore: "さらに表示",
+    showAll: "全{total}件を表示",
+    refine: "絞り込み",
+    refineActive: "{n}件適用中",
+    refineNone: "トピック・入出力・並び順",
+    activeFilters: "適用中の条件",
+    removeFilter: "解除",
+    clearAll: "すべて解除",
     view: "詳細",
     gateExpand: "基本ゲートに展開",
     gateCollapse: "元のゲート表示に戻す",
@@ -234,6 +261,28 @@ const FAMILY_LABELS_JA: Record<string, string> = {
 function familyLabel(family: string, locale: PublicLocale): string {
   return locale === "ja" ? FAMILY_LABELS_JA[family] ?? family : family;
 }
+
+/**
+ * Which copy key names each order.
+ *
+ * The nine orders and their labels used to be paired only by the JSX writing
+ * them out one `<option>` at a time. The rail needs the same pairing in two
+ * more places — an option in the list and a chip when it is active — so a third
+ * hand-written copy is exactly the drift this codebase keeps finding. Typed as
+ * a total `Record<BrowseOrder, …>`, so an order added without a label is a
+ * compile error rather than a blank chip.
+ */
+const ORDER_COPY_KEY = {
+  catalog: "sortDefault",
+  "cost-asc": "sortCost",
+  "cost-desc": "sortCostDesc",
+  "qubits-asc": "sortQubits",
+  "qubits-desc": "sortQubitsDesc",
+  "depth-asc": "sortDepth",
+  "depth-desc": "sortDepthDesc",
+  "two-qubit-asc": "sortTwoQubit",
+  "two-qubit-desc": "sortTwoQubitDesc",
+} as const satisfies Record<BrowseOrder, keyof (typeof COPY)["en"]>;
 
 /**
  * Curated variant groups (Owner Inbox 2026-07-19: "qubit# variants should be
@@ -332,6 +381,10 @@ export function RepositoryBrowser({
   initialStance = "",
   initialCategory = "all",
   initialGate = null,
+  initialQuery = "",
+  initialOrder = "catalog",
+  initialCircuitOnly = false,
+  initialRows = DEFAULT_ROW_LIMIT,
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
@@ -363,27 +416,51 @@ export function RepositoryBrowser({
   initialCategory?: "all" | PublicRepositoryCategory;
   /** Resolved from `?gate=`; null when absent. An unknown slug falls back to the first gate. */
   initialGate?: string | null;
+  /** Resolved from `?q=`; "" when absent. */
+  initialQuery?: string;
+  /** Resolved from `?order=`; "catalog" when absent or unknown. */
+  initialOrder?: BrowseOrder;
+  /** Resolved from `?circuit=`; false unless the param says 1 or true. */
+  initialCircuitOnly?: boolean;
+  /** Resolved from `?rows=`; the default cap when absent or unrecognised. */
+  initialRows?: RowLimit;
 }) {
   const copy = COPY[locale];
-  const [query, setQuery] = useState("");
+  // Seeded from `?q=`, so a search is a thing you can send somebody. It was the
+  // only control on this page whose state a reader could see and not address.
+  const [query, setQuery] = useState(initialQuery);
   // Seeded from `?category=` for the reason the two below give, plus one this
   // control has and they do not: `gates` does not narrow the same view, it
   // swaps it for a sidebar and a detail pane. Without an address that whole
   // reading surface existed only after a click, so it had no link, no bookmark,
   // no crawler, and nothing at all for a reader with JS off (§0.5.1).
   const [category, setCategory] = useState<"all" | PublicRepositoryCategory>(initialCategory);
-  // Seeded from ?topic= by the server component, never read from `window` here:
-  // this page does not hydrate in either browser surface, so an effect that set
-  // it would leave the entry pages' topic chips linking to a filter that never
-  // applies. Seeding the initial state means the server's own HTML is filtered.
+  // Seeded from `?topic=` by the server component, never read from `window` in
+  // an effect. The reason is NOT that this page fails to hydrate — sessions
+  // 77–80 said that and session 81 measured the opposite on production; the
+  // claim came from `next dev` in an agent browser pane, whose CSP blocks the
+  // `eval()` that dev-mode React needs. The real reason survives the
+  // correction and is better: SSR'd HTML is the only version a crawler or a
+  // no-JS reader ever sees, and `curl | grep -c 'mj-repo-card'` can check it
+  // without a browser. An effect would filter the page a beat *after* paint,
+  // for readers who run JS, and not at all for anyone else.
   const [topic, setTopic] = useState<TopicId | "">(initialTopic);
-  // Seeded from `?fits=` by the server component, on exactly the terms `topic`
-  // is and for the same reason: this page does not hydrate, so a filter whose
-  // only state is a `useState` may never move for anyone. Entry pages link to
-  // this control, so the link has to arrive already applied.
+  // Seeded from `?fits=` on exactly the terms `topic` is, and for the same
+  // reason. Entry pages link to this control, so the link has to arrive already
+  // applied rather than applied on hydration.
   const [stance, setStance] = useState<InterfaceStance | "">(initialStance);
-  const [order, setOrder] = useState<BrowseOrder>("catalog");
-  const [circuitOnly, setCircuitOnly] = useState(false);
+  const [order, setOrder] = useState<BrowseOrder>(initialOrder);
+  const [circuitOnly, setCircuitOnly] = useState(initialCircuitOnly);
+  /**
+   * How much of the list is on the page (s91).
+   *
+   * Seeded from `?rows=` and moved by the control under the list, which is a
+   * real link *and* a click handler: following it navigates and re-renders on
+   * the server, clicking it grows the list in place without losing the scroll
+   * position. Both paths land on the same view, which is the rule the category
+   * strip and the gate sidebar already follow here.
+   */
+  const [rowLimit, setRowLimit] = useState<RowLimit>(initialRows);
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
   // Gate whose circuit is currently showing its basic-gate decomposition.
   const [expandedGates, setExpandedGates] = useState<Set<string>>(new Set());
@@ -818,18 +895,131 @@ export function RepositoryBrowser({
   const unrankedRows = useMemo(() => foldRows(unranked, groupOfSlug), [groupOfSlug, unranked]);
 
   /**
-   * How many rows the reader can actually count on the page (s81).
+   * Every row the cap governs, in the order the page draws them.
+   *
+   * **The ranked list and the held-out tail are one sequence, not two.** The
+   * first draft capped `listRows` alone and left `unrankedRows` rendering in
+   * full underneath. Nothing showed it on today's corpus — all 120 circuit
+   * members rank under every order this list offers, so `unranked` is empty —
+   * but under a cost or structure order that ever *did* hold rows back, the
+   * "first 24" view would have rendered 24 cards plus the entire unranked
+   * section, and the control above it would have said "Showing 24 of 24" while
+   * the reader scrolled past ninety more. A cap that only governs part of the
+   * page is not a cap; it is a cap-shaped label.
+   *
+   * `gates` and `algorithms` contribute nothing to the sequence, so under those
+   * views the whole budget goes to the tail. Neither ever put 176 cards on the
+   * page: `gates` is a sidebar and one detail pane, and `algorithms` is
+   * `<details>` groups with only the first open. Capping *their* main bodies
+   * would hide rows inside a collapsed group, where a control saying so is not
+   * visible — which is why they are out of the sequence rather than in it.
+   */
+  const cappableRows = useMemo(
+    () =>
+      category === "gates" || category === "algorithms"
+        ? unrankedRows
+        : [...listRows, ...unrankedRows],
+    [category, listRows, unrankedRows],
+  );
+  const cappedList = useMemo(() => capRows(cappableRows, rowLimit), [cappableRows, rowLimit]);
+  /**
+   * The cut sequence, split back into the two sections that render it.
+   *
+   * By position, from the one `shown` array — never by capping each section
+   * against its own budget. Two caps are two places that have to agree on how
+   * much is left, and the number the control prints comes from only one of
+   * them.
+   */
+  const { first: shownListRows, second: shownUnrankedRows } = splitCapped(
+    cappedList.shown,
+    listRows.length,
+  );
+
+  /**
+   * The URL of this view, with `overrides` applied.
+   *
+   * Every filter now has a param, so this can build the *whole* address rather
+   * than a link that quietly drops the reader's search on the way to a longer
+   * list. Built from the live state and not from the incoming `searchParams`,
+   * which is the half that matters after hydration: a reader who typed a query
+   * and then middle-clicks "show everything" gets their query, because the href
+   * was rebuilt when they typed.
+   *
+   * Defaults are omitted, so the common address stays `/repository` rather than
+   * `/repository?q=&order=catalog&circuit=0&rows=24` — one canonical URL for
+   * the default view, which is what a crawler and a share link both want.
+   */
+  function browseHref(overrides: {
+    category?: "all" | PublicRepositoryCategory;
+    topic?: TopicId | "";
+    stance?: InterfaceStance | "";
+    query?: string;
+    order?: BrowseOrder;
+    circuitOnly?: boolean;
+    rows?: RowLimit;
+    gate?: string | null;
+  } = {}): string {
+    const next = {
+      category, topic, stance, query, order, circuitOnly, rows: rowLimit,
+      gate: selectedGate, ...overrides,
+    };
+    const params = new URLSearchParams();
+    if (next.category !== "all") params.set("category", next.category);
+    if (next.topic) params.set("topic", next.topic);
+    if (next.stance) params.set("fits", next.stance);
+    if (next.query) params.set("q", next.query);
+    if (next.order !== "catalog") params.set("order", next.order);
+    if (next.circuitOnly) params.set("circuit", "1");
+    if (next.rows !== DEFAULT_ROW_LIMIT) params.set("rows", String(next.rows));
+    // Only where it means something. `?gate=` selects within the gates view and
+    // is inert everywhere else, so carrying it onto an algorithms link would
+    // put a param in the URL that the page cannot act on.
+    if (next.category === "gates" && next.gate) params.set("gate", next.gate);
+    const search = params.toString();
+    return search ? `/repository?${search}` : "/repository";
+  }
+
+  /**
+   * Put `href` in the address bar without navigating.
+   *
+   * The intercepted click and the link have to end at the same place, and until
+   * this existed they did not: following the link gave `?rows=48`, clicking it
+   * grew the list and left the URL saying `/repository`. Nothing looked wrong —
+   * the page was right either way — but a reader who expanded the list and then
+   * copied the URL shared the *short* view, which is the quiet kind of wrong
+   * this route keeps finding.
+   *
+   * `replaceState` rather than `pushState`: growing a list is not a place, and
+   * a reader who pressed Back after three expansions should leave the Atlas
+   * rather than walk back down the chain. Guarded because this same component
+   * renders on the server, where there is no history.
+   */
+  function syncUrl(href: string) {
+    if (typeof window === "undefined") return;
+    window.history.replaceState(window.history.state, "", href);
+  }
+
+  /**
+   * How many rows the fold produced (s81).
+   *
+   * Deliberately **before** the cap: this number's whole job is to explain the
+   * gap between records and rows, and a capped count would attribute the cap's
+   * 152 missing rows to variant folding. How much of it is on the page is a
+   * different fact, and it is stated by the control under the list.
    *
    * R2.6 made the header disagree with the page: it said "283 public entries"
    * over 176 cards, because 120 records fold into 15 width families and 4 more
    * into 2 curated clusters. Both numbers were true and the gap was never
    * explained, so it read as "where did the other 107 go".
    *
-   * Summed from **the same arrays the body renders**, not recomputed from the
+   * Summed from **the arrays the body draws from**, not recomputed from the
    * fold rule. A second derivation of "how many rows are there" is a second
    * writer of one fact, and the two would drift the first time a view changed
    * which set it draws from — the failure being a count that is wrong in a way
-   * only a reader counting cards would ever catch.
+   * only a reader counting cards would ever catch. Since s91 the default branch
+   * renders a *prefix* of `listRows`, so this is no longer the number of cards
+   * on the screen; `cappedList` is the only thing that may state that, and it
+   * derives from this same array rather than from a second count.
    *
    * The unranked section renders under every view, so it is added in every
    * branch rather than only the default one.
@@ -850,14 +1040,363 @@ export function RepositoryBrowser({
   const selectedGateEntry = gateEntries.find((entry) => entry.slug === selectedGate) ?? gateEntries[0] ?? null;
   const activeGateSlug = selectedGateEntry?.slug ?? null;
 
+  // ---------------------------------------------------------------------------
+  // The facet rail (s91) — OWNER_TODO §4b, "one facet rail instead of three
+  // dropdowns; counts and current state without a page of chrome".
+  //
+  // What it replaces: `Topic`, `Takes / returns` and `Order by` as three
+  // `<select>`s, plus a `circuit only` checkbox, standing permanently across
+  // the top of the page. The owner's words were "terribly hard to navigate and
+  // not minimalist enough from the get-go", and the controls were the part of
+  // that complaint this page could actually answer.
+  //
+  // **Three properties a `<select>` could not have, and they are the argument:**
+  //
+  // 1. **Every option is a URL.** A `<select>` option is not addressable, not
+  //    crawlable, and does not exist for a reader without JS. Forty topics were
+  //    reachable only by hydrating and clicking. As links they are forty
+  //    addresses — the same correction §0.5.1 made for `?category=` and s91
+  //    made for `?q=`/`?order=`.
+  // 2. **Current state survives collapse.** A closed dropdown showing
+  //    "Optimization" is one glance; a rail that is closed still shows its
+  //    active filters as chips, each with the URL that removes it. This is the
+  //    one hazard a disclosure introduces that a dropdown does not — a
+  //    collapsed control silently filtering the page — and the chips are the
+  //    answer to it, not decoration.
+  // 3. **The whole vocabulary is legible at once.** A `<select>` shows one
+  //    option; opening the rail shows every option with its count, grouped, so
+  //    a reader can see that "Optimization" is 10 of 176 before spending a
+  //    click on it.
+  //
+  // **Counts stay global** — over the whole corpus, not over what the other
+  // filters have left. That was decided deliberately before this rail existed
+  // ("a count that moves while you are reading it is not a count, it is a
+  // hint") and this change does not reverse it. The tension is real and is
+  // worth the owner's steer rather than a quiet flip: co-filtered counts would
+  // predict the click, and stable counts describe the catalogue. Raised in
+  // OWNER_TODO rather than settled here.
+  // ---------------------------------------------------------------------------
+
+  /**
+   * The filters currently narrowing the list, each with the URL that drops it
+   * AND the state change that drops it.
+   *
+   * Both, on the same object, rather than an href here and a `switch` on the
+   * key somewhere else. The two have to agree — a chip whose link removes the
+   * topic while its click removes the stance is a defect nothing would catch,
+   * because each path looks right on its own.
+   */
+  const activeFilters: Array<{ key: string; label: string; href: string; apply: () => void }> = [];
+  if (topic) {
+    const option = TOPICS_BY_ID.get(topic);
+    activeFilters.push({
+      key: `topic:${topic}`,
+      label: option ? (locale === "ja" ? option.labelJa : option.label) : topic,
+      href: browseHref({ topic: "" }),
+      apply: () => setTopic(""),
+    });
+  }
+  if (stance) {
+    activeFilters.push({
+      key: `stance:${stance}`,
+      label: copy[`stance_${stance}`],
+      href: browseHref({ stance: "" }),
+      apply: () => setStance(""),
+    });
+  }
+  // Only when the ordering is actually applied. An `?order=` the data cannot
+  // supply is downgraded to `catalog` further up, and a chip claiming a sort
+  // that is not in effect is worse than no chip.
+  if (order !== "catalog" && orderAvailable) {
+    activeFilters.push({
+      key: `order:${order}`,
+      label: copy[ORDER_COPY_KEY[order]],
+      href: browseHref({ order: "catalog" }),
+      apply: () => setOrder("catalog"),
+    });
+  }
+  if (circuitOnly && canOrderByStructure) {
+    activeFilters.push({
+      key: "circuit",
+      label: copy.circuitOnly,
+      href: browseHref({ circuitOnly: false }),
+      apply: () => setCircuitOnly(false),
+    });
+  }
+
+  /**
+   * One option in the rail: a link, unless it is the one already chosen.
+   *
+   * The current option renders as a `<span>` rather than a link to itself. A
+   * link whose destination is the page you are on is a control that looks
+   * operable and does nothing, and `aria-current` on an anchor still leaves it
+   * in the tab order as a dead stop.
+   */
+  function facetOption(args: {
+    key: string;
+    label: string;
+    count?: number;
+    active: boolean;
+    href: string;
+    /** The state change a hydrated click makes, matching what `href` renders. */
+    apply: () => void;
+  }) {
+    const body = (
+      <>
+        <span className="mj-facet-option-label">{args.label}</span>
+        {args.count !== undefined ? (
+          <span className="mj-facet-option-count">{args.count}</span>
+        ) : null}
+      </>
+    );
+    if (args.active) {
+      return (
+        <span className="mj-facet-option is-active" key={args.key} aria-current="true">
+          {body}
+        </span>
+      );
+    }
+    return (
+      <a
+        className="mj-facet-option"
+        key={args.key}
+        href={args.href}
+        onClick={(event) => {
+          // Modified clicks keep their meaning: the href is a real destination.
+          if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+            return;
+          }
+          event.preventDefault();
+          args.apply();
+          syncUrl(args.href);
+        }}
+      >
+        {body}
+      </a>
+    );
+  }
+
+  function FacetRail() {
+    return (
+      <div className="mj-facet-rail">
+        {/* Always visible, open or closed. See property 2 above. */}
+        {activeFilters.length ? (
+          <div className="mj-facet-active" aria-label={copy.activeFilters}>
+            <span className="mj-facet-active-label">{copy.activeFilters}</span>
+            {activeFilters.map((filter) => (
+              <a
+                className="mj-facet-chip"
+                key={filter.key}
+                href={filter.href}
+                title={`${copy.removeFilter}: ${filter.label}`}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                    return;
+                  }
+                  event.preventDefault();
+                  filter.apply();
+                  syncUrl(filter.href);
+                }}
+              >
+                <span>{filter.label}</span>
+                <span aria-hidden="true">×</span>
+              </a>
+            ))}
+            <a
+              className="mj-text-link mj-facet-clear"
+              href={browseHref({ topic: "", stance: "", query: "", order: "catalog", circuitOnly: false })}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                  return;
+                }
+                event.preventDefault();
+                clearFilters();
+                syncUrl(browseHref({ topic: "", stance: "", query: "", order: "catalog", circuitOnly: false }));
+              }}
+            >
+              {copy.clearAll}
+            </a>
+          </div>
+        ) : null}
+
+        {/* A native <details>, so opening the rail needs no JavaScript and no
+            state. Its open-ness is deliberately NOT a URL param: the params on
+            this route address the *data* a reader is looking at, and whether a
+            control panel happens to be unfolded is not that. The chips above
+            carry the part of this that is data. */}
+        <details className="mj-facet-disclosure">
+          <summary>
+            <span className="mj-facet-summary-label">{copy.refine}</span>
+            <span className="mj-facet-summary-state">
+              {activeFilters.length
+                ? copy.refineActive.replace("{n}", String(activeFilters.length))
+                : copy.refineNone}
+            </span>
+          </summary>
+          <div className="mj-facet-groups">
+            {/* Topic, by facet. The domain heading carries how much of the
+                corpus is domain-tagged at all, because a domain list read
+                without that number looks like a taxonomy of the catalogue
+                rather than of a slice of it. */}
+            {topicGroups.map((group, groupIndex) => (
+              <section className="mj-facet-group" key={group.facet}>
+                <h4>
+                  {copy[`facet_${group.facet}`]}
+                  {group.facet === "domain" ? (
+                    <span className="mj-facet-group-note">
+                      {copy.facetDomainCount
+                        .replace("{n}", String(entriesWithDomain))
+                        .replace("{total}", String(entries.length))}
+                    </span>
+                  ) : null}
+                </h4>
+                <div className="mj-facet-options">
+                  {/* Once, in the first group — not once per facet. The three
+                      facets are three views of ONE selection, so three "All
+                      topics" rows would read as three separate filters to
+                      clear, and clearing any one of them clears all three. */}
+                  {groupIndex === 0
+                    ? facetOption({
+                        key: "topic-all",
+                        label: copy.allTopics,
+                        active: topic === "",
+                        href: browseHref({ topic: "" }),
+                        apply: () => setTopic(""),
+                      })
+                    : null}
+                  {group.options.map((option) =>
+                    facetOption({
+                      key: option.id,
+                      // `option.label` rather than `topicOptionLabel`, which
+                      // bakes the count into the string for a `<select>` that
+                      // can only hold text. The rail has a slot for the number,
+                      // so putting it in the label too would print it twice.
+                      label: option.label,
+                      count: option.count,
+                      active: topic === option.id,
+                      href: browseHref({ topic: option.id }),
+                      apply: () => setTopic(option.id),
+                    }),
+                  )}
+                </div>
+              </section>
+            ))}
+
+            {/* Takes / returns. Two groups, and the second is the complement of
+                the first rather than a second list — a stance in neither would
+                vanish from the control entirely, which is invisible. */}
+            {(["pipeline", "not"] as const).map((group) => {
+              const inGroup = stanceOptions.filter(
+                (option) => PIPELINE_STANCES.has(option.stance) === (group === "pipeline"),
+              );
+              if (inGroup.length === 0) return null;
+              return (
+                <section className="mj-facet-group" key={`stance-${group}`}>
+                  <h4>
+                    {group === "pipeline" ? copy.stanceGroupPipeline : copy.stanceGroupNot}
+                    {group === "pipeline" ? (
+                      <span className="mj-facet-group-note">
+                        {copy.stanceConnectable
+                          .replace("{n}", String(connectableEntries))
+                          .replace("{total}", String(entries.length))
+                          .replace("{met}", String(meetingEntries))}
+                      </span>
+                    ) : null}
+                  </h4>
+                  <div className="mj-facet-options">
+                    {group === "pipeline"
+                      ? facetOption({
+                          key: "stance-any",
+                          label: copy.allStances,
+                          active: stance === "",
+                          href: browseHref({ stance: "" }),
+                          apply: () => setStance(""),
+                        })
+                      : null}
+                    {inGroup.map((option) =>
+                      facetOption({
+                        key: option.stance,
+                        label: copy[`stance_${option.stance}`],
+                        count: option.count,
+                        active: stance === option.stance,
+                        href: browseHref({ stance: option.stance }),
+                        apply: () => setStance(option.stance),
+                      }),
+                    )}
+                  </div>
+                </section>
+              );
+            })}
+
+            {/* Order, and the circuit-only filter beside it because both read
+                the derived listings and both disappear together when the
+                catalog API is off. An ordering option that ranks nothing is
+                worse than an absent one: it looks like the corpus has no
+                structure rather than like the API is off. */}
+            {canOrderByCost || canOrderByStructure ? (
+              <section className="mj-facet-group" key="order">
+                <h4>{copy.sort}</h4>
+                <div className="mj-facet-options">
+                  {facetOption({
+                    key: "catalog",
+                    label: copy.sortDefault,
+                    active: order === "catalog",
+                    href: browseHref({ order: "catalog" }),
+                    apply: () => setOrder("catalog"),
+                  })}
+                  {(canOrderByCost ? (["cost-asc", "cost-desc"] as const) : []).map((value) =>
+                    facetOption({
+                      key: value,
+                      label: copy[ORDER_COPY_KEY[value]],
+                      active: order === value,
+                      href: browseHref({ order: value }),
+                      apply: () => setOrder(value),
+                    }),
+                  )}
+                  {(canOrderByStructure ? PROFILE_ORDERS : []).map((value) =>
+                    facetOption({
+                      key: value,
+                      label: copy[ORDER_COPY_KEY[value]],
+                      active: order === value,
+                      href: browseHref({ order: value }),
+                      apply: () => setOrder(value),
+                    }),
+                  )}
+                  {canOrderByStructure
+                    ? facetOption({
+                        key: "circuit-only",
+                        label: copy.circuitOnly,
+                        active: circuitOnly,
+                        href: browseHref({ circuitOnly: !circuitOnly }),
+                        apply: () => setCircuitOnly(!circuitOnly),
+                      })
+                    : null}
+                </div>
+              </section>
+            ) : null}
+          </div>
+        </details>
+      </div>
+    );
+  }
+
   return (
     <div className="mj-repository-browser">
       <div className="mj-repository-controls">
         <label>
           <span>{copy.search}</span>
+          {/* The address follows the box. A reader who types "grover", finds
+              what they wanted and copies the URL used to get the *unfiltered*
+              Atlas — `?q=` was resolved on the way in and never written on the
+              way out, so the one control people use most was the one whose
+              state a link could not carry. `replaceState`, so a search is not
+              twelve history entries and Back still leaves the page. */}
           <input
             value={query}
-            onChange={(event) => setQuery(event.target.value)}
+            onChange={(event) => {
+              setQuery(event.target.value);
+              syncUrl(browseHref({ query: event.target.value }));
+            }}
             placeholder={copy.placeholder}
             type="search"
           />
@@ -888,108 +1427,12 @@ export function RepositoryBrowser({
 
             That takes the bar from five controls to three: search · topic ·
             takes-returns, which is the owner's "all over the place", answered. */}
-        {/* One control for three facets, grouped, because the alternative is
-            three more selects beside four existing ones. Every option carries
-            its count: "Optimization (10)" cannot be read as a promise the way a
-            bare "Optimization" can, and on this corpus that matters — those ten
-            are eight width-scaled MaxCut ring benchmarks. */}
-        <label>
-          <span>{copy.topic}</span>
-          <select value={topic} onChange={(event) => setTopic(event.target.value as TopicId | "")}>
-            <option value="">{copy.allTopics}</option>
-            {topicGroups.map((group) => (
-              <optgroup
-                key={group.facet}
-                label={
-                  group.facet === "domain"
-                    ? `${copy.facet_domain} — ${copy.facetDomainCount.replace("{n}", String(entriesWithDomain)).replace("{total}", String(entries.length))}`
-                    : copy[`facet_${group.facet}`]
-                }
-              >
-                {group.options.map((option) => (
-                  <option key={option.id} value={option.id}>{topicOptionLabel(option)}</option>
-                ))}
-              </optgroup>
-            ))}
-          </select>
-        </label>
-        {/* What an entry takes and returns, which is a different question from
-            what it is. Two groups rather than five flat options, because the
-            split that matters is whether a record is on the pipeline graph at
-            all — 121 of the 283 are not, and the group heading carries that
-            number so the control cannot be read as a parts bin. */}
-        <label>
-          <span>{copy.stance}</span>
-          <select value={stance} onChange={(event) => setStance(event.target.value as InterfaceStance | "")}>
-            <option value="">{copy.allStances}</option>
-            {(["pipeline", "not"] as const).map((group) => {
-              // Membership from the module, and the second group is the
-              // complement of the first — never a second list. A stance in
-              // neither would vanish from this control entirely, which is
-              // invisible; in the wrong group it is at least on screen.
-              const inGroup = stanceOptions.filter(
-                (option) => PIPELINE_STANCES.has(option.stance) === (group === "pipeline"),
-              );
-              if (inGroup.length === 0) return null;
-              return (
-                <optgroup
-                  key={group}
-                  label={
-                    group === "pipeline"
-                      ? `${copy.stanceGroupPipeline} — ${copy.stanceConnectable
-                          .replace("{n}", String(connectableEntries))
-                          .replace("{total}", String(entries.length))
-                          .replace("{met}", String(meetingEntries))}`
-                      : copy.stanceGroupNot
-                  }
-                >
-                  {inGroup.map((option) => (
-                    <option key={option.stance} value={option.stance}>
-                      {`${copy[`stance_${option.stance}`]} (${option.count})`}
-                    </option>
-                  ))}
-                </optgroup>
-              );
-            })}
-          </select>
-        </label>
-        {canOrderByCost || canOrderByStructure ? (
-          <label>
-            <span>{copy.sort}</span>
-            <select value={order} onChange={(event) => setOrder(event.target.value as BrowseOrder)}>
-              <option value="catalog">{copy.sortDefault}</option>
-              {canOrderByCost ? (
-                <>
-                  <option value="cost-asc">{copy.sortCost}</option>
-                  <option value="cost-desc">{copy.sortCostDesc}</option>
-                </>
-              ) : null}
-              {/* Offered only when the listing exists. An ordering option that
-                  ranks nothing is worse than an absent one: it looks like the
-                  corpus has no structure rather than like the API is off. */}
-              {canOrderByStructure ? (
-                <>
-                  <option value="qubits-asc">{copy.sortQubits}</option>
-                  <option value="qubits-desc">{copy.sortQubitsDesc}</option>
-                  <option value="depth-asc">{copy.sortDepth}</option>
-                  <option value="depth-desc">{copy.sortDepthDesc}</option>
-                  <option value="two-qubit-asc">{copy.sortTwoQubit}</option>
-                  <option value="two-qubit-desc">{copy.sortTwoQubitDesc}</option>
-                </>
-              ) : null}
-            </select>
-          </label>
-        ) : null}
-        {canOrderByStructure ? (
-          <label className="mj-repository-circuit-only" title={copy.circuitOnlyHint}>
-            <input
-              type="checkbox"
-              checked={circuitOnly}
-              onChange={(event) => setCircuitOnly(event.target.checked)}
-            />
-            <span>{copy.circuitOnly}</span>
-          </label>
-        ) : null}
+        {/* Everything that was three <select>s and a checkbox (s91). Every
+            option still carries its count: "Optimization (10)" cannot be read
+            as a promise the way a bare "Optimization" can, and on this corpus
+            that matters — those ten are eight width-scaled MaxCut ring
+            benchmarks. */}
+        <FacetRail />
       </div>
 
       {/* The assumption set is stated wherever the ordering it justifies is
@@ -1157,19 +1600,87 @@ export function RepositoryBrowser({
           ))}
         </div>
       ) : (
-        <div className="mj-repo-list">{listRows.map((row) => renderRow(row, listIsRanked))}</div>
+        <div className="mj-repo-list">{shownListRows.map((row) => renderRow(row, listIsRanked))}</div>
       )}
 
       {/* Entries the ordering had to leave out, kept visible and kept out of
           the ranking. An unknown cost is not a low cost, and a list that
           silently dropped these would read as though the catalog were smaller
           than it is. */}
-      {unranked.length ? (
+      {/* The heading counts the entries the ORDERING held back, not the ones on
+          screen. Those are different questions and the section exists to answer
+          the first: "an unknown cost is not a low cost" is a statement about the
+          ranking, true whether or not the cap has reached this far down. How
+          many are rendered is the control below's job, and it counts both
+          sections together. */}
+      {unranked.length && shownUnrankedRows.length ? (
         <section className="mj-repository-unranked">
           <h3>{copy.unrankedTitle} <span>{unranked.length}</span></h3>
           <p>{isProfileOrder(order) ? copy.structureUnrankedBody : copy.unrankedBody}</p>
-          <div className="mj-repo-list">{unrankedRows.map((row) => renderRow(row, false))}</div>
+          <div className="mj-repo-list">{shownUnrankedRows.map((row) => renderRow(row, false))}</div>
         </section>
+      ) : null}
+
+      {/* The rest of the page, and its address.
+
+          **Below everything the cap governs**, which is why it moved down here
+          from between the two lists: a "show more" printed above a section that
+          the cap is also cutting reads as though the section under it were
+          complete.
+
+          Two links, not one. "Show more" walks the doubling chain for a reader
+          who is browsing; "show everything" is for the reader who knew from the
+          first screen that they wanted the lot, and without it the cap would
+          cost them three clicks it never used to.
+
+          Real `<a href>`s. A reader with JS off follows them and the server
+          renders the longer page; a hydrated click is intercepted and grows the
+          list in place, which keeps the scroll position where a navigation
+          would lose it. Both land on the same view — the href is exactly the
+          state the click produces. */}
+      {cappedList.next !== null ? (
+        <div className="mj-repo-more">
+          <p className="mj-repo-more-count">
+            {copy.showingOf
+              .replace("{shown}", String(cappedList.shown.length))
+              .replace("{total}", String(cappableRows.length))}
+          </p>
+          <div className="mj-repo-more-actions">
+            <a
+              className="mj-repo-more-link"
+              href={browseHref({ rows: cappedList.next })}
+              onClick={(event) => {
+                if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                  return;
+                }
+                event.preventDefault();
+                setRowLimit(cappedList.next as RowLimit);
+                syncUrl(browseHref({ rows: cappedList.next as RowLimit }));
+              }}
+            >
+              {copy.showMore}
+            </a>
+            {/* Only when it says something the other link does not — when the
+                next step already is everything, two controls with one
+                destination is chrome, and chrome is the complaint. */}
+            {cappedList.next !== "all" ? (
+              <a
+                className="mj-text-link"
+                href={browseHref({ rows: "all" })}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                    return;
+                  }
+                  event.preventDefault();
+                  setRowLimit("all");
+                  syncUrl(browseHref({ rows: "all" }));
+                }}
+              >
+                {copy.showAll.replace("{total}", String(cappableRows.length))}
+              </a>
+            ) : null}
+          </div>
+        </div>
       ) : null}
     </div>
   );

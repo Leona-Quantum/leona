@@ -2,6 +2,8 @@
   "schema_version": 1,
   "recorded_at": "2026-08-07T22:48:08+09:00",
   "branch": "feature/vqe",
+  "phase12_checkpoint": "8a7aad0f",
+  "integrated_dev_baseline": "0197600dc759a3ebe5760a86c47eabc98023b859",
   "scope": "private_component_first_vqe_launch_reliability",
   "release_decision": "no_go_pending_digest_pinned_linux_e2e",
   "claim_boundary": {
@@ -39,13 +41,14 @@
     },
     "web_unit_suite": {
       "status": "passed",
-      "passed": 706
+      "passed": 767
     },
     "web_typecheck": "passed",
     "web_lint": "passed",
     "web_production_build": {
       "status": "passed",
-      "routes": 338
+      "generated_static_pages": 415,
+      "required_vqe_routes_present": true
     },
     "authenticated_vqe_playwright": {
       "status": "passed",

@@ -501,9 +501,12 @@ export function RepositoryInterfacePanel({
       <p className="mj-iface-stance">
         {stanceCopy}{" "}
         {/* The owner's "people can click on either end to get a preview".
-            A link rather than an onClick, because this page does not hydrate:
-            `/repository?fits=` is resolved server-side, so the browse list
-            arrives already filtered whether or not React ever runs. */}
+            A link rather than an onClick — not because this page fails to
+            hydrate (s81 measured that it does; the old claim came from
+            `next dev` in an agent pane whose CSP blocks React's dev-mode
+            `eval()`), but because `/repository?fits=` is resolved server-side.
+            The browse list arrives already filtered whether or not React ever
+            runs, and the destination is a URL rather than a state change. */}
         <a className="mj-iface-stance-link" href={`/repository?fits=${encodeURIComponent(entry.stance)}`}>
           {copy.seeAll(stanceCount)}
         </a>

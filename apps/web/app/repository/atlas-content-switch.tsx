@@ -21,6 +21,8 @@ import type { RepositoryProfileList } from "../../lib/repository/profile";
 import type { TopicId } from "../../lib/repository/topics";
 import type { InterfaceStance } from "../../lib/repository/interface";
 import type { PublicRepositoryCategory } from "../../lib/public-repository";
+import type { BrowseOrder } from "../../lib/repository/browse-order";
+import type { RowLimit } from "../../lib/repository/browse-page";
 
 const COPY = {
   en: { circuits: "Circuits", vqeMethods: "VQE Methods" },
@@ -41,6 +43,10 @@ export function AtlasContentSwitch({
   initialStance = "",
   initialCategory = "all",
   initialGate = null,
+  initialQuery = "",
+  initialOrder = "catalog",
+  initialCircuitOnly = false,
+  initialRows,
 }: {
   entries: PublicRepositoryListEntry[];
   vqeCatalog: StandardVqeCatalogBundle;
@@ -55,6 +61,10 @@ export function AtlasContentSwitch({
   initialStance?: InterfaceStance | "";
   initialCategory?: "all" | PublicRepositoryCategory;
   initialGate?: string | null;
+  initialQuery?: string;
+  initialOrder?: BrowseOrder;
+  initialCircuitOnly?: boolean;
+  initialRows?: RowLimit;
 }) {
   const copy = COPY[locale];
   const [contentType, setContentType] = useState<"circuits" | "vqe">("circuits");
@@ -93,6 +103,10 @@ export function AtlasContentSwitch({
           initialStance={initialStance}
           initialCategory={initialCategory}
           initialGate={initialGate}
+          initialQuery={initialQuery}
+          initialOrder={initialOrder}
+          initialCircuitOnly={initialCircuitOnly}
+          initialRows={initialRows}
         />
       ) : (
         <VqeMethodsBrowser
