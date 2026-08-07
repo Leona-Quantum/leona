@@ -31,6 +31,7 @@ def test_vqe_migration_enforces_immutability_and_fail_closed_downgrade(monkeypat
     module.downgrade()
 
     rendered = "\n".join(str(statement) for statement in statements)
+    assert module.revision == "vqe_0046"
     assert module.down_revision == "0045"
     assert "BEFORE UPDATE OR DELETE ON vqe_observations" in rendered
     assert "revoke update, delete on vqe_observations from app_rw" in rendered.lower()

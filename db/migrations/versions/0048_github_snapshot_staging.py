@@ -1,7 +1,7 @@
 """Add immutable private staging for bounded GitHub metadata snapshots.
 
 Revision ID: 0048
-Revises: 0047
+Revises: 0047, vqe_0047
 
 Phase 7 S4 persists the already bounded and content-verified snapshot produced
 by ``github_snapshot.py``.  It deliberately does not create a public Artifact,
@@ -20,7 +20,7 @@ from alembic import op
 from sqlalchemy.dialects import postgresql
 
 revision = "0048"
-down_revision = "0047"
+down_revision = ("0047", "vqe_0047")
 branch_labels = None
 depends_on = None
 

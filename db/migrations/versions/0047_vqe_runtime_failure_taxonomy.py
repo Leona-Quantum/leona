@@ -1,7 +1,7 @@
 """Add bounded-output failure evidence for the VQE runtime.
 
-Revision ID: 0047
-Revises: 0046
+Revision ID: vqe_0047
+Revises: vqe_0046
 
 The application contract gained ``output_limit_exceeded`` so a deterministic
 runtime safety violation is not mislabeled as transient infrastructure
@@ -14,8 +14,8 @@ from __future__ import annotations
 import sqlalchemy as sa
 from alembic import op
 
-revision = "0047"
-down_revision = "0046"
+revision = "vqe_0047"
+down_revision = "vqe_0046"
 branch_labels = None
 depends_on = None
 
@@ -59,7 +59,7 @@ def downgrade() -> None:
                     where failure_code = 'output_limit_exceeded'
                 ) then
                     raise exception
-                        'cannot downgrade 0047: output-limit evidence exists';
+                        'cannot downgrade vqe_0047: output-limit evidence exists';
                 end if;
             end $$;
             """

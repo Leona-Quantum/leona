@@ -123,8 +123,18 @@ def check() -> None:
         _fail("local_gates must be an object")
     _require_equal(local.get("alembic_up_down_up"), "passed", "alembic cycle")
     alembic_config = Config(str(ROOT / "db/alembic.ini"))
-    current_heads = sorted(ScriptDirectory.from_config(alembic_config).get_heads())
-    _require_equal(local.get("alembic_heads"), current_heads, "alembic_heads")
+    script_directory = ScriptDirectory.from_config(alembic_config)
+    current_heads = sorted(script_directory.get_heads())
+    if len(current_heads) != 1:
+        _fail(f"current migration graph must have exactly one head, got {current_heads!r}")
+    recorded_heads = local.get("alembic_heads")
+    if not isinstance(recorded_heads, list) or not recorded_heads:
+        _fail("alembic_heads must record at least one historical revision")
+    for recorded_head in recorded_heads:
+        if not isinstance(recorded_head, str) or not recorded_head:
+            _fail("every recorded alembic head must be a non-empty revision string")
+        if script_directory.get_revision(recorded_head) is None:
+            _fail(f"historical alembic head no longer resolves: {recorded_head!r}")
     for group in (
         "phase9_db_free_contracts",
         "phase9_live_private_transactions",

@@ -1,6 +1,6 @@
 """VQE Registry and Portable Experiment Persistence (Phase 4.5, ADR-0030).
 
-Revision ID: 0046
+Revision ID: vqe_0046
 Revises: 0045
 
 Five purely additive tables. Component/Workflow registry identity is an existing
@@ -24,7 +24,7 @@ import sqlalchemy as sa
 from alembic import op
 from sqlalchemy.dialects import postgresql
 
-revision = "0046"
+revision = "vqe_0046"
 down_revision = "0045"
 branch_labels = None
 depends_on = None

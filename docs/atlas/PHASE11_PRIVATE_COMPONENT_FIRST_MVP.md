@@ -63,6 +63,25 @@ component definitions and implementations.
 | S10 Public/external execution | Outside Private MVP scope and blocked by manifest/API/UI | blocked_external |
 | S11 Audit and handoff | Local evidence, defects, known debt, and remaining operator actions are committed as reviewable documents | complete |
 
+## Post-push CI correction — 2026-08-07
+
+The first pushed Phase 11 candidate (`d212177`) exposed an Alembic history
+collision after the latest `dev` merge: both the VQE branch and `dev` used
+revision identifiers `0046` and `0047`.  The Python scientific tests and Web
+journey passed, but the database and production-E2E jobs stopped before
+qualification because the graph had multiple heads.  No failed job is counted
+as scientific or deployment evidence.
+
+The repair gives the VQE branch unique revision identities, makes `0048` the
+explicit merge point, and adds a `0055` reconciliation revision for private
+databases previously stamped by the old feature-only `0054` history.  Historical
+Phase 9 evidence remains immutable: its recorded `0054` head must still resolve,
+while the present graph is independently required to have exactly one head.
+
+Detailed root cause, compatibility paths, tests, and remaining remote PostgreSQL
+17 qualification are recorded in
+[`private_mvp/migration_reconciliation_audit_2026-08-07.md`](private_mvp/migration_reconciliation_audit_2026-08-07.md).
+
 ## Scientific acceptance
 
 | Requirement | Local decision |

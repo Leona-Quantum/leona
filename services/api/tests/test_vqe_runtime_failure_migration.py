@@ -38,7 +38,8 @@ def test_runtime_failure_taxonomy_migration_is_linear_and_reversible(monkeypatch
         lambda statement: operations.append(("execute", str(statement), {})),
     )
 
-    assert module.down_revision == "0046"
+    assert module.revision == "vqe_0047"
+    assert module.down_revision == "vqe_0046"
     module.upgrade()
     assert "output_limit_exceeded" in operations[-1][1][2]
     operations.clear()

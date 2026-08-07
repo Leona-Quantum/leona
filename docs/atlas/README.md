@@ -66,6 +66,8 @@ override both.
   `PHASE76_PROGRESS.md`
 - Phase 11 private MVP consolidation:
   `PHASE11_PRIVATE_COMPONENT_FIRST_MVP.md`
+- Phase 11 post-push migration reconciliation audit:
+  `private_mvp/migration_reconciliation_audit_2026-08-07.md`
 - Phase 6 rollback and disablement runbook: `PHASE6_ROLLBACK.md`
 - Beginner-facing test deployment and dashboard manual:
   `../runbooks/vqe-test-vercel-workos-neon-manual_ja.md`
