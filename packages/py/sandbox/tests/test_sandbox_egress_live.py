@@ -109,17 +109,23 @@ def _canary_hits(nonce: str) -> list[str]:
     """
     query = (
         "resource.type=cloud_run_revision "
-        'AND resource.labels.service_name=majorana-api '
+        "AND resource.labels.service_name=majorana-api "
         f'AND httpRequest.requestUrl:"{nonce}"'
     )
     out = subprocess.run(
         [
-            "gcloud", "logging", "read", query,
+            "gcloud",
+            "logging",
+            "read",
+            query,
             f"--project={GCP_PROJECT}",
-            "--limit=10", "--freshness=2h",
+            "--limit=10",
+            "--freshness=2h",
             "--format=value(timestamp,httpRequest.requestUrl)",
         ],
-        capture_output=True, text=True, timeout=180,
+        capture_output=True,
+        text=True,
+        timeout=180,
     )
     assert out.returncode == 0, f"log query failed, so its emptiness proves nothing: {out.stderr}"
     return [line for line in out.stdout.splitlines() if line.strip()]
@@ -195,7 +201,7 @@ def test_canary_records_a_request_from_a_networked_host():
 
 # --- The gate: an exfil attempt reaches nothing ------------------------------
 
-EXFIL_PAYLOAD = r'''
+EXFIL_PAYLOAD = r"""
 import json, socket, subprocess, urllib.request
 
 CANARY = "{canary}"
@@ -250,7 +256,7 @@ except Exception as e:
     out["curl"] = type(e).__name__ + ": " + str(e)[:200]
 
 print("EXFIL_JSON=" + json.dumps(out))
-'''
+"""
 
 
 @requires_log_reader
@@ -310,16 +316,14 @@ async def test_sandbox_env_carries_no_credentials():
     filtered by pattern, so a second credential-shaped variable fails the test
     instead of being quietly absorbed by the exception.
     """
-    code = (
-        "import json, os\n"
-        "print('ENV_JSON=' + json.dumps({'names': sorted(os.environ)}))\n"
-    )
+    code = "import json, os\nprint('ENV_JSON=' + json.dumps({'names': sorted(os.environ)}))\n"
     result = await _run_in_sandbox(code, timeout_s=60)
     assert result.ok, result.stderr[:400]
     names = _payload_json(result.stdout, "ENV_JSON")["names"]
 
     suspicious = [
-        n for n in names
+        n
+        for n in names
         if any(t in n.upper() for t in ("TOKEN", "KEY", "SECRET", "PASSWORD", "VERCEL"))
     ]
     assert suspicious == ["GPG_KEY"], f"credential-shaped variables in the sandbox: {suspicious}"
@@ -327,7 +331,7 @@ async def test_sandbox_env_carries_no_credentials():
 
 # --- The one address that answers -------------------------------------------
 
-MMDS_PAYLOAD = r'''
+MMDS_PAYLOAD = r"""
 import json, urllib.request, urllib.error
 
 out = {}
@@ -361,7 +365,7 @@ if tok:
         req(label, "http://169.254.169.254" + path, headers=hdrs)
 
 print("MMDS_JSON=" + json.dumps(out))
-'''
+"""
 
 
 async def test_mmds_carries_nothing():
