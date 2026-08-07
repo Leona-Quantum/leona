@@ -30,6 +30,7 @@
 //   prepared state, a polynomial — which does not move the route along and so is
 //   not a stage.
 import type {
+  DiagramCaption,
   FeedStub,
   KinshipTie,
   LaneLabel,
@@ -167,23 +168,29 @@ function Group({ group, copy }: { group: ProcessGroup; copy: MapCopy }): React.R
           />
         </a>
       )}
-      <a href={group.href} aria-label={`${group.fullLabel} — ${copy.readAbout}`}>
-        <title>{group.summary ? `${label} — ${group.summary}` : label}</title>
-        {/* Inside the box, not five pixels above it. The name used to hang over
-            the top edge into whatever was there, which was the canvas margin
-            while only one slot could be open and an ancestor's lane name as
-            soon as two could. */}
-        <rect
-          className="mj-process-hit"
-          x={n(group.x0)}
-          y={n(group.top)}
-          width={n(Math.max(0, group.x1 - group.x0))}
-          height="17"
-        />
-        <text className="mj-process-group-name" x={n(group.x0 + 4)} y={n(group.top + 13)}>
-          {group.label}
-        </text>
-      </a>
+      {/* No address, no name. This is the zoomed figure's own subject: its name
+          is the caption top right and the page's `<h1>`, and drawing a third
+          copy here — as a link back to the page you are already on — would be
+          the one link on the canvas that goes nowhere. */}
+      {group.href === null ? null : (
+        <a href={group.href} aria-label={`${group.fullLabel} — ${copy.readAbout}`}>
+          <title>{group.summary ? `${label} — ${group.summary}` : label}</title>
+          {/* Inside the box, not five pixels above it. The name used to hang over
+              the top edge into whatever was there, which was the canvas margin
+              while only one slot could be open and an ancestor's lane name as
+              soon as two could. */}
+          <rect
+            className="mj-process-hit"
+            x={n(group.x0)}
+            y={n(group.top)}
+            width={n(Math.max(0, group.x1 - group.x0))}
+            height="17"
+          />
+          <text className="mj-process-group-name" x={n(group.x0 + 4)} y={n(group.top + 13)}>
+            {group.label}
+          </text>
+        </a>
+      )}
     </g>
   );
 }
@@ -252,19 +259,26 @@ function Process({ process, copy }: { process: ProcessBox; copy: MapCopy }): Rea
           />
         </a>
       )}
-      <a href={process.pageHref} aria-label={`${process.fullLabel} — ${copy.readAbout}`}>
-        <title>{`${title} — ${copy.readAbout}`}</title>
-        <rect
-          className="mj-process-hit"
-          x={n(process.x0)}
-          y={n(process.y - 15)}
-          width={n(Math.max(0, process.x1 - process.x0))}
-          height="14"
-        />
-        <text className="mj-process-name" x={n(midX)} y={n(process.y - 7)} textAnchor="middle">
-          {process.label}
-        </text>
-      </a>
+      {/* No drawn name, no name target. A lane that is one hop of its method's
+          own work already carries that name as the row's title, directly above
+          this line and linking to the same page — so this line does not repeat
+          it, and an invisible 14px band claiming a name that is not there would
+          be a hit target for nothing. */}
+      {process.label === "" ? null : (
+        <a href={process.pageHref} aria-label={`${process.fullLabel} — ${copy.readAbout}`}>
+          <title>{`${title} — ${copy.readAbout}`}</title>
+          <rect
+            className="mj-process-hit"
+            x={n(process.x0)}
+            y={n(process.y - 15)}
+            width={n(Math.max(0, process.x1 - process.x0))}
+            height="14"
+          />
+          <text className="mj-process-name" x={n(midX)} y={n(process.y - 7)} textAnchor="middle">
+            {process.label}
+          </text>
+        </a>
+      )}
     </g>
   );
 }
@@ -351,6 +365,27 @@ function Lane({ lane, copy }: { lane: LaneLabel; copy: MapCopy }): React.ReactEl
   );
 }
 
+/**
+ * The figure's own name, top right — and only on a zoomed figure.
+ *
+ * Not a link, deliberately. Everything else on this canvas is an address, and
+ * this one names the page it is already on; the `<h1>` directly above it is the
+ * same string, uncut, which is also why letting it truncate here costs nothing.
+ */
+function Caption({ caption }: { caption: DiagramCaption }): React.ReactElement {
+  return (
+    <text
+      className={`mj-process-caption mj-process-caption--${caption.kind}`}
+      x={n(caption.x)}
+      y={n(caption.y)}
+      textAnchor="end"
+    >
+      <title>{caption.fullText}</title>
+      {caption.text}
+    </text>
+  );
+}
+
 /** An ingredient a route needs, hanging under the lane that consumes it. */
 function Feed({ feed, copy }: { feed: FeedStub; copy: MapCopy }): React.ReactElement {
   return (
@@ -402,6 +437,7 @@ export function ProcessCanvas({
         }
       >
         <title>{title}</title>
+        {diagram.caption ? <Caption caption={diagram.caption} /> : null}
         {diagram.groups.map((group) => (
           <Group key={group.key} group={group} copy={copy} />
         ))}

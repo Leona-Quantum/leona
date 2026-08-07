@@ -51,13 +51,17 @@ import {
   type LayerMethod,
   type LayerNode,
 } from "../lib/repository/layers";
+import { layoutProcessZoom } from "../lib/repository/process-layout";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import {
   kindsOf,
+  layerState,
   specializationsOf,
   type LayerState,
   type StateVocabulary,
 } from "../lib/repository/states";
+import { ProcessCanvas } from "./repository-process-map";
+import { mapHref } from "./repository-process-view";
 
 const COPY = {
   en: {
@@ -169,6 +173,19 @@ const COPY = {
     stateNarrowedLead:
       "These do not declare it in a contract. They record that one of their steps lands on something narrower than the slot promises, and this is that narrower thing.",
     stateOnMap: "See it on the map",
+    zoomHeading: "This one, drawn",
+    zoomFrom: "From",
+    zoomTo: "to",
+    zoomReadingSlot:
+      "A circle is an object you are holding. Each line between the two ends is one recorded way through this slot; where a way is built from smaller slots, those are its own lines.",
+    zoomReadingMethod:
+      "A circle is an object you are holding. Each line along the row is one step of this method — a slot, with its own ways through it — and the two ends are what you start and finish holding.",
+    zoomUnfilled:
+      "The line is drawn broken because no method is recorded for this slot. The two ends are still what it would take and return.",
+    zoomDeeper: (n: number) =>
+      `${n} ${n === 1 ? "line here has ways" : "lines here have ways"} through that this figure does not open. The map opens them in place.`,
+    zoomAllShallow: "Nothing drawn here has a recorded way through it that this figure leaves shut.",
+    zoomNames: "Circles are named on hover, and each one is a link.",
   },
   ja: {
     indexHeading: "階層",
@@ -263,6 +280,19 @@ const COPY = {
     stateNarrowedLead:
       "これらは契約でこの対象を宣言しているわけではありません。ステップのひとつが枠の約束よりも狭い対象に着地することを記録しており、その狭い対象がこれです。",
     stateOnMap: "地図上で見る",
+    zoomHeading: "この処理の図",
+    zoomFrom: "入力：",
+    zoomTo: "→",
+    zoomReadingSlot:
+      "円は、手にしている対象です。両端のあいだに引かれた各線が、この枠を通る記録済みの一つのやり方です。より小さな枠から組み立てられているやり方では、その枠が線として並びます。",
+    zoomReadingMethod:
+      "円は、手にしている対象です。行に並ぶ各線がこの手法の一段階——それぞれ通り道をもつ枠——であり、両端が、始めと終わりに手にしている対象です。",
+    zoomUnfilled:
+      "この枠に手法が記録されていないため、線は破線で描かれています。両端は、それでもこの枠が受け取り返すはずの対象です。",
+    zoomDeeper: (n: number) =>
+      `この図が開いていない通り道をもつ線が ${n} 本あります。地図ではその場で開けます。`,
+    zoomAllShallow: "この図が閉じたままにしている通り道は、ここにはありません。",
+    zoomNames: "円の名前はホバーで表示され、それぞれがリンクです。",
   },
 } as const;
 
@@ -319,6 +349,69 @@ function ContractPiece({
         </p>
       ) : null}
     </div>
+  );
+}
+
+/**
+ * The zoomed figure: this process, its two states, and the first level of it.
+ *
+ * The owner asked for this in session 92 and got half of it in 93 — a name on the
+ * map became a link to a page, and the page was the text write-up it had always
+ * been. *"Clicking on the label of a process zooms in with the first level of the
+ * process expanded with connection to the two states before and after, with the
+ * original process label in the top right like the strand visualization."*
+ *
+ * It is the map's own engine at depth one (`layoutProcessZoom`), so there is one
+ * geometry for one picture. What the page adds around it is the thing a drawing
+ * cannot carry: the two states **written out**. Their names are in `<title>` on
+ * the canvas, which is a hover — and there is no hover on a phone. Naming them
+ * here in prose, as links, is the same fact in a form every reader gets.
+ */
+function ProcessZoom({
+  graph,
+  node,
+  locale,
+  copy,
+}: {
+  graph: LayerGraph;
+  node: LayerNode;
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const resolved = contractFor(graph, node);
+  const diagram = layoutProcessZoom(graph, STATE_VOCABULARY, node.id, locale === "ja" ? "ja" : "en");
+  // An unresolvable contract or an empty layout means the graph does not have
+  // the two ends this figure is *about*. Drawing a picture of that would be
+  // inventing one; the sections below still say everything they always said.
+  if (!resolved || diagram.width === 0) return null;
+  const from = layerState(STATE_VOCABULARY, resolved.contract.from);
+  const to = layerState(STATE_VOCABULARY, resolved.contract.to);
+  const unfilled = isCapability(node) && capabilityOutlook(graph, node.id) === "open";
+  const mapId = isCapability(node) ? node.id : node.realizes;
+
+  return (
+    <figure className="mj-layers-zoom" aria-labelledby={`zoom-${node.id}`}>
+      <h2 className="mj-layers-zoom-heading" id={`zoom-${node.id}`}>
+        {copy.zoomHeading}
+      </h2>
+      <ProcessCanvas diagram={diagram} locale={locale === "ja" ? "ja" : "en"} title={label(node, locale)} />
+      <figcaption className="mj-layers-zoom-caption">
+        {from && to ? (
+          <p className="mj-layers-zoom-ends">
+            {copy.zoomFrom} <a href={href(from.id)}>{stateLabel(from, locale)}</a> {copy.zoomTo}{" "}
+            <a href={href(to.id)}>{stateLabel(to, locale)}</a>
+          </p>
+        ) : null}
+        <p>
+          {unfilled ? copy.zoomUnfilled : isCapability(node) ? copy.zoomReadingSlot : copy.zoomReadingMethod}{" "}
+          {copy.zoomNames}
+        </p>
+        <p>
+          {diagram.collapsedCount > 0 ? copy.zoomDeeper(diagram.collapsedCount) : copy.zoomAllShallow}{" "}
+          <a href={mapHref(mapId)}>{copy.stateOnMap}</a>
+        </p>
+      </figcaption>
+    </figure>
   );
 }
 
@@ -665,6 +758,10 @@ export function LayerNodeView({
         <p className="mj-layers-lede">{summary(node, locale)}</p>
         <ContractPiece graph={graph} node={node} locale={locale} copy={copy} />
       </header>
+      {/* Before the prose, not after it. A reader who clicked a name on the map
+          came here to see this one thing drawn; the write-up is what they read
+          once they have found it. */}
+      <ProcessZoom graph={graph} node={node} locale={locale} copy={copy} />
       {isCapability(node) ? (
         <CapabilityView graph={graph} node={node} corpus={corpus} locale={locale} copy={copy} />
       ) : (

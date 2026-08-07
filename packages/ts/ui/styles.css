@@ -10256,6 +10256,51 @@ div.mj-rail-row:hover {
   border-radius: var(--radius-card);
   background: var(--bg-1);
 }
+/* --- the zoomed figure ----------------------------------------------------
+   One process drawn on its own page: the two states either side and the first
+   level between them. Set apart from the prose sections rather than dressed up —
+   it is the subject of the page, and the sections below it are the notes. */
+.mj-layers-zoom {
+  margin: var(--sp-6) 0;
+  padding: var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  /* The canvas inside can be wider than the column and scrolls in its own box;
+     without this the grid item refuses to shrink and the page scrolls instead. */
+  min-width: 0;
+}
+/* Centred inside its card, and this is about the caption rather than taste. The
+   figure's name is drawn at the **drawing's** right edge, because that is what it
+   names; a narrow drawing pinned to the left of a wide card leaves that name
+   sitting in the middle of the card looking like a stray heading. Auto margins
+   collapse to zero the moment the drawing is wider than the card, which is when
+   the scroll box takes over. */
+.mj-layers-zoom .mj-process-canvas { margin-inline: auto; }
+.mj-layers-zoom-heading {
+  margin: 0 0 var(--sp-4);
+  font-size: var(--fs-13);
+  font-weight: 500;
+  color: var(--text-2);
+  letter-spacing: 0.02em;
+  text-transform: uppercase;
+}
+.mj-layers-zoom-caption {
+  margin: var(--sp-3) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-layers-zoom-caption p { margin: 0 0 var(--sp-2); }
+.mj-layers-zoom-caption p:last-child { margin-bottom: 0; }
+/* The two ends, written out. On the canvas they are hover tooltips, and a phone
+   has no hover — this is the same fact in a form every reader gets. */
+.mj-layers-zoom-ends {
+  color: var(--text-0);
+  font-size: var(--fs-14);
+}
+.mj-layers-zoom-ends a { color: var(--accent); }
+
 /* An empty list says what the emptiness means, and says it in the voice of a
    fact rather than a defect — muted, never warning-coloured. */
 .mj-layers-empty {
@@ -10812,6 +10857,25 @@ div.mj-rail-row:hover {
   font-family: var(--font-ui);
   font-size: 12px;
   font-weight: 500;
+}
+
+/* --- the figure's own name, top right ------------------------------------
+   Only on a zoomed figure — the map has no single subject to name. Bigger than
+   anything on the canvas and not a link: everything else here is an address,
+   and this one names the page it is already on. */
+.mj-process-caption {
+  fill: var(--text-0);
+  font-family: var(--font-ui);
+  font-size: 13px;
+  font-weight: 500;
+}
+/* A method's name is set the way a method's name is set everywhere on this
+   surface — italic, one weight down — so the caption says which of the two kinds
+   of thing this page is about without a second word of copy. */
+.mj-process-caption--method {
+  fill: var(--text-1);
+  font-style: italic;
+  font-weight: 400;
 }
 
 /* --- processes ----------------------------------------------------------- */

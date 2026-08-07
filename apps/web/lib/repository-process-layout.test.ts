@@ -67,6 +67,7 @@ import {
   estimateTextWidth,
   fitLabel,
   layoutProcessMap,
+  layoutProcessZoom,
   processPageHref,
   slotHref,
   stateHref,
@@ -249,6 +250,22 @@ function textBoxes(diagram: ProcessDiagram): TextBox[] {
   for (const feed of diagram.feeds) {
     boxes.push(textBox(feed.key, "feed name", feed.x + 11, feed.y1 + 2, feed.label, M.feedFont, "start"));
   }
+  // `<text className="mj-process-caption" x={x} y={y} textAnchor="end">` — the
+  // zoomed figure's own name. It is placed by the layout rather than by the
+  // renderer precisely so that it lands in this sweep: a name the geometry does
+  // not know about is a name nothing checks, which is how three of session 92's
+  // four real collisions got onto a page with a green suite.
+  if (diagram.caption) {
+    const width = estimateTextWidth(diagram.caption.text, M.captionFont);
+    boxes.push({
+      key: "caption",
+      what: "caption",
+      left: diagram.caption.x - width,
+      right: diagram.caption.x,
+      top: diagram.caption.y - M.captionFont * 0.8,
+      bottom: diagram.caption.y + M.captionFont * 0.25,
+    });
+  }
   return boxes;
 }
 
@@ -281,7 +298,19 @@ function isInside(child: { key: string }, group: { key: string }): boolean {
  * change usually breaks a family of things at once, and fixing one, re-running,
  * and finding the next is how a layout change takes six rounds instead of one.
  */
-function violations(diagram: ProcessDiagram, open: ReadonlySet<string>): string[] {
+function violations(
+  diagram: ProcessDiagram,
+  open: ReadonlySet<string>,
+  /**
+   * Which surface this diagram is drawn on.
+   *
+   * Every geometric invariant below is the same on both, and that is the point
+   * of the zoom reusing the map's engine. What differs is *affordances*: the map
+   * is where a line toggles and every region names itself, and a process's own
+   * page is neither. Those three are switched on this, and nothing else is.
+   */
+  surface: "map" | "zoom" = "map",
+): string[] {
   const found: string[] = [];
   const { processes, states, groups, lanes, ties, feeds } = diagram;
 
@@ -430,11 +459,68 @@ function violations(diagram: ProcessDiagram, open: ReadonlySet<string>): string[
   // because it is the flag the renderer uses to decide whether the shape needs
   // its full name anywhere at all. A cut label whose flag says otherwise is a
   // name that has been silently lost, not abbreviated.
-  for (const shape of [...groups, ...lanes, ...feeds]) {
+  for (const shape of [...lanes, ...feeds]) {
     if (!shape.href) found.push(`${shape.key}: no href`);
+  }
+  // A group with no address is the zoomed figure's own subject, and it draws no
+  // name. The two move together or one of them has been silently lost: a name
+  // with nowhere to go is a dead link, and an address with no name is a region
+  // nobody can tell is clickable.
+  for (const group of groups) {
+    if (group.href === null) {
+      if (surface !== "zoom") found.push(`${group.key}: no href`);
+      else if (group.label !== "") found.push(`${group.key}: no href but its name is drawn`);
+    } else if (group.label === "") {
+      found.push(`${group.key}: an address with no name to click`);
+    }
+  }
+  // A line may draw no name at all, and exactly one thing licenses that: the
+  // name is already written, once, somewhere that names this same line. On the
+  // map that is the row's own title directly above it; on a zoomed method it is
+  // the caption. Asserted rather than assumed — "the name is elsewhere" is the
+  // kind of claim that stays true in a comment long after the elsewhere moved.
+  for (const process of processes) {
+    if (process.label !== "") continue;
+    // Nothing was cut — the name was dropped, and those are different claims.
+    // `labelTruncated` is what tells the renderer a full name has to survive
+    // somewhere else, and leaving it set on a name that is not drawn at all is
+    // the renderer being told to abbreviate nothing.
+    if (process.labelTruncated) found.push(`${process.key}: draws no name but is flagged cut`);
+    // The lane this line is *in*, not the first lane anywhere on the canvas
+    // that happens to be the same method. A method reached under two different
+    // parents is drawn twice, and matching on `methodId` picked whichever came
+    // first — which put a name three hundred pixels below its own line and read
+    // as a violation of a rule nothing had broken. Keys are paths; use the path.
+    const laneKey = process.key.replace(/:own\d+$/, "");
+    // A row with more than one hop keeps the name on its own-work line. There it
+    // is not a repetition of the row's title — it says which hop is the part the
+    // method does itself, and without it that hop is a bare line between two
+    // circles with nothing on the canvas saying what happens along it.
+    const hops = [...processes, ...groups].filter((shape) => shape.key.startsWith(`${laneKey}:`));
+    if (hops.length > 1) {
+      found.push(`${process.key}: draws no name although its row has ${hops.length} hops`);
+    }
+    const lane = lanes.find((candidate) => candidate.key === `${laneKey}:name`);
+    if (lane) {
+      if (lane.fullLabel !== process.fullLabel) {
+        found.push(`${process.key}: draws no name and its row says something else`);
+      }
+      if (lane.href !== process.pageHref) {
+        found.push(`${process.key}: draws no name and its row leads somewhere else`);
+      }
+      if (!(lane.y < process.y)) found.push(`${process.key}: its row's name is not above it`);
+      continue;
+    }
+    if (diagram.caption?.fullText === process.fullLabel) continue;
+    found.push(`${process.key}: draws no name and nothing else on the canvas names it`);
   }
   for (const shape of [...processes, ...groups, ...lanes, ...feeds]) {
     if (!shape.fullLabel) found.push(`${shape.key}: no fullLabel`);
+    // A line that draws no name, licensed by the loop above.
+    if ("pageHref" in shape && shape.label === "") continue;
+    // The subject of a zoomed figure draws nothing, so there is no drawn name to
+    // compare against the whole one.
+    if ("closeHref" in shape && shape.href === null) continue;
     if (shape.labelTruncated) {
       if (shape.label === shape.fullLabel) found.push(`${shape.key}: flagged cut but nothing was cut`);
       if (!shape.label.endsWith("…")) found.push(`${shape.key}: cut without an ellipsis`);
@@ -461,7 +547,18 @@ function violations(diagram: ProcessDiagram, open: ReadonlySet<string>): string[
     }
     // Only a slot with recorded ways through it can be opened. A method's line
     // and an empty slot's line must not look like controls.
+    //
+    // On a zoomed figure *no* line is a control, and that is not a weaker rule —
+    // it is the same rule reaching a different answer. `?open=` is the map's
+    // address; a line that looked openable on a process's own page would either
+    // do nothing or navigate away from the page the reader just zoomed into.
     const openable = process.weight === "slot" && process.state === "collapsed";
+    if (surface === "zoom") {
+      if (process.href !== null) {
+        found.push(`${process.key}: a line is a control on a page that is not the map`);
+      }
+      continue;
+    }
     if (openable && process.href === null) found.push(`${process.key}: openable but its line is inert`);
     if (!openable && process.href !== null) {
       found.push(`${process.key}: nothing to open but its line is a control`);
@@ -1434,6 +1531,234 @@ test("an opened slot inside an opened slot still collides with nothing, in both 
   // the assertion above is satisfied by a graph that never nests at all, which
   // is the state the old test was left in.
   assert.ok(nested > 0, "no capability produced a nested expansion — nothing was tested");
+});
+
+// ---------------------------------------------------------------------------
+// The zoomed figure: one process on its own page
+// ---------------------------------------------------------------------------
+//
+// `layoutProcessZoom` is deliberately the map's engine held at depth one rather
+// than a second geometry, so most of what it must satisfy is already asserted
+// above and is re-asserted here only over the arrangements the zoom produces and
+// the map cannot. What is genuinely new is small and is all of it about
+// *addresses*: this page is not the map, so nothing on it may claim to open
+// anything, and the subject may not link to itself.
+
+/** The topmost edge of anything actually stroked on the canvas. */
+function topOfShapes(diagram: ProcessDiagram): number {
+  const tops: number[] = [];
+  for (const process of diagram.processes) tops.push(process.y - M.edgeBand / 2);
+  for (const group of diagram.groups) tops.push(group.top);
+  for (const stateBox of diagram.states) tops.push(stateBox.cy - stateBox.r);
+  for (const lane of diagram.lanes) tops.push(lane.y - M.processFont * 0.8);
+  for (const tie of diagram.ties) tops.push(tie.y0);
+  return tops.length === 0 ? Number.POSITIVE_INFINITY : Math.min(...tops);
+}
+
+const ZOOM_STATES = vocabulary(state("alpha"), state("beta"), state("gamma"), state("delta"));
+
+const ZOOM_GRAPH: LayerGraph = {
+  nodes: [
+    capability("slot", "alpha", "delta"),
+    method("first-way", "slot", { steps: ["inner"] }),
+    method("second-way", "slot", { atomic: true }),
+    capability("inner", "alpha", "delta"),
+    method("inner-way", "inner", { atomic: true }),
+  ],
+};
+
+test("a one-hop row does not write its method's name twice, and a longer row does", () => {
+  // The symptom, from `get_page_text` on the rendered page: every method name in
+  // the list, twice through. A lane that is a single segment of its method's own
+  // work drew the row's title and then the same string again on the only line in
+  // the row, five pixels below it. Forty-one of this graph's fifty-eight methods
+  // are that shape.
+  let single = 0;
+  let longer = 0;
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isCapability(node)) continue;
+    const diagram = layoutProcessMap(
+      LAYER_GRAPH,
+      STATE_VOCABULARY,
+      node.id,
+      "en",
+      new Set([node.id]),
+      1,
+    );
+    for (const process of diagram.processes) {
+      if (process.methodId === null || process.capabilityId !== null) continue;
+      const laneKey = process.key.replace(/:own\d+$/, "");
+      const hops = [...diagram.processes, ...diagram.groups].filter((shape) =>
+        shape.key.startsWith(`${laneKey}:`),
+      );
+      if (hops.length === 1) {
+        assert.equal(process.label, "", `${process.key} repeats its row's title`);
+        single += 1;
+      } else {
+        // Where the row has other hops the name stays: it is which one of them
+        // the method does itself, not a repetition of the row.
+        assert.notEqual(process.label, "", `${process.key} lost the name that marks it`);
+        longer += 1;
+      }
+    }
+  }
+  assert.ok(single > 0 && longer > 0, `single=${single} longer=${longer} — a case was not drawn`);
+});
+
+test("a zoomed slot draws every way through it, and no line on it is a control", () => {
+  const diagram = layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, "slot", "en");
+
+  // Both alternatives, drawn as lanes between the same two ends.
+  assert.deepEqual(
+    diagram.lanes.map((lane) => lane.methodId).sort(),
+    ["first-way", "second-way"],
+  );
+  // The subject is the region the lanes sit in, and it does not name itself: the
+  // caption top right and the page's own `<h1>` are the two places that name it,
+  // and a third copy here would be a link back to the page you are on.
+  const own = diagram.groups.find((group) => group.capabilityId === "slot")!;
+  assert.equal(own.href, null);
+  assert.equal(own.label, "");
+  assert.equal(own.closeHref, null);
+  // `?open=` is the map's address and this is not the map.
+  assert.deepEqual(
+    diagram.processes.filter((process) => process.href !== null),
+    [],
+  );
+  // …and the names still are links, because a name has always gone to a page.
+  assert.ok(diagram.processes.every((process) => process.pageHref.startsWith("/repository/layers/")));
+
+  assert.equal(diagram.caption?.fullText, "slot");
+  assert.equal(diagram.caption?.kind, "slot");
+  assert.deepEqual(violations(diagram, new Set(["slot"]), "zoom"), []);
+});
+
+test("a zoomed method is one way through its slot, and the slot keeps its name", () => {
+  const diagram = layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, "first-way", "en");
+
+  // One lane's worth of drawing, and the lane is this method — so its own name
+  // is not drawn twice. The caption is the other end of the same line.
+  assert.deepEqual(diagram.lanes, []);
+  assert.equal(diagram.caption?.fullText, "first-way");
+  assert.equal(diagram.caption?.kind, "method");
+  // The sibling is not on this page at all. That is the whole difference between
+  // this figure and the slot's own, and it is what the lens buys.
+  assert.equal(
+    diagram.processes.some((process) => process.methodId === "second-way"),
+    false,
+  );
+  // The slot it fills is still named, and still a link — a reader has to be able
+  // to get from one way through to all of them.
+  const slot = diagram.groups.find((group) => group.capabilityId === "slot")!;
+  assert.equal(slot.href, "/repository/layers/slot");
+  assert.ok(slot.label.length > 0);
+  // Its one step is drawn, shut, and counted as shut.
+  const inner = diagram.processes.find((process) => process.capabilityId === "inner")!;
+  assert.equal(inner.state, "collapsed");
+  assert.equal(diagram.collapsedCount, 1);
+
+  assert.deepEqual(violations(diagram, new Set(["slot"]), "zoom"), []);
+});
+
+test("the lens that hides a method's siblings does not touch the graph", () => {
+  // The zoom for a method restricts what fills one slot so that the lane code
+  // draws one lane. A lens that leaked would silently delete a method from every
+  // page rendered after it in the same process.
+  const before = ZOOM_GRAPH.nodes.map((node) => node.id);
+  layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, "first-way", "en");
+  layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, "second-way", "ja");
+  assert.deepEqual(
+    ZOOM_GRAPH.nodes.map((node) => node.id),
+    before,
+  );
+  // And the slot's own figure still has both ways through it afterwards.
+  const after = layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, "slot", "en");
+  assert.equal(after.lanes.length, 2);
+});
+
+test("a slot nothing fills still gets a figure, with its two ends and a broken line", () => {
+  const diagram = layoutProcessZoom(SLOT_GRAPH, SLOT_STATES, "barren", "en");
+  const line = diagram.processes.find((process) => process.capabilityId === "barren")!;
+  assert.equal(line.state, "unfilled");
+  // Nothing to open, so nothing pretends to be openable — the same rule the map
+  // follows, arrived at from the other direction.
+  assert.equal(line.href, null);
+  assert.deepEqual(
+    diagram.states.map((box) => box.stateId),
+    ["beta", "gamma"],
+  );
+  assert.equal(diagram.caption?.fullText, "barren");
+});
+
+test("nothing that is not a process has a figure", () => {
+  // A state id resolves on this route — states and nodes share one namespace on
+  // purpose — and it is not a thing this figure is about. An empty diagram is
+  // what makes the page render its prose and no picture, rather than a picture
+  // of nothing.
+  for (const id of ["alpha", "not-a-node", ""]) {
+    const diagram = layoutProcessZoom(ZOOM_GRAPH, ZOOM_STATES, id, "en");
+    assert.equal(diagram.width, 0, id);
+    assert.equal(diagram.caption, null, id);
+  }
+});
+
+test("every process in the graph zooms cleanly, in both locales", () => {
+  // The exhaustive pass, and the one that catches "it lays out fine in the
+  // abstract and breaks on the one method whose Japanese label is forty per cent
+  // wider than its English one". Structural invariants only: no count, no name.
+  let slots = 0;
+  let methods = 0;
+  for (const node of LAYER_GRAPH.nodes) {
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = layoutProcessZoom(LAYER_GRAPH, STATE_VOCABULARY, node.id, locale);
+      assert.ok(diagram.width > 0 && diagram.height > 0, `${node.id} (${locale}) drew nothing`);
+      const opened = new Set([isCapability(node) ? node.id : node.realizes]);
+      assert.deepEqual(violations(diagram, opened, "zoom"), [], `zoom ${node.id} (${locale})`);
+
+      const caption = diagram.caption;
+      assert.ok(caption, `${node.id} (${locale}) has no caption`);
+      // Top right, and clear of the drawing rather than merely not equal to it.
+      // A caption sitting one pixel into the first circle is the failure this is
+      // about, and `y < top` would pass it.
+      assert.ok(
+        caption.y + M.captionFont * 0.25 < topOfShapes(diagram),
+        `${node.id} (${locale}): caption overlaps the drawing`,
+      );
+      assert.ok(caption.x <= diagram.width, `${node.id} (${locale}): caption runs off the canvas`);
+      assert.ok(
+        caption.x - estimateTextWidth(caption.text, M.captionFont) >= -EPS,
+        `${node.id} (${locale}): caption runs off the left`,
+      );
+      // Nothing on a zoomed figure toggles anything, at any depth.
+      assert.deepEqual(
+        diagram.processes.filter((process) => process.href !== null).map((process) => process.key),
+        [],
+        `${node.id} (${locale}): a line is still a toggle`,
+      );
+      assert.deepEqual(
+        diagram.groups.filter((group) => group.closeHref !== null).map((group) => group.key),
+        [],
+        `${node.id} (${locale}): an opened slot is still closable`,
+      );
+      // Exactly one thing on the canvas declines to name itself: the subject.
+      const anonymous = diagram.groups.filter((group) => group.href === null);
+      if (isCapability(node)) {
+        assert.deepEqual(anonymous.map((group) => group.capabilityId), [node.id]);
+        slots += 1;
+      } else {
+        assert.deepEqual(anonymous, [], `${node.id}: a method's figure hid a slot's name`);
+        assert.equal(
+          diagram.lanes.some((lane) => lane.methodId === node.id),
+          false,
+          `${node.id}: the method named itself inside its own figure`,
+        );
+        methods += 1;
+      }
+    }
+  }
+  // Both shapes of figure were actually produced. Without this the assertions
+  // above are satisfied by a graph of one kind of node.
+  assert.ok(slots > 0 && methods > 0, `slots=${slots} methods=${methods}`);
 });
 
 test("opening a slot never draws fewer shapes than leaving it shut", () => {

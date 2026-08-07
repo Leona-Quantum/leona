@@ -61,6 +61,7 @@
 import {
   capabilityOutlook,
   isCapability,
+  isMethod,
   layerNode,
   methodsRealizing,
   routeOf,
@@ -136,6 +137,12 @@ export const PROCESS_METRICS = {
   processFont: 12,
   stateFont: 12,
   feedFont: 11,
+  /**
+   * The zoomed figure's own name, top right. Larger than everything on the
+   * canvas because it is the one piece of text that names the whole picture
+   * rather than a part of it.
+   */
+  captionFont: 13,
 } as const;
 
 /**
@@ -222,8 +229,15 @@ export interface ProcessGroup {
   fullLabel: string;
   labelTruncated: boolean;
   summary: string;
-  /** Where the **name** goes: this slot's own page. */
-  href: string;
+  /**
+   * Where the **name** goes: this slot's own page.
+   *
+   * `null` on the zoomed figure's own root, and the absence is what stops the
+   * name being drawn at all. A page that draws its own title inside its own
+   * picture, linking to itself, is a link a reader can only lose by following —
+   * so the name moves to the caption and the shape keeps only the spine.
+   */
+  href: string | null;
   /** Where the **faint line** goes: the same map with this slot shut again. */
   closeHref: string | null;
   x0: number;
@@ -349,6 +363,31 @@ export interface FeedStub {
   y1: number;
 }
 
+/**
+ * The whole figure's own name, top right.
+ *
+ * *"…with the original process label in the top right like the strand
+ * visualization"* — owner, session 92. It is a caption rather than a shape: it
+ * names the picture, it is not a thing in it, and nothing on the canvas links to
+ * it. It is measured and placed here rather than in the renderer for the reason
+ * every other name on this surface is — the collision sweep reads the geometry,
+ * and a name the geometry does not know about is a name nothing checks.
+ *
+ * `null` on the map, which has no single subject to name.
+ */
+export interface DiagramCaption {
+  /** Fitted to the canvas. The full text rides in a `<title>`, as everywhere. */
+  text: string;
+  fullText: string;
+  truncated: boolean;
+  /** The **right** edge: this is drawn `text-anchor="end"`. */
+  x: number;
+  /** Baseline. */
+  y: number;
+  /** What kind of thing the figure is about — a slot, or one way through one. */
+  kind: "slot" | "method";
+}
+
 export interface ProcessDiagram {
   width: number;
   height: number;
@@ -362,6 +401,8 @@ export interface ProcessDiagram {
   /** Slots that could be opened and are not. Surfaced so the page can say so. */
   collapsedCount: number;
   depthCap: number;
+  /** Set on a zoomed figure, never on the map. See `DiagramCaption`. */
+  caption: DiagramCaption | null;
 }
 
 type Locale = "en" | "ja";
@@ -922,14 +963,22 @@ function placeLanes(
         const method = lane.method;
         const full = labelOf(method, options.locale);
         const fitted = fitLabel(full, PROCESS_METRICS.processFont, Math.max(24, sx1 - sx0 - 10));
+        // A lane that is one segment of the method's own work has its name
+        // written twice: once as the row's title, and again on the only line in
+        // the row, five pixels below it. Forty-one of the graph's fifty-eight
+        // methods are that shape — `get_page_text` reads them back as a list of
+        // every method name twice through — so the line drops the name and keeps
+        // the row's. Where a lane has *several* hops the name stays: there it is
+        // not a repetition, it marks which hop the method does itself.
+        const repeatsLane = lane.route.segments.length === 1;
         canvas.processes.push({
           kind: "process",
           capabilityId: null,
           methodId: method.id,
           key: `${laneKey}:own${index}`,
-          label: fitted.text,
+          label: repeatsLane ? "" : fitted.text,
           fullLabel: full,
-          labelTruncated: fitted.truncated,
+          labelTruncated: repeatsLane ? false : fitted.truncated,
           summary: summaryOf(method, options.locale),
           // A method's own work: nothing under it to open, so the line is inert
           // and only the name is a link.
@@ -1074,6 +1123,7 @@ export function layoutProcessMap(
       feeds: [],
       collapsedCount: 0,
       depthCap,
+      caption: null,
     };
   }
 
@@ -1131,6 +1181,143 @@ export function layoutProcessMap(
     feeds: canvas.feeds,
     collapsedCount: canvas.collapsed.count,
     depthCap,
+    caption: null,
+  };
+}
+
+/**
+ * One process, drawn on its own page: its two states, and the first level of it
+ * between them.
+ *
+ * This is the other half of *"clicking on the label of a process zooms in"* —
+ * the half session 93 shipped a link to and did not draw. The owner asked for
+ * *"the first level of the process expanded with connection to the two states
+ * before and after, with the original process label in the top right like the
+ * strand visualization"*, and what arrives here is the map's own engine held at
+ * depth one.
+ *
+ * ## Why it is the map's engine and not a second one
+ *
+ * The map's placement pass is what 174 fixed collisions were fixed *in*. A
+ * second geometry for the same picture would be a second place for all of them
+ * to come back, and nothing would compare the two — the same argument that keeps
+ * the legend drawing the canvas's own classes rather than copies of them.
+ *
+ * So the differences are stated as differences, not re-derived:
+ *
+ * - **Depth one.** The reader asked for this process, not for the whole tree
+ *   under it. Everything one level down is drawn shut, and the figcaption says
+ *   how many.
+ * - **No line is a control.** `?open=` is the map's address, and this page is not
+ *   the map; a line that looked clickable here would either do nothing or
+ *   navigate away from the page a reader just zoomed into. The names stay links,
+ *   because a name has always gone to a page.
+ * - **The subject does not name itself inside its own picture.** The zoomed
+ *   node's own name is the caption, top right; its shape on the canvas keeps the
+ *   spine and drops the label.
+ *
+ * ## A method is the same slot with one way through it
+ *
+ * A method has no lanes of its own — it *is* a lane. Rather than a second
+ * placement pass for the one-lane case, the slot it fills is laid out through a
+ * graph **lens** that hides the sibling methods (`soleMethodLens`). The engine
+ * draws whatever the graph says fills a slot; restricting what fills it is how
+ * one lane gets drawn by the code that already draws lanes. The lens is read-only
+ * and local to this call, and it hides *only* siblings under the same slot —
+ * every step, state and citation the lane reaches is the authored graph.
+ */
+export function layoutProcessZoom(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  id: string,
+  locale: Locale,
+): ProcessDiagram {
+  const node = layerNode(graph, id);
+  if (!node) return emptyDiagram();
+  const capabilityId = isCapability(node) ? node.id : node.realizes;
+  const lens = isCapability(node) ? graph : soleMethodLens(graph, node);
+  const base = layoutProcessMap(
+    lens,
+    vocabulary,
+    capabilityId,
+    locale,
+    new Set([capabilityId]),
+    1,
+    null,
+  );
+  if (base.width === 0) return emptyDiagram();
+  return asZoom(base, id, labelOf(node, locale), isCapability(node) ? "slot" : "method");
+}
+
+function emptyDiagram(): ProcessDiagram {
+  return {
+    width: 0,
+    height: 0,
+    states: [],
+    processes: [],
+    groups: [],
+    lanes: [],
+    ties: [],
+    feeds: [],
+    collapsedCount: 0,
+    depthCap: 1,
+    caption: null,
+  };
+}
+
+/**
+ * The graph with one slot's other methods hidden.
+ *
+ * Everything else — the method's own steps, the slots they name, the states, the
+ * whole rest of the graph — is untouched. Only the set of ways through *this one
+ * slot* is narrowed to the one being zoomed.
+ */
+function soleMethodLens(graph: LayerGraph, method: LayerMethod): LayerGraph {
+  return {
+    ...graph,
+    nodes: graph.nodes.filter(
+      (node) => node.id === method.id || !(isMethod(node) && node.realizes === method.realizes),
+    ),
+  };
+}
+
+/** The map's diagram, re-read as a figure about one thing. */
+function asZoom(
+  base: ProcessDiagram,
+  selfId: string,
+  captionText: string,
+  kind: "slot" | "method",
+): ProcessDiagram {
+  const fitted = fitLabel(
+    captionText,
+    PROCESS_METRICS.captionFont,
+    Math.max(60, base.width - PROCESS_METRICS.margin * 2),
+  );
+  return {
+    ...base,
+    // Nothing toggles on a page that is not the map. A method's line was already
+    // inert for the same reason: a shape that looks like a control and is not one
+    // is worse than no control.
+    processes: base.processes.map((process) => ({ ...process, href: null })),
+    groups: base.groups.map((group) =>
+      group.capabilityId === selfId
+        ? { ...group, label: "", labelTruncated: false, href: null, closeHref: null }
+        : { ...group, closeHref: null },
+    ),
+    // The lane that *is* this page keeps its shape and loses its name — the
+    // caption already says it, in bigger type, at the other end of the same line.
+    lanes: base.lanes.filter((lane) => lane.methodId !== selfId),
+    caption: {
+      text: fitted.text,
+      fullText: captionText,
+      // Truncation costs nothing here and is worth saying plainly: the caption is
+      // a repetition of the page's own `<h1>`, which is six lines above it and is
+      // never cut. It is the only name on this surface where that is true.
+      truncated: fitted.truncated,
+      x: base.width - PROCESS_METRICS.margin,
+      y: PROCESS_METRICS.margin - 12,
+      kind,
+    },
   };
 }
 
