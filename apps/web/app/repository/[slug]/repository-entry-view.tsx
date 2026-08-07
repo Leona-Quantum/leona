@@ -256,6 +256,7 @@ export function RepositoryEntryView({
   profile,
   connections,
   connectionsOpen,
+  layers,
 }: {
   entry: PublicRepositoryEntry;
   locale: PublicLocale;
@@ -298,6 +299,17 @@ export function RepositoryEntryView({
    * at the rendered page rather than at the markup.
    */
   connectionsOpen?: boolean;
+  /**
+   * Where the layer graph names this record, or null when it does not.
+   *
+   * Null on 279 of the 283 today, and unlike every panel on the Layers surface
+   * itself this one renders **nothing** in that case. The difference is
+   * deliberate: over there an empty list is the finding — it says which part of
+   * the literature the corpus has not reached — and here it would be the same
+   * sentence repeated on almost every record, which is noise wearing honesty's
+   * clothes.
+   */
+  layers?: ReactNode;
   related: RelatedEntrySummary[];
 }) {
   const copy = COPY[locale];
@@ -410,6 +422,14 @@ export function RepositoryEntryView({
               {connections}
             </DetailSection>
           ) : null}
+
+          {/* Directly under the connections panel, and not inside a
+              `DetailSection`. The panel above answers "what meets this record's
+              edges"; this answers "what is this record an instance of", which is
+              one level up and is the only route from a record into the layer
+              graph. Behind a collapsed disclosure it would be a door nobody
+              opens — the failure the gates surface already paid for twice. */}
+          {layers}
 
           <DetailSection title={copy.how} defaultOpen>
             <MarkdownContent source={explanation} className="mj-repo-markdown" />

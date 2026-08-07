@@ -12,6 +12,8 @@ import {
 import { RepositoryEstimatePanel, hasVisibleEstimate } from "../../../components/repository-estimate";
 import { RepositoryProfilePanel, hasVisibleProfile } from "../../../components/repository-profile";
 import { RepositoryInterfacePanel } from "../../../components/repository-interface";
+import { EntryLayerLinks } from "../../../components/repository-layers";
+import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { deriveInterface, neighboursOf, type EntryInterface } from "../../../lib/repository/interface";
 import { resolveEntryPort, type BrowseSearchParams } from "../../../lib/repository/browse-params";
 import { RepositoryEntryView } from "./repository-entry-view";
@@ -166,6 +168,15 @@ export default async function RepositoryEntryPage({
             locale={locale}
             openPort={openPort}
           />
+        }
+        layers={
+          // Rendered on the server and passed in as a slot, like the three
+          // above, and for the same reason: the entry view is a client
+          // component. Returns null when no node in the graph names this slug,
+          // which is 279 of the 283 today — the strip is absent rather than
+          // empty, and the honest count of what the graph does cover is printed
+          // on /repository/layers instead.
+          <EntryLayerLinks graph={LAYER_GRAPH} slug={entry.slug} locale={locale} />
         }
       />
     </PublicSite>
