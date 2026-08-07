@@ -41,9 +41,11 @@ class _ScriptedLLM:
     def __init__(self, text="Bell state circuit"):
         self._text = text
         self.calls = 0
+        self.request = None
 
     async def complete(self, request, *, on_delta=None):
         self.calls += 1
+        self.request = request
         return LLMResponse(text=self._text, model=request.model, input_tokens=1, output_tokens=1)
 
 
@@ -56,7 +58,7 @@ class _BrokenLLM:
         raise RuntimeError("provider down")
 
 
-def _ctx(sink, *, prompt="Build a Bell state", conversation_id=None):
+def _ctx(sink, *, prompt="Build a Bell state", conversation_id=None, response_locale="en"):
     return RunContext(
         run_id=uuid.uuid4(),
         task_prompt=prompt,
@@ -66,6 +68,7 @@ def _ctx(sink, *, prompt="Build a Bell state", conversation_id=None):
         shots=None,
         timeout_s=60,
         sink=sink,
+        response_locale=response_locale,
         conversation_id=conversation_id,
     )
 
@@ -145,6 +148,23 @@ async def test_the_opening_turn_is_named_and_the_name_reaches_the_run(monkeypatc
     assert sink.events == [
         ("conversation.titled", {"title": "Bell state circuit", "source": "model"})
     ]
+
+
+async def test_title_prompt_follows_japanese_mode_even_for_an_english_request(monkeypatch):
+    _stub_conversation(monkeypatch, [])
+    sink = _RecordingSink()
+    llm = _ScriptedLLM("ベル状態回路")
+
+    ctx = await handlers._title_conversation(
+        _ctx(sink, conversation_id=uuid.uuid4(), response_locale="ja"),
+        _FakeStore(),
+        scope=None,
+        session=None,
+        llm=llm,
+    )
+
+    assert ctx.conversation_title == "ベル状態回路"
+    assert "出力言語: 日本語" in llm.request.system
 
 
 async def test_a_later_turn_computes_a_title_but_never_renames_the_thread(monkeypatch):

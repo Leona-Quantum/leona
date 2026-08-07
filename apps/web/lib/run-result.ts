@@ -14,13 +14,25 @@
  */
 
 import { friendlyFailure, type OutcomeEvent } from "./run-outcome.ts";
-import { simulationChartData, type SimulationChartData } from "./simulation-visual.ts";
+import {
+  resultVisualizationFromResult,
+  type ResultDistributionView,
+  type ResultTraceView,
+  type ResultValueView,
+} from "./result-visualization.ts";
 import {
   verificationSummaryFromValue,
   type VerificationSummary,
 } from "./verification-record.ts";
+import type { PublicLocale } from "./public-locale.ts";
 
-export interface RunResultValue {
+export type RunResultValue = ResultValueView;
+
+/**
+ * Fixed-label run metadata — algorithm, framework, revision, shots. Authored here
+ * rather than read off a result, so it carries no result key.
+ */
+export interface RunResultFact {
   label: string;
   value: string;
 }
@@ -30,13 +42,10 @@ export interface RunResultView {
   /** Short, honest trust marker. Never the headline. */
   trust: { label: string; tone: "ok" | "warn" };
   saved: boolean;
-  distribution: {
-    data: SimulationChartData;
-    shots: number;
-    peakLabel: string;
-  } | null;
+  distribution: ResultDistributionView | null;
+  traces: ResultTraceView[];
   values: RunResultValue[];
-  facts: RunResultValue[];
+  facts: RunResultFact[];
   code: { label: string; language: string; source: string } | null;
   /** Unverified claims, kept available but never as the lead. */
   limitations: string[];
@@ -51,16 +60,63 @@ function lastEvent(events: readonly OutcomeEvent[], type: string): OutcomeEvent 
   return null;
 }
 
-function humanize(value: string): string {
+const JAPANESE_LIMITATION: Record<string, string> = {
+  intent_alignment: "意図との整合性",
+  optimality: "最適性",
+  quantum_correctness: "量子的な正しさ",
+};
+
+function humanize(value: string, locale: PublicLocale): string {
+  if (locale === "ja" && JAPANESE_LIMITATION[value.toLowerCase()]) {
+    return JAPANESE_LIMITATION[value.toLowerCase()];
+  }
   return value.replaceAll("_", " ").replace(/\b\w/g, (character) => character.toUpperCase());
 }
 
-function formatNumber(value: number): string {
-  if (!Number.isFinite(value)) return String(value);
-  if (Number.isInteger(value) && Math.abs(value) < 1e15) return value.toLocaleString("en-US");
-  const magnitude = Math.abs(value);
-  if (magnitude !== 0 && (magnitude < 1e-4 || magnitude >= 1e6)) return value.toExponential(4);
-  return String(Number(value.toFixed(6)));
+function userFacingExplanation({
+  analysis,
+  failed,
+  reviewAccepted,
+  distribution,
+  values,
+  locale,
+}: {
+  analysis?: unknown;
+  failed: boolean;
+  reviewAccepted: boolean;
+  distribution: ResultDistributionView | null;
+  values: ResultValueView[];
+  locale: PublicLocale;
+}): string {
+  if (typeof analysis === "string" && analysis.trim()) return analysis.trim();
+  const primary = values[0];
+  const peak = distribution?.data.peak;
+  const measuredFacts = [
+    ...(primary
+      ? [locale === "ja"
+          ? `主な結果として「${primary.label}」は${primary.value}でした。`
+          : `The main reported result is ${primary.label}: ${primary.value}.`]
+      : []),
+    ...(peak
+      ? [locale === "ja"
+          ? `測定で最も多かった状態は${peak.bitstring}（${peak.share.toLocaleString("ja-JP", { style: "percent", maximumFractionDigits: 1 })}）です。`
+          : `The most frequent measured state is ${peak.bitstring} (${peak.share.toLocaleString("en-US", { style: "percent", maximumFractionDigits: 1 })}).`]
+      : []),
+  ].join(locale === "ja" ? "" : " ");
+  const lead = measuredFacts ? `${measuredFacts}${locale === "ja" ? "" : " "}` : "";
+  if (failed) {
+    return locale === "ja"
+      ? `${lead}最終検証には合格しませんでしたが、確認可能な最良の成果物を残しました。上の数値やコードは参考として利用し、注意点を解消するまでは確定結果として扱わないでください。`
+      : `${lead}The run did not pass final verification, but the best available deliverable has been preserved. You can use the values and code above as a reference; do not treat them as final until the listed concerns are resolved.`;
+  }
+  if (!reviewAccepted) {
+    return locale === "ja"
+      ? `${lead}ご依頼に基づく成果物を生成し、実行しました。上の成果物で結果とコードを確認できますが、未確認の点が残っているため、注意点もあわせて確認してください。`
+      : `${lead}The requested deliverable was generated and executed. You can review the result and code above, but some points remain unverified, so please check the listed limitations as well.`;
+  }
+  return locale === "ja"
+    ? `${lead}ご依頼に基づく成果物を生成し、実行しました。上の成果物で結果と生成コードを確認でき、コードは再実行や追加調整にも利用できます。検証の範囲は表示されている状態と注意点から確認できます。`
+    : `${lead}The requested deliverable was generated and executed. You can review the result and generated code above, and reuse the code for further runs or adjustments. The displayed status and limitations show the scope of verification.`;
 }
 
 /** The protected RESULT for one candidate revision — never stdout or another revision. */
@@ -85,52 +141,10 @@ function protectedResult(
   return selected;
 }
 
-/**
- * A `{bitstring: count}` mapping anywhere in RESULT. The plan names its own keys, so
- * match on shape rather than on a fixed key list — a run that reports `histogram` or
- * `measurement_counts` has just as much a distribution to draw.
- */
-function countsFrom(result: Record<string, unknown> | null): Record<string, number> | null {
-  if (!result) return null;
-  for (const value of Object.values(result)) {
-    if (!value || typeof value !== "object" || Array.isArray(value)) continue;
-    const entries = Object.entries(value as Record<string, unknown>);
-    if (!entries.length) continue;
-    const numeric = entries.every(
-      ([key, count]) => /^[01]+$/.test(key) && typeof count === "number" && Number.isFinite(count),
-    );
-    if (numeric) return Object.fromEntries(entries as [string, number][]);
-  }
-  return null;
-}
-
-/** Scalars the run reported, in the order the plan promised them. */
-function valuesFrom(
-  result: Record<string, unknown> | null,
-  expectedKeys: readonly string[],
-): RunResultValue[] {
-  if (!result) return [];
-  const keys = [
-    ...expectedKeys.filter((key) => key in result),
-    ...Object.keys(result).filter((key) => !expectedKeys.includes(key)),
-  ];
-  const values: RunResultValue[] = [];
-  for (const key of keys) {
-    const value = result[key];
-    if (typeof value === "number") values.push({ label: humanize(key), value: formatNumber(value) });
-    else if (typeof value === "boolean") values.push({ label: humanize(key), value: String(value) });
-    else if (typeof value === "string" && value.length <= 200) {
-      values.push({ label: humanize(key), value });
-    } else if (Array.isArray(value) && value.length <= 8 && value.every((item) => typeof item === "number")) {
-      values.push({ label: humanize(key), value: value.map(formatNumber).join(", ") });
-    }
-  }
-  return values.slice(0, 10);
-}
-
 export function runResultFromEvents(
   events: readonly OutcomeEvent[],
   recordSummary: VerificationSummary | null = null,
+  locale: PublicLocale = "en",
 ): RunResultView | null {
   const finished = lastEvent(events, "run.finished");
   if (!finished || finished.status === "cancelled") return null;
@@ -155,10 +169,14 @@ export function runResultFromEvents(
   // when review did not accept it; hiding those recreates the old
   // "No accepted result" dead end.
   if (!source?.code && !result) return null;
-  const counts = countsFrom(result);
-
-  const shots = counts ? Object.values(counts).reduce((total, count) => total + count, 0) : 0;
-  const data = counts ? simulationChartData(counts, shots) : null;
+  const visualization = resultVisualizationFromResult(
+    result,
+    plan?.expected_output_keys ?? [],
+    locale,
+  );
+  const shots = visualization.distribution?.kind === "counts"
+    ? visualization.distribution.total
+    : 0;
 
   const reviewAccepted = !failed
     && summary?.semantic_review_decision !== "code_repair"
@@ -173,13 +191,13 @@ export function runResultFromEvents(
     : strings(finished.residual_risks);
   const bestRisks = strings(best?.residual_risks);
   const limitations = [
-    ...(summary?.unverified_claims ?? []).map(humanize),
+    ...(summary?.unverified_claims ?? []).map((claim) => humanize(claim, locale)),
     ...bestRisks,
     ...eventRisks,
   ].filter((value, index, all) => Boolean(value.trim()) && all.indexOf(value) === index);
   const failure = failed ? lastEvent(events, "run.error") : null;
   const failureDescription = failure
-    ? friendlyFailure(failure.message, failure.stage, failure.code)
+    ? friendlyFailure(failure.message, failure.stage, failure.code, locale)
     : null;
   const noticeParts = failed
     ? [best?.critic_summary, failureDescription]
@@ -188,38 +206,41 @@ export function runResultFromEvents(
     : [];
 
   return {
-    summary:
-      lastEvent(events, "run.analysis")?.interpretation
-      ?? plan?.problem_summary
-      ?? "Quantum circuit run",
+    summary: userFacingExplanation({
+      analysis: lastEvent(events, "run.analysis")?.interpretation,
+      failed,
+      reviewAccepted,
+      distribution: visualization.distribution,
+      values: visualization.values,
+      locale,
+    }),
     trust: failed
       ? {
-          label: best ? "Best available · not verified" : "Executed · verification failed",
+          label: best
+            ? locale === "ja" ? "利用可能な最良結果・未検証" : "Best available · not verified"
+            : locale === "ja" ? "実行済み・検証失敗" : "Executed · verification failed",
           tone: "warn",
         }
       : reviewAccepted
-        ? { label: "Executed", tone: "ok" }
-        : { label: "Executed · needs attention", tone: "warn" },
+        ? { label: locale === "ja" ? "実行済み" : "Executed", tone: "ok" }
+        : { label: locale === "ja" ? "実行済み・要確認" : "Executed · needs attention", tone: "warn" },
     saved: Boolean(lastEvent(events, "artifact.saved")),
-    distribution: data
-      ? {
-          data,
-          shots,
-          peakLabel: data.peak.bitstring,
-        }
-      : null,
-    values: valuesFrom(result, plan?.expected_output_keys ?? []),
+    distribution: visualization.distribution,
+    traces: visualization.traces,
+    values: visualization.values,
     facts: [
-      ...(plan?.algorithm ? [{ label: "Algorithm", value: plan.algorithm }] : []),
-      ...(plan?.framework ? [{ label: "Framework", value: plan.framework }] : []),
+      ...(plan?.algorithm ? [{ label: locale === "ja" ? "アルゴリズム" : "Algorithm", value: plan.algorithm }] : []),
+      ...(plan?.framework ? [{ label: locale === "ja" ? "フレームワーク" : "Framework", value: plan.framework }] : []),
       ...(source?.revision !== undefined
-        ? [{ label: "Revision", value: String(source.revision) }]
+        ? [{ label: locale === "ja" ? "リビジョン" : "Revision", value: String(source.revision) }]
         : []),
-      ...(shots ? [{ label: "Shots", value: shots.toLocaleString("en-US") }] : []),
+      ...(shots ? [{ label: locale === "ja" ? "ショット数" : "Shots", value: shots.toLocaleString(locale === "ja" ? "ja-JP" : "en-US") }] : []),
     ],
     code: source?.code
       ? {
-          label: failed ? "Best available code" : "Final code",
+          label: failed
+            ? locale === "ja" ? "利用可能な最良コード" : "Best available code"
+            : locale === "ja" ? "最終コード" : "Final code",
           language: source.language ?? plan?.framework ?? "python",
           source: source.code,
         }
@@ -227,7 +248,9 @@ export function runResultFromEvents(
     limitations,
     notice: noticeParts.length
       ? {
-          title: best ? "Why this result was not accepted" : "Why verification stopped",
+          title: best
+            ? locale === "ja" ? "この結果が採用されなかった理由" : "Why this result was not accepted"
+            : locale === "ja" ? "検証が停止した理由" : "Why verification stopped",
           body: noticeParts.join(" "),
         }
       : null,

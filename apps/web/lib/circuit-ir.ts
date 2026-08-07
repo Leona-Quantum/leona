@@ -1,3 +1,4 @@
+import { FRAMEWORK_VALUES } from "@majorana/contracts-gen/enums";
 import { parseGateAngle } from "./gate-angle.ts";
 import {
   type BuilderStep,
@@ -8,6 +9,23 @@ import { MAX_VIEWABLE_QUBITS, MAX_VIEWABLE_STEPS } from "./studio-parse.ts";
 
 export const CIRCUIT_IR_SCHEMA = "majorana.circuit-ir";
 export const CIRCUIT_IR_VERSION = 1;
+
+/**
+ * The frameworks a Circuit IR document may declare — the contract's `Framework`,
+ * not a copy of it.
+ *
+ * This was six hand-written string comparisons, and the failure they invite is
+ * one-directional and silent: a framework added to the contract but missed here
+ * makes `parseCircuitIR` return null, so the canvas simply does not render for
+ * a valid circuit. Nothing throws and nothing logs. PR 262 added three frameworks
+ * across seven sites; two of them were TypeScript registries exactly like this
+ * one, and that is what put this on the roadmap.
+ */
+export type CircuitIRFramework = (typeof FRAMEWORK_VALUES)[number];
+
+export function isCircuitIRFramework(value: unknown): value is CircuitIRFramework {
+  return typeof value === "string" && (FRAMEWORK_VALUES as readonly string[]).includes(value);
+}
 
 const MAX_TEXT = 160;
 const MAX_PARAMETERS = 8;
@@ -28,7 +46,7 @@ export interface CircuitIROperation {
 export interface CircuitIR {
   schema: typeof CIRCUIT_IR_SCHEMA;
   version: typeof CIRCUIT_IR_VERSION;
-  framework: "qiskit" | "cirq" | "pennylane";
+  framework: CircuitIRFramework;
   qubitCount: number;
   clbitCount: number;
   operationCount: number;
@@ -69,7 +87,7 @@ const TWO_QUBIT = new Set(["cx", "cz", "swap"]);
 export function parseCircuitIR(value: unknown): CircuitIR | null {
   const raw = plainRecord(value);
   if (!raw || raw.schema !== CIRCUIT_IR_SCHEMA || raw.version !== CIRCUIT_IR_VERSION) return null;
-  if (raw.framework !== "qiskit" && raw.framework !== "cirq" && raw.framework !== "pennylane") return null;
+  if (!isCircuitIRFramework(raw.framework)) return null;
   const qubitCount = boundedInteger(raw.qubit_count, 0, MAX_VIEWABLE_QUBITS);
   const clbitCount = boundedInteger(raw.clbit_count, 0, MAX_VIEWABLE_QUBITS);
   const operationCount = boundedInteger(raw.operation_count, 0, 10_000_000);

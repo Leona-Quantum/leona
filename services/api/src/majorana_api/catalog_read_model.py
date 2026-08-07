@@ -91,6 +91,30 @@ LIST_VIEW_RECORD_FIELDS: frozenset[str] = frozenset(
         "visualization",
         "decomposition",
         "portableCircuit",
+        # Roadmap §3.6. Three enum values per record — small and fixed-size, so
+        # it does not move the ceiling above meaningfully.
+        #
+        # This set and apps/web/lib/repository/types.ts's
+        # PUBLIC_REPOSITORY_LIST_FIELDS are the same list in two languages.
+        # scripts/catalog-bootstrap/from-catalog-validator.test.mjs asserts they
+        # are set-equal — the two assertions in this service's own tests are
+        # `issubset` and `<=`, which cannot see a field missing from here.
+        "sourceCoverage",
+        # Also §3.6, and added later than `sourceCoverage` on purpose: the web's
+        # `deriveInterface` reads `knownGaps[].role` to decide whether a record's
+        # interface stance is `declared-hole` or `undeclared`, and the browse
+        # list's interface filter is built from those stances. Dropping it here
+        # would not blank a chip — it would silently reclassify every declared
+        # hole as "no declared interface" in the one view a reader uses to find
+        # them, and only in production against a healthy API.
+        #
+        # It is prose-bearing and unbounded per record, which is why the byte
+        # cost is measured rather than argued: +1,037 bytes across the real
+        # 283-record corpus, ~290 KB if every record carried a gap of that size,
+        # against 770,397 projected and the 2 MB Next.js data-cache ceiling.
+        # The web-side test named above asserts that ceiling over the pinned
+        # manifest, so growth fails a test rather than a page.
+        "knownGaps",
     }
 )
 

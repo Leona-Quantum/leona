@@ -21,7 +21,7 @@ from majorana_contracts.enums import (
     VerifierDecision,
 )
 from majorana_api import credential_crypto
-from majorana_llm import CHAT_SYSTEM_PROMPT, LLMResponse, request_messages
+from majorana_llm import CHAT_SYSTEM_PROMPT, LLMResponse, request_messages, with_response_locale
 from majorana_sandbox import LocalSubprocessSandbox
 from majorana_worker import handlers
 from majorana_worker.context import RunContext
@@ -799,13 +799,38 @@ async def test_conversation_mode_answers_without_pipeline_or_sandbox():
     # edit to the assistant's persona broke this test for no behavioural reason.
     # What matters here is that chat uses the assistant prompt and not the
     # planner's (the only other live pipeline prompt in majorana_llm).
-    assert llm.request.system == CHAT_SYSTEM_PROMPT
+    assert llm.request.system == with_response_locale(
+        CHAT_SYSTEM_PROMPT,
+        "en",
+        surface="chat",
+    )
     # Asserted through `request_messages` rather than off `.messages`: that is
     # the body the provider is handed, and a turn with no history carries it in
     # `.user` with `.messages` unset. Reading the raw field made an equivalent
     # request look like a changed one.
     assert request_messages(llm.request) == [{"role": "user", "content": "What is a Bell state?"}]
     assert store.finished == [(RunStatus.SUCCEEDED, {"status": RunStatus.SUCCEEDED}, {})]
+
+
+async def test_conversation_mode_uses_the_explicit_japanese_output_locale():
+    sink = _RecordingSink()
+    ctx = RunContext(
+        run_id="japanese-conversation-test",
+        task_prompt="Explain the Bell state.",
+        mode=RunMode.CHAT,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+        response_locale="ja",
+    )
+    llm = _ConversationLLM()
+
+    await handlers._handle_conversation(ctx, _FakeStore(), llm, conversation_messages=[])
+
+    assert "出力言語: 日本語" in llm.request.system
+    assert "RESULTキー" in llm.request.system
 
 
 @pytest.mark.parametrize("mode", [RunMode.CHAT, RunMode.EXECUTE])

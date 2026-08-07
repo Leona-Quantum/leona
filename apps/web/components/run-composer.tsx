@@ -1,12 +1,16 @@
 "use client";
 
-import { useEffect, useRef, useState, type FormEvent } from "react";
+import { useEffect, useRef, useState, type FormEvent, type Ref } from "react";
 import { ChevronIcon, PaperclipIcon } from "./icons";
 import type { PublicLocale } from "../lib/public-locale";
 import { COMPOSER_MODES, type ComposerMode } from "../lib/run-mode";
 import { ghostFrame } from "../lib/composer-ghost";
+import {
+  COMPOSER_FRAMEWORKS,
+  type ComposerFramework,
+} from "../lib/framework-selection";
 
-export type ComposerFramework = "qiskit" | "pennylane" | "cirq";
+export type { ComposerFramework } from "../lib/framework-selection";
 
 export interface ComposerAttachment {
   name: string;
@@ -34,6 +38,7 @@ export function RunComposer({
   onStop,
   stopping = false,
   suggestions,
+  inputRef,
   centered = false,
   locale = "en",
 }: {
@@ -57,6 +62,8 @@ export function RunComposer({
   stopping?: boolean;
   /** Prompts the placeholder types out; Tab accepts the one on screen. */
   suggestions?: readonly string[];
+  /** Lets a prompt suggestion return focus to the shared conversation input. */
+  inputRef?: Ref<HTMLTextAreaElement>;
   centered?: boolean;
   locale?: PublicLocale;
 }) {
@@ -137,6 +144,7 @@ export function RunComposer({
           </div>
         ) : null}
         <textarea
+          ref={inputRef}
           className="mj-composer-input"
           value={value}
           onChange={(event) => onChange(event.target.value)}
@@ -228,9 +236,9 @@ export function RunComposer({
                   value={framework}
                   onChange={(event) => onFrameworkChange(event.target.value as ComposerFramework)}
                 >
-                  <option value="qiskit">Qiskit</option>
-                  <option value="cirq">Cirq</option>
-                  <option value="pennylane">PennyLane</option>
+                  {COMPOSER_FRAMEWORKS.map((option) => (
+                    <option key={option.key} value={option.key}>{option.label}</option>
+                  ))}
                 </select>
                 <ChevronIcon size={12} />
               </label>

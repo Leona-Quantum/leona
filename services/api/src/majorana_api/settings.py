@@ -8,7 +8,7 @@ import os
 from dataclasses import dataclass
 
 from .catalog_authority import CatalogAuthority
-from .rate_limit import DEFAULT_ANON_LIMIT
+from .rate_limit import DEFAULT_ANON_LIMIT, DEFAULT_TRUSTED_LIMIT
 from .tiers import TIER_ALLOWLIST_ENV, parse_developer_emails
 
 _MIN_TOKEN_LENGTH = 32
@@ -41,6 +41,36 @@ def _int_env(name: str, default: int) -> int:
     if value < 0:
         raise RuntimeError(f"{name} must be >= 0, got {value}")
     return value
+
+
+def _validate_trusted_caller_token(token: str) -> None:
+    """An empty value disables the exemption; a weak one must not silently enable it.
+
+    Held to the same bar as the deploy probe for the same reason — it is a
+    standing bearer secret on the production control plane — and to one extra
+    rule the probe does not need. The probe token is compared on a route that
+    takes a credential anyway; this one is compared on `/v1/catalog/*`, which
+    takes none, so an attacker may probe it without limit. A short or guessable
+    value here is not merely weak, it is weak against an unbounded oracle.
+    """
+    if token in _PUBLIC_PLACEHOLDERS:
+        raise RuntimeError("TRUSTED_CALLER_TOKEN is a public placeholder; generate a real secret")
+    if not token.isascii():
+        # Not style. `is_trusted_caller` refuses a non-ASCII value on BOTH sides,
+        # because `hmac.compare_digest` raises TypeError on one and the raise
+        # became a 500 on the credential-less catalog route. So a non-ASCII token
+        # here is not merely unusual — it is a secret no caller can ever present,
+        # and the service would start perfectly healthy while metering its own
+        # renderer as anonymous forever.
+        raise RuntimeError(
+            "TRUSTED_CALLER_TOKEN must be ASCII; a non-ASCII secret can never match "
+            "a presented header, so the exemption would silently never apply"
+        )
+    if len(token) < _MIN_TOKEN_LENGTH:
+        raise RuntimeError(
+            f"TRUSTED_CALLER_TOKEN must be at least {_MIN_TOKEN_LENGTH} characters "
+            "(unset it entirely to meter our own renderer as an anonymous caller)"
+        )
 
 
 def _validate_deploy_probe_token(token: str) -> None:
@@ -157,6 +187,18 @@ class Settings:
     #: refusing real readers, since an unbounded public catalog is recoverable
     #: and a throttled one looks like an outage.
     anon_rate_limit_per_minute: int = DEFAULT_ANON_LIMIT
+    #: Shared secret proving a `/v1/catalog/*` caller is our own server-side
+    #: renderer rather than an anonymous reader (`rate_limit.py`). Empty — the
+    #: default — means nobody is trusted and every caller is metered in the
+    #: anonymous bucket, which is what this service did before the exemption
+    #: existed. It is emphatically NOT a credential: it grants no read that an
+    #: anonymous caller cannot already make, only a separate rate-limit bucket.
+    trusted_caller_token: str = ""
+    #: Requests per minute for a caller that presented the token above. `0`
+    #: disables the trusted bucket, which does not disable the exemption — it
+    #: makes it unbounded. See `DEFAULT_TRUSTED_LIMIT` for what this bound is
+    #: actually protecting against, which is our own renderer looping.
+    trusted_rate_limit_per_minute: int = DEFAULT_TRUSTED_LIMIT
 
     def __post_init__(self) -> None:
         if self.local_dev_auth and self.environment != "development":
@@ -179,6 +221,19 @@ class Settings:
             )
         if self.deploy_probe_token:
             _validate_deploy_probe_token(self.deploy_probe_token)
+        if self.trusted_caller_token:
+            _validate_trusted_caller_token(self.trusted_caller_token)
+        # Two standing secrets on the same service, with very different blast
+        # radii: the probe may create and read a run, the trusted-caller token
+        # may only pick a rate-limit bucket. Sharing one value would silently
+        # promote the weaker one — anybody who learned the catalog secret would
+        # hold a write credential — and the mistake is easy to make, because the
+        # obvious way to provision the second is to copy the first.
+        if self.trusted_caller_token and self.trusted_caller_token == self.deploy_probe_token:
+            raise RuntimeError(
+                "TRUSTED_CALLER_TOKEN and DEPLOY_PROBE_TOKEN must be different secrets; "
+                "the probe token can create runs and the trusted-caller token must not"
+            )
         # Here rather than in `from_env` so it also holds for a Settings built
         # directly — the deploy probe and the tests both do that, and a guard
         # that only covers one construction path is a guard with a way round it.
@@ -251,4 +306,8 @@ class Settings:
             vqe_candidate_execution=vqe_candidate_execution,
             vqe_production_execution=vqe_production_execution,
             anon_rate_limit_per_minute=_int_env("ANON_RATE_LIMIT_PER_MINUTE", DEFAULT_ANON_LIMIT),
+            trusted_caller_token=os.environ.get("TRUSTED_CALLER_TOKEN", "").strip(),
+            trusted_rate_limit_per_minute=_int_env(
+                "TRUSTED_RATE_LIMIT_PER_MINUTE", DEFAULT_TRUSTED_LIMIT
+            ),
         )

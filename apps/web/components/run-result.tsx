@@ -1,8 +1,9 @@
 import type { ReactNode } from "react";
 
-import { formatShare } from "../lib/simulation-visual.ts";
 import type { RunResultView } from "../lib/run-result.ts";
+import { ResultVisualizations } from "./result-visualization";
 import { RunCodeExport } from "./run-code-export";
+import type { PublicLocale } from "../lib/public-locale";
 
 /**
  * The end of a run: what it measured, what it reported, and the best program it
@@ -16,21 +17,27 @@ export function RunResult({
   result,
   action,
   artifactId = null,
+  locale = "en",
+  showSummary = true,
 }: {
   result: RunResultView;
   action?: ReactNode;
   /** When the run saved an artifact, its stored QASM is what makes the
    * framework conversions, the circuit diagram and the export possible. */
   artifactId?: string | null;
+  locale?: PublicLocale;
+  /** The Run conversation renders its prose summary as a normal assistant
+   * message immediately before this structured result card. */
+  showSummary?: boolean;
 }) {
   const { distribution } = result;
   return (
-    <section className="mj-run-result" aria-label="Run result">
-      <header className="mj-run-result-head">
-        <p className="mj-run-result-summary">{result.summary}</p>
-        <ul className="mj-run-result-badges" aria-label="Result status">
+    <section className="mj-run-result" aria-label={locale === "ja" ? "実行結果" : "Run result"}>
+      <header className={`mj-run-result-head${showSummary ? "" : " mj-run-result-head--badges-only"}`}>
+        {showSummary ? <p className="mj-run-result-summary">{result.summary}</p> : null}
+        <ul className="mj-run-result-badges" aria-label={locale === "ja" ? "結果の状態" : "Result status"}>
           <li data-tone={result.trust.tone}>{result.trust.label}</li>
-          <li data-tone="neutral">{result.saved ? "Saved" : "Not saved"}</li>
+          <li data-tone="neutral">{result.saved ? locale === "ja" ? "保存済み" : "Saved" : locale === "ja" ? "未保存" : "Not saved"}</li>
         </ul>
       </header>
 
@@ -41,59 +48,12 @@ export function RunResult({
         </aside>
       ) : null}
 
-      {distribution ? (
-        <div className="mj-sim-chart">
-          <span className="mj-section-label">
-            Measured distribution · {distribution.shots.toLocaleString("en-US")} shots
-          </span>
-          <div className="mj-sim-chart-rows">
-            {distribution.data.bars.map((bar) => (
-              <div
-                className={bar.peak ? "mj-sim-chart-row is-peak" : "mj-sim-chart-row"}
-                title={`|${bar.bitstring}⟩ · ${bar.count.toLocaleString("en-US")} / ${distribution.shots.toLocaleString("en-US")} · ${formatShare(bar.share, "en-US")}`}
-                key={bar.bitstring}
-              >
-                <code>{bar.bitstring}</code>
-                <span className="mj-sim-chart-track">
-                  <span
-                    className="mj-sim-chart-fill"
-                    style={{ width: `${Math.max(bar.share * 100, 0.75)}%` }}
-                  />
-                </span>
-                <span className="mj-sim-chart-value">{formatShare(bar.share, "en-US")}</span>
-              </div>
-            ))}
-            {distribution.data.otherStates ? (
-              <div
-                className="mj-sim-chart-row is-other"
-                title={`${distribution.data.otherStates} further states · ${distribution.data.otherShots.toLocaleString("en-US")} / ${distribution.shots.toLocaleString("en-US")}`}
-              >
-                <code>…</code>
-                <span className="mj-sim-chart-track">
-                  <span
-                    className="mj-sim-chart-fill"
-                    style={{
-                      width: `${Math.max((distribution.data.otherShots / distribution.shots) * 100, 0.75)}%`,
-                    }}
-                  />
-                </span>
-                <span className="mj-sim-chart-value">+{distribution.data.otherStates}</span>
-              </div>
-            ) : null}
-          </div>
-        </div>
-      ) : null}
-
-      {result.values.length ? (
-        <dl className="mj-run-result-values">
-          {result.values.map((value) => (
-            <div key={value.label}>
-              <dt>{value.label}</dt>
-              <dd>{value.value}</dd>
-            </div>
-          ))}
-        </dl>
-      ) : null}
+      <ResultVisualizations
+        distribution={distribution}
+        traces={result.traces}
+        values={result.values}
+        locale={locale}
+      />
 
       {result.facts.length ? (
         <ul className="mj-run-result-facts">
@@ -111,12 +71,13 @@ export function RunResult({
           artifactId={artifactId}
           title={result.summary}
           fallback={result.code}
+          locale={locale}
         />
       ) : null}
 
       {result.limitations.length ? (
         <details className="mj-run-result-limits">
-          <summary>What this run does not establish</summary>
+          <summary>{locale === "ja" ? "この実行で確認できていないこと" : "What this run does not establish"}</summary>
           <p>{result.limitations.join(", ")}.</p>
         </details>
       ) : null}

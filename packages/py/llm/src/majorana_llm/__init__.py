@@ -52,6 +52,11 @@ from majorana_llm.research_evaluation import (
     ResearchValidationMetrics,
     evaluate_research_validation_fixtures,
 )
+from majorana_llm.prompt_locale import (
+    ResponseLocale,
+    normalize_response_locale,
+    with_response_locale,
+)
 
 from majorana_llm.prompts import (
     CHAT_SYSTEM_PROMPT,
@@ -141,4 +146,7 @@ __all__ = [
     "evaluate_research_validation_fixtures",
     "simple_generation_system_prompt",
     "with_execution_conversation_context",
+    "ResponseLocale",
+    "normalize_response_locale",
+    "with_response_locale",
 ]

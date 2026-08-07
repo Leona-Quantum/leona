@@ -910,7 +910,12 @@
   gap: var(--sp-2);
   margin-bottom: var(--sp-4);
 }
-.mj-repository-category-nav button {
+/* Anchors since §0.5.1 — each category is a URL, so a section can be linked and
+   reached without JS. Styled as the buttons they replaced: the affordance the
+   reader learned did not change, only what happens on a middle-click. */
+.mj-repository-category-nav a {
+  display: inline-flex;
+  align-items: center;
   min-height: 30px;
   padding: 0 var(--sp-3);
   border: 1px solid var(--border-0);
@@ -919,10 +924,11 @@
   background: var(--bg-1);
   font: inherit;
   font-size: var(--fs-12);
+  text-decoration: none;
   cursor: pointer;
 }
-.mj-repository-category-nav button:hover,
-.mj-repository-category-nav button.is-active {
+.mj-repository-category-nav a:hover,
+.mj-repository-category-nav a.is-active {
   border-color: var(--accent);
   color: var(--text-0);
   background: var(--bg-2);
@@ -3645,6 +3651,54 @@
   font-family: var(--font-mono);
   font-size: var(--fs-12);
   font-variant-numeric: tabular-nums;
+}
+.mj-agent-activity .mj-agent-activity-progress {
+  display: grid;
+  grid-auto-columns: minmax(72px, 1fr);
+  grid-auto-flow: column;
+  gap: 2px;
+  margin: 0;
+  padding: 0 var(--sp-1);
+  overflow-x: auto;
+  list-style: none;
+}
+.mj-agent-activity-progress li {
+  display: grid;
+  min-width: 0;
+  gap: var(--sp-1);
+}
+.mj-agent-activity-progress li + li {
+  margin-top: 0;
+}
+.mj-agent-activity-progress li > span[aria-hidden="true"] {
+  display: block;
+  height: 3px;
+  border-radius: 2px;
+  background: var(--border-0);
+}
+.mj-agent-activity-progress li[data-state="done"] > span[aria-hidden="true"] {
+  background: var(--mono-tint);
+}
+.mj-agent-activity-progress li[data-state="active"] > span[aria-hidden="true"] {
+  background: var(--accent);
+}
+.mj-agent-activity-progress li[data-state="warn"] > span[aria-hidden="true"] {
+  background: var(--warn);
+}
+.mj-agent-activity-progress li[data-state="error"] > span[aria-hidden="true"] {
+  background: var(--err);
+}
+.mj-agent-activity-progress small {
+  overflow: hidden;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.2;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.mj-agent-activity-progress li[data-state="active"] small,
+.mj-agent-activity-progress li[data-state="error"] small {
+  color: var(--text-0);
 }
 .mj-agent-activity-list {
   display: grid;
@@ -7806,6 +7860,118 @@ div.mj-rail-row:hover {
 .mj-repo-table-scroll .mj-repo-comparison-table {
   min-width: 680px;
 }
+
+/* Source coverage and declared gaps — roadmap §3.6.
+
+   The three axis states are colour-coded, and the pairing is deliberate:
+   `absent` is NOT a warning. "This paper documents no hardware run" is a fact
+   about the literature, not a defect in the record, and styling it as a
+   near-miss would push authors toward writing `unknown` to avoid the red — the
+   exact opposite of what the field is for. `unknown` is the muted one, because
+   it is the only state that means work has not happened. */
+.mj-repo-coverage {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-repo-coverage-axes {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+}
+.mj-repo-coverage-axis {
+  display: grid;
+  gap: var(--sp-1);
+  padding: var(--sp-2) var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  min-width: 0;
+}
+.mj-repo-coverage-axis dt {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-repo-coverage-axis dd {
+  margin: 0;
+  color: var(--text-0);
+  font-size: var(--fs-13);
+  font-weight: 500;
+}
+.mj-repo-coverage-axis--reported { border-color: var(--ok); }
+.mj-repo-coverage-axis--reported dd { color: var(--ok); }
+.mj-repo-coverage-axis--absent { border-color: var(--border-0); }
+.mj-repo-coverage-axis--unknown { opacity: 0.68; }
+.mj-repo-coverage-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  /* Prose, so it wraps. The nowrap default elsewhere in this file has
+     silently overflowed a card before. */
+  white-space: normal;
+}
+.mj-repo-gaps {
+  display: grid;
+  gap: var(--sp-3);
+}
+.mj-repo-gap {
+  display: grid;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-left: 3px solid var(--accent);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-repo-gap header {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: baseline;
+  gap: var(--sp-2);
+}
+.mj-repo-gap-reason {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+/* A permanent gap is not a backlog item and must not read like one. */
+.mj-repo-gap-permanent {
+  padding: 0 var(--sp-2);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+.mj-repo-gap p {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  white-space: normal;
+}
+.mj-repo-gap-citations {
+  margin: 0;
+  padding-left: var(--sp-4);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-repo-gap-citations a { overflow-wrap: anywhere; }
+.mj-repo-gaps-empty {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  white-space: normal;
+}
+/* "Nobody has looked" is a different claim from "reviewed, none found", and it
+   is the weaker one. It is muted so the two are not read as the same sentence. */
+.mj-repo-gaps-empty--unreviewed {
+  font-style: italic;
+  opacity: 0.8;
+}
 /* Numeric classical-vs-quantum table (Owner Inbox 2026-07-19): concrete
    figures/complexities sit above the prose read. */
 .mj-repo-comparison-table {
@@ -8086,7 +8252,10 @@ div.mj-rail-row:hover {
   overflow-y: auto;
   padding-right: var(--sp-1);
 }
-.mj-gate-sidebar button {
+/* Anchors since §0.5.1 — every gate is a URL, so the section is crawlable and
+   a particular gate can be sent to somebody. Styled exactly as the buttons they
+   replaced. */
+.mj-gate-sidebar a {
   display: flex;
   flex-direction: column;
   gap: 2px;
@@ -8098,11 +8267,12 @@ div.mj-rail-row:hover {
   background: transparent;
   color: var(--text-1);
   font: inherit;
+  text-decoration: none;
   cursor: pointer;
   transition: background 120ms ease-out, color 120ms ease-out, border-color 120ms ease-out;
 }
-.mj-gate-sidebar button:hover { background: var(--bg-1); color: var(--text-0); }
-.mj-gate-sidebar button.is-active {
+.mj-gate-sidebar a:hover { background: var(--bg-1); color: var(--text-0); }
+.mj-gate-sidebar a.is-active {
   background: var(--bg-1);
   border-color: var(--border-0);
   color: var(--text-0);
@@ -8209,7 +8379,7 @@ div.mj-rail-row:hover {
   .mj-gate-grid { grid-template-columns: minmax(0, 1fr); }
   .mj-gate-master { grid-template-columns: minmax(0, 1fr); }
   .mj-gate-sidebar { flex-direction: row; flex-wrap: wrap; max-height: none; }
-  .mj-gate-sidebar button { width: auto; }
+  .mj-gate-sidebar a { width: auto; }
   .mj-vlegend-tier dl > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .mj-repo-comparison-prose > div { grid-template-columns: minmax(0, 1fr); gap: var(--sp-1); }
   .mj-repo-card-top time { margin-left: 0; }
@@ -9611,6 +9781,164 @@ div.mj-rail-row:hover {
   max-width: 62ch;
 }
 
+/* ---------- what an entry takes and returns: the piece ---------- */
+/* The owner asked for the interface as a shape — "puzzle pieces that connect to
+   the corresponding pieces that fit before and after it". The shape earns its
+   place because a FLAT edge is the common case and carries information a chip
+   cannot: 121 of 283 records have no ports at all and 120 more end in a
+   measurement nothing consumes, so most pieces in this catalogue have a
+   straight side, and you can see that before reading a word.
+
+   The two readings are real text inside the piece. The notches are
+   aria-hidden — they restate what the text already says. */
+.mj-iface {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-4);
+}
+.mj-iface-piece {
+  position: relative;
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: var(--sp-3);
+  /* Room on both sides for a notch that reaches into the box, and for a tab
+     that reaches out of it. Symmetric so a piece with one open edge does not
+     sit visibly off-centre against one with two. */
+  padding: var(--sp-4) var(--sp-5);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+}
+.mj-iface-port {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  min-width: 0;
+}
+.mj-iface-port--out { text-align: right; }
+.mj-iface-port-label {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-iface-port-value {
+  color: var(--text-0);
+  font-family: var(--font-mono);
+  font-size: var(--fs-16);
+  overflow-wrap: anywhere;
+}
+.mj-iface-port-caveat {
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+
+/* A closed edge is the default, and it is drawn by drawing nothing: the piece's
+   own border is already a straight side. Only an edge that can meet something
+   gets a notch. */
+.mj-iface-edge {
+  display: none;
+  position: absolute;
+  top: 50%;
+  width: 13px;
+  height: 26px;
+  border: 1px solid var(--border-0);
+  transform: translateY(-50%);
+}
+.mj-iface-edge.is-open { display: block; }
+/* The socket: a half-disc bitten out of the left edge, filled with what is
+   BEHIND the piece so it reads as absence rather than as a second box. */
+.mj-iface-edge--in {
+  left: -1px;
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: var(--bg-1);
+}
+/* An input whose entry was written to start from |0…0⟩. Dashed and muted, not
+   warning-coloured: roadmap §6 is explicit that `unknown` must not render as a
+   near-miss, and an amber notch would say "nearly wrong" where the truth is
+   "not established". */
+.mj-iface-edge--in.is-caveated {
+  border-style: dashed;
+  border-color: var(--text-2);
+}
+/* The tab: the same half-disc pushed out of the right edge, filled with the
+   piece so it reads as part of it. Only qubits out get one — classical bits
+   are what 120 of the corpus's circuits return, and nothing takes them. */
+.mj-iface-edge--out {
+  right: -13px;
+  border-left: none;
+  border-radius: 0 999px 999px 0;
+  background: var(--bg-2);
+}
+/* A declared hole (§3.6): the edge is there and its shape is not. Dashed like
+   the caveated input above and for the same reason — roadmap §6 forbids an
+   unverified edge rendering as a near-miss — but hollow rather than filled, so
+   it reads as a socket waiting for something rather than as a finished joint.
+   Muted, never warning-coloured: a sourced declaration of what a paper omits is
+   a contribution, and colouring it as a fault would say the opposite. */
+.mj-iface-edge.is-hole {
+  border-style: dashed;
+  border-color: var(--text-2);
+  background: none;
+}
+.mj-iface-stance {
+  margin: 0;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.55;
+  max-width: 68ch;
+}
+.mj-iface-stance-link {
+  color: var(--accent);
+  font-size: var(--fs-13);
+  white-space: nowrap;
+}
+.mj-iface-neighbours {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+}
+.mj-iface-partners {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-2);
+  padding: var(--sp-3);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-control);
+}
+/* Earned and unverified are different claims, so they are different boxes. The
+   accent goes on the earned one; the unverified one is deliberately quiet. */
+.mj-iface-partners--ok { border-color: var(--accent); }
+.mj-iface-partners--unknown { border-style: dashed; }
+.mj-iface-partners-title {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-iface-partners--ok .mj-iface-partners-title strong { color: var(--accent); }
+.mj-iface-partner-list {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-iface-partner-list a {
+  color: var(--text-0);
+  font-size: var(--fs-13);
+}
+.mj-iface-partner-rest {
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-iface-partners-note {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+  max-width: 68ch;
+}
+
 @media (max-width: 720px) {
   .mj-estimate-headline { grid-template-columns: 1fr; }
   .mj-estimate-machines { grid-template-columns: 1fr; }
@@ -9620,4 +9948,75 @@ div.mj-rail-row:hover {
     gap: 2px;
   }
   .mj-estimate-row dd { text-align: left; }
+  /* One column, and the out port loses its right alignment with it: stacked,
+     right-aligned text under left-aligned text reads as two unrelated blocks. */
+  .mj-iface-piece { grid-template-columns: 1fr; }
+  .mj-iface-port--out { text-align: left; }
+}
+
+/* ---------- /repository preface (roadmap §0.5.1) ---------- */
+.mj-repo-preface {
+  max-width: 760px;
+  margin: var(--sp-8) 0 0;
+}
+.mj-repo-preface h2 {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-display);
+  font-size: var(--fs-display-3);
+  font-weight: 400;
+  letter-spacing: -0.01em;
+}
+.mj-repo-preface p {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.65;
+}
+.mj-repo-preface-kinds {
+  margin: var(--sp-5) 0 var(--sp-3);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  font-weight: 400;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+.mj-repo-preface-list {
+  display: grid;
+  gap: var(--sp-3);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+/* Two columns once there is room for the blurbs to stay readable. Four short
+   sections stacked on a wide screen read as a list of links rather than as the
+   map of the catalogue they are. */
+@media (min-width: 900px) {
+  .mj-repo-preface-list { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+}
+.mj-repo-preface-list li {
+  padding: var(--sp-3) var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+}
+.mj-repo-preface-list li > a {
+  color: var(--text-0);
+  font-size: var(--fs-16);
+  text-decoration: none;
+}
+.mj-repo-preface-list li > a:hover { color: var(--accent); }
+.mj-repo-preface-count {
+  margin-left: var(--sp-2);
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  /* The count belongs to the link beside it and must not wrap away from it. */
+  white-space: nowrap;
+}
+.mj-repo-preface-list li p {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.55;
 }

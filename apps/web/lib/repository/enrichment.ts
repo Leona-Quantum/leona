@@ -16,6 +16,8 @@ export type EntryEnrichment = Partial<
     | "industryUseCases"
     | "industryUseCasesJa"
     | "verificationMethods"
+    | "sourceCoverage"
+    | "knownGaps"
   >
 > & {
   /**
@@ -71,6 +73,58 @@ const BENNETT_WIESNER_1992: PublicRepositoryCitation = {
 };
 
 export const ENTRY_ENRICHMENT: Record<string, EntryEnrichment> = {
+  // The corpus's first authored source coverage and its first declared gap
+  // (roadmap §3.6). Every other record is all-`unknown` by the barrel's
+  // default, which is the honest state of a record nobody has read the source
+  // for — this one has been read, so it can say more.
+  //
+  // The source for these three values is the OWNER'S G1 grading of
+  // `1810.09434`, recorded verbatim in docs/gates/G1-owner-review-2026-08-06.md
+  // (B5-8, B5-9, 2026-08-06). Nothing here is inferred from the record's own
+  // prose, which is exactly the derivation §3.6 forbids.
+  //
+  //   theory     — reported. The paper states the algorithm and its objective
+  //                functions; graded CORRECT on field 3.
+  //   simulation — reported. Owner, on B5-8: "Here we numerically simulate our
+  //                algorithms with 4-qubit Hamiltonians."
+  //   hardware   — absent, NOT unknown. The paper was read end to end for G1
+  //                and documents no device run. That is the distinction the
+  //                three-valued type exists for: somebody looked.
+  //
+  // And the gap is the one the owner named as the product direction (D85.2):
+  // the paper publishes no error data for its own simulations, so the number a
+  // reader needs is missing from the literature rather than from us. Reason is
+  // `not_stated_in_source` rather than a permanent one, because a Leona
+  // reproduction can close it — which is precisely §0.5.4's point.
+  "vqe-ssvqe": {
+    sourceCoverage: { theory: "reported", simulation: "reported", hardware: "absent" },
+    knownGaps: [
+      {
+        role: "readout",
+        reason: "not_stated_in_source",
+        detail:
+          "The paper reports no error or precision figures for its own 4-qubit simulations — there is no data table behind the simulated results, so the accuracy an implementer should expect is not recoverable from this source. Owner review of arXiv:1810.09434, G1 field B5-9, 2026-08-06.",
+        detailJa:
+          "本論文は自身の4量子ビットシミュレーションについて誤差・精度の数値を報告していません。結果を裏づけるデータ表がないため、実装者が期待できる精度をこの文献から復元することはできません。arXiv:1810.09434 のオーナーレビュー、G1 フィールド B5-9、2026-08-06。",
+        // The paper itself, because the claim being sourced is a claim ABOUT
+        // this paper — that it is silent on error. A gap whose evidence lives
+        // only in prose gives a reader nothing to check it against, and the
+        // renderer links `citations` and nothing else.
+        citations: [
+          {
+            title: "Subspace-search variational quantum eigensolver for excited states",
+            authors: "K. M. Nakanishi, K. Mitarai, K. Fujii",
+            year: "2019",
+            url: "https://arxiv.org/abs/1810.09434",
+            relevance:
+              "The source this gap is declared against. Read end to end for gate G1 on 2026-08-06; it reports simulated results for 4-qubit Hamiltonians but publishes no error or precision figures for them.",
+            relevanceJa:
+              "この欠落が宣言されている出典です。2026-08-06 にゲート G1 のため全体を精読しました。4量子ビットハミルトニアンのシミュレーション結果は報告されていますが、その誤差・精度の数値は公開されていません。",
+          },
+        ],
+      },
+    ],
+  },
   // Metrics-only enrichments: these slugs already carry prose comparisons in
   // their raw data; the barrel merges the table in (Owner Inbox 2026-07-19).
   "quantum-fourier-transform": {

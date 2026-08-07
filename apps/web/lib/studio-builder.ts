@@ -256,6 +256,47 @@ function pyquilOperation(step: BuilderStep): string {
   }
 }
 
+function qiboOperation(step: BuilderStep): string {
+  const [a, b] = step.qubits;
+  switch (step.gate) {
+    case "H": return `circuit.add(gates.H(${a}))`;
+    case "X": return `circuit.add(gates.X(${a}))`;
+    case "Y": return `circuit.add(gates.Y(${a}))`;
+    case "Z": return `circuit.add(gates.Z(${a}))`;
+    case "S": return `circuit.add(gates.S(${a}))`;
+    case "T": return `circuit.add(gates.T(${a}))`;
+    case "RX": return `circuit.add(gates.RX(${a}, ${step.param}))`;
+    case "RY": return `circuit.add(gates.RY(${a}, ${step.param}))`;
+    case "RZ": return `circuit.add(gates.RZ(${a}, ${step.param}))`;
+    case "CX": return `circuit.add(gates.CNOT(${a}, ${b}))`;
+    case "CZ": return `circuit.add(gates.CZ(${a}, ${b}))`;
+    case "SWAP": return `circuit.add(gates.SWAP(${a}, ${b}))`;
+    case "M": return "";
+    case "CUSTOM": return "";
+  }
+}
+
+function qulacsOperation(step: BuilderStep): string {
+  const [a, b] = step.qubits;
+  switch (step.gate) {
+    case "H": return `circuit.add_gate(H(${a}))`;
+    case "X": return `circuit.add_gate(X(${a}))`;
+    case "Y": return `circuit.add_gate(Y(${a}))`;
+    case "Z": return `circuit.add_gate(Z(${a}))`;
+    case "S": return `circuit.add_gate(S(${a}))`;
+    case "T": return `circuit.add_gate(T(${a}))`;
+    // Qulacs uses exp(+i theta Pauli/2); portable angles use exp(-i theta Pauli/2).
+    case "RX": return `circuit.add_gate(RX(${a}, -(${step.param})))`;
+    case "RY": return `circuit.add_gate(RY(${a}, -(${step.param})))`;
+    case "RZ": return `circuit.add_gate(RZ(${a}, -(${step.param})))`;
+    case "CX": return `circuit.add_gate(CNOT(${a}, ${b}))`;
+    case "CZ": return `circuit.add_gate(CZ(${a}, ${b}))`;
+    case "SWAP": return `circuit.add_gate(SWAP(${a}, ${b}))`;
+    case "M": return "";
+    case "CUSTOM": return "";
+  }
+}
+
 /**
  * Classiq's Qmod, in its Python-embedded form. Gate names and argument order are
  * taken from Classiq's own standard-gate reference: single-qubit gates take a
@@ -405,6 +446,8 @@ export function generateBuilderCode(
     "circuit = Circuit()",
     ...braketLines,
     ...(measured ? [`circuit.measure(range(${qubitCount}))`] : []),
+    "",
+    "FINAL_CIRCUIT = circuit",
   ].join("\n");
 
   const openqasmLines = flattenedOperations.map(openqasmOperation).filter(Boolean);
@@ -428,6 +471,33 @@ export function generateBuilderCode(
     ...(measured ? [`ro = program.declare("ro", "BIT", ${qubitCount})`] : []),
     ...pyquilLines,
     ...(measured ? Array.from({ length: qubitCount }, (_, qubit) => `program += MEASURE(${qubit}, ro[${qubit}])`) : []),
+    "",
+    "FINAL_CIRCUIT = program",
+  ].join("\n");
+
+  const qiboLines = flattenedOperations.map(qiboOperation).filter(Boolean);
+  const qibo = [
+    "from qibo import Circuit, gates",
+    ...(usesAngle ? ["from math import pi"] : []),
+    "",
+    `circuit = Circuit(${qubitCount})`,
+    ...qiboLines,
+    ...(measured ? [`circuit.add(gates.M(*range(${qubitCount}), register_name="ro"))`] : []),
+    "",
+    "FINAL_CIRCUIT = circuit",
+  ].join("\n");
+
+  const qulacsLines = flattenedOperations.map(qulacsOperation).filter(Boolean);
+  const qulacs = [
+    "from qulacs import QuantumCircuit",
+    `from qulacs.gate import ${["H", "X", "Y", "Z", "S", "T", "RX", "RY", "RZ", "CNOT", "CZ", "SWAP", ...(measured ? ["Measurement"] : [])].join(", ")}`,
+    ...(usesAngle ? ["from math import pi"] : []),
+    "",
+    `circuit = QuantumCircuit(${qubitCount})`,
+    ...qulacsLines,
+    ...(measured ? Array.from({ length: qubitCount }, (_, qubit) => `circuit.add_gate(Measurement(${qubit}, ${qubit}))`) : []),
+    "",
+    "FINAL_CIRCUIT = circuit",
   ].join("\n");
 
   const qmodLines = flattenedOperations.map(qmodOperation).filter(Boolean);
@@ -455,5 +525,5 @@ export function generateBuilderCode(
       : []),
   ].join("\n");
 
-  return { qiskit, pennylane, cirq, cudaq, braket, openqasm3, pyquil, qmod };
+  return { qiskit, pennylane, cirq, cudaq, braket, openqasm3, pyquil, qibo, qulacs, qmod };
 }

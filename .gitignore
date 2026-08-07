@@ -18,3 +18,4 @@ report.json
 .venv
 .venv.nosync/
 .DS_Store
+bench/k6/out/

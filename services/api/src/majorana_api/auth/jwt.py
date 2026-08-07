@@ -67,6 +67,30 @@ def _verify(
     the value is an owner action taken against a real token rather than a guess
     made in this file. `WORKOS_JWT_AUDIENCE` unset is the pre-existing behaviour,
     stated rather than implied.
+
+    ## Answered 2026-08-07: production tokens carry no `aud`
+
+    The owner read a real signed-in token and reported no `aud` claim, so
+    `WORKOS_JWT_AUDIENCE` **stays unset** and this is now a settled configuration
+    rather than an open question. Recorded here rather than only in the runbook,
+    because the next person to read this docstring is the one deciding whether to
+    set it.
+
+    What that leaves as the boundary: the issuer, the per-client JWKS, and the
+    `exp`/`iat`/`sub`/`sid` requirement below. `aud` separates token *purposes*
+    within one client, and with no `aud` on any of them that separation is simply
+    not available to us — pyjwt's `audience=None` still refuses a token that
+    carries one, which is the half that actually protects this service today.
+
+    **The trap this now sets, which is why it is written down.** The correctness
+    of leaving it unset is coupled to a WorkOS *dashboard* setting nobody here
+    would think to re-check: configure a JWT template that adds an `aud`, and
+    `audience=None` starts refusing **every** request — including sign-in — on a
+    service that reports itself perfectly healthy. That is the same total outage
+    described three paragraphs up, arrived at from the opposite direction. If a
+    JWT template is ever added, this variable must be set in the same change.
+    `test_audience_unset_still_refuses_a_token_carrying_one` is the test that
+    encodes the refusal; it is passing, and it is the behaviour that would bite.
     """
     required = ["exp", "iat", "sub", "sid", "client_id"]
     if audience is not None:

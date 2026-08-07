@@ -82,6 +82,63 @@ async def test_legitimate_run_succeeds_on_local_double():
     assert result.provider == "local-subprocess"
 
 
+async def test_braket_local_simulator_succeeds_on_local_double():
+    sandbox = LocalSubprocessSandbox()
+    code = (
+        "import json\n"
+        "from braket.circuits import Circuit\n"
+        "from braket.devices import LocalSimulator\n"
+        "circuit = Circuit().x(0).measure([0])\n"
+        "counts = LocalSimulator().run(circuit, shots=32).result().measurement_counts\n"
+        "print(json.dumps({str(k): int(v) for k, v in counts.items()}))\n"
+    )
+
+    result = await run(sandbox, ExecutionSpec(code=code, timeout_s=30))
+
+    assert result.ok, result.stderr
+    assert result.stdout.strip() == '{"1": 32}'
+
+
+async def test_qibo_numpy_backend_succeeds_on_local_double():
+    sandbox = LocalSubprocessSandbox()
+    code = (
+        "import json\n"
+        "from qibo import Circuit, gates\n"
+        "from qibo.backends import NumpyBackend\n"
+        "circuit = Circuit(1)\n"
+        "circuit.add(gates.X(0))\n"
+        "circuit.add(gates.M(0, register_name='ro'))\n"
+        "backend = NumpyBackend()\n"
+        "backend.set_seed(7)\n"
+        "result = backend.execute_circuit(circuit, nshots=16)\n"
+        "print(json.dumps({'ones': int(result.samples(binary=True).sum())}))\n"
+    )
+
+    result = await run(sandbox, ExecutionSpec(code=code, timeout_s=30))
+
+    assert result.ok, result.stderr
+    assert result.stdout.strip() == '{"ones": 16}'
+
+
+async def test_qulacs_succeeds_on_local_double():
+    sandbox = LocalSubprocessSandbox()
+    code = (
+        "import json\n"
+        "from qulacs import QuantumCircuit, QuantumState\n"
+        "from qulacs.gate import X\n"
+        "circuit = QuantumCircuit(1)\n"
+        "circuit.add_gate(X(0))\n"
+        "state = QuantumState(1)\n"
+        "circuit.update_quantum_state(state)\n"
+        "print(json.dumps({'samples': [int(v) for v in state.sampling(8, 7)]}))\n"
+    )
+
+    result = await run(sandbox, ExecutionSpec(code=code, timeout_s=30))
+
+    assert result.ok, result.stderr
+    assert result.stdout.strip() == '{"samples": [1, 1, 1, 1, 1, 1, 1, 1]}'
+
+
 @pytest.mark.parametrize(
     "hostile_shadow",
     [

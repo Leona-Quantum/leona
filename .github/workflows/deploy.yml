@@ -275,7 +275,23 @@ jobs:
           test "$code" = "401" || { echo "/v1/me returned $code, expected 401"; exit 1; }
           count=$(curl -sS "$url/v1/catalog/entries?view=list" | jq 'length')
           test "$count" -gt 0 || { echo "catalog returned $count entries"; exit 1; }
-          echo "dark revision healthy: $count catalog entries"
+          # The trusted-caller verdict must be READABLE, and for an unauthenticated
+          # curl it must say `anonymous`. This asserts the mechanism shipped, not
+          # that the renderer's secret is right — only the renderer can prove that,
+          # and it does, in `lib/trusted-caller.ts::reportCallerTrust`.
+          #
+          # Deliberately NOT asserting `trusted` here. This job holds no token, so
+          # the only way to make that pass would be to hand the deploy pipeline the
+          # catalog secret — and a gate that needs a secret to go green is a gate
+          # that gets deleted the first time the secret rotates.
+          trust=$(curl -sSI "$url/v1/catalog/entries?view=list" \
+            | tr -d '\r' | awk -F': ' 'tolower($1)=="x-majorana-caller-trust"{print $2}')
+          test "$trust" = "anonymous" || {
+            echo "::error::caller-trust header was '$trust', expected 'anonymous'"
+            echo "an empty value means this revision predates the trusted-caller exemption"
+            exit 1
+          }
+          echo "dark revision healthy: $count catalog entries, caller-trust readable"
 
       - name: shift api traffic
         if: steps.creds.outputs.have == 'true'

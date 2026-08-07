@@ -56,6 +56,7 @@ take the site down for everyone who is not attacking it.
 
 from __future__ import annotations
 
+import hmac
 import time
 from dataclasses import dataclass, field
 
@@ -80,10 +81,56 @@ from dataclasses import dataclass, field
 #: 1200/min is 20 requests a second from one address. Vercel's cached SSR cannot
 #: approach that; a scraper in a loop does thousands a minute and is still
 #: refused. The proper fix is to stop our own renderer sharing a bucket with
-#: anonymous callers at all — a trusted-caller exemption, written up in
-#: OWNER_TODO — after which this can come back down.
+#: anonymous callers at all — the trusted-caller exemption below — after which
+#: this can come back down.
+#:
+#: **It has NOT come down yet, and that is deliberate.** Lowering it in the same
+#: change that adds the exemption would mean that if the shared secret is absent
+#: or wrong in production, the renderer is metered at the *new, lower* ceiling —
+#: strictly worse than today, and silent in exactly the same way. The sequence is:
+#: ship the exemption, read back `X-Majorana-Caller-Trust: trusted` from the
+#: deployed service, then lower this.
 DEFAULT_ANON_LIMIT = 1200
 DEFAULT_WINDOW_S = 60.0
+
+#: Requests per window for a caller that proved it is our own renderer.
+#:
+#: ## What this bound is for, and what it is not for
+#:
+#: It is a backstop against **our own code looping** — a render path that fetches
+#: in an unbounded loop, a revalidate window set to zero, a retry with no ceiling.
+#: Those are the failures that have actually happened to this service, and an
+#: unmetered exempt path would let one of them saturate the API with nothing
+#: reporting it.
+#:
+#: It is **not** meaningful protection against a leaked token. 20000/min is 333
+#: requests a second; anybody holding the secret can read the entire 283-record
+#: corpus hundreds of times over inside this ceiling. Saying otherwise would be
+#: the kind of stated-but-unheld guarantee this module's `read_bounded_body`
+#: docstring already records once. The control for a leaked token is rotating it.
+DEFAULT_TRUSTED_LIMIT = 20_000
+
+#: Presented by our own server-side renderer to prove it is not an anonymous
+#: caller. Never sent from a browser: the value is a server-only secret, and
+#: `apps/web/lib/repository-source.ts` — the only sender — is imported solely by
+#: server components and route handlers.
+TRUSTED_CALLER_HEADER = "x-majorana-trusted-caller"
+
+#: Echoed on every metered response so the deployment can be READ BACK rather
+#: than assumed. `trusted` or `anonymous`.
+#:
+#: This is the whole reason the exemption is verifiable. Without it, a token that
+#: is missing, misspelled or stale in the renderer's environment presents exactly
+#: like a working one — the catalog keeps rendering, from the static corpus,
+#: until somebody notices the data is old. With it, one curl against the live
+#: service answers the question.
+#:
+#: The header is emitted for both verdicts on purpose. Emitting it only when
+#: trusted would make "the token is wrong" and "this build does not have the
+#: feature" the same observation, which is the failure it exists to prevent.
+#: It discloses nothing an attacker cannot already infer by sending 1300
+#: requests in a minute and seeing whether they are refused.
+CALLER_TRUST_HEADER = "X-Majorana-Caller-Trust"
 
 #: Maximum distinct addresses tracked at once. At ~80 bytes per entry this is
 #: single-digit megabytes — small enough that the cap is about bounding the
@@ -271,3 +318,54 @@ def client_address(headers: dict[str, str], peer: str | None) -> str:
 def is_rate_limited_path(path: str) -> bool:
     """True for the routes that serve data without a credential."""
     return path.startswith(LIMITED_PATH_PREFIXES)
+
+
+def is_trusted_caller(headers: dict[str, str], expected: str) -> bool:
+    """True when the caller presented our own renderer's shared secret.
+
+    ## Why a secret header here, when the module docstring rejects a header
+
+    The docstring above is explicit that `Authorization: Bearer x` cannot decide
+    whether the limiter runs, because *presenting a header* costs an attacker
+    nothing. That objection is about presence, not about proof: this compares the
+    value against a secret the attacker does not have. The distinction is the
+    whole design — `LIMITED_PATH_PREFIXES` still decides which routes are metered,
+    and this only decides **which bucket** a metered caller is counted in. There
+    is no path on which an unproven caller escapes metering entirely.
+
+    ## Unset means nobody is trusted
+
+    An empty `expected` refuses every caller, including one sending an empty
+    header. That is the direction that fails safe: a deployment that forgot to
+    set the secret meters its own renderer as anonymous, which is exactly the
+    behaviour it had before this function existed. The opposite default — empty
+    matches empty — would hand the exemption to every anonymous caller in the
+    world the moment a variable went missing.
+
+    `compare_digest` rather than `==` because the wrong-token case is reachable
+    by anyone: `/v1/catalog/*` takes no credential, so an attacker can probe this
+    comparison as often as they like and a byte-by-byte early exit would leak the
+    prefix. The secret is long enough that this is precaution rather than a live
+    threat, which is the right time to spend one function call on it.
+
+    ## The ASCII check is not defensive tidiness — it is the bug
+
+    `hmac.compare_digest` **raises TypeError on a non-ASCII `str`**. Header bytes
+    reach here latin-1 decoded, so a single `0x80` in
+    `X-Majorana-Trusted-Caller` reached this comparison, raised, and came back as
+    a **500** — on the one route in this service that takes no credential at all.
+    Anyone could produce it, cheaply, in a loop. Confirmed by probe before this
+    line existed, not reasoned about.
+
+    Refusing rather than encoding is also the *correct* answer and not merely the
+    safe one: the token is generated by `secrets.token_urlsafe` and is ASCII by
+    construction, so a non-ASCII header could never have matched one. Startup
+    validation refuses a non-ASCII configured token for the other half of it —
+    otherwise an operator could set a secret that no caller can ever present.
+    """
+    if not expected or not expected.isascii():
+        return False
+    presented = headers.get(TRUSTED_CALLER_HEADER, "")
+    if not presented or not presented.isascii():
+        return False
+    return hmac.compare_digest(presented, expected)

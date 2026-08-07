@@ -3,12 +3,9 @@
 import { Fragment, useEffect, useMemo, useState, type ReactNode } from "react";
 import {
   entryVerificationMethods,
-  getPublicRepositoryVariant,
   PUBLIC_REPOSITORY_CATEGORIES,
-  PUBLIC_REPOSITORY_FRAMEWORKS,
   type PublicRepositoryCategory,
   type PublicRepositoryListEntry,
-  type PublicRepositoryFramework,
 } from "../../lib/public-repository";
 import type { PublicLocale } from "../../lib/public-locale";
 import { VerificationTierBadge } from "../../components/repository-verification";
@@ -24,24 +21,58 @@ import {
 } from "../../lib/repository/browse-order";
 import { profilesBySlug, type RepositoryProfileList } from "../../lib/repository/profile";
 import { filterByTopic, topicOptionLabel, topicOptions } from "../../lib/repository/topic-filter";
+import { matchesRepositoryQuery } from "../../lib/repository/search";
+import {
+  PIPELINE_STANCES,
+  connectedCount,
+  deriveInterface,
+  filterByStance,
+  interfaceOptions,
+  declaresPort,
+  type EntryInterface,
+  type InterfaceStance,
+} from "../../lib/repository/interface";
 import { roleOf, TOPICS_BY_ID, type TopicId } from "../../lib/repository/topics";
+import {
+  deriveWidthFamilies,
+  foldRows,
+  widthFamilyGroup,
+  type FoldedRow,
+  type RowGroup,
+} from "../../lib/repository/families";
 
 const COPY = {
   en: {
     search: "Search the Atlas",
     placeholder: "Search algorithms, frameworks, or tags",
-    family: "Algorithm family",
-    framework: "Framework",
-    allFamilies: "All families",
-    allFrameworks: "All frameworks",
     topic: "Topic",
     allTopics: "All topics",
+    stance: "Takes / returns",
+    allStances: "Any interface",
+    stanceGroupPipeline: "In a pipeline",
+    stanceGroupNot: "Not a pipeline stage",
+    stanceConnectable: "{n} of {total} declare ports · {met} meet another entry",
+    stance_source: "Prepares a state",
+    stance_transform: "Register in, register out",
+    stance_program: "Whole program, measured",
+    // Reads as a contribution rather than a defect, because §3.6 says it is
+    // one: the record names which part its source does not state, with a
+    // citation. "Missing" or "Incomplete" would file it with `undeclared`,
+    // which is the one distinction the field exists to make.
+    "stance_declared-hole": "Declared hole, sourced",
+    stance_observable: "Observable",
+    stance_undeclared: "No declared interface",
     facet_role: "What it is",
     facet_method: "Technique",
     facet_domain: "Problem domain",
     facetDomainCount: "{n} of {total} entries",
     entry: "entry",
     entries: "entries",
+    // Shown only when folding actually removed a row, so the ordinary case
+    // stays the short sentence it was.
+    countFolded: "{rows} entries · {records} records, sized variants folded",
+    countFoldedTitle:
+      "Sized and curated variants of the same circuit are folded into one entry. Every variant is still its own page, and the widths are listed on the card.",
     view: "View",
     gateExpand: "Expand into basic gates",
     gateCollapse: "Collapse to single gate",
@@ -51,6 +82,7 @@ const COPY = {
     gateDetailHint: "Select a gate to see its circuit and decomposition.",
     variants: "Variants",
     variantOf: "variants",
+    widths: "Widths",
     star: "Star",
     unstar: "Unstar",
     starNote: "Atlas stars stay in this public list. Saving an entry to your workspace starts an unstarred private copy.",
@@ -90,18 +122,36 @@ const COPY = {
   ja: {
     search: "Atlasを検索",
     placeholder: "アルゴリズム、フレームワーク、タグを検索",
-    family: "アルゴリズムの分類",
-    framework: "フレームワーク",
-    allFamilies: "すべての分類",
-    allFrameworks: "すべてのフレームワーク",
     topic: "トピック",
     allTopics: "すべてのトピック",
+    stance: "入力 / 出力",
+    allStances: "すべてのインターフェース",
+    stanceGroupPipeline: "パイプラインの段",
+    stanceGroupNot: "段ではないもの",
+    // NOT 「うち」. That word scopes {met} inside {n}, and since §3.6 the two
+    // counts are drawn from different sets: {n} is `declaresPort` (ports only)
+    // while {met} is `connectedCount`, which counts declared holes too — and a
+    // hole is on the graph without declaring a port. The English joins the
+    // clauses with a middle dot and asserts no such containment; this now
+    // matches. Second time this locale has claimed a relationship the data does
+    // not have (the first was the unknown-verdict caption in 92dc87cb), so the
+    // rule is in NEXT.md: render `ja` before calling a UI change verified.
+    stanceConnectable: "{total}件中{n}件がポートを宣言・{met}件が他と接続",
+    stance_source: "状態を準備",
+    stance_transform: "レジスタ入力・レジスタ出力",
+    stance_program: "測定まで含む完結したプログラム",
+    "stance_declared-hole": "欠落を出典付きで明示",
+    stance_observable: "オブザーバブル",
+    stance_undeclared: "インターフェース未宣言",
     facet_role: "種別",
     facet_method: "手法",
     facet_domain: "問題領域",
     facetDomainCount: "{total}件中{n}件",
     entry: "件",
     entries: "件",
+    countFolded: "{rows}件 · レコード{records}件（サイズ違いのバリアントを統合）",
+    countFoldedTitle:
+      "同じ回路のサイズ違い・厳選されたバリアントは1件にまとめています。各バリアントは個別のページとして残り、対応する量子ビット数はカードに表示されます。",
     view: "詳細",
     gateExpand: "基本ゲートに展開",
     gateCollapse: "元のゲート表示に戻す",
@@ -111,6 +161,7 @@ const COPY = {
     gateDetailHint: "ゲートを選ぶと回路と分解が表示されます。",
     variants: "別の構成",
     variantOf: "構成違い",
+    widths: "量子ビット数",
     star: "スターを付ける",
     unstar: "スターを外す",
     starNote: "スターはAtlasの一覧に保存されます。ワークスペースに追加したコピーには引き継がれません。",
@@ -191,8 +242,19 @@ function familyLabel(family: string, locale: PublicLocale): string {
  * reversible. Each group lists the same algorithm at different sizes/forms; the
  * first slug is the canonical primary. Only hand-picked, genuinely-equivalent
  * clusters are folded, never a fuzzy title match.
+ *
+ * **These two stay hand-picked; the width families do not** (R2.6). The same
+ * inbox note asked for "qubit# variants folded into one entry", and that half is
+ * 120 records — the 15 benchmark circuits this corpus publishes at eight widths
+ * each. Fifteen more entries here would be fifteen hand-written labels that a
+ * corpus repopulation discards, so they are derived by rule in
+ * lib/repository/families and merged with these below. The rule is not a fuzzy
+ * title match either: it reads the `-Nq` slug suffix and then *checks* that the
+ * members agree on every facet a folded card filters or renders on, refusing the
+ * fold when they do not. What stays curated is what no rule can see — that
+ * `qft-resource-screen` is the same algorithm as `quantum-fourier-transform`.
  */
-const VARIANT_GROUPS: Array<{ key: string; label: string; labelJa: string; slugs: string[] }> = [
+const VARIANT_GROUPS: RowGroup[] = [
   {
     key: "qft",
     label: "Quantum Fourier transform",
@@ -207,39 +269,12 @@ const VARIANT_GROUPS: Array<{ key: string; label: string; labelJa: string; slugs
   },
 ];
 
-const SLUG_TO_GROUP = new Map<string, (typeof VARIANT_GROUPS)[number]>();
+const CURATED_SLUG_TO_GROUP = new Map<string, RowGroup>();
 for (const group of VARIANT_GROUPS) {
-  for (const slug of group.slugs) SLUG_TO_GROUP.set(slug, group);
+  for (const slug of group.slugs) CURATED_SLUG_TO_GROUP.set(slug, group);
 }
 
-type FoldedRow =
-  | { kind: "single"; entry: PublicRepositoryListEntry }
-  | { kind: "group"; group: (typeof VARIANT_GROUPS)[number]; members: PublicRepositoryListEntry[] };
-
-/**
- * Collapse curated variant clusters into a single row, preserving order by each
- * cluster's first appearance. A cluster with only one surviving member (after
- * filtering) renders as a plain entry — no pointless toggle.
- */
-function foldVariants(entries: PublicRepositoryListEntry[]): FoldedRow[] {
-  const rows: FoldedRow[] = [];
-  const emitted = new Set<string>();
-  for (const entry of entries) {
-    const group = SLUG_TO_GROUP.get(entry.slug);
-    if (!group) {
-      rows.push({ kind: "single", entry });
-      continue;
-    }
-    if (emitted.has(group.key)) continue;
-    emitted.add(group.key);
-    const members = group.slugs
-      .map((slug) => entries.find((candidate) => candidate.slug === slug))
-      .filter((candidate): candidate is PublicRepositoryListEntry => Boolean(candidate));
-    if (members.length <= 1) rows.push({ kind: "single", entry: members[0] ?? entry });
-    else rows.push({ kind: "group", group, members });
-  }
-  return rows;
-}
+type BrowseRow = FoldedRow<PublicRepositoryListEntry>;
 
 /**
  * Compact moment-aligned circuit for the gates grid — the same layout scheme
@@ -294,6 +329,9 @@ export function RepositoryBrowser({
   estimates,
   profiles,
   initialTopic = "",
+  initialStance = "",
+  initialCategory = "all",
+  initialGate = null,
 }: {
   entries: PublicRepositoryListEntry[];
   locale: PublicLocale;
@@ -319,24 +357,42 @@ export function RepositoryBrowser({
   profiles?: RepositoryProfileList | null;
   /** Resolved from `?topic=` by the server component; "" when absent or unknown. */
   initialTopic?: TopicId | "";
+  /** Resolved from `?fits=` by the server component; "" when absent or unknown. */
+  initialStance?: InterfaceStance | "";
+  /** Resolved from `?category=`; "all" when absent or unknown. */
+  initialCategory?: "all" | PublicRepositoryCategory;
+  /** Resolved from `?gate=`; null when absent. An unknown slug falls back to the first gate. */
+  initialGate?: string | null;
 }) {
   const copy = COPY[locale];
   const [query, setQuery] = useState("");
-  const [category, setCategory] = useState<"all" | PublicRepositoryCategory>("all");
-  const [family, setFamily] = useState<string>("");
-  const [framework, setFramework] = useState<"" | PublicRepositoryFramework>("");
+  // Seeded from `?category=` for the reason the two below give, plus one this
+  // control has and they do not: `gates` does not narrow the same view, it
+  // swaps it for a sidebar and a detail pane. Without an address that whole
+  // reading surface existed only after a click, so it had no link, no bookmark,
+  // no crawler, and nothing at all for a reader with JS off (§0.5.1).
+  const [category, setCategory] = useState<"all" | PublicRepositoryCategory>(initialCategory);
   // Seeded from ?topic= by the server component, never read from `window` here:
   // this page does not hydrate in either browser surface, so an effect that set
   // it would leave the entry pages' topic chips linking to a filter that never
   // applies. Seeding the initial state means the server's own HTML is filtered.
   const [topic, setTopic] = useState<TopicId | "">(initialTopic);
+  // Seeded from `?fits=` by the server component, on exactly the terms `topic`
+  // is and for the same reason: this page does not hydrate, so a filter whose
+  // only state is a `useState` may never move for anyone. Entry pages link to
+  // this control, so the link has to arrive already applied.
+  const [stance, setStance] = useState<InterfaceStance | "">(initialStance);
   const [order, setOrder] = useState<BrowseOrder>("catalog");
   const [circuitOnly, setCircuitOnly] = useState(false);
   const [starredSlugs, setStarredSlugs] = useState<Set<string>>(new Set());
   // Gate whose circuit is currently showing its basic-gate decomposition.
   const [expandedGates, setExpandedGates] = useState<Set<string>>(new Set());
   // Gate master/detail: the gate shown in the right-hand pane.
-  const [selectedGate, setSelectedGate] = useState<string | null>(null);
+  // Seeded from `?gate=` so the gates section is deep-linkable at the gate as
+  // well as at the section: the sidebar's links point at exactly this, so what a
+  // middle-click opens and what a plain click shows are the same view rather
+  // than two different readings of one control.
+  const [selectedGate, setSelectedGate] = useState<string | null>(initialGate);
   // Variant folding: the active member slug per variant group.
   const [variantActive, setVariantActive] = useState<Record<string, string>>({});
 
@@ -357,11 +413,90 @@ export function RepositoryBrowser({
     });
   }
 
-  const families = useMemo(() => Array.from(new Set(entries.map((entry) => entry.algorithmFamily))).sort(), [entries]);
   // Counted over the whole corpus rather than over what the other filters have
   // left, so the control does not renumber itself as a reader narrows — a count
   // that moves while you are reading it is not a count, it is a hint.
   const topicGroups = useMemo(() => topicOptions(entries, locale === "ja" ? "ja" : "en"), [entries, locale]);
+  /**
+   * Every entry's interface, derived once per corpus.
+   *
+   * Over the whole corpus rather than over what the other filters have left, for
+   * the same reason the topic counts are: a number that moves while a reader is
+   * looking at it is a hint, not a count.
+   */
+  const interfaces = useMemo(() => {
+    const index = new Map<string, EntryInterface>();
+    for (const entry of entries) {
+      index.set(
+        entry.slug,
+        deriveInterface({
+          slug: entry.slug,
+          topics: entry.topics ?? [],
+          category: entry.category,
+          wireCount: entry.visualization?.wires?.length ?? 0,
+          portableCircuit: entry.portableCircuit,
+          knownGaps: entry.knownGaps,
+        }),
+      );
+    }
+    return index;
+  }, [entries]);
+  const stanceOptions = useMemo(() => interfaceOptions(interfaces), [interfaces]);
+  /**
+   * Which slugs fold into one row, curated clusters and width families together.
+   *
+   * Derived over the **whole corpus**, not over what the filters have left, so a
+   * family's membership is a property of the catalogue rather than of the
+   * current query: `foldRows` drops the members a filter removed, and a group
+   * reduced to one survivor renders as a plain card. Deriving over the filtered
+   * set instead would make "8 widths" mean "8 widths that match your search",
+   * which is a different and much less useful claim.
+   *
+   * The stance comes from the same `interfaces` index the filter uses, so a
+   * family whose widths would take two different values of the "Takes /
+   * returns" control does not fold — the card would otherwise stay on screen
+   * under a filter that excludes the member it is showing.
+   *
+   * Curated clusters win a collision. Neither curated slug carries a `-Nq`
+   * suffix today, so the branch is unreachable on this corpus; it is here
+   * because "these two lists never overlap" is a property of the data, and the
+   * merge should not depend on it silently.
+   */
+  const groupOfSlug = useMemo(() => {
+    const { families } = deriveWidthFamilies(entries, (entry) => interfaces.get(entry.slug)?.stance);
+    const index = new Map<string, RowGroup>();
+    for (const family of families) {
+      const group = widthFamilyGroup(family, locale === "ja" ? "ja" : "en");
+      for (const slug of group.slugs) index.set(slug, group);
+    }
+    for (const [slug, group] of CURATED_SLUG_TO_GROUP) index.set(slug, group);
+    return (slug: string) => index.get(slug);
+  }, [entries, interfaces, locale]);
+  /**
+   * How many entries have any port at all — the number that qualifies the whole
+   * control, the way `entriesWithDomain` qualifies the domain group.
+   *
+   * It is 162 of 283 on today's corpus and the group heading says so, because a
+   * filter offering six interface kinds without that number reads as though the
+   * catalogue is a set of connectable parts. Most of it is not.
+   *
+   * `declaresPort`, not `isOnGraph`: since §3.6 a declared hole is on the graph
+   * without declaring a port, and the sentence beside this number says "declare
+   * ports". `isOnGraph` here would have made the copy false the day the first
+   * hole was authored, with nothing failing.
+   */
+  const connectableEntries = useMemo(
+    () => [...interfaces.values()].filter(declaresPort).length,
+    [interfaces],
+  );
+  /**
+   * How many of those meet another entry at all — 87 on today's corpus, against
+   * the 162 that declare ports. Both numbers are in the heading because the gap
+   * between them IS the state of the catalogue: 75 entries publish a port that is
+   * the only one of its width and type here, and a control showing only the
+   * larger figure would read as a parts bin.
+   */
+  const meetingEntries = useMemo(() => connectedCount(interfaces), [interfaces]);
   /**
    * How many entries carry ANY domain — a distinct count, not the sum of the
    * per-topic ones: HHL is both `finance` and `linear-algebra`, so adding the
@@ -377,29 +512,19 @@ export function RepositoryBrowser({
     [entries],
   );
   const filteredEntries = useMemo(() => {
-    const normalizedQuery = query.trim().toLowerCase();
     const matched = entries.filter((entry) => {
-      const matchesQuery = !normalizedQuery || [
-        entry.title,
-        entry.titleJa,
-        entry.algorithmFamily,
-        entry.framework,
-        entry.description,
-        entry.descriptionJa,
-        entry.provenance,
-        ...entry.tags,
-      ].join(" ").toLowerCase().includes(normalizedQuery);
+      // Through the shared predicate, not inline: removing the family control
+      // made this haystack the only way those 57 values stay reachable, so it
+      // has to live where the corpus audit and a unit test can read the real
+      // one (lib/repository/search).
       const matchesCategory = category === "all" || entry.category === category;
-      const matchesFamily = !family || entry.algorithmFamily === family;
-      const variant = framework ? getPublicRepositoryVariant(entry, framework) : null;
-      const matchesFramework = !framework || variant?.status === "native" || variant?.status === "conversion";
-      return matchesQuery && matchesCategory && matchesFamily && matchesFramework;
+      return matchesRepositoryQuery(entry, query) && matchesCategory;
     });
-    // Applied through the shared helper rather than as another clause here: the
-    // browse <select> does not hydrate in either browser surface, so the rule
-    // has to live where a unit test can reach it (lib/repository/topic-filter).
-    return filterByTopic(matched, topic);
-  }, [category, entries, family, framework, query, topic]);
+    // Applied through the shared helpers rather than as more clauses here, so
+    // each rule sits somewhere a unit test can reach it
+    // (lib/repository/topic-filter, lib/repository/interface).
+    return filterByStance(filterByTopic(matched, topic), interfaces, stance);
+  }, [category, entries, interfaces, query, stance, topic]);
 
   /** slug -> its cost row, when the API supplied a listing. */
   const costBySlug = useMemo(() => {
@@ -466,12 +591,11 @@ export function RepositoryBrowser({
   function clearFilters() {
     setQuery("");
     setCategory("all");
-    setFamily("");
-    setFramework("");
     // Including one that may have arrived from `?topic=` rather than from this
     // control — the button offered by the empty state has to be able to empty
     // every filter, or it hands back a list that is still filtered.
     setTopic("");
+    setStance("");
     setCircuitOnly(false);
   }
 
@@ -484,10 +608,46 @@ export function RepositoryBrowser({
     });
   }
 
-  function activeMember(row: Extract<FoldedRow, { kind: "group" }>): PublicRepositoryListEntry {
+  /**
+   * Which member's card a folded row shows.
+   *
+   * A reader's own pick always wins. Absent one it depends on whether the list
+   * is *ranked*, and the two cases are genuinely different:
+   *
+   * **Under a ranking** the row opens on the member that placed it — the first
+   * of its members in the current order, which under "deepest first" is the
+   * deepest and under "shallowest first" the shallowest. Showing `members[0]`
+   * there would rank a row by its 16-qubit circuit and then describe its
+   * 2-qubit one, the defect `renderCostChip` already refuses to commit for
+   * cost: displaying one number while sorting on another is worse than either.
+   *
+   * **When nothing earned the position** the canonical member is the better
+   * default — the smallest width for a family, the primary slug for a curated
+   * cluster, which is `members[0]` in both. It matters because catalog order is
+   * not width order: the corpus lists `-12q` before `-16q` before `-2q`, so
+   * deferring to placement there would open every benchmark on its 12-qubit
+   * member for no reason a reader could see, and would silently change which
+   * record the two curated clusters have opened on since they shipped.
+   *
+   * `ranked` is passed in rather than read off `order` here, because the
+   * "Not ranked" section is the case that gets it wrong: those are precisely
+   * the entries the ordering *excluded*, so their `placedBy` is not a ranking
+   * result even when a ranking is active. Every call site states its own
+   * answer; there is no default to be silently wrong.
+   */
+  function activeMember(
+    row: Extract<BrowseRow, { kind: "group" }>,
+    ranked: boolean,
+  ): PublicRepositoryListEntry {
     const chosen = variantActive[row.group.key];
-    return row.members.find((member) => member.slug === chosen) ?? row.members[0];
+    const picked = row.members.find((member) => member.slug === chosen);
+    if (picked) return picked;
+    if (!ranked) return row.members[0];
+    return row.members.find((member) => member.slug === row.placedBy) ?? row.members[0];
   }
+
+  /** Whether the list currently ranks on a number at all. */
+  const listIsRanked = (orderAvailable ? order : "catalog") !== "catalog";
 
   /**
    * One card's cost, in as few characters as a card can carry.
@@ -575,9 +735,9 @@ export function RepositoryBrowser({
     );
   }
 
-  function renderRow(row: FoldedRow) {
+  function renderRow(row: BrowseRow, ranked: boolean) {
     if (row.kind === "single") return <Fragment key={row.entry.slug}>{renderRepoCard(row.entry)}</Fragment>;
-    const active = activeMember(row);
+    const active = activeMember(row, ranked);
     // A small variant switcher sits above the active member's card; picking a
     // pill swaps which sibling record the card shows.
     //
@@ -591,7 +751,14 @@ export function RepositoryBrowser({
     // visitors follow the href to the record's own page.
     const switcher = (
       <div className="mj-repo-variant-switch" role="group" aria-label={locale === "ja" ? row.group.labelJa : row.group.label}>
-        <span className="mj-repo-variant-label">{copy.variants}</span>
+        {/* "Widths" for a width family, "Variants" for a curated cluster. The
+            pills below read "2 q … 16 q" in the first case, and the switcher
+            labelled "Variants" over a row of bare widths reads as though the
+            eight were eight different circuits — which is the belief R2.6
+            exists to correct. */}
+        <span className="mj-repo-variant-label">
+          {row.group.memberLabels ? copy.widths : copy.variants}
+        </span>
         {row.members.map((member) => (
           <a
             key={member.slug}
@@ -605,7 +772,7 @@ export function RepositoryBrowser({
               setVariantActive((current) => ({ ...current, [row.group.key]: member.slug }));
             }}
           >
-            {locale === "ja" ? member.titleJa : member.title}
+            {row.group.memberLabels?.[member.slug] ?? (locale === "ja" ? member.titleJa : member.title)}
           </a>
         ))}
       </div>
@@ -625,17 +792,57 @@ export function RepositoryBrowser({
     }
     return Array.from(byFamily.entries())
       .sort((a, b) => a[0].localeCompare(b[0]))
-      .map(([familyKey, groupEntries]) => ({ familyKey, rows: foldVariants(groupEntries) }));
+      .map(([familyKey, groupEntries]) => ({ familyKey, rows: foldRows(groupEntries, groupOfSlug) }));
     // `ordered`, not `filteredEntries`: the body reads the former, and since R1
     // it is no longer a pure function of the latter — a structure sort or the
     // circuit-only filter would otherwise leave this grouping showing the
     // previous ordering.
-  }, [category, ordered]);
+  }, [category, groupOfSlug, ordered]);
 
   const listRows = useMemo(
-    () => (category === "gates" || category === "algorithms" ? [] : foldVariants(ordered)),
-    [category, ordered],
+    () => (category === "gates" || category === "algorithms" ? [] : foldRows(ordered, groupOfSlug)),
+    [category, groupOfSlug, ordered],
   );
+
+  /**
+   * The held-out entries fold too.
+   *
+   * No width family lands here on today's corpus — all 120 members publish a
+   * circuit, so they are rankable under every order this list offers. That is a
+   * fact about the corpus and not a property of the fold, and leaving this
+   * section unfolded would mean a family that ever *did* lose its ranking came
+   * back as eight cards in a section whose job is to explain why it is not
+   * ranked. A family split across the two sections folds within each, which is
+   * what "these are the members I am showing you" should mean in both.
+   */
+  const unrankedRows = useMemo(() => foldRows(unranked, groupOfSlug), [groupOfSlug, unranked]);
+
+  /**
+   * How many rows the reader can actually count on the page (s81).
+   *
+   * R2.6 made the header disagree with the page: it said "283 public entries"
+   * over 176 cards, because 120 records fold into 15 width families and 4 more
+   * into 2 curated clusters. Both numbers were true and the gap was never
+   * explained, so it read as "where did the other 107 go".
+   *
+   * Summed from **the same arrays the body renders**, not recomputed from the
+   * fold rule. A second derivation of "how many rows are there" is a second
+   * writer of one fact, and the two would drift the first time a view changed
+   * which set it draws from — the failure being a count that is wrong in a way
+   * only a reader counting cards would ever catch.
+   *
+   * The unranked section renders under every view, so it is added in every
+   * branch rather than only the default one.
+   */
+  const shownRowCount = useMemo(() => {
+    const main =
+      category === "gates"
+        ? gateEntries.length
+        : category === "algorithms"
+          ? algorithmGroups.reduce((total, group) => total + group.rows.length, 0)
+          : listRows.length;
+    return main + unrankedRows.length;
+  }, [algorithmGroups, category, gateEntries, listRows, unrankedRows]);
 
   // Fall back to the first gate so the detail pane is populated on the very
   // first render (before the selection effect runs / without JS), and keep the
@@ -655,20 +862,32 @@ export function RepositoryBrowser({
             type="search"
           />
         </label>
-        <label>
-          <span>{copy.family}</span>
-          <select value={family} onChange={(event) => setFamily(event.target.value)}>
-            <option value="">{copy.allFamilies}</option>
-            {families.map((option) => <option key={option} value={option}>{familyLabel(option, locale)}</option>)}
-          </select>
-        </label>
-        <label>
-          <span>{copy.framework}</span>
-          <select value={framework} onChange={(event) => setFramework(event.target.value as "" | PublicRepositoryFramework)}>
-            <option value="">{copy.allFrameworks}</option>
-            {PUBLIC_REPOSITORY_FRAMEWORKS.map((option) => <option key={option}>{option}</option>)}
-          </select>
-        </label>
+        {/* The `Algorithm family` and `Framework` selects stood here until s81.
+            Both were removed rather than restyled, and both removals were
+            measured against the corpus first (roadmap §0.3):
+
+            `algorithmFamily` was 57 free-text values over 283 entries, **33 of
+            them worn by exactly one entry** — a search box implemented as a
+            dropdown. `role` + `method` now cover it by rule, as supersets: 49
+            of the 57 families share a single role+method signature. The 8 that
+            scatter, and the 12 signatures that cover more than one family, are
+            why the fallback matters — and the fallback is exact. The search
+            input above already indexes `algorithmFamily`, and typing a family's
+            name **never misses one of its own members** (0 of 57 lossy; 47
+            return the family exactly, 10 a benign superset). Nothing became
+            unreachable. The value is still on every card, and the algorithm
+            view still groups by it.
+
+            `framework` looked like a filter and was not one. Its eight options
+            produce **five distinct result sets** — CUDA-Q, Amazon Braket,
+            PyQuil and Qmod select the identical 153 entries — and the most
+            selective option still keeps 191 of 283. It asks "can I export this
+            to Cirq", which is a question about an entry already found; the
+            entry page's export section answers it per record. `entry.framework`
+            stays in the search haystack, so the placeholder still holds.
+
+            That takes the bar from five controls to three: search · topic ·
+            takes-returns, which is the owner's "all over the place", answered. */}
         {/* One control for three facets, grouped, because the alternative is
             three more selects beside four existing ones. Every option carries
             its count: "Optimization (10)" cannot be read as a promise the way a
@@ -692,6 +911,46 @@ export function RepositoryBrowser({
                 ))}
               </optgroup>
             ))}
+          </select>
+        </label>
+        {/* What an entry takes and returns, which is a different question from
+            what it is. Two groups rather than five flat options, because the
+            split that matters is whether a record is on the pipeline graph at
+            all — 121 of the 283 are not, and the group heading carries that
+            number so the control cannot be read as a parts bin. */}
+        <label>
+          <span>{copy.stance}</span>
+          <select value={stance} onChange={(event) => setStance(event.target.value as InterfaceStance | "")}>
+            <option value="">{copy.allStances}</option>
+            {(["pipeline", "not"] as const).map((group) => {
+              // Membership from the module, and the second group is the
+              // complement of the first — never a second list. A stance in
+              // neither would vanish from this control entirely, which is
+              // invisible; in the wrong group it is at least on screen.
+              const inGroup = stanceOptions.filter(
+                (option) => PIPELINE_STANCES.has(option.stance) === (group === "pipeline"),
+              );
+              if (inGroup.length === 0) return null;
+              return (
+                <optgroup
+                  key={group}
+                  label={
+                    group === "pipeline"
+                      ? `${copy.stanceGroupPipeline} — ${copy.stanceConnectable
+                          .replace("{n}", String(connectableEntries))
+                          .replace("{total}", String(entries.length))
+                          .replace("{met}", String(meetingEntries))}`
+                      : copy.stanceGroupNot
+                  }
+                >
+                  {inGroup.map((option) => (
+                    <option key={option.stance} value={option.stance}>
+                      {`${copy[`stance_${option.stance}`]} (${option.count})`}
+                    </option>
+                  ))}
+                </optgroup>
+              );
+            })}
           </select>
         </label>
         {canOrderByCost || canOrderByStructure ? (
@@ -744,25 +1003,56 @@ export function RepositoryBrowser({
         </p>
       ) : null}
 
-      <div className="mj-repository-category-nav" aria-label={locale === "ja" ? "カテゴリ" : "Categories"}>
+      {/* Anchors that also behave as buttons, and both halves are load-bearing.
+          The `href` is what makes each category a **section** rather than a
+          view: it is a URL to link, share, bookmark and crawl, and it is the
+          only way a reader without JS reaches the gates sidebar at all — before
+          this the whole surface lived behind an onClick. The `preventDefault`
+          is what keeps the hydrated experience unchanged: switching sections
+          must not throw away the search box, the topic and the ordering the
+          reader has already set, which a real navigation would. */}
+      <nav className="mj-repository-category-nav" aria-label={locale === "ja" ? "カテゴリ" : "Categories"}>
         {PUBLIC_REPOSITORY_CATEGORIES.map((option) => (
-          <button
+          <a
             className={category === option.value ? "is-active" : ""}
             key={option.value}
-            type="button"
-            aria-pressed={category === option.value}
+            href={option.value === "all" ? "/repository" : `/repository?category=${option.value}`}
+            aria-current={category === option.value ? "page" : undefined}
             title={locale === "ja" ? option.labelJa : option.label}
-            onClick={() => setCategory(option.value)}
+            onClick={(event) => {
+              // Leave modified clicks alone — a middle-click or ⌘-click means
+              // "open this somewhere else", and it now has somewhere to go.
+              if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                return;
+              }
+              event.preventDefault();
+              setCategory(option.value);
+            }}
           >
             {locale === "ja" ? option.labelJa : option.label}
-          </button>
+          </a>
         ))}
-      </div>
+      </nav>
 
       {legend}
 
-      <p className="mj-repository-result-count" aria-live="polite">
-        {locale === "ja" ? `${structureFiltered.length}${copy.entries}` : `${structureFiltered.length} public ${structureFiltered.length === 1 ? copy.entry : copy.entries}`}
+      {/* Two numbers only when they differ. On a filtered view that folded
+          nothing — a single width, or a category with no families in it — the
+          second clause would be "176 entries · 176 records", which is noise
+          that teaches a reader the two can disagree at exactly the moment they
+          do not. */}
+      <p
+        className="mj-repository-result-count"
+        aria-live="polite"
+        title={shownRowCount !== structureFiltered.length ? copy.countFoldedTitle : undefined}
+      >
+        {shownRowCount !== structureFiltered.length
+          ? copy.countFolded
+              .replace("{rows}", String(shownRowCount))
+              .replace("{records}", String(structureFiltered.length))
+          : locale === "ja"
+            ? `${structureFiltered.length}${copy.entries}`
+            : `${structureFiltered.length} public ${structureFiltered.length === 1 ? copy.entry : copy.entries}`}
       </p>
       <p className="mj-repository-star-note">{copy.starNote}</p>
 
@@ -777,17 +1067,29 @@ export function RepositoryBrowser({
         // in the large pane on the right (Owner Inbox 2026-07-19).
         <div className="mj-gate-master">
           <nav className="mj-gate-sidebar" aria-label={copy.gateListLabel}>
+            {/* Links, on the same terms as the category strip above and for a
+                sharper version of the same reason. As buttons, 28 of the 29
+                gates existed only after a click: no crawler saw them, no reader
+                without JS could open one, and there was no way to send somebody
+                a particular gate. The href is the exact view the click produces,
+                so the two paths cannot drift into showing different things. */}
             {gateEntries.map((entry) => (
-              <button
+              <a
                 key={entry.slug}
-                type="button"
+                href={`/repository?category=gates&gate=${encodeURIComponent(entry.slug)}`}
                 className={entry.slug === activeGateSlug ? "is-active" : ""}
-                aria-current={entry.slug === activeGateSlug}
-                onClick={() => setSelectedGate(entry.slug)}
+                aria-current={entry.slug === activeGateSlug ? "true" : undefined}
+                onClick={(event) => {
+                  if (event.metaKey || event.ctrlKey || event.shiftKey || event.altKey || event.button !== 0) {
+                    return;
+                  }
+                  event.preventDefault();
+                  setSelectedGate(entry.slug);
+                }}
               >
                 <span>{locale === "ja" ? entry.titleJa : entry.title}</span>
                 <span className="mj-gate-sidebar-family">{familyLabel(entry.algorithmFamily, locale)}</span>
-              </button>
+              </a>
             ))}
           </nav>
           <div className="mj-gate-detail">
@@ -850,12 +1152,12 @@ export function RepositoryBrowser({
                 <span>{familyLabel(group.familyKey, locale)}</span>
                 <span className="mj-repo-group-count">{group.rows.length}</span>
               </summary>
-              <div className="mj-repo-list">{group.rows.map((row) => renderRow(row))}</div>
+              <div className="mj-repo-list">{group.rows.map((row) => renderRow(row, listIsRanked))}</div>
             </details>
           ))}
         </div>
       ) : (
-        <div className="mj-repo-list">{listRows.map((row) => renderRow(row))}</div>
+        <div className="mj-repo-list">{listRows.map((row) => renderRow(row, listIsRanked))}</div>
       )}
 
       {/* Entries the ordering had to leave out, kept visible and kept out of
@@ -866,7 +1168,7 @@ export function RepositoryBrowser({
         <section className="mj-repository-unranked">
           <h3>{copy.unrankedTitle} <span>{unranked.length}</span></h3>
           <p>{isProfileOrder(order) ? copy.structureUnrankedBody : copy.unrankedBody}</p>
-          <div className="mj-repo-list">{unranked.map((entry) => <Fragment key={entry.slug}>{renderRepoCard(entry)}</Fragment>)}</div>
+          <div className="mj-repo-list">{unrankedRows.map((row) => renderRow(row, false))}</div>
         </section>
       ) : null}
     </div>

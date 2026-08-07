@@ -111,7 +111,7 @@ class FrameworkProgram:
         trusted evidence the observer already computed into `result`, marked as
         derived. It is appended HERE rather than inside an adapter because the
         block reads only `_majorana_observation` — one implementation for all
-        three frameworks — and because it must run after everything the adapter
+        supported frameworks — and because it must run after everything the adapter
         emits, which the adapters build front-to-back by concatenation.
 
         It is inert without an observer to append to: with `circuit_expected`

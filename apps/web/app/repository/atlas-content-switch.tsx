@@ -19,6 +19,8 @@ import type {
 import type { RepositoryEstimateList } from "../../lib/repository/estimate";
 import type { RepositoryProfileList } from "../../lib/repository/profile";
 import type { TopicId } from "../../lib/repository/topics";
+import type { InterfaceStance } from "../../lib/repository/interface";
+import type { PublicRepositoryCategory } from "../../lib/public-repository";
 
 const COPY = {
   en: { circuits: "Circuits", vqeMethods: "VQE Methods" },
@@ -36,6 +38,9 @@ export function AtlasContentSwitch({
   estimates,
   profiles,
   initialTopic = "",
+  initialStance = "",
+  initialCategory = "all",
+  initialGate = null,
 }: {
   entries: PublicRepositoryListEntry[];
   vqeCatalog: StandardVqeCatalogBundle;
@@ -47,6 +52,9 @@ export function AtlasContentSwitch({
   estimates?: RepositoryEstimateList | null;
   profiles?: RepositoryProfileList | null;
   initialTopic?: TopicId | "";
+  initialStance?: InterfaceStance | "";
+  initialCategory?: "all" | PublicRepositoryCategory;
+  initialGate?: string | null;
 }) {
   const copy = COPY[locale];
   const [contentType, setContentType] = useState<"circuits" | "vqe">("circuits");
@@ -82,6 +90,9 @@ export function AtlasContentSwitch({
           estimates={estimates}
           profiles={profiles}
           initialTopic={initialTopic}
+          initialStance={initialStance}
+          initialCategory={initialCategory}
+          initialGate={initialGate}
         />
       ) : (
         <VqeMethodsBrowser

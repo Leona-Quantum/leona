@@ -25,6 +25,11 @@ RUN python -m pip install --no-cache-dir --only-binary=:all: \
     "qiskit-aer==0.17.2" \
     "pennylane==0.43.1" \
     "cirq-core==1.6.1" \
+    "amazon-braket-sdk==1.122.0" \
+    "amazon-braket-default-simulator==1.39.5" \
+    "numba==0.66.0" \
+    "qibo==0.3.4" \
+    "qulacs==0.6.14" \
     "gast==0.7.0"
 
 WORKDIR /tmp/run
@@ -38,5 +43,12 @@ WORKDIR /tmp/run
 # could break that handoff on file permissions, and this path is only
 # exercisable against the live provider. Settle it with a `run_command("id")`
 # probe against the real image before changing anything here.
+#
+# 2026-08-06: the probe has been run against the published image, deny-all
+# egress, and it reports `uid=0(root) gid=0(root) groups=0(root)` with
+# os.getcwd() == /tmp/run. So WORKDIR is honoured, the platform imposes no USER,
+# and the code here runs as root. That answers "is it observable"; it does not
+# answer "does a non-root USER survive the SDK's write of main.py", which is
+# still untested and is the half that decides whether this line changes.
 # nosemgrep: dockerfile.security.missing-user.missing-user
 CMD ["python"]

@@ -115,7 +115,19 @@ visible without producing unexplained "Candidate revision N" cards. Ordinary cha
 return no activity model. Code, measured values, verification evidence, stdout/stderr,
 and compilation metrics live in their owning disclosure. Generated code lets the user
 switch among retained revisions and copy the selected source without exposing raw event
-payloads. The normal RUN surface does not expose the raw durable event log.
+payloads. A compact segmented overview mirrors the same disclosure states; it is a visual
+summary, not a second source of pipeline truth. The normal RUN surface does not expose the
+raw durable event log.
+
+Structured sandbox `RESULT` data is projected by `apps/web/lib/result-visualization.ts`.
+Bitstring-valued mappings are visualized by shape rather than a framework-specific key, so
+counts, histograms, probabilities, and JSON-safe statevector amplitudes share one bounded
+distribution grammar. Numeric arrays with iteration semantics (`history`, `trace`, `curve`,
+`loss`, and equivalent terms) render as bounded convergence plots with explicit start,
+latest, range, point count, and accessible text. Parameter vectors do not become plots.
+The same projection and renderer own both Sandbox execution and Final Output, so replay and
+the completed result cannot disagree. Raw stdout/stderr remain logs and are never promoted
+to measured values.
 
 `artifact.saved` means the run materialized a private result package. It must never claim
 that the user kept it; only the explicit Keep action establishes that state.

@@ -42,7 +42,9 @@ from majorana_llm import (
     conversation_request_messages,
     default_llm,
     model_for,
+    normalize_response_locale,
     render_conversation_title_prompt,
+    with_response_locale,
 )
 from majorana_qpu import (
     QpuJobRequest,
@@ -300,6 +302,7 @@ async def handle_run_execute(
         shots=run.shots,
         timeout_s=run.timeout_s,
         sink=RepoEventSink(scope, session, run_id),
+        response_locale=normalize_response_locale(payload.get("response_locale")),
         conversation_id=run.conversation_id,
         source_code=payload.get("source_code"),
         source_framework=Framework(run.framework),
@@ -442,7 +445,7 @@ async def _title_conversation(
 
     title: str | None = None
     source = "model"
-    prompt = render_conversation_title_prompt(ctx.task_prompt)
+    prompt = render_conversation_title_prompt(ctx.task_prompt, ctx.response_locale)
     try:
         async with asyncio.timeout(_TITLE_TIMEOUT_S):
             response = await llm.complete(
@@ -734,6 +737,7 @@ async def _handle_agent_execution(
             llm=metered_llm,
             task_prompt=ctx.task_prompt,
             conversation_messages=conversation_messages or (),
+            response_locale=ctx.response_locale,
         ),
         converter=TrustedOpenQASMConverter(),
         saver=RepoReviewArtifactSaver(
@@ -752,6 +756,7 @@ async def _handle_agent_execution(
         ),
         task_prompt=ctx.task_prompt,
         conversation_messages=conversation_messages or (),
+        response_locale=ctx.response_locale,
         framework=ctx.framework,
         requested_shots=ctx.shots,
         requested_seed=ctx.seed,
@@ -1111,7 +1116,11 @@ async def _handle_conversation(
         response = await llm.complete(
             LLMRequest(
                 model=model,
-                system=CHAT_SYSTEM_PROMPT,
+                system=with_response_locale(
+                    CHAT_SYSTEM_PROMPT,
+                    ctx.response_locale,
+                    surface="chat",
+                ),
                 user=ctx.task_prompt,
                 messages=conversation_request_messages(history, ctx.task_prompt),
                 temperature=0.7,

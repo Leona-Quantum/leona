@@ -163,21 +163,23 @@ function ActivityDisclosure<TDetail>({
 export function AgentActivity<TDetail>({
   activity,
   renderDetail,
+  locale = "en",
 }: {
   activity: AgentActivityView<TDetail>;
   renderDetail: (item: AgentActivityItem<TDetail>) => ReactNode;
+  locale?: "en" | "ja";
 }): ReactNode {
   const active = activity.items.some((item) => item.state === "active");
   const resolved = activity.items.filter((item) => item.state !== "active").length;
   const warnings = activity.items.filter((item) => item.state === "warn").length;
   const errors = activity.items.filter((item) => item.state === "error").length;
   const summary = active
-    ? `${resolved}/${activity.items.length} resolved`
+    ? locale === "ja" ? `${activity.items.length}件中${resolved}件完了` : `${resolved}/${activity.items.length} resolved`
     : errors
-      ? `${errors} issue${errors === 1 ? "" : "s"}`
+      ? locale === "ja" ? `${errors}件の問題` : `${errors} issue${errors === 1 ? "" : "s"}`
       : warnings
-        ? `${warnings} limitation${warnings === 1 ? "" : "s"}`
-        : `${activity.items.length} steps`;
+        ? locale === "ja" ? `${warnings}件の制限` : `${warnings} limitation${warnings === 1 ? "" : "s"}`
+        : locale === "ja" ? `${activity.items.length}ステップ` : `${activity.items.length} steps`;
 
   return (
     <section
@@ -200,6 +202,16 @@ export function AgentActivity<TDetail>({
           {summary}
         </span>
       </header>
+
+      <ol className="mj-agent-activity-progress" aria-label={locale === "ja" ? "Agent実行の進捗" : "Agent run progress"}>
+        {activity.items.map((item) => (
+          <li data-state={item.state} key={item.id}>
+            <span aria-hidden="true" />
+            <small>{item.label}</small>
+            <span className="sr-only">{item.status}</span>
+          </li>
+        ))}
+      </ol>
 
       <div className="mj-agent-activity-list">
         {activity.items.map((item) => (

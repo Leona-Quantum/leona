@@ -24,6 +24,7 @@ from majorana_agent import (
     SimplePlan,
     SimplePipelineStatus,
     SimpleRetryTarget,
+    ToolName,
 )
 from majorana_contracts.enums import (
     Algorithm,
@@ -75,6 +76,13 @@ def _plan_payload() -> dict:
     }
 
 
+def test_every_framework_has_a_persisted_simulation_tool():
+    assert set(simple_ports_module._SIMULATION_TOOL) == set(Framework)
+    assert simple_ports_module._SIMULATION_TOOL[Framework.BRAKET] is ToolName.SIMULATE_BRAKET
+    assert simple_ports_module._SIMULATION_TOOL[Framework.QIBO] is ToolName.SIMULATE_QIBO
+    assert simple_ports_module._SIMULATION_TOOL[Framework.QULACS] is ToolName.SIMULATE_QULACS
+
+
 def _alignment_payload(
     *,
     ready: bool = True,
@@ -97,6 +105,40 @@ def _alignment_payload(
         },
         "mismatches": mismatches or [],
     }
+
+
+def test_review_follow_ups_are_optional_but_bounded_for_display():
+    output = simple_ports_module._IntentReviewOutput.model_validate(
+        {
+            "decision": "ready",
+            "confidence": "high",
+            "severity": "none",
+            "summary": "The H2 VQE result matches the requested calculation.",
+            "suggested_follow_ups": [
+                "  How does this ansatz represent H2?  ",
+                "Would a particle-preserving UCCSD ansatz improve the energy?",
+                "How does the result compare with exact diagonalization?",
+                "This fourth suggestion must be dropped.",
+            ],
+        }
+    )
+
+    assert output.suggested_follow_ups == [
+        "How does this ansatz represent H2?",
+        "Would a particle-preserving UCCSD ansatz improve the energy?",
+        "How does the result compare with exact diagonalization?",
+    ]
+    assert (
+        simple_ports_module._IntentReviewOutput.model_validate(
+            {
+                "decision": "ready",
+                "confidence": "medium",
+                "severity": "minor",
+                "summary": "No concrete mismatch was found.",
+            }
+        ).suggested_follow_ups
+        == []
+    )
 
 
 @pytest.mark.parametrize(
@@ -569,6 +611,42 @@ async def test_production_ports_complete_fixed_flow_without_strict_verification(
     assert all(result.tool_call_id.startswith("simple:") for result in observer.results)
     assert all(result.name.value != "strict_verify" for result in observer.results)
     assert all(result.state.value != "ready_for_strict_verification" for result in observer.results)
+
+
+async def test_production_flow_keeps_amazon_braket_framework_and_tool_identity():
+    plan_payload = _plan_payload()
+    plan_payload["framework"] = "braket"
+    source = (
+        "from braket.circuits import Circuit\n"
+        "FINAL_CIRCUIT = Circuit().h(0).cnot(0, 1).measure([0, 1])\n"
+        'RESULT = {"counts": {"00": 50, "11": 50}}\n'
+    )
+    llm = QueueLLM([json.dumps(plan_payload), json.dumps({"source": source})])
+    observer = Observer()
+    ports = ProductionSimplePipelinePorts(
+        store=MemoryAgentStore(),
+        observer=observer,
+        llm=llm,
+        executor=Executor(),
+        reviewer=Reviewer(),
+        converter=Converter(),
+        saver=Saver(),
+        task_prompt="prepare a two-qubit Bell state with Amazon Braket",
+        framework=Framework.BRAKET,
+        requested_shots=100,
+    )
+
+    outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
+
+    assert outcome.status is SimplePipelineStatus.SUCCEEDED
+    assert outcome.candidate is not None
+    assert outcome.candidate.framework is Framework.BRAKET
+    simulation = next(
+        result for result in observer.results if result.name is ToolName.SIMULATE_BRAKET
+    )
+    assert simulation.ok
+    assert "Amazon Braket Bell-state reference" in llm.requests[1].system
+    assert "Example 1 — Qiskit Bell state" not in llm.requests[1].system
 
 
 async def test_simple_plan_normalizes_measurement_contract_that_killed_vqe():

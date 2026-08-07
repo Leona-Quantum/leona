@@ -73,7 +73,16 @@ class LocalSubprocessSandbox:
     @property
     def environment_id(self) -> str:
         dependencies: dict[str, str | None] = {}
-        for name in ("qiskit", "cirq", "pennylane", "numpy", "scipy"):
+        for name in (
+            "qiskit",
+            "cirq",
+            "pennylane",
+            "amazon-braket-sdk",
+            "qibo",
+            "qulacs",
+            "numpy",
+            "scipy",
+        ):
             try:
                 dependencies[name] = metadata.version(name)
             except metadata.PackageNotFoundError:
