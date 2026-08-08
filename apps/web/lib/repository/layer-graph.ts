@@ -62,6 +62,14 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The same paper proves the general quadratic ODE problem is intractable for R ≥ √2: any quantum algorithm then has worst-case complexity exponential in T. Penuel et al. give a full fault-tolerant resource estimate for a Carleman-linearized lattice Boltzmann instance of this route, applied to flow past a sphere, and find (logical qubits)×(T-gates) ranging from 10^21 to 10^39, with quantum resource scaling O(Re^2.68) against classical O(Re^3) — a modest polynomial improvement and, in their words, no exponential quantum advantage. Their paper attributes that to explicit time evolution as such, not to one implementation.",
     contestedJa: "同じ論文は、R ≥ √2 のとき一般の二次常微分方程式の問題が効率的には解けないこと、すなわちどの量子アルゴリズムでも最悪計算量が T について指数的になることを証明しています。また Penuel らは、この経路を格子 Boltzmann 法に適用した場合について、球まわりの流れの抗力計算を端から端まで資源見積もりし、（論理量子ビット数）×（T ゲート数）が 10^21 から 10^39 に及ぶこと、量子側の資源スケーリングが O(Re^2.68) で古典の O(Re^3) に対する改善が多項式的にとどまることを報告しています。著者らの表現では、指数的な量子優位性はありません。この論文はその原因を、個別の実装ではなく陽的な時間発展そのものに帰しています。",
     steps: ["nonlinear-linear-embedding", "time-discretization", "quantum-linear-solve"],
+    // Both pins are this route's own first sentence: "Carleman-linearize the
+    // quadratic ODE, discretize with forward Euler". The third step is
+    // deliberately absent — the route says "a quantum linear system algorithm"
+    // and names none of the five, so that hop keeps drawing the slot.
+    via: {
+      "nonlinear-linear-embedding": "carleman-linearization",
+      "time-discretization": "forward-euler",
+    },
     citations: [
       { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Liu, Kolden, Krovi, Loureiro, Trivisa, Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
       { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
@@ -86,6 +94,11 @@ export const LAYER_GRAPH: LayerGraph = {
     // into promises a linear generator and no more, so without this the route
     // reads as skipping a conversion it does not skip.
     through: { "nonlinear-linear-embedding": "hermitian-generator" },
+    // The pin the `through` above was already relying on. Only the Koopman-von
+    // Neumann lift returns a Hermitian generator, so the narrowing was an
+    // unstated claim about *which* method fills this step; now it is stated, and
+    // a reader sees the algorithm's own name on the hop rather than the slot's.
+    via: { "nonlinear-linear-embedding": "koopman-von-neumann-lift" },
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["amplitude-estimation"],
     citations: [
@@ -105,6 +118,10 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Computational cost independent of M, the number of sets of initial data. Depending on the details of the initial data it can also display up to exponential advantage in both the dimension of the PDE and the error in computing its observables.",
     costJa: "計算費用は初期データの組数 M に依存しません。初期データの詳細によっては、偏微分方程式の次元と観測量計算の誤差の両方について、最大で指数的な優位性を示すこともあります。",
     steps: ["nonlinear-linear-embedding", "linear-ode-solve"],
+    // "Use the exact level-set mapping to a linear PDE" — this route's own
+    // summary. The linear solve it hands off to is left unpinned: it says
+    // "solve the linear problem quantumly" and names no algorithm.
+    via: { "nonlinear-linear-embedding": "level-set-linearization" },
     citations: [
       { title: "Quantum algorithms for computing observables of nonlinear partial differential equations", authors: "Jin, Liu", year: "2022", url: "https://arxiv.org/abs/2202.07834" },
     ],
@@ -122,6 +139,10 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "O(g η T poly(log(nT/ε))), where η and g measure the decay of the solution, n is the dimension, T the evolution time and ε the error.",
     costJa: "O(g η T poly(log(nT/ε)))。ここで η と g は解の減衰を測る量、n は次元、T は発展時間、ε は誤差です。",
     steps: ["nonlinear-linear-embedding", "linear-ode-solve"],
+    // "Embed the homotopy-perturbation series into a finite-dimensional linear
+    // ODE system" — this route's own summary. The solver it then calls is
+    // "a quantum linear-ODE algorithm", unnamed, so that hop stays a slot.
+    via: { "nonlinear-linear-embedding": "homotopy-perturbation-lift" },
     citations: [
       { title: "Quantum homotopy perturbation method for nonlinear dissipative ordinary differential equations", authors: "Xue, Wu, Guo", year: "2021", url: "https://arxiv.org/abs/2111.07486" },
       { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },

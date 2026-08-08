@@ -173,6 +173,8 @@ export default async function RepositoryLayersPage({
     title: entry.title,
     titleJa: entry.titleJa,
     category: entry.category,
+    description: entry.description,
+    descriptionJa: entry.descriptionJa,
   }));
 
   return (

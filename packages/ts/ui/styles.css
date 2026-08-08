@@ -10198,15 +10198,19 @@ div.mj-rail-row:hover {
 .mj-layers-census p:last-child { margin-bottom: 0; }
 
 /* The piece. Two edges, prose on each, and no verdict drawn between them. */
+/* The contract, on two rules rather than in a box.
+   Same reading as `.mj-layers-zoom` above: the owner's objection was to panels
+   appearing over a surface, and this was the other filled card on the page. It
+   keeps its two columns and its alignment — takes on the left, returns on the
+   right, which is the shape of the claim — and loses the frame. A hairline top
+   and bottom is enough to say "these two paragraphs belong together". */
 .mj-layers-piece {
   display: grid;
   grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: var(--sp-4);
   margin: var(--sp-5) 0 0;
-  padding: var(--sp-4) var(--sp-5);
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-control);
-  background: var(--bg-2);
+  padding: var(--sp-4) 0;
+  border-block: 1px solid var(--border-hairline);
 }
 .mj-layers-edge { min-width: 0; }
 .mj-layers-edge--out { text-align: right; }
@@ -10260,12 +10264,17 @@ div.mj-rail-row:hover {
    One process drawn on its own page: the two states either side and the first
    level between them. Set apart from the prose sections rather than dressed up —
    it is the subject of the page, and the sections below it are the notes. */
+/* The drawing is the page, not a panel on it.
+   *"i want the main map screen to be one big continuous surface — i don't like
+   how there are scrollable boxes that show up when things are clicked"*, owner,
+   session 94. This was a bordered, filled card with a heading over it, so
+   clicking a name on the map landed you on a document containing a picture
+   rather than on the picture. The border, the fill and the radius are gone; the
+   figure now sits on the page's own background, which is the same background the
+   map it came from sits on — so the two surfaces are one surface and the
+   transition between them has nothing to cut across. */
 .mj-layers-zoom {
-  margin: var(--sp-6) 0;
-  padding: var(--sp-5);
-  border: 1px solid var(--border-0);
-  border-radius: var(--radius-card);
-  background: var(--bg-1);
+  margin: var(--sp-5) 0 var(--sp-6);
   /* The canvas inside can be wider than the column and scrolls in its own box;
      without this the grid item refuses to shrink and the page scrolls instead. */
   min-width: 0;
@@ -10325,6 +10334,16 @@ div.mj-rail-row:hover {
   list-style: none;
 }
 .mj-layers-steps { counter-reset: mj-layer-step; }
+/* What the Atlas record says, under its title. Set like every other summary on
+   this page — muted, one step down — so it reads as a description of the link
+   above it rather than as prose of its own. */
+.mj-layers-record-blurb {
+  margin: var(--sp-1) 0 0;
+  max-width: 68ch;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.5;
+}
 .mj-layers-item,
 .mj-layers-steps li,
 .mj-layers-list li {
@@ -10523,6 +10542,16 @@ div.mj-rail-row:hover {
   font-size: var(--fs-28);
   line-height: 1.2;
 }
+/* The key, below the picture it is a key to (session 95).
+   A hairline separates it from the drawing rather than a box around it — same
+   reading as the rail and the contract: this surface is one surface, and a
+   frame drawn on part of it says otherwise. */
+.mj-strand-key {
+  margin-top: var(--sp-6);
+  padding-top: var(--sp-5);
+  border-top: 1px solid var(--border-hairline);
+}
+.mj-strand-key .mj-strand-lede { margin-bottom: var(--sp-4); }
 .mj-strand-lede {
   margin: 0 0 var(--sp-6);
   max-width: 62ch;
@@ -10736,12 +10765,17 @@ div.mj-rail-row:hover {
 }
 
 /* --- the rail ------------------------------------------------------------ */
+/* Beside the map, not floating over it.
+   The third of the three cards the owner meant by *"scrollable boxes that show
+   up when things are clicked"* — it is the one that literally appears on click,
+   because it only exists once you have focused a slot. It keeps its column and
+   its `<details>`, and loses the frame and the fill: a single rule down its left
+   edge says "this is an aside about what you are looking at" without making it a
+   second screen sitting on the first. */
 .mj-strand-rail {
   min-width: 0;
-  padding: var(--sp-4);
-  border: var(--border-hairline) solid var(--border-0);
-  border-radius: var(--radius-card);
-  background: var(--bg-1);
+  padding: 0 0 0 var(--sp-4);
+  border-left: 1px solid var(--border-hairline);
   font-size: var(--fs-13);
 }
 .mj-strand-rail > summary {
@@ -10800,6 +10834,92 @@ div.mj-rail-row:hover {
   color: var(--text-2);
   font-size: var(--fs-13);
   line-height: 1.55;
+}
+
+/* --- one surface, not a stack of screens ----------------------------------
+   The owner's session-94 brief, with emphasis: *"clicking on labels shouldn't
+   feel like it shows a completely different screen, but should look like it
+   zoomed in and the content of the screen renders in — but the animation in and
+   out is smooth and doesn't feel like a whole new screen. … that is just like
+   Prezi."*
+
+   This is a **cross-document** view transition, and choosing that over the
+   in-browser kind is the whole design. Every shape on this canvas is already a
+   plain `<a href>` in server-rendered HTML — D88.2's rule that a control which
+   only works after hydration has no address — so each click is a real
+   navigation, and a real navigation is exactly what `navigation: auto` animates.
+   The Prezi feel therefore costs no JavaScript, no client component, no canvas
+   library, and no state that a URL cannot carry. A browser without it navigates
+   as it always did; nothing is behind the animation.
+
+   Two things move. The figure carries a `view-transition-name` keyed to what it
+   is *of* (`transitionNameFor`), so a slot's figure on the map and the same
+   slot's figure on its own page are one element to the browser and it moves and
+   resizes between them — the zoom. Everything else crossfades under a slight
+   scale, so a click that lands on a figure the previous page was not showing
+   still reads as going *in* rather than as a cut.
+
+   Held to under a third of a second on purpose. A transition long enough to
+   watch is long enough to wait for, and this is a reading surface. */
+@view-transition {
+  navigation: auto;
+}
+::view-transition-old(root) {
+  animation: mj-surface-out 180ms cubic-bezier(0.4, 0, 1, 1) both;
+}
+::view-transition-new(root) {
+  animation: mj-surface-in 260ms cubic-bezier(0, 0, 0.2, 1) both;
+}
+/* The figure itself is the subject of the zoom, so it gets longer than the page
+   around it and an ease that settles rather than stops. */
+::view-transition-group(*) {
+  animation-duration: 320ms;
+  animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
+}
+@keyframes mj-surface-in {
+  from {
+    opacity: 0;
+    transform: scale(0.985);
+  }
+}
+@keyframes mj-surface-out {
+  to {
+    opacity: 0;
+    transform: scale(1.012);
+  }
+}
+/* Reduced motion takes the **motion** and keeps the continuity.
+   The opt-in stays on and the crossfade stays: a fade is not motion, and it is
+   what stops a navigation reading as a cut. What goes is everything that moves —
+   the scale on the page and the figure flying from where it was to where it now
+   is, which is precisely the effect somebody with a vestibular disorder set this
+   preference to avoid.
+
+   Written as an override rather than by gating `@view-transition` itself, which
+   would have been the obvious shape and is a trap: nesting the opt-in inside a
+   media query makes "does this browser honour a nested `@view-transition`" a
+   silent precondition of the whole feature, and a silent precondition on a thing
+   whose only symptom is "the animation did not play" is not one you find. */
+@media (prefers-reduced-motion: reduce) {
+  ::view-transition-group(*) {
+    animation: none;
+  }
+  ::view-transition-old(root) {
+    animation: mj-surface-fade-out 120ms linear both;
+  }
+  ::view-transition-new(root) {
+    animation: mj-surface-fade-in 120ms linear both;
+  }
+}
+@keyframes mj-surface-fade-in {
+  from {
+    opacity: 0;
+  }
+}
+@keyframes mj-surface-fade-out {
+  to {
+    opacity: 0;
+  }
 }
 
 /* --- the process map ------------------------------------------------------
@@ -10951,6 +11071,42 @@ div.mj-rail-row:hover {
 .mj-process--method .mj-process-name {
   fill: var(--text-2);
   font-size: 11px;
+  font-style: italic;
+}
+/* The Atlas holds a full record of this one.
+   *"specific algorithms that exist in the repository surface can be highlighted
+   too perhaps. this allows user to understand how atlas has everything about
+   specific algorithms, while this map has everything including how they fit
+   in."* — owner, session 94.
+
+   A dotted underline on the **name**, because the name is the thing that leads
+   there and the record is about the thing the name names. Underline was the one
+   decoration free on this canvas: every name here is already a link and none of
+   them was underlined, so the mark cannot be misread as "this is clickable" —
+   all of them are. Dotted rather than solid keeps it below the type in weight,
+   which is right for a mark that is true of fifteen nodes out of seventy-six and
+   must not read as the main event. `from-font` so it sits under the descenders
+   rather than through them.
+
+   Deliberately not a colour: colour on this canvas already means the accent, and
+   the accent already means hover. */
+.mj-process--atlas .mj-process-name,
+.mj-process-lane--atlas .mj-process-lane-name {
+  text-decoration: underline dotted from-font;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
+}
+
+/* A hop whose route names the algorithm that fills it (`via`).
+   The line is still a slot — thick, and clicking it still fans out every
+   recorded way through — but the name on it is a *method's* name, and this
+   surface has said since session 92 that a method's name is set in italic one
+   step down. It gets that, and not a new mark: the distinction a reader needs is
+   "this word is an algorithm, not a slot", which the type already carries, and a
+   second legend row would be a second thing to learn for a fact they can see.
+   Left at `--text-1` rather than `--text-2` because it is the label of a full
+   line on the route, not an aside hanging off one. */
+.mj-process--named .mj-process-name {
   font-style: italic;
 }
 

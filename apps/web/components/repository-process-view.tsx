@@ -1,18 +1,27 @@
 // The surface around the process map: the switch, the legend, the rail.
 //
 // Everything here is a server component. The only interactive elements are
-// `<Link>`s and one `<details>`, which is the same rule the strand view follows
-// and the same reason: a control that only works after hydration has no address,
-// so it cannot be linked, sent, bookmarked, crawled, or checked with `curl`
-// (D88.2). Opening a slot on this map is a link, not a click handler — which is
-// why `?open=` carries a set of ids rather than component state.
-import Link from "next/link";
+// `<a href>`s and one `<details>`, which is the same rule the strand view
+// follows and the same reason: a control that only works after hydration has no
+// address, so it cannot be linked, sent, bookmarked, crawled, or checked with
+// `curl` (D88.2). Opening a slot on this map is a link, not a click handler —
+// which is why `?open=` carries a set of ids rather than component state.
+//
+// **Plain anchors rather than `next/link`, deliberately (session 95.)** A
+// `<Link>` is a *same-document* navigation, and a same-document navigation is
+// the one kind `@view-transition { navigation: auto }` does not animate. The
+// canvas beside this file has always emitted plain `<a href>` — SVG has no other
+// kind — so half this surface zoomed between pages and half of it cut. There is
+// nothing to lose by matching: these pages are statically generated, carry no
+// client state to preserve across a navigation, and the transition covers the
+// document fetch by holding the old frame until the new one is ready.
 import { ProcessCanvas } from "./repository-process-map";
 import {
   bypassersOf,
   isCapability,
   layerNode,
   methodsRealizing,
+  nodesWithEntries,
   routeOf,
   rootCapabilities,
   type LayerCorpusEntry,
@@ -86,6 +95,7 @@ interface MapViewCopy {
   legendEmpty: string;
   legendTie: string;
   legendFeed: string;
+  legendAtlas: string;
   back: string;
   zoomLabel: string;
   zoomFit: string;
@@ -124,6 +134,7 @@ const COPY: Record<"en" | "ja", MapViewCopy> = {
     legendEmpty: "nothing recorded fills it",
     legendTie: "the same object on both routes",
     legendFeed: "an ingredient the route needs",
+    legendAtlas: "the Atlas has a full record of it",
     back: "All four",
     zoomLabel: "Size",
     zoomFit: "Fit",
@@ -158,6 +169,7 @@ const COPY: Record<"en" | "ja", MapViewCopy> = {
     legendEmpty: "記録された手法なし",
     legendTie: "どちらの経路でも同じ対象",
     legendFeed: "経路に必要な材料",
+    legendAtlas: "アトラスに完全な記録あり",
     back: "四つすべて",
     zoomLabel: "表示倍率",
     zoomFit: "全体表示",
@@ -219,9 +231,9 @@ export function ZoomControl({
             {text}
           </strong>
         ) : (
-          <Link key={String(rung)} href={hrefFor(rung)}>
+          <a key={String(rung)} href={hrefFor(rung)}>
             {text}
-          </Link>
+          </a>
         );
       })}
     </div>
@@ -237,9 +249,25 @@ export function ZoomControl({
 function LegendMark({
   kind,
 }: {
-  kind: "slot" | "method" | "state" | "shut" | "empty" | "tie" | "feed";
+  kind: "slot" | "method" | "state" | "shut" | "empty" | "tie" | "feed" | "atlas";
 }): React.ReactElement {
   const common = { width: 34, height: 16, viewBox: "0 0 34 16", "aria-hidden": true } as const;
+  // The mark for "the Atlas holds a record of this" is drawn on the **name**,
+  // not on the line, so the key has to show a name. Real text through the real
+  // class, for the same reason every other mark here is real SVG: a hand-drawn
+  // approximation is how a key starts describing something the canvas stopped
+  // doing.
+  if (kind === "atlas") {
+    return (
+      <svg className="mj-strand-legend-mark mj-process-key" {...common}>
+        <g className="mj-process mj-process--slot mj-process--collapsed mj-process--atlas">
+          <text className="mj-process-name" x="17" y="12" textAnchor="middle">
+            abc
+          </text>
+        </g>
+      </svg>
+    );
+  }
   if (kind === "state") {
     return (
       <svg className="mj-strand-legend-mark mj-process-key" {...common}>
@@ -290,6 +318,7 @@ function Legend({ copy }: { copy: MapViewCopy }): React.ReactElement {
     ["empty", copy.legendEmpty],
     ["tie", copy.legendTie],
     ["feed", copy.legendFeed],
+    ["atlas", copy.legendAtlas],
   ];
   return (
     <ul className="mj-strand-legend">
@@ -345,7 +374,7 @@ function Rail({
                 {item.id === focusId ? (
                   <strong aria-current="true">{label(item)}</strong>
                 ) : (
-                  <Link href={mapHref(item.id, zoom)}>{label(item)}</Link>
+                  <a href={mapHref(item.id, zoom)}>{label(item)}</a>
                 )}
               </li>
             ))}
@@ -363,7 +392,7 @@ function Rail({
             <ul>
               {ways.map((method) => (
                 <li key={method.id}>
-                  <Link href={`/repository/layers/${method.id}`}>{label(method)}</Link>
+                  <a href={`/repository/layers/${method.id}`}>{label(method)}</a>
                 </li>
               ))}
             </ul>
@@ -378,7 +407,7 @@ function Rail({
             <ul>
               {around.map((method) => (
                 <li key={method.id}>
-                  <Link href={`/repository/layers/${method.id}`}>{label(method)}</Link>
+                  <a href={`/repository/layers/${method.id}`}>{label(method)}</a>
                 </li>
               ))}
             </ul>
@@ -396,7 +425,7 @@ function Rail({
             <ul>
               {narrower.map((state) => (
                 <li key={state.id}>
-                  <Link href={`/repository/layers/${state.id}`}>{label(state)}</Link>
+                  <a href={`/repository/layers/${state.id}`}>{label(state)}</a>
                 </li>
               ))}
             </ul>
@@ -404,7 +433,7 @@ function Rail({
         </section>
 
         <p className="mj-strand-rail-writeup">
-          <Link href={`/repository/layers/${focusId}`}>{copy.writeUp}</Link>
+          <a href={`/repository/layers/${focusId}`}>{copy.writeUp}</a>
         </p>
       </div>
     </details>
@@ -413,7 +442,7 @@ function Rail({
 
 export function ProcessMapView({
   graph,
-  corpus: _corpus,
+  corpus,
   locale,
   focusId,
   openIds,
@@ -432,6 +461,12 @@ export function ProcessMapView({
   const nav = viewSwitchLabels(locale);
   const roots = rootCapabilities(graph);
   const shown = focusId ? [layerNode(graph, focusId)].filter(isCapabilityNode) : roots;
+  // Which of these shapes the Atlas holds a full record for. The owner's
+  // framing: *"atlas has everything about specific algorithms, while this map
+  // has everything including how they fit in"* — so the map says where the two
+  // meet, and says it against the corpus that actually loaded rather than
+  // against the graph's own optimism.
+  const atlas = nodesWithEntries(graph, new Set(corpus.map((entry) => entry.slug)));
 
   // `?open=` is what a reader clicked; the focused slot joins it because arriving
   // at a slot's own view with it shut would show a reader the one line they just
@@ -468,31 +503,36 @@ export function ProcessMapView({
         <div className="mj-strand-switch" role="group" aria-label={nav.view}>
           <span className="mj-strand-switch-label">{nav.view}</span>
           <span className="mj-strand-switch-on">{nav.map}</span>
-          <Link href="/repository/layers?view=strands">{nav.strands}</Link>
-          <Link href="/repository/layers?view=list">{nav.list}</Link>
+          <a href="/repository/layers?view=strands">{nav.strands}</a>
+          <a href="/repository/layers?view=list">{nav.list}</a>
         </div>
         {focusId ? (
-          <Link className="mj-strand-back" href={mapHref(null, zoom)}>
+          <a className="mj-strand-back" href={mapHref(null, zoom)}>
             {copy.back}
-          </Link>
+          </a>
         ) : null}
       </div>
 
 
+      {/* One line of orientation, then the picture.
+          What used to be here was an `<h1>`, two full paragraphs and a
+          seven-item key — around 450px of reading before the map began, on a
+          surface whose whole argument is the map. *"i want the main map screen
+          to be one big continuous surface"*, owner, session 94. The second
+          paragraph and the key are the same words, moved below the drawing:
+          both are things a reader consults *about* a picture they can already
+          see, and neither is something they need before it. */}
       <div className="mj-strand-head">
         <h1 id="layers-heading">{copy.heading}</h1>
         <p className="mj-strand-lede">{focusId ? copy.lede : copy.ledeOverview}</p>
-        <p className="mj-strand-lede">{copy.reading}</p>
       </div>
 
-      <Legend copy={copy} />
-
-      {/* Directly above the thing it sizes, below the legend — a control for the
-          picture, not for the page. The map is 1,046px wide for four routes and
-          wider than that focused, and until now the only answer to a drawing
-          that does not fit the column was to scroll it sideways: *"they can zoom
-          in and out of the page on their own"*, owner, session 92. Every line's
-          toggle carries the choice, so opening a slot does not quietly undo it. */}
+      {/* Directly above the thing it sizes — a control for the picture, not for
+          the page. The map is 1,046px wide for four routes and wider than that
+          focused, and until now the only answer to a drawing that does not fit
+          the column was to scroll it sideways: *"they can zoom in and out of the
+          page on their own"*, owner, session 92. Every line's toggle carries the
+          choice, so opening a slot does not quietly undo it. */}
       <ZoomControl current={zoom} hrefFor={(next) => zoomHref(focusId, openIds, next)} copy={copy} />
 
       <div className="mj-strand-body">
@@ -504,6 +544,8 @@ export function ProcessMapView({
               locale={locale}
               title={labelOfNode(graph, entry.id, locale)}
               scale={zoom === null ? null : zoom / 100}
+              subjectId={entry.id}
+              atlas={atlas}
             />
           ))}
           <p className="mj-strand-note">
@@ -520,6 +562,12 @@ export function ProcessMapView({
         {focusId ? (
           <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} zoom={zoom} />
         ) : null}
+      </div>
+
+      {/* The key, under the thing it is a key to. */}
+      <div className="mj-strand-key">
+        <p className="mj-strand-lede">{copy.reading}</p>
+        <Legend copy={copy} />
       </div>
     </section>
   );
