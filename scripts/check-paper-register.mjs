@@ -119,8 +119,12 @@ if (!QUIET) {
   // The two numbers the owner's "papers as traces" rests on. A paper cited from
   // both sides is one the Atlas and the map already agree about; the rest are
   // two bibliographies of one field that have never been joined.
+  // All three, because the pair is the measurement the ingestion plan is aimed
+  // at and the third is the only one that was ever written down by hand — where
+  // it went wrong by one (68 for 67) within a day. The three must satisfy
+  // node + entry − shared = the register size, and a reader can check that here.
   console.log(
-    `  ${audit.shared.length} papers are cited from both an Atlas record and a map node`,
+    `  ${audit.citedByNode.length} papers are cited by the map, ${audit.citedByEntry.length} by an Atlas record, ${audit.shared.length} by both`,
   );
   // Reported, never failed. A registered paper nothing cites is the normal state
   // of an ingestion queue: read, recorded, not yet placed. See ./papers.ts.

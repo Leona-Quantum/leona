@@ -101,6 +101,33 @@ export function paperIdFromUrl(url: string): PaperId | null {
   return null;
 }
 
+/**
+ * The URL segment for a paper on this site — `/repository/papers/<slug>`.
+ *
+ * A `PaperId` cannot be a route segment as it stands: it carries a `:` and, for
+ * every pre-2007 arXiv id and every DOI, a `/`. A segment containing a slash is
+ * two segments, and the page 404s.
+ *
+ * The mapping is `:` → `-` and `/` → `_`, and it is **checked rather than
+ * proved**. Nothing in the DOI grammar forbids an underscore, so a future row
+ * could in principle collide with another row's slug or fail to round-trip.
+ * `validatePaperRegister` refuses both, over the whole register, so the day it
+ * happens the build says so instead of serving one paper at another's address —
+ * which is the same failure the identity rule exists to stop, one layer up.
+ */
+export function paperSlug(id: PaperId): string {
+  return id.replace(":", "-").replaceAll("/", "_");
+}
+
+/** The inverse of `paperSlug`, or `null` if this is not a slug shape. */
+export function paperIdFromSlug(slug: string): PaperId | null {
+  const separator = slug.indexOf("-");
+  if (separator <= 0) return null;
+  const scheme = slug.slice(0, separator);
+  if (!PAPER_ID_SCHEMES.includes(scheme as (typeof PAPER_ID_SCHEMES)[number])) return null;
+  return `${scheme}:${slug.slice(separator + 1).replaceAll("_", "/")}`;
+}
+
 /** The address the register publishes for an id. One paper, one link. */
 export function canonicalPaperUrl(id: PaperId): string {
   if (id.startsWith("arxiv:")) return `https://arxiv.org/abs/${id.slice("arxiv:".length)}`;
@@ -235,6 +262,22 @@ export function indexPapers(register: PaperRegister): ReadonlyMap<PaperId, Regis
 export function validatePaperRegister(register: PaperRegister): string[] {
   const errors: string[] = [];
   const seen = new Set<PaperId>();
+  // Two rows whose slugs agree would put one paper at the other's address, and
+  // the loser is unreachable while the route still returns 200. Checked over
+  // the whole register because a slug collision is a property of the *set*, and
+  // no per-row rule can see it.
+  const bySlug = new Map<string, PaperId>();
+  for (const paper of register.papers) {
+    const slug = paperSlug(paper.id);
+    const other = bySlug.get(slug);
+    if (other !== undefined && other !== paper.id) {
+      errors.push(`${paper.id}: its url segment "${slug}" is already ${other}'s`);
+    }
+    bySlug.set(slug, paper.id);
+    if (paperIdFromSlug(slug) !== paper.id) {
+      errors.push(`${paper.id}: does not survive a round trip through its url segment "${slug}"`);
+    }
+  }
   for (const paper of register.papers) {
     if (seen.has(paper.id)) errors.push(`${paper.id}: listed twice`);
     seen.add(paper.id);
@@ -360,6 +403,16 @@ export interface CitationAudit {
    * any surface agree on which set that is.
    */
   citedByNode: PaperId[];
+  /**
+   * Papers an Atlas record cites, sorted.
+   *
+   * Published beside `citedByNode` because the pair is the measurement the
+   * whole ingestion plan is aimed at — two bibliographies of one field, and
+   * `shared` is where they meet. It was carried in prose in
+   * `plans/leona-map-scaling-rules.md` and was **wrong by one** (68 for 67)
+   * within a day of being written, which is the argument for computing it.
+   */
+  citedByEntry: PaperId[];
 }
 
 /**
@@ -387,6 +440,7 @@ export function auditCitations(
     uncited: [],
     shared: [],
     citedByNode: [],
+    citedByEntry: [],
   };
   const citedFromEntry = new Set<PaperId>();
   const citedFromNode = new Set<PaperId>();
@@ -413,5 +467,6 @@ export function auditCitations(
   audit.uncited = register.papers.map((paper) => paper.id).filter((id) => !cited.has(id));
   audit.shared = [...citedFromEntry].filter((id) => citedFromNode.has(id)).sort();
   audit.citedByNode = [...citedFromNode].sort();
+  audit.citedByEntry = [...citedFromEntry].sort();
   return audit;
 }

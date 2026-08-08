@@ -54,6 +54,9 @@ import {
   type LayerNode,
 } from "../lib/repository/layers";
 import { layoutProcessZoom } from "../lib/repository/process-layout";
+import { PAPER_REGISTER } from "../lib/repository/paper-register";
+import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
+import { SOURCE_COVERAGE_AXES } from "../lib/repository/types";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import {
   kindsOf,
@@ -164,6 +167,13 @@ const COPY = {
     atlasNone:
       "No record in the Atlas covers this yet. The catalogue is 283 records of circuits and primitives; this part of the literature is not in it.",
     citationsHeading: "Sources",
+    sourceOutLabel: "open the paper itself",
+    // Printed on every citation, including the ones nobody has read for this.
+    // The owner's theory-vs-experimentation question is answered here, on the
+    // map, rather than one navigation away.
+    reportsAxis: { theory: "theory", simulation: "simulation", hardware: "hardware" },
+    reportsStatus: { reported: "yes", absent: "no", unknown: "?" },
+    reportsUnread: "nobody has read this paper for what it reports",
     backToLayers: "← Layers",
     backToAtlas: "Atlas",
     layersLink: "Layers — how the pieces fit together",
@@ -287,6 +297,10 @@ const COPY = {
     atlasNone:
       "これに対応する項目は Atlas にまだありません。カタログは回路と基本要素の283件で構成されており、この領域の文献は含まれていません。",
     citationsHeading: "出典",
+    sourceOutLabel: "論文そのものを開く",
+    reportsAxis: { theory: "理論", simulation: "数値計算", hardware: "実機" },
+    reportsStatus: { reported: "あり", absent: "なし", unknown: "未確定" },
+    reportsUnread: "この論文が何を報告しているかは、まだ誰も読んでいません",
     backToLayers: "← 階層",
     backToAtlas: "Atlas",
     layersLink: "階層 — 部品どうしの組み合わさり方",
@@ -532,23 +546,71 @@ function EmptyNote({ children }: { children: string }) {
   return <p className="mj-layers-empty">{children}</p>;
 }
 
-function Citations({ node, copy }: { node: LayerNode; copy: LayersCopy }) {
+/**
+ * The sources behind a node — each now an address on this site as well as a
+ * link off it.
+ *
+ * Two links per citation, deliberately. The title goes to `/repository/papers/…`
+ * because that page is the only place that says what the paper reports and
+ * everywhere else it is cited from; the arrow goes to the paper itself, because
+ * a reader who wants the PDF should not have to make two hops for it. Both are
+ * `<a href>`, so `curl` sees the same surface a browser does.
+ *
+ * The theory/simulation/hardware line is printed **here**, on the map, rather
+ * than only on the paper page. That distinction was the owner's ask, and a fact
+ * a reader has to navigate away to see is a fact the map does not have.
+ * `unread` is printed rather than omitted — an absence that renders as silence
+ * reads as "nothing to say", which is the one thing it does not mean.
+ */
+function Citations({ node, copy, locale }: { node: LayerNode; copy: LayersCopy; locale: PublicLocale }) {
   const citations = node.citations ?? [];
   if (citations.length === 0) return null;
+  const register = indexPapers(PAPER_REGISTER);
   return (
     <section className="mj-layers-section" aria-labelledby={`sources-${node.id}`}>
       <h2 id={`sources-${node.id}`}>{copy.citationsHeading}</h2>
       <ul className="mj-layers-sources">
-        {citations.map((citation) => (
-          <li key={citation.url}>
-            <a href={citation.url} rel="noreferrer noopener" target="_blank">
-              {citation.title}
-            </a>
-            <span className="mj-layers-source-meta">
-              {citation.authors} · {citation.year}
-            </span>
-          </li>
-        ))}
+        {citations.map((citation) => {
+          // A citation whose url the register cannot key on already fails
+          // `check-paper-register.mjs`, so this branch is unreachable on a
+          // green tree. It renders the plain external link rather than a dead
+          // internal one, because a broken tree is exactly when a page must
+          // still render.
+          const paperId = paperIdFromUrl(citation.url);
+          const paper = paperId ? register.get(paperId) : undefined;
+          return (
+            <li key={citation.url}>
+              {paper ? (
+                <a href={`/repository/papers/${paperSlug(paper.id)}`}>{citation.title}</a>
+              ) : (
+                <a href={citation.url} rel="noreferrer noopener" target="_blank">
+                  {citation.title}
+                </a>
+              )}
+              {paper ? (
+                <a
+                  className="mj-layers-source-out"
+                  href={citation.url}
+                  rel="noreferrer noopener"
+                  target="_blank"
+                  aria-label={`${citation.title} — ${copy.sourceOutLabel}`}
+                >
+                  ↗
+                </a>
+              ) : null}
+              <span className="mj-layers-source-meta">
+                {citation.authors} · {citation.year}
+              </span>
+              <span className="mj-layers-source-meta">
+                {paper?.reports
+                  ? SOURCE_COVERAGE_AXES.map(
+                      (axis) => `${copy.reportsAxis[axis]} ${copy.reportsStatus[paper.reports![axis]]}`,
+                    ).join(" · ")
+                  : copy.reportsUnread}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -683,7 +745,7 @@ function CapabilityView({
       <LoopComparison graph={graph} node={node} locale={locale} copy={copy} />
 
       <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} />
-      <Citations node={node} copy={copy} />
+      <Citations node={node} copy={copy} locale={locale} />
     </>
   );
 }
@@ -891,7 +953,7 @@ function MethodView({
       </section>
 
       <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} />
-      <Citations node={node} copy={copy} />
+      <Citations node={node} copy={copy} locale={locale} />
     </>
   );
 }
