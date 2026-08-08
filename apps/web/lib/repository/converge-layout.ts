@@ -972,6 +972,18 @@ interface Placement {
   lanes: ConvergeLane[];
   inner: ConvergeState[];
   feeds: ConvergeFeed[];
+  /**
+   * The furthest right anything reaches, including text.
+   *
+   * An ingredient's name is drawn from its stub *rightwards*, so unlike a lane
+   * name — which is centred in a column sized to hold it — it can run past the
+   * edge of the canvas. Read on production: `Amplify a success branc` inside a
+   * viewport that clips, with no ellipsis to say it had been cut, which is the
+   * silent-truncation failure in its smallest form. The width is stretched to
+   * cover it after placement, which is safe because nothing else's position
+   * depends on the total width.
+   */
+  rightmost: number;
   /** Ids already given a view-transition name, so no two elements claim one. */
   named: Set<string>;
   depthCapped: boolean;
@@ -1138,6 +1150,10 @@ function placeFeeds(
     const t = (index + 1) / (strand.feeds.length + 1);
     const at = pointOn(base, bow, t);
     const fitted = fitLabel(feed.label, M.laneFont, context.columnFit);
+    context.out.rightmost = Math.max(
+      context.out.rightmost,
+      at.x + 4 + estimateTextWidth(fitted.text, M.laneFont),
+    );
     context.out.feeds.push({
       key: `${strand.key}~${feed.id}`,
       nodeId: feed.id,
@@ -1299,6 +1315,7 @@ export function layoutConverge(options: {
     inner: [],
     feeds: [],
     named: new Set(),
+    rightmost: 0,
     depthCapped: false,
     collapsed: 0,
     unpublished: 0,
@@ -1322,7 +1339,10 @@ export function layoutConverge(options: {
   }
 
   return {
-    width,
+    // Stretched to cover any ingredient name that runs past the last circle.
+    // Never shrunk: `width` is the tiled columns plus their margins, and that is
+    // the minimum whatever the labels do.
+    width: Math.max(width, round(out.rightmost + M.margin)),
     height,
     states: [...states, ...out.inner],
     lanes: out.lanes,
