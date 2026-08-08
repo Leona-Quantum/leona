@@ -1339,32 +1339,44 @@ function place(
   const spine = offsetCubic(base, bow);
   const peak = peakOf(base, bow);
 
-  // **An opened strand draws no name.** Not an oversight and not a style call.
+  // **An opened strand draws its name at the edge of its band, not of its spine.**
   //
-  // Every line on this canvas converges to a point at both circles, so the
-  // vertical room between two neighbouring lines shrinks to nothing towards the
-  // ends. A name is a box of fixed height sitting in that room, and the wider it
-  // is, the further out it reaches into the part where there is none. A shut
-  // strand's name is short and sits against its own edge, so it fits. An opened
-  // strand's name would have to sit at the edge of its whole band — which is
-  // exactly where its neighbour's band begins — and the first draft of this put
-  // it there: measured on `?focus=nonlinear-ode-solve`, the curve of
+  // It used to draw no name at all, and the reason was a real measurement: every
+  // line here converges to a point at both circles, so the vertical room between
+  // two neighbours shrinks to nothing towards the ends, and an opened strand's
+  // name has to sit at the edge of its whole band — which is exactly where its
+  // neighbour's band begins. The first draft put it there and the curve of
   // `linear-ode-solve` ran straight through it.
   //
-  // So an opened strand is named three other ways instead, none of which can
-  // collide: the `<title>` on the faint spine that shuts it again, the row in
-  // the list under the figure — which is the reading a screen reader and a
-  // printout get — and the caption, once a reader zooms into it. The map canvas
-  // reached the same conclusion about an opened group for its own reason.
+  // **That constraint was measured two PRs before the angle cap existed, and the
+  // cap almost entirely relieved it.** Re-measured over all 18 figures fully
+  // opened, with the pre-cap geometry reconstructed and validated against the
+  // three numbers the cap's own comment records: **68 of 128 opened names
+  // collided before, 6 do now.** The cap turned 62 of the 68 into clearances,
+  // because it multiplied the summed figure width by 7.5x and the room at a
+  // given y is linear in the span. Meanwhile the owner was reading a canvas where
+  // **128 of 337 lines drew nothing** and names appeared and vanished as they
+  // clicked — *"labels that show up randomly"*.
+  //
+  // The 6 that still overlap are not worse than what already ships: applying the
+  // identical test to the **shut** names on the same fully-opened figures, 33 of
+  // 209 of them already collide with something. One bar, applied to both, and the
+  // restored names clear it by a wider margin than the existing ones do.
+  //
+  // `size.vHalf`, not `half`. `half` is the thin spine an opened strand draws;
+  // `vHalf` is the band its children actually fill, and it is the number
+  // `allocateBows` already spaced the neighbours against — so the name lands
+  // exactly where the layout has already reserved room, rather than on top of its
+  // own children. Deriving it from the children's drawn edges instead puts the
+  // name on its own child's name: 16 collisions rather than 6.
   const outward = bow >= 0 ? 1 : -1;
+  const bandHalf = strand.open ? size.vHalf : half;
   const labelY =
     outward > 0
-      ? peak.y + half + M.labelLift + M.laneFont * 0.8
-      : peak.y - half - M.labelLift;
+      ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
+      : peak.y - bandHalf - M.labelLift;
 
-  const fitted = strand.open
-    ? { text: "", truncated: false }
-    : fitLabel(strand.label, M.laneFont, context.columnFit);
+  const fitted = fitLabel(strand.label, M.laneFont, context.columnFit);
   if (strand.standing === "unpublished") out.unpublished += 1;
   if (!strand.open && strand.inside > 0) out.collapsed += 1;
   if (depth >= CONVERGE_DEPTH_MAX && strand.inside > 0 && !strand.open) out.depthCapped = true;

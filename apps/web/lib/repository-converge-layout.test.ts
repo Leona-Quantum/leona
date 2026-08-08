@@ -683,11 +683,9 @@ test("no figure clips a label the column was sized to hold", () => {
           false,
           `${focus.id} (${locale}) clipped "${lane.fullLabel}" into "${lane.label}"`,
         );
-        // An opened strand draws no name at all, which is not a clipped one.
-        if (lane.open) {
-          assert.equal(lane.label, "");
-          continue;
-        }
+        // Opened strands used to be exempt here because they drew no name at
+        // all. They draw one now, and it is fitted against the same budget as
+        // every other, so there is nothing left to exempt.
         assert.equal(lane.label, lane.fullLabel);
       }
     }
@@ -837,8 +835,16 @@ test("the narrowed lane is named after its filler, not after the slot four route
 // example, because a layout that survives one expansion and folds on two is the
 // normal way this fails.
 
-/** Every id on a figure that a reader could click open. */
-function openableIds(id: string): string[] {
+/**
+ * Every **address** on a figure that a reader could click open.
+ *
+ * Addresses, not node ids, because that is what the canvas now emits and so what
+ * a reader's URL actually contains. Sweeping the id form instead would run every
+ * opened-state test below against a path readers no longer take — and the id form
+ * opens *more* lanes per value, so it is not even the harder case for the ones
+ * that count things. The id path keeps its own test.
+ */
+function openableAddresses(id: string): string[] {
   const seen = new Set<string>();
   const walk = (open: ReadonlySet<string>) => {
     const node = layerNode(LAYER_GRAPH, id);
@@ -850,13 +856,12 @@ function openableIds(id: string): string[] {
       locale: "en",
       open,
     });
-    const found = diagram.lanes.filter((lane) => lane.openHref !== null && lane.nodeId);
     let grew = false;
-    for (const lane of found) {
-      if (!seen.has(lane.nodeId!)) {
-        seen.add(lane.nodeId!);
-        grew = true;
-      }
+    for (const lane of diagram.lanes) {
+      if (lane.openHref === null) continue;
+      if (seen.has(lane.address)) continue;
+      seen.add(lane.address);
+      grew = true;
     }
     if (grew) walk(new Set(seen));
   };
@@ -878,7 +883,7 @@ function openDiagram(id: string, open: Iterable<string>, locale: PublicLocale = 
 
 /** Every way a figure can be opened that is worth checking: each id alone, then all of them. */
 function openings(id: string): Set<string>[] {
-  const ids = openableIds(id);
+  const ids = openableAddresses(id);
   return [...ids.map((one) => new Set([one])), new Set(ids)];
 }
 
@@ -1296,6 +1301,100 @@ test("an ingredient's name stays on the canvas", () => {
   }
 });
 
+/**
+ * The box a lane's name occupies, in the units the canvas draws in.
+ *
+ * `text-anchor="middle"` at `(labelX, labelY)`, so it is centred in x and sits on
+ * its baseline in y. The 0.8 is the same ascent fraction `place` uses to lift a
+ * name clear of the strand below it — one number, one place it came from.
+ */
+function nameBox(lane: ConvergeLane): { x0: number; x1: number; y0: number; y1: number } {
+  const w = estimateTextWidth(lane.label, M.laneFont);
+  return {
+    x0: lane.labelX - w / 2,
+    x1: lane.labelX + w / 2,
+    y0: lane.labelY - M.laneFont * 0.8,
+    y1: lane.labelY,
+  };
+}
+
+/**
+ * Does a lane's drawn body pass through this box?
+ *
+ * Sampled off the spine and inflated by the lane's own half-thickness rather than
+ * parsed out of `outline`: the outline is a closed two-cubic path and a taper, so
+ * inflating by the maximum half is the conservative reading — it can call a near
+ * miss a hit but never the other way round.
+ */
+function laneEnters(lane: ConvergeLane, box: ReturnType<typeof nameBox>): boolean {
+  const c = parseCubic(lane.d);
+  const pad = lane.open ? 1 : lane.half;
+  for (let i = 0; i <= 400; i += 1) {
+    const [x, y] = pointOn(c, i / 400);
+    if (x >= box.x0 && x <= box.x1 && y >= box.y0 - pad && y <= box.y1 + pad) return true;
+  }
+  return false;
+}
+
+test("an opened line draws its name, and the name is not worse placed than a shut one's", () => {
+  // **The measurement that reversed a decision.** An opened lane used to draw no
+  // name — `strand.open ? "" : fitLabel(...)` — and the comment above it recorded
+  // a real collision: the name has to sit at the edge of its whole band, which is
+  // where its neighbour's band begins, and `linear-ode-solve`'s curve ran through
+  // it. That was measured two PRs before the angle cap existed, and the cap
+  // multiplied the summed figure width by 7.5x. Re-measured with the pre-cap
+  // geometry reconstructed: 68 of 128 opened names collided then, 6 do now.
+  //
+  // Meanwhile 128 of 337 lines drew nothing, so names appeared and vanished as
+  // the reader clicked — the owner's *"labels that show up randomly"*.
+  //
+  // The bar here is deliberately **relative**, because an absolute one would be
+  // stricter than the drawing it is defending: 33 of 209 *shut* names already
+  // overlap something on a fully-opened figure. So the rule is that restoring the
+  // opened names does not make the picture worse than it already is, plus a hard
+  // ceiling so "worse" cannot creep up on both sides at once.
+  //
+  // Failable, which is the point: putting the name back at `half` (the thin spine
+  // an opened lane draws) instead of `size.vHalf` (the band its children fill)
+  // takes the opened collision rate past the shut one and this fails.
+  let openedNamed = 0;
+  let openedHit = 0;
+  let shutNamed = 0;
+  let shutHit = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const open = new Set(openableAddresses(focus.id));
+    const diagram = openDiagram(focus.id, open);
+    for (const lane of diagram.lanes) {
+      if (lane.label === "") continue;
+      const box = nameBox(lane);
+      // Everything drawn on the figure except this lane's own centre line, which
+      // its name is deliberately placed clear of and above.
+      const hit = diagram.lanes.some((other) => other.key !== lane.key && laneEnters(other, box));
+      if (lane.open) {
+        openedNamed += 1;
+        if (hit) openedHit += 1;
+      } else {
+        shutNamed += 1;
+        if (hit) shutHit += 1;
+      }
+    }
+  }
+  assert.ok(openedNamed > 100, `only ${openedNamed} opened lanes drew a name`);
+  assert.ok(shutNamed > 100, `only ${shutNamed} shut lanes drew a name`);
+  const openedRate = openedHit / openedNamed;
+  const shutRate = shutHit / shutNamed;
+  assert.ok(
+    openedRate <= shutRate,
+    `opened names collide ${openedHit}/${openedNamed} (${(openedRate * 100).toFixed(1)}%), ` +
+      `shut names ${shutHit}/${shutNamed} (${(shutRate * 100).toFixed(1)}%) — ` +
+      `restoring the opened names made the picture worse, not better`,
+  );
+  assert.ok(
+    openedRate < 0.15,
+    `${openedHit} of ${openedNamed} opened names collide, which is past the ceiling`,
+  );
+});
+
 /** The steepest the drawn curve gets, in degrees from horizontal. Sampled off `d`. */
 function steepestDegrees(d: string): number {
   const c = parseCubic(d);
@@ -1464,7 +1563,7 @@ test("a line never offers a click it will not honour", () => {
     assert.ok(node && isCapability(node));
     // Everything the surface will let a reader open, which is how a reader
     // reaches the ceiling in the first place.
-    const open = new Set(openableIds(focus.id));
+    const open = new Set(openableAddresses(focus.id));
     const diagram = layoutConverge({
       graph: LAYER_GRAPH,
       vocabulary: STATE_VOCABULARY,
@@ -1479,10 +1578,66 @@ test("a line never offers a click it will not honour", () => {
       // open now and the link shuts it, or it is shut and the link opens it.
       if (lane.open) continue;
       assert.ok(
-        !(lane.nodeId && open.has(lane.nodeId)),
+        !open.has(lane.address),
         `${focus.id}: ${lane.key} is named in ?open=, is drawn shut, and still offers a click`,
       );
     }
   }
   assert.ok(offered > 50, `only ${offered} open links seen`);
+});
+
+test("a node id in ?open= still opens what it always opened", () => {
+  // The back-compatible half of the re-keying, and the half a sweep over
+  // addresses cannot reach. Links to this surface are already written down — in
+  // the owner's notes, in whatever has been shared — and every one of them names
+  // a node. They must keep working, and an id must keep meaning what it meant:
+  // *every* lane that node is drawn on, which is why it was the wrong key.
+  const FOCUS = "nonlinear-ode-solve";
+  const openedBy = (d: ConvergeDiagram) => d.lanes.filter((one) => one.open).length;
+
+  // Every openable lane on the shut figure keeps opening under its id.
+  const shut = openDiagram(FOCUS, []);
+  let checked = 0;
+  for (const lane of shut.lanes) {
+    if (lane.openHref === null || !lane.nodeId) continue;
+    checked += 1;
+    assert.ok(
+      openedBy(openDiagram(FOCUS, [lane.nodeId])) > openedBy(shut),
+      `?open=${lane.nodeId} opened nothing, so an already-written link is now dead`,
+    );
+  }
+  assert.ok(checked > 0, "no openable lane with a node id to check");
+
+  // And the id form still does the thing the address form was built to stop. A
+  // node only holds several positions *below* the figure's own level, so this
+  // has to walk down to a state where one does — from the shut figure, every id
+  // names exactly one lane and the two forms are indistinguishable, which is how
+  // the first draft of this test passed while proving nothing.
+  const ancestors: string[] = [];
+  let found: { id: string; address: string } | null = null;
+  for (let step = 0; step < 6 && !found; step += 1) {
+    const diagram = openDiagram(FOCUS, ancestors);
+    const positions = new Map<string, string[]>();
+    for (const lane of diagram.lanes) {
+      if (lane.openHref === null || !lane.nodeId || lane.open) continue;
+      positions.set(lane.nodeId, [...(positions.get(lane.nodeId) ?? []), lane.address]);
+    }
+    for (const [id, addresses] of positions) {
+      if (addresses.length > 1) {
+        found = { id, address: addresses[0]! };
+        break;
+      }
+    }
+    if (found) break;
+    for (const lane of diagram.lanes) {
+      if (lane.openHref !== null && !lane.open) ancestors.push(lane.address);
+    }
+  }
+  assert.ok(found, "no node holds two shut openable positions — is the id path still distinct?");
+  const byId = openedBy(openDiagram(FOCUS, [...ancestors, found.id]));
+  const byAddress = openedBy(openDiagram(FOCUS, [...ancestors, found.address]));
+  assert.ok(
+    byId > byAddress,
+    `${found.id} opens ${byId} lanes and its address opens ${byAddress} — the two forms have become one`,
+  );
 });
