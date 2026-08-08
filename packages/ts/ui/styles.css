@@ -11283,9 +11283,18 @@ div.mj-rail-row:hover {
   opacity: 0.4;
 }
 /* Recorded that these slots are crossed in this order, but no source names which
-   method fills them. Between the two: solid, because the crossing IS recorded,
-   and fainter, because the detail is not. */
-.mj-converge-lane--unpinned .mj-converge-strand { opacity: 0.45; }
+   method fills them.
+
+   This was opacity 0.45 against the base 0.55, and a 0.10 difference is not
+   reliably perceivable — the two standings looked identical in the drawing while
+   `--unpublished` had a dash pattern AND an italic label to tell it apart. Three
+   states need three marks. A long dash reads as "a line with something left
+   unsaid", which is what an unpinned crossing is, and it stays clearly distinct
+   from the short dash of "nobody takes this". */
+.mj-converge-lane--unpinned .mj-converge-strand {
+  stroke-dasharray: 14 3;
+  opacity: 0.5;
+}
 
 .mj-converge-lane-name {
   fill: var(--text-1);
@@ -11392,7 +11401,16 @@ div.mj-rail-row:hover {
   margin: 0 0 var(--sp-2);
   font-size: var(--fs-16);
 }
-.mj-converge-crossings > p { margin: 0 0 var(--sp-3); font-size: var(--fs-14); }
+/* Scoped away from the caveat below. This was `.mj-converge-crossings > p`
+   (specificity 0,2,0), which also matched `.mj-converge-caveat` (0,1,0) and won
+   for every shared property — so the caveat rendered at --fs-14 with a bottom
+   margin instead of --fs-12 with none, while its own colour and line-height
+   still applied because this rule does not set them. A partial override is
+   harder to see than a total one. */
+.mj-converge-crossings > p:not(.mj-converge-caveat) {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-14);
+}
 .mj-converge-crossings ul {
   margin: 0 0 var(--sp-3);
   padding-left: var(--sp-4);

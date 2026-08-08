@@ -125,10 +125,13 @@ function Lane({ lane, copy }: { lane: ConvergeLane; copy: ConvergeCopy }): React
 /**
  * The canvas.
  *
- * `subjectId` carries the view-transition name so this figure and the figure on
- * the page a reader lands on are the *same* box to the browser — which is what
- * makes moving between them read as a zoom rather than a replacement. Session
- * 95 built that and scoped it to the Atlas; nothing here changes it.
+ * **No view-transition name yet, deliberately.** The process canvas pairs its
+ * figure with the one on the page a reader lands on, so moving between them
+ * reads as a zoom; this surface does not, because the recentre gesture that
+ * would pair with it is not built (NEXT.md §b). An earlier draft of this comment
+ * described a `subjectId` prop that the component never accepted and nothing
+ * ever passed — a doc comment for a feature that did not exist, which is worse
+ * than no comment because it reads as wiring somebody already did.
  */
 export function ConvergeCanvas({
   diagram,

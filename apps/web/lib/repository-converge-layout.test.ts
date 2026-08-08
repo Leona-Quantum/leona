@@ -17,6 +17,7 @@ import {
   convergingSlots,
   crossingsAt,
   laneOffsets,
+  reservedHalfHeight,
   layoutConverge,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -89,20 +90,121 @@ test("the shared circle is the one everything converges on, and it says so", () 
  * not. A geometric test that measures the metadata instead of the geometry
  * cannot see a renderer drift away from it.
  */
-function drawnEnds(d: string): { sx: number; sy: number; ex: number; ey: number } {
-  const move = /^M\s+(-?[\d.]+)\s+(-?[\d.]+)/.exec(d.trim());
-  const curve = /C\s+[-\d.]+\s+[-\d.]+,\s*[-\d.]+\s+[-\d.]+,\s*(-?[\d.]+)\s+(-?[\d.]+)\s*$/.exec(
-    d.trim(),
-  );
-  assert.ok(move, `path does not begin with a moveto: ${d}`);
-  assert.ok(curve, `path does not end with a cubic: ${d}`);
-  return {
-    sx: Number(move[1]),
-    sy: Number(move[2]),
-    ex: Number(curve[1]),
-    ey: Number(curve[2]),
-  };
+interface Cubic {
+  p0: [number, number];
+  p1: [number, number];
+  p2: [number, number];
+  p3: [number, number];
 }
+
+/**
+ * The full cubic, parsed out of the emitted `d`.
+ *
+ * Both control points, not just the endpoints. Sampling y from `bowAt` while
+ * only the endpoints came from `d` is what let a real defect through review:
+ * `bowAt` returned the curve for control height `bow` while the emitter used
+ * `4·bow/3`, so every invariant was measuring a curve **three quarters** the
+ * height of the rendered one. The label-clearance check therefore had 25% more
+ * room than the page does, and mutating either side alone kept the two
+ * consistently wrong with each other, so the mutation sweep could not see it.
+ *
+ * Parse the artifact, sample the artifact.
+ */
+function parseCubic(d: string): Cubic {
+  const match =
+    /^M\s+(-?[\d.]+)\s+(-?[\d.]+)\s+C\s+(-?[\d.]+)\s+(-?[\d.]+),\s*(-?[\d.]+)\s+(-?[\d.]+),\s*(-?[\d.]+)\s+(-?[\d.]+)\s*$/.exec(
+      d.trim(),
+    );
+  assert.ok(match, `not a single-cubic path: ${d}`);
+  const n = (at: number) => Number(match[at]);
+  return { p0: [n(1), n(2)], p1: [n(3), n(4)], p2: [n(5), n(6)], p3: [n(7), n(8)] };
+}
+
+/** A point on the parsed cubic. This is the curve the browser draws. */
+function pointOn(cubic: Cubic, t: number): [number, number] {
+  const b = (a: number, bb: number, c: number, dd: number) =>
+    (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * bb + 3 * (1 - t) * t ** 2 * c + t ** 3 * dd;
+  return [
+    b(cubic.p0[0], cubic.p1[0], cubic.p2[0], cubic.p3[0]),
+    b(cubic.p0[1], cubic.p1[1], cubic.p2[1], cubic.p3[1]),
+  ];
+}
+
+function drawnEnds(d: string): { sx: number; sy: number; ex: number; ey: number } {
+  const cubic = parseCubic(d);
+  return { sx: cubic.p0[0], sy: cubic.p0[1], ex: cubic.p3[0], ey: cubic.p3[1] };
+}
+
+test("bowAt describes the curve that is actually emitted", () => {
+  // The helper and the emitter are two expressions of one shape, and they had
+  // drifted by a factor of 4/3. Pinned against the parsed path so they cannot
+  // drift again without something failing.
+  for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const lane of diagramFor(focus.id).lanes) {
+      const cubic = parseCubic(lane.d);
+      for (let step = 0; step <= 20; step += 1) {
+        const t = step / 20;
+        const [, drawnY] = pointOn(cubic, t);
+        assert.ok(
+          Math.abs(drawnY - bowAt(lane.yc, lane.bow, t)) < 0.05,
+          `${lane.key}: bowAt says ${bowAt(lane.yc, lane.bow, t)} at t=${t}, the path draws ${drawnY}`,
+        );
+      }
+    }
+  }
+});
+
+test("the peak of a bow is exactly its `bow`, and the canvas reserves that much", () => {
+  // Two claims, and the second is the one a bigger fan would break first.
+  //
+  // `controlHeight` exists so the drawn peak equals `bow` rather than 3/4 of it.
+  // And `halfHeight` must reserve from that true peak: it read `(tallest*3)/4`
+  // while the emitter already scaled by 4/3. On today's two-lane fans the 34px
+  // margin absorbed the shortfall, so nothing left the canvas and the sampling
+  // test could not see it — the reservation has to be asserted directly, or the
+  // defect waits for the first fan wide enough to expose it.
+  const M2 = CONVERGE_METRICS;
+  for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const diagram = diagramFor(focus.id);
+    for (const lane of diagram.lanes) {
+      const peak = pointOn(parseCubic(lane.d), 0.5)[1] - lane.yc;
+      assert.ok(
+        Math.abs(peak - lane.bow) < 0.05,
+        `${lane.key}: bow is ${lane.bow} but the drawn peak is ${peak}`,
+      );
+    }
+    const tallest = Math.max(...diagram.lanes.map((lane) => Math.abs(lane.bow)), 0);
+    assert.ok(
+      reservedHalfHeight(tallest) >= tallest + M2.labelLift + M2.laneFont + M2.stateRadius,
+      "the reservation must start from the true peak, not a fraction of it",
+    );
+    const need = tallest + M2.labelLift + M2.laneFont + M2.stateRadius;
+    const yc = diagram.lanes[0]?.yc ?? 0;
+    assert.ok(yc >= need, `${focus.id}: reserved ${yc} above the spine, the fan needs ${need}`);
+    assert.ok(
+      diagram.height - yc >= need,
+      `${focus.id}: reserved ${diagram.height - yc} below the spine, the fan needs ${need}`,
+    );
+  }
+});
+
+test("the canvas reserves the height the fan actually reaches", () => {
+  // `halfHeight` reserved (tallest*3)/4 while the emitter already scaled by 4/3,
+  // so the outermost lane overshot its own canvas.
+  for (const locale of ["en", "ja"] as const) {
+    for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+      const diagram = diagramFor(focus.id, locale);
+      for (const lane of diagram.lanes) {
+        const cubic = parseCubic(lane.d);
+        for (let step = 0; step <= 40; step += 1) {
+          const [x, y] = pointOn(cubic, step / 40);
+          assert.ok(y >= 0 && y <= diagram.height, `${lane.key} leaves the canvas at y=${y}`);
+          assert.ok(x >= 0 && x <= diagram.width, `${lane.key} leaves the canvas at x=${x}`);
+        }
+      }
+    }
+  }
+});
 
 test("every lane's DRAWN path begins and ends exactly on a circle centre", () => {
   for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
@@ -145,11 +247,13 @@ test("two lanes of one bundle touch at both ends and are apart everywhere betwee
         for (let j = i + 1; j < bundle.length; j += 1) {
           const a = bundle[i]!;
           const b = bundle[j]!;
-          assert.equal(bowAt(a.yc, a.bow, 0), bowAt(b.yc, b.bow, 0), "must meet at the start");
-          assert.equal(bowAt(a.yc, a.bow, 1), bowAt(b.yc, b.bow, 1), "must meet at the end");
+          const ca = parseCubic(a.d);
+          const cb = parseCubic(b.d);
+          assert.equal(pointOn(ca, 0)[1], pointOn(cb, 0)[1], "must meet at the start");
+          assert.equal(pointOn(ca, 1)[1], pointOn(cb, 1)[1], "must meet at the end");
           for (let step = 1; step < 40; step += 1) {
             const t = step / 40;
-            const gap = Math.abs(bowAt(a.yc, a.bow, t) - bowAt(b.yc, b.bow, t));
+            const gap = Math.abs(pointOn(ca, t)[1] - pointOn(cb, t)[1]);
             assert.ok(
               gap > EPS,
               `${focus.id}: ${a.key} and ${b.key} meet at t=${t} (gap ${gap}) — ` +
@@ -197,6 +301,22 @@ test("no lane crosses the spine it bows around, except at the two shared circles
 });
 
 // --- the fan's shape --------------------------------------------------------
+
+test("a fan wide enough to matter still fits, at any size the graph could grow to", () => {
+  // The reservation is linear in the peak, so it holds for fans far wider than
+  // anything drawn today. Asserted over sizes the method-level fan-out will
+  // reach, because the current two-lane figures cannot expose an error here —
+  // the margin covers a shortfall of `tallest / 4` until about ten lanes.
+  const M2 = CONVERGE_METRICS;
+  for (const n of [2, 4, 7, 10, 16, 24]) {
+    const tallest = Math.max(...laneOffsets(n).map(Math.abs));
+    const reserved = reservedHalfHeight(tallest);
+    assert.ok(
+      reserved >= tallest + M2.labelLift + M2.laneFont + M2.stateRadius,
+      `a fan of ${n} reserves ${reserved} for a peak of ${tallest}`,
+    );
+  }
+});
 
 test("an odd fan runs one lane straight through the middle; an even fan straddles", () => {
   // The owner: "every other process expanded from it should be around it, even
@@ -284,16 +404,12 @@ test("no lane label sits on a lane", () => {
           y1: lane.labelY,
         };
         for (const other of diagram.lanes) {
+          // Sampled off the PARSED path. A parallel formula here is what let the
+          // 4/3 drift hide: the check ran against a curve 3/4 as tall as the one
+          // a reader sees, so it had 25% more clearance than the page does.
+          const cubic = parseCubic(other.d);
           for (let step = 0; step <= 120; step += 1) {
-            const t = step / 120;
-            // x is the same cubic for every lane of a bundle, and the control
-            // points sit at thirds, so x(t) is the standard cubic in those.
-            const x =
-              (1 - t) ** 3 * other.x0 +
-              3 * (1 - t) ** 2 * t * (other.x0 + (other.x1 - other.x0) / 3) +
-              3 * (1 - t) * t ** 2 * (other.x1 - (other.x1 - other.x0) / 3) +
-              t ** 3 * other.x1;
-            const y = bowAt(other.yc, other.bow, t);
+            const [x, y] = pointOn(cubic, step / 120);
             const inside = x > box.x0 && x < box.x1 && y > box.y0 && y < box.y1;
             assert.ok(
               !inside,
@@ -364,6 +480,22 @@ test("the crossings at a shared circle count methods, and count each one once", 
 
   const seen = new Set(census.examples.map((crossing) => crossing.key));
   assert.equal(seen.size, census.examples.length, "a combination is listed once");
+});
+
+test("the examples cap is reported rather than applied silently", () => {
+  const node = layerNode(LAYER_GRAPH, "nonlinear-ode-solve");
+  assert.ok(node && isCapability(node));
+  const expansion = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, node);
+
+  const capped = crossingsAt(LAYER_GRAPH, STATE_VOCABULARY, expansion, "linear-ivp", "en", 3);
+  assert.ok(capped);
+  assert.equal(capped.examples.length, 3);
+  assert.equal(capped.examplesTruncated, true, "a shortened list must say it is shortened");
+
+  const whole = crossingsAt(LAYER_GRAPH, STATE_VOCABULARY, expansion, "linear-ivp", "en", 500);
+  assert.ok(whole);
+  assert.equal(whole.examples.length, whole.unpublished);
+  assert.equal(whole.examplesTruncated, false);
 });
 
 test("the owner's own research direction is on the page", () => {

@@ -157,9 +157,54 @@ export interface ConvergeDiagram {
   unpublishedCount: number;
 }
 
-/** y of the bow at parameter t. Affine in `bow` — this is the crossing-free proof. */
+/**
+ * The control-point offset that makes a cubic peak at exactly `bow`.
+ *
+ * A cubic with both controls lifted by `h` reaches `3h/4` at `t = ½`, so the
+ * control has to be pushed 4/3 past the height you want. One function owns that
+ * relationship because two places need it — the emitted path and `bowAt` — and
+ * they had drifted: `bowAt` used `h = bow` while the emitter used `h = 4·bow/3`,
+ * making the helper describe a curve **three quarters** the height of the one
+ * on screen.
+ */
+export function controlHeight(bow: number): number {
+  return (bow * 4) / 3;
+}
+
+/**
+ * y of the **drawn** bow at parameter t. Affine in `bow` — the crossing-free proof.
+ *
+ * This must stay the y of the curve `layoutConverge` emits, not a parallel
+ * formula that resembles it. It was one for a while, and the consequence was not
+ * academic: every invariant sampling this function was measuring a curve 3/4 as
+ * tall as the rendered one, so the label-clearance check had 25% more room than
+ * the page does, and `halfHeight` reserved 3/4 of the height the fan actually
+ * reaches — the outermost lane overshot its own canvas. Caught in review, after
+ * a mutation sweep that could not see it: mutating the emitter and mutating this
+ * helper both left the two *consistently* wrong with each other.
+ */
 export function bowAt(yc: number, bow: number, t: number): number {
-  return yc + bow * 3 * t * (1 - t);
+  return yc + controlHeight(bow) * 3 * t * (1 - t);
+}
+
+/**
+ * Room to leave above and below the spine for a fan whose outermost bow is
+ * `tallest`.
+ *
+ * Its own function because it is the one number a wide fan gets wrong, and the
+ * error is invisible until it is large. This read `(tallest * 3) / 4` while the
+ * emitter already scaled by `controlHeight`'s 4/3, so the canvas reserved three
+ * quarters of the height the fan uses. Nothing overflowed, because the 34px
+ * margin absorbed the shortfall at every fan the graph produces today — the
+ * lanes on a figure are *slots*, and there are at most two. The shortfall is
+ * `tallest / 4`, so it eats the margin at roughly ten lanes, which is exactly
+ * what the method-level fan-out will draw. A defect that waits for the next
+ * feature is worth pinning now, and it can only be pinned here: sampling the
+ * curves cannot see a reservation the margin is covering for.
+ */
+export function reservedHalfHeight(tallest: number): number {
+  const M = CONVERGE_METRICS;
+  return tallest + M.labelLift + M.laneFont + M.stateRadius;
 }
 
 /**
@@ -257,10 +302,7 @@ export function layoutConverge(options: {
     (tall, bundle) => Math.max(tall, Math.max(...laneOffsets(bundle.lanes.length).map(Math.abs))),
     0,
   );
-  // The bow's visual peak is 3/4 of its control height, and the label sits above
-  // that. Reserve for the label too, or the top lane's name leaves the canvas —
-  // the exact failure the old canvas shipped and had to grow an invariant for.
-  const halfHeight = (tallest * 3) / 4 + M.labelLift + M.laneFont + M.stateRadius;
+  const halfHeight = reservedHalfHeight(tallest);
   const height = round(halfHeight * 2 + M.margin * 2 + M.captionFont + 8);
   const yc = round(M.margin + M.captionFont + 8 + halfHeight);
 
@@ -306,9 +348,7 @@ export function layoutConverge(options: {
     const offsets = laneOffsets(bundle.lanes.length);
     for (const [at, lane] of bundle.lanes.entries()) {
       const bow = offsets[at]!;
-      // Control height chosen so the visual peak is exactly `bow`: the cubic
-      // reaches 3/4 of the control offset at t = 1/2.
-      const h = (bow * 4) / 3;
+      const h = controlHeight(bow);
       const third = (x1 - x0) / 3;
       const d =
         `M ${round(x0)} ${round(yc)} ` +
@@ -393,6 +433,15 @@ export interface CrossingCensus {
   unpublished: number;
   /** The unpublished ones, capped — the discovery, listed. */
   examples: readonly Crossing[];
+  /**
+   * True when the cap bit, so `examples` is a floor rather than the list.
+   *
+   * Same reason `PathSearch.truncated` exists: a silently shortened list of
+   * discoveries reads exactly like a shorter list of discoveries, and a contract
+   * that cannot express the truncation gives no consumer anything to render and
+   * no test anything to assert.
+   */
+  examplesTruncated: boolean;
 }
 
 /**
@@ -455,7 +504,12 @@ export function crossingsAt(
   const distinct = <T extends { crossing: EdgeChoice; label: string }>(items: T[]): T[] => {
     const seen = new Set<string>();
     return items.filter((item) => {
-      const id = item.crossing.filler ?? item.crossing.edgeKey;
+      // Namespaced, so a filler id can never collide with another lane's edge
+      // key, and two filler-less lanes sharing a first edge stay two entries.
+      const id =
+        item.crossing.filler === null
+          ? `edge:${item.crossing.edgeKey}:${item.label}`
+          : `method:${item.crossing.filler}`;
       if (seen.has(id)) return false;
       seen.add(id);
       return true;
@@ -491,6 +545,7 @@ export function crossingsAt(
     total: arrivals.length * departures.length,
     ...tally,
     examples,
+    examplesTruncated: tally.unpublished > examples.length,
   };
 }
 

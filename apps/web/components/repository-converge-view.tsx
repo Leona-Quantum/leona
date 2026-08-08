@@ -36,6 +36,7 @@ interface ConvergeCopy {
   crossHeading: (state: string) => string;
   crossTally: (total: number, recorded: number, unpinned: number, unpublished: number) => string;
   crossNone: string;
+  crossMore: (shown: number, total: number) => string;
   crossCaveat: string;
 }
 
@@ -59,6 +60,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     crossTally: (total: number, recorded: number, unpinned: number, unpublished: number) =>
       `${total} combinations cross this circle. A source records ${recorded} of them end to end. ${unpinned} cross slots a source does record, without naming which method fills them. ${unpublished} are compositions no recorded source takes.`,
     crossNone: "No recorded source leaves any of these unwalked.",
+    crossMore: (shown: number, total: number) =>
+      `Showing ${shown} of ${total}.`,
     crossCaveat:
       "These are derived from the two contracts each line carries, not proposed. A line here says the object one process hands back is the object the next one takes — nothing about whether it is a good idea, and nothing about whether the literature has missed it.",
   },
@@ -81,6 +84,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     crossTally: (total: number, recorded: number, unpinned: number, unpublished: number) =>
       `この円を通る組み合わせは ${total} 通りです。出典が端から端までたどるものが ${recorded} 件、出典が枠は記録しているものの、どの手法が満たすかを述べていないものが ${unpinned} 件、記録された出典がたどっていない組み合わせが ${unpublished} 件あります。`,
     crossNone: "記録された出典がたどっていない組み合わせはありません。",
+    crossMore: (shown: number, total: number) => `${total} 件のうち ${shown} 件を表示しています。`,
     crossCaveat:
       "これらは各線が持つ二つの契約から導かれたものであり、提案ではありません。ここでの線は、ある処理が返す対象が次の処理の受け取る対象と一致することを述べているにすぎません。それが良い着想であるか、文献が見落としているかについては何も述べていません。",
   },
@@ -217,6 +221,9 @@ export function ConvergeView({
               ) : (
                 <p>{copy.crossNone}</p>
               )}
+              {census.examplesTruncated ? (
+                <p>{copy.crossMore(census.examples.length, census.unpublished)}</p>
+              ) : null}
               <p className="mj-converge-caveat">{copy.crossCaveat}</p>
             </section>
           ) : null}
