@@ -22,14 +22,6 @@ const KEYBOARD_PAN_STEP_PX = 40;
  * has an intuition for how far one press goes. */
 const KEYBOARD_ZOOM_FACTOR = 1.2;
 
-/** How long a keyboard-triggered pan/zoom animates before landing, when
- * `prefers-reduced-motion` allows it. Reuses `--dur-hover` (150ms) rather than
- * inventing a second interface-motion constant — see tokens.css: "one easing
- * for interface motion, so hover/press across the product reads as the same
- * hand." Mirrored here as a plain number because `setTimeout` cannot read a
- * CSS custom property; if `--dur-hover` changes, this should move with it. */
-const KEYBOARD_ANIMATION_MS = 150;
-
 /** `deltaMode` 1 ("line") events report a small integer count of lines rather
  * than pixels; 16 is a standard single-line height used to bring that count
  * into the same rough unit as `deltaMode` 0 ("pixel") before both are fed to
@@ -100,7 +92,6 @@ export function InfiniteCanvas({
 }) {
   const [view, setView] = useState<Viewport>(initial);
   const [dragging, setDragging] = useState(false);
-  const [keyboardAnimating, setKeyboardAnimating] = useState(false);
   const hintId = useId();
 
   // Event handlers below are registered once (empty dependency array) so a
@@ -342,23 +333,32 @@ export function InfiniteCanvas({
   }, []);
 
   // --- keyboard: arrows pan, +/- zoom, 0 resets to `initial` ---------------
-  const keyboardAnimationTimer = useRef<number | undefined>(undefined);
-  useEffect(() => () => window.clearTimeout(keyboardAnimationTimer.current), []);
 
+  /**
+   * A keyboard step lands immediately.
+   *
+   * It used to ease into place over 150ms, skipped under
+   * `prefers-reduced-motion`. Removed on review: the coding guidelines carry a
+   * **closed** list of permitted animations and a canvas keyboard-step is not on
+   * it. Adding a sixth quietly is how a closed list stops being one, and
+   * extending it is the owner's call rather than a side effect of building a
+   * viewport. Nothing is lost for the readers it would have mattered to most —
+   * an instant step is what they were getting anyway.
+   */
   function stepByKeyboard(next: Viewport) {
-    // `prefers-reduced-motion` is read per keypress rather than once at mount:
-    // it is a live media query and a reader can change the OS setting without
-    // reloading this page, the same posture `reveal.tsx` and `run-composer.tsx`
-    // already take on this surface.
-    if (!window.matchMedia("(prefers-reduced-motion: reduce)").matches) {
-      setKeyboardAnimating(true);
-      window.clearTimeout(keyboardAnimationTimer.current);
-      keyboardAnimationTimer.current = window.setTimeout(() => setKeyboardAnimating(false), KEYBOARD_ANIMATION_MS);
-    }
     setView(next);
   }
 
   function onKeyDown(e: KeyboardEvent<HTMLDivElement>) {
+    // Only the viewport's own focus drives the viewport.
+    //
+    // This handler is on the container, so it also sees keys bubbling from the
+    // `<a>` shapes inside it. With a link on the figure focused, an arrow key
+    // panned the canvas *and* called `preventDefault()` — cancelling the
+    // browser's own behaviour for a key press that belonged to the link, on a
+    // component whose whole justification for declining `role="application"` is
+    // that the content keeps its usual navigation.
+    if (e.target !== e.currentTarget) return;
     const current = viewRef.current;
     const rect = e.currentTarget.getBoundingClientRect();
     switch (e.key) {
@@ -411,7 +411,7 @@ export function InfiniteCanvas({
       onKeyDown={onKeyDown}
     >
       <div
-        className={`mj-canvas-layer${keyboardAnimating ? " mj-canvas-layer--animated" : ""}`}
+        className="mj-canvas-layer"
         style={{ transform: transformOf(view), transformOrigin: "0 0" }}
       >
         {children}

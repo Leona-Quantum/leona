@@ -821,7 +821,17 @@ export function ConvergeView({
             </div>
           ))}
 
-          {first ? (
+          {/* Only when one figure is drawn.
+
+              `shared` and `unpublishedCount` come from the first figure, and on
+              the unfocused overview there are four — so this stated the shared
+              circles and the unpublished count of one root as facts about the
+              page. A count over a mixed population names no problem: the
+              sentence was true of `drawn[0]` and false of what the reader was
+              looking at. `collapsedCount` a few lines up is aggregated across
+              all four because it can be; these two cannot, because "2 ways
+              arrive at Linear ODE system" is a fact about one figure. */}
+          {focus && first ? (
             <ul className="mj-converge-facts">
               {shared.map((state) => {
                 const named = layerState(STATE_VOCABULARY, state.stateId);

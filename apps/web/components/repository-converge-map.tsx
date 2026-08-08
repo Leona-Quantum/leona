@@ -233,8 +233,17 @@ function Lane({
     documented ? ` · ${copy.inAtlas}` : ""
   }`;
 
-  // The zoom pairing goes on the *name*, because the name is what navigates.
-  const claimsTransition = lane.nodeId !== null && !named.has(lane.nodeId);
+  // The zoom pairing goes on the *name*, because the name is what navigates —
+  // so a strand that draws no name must not take the claim either.
+  //
+  // An opened strand is nameless (see `place` in the layout). Claiming the id
+  // anyway consumed it twice over: the opened lane applied no
+  // `view-transition-name` because it renders no `<text>`, and a later lane for
+  // the same node found the id already spoken for and rendered none either. The
+  // pairing for that node was simply gone, and a missing view transition is
+  // invisible — the page still loads, it just cuts instead of zooming.
+  const claimsTransition =
+    lane.label !== "" && lane.nodeId !== null && !named.has(lane.nodeId);
   if (claimsTransition) named.add(lane.nodeId!);
 
   return (

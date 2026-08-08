@@ -11843,20 +11843,12 @@ div.mj-rail-row:hover {
      only thing that moves it inside the fixed box above. */
   display: inline-block;
 }
-/* Applied by InfiniteCanvas only for the duration of a keyboard-triggered
-   step (arrow/+/-/0), and never during a drag or a wheel zoom — a transition
-   present during either of those would make the content visibly lag behind
-   the hand moving it, rather than track it. */
-.mj-canvas-layer--animated {
-  transition: transform var(--dur-hover) var(--ease-out-ui);
-}
-@media (prefers-reduced-motion: reduce) {
-  /* Belt-and-suspenders with the `prefers-reduced-motion` check already in
-     infinite-canvas.tsx (which skips adding this class in the first place):
-     same pairing `.mj-reveal`/`.mj-reveal--pending` use above, so a future
-     edit to the JS check cannot reintroduce motion without this still
-     catching it. */
-  .mj-canvas-layer--animated {
-    transition: none;
-  }
-}
+/* A keyboard step used to ease this layer into place over 150ms. It has been
+   removed rather than kept, because the permitted-animation list in the coding
+   guidelines is a closed list — rail state transitions, the running-dot pulse,
+   the skeleton shimmer, toast enter/exit, and the Atlas navigation transition —
+   and a canvas keyboard-step is not on it. Adding a sixth quietly is how a
+   closed list stops being one; extending it is the owner's call, not a side
+   effect of building a viewport. An instant step is also the correct default
+   under `prefers-reduced-motion`, so nothing is lost for the readers the
+   transition would have mattered to most. */
