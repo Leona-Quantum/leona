@@ -12,12 +12,12 @@ import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PublicSite } from "../../../../components/public-site";
 import { LayerNodeView, LayerStateView } from "../../../../components/repository-layers";
-import { parseViewport } from "../../../../lib/repository/canvas-viewport";
+import { IDENTITY, formatViewport, parseViewport } from "../../../../lib/repository/canvas-viewport";
 import { resolveOpenIds } from "../../../../lib/repository/converge-layout";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../lib/repository/layer-graph";
-import { layerNode, type LayerCorpusEntry } from "../../../../lib/repository/layers";
+import { isCapability, layerNode, type LayerCorpusEntry } from "../../../../lib/repository/layers";
 import { STATE_VOCABULARY } from "../../../../lib/repository/state-vocabulary";
 import { layerState } from "../../../../lib/repository/states";
 
@@ -56,6 +56,19 @@ export async function generateMetadata({
 function openValues(query: Record<string, string | string[] | undefined>): string[] {
   const raw = query.open;
   return Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
+}
+
+/**
+ * A viewport parameter the parser actually accepted, or null for the default.
+ *
+ * Null rather than `"0,0,1"` so a bare address stays bare instead of every link
+ * on the page carrying an identity transform.
+ */
+function canonicalViewport(raw: string | string[] | undefined): string | null {
+  const viewport = parseViewport(raw);
+  return viewport.x === IDENTITY.x && viewport.y === IDENTITY.y && viewport.z === IDENTITY.z
+    ? null
+    : formatViewport(viewport);
 }
 
 export default async function RepositoryLayerNodePage({
@@ -103,10 +116,22 @@ export default async function RepositoryLayerNodePage({
           corpus={corpus}
           locale={locale}
           viewport={parseViewport(query.at)}
-          // A method's own figure always opens itself, so one slot of the cap is
-          // spoken for before the reader's own ids are counted.
-          open={resolveOpenIds(openValues(query), (id) => layerNode(LAYER_GRAPH, id) !== null, 1).open}
-          at={typeof query.at === "string" ? query.at : null}
+          // A METHOD's own figure opens itself, so one slot of the cap is spoken
+          // for before the reader's ids are counted. A capability's does not,
+          // and reserving there would drop one of the reader's ids for nothing.
+          open={
+            resolveOpenIds(
+              openValues(query),
+              (id) => layerNode(LAYER_GRAPH, id) !== null,
+              isCapability(node) ? 0 : 1,
+            ).open
+          }
+          // Canonical, not raw. `parseViewport` falls back to IDENTITY on a
+          // malformed `?at=`, so handing the original back out would render one
+          // viewport and link to a different one — and keep the bad value alive
+          // across every click. The overview does this too; the node page did
+          // not, which is the half of the rule that was missing.
+          at={canonicalViewport(query.at)}
         />
       ) : state ? (
         <LayerStateView

@@ -1409,6 +1409,27 @@ test("every address a figure emits keeps the reader where they were standing", (
           `${focus.id}: ${href} dropped the viewport`,
         );
       }
+      // And what the reader had open, on the addresses that go to a node's own
+      // page. This half shipped broken once: the node page was taught to honour
+      // `?open=` and nothing sent it, so 0 of 16 node links carried one and the
+      // set still died on every name click. It was "verified" by hand-writing
+      // the URL the page receives, which tests the receiving half and nothing
+      // else — a link is not verified until something has followed it.
+      if (open.size > 0) {
+        const toNodePages = [
+          ...carried.lanes.map((lane) => lane.href),
+          ...carried.states.map((state) => state.href),
+          ...carried.feeds.map((feed) => feed.href),
+        ].filter((href) => href.startsWith("/repository/layers/"));
+        for (const href of toNodePages) {
+          for (const id of open) {
+            assert.ok(
+              href.includes(`open=${encodeURIComponent(id)}`),
+              `${focus.id}: ${href} dropped ${id} from what the reader had open`,
+            );
+          }
+        }
+      }
       // And the default stays clean — stamping `at=0,0,1` onto every link would
       // make a bare address impossible to produce.
       const bare = layoutConverge({

@@ -1236,8 +1236,15 @@ function place(
     // `openable`, not `id`. A line at the depth ceiling has an id and something
     // inside and still cannot draw it, and offering the click anyway is what
     // produced 39 dead controls.
+    // `openable`, and not already at the ceiling. Once `?open=` names
+    // CONVERGE_OPEN_MAX ids, appending one more produces an address the page
+    // drops on arrival — the same dead control as the depth cap, at the other
+    // cap. Shutting something already open is always offered, because that is
+    // what makes room.
     openHref:
-      strand.id && (strand.openable || strand.open)
+      strand.id &&
+      (strand.openable || strand.open) &&
+      (context.open.has(strand.id) || context.open.size < CONVERGE_OPEN_MAX)
         ? toggleHref(context.focusId, context.open, strand.id)
         : null,
     href: strand.href,
@@ -1378,8 +1385,34 @@ function withViewport(href: string | null, at?: string | null): string | null {
   return `${href}${href.includes("?") ? "&" : "?"}at=${encodeURIComponent(at)}`;
 }
 
-function carryViewport<T extends { href: string }>(shape: T, at?: string | null): T {
-  return at ? { ...shape, href: withViewport(shape.href, at)! } : shape;
+/**
+ * A node's own page, carrying what the reader had open as well as where they
+ * were standing.
+ *
+ * Both halves are needed and shipping one is worse than shipping neither: the
+ * node page was taught to *honour* `?open=` and nothing *sent* it, so the set
+ * still died on every name click — measured on the preview, 0 of 16 node links
+ * carried one. A link is not verified until something has followed it, and a
+ * hand-written URL is not something.
+ *
+ * Only figure addresses get this. `openHref` already carries its own `open`
+ * list, and the size rungs build their own address on purpose.
+ */
+function withOpen(href: string, open: ReadonlySet<string>): string {
+  if (open.size === 0 || href.includes("open=")) return href;
+  if (!href.startsWith("/repository/layers/")) return href;
+  const params = new URLSearchParams();
+  for (const id of open) params.append("open", id);
+  return `${href}${href.includes("?") ? "&" : "?"}${params.toString()}`;
+}
+
+function carryViewport<T extends { href: string }>(
+  shape: T,
+  at: string | null | undefined,
+  open: ReadonlySet<string>,
+): T {
+  const href = withViewport(withOpen(shape.href, open), at);
+  return href === shape.href ? shape : { ...shape, href: href! };
 }
 
 export function layoutConverge(options: {
@@ -1569,12 +1602,12 @@ export function layoutConverge(options: {
     // the minimum whatever the labels do.
     width: Math.max(width, round(out.rightmost + M.margin)),
     height,
-    states: [...states, ...out.inner].map((state) => carryViewport(state, options.at)),
+    states: [...states, ...out.inner].map((state) => carryViewport(state, options.at, open)),
     lanes: out.lanes.map((lane) => ({
-      ...carryViewport(lane, options.at),
+      ...carryViewport(lane, options.at, open),
       openHref: withViewport(lane.openHref, options.at),
     })),
-    feeds: out.feeds.map((feed) => carryViewport(feed, options.at)),
+    feeds: out.feeds.map((feed) => carryViewport(feed, options.at, open)),
     caption,
     empty: false,
     unpublishedCount: out.unpublished,
