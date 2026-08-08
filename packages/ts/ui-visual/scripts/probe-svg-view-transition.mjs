@@ -69,8 +69,9 @@ const capture = await page.evaluate(async () => {
 // 2. CSS transitions on SVG geometry, driven by an attribute write
 // ---------------------------------------------------------------------------
 await page.setContent(`<!doctype html><meta charset="utf-8"><style>
-  #lane, #hub, #label { transition: d 600ms linear, cx 600ms linear, cy 600ms linear,
+  #lane, #hub, #label, #hit { transition: d 600ms linear, cx 600ms linear, cy 600ms linear,
                                     r 600ms linear, x 600ms linear, y 600ms linear,
+                                    width 600ms linear, height 600ms linear,
                                     opacity 600ms linear; }
   #g { transition: transform 600ms linear; }
 </style>
@@ -78,6 +79,7 @@ await page.setContent(`<!doctype html><meta charset="utf-8"><style>
   <path id="lane" d="M20,100 C200,100 400,100 580,100" stroke="black" fill="none" stroke-width="3"/>
   <circle id="hub" cx="20" cy="100" r="8"/>
   <text id="label" x="100" y="60">n</text>
+  <rect id="hit" x="40" y="40" width="120" height="15" fill="none" pointer-events="all"/>
   <g id="g"><rect width="10" height="10"/></g>
 </svg>`);
 
@@ -86,6 +88,7 @@ const geometry = await page.evaluate(async () => {
   const lane = document.getElementById("lane");
   const hub = document.getElementById("hub");
   const label = document.getElementById("label");
+  const hit = document.getElementById("hit");
   const g = document.getElementById("g");
   // Force a style flush so the "before" value is settled.
   getComputedStyle(lane).d;
@@ -94,6 +97,11 @@ const geometry = await page.evaluate(async () => {
   hub.setAttribute("cx", "560");
   hub.setAttribute("r", "20");
   label.setAttribute("x", "500");
+  // The name's click target is a `<rect>`, which moves by x/y/width rather than
+  // by cx/cy/r — a separate question from the circle's, and the one that decides
+  // whether an invisible target can keep up with the visible name it belongs to.
+  hit.setAttribute("x", "300");
+  hit.setAttribute("width", "280");
   g.setAttribute("transform", "translate(300,50)");
   await new Promise((r) => requestAnimationFrame(() => requestAnimationFrame(r)));
   const running = document.getAnimations().map((a) => ({

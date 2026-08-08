@@ -264,7 +264,26 @@ export const CONVERGE_OPEN_MAX = 64;
  * had — "a URL naming four things, one of which has since been renamed, opens the
  * other three" — arrived at by construction instead of by a graph lookup.
  */
-const ADDRESS = /^\d+(?:\.\d+)*$/;
+const ADDRESS = /^[A-Za-z0-9_-]+:\d+(?:\.\d+)*$/;
+
+/**
+ * The address prefix that says **which figure** — and it is not decoration.
+ *
+ * The unfocused surface draws four figures at once and hands every one of them
+ * the same `?open=` set. A position alone is not unique across them: bundle 0,
+ * lane 0 exists on every root, so `?open=0.0` opened a lane on **three of the
+ * four** — exactly the multi-open defect addresses were introduced to kill,
+ * reintroduced one level up. Caught in review and reproduced on the deployed
+ * preview before being believed.
+ *
+ * The subject's id, because that is what a figure *is* — and it is the same
+ * value on a focused page, where there is one figure and the prefix is constant
+ * and harmless. One name segment, so a saturated figure goes from 733 characters
+ * to about 1,800, still a quarter of what the render keys would have cost.
+ */
+function addressRoot(subjectId: string, bundleIndex: number, laneIndex: number): string {
+  return `${subjectId}:${bundleIndex}.${laneIndex}`;
+}
 
 /**
  * Is this lane opened by the reader's `?open=` set?
@@ -666,9 +685,16 @@ export function toggleHref(
   id?: string | null,
 ): string {
   const next = new Set(open);
-  if (next.has(address)) next.delete(address);
-  else if (id && next.has(id)) next.delete(id);
-  else next.add(address);
+  // **Both forms, unconditionally**, and only then decide whether to add.
+  // Written as an if/else-if first, which is wrong for the one input a click can
+  // never produce and a URL can: `?open=` carrying the address *and* the node id
+  // for the same lane. The address was removed, the id kept holding it open, and
+  // the shut control did nothing — the dead control this canvas has now produced
+  // twice. `?open=` is user-supplied and shareable, so "a click cannot reach it"
+  // is not an argument. Caught in review.
+  const heldByAddress = next.delete(address);
+  const heldById = id !== null && id !== undefined ? next.delete(id) : false;
+  if (!heldByAddress && !heldById) next.add(address);
   return figureHref(focus, next, at);
 }
 
@@ -1682,7 +1708,7 @@ export function layoutConverge(options: {
   const plan =
     expansion.atomicAtThisLevel || expansion.bundles.length === 0
       ? planMethodFan(graph, vocabulary, focus, locale, open)
-      : planStateChain(graph, vocabulary, expansion, locale, open);
+      : planStateChain(graph, vocabulary, expansion, locale, open, focus.id);
 
   if (!plan) {
     return {
@@ -1854,6 +1880,7 @@ function planStateChain(
   expansion: Expansion,
   locale: PublicLocale,
   open: ReadonlySet<string>,
+  subjectId: string,
 ): Plan {
   return {
     chain: expansion.chain,
@@ -1869,7 +1896,7 @@ function planStateChain(
           locale,
           open,
           standingFor(graph, vocabulary, lane),
-          `${bundleIndex}.${laneIndex}`,
+          addressRoot(subjectId, bundleIndex, laneIndex),
         ),
       ),
     })),
@@ -1892,6 +1919,7 @@ function planMethodFan(
   locale: PublicLocale,
   open: ReadonlySet<string>,
 ): Plan | null {
+  // The fan IS the focus's own figure, so the subject is `focus` itself.
   const fan = methodFanOf(graph, focus);
   if (!fan) return null;
   return {
@@ -1911,7 +1939,7 @@ function planMethodFan(
             0,
             new Set([focus.id]),
             `${focus.id}:`,
-            `0.${laneIndex}`,
+            addressRoot(focus.id, 0, laneIndex),
           ),
         ),
       },

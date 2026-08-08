@@ -18,8 +18,17 @@ What it does:
   rules like `region`, which flag any standalone fragment for not being a full page).
 
 Invariants:
-- No Next, no auth, no dev server. Do not screenshot the running app (it is WorkOS-gated
-  and `middleware.ts` is CODEOWNERS blast-radius) — render from source instead.
+- No Next, no auth, no dev server, for the **rendering and a11y** work this package exists
+  for. Do not screenshot the running app (it is WorkOS-gated and `middleware.ts` is
+  CODEOWNERS blast-radius) — render from source instead.
+  **One recorded exception: `scripts/probe-*.mjs`** (added 2026-08-09, D102.11–D102.12). A
+  probe measures *browser behaviour*, and the two behaviours it was added for — whether a
+  click is intercepted rather than replacing the document, and whether React's reconciliation
+  leaves an element in place for a CSS transition to run on — do not exist in a static render
+  at all. They need a served page, so one probe starts `@majorana/web` against a built
+  `NEXT_DIST_DIR`. That is a deliberate exception to the line above, not an oversight, and it
+  is bounded: probes are hand-run, in no pipeline, and no CI job may depend on one. Anything
+  that is a *check* rather than a *measurement* still renders from source.
 - Scripts: `render` (HTML only), `a11y` (render + axe). It is deliberately **not** named
   `test`: the required `ts` CI job runs `turbo run … test`, which must not pull in a
   chromium download. The dedicated `ui-visual` CI job runs `a11y`.

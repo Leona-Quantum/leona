@@ -11674,11 +11674,24 @@ div.mj-rail-row:hover {
 .mj-converge-canvas :where(.mj-converge-strand-body, .mj-converge-spine, .mj-converge-strand-hit) {
   transition: d var(--dur-converge) var(--ease-converge);
 }
-.mj-converge-canvas :where(.mj-converge-dot, .mj-converge-hit) {
+.mj-converge-canvas .mj-converge-dot,
+.mj-converge-canvas circle.mj-converge-hit {
   transition:
     cx var(--dur-converge) var(--ease-converge),
     cy var(--dur-converge) var(--ease-converge),
     r var(--dur-converge) var(--ease-converge);
+}
+/* `.mj-converge-hit` is two different shapes: a circle over a state, and a
+   rectangle over a lane's name. The rectangle moves by `x`/`y`/`width`, not by
+   `cx`/`cy`/`r`, so one rule covering both left the name's *click target* jumping
+   to its new place while the name itself glided there — an invisible target
+   200ms out of step with the visible thing it belongs to, which is worse than
+   not animating either. Caught in review. */
+.mj-converge-canvas rect.mj-converge-hit {
+  transition:
+    x var(--dur-converge) var(--ease-converge),
+    y var(--dur-converge) var(--ease-converge),
+    width var(--dur-converge) var(--ease-converge);
 }
 .mj-converge-canvas :where(.mj-converge-lane-name, .mj-converge-feed-name, .mj-converge-hit-name) {
   transition: transform var(--dur-converge) var(--ease-converge);

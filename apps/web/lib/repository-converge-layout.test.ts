@@ -991,8 +991,18 @@ test("a line that opens into something says so, and a line that does not is not 
         assert.ok(lane.openHref.startsWith("/repository/layers?"));
         // The address, not the node id. A node holds up to twelve positions on
         // one figure and naming it by id opened all of them.
+        //
+        // Parsed, not `includes`. An address is a prefix of its own descendants'
+        // addresses and `encodeURIComponent` leaves it unchanged, so a substring
+        // test passes on `open=<subject>:1.0` whenever the href carries
+        // `open=<subject>:1.0.3` — which is exactly the href an *open* lane
+        // emits, since shutting it drops its own address and keeps the
+        // descendant. The assertion would have held while the control did the
+        // opposite of what it claims. Caught in review.
         assert.ok(
-          lane.openHref.includes(`open=${encodeURIComponent(lane.address)}`),
+          new URL(lane.openHref, "https://example.invalid").searchParams
+            .getAll("open")
+            .includes(lane.address),
           `${lane.key} does not offer its own address`,
         );
       }
@@ -1717,6 +1727,89 @@ test("a line never offers a click it will not honour", () => {
     }
   }
   assert.ok(offered > 50, `only ${offered} open links seen`);
+});
+
+test("shutting a lane removes every form that was holding it open", () => {
+  // `?open=` is user-supplied and shareable, so it can carry the address **and**
+  // the legacy node id for the same lane — a state no click can produce and a
+  // hand-edited or forwarded URL can. The first version of `toggleHref` was an
+  // if/else-if: it dropped the address, the id went on holding the lane open,
+  // and the shut control did nothing. That is the dead-control failure this
+  // canvas has now produced twice, and no test covered it — the mutation that
+  // restores the if/else-if passed the whole suite. Caught in review.
+  const shut = openDiagram("nonlinear-ode-solve", []);
+  const lane = shut.lanes.find((one) => one.openHref !== null && one.nodeId);
+  assert.ok(lane?.nodeId, "no openable lane with a node id");
+
+  const both = new Set([lane.address, lane.nodeId]);
+  const opened = openDiagram("nonlinear-ode-solve", both);
+  const drawn = opened.lanes.find((one) => one.key === lane.key);
+  assert.ok(drawn?.open, "the lane is not open under both forms, so the case is not being tested");
+  assert.ok(drawn.openHref, "an open lane offers no shut control");
+
+  const after = new URL(drawn.openHref, "https://example.invalid").searchParams.getAll("open");
+  assert.ok(!after.includes(lane.address), "the shut link still names the address");
+  assert.ok(!after.includes(lane.nodeId), "the shut link still names the node id");
+  // And the drawing agrees, which is the part the reader sees.
+  const reopened = openDiagram("nonlinear-ode-solve", after);
+  assert.equal(
+    reopened.lanes.find((one) => one.key === lane.key)?.open,
+    false,
+    "following the shut link leaves the lane open",
+  );
+});
+
+test("one address opens a lane on one figure, even when four are drawn at once", () => {
+  // **The defect this test exists for shipped to a preview deployment.**
+  //
+  // A root address was `${bundleIndex}.${laneIndex}` — a position with no
+  // figure in it. The unfocused surface draws all four roots and hands every one
+  // of them the same `?open=` set, so `?open=0.0` opened a lane on **three of
+  // the four**: the exact multi-open defect addresses were introduced to kill,
+  // reintroduced one level up where the per-figure tests could not see it.
+  //
+  // Every test around this one builds a single figure, which is why none of them
+  // could fail on it. This one draws the surface the way the page does.
+  const roots = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).slice(0, 4);
+  assert.ok(roots.length >= 3, "need several figures to check for a collision between them");
+
+  const addressesByFigure = roots.map((root) => {
+    const shut = openDiagram(root.id, []);
+    return {
+      id: root.id,
+      addresses: shut.lanes.filter((lane) => lane.openHref !== null).map((lane) => lane.address),
+    };
+  });
+
+  // No two figures share an address at all — the property, asserted directly.
+  const owner = new Map<string, string>();
+  for (const figure of addressesByFigure) {
+    for (const address of figure.addresses) {
+      const already = owner.get(address);
+      assert.ok(
+        already === undefined || already === figure.id,
+        `${address} is a lane on both ${already} and ${figure.id}, so one ?open= opens both`,
+      );
+      owner.set(address, figure.id);
+    }
+  }
+
+  // And the consequence, measured the way the page produces it: one address in
+  // the set, every figure drawn, exactly one lane newly open across all of them.
+  const probe = addressesByFigure.find((figure) => figure.addresses.length > 0);
+  assert.ok(probe, "no figure offers an open control");
+  const address = probe.addresses[0]!;
+  let openedBefore = 0;
+  let openedAfter = 0;
+  for (const root of roots) {
+    openedBefore += openDiagram(root.id, []).lanes.filter((lane) => lane.open).length;
+    openedAfter += openDiagram(root.id, [address]).lanes.filter((lane) => lane.open).length;
+  }
+  assert.equal(
+    openedAfter - openedBefore,
+    1,
+    `?open=${address} opened ${openedAfter - openedBefore} lanes across ${roots.length} figures`,
+  );
 });
 
 test("a node id in ?open= still opens what it always opened", () => {
