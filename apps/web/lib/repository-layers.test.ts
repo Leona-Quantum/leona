@@ -262,18 +262,24 @@ const LOOP_FIXTURE: LayerGraph = {
     }),
     method("folder", "solve", {
       contract: contract("alpha", "gamma"),
-      steps: ["encode"],
+      steps: ["encode", "plain"],
       atomic: undefined,
     }),
     method("encode-a", "encode"),
+    // A slot two routes step into and **neither** repeats. Without it, the
+    // "nothing to compare" case could only be asked of a slot nothing steps into
+    // at all, where the answer is empty for the wrong reason — which is exactly
+    // what happened: removing the guard in `foldedAgainst` left every test green.
+    capability("plain"),
+    method("plain-a", "plain"),
   ],
 };
 
 test("a repeated hop is counted as a hop, and the denominator is carried with it", () => {
   const census = layerCensus(LOOP_FIXTURE, new Set<string>(), FIXTURE_STATES);
-  // Two methods take one hop each; one of the two declares a multiplicity. The
+  // Three hops across two methods, one of which declares a multiplicity. The
   // denominator is the point: without it, "1 loop" reads as "1 of 1".
-  assert.equal(census.stepInstances, 2);
+  assert.equal(census.stepInstances, 3);
   assert.equal(census.iteratedSteps, 1);
   assert.equal(census.coherentLoops, 1);
   assert.equal(census.measuredLoops, 0);
@@ -281,10 +287,13 @@ test("a repeated hop is counted as a hop, and the denominator is carried with it
 });
 
 test("a slot nothing repeats draws no contrast at all", () => {
-  // `solve` is realised by methods that step into `encode`; nothing steps into
-  // `solve`, so it has no traffic to compare. The empty pair is what stops the
-  // page printing "these routes meet it once" about a slot no route has measured.
-  const { unpinned, repeated } = foldedAgainst(LOOP_FIXTURE, "solve");
+  // `plain` is a real hop — `folder` steps into it — and no route repeats it. The
+  // empty pair is what stops the capability page printing "no multiplicity
+  // recorded" as a list of shortcomings on a slot nobody is competing over.
+  // Asking this of a slot nothing steps into would answer empty for the wrong
+  // reason and let the guard be deleted with every test still green.
+  assert.ok(containersOf(LOOP_FIXTURE, "plain").length > 0);
+  const { unpinned, repeated } = foldedAgainst(LOOP_FIXTURE, "plain");
   assert.deepEqual(unpinned, []);
   assert.deepEqual(repeated, []);
 });
