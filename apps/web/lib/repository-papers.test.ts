@@ -291,7 +291,19 @@ test("the census counts each axis separately, because they were filled by differ
   }
   // The rule in ./repository/papers.ts, asserted rather than trusted: nothing
   // filled from an abstract may claim a paper has no numerics.
-  assert.equal(census.byAxis.simulation.absent, 0);
+  //
+  // **Scoped to the abstract rows on purpose.** Asserting it over the whole
+  // register passes today only because all 82 populated rows are abstract
+  // reads — and it would fail the first time somebody does the legitimate
+  // thing this field is designed for: read a full text and record
+  // `simulation: "absent"`. A test that turns red on correct work is worse
+  // than no test, because the fix looks like deleting the rule.
+  const fromAbstracts = reportsCensus({
+    papers: PAPER_REGISTER.papers.filter((paper) => paper.reportsBasis === "abstract"),
+  });
+  assert.equal(fromAbstracts.byAxis.simulation.absent, 0);
+  // …and the scoping is not vacuous: there are abstract rows to check.
+  assert.ok(fromAbstracts.read > 0);
 });
 
 test("citedByNode is the set the source-read passes are prioritised against", () => {

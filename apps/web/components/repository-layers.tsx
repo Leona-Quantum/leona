@@ -55,6 +55,7 @@ import {
 } from "../lib/repository/layers";
 import { layoutProcessZoom } from "../lib/repository/process-layout";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
+import { paperTraces } from "../lib/repository/paper-traces";
 import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
 import { SOURCE_COVERAGE_AXES } from "../lib/repository/types";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
@@ -167,7 +168,8 @@ const COPY = {
     atlasNone:
       "No record in the Atlas covers this yet. The catalogue is 283 records of circuits and primitives; this part of the literature is not in it.",
     citationsHeading: "Sources",
-    papersLead: (n: number) => `Every claim here rests on a source, and all ${n} of them are registered in one place — with what each reports, and everywhere it is cited from.`,
+    papersLead: (cited: number, total: number) =>
+      `Every claim here rests on a source. This graph cites ${cited} papers; they and the ${total - cited} the Atlas cites alone are registered in one place, with what each reports and everywhere it is cited from.`,
     papersLink: "Papers",
     sourceOutLabel: "open the paper itself",
     // Printed on every citation, including the ones nobody has read for this.
@@ -299,7 +301,8 @@ const COPY = {
     atlasNone:
       "これに対応する項目は Atlas にまだありません。カタログは回路と基本要素の283件で構成されており、この領域の文献は含まれていません。",
     citationsHeading: "出典",
-    papersLead: (n: number) => `ここでの主張はすべて出典に基づいており、その ${n} 件は一箇所に登録されています。各論文が何を報告しているか、どこから引用されているかも併せて記録しています。`,
+    papersLead: (cited: number, total: number) =>
+      `ここでの主張はすべて出典に基づいています。この図が引用しているのは ${cited} 件で、それらとアトラスのみが引用する ${total - cited} 件は、一箇所に登録されています。各論文が何を報告しているか、どこから引用されているかも併せて記録しています。`,
     papersLink: "論文",
     sourceOutLabel: "論文そのものを開く",
     reportsAxis: { theory: "理論", simulation: "数値計算", hardware: "実機" },
@@ -1219,7 +1222,7 @@ export function LayerCensusPanel({
           it documents it *from*. A reader who wants the second is otherwise
           stuck opening node pages one at a time. */}
       <p>
-        {copy.papersLead(PAPER_REGISTER.papers.length)}{" "}
+        {copy.papersLead(paperTraces(graph).length, PAPER_REGISTER.papers.length)}{" "}
         <a href="/repository/papers">{copy.papersLink}</a>
       </p>
     </section>

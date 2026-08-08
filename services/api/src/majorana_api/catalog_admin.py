@@ -406,7 +406,11 @@ async def _resolve_reviewer_by_email(email: str) -> uuid.UUID:
         await engine.dispose()
 
     reviewer = pick_live_reviewer(email, rows)
-    print(f"reviewer: {reviewer} (resolved from {email})")
+    # The email is deliberately NOT echoed. This runs as a Cloud Run job and its
+    # stdout is retained in Cloud Logging, so printing it would write a personal
+    # address into log storage on every re-import — for no gain, since the
+    # operator just typed it. The UUID is what they need back to check the pick.
+    print(f"reviewer: {reviewer} (resolved from --attested-by-email)")
     return reviewer
 
 

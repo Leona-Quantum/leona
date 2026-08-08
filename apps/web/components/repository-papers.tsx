@@ -90,6 +90,8 @@ const COPY = {
     kind: { slot: "slot", method: "method", record: "record" },
     unread: "not read",
     citedNowhere: "cited nowhere yet",
+    empty:
+      "No paper is registered. Either nothing has been read into the register yet, or it failed to load — those are different things, and this page cannot tell them apart.",
     // Pluralised per count rather than written for the common case: the
     // commonest count on this list is 1, and "cited by 1 map nodes" is the
     // sentence a graph seeded one cluster at a time produces most often.
@@ -148,6 +150,7 @@ const COPY = {
     kind: { slot: "枠", method: "手法", record: "記録" },
     unread: "未読",
     citedNowhere: "まだ引用なし",
+    empty: "登録されている論文がありません。まだ登録簿に何も読み込まれていないか、読み込みに失敗したかのいずれかです。このふたつは別のことですが、このページからは区別できません。",
     citedByNodes: (n: number) => `地図の ${n} 個のノードから引用`,
     citedByRecords: (n: number) => `アトラスの ${n} 件の記録から引用`,
   },
@@ -342,6 +345,12 @@ export function PaperIndexView({
         <p className="mj-layers-empty">{copy.reachLine(census)}</p>
         <p className="mj-layers-empty">{copy.queuedLine(census.queued)}</p>
       </section>
+      {/* Unreachable on the authored register, which has 143 rows — and written
+          anyway, because "the list is currently empty" and "the register failed
+          to load" render identically as a blank page, and the reader cannot
+          tell which they are looking at. Same rule every list on the Layers
+          surface follows: an empty list says what the emptiness means. */}
+      {pages.length === 0 ? <p className="mj-layers-empty">{copy.empty}</p> : null}
       <ul className="mj-papers-list">
         {pages.map((page) => (
           <li key={page.paper.id}>
