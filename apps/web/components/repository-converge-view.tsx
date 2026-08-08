@@ -778,7 +778,7 @@ export function ConvergeView({
                   the document being replaced. The figure inside still arrives
                   from the server as links, so a reader with JavaScript off gets
                   the same figure at the same place — fixed, and navigating. */}
-              <CanvasContinuity>
+              <CanvasContinuity renderedAt={atParam}>
                 <InfiniteCanvas
                   initial={viewport}
                   label={copy.canvasLabel(focus ? label(focus) : copy.heading)}

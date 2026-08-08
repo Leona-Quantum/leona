@@ -56,12 +56,37 @@ import { useEffect, useRef, type ReactNode } from "react";
 export function CanvasContinuity({
   children,
   className,
+  renderedAt = null,
 }: {
   children: ReactNode;
   className?: string;
+  /**
+   * The `?at=` **this render was built from** — the viewport stamped into every
+   * href on the figure below.
+   *
+   * Needed because the reader's viewport and the links' viewport drift apart the
+   * moment they pan: `InfiniteCanvas` writes the live one into the URL with a
+   * debounced `replaceState`, while the anchors still carry the value the server
+   * rendered with. Following one used to remount the canvas at the stale value,
+   * which is session 101's *"every click threw away where you were standing"*.
+   * Intercepting fixed the visible half — the canvas is not remounted, so the
+   * reader stays put — and left the invisible half worse: the pushed URL would
+   * say somewhere the reader is not, and that URL is what they bookmark or send.
+   *
+   * So an inherited `at` is replaced with the live one. **Inherited**, not "any":
+   * the size controls set an `at` of their own deliberately, and one of those
+   * must win over where the reader happens to be standing. The test for
+   * inherited is exactly this prop — an anchor carrying the value this render was
+   * built from is passing it along, not choosing it. Caught in review.
+   */
+  renderedAt?: string | null;
 }): React.ReactElement {
   const router = useRouter();
   const host = useRef<HTMLDivElement>(null);
+  // Read inside the handler rather than captured in the effect's closure, so a
+  // re-render after a push updates it without re-binding the listener.
+  const inherited = useRef(renderedAt);
+  inherited.current = renderedAt;
 
   useEffect(() => {
     const node = host.current;
@@ -102,6 +127,15 @@ export function CanvasContinuity({
       // candidate for being turned into a movement of the drawing.
       if (next.pathname !== window.location.pathname) return;
       if (next.search === window.location.search) return;
+
+      // Where the reader is *now*, which is not what the anchor says once they
+      // have panned. Only substituted into a link that is passing the rendered
+      // value along; a link that names a different viewport chose it.
+      const live = new URLSearchParams(window.location.search).get("at");
+      const carried = next.searchParams.get("at");
+      if (live !== null && carried === inherited.current && live !== carried) {
+        next.searchParams.set("at", live);
+      }
 
       event.preventDefault();
       // `scroll: false` because the reader is looking at a figure, not arriving

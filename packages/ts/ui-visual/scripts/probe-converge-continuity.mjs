@@ -113,6 +113,43 @@ out.withoutJavaScript = {
   anchors: await plain.locator("svg.mj-converge-canvas a").count(),
 };
 
+// After a pan, the pushed URL must say where the reader actually is — the anchors
+// still carry the `?at=` the server rendered with, and `InfiniteCanvas` writes the
+// live one in with a debounced replaceState.
+await page.goto(`${BASE}/repository/layers?focus=nonlinear-ode-solve`, { waitUntil: "networkidle" });
+const canvas = page.locator(".mj-canvas-viewport, .mj-converge-scroll").first();
+const box = await canvas.boundingBox();
+if (box) {
+  await page.mouse.move(box.x + box.width / 2, box.y + box.height / 2);
+  await page.mouse.down();
+  await page.mouse.move(box.x + box.width / 2 - 140, box.y + box.height / 2 - 60, { steps: 12 });
+  await page.mouse.up();
+}
+await page.waitForFunction(() => window.location.search.includes("at="), null, { timeout: 5000 })
+  .catch(() => {});
+const panned = new URL(page.url()).searchParams.get("at");
+const anchorAt = await page.evaluate(() => {
+  const a = document.querySelector("svg.mj-converge-canvas a[href*='open=']");
+  return a ? new URL(a.getAttribute("href"), location.href).searchParams.get("at") : null;
+});
+await page.evaluate(() => {
+  const a = document.querySelector("svg.mj-converge-canvas a[href*='open=']");
+  const hit = a?.querySelector(".mj-converge-strand-hit");
+  if (hit) hit.setAttribute("data-aim", "here");
+});
+const aim2 = await pointOnLane('[data-aim="here"]');
+if (aim2) await page.mouse.click(aim2.x, aim2.y);
+await page.waitForFunction(() => window.location.search.includes("open="), null, { timeout: 5000 })
+  .catch(() => {});
+out.afterPan = {
+  urlAtWhilePanned: panned,
+  atStampedOnTheAnchor: anchorAt,
+  atInThePushedUrl: new URL(page.url()).searchParams.get("at"),
+  // The interesting case only exists if the pan actually moved the URL away from
+  // what the anchors carry; say so rather than reporting a vacuous pass.
+  driftExisted: panned !== null && panned !== anchorAt,
+};
+
 // And a cross-page link must NOT be intercepted — it keeps the cross-document zoom.
 await page.goto(`${BASE}/repository/layers?focus=nonlinear-ode-solve`, { waitUntil: "networkidle" });
 await page.evaluate(() => {
