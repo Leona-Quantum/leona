@@ -15,11 +15,13 @@ import {
   CONVERGE_METRICS,
   bowAt,
   convergingSlots,
+  crossingsAt,
   laneOffsets,
   layoutConverge,
   type ConvergeDiagram,
   type ConvergeLane,
 } from "./repository/converge-layout.ts";
+import { expansionOf } from "./repository/state-graph.ts";
 import { estimateTextWidth } from "./repository/process-layout.ts";
 import { isCapability, layerNode, type LayerCapability } from "./repository/layers.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
@@ -342,6 +344,43 @@ test("a slot with nothing finer draws nothing rather than an empty frame", () =>
   assert.equal(diagram.empty, true);
   assert.deepEqual(diagram.states, []);
   assert.deepEqual(diagram.lanes, []);
+});
+
+test("the crossings at a shared circle count methods, and count each one once", () => {
+  const node = layerNode(LAYER_GRAPH, "nonlinear-ode-solve");
+  assert.ok(node && isCapability(node));
+  const expansion = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, node);
+  const census = crossingsAt(LAYER_GRAPH, STATE_VOCABULARY, expansion, "linear-ivp", "en");
+  assert.ok(census);
+
+  // Four embeddings, not five. The Koopman-von Neumann lift fills the broad
+  // lane AND is the sole filler of its own narrowed lane, so counting lanes
+  // instead of methods reported it twice — measured before the dedupe went in,
+  // this said 5 ways in, 40 crossings, and listed KvN → Schrödingerisation
+  // twice.
+  assert.equal(census.waysIn, 4, "one entry per embedding method, however many lanes reach it");
+  assert.equal(census.total, census.waysIn * census.waysOut);
+  assert.equal(census.recorded + census.unpinned + census.unpublished, census.total);
+
+  const seen = new Set(census.examples.map((crossing) => crossing.key));
+  assert.equal(seen.size, census.examples.length, "a combination is listed once");
+});
+
+test("the owner's own research direction is on the page", () => {
+  // Carleman + Schrödingerisation: it composes through `linear-ivp`, no source
+  // puts the two together, and the whole point of this surface is that a reader
+  // can see it. If it stops appearing, the surface has stopped doing its job.
+  const node = layerNode(LAYER_GRAPH, "nonlinear-ode-solve");
+  assert.ok(node && isCapability(node));
+  const expansion = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, node);
+  const census = crossingsAt(LAYER_GRAPH, STATE_VOCABULARY, expansion, "linear-ivp", "en");
+  assert.ok(census);
+  const found = census.examples.some(
+    (crossing) =>
+      crossing.inHref.endsWith("/carleman-linearization") &&
+      crossing.outHref.endsWith("/schrodingerisation"),
+  );
+  assert.ok(found, "Carleman → Schrödingerisation is not listed as unpublished");
 });
 
 test("the narrowed lane is named after its filler, not after the slot four routes share", () => {

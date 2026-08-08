@@ -10,9 +10,11 @@ import { ConvergeCanvas } from "./repository-converge-map";
 import { viewSwitchLabels } from "./repository-strand-view";
 import {
   convergingSlots,
+  crossingsAt,
   layoutConverge,
   type ConvergeDiagram,
 } from "../lib/repository/converge-layout";
+import { expansionOf } from "../lib/repository/state-graph";
 import { mapHref } from "../lib/repository/process-layout";
 import { isCapability, layerNode, type LayerGraph } from "../lib/repository/layers";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
@@ -31,6 +33,10 @@ interface ConvergeCopy {
   unpublishedNote: (n: number) => string;
   noneUnpublished: string;
   onMap: string;
+  crossHeading: (state: string) => string;
+  crossTally: (total: number, recorded: number, unpinned: number, unpublished: number) => string;
+  crossNone: string;
+  crossCaveat: string;
 }
 
 const COPY: Record<"en" | "ja", ConvergeCopy> = {
@@ -49,6 +55,12 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `${n} line${n === 1 ? "" : "s"} here ${n === 1 ? "is" : "are"} a composition no recorded source takes. That is a fact about this graph, not a claim about the literature.`,
     noneUnpublished: "Every line on this figure is one a recorded source takes.",
     onMap: "See it on the route map",
+    crossHeading: (state: string) => `Ways through ${state}`,
+    crossTally: (total: number, recorded: number, unpinned: number, unpublished: number) =>
+      `${total} combinations cross this circle. A source records ${recorded} of them end to end. ${unpinned} cross slots a source does record, without naming which method fills them. ${unpublished} are compositions no recorded source takes.`,
+    crossNone: "No recorded source leaves any of these unwalked.",
+    crossCaveat:
+      "These are derived from the two contracts each line carries, not proposed. A line here says the object one process hands back is the object the next one takes — nothing about whether it is a good idea, and nothing about whether the literature has missed it.",
   },
   ja: {
     heading: "経路が合流する場所",
@@ -65,6 +77,12 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `この図の ${n} 本は、記録された出典がたどっていない組み合わせです。これはこのグラフについての事実であり、文献についての主張ではありません。`,
     noneUnpublished: "この図のすべての線は、記録された出典がたどるものです。",
     onMap: "経路マップで見る",
+    crossHeading: (state: string) => `${state}を通る道`,
+    crossTally: (total: number, recorded: number, unpinned: number, unpublished: number) =>
+      `この円を通る組み合わせは ${total} 通りです。出典が端から端までたどるものが ${recorded} 件、出典が枠は記録しているものの、どの手法が満たすかを述べていないものが ${unpinned} 件、記録された出典がたどっていない組み合わせが ${unpublished} 件あります。`,
+    crossNone: "記録された出典がたどっていない組み合わせはありません。",
+    crossCaveat:
+      "これらは各線が持つ二つの契約から導かれたものであり、提案ではありません。ここでの線は、ある処理が返す対象が次の処理の受け取る対象と一致することを述べているにすぎません。それが良い着想であるか、文献が見落としているかについては何も述べていません。",
   },
 };
 
@@ -103,6 +121,22 @@ export function ConvergeView({
   const shared = (diagram?.states ?? []).filter(
     (state) => state.arriving > 0 && state.leaving > 0 && (state.arriving > 1 || state.leaving > 1),
   );
+
+  // The discovery lives one level below the drawn lanes. A lane is a *slot*, and
+  // at slot granularity every lane on the authored graph is one a source walks —
+  // so the figure's own unpublished count is zero and would stay zero. The
+  // unpublished pairs are combinations of the **methods** filling two slots, and
+  // this is where the owner's Carleman + Schrödingerisation shows up.
+  const census =
+    focus && diagram && !diagram.empty && shared[0]
+      ? crossingsAt(
+          graph,
+          STATE_VOCABULARY,
+          expansionOf(graph, STATE_VOCABULARY, focus),
+          shared[0].stateId,
+          locale,
+        )
+      : null;
 
   return (
     <section className="mj-strand-view mj-process-view" aria-labelledby="converge-heading">
@@ -152,6 +186,40 @@ export function ConvergeView({
             <li>{copy.legendUnpublished}</li>
             <li>{copy.legendUnpinned}</li>
           </ul>
+
+          {census ? (
+            <section className="mj-converge-crossings">
+              <h2>
+                {copy.crossHeading(
+                  layerState(STATE_VOCABULARY, census.stateId)
+                    ? label(layerState(STATE_VOCABULARY, census.stateId)!)
+                    : census.stateId,
+                )}
+              </h2>
+              <p>
+                {copy.crossTally(
+                  census.total,
+                  census.recorded,
+                  census.unpinned,
+                  census.unpublished,
+                )}
+              </p>
+              {census.examples.length > 0 ? (
+                <ul>
+                  {census.examples.map((crossing) => (
+                    <li key={crossing.key}>
+                      <a href={crossing.inHref}>{crossing.inLabel}</a>
+                      {" → "}
+                      <a href={crossing.outHref}>{crossing.outLabel}</a>
+                    </li>
+                  ))}
+                </ul>
+              ) : (
+                <p>{copy.crossNone}</p>
+              )}
+              <p className="mj-converge-caveat">{copy.crossCaveat}</p>
+            </section>
+          ) : null}
 
           {focus ? <p><a href={mapHref(focus.id)}>{copy.onMap}</a></p> : null}
         </>

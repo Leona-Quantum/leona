@@ -11375,3 +11375,37 @@ div.mj-rail-row:hover {
   list-style: none;
   font-size: var(--fs-14);
 }
+
+/* Every way through the shared circle, at method granularity.
+   This is a level below what the canvas draws, and it has to be: a drawn lane is
+   a *slot*, and at slot granularity every lane on the authored graph is one a
+   source walks. The combinations nobody has published are pairs of the methods
+   filling two slots — which is where the owner's own Carleman +
+   Schrödingerisation research direction appears. */
+.mj-converge-crossings {
+  margin: var(--sp-5) 0;
+  padding: var(--sp-4);
+  border: 1px solid var(--border-0);
+  border-radius: var(--radius-card);
+}
+.mj-converge-crossings h2 {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-16);
+}
+.mj-converge-crossings > p { margin: 0 0 var(--sp-3); font-size: var(--fs-14); }
+.mj-converge-crossings ul {
+  margin: 0 0 var(--sp-3);
+  padding-left: var(--sp-4);
+  font-size: var(--fs-14);
+  line-height: 1.7;
+}
+/* Said out loud rather than implied by the styling: a line here is derived from
+   two contracts, and derived is neither invented nor published. D89.6 forbids
+   filling a hole with a plausible sentence; it does not forbid stating a
+   composition the data supports, provided the page never implies a paper. */
+.mj-converge-caveat {
+  margin: 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+}

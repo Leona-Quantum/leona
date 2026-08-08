@@ -66,6 +66,11 @@ import {
   type Expansion,
   type StateBundle,
 } from "./state-graph.ts";
+// `Crossing` below is this module's own type — a way IN and a way OUT of one
+// shared circle, ready to render. `state-graph.ts` exports a `Crossing` too and
+// it is a different thing: one (edge, filler) choice. Deliberately not shared,
+// and named apart at the import so the two cannot be confused.
+import type { Crossing as EdgeChoice } from "./state-graph.ts";
 import { isCapability, layerNode, type LayerCapability, type LayerGraph } from "./layers.ts";
 import { layerState, type StateVocabulary } from "./states.ts";
 import type { PublicLocale } from "../public-locale.ts";
@@ -365,6 +370,128 @@ function standingFor(
 
 function round(value: number): number {
   return Math.round(value * 100) / 100;
+}
+
+/** One concrete route through a shared circle: a way in, then a way out. */
+export interface Crossing {
+  key: string;
+  inLabel: string;
+  inHref: string;
+  outLabel: string;
+  outHref: string;
+  standing: LaneStanding;
+}
+
+export interface CrossingCensus {
+  stateId: string;
+  waysIn: number;
+  waysOut: number;
+  /** waysIn × waysOut. What the shared circle actually offers. */
+  total: number;
+  recorded: number;
+  unpinned: number;
+  unpublished: number;
+  /** The unpublished ones, capped — the discovery, listed. */
+  examples: readonly Crossing[];
+}
+
+/**
+ * Every way across a shared circle, at **method** granularity, with its standing.
+ *
+ * This is where the owner's discovery actually lives, and it is a level below
+ * what the canvas draws. The lanes on the figure are *slots*, and at slot
+ * granularity every lane on the authored graph is one a recorded source walks —
+ * so the figure's own `unpublishedCount` is zero and would stay zero. The
+ * unpublished pairs are combinations of the **methods** filling two slots:
+ * Carleman fills the embedding, Schrödingerisation fills the linear solve, they
+ * compose through `linear-ivp`, and no source puts them together.
+ *
+ * Capped, and the cap is reported rather than applied silently: a truncated list
+ * of discoveries reads exactly like a shorter list of them.
+ */
+export function crossingsAt(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  expansion: Expansion,
+  stateId: string,
+  locale: PublicLocale,
+  cap = 30,
+): CrossingCensus | null {
+  const into = expansion.bundles.filter((bundle) => bundle.to === stateId);
+  const outOf = expansion.bundles.filter((bundle) => bundle.from === stateId);
+  if (into.length === 0 || outOf.length === 0) return null;
+
+  const ways = (bundles: readonly StateBundle[]) =>
+    bundles.flatMap((bundle) =>
+      bundle.lanes.flatMap((lane) => {
+        const fillers = laneFillers(graph, lane);
+        if (fillers.length > 0) {
+          return fillers.map((method) => ({
+            crossing: { edgeKey: lane.edges[0]!.key, filler: method.id },
+            label: labelOf(method, locale),
+            href: `/repository/layers/${method.id}`,
+          }));
+        }
+        // A multi-edge lane names no single method; it is the run itself.
+        return [
+          {
+            crossing: { edgeKey: lane.edges[0]!.key, filler: null } as EdgeChoice,
+            label: laneName(graph, lane, locale).text,
+            href: laneName(graph, lane, locale).href,
+          },
+        ];
+      }),
+    );
+
+  // Deduped on the method, not on the lane it was reached by.
+  //
+  // A filler can appear on two lanes of the same bundle: the Koopman-von Neumann
+  // lift fills the broad `nonlinear-linear-embedding` lane *and* is the sole
+  // filler of the narrowed `…@koopman-von-neumann-lift` lane, because the
+  // narrowing is drawn as its own way across. Both reach the circle by the same
+  // method, so counting both says the same route twice — measured before this
+  // guard, `linear-ivp` reported 40 crossings and listed
+  // "Koopman-von Neumann → Schrödingerisation" twice.
+  const distinct = <T extends { crossing: EdgeChoice; label: string }>(items: T[]): T[] => {
+    const seen = new Set<string>();
+    return items.filter((item) => {
+      const id = item.crossing.filler ?? item.crossing.edgeKey;
+      if (seen.has(id)) return false;
+      seen.add(id);
+      return true;
+    });
+  };
+
+  const arrivals = distinct(ways(into));
+  const departures = distinct(ways(outOf));
+
+  const tally = { recorded: 0, unpinned: 0, unpublished: 0 };
+  const examples: Crossing[] = [];
+  for (const arrival of arrivals) {
+    for (const departure of departures) {
+      const standing = pathStanding(graph, vocabulary, [arrival.crossing, departure.crossing]);
+      tally[standing] += 1;
+      if (standing === "unpublished" && examples.length < cap) {
+        examples.push({
+          key: `${arrival.crossing.filler ?? arrival.crossing.edgeKey}>${departure.crossing.filler ?? departure.crossing.edgeKey}`,
+          inLabel: arrival.label,
+          inHref: arrival.href,
+          outLabel: departure.label,
+          outHref: departure.href,
+          standing,
+        });
+      }
+    }
+  }
+
+  return {
+    stateId,
+    waysIn: arrivals.length,
+    waysOut: departures.length,
+    total: arrivals.length * departures.length,
+    ...tally,
+    examples,
+  };
 }
 
 /** Every focusable slot that has something to converge — used by the page and the tests. */
