@@ -1374,3 +1374,54 @@ test("a column is wide enough for the bows it holds, and that is what makes it g
     `opening a 7-method fan left the figure ${opened.width} wide, was ${shut.width}`,
   );
 });
+
+test("every address a figure emits keeps the reader where they were standing", () => {
+  // Measured on production before this: of 83 links to `/repository/layers*` on
+  // the overview, 5 carried `at=` — and all 5 were the size rungs, which set
+  // their own. So every "open this line in place" click threw the reader's pan
+  // and zoom away and re-rendered them at the origin at 100%. The figure stayed
+  // put; the reader did not, and that is most of what "it does not feel like one
+  // continuous surface" was.
+  const AT = "120,-40,1.5";
+  let checked = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const node = layerNode(LAYER_GRAPH, focus.id);
+    assert.ok(node && isCapability(node));
+    for (const open of openings(focus.id)) {
+      const carried = layoutConverge({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        focus: node,
+        locale: "en",
+        open,
+        at: AT,
+      });
+      const addresses = [
+        ...carried.lanes.flatMap((lane) => [lane.href, lane.openHref]),
+        ...carried.states.map((state) => state.href),
+        ...carried.feeds.map((feed) => feed.href),
+      ].filter((href): href is string => typeof href === "string");
+      assert.ok(addresses.length > 0, `${focus.id} emitted no addresses`);
+      for (const href of addresses) {
+        checked += 1;
+        assert.ok(
+          href.includes(`at=${encodeURIComponent(AT)}`),
+          `${focus.id}: ${href} dropped the viewport`,
+        );
+      }
+      // And the default stays clean — stamping `at=0,0,1` onto every link would
+      // make a bare address impossible to produce.
+      const bare = layoutConverge({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        focus: node,
+        locale: "en",
+        open,
+      });
+      for (const lane of bare.lanes) {
+        assert.ok(!lane.href.includes("at="), `${focus.id}: ${lane.href} invented a viewport`);
+      }
+    }
+  }
+  assert.ok(checked > 200, `only ${checked} addresses checked`);
+});

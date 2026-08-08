@@ -255,6 +255,38 @@ export const CONVERGE_DEPTH_MAX = 4;
  */
 export const CONVERGE_OPEN_MAX = 24;
 
+/**
+ * Which of a URL's `?open=` values this figure will honour, and how many it drops.
+ *
+ * Lives beside `CONVERGE_OPEN_MAX` because the number that enforces and the
+ * number that is reported have to be one number, and because **both** surfaces
+ * that draw this canvas now parse the parameter. The node page used to ignore
+ * `?open=` entirely — verified on production, its `<svg>` was byte-identical
+ * with and without one — so everything a reader had opened was silently thrown
+ * away the moment they clicked a name to look at something closely.
+ *
+ * Unknown ids are skipped rather than rejected: a URL naming four things, one
+ * of which has since been renamed, should open the other three.
+ */
+export function resolveOpenIds(
+  values: readonly string[],
+  known: (id: string) => boolean,
+  reserved = 0,
+): { open: Set<string>; dropped: number } {
+  const open = new Set<string>();
+  let dropped = 0;
+  for (const value of values) {
+    if (!known(value)) continue;
+    if (open.has(value)) continue;
+    if (open.size + reserved >= CONVERGE_OPEN_MAX) {
+      dropped += 1;
+      continue;
+    }
+    open.add(value);
+  }
+  return { open, dropped };
+}
+
 export type LaneStanding = "recorded" | "unpinned" | "unpublished";
 
 /** What a line opens into, when it opens into anything. */
@@ -515,13 +547,34 @@ function labelOf(item: { label: string; labelJa: string }, locale: PublicLocale)
   return locale === "ja" ? item.labelJa : item.label;
 }
 
-/** The address of this figure, with a given focus and a given set of things open. */
-export function figureHref(focus: string | null, open: Iterable<string>): string {
+/**
+ * The address of this figure, with a given focus, a given set of things open,
+ * and **where the reader is standing**.
+ *
+ * `at` is carried because leaving it out is what made the surface stop feeling
+ * like one surface. Measured on production before this: of 83 links to
+ * `/repository/layers*` on the overview, exactly 5 carried `at=` — the size
+ * rungs, which set it deliberately — so every "open this line in place" click
+ * silently threw the reader's pan and zoom away and re-rendered them at the
+ * origin at 100%. The figure did stay put; the reader did not.
+ *
+ * Passed through as the raw parameter rather than parsed and reformatted. It
+ * arrived as a string that `parseViewport` accepted and the only thing to do
+ * with it is hand it back, so round-tripping it through a float would add a
+ * second writer of one value for no gain.
+ */
+export function figureHref(focus: string | null, open: Iterable<string>, at?: string | null): string {
   const params = new URLSearchParams();
   if (focus) params.set("focus", focus);
   for (const id of open) params.append("open", id);
+  if (at) params.set("at", at);
   const query = params.toString();
   return query ? `/repository/layers?${query}` : "/repository/layers";
+}
+
+/** `/repository/layers/<id>`, keeping where the reader is standing. */
+export function nodeHref(id: string, at?: string | null): string {
+  return at ? `/repository/layers/${id}?at=${encodeURIComponent(at)}` : `/repository/layers/${id}`;
 }
 
 /**
@@ -532,11 +585,16 @@ export function figureHref(focus: string | null, open: Iterable<string>): string
  * everything else still in view."* One id would mean opening a second thing
  * shuts the first.
  */
-export function toggleHref(focus: string | null, open: ReadonlySet<string>, id: string): string {
+export function toggleHref(
+  focus: string | null,
+  open: ReadonlySet<string>,
+  id: string,
+  at?: string | null,
+): string {
   const next = new Set(open);
   if (next.has(id)) next.delete(id);
   else next.add(id);
-  return figureHref(focus, next);
+  return figureHref(focus, next, at);
 }
 
 function laneName(
@@ -1279,6 +1337,27 @@ function round(value: number): number {
  * pass. Each consecutive pair gets one circle each — **one**, shared by every
  * lane that touches it — and the ways across bow between them.
  */
+/**
+ * Put the reader's viewport back on an address this figure emitted.
+ *
+ * One writer for the whole diagram rather than an `at` threaded through the
+ * nine places that build a `/repository/layers/...` string. Threading it would
+ * mean nine call sites that each have to remember, and the ones that forgot
+ * would be invisible — which is precisely how the parameter came to be on 5 of
+ * 83 links in the first place.
+ */
+function withViewport(href: string | null, at?: string | null): string | null {
+  if (!href || !at) return href;
+  // Already addressed — the size rungs set their own `at` deliberately and must
+  // win over the one the reader arrived with, or the control does nothing.
+  if (href.includes("at=")) return href;
+  return `${href}${href.includes("?") ? "&" : "?"}at=${encodeURIComponent(at)}`;
+}
+
+function carryViewport<T extends { href: string }>(shape: T, at?: string | null): T {
+  return at ? { ...shape, href: withViewport(shape.href, at)! } : shape;
+}
+
 export function layoutConverge(options: {
   graph: LayerGraph;
   vocabulary: StateVocabulary;
@@ -1301,6 +1380,14 @@ export function layoutConverge(options: {
    * Defaults to the subject, which is right whenever there is only one figure.
    */
   focusParam?: string | null;
+  /**
+   * The reader's current `?at=`, carried onto every address this figure emits.
+   *
+   * Raw, as it arrived. A figure that forgets it re-renders the reader at the
+   * origin on every click, which is most of what "it does not feel like one
+   * continuous surface" turned out to be.
+   */
+  at?: string | null;
 }): ConvergeDiagram {
   const { graph, vocabulary, focus, locale } = options;
   const focusParam = options.focusParam === undefined ? focus.id : options.focusParam;
@@ -1458,9 +1545,12 @@ export function layoutConverge(options: {
     // the minimum whatever the labels do.
     width: Math.max(width, round(out.rightmost + M.margin)),
     height,
-    states: [...states, ...out.inner],
-    lanes: out.lanes,
-    feeds: out.feeds,
+    states: [...states, ...out.inner].map((state) => carryViewport(state, options.at)),
+    lanes: out.lanes.map((lane) => ({
+      ...carryViewport(lane, options.at),
+      openHref: withViewport(lane.openHref, options.at),
+    })),
+    feeds: out.feeds.map((feed) => carryViewport(feed, options.at)),
     caption,
     empty: false,
     unpublishedCount: out.unpublished,

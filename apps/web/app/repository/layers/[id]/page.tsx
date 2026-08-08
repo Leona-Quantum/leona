@@ -13,6 +13,7 @@ import { notFound } from "next/navigation";
 import { PublicSite } from "../../../../components/public-site";
 import { LayerNodeView, LayerStateView } from "../../../../components/repository-layers";
 import { parseViewport } from "../../../../lib/repository/canvas-viewport";
+import { resolveOpenIds } from "../../../../lib/repository/converge-layout";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../lib/repository/layer-graph";
@@ -49,6 +50,12 @@ export async function generateMetadata({
     };
   }
   return { title: locale === "ja" ? "階層" : "Layers" };
+}
+
+/** `?open=` as a list, tolerating the repeated-parameter form the canvas emits. */
+function openValues(query: Record<string, string | string[] | undefined>): string[] {
+  const raw = query.open;
+  return Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
 }
 
 export default async function RepositoryLayerNodePage({
@@ -96,6 +103,10 @@ export default async function RepositoryLayerNodePage({
           corpus={corpus}
           locale={locale}
           viewport={parseViewport(query.at)}
+          // A method's own figure always opens itself, so one slot of the cap is
+          // spoken for before the reader's own ids are counted.
+          open={resolveOpenIds(openValues(query), (id) => layerNode(LAYER_GRAPH, id) !== null, 1).open}
+          at={typeof query.at === "string" ? query.at : null}
         />
       ) : state ? (
         <LayerStateView
