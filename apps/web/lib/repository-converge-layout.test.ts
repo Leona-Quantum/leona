@@ -1242,3 +1242,26 @@ test("on the overview, opening a line comes back to the overview", () => {
     );
   }
 });
+
+test("an ingredient's name stays on the canvas", () => {
+  // A lane name is centred in a column sized to hold it, so it cannot escape. An
+  // ingredient's name is drawn from its stub *rightwards* and had no such
+  // guarantee: read on production, `Amplify a success branc` — clipped by the
+  // viewport, with no ellipsis to say it had been cut, which is the
+  // silent-truncation failure in its smallest form.
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of openings(focus.id)) {
+        const diagram = openDiagram(focus.id, open, locale);
+        for (const feed of diagram.feeds) {
+          const right = feed.x + 4 + estimateTextWidth(feed.label, M.laneFont);
+          assert.ok(
+            right <= diagram.width,
+            `${focus.id} (${locale}): "${feed.label}" reaches ${right.toFixed(1)} ` +
+              `on a canvas ${diagram.width} wide`,
+          );
+        }
+      }
+    }
+  }
+});
