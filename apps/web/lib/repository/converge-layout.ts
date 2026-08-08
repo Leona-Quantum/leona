@@ -195,7 +195,45 @@ export const CONVERGE_METRICS = {
    * keep a depth-0 thickness is what makes a four-level figure a solid block.
    */
   depthTaper: 0.78,
+  /**
+   * The steepest a lane may leave or arrive at a circle, in degrees.
+   *
+   * The owner asked for two things and they are one constraint: *"distances
+   * between states should increase as branches between them are opened out"*,
+   * and *"no branch should be at such a steep angle that it becomes weird to
+   * look at"*. A lane is a cubic whose x controls sit at exact thirds, so
+   * `x(t) = x0 + span·t` and its displacement is `4·bow·t(1−t)` — which makes
+   * the tangent `4·bow(1−2t)/span`, steepest at both ends, at exactly
+   * `atan(4·|bow|/span)`. So capping the angle *is* the rule that widens a
+   * column when a fan opens inside it: `span ≥ 4·|bow| / tan(cap)`.
+   *
+   * Measured before this existed, over all 18 figures fully opened: 186 of 337
+   * lanes were past 45°, 90 past 60°, the steepest 79.1° — and four figures were
+   * already past 45° *shut*, at 55 lines. Opening the widest fan (7 methods)
+   * added 322px of height and **0px** of width, because `measure` took a `max`
+   * over its children's label widths and nothing in the expression mentioned how
+   * many of them there were.
+   *
+   * 45 rather than 30: at 30° the seven-method fan needs a 1040px column against
+   * today's 392, which pushes `nonlinear-ode-solve` past 4000px wide and trades
+   * the owner's complaint for a horizontal version of it.
+   */
+  maxLaneAngleDeg: 45,
 } as const;
+
+/**
+ * The narrowest column in which a lane bowed this far off its base stays inside
+ * `maxLaneAngleDeg`.
+ *
+ * `atan(4·|bow|/span)` is the tangent at a lane's end (see `maxLaneAngleDeg`),
+ * so this inverts it: `span ≥ 4·|bow| / tan(cap)`. Exported because it is the
+ * whole rule in one line and deserves a test that does not have to build a
+ * figure to reach it.
+ */
+export function spanForBow(bow: number): number {
+  const tan = Math.tan((CONVERGE_METRICS.maxLaneAngleDeg * Math.PI) / 180);
+  return (4 * Math.abs(bow)) / tan;
+}
 
 /**
  * How deep a chain of deliberate clicks may go before the figure stops following.
@@ -912,6 +950,45 @@ interface Measure {
    * *"チェビシェフ展開の LCU による行列の…"* in a column built precisely for it.
    */
   hFit: number;
+  /**
+   * The narrowest **column** in which everything drawn inside this strand stays
+   * inside `maxLaneAngleDeg`.
+   *
+   * A second number rather than part of `hFit`, because `hFit` is the budget a
+   * label is fitted against and that budget has to stay exactly the measured
+   * label demand — the comment above it records two sessions where deriving it
+   * a second way clipped the widest label in the column.
+   *
+   * It has to recurse, and two earlier attempts at avoiding that were wrong in
+   * opposite directions. Capping each fan against its own spread misses that a
+   * child is allocated around *its parent's* bow, so the offsets add. Capping
+   * the whole column against its band height fixes that but misses the other
+   * half: `place` gives a chain's step a `1/k` share of the column, so a bow one
+   * step deep needs `k` times the room — the same multiplier, and for the same
+   * reason, as `chainColumnNeed`.
+   */
+  hDev: number;
+  /**
+   * How much narrower than this whole strand the tightest slice inside it is.
+   *
+   * 1 for a leaf and for a fan — a fan's children are redrawn on the same
+   * x-range. A chain of `k` steps multiplies it by `k`, because `place` gives
+   * each step a `1/k` slice, so a bow drawn inside one has `1/k` of the run to
+   * get there and needs `k` times the column to stay inside the cap.
+   *
+   * **Not exercised by the authored graph, and said out loud rather than left to
+   * be discovered.** Mutating this line to a plain `max` leaves every test on
+   * the real data green — the deepest compression today is 6x
+   * (`quantum-linear-solve`, an `lcu-chebyshev-transform` step), but no fan puts
+   * a chain far enough off its spine for the offset to need converting into that
+   * chain's units. `hDev`'s own `k` *is* exercised (mutating it fails), so the
+   * chain path is covered and this one factor of it is not. It is kept because
+   * the shape that needs it is a fan of methods whose members are themselves
+   * decomposed, which is exactly the VQE cluster the map is about to gain, and
+   * because a bound that is right only for the graph that exists is not a bound.
+   * Same reasoning, and the same honesty, as `chainColumnNeed` above.
+   */
+  hScale: number;
   children: Measure[];
 }
 
@@ -919,7 +996,7 @@ function measure(strand: PlanStrand, depth: number): Measure {
   const M = CONVERGE_METRICS;
   const own = estimateTextWidth(strand.label, M.laneFont);
   if (!strand.open || strand.children.length === 0) {
-    return { vHalf: halfAt(depth) + M.labelBand, hFit: own, children: [] };
+    return { vHalf: halfAt(depth) + M.labelBand, hFit: own, hDev: 0, hScale: 1, children: [] };
   }
   const children = strand.children.map((child) => measure(child, depth + 1));
   // Ingredients hang past everything drawn inside, on one side, and their names
@@ -949,6 +1026,12 @@ function measure(strand: PlanStrand, depth: number): Measure {
         chainColumnNeed(children.map((child) => child.hFit)),
         ...strand.feeds.map((feed) => estimateTextWidth(feed.label, M.laneFont)),
       ),
+      // A step sits *on* the spine — `place` hands it bow 0 — so a chain adds no
+      // bow of its own. What it does is shrink the room: each step is drawn in a
+      // `1/k` slice, so a demand made inside one is a demand for `k` times as
+      // much column. Same multiplier, same reason, as `chainColumnNeed`.
+      hDev: chainColumnNeed(children.map((child) => child.hDev)),
+      hScale: chainColumnNeed(children.map((child) => child.hScale)),
       children,
     };
   }
@@ -957,9 +1040,23 @@ function measure(strand: PlanStrand, depth: number): Measure {
   // pushed apart — an opened strand draws no name of its own (see `place`).
   const spread =
     children.reduce((sum, child) => sum + child.vHalf * 2, 0) + M.laneGap * (children.length - 1);
+  // The very offsets `place` will use, computed from the same allocator against
+  // the same half-bands, so the bound is measured against the drawing rather
+  // than against an idea of it.
+  const offsets = allocateBows(children.map((child) => child.vHalf), 0, M.laneGap);
   return {
     vHalf: spread / 2 + M.labelBand,
     hFit: Math.max(own, ...children.map((child) => child.hFit)),
+    // A child's bow off *this* base is this fan's offset for it plus whatever it
+    // bows inside itself — the offsets add down the tree, which is the part two
+    // earlier versions of this missed. `spanForBow` is linear in the bow, so the
+    // sum can be carried as one number and converted to a width once, at the
+    // column: a child's own demand is already in its slice's units, so the
+    // offset has to be put into those units too before they add.
+    hDev: Math.max(
+      ...children.map((child, index) => Math.abs(offsets[index]!) * child.hScale + child.hDev),
+    ),
+    hScale: Math.max(...children.map((child) => child.hScale)),
     children,
   };
 }
@@ -1242,6 +1339,16 @@ export function layoutConverge(options: {
   // widest strand wants and as tall as its strands' bands summed.
   const measured = plan.bundles.map((bundle) => bundle.lanes.map((lane) => measure(lane, 0)));
 
+  // Each column's band, measured before its width — because the width now
+  // depends on it. A band is how tall the column's lanes stack; the cap on how
+  // steeply a lane may leave a circle turns that height into a minimum width.
+  const bundleHalves = measured.map((lanes) => {
+    if (lanes.length === 0) return 0;
+    return (
+      lanes.reduce((sum, lane) => sum + lane.vHalf * 2, 0) + M.laneGap * (lanes.length - 1)
+    ) / 2;
+  });
+
   const columns = measured.map((lanes) => {
     // One measurement, two uses — never two derivations. `fit` is the measured
     // demand itself; `span` is that demand plus the padding. Recovering `fit`
@@ -1250,19 +1357,26 @@ export function layoutConverge(options: {
     // how this was found the first time (12 of 18 figures, English) and the
     // second (`quantum-linear-solve`, Japanese).
     const need = Math.max(0, ...lanes.map((lane) => lane.hFit));
+    // The geometric demand joins here and nowhere else. It widens the column and
+    // deliberately does **not** widen `fit`: a fan that needs room to stay flat
+    // has not earned its labels more characters, and letting it would make the
+    // drawn text depend on how many siblings a line has.
+    // The bundle's own lanes are spread across this column by the same
+    // allocator, and that spread is subject to the same cap as any fan inside
+    // one of them.
+    const offsets = allocateBows(lanes.map((lane) => lane.vHalf), 0, M.laneGap);
+    const spread = spanForBow(
+      Math.max(
+        0,
+        ...lanes.map((lane, index) => Math.abs(offsets[index]!) * lane.hScale + lane.hDev),
+      ),
+    );
     return {
-      span: Math.max(M.minSpan, need + M.labelPad * 2),
+      span: Math.max(M.minSpan, need + M.labelPad * 2, spread),
       fit: Math.max(M.minSpan - M.labelPad * 2, need),
     };
   });
   const spans = columns.map((column) => column.span);
-
-  const bundleHalves = measured.map((lanes) => {
-    if (lanes.length === 0) return 0;
-    return (
-      lanes.reduce((sum, lane) => sum + lane.vHalf * 2, 0) + M.laneGap * (lanes.length - 1)
-    ) / 2;
-  });
   // Never less than the closed form for the shut case. The two agree on a shut
   // figure by construction; this is the guard that says so if either moves.
   const tallestShut = plan.bundles.reduce(
