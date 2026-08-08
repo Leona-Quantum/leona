@@ -11235,3 +11235,143 @@ div.mj-rail-row:hover {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
 }
+
+/* --- the convergence map --------------------------------------------------
+   Several ways across, drawn between ONE circle and one circle.
+
+   The process canvas above draws one band per route, so a state on three routes
+   is three circles at one x joined by a dotted tie — read off the live page on
+   2026-08-08, `?focus=nonlinear-ode-solve` drew `nonlinear-ivp` four times. This
+   surface draws it once and the lanes reach *it*.
+
+   Class names kept separate from `.mj-process-*` for the reason that block
+   states: both surfaces ship, and a change meant for one picture must not
+   silently reach the other. */
+.mj-converge-scroll {
+  min-width: 0;
+  overflow-x: auto;
+  padding-bottom: var(--sp-3);
+  scrollbar-width: thin;
+}
+/* Same floor and the same reason as `.mj-process-canvas`: `min-width` is NOT
+   wrapped in `min(…, 100%)`, because 100% is always the smaller value and that
+   silently disables the floor. Past 88% this scrolls inside its own box; the
+   page body still never scrolls sideways. */
+.mj-converge-canvas {
+  display: block;
+  width: 100%;
+  max-width: var(--converge-w);
+  min-width: var(--converge-min);
+  height: auto;
+  color: var(--text-2);
+}
+
+/* --- the ways across ----------------------------------------------------- */
+.mj-converge-strand {
+  stroke: currentColor;
+  stroke-width: 2;
+  fill: none;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+/* A path nothing recorded walks. Dashed rather than coloured: colour on this
+   canvas already means the accent and the accent already means hover. The claim
+   is "no source takes this", which is an absence, and an absence reads as a
+   broken line. */
+.mj-converge-lane--unpublished .mj-converge-strand {
+  stroke-dasharray: 5 4;
+  opacity: 0.4;
+}
+/* Recorded that these slots are crossed in this order, but no source names which
+   method fills them. Between the two: solid, because the crossing IS recorded,
+   and fainter, because the detail is not. */
+.mj-converge-lane--unpinned .mj-converge-strand { opacity: 0.45; }
+
+.mj-converge-lane-name {
+  fill: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
+.mj-converge-lane--unpublished .mj-converge-lane-name {
+  fill: var(--text-2);
+  font-style: italic;
+}
+
+/* --- the shared circles -------------------------------------------------- */
+.mj-converge-dot {
+  fill: var(--bg-0);
+  stroke: currentColor;
+  stroke-width: 1.75;
+  opacity: 0.85;
+}
+/* The two ends of the figure are where a reader arrives and leaves. */
+.mj-converge-hub--terminal .mj-converge-dot {
+  fill: currentColor;
+  opacity: 0.9;
+}
+/* The convergence itself, and the one mark this surface exists to make: a state
+   that more than one way reaches or leaves is drawn heavier, because it is the
+   place where a reader can change their mind about the rest of the route. */
+.mj-converge-hub--shared .mj-converge-dot {
+  stroke-width: 2.75;
+  opacity: 1;
+}
+
+/* --- hit targets --------------------------------------------------------- */
+/* A fat transparent STROKE, never a fill: a filled region would cover its own
+   interior and the parent would eat every click meant for a child. Carried over
+   from the strand canvas, where that was found the hard way. 24px for
+   WCAG 2.5.8. */
+.mj-converge-strand-hit {
+  stroke: currentColor;
+  stroke-width: 24;
+  fill: none;
+  opacity: 0;
+  pointer-events: stroke;
+}
+.mj-converge-hit {
+  fill: currentColor;
+  opacity: 0;
+  pointer-events: fill;
+}
+.mj-converge-canvas a { cursor: pointer; }
+.mj-converge-canvas a:hover .mj-converge-strand-hit { opacity: 0.07; }
+.mj-converge-canvas a:hover .mj-converge-hit { opacity: 0.08; }
+.mj-converge-canvas a:hover .mj-converge-strand { opacity: 0.95; }
+.mj-converge-canvas a:hover .mj-converge-dot { opacity: 1; stroke: var(--accent); }
+.mj-converge-canvas a:hover .mj-converge-lane-name,
+.mj-converge-canvas a:focus-visible .mj-converge-lane-name {
+  fill: var(--accent);
+}
+.mj-converge-canvas a:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* The convergence stated as sentences under the picture.
+   The figure shows four lines meeting; this says what that *is* — "2 ways arrive
+   and 2 lead on, so 4 routes cross it" — which is the part a reader can carry
+   away and check. Same reason the process view prints its route census in prose
+   rather than leaving it to be counted off the canvas. */
+.mj-converge-facts {
+  margin: var(--sp-4) 0 var(--sp-5);
+  padding-left: var(--sp-4);
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.6;
+}
+.mj-converge-facts li { margin-bottom: var(--sp-2); }
+
+/* Which figures have something to converge — the honest list, and it is short on
+   purpose. Two of the eighteen slots have a finer decomposition in the state
+   graph; the rest are a single bundle and say so rather than drawing an empty
+   frame. */
+.mj-converge-picks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-2) var(--sp-4);
+  margin: 0;
+  padding: 0;
+  list-style: none;
+  font-size: var(--fs-14);
+}
