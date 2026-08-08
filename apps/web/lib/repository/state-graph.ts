@@ -21,8 +21,17 @@
 // | slots carrying a `from`/`to` contract | 18 of 18 |
 // | **methods** carrying their own contract | **0 of 58** |
 // | authored routes under `nonlinear-ode-solve` | **4** |
-// | distinct slot-paths the state graph already admits there | **6** |
-// | concrete method-chains those expand to | **435** |
+// | distinct slot-paths the state graph already admits there | **4 raw, 2 distinct** |
+// | concrete method-chains those expand to | **108** |
+//
+// The last two rows read **6** and **435** until session 97. Neither reproduced
+// against this module and no test pinned either — measured twice by different
+// routes, `statePathsBetween` returns 4 raw paths which dedupe to 2 distinct
+// slot-sequences, because the Koopman-von Neumann narrowing carries the same
+// `slot` id as the contract edge and so enumerates one journey twice. The
+// figures above are asserted in `repository-converge-layout.test.ts` now. The
+// argument is unchanged: the map drew authored routes and never walked the
+// graph they are paths through.
 //
 // The map drew the four. It could not draw the rest, because it enumerated
 // **authored route nodes** and never walked the graph those routes are paths
@@ -323,6 +332,58 @@ export function expansionOf(
     atomicAtThisLevel: false,
     truncated: search.truncated,
     chainConsistent: consistent,
+  };
+}
+
+/** One way of filling a slot, drawn as its own line between the slot's two states. */
+export interface MethodLane {
+  key: string;
+  method: LayerMethod;
+}
+
+/**
+ * The fan a slot opens into when it has no finer chain of states.
+ *
+ * Both ends are the slot's **own** contract states, so this is one bundle
+ * between two circles, exactly like a state bundle — and for the same reason it
+ * cannot cross itself.
+ */
+export interface MethodFan {
+  from: string;
+  to: string;
+  lanes: readonly MethodLane[];
+}
+
+/**
+ * What an atomic slot opens into: the methods that fill it.
+ *
+ * `expansionOf`'s own doc comment has said since session 92 that opening
+ * `time-discretization` *"can only fan out the four methods that fill it, which
+ * is what the surface does instead"*. **The surface did not do that.** Measured
+ * on production 2026-08-08, `?view=converge&focus=observable-estimation` drew
+ * nothing at all and printed *"Nothing recorded goes through this in more than
+ * one way."* — and 16 of the 18 slots are atomic, so that was the whole page for
+ * all but two of them. The comment described a feature nobody had written.
+ *
+ * This is deliberately **not** folded into `Expansion`. A chain of states and a
+ * fan of methods are different claims — one says *every way across passes
+ * through this object*, the other says *here are the recorded ways across* — and
+ * D90.6's rule is that two different things never share a shape. The caller asks
+ * for the second only after the first says there is none, and the diagram
+ * records which it drew.
+ *
+ * Returns `null` for a slot nothing fills, rather than an empty fan: a shut slot
+ * and an unfilled one are not the same picture either. Measured on the authored
+ * graph, no slot is unfilled today — the range is 2 to 7 methods — so this is a
+ * guard against a future edit, not a case the page renders.
+ */
+export function methodFanOf(graph: LayerGraph, capability: LayerCapability): MethodFan | null {
+  const methods = methodsRealizing(graph, capability.id);
+  if (methods.length === 0) return null;
+  return {
+    from: capability.contract.from,
+    to: capability.contract.to,
+    lanes: methods.map((method) => ({ key: `m:${method.id}`, method })),
   };
 }
 

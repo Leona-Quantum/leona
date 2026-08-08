@@ -76,7 +76,13 @@ function Hub({ state, copy }: { state: ConvergeState; copy: ConvergeCopy }): Rea
         state.arriving > 1 || state.leaving > 1 ? " mj-converge-hub--shared" : ""
       }`}
     >
-      <a href={state.href} aria-label={state.label}>
+      {/* The note rides IN the aria-label, not only in the `<title>`.
+          `aria-label` wins the accessible-name computation over an SVG `<title>`
+          child, so with the two split a screen reader announced the bare state
+          name and never the payload — "3 ways arrive here, 2 lead on" was
+          visible to a mouse and inaudible to everyone else. One string, used
+          twice, so they cannot drift apart either. */}
+      <a href={state.href} aria-label={`${state.label} — ${note}`}>
         <title>{`${state.label} — ${note}`}</title>
         <circle className="mj-converge-dot" cx={n(state.cx)} cy={n(state.cy)} r={n(state.r)} />
         {/* A 24px minimum touch target, invisible, over an 11px dot. Same reason
@@ -102,7 +108,11 @@ function Lane({ lane, copy }: { lane: ConvergeLane; copy: ConvergeCopy }): React
   const waysNote = lane.ways > 0 ? ` · ${copy.ways(lane.ways)}` : "";
   return (
     <g className={`mj-converge-lane mj-converge-lane--${lane.standing}`}>
-      <a href={lane.href} aria-label={`${lane.fullLabel} — ${copy.readAbout}`}>
+      {/* Same rule as the hub, and the loss here was larger: the standing —
+          whether any source walks this line — existed on the canvas only as a
+          `stroke-dasharray`, so it reached a sighted mouse user through a
+          tooltip and reached nobody else at all. */}
+      <a href={lane.href} aria-label={`${lane.fullLabel}${waysNote}${standingNote} — ${copy.readAbout}`}>
         <title>{`${lane.fullLabel}${waysNote}${standingNote}`}</title>
         <path className="mj-converge-strand" d={lane.d} />
         {/* A fat transparent stroke of the same curve, so the hit target is the

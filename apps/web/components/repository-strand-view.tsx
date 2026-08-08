@@ -17,6 +17,7 @@
 // states in full: a same-document navigation is the one kind the cross-document
 // view transition cannot animate, and the view switch here leads straight to a
 // surface that does animate. Half a surface that zooms is worse than neither.
+import { ViewSwitch } from "./repository-view-switch";
 import {
   ancestorPath,
   layoutFocus,
@@ -49,17 +50,6 @@ export type StrandDepth = (typeof STRAND_DEPTHS)[number];
  * translated label is the shape that drifts: one of them gets reworded and the
  * two views start disagreeing about what the reader is looking at.
  */
-export function viewSwitchLabels(locale: PublicLocale): {
-  view: string;
-  map: string;
-  converge: string;
-  strands: string;
-  list: string;
-} {
-  return locale === "ja"
-    ? { view: "表示", map: "マップ", converge: "合流", strands: "ストランド", list: "リスト" }
-    : { view: "View", map: "Map", converge: "Converge", strands: "Strands", list: "List" };
-}
 
 /**
  * Named for the reason `repository-strands.tsx` gives: `as const` on a
@@ -349,7 +339,6 @@ export function StrandView({
   depth: StrandDepth;
 }) {
   const copy = copyFor(locale);
-  const nav = viewSwitchLabels(locale);
   const lang: "en" | "ja" = locale === "ja" ? "ja" : "en";
   const roots = rootCapabilities(graph);
   const census = layerCensus(graph, new Set(corpus.map((entry) => entry.slug)), STATE_VOCABULARY);
@@ -374,12 +363,7 @@ export function StrandView({
       </header>
 
       <div className="mj-strand-controls">
-        <div className="mj-strand-switch" role="group" aria-label={nav.view}>
-          <span className="mj-strand-switch-label">{nav.view}</span>
-          <a href="/repository/layers?view=map">{nav.map}</a>
-          <span className="mj-strand-switch-on">{nav.strands}</span>
-          <a href="/repository/layers?view=list">{nav.list}</a>
-        </div>
+        <ViewSwitch current="strands" locale={locale} />
         <div className="mj-strand-switch" role="group" aria-label={copy.depth}>
           <span className="mj-strand-switch-label">{copy.depth}</span>
           {STRAND_DEPTHS.map((option) =>

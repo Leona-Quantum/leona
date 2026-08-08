@@ -26,8 +26,8 @@
 // about the routes; and neither may render as silence, because silence in a
 // panel reads as "there is nothing to say" — the same reason `knownGaps` prints
 // a sentence on the 282 records nobody has reviewed.
+import { ViewSwitch } from "./repository-view-switch";
 import type { PublicLocale } from "../lib/public-locale";
-import { viewSwitchLabels } from "./repository-strand-view";
 import {
   alternativesTo,
   bypassersOf,
@@ -1010,19 +1010,16 @@ export function LayerIndexView({
       <nav className="mj-layers-crumbs" aria-label={copy.backToAtlas}>
         <a href="/repository">← {copy.backToAtlas}</a>
       </nav>
-      {/* The other drawing of this same graph. Both views have an address, and
-          neither is reachable only from the other — a reader who lands on
-          `?view=list` from a bookmark can still get to the canvas.
+      {/* The other drawings of this same graph. Every view has an address and
+          none is reachable only from another — a reader who lands here from a
+          bookmark can still get to any canvas.
 
-          The words come from `viewSwitchLabels` rather than from inline
-          conditions here: two copies of a translated label is the shape that
-          drifts, and this control is rendered from both sides. */}
-      <div className="mj-strand-switch" role="group" aria-label={viewSwitchLabels(locale).view}>
-        <span className="mj-strand-switch-label">{viewSwitchLabels(locale).view}</span>
-        <a href="/repository/layers?view=map">{viewSwitchLabels(locale).map}</a>
-        <a href="/repository/layers?view=strands">{viewSwitchLabels(locale).strands}</a>
-        <span className="mj-strand-switch-on">{viewSwitchLabels(locale).list}</span>
-      </div>
+          The whole control comes from `ViewSwitch`, not just its words. Sharing
+          the labels was not enough: four copies of the *markup* each listed the
+          views they knew about, and when `?view=converge` shipped only its own
+          copy gained the entry, so the default view had no link to it and the
+          owner could not find the surface at all. One list, one place. */}
+      <ViewSwitch current="list" locale={locale} />
       <h1 id="layers-heading">{copy.indexHeading}</h1>
       <p className="mj-layers-lede">{copy.indexLead}</p>
 

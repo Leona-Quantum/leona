@@ -4,6 +4,7 @@ import { LayerIndexView } from "../../../components/repository-layers";
 import { MAP_OPEN_MAX, ProcessMapView, resolveZoom } from "../../../components/repository-process-view";
 import { StrandView, STRAND_DEPTHS, type StrandDepth } from "../../../components/repository-strand-view";
 import { ConvergeView } from "../../../components/repository-converge-view";
+import { VIEWS, type RepositoryView } from "../../../components/repository-view-switch";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
@@ -99,31 +100,31 @@ function one(params: Record<string, string | string[] | undefined>, key: string)
 /**
  * `?view=` — which drawing of the same graph.
  *
- * **The map is the default**, which moves the default a second time. Session 90
- * made strands the default over the list on the argument that leaving the better
- * surface behind a query parameter means nobody arriving at the page ever sees
- * it; the owner's session-91 reading of strands was that the nesting is *"hard
- * to track and not easy to navigate"* — bubbles inside bubbles, lines through
- * bubbles, and skip-routes drawn as arcs that follow the thing they skip. The
- * same argument therefore applies again.
+ * **Converge is the default**, which moves the default a third time, and this
+ * time the argument that moved it twice before finally has to be applied to
+ * itself. Session 90 made strands the default over the list because *"leaving
+ * the better surface behind a query parameter means nobody arriving at the page
+ * ever sees it"*; session 92 made the map the default over strands for the same
+ * reason. Session 96 shipped a better surface than either and left it behind a
+ * query parameter — and the owner's next message was *"i can't see the converge
+ * option so i can't really comment on it"*. Read on production 2026-08-08, the
+ * switch on this page said `Map · Strands · List`.
  *
- * Both older views keep their addresses and neither is deprecated: `?view=list`
- * is still the linear, screen-reader and print reading (D90.2), and
- * `?view=strands` is still the containment picture, which says something the
- * path picture does not. Reversible in one line.
+ * The default is only half of what made it invisible; the other half was four
+ * hand-written copies of the switch, and that is fixed in `ViewSwitch` where it
+ * cannot recur.
+ *
+ * The three older views keep their addresses and none is deprecated *here* —
+ * retiring them is a separate change with its own blockers, and until converge
+ * covers what they cover, deleting them would remove the only drawing of the
+ * device stack. `?view=list` is still the linear, screen-reader and print
+ * reading (D90.2).
  */
-function resolveView(
-  params: Record<string, string | string[] | undefined>,
-): "map" | "converge" | "strands" | "list" {
+function resolveView(params: Record<string, string | string[] | undefined>): RepositoryView {
   const value = one(params, "view");
-  if (value === "list") return "list";
-  if (value === "strands") return "strands";
-  // `?view=converge` draws the same graph with each state as ONE circle, so the
-  // ways into it and out of it meet. Its own address, and the map keeps its
-  // default: this is a second reading of the same data, not a replacement, and
-  // the same rule that kept `?view=strands` alive applies.
-  if (value === "converge") return "converge";
-  return "map";
+  return (VIEWS as readonly string[]).includes(value ?? "")
+    ? (value as RepositoryView)
+    : "converge";
 }
 
 /**
