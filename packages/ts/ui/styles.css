@@ -10861,18 +10861,43 @@ div.mj-rail-row:hover {
 
    Held to under a third of a second on purpose. A transition long enough to
    watch is long enough to wait for, and this is a reading surface. */
+/* **The opt-in is document-level and there is no scoped form of it** — `@view-transition`
+   takes no selector, by spec. So switching it on for the Atlas switches it on
+   for the whole product, and Chrome's *default* root crossfade would then apply
+   to every full navigation the site makes. That is a site-wide animation change
+   in exchange for a request about one visualization, and this package's own
+   AGENTS.md keeps a closed list of permitted animations that does not include
+   it. (Raised by CodeRabbit in review, and correct on both counts.)
+
+   The scoping is therefore done one level down: every part of the transition is
+   turned **off** by default, including the browser's own default, and turned on
+   again under `.mj-repository-site` — which is the Atlas and nothing else: the
+   map, every node and state page, and every record page. Elsewhere the
+   transition still technically runs and finishes in zero frames, which is
+   indistinguishable from the navigation the site made before this. */
 @view-transition {
   navigation: auto;
 }
-::view-transition-old(root) {
+::view-transition-group(*),
+::view-transition-old(*),
+::view-transition-new(*) {
+  animation: none;
+}
+
+/* The Atlas, where it was asked for.
+   Matched on the **arriving** document, which is the one whose styles the
+   transition runs under. So this animates whenever a reader lands anywhere in
+   the Atlas — including stepping from the map out to a record — and never when
+   they leave it for the marketing site or the workspace. */
+:root:has(.mj-repository-site)::view-transition-old(root) {
   animation: mj-surface-out 180ms cubic-bezier(0.4, 0, 1, 1) both;
 }
-::view-transition-new(root) {
+:root:has(.mj-repository-site)::view-transition-new(root) {
   animation: mj-surface-in 260ms cubic-bezier(0, 0, 0.2, 1) both;
 }
 /* The figure itself is the subject of the zoom, so it gets longer than the page
    around it and an ease that settles rather than stops. */
-::view-transition-group(*) {
+:root:has(.mj-repository-site)::view-transition-group(*) {
   animation-duration: 320ms;
   animation-timing-function: cubic-bezier(0.32, 0.72, 0, 1);
 }
@@ -10901,13 +10926,13 @@ div.mj-rail-row:hover {
    silent precondition of the whole feature, and a silent precondition on a thing
    whose only symptom is "the animation did not play" is not one you find. */
 @media (prefers-reduced-motion: reduce) {
-  ::view-transition-group(*) {
+  :root:has(.mj-repository-site)::view-transition-group(*) {
     animation: none;
   }
-  ::view-transition-old(root) {
+  :root:has(.mj-repository-site)::view-transition-old(root) {
     animation: mj-surface-fade-out 120ms linear both;
   }
-  ::view-transition-new(root) {
+  :root:has(.mj-repository-site)::view-transition-new(root) {
     animation: mj-surface-fade-in 120ms linear both;
   }
 }
