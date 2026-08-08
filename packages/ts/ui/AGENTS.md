@@ -17,7 +17,12 @@ Invariants:
 - No external component libraries — components are owned code (Radix primitives are the
   only permitted dependency, added only when a component genuinely needs one).
 - Only permitted animations: rail state transitions (150 ms ease-out), the running-dot
-  pulse (spec §2), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` must be honored.
+  pulse (spec §2), skeleton shimmer, toast enter/exit, and the Atlas navigation transition
+  (session 95 — `@view-transition`, scoped to `.mj-repository-site`, ≤320 ms).
+  `prefers-reduced-motion` must be honored. **`@view-transition` takes no selector**, so a
+  navigation transition is enabled document-wide and must be scoped by turning
+  `::view-transition-*` off by default — including the browser's own default root crossfade —
+  and back on under the surface that asked for it.
 - Components are pure renderers of typed data (no fetching, no run state) so the replay
   rule (`docs/ui/screens-acceptance.md` §4) holds and fixtures can drive every state.
 - Copy: verdicts/exports/buttons per `docs/ui/copy.md`. No exclamation marks, no emoji.

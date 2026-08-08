@@ -68,6 +68,10 @@ interface MapCopy {
   openHere: string;
   closeHere: string;
   readAbout: string;
+  /** Said only on a hop whose label is an algorithm rather than the slot. */
+  fills: string;
+  /** Said only where the Atlas holds a full record for this thing. */
+  inAtlas: string;
 }
 
 const COPY: Record<"en" | "ja", MapCopy> = {
@@ -85,6 +89,8 @@ const COPY: Record<"en" | "ja", MapCopy> = {
     openHere: "click the line to open it here",
     closeHere: "click the line to close it",
     readAbout: "click the name to read about it",
+    fills: "one way through",
+    inAtlas: "the Atlas has a full record of this",
   },
   ja: {
     ways: (n: number) => `通り道 ${n} 件`,
@@ -100,6 +106,8 @@ const COPY: Record<"en" | "ja", MapCopy> = {
     openHere: "線をクリックするとこの場で展開します",
     closeHere: "線をクリックすると畳みます",
     readAbout: "名前をクリックすると解説を開きます",
+    fills: "次の枠を通る一つのやり方:",
+    inAtlas: "アトラスに完全な記録があります",
   },
 };
 
@@ -107,6 +115,9 @@ const COPY: Record<"en" | "ja", MapCopy> = {
 function n(value: number): string {
   return (Math.round(value * 10) / 10).toString();
 }
+
+/** One shared empty set rather than a fresh `new Set()` per render. */
+const EMPTY_ATLAS: ReadonlySet<string> = new Set<string>();
 
 /**
  * An opened slot: the same line it always was, gone faint, with its ways drawn
@@ -203,7 +214,31 @@ function Group({ group, copy }: { group: ProcessGroup; copy: MapCopy }): React.R
  * a filled region would cover its own interior and eat the clicks meant for
  * whatever is drawn inside it.
  */
-function Process({ process, copy }: { process: ProcessBox; copy: MapCopy }): React.ReactElement {
+/**
+ * Does the Atlas hold a full record for this shape's node?
+ *
+ * A pinned hop carries both ids — the slot it fills and the algorithm named on
+ * it — and the mark has to follow the **name**, because the name is what the
+ * reader would click and the Atlas record is about that algorithm, not about the
+ * slot. So the method id wins where there is one.
+ */
+function inAtlas(
+  shape: { capabilityId?: string | null; methodId?: string | null },
+  atlas: ReadonlySet<string>,
+): boolean {
+  const id = shape.methodId ?? shape.capabilityId ?? null;
+  return id !== null && atlas.has(id);
+}
+
+function Process({
+  process,
+  copy,
+  atlas,
+}: {
+  process: ProcessBox;
+  copy: MapCopy;
+  atlas: ReadonlySet<string>;
+}): React.ReactElement {
   const note =
     process.state === "unfilled"
       ? copy.noWay
@@ -214,13 +249,23 @@ function Process({ process, copy }: { process: ProcessBox; copy: MapCopy }): Rea
           : process.outlook === "undecomposed"
             ? copy.undecomposed
             : null;
-  const title = [process.fullLabel, note ? ` (${note})` : "", process.summary ? ` — ${process.summary}` : ""].join(
-    "",
-  );
+  // A pinned hop wears an algorithm's name, so its tooltip has to say which slot
+  // that algorithm is filling — otherwise "Carleman linearization" appears on a
+  // line whose click opens something the reader was never told the name of.
+  const documented = inAtlas(process, atlas);
+  const title = [
+    process.fullLabel,
+    process.slotLabel ? ` — ${copy.fills} ${process.slotLabel}` : "",
+    note ? ` (${note})` : "",
+    documented ? ` · ${copy.inAtlas}` : "",
+    process.summary ? ` — ${process.summary}` : "",
+  ].join("");
   const midX = (process.x0 + process.x1) / 2;
   return (
     <g
-      className={`mj-process mj-process--${process.weight} mj-process--${process.state}`}
+      className={`mj-process mj-process--${process.weight} mj-process--${process.state}${
+        process.slotLabel ? " mj-process--named" : ""
+      }${documented ? " mj-process--atlas" : ""}`}
       data-depth={process.depth}
     >
       <line
@@ -348,14 +393,26 @@ function Tie({ tie, copy }: { tie: KinshipTie; copy: MapCopy }): React.ReactElem
  * from named slots or is one undivided act — but it is not one a reader needs
  * before they have decided which row to look at.
  */
-function Lane({ lane, copy }: { lane: LaneLabel; copy: MapCopy }): React.ReactElement {
+function Lane({
+  lane,
+  copy,
+  atlas,
+}: {
+  lane: LaneLabel;
+  copy: MapCopy;
+  atlas: ReadonlySet<string>;
+}): React.ReactElement {
   const note =
     lane.outlook === "atomic" ? copy.atomic : lane.outlook === "undecomposed" ? copy.undecomposed : null;
+  const documented = inAtlas(lane, atlas);
   return (
-    <g className="mj-process-lane" data-coverage={lane.coverage}>
+    <g
+      className={`mj-process-lane${documented ? " mj-process-lane--atlas" : ""}`}
+      data-coverage={lane.coverage}
+    >
       <a href={lane.href}>
         <title>
-          {`${lane.fullLabel}${note ? ` (${note})` : ""}${lane.summary ? ` — ${lane.summary}` : ""}`}
+          {`${lane.fullLabel}${note ? ` (${note})` : ""}${documented ? ` · ${copy.inAtlas}` : ""}${lane.summary ? ` — ${lane.summary}` : ""}`}
         </title>
         <text className="mj-process-lane-name" x={n(lane.x)} y={n(lane.y)}>
           {lane.label}
@@ -412,15 +469,51 @@ function Feed({ feed, copy }: { feed: FeedStub; copy: MapCopy }): React.ReactEle
  * they relate; lines next; circles last, so a circle wins the pointer over the
  * two lines that end on it.
  */
+/**
+ * The figure's identity **across pages**, for the cross-document zoom.
+ *
+ * A view transition pairs an old element with a new one by name, so the map's
+ * figure for a slot and that slot's own page carrying the same name is what
+ * makes clicking it read as *zooming into the thing* rather than as loading a
+ * different screen — the owner's session-94 brief, in one line of CSS instead of
+ * a canvas library. Where no pair exists the browser falls back to the whole
+ * page, which still scales and fades rather than cutting.
+ *
+ * Sanitised because the value is a CSS `<custom-ident>` and node ids are
+ * authored strings: a leading digit or a stray character would make the whole
+ * declaration invalid, and an invalid declaration is silent. The prefix also
+ * guarantees the ident cannot start with a digit whatever the id does.
+ */
+function transitionNameFor(id: string): string {
+  return `mj-fig-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
+}
+
 export function ProcessCanvas({
   diagram,
   locale,
   title,
   scale = null,
+  subjectId = null,
+  atlas = EMPTY_ATLAS,
 }: {
   diagram: ProcessDiagram;
   locale: "en" | "ja";
   title: string;
+  /**
+   * Node ids the Atlas holds a full record for (`nodesWithEntries`).
+   *
+   * Passed in rather than derived here because it depends on the corpus that
+   * actually loaded, and that is a fetch this component must not make. Empty by
+   * default, which draws no marks — the right failure: a surface that could not
+   * read the corpus claims nothing about it rather than claiming everything.
+   */
+  atlas?: ReadonlySet<string>;
+  /**
+   * What this figure is *of*. Two figures of the same thing on two pages are one
+   * figure to the reader, and naming them so is what the browser needs to move
+   * one into the other. Null on a figure with no single subject.
+   */
+  subjectId?: string | null;
   /**
    * The size the reader asked for, as a multiplier, or `null` for "fit".
    *
@@ -449,6 +542,7 @@ export function ProcessCanvas({
           {
             "--process-w": `${drawn}px`,
             "--process-min": `${scale === null ? diagram.width * 0.88 : drawn}px`,
+            ...(subjectId ? { viewTransitionName: transitionNameFor(subjectId) } : {}),
           } as React.CSSProperties
         }
       >
@@ -461,10 +555,10 @@ export function ProcessCanvas({
           <Tie key={`tie-${index}-${n(tie.x)}-${n(tie.y0)}`} tie={tie} copy={copy} />
         ))}
         {diagram.lanes.map((lane) => (
-          <Lane key={lane.key} lane={lane} copy={copy} />
+          <Lane key={lane.key} lane={lane} copy={copy} atlas={atlas} />
         ))}
         {diagram.processes.map((process) => (
-          <Process key={process.key} process={process} copy={copy} />
+          <Process key={process.key} process={process} copy={copy} atlas={atlas} />
         ))}
         {diagram.feeds.map((feed) => (
           <Feed key={feed.key} feed={feed} copy={copy} />

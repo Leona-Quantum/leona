@@ -181,7 +181,23 @@ export function fitLabel(
     if (estimateTextWidth(next + "…", fontSize) > maxWidth) break;
     kept = next;
   }
-  return { text: kept.trimEnd() + "…", truncated: true };
+  // A cut that saves nothing is not a cut.
+  //
+  // The loop above stops on *pixels*, and one dropped character plus an ellipsis
+  // can come back the same length: `レベルセット法による厳密な線形化` is sixteen
+  // characters and so is `レベルセット法による厳密な線形…`, which shows a reader
+  // the mark that says "there is more here" in exchange for the one character it
+  // hid. Widened Japanese labels are where this surfaces — a wide glyph is one
+  // character, so the pixel budget runs out a single character early.
+  //
+  // Found by the layout suite's own invariant (a cut label is strictly shorter
+  // than the whole one), not by looking at the picture, and only once `via`
+  // started putting method names on hops. Dropping one more character keeps the
+  // fit — the result is strictly narrower than what already fitted — and makes
+  // the ellipsis mean something again.
+  let cut = [...kept.trimEnd()];
+  while (cut.length > 0 && cut.length + 1 >= characters.length) cut = cut.slice(0, -1);
+  return { text: cut.join("") + "…", truncated: true };
 }
 
 /**
@@ -276,13 +292,27 @@ export interface ProcessBox {
   kind: "process";
   /** The slot filling this hop, or null when a method does this part itself. */
   capabilityId: string | null;
-  /** Set when this is a method — either its own work, or a lane in an expansion. */
+  /**
+   * Set when this is a method — its own work, a lane in an expansion, or the
+   * algorithm a route **pins** to this step (`via`). In that last case
+   * `capabilityId` is set too: the hop is still that slot, and the line still
+   * opens it; the name is just the algorithm's rather than the slot's.
+   */
   methodId: string | null;
   key: string;
   label: string;
   fullLabel: string;
   labelTruncated: boolean;
   summary: string;
+  /**
+   * The slot's own name, present **only** when a pin has taken the label.
+   *
+   * Null is the common case and reads as "the label already is the slot". A
+   * reader who meets "Carleman linearization" on a line still has to be able to
+   * find out that the line opens *Embed a nonlinear system into a linear one*,
+   * and that fact has exactly one home rather than being re-derived per surface.
+   */
+  slotLabel: string | null;
   /**
    * Where the **line** goes: the same map with this slot toggled open.
    *
@@ -883,6 +913,25 @@ function placeStates(
   return boxes;
 }
 
+/**
+ * The method a route pins to one of its steps, or null.
+ *
+ * Resolved through `options.graph` rather than the authored graph so a lens sees
+ * what the lens shows: `soleMethodLens` hides a slot's other methods on a zoomed
+ * method page, and a pin naming a hidden one must come back null rather than
+ * printing a name for a lane that is not on the figure.
+ */
+function pinnedFiller(
+  route: LayerMethod,
+  capabilityId: string,
+  options: Options,
+): LayerMethod | null {
+  const id = route.via?.[capabilityId];
+  if (id === undefined) return null;
+  const node = layerNode(options.graph, id);
+  return node && isMethod(node) && node.realizes === capabilityId ? node : null;
+}
+
 function placeProcess(
   capabilityId: string,
   x0: number,
@@ -893,6 +942,17 @@ function placeProcess(
   canvas: Canvas,
   key: string,
   focus: string | null,
+  /**
+   * The algorithm this route uses here, when it names one (`via`).
+   *
+   * It renames only the **hop**, never the slot: `capabilityId`, the line's
+   * `href`, the expansion and the method count all stay the slot's, because what
+   * this hop *is* has not changed — one of the recorded ways through that slot.
+   * What changes is that the drawing stops saying "Embed a nonlinear system into
+   * a linear one" on four lanes that each do something different, and says
+   * "Carleman linearization" on the one that does.
+   */
+  pinned: LayerMethod | null = null,
 ): void {
   const node = layerNode(options.graph, capabilityId);
   if (!node || !isCapability(node)) return;
@@ -933,19 +993,36 @@ function placeProcess(
   const state: ProcessState = unfilled ? "unfilled" : "collapsed";
   if (state === "collapsed") canvas.collapsed.count += 1;
 
+  // The name this hop wears, and where that name goes. Pinned: the algorithm's
+  // own name and its own page — the owner's *"labeled by what they actually are
+  // (such as a specific algorithm)"*. Unpinned: the slot, exactly as before.
+  const namedFull = pinned ? labelOf(pinned, options.locale) : full;
+  const namedFitted = pinned
+    ? fitLabel(namedFull, PROCESS_METRICS.processFont, Math.max(24, x1 - x0 - 10))
+    : fitted;
+
   canvas.processes.push({
     kind: "process",
     capabilityId,
-    methodId: null,
+    // The pinned algorithm, so a surface can tell a named hop from a slot
+    // without re-deriving it. Still a slot by `weight` and by `href`: the line
+    // opens the slot's alternatives, which is the point of naming the choice.
+    methodId: pinned ? pinned.id : null,
     key,
-    label: fitted.text,
-    fullLabel: full,
-    labelTruncated: fitted.truncated,
-    summary: summaryOf(node, options.locale),
+    label: namedFitted.text,
+    fullLabel: namedFull,
+    labelTruncated: namedFitted.truncated,
+    // What it *does*, which on a pinned hop is the algorithm's own summary. This
+    // is the prose the owner asked to reach on hover once the label stopped
+    // being a sentence: `<title>` on the name carries it.
+    summary: summaryOf(pinned ?? node, options.locale),
+    // The slot this hop fills, kept whatever the name says. A reader who wants
+    // the other ways through still has one word for it and one place to read it.
+    slotLabel: pinned ? full : null,
     // A slot with nothing recorded in it has nothing to open, so its line is not
     // a control. Only a shut slot with ways through it gets one.
     href: state === "collapsed" ? slotHref(capabilityId, options.open, focus, options.zoom) : null,
-    pageHref: processPageHref(capabilityId),
+    pageHref: processPageHref(pinned ? pinned.id : capabilityId),
     x0,
     x1,
     y,
@@ -1057,6 +1134,8 @@ function placeLanes(
           fullLabel: full,
           labelTruncated: repeatsLane ? false : fitted.truncated,
           summary: summaryOf(method, options.locale),
+          // Its own work fills no slot, so there is no slot name to keep.
+          slotLabel: null,
           // A method's own work: nothing under it to open, so the line is inert
           // and only the name is a link.
           href: null,
@@ -1082,6 +1161,12 @@ function placeLanes(
         canvas,
         `${laneKey}:${segment.capabilityId}`,
         focus,
+        // What *this* lane uses to fill that step, when the route pins it. It is
+        // a property of the (route, step) pair and not of the slot, which is why
+        // it is passed down rather than looked up inside `placeProcess`: the
+        // same slot is drawn on four lanes here and each names a different
+        // algorithm.
+        pinnedFiller(lane.method, segment.capabilityId, options),
       );
     });
 

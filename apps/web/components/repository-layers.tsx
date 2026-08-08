@@ -399,7 +399,15 @@ function ProcessZoom({
 
   return (
     <figure className="mj-layers-zoom" aria-labelledby={`zoom-${node.id}`}>
-      <h2 className="mj-layers-zoom-heading" id={`zoom-${node.id}`}>
+      {/* The label the card used to wear as a heading, kept as a heading because
+          it is the accessible name of this figure, and taken out of the visual
+          flow because *"clicking on labels shouldn't feel like it shows a
+          completely different screen"* — and a strapline over a framed panel is
+          exactly how a screen announces itself. The reader arrived here by
+          clicking this thing's name; being told "this one, drawn" is a caption
+          for a picture they are already looking at. Screen readers still get it,
+          which is the whole reason it is `sr-only` rather than deleted. */}
+      <h2 className="mj-layers-zoom-heading sr-only" id={`zoom-${node.id}`}>
         {copy.zoomHeading}
       </h2>
       {/* The reader's own size. A figure can be 1,233px wide in an 868px column:
@@ -416,6 +424,12 @@ function ProcessZoom({
         locale={locale === "ja" ? "ja" : "en"}
         title={label(node, locale)}
         scale={zoom === null ? null : zoom / 100}
+        // The same figure the map draws for this slot, so arriving here moves
+        // that figure rather than replacing the screen it was on. A method's
+        // page is drawn through `soleMethodLens` and is a genuinely different
+        // picture, so it pairs with nothing on the map and gets the page-level
+        // zoom instead — which is the honest animation for "a different figure".
+        subjectId={node.id}
       />
       <figcaption className="mj-layers-zoom-caption">
         {from && to ? (
@@ -521,12 +535,22 @@ function AtlasRecords({
       {slugs.length === 0 ? (
         <EmptyNote>{copy.atlasNone}</EmptyNote>
       ) : (
+        /* A title and a sentence, not a bare link.
+           *"when people see specific algorithms on the map, they see the content
+           of the atlas repository entry and can click around in there and export
+           etc etc."* — owner, session 94. This is the first half: enough of the
+           record to know what is behind the link before following it. The second
+           half is the record's own page, which is where the code, the
+           verification and the export live and where they stay — a copy of them
+           here would be a second thing to keep in step with the first. */
         <ul className="mj-layers-records">
           {slugs.map((slug) => {
             const entry = bySlug.get(slug)!;
+            const blurb = locale === "ja" ? entry.descriptionJa : entry.description;
             return (
               <li key={slug}>
                 <a href={`/repository/${slug}`}>{locale === "ja" ? entry.titleJa : entry.title}</a>
+                {blurb ? <p className="mj-layers-record-blurb">{blurb}</p> : null}
               </li>
             );
           })}

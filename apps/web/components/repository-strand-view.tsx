@@ -12,7 +12,11 @@
 // Everything here is a server component. The only interactive controls are links
 // and `<details>`, both of which have addresses or native behaviour. Nothing on
 // this surface stops working with JS off.
-import Link from "next/link";
+//
+// Plain anchors rather than `next/link`, for the reason `repository-process-view`
+// states in full: a same-document navigation is the one kind the cross-document
+// view transition cannot animate, and the view switch here leads straight to a
+// surface that does animate. Half a surface that zooms is worse than neither.
 import {
   ancestorPath,
   layoutFocus,
@@ -264,7 +268,7 @@ function Rail({
                 {step.id === focusId ? (
                   <strong>{label(step)}</strong>
                 ) : (
-                  <Link href={strandHref(step.id, depth)}>{label(step)}</Link>
+                  <a href={strandHref(step.id, depth)}>{label(step)}</a>
                 )}
               </li>
             ))}
@@ -279,7 +283,7 @@ function Rail({
             <ul>
               {siblings.map((item) => (
                 <li key={item.id}>
-                  <Link href={strandHref(item.id, depth)}>{label(item)}</Link>
+                  <a href={strandHref(item.id, depth)}>{label(item)}</a>
                 </li>
               ))}
             </ul>
@@ -300,7 +304,7 @@ function Rail({
             <ul>
               {methods.map((item) => (
                 <li key={item.id}>
-                  <Link href={`/repository/layers/${item.id}`}>{label(item)}</Link>
+                  <a href={`/repository/layers/${item.id}`}>{label(item)}</a>
                 </li>
               ))}
             </ul>
@@ -315,16 +319,16 @@ function Rail({
             <ul>
               {skippers.map((item) => (
                 <li key={item.id}>
-                  <Link href={`/repository/layers/${item.id}`}>{label(item)}</Link>
+                  <a href={`/repository/layers/${item.id}`}>{label(item)}</a>
                 </li>
               ))}
             </ul>
           )}
         </section>
 
-        <Link className="mj-strand-rail-writeup" href={`/repository/layers/${focusId}`}>
+        <a className="mj-strand-rail-writeup" href={`/repository/layers/${focusId}`}>
           {copy.writeUp}
-        </Link>
+        </a>
       </div>
     </details>
   );
@@ -371,9 +375,9 @@ export function StrandView({
       <div className="mj-strand-controls">
         <div className="mj-strand-switch" role="group" aria-label={nav.view}>
           <span className="mj-strand-switch-label">{nav.view}</span>
-          <Link href="/repository/layers?view=map">{nav.map}</Link>
+          <a href="/repository/layers?view=map">{nav.map}</a>
           <span className="mj-strand-switch-on">{nav.strands}</span>
-          <Link href="/repository/layers?view=list">{nav.list}</Link>
+          <a href="/repository/layers?view=list">{nav.list}</a>
         </div>
         <div className="mj-strand-switch" role="group" aria-label={copy.depth}>
           <span className="mj-strand-switch-label">{copy.depth}</span>
@@ -383,16 +387,16 @@ export function StrandView({
                 {option}
               </span>
             ) : (
-              <Link href={strandHref(focusId, option)} key={option}>
+              <a href={strandHref(focusId, option)} key={option}>
                 {option}
-              </Link>
+              </a>
             ),
           )}
         </div>
         {focusId ? (
-          <Link className="mj-strand-back" href={strandHref(null, depth)}>
+          <a className="mj-strand-back" href={strandHref(null, depth)}>
             ← {copy.back}
-          </Link>
+          </a>
         ) : null}
       </div>
 

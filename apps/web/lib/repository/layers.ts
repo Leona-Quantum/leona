@@ -209,6 +209,33 @@ export interface LayerMethod extends LayerNodeBase {
    */
   through?: Readonly<Record<string, string>>;
   /**
+   * Step id → the method this route actually uses to fill it.
+   *
+   * The owner's session-94 note: *"processes are labeled by what they actually
+   * are (such as a specific algorithm)"*. Measured before building this, every
+   * one of the graph's 55 step instances lands on a slot that several methods
+   * compete for, so the map could only ever name the **slot** on a hop — which is
+   * why four routes out of `nonlinear-ode-solve` all drew "Embed a nonlinear
+   * system into a linear one" as their first segment, a string that says nothing
+   * the two circles do not already say.
+   *
+   * A rename could not fix that, because there is nothing to rename: the four
+   * routes share one slot node. What was missing is the fact itself — Liu et al.'s
+   * route uses **Carleman** linearization, not "some embedding" — and a label is
+   * only allowed to say so once the graph does.
+   *
+   * **Only where a primary source pins it.** Absent is the common and correct
+   * case: `carleman-euler-qls-route` names no particular quantum linear solver
+   * and must keep drawing the slot there. This is the same standard `through`
+   * holds to — read off contract prose that already exists, never inferred to
+   * make a picture read better.
+   *
+   * Narrowing only, and checked: the value must be a method that realises the
+   * step it is filed under, so this can name one of the ways through a slot and
+   * can never introduce a way that is not recorded.
+   */
+  via?: Readonly<Record<string, string>>;
+  /**
    * Declared to have no sub-steps **at this level, on purpose** — as opposed to
    * simply not having been decomposed yet. Only meaningful when `steps` is
    * empty; validation rejects it beside a non-empty `steps`.
@@ -598,6 +625,30 @@ export function entriesFor(node: LayerNode, corpus: ReadonlySet<string>): string
 }
 
 /**
+ * Every node id the Atlas has a record for, given the corpus that actually
+ * loaded.
+ *
+ * The owner's session-94 brief: *"specific algorithms that exist in the
+ * repository surface can be highlighted too perhaps. this allows user to
+ * understand how atlas has everything about specific algorithms, while this map
+ * has everything including how they fit in."*
+ *
+ * Resolved against the live corpus rather than read off `entries` directly, and
+ * that is the whole point of the function: `getRepositoryListEntries` can fall
+ * back to the static corpus or come up short, and a mark promising a record that
+ * is not there is worse than no mark. Fifteen of the graph's seventy-six nodes
+ * carry a cross-link today — the mark is meant to be sparse, because the honest
+ * claim is that the Atlas documents a *few* of these in depth.
+ */
+export function nodesWithEntries(graph: LayerGraph, corpus: ReadonlySet<string>): ReadonlySet<string> {
+  const ids = new Set<string>();
+  for (const node of graph.nodes) {
+    if (entriesFor(node, corpus).length > 0) ids.add(node.id);
+  }
+  return ids;
+}
+
+/**
  * How much of the graph the corpus actually covers.
  *
  * Every number the page prints comes from here rather than from a sentence, on
@@ -948,6 +999,38 @@ export function validateLayerGraph(
         }
       }
     }
+    // `via` pins which method fills a step. Checked for the same reason `through`
+    // is: it puts a **specific algorithm's name** on a hop of this route, and a
+    // pin naming a method that does not fill that slot would print a name the
+    // graph does not support — on the one surface whose whole claim is that it
+    // shows how the recorded pieces fit.
+    if (node.via !== undefined) {
+      const entries = Object.entries(node.via);
+      if (entries.length === 0) {
+        errors.push(`${node.id}: via pins nothing — omit it instead`);
+      }
+      for (const [stepId, methodId] of entries) {
+        if (!node.steps.includes(stepId)) {
+          errors.push(`${node.id}: via names ${stepId}, which is not one of its steps`);
+          continue;
+        }
+        const filler = byId.get(methodId);
+        if (!filler) {
+          errors.push(`${node.id}: via[${stepId}] names an unknown id — ${methodId}`);
+          continue;
+        }
+        if (!isMethod(filler)) {
+          errors.push(`${node.id}: via[${stepId}] is ${methodId}, which is a capability, not a way through one`);
+          continue;
+        }
+        if (filler.realizes !== stepId) {
+          errors.push(
+            `${node.id}: via[${stepId}] is ${methodId}, which fills ${filler.realizes} — a pin may only name one of the ways through the step it is filed under`,
+          );
+        }
+        if (methodId === node.id) errors.push(`${node.id}: via[${stepId}] names itself`);
+      }
+    }
 
     if (node.refines !== undefined) {
       const parent = byId.get(node.refines);
@@ -1061,6 +1144,21 @@ export interface LayerCorpusEntry {
   title: string;
   titleJa: string;
   category: PublicRepositoryCategory;
+  /**
+   * What the Atlas record actually says, in one line.
+   *
+   * Added session 95 on the owner's *"when people see specific algorithms on the
+   * map, they see the content of the atlas repository entry and can click around
+   * in there and export etc etc."* Until now this surface listed a record by
+   * **title only**, so a reader met a link and had to follow it to find out
+   * whether it was worth following.
+   *
+   * A projection of the record, never a second copy of it: one sentence and a
+   * link. The record itself — the code, the verification, the export — stays at
+   * `/repository/<slug>`, which is the page that owns it.
+   */
+  description: string;
+  descriptionJa: string;
 }
 
 /** Every node a given corpus record appears on — the inverse of `entries`. */
