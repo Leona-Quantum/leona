@@ -15,6 +15,7 @@
 // nothing to lose by matching: these pages are statically generated, carry no
 // client state to preserve across a navigation, and the transition covers the
 // document fetch by holding the old frame until the new one is ready.
+import { ViewSwitch } from "./repository-view-switch";
 import { ProcessCanvas } from "./repository-process-map";
 import {
   bypassersOf,
@@ -39,7 +40,6 @@ import {
 import { ancestorPath } from "../lib/repository/strand-layout";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import { layerState, specializationsOf } from "../lib/repository/states";
-import { viewSwitchLabels } from "./repository-strand-view";
 import type { PublicLocale } from "../lib/public-locale";
 
 /**
@@ -453,7 +453,6 @@ export function ProcessMapView({
   zoom?: MapZoom | null;
 }): React.ReactElement {
   const copy = copyFor(locale);
-  const nav = viewSwitchLabels(locale);
   const roots = rootCapabilities(graph);
   const shown = focusId ? [layerNode(graph, focusId)].filter(isCapabilityNode) : roots;
   // Which of these shapes the Atlas holds a full record for. The owner's
@@ -495,12 +494,7 @@ export function ProcessMapView({
   return (
     <section className="mj-strand-view mj-process-view" aria-labelledby="layers-heading">
       <div className="mj-strand-controls">
-        <div className="mj-strand-switch" role="group" aria-label={nav.view}>
-          <span className="mj-strand-switch-label">{nav.view}</span>
-          <span className="mj-strand-switch-on">{nav.map}</span>
-          <a href="/repository/layers?view=strands">{nav.strands}</a>
-          <a href="/repository/layers?view=list">{nav.list}</a>
-        </div>
+        <ViewSwitch current="map" locale={locale} />
         {focusId ? (
           <a className="mj-strand-back" href={mapHref(null, openIds, zoom)}>
             {copy.back}

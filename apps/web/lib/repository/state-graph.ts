@@ -326,6 +326,58 @@ export function expansionOf(
   };
 }
 
+/** One way of filling a slot, drawn as its own line between the slot's two states. */
+export interface MethodLane {
+  key: string;
+  method: LayerMethod;
+}
+
+/**
+ * The fan a slot opens into when it has no finer chain of states.
+ *
+ * Both ends are the slot's **own** contract states, so this is one bundle
+ * between two circles, exactly like a state bundle — and for the same reason it
+ * cannot cross itself.
+ */
+export interface MethodFan {
+  from: string;
+  to: string;
+  lanes: readonly MethodLane[];
+}
+
+/**
+ * What an atomic slot opens into: the methods that fill it.
+ *
+ * `expansionOf`'s own doc comment has said since session 92 that opening
+ * `time-discretization` *"can only fan out the four methods that fill it, which
+ * is what the surface does instead"*. **The surface did not do that.** Measured
+ * on production 2026-08-08, `?view=converge&focus=observable-estimation` drew
+ * nothing at all and printed *"Nothing recorded goes through this in more than
+ * one way."* — and 16 of the 18 slots are atomic, so that was the whole page for
+ * all but two of them. The comment described a feature nobody had written.
+ *
+ * This is deliberately **not** folded into `Expansion`. A chain of states and a
+ * fan of methods are different claims — one says *every way across passes
+ * through this object*, the other says *here are the recorded ways across* — and
+ * D90.6's rule is that two different things never share a shape. The caller asks
+ * for the second only after the first says there is none, and the diagram
+ * records which it drew.
+ *
+ * Returns `null` for a slot nothing fills, rather than an empty fan: a shut slot
+ * and an unfilled one are not the same picture either. Measured on the authored
+ * graph, no slot is unfilled today — the range is 2 to 7 methods — so this is a
+ * guard against a future edit, not a case the page renders.
+ */
+export function methodFanOf(graph: LayerGraph, capability: LayerCapability): MethodFan | null {
+  const methods = methodsRealizing(graph, capability.id);
+  if (methods.length === 0) return null;
+  return {
+    from: capability.contract.from,
+    to: capability.contract.to,
+    lanes: methods.map((method) => ({ key: `m:${method.id}`, method })),
+  };
+}
+
 /**
  * Whether any recorded route walks this exact sequence of slots.
  *

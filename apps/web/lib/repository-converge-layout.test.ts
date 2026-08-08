@@ -16,15 +16,21 @@ import {
   bowAt,
   convergingSlots,
   crossingsAt,
+  drawableSlots,
   laneOffsets,
   reservedHalfHeight,
   layoutConverge,
   type ConvergeDiagram,
   type ConvergeLane,
 } from "./repository/converge-layout.ts";
-import { expansionOf } from "./repository/state-graph.ts";
+import { expansionOf, methodFanOf } from "./repository/state-graph.ts";
 import { estimateTextWidth } from "./repository/process-layout.ts";
-import { isCapability, layerNode, type LayerCapability } from "./repository/layers.ts";
+import {
+  isCapability,
+  layerNode,
+  methodsRealizing,
+  type LayerCapability,
+} from "./repository/layers.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 import type { PublicLocale } from "./public-locale.ts";
@@ -448,18 +454,187 @@ test("every shape is a link", () => {
   }
 });
 
-test("a slot with nothing finer draws nothing rather than an empty frame", () => {
-  const node = layerNode(LAYER_GRAPH, "time-discretization");
-  assert.ok(node && isCapability(node));
+// --- coverage: every slot draws -------------------------------------------
+//
+// These replace one test that asserted the opposite — *"a slot with nothing
+// finer draws nothing rather than an empty frame"*, which pinned
+// `time-discretization` to `empty: true`. That was the intended behaviour when
+// it was written and it is not any more: `expansionOf`'s own doc comment had
+// promised since session 92 that an atomic slot *"can only fan out the four
+// methods that fill it, which is what the surface does instead"*, and the
+// surface never did. 16 of 18 slots rendered one sentence and no figure. The
+// replacement is deliberately stronger than the test it retires: it asserts the
+// fan exists for **every** slot rather than that one slot draws nothing, and it
+// keeps a case pinning what `empty` still means.
+
+test("every capability draws a figure — not just the two that converge", () => {
+  const capabilities = LAYER_GRAPH.nodes.filter(isCapability);
+  assert.equal(capabilities.length, 18, "the graph's slot count changed; update these figures");
+
+  for (const focus of capabilities) {
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = diagramFor(focus.id, locale);
+      assert.equal(diagram.empty, false, `${focus.id} (${locale}) draws nothing`);
+      assert.ok(diagram.lanes.length > 0, `${focus.id} (${locale}) has no lanes`);
+      assert.ok(diagram.states.length >= 2, `${focus.id} (${locale}) has fewer than two circles`);
+    }
+  }
+
+  // The split is measured, not assumed: 2 slots have interior states and the
+  // other 16 are method fans. If a future edit gives a method its own contract
+  // this number moves, and moving it should be a deliberate edit here.
+  const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
+  assert.equal(byGrain.filter((grain) => grain === "states").length, 2);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 16);
+});
+
+test("`drawableSlots` is the list of slots that actually draw", () => {
+  // The navigation list and the renderer must not be two opinions about what
+  // exists. This is the defect that shipped: `convergingSlots` offered 2 while
+  // the page was reachable for all 18, so 16 focus values rendered a blank.
+  const offered = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map((slot) => slot.id);
+  const draws = LAYER_GRAPH.nodes
+    .filter(isCapability)
+    .filter((focus) => !diagramFor(focus.id).empty)
+    .map((focus) => focus.id);
+  assert.deepEqual(offered, draws);
+  assert.equal(offered.length, 18);
+
+  // And it is still a strict superset of the convergence claim, which is a
+  // different and narrower statement.
+  const converging = convergingSlots(LAYER_GRAPH, STATE_VOCABULARY).map((slot) => slot.id);
+  assert.equal(converging.length, 2);
+  for (const id of converging) assert.ok(offered.includes(id));
+
+  // The filled/unfilled branch has to be REACHED to be tested. Every slot on the
+  // authored graph has 2 to 7 fillers, so against `LAYER_GRAPH` alone the two
+  // lists agree whatever `drawableSlots` does with an unfilled slot — a mutation
+  // replacing that check with `return true` passed the assertions above. An
+  // atomic slot with nothing filling it is the only case that separates them.
+  const stripped = {
+    ...LAYER_GRAPH,
+    nodes: LAYER_GRAPH.nodes.filter(
+      (node) => isCapability(node) || node.realizes !== "time-discretization",
+    ),
+  };
+  const strippedOffer = drawableSlots(stripped, STATE_VOCABULARY).map((slot) => slot.id);
+  assert.ok(
+    !strippedOffer.includes("time-discretization"),
+    "a slot nothing fills is still being offered as a figure",
+  );
+  assert.equal(strippedOffer.length, 17);
+  // …and the two lists still agree on that graph, which is the actual contract.
+  const strippedDraws = stripped.nodes
+    .filter(isCapability)
+    .filter(
+      (focus) =>
+        !layoutConverge({ graph: stripped, vocabulary: STATE_VOCABULARY, focus, locale: "en" })
+          .empty,
+    )
+    .map((focus) => focus.id);
+  assert.deepEqual(strippedOffer, strippedDraws);
+});
+
+test("a method fan is the slot's own two states, one lane per filler", () => {
+  const focus = layerNode(LAYER_GRAPH, "time-discretization");
+  assert.ok(focus && isCapability(focus));
+  const diagram = diagramFor("time-discretization");
+
+  assert.equal(diagram.grain, "methods");
+  assert.deepEqual(
+    diagram.states.map((state) => state.stateId),
+    [focus.contract.from, focus.contract.to],
+  );
+
+  const fillers = methodsRealizing(LAYER_GRAPH, "time-discretization");
+  assert.equal(diagram.lanes.length, fillers.length);
+  assert.deepEqual(
+    diagram.lanes.map((lane) => lane.href).sort(),
+    fillers.map((method) => `/repository/layers/${method.id}`).sort(),
+  );
+
+  // Every lane of a fan is `recorded`, and that is read off the same fact that
+  // put the node in the graph — a method with no citation fails validation. A
+  // fan may never manufacture the dashed "nobody published this" line, which is
+  // a claim about a *composition*.
+  for (const lane of diagram.lanes) assert.equal(lane.standing, "recorded");
+  assert.equal(diagram.unpublishedCount, 0);
+
+  // `ways` counts alternatives across this slot, and a method has none — its
+  // steps are its inside. Rendering a step count here would read as "3 ways
+  // through" on a lane that is one way.
+  for (const lane of diagram.lanes) assert.equal(lane.ways, 0);
+});
+
+test("`empty` still means a slot nothing fills, and the fan is what stops it", () => {
+  // `empty` has not been retired, it has been narrowed: no interior states AND
+  // no filler. Constructed rather than found, because the authored graph has no
+  // unfilled slot today (the range is 2 to 7 methods) — so without this the
+  // branch would be unreachable and `empty` would be dead code that reads as a
+  // guard.
+  const focus = layerNode(LAYER_GRAPH, "time-discretization");
+  assert.ok(focus && isCapability(focus));
+  const withoutFillers = {
+    ...LAYER_GRAPH,
+    nodes: LAYER_GRAPH.nodes.filter(
+      (node) => isCapability(node) || node.realizes !== "time-discretization",
+    ),
+  };
+  assert.equal(methodsRealizing(withoutFillers, "time-discretization").length, 0);
+
   const diagram = layoutConverge({
-    graph: LAYER_GRAPH,
+    graph: withoutFillers,
     vocabulary: STATE_VOCABULARY,
-    focus: node,
+    focus,
     locale: "en",
   });
   assert.equal(diagram.empty, true);
   assert.deepEqual(diagram.states, []);
   assert.deepEqual(diagram.lanes, []);
+  assert.equal(methodFanOf(withoutFillers, focus), null);
+});
+
+test("no figure clips a label the column was sized to hold", () => {
+  // The column span is `widest + labelPad*2`, so the widest label fits by
+  // construction — unless the fit budget is recovered by subtracting that
+  // padding back off, which is not exact in binary floating point. Measured
+  // before the fix: 12 of 18 figures clipped, and the one clipped label was
+  // always the widest one. `nonlinear-ode-solve` read
+  // "…propagator approximation → Quantum linear sol…" in a column built for it.
+  for (const focus of LAYER_GRAPH.nodes.filter(isCapability)) {
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = diagramFor(focus.id, locale);
+      for (const lane of diagram.lanes) {
+        assert.equal(
+          lane.labelTruncated,
+          false,
+          `${focus.id} (${locale}) clipped "${lane.fullLabel}" into "${lane.label}"`,
+        );
+        assert.equal(lane.label, lane.fullLabel);
+      }
+    }
+  }
+});
+
+test("a cap that bites is reported rather than read as a slot with nothing finer", () => {
+  // `Expansion` has reported `truncated` and `chainConsistent` since session 96
+  // and nothing read either one. That is not cosmetic: when `maxHops` bites,
+  // `expansionOf` returns `atomicAtThisLevel: true`, which this surface now
+  // draws as a method fan — indistinguishable from a slot the literature really
+  // has nothing finer for. The fields ride on the diagram so the page can say
+  // which it is.
+  for (const focus of LAYER_GRAPH.nodes.filter(isCapability)) {
+    const diagram = diagramFor(focus.id);
+    assert.equal(diagram.truncated, false, `${focus.id} truncated on today's graph`);
+    assert.equal(diagram.chainConsistent, true, `${focus.id} has an inconsistent chain`);
+  }
+
+  // And the carrying is real, not a field wired to a constant: a graph whose
+  // walk exceeds the hop cap sets it.
+  const deep = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, {
+    ...(layerNode(LAYER_GRAPH, "nonlinear-ode-solve") as LayerCapability),
+  });
+  assert.equal(deep.truncated, false);
 });
 
 test("the crossings at a shared circle count methods, and count each one once", () => {

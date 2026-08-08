@@ -60,6 +60,7 @@ import { PROCESS_METRICS, estimateTextWidth, fitLabel, stateHref } from "./proce
 import {
   expansionOf,
   laneFillers,
+  methodFanOf,
   pathStanding,
   pathWitnesses,
   type BundleLane,
@@ -144,6 +145,19 @@ export interface ConvergeLane {
   ways: number;
 }
 
+/**
+ * Which of the two questions this figure answers.
+ *
+ * `states` — every way across passes through these objects, so the circles
+ * between the ends are dominators and the lanes are alternative runs between
+ * them. `methods` — the graph records no interior object, so the lanes are the
+ * recorded ways of filling this one slot. They are different claims and the page
+ * has to say which one it is showing; conflating them would let a reader take
+ * "three ways to estimate an observable" for "three objects every estimate
+ * passes through".
+ */
+export type ConvergeGrain = "states" | "methods";
+
 export interface ConvergeDiagram {
   width: number;
   height: number;
@@ -151,10 +165,28 @@ export interface ConvergeDiagram {
   lanes: readonly ConvergeLane[];
   /** The focused process's own name, drawn once. */
   caption: string;
-  /** Nothing finer is recorded, so there is no fan to draw. */
+  /** Nothing at all to draw: no interior states *and* nothing fills the slot. */
   empty: boolean;
   /** How many lanes on this figure no recorded source walks. */
   unpublishedCount: number;
+  /** What the circles between the ends mean. See `ConvergeGrain`. */
+  grain: ConvergeGrain;
+  /**
+   * The path walk hit `PATH_LIMITS` and the picture is a subset, not the graph.
+   *
+   * Carried because `Expansion` has reported it since session 96 and **nothing
+   * read it** — measured by grep, `truncated` and `chainConsistent` were
+   * computed, returned, and dropped by the only consumer. That matters more than
+   * it sounds: when `maxHops` bites, `expansionOf` returns
+   * `atomicAtThisLevel: true`, which this surface renders as *"no finer
+   * decomposition is recorded"* — a cap that bites is therefore indistinguishable
+   * from a slot the literature has nothing finer for. It does not bite on
+   * today's graph (max 4 paths, max 3 hops against limits of 400 and 8), and a
+   * figure that says so is the only way that stays true.
+   */
+  truncated: boolean;
+  /** The dominator order differs between paths, so the chain is not drawable as one line. */
+  chainConsistent: boolean;
 }
 
 /**
@@ -285,20 +317,50 @@ export function layoutConverge(options: {
   const expansion: Expansion = expansionOf(graph, vocabulary, focus);
   const caption = labelOf(focus, locale);
 
-  if (expansion.atomicAtThisLevel || expansion.bundles.length === 0) {
-    return { width: 0, height: 0, states: [], lanes: [], caption, empty: true, unpublishedCount: 0 };
+  // Which picture this is. The state chain is asked for first and the method fan
+  // is the answer only when there is no chain — never both, and the answer is
+  // recorded on the diagram rather than inferred downstream from `lanes.length`.
+  const plan =
+    expansion.atomicAtThisLevel || expansion.bundles.length === 0
+      ? planMethodFan(graph, focus, locale)
+      : planStateChain(graph, vocabulary, expansion, locale);
+
+  if (!plan) {
+    return {
+      width: 0,
+      height: 0,
+      states: [],
+      lanes: [],
+      caption,
+      empty: true,
+      unpublishedCount: 0,
+      grain: "methods",
+      truncated: expansion.truncated,
+      chainConsistent: expansion.chainConsistent,
+    };
   }
 
   // Column widths: each bundle needs room for its widest lane label.
-  const spans = expansion.bundles.map((bundle) => {
-    const widest = bundle.lanes.reduce((wide, lane) => {
-      const { text } = laneName(graph, lane, locale);
-      return Math.max(wide, estimateTextWidth(text, M.laneFont));
-    }, 0);
-    return Math.max(M.minSpan, widest + M.labelPad * 2);
+  //
+  // `fit` is carried, not recovered from `span` by subtracting the padding
+  // again. `(widest + pad) - pad` is not `widest` in binary floating point, and
+  // the label that loses that comparison is always the widest one — the very
+  // label the column was sized to hold. Measured: `502.44` of need against
+  // `502.44` of budget, clipped, because one of them was really
+  // `502.4400000000001`. Two subtractions of the same padding is the same "one
+  // measurement, two derivations" mistake as deriving the run widths twice, so
+  // the number that decides the fit is computed once and kept.
+  const columns = plan.bundles.map((bundle) => {
+    const widest = bundle.lanes.reduce(
+      (wide, lane) => Math.max(wide, estimateTextWidth(lane.text, M.laneFont)),
+      0,
+    );
+    const span = Math.max(M.minSpan, widest + M.labelPad * 2);
+    return { span, fit: Math.max(M.minSpan - M.labelPad * 2, widest) };
   });
+  const spans = columns.map((column) => column.span);
 
-  const tallest = expansion.bundles.reduce(
+  const tallest = plan.bundles.reduce(
     (tall, bundle) => Math.max(tall, Math.max(...laneOffsets(bundle.lanes.length).map(Math.abs))),
     0,
   );
@@ -318,13 +380,12 @@ export function layoutConverge(options: {
 
   const arriving = new Map<string, number>();
   const leaving = new Map<string, number>();
-  for (const [index, bundle] of expansion.bundles.entries()) {
+  for (const bundle of plan.bundles) {
     arriving.set(bundle.to, (arriving.get(bundle.to) ?? 0) + bundle.lanes.length);
     leaving.set(bundle.from, (leaving.get(bundle.from) ?? 0) + bundle.lanes.length);
-    void index;
   }
 
-  const states: ConvergeState[] = expansion.chain.map((stateId, index) => {
+  const states: ConvergeState[] = plan.chain.map((stateId, index) => {
     const state = layerState(vocabulary, stateId);
     return {
       key: `s:${stateId}`,
@@ -334,7 +395,7 @@ export function layoutConverge(options: {
       cy: yc,
       r: M.stateRadius,
       href: stateHref(stateId),
-      terminal: index === 0 || index === expansion.chain.length - 1,
+      terminal: index === 0 || index === plan.chain.length - 1,
       arriving: arriving.get(stateId) ?? 0,
       leaving: leaving.get(stateId) ?? 0,
     };
@@ -342,7 +403,7 @@ export function layoutConverge(options: {
 
   const lanes: ConvergeLane[] = [];
   let unpublishedCount = 0;
-  for (const [index, bundle] of expansion.bundles.entries()) {
+  for (const [index, bundle] of plan.bundles.entries()) {
     const x0 = xs[index]!;
     const x1 = xs[index + 1]!;
     const offsets = laneOffsets(bundle.lanes.length);
@@ -355,11 +416,24 @@ export function layoutConverge(options: {
         `C ${round(x0 + third)} ${round(yc + h)}, ${round(x1 - third)} ${round(yc + h)}, ` +
         `${round(x1)} ${round(yc)}`;
 
-      const { text, href, slots } = laneName(graph, lane, locale);
-      const fitted = fitLabel(text, M.laneFont, x1 - x0 - M.labelPad * 2);
+      // Fitted against the span that **sized** this column, never against the
+      // rounded `x1 - x0` drawn from it.
+      //
+      // Those differ, and the difference lands on exactly the wrong label. A
+      // span is `widest + labelPad*2`, `xs` rounds each cumulative sum to 2dp,
+      // and the rounding can shave a hundredth off — so the fit budget came back
+      // `widest - 0.005` and the one label guaranteed to exceed it is the widest
+      // one, the label that set the column width in the first place. Measured
+      // before this fix: 12 of the 18 figures clipped a name, and the production
+      // page read *"Koopman-von Neumann lift to phase-space densiti…"* inside a
+      // column sized precisely to hold it.
+      //
+      // The same "one measurement, one placement" rule `placeLanes` already
+      // learned the hard way, arriving by a different door: a second derivation
+      // of a number somebody had already computed.
+      const fitted = fitLabel(lane.text, M.laneFont, columns[index]!.fit);
       const peakY = bowAt(yc, bow, 0.5);
-      const standing = standingFor(graph, vocabulary, lane);
-      if (standing === "unpublished") unpublishedCount += 1;
+      if (lane.standing === "unpublished") unpublishedCount += 1;
 
       lanes.push({
         key: `${bundle.from}>${bundle.to}:${lane.key}`,
@@ -369,22 +443,133 @@ export function layoutConverge(options: {
         yc,
         bow,
         label: fitted.text,
-        fullLabel: text,
+        fullLabel: lane.text,
         labelTruncated: fitted.truncated,
         labelX: (x0 + x1) / 2,
         // Above the curve for the upper half, below for the lower, so a label
         // never sits on the line it names or on its neighbour's.
         labelY: bow >= 0 ? peakY + M.labelLift + M.laneFont * 0.8 : peakY - M.labelLift,
-        href,
-        standing,
-        slots,
+        href: lane.href,
+        standing: lane.standing,
+        slots: lane.slots,
         interior: lane.interior,
-        ways: laneFillers(graph, lane).length,
+        ways: lane.ways,
       });
     }
   }
 
-  return { width, height, states, lanes, caption, empty: false, unpublishedCount };
+  return {
+    width,
+    height,
+    states,
+    lanes,
+    caption,
+    empty: false,
+    unpublishedCount,
+    grain: plan.grain,
+    truncated: expansion.truncated,
+    chainConsistent: expansion.chainConsistent,
+  };
+}
+
+/**
+ * A bundle reduced to what the geometry needs, so one placement pass serves both
+ * grains.
+ *
+ * The alternative — a second `layoutConverge` for the method fan — is the shape
+ * this repository has been bitten by twice: `placeLanes` deriving its own run
+ * widths beside `measureLanes`, and `bowAt` describing a curve three quarters
+ * the height of the emitted one. Two writers of the same number drift, and the
+ * second is silent when it is wrong. There is one emitter of `d` in this file
+ * and there stays one.
+ */
+interface PlannedLane {
+  key: string;
+  text: string;
+  href: string;
+  standing: LaneStanding;
+  slots: readonly string[];
+  interior: readonly string[];
+  ways: number;
+}
+
+interface PlannedBundle {
+  from: string;
+  to: string;
+  lanes: readonly PlannedLane[];
+}
+
+interface Plan {
+  chain: readonly string[];
+  bundles: readonly PlannedBundle[];
+  grain: ConvergeGrain;
+}
+
+function planStateChain(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  expansion: Expansion,
+  locale: PublicLocale,
+): Plan {
+  return {
+    chain: expansion.chain,
+    grain: "states",
+    bundles: expansion.bundles.map((bundle) => ({
+      from: bundle.from,
+      to: bundle.to,
+      lanes: bundle.lanes.map((lane) => {
+        const { text, href, slots } = laneName(graph, lane, locale);
+        return {
+          key: lane.key,
+          text,
+          href,
+          standing: standingFor(graph, vocabulary, lane),
+          slots,
+          interior: lane.interior,
+          ways: laneFillers(graph, lane).length,
+        };
+      }),
+    })),
+  };
+}
+
+/**
+ * The slot's own two states, with one lane per method that fills it.
+ *
+ * Every lane here is `recorded` and that is not a default: a method node exists
+ * *because* a source describes it, and validation refuses one carrying no
+ * citation (`layers.ts` — *"a method must carry at least one citation"*). So the
+ * standing is read off the same fact that put the node in the graph, and this
+ * fan can never manufacture the dashed "nobody has published this" line, which
+ * belongs to compositions and not to a single filler.
+ *
+ * `ways` is 0 rather than the method's step count. A step is not another way
+ * *across this slot* — it is the inside of this one way — and putting it in the
+ * field that renders "N ways through" would say there are three alternatives
+ * where there is one method with three steps.
+ */
+function planMethodFan(graph: LayerGraph, focus: LayerCapability, locale: PublicLocale): Plan | null {
+  const fan = methodFanOf(graph, focus);
+  if (!fan) return null;
+  return {
+    chain: [fan.from, fan.to],
+    grain: "methods",
+    bundles: [
+      {
+        from: fan.from,
+        to: fan.to,
+        lanes: fan.lanes.map((lane) => ({
+          key: lane.key,
+          text: labelOf(lane.method, locale),
+          href: `/repository/layers/${lane.method.id}`,
+          standing: "recorded" as LaneStanding,
+          slots: [focus.id],
+          interior: [],
+          ways: 0,
+        })),
+      },
+    ],
+  };
 }
 
 /**
@@ -549,10 +734,36 @@ export function crossingsAt(
   };
 }
 
-/** Every focusable slot that has something to converge — used by the page and the tests. */
+/**
+ * Every focusable slot whose interior states converge — 2 of 18 on today's graph.
+ *
+ * Still a real and separate distinction after the method fan landed: these are
+ * the figures where the circles between the ends mean *"every way across passes
+ * through this"*. It is no longer the list of slots the page can draw — see
+ * `drawableSlots` — and conflating the two is what made 16 slots render a blank
+ * page for three sessions.
+ */
 export function convergingSlots(graph: LayerGraph, vocabulary: StateVocabulary): LayerCapability[] {
   return graph.nodes.filter((node): node is LayerCapability => {
     if (!isCapability(node)) return false;
     return !expansionOf(graph, vocabulary, node).atomicAtThisLevel;
+  });
+}
+
+/**
+ * Every slot this surface can draw a figure for.
+ *
+ * A slot draws when it has interior states **or** something fills it. Written as
+ * the disjunction the layout actually branches on rather than as "all
+ * capabilities", so a slot that stops being drawable stops being offered — the
+ * failure this replaces was a navigation list and a renderer disagreeing about
+ * what exists, and the fix is not a second hand-maintained list that agrees
+ * today.
+ */
+export function drawableSlots(graph: LayerGraph, vocabulary: StateVocabulary): LayerCapability[] {
+  return graph.nodes.filter((node): node is LayerCapability => {
+    if (!isCapability(node)) return false;
+    if (!expansionOf(graph, vocabulary, node).atomicAtThisLevel) return true;
+    return methodFanOf(graph, node) !== null;
   });
 }

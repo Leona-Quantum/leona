@@ -6,11 +6,12 @@
 // the reason session 95 recorded — a `<Link>` is a same-document navigation and
 // that is the one kind `@view-transition { navigation: auto }` does not animate,
 // so using one here would silently delete the zoom on this surface only.
+import { ViewSwitch } from "./repository-view-switch";
 import { ConvergeCanvas } from "./repository-converge-map";
-import { viewSwitchLabels } from "./repository-strand-view";
 import {
   convergingSlots,
   crossingsAt,
+  drawableSlots,
   layoutConverge,
   type ConvergeDiagram,
 } from "../lib/repository/converge-layout";
@@ -24,7 +25,16 @@ import type { PublicLocale } from "../lib/public-locale";
 interface ConvergeCopy {
   heading: string;
   lede: string;
-  pick: string;
+  /** The lede when the figure is a fan of fillers rather than a chain of states. */
+  ledeFan: string;
+  grainStates: (interior: number) => string;
+  grainMethods: (n: number, slot: string) => string;
+  truncatedNote: string;
+  inconsistentNote: string;
+  linesHeading: string;
+  ownPage: string;
+  pickAll: string;
+  pickConverging: (n: number) => string;
   nothing: string;
   legendShared: string;
   legendUnpublished: string;
@@ -45,7 +55,21 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     heading: "Where the routes meet",
     lede:
       "Every circle is drawn once. Several ways of getting somewhere end on the same circle, and every way onward leaves from it — so a route you can take is any line in, followed by any line out, whether or not a paper has put those two together.",
-    pick: "Figures that have something to converge",
+    ledeFan:
+      "Every circle is drawn once. This step has no smaller object recorded inside it, so the lines between its two circles are the recorded ways of taking it — one line per method.",
+    grainStates: (interior: number) =>
+      `The ${interior === 1 ? "circle" : `${interior} circles`} between the ends ${interior === 1 ? "is an object" : "are objects"} every way across passes through.`,
+    grainMethods: (n: number, slot: string) =>
+      `${n} recorded ${n === 1 ? "way" : "ways"} of doing ${slot}. Nothing smaller is recorded inside it, so there is no object in the middle to draw.`,
+    linesHeading: "The lines on this figure",
+    truncatedNote:
+      "The search for ways across hit its limit, so this figure is part of what the graph records rather than all of it.",
+    inconsistentNote:
+      "The shared objects are met in a different order on different routes, so they are not drawn as one line.",
+    ownPage: "Read the full write-up",
+    pickAll: "Every step you can open",
+    pickConverging: (n: number) =>
+      `${n} of these have an object recorded in the middle; the rest open into the methods that fill them.`,
     nothing: "Nothing recorded goes through this in more than one way.",
     legendShared: "more than one way reaches or leaves it",
     legendUnpublished: "no recorded source takes this path",
@@ -69,7 +93,21 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     heading: "経路が合流する場所",
     lede:
       "円はひとつずつ描かれます。ある場所に至る複数の道はすべて同じ円で終わり、そこから先へ向かう道はすべてその円から出ます。したがって、入る線と出る線の任意の組み合わせが、たどりうる経路になります。論文がその二つを結びつけているかどうかとは無関係です。",
-    pick: "合流のある図",
+    ledeFan:
+      "円はひとつずつ描かれます。この工程の内側により小さな対象は記録されていないため、二つの円のあいだの線は、この工程を行う記録された手法そのものです。手法ひとつにつき一本です。",
+    grainStates: (interior: number) =>
+      `両端のあいだにある ${interior} 個の円は、どの道を通っても必ず経由する対象です。`,
+    grainMethods: (n: number, slot: string) =>
+      `${slot}を行う記録された手法が ${n} 件あります。内側により小さな対象は記録されていないため、中間に描く対象はありません。`,
+    linesHeading: "この図の線",
+    truncatedNote:
+      "経路の探索が上限に達したため、この図はグラフが記録する全体ではなく、その一部です。",
+    inconsistentNote:
+      "共有される対象に出会う順序が経路によって異なるため、ひとつの線としては描いていません。",
+    ownPage: "解説を読む",
+    pickAll: "開くことのできる工程",
+    pickConverging: (n: number) =>
+      `このうち ${n} 件は中間に対象が記録されています。残りは、それを満たす手法へと開きます。`,
     nothing: "これを複数の方法で通る記録はありません。",
     legendShared: "複数の道が到達または出発する対象",
     legendUnpublished: "この経路をたどる記録された出典はありません",
@@ -107,8 +145,11 @@ export function ConvergeView({
 }): React.ReactElement {
   const lang: "en" | "ja" = locale === "ja" ? "ja" : "en";
   const copy = COPY[lang];
-  const nav = viewSwitchLabels(locale);
-  const candidates = convergingSlots(graph, STATE_VOCABULARY);
+  // Every slot that draws, not only the two whose interiors converge. Those are
+  // different questions and answering the second here is what left 16 of the 18
+  // slots with a blank page and no way to reach the other 16 from this surface.
+  const candidates = drawableSlots(graph, STATE_VOCABULARY);
+  const converging = convergingSlots(graph, STATE_VOCABULARY);
 
   const node = focusId ? layerNode(graph, focusId) : null;
   const focus = node && isCapability(node) ? node : (candidates[0] ?? null);
@@ -145,25 +186,65 @@ export function ConvergeView({
   return (
     <section className="mj-strand-view mj-process-view" aria-labelledby="converge-heading">
       <div className="mj-strand-controls">
-        <div className="mj-strand-switch" role="group" aria-label={nav.view}>
-          <span className="mj-strand-switch-label">{nav.view}</span>
-          <a href="/repository/layers?view=map">{nav.map}</a>
-          <span className="mj-strand-switch-on">{nav.converge}</span>
-          <a href="/repository/layers?view=strands">{nav.strands}</a>
-          <a href="/repository/layers?view=list">{nav.list}</a>
-        </div>
+        <ViewSwitch current="converge" locale={locale} />
       </div>
 
       <h1 id="converge-heading">{copy.heading}</h1>
-      <p className="mj-layers-lede">{copy.lede}</p>
+      <p className="mj-layers-lede">{diagram?.grain === "methods" ? copy.ledeFan : copy.lede}</p>
 
       {diagram && !diagram.empty ? (
         <>
+          {/* What this figure is, before the figure. A chain of shared circles
+              and a fan of fillers are different claims — "every way across
+              passes through this object" versus "these are the recorded ways
+              across" — and a reader who takes the second for the first reads
+              three ways to estimate an observable as three objects every
+              estimate passes through. D89.6: say which, never let the picture
+              imply it. */}
+          <p className="mj-converge-grain">
+            {diagram.grain === "states"
+              ? copy.grainStates(diagram.states.length - 2)
+              : copy.grainMethods(diagram.lanes.length, focus ? label(focus) : "")}
+          </p>
+
+          {/* A cap that bites is reported. `maxHops` biting makes `expansionOf`
+              return "nothing finer is recorded", which this page would draw as a
+              method fan — identical to a slot the literature genuinely has
+              nothing finer for. Silence here would be the surface asserting the
+              stronger of two readings it cannot tell apart. */}
+          {diagram.truncated ? <p className="mj-converge-caveat">{copy.truncatedNote}</p> : null}
+          {diagram.chainConsistent ? null : (
+            <p className="mj-converge-caveat">{copy.inconsistentNote}</p>
+          )}
+
           <ConvergeCanvas
             diagram={diagram}
             locale={locale}
             title={focus ? label(focus) : copy.heading}
           />
+
+          {/* The figure, in words.
+
+              Not a nicety: the lane's three-valued standing was carried ONLY by
+              `stroke-dasharray` on a CSS modifier, so a screen-reader user got
+              nothing, a print reader got three dash patterns and a legend that
+              never said which line was which, and the `<text>` label was the
+              fitted one. Every lane now has one row naming it, saying what its
+              standing is in words, and linking where the shape links. */}
+          <h2 className="mj-converge-lines-heading">{copy.linesHeading}</h2>
+          <ol className="mj-converge-lanes">
+            {diagram.lanes.map((lane) => (
+              <li key={lane.key} className={`mj-converge-lane-row--${lane.standing}`}>
+                <a href={lane.href}>{lane.fullLabel}</a>
+                {lane.standing === "recorded" ? null : (
+                  <span className="mj-converge-lane-standing">
+                    {" — "}
+                    {lane.standing === "unpublished" ? copy.legendUnpublished : copy.legendUnpinned}
+                  </span>
+                )}
+              </li>
+            ))}
+          </ol>
 
           <ul className="mj-converge-facts">
             {shared.map((state) => {
@@ -228,14 +309,34 @@ export function ConvergeView({
             </section>
           ) : null}
 
-          {focus ? <p><a href={mapHref(focus.id)}>{copy.onMap}</a></p> : null}
+          {/* The focused slot's own write-up, which this surface never linked.
+              Measured before this: the converge page emitted 19 hrefs and not
+              one of them was the page for the thing it was drawing — a reader
+              looking at "Estimate an observable" had no way to read what it is
+              without going through a lane. */}
+          {focus ? (
+            <p className="mj-converge-own">
+              <a href={`/repository/layers/${focus.id}`}>{copy.ownPage}</a>
+              {" · "}
+              <a href={mapHref(focus.id)}>{copy.onMap}</a>
+            </p>
+          ) : null}
         </>
       ) : (
         <p>{copy.nothing}</p>
       )}
 
+      {/* Every step, not the two that converge.
+          This list *was* `convergingSlots`, and the mismatch between what it
+          offered and what the page could draw is the whole defect: 16 slots were
+          addressable, rendered nothing, and appeared nowhere to click. It is
+          `drawableSlots` now — the same predicate the layout branches on, so the
+          navigation and the renderer cannot hold different opinions about what
+          exists. The convergence count stays as a sentence, because it is still
+          true and still worth saying. */}
       <section>
-        <h2>{copy.pick}</h2>
+        <h2>{copy.pickAll}</h2>
+        <p>{copy.pickConverging(converging.length)}</p>
         <ul className="mj-converge-picks">
           {candidates.map((item) => (
             <li key={item.id}>

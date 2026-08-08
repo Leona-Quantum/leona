@@ -11371,10 +11371,56 @@ div.mj-rail-row:hover {
 }
 .mj-converge-facts li { margin-bottom: var(--sp-2); }
 
-/* Which figures have something to converge — the honest list, and it is short on
-   purpose. Two of the eighteen slots have a finer decomposition in the state
-   graph; the rest are a single bundle and say so rather than drawing an empty
-   frame. */
+/* What the figure IS, said before the figure.
+   A chain of shared circles and a fan of fillers are different claims, and this
+   line is the only thing distinguishing them for a reader who cannot count the
+   circles. Sits tight under the lede because it qualifies it. */
+.mj-converge-grain {
+  margin: calc(var(--sp-2) * -1) 0 var(--sp-4);
+  color: var(--text-2);
+  font-size: var(--fs-14);
+  line-height: 1.6;
+}
+
+/* Heading for the lines list. Without it the list reads as an accidental repeat
+   of the labels already on the canvas; with it, it is the index — and on a phone
+   it is the only complete one, because the canvas is wider than the viewport and
+   scrolls (measured at 375px: a 303px box holding a 363px figure). */
+.mj-converge-lines-heading {
+  margin: var(--sp-5) 0 var(--sp-2);
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  font-weight: 600;
+}
+
+/* The figure, in words.
+   Not decoration and not a duplicate: the lane's standing lived only in
+   `stroke-dasharray`, so it reached a mouse and reached nobody else, and the
+   drawn `<text>` is the *fitted* label. This list carries the full name, the
+   standing as a word, and the same destination the shape links to — which is
+   what makes the canvas readable with a screen reader, in print, and by `curl`.
+   Ordered, because a lane's position in the fan is meaningful. */
+.mj-converge-lanes {
+  margin: var(--sp-4) 0 var(--sp-5);
+  padding-left: var(--sp-5);
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.7;
+}
+.mj-converge-lanes li { margin-bottom: var(--sp-1); }
+.mj-converge-lane-standing { color: var(--text-2); }
+/* Matches the canvas: an unpublished line is the quiet one in both readings. */
+.mj-converge-lane-row--unpublished > a { font-style: italic; }
+
+/* The focused slot's own write-up. This surface drew a thing for four sessions
+   and never linked the page describing it. */
+.mj-converge-own {
+  margin: var(--sp-4) 0 var(--sp-5);
+  font-size: var(--fs-14);
+}
+
+/* Every step you can open. Was the two that converge, which is a different
+   question and left sixteen slots addressable, blank and unlinked. */
 .mj-converge-picks {
   display: flex;
   flex-wrap: wrap;
