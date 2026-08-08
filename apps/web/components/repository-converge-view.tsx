@@ -645,6 +645,13 @@ export function ConvergeView({
   // Unfocused, this draws the four roots — the map's overview, which converge
   // never had. It used to fall back to `candidates[0]`, which showed a reader
   // arriving at the page one arbitrary slot and no way to tell it was arbitrary.
+  // IDENTITY is the default, so omitting it keeps a bare `/repository/layers`
+  // link bare instead of stamping `at=0,0,1` onto all 83 of them.
+  const atParam =
+    viewport.x === IDENTITY.x && viewport.y === IDENTITY.y && viewport.z === IDENTITY.z
+      ? null
+      : formatViewport(viewport);
+
   const subjects = focus ? [focus] : rootCapabilities(graph);
   const figures = subjects.map((subject) => ({
     subject,
@@ -657,6 +664,13 @@ export function ConvergeView({
       // The page's own `?focus=`, not this figure's subject: unfocused, every
       // open link must come back to the overview rather than to one root.
       focusParam: focusId,
+      // Where the reader is standing, carried onto every address this figure
+      // emits. Serialized from the parsed viewport rather than taken from the
+      // query string so that a viewport the parser *rejected* is not handed
+      // back out again — `parseViewport` falls back to IDENTITY on a malformed
+      // `?at=`, and a link that carries the malformed original would keep it
+      // alive across every click.
+      at: atParam,
     }),
   }));
   const drawn = figures.filter((figure) => !figure.diagram.empty);

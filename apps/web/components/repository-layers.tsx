@@ -427,18 +427,25 @@ function ContractPiece({
  * the canvas, which is a hover — and there is no hover on a phone. Naming them
  * here in prose, as links, is the same fact in a form every reader gets.
  */
+/** One frozen empty set rather than a fresh `new Set()` per render. */
+const EMPTY_OPEN: ReadonlySet<string> = new Set<string>();
+
 function ProcessZoom({
   graph,
   node,
   locale,
   copy,
   viewport,
+  open,
+  at,
 }: {
   graph: LayerGraph;
   node: LayerNode;
   locale: PublicLocale;
   copy: LayersCopy;
   viewport: Viewport;
+  open: ReadonlySet<string>;
+  at: string | null;
 }) {
   const resolved = contractFor(graph, node);
   // **The same drawing as the index, of the same subject.** That is what makes
@@ -461,7 +468,13 @@ function ProcessZoom({
           vocabulary: STATE_VOCABULARY,
           focus: subject,
           locale,
-          open: isCapability(node) ? new Set<string>() : new Set([node.id]),
+          // The reader's own `?open=` **and** what this page is about. A method
+          // is drawn as the slot it fills with itself open, and that is not
+          // negotiable — but everything else the reader had expanded on the way
+          // here survives the click now, instead of the figure quietly
+          // resetting to the one line the URL happens to name.
+          open: isCapability(node) ? new Set(open) : new Set([...open, node.id]),
+          at,
         })
       : null;
   // An unresolvable contract or an empty layout means the graph does not have
@@ -989,12 +1002,18 @@ export function LayerNodeView({
   corpus,
   locale,
   viewport = IDENTITY,
+  open,
+  at = null,
 }: {
   graph: LayerGraph;
   node: LayerNode;
   corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
   viewport?: Viewport;
+  /** The reader's own `?open=`, carried in from the page they came from. */
+  open?: ReadonlySet<string>;
+  /** The reader's own `?at=`, raw, so every address this page emits keeps it. */
+  at?: string | null;
 }) {
   const copy = copyFor(locale);
   const depth = layerDepths(graph).get(isCapability(node) ? node.id : node.realizes);
@@ -1018,7 +1037,15 @@ export function LayerNodeView({
       {/* Before the prose, not after it. A reader who clicked a name on the map
           came here to see this one thing drawn; the write-up is what they read
           once they have found it. */}
-      <ProcessZoom graph={graph} node={node} locale={locale} copy={copy} viewport={viewport} />
+      <ProcessZoom
+        graph={graph}
+        node={node}
+        locale={locale}
+        copy={copy}
+        viewport={viewport}
+        open={open ?? EMPTY_OPEN}
+        at={at}
+      />
       {isCapability(node) ? (
         <CapabilityView graph={graph} node={node} corpus={corpus} locale={locale} copy={copy} />
       ) : (

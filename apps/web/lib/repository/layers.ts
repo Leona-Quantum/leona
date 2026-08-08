@@ -599,6 +599,217 @@ export function stateTraffic(
   };
 }
 
+/**
+ * One end of an asserted composition: the method, and the edge it takes.
+ *
+ * `edgeKey` is the key shape `state-graph.ts` walks — a slot id, or
+ * `slot@filler` where a route records the hop landing somewhere narrower. It is
+ * carried rather than recomputed by the caller because the caller is a lint
+ * script and the judge is `pathStanding`, which matches on exactly these strings:
+ * a key built two ways is a key that stops matching, and the symptom would be a
+ * census reporting every composition as unwitnessed, which is what a
+ * genuinely-empty record looks like. `check-layer-graph.mjs` asserts the join by
+ * requiring at least one `recorded` — see the reachability rule below.
+ */
+export interface CompositionEnd {
+  method: string;
+  edgeKey: string;
+}
+
+/**
+ * What the literature record says about one asserted composition.
+ *
+ * Structurally identical to `PathStanding` in `state-graph.ts`, **and the three
+ * words are deliberately the same** so the number this lint prints and the mark
+ * the converge surface draws cannot come to mean different things. It is
+ * redeclared rather than imported because `state-graph.ts` imports *this* module;
+ * importing back would be a cycle. The judge is injected for the same reason.
+ */
+export type CompositionStanding = "recorded" | "unpinned" | "unpublished";
+
+export type CompositionJudge = (
+  arrival: CompositionEnd,
+  departure: CompositionEnd,
+) => CompositionStanding;
+
+/** One state's in/out table and how the record stands on each way across it. */
+export interface StateComposition {
+  state: string;
+  arrivals: readonly CompositionEnd[];
+  departures: readonly CompositionEnd[];
+  /** `arrivals × departures` — every way across this circle the graph offers. */
+  asserted: number;
+  recorded: number;
+  unpinned: number;
+  unpublished: number;
+}
+
+export interface CompositionCensus {
+  states: readonly StateComposition[];
+  asserted: number;
+  recorded: number;
+  unpinned: number;
+  unpublished: number;
+  /**
+   * States more than one method arrives at — the ones where the question has
+   * teeth, because a shared name is doing the joining rather than a source.
+   */
+  statesWithSeveralArrivals: number;
+}
+
+/**
+ * Every method-to-method composition the graph asserts, and how many of them
+ * anybody has actually written down.
+ *
+ * ## Why this is counted rather than checked
+ *
+ * The rule it would take to *check* these is the one the block above `RouteSegment`
+ * says is not expressible. So this does the next honest thing: it makes the size
+ * of the unchecked surface a number the lint prints on every run, instead of a
+ * figure in a session note that is right on the day it is written and silent
+ * every day after.
+ *
+ * ## What counts as an arrival, and the case that shows why it is not obvious
+ *
+ * A method arrives at the state its **effective** contract returns — every method
+ * here inherits its slot's contract — measured 2026-08-09, **not one** carries a
+ * contract of its own — so every arrival on the map is asserted by a slot rather
+ * than claimed by the method that fills it. The exception is a
+ * `through` narrowing, and there the arriving *process* is the method **filling**
+ * the narrowed step, not the route that recorded the narrowing: `kvn-simulation-route`
+ * writes down that the hop lands on `hermitian-generator`, but the thing that
+ * lands there is `koopman-von-neumann-lift`. Reading the route as the arrival
+ * would put a whole nonlinear-ODE route on a circle it merely passes through.
+ *
+ * A departure is a method whose contract takes this state, **or takes something
+ * broader** — `stateSatisfies` says a narrower object is accepted where a broader
+ * one is asked for, and that is precisely how a state with one arrival can still
+ * offer seventeen ways out.
+ *
+ * Self-pairs are kept. A method that both produces a state and accepts it (three
+ * of the block-encoding constructions do, because `block-encoding` specialises
+ * `matrix-access`) is a composition the graph is genuinely asserting, and dropping
+ * it would make the printed total smaller than the surface a reader can click.
+ */
+export function stateCompositionCensus(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  judge: CompositionJudge,
+): CompositionCensus {
+  const methods = graph.nodes.filter(isMethod);
+  const effective = (method: LayerMethod): LayerContract | null =>
+    contractFor(graph, method)?.contract ?? null;
+
+  const states: StateComposition[] = [];
+  let asserted = 0;
+  let recorded = 0;
+  let unpinned = 0;
+  let unpublished = 0;
+  let statesWithSeveralArrivals = 0;
+
+  for (const state of vocabulary.states) {
+    const arrivals: CompositionEnd[] = [];
+    const seenArrival = new Set<string>();
+    // Deduped on the **method**, not on the way it was reached — the guard
+    // `crossingsAt` had to grow after `linear-ivp` reported forty crossings and
+    // listed one of them twice. A filler can reach a circle both by its slot's
+    // contract and by a route's narrowing, and that is one process arriving.
+    const addArrival = (method: string, edgeKey: string) => {
+      if (seenArrival.has(method)) return;
+      seenArrival.add(method);
+      arrivals.push({ method, edgeKey });
+    };
+    for (const method of methods) {
+      if (effective(method)?.to === state.id) addArrival(method.id, method.realizes);
+    }
+    for (const method of methods) {
+      for (const [stepId, landing] of Object.entries(method.through ?? {})) {
+        if (landing !== state.id) continue;
+        // Same fallback `walkedEdgeKeys` uses: an unpinned narrowing is the
+        // recording route's own claim, so the route is the process there.
+        const filler = method.via?.[stepId] ?? method.id;
+        const node = layerNode(graph, filler);
+        if (node && isMethod(node)) addArrival(filler, `${stepId}@${filler}`);
+      }
+    }
+
+    const departures: CompositionEnd[] = [];
+    const seenDeparture = new Set<string>();
+    for (const method of methods) {
+      const from = effective(method)?.from;
+      if (from === undefined) continue;
+      if (from !== state.id && !stateSatisfies(vocabulary, state.id, from)) continue;
+      if (seenDeparture.has(method.id)) continue;
+      seenDeparture.add(method.id);
+      departures.push({ method: method.id, edgeKey: method.realizes });
+    }
+
+    const here = { recorded: 0, unpinned: 0, unpublished: 0 };
+    for (const arrival of arrivals) {
+      for (const departure of departures) here[judge(arrival, departure)] += 1;
+    }
+    if (arrivals.length > 1) statesWithSeveralArrivals += 1;
+    asserted += arrivals.length * departures.length;
+    recorded += here.recorded;
+    unpinned += here.unpinned;
+    unpublished += here.unpublished;
+    states.push({
+      state: state.id,
+      arrivals,
+      departures,
+      asserted: arrivals.length * departures.length,
+      ...here,
+    });
+  }
+
+  return { states, asserted, recorded, unpinned, unpublished, statesWithSeveralArrivals };
+}
+
+/**
+ * What a real check of the owner's session-91 rule would need, and why the model
+ * cannot express it yet.
+ *
+ * > *"we just have to make sure that the state it resides in actually matches the
+ * > processes that can go in and out of it… if something arrives that can't use
+ * > all of the same processes that go out of the state, it should be a new state
+ * > with only those processes."*
+ * > — owner
+ *
+ * That is a **restriction** relation: an arrival may bring *fewer* exits with it
+ * than the state advertises, and where it does, the state has to split. Nothing in
+ * this file or in `states.ts` can say so. `specializes` (`states.ts`:92) is the
+ * only relation between states and it runs the other way by construction —
+ * `stateSatisfies` reads `a specializes b` as *"anything consuming a b accepts an
+ * a"*, so a narrowing can only ever **add** exits (a Hermitian generator is
+ * accepted everywhere a linear one is, plus by every simulator). There is no way
+ * to write "and it loses this one", and inverting `specializes` to fake it would
+ * break the composition check that the whole vocabulary exists to run.
+ *
+ * The missing field is on the **arrival**, not on the state: a process landing on
+ * a state would have to name the exits it does *not* license, or the graph would
+ * have to carry the composition as an edge in its own right instead of deriving
+ * it from two contracts meeting at a shared name. Either is a data-model change
+ * with an authoring pass behind it, so nothing here pretends to check it.
+ *
+ * ## The worked example, which is already in the file
+ *
+ * `koopman-von-neumann-lift` has **two recorded landings and they disagree**. Its
+ * own slot, `nonlinear-linear-embedding`, promises `linear-ivp`, so by contract it
+ * lands exactly where `carleman-linearization` lands. But `kvn-simulation-route`
+ * — the route that *calls* it — records `through: { "nonlinear-linear-embedding":
+ * "hermitian-generator" }`, because a simulator can only be handed the lift's
+ * output if it is Hermitian. So which state the KvN lift arrives at depends on who
+ * called it, and only one caller says.
+ *
+ * That is not a bookkeeping detail. Every exit `linear-ivp` advertises is offered
+ * to the KvN lift by the contract alone, and the census below counts each of those
+ * offers as an asserted composition. Whether a KvN phase-space density can in fact
+ * be handed to a time discretisation and then to a linear solver is a question no
+ * source in this graph answers — and the ones nobody answers are the majority.
+ * `check-layer-graph.mjs` prints the tally per state rather than a sentence here,
+ * on the standing rule that a number written into prose is silent when it drifts.
+ */
+
 /** One hop on a route: the process that carries it from one state to the next. */
 export interface RouteSegment {
   /** The slot filling this hop, or `null` when the method does this part itself. */
@@ -962,6 +1173,256 @@ export function layerCensus(
  */
 export const RESERVED_REPOSITORY_SEGMENTS: readonly string[] = ["layers", "papers"];
 
+// ---------------------------------------------------------------------------
+// Coined composite names
+//
+// > *"Only composite processes without branches on one layer should show the
+// > states and subprocesses within, **don't invent composite processes**. for
+// > example, integrator+qls should not be one composite process — it should be
+// > integrators->state->qls. however, something else like maybe 'lindbladians'
+// > could be the name of one composite process… like there is a clear name for
+// > the composite process that is its own concept, not one we just made up."*
+// > — owner
+//
+// `converge-layout.ts` already applies this at the **lane** level and says so.
+// Nothing applied it to a node **label**, which is where it is actually broken:
+// two of the fifty-eight method labels are the route's own step list with plus
+// signs between the parts, which is the owner's `integrator+qls` case verbatim.
+//
+// ## What distinguishes "Clifford+T" from "Carleman + forward Euler + QLS"
+//
+// A blanket ban on `+` is wrong and would fire on three honest labels — two
+// naming the **Clifford+T** gate set and one printing the equation
+// `du/dt = A(t)u + b(t)`. Three things separate them, and the rule uses all
+// three rather than picking a favourite:
+//
+// 1. **Only a composite can invent a composite.** The rule is scoped to methods
+//    whose route has more than one *advancing* hop — ten of fifty-eight. That
+//    alone spares `ross-selinger-synthesis`, which is `atomic`, and
+//    `linear-ode-solve`, which is a capability and has no steps at all.
+// 2. **A term of art is written closed up; a list is written spaced.**
+//    `Clifford+T` is one token naming one gate set. `Carleman + forward Euler +
+//    quantum linear solver` is a list with separators, and a spaced joiner in a
+//    composite method's label is the arm that fires on today's graph. It also
+//    spares `fault-tolerant-compilation`, which *is* composite by hop count and
+//    whose `(Clifford+T pipeline)` is closed up.
+// 3. **A coined name relists parts the map already draws.** Split on the joiner
+//    and the fragments of the two offenders are `carleman-linearization`,
+//    `forward-euler`, `quantum-linear-solve`, `koopman-von-neumann-lift`,
+//    `hamiltonian-simulation` — nodes of this graph, joined by the very `steps`
+//    edges the label is duplicating. Splitting `Clifford+T` yields nothing that
+//    names anything. This arm is what stops the obvious evasion of closing the
+//    spaces up, and it is the arm that tells a human *why* the name is wrong.
+//
+// Nothing in this section reaches a page: `conjoinedCompositeNames` is called by
+// the validator, the lint script and the tests, and its strings are read by
+// whoever broke the build. So they are English only, like every other message
+// `validateLayerGraph` returns. The both-locales rule is about what a visitor
+// sees, and what a visitor sees here is the **label** — which is exactly the
+// thing this rule refuses to let anyone leave half-renamed.
+//
+// A rename is a **domain** decision — these are terms from the literature and
+// this file's standing rule is that an unstated thing stays unstated — so the
+// lint never renames. It refuses an unacknowledged one and routes the two that
+// exist to the owner through the register below.
+
+/**
+ * Splits on every joiner — `+`, `&`, `and` — spaced or closed up.
+ *
+ * A comma is deliberately not one: `Truncated Taylor propagator, all-at-once
+ * encoding` is apposition — one thing described twice — and reading it as a
+ * conjunction would flag four honest labels to catch nothing.
+ *
+ * These two patterns are the only statement of what a joiner is. A list constant
+ * beside them would be a second copy of the same predicate, drifting the first
+ * time either was edited.
+ */
+const JOINER_SPLIT = /\s*\+\s*|\s*&\s*|\s+and\s+/i;
+
+/** The same joiners written as a list separator — whitespace on both sides. */
+const JOINER_SPACED = /\s\+\s|\s&\s|\s+and\s+/i;
+
+/**
+ * Grammatical words only. Nothing domain-bearing is dropped: a stop list holding
+ * "method" or "approach" would let `Carleman method + Euler method` match
+ * anything, and the whole value of the second arm is that a fragment has to name
+ * a concept exactly enough to be that concept.
+ */
+const NAME_STOPWORDS = new Set([
+  "a", "an", "the", "of", "for", "with", "in", "to", "by", "on", "at", "from", "into", "as",
+  "its", "and", "or",
+]);
+
+function nameTokens(text: string): string[] {
+  return text
+    .toLowerCase()
+    .replace(/[^a-z0-9]+/g, " ")
+    .split(/\s+/)
+    .filter((token) => token.length > 0 && !NAME_STOPWORDS.has(token));
+}
+
+/**
+ * Two tokens name the same thing.
+ *
+ * Prefix-tolerant so `solver` reaches `quantum-linear-solve`, and floored at four
+ * characters so a stray `T` from `Clifford+T` cannot prefix-match `time`,
+ * `taylor` or `trapezoidal` and turn a gate set into a step list.
+ */
+function tokenMatches(a: string, b: string): boolean {
+  if (a === b) return true;
+  const [shorter, longer] = a.length <= b.length ? [a, b] : [b, a];
+  return shorter.length >= 4 && longer.startsWith(shorter);
+}
+
+/**
+ * The concept a label fragment names, or null.
+ *
+ * Every content token of the fragment has to land on one candidate, so
+ * `Fault-tolerant compilation (Clifford` names nothing — no node carries all of
+ * `fault tolerant compilation clifford` — while `quantum linear solver` names
+ * `quantum-linear-solve`.
+ *
+ * **The tightest match wins, and that is not cosmetic.** Several nodes can cover
+ * one fragment: `Hamiltonian simulation` is covered by `hamiltonian-simulation`
+ * and also by `lchs-route`, whose label reads *"LCHS — linear combination of
+ * Hamiltonian simulation"*. Taking the first in graph order reported the wrong
+ * node in the error a human is meant to act on — caught by mutating the register
+ * away and reading the message — so the candidate carrying the fewest words
+ * beyond the fragment wins, and graph order only breaks a tie.
+ */
+function conceptNamedBy(
+  fragment: string,
+  candidates: ReadonlyArray<{ id: string; label: string }>,
+): string | null {
+  const tokens = nameTokens(fragment);
+  if (tokens.length === 0) return null;
+  let best: { id: string; breadth: number } | null = null;
+  for (const candidate of candidates) {
+    const pool = new Set([...nameTokens(candidate.id), ...nameTokens(candidate.label)]);
+    if (!tokens.every((token) => [...pool].some((other) => tokenMatches(token, other)))) continue;
+    if (best === null || pool.size < best.breadth) best = { id: candidate.id, breadth: pool.size };
+  }
+  return best?.id ?? null;
+}
+
+/** A method label that conjoins concepts, with the evidence for saying so. */
+export interface ConjoinedName {
+  node: string;
+  /**
+   * Every locale whose label conjoins. Carried because a rename is only done
+   * when it is done in **both** — a node renamed in English and left as a plus
+   * list in Japanese is the half-fix that renders fine in a screenshot.
+   */
+  locales: readonly ("en" | "ja")[];
+  /** Advancing hops — why this counts as a composite at all. */
+  advancing: number;
+  /**
+   * Fragments that already name another node or state, English only.
+   *
+   * **English only, and that is a real limit rather than an oversight.** The
+   * matcher tokenises on `[a-z0-9]`, so `量子線形ソルバー` yields nothing to match
+   * and a Japanese label can only ever trip the spaced-joiner arm. Both authored
+   * Japanese labels use a spaced ASCII `+`, so both are caught today; a coined
+   * Japanese name written with `・` or `と` would not be, and nothing here
+   * pretends otherwise.
+   */
+  relisted: readonly { fragment: string; concept: string }[];
+}
+
+/** Advancing hops — the delegated segments of a method's route. */
+export function advancingStepCount(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  method: LayerMethod,
+): number {
+  return routeOf(graph, vocabulary, method).segments.filter(
+    (segment) => segment.capabilityId !== null,
+  ).length;
+}
+
+/**
+ * Every composite method whose label conjoins concepts, in graph order.
+ *
+ * Total on any input and never throws: it is reached from the validator, which
+ * has to be able to report a malformed graph rather than die on it.
+ */
+export function conjoinedCompositeNames(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+): ConjoinedName[] {
+  const found: ConjoinedName[] = [];
+  for (const node of graph.nodes) {
+    if (!isMethod(node)) continue;
+    const advancing = advancingStepCount(graph, vocabulary, node);
+    if (advancing <= 1) continue;
+
+    const candidates = [
+      ...graph.nodes.filter((other) => other.id !== node.id),
+      ...vocabulary.states,
+    ];
+    const relisted: { fragment: string; concept: string }[] = [];
+    for (const fragment of node.label.split(JOINER_SPLIT)) {
+      const concept = conceptNamedBy(fragment, candidates);
+      if (concept !== null) relisted.push({ fragment: fragment.trim(), concept });
+    }
+    const distinct = new Set(relisted.map((entry) => entry.concept));
+
+    const locales = (["en", "ja"] as const).filter((locale) =>
+      JOINER_SPACED.test(locale === "ja" ? node.labelJa : node.label),
+    );
+    if (locales.length === 0 && distinct.size < 2) continue;
+    found.push({ node: node.id, locales, advancing, relisted });
+  }
+  return found;
+}
+
+/**
+ * What was decided about a name this rule refuses, and by whom.
+ *
+ * Two dispositions, and they are not the same claim:
+ *
+ * - `source-framing` — the compound name is the **paper's**, not ours. It must
+ *   name a citation the node already carries, and validation checks the url
+ *   resolves there, so the acknowledgement cannot be a sentence somebody typed.
+ *   `phrase` is the wording as the source has it; it is not translated, for the
+ *   reason `citation.title` is not translated — a quotation rendered into another
+ *   language is no longer the thing being quoted.
+ * - `awaiting-owner-rename` — the name **is** coined, nobody has renamed it, and
+ *   renaming it is a domain call. This is a queue, not an allowlist: the lint
+ *   prints every row on every run, and a row whose node has stopped conjoining is
+ *   an error, so a rename cannot leave its excuse behind.
+ *
+ * Both rows below are the owner's, not a subagent's, to clear. Neither name
+ * appears in the cited papers under that form — Liu et al. do not call their
+ * route "Carleman + forward Euler + quantum linear solver" — so `source-framing`
+ * would have been a fabrication and is deliberately not used.
+ */
+export interface CompositeNameDisposition {
+  node: string;
+  disposition: "source-framing" | "awaiting-owner-rename";
+  /** Why, for whoever reads the lint output. Developer-facing, so English only. */
+  reason: string;
+  /** `source-framing` only: a citation url the node carries. */
+  citedAs?: string;
+  /** `source-framing` only: the compound name as that source writes it. */
+  phrase?: string;
+}
+
+export const COMPOSITE_NAME_DISPOSITIONS: readonly CompositeNameDisposition[] = [
+  {
+    node: "carleman-euler-qls-route",
+    disposition: "awaiting-owner-rename",
+    reason:
+      "Three concepts in one name, and all three are separate nodes the map already draws between: carleman-linearization -> linear-ivp -> forward-euler -> linear-system -> quantum-linear-solve. This is the owner's integrator+qls example exactly. No cited paper names the route this way, so it cannot be filed as source framing; picking the replacement is a domain call.",
+  },
+  {
+    node: "kvn-simulation-route",
+    disposition: "awaiting-owner-rename",
+    reason:
+      "Two concepts: koopman-von-neumann-lift and hamiltonian-simulation, both nodes, and the route already pins the first with `via`. Joseph's paper is titled a Koopman-von Neumann *approach*; it does not name this pipeline, so the compound is ours.",
+  },
+];
+
 /**
  * The contract of a step id, for validation, without assuming it resolves.
  *
@@ -993,6 +1454,17 @@ export function validateLayerGraph(
   graph: LayerGraph,
   corpus: ReadonlySet<string>,
   vocabulary: StateVocabulary,
+  /**
+   * The name dispositions this graph is checked against.
+   *
+   * Passed rather than read off `COMPOSITE_NAME_DISPOSITIONS` directly, and
+   * required rather than defaulted, for the reason `corpus` and `vocabulary` are:
+   * the validator is run against fixtures as much as against the authored graph,
+   * and a module constant reaching inside it would report the real register's two
+   * rows as unknown ids on every fixture. A caller with no dispositions passes
+   * `[]` and says so.
+   */
+  dispositions: readonly CompositeNameDisposition[],
 ): string[] {
   const errors: string[] = [...validateStateVocabulary(vocabulary)];
   const byId = new Map<string, LayerNode>();
@@ -1378,6 +1850,70 @@ export function validateLayerGraph(
     if (isCapability(node) && !walk(node.id)) {
       errors.push(`the steps graph contains a cycle reachable from ${node.id}`);
       break;
+    }
+  }
+
+  // --- coined composite names ----------------------------------------------
+  //
+  // The owner's rule, applied where it was not applied: to the label. Fail-closed
+  // — a composite whose name conjoins concepts is an error unless a row in
+  // `COMPOSITE_NAME_DISPOSITIONS` says what was decided about it — and the
+  // message tells whoever is adding the node which of the two things to do.
+  const conjoined = conjoinedCompositeNames(graph, vocabulary);
+  const dispositionOf = new Map<string, CompositeNameDisposition>();
+  for (const row of dispositions) {
+    if (dispositionOf.has(row.node)) {
+      errors.push(`${row.node}: listed twice in COMPOSITE_NAME_DISPOSITIONS`);
+    }
+    dispositionOf.set(row.node, row);
+  }
+  for (const { node, locales, relisted } of conjoined) {
+    if (dispositionOf.has(node)) continue;
+    const parts = relisted.map((entry) => `${JSON.stringify(entry.fragment)} is ${entry.concept}`);
+    errors.push(
+      `${node}: its label joins separate concepts${
+        parts.length > 0 ? ` — ${parts.join(", ")}` : ""
+      }, and this method takes more than one hop, so the name relists a chain the steps already draw. Rename it to the one concept this route is (in ${
+        locales.length > 1 ? "both locales" : "every locale"
+      }), or add a COMPOSITE_NAME_DISPOSITIONS row: "source-framing" with the citation url whose paper writes it this way, or "awaiting-owner-rename" if the replacement is a domain call.`,
+    );
+  }
+  const conjoinedIds = new Set(conjoined.map((entry) => entry.node));
+  for (const row of dispositions) {
+    const node = byId.get(row.node);
+    if (!node) {
+      errors.push(`${row.node}: COMPOSITE_NAME_DISPOSITIONS names an id the graph does not carry`);
+      continue;
+    }
+    if (!isMethod(node)) {
+      errors.push(`${row.node}: COMPOSITE_NAME_DISPOSITIONS names a capability — the rule is about routes`);
+      continue;
+    }
+    // A row that outlives the name it excuses is the failure this whole
+    // mechanism exists to avoid: a queue nobody empties reads exactly like a
+    // queue with nothing in it.
+    if (!conjoinedIds.has(row.node)) {
+      errors.push(
+        `${row.node}: its label no longer joins concepts — delete the COMPOSITE_NAME_DISPOSITIONS row`,
+      );
+    }
+    if (!row.reason.trim()) errors.push(`${row.node}: its disposition gives no reason`);
+    if (row.disposition === "source-framing") {
+      if (!row.phrase?.trim()) {
+        errors.push(`${row.node}: source-framing must quote the phrase the source uses`);
+      }
+      const urls = (node.citations ?? []).map((citation) => citation.url);
+      if (row.citedAs === undefined) {
+        errors.push(`${row.node}: source-framing must name the citation url that frames it this way`);
+      } else if (!urls.includes(row.citedAs)) {
+        errors.push(
+          `${row.node}: source-framing cites ${row.citedAs}, which is not one of this node's citations — cite the paper on the node first`,
+        );
+      }
+    } else if (row.citedAs !== undefined || row.phrase !== undefined) {
+      errors.push(
+        `${row.node}: awaiting-owner-rename carries a citation — a name nobody has ruled on is not a source's framing`,
+      );
     }
   }
 

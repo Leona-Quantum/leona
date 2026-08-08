@@ -101,7 +101,18 @@ class AttestedRecord:
 
         It stops being defensible the moment a record's origin is third-party,
         which is exactly what a changed claim indicates. So a changed claim
-        refuses and falls back to option A: a human re-attests (`--attested-by`).
+        refuses and falls back to option A: a human looks at what moved and
+        re-signs those records by name, with
+        ``catalog_admin ... --re-attest <identity>,<identity>``.
+
+        This sentence used to name ``--attested-by``, **and that hatch did not
+        exist**. ``--attested-by`` says *who* is signing; nothing on the command
+        line could reach the comparison below. So a run that refused could only
+        ever refuse again — the first production `sync-bootstrap` imported 283
+        records, refused 9, and never reached the publish step, forever. The flag
+        that now exists is deliberately not a `--force`: it must name the
+        identities and it refuses if the named set and the refused set disagree
+        in either direction. See `catalog_admin.plan_re_attestation`.
 
         `previous_claim_hash` of None means no prior grant exists, which is not a
         carry-forward at all — it needs a first signature.

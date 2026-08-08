@@ -195,7 +195,45 @@ export const CONVERGE_METRICS = {
    * keep a depth-0 thickness is what makes a four-level figure a solid block.
    */
   depthTaper: 0.78,
+  /**
+   * The steepest a lane may leave or arrive at a circle, in degrees.
+   *
+   * The owner asked for two things and they are one constraint: *"distances
+   * between states should increase as branches between them are opened out"*,
+   * and *"no branch should be at such a steep angle that it becomes weird to
+   * look at"*. A lane is a cubic whose x controls sit at exact thirds, so
+   * `x(t) = x0 + span·t` and its displacement is `4·bow·t(1−t)` — which makes
+   * the tangent `4·bow(1−2t)/span`, steepest at both ends, at exactly
+   * `atan(4·|bow|/span)`. So capping the angle *is* the rule that widens a
+   * column when a fan opens inside it: `span ≥ 4·|bow| / tan(cap)`.
+   *
+   * Measured before this existed, over all 18 figures fully opened: 186 of 337
+   * lanes were past 45°, 90 past 60°, the steepest 79.1° — and four figures were
+   * already past 45° *shut*, at 55 lines. Opening the widest fan (7 methods)
+   * added 322px of height and **0px** of width, because `measure` took a `max`
+   * over its children's label widths and nothing in the expression mentioned how
+   * many of them there were.
+   *
+   * 45 rather than 30: at 30° the seven-method fan needs a 1040px column against
+   * today's 392, which pushes `nonlinear-ode-solve` past 4000px wide and trades
+   * the owner's complaint for a horizontal version of it.
+   */
+  maxLaneAngleDeg: 45,
 } as const;
+
+/**
+ * The narrowest column in which a lane bowed this far off its base stays inside
+ * `maxLaneAngleDeg`.
+ *
+ * `atan(4·|bow|/span)` is the tangent at a lane's end (see `maxLaneAngleDeg`),
+ * so this inverts it: `span ≥ 4·|bow| / tan(cap)`. Exported because it is the
+ * whole rule in one line and deserves a test that does not have to build a
+ * figure to reach it.
+ */
+export function spanForBow(bow: number): number {
+  const tan = Math.tan((CONVERGE_METRICS.maxLaneAngleDeg * Math.PI) / 180);
+  return (4 * Math.abs(bow)) / tan;
+}
 
 /**
  * How deep a chain of deliberate clicks may go before the figure stops following.
@@ -216,6 +254,38 @@ export const CONVERGE_DEPTH_MAX = 4;
  * widest figure in the graph fully opened names fewer.
  */
 export const CONVERGE_OPEN_MAX = 24;
+
+/**
+ * Which of a URL's `?open=` values this figure will honour, and how many it drops.
+ *
+ * Lives beside `CONVERGE_OPEN_MAX` because the number that enforces and the
+ * number that is reported have to be one number, and because **both** surfaces
+ * that draw this canvas now parse the parameter. The node page used to ignore
+ * `?open=` entirely — verified on production, its `<svg>` was byte-identical
+ * with and without one — so everything a reader had opened was silently thrown
+ * away the moment they clicked a name to look at something closely.
+ *
+ * Unknown ids are skipped rather than rejected: a URL naming four things, one
+ * of which has since been renamed, should open the other three.
+ */
+export function resolveOpenIds(
+  values: readonly string[],
+  known: (id: string) => boolean,
+  reserved = 0,
+): { open: Set<string>; dropped: number } {
+  const open = new Set<string>();
+  let dropped = 0;
+  for (const value of values) {
+    if (!known(value)) continue;
+    if (open.has(value)) continue;
+    if (open.size + reserved >= CONVERGE_OPEN_MAX) {
+      dropped += 1;
+      continue;
+    }
+    open.add(value);
+  }
+  return { open, dropped };
+}
 
 export type LaneStanding = "recorded" | "unpinned" | "unpublished";
 
@@ -477,13 +547,34 @@ function labelOf(item: { label: string; labelJa: string }, locale: PublicLocale)
   return locale === "ja" ? item.labelJa : item.label;
 }
 
-/** The address of this figure, with a given focus and a given set of things open. */
-export function figureHref(focus: string | null, open: Iterable<string>): string {
+/**
+ * The address of this figure, with a given focus, a given set of things open,
+ * and **where the reader is standing**.
+ *
+ * `at` is carried because leaving it out is what made the surface stop feeling
+ * like one surface. Measured on production before this: of 83 links to
+ * `/repository/layers*` on the overview, exactly 5 carried `at=` — the size
+ * rungs, which set it deliberately — so every "open this line in place" click
+ * silently threw the reader's pan and zoom away and re-rendered them at the
+ * origin at 100%. The figure did stay put; the reader did not.
+ *
+ * Passed through as the raw parameter rather than parsed and reformatted. It
+ * arrived as a string that `parseViewport` accepted and the only thing to do
+ * with it is hand it back, so round-tripping it through a float would add a
+ * second writer of one value for no gain.
+ */
+export function figureHref(focus: string | null, open: Iterable<string>, at?: string | null): string {
   const params = new URLSearchParams();
   if (focus) params.set("focus", focus);
   for (const id of open) params.append("open", id);
+  if (at) params.set("at", at);
   const query = params.toString();
   return query ? `/repository/layers?${query}` : "/repository/layers";
+}
+
+/** `/repository/layers/<id>`, keeping where the reader is standing. */
+export function nodeHref(id: string, at?: string | null): string {
+  return at ? `/repository/layers/${id}?at=${encodeURIComponent(at)}` : `/repository/layers/${id}`;
 }
 
 /**
@@ -494,11 +585,16 @@ export function figureHref(focus: string | null, open: Iterable<string>): string
  * everything else still in view."* One id would mean opening a second thing
  * shuts the first.
  */
-export function toggleHref(focus: string | null, open: ReadonlySet<string>, id: string): string {
+export function toggleHref(
+  focus: string | null,
+  open: ReadonlySet<string>,
+  id: string,
+  at?: string | null,
+): string {
   const next = new Set(open);
   if (next.has(id)) next.delete(id);
   else next.add(id);
-  return figureHref(focus, next);
+  return figureHref(focus, next, at);
 }
 
 function laneName(
@@ -571,6 +667,18 @@ interface PlanStrand {
   boundaries: string[];
   /** Counted whether or not it is open, so a shut line can say what it holds. */
   inside: number;
+  /**
+   * Whether clicking the body would actually draw what is inside.
+   *
+   * Not the same as `inside > 0`, and the gap between the two was 39 lines.
+   * `inside` is set unconditionally from the child count while opening is gated
+   * on the depth cap, so a line at the ceiling said "opens into 4", carried a
+   * live open link, and rendered shut when the reader took it up on the offer —
+   * on `nonlinear-ode-solve`, 27 lines did that at once. A control that does
+   * nothing does not read as a limit; it reads as a broken surface, and it
+   * teaches the wrong rule about every other line on the canvas.
+   */
+  openable: boolean;
   opensInto: OpensInto | null;
   slots: readonly string[];
   interior: readonly string[];
@@ -682,6 +790,7 @@ function chainInside(
       children: [],
       boundaries: [],
       inside: 0,
+      openable: false,
       opensInto: null,
       slots: [],
       interior: [],
@@ -733,6 +842,7 @@ function planForSlot(
     children: inside?.children ?? [],
     boundaries: [],
     inside: methods.length,
+    openable: canOpen,
     opensInto: methods.length > 0 ? "ways" : null,
     slots: [slotId],
     interior: [],
@@ -791,6 +901,7 @@ function planForMethod(
     children: inside?.children ?? [],
     boundaries: inside?.boundaries ?? [],
     inside: holds ? segments + feeds.length : 0,
+    openable: canOpen && holds,
     opensInto: holds ? "steps" : null,
     slots: [],
     interior: [],
@@ -843,6 +954,9 @@ function planForLane(
     children,
     boundaries: [...lane.interior],
     inside: lane.edges.length,
+    // A run of named hops is drawn open from the start and has no id for
+    // `?open=` to name it by, so there was never anything to click.
+    openable: false,
     opensInto: "steps",
     slots: named.slots,
     interior: lane.interior,
@@ -912,6 +1026,45 @@ interface Measure {
    * *"チェビシェフ展開の LCU による行列の…"* in a column built precisely for it.
    */
   hFit: number;
+  /**
+   * The narrowest **column** in which everything drawn inside this strand stays
+   * inside `maxLaneAngleDeg`.
+   *
+   * A second number rather than part of `hFit`, because `hFit` is the budget a
+   * label is fitted against and that budget has to stay exactly the measured
+   * label demand — the comment above it records two sessions where deriving it
+   * a second way clipped the widest label in the column.
+   *
+   * It has to recurse, and two earlier attempts at avoiding that were wrong in
+   * opposite directions. Capping each fan against its own spread misses that a
+   * child is allocated around *its parent's* bow, so the offsets add. Capping
+   * the whole column against its band height fixes that but misses the other
+   * half: `place` gives a chain's step a `1/k` share of the column, so a bow one
+   * step deep needs `k` times the room — the same multiplier, and for the same
+   * reason, as `chainColumnNeed`.
+   */
+  hDev: number;
+  /**
+   * How much narrower than this whole strand the tightest slice inside it is.
+   *
+   * 1 for a leaf and for a fan — a fan's children are redrawn on the same
+   * x-range. A chain of `k` steps multiplies it by `k`, because `place` gives
+   * each step a `1/k` slice, so a bow drawn inside one has `1/k` of the run to
+   * get there and needs `k` times the column to stay inside the cap.
+   *
+   * **Not exercised by the authored graph, and said out loud rather than left to
+   * be discovered.** Mutating this line to a plain `max` leaves every test on
+   * the real data green — the deepest compression today is 6x
+   * (`quantum-linear-solve`, an `lcu-chebyshev-transform` step), but no fan puts
+   * a chain far enough off its spine for the offset to need converting into that
+   * chain's units. `hDev`'s own `k` *is* exercised (mutating it fails), so the
+   * chain path is covered and this one factor of it is not. It is kept because
+   * the shape that needs it is a fan of methods whose members are themselves
+   * decomposed, which is exactly the VQE cluster the map is about to gain, and
+   * because a bound that is right only for the graph that exists is not a bound.
+   * Same reasoning, and the same honesty, as `chainColumnNeed` above.
+   */
+  hScale: number;
   children: Measure[];
 }
 
@@ -919,7 +1072,7 @@ function measure(strand: PlanStrand, depth: number): Measure {
   const M = CONVERGE_METRICS;
   const own = estimateTextWidth(strand.label, M.laneFont);
   if (!strand.open || strand.children.length === 0) {
-    return { vHalf: halfAt(depth) + M.labelBand, hFit: own, children: [] };
+    return { vHalf: halfAt(depth) + M.labelBand, hFit: own, hDev: 0, hScale: 1, children: [] };
   }
   const children = strand.children.map((child) => measure(child, depth + 1));
   // Ingredients hang past everything drawn inside, on one side, and their names
@@ -949,6 +1102,12 @@ function measure(strand: PlanStrand, depth: number): Measure {
         chainColumnNeed(children.map((child) => child.hFit)),
         ...strand.feeds.map((feed) => estimateTextWidth(feed.label, M.laneFont)),
       ),
+      // A step sits *on* the spine — `place` hands it bow 0 — so a chain adds no
+      // bow of its own. What it does is shrink the room: each step is drawn in a
+      // `1/k` slice, so a demand made inside one is a demand for `k` times as
+      // much column. Same multiplier, same reason, as `chainColumnNeed`.
+      hDev: chainColumnNeed(children.map((child) => child.hDev)),
+      hScale: chainColumnNeed(children.map((child) => child.hScale)),
       children,
     };
   }
@@ -957,9 +1116,23 @@ function measure(strand: PlanStrand, depth: number): Measure {
   // pushed apart — an opened strand draws no name of its own (see `place`).
   const spread =
     children.reduce((sum, child) => sum + child.vHalf * 2, 0) + M.laneGap * (children.length - 1);
+  // The very offsets `place` will use, computed from the same allocator against
+  // the same half-bands, so the bound is measured against the drawing rather
+  // than against an idea of it.
+  const offsets = allocateBows(children.map((child) => child.vHalf), 0, M.laneGap);
   return {
     vHalf: spread / 2 + M.labelBand,
     hFit: Math.max(own, ...children.map((child) => child.hFit)),
+    // A child's bow off *this* base is this fan's offset for it plus whatever it
+    // bows inside itself — the offsets add down the tree, which is the part two
+    // earlier versions of this missed. `spanForBow` is linear in the bow, so the
+    // sum can be carried as one number and converted to a width once, at the
+    // column: a child's own demand is already in its slice's units, so the
+    // offset has to be put into those units too before they add.
+    hDev: Math.max(
+      ...children.map((child, index) => Math.abs(offsets[index]!) * child.hScale + child.hDev),
+    ),
+    hScale: Math.max(...children.map((child) => child.hScale)),
     children,
   };
 }
@@ -1060,7 +1233,20 @@ function place(
     labelX: peak.x,
     labelY,
     nodeId: strand.id,
-    openHref: strand.id ? toggleHref(context.focusId, context.open, strand.id) : null,
+    // `openable`, not `id`. A line at the depth ceiling has an id and something
+    // inside and still cannot draw it, and offering the click anyway is what
+    // produced 39 dead controls.
+    // `openable`, and not already at the ceiling. Once `?open=` names
+    // CONVERGE_OPEN_MAX ids, appending one more produces an address the page
+    // drops on arrival — the same dead control as the depth cap, at the other
+    // cap. Shutting something already open is always offered, because that is
+    // what makes room.
+    openHref:
+      strand.id &&
+      (strand.openable || strand.open) &&
+      (context.open.has(strand.id) || context.open.size < CONVERGE_OPEN_MAX)
+        ? toggleHref(context.focusId, context.open, strand.id)
+        : null,
     href: strand.href,
     open: strand.open,
     inside: strand.inside,
@@ -1182,6 +1368,53 @@ function round(value: number): number {
  * pass. Each consecutive pair gets one circle each — **one**, shared by every
  * lane that touches it — and the ways across bow between them.
  */
+/**
+ * Put the reader's viewport back on an address this figure emitted.
+ *
+ * One writer for the whole diagram rather than an `at` threaded through the
+ * nine places that build a `/repository/layers/...` string. Threading it would
+ * mean nine call sites that each have to remember, and the ones that forgot
+ * would be invisible — which is precisely how the parameter came to be on 5 of
+ * 83 links in the first place.
+ */
+function withViewport(href: string | null, at?: string | null): string | null {
+  if (!href || !at) return href;
+  // Already addressed — the size rungs set their own `at` deliberately and must
+  // win over the one the reader arrived with, or the control does nothing.
+  if (href.includes("at=")) return href;
+  return `${href}${href.includes("?") ? "&" : "?"}at=${encodeURIComponent(at)}`;
+}
+
+/**
+ * A node's own page, carrying what the reader had open as well as where they
+ * were standing.
+ *
+ * Both halves are needed and shipping one is worse than shipping neither: the
+ * node page was taught to *honour* `?open=` and nothing *sent* it, so the set
+ * still died on every name click — measured on the preview, 0 of 16 node links
+ * carried one. A link is not verified until something has followed it, and a
+ * hand-written URL is not something.
+ *
+ * Only figure addresses get this. `openHref` already carries its own `open`
+ * list, and the size rungs build their own address on purpose.
+ */
+function withOpen(href: string, open: ReadonlySet<string>): string {
+  if (open.size === 0 || href.includes("open=")) return href;
+  if (!href.startsWith("/repository/layers/")) return href;
+  const params = new URLSearchParams();
+  for (const id of open) params.append("open", id);
+  return `${href}${href.includes("?") ? "&" : "?"}${params.toString()}`;
+}
+
+function carryViewport<T extends { href: string }>(
+  shape: T,
+  at: string | null | undefined,
+  open: ReadonlySet<string>,
+): T {
+  const href = withViewport(withOpen(shape.href, open), at);
+  return href === shape.href ? shape : { ...shape, href: href! };
+}
+
 export function layoutConverge(options: {
   graph: LayerGraph;
   vocabulary: StateVocabulary;
@@ -1204,6 +1437,14 @@ export function layoutConverge(options: {
    * Defaults to the subject, which is right whenever there is only one figure.
    */
   focusParam?: string | null;
+  /**
+   * The reader's current `?at=`, carried onto every address this figure emits.
+   *
+   * Raw, as it arrived. A figure that forgets it re-renders the reader at the
+   * origin on every click, which is most of what "it does not feel like one
+   * continuous surface" turned out to be.
+   */
+  at?: string | null;
 }): ConvergeDiagram {
   const { graph, vocabulary, focus, locale } = options;
   const focusParam = options.focusParam === undefined ? focus.id : options.focusParam;
@@ -1242,6 +1483,16 @@ export function layoutConverge(options: {
   // widest strand wants and as tall as its strands' bands summed.
   const measured = plan.bundles.map((bundle) => bundle.lanes.map((lane) => measure(lane, 0)));
 
+  // Each column's band, measured before its width — because the width now
+  // depends on it. A band is how tall the column's lanes stack; the cap on how
+  // steeply a lane may leave a circle turns that height into a minimum width.
+  const bundleHalves = measured.map((lanes) => {
+    if (lanes.length === 0) return 0;
+    return (
+      lanes.reduce((sum, lane) => sum + lane.vHalf * 2, 0) + M.laneGap * (lanes.length - 1)
+    ) / 2;
+  });
+
   const columns = measured.map((lanes) => {
     // One measurement, two uses — never two derivations. `fit` is the measured
     // demand itself; `span` is that demand plus the padding. Recovering `fit`
@@ -1250,19 +1501,26 @@ export function layoutConverge(options: {
     // how this was found the first time (12 of 18 figures, English) and the
     // second (`quantum-linear-solve`, Japanese).
     const need = Math.max(0, ...lanes.map((lane) => lane.hFit));
+    // The geometric demand joins here and nowhere else. It widens the column and
+    // deliberately does **not** widen `fit`: a fan that needs room to stay flat
+    // has not earned its labels more characters, and letting it would make the
+    // drawn text depend on how many siblings a line has.
+    // The bundle's own lanes are spread across this column by the same
+    // allocator, and that spread is subject to the same cap as any fan inside
+    // one of them.
+    const offsets = allocateBows(lanes.map((lane) => lane.vHalf), 0, M.laneGap);
+    const spread = spanForBow(
+      Math.max(
+        0,
+        ...lanes.map((lane, index) => Math.abs(offsets[index]!) * lane.hScale + lane.hDev),
+      ),
+    );
     return {
-      span: Math.max(M.minSpan, need + M.labelPad * 2),
+      span: Math.max(M.minSpan, need + M.labelPad * 2, spread),
       fit: Math.max(M.minSpan - M.labelPad * 2, need),
     };
   });
   const spans = columns.map((column) => column.span);
-
-  const bundleHalves = measured.map((lanes) => {
-    if (lanes.length === 0) return 0;
-    return (
-      lanes.reduce((sum, lane) => sum + lane.vHalf * 2, 0) + M.laneGap * (lanes.length - 1)
-    ) / 2;
-  });
   // Never less than the closed form for the shut case. The two agree on a shut
   // figure by construction; this is the guard that says so if either moves.
   const tallestShut = plan.bundles.reduce(
@@ -1344,9 +1602,12 @@ export function layoutConverge(options: {
     // the minimum whatever the labels do.
     width: Math.max(width, round(out.rightmost + M.margin)),
     height,
-    states: [...states, ...out.inner],
-    lanes: out.lanes,
-    feeds: out.feeds,
+    states: [...states, ...out.inner].map((state) => carryViewport(state, options.at, open)),
+    lanes: out.lanes.map((lane) => ({
+      ...carryViewport(lane, options.at, open),
+      openHref: withViewport(lane.openHref, options.at),
+    })),
+    feeds: out.feeds.map((feed) => carryViewport(feed, options.at, open)),
     caption,
     empty: false,
     unpublishedCount: out.unpublished,

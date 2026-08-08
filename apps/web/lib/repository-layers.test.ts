@@ -18,9 +18,11 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  advancingStepCount,
   alternativesTo,
   bypassersOf,
   capabilityOutlook,
+  conjoinedCompositeNames,
   containersOf,
   entriesFor,
   foldedAgainst,
@@ -37,9 +39,13 @@ import {
   repetitionOf,
   rootCapabilities,
   siblingsOf,
+  stateCompositionCensus,
   stateTraffic,
   stepsOutlook,
   validateLayerGraph,
+  COMPOSITE_NAME_DISPOSITIONS,
+  type CompositeNameDisposition,
+  type CompositionStanding,
   type LayerCapability,
   type LayerContract,
   type LayerGraph,
@@ -49,8 +55,20 @@ import {
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import type { StateVocabulary } from "./repository/states.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
+// Read-only, and from the module that imports *this* one: `state-graph.ts` is
+// where `pathStanding` lives, and the census below cannot import it (that would
+// be a cycle), so the judge is injected here exactly as the lint script injects
+// it. Both callers therefore exercise the same join.
+import { pathStanding } from "./repository/state-graph.ts";
 
 const CITE = [{ title: "A paper", authors: "Someone", year: "2020", url: "https://example.org/a" }];
+
+/**
+ * A fixture carries no name dispositions, and says so rather than inheriting the
+ * authored register — whose two rows name nodes no fixture has, and would be
+ * reported as unknown ids on every call.
+ */
+const NO_DISPOSITIONS: readonly CompositeNameDisposition[] = [];
 
 /**
  * The fixture's own state vocabulary, on the same rule as the graph above it:
@@ -354,6 +372,7 @@ test("validation rejects a repetition the route cannot honestly be making", () =
       },
       corpus,
       FIXTURE_STATES,
+      NO_DISPOSITIONS,
     );
   const rep = (over: Partial<StepRepetition> = {}): StepRepetition => ({
     count: "once per step",
@@ -418,7 +437,7 @@ test("every authored repetition names a step its own method takes, in both local
 test("validation rejects the edges that would make a reading dishonest", () => {
   const corpus = new Set(["real-slug"]);
   const bad = (nodes: LayerGraph["nodes"]) =>
-    validateLayerGraph({ nodes }, corpus, FIXTURE_STATES);
+    validateLayerGraph({ nodes }, corpus, FIXTURE_STATES, NO_DISPOSITIONS);
 
   assert.ok(
     bad([capability("a"), method("m", "missing")]).some((e) => e.includes("realizes an unknown id")),
@@ -511,7 +530,10 @@ test("a state's traffic counts own contracts and narrowings, never an inherited 
       }),
     ],
   };
-  assert.deepEqual(validateLayerGraph(graph, new Set(["real-slug"]), narrowing), []);
+  assert.deepEqual(
+    validateLayerGraph(graph, new Set(["real-slug"]), narrowing, NO_DISPOSITIONS),
+    [],
+  );
 
   const beta = stateTraffic(graph, narrowing, "beta");
   assert.deepEqual(
@@ -630,7 +652,7 @@ test("validation rejects a `through` that is not a narrowing", () => {
     }),
   ];
   const errorsFor = (through: LayerMethod["through"]) =>
-    validateLayerGraph({ nodes: graph(through) }, corpus, narrowing);
+    validateLayerGraph({ nodes: graph(through) }, corpus, narrowing, NO_DISPOSITIONS);
 
   assert.ok(errorsFor({}).some((e) => e.includes("through narrows nothing")));
   assert.ok(
@@ -674,7 +696,15 @@ test("validation rejects a `through` that is not a narrowing", () => {
 const SELF_DECLARED_SLUGS = new Set(LAYER_GRAPH.nodes.flatMap((node) => node.entries ?? []));
 
 test("the authored layer graph satisfies every rule that does not need the corpus", () => {
-  assert.deepEqual(validateLayerGraph(LAYER_GRAPH, SELF_DECLARED_SLUGS, STATE_VOCABULARY), []);
+  assert.deepEqual(
+    validateLayerGraph(
+      LAYER_GRAPH,
+      SELF_DECLARED_SLUGS,
+      STATE_VOCABULARY,
+      COMPOSITE_NAME_DISPOSITIONS,
+    ),
+    [],
+  );
 });
 
 test("every authored node is reachable from a root", () => {
@@ -728,4 +758,441 @@ test("every slot in the authored graph has at least two ways through it", () => 
     .map((node) => ({ id: node.id, ways: methodsRealizing(LAYER_GRAPH, node.id).length }))
     .filter((slot) => slot.ways < 2);
   assert.deepEqual(thin, []);
+});
+
+// ---------------------------------------------------------------------------
+// Coined composite names
+//
+// The owner's rule — *"don't invent composite processes… integrator+qls should
+// not be one composite process"* — applied to a node label. The hard part is not
+// finding a `+`; it is refusing the coined ones **without** refusing `Clifford+T`,
+// which is a real gate set, so every case below is a discrimination rather than a
+// detection.
+
+/**
+ * A method that inherits its slot's contract, which is what every method on the
+ * authored graph does — all fifty-eight of them. `method()` above gives its
+ * fixtures a contract of their own, which is right for the rules that read one
+ * and wrong here, where the whole subject is what a slot asserts on a method's
+ * behalf.
+ */
+function filler(id: string, realizes: string, extra: Partial<LayerMethod> = {}): LayerMethod {
+  return method(id, realizes, { contract: undefined, ...extra });
+}
+
+/** A three-state chain, so a route can have two genuinely advancing hops. */
+const CHAIN: StateVocabulary = {
+  states: [
+    { id: "alpha", label: "alpha", labelJa: "alpha", summary: "s", summaryJa: "s" },
+    { id: "beta", label: "beta", labelJa: "beta", summary: "s", summaryJa: "s" },
+    { id: "gamma", label: "gamma", labelJa: "gamma", summary: "s", summaryJa: "s" },
+  ],
+};
+
+/**
+ * `route` delegates `lift` (alpha → beta) then `solve` (beta → gamma), so it is a
+ * composite by hop count and its name is allowed to be judged.
+ */
+function composite(label: string, labelJa = label): LayerGraph {
+  return {
+    nodes: [
+      capability("whole", { contract: contract("alpha", "gamma") }),
+      capability("lift", { contract: contract("alpha", "beta") }),
+      capability("solve", { contract: contract("beta", "gamma") }),
+      // Unused by the route, and present for one reason: its name begins with the
+      // letter a gate-set name ends with. Without it nothing in this fixture can
+      // tell a single-letter fragment apart from a concept, and the floor that
+      // does the telling would be untested.
+      capability("transform", { contract: contract("beta", "gamma") }),
+      filler("route", "whole", { label, labelJa, steps: ["lift", "solve"], atomic: undefined }),
+      filler("lift-a", "lift"),
+      filler("solve-a", "solve"),
+    ],
+  };
+}
+
+test("a coined composite is refused and a gate-set name is not", () => {
+  const conjoins = (label: string, labelJa?: string) =>
+    conjoinedCompositeNames(composite(label, labelJa)
+      , CHAIN).map((entry) => entry.node);
+
+  // The owner's own example. Both halves already name nodes of this graph, so
+  // the label is the chain the `steps` edges already draw, written out.
+  assert.deepEqual(conjoins("Lift + solve"), ["route"]);
+
+  // …and the reason is reported, not just the verdict — a human has to be told
+  // which fragments are the problem before "rename it" means anything.
+  const [found] = conjoinedCompositeNames(composite("Lift + solve"), CHAIN);
+  assert.deepEqual(
+    found?.relisted.map((entry) => entry.concept),
+    ["lift", "solve"],
+  );
+  assert.equal(found?.advancing, 2);
+
+  // A term of art on the very same composite. `Clifford+T` is one gate set, it is
+  // written closed up, and neither fragment names anything on this map. A blanket
+  // ban on `+` would take this with it, which is the whole design constraint.
+  assert.deepEqual(conjoins("Fault-tolerant compilation (Clifford+T pipeline)"), []);
+
+  // The arm that stops the obvious evasion: close the spaces up and the fragments
+  // still name two nodes, so it is still a relisting.
+  assert.deepEqual(conjoins("Lift+solve"), ["route"]);
+
+  // The `Clifford+T` shape, reduced: a word that does name a node, closed up with a
+  // single letter that names a gate. `T` prefixes `transform` and would prefix
+  // `time-discretization`, `taylor-…` and `trapezoidal-…` on the authored graph, so
+  // without the four-character floor on prefix matching every `X+T` gate set reads
+  // as a two-step chain. One letter is never evidence that a label relists a route.
+  assert.deepEqual(conjoins("Lift+T"), []);
+
+  // One concept plus a word that names nothing is a **name**, not a list — this is
+  // the owner's `lindbladians` case, and the reason the bar is two fragments that
+  // each land on something the map already draws.
+  assert.deepEqual(conjoins("Lift+Lindbladians"), []);
+
+  // …and a fragment has to land **whole**. `solver-free` shares a word with
+  // `solve` and means its opposite; a rule that matched on any one token would
+  // read a shared adjective as a step and start refusing names for mentioning
+  // the neighbourhood they live in.
+  assert.deepEqual(conjoins("Lift+solver-free shortcut"), []);
+});
+
+test("only a composite can invent a composite", () => {
+  // An atomic method may carry a compound name — there is no chain to relist,
+  // because there is no chain. `ross-selinger-synthesis` is exactly this shape.
+  const atomic: LayerGraph = {
+    nodes: [
+      capability("whole", { contract: contract("alpha", "gamma") }),
+      method("route", "whole", { label: "Lift + solve", labelJa: "Lift + solve" }),
+    ],
+  };
+  assert.deepEqual(conjoinedCompositeNames(atomic, CHAIN), []);
+
+  // And a capability is never judged at all: it has no steps, so it cannot be
+  // relisting them. This is what keeps `du/dt = A(t)u + b(t)` on the map.
+  const equation: LayerGraph = {
+    nodes: [capability("whole", { label: "Solve du/dt = A(t)u + b(t)" })],
+  };
+  assert.deepEqual(conjoinedCompositeNames(equation, CHAIN), []);
+});
+
+test("a rename that only happened in one locale is still a coined name", () => {
+  // The failure a screenshot cannot catch. English reads as a single concept and
+  // Japanese is still a plus list, so the node is reported with `ja` alone and a
+  // reader in that locale still meets the invented composite.
+  const [found] = conjoinedCompositeNames(composite("Lindbladians", "Lift + solve"), CHAIN);
+  assert.deepEqual(found?.locales, ["ja"]);
+  assert.equal(found?.node, "route");
+
+  // English-only fires too, and both locales together report both.
+  assert.deepEqual(
+    conjoinedCompositeNames(composite("Lift + solve", "Lift + solve"), CHAIN)[0]?.locales,
+    ["en", "ja"],
+  );
+});
+
+test("a coined name must be disposed of, and the disposition cannot be a sentence", () => {
+  const graph = composite("Lift + solve");
+  const corpus = new Set<string>();
+  const errors = (dispositions: readonly CompositeNameDisposition[]) =>
+    validateLayerGraph(graph, corpus, CHAIN, dispositions).join("\n");
+
+  // Fail-closed: nothing recorded about it is an error, and the message names the
+  // two things a human may do about it.
+  const unhandled = errors([]);
+  assert.match(unhandled, /its label joins separate concepts/);
+  assert.match(unhandled, /"Lift" is lift/);
+  assert.match(unhandled, /source-framing|awaiting-owner-rename/);
+
+  // The owner's queue clears it, and carries no citation — a name nobody has
+  // ruled on is not a source's framing and may not borrow one.
+  assert.equal(errors([{ node: "route", disposition: "awaiting-owner-rename", reason: "r" }]), "");
+  assert.match(
+    errors([
+      { node: "route", disposition: "awaiting-owner-rename", reason: "r", citedAs: CITE[0]!.url },
+    ]),
+    /awaiting-owner-rename carries a citation/,
+  );
+
+  // The other disposition is reachable, and it is checkable rather than asserted:
+  // the url has to be a citation the node already carries, so "the paper calls it
+  // this" cannot be typed by somebody who has not cited the paper.
+  assert.equal(
+    errors([
+      { node: "route", disposition: "source-framing", reason: "r", citedAs: CITE[0]!.url, phrase: "Lift + solve" },
+    ]),
+    "",
+  );
+  assert.match(
+    errors([
+      { node: "route", disposition: "source-framing", reason: "r", citedAs: "https://example.org/z", phrase: "p" },
+    ]),
+    /not one of this node's citations/,
+  );
+  assert.match(
+    errors([{ node: "route", disposition: "source-framing", reason: "r", citedAs: CITE[0]!.url }]),
+    /must quote the phrase/,
+  );
+
+  // A row that outlives the name it excuses. This is the failure the whole
+  // mechanism exists to avoid: a queue nobody empties reads exactly like an empty
+  // queue, so the row has to die with the rename rather than after it.
+  assert.match(
+    validateLayerGraph(composite("Lindbladians"), corpus, CHAIN, [
+      { node: "route", disposition: "awaiting-owner-rename", reason: "r" },
+    ]).join("\n"),
+    /no longer joins concepts — delete the COMPOSITE_NAME_DISPOSITIONS row/,
+  );
+  assert.match(
+    validateLayerGraph(graph, corpus, CHAIN, [
+      { node: "ghost", disposition: "awaiting-owner-rename", reason: "r" },
+    ]).join("\n"),
+    /names an id the graph does not carry/,
+  );
+});
+
+test("the authored graph's three honest plus signs are not refused", () => {
+  const conjoined = conjoinedCompositeNames(LAYER_GRAPH, STATE_VOCABULARY).map((e) => e.node);
+
+  // Two gate-set names and one equation. If the rule ever takes one of these, it
+  // has stopped being a rule about coined composites and become a ban on `+`.
+  for (const id of ["fault-tolerant-compilation", "ross-selinger-synthesis", "linear-ode-solve"]) {
+    assert.ok(!conjoined.includes(id), `${id} is a real name, not a coined composite`);
+  }
+
+  // …and the two it does take. Renaming either is a domain call the owner has not
+  // made yet; when it is made, this line and the register row go together, and
+  // the validator already refuses a row whose node has stopped conjoining.
+  assert.deepEqual(conjoined.sort(), ["carleman-euler-qls-route", "kvn-simulation-route"]);
+
+  // The message a human acts on has to name the right node. `Hamiltonian
+  // simulation` is covered by `hamiltonian-simulation` **and** by `lchs-route`,
+  // whose label contains the phrase, and the first draft reported `lchs-route` —
+  // an instruction to go and look at a node that has nothing to do with it.
+  const byNode = new Map(
+    conjoinedCompositeNames(LAYER_GRAPH, STATE_VOCABULARY).map((e) => [e.node, e]),
+  );
+  assert.deepEqual(
+    byNode.get("kvn-simulation-route")?.relisted.map((e) => e.concept),
+    ["koopman-von-neumann-lift", "hamiltonian-simulation"],
+  );
+  assert.deepEqual(
+    byNode.get("carleman-euler-qls-route")?.relisted.map((e) => e.concept),
+    ["carleman-linearization", "forward-euler", "quantum-linear-solve"],
+  );
+  assert.deepEqual(
+    COMPOSITE_NAME_DISPOSITIONS.map((row) => row.disposition),
+    ["awaiting-owner-rename", "awaiting-owner-rename"],
+  );
+});
+
+test("advancing hops are counted off the route, not off the step list", () => {
+  // `steps` is a set of what a route needs; only some of them move the object
+  // along. A method whose second step is an ingredient is not a two-hop
+  // composite, and judging its name would be judging a chain it does not have.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("whole", { contract: contract("alpha", "gamma") }),
+      capability("lift", { contract: contract("alpha", "beta") }),
+      // Takes gamma, which the route never holds before this point — a feed.
+      capability("side", { contract: contract("gamma", "beta") }),
+      filler("route", "whole", {
+        label: "Lift + side",
+        labelJa: "Lift + side",
+        steps: ["lift", "side"],
+        atomic: undefined,
+      }),
+      filler("lift-a", "lift"),
+      filler("side-a", "side"),
+    ],
+  };
+  const route = graph.nodes.find((node) => node.id === "route")!;
+  assert.ok(isMethod(route));
+  assert.equal(advancingStepCount(graph, CHAIN, route), 1, "the feed is not a hop");
+  assert.deepEqual(conjoinedCompositeNames(graph, CHAIN), []);
+});
+
+// ---------------------------------------------------------------------------
+// The compositions the graph asserts by putting two contracts on one state name
+//
+// > *"we just have to make sure that the state it resides in actually matches
+// > the processes that can go in and out of it… i just want to make sure these
+// > kind of checks are in place when we add more to the map!"*
+// > — owner
+//
+// The check the owner is asking for is not expressible — see the block above
+// `RouteSegment`: it needs a *restriction* relation and `specializes` only
+// widens. So what is asserted here is the honest substitute: the size of the
+// unchecked surface is derived rather than remembered, the pairs handed to the
+// judge are the ones a reader can actually click, and the edge keys are the ones
+// `pathStanding` walks.
+
+/** `beta-sharp` is a kind of `beta`, so a route may land on it and compose on. */
+const NARROWING: StateVocabulary = {
+  states: [
+    ...CHAIN.states,
+    {
+      id: "beta-sharp",
+      label: "beta-sharp",
+      labelJa: "beta-sharp",
+      summary: "s",
+      summaryJa: "s",
+      specializes: ["beta"],
+    },
+  ],
+};
+
+/** Records what the census asks about, so the keys can be asserted directly. */
+function recordingJudge(seen: string[]): (a: { method: string; edgeKey: string }, b: { method: string; edgeKey: string }) => CompositionStanding {
+  return (arrival, departure) => {
+    seen.push(`${arrival.edgeKey}/${arrival.method} > ${departure.edgeKey}/${departure.method}`);
+    return "unpublished";
+  };
+}
+
+test("a state's asserted compositions are every arrival against every departure", () => {
+  const graph: LayerGraph = {
+    nodes: [
+      capability("whole", { contract: contract("alpha", "gamma") }),
+      capability("lift", { contract: contract("alpha", "beta") }),
+      capability("solve", { contract: contract("beta", "gamma") }),
+      filler("route", "whole", { steps: ["lift", "solve"], atomic: undefined }),
+      filler("lift-a", "lift"),
+      filler("lift-b", "lift"),
+      filler("solve-a", "solve"),
+    ],
+  };
+  const seen: string[] = [];
+  const census = stateCompositionCensus(graph, CHAIN, recordingJudge(seen));
+  const beta = census.states.find((state) => state.state === "beta")!;
+
+  // Two lifts arrive because both inherit the slot's contract — which is the
+  // finding, not a fixture quirk: no method in the authored graph carries a
+  // contract of its own, so every arrival on the map is asserted by a slot.
+  assert.deepEqual(beta.arrivals.map((end) => end.method), ["lift-a", "lift-b"]);
+  assert.deepEqual(beta.departures.map((end) => end.method), ["solve-a"]);
+  assert.equal(beta.asserted, 2);
+  assert.equal(beta.unpublished, 2);
+  assert.deepEqual(seen, ["lift/lift-a > solve/solve-a", "lift/lift-b > solve/solve-a"]);
+
+  // The totals are sums over the states, and the "several arrivals" count is the
+  // one that says where a shared name is doing the joining rather than a source.
+  assert.equal(census.asserted, census.states.reduce((total, s) => total + s.asserted, 0));
+  // `beta` and `gamma`. It counts states **more than one method arrives at**, not
+  // states that assert a composition — `gamma` has two arrivals and no exit, so it
+  // offers nothing to cross and still belongs in the count: two processes claiming
+  // one name is the condition, and whether anything leaves is a separate fact the
+  // `asserted` column carries.
+  assert.equal(census.statesWithSeveralArrivals, 2);
+  assert.equal(census.states.find((state) => state.state === "gamma")?.asserted, 0);
+});
+
+test("a departure is anything that accepts the state, not only what names it", () => {
+  // `stateSatisfies` says a narrower object is taken where a broader one is
+  // asked for. So a solver asking for `beta` is a way *out of* `beta-sharp`, and
+  // a census reading `contract.from` literally would report a dead end on the one
+  // state the graph reaches by narrowing.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("whole", { contract: contract("alpha", "gamma") }),
+      capability("lift", { contract: contract("alpha", "beta") }),
+      capability("solve", { contract: contract("beta", "gamma") }),
+      filler("route", "whole", {
+        steps: ["lift", "solve"],
+        atomic: undefined,
+        through: { lift: "beta-sharp" },
+        via: { lift: "lift-b" },
+      }),
+      filler("lift-a", "lift"),
+      filler("lift-b", "lift"),
+      filler("solve-a", "solve"),
+    ],
+  };
+  const census = stateCompositionCensus(graph, NARROWING, () => "unpublished");
+  const sharp = census.states.find((state) => state.state === "beta-sharp")!;
+
+  // The process that lands on `beta-sharp` is the **filler**, not the route that
+  // recorded the narrowing. `kvn-simulation-route` writes the narrowing down;
+  // `koopman-von-neumann-lift` is the thing that arrives. Reading the route as
+  // the arrival would put a whole top-level route on a circle it passes through.
+  assert.deepEqual(sharp.arrivals, [{ method: "lift-b", edgeKey: "lift@lift-b" }]);
+  assert.deepEqual(sharp.departures.map((end) => end.method), ["solve-a"]);
+  assert.equal(sharp.asserted, 1);
+});
+
+test("the census hands pathStanding keys it can actually match", () => {
+  // The end-to-end join, and the only thing that proves it. The census builds
+  // edge keys and `pathStanding` matches on them; get the shape wrong and every
+  // composition comes back `unpublished`, which is indistinguishable from a
+  // record in which nobody has published anything. One `recorded` is the
+  // evidence, and it is the pair Liu et al. actually wrote down —
+  // Carleman, then forward Euler.
+  const standings = new Map<string, CompositionStanding>();
+  const census = stateCompositionCensus(LAYER_GRAPH, STATE_VOCABULARY, (arrival, departure) => {
+    const standing = pathStanding(LAYER_GRAPH, STATE_VOCABULARY, [
+      { edgeKey: arrival.edgeKey, filler: arrival.method },
+      { edgeKey: departure.edgeKey, filler: departure.method },
+    ]);
+    standings.set(`${arrival.method}>${departure.method}`, standing);
+    return standing;
+  });
+
+  // The one composition anybody published, by name. `carleman-euler-qls-route`
+  // pins both hops with `via`, so this pair is a route a source walked and named.
+  assert.equal(standings.get("carleman-linearization>forward-euler"), "recorded");
+
+  // …and the pair that is *not* it, which is the assertion with teeth. The same
+  // route walks the same two slots and pins **forward** Euler on the second, so it
+  // is not a witness for backward Euler — it took the other one. Drop the
+  // departing method from the question and this flips to "recorded", printing a
+  // source's blessing on a combination no source takes. If either method ever
+  // leaves the graph, replace this pair with another conflicting one rather than
+  // deleting the case.
+  assert.equal(standings.get("carleman-linearization>backward-euler"), "unpublished");
+
+  // Three-valued, and every value reachable on the authored graph. A standing
+  // nothing can produce is a check that has stopped asking — the same rule
+  // `PathStanding`'s own doc comment states.
+  assert.ok(census.recorded > 0, "no composition is recorded — the edge keys do not join");
+  assert.ok(census.unpinned > 0, "the middle value is unreachable");
+  assert.ok(census.unpublished > 0);
+  assert.equal(census.recorded + census.unpinned + census.unpublished, census.asserted);
+
+  // Not a pinned total — `arrivals × departures` grows with any correct new
+  // method, and pinning it would block tomorrow's content. What is pinned is the
+  // shape: the map asserts far more compositions than it can support, and the
+  // states with several arrivals are where that happens.
+  assert.ok(census.unpublished > census.recorded);
+  assert.ok(census.statesWithSeveralArrivals > 0);
+  assert.ok(census.statesWithSeveralArrivals < STATE_VOCABULARY.states.length);
+});
+
+test("a process that reaches a circle two ways is one process arriving", () => {
+  // `lift-b` narrows the slot's contract itself *and* is the filler a route pins
+  // on a `through` naming the same state. Both are true and both are recorded, so
+  // reading the ways in rather than the processes counts one method twice and
+  // squares the composition total for that circle — measured on the real graph
+  // before `crossingsAt` grew the same guard, `linear-ivp` reported 40 crossings
+  // and listed one of them twice.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("whole", { contract: contract("alpha", "gamma") }),
+      capability("lift", { contract: contract("alpha", "beta") }),
+      capability("solve", { contract: contract("beta", "gamma") }),
+      filler("route", "whole", {
+        steps: ["lift", "solve"],
+        atomic: undefined,
+        through: { lift: "beta-sharp" },
+        via: { lift: "lift-b" },
+      }),
+      method("lift-b", "lift", { contract: contract("alpha", "beta-sharp") }),
+      filler("solve-a", "solve"),
+    ],
+  };
+  assert.deepEqual(validateLayerGraph(graph, new Set<string>(), NARROWING, NO_DISPOSITIONS), []);
+
+  const census = stateCompositionCensus(graph, NARROWING, () => "unpublished");
+  const sharp = census.states.find((state) => state.state === "beta-sharp")!;
+  assert.deepEqual(sharp.arrivals, [{ method: "lift-b", edgeKey: "lift" }]);
+  assert.equal(sharp.asserted, sharp.departures.length);
 });

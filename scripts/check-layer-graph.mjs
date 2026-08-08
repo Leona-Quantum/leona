@@ -59,6 +59,7 @@ const statesMod = await bundle("apps/web/lib/repository/state-vocabulary.ts", "s
 const topicsMod = await bundle("apps/web/lib/repository/topics.ts", "topics");
 const eligibilityMod = await bundle("apps/web/lib/repository/map-eligibility.ts", "map-eligibility");
 const tracesMod = await bundle("apps/web/lib/repository/paper-traces.ts", "paper-traces");
+const stateGraphMod = await bundle("apps/web/lib/repository/state-graph.ts", "state-graph");
 
 const { LAYER_GRAPH } = graphMod;
 const {
@@ -74,7 +75,12 @@ const { PUBLIC_REPOSITORY_ENTRIES } = corpusMod;
 const { STATE_VOCABULARY } = statesMod;
 
 const corpus = new Set(PUBLIC_REPOSITORY_ENTRIES.map((entry) => entry.slug));
-const errors = validateLayerGraph(LAYER_GRAPH, corpus, STATE_VOCABULARY);
+const errors = validateLayerGraph(
+  LAYER_GRAPH,
+  corpus,
+  STATE_VOCABULARY,
+  layersMod.COMPOSITE_NAME_DISPOSITIONS,
+);
 
 // A state id that is also a corpus slug has the same problem as a node id that
 // is: two different things answering to one name. Only checkable here, for the
@@ -128,10 +134,65 @@ for (const segment of layersMod.RESERVED_REPOSITORY_SEGMENTS) {
   }
 }
 
+// Every method-to-method composition the graph asserts, judged by the same
+// `pathStanding` the converge surface draws its marks from.
+//
+// Assembled here rather than in `layers.ts` because `state-graph.ts` imports
+// `layers.ts` and the reverse would be a cycle — so the census enumerates and
+// the judge is passed in. Both sides of `pathStanding`'s edge-key convention have
+// to agree for this to mean anything, which is what the `recorded` reachability
+// check below is actually testing.
+const compositions = layersMod.stateCompositionCensus(
+  LAYER_GRAPH,
+  STATE_VOCABULARY,
+  (arrival, departure) =>
+    stateGraphMod.pathStanding(LAYER_GRAPH, STATE_VOCABULARY, [
+      { edgeKey: arrival.edgeKey, filler: arrival.method },
+      { edgeKey: departure.edgeKey, filler: departure.method },
+    ]),
+);
+
+// **This does not fail on the size of the number, and there is no honest way to
+// make it.** A composition count is `arrivals × departures` per state, so any
+// correct new method multiplies it; a threshold would only say "somebody added
+// content", and pinning today's 226 would block tomorrow's correct work for the
+// reason the state-scoped-test note gives. So the number is printed, every run,
+// and that is the whole of the guarantee.
+//
+// What *is* failable without inventing a threshold is that the judgement still
+// has three values. `pathStanding` is three-valued on purpose — `unpinned` is the
+// middle that stops a discovery being printed on every second line — and a
+// standing nothing can produce is a check that passes because it stopped asking.
+// One `recorded` also happens to be the only end-to-end evidence that the edge
+// keys this script builds match the ones `pathStanding` walks: get them wrong and
+// every composition reads `unpublished`, which looks exactly like an empty record.
+for (const [standing, count] of [
+  ["recorded", compositions.recorded],
+  ["unpinned", compositions.unpinned],
+  ["unpublished", compositions.unpublished],
+]) {
+  if (count === 0) {
+    errors.push(
+      `no composition anywhere in the graph is "${standing}" — pathStanding has stopped being three-valued, so the mark it draws no longer distinguishes anything`,
+    );
+  }
+}
+
 if (errors.length > 0) {
   console.error(`✖ layer graph invalid (${errors.length} ${errors.length === 1 ? "error" : "errors"})`);
   for (const error of errors) console.error(`  - ${error}`);
   process.exit(1);
+}
+
+// Printed whether or not `--quiet`, like the paper register's warnings and for
+// the same reason: a name the owner has not ruled on is a decision waiting, not
+// a passing check, and a queue that only shows in verbose output is a queue
+// nobody empties.
+for (const row of layersMod.COMPOSITE_NAME_DISPOSITIONS) {
+  if (row.disposition !== "awaiting-owner-rename") continue;
+  const node = LAYER_GRAPH.nodes.find((candidate) => candidate.id === row.node);
+  console.log(`  ⚠ ${row.node} — coined composite name "${node?.label ?? "?"}", owner decision pending`);
+  console.log(`      ${row.reason}`);
 }
 
 if (!QUIET) {
@@ -181,6 +242,29 @@ if (!QUIET) {
   console.log(
     `  ${census.iteratedSteps} of ${census.stepInstances} hops declare a multiplicity — ${census.coherentLoops} coherent, ${census.measuredLoops} closing through a measurement · ${census.contrastedSlots} slots draw the contrast: one route repeats, another records nothing`,
   );
+  // The compositions the graph asserts by putting two contracts on one state
+  // name, and how few of them anybody has written down. The owner's session-91
+  // rule — an arrival that cannot use every exit means the state has to split —
+  // is a *restriction* relation and `specializes` only ever widens, so this
+  // cannot be checked; see the block above `RouteSegment` in `layers.ts`. It can
+  // be counted, and counting it here is the point: the alternative is a figure in
+  // a session note that is right on the day it is written.
+  console.log(
+    `  ${compositions.asserted} method-to-method compositions asserted at ${compositions.statesWithSeveralArrivals} of ${census.states} states that more than one method arrives at`,
+  );
+  console.log(
+    `    ${compositions.recorded} a source records · ${compositions.unpinned} a route walks without naming who fills it · ${compositions.unpublished} nothing walks at all`,
+  );
+  // The per-state table, because the total hides where the exposure is: a state
+  // with one arrival and seventeen exits is a different problem from a state with
+  // four arrivals that fan into eleven, and only the second is a place where a
+  // shared name is doing the joining.
+  for (const state of compositions.states) {
+    if (state.asserted === 0) continue;
+    console.log(
+      `    ${state.state.padEnd(28)} ${String(state.arrivals.length).padStart(2)} in × ${String(state.departures.length).padStart(2)} out = ${String(state.asserted).padStart(3)} — ${state.recorded} recorded, ${state.unpinned} unpinned, ${state.unpublished} unpublished`,
+    );
+  }
   // Papers as traces, measured rather than assumed. A citation attaches to one
   // node and a trace is a path, so "a paper is a line on the map" is a claim
   // about the graph that has to be counted before anything is built on it. The

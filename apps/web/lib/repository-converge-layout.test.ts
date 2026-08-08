@@ -21,6 +21,7 @@ import {
   chainColumnNeed,
   laneOffsets,
   reservedHalfHeight,
+  spanForBow,
   layoutConverge,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -971,13 +972,38 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
         // apart, so a point exactly on the curve could fall between two of them
         // and be reported off it — a test failing for its own resolution rather
         // than for the thing it is checking.
+        //
+        // Refined around the best coarse sample rather than sampled harder,
+        // because a fixed sample count is a resolution that depends on how wide
+        // the figure happens to be — and the figure got wider the moment lanes
+        // were given room to stay flat, which reintroduced exactly the artefact
+        // this comment was written about. Refining makes the tolerance mean the
+        // same thing on a 400px figure and a 10,000px one.
         const distanceTo = (x: number, y: number) => {
+          const at = (t: number) => {
+            const [px, py] = pointOn(on, t);
+            return Math.hypot(px - x, py - y);
+          };
+          const COARSE = 4000;
+          let bestT = 0;
           let best = Infinity;
-          for (let step = 0; step <= 4000; step += 1) {
-            const [px, py] = pointOn(on, step / 4000);
-            best = Math.min(best, Math.hypot(px - x, py - y));
+          for (let step = 0; step <= COARSE; step += 1) {
+            const t = step / COARSE;
+            const distance = at(t);
+            if (distance < best) {
+              best = distance;
+              bestT = t;
+            }
           }
-          return best;
+          let lo = Math.max(0, bestT - 1 / COARSE);
+          let hi = Math.min(1, bestT + 1 / COARSE);
+          for (let round = 0; round < 60; round += 1) {
+            const a = lo + (hi - lo) / 3;
+            const b = hi - (hi - lo) / 3;
+            if (at(a) < at(b)) hi = b;
+            else lo = a;
+          }
+          return Math.min(best, at((lo + hi) / 2));
         };
         const near = (x: number, y: number) => distanceTo(x, y) < 0.6;
         assert.ok(
@@ -1264,4 +1290,195 @@ test("an ingredient's name stays on the canvas", () => {
       }
     }
   }
+});
+
+/** The steepest the drawn curve gets, in degrees from horizontal. Sampled off `d`. */
+function steepestDegrees(d: string): number {
+  const c = parseCubic(d);
+  // The derivative of a cubic Bézier. Sampled densely rather than evaluated at
+  // the endpoints: "the steepest point is always an endpoint" is a property of
+  // *this* family of curves, and asserting it against a formula that assumes it
+  // would be the test agreeing with the emitter about the thing in question.
+  let worst = 0;
+  for (let i = 0; i <= 200; i += 1) {
+    const t = i / 200;
+    const dx =
+      3 * (1 - t) ** 2 * (c.p1[0] - c.p0[0]) +
+      6 * (1 - t) * t * (c.p2[0] - c.p1[0]) +
+      3 * t ** 2 * (c.p3[0] - c.p2[0]);
+    const dy =
+      3 * (1 - t) ** 2 * (c.p1[1] - c.p0[1]) +
+      6 * (1 - t) * t * (c.p2[1] - c.p1[1]) +
+      3 * t ** 2 * (c.p3[1] - c.p2[1]);
+    if (dx === 0) return 90;
+    worst = Math.max(worst, Math.abs(Math.atan2(Math.abs(dy), Math.abs(dx))));
+  }
+  return (worst * 180) / Math.PI;
+}
+
+test("no line stands up on end, however much is opened", () => {
+  // The owner asked for two things — *"distances between states should increase
+  // as branches between them are opened out"* and *"no branch should be at such
+  // a steep angle that it becomes weird to look at"* — and they are one
+  // constraint, because a lane's tangent is `4·bow/span`. Capping the angle is
+  // what widens the column.
+  //
+  // Measured before the cap existed, over these same figures: 186 of 337 lanes
+  // past 45 degrees, 90 past 60, steepest 79.1 — and four figures already past
+  // 45 *shut*. Sampled off the emitted `d`, because a test that recomputes the
+  // geometry beside the emitter cannot see the emitter break (session 100).
+  let checked = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of openings(focus.id)) {
+        const diagram = openDiagram(focus.id, open, locale);
+        for (const lane of diagram.lanes) {
+          const degrees = steepestDegrees(lane.d);
+          checked += 1;
+          assert.ok(
+            degrees <= M.maxLaneAngleDeg + 1e-6,
+            `${focus.id} (${locale}) ${lane.key}: ${degrees.toFixed(1)}deg exceeds ` +
+              `${M.maxLaneAngleDeg}deg`,
+          );
+        }
+      }
+    }
+  }
+  // A guard over an empty set passes for the wrong reason.
+  assert.ok(checked > 300, `only ${checked} lanes checked`);
+});
+
+test("a column is wide enough for the bows it holds, and that is what makes it grow", () => {
+  // `spanForBand` inverts the tangent, so it is checkable as arithmetic without
+  // building a figure — which matters because the property it defends is about
+  // figures the authored graph cannot currently produce.
+  assert.equal(spanForBow(0), 0);
+  // At 45 degrees, tan is 1, so the span is exactly four times the bow.
+  assert.ok(Math.abs(spanForBow(100) - 400) < 1e-9);
+  // Sign-blind: a lane bowed upward asks for exactly what one bowed down does.
+  assert.equal(spanForBow(-137), spanForBow(137));
+  // Monotone: a further-bowed lane never asks for a narrower column.
+  let previous = -1;
+  for (const bow of [0, 10, 55, 120, 400, 2300]) {
+    const span = spanForBow(bow);
+    assert.ok(span > previous, `spanForBow(${bow}) = ${span} did not grow`);
+    previous = span;
+  }
+  // And the figure actually uses it: opening the widest fan in the graph must
+  // widen the figure, which is the behaviour that was missing entirely — a
+  // seven-method fan used to add 322px of height and exactly 0px of width.
+  const shut = openDiagram("nonlinear-ode-solve", []);
+  const opened = openDiagram("nonlinear-ode-solve", ["linear-ode-solve"]);
+  assert.ok(
+    opened.width > shut.width,
+    `opening a 7-method fan left the figure ${opened.width} wide, was ${shut.width}`,
+  );
+});
+
+test("every address a figure emits keeps the reader where they were standing", () => {
+  // Measured on production before this: of 83 links to `/repository/layers*` on
+  // the overview, 5 carried `at=` — and all 5 were the size rungs, which set
+  // their own. So every "open this line in place" click threw the reader's pan
+  // and zoom away and re-rendered them at the origin at 100%. The figure stayed
+  // put; the reader did not, and that is most of what "it does not feel like one
+  // continuous surface" was.
+  const AT = "120,-40,1.5";
+  let checked = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const node = layerNode(LAYER_GRAPH, focus.id);
+    assert.ok(node && isCapability(node));
+    for (const open of openings(focus.id)) {
+      const carried = layoutConverge({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        focus: node,
+        locale: "en",
+        open,
+        at: AT,
+      });
+      const addresses = [
+        ...carried.lanes.flatMap((lane) => [lane.href, lane.openHref]),
+        ...carried.states.map((state) => state.href),
+        ...carried.feeds.map((feed) => feed.href),
+      ].filter((href): href is string => typeof href === "string");
+      assert.ok(addresses.length > 0, `${focus.id} emitted no addresses`);
+      for (const href of addresses) {
+        checked += 1;
+        assert.ok(
+          href.includes(`at=${encodeURIComponent(AT)}`),
+          `${focus.id}: ${href} dropped the viewport`,
+        );
+      }
+      // And what the reader had open, on the addresses that go to a node's own
+      // page. This half shipped broken once: the node page was taught to honour
+      // `?open=` and nothing sent it, so 0 of 16 node links carried one and the
+      // set still died on every name click. It was "verified" by hand-writing
+      // the URL the page receives, which tests the receiving half and nothing
+      // else — a link is not verified until something has followed it.
+      if (open.size > 0) {
+        const toNodePages = [
+          ...carried.lanes.map((lane) => lane.href),
+          ...carried.states.map((state) => state.href),
+          ...carried.feeds.map((feed) => feed.href),
+        ].filter((href) => href.startsWith("/repository/layers/"));
+        for (const href of toNodePages) {
+          for (const id of open) {
+            assert.ok(
+              href.includes(`open=${encodeURIComponent(id)}`),
+              `${focus.id}: ${href} dropped ${id} from what the reader had open`,
+            );
+          }
+        }
+      }
+      // And the default stays clean — stamping `at=0,0,1` onto every link would
+      // make a bare address impossible to produce.
+      const bare = layoutConverge({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        focus: node,
+        locale: "en",
+        open,
+      });
+      for (const lane of bare.lanes) {
+        assert.ok(!lane.href.includes("at="), `${focus.id}: ${lane.href} invented a viewport`);
+      }
+    }
+  }
+  assert.ok(checked > 200, `only ${checked} addresses checked`);
+});
+
+test("a line never offers a click it will not honour", () => {
+  // Measured before this: 39 lines advertised "opens into N", carried a live
+  // open link, had their id in `?open=` — and rendered shut, all 39 stopped by
+  // the depth cap, 27 of them on one figure. `inside` was set unconditionally
+  // from the child count while opening was gated on the cap, so the two
+  // disagreed at the ceiling. A control that does nothing does not read as a
+  // limit; it reads as a broken surface.
+  let offered = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const node = layerNode(LAYER_GRAPH, focus.id);
+    assert.ok(node && isCapability(node));
+    // Everything the surface will let a reader open, which is how a reader
+    // reaches the ceiling in the first place.
+    const open = new Set(openableIds(focus.id));
+    const diagram = layoutConverge({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      focus: node,
+      locale: "en",
+      open,
+    });
+    for (const lane of diagram.lanes) {
+      if (lane.openHref === null) continue;
+      offered += 1;
+      // The link is honoured if following it changes the drawing: either it is
+      // open now and the link shuts it, or it is shut and the link opens it.
+      if (lane.open) continue;
+      assert.ok(
+        !(lane.nodeId && open.has(lane.nodeId)),
+        `${focus.id}: ${lane.key} is named in ?open=, is drawn shut, and still offers a click`,
+      );
+    }
+  }
+  assert.ok(offered > 50, `only ${offered} open links seen`);
 });
