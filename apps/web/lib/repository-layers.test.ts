@@ -25,7 +25,9 @@ import {
   entriesFor,
   foldedAgainst,
   indexLayerGraph,
+  isCapability,
   isMethod,
+  methodsRealizing,
   layerCensus,
   layerDepths,
   layerNode,
@@ -703,4 +705,27 @@ test("the authored graph's own sibling sets partition, on every slot that has on
     }
     assert.equal(alternatives.size + refinements.length, siblings, node.id);
   }
+});
+
+test("every slot in the authored graph has at least two ways through it", () => {
+  // `whyALayer`'s own doctrine, asserted rather than reviewed: *"if there is no
+  // honest sentence saying which genuinely different methods compete for this
+  // slot, it is not a layer, it is a step in one method's write-up."*
+  //
+  // This is the single rule that decides whether the map stays a lattice as the
+  // corpus grows. A slot with one filler is indistinguishable from a stage in
+  // somebody's preferred pipeline, and at a thousand papers a map made of those
+  // is a thousand pipelines drawn on top of each other. Measured today: 18
+  // slots, minimum 2 methods, maximum 7, and 84 papers produced all 18 — slots
+  // saturate where methods and citations do not, and that is the scaling claim.
+  //
+  // A genuinely one-method slot is possible (the literature may have published
+  // exactly one way). If one arrives, amend this test with the reason rather
+  // than deleting it — an unasserted design rule is a design rule that has
+  // already been broken somewhere nobody looked.
+  const thin = LAYER_GRAPH.nodes
+    .filter(isCapability)
+    .map((node) => ({ id: node.id, ways: methodsRealizing(LAYER_GRAPH, node.id).length }))
+    .filter((slot) => slot.ways < 2);
+  assert.deepEqual(thin, []);
 });
