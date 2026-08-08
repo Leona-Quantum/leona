@@ -1171,6 +1171,61 @@ export function LayerStateView({
  * each route names further slots. The `<details>` per root is addressable and
  * needs no JavaScript.
  */
+/**
+ * What is here, counted — the only place on this site the graph's own census is
+ * printed.
+ *
+ * **Exported and rendered from two views deliberately.** It lived inside
+ * `LayerIndexView`, which is `?view=list` — not the default, and one of the
+ * three views OWNER_TODO §5 proposes retiring. So the numbers that say how
+ * complete this graph honestly is were reachable only from the surface most
+ * likely to be deleted, and a reader on the default view was never shown them.
+ *
+ * Written once rather than copied onto converge, for the reason `ViewSwitch`
+ * exists: four hand-written copies of one control is how `?view=converge`
+ * shipped invisible. A census restated in two places is the same failure with
+ * numbers, and numbers drift more quietly than links do.
+ *
+ * Counted from the graph and the corpus in hand — not one of these figures is
+ * written into a sentence.
+ */
+export function LayerCensusPanel({
+  graph,
+  corpus,
+  locale,
+}: {
+  graph: LayerGraph;
+  corpus: readonly LayerCorpusEntry[];
+  locale: PublicLocale;
+}) {
+  const copy = copyFor(locale);
+  const census = layerCensus(graph, new Set(corpus.map((entry) => entry.slug)), STATE_VOCABULARY);
+  return (
+    <section className="mj-layers-census">
+      <h2>{copy.censusHeading}</h2>
+      <p>{copy.census(census.nodes, census.capabilities, census.methods)}</p>
+      <p>{copy.censusAnchored(census.anchored, census.nodes, census.distinctEntries)}</p>
+      <p>{copy.censusOpen(census.openCapabilities, census.undecomposedMethods)}</p>
+      {/* Absent on a healthy catalogue, and that absence is correct: this is
+          not a status field, it is the sentence that stops the number above
+          from going quietly wrong when the catalogue serves less than the
+          repo does. `check-layer-graph.mjs` proves the links resolve at build
+          time; nothing proves it at read time. */}
+      {census.unresolvedEntries > 0 ? (
+        <p className="mj-layers-census-warn">{copy.censusUnresolved(census.unresolvedEntries)}</p>
+      ) : null}
+      {/* Counted here rather than written, and linked, because the sentence
+          above is about what this graph documents and this one is about what
+          it documents it *from*. A reader who wants the second is otherwise
+          stuck opening node pages one at a time. */}
+      <p>
+        {copy.papersLead(PAPER_REGISTER.papers.length)}{" "}
+        <a href="/repository/papers">{copy.papersLink}</a>
+      </p>
+    </section>
+  );
+}
+
 export function LayerIndexView({
   graph,
   corpus,
@@ -1183,11 +1238,6 @@ export function LayerIndexView({
   openRoot: string | null;
 }) {
   const copy = copyFor(locale);
-  const census = layerCensus(
-    graph,
-    new Set(corpus.map((entry) => entry.slug)),
-    STATE_VOCABULARY,
-  );
   const roots = rootCapabilities(graph);
   return (
     <section className="mj-layers-index" aria-labelledby="layers-heading">
@@ -1217,33 +1267,7 @@ export function LayerIndexView({
         </ul>
       </section>
 
-      {/* Counted from the graph and the corpus in hand — not one of these
-          numbers is written into the sentence. Same rule as the Atlas preface,
-          and it matters more here: the honest reading of this surface today is
-          that most of it has no record behind it, and a hard-coded number would
-          stop saying so the moment the graph grew. */}
-      <section className="mj-layers-census">
-        <h2>{copy.censusHeading}</h2>
-        <p>{copy.census(census.nodes, census.capabilities, census.methods)}</p>
-        <p>{copy.censusAnchored(census.anchored, census.nodes, census.distinctEntries)}</p>
-        <p>{copy.censusOpen(census.openCapabilities, census.undecomposedMethods)}</p>
-        {/* Absent on a healthy catalogue, and that absence is correct: this is
-            not a status field, it is the sentence that stops the number above
-            from going quietly wrong when the catalogue serves less than the
-            repo does. `check-layer-graph.mjs` proves the links resolve at build
-            time; nothing proves it at read time. */}
-        {census.unresolvedEntries > 0 ? (
-          <p className="mj-layers-census-warn">{copy.censusUnresolved(census.unresolvedEntries)}</p>
-        ) : null}
-        {/* Counted here rather than written, and linked, because the sentence
-            above is about what this graph documents and this one is about what
-            it documents it *from*. A reader who wants the second is otherwise
-            stuck opening node pages one at a time. */}
-        <p>
-          {copy.papersLead(PAPER_REGISTER.papers.length)}{" "}
-          <a href="/repository/papers">{copy.papersLink}</a>
-        </p>
-      </section>
+      <LayerCensusPanel graph={graph} corpus={corpus} locale={locale} />
 
       <h2 className="mj-layers-start">{copy.startHeading}</h2>
       <div className="mj-layers-roots">

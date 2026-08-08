@@ -10,9 +10,6 @@ from collections.abc import Sequence
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import ImportJobStatus, Role
-from sqlalchemy import select
-
-from . import orm
 
 from .catalog_attestation import AttestationPolicy
 from .catalog_authority import CatalogAuthority
@@ -404,15 +401,11 @@ async def _resolve_reviewer_by_email(email: str) -> uuid.UUID:
     factory = session_factory(engine)
     try:
         async with factory() as session:
-            rows = (
-                await session.execute(
-                    select(orm.User.id, orm.User.workos_user_id).where(orm.User.email == email)
-                )
-            ).all()
+            rows = await system.list_users_by_email(session, email)
     finally:
         await engine.dispose()
 
-    reviewer = pick_live_reviewer(email, [(row.id, row.workos_user_id) for row in rows])
+    reviewer = pick_live_reviewer(email, rows)
     print(f"reviewer: {reviewer} (resolved from {email})")
     return reviewer
 

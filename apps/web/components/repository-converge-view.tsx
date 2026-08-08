@@ -7,6 +7,7 @@
 // that is the one kind `@view-transition { navigation: auto }` does not animate,
 // so using one here would silently delete the zoom on this surface only.
 import { ViewSwitch } from "./repository-view-switch";
+import { LayerCensusPanel } from "./repository-layers";
 import { ConvergeCanvas } from "./repository-converge-map";
 import {
   convergingSlots,
@@ -17,7 +18,12 @@ import {
 } from "../lib/repository/converge-layout";
 import { expansionOf } from "../lib/repository/state-graph";
 import { mapHref } from "../lib/repository/process-layout";
-import { isCapability, layerNode, type LayerGraph } from "../lib/repository/layers";
+import {
+  isCapability,
+  layerNode,
+  type LayerCorpusEntry,
+  type LayerGraph,
+} from "../lib/repository/layers";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import { layerState } from "../lib/repository/states";
 import type { PublicLocale } from "../lib/public-locale";
@@ -136,10 +142,12 @@ export function convergeHref(focus: string | null): string {
 
 export function ConvergeView({
   graph,
+  corpus,
   locale,
   focusId,
 }: {
   graph: LayerGraph;
+  corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
   focusId: string | null;
 }): React.ReactElement {
@@ -357,6 +365,14 @@ export function ConvergeView({
           ))}
         </ul>
       </section>
+
+      {/* The counted census, on the default view at last. It lived only inside
+          `?view=list`, so the numbers saying how complete this graph honestly
+          is were reachable only from a surface OWNER_TODO §5 proposes retiring —
+          and a reader who never changed the view was never shown them. Rendered
+          from the one component rather than restated here: a census written
+          twice drifts, and more quietly than a link does. */}
+      <LayerCensusPanel graph={graph} corpus={corpus} locale={locale} />
     </section>
   );
 }

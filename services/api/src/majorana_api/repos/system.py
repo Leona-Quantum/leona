@@ -353,6 +353,23 @@ async def ensure_starter_bell_artifact(session: AsyncSession, workspace_id) -> N
     await session.flush()
 
 
+async def list_users_by_email(session: AsyncSession, email: str) -> list[tuple[Any, str]]:
+    """Every `users` row carrying an email, as `(id, workos_user_id)` pairs.
+
+    An email is **not** unique in this table and this function does not pretend
+    it is: the WorkOS environment switch minted a second row per account, so a
+    `.first()` here would silently pick one of two — and the caller
+    (`catalog_admin.pick_live_reviewer`) grants the row it is handed ADMIN on
+    the catalog workspace. The choosing rule lives with that caller, where it is
+    tested without a database; this returns the whole set so the rule has
+    something to choose from.
+    """
+    rows = (
+        await session.execute(select(User.id, User.workos_user_id).where(User.email == email))
+    ).all()
+    return [(row.id, row.workos_user_id) for row in rows]
+
+
 async def _existing_user(
     session: AsyncSession, workos_user_id: str
 ) -> tuple[User, Workspace] | None:
