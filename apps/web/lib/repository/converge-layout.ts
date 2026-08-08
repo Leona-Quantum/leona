@@ -667,6 +667,18 @@ interface PlanStrand {
   boundaries: string[];
   /** Counted whether or not it is open, so a shut line can say what it holds. */
   inside: number;
+  /**
+   * Whether clicking the body would actually draw what is inside.
+   *
+   * Not the same as `inside > 0`, and the gap between the two was 39 lines.
+   * `inside` is set unconditionally from the child count while opening is gated
+   * on the depth cap, so a line at the ceiling said "opens into 4", carried a
+   * live open link, and rendered shut when the reader took it up on the offer —
+   * on `nonlinear-ode-solve`, 27 lines did that at once. A control that does
+   * nothing does not read as a limit; it reads as a broken surface, and it
+   * teaches the wrong rule about every other line on the canvas.
+   */
+  openable: boolean;
   opensInto: OpensInto | null;
   slots: readonly string[];
   interior: readonly string[];
@@ -778,6 +790,7 @@ function chainInside(
       children: [],
       boundaries: [],
       inside: 0,
+      openable: false,
       opensInto: null,
       slots: [],
       interior: [],
@@ -829,6 +842,7 @@ function planForSlot(
     children: inside?.children ?? [],
     boundaries: [],
     inside: methods.length,
+    openable: canOpen,
     opensInto: methods.length > 0 ? "ways" : null,
     slots: [slotId],
     interior: [],
@@ -887,6 +901,7 @@ function planForMethod(
     children: inside?.children ?? [],
     boundaries: inside?.boundaries ?? [],
     inside: holds ? segments + feeds.length : 0,
+    openable: canOpen && holds,
     opensInto: holds ? "steps" : null,
     slots: [],
     interior: [],
@@ -939,6 +954,9 @@ function planForLane(
     children,
     boundaries: [...lane.interior],
     inside: lane.edges.length,
+    // A run of named hops is drawn open from the start and has no id for
+    // `?open=` to name it by, so there was never anything to click.
+    openable: false,
     opensInto: "steps",
     slots: named.slots,
     interior: lane.interior,
@@ -1215,7 +1233,13 @@ function place(
     labelX: peak.x,
     labelY,
     nodeId: strand.id,
-    openHref: strand.id ? toggleHref(context.focusId, context.open, strand.id) : null,
+    // `openable`, not `id`. A line at the depth ceiling has an id and something
+    // inside and still cannot draw it, and offering the click anyway is what
+    // produced 39 dead controls.
+    openHref:
+      strand.id && (strand.openable || strand.open)
+        ? toggleHref(context.focusId, context.open, strand.id)
+        : null,
     href: strand.href,
     open: strand.open,
     inside: strand.inside,

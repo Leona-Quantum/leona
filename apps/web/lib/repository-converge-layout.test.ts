@@ -1425,3 +1425,39 @@ test("every address a figure emits keeps the reader where they were standing", (
   }
   assert.ok(checked > 200, `only ${checked} addresses checked`);
 });
+
+test("a line never offers a click it will not honour", () => {
+  // Measured before this: 39 lines advertised "opens into N", carried a live
+  // open link, had their id in `?open=` — and rendered shut, all 39 stopped by
+  // the depth cap, 27 of them on one figure. `inside` was set unconditionally
+  // from the child count while opening was gated on the cap, so the two
+  // disagreed at the ceiling. A control that does nothing does not read as a
+  // limit; it reads as a broken surface.
+  let offered = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const node = layerNode(LAYER_GRAPH, focus.id);
+    assert.ok(node && isCapability(node));
+    // Everything the surface will let a reader open, which is how a reader
+    // reaches the ceiling in the first place.
+    const open = new Set(openableIds(focus.id));
+    const diagram = layoutConverge({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      focus: node,
+      locale: "en",
+      open,
+    });
+    for (const lane of diagram.lanes) {
+      if (lane.openHref === null) continue;
+      offered += 1;
+      // The link is honoured if following it changes the drawing: either it is
+      // open now and the link shuts it, or it is shut and the link opens it.
+      if (lane.open) continue;
+      assert.ok(
+        !(lane.nodeId && open.has(lane.nodeId)),
+        `${focus.id}: ${lane.key} is named in ?open=, is drawn shut, and still offers a click`,
+      );
+    }
+  }
+  assert.ok(offered > 50, `only ${offered} open links seen`);
+});
