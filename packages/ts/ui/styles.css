@@ -11799,12 +11799,25 @@ div.mj-rail-row:hover {
   border-radius: var(--radius-card);
   background: var(--bg-1);
   cursor: grab;
-  /* Pointer Events drive every gesture here (drag-to-pan, two-finger
-     pinch-to-zoom — see infinite-canvas.tsx), not native touch scrolling.
-     Without this the browser starts its own scroll/pinch from the first
-     touchmove before the pointermove handler sees a useful delta, and the two
-     fight over the same finger. */
-  touch-action: none;
+  /* Pointer Events drive the gestures here (drag-to-pan, two-finger
+     pinch-to-zoom — see infinite-canvas.tsx) rather than native touch
+     scrolling: without this the browser starts its own scroll or pinch from the
+     first touchmove, before the pointermove handler has a useful delta, and the
+     two fight over one finger.
+
+     `pan-y` rather than `none`, and the difference is whether a phone can read
+     this page at all. This canvas is a box in a long document — 303×512 in a
+     375px viewport, measured — so with `none` a reader swiping up anywhere over
+     the figure pans the figure and cannot get past it. It is the same trap as
+     binding zoom to a plain wheel, and it is worse on a phone because there is
+     almost no margin to aim at.
+
+     `pan-y` gives the vertical swipe back to the page and keeps everything
+     else: a horizontal drag is still ours, and since `pinch-zoom` is not in the
+     list the UA does not claim a two-finger gesture either, so pinch still
+     reaches the pinch handler. What is lost is dragging the figure *vertically*
+     by touch, which the arrow keys and the size links both cover. */
+  touch-action: pan-y;
 }
 /* Set by InfiniteCanvas only once a pointer has moved past the drag
    threshold — never on a plain press — so a reader mousing over the canvas
