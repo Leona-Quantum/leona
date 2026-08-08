@@ -262,6 +262,98 @@ export interface LayerMethod extends LayerNodeBase {
    */
   contested?: string;
   contestedJa?: string;
+  /**
+   * Step id → the fact that this route runs that step **many times**, and what
+   * the turn costs.
+   *
+   * > *"iteration loop type algorithms, like vqe and some integrators, which run
+   * > iteratively over several states/processes. eg backwards euler does, while
+   * > folded euler bypasses for this reason. and so backwards euler also requires
+   * > more readouts and such."*
+   * > — owner, session-98 inbox
+   *
+   * ## Why this could not be read off the graph already
+   *
+   * `steps` is a **set**, and validation rejects a repeat inside it, so the only
+   * thing the structure could ever say was *whether* a route meets a slot — never
+   * how often. Two methods that look identical on the map are then charged
+   * wildly different amounts: `taylor-all-at-once` assembles the whole trajectory
+   * into one system and calls `quantum-linear-solve` **once**; `backward-euler`
+   * solves *(I − hA)u_{k+1} = u_k + h·b_{k+1}* and calls the same slot **once per
+   * time step**. Both drew one line to one circle.
+   *
+   * That difference is not a constant factor and it is not decoration: it is the
+   * reason the published encodings fold. `time-marching-usva`'s own recorded
+   * prose is the clearest statement of it in this file — the success probability
+   * decays *exponentially* in the number of steps, and the method exists to buy
+   * that back with an amplification at **every** turn.
+   *
+   * ## Why it is an edge annotation and not a field on the method
+   *
+   * A method does not "iterate" — it iterates *something*. `direct-sampling-readout`
+   * repeats `state-preparation` and nothing else; `backward-euler` repeats
+   * `quantum-linear-solve` and not the discretisation that produced it. A boolean
+   * on the node would say a route loops and leave a reader to guess which of its
+   * steps is inside the loop, which on a three-step method is a three-way guess
+   * about where the whole cost lives. Same shape and same argument as `through`
+   * and `via`: the fact belongs to the hop, so it is keyed by the hop.
+   *
+   * **Only where a source states it, and absent is the common and correct case.**
+   * Absent means "no source we read said this step runs more than once" — never
+   * "it runs once". Nothing is derived here: a plausible loop is exactly the kind
+   * of sentence §3.6 forbids inventing.
+   */
+  repeats?: Readonly<Record<string, StepRepetition>>;
+}
+
+/**
+ * How a loop closes — and this is the field the owner's *"requires more
+ * readouts"* lives in.
+ *
+ * - `coherent` — the turn's output stays a quantum state and feeds the next
+ *   turn. Nothing is **measured**, so the state is never collapsed and restarted
+ *   from classical data; the price is paid in depth and in success probability,
+ *   which multiplies down the chain. This is `time-marching-usva`, which buys the
+ *   decay back with an amplification per step, and `amplitude-estimation-readout`,
+ *   whose iteration is *M* applications of one Grover operator.
+ *
+ *   **Coherent does not mean the preparation runs once.** HHL prepares |b⟩ afresh
+ *   inside every one of its O(κ) amplification rounds and amplitude estimation
+ *   runs *A* forwards and backwards on every iteration — both are recorded here
+ *   as repeating `state-preparation`, coherently. What a coherent loop never pays
+ *   is a *readout*. Saying otherwise would contradict two of this graph's own
+ *   annotations, which is how it was caught.
+ * - `measured` — the turn's output leaves the device as classical data, so every
+ *   turn is a fresh preparation **and** a fresh readout. This is shot-based
+ *   estimation, and it is the loop a variational optimizer closes.
+ *
+ * The two are not gradations of one thing. A coherent loop's cost is a *depth* a
+ * device may simply not have; a measured loop's cost is a *count* that a device
+ * can always pay and a schedule may not be able to afford. Collapsing them into
+ * "it repeats" loses the only part a reader is deciding on.
+ */
+export type LoopClosure = "coherent" | "measured";
+
+export const LOOP_CLOSURES = ["coherent", "measured"] as const;
+
+/**
+ * One repeated step, as a source states it.
+ *
+ * `count` is **symbolic and quoted**, never a number this file worked out: "one
+ * per time step", "O(1/ε²) shots", "M = O(1/ε)". A concrete integer would be a
+ * claim about a problem instance, and the map does not have one — it has a
+ * scheme. `validateLayerGraph` rejects a `count` of `"1"` for the same reason it
+ * rejects an empty `through`: a loop that turns once is not a loop, and recording
+ * it as one would put an iteration badge on the folded encodings that exist
+ * precisely to avoid it.
+ */
+export interface StepRepetition {
+  count: string;
+  countJa: string;
+  closure: LoopClosure;
+  /** What the turn costs and why it turns that many times, read off the source. */
+  note: string;
+  noteJa: string;
 }
 
 export type LayerNode = LayerCapability | LayerMethod;
@@ -302,6 +394,63 @@ export type StepsOutlook = "decomposed" | "atomic" | "undecomposed";
 export function stepsOutlook(method: LayerMethod): StepsOutlook {
   if (method.steps.length > 0) return "decomposed";
   return method.atomic ? "atomic" : "undecomposed";
+}
+
+/** The repetition recorded for one hop, or `null` where none is. */
+export function repetitionOf(method: LayerMethod, stepId: string): StepRepetition | null {
+  return method.repeats?.[stepId] ?? null;
+}
+
+/** Every repeated hop of a method, in the order its steps are met. */
+export function repeatedSteps(
+  method: LayerMethod,
+): Array<{ stepId: string; repetition: StepRepetition }> {
+  const repeats = method.repeats;
+  if (!repeats) return [];
+  return method.steps
+    .filter((stepId) => repeats[stepId] !== undefined)
+    .map((stepId) => ({ stepId, repetition: repeats[stepId]! }));
+}
+
+/**
+ * Which routes into a slot declare that they run it many times, and which
+ * declare nothing.
+ *
+ * This is the comparison the owner asked the map to be able to draw, and it is
+ * only answerable across a whole slot: "folded" is not a property of
+ * `taylor-all-at-once`, it is what `taylor-all-at-once` is *relative to*
+ * `backward-euler`. A reader standing on `quantum-linear-solve` should be able to
+ * see that one route pays it once per time step and another assembles the whole
+ * trajectory and pays once, because that is the single largest cost difference on
+ * the layer.
+ *
+ * **`unpinned` is not "folded", and the name is deliberate.** A route with no
+ * `repeats` entry has recorded no multiplicity; it has not claimed to meet the
+ * slot exactly once. Calling that list `folded` would manufacture a claim per
+ * member — the failure `via` already has, where 50 of 55 hops name no method and
+ * a picture could easily imply they name one. The caller says "declares no
+ * multiplicity"; nothing here says "once".
+ *
+ * Returns two empty arrays when nothing repeats this slot, so the contrast is
+ * only ever drawn where there is a contrast, and a slot no route has measured
+ * never claims a virtue nobody is competing for.
+ */
+export function foldedAgainst(
+  graph: LayerGraph,
+  capabilityId: string,
+): {
+  unpinned: LayerMethod[];
+  repeated: Array<{ method: LayerMethod; repetition: StepRepetition }>;
+} {
+  const unpinned: LayerMethod[] = [];
+  const repeated: Array<{ method: LayerMethod; repetition: StepRepetition }> = [];
+  for (const node of graph.nodes) {
+    if (!isMethod(node) || !node.steps.includes(capabilityId)) continue;
+    const repetition = repetitionOf(node, capabilityId);
+    if (repetition) repeated.push({ method: node, repetition });
+    else unpinned.push(node);
+  }
+  return repeated.length === 0 ? { unpinned: [], repeated: [] } : { unpinned, repeated };
 }
 
 /**
@@ -701,6 +850,42 @@ export interface LayerCensus {
   feedSteps: number;
   /** States nothing produces — a route can start here but never arrive. */
   unreachedStates: number;
+  /**
+   * Hops recorded as running many times, and how those loops close.
+   *
+   * Counted rather than left implicit for the reason every other count in here
+   * is: a route that stops declaring its loop looks exactly like a route that
+   * never had one, and the difference is the dominant cost term. `iteratedSteps`
+   * counts hops, not methods — one method may repeat two different slots.
+   */
+  iteratedSteps: number;
+  /** Of those, the ones whose turn ends in a measurement and a fresh preparation. */
+  measuredLoops: number;
+  /** Of those, the ones whose turn stays in superposition and pays in depth. */
+  coherentLoops: number;
+  /**
+   * Slots where some route declares a multiplicity **and another declares none**
+   * — the figure the capability page actually draws.
+   *
+   * Was `foldedSlots`, counted as "any route repeats it", and both the name and
+   * the count overclaimed: a slot every route repeats has no contrast to draw,
+   * and no route here "meets it exactly once" — the second list records nothing
+   * at all (see `foldedAgainst`). The renderer already guarded both halves; the
+   * number did not, so the census could report a comparison the page would not
+   * print.
+   */
+  contrastedSlots: number;
+  /**
+   * Every hop in the graph — the denominator `iteratedSteps` is a numerator of.
+   *
+   * Carried because `repeats` has the failure mode `via` has and `entries` has:
+   * **absent means nobody recorded it, and it renders identically to "meets this
+   * slot once".** A reader who cannot see that 9 of 55 hops carry a multiplicity
+   * will read the other 46 as folded, which is a claim the graph is not making
+   * about any of them. One number turns that from an implication into a
+   * statement.
+   */
+  stepInstances: number;
 }
 
 export function layerCensus(
@@ -731,6 +916,11 @@ export function layerCensus(
   for (const method of methods) {
     for (const narrowed of Object.values(method.through ?? {})) produced.add(narrowed);
   }
+  const repetitions = methods.flatMap((method) => repeatedSteps(method));
+  const contrastedSlots = capabilities.filter((node) => {
+    const { unpinned, repeated } = foldedAgainst(graph, node.id);
+    return repeated.length > 0 && unpinned.length > 0;
+  }).length;
   const referenced = new Set<string>();
   let unresolved = 0;
   for (const node of graph.nodes) {
@@ -754,6 +944,11 @@ export function layerCensus(
     routesAllOwn: decomposed.filter((route) => route.coverage === "all-own").length,
     feedSteps: decomposed.reduce((total, route) => total + route.feeds.length, 0),
     unreachedStates: vocabulary.states.filter((state) => !produced.has(state.id)).length,
+    iteratedSteps: repetitions.length,
+    measuredLoops: repetitions.filter(({ repetition }) => repetition.closure === "measured").length,
+    coherentLoops: repetitions.filter(({ repetition }) => repetition.closure === "coherent").length,
+    contrastedSlots,
+    stepInstances: methods.reduce((total, method) => total + method.steps.length, 0),
   };
 }
 
@@ -934,6 +1129,68 @@ export function validateLayerGraph(
     }
     if (node.atomic && node.steps.length > 0) {
       errors.push(`${node.id}: atomic is set beside a non-empty steps list`);
+    }
+  }
+
+  // --- repetitions ---------------------------------------------------------
+  //
+  // Checked in its own pass rather than inside the method block above, because
+  // two of the five rules compare `repeats` against `steps` and `bypasses` and
+  // read better beside each other than threaded through the field walk.
+  //
+  // The rule that matters most is the last one: **a route may not both skip a
+  // layer and run it many times.** That is not a typo-catcher. Skipping and
+  // repeating are the two opposite answers to the same question — LCHS removes
+  // the linear-solve span, backward Euler pays it once per step — and a node
+  // asserting both would render as a route that avoids the cost it is charged
+  // for, on the one surface whose whole claim is that the costs are honest.
+  for (const node of graph.nodes) {
+    if (!isMethod(node) || node.repeats === undefined) continue;
+    const entries = Object.entries(node.repeats);
+    if (entries.length === 0) {
+      errors.push(`${node.id}: repeats records nothing — omit it instead`);
+    }
+    for (const [stepId, repetition] of entries) {
+      if (!node.steps.includes(stepId)) {
+        errors.push(
+          `${node.id}: repeats names ${stepId}, which is not one of its steps — a route can only repeat a hop it takes`,
+        );
+        continue;
+      }
+      if ((node.bypasses ?? []).includes(stepId)) {
+        errors.push(
+          `${node.id}: both bypasses and repeats ${stepId} — a route cannot skip a layer it runs once per turn`,
+        );
+      }
+      for (const [field, value] of [
+        ["count", repetition.count],
+        ["countJa", repetition.countJa],
+        ["note", repetition.note],
+        ["noteJa", repetition.noteJa],
+      ] as const) {
+        if (typeof value !== "string" || value.trim() === "") {
+          errors.push(`${node.id}: repeats[${stepId}].${field} is empty`);
+        }
+      }
+      // A loop that turns once is not a loop. Recording it as one would put the
+      // badge on exactly the folded encodings that exist to avoid the loop —
+      // `taylor-all-at-once` and `krovi-linear-ode` call the solver once, and
+      // that is the fact worth seeing, not a repetition of multiplicity one.
+      for (const [field, value] of [
+        ["count", repetition.count],
+        ["countJa", repetition.countJa],
+      ] as const) {
+        if (typeof value === "string" && value.trim() === "1") {
+          errors.push(
+            `${node.id}: repeats[${stepId}].${field} is "1" — a step taken once is not a repetition, omit it`,
+          );
+        }
+      }
+      if (!(LOOP_CLOSURES as readonly string[]).includes(repetition.closure)) {
+        errors.push(
+          `${node.id}: repeats[${stepId}].closure is ${JSON.stringify(repetition.closure)}, not one of ${LOOP_CLOSURES.join(" | ")}`,
+        );
+      }
     }
   }
 

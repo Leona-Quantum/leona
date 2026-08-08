@@ -35,6 +35,7 @@ import {
   containersOf,
   contractFor,
   entriesFor,
+  foldedAgainst,
   isCapability,
   isMethod,
   layerCensus,
@@ -43,6 +44,7 @@ import {
   methodsRealizing,
   realizedBy,
   refinementsOf,
+  repetitionOf,
   rootCapabilities,
   stateTraffic,
   stepsOutlook,
@@ -132,6 +134,26 @@ const COPY = {
       "Nobody has taken this apart yet. That is a gap in this graph, not a claim that the method has no parts.",
     needsWays: (n: number) =>
       n === 0 ? "no method recorded" : n === 1 ? "1 method" : `${n} methods`,
+    // The badge says the multiplicity; the closure says what one turn costs.
+    // They are two sentences because they are two facts, and a reader deciding
+    // between shot-based and coherent readout is deciding on the second one.
+    repeatsBadge: (count: string) => `runs ${count}`,
+    // NOT "so nothing is prepared again" — that was wrong, and wrong against two
+    // of this graph's own records: HHL prepares |b⟩ afresh in every one of its
+    // O(κ) amplification rounds, and amplitude estimation runs the preparation
+    // forwards and backwards on every iteration. What a coherent loop never pays
+    // is a readout.
+    repeatsCoherent:
+      "The loop stays coherent: nothing is measured between turns. The preparation may still be reapplied every turn — what the loop never pays is a readout and a restart from classical data. The price is depth, and a success probability that multiplies down the chain.",
+    repeatsMeasured:
+      "The loop closes through a measurement: every turn ends in a readout and starts from a fresh preparation. The price is a count of runs, not a depth.",
+    repeatsHeading: "Steps it runs more than once",
+    loopHeading: "Routes that run this slot many times",
+    loopLead:
+      "For these routes this slot is inside a loop, so its cost is multiplied rather than paid once. That multiplier is usually the largest single term in what the route costs.",
+    loopUnpinnedLabel: "No multiplicity recorded",
+    loopUnpinnedLead:
+      "These routes take this step and no source we have read says how often. That is an absence, not a claim that they take it once.",
     makesUnnecessaryHeading: "Slots it makes unnecessary",
     siblingsHeading: "Other ways to fill the same slot",
     siblingsNone: "Nothing else in this graph fills this slot.",
@@ -243,6 +265,18 @@ const COPY = {
     needsUndecomposed:
       "まだ分解されていません。これはこのグラフ側の欠落であって、この手法に部品がないという主張ではありません。",
     needsWays: (n: number) => (n === 0 ? "手法の記録なし" : `手法${n}件`),
+    repeatsBadge: (count: string) => `実行回数：${count}`,
+    repeatsCoherent:
+      "反復はコヒーレントに閉じます。回と回の間で測定は行われません。準備ユニタリ自体は毎回適用され直すことがありますが、読み出しと、古典的なデータからの再出発は生じません。代価は深さと、連鎖のあいだ掛け合わされていく成功確率です。",
+    repeatsMeasured:
+      "反復は測定を挟んで閉じます。1 回ごとに読み出しで終わり、次は新たな準備から始まります。代価は深さではなく実行回数です。",
+    repeatsHeading: "複数回実行する手順",
+    loopHeading: "この枠を何度も実行する経路",
+    loopLead:
+      "これらの経路では、この枠は反復の内側にあります。したがってその費用は 1 回分ではなく、回数分だけ掛かります。多くの場合、この倍率が経路全体の費用のなかで最大の項になります。",
+    loopUnpinnedLabel: "回数の記録なし",
+    loopUnpinnedLead:
+      "これらの経路はこの手順を踏みますが、回数を述べた出典は確認できていません。これは記録の欠落であって、1 回だけ踏むという主張ではありません。",
     makesUnnecessaryHeading: "不要にする枠",
     siblingsHeading: "同じ枠を埋める他のやり方",
     siblingsNone: "このグラフでこの枠を埋めるものは他にありません。",
@@ -637,9 +671,73 @@ function CapabilityView({
         )}
       </section>
 
+      {/* How often the routes above pay for this slot — the comparison that
+          motivated the whole annotation, and it is only answerable here rather
+          than on any one method page: paying once per time step is not a
+          property of backward Euler, it is what backward Euler is relative to an
+          all-at-once encoding.
+
+          Drawn only where some route repeats it. The second list is headed "no
+          multiplicity recorded" and never "runs it once", because that is what
+          the graph says about those routes — nothing. */}
+      <LoopComparison graph={graph} node={node} locale={locale} copy={copy} />
+
       <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} />
       <Citations node={node} copy={copy} />
     </>
+  );
+}
+
+/**
+ * "Some routes run this slot many times; these others record nothing about how
+ * often." Renders nothing at all when no route repeats the slot.
+ */
+function LoopComparison({
+  graph,
+  node,
+  locale,
+  copy,
+}: {
+  graph: LayerGraph;
+  node: Extract<LayerNode, { kind: "capability" }>;
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const { unpinned, repeated } = foldedAgainst(graph, node.id);
+  if (repeated.length === 0) return null;
+  const isJa = locale === "ja";
+  return (
+    <section className="mj-layers-section" aria-labelledby={`loop-${node.id}`}>
+      <h2 id={`loop-${node.id}`}>{copy.loopHeading}</h2>
+      <p>{copy.loopLead}</p>
+      <ul className="mj-layers-list">
+        {repeated.map(({ method, repetition }) => (
+          <li key={method.id} className="mj-layers-loop-row">
+            <a href={href(method.id)}>{label(method, locale)}</a>{" "}
+            <span
+              className={`mj-layers-repeat mj-layers-repeat--${repetition.closure}`}
+              data-closure={repetition.closure}
+            >
+              {copy.repeatsBadge(isJa ? repetition.countJa : repetition.count)}
+            </span>
+            <p>
+              {repetition.closure === "measured" ? copy.repeatsMeasured : copy.repeatsCoherent}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {unpinned.length > 0 ? (
+        <>
+          <h3>{copy.loopUnpinnedLabel}</h3>
+          <p>{copy.loopUnpinnedLead}</p>
+          <ul className="mj-layers-list">
+            {unpinned.map((method) => (
+              <NodeLink key={method.id} graph={graph} node={method} locale={locale} copy={copy} />
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -714,11 +812,31 @@ function MethodView({
               // The count is the branching factor, and printing it here is what
               // makes descending feel like a choice rather than a corridor.
               const ways = methodsRealizing(graph, stepId).length;
+              // How often this route takes this hop, where a source says. Absent
+              // prints nothing at all — never "once". A route that has not been
+              // measured must not be made to look like one that folds.
+              const repetition = repetitionOf(node, stepId);
               return (
                 <li key={stepId}>
                   <a href={href(stepId)}>{label(step, locale)}</a>{" "}
                   <span className="mj-layers-item-kind">{copy.needsWays(ways)}</span>
+                  {repetition ? (
+                    <span
+                      className={`mj-layers-repeat mj-layers-repeat--${repetition.closure}`}
+                      data-closure={repetition.closure}
+                    >
+                      {copy.repeatsBadge(isJa ? repetition.countJa : repetition.count)}
+                    </span>
+                  ) : null}
                   <p>{summary(step, locale)}</p>
+                  {repetition ? (
+                    <p className="mj-layers-repeat-note">
+                      {repetition.closure === "measured"
+                        ? copy.repeatsMeasured
+                        : copy.repeatsCoherent}{" "}
+                      {isJa ? repetition.noteJa : repetition.note}
+                    </p>
+                  ) : null}
                 </li>
               );
             })}

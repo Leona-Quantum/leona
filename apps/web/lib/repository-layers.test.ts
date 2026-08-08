@@ -23,13 +23,18 @@ import {
   capabilityOutlook,
   containersOf,
   entriesFor,
+  foldedAgainst,
   indexLayerGraph,
+  isCapability,
   isMethod,
+  methodsRealizing,
   layerCensus,
   layerDepths,
   layerNode,
   nodesForEntry,
   refinementsOf,
+  repeatedSteps,
+  repetitionOf,
   rootCapabilities,
   siblingsOf,
   stateTraffic,
@@ -39,6 +44,7 @@ import {
   type LayerContract,
   type LayerGraph,
   type LayerMethod,
+  type StepRepetition,
 } from "./repository/layers.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import type { StateVocabulary } from "./repository/states.ts";
@@ -227,6 +233,186 @@ test("a corpus that does not carry a declared slug is counted, not silently abso
   const census = layerCensus(FIXTURE, new Set<string>(), FIXTURE_STATES);
   assert.equal(census.anchored, 0);
   assert.equal(census.unresolvedEntries, 1);
+});
+
+/**
+ * A fixture in the shape the owner described: one route that runs `encode` once
+ * per turn, one that declares nothing about it.
+ *
+ * `direct` is the backward-Euler shape — it needs `encode` and pays for it every
+ * step. `folder` is the all-at-once shape and records **no** multiplicity, which
+ * is a different statement from "records one". Nothing below asserts that it
+ * meets the slot once, because the graph does not say so.
+ */
+const LOOP_FIXTURE: LayerGraph = {
+  nodes: [
+    capability("solve", { contract: contract("alpha", "gamma") }),
+    capability("encode"),
+    method("direct", "solve", {
+      contract: contract("alpha", "gamma"),
+      steps: ["encode"],
+      atomic: undefined,
+      repeats: {
+        encode: {
+          count: "once per time step",
+          countJa: "各ステップにつき 1 回",
+          closure: "coherent",
+          note: "n",
+          noteJa: "n",
+        },
+      },
+    }),
+    method("folder", "solve", {
+      contract: contract("alpha", "gamma"),
+      steps: ["encode", "plain"],
+      atomic: undefined,
+    }),
+    method("encode-a", "encode"),
+    // A slot two routes step into and **neither** repeats. Without it, the
+    // "nothing to compare" case could only be asked of a slot nothing steps into
+    // at all, where the answer is empty for the wrong reason — which is exactly
+    // what happened: removing the guard in `foldedAgainst` left every test green.
+    capability("plain"),
+    method("plain-a", "plain"),
+  ],
+};
+
+test("a repeated hop is counted as a hop, and the denominator is carried with it", () => {
+  const census = layerCensus(LOOP_FIXTURE, new Set<string>(), FIXTURE_STATES);
+  // Three hops across two methods, one of which declares a multiplicity. The
+  // denominator is the point: without it, "1 loop" reads as "1 of 1".
+  assert.equal(census.stepInstances, 3);
+  assert.equal(census.iteratedSteps, 1);
+  assert.equal(census.coherentLoops, 1);
+  assert.equal(census.measuredLoops, 0);
+  assert.equal(census.contrastedSlots, 1);
+});
+
+test("a slot nothing repeats draws no contrast at all", () => {
+  // `plain` is a real hop — `folder` steps into it — and no route repeats it. The
+  // empty pair is what stops the capability page printing "no multiplicity
+  // recorded" as a list of shortcomings on a slot nobody is competing over.
+  // Asking this of a slot nothing steps into would answer empty for the wrong
+  // reason and let the guard be deleted with every test still green.
+  assert.ok(containersOf(LOOP_FIXTURE, "plain").length > 0);
+  const { unpinned, repeated } = foldedAgainst(LOOP_FIXTURE, "plain");
+  assert.deepEqual(unpinned, []);
+  assert.deepEqual(repeated, []);
+});
+
+test("the routes that declare no multiplicity are never called folded", () => {
+  const { unpinned, repeated } = foldedAgainst(LOOP_FIXTURE, "encode");
+  assert.deepEqual(
+    repeated.map((r) => r.method.id),
+    ["direct"],
+  );
+  // `folder` appears here because it takes the hop and records nothing about how
+  // often — not because the graph says it takes it once. The name of the field is
+  // the assertion; if it is ever renamed to `folded`, this test is the reason not
+  // to.
+  assert.deepEqual(
+    unpinned.map((m) => m.id),
+    ["folder"],
+  );
+  assert.equal(repetitionOf(unpinned[0]!, "encode"), null);
+});
+
+test("repeatedSteps follows the order a reader meets the steps in, not object order", () => {
+  const two = method("two", "solve", {
+    contract: contract("alpha", "gamma"),
+    steps: ["encode", "second"],
+    atomic: undefined,
+    // Written second-then-first on purpose: `Object.entries` would hand these
+    // back in insertion order and the page numbers its steps from `steps`.
+    repeats: {
+      second: { count: "n", countJa: "n", closure: "measured", note: "n", noteJa: "n" },
+      encode: { count: "m", countJa: "m", closure: "coherent", note: "n", noteJa: "n" },
+    },
+  });
+  assert.deepEqual(
+    repeatedSteps(two).map((r) => r.stepId),
+    ["encode", "second"],
+  );
+});
+
+test("validation rejects a repetition the route cannot honestly be making", () => {
+  const corpus = new Set<string>();
+  const bad = (extra: Partial<LayerMethod>) =>
+    validateLayerGraph(
+      {
+        nodes: [
+          capability("solve", { contract: contract("alpha", "gamma") }),
+          capability("encode"),
+          method("m", "solve", {
+            contract: contract("alpha", "gamma"),
+            steps: ["encode"],
+            atomic: undefined,
+            ...extra,
+          }),
+          method("encode-a", "encode"),
+        ],
+      },
+      corpus,
+      FIXTURE_STATES,
+    );
+  const rep = (over: Partial<StepRepetition> = {}): StepRepetition => ({
+    count: "once per step",
+    countJa: "各ステップにつき 1 回",
+    closure: "coherent",
+    note: "n",
+    noteJa: "n",
+    ...over,
+  });
+
+  assert.equal(bad({ repeats: { encode: rep() } }).length, 0);
+
+  // A hop this route does not take. The whole value of the annotation is that it
+  // is attached to a hop, so one attached to nothing is worse than absent.
+  assert.match(bad({ repeats: { solve: rep() } }).join("\n"), /not one of its steps/);
+
+  assert.match(bad({ repeats: {} }).join("\n"), /repeats records nothing/);
+
+  // The rule that is not a typo-catcher: skipping a layer and running it once per
+  // turn are the two opposite answers to one question. LCHS removes the
+  // linear-solve span; backward Euler pays it every step. A node asserting both
+  // renders as a route that avoids the cost it is charged for.
+  assert.match(
+    bad({ steps: ["encode"], bypasses: ["encode"], repeats: { encode: rep() } }).join("\n"),
+    /cannot skip a layer it runs once per turn/,
+  );
+
+  // A loop that turns once is not a loop — and recording it as one would put the
+  // badge on exactly the folded encodings that exist to avoid looping.
+  assert.match(bad({ repeats: { encode: rep({ count: "1" }) } }).join("\n"), /is "1"/);
+  assert.match(bad({ repeats: { encode: rep({ countJa: " 1 " }) } }).join("\n"), /is "1"/);
+
+  assert.match(bad({ repeats: { encode: rep({ count: "  " }) } }).join("\n"), /count is empty/);
+  assert.match(bad({ repeats: { encode: rep({ noteJa: "" }) } }).join("\n"), /noteJa is empty/);
+  assert.match(
+    bad({ repeats: { encode: rep({ closure: "sometimes" as never }) } }).join("\n"),
+    /closure is "sometimes"/,
+  );
+});
+
+test("every authored repetition names a step its own method takes, in both locales", () => {
+  // The authored graph, not the fixture. This is the rule most likely to rot as
+  // steps are re-cut underneath an annotation nobody re-reads.
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node) || node.repeats === undefined) continue;
+    for (const [stepId, repetition] of Object.entries(node.repeats)) {
+      assert.ok(node.steps.includes(stepId), `${node.id}: repeats ${stepId}, which is not a step`);
+      assert.ok(repetition.count.trim().length > 0);
+      assert.ok(repetition.countJa.trim().length > 0);
+      assert.ok(repetition.note.trim().length > 0);
+      assert.ok(repetition.noteJa.trim().length > 0);
+      // Every note is a paragraph of Japanese, not an English string copied
+      // across — the failure `:lang(ja)` cannot show and a screenshot cannot
+      // catch, because the page renders whatever is in the field.
+      assert.notEqual(repetition.note, repetition.noteJa, `${node.id}.${stepId}: Ja note is the En one`);
+      assert.match(repetition.noteJa, /[぀-ヿ一-龯]/, `${node.id}.${stepId}: noteJa has no Japanese`);
+      assert.match(repetition.countJa, /[぀-ヿ一-龯]/, `${node.id}.${stepId}: countJa has no Japanese`);
+    }
+  }
 });
 
 test("validation rejects the edges that would make a reading dishonest", () => {
@@ -519,4 +705,27 @@ test("the authored graph's own sibling sets partition, on every slot that has on
     }
     assert.equal(alternatives.size + refinements.length, siblings, node.id);
   }
+});
+
+test("every slot in the authored graph has at least two ways through it", () => {
+  // `whyALayer`'s own doctrine, asserted rather than reviewed: *"if there is no
+  // honest sentence saying which genuinely different methods compete for this
+  // slot, it is not a layer, it is a step in one method's write-up."*
+  //
+  // This is the single rule that decides whether the map stays a lattice as the
+  // corpus grows. A slot with one filler is indistinguishable from a stage in
+  // somebody's preferred pipeline, and at a thousand papers a map made of those
+  // is a thousand pipelines drawn on top of each other. Measured today: 18
+  // slots, minimum 2 methods, maximum 7, and 84 papers produced all 18 — slots
+  // saturate where methods and citations do not, and that is the scaling claim.
+  //
+  // A genuinely one-method slot is possible (the literature may have published
+  // exactly one way). If one arrives, amend this test with the reason rather
+  // than deleting it — an unasserted design rule is a design rule that has
+  // already been broken somewhere nobody looked.
+  const thin = LAYER_GRAPH.nodes
+    .filter(isCapability)
+    .map((node) => ({ id: node.id, ways: methodsRealizing(LAYER_GRAPH, node.id).length }))
+    .filter((slot) => slot.ways < 2);
+  assert.deepEqual(thin, []);
 });
