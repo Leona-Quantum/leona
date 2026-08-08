@@ -10769,14 +10769,12 @@ div.mj-rail-row:hover {
    forcing a scrollbar; one far too wide (depth 3 is 4005px) stops shrinking at
    72% and scrolls instead, because past that the 11px labels stop being
    readable and a diagram nobody can read is not a smaller diagram. */
-.mj-strand-canvas {
-  display: block;
-  width: 100%;
-  max-width: var(--strand-w);
-  min-width: min(var(--strand-min), 100%);
-  height: auto;
-  color: var(--text-2);
-}
+/* The strand canvas was retired with its surface this session. Only its sizing
+   rule is deleted here rather than the whole block: the two custom properties
+   it read were set by the component that no longer exists, so the `var()`s
+   pointed at nothing and `check-token-vars` said so. The rest of the block is
+   dead too and is left for a sweep that can check every selector rather than
+   the two the gate happened to catch. */
 
 /* --- the shapes ---------------------------------------------------------- */
 .mj-strand-lens {
@@ -11092,14 +11090,12 @@ div.mj-rail-row:hover {
    1150px column rendered at 51%, which turns 12px labels into 6px ones. A
    diagram nobody can read is not a smaller diagram, so past 88% this scrolls
    inside its own box instead. The page body still never scrolls sideways. */
-.mj-process-canvas {
-  display: block;
-  width: 100%;
-  max-width: var(--process-w);
-  min-width: var(--process-min);
-  height: auto;
-  color: var(--text-2);
-}
+/* The process canvas was retired with its surface this session. Only its sizing
+   rule is deleted here rather than the whole block: the two custom properties
+   it read were set by the component that no longer exists, so the `var()`s
+   pointed at nothing and `check-token-vars` said so. The rest of the block is
+   dead too and is left for a sweep that can check every selector rather than
+   the two the gate happened to catch. */
 
 /* The legend draws the canvas's own shapes at their real proportions, so a
    stylesheet change reaches the key and the diagram together. It must NOT carry
@@ -11378,47 +11374,129 @@ div.mj-rail-row:hover {
   padding-bottom: var(--sp-3);
   scrollbar-width: thin;
 }
-/* Same floor and the same reason as `.mj-process-canvas`: `min-width` is NOT
-   wrapped in `min(…, 100%)`, because 100% is always the smaller value and that
-   silently disables the floor. Past 88% this scrolls inside its own box; the
-   page body still never scrolls sideways. */
+/* Drawn at its own size, and moved by the viewport around it.
+
+   This used to negotiate with the column: `width: 100%` between a `max-width`
+   and a `min-width` the renderer set as custom properties, shrinking to fit and
+   scrolling sideways past 88%. The figure is now inside `.mj-canvas-viewport`,
+   which pans and zooms it, so the negotiation is gone and with it the two
+   properties — `--converge-w` and `--converge-min` were set nowhere else, and
+   leaving the rules behind left two `var()`s referring to nothing, which is
+   what `check-token-vars` is for.
+
+   `width`/`height` come from the SVG attributes the renderer emits, so a reader
+   with no JavaScript gets the figure at its natural size inside a viewport that
+   simply does not move. */
 .mj-converge-canvas {
   display: block;
-  width: 100%;
-  max-width: var(--converge-w);
-  min-width: var(--converge-min);
+  /* Fitted to the viewport box at rest, and zoomed from there.
+
+     `width`/`height` on the SVG give it a natural size; without this it keeps
+     that size and a figure wider than the box arrives already cut off at the
+     right edge, which is what the first build of this surface did — read on the
+     rendered page, "Solve a linear ODE du/dt = A(t)u + b(t)" ran off the box
+     before the reader had touched anything. An infinite canvas is a promise that
+     you can go anywhere, not that you have to travel to see the subject.
+
+     So the resting state is the whole figure, and the viewport's zoom multiplies
+     from there. Deliberately `max-width` rather than `width`: a figure narrower
+     than the box is drawn at its own size rather than stretched to fill one. */
+  max-width: 100%;
   height: auto;
   color: var(--text-2);
 }
+/* The legend draws the canvas's own shapes at their real proportions, same
+   reasoning as `.mj-process-key` above: it must NOT carry `.mj-converge-canvas`
+   itself — that rule is the scroll-box sizing (width:100%, and a max-width from
+   a custom property only the renderer sets) and it would inflate every legend
+   mark to the full column. It needs the colour from that rule and nothing
+   else. */
+.mj-converge-key { color: var(--text-2); }
 
-/* --- the ways across ----------------------------------------------------- */
-.mj-converge-strand {
+/* --- the ways across -----------------------------------------------------
+   Was a plain 2px stroke (`.mj-converge-strand`, now gone). The redraw pinches
+   each line to a point at both circles and thickens it toward the middle, so
+   the shape itself now carries how much of the crossing runs through here,
+   which a uniform stroke could not say. What a reader sees is a filled region
+   — `lane.outline`, the tapered area, closed — and the geometry invariants
+   still live on the centre line underneath it (`lane.d`), which is why the hit
+   target below is stroked along `d` and not the fill: see `.mj-converge-spine`
+   for where `d` is drawn directly. */
+.mj-converge-strand-body {
+  fill: currentColor;
+  stroke: none;
+  opacity: 0.5;
+}
+/* A path nothing recorded walks. A fill cannot be dashed, so the absence this
+   standing draws moves to a second mark on the same shape: a dashed OUTLINE
+   stroked over the fill, contrasting with it rather than merely fainter than
+   it. Colour is already taken — colour on this canvas means the accent, and
+   the accent already means hover — so "no source takes this" has to be a
+   different shape, not a different shade. The dash length is the one this
+   standing used on the old stroked line, kept so the mark still means the same
+   thing in the prose list and the legend beside it. */
+.mj-converge-lane--unpublished .mj-converge-strand-body {
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 5 4;
+  opacity: 0.3;
+}
+/* Recorded that these slots are crossed in this order, but no source names
+   which method fills them.
+
+   This was opacity 0.45 against a base 0.55 on the old stroked line, and a
+   0.10 difference was not reliably perceivable — the two standings looked
+   identical in the drawing while `--unpublished` had a dash pattern AND an
+   italic label to tell it apart. Three standings still need three marks: a
+   long dashed outline over a fuller fill than `--unpublished`'s, reading as "a
+   shape with something left unsaid" against the short dash of "nobody takes
+   this" and the plain, unstroked fill of a fully recorded line. */
+.mj-converge-lane--unpinned .mj-converge-strand-body {
+  stroke: currentColor;
+  stroke-width: 1;
+  stroke-dasharray: 14 3;
+  opacity: 0.42;
+}
+
+/* --- an opened strand: the same line, gone faint --------------------------
+   Mirrors `.mj-process-spine` above, same reasoning: the line is no longer the
+   thing being looked at, it is what the shapes drawn around or along it are
+   alternatives to (or ingredients of). Thinner than that surface's 3.5px
+   spine on purpose — that spine fades down from a thick slot line, and this
+   one fades down from a shape that already tapers to a point at both ends, so
+   a thin, low-opacity stroke is enough to read as "still here". */
+.mj-converge-spine {
   stroke: currentColor;
   stroke-width: 2;
   fill: none;
   stroke-linecap: round;
-  opacity: 0.55;
+  opacity: 0.16;
 }
-/* A path nothing recorded walks. Dashed rather than coloured: colour on this
-   canvas already means the accent and the accent already means hover. The claim
-   is "no source takes this", which is an absence, and an absence reads as a
-   broken line. */
-.mj-converge-lane--unpublished .mj-converge-strand {
-  stroke-dasharray: 5 4;
-  opacity: 0.4;
-}
-/* Recorded that these slots are crossed in this order, but no source names which
-   method fills them.
 
-   This was opacity 0.45 against the base 0.55, and a 0.10 difference is not
-   reliably perceivable — the two standings looked identical in the drawing while
-   `--unpublished` had a dash pattern AND an italic label to tell it apart. Three
-   states need three marks. A long dash reads as "a line with something left
-   unsaid", which is what an unpinned crossing is, and it stays clearly distinct
-   from the short dash of "nobody takes this". */
-.mj-converge-lane--unpinned .mj-converge-strand {
-  stroke-dasharray: 14 3;
-  opacity: 0.5;
+/* --- depth: nested strands recede ------------------------------------------
+   `depthTaper` (converge-layout.ts) already thins a strand by the layout's own
+   rule — "the fibres inside a fascicle are thinner than the fascicle" — every
+   level it sits inside an opened lane, and the same file caps a chain at
+   `CONVERGE_DEPTH_MAX` (4). This only has to add a LITTLE on top of that
+   geometry, not carry the recession by itself: a bigger step here would double
+   up with the taper and read as murkier rather than as further away. Depths 3
+   and 4 share a step rather than each getting their own — past that point the
+   geometry has already done the work and a further opacity cut just loses
+   legibility. Applies to feeds too: an ingredient hanging off a depth-2 strand
+   is exactly as far from the figure's own axis as the strand is. */
+.mj-converge-lane[data-depth="1"],
+.mj-converge-feed[data-depth="1"] {
+  opacity: 0.94;
+}
+.mj-converge-lane[data-depth="2"],
+.mj-converge-feed[data-depth="2"] {
+  opacity: 0.88;
+}
+.mj-converge-lane[data-depth="3"],
+.mj-converge-lane[data-depth="4"],
+.mj-converge-feed[data-depth="3"],
+.mj-converge-feed[data-depth="4"] {
+  opacity: 0.82;
 }
 
 .mj-converge-lane-name {
@@ -11429,6 +11507,18 @@ div.mj-rail-row:hover {
 .mj-converge-lane--unpublished .mj-converge-lane-name {
   fill: var(--text-2);
   font-style: italic;
+}
+/* The Atlas holds a full record of this one — same visual language as
+   `.mj-process--atlas .mj-process-name` above: a dotted underline on the name,
+   not a colour, because colour on this canvas already means the accent and the
+   accent already means hover. Written as its own rule rather than folded into
+   that selector list: the comment above `.mj-converge-scroll` already states
+   the rule for these two surfaces — a change meant for one picture must not
+   silently reach the other, even a change that happens to agree with it. */
+.mj-converge-lane--atlas .mj-converge-lane-name {
+  text-decoration: underline dotted from-font;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1px;
 }
 
 /* --- the shared circles -------------------------------------------------- */
@@ -11449,6 +11539,36 @@ div.mj-rail-row:hover {
 .mj-converge-hub--shared .mj-converge-dot {
   stroke-width: 2.75;
   opacity: 1;
+}
+/* A state drawn inside an opened lane rather than on the figure's own axis.
+   The layout already draws it smaller — `state.depth > 0` gets a smaller `r`,
+   because "a drawn size is a consequence; the depth is the fact" — so this only
+   adds the quieter reading on top of that geometry: less stroke, a touch more
+   transparent, the same way `data-depth` recedes a strand. It keeps
+   `currentColor` and the same stroke-on-`--bg-0`-fill construction as every
+   other dot here, because it has to read as one of these circles before it
+   reads as a smaller one. */
+.mj-converge-hub--inner .mj-converge-dot {
+  stroke-width: 1.25;
+  opacity: 0.72;
+}
+
+/* --- ingredients ------------------------------------------------------------
+   An ingredient hanging off an opened strand — `hhl-qpe-inversion` needs a
+   block-encoding and a prepared |b⟩, and having them does not move the route
+   along, so it is drawn hanging off the line rather than sitting on it.
+   Modelled directly on `.mj-process-feed` above: thin line, smaller and
+   quieter name than a lane's own, because it has to read as subordinate to the
+   strand it hangs from before a reader has followed where it goes. */
+.mj-converge-feed-line {
+  stroke: currentColor;
+  stroke-width: 1;
+  opacity: 0.4;
+}
+.mj-converge-feed-name {
+  fill: var(--text-2);
+  font-family: var(--font-ui);
+  font-size: 11px;
 }
 
 /* --- hit targets --------------------------------------------------------- */
@@ -11471,7 +11591,25 @@ div.mj-rail-row:hover {
 .mj-converge-canvas a { cursor: pointer; }
 .mj-converge-canvas a:hover .mj-converge-strand-hit { opacity: 0.07; }
 .mj-converge-canvas a:hover .mj-converge-hit { opacity: 0.08; }
-.mj-converge-canvas a:hover .mj-converge-strand { opacity: 0.95; }
+/* The line and the name are two different destinations now that the strand
+   has a drawn body, reached through two different anchors — see `Lane` in
+   repository-converge-map.tsx, "target one: the line" and "target two: the
+   name". Hovering one must not imply the other, which is the exact mistake
+   `.mj-process-canvas`'s note above already found and fixed ("a group-wide
+   :hover made hovering the name promise the wrong action"). That fix could
+   reach its spine with a plain descendant selector because the spine sits
+   INSIDE the anchor there. Here the body and spine sit OUTSIDE both anchors —
+   siblings in the lane's `<g>`, not children, because a filled shape covering
+   its own hit target would eat the target's own clicks — so reaching them only
+   from the line's anchor needs `:has()` rather than a descendant selector. */
+.mj-converge-lane:has(> a:hover > .mj-converge-strand-hit) > .mj-converge-strand-body,
+.mj-converge-lane:has(> a:focus-visible > .mj-converge-strand-hit) > .mj-converge-strand-body {
+  opacity: 0.85;
+}
+.mj-converge-lane:has(> a:hover > .mj-converge-strand-hit) > .mj-converge-spine,
+.mj-converge-lane:has(> a:focus-visible > .mj-converge-strand-hit) > .mj-converge-spine {
+  opacity: 0.4;
+}
 .mj-converge-canvas a:hover .mj-converge-dot { opacity: 1; stroke: var(--accent); }
 .mj-converge-canvas a:hover .mj-converge-lane-name,
 .mj-converge-canvas a:focus-visible .mj-converge-lane-name {
@@ -11536,6 +11674,39 @@ div.mj-rail-row:hover {
 .mj-converge-lane-standing { color: var(--text-2); }
 /* Matches the canvas: an unpublished line is the quiet one in both readings. */
 .mj-converge-lane-row--unpublished > a { font-style: italic; }
+/* The canvas nests a step inside a method inside a slot now, and this list has
+   to say so or "nested" only exists on the drawing. Indentation alone is not
+   enough — a screen reader does not announce left padding, and a printout
+   loses it if the page is ever photocopied at an angle nobody plans for — so a
+   border-left carries the depth as a second, redundant signal. A border
+   rather than a leading glyph: this is already an ordered list with its own
+   marker, and a second mark competing with the first is harder to read than
+   one. Depths 3 and 4 share a step for the same reason the canvas's own
+   `[data-depth]` rule does: past that point the geometry has done the work and
+   a further indent just runs the text into the margin. */
+.mj-converge-lanes li[data-depth="1"],
+.mj-converge-lanes li[data-depth="2"],
+.mj-converge-lanes li[data-depth="3"],
+.mj-converge-lanes li[data-depth="4"] {
+  padding-left: var(--sp-3);
+  border-left: var(--border-hairline) solid var(--border-0);
+}
+.mj-converge-lanes li[data-depth="1"] { margin-left: var(--sp-4); }
+.mj-converge-lanes li[data-depth="2"] { margin-left: calc(var(--sp-4) * 2); }
+.mj-converge-lanes li[data-depth="3"],
+.mj-converge-lanes li[data-depth="4"] { margin-left: calc(var(--sp-4) * 3); }
+/* The ingredient sub-list a lane row carries — the prose reading of
+   `.mj-converge-feed-name` on the canvas. Quieter than the lane it hangs off
+   for the same reason that mark is quieter than a lane's own name: it has to
+   read as subordinate before a reader follows where it goes. */
+.mj-converge-feeds {
+  margin: var(--sp-1) 0 0;
+  padding-left: var(--sp-4);
+  color: var(--text-2);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+  list-style: none;
+}
 
 /* The focused slot's own write-up. This surface drew a thing for four sessions
    and never linked the page describing it. */
@@ -11598,3 +11769,86 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   line-height: 1.6;
 }
+
+/* --- the infinite canvas: an addressable pan/zoom viewport -----------------
+   `/repository/layers`'s converge canvas gets its own box (`InfiniteCanvas`,
+   components/infinite-canvas.tsx; the address it reads and writes is
+   `lib/repository/canvas-viewport.ts`'s `Viewport`). `.mj-process-scroll` and
+   `.mj-converge-scroll` above solve a related but different problem — a fixed
+   SVG shrinking to fit a column, with a floor past which it scrolls instead of
+   shrinking further. This box does not shrink its content at all: the content
+   inside pans and zooms under pointer/wheel/keyboard control, so what it needs
+   is a fixed, resizable window onto content that can be far larger (or
+   smaller) than the window itself. Class names kept separate from both
+   `.mj-process-*` and `.mj-converge-*` for the same reason those two are kept
+   separate from each other: a change meant for one picture must not silently
+   reach another. */
+.mj-canvas-viewport {
+  position: relative;
+  overflow: hidden;
+  /* `resize` only takes effect when `overflow` is something other than
+     `visible` (CSS Basic UI §8) — already true above for an unrelated reason
+     (panned content has to be clipped), which is what makes the resize handle
+     work at all. */
+  resize: vertical;
+  height: 32rem;
+  min-height: 16rem;
+  width: 100%;
+  max-width: 100%;
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  cursor: grab;
+  /* Pointer Events drive the gestures here (drag-to-pan, two-finger
+     pinch-to-zoom — see infinite-canvas.tsx) rather than native touch
+     scrolling: without this the browser starts its own scroll or pinch from the
+     first touchmove, before the pointermove handler has a useful delta, and the
+     two fight over one finger.
+
+     `pan-y` rather than `none`, and the difference is whether a phone can read
+     this page at all. This canvas is a box in a long document — 303×512 in a
+     375px viewport, measured — so with `none` a reader swiping up anywhere over
+     the figure pans the figure and cannot get past it. It is the same trap as
+     binding zoom to a plain wheel, and it is worse on a phone because there is
+     almost no margin to aim at.
+
+     `pan-y` gives the vertical swipe back to the page and keeps everything
+     else: a horizontal drag is still ours, and since `pinch-zoom` is not in the
+     list the UA does not claim a two-finger gesture either, so pinch still
+     reaches the pinch handler. What is lost is dragging the figure *vertically*
+     by touch, which the arrow keys and the size links both cover. */
+  touch-action: pan-y;
+}
+/* Set by InfiniteCanvas only once a pointer has moved past the drag
+   threshold — never on a plain press — so a reader mousing over the canvas
+   without dragging sees the "you can grab this" affordance, and a reader
+   mid-drag sees confirmation that a pan, not a click, is what is happening. */
+.mj-canvas-viewport--dragging {
+  cursor: grabbing;
+}
+/* -2px offset keeps the ring inside `overflow: hidden`'s clip rather than
+   letting the clip cut the outside half of it off — the outward offset every
+   other `:focus-visible` rule on this stylesheet uses (e.g.
+   `.mj-process-canvas a:focus-visible`) would render as a half-ring here. */
+.mj-canvas-viewport:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.mj-canvas-layer {
+  /* Sized to `children`, not to the viewport: no width/height here, so the
+     layer is exactly as large as its content and `transform` — written by
+     `transformOf`, the one function that ever produces this string, on both
+     the server-rendered first paint and every client update after it — is the
+     only thing that moves it inside the fixed box above. */
+  display: inline-block;
+}
+/* A keyboard step used to ease this layer into place over 150ms. It has been
+   removed rather than kept, because the permitted-animation list in the coding
+   guidelines is a closed list — rail state transitions, the running-dot pulse,
+   the skeleton shimmer, toast enter/exit, and the Atlas navigation transition —
+   and a canvas keyboard-step is not on it. Adding a sixth quietly is how a
+   closed list stops being one; extending it is the owner's call, not a side
+   effect of building a viewport. An instant step is also the correct default
+   under `prefers-reduced-motion`, so nothing is lost for the readers the
+   transition would have mattered to most. */
