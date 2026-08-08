@@ -58,6 +58,7 @@ const corpusMod = await bundle("apps/web/lib/public-repository.ts", "public-repo
 const statesMod = await bundle("apps/web/lib/repository/state-vocabulary.ts", "state-vocabulary");
 const topicsMod = await bundle("apps/web/lib/repository/topics.ts", "topics");
 const eligibilityMod = await bundle("apps/web/lib/repository/map-eligibility.ts", "map-eligibility");
+const tracesMod = await bundle("apps/web/lib/repository/paper-traces.ts", "paper-traces");
 
 const { LAYER_GRAPH } = graphMod;
 const {
@@ -180,6 +181,25 @@ if (!QUIET) {
   console.log(
     `  ${census.iteratedSteps} of ${census.stepInstances} hops declare a multiplicity — ${census.coherentLoops} coherent, ${census.measuredLoops} closing through a measurement · ${census.contrastedSlots} slots draw the contrast: one route repeats, another records nothing`,
   );
+  // Papers as traces, measured rather than assumed. A citation attaches to one
+  // node and a trace is a path, so "a paper is a line on the map" is a claim
+  // about the graph that has to be counted before anything is built on it. The
+  // shape of the answer is the design: most papers are cited once and have no
+  // line to draw at all, and printing that is what stops a surface promising 84
+  // traces and rendering two.
+  const traces = tracesMod.paperTraces(LAYER_GRAPH);
+  const traceCensus = tracesMod.traceCensus(traces);
+  console.log(
+    `  ${traceCensus.papers} papers cited — ${traceCensus.point} at a single node, ${traceCensus.contiguous} contiguous, ${traceCensus.joinable} joinable through uncited nodes, ${traceCensus.scattered} with no path at all (widest: ${traceCensus.widest} nodes)`,
+  );
+  for (const trace of traces) {
+    if (trace.shape === "point") continue;
+    const bridge = trace.bridgeUpperBound ?? [];
+    console.log(
+      `  ${trace.paper} spans ${trace.nodes.length} nodes in ${trace.components.length} ${trace.components.length === 1 ? "piece" : "pieces"}` +
+        (bridge.length > 0 ? ` — joined through ≤${bridge.length} uncited (${bridge.join(", ")})` : ""),
+    );
+  }
   for (const node of LAYER_GRAPH.nodes) {
     if (!isMethod(node)) continue;
     for (const { stepId, repetition } of layersMod.repeatedSteps(node)) {

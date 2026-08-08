@@ -128,11 +128,32 @@ if (!QUIET) {
     console.log(`  ${audit.uncited.length} registered papers nothing cites yet`);
   }
   // What is NOT known about these papers, said out loud. `reports` is where the
-  // theory/simulation/hardware distinction lives, and it is empty.
-  const read = PAPER_REGISTER.papers.filter((paper) => paper.reports !== undefined).length;
+  // theory/simulation/hardware distinction lives, and the three axes were
+  // filled by three different rules — so they are printed as three lines. One
+  // "82 of 143 read" would let `simulation`, which is open on most rows, ride
+  // on `hardware`, which is decided on all of them.
+  const census = papers.reportsCensus(PAPER_REGISTER);
+  const bases = Object.entries(census.byBasis)
+    .filter(([, count]) => count > 0)
+    .map(([basis, count]) => `${count} from the ${basis}`)
+    .join(", ");
   console.log(
-    `  ${read} of ${PAPER_REGISTER.papers.length} papers record what they report on the theory/simulation/hardware axes`,
+    `  ${census.read} of ${census.papers} papers record what they report${bases ? ` — ${bases}` : ""}`,
   );
+  // The denominator that actually governs the pass. `reports` is filled on the
+  // map-cited papers first because they are the ones a process page shows, so
+  // "82 of 143" understates the coverage of the set being worked and would
+  // read as stalled when it is finished. Both numbers, neither alone.
+  const byId = papers.indexPapers(PAPER_REGISTER);
+  const mapCitedRead = audit.citedByNode.filter((id) => byId.get(id)?.reports).length;
+  console.log(
+    `    of the ${audit.citedByNode.length} papers a map node cites: ${mapCitedRead} read, ${audit.citedByNode.length - mapCitedRead} not`,
+  );
+  for (const [axis, counts] of Object.entries(census.byAxis)) {
+    console.log(
+      `    ${axis.padEnd(10)} ${counts.reported} reported · ${counts.absent} absent · ${counts.unknown} unknown`,
+    );
+  }
 }
 
 console.log(`✓ paper register valid (${PAPER_REGISTER.papers.length} papers, ${citations.length} citations)`);
