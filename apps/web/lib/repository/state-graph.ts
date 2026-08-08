@@ -21,8 +21,17 @@
 // | slots carrying a `from`/`to` contract | 18 of 18 |
 // | **methods** carrying their own contract | **0 of 58** |
 // | authored routes under `nonlinear-ode-solve` | **4** |
-// | distinct slot-paths the state graph already admits there | **6** |
-// | concrete method-chains those expand to | **435** |
+// | distinct slot-paths the state graph already admits there | **4 raw, 2 distinct** |
+// | concrete method-chains those expand to | **108** |
+//
+// The last two rows read **6** and **435** until session 97. Neither reproduced
+// against this module and no test pinned either — measured twice by different
+// routes, `statePathsBetween` returns 4 raw paths which dedupe to 2 distinct
+// slot-sequences, because the Koopman-von Neumann narrowing carries the same
+// `slot` id as the contract edge and so enumerates one journey twice. The
+// figures above are asserted in `repository-converge-layout.test.ts` now. The
+// argument is unchanged: the map drew authored routes and never walked the
+// graph they are paths through.
 //
 // The map drew the four. It could not draw the rest, because it enumerated
 // **authored route nodes** and never walked the graph those routes are paths
