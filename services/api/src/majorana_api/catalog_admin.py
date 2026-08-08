@@ -6,12 +6,13 @@ import argparse
 import asyncio
 import json
 import uuid
-from collections.abc import Sequence
+from collections.abc import Mapping, Sequence
+from dataclasses import dataclass
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import ImportJobStatus, Role
 
-from .catalog_attestation import AttestationPolicy
+from .catalog_attestation import AttestationPolicy, AttestedRecord
 from .catalog_authority import CatalogAuthority
 from .catalog_bootstrap_manifest import BootstrapManifestSource
 from .db import engine_from_env, session_factory
@@ -126,7 +127,155 @@ def _bootstrap_plan(source: BootstrapManifestSource, policy: AttestationPolicy):
     return policy.plan(claims, source.content_digests())
 
 
-async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
+@dataclass(frozen=True)
+class ReAttestationPlan:
+    """What an attest run will do to each record, decided before anything is written.
+
+    Four dispositions, each an identity list rather than a count, because every
+    one of them is a question a later reader asks as "which records?" and a
+    number sends them back to the manifest to work it out.
+
+    `re_signed` and `needs_signature` are the two halves of the same population —
+    records whose provenance claim moved. The operator's `--re-attest` list is
+    what moves an identity from the second to the first, and nothing else does.
+    """
+
+    first_signature: tuple[str, ...]
+    carried_forward: tuple[str, ...]
+    re_signed: tuple[str, ...]
+    needs_signature: tuple[str, ...]
+
+
+def parse_re_attest(raw: str | None) -> frozenset[str] | None:
+    """The identities an operator deliberately re-signed, or None if they passed no flag.
+
+    None and the empty set are deliberately different answers. Not passing the
+    flag is the normal run; passing `--re-attest ""` is an operator who believes
+    they authorised something and did not, and a run that quietly treated the two
+    the same would print "0 re-signed" under a command line that says otherwise.
+
+    A repeated identity refuses rather than being deduplicated silently. The list
+    is a hand-assembled decision record, and a repeat is the signature of one
+    assembled from two sources — where the second source is exactly the stale
+    list `plan_re_attestation` exists to catch, one level up.
+    """
+    if raw is None:
+        return None
+    parts = [part.strip() for part in raw.split(",")]
+    if not any(parts):
+        raise SystemExit("--re-attest was given no identities; omit the flag instead")
+    if not all(parts):
+        raise SystemExit(f"--re-attest has an empty identity in {raw!r}")
+    seen: set[str] = set()
+    for part in parts:
+        if part in seen:
+            raise SystemExit(f"--re-attest names {part!r} more than once")
+        seen.add(part)
+    return frozenset(seen)
+
+
+def plan_re_attestation(
+    records: Sequence[AttestedRecord],
+    previous_claims: Mapping[str, str | None],
+    requested: frozenset[str] | None,
+) -> ReAttestationPlan:
+    """Classify every record, and reconcile the operator's list against the refusals.
+
+    Separated from the writes so the **rule** is testable without a database —
+    same argument as `pick_live_reviewer`, and the same stakes: this rule is what
+    stands between "a human looked at a record whose stated origin moved" and "a
+    flag waved 283 records through".
+
+    Why `--re-attest` names identities instead of being `--force`: the guard at
+    `AttestedRecord.grant_carries_forward` exists so a person examines each record
+    whose provenance claim changed. A blanket override deletes the guard while
+    leaving it in the source, which is worse than not having it — the code still
+    reads as if someone is checking.
+
+    So the named set must equal the refused set **in both directions**:
+
+    - named but not refused — the operator is working from a list written against
+      an earlier state. Whatever they looked at is not what this run is doing.
+    - refused but not named — a refusal appeared after the list was written, and
+      letting the run continue would attest it on the strength of a decision made
+      about other records. This is the direction a `--force` cannot express at
+      all, and it is the one that actually protects the corpus.
+
+    Either way nothing is written: the reconciliation runs before the first
+    attestation rather than as the loop discovers refusals, so a disagreement
+    cannot leave a half-attested corpus behind.
+
+    With no flag (`requested is None`) every changed claim lands in
+    `needs_signature` and the caller fails closed exactly as it did before — the
+    283-record production run that motivated this stays byte-identical when the
+    flag is absent.
+    """
+    first: list[str] = []
+    carried: list[str] = []
+    changed: list[str] = []
+    for record in records:
+        identity = record.upstream_identity
+        previous = previous_claims[identity]
+        if previous is None:
+            first.append(identity)
+        elif record.grant_carries_forward(previous):
+            carried.append(identity)
+        else:
+            changed.append(identity)
+
+    if requested is None:
+        return ReAttestationPlan(
+            first_signature=tuple(sorted(first)),
+            carried_forward=tuple(sorted(carried)),
+            re_signed=(),
+            needs_signature=tuple(sorted(changed)),
+        )
+
+    known = {record.upstream_identity for record in records}
+    refused = set(changed)
+    # A typo and a stale list are both "named but not refused", and the operator's
+    # fix differs — one is a re-type, the other is a re-read of the diff. Split so
+    # the message says which.
+    unknown = sorted(requested - known)
+    not_refused = sorted((requested & known) - refused)
+    unnamed = sorted(refused - requested)
+    if unknown or not_refused or unnamed:
+        lines = ["--re-attest does not match what this run refused; nothing was attested."]
+        if unknown:
+            lines += ["  named but not in the corpus (typo?):", *(f"    {i}" for i in unknown)]
+        if not_refused:
+            # The most common way to land here is success: a re-attest run that
+            # worked leaves nothing refused, so repeating the identical command
+            # is now a stale list. Said out loud, because "these claims did not
+            # move" alone reads as a bug on the second run of a working command.
+            lines += [
+                "  named but not refused — these records' claims did not move (or a "
+                "previous run already re-signed them, in which case drop the flag):",
+                *(f"    {i}" for i in not_refused),
+            ]
+        if unnamed:
+            lines += [
+                "  refused but not named — these appeared after the list was written "
+                "and would ride through on a decision made about other records:",
+                *(f"    {i}" for i in unnamed),
+            ]
+        # Listed one per line rather than as a ready-to-paste comma string on
+        # purpose. The identities have to be here — an operator cannot act on a
+        # count — but handing back the exact argument makes "paste and re-run" the
+        # cheapest path, and the whole flag exists to buy a look at each record.
+        raise SystemExit("\n".join(lines))
+
+    return ReAttestationPlan(
+        first_signature=tuple(sorted(first)),
+        carried_forward=tuple(sorted(carried)),
+        re_signed=tuple(sorted(refused)),
+        needs_signature=(),
+    )
+
+
+async def _attest_bootstrap(
+    attested_by: uuid.UUID, re_attest: frozenset[str] | None = None
+) -> None:
     """Bind provenance + the owner's approved license onto the staged corpus.
 
     Records the owner's committed attestation (catalog_bootstrap/
@@ -136,6 +285,10 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
     The importer and the named reviewer stay distinct principals throughout.
 
     Nothing is published here. Idempotent: re-running only fills gaps.
+
+    `re_attest` carries the operator's deliberate re-signature of records whose
+    provenance claim moved (`--re-attest`); see `plan_re_attestation` for why it
+    names identities rather than being a `--force`.
     """
     authority = CatalogAuthority.from_env()
     authority.require_configured()
@@ -170,26 +323,46 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
             )
 
         attestation_meta = policy.audit_meta()
-        touched = 0
-        carried = 0
-        refused: list[str] = []
+
+        # Read every prior claim BEFORE writing anything. Owner decision B: a
+        # prior human grant binds to a record's new version when the provenance
+        # claim is unchanged, and refuses when it changed. A refusal is not a
+        # failure to be retried — it is the case that needs a person.
+        #
+        # Deciding the whole corpus up front is what makes `--re-attest`'s
+        # both-directions rule enforceable. Classifying inside the write loop
+        # would attest records 1..k and only then discover an unnamed refusal at
+        # k+1 — so the "refused but not named" half of the rule would fire after
+        # the ride-through it exists to prevent had already been committed. Same
+        # number of queries either way; only the ordering changes.
+        previous_claims: dict[str, str | None] = {}
         for record in plan.included:
-            artifact_id = targets[record.upstream_identity]
-            # Owner decision B: a prior human grant binds to a record's new
-            # version when the provenance claim is unchanged, and refuses when it
-            # changed. A refusal is not a failure to be retried — it is the case
-            # that needs a person, so it is collected and reported rather than
-            # swept into a 283-record bulk run where nobody would see it.
             async with factory() as session:
-                previous_claim = await catalog.latest_license_claim_hash(
-                    importer_scope, session, artifact_id, authority=authority
+                previous_claims[record.upstream_identity] = await catalog.latest_license_claim_hash(
+                    importer_scope,
+                    session,
+                    targets[record.upstream_identity],
+                    authority=authority,
                 )
-            carries = record.grant_carries_forward(previous_claim)
-            if previous_claim is not None and not carries:
-                refused.append(record.upstream_identity)
+        decision = plan_re_attestation(plan.included, previous_claims, re_attest)
+        carried_forward = set(decision.carried_forward)
+        re_signed = set(decision.re_signed)
+        refused = decision.needs_signature
+        skip = set(refused)
+
+        touched = 0
+        for record in plan.included:
+            identity = record.upstream_identity
+            # The override is exactly this: a re-signed identity is not in
+            # `refused`, so it is not skipped. It then attests with
+            # `record.claim_hash` — the NEW claim — down the same path as every
+            # other record, so the assertion it lands states what the record
+            # claims *now*. Nothing inherits the old grant's hash, which is the
+            # whole difference between a re-signature and a rubber stamp.
+            if identity in skip:
                 continue
-            if carries:
-                carried += 1
+            artifact_id = targets[identity]
+            previous_claim = previous_claims[identity]
 
             async with factory() as session:
                 performed = await catalog.attest_catalog_record(
@@ -215,7 +388,18 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
                     },
                     attestation_meta={
                         **attestation_meta,
-                        "grant_carried_forward": carries,
+                        "grant_carried_forward": identity in carried_forward,
+                        # The field that tells a future reader "a human looked at
+                        # this record's moved claim and signed it again" apart
+                        # from "the hash matched and nobody was asked".
+                        #
+                        # In principle derivable — carried_forward False beside a
+                        # non-null previous_claim_hash can only mean a
+                        # re-signature — but only for a reader who knows that
+                        # combination was *impossible* before this flag existed,
+                        # because the run exited instead. Stated rather than
+                        # inferable-from-the-release-date.
+                        "re_signed_after_claim_change": identity in re_signed,
                         "previous_claim_hash": previous_claim,
                     },
                 )
@@ -240,11 +424,20 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
                     **attestation_meta,
                     "manifest_checksum": source.manifest_checksum,
                     "attested_count": len(plan.included) - len(refused),
-                    "carried_forward_count": carried,
+                    "carried_forward_count": len(carried_forward),
                     "excluded": {r.upstream_identity: r.reason for r in plan.excluded},
                     # Named, not counted: "3 records were refused" sends whoever
                     # reads this back to the import to work out which three.
-                    "refused_provenance_claim_changed": sorted(refused),
+                    "refused_provenance_claim_changed": list(refused),  # sorted by the planner
+                    # The corpus-level half of the per-record
+                    # `re_signed_after_claim_change`. Keyed by identity to the
+                    # claim hash the grant moved *from*, mirroring `excluded`'s
+                    # {identity: reason} — so this one row answers "which records
+                    # did a human re-sign, and what was signed before" without a
+                    # join back to the per-record audit rows.
+                    "re_signed_after_claim_change": {
+                        identity: previous_claims[identity] for identity in decision.re_signed
+                    },
                 },
             )
             await session.commit()
@@ -252,11 +445,17 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
         print(
             f"bulk attestation complete: spdx={policy.spdx_id} "
             f"attested={len(plan.included) - len(refused)} changed_this_run={touched} "
-            f"carried_forward={carried} needs_signature={len(refused)} "
+            f"carried_forward={len(carried_forward)} re_signed={len(re_signed)} "
+            f"needs_signature={len(refused)} "
             f"excluded={len(plan.excluded)} policy={policy.checksum[:12]}"
         )
         for excluded in plan.excluded:
             print(f"  excluded {excluded.upstream_identity}: {excluded.reason}")
+        # Unsliced, unlike the refusal list below: a re-signature is a human act
+        # this run performed, and truncating the record of what someone signed to
+        # "and 4 more" is the one list nobody may have to reconstruct.
+        for identity in decision.re_signed:
+            print(f"  re-signed after a provenance claim change (--re-attest): {identity}")
         for identity in refused[:20]:
             print(f"  needs a fresh signature (provenance claim changed): {identity}")
         if refused:
@@ -266,7 +465,8 @@ async def _attest_bootstrap(attested_by: uuid.UUID) -> None:
             # a grant made about something else.
             raise SystemExit(
                 f"{len(refused)} records changed their provenance claim and cannot "
-                "inherit the existing grant; re-attest them deliberately"
+                "inherit the existing grant. Look at what moved in each, then re-run "
+                "naming exactly those identities: --re-attest <identity>,<identity>,…"
             )
     finally:
         await engine.dispose()
@@ -323,7 +523,7 @@ async def _publish_bootstrap(attested_by: uuid.UUID) -> None:
         await engine.dispose()
 
 
-async def _sync_bootstrap(attested_by: uuid.UUID) -> None:
+async def _sync_bootstrap(attested_by: uuid.UUID, re_attest: frozenset[str] | None = None) -> None:
     """Import, attest and publish the manifest as one operation.
 
     This exists because the three steps are not independently safe to leave
@@ -336,13 +536,23 @@ async def _sync_bootstrap(attested_by: uuid.UUID) -> None:
     Each step is separately idempotent and each is the same function the
     individual subcommands call, so this is a sequencing guarantee, not a second
     implementation that could drift from them.
+
+    `re_attest` passes straight through to the attest step. It matters most here:
+    a refusal in the middle of *this* command is exactly the state that leaves the
+    corpus staged-but-unpublished, which is the gap the command exists to close.
     """
     await _bootstrap_import()
-    await _attest_bootstrap(attested_by)
+    await _attest_bootstrap(attested_by, re_attest)
     await _publish_bootstrap(attested_by)
 
 
 _NEEDS_REVIEWER = {"attest-bootstrap", "publish-bootstrap", "sync-bootstrap"}
+
+# The two commands that attest. `publish-bootstrap` re-evaluates readiness and
+# never signs anything, so accepting --re-attest there would take a list of
+# identities the operator had examined and do nothing with it — a flag that reads
+# as a decision and is not one.
+_ACCEPTS_RE_ATTEST = {"attest-bootstrap", "sync-bootstrap"}
 
 # A user row whose WorkOS id starts with this is a casualty of the environment
 # switch, not an account anybody signs in to. See `_resolve_reviewer_by_email`.
@@ -437,11 +647,27 @@ def main() -> None:
         help="resolve the reviewer from a user email instead of pasting a UUID. "
         "Refuses if the email is ambiguous; see _resolve_reviewer_by_email (D70.2)",
     )
+    parser.add_argument(
+        "--re-attest",
+        metavar="IDENTITY,IDENTITY,…",
+        help="upstream identities whose provenance claim changed and which you have "
+        "looked at and are deliberately re-signing. NOT a --force: the named set must "
+        "equal the refused set exactly, in both directions, or the run refuses without "
+        "attesting anything. See plan_re_attestation",
+    )
     args = parser.parse_args()
     if args.attested_by and args.attested_by_email:
         parser.error("pass --attested-by or --attested-by-email, not both")
     if args.command in _NEEDS_REVIEWER and not (args.attested_by or args.attested_by_email):
         parser.error(f"{args.command} requires --attested-by or --attested-by-email")
+    if args.re_attest is not None and args.command not in _ACCEPTS_RE_ATTEST:
+        parser.error(
+            f"--re-attest applies to {' and '.join(sorted(_ACCEPTS_RE_ATTEST))}, not {args.command}"
+        )
+    # Parsed before anything connects to a database: a malformed list is an
+    # operator typo, and discovering it after a 283-record import is the shape of
+    # failure `_sync_bootstrap` and the reviewer resolution above already avoid.
+    re_attest = parse_re_attest(args.re_attest)
     if args.command == "provision":
         asyncio.run(_provision())
         return
@@ -460,11 +686,11 @@ def main() -> None:
             else await _resolve_reviewer_by_email(args.attested_by_email)
         )
         if args.command == "attest-bootstrap":
-            await _attest_bootstrap(reviewer)
+            await _attest_bootstrap(reviewer, re_attest)
         elif args.command == "publish-bootstrap":
             await _publish_bootstrap(reviewer)
         else:
-            await _sync_bootstrap(reviewer)
+            await _sync_bootstrap(reviewer, re_attest)
 
     asyncio.run(_run())
 
