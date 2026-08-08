@@ -29,6 +29,7 @@
 // would silently delete the zoom this surface is built around.
 import { LayerCensusPanel } from "./repository-layers";
 import { ConvergeCanvas } from "./repository-converge-map";
+import { CanvasContinuity } from "./canvas-continuity";
 import { InfiniteCanvas } from "./infinite-canvas";
 import {
   CONVERGE_OPEN_MAX,
@@ -771,30 +772,34 @@ export function ConvergeView({
 
           <div className="mj-strand-body">
             <div>
-              {/* The viewport is the only client component on this surface, and
-                  it is deliberately only a viewport: the drawing inside it
-                  arrives from the server as links, so a reader with JavaScript
-                  off gets the same figure at the same place, just fixed. */}
-              <InfiniteCanvas
-                initial={viewport}
-                label={copy.canvasLabel(focus ? label(focus) : copy.heading)}
-                locale={locale}
-              >
-                {drawn.map((figure) => (
-                  <ConvergeCanvas
-                    key={figure.subject.id}
-                    diagram={figure.diagram}
-                    locale={locale}
-                    title={label(figure.subject)}
-                    subjectId={figure.subject.id}
-                    atlas={atlas}
-                    // One set across all four figures — see `claimed`. Built
-                    // here because this is the component that knows how many
-                    // figures the page is drawing.
-                    claimed={claimed}
-                  />
-                ))}
-              </InfiniteCanvas>
+              {/* Two client components, and neither of them draws anything: the
+                  viewport moves the figure, and `CanvasContinuity` changes how a
+                  same-page link is followed so the drawing rearranges instead of
+                  the document being replaced. The figure inside still arrives
+                  from the server as links, so a reader with JavaScript off gets
+                  the same figure at the same place — fixed, and navigating. */}
+              <CanvasContinuity>
+                <InfiniteCanvas
+                  initial={viewport}
+                  label={copy.canvasLabel(focus ? label(focus) : copy.heading)}
+                  locale={locale}
+                >
+                  {drawn.map((figure) => (
+                    <ConvergeCanvas
+                      key={figure.subject.id}
+                      diagram={figure.diagram}
+                      locale={locale}
+                      title={label(figure.subject)}
+                      subjectId={figure.subject.id}
+                      atlas={atlas}
+                      // One set across all four figures — see `claimed`. Built
+                      // here because this is the component that knows how many
+                      // figures the page is drawing.
+                      claimed={claimed}
+                    />
+                  ))}
+                </InfiniteCanvas>
+              </CanvasContinuity>
 
               <p className="mj-strand-note">
                 {collapsed > 0 ? copy.collapsed(collapsed) : copy.allOpen}
