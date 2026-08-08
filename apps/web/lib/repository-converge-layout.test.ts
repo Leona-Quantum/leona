@@ -23,7 +23,7 @@ import {
   type ConvergeDiagram,
   type ConvergeLane,
 } from "./repository/converge-layout.ts";
-import { expansionOf, methodFanOf } from "./repository/state-graph.ts";
+import { PATH_LIMITS, expansionOf, methodFanOf } from "./repository/state-graph.ts";
 import { estimateTextWidth } from "./repository/process-layout.ts";
 import {
   isCapability,
@@ -32,6 +32,7 @@ import {
   type LayerCapability,
 } from "./repository/layers.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
+import type { StateVocabulary } from "./repository/states.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 import type { PublicLocale } from "./public-locale.ts";
 
@@ -629,12 +630,61 @@ test("a cap that bites is reported rather than read as a slot with nothing finer
     assert.equal(diagram.chainConsistent, true, `${focus.id} has an inconsistent chain`);
   }
 
-  // And the carrying is real, not a field wired to a constant: a graph whose
-  // walk exceeds the hop cap sets it.
-  const deep = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, {
-    ...(layerNode(LAYER_GRAPH, "nonlinear-ode-solve") as LayerCapability),
+  // And the carrying is real rather than a field wired to a constant.
+  //
+  // The first draft of this assertion spread an unchanged capability and
+  // asserted `truncated === false` under a comment claiming it proved a biting
+  // cap did the opposite. It proved nothing — it repeated the loop above. A
+  // comment saying a thing is checked is not a check, so the cap is made to bite
+  // on a graph built for it: a chain of `maxHops + 2` slots between the ends,
+  // which no walk can cross inside the budget.
+  const hops = PATH_LIMITS.maxHops + 2;
+  const ids = Array.from({ length: hops + 1 }, (unused, at) => `synthetic-state-${at}`);
+  const vocabulary: StateVocabulary = {
+    states: ids.map((id) => ({
+      id,
+      label: id,
+      labelJa: id,
+      summary: id,
+      summaryJa: id,
+      specializes: [],
+    })),
+  };
+  const link = (at: number): LayerCapability => ({
+    kind: "capability",
+    id: `synthetic-slot-${at}`,
+    label: `synthetic-slot-${at}`,
+    labelJa: `synthetic-slot-${at}`,
+    summary: "",
+    summaryJa: "",
+    whyALayer: "",
+    whyALayerJa: "",
+    contract: {
+      from: ids[at]!,
+      to: ids[at + 1]!,
+      takes: "",
+      takesJa: "",
+      returns: "",
+      returnsJa: "",
+    },
   });
-  assert.equal(deep.truncated, false);
+  const spanning: LayerCapability = {
+    ...link(0),
+    id: "synthetic-span",
+    label: "synthetic-span",
+    labelJa: "synthetic-span",
+    contract: { ...link(0).contract, from: ids[0]!, to: ids[hops]! },
+  };
+  const chain = {
+    nodes: [...Array.from({ length: hops }, (unused, at) => link(at)), spanning],
+  } as unknown as typeof LAYER_GRAPH;
+
+  const capped = expansionOf(chain, vocabulary, spanning);
+  assert.equal(capped.truncated, true, "a walk past maxHops must report the cap");
+  // …and this is the failure mode the field exists to make visible: the cap
+  // biting is reported as "nothing finer is recorded", which is what an
+  // genuinely atomic slot returns too.
+  assert.equal(capped.atomicAtThisLevel, true);
 });
 
 test("the crossings at a shared circle count methods, and count each one once", () => {

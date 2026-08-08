@@ -190,7 +190,15 @@ export function ConvergeView({
       </div>
 
       <h1 id="converge-heading">{copy.heading}</h1>
-      <p className="mj-layers-lede">{diagram?.grain === "methods" ? copy.ledeFan : copy.lede}</p>
+      {/* `grain` is only meaningful once something is drawn. The empty result
+          carries `grain: "methods"` because a fan is what it failed to build,
+          and reading it before the `empty` check printed "the lines between its
+          two circles are the recorded ways of taking it" above a page with no
+          lines and no circles. Unreachable on the authored graph — no slot is
+          unfilled — which is exactly why it would have sat there. */}
+      <p className="mj-layers-lede">
+        {diagram && !diagram.empty && diagram.grain === "methods" ? copy.ledeFan : copy.lede}
+      </p>
 
       {diagram && !diagram.empty ? (
         <>
