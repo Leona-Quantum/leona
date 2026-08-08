@@ -56,6 +56,8 @@ const graphMod = await bundle("apps/web/lib/repository/layer-graph.ts", "layer-g
 const layersMod = await bundle("apps/web/lib/repository/layers.ts", "layers");
 const corpusMod = await bundle("apps/web/lib/public-repository.ts", "public-repository");
 const statesMod = await bundle("apps/web/lib/repository/state-vocabulary.ts", "state-vocabulary");
+const topicsMod = await bundle("apps/web/lib/repository/topics.ts", "topics");
+const eligibilityMod = await bundle("apps/web/lib/repository/map-eligibility.ts", "map-eligibility");
 
 const { LAYER_GRAPH } = graphMod;
 const {
@@ -92,6 +94,29 @@ for (const node of LAYER_GRAPH.nodes) {
   }
 }
 
+// Which records may be cross-linked from a node at all. Only checkable here, for
+// the same reason the slug-resolution rule is: it needs the corpus, and the
+// corpus carries the `role` facet the rule reads.
+//
+// It has never fired — all 9 anchors are `algorithm-reference` — and that is
+// precisely why it exists. A convention nobody has broken yet is one helpful
+// cross-link away from being broken, and a gate record hanging off
+// `quantum-linear-solve` renders as "the Atlas documents this layer".
+const anchorAudit = eligibilityMod.auditAnchors(
+  LAYER_GRAPH.nodes.flatMap((node) =>
+    (node.entries ?? []).map((slug) => ({ nodeId: node.id, slug })),
+  ),
+  PUBLIC_REPOSITORY_ENTRIES.map((entry) => ({
+    slug: entry.slug,
+    role: topicsMod.roleOf(entry.topics ?? []),
+  })),
+);
+for (const { nodeId, slug, role } of anchorAudit.ineligible) {
+  errors.push(
+    `${nodeId}: entries names ${slug}, whose role is ${role ?? "none"} — only ${eligibilityMod.MAP_ELIGIBLE_ROLES.join(", ")} records may be anchored to a layer`,
+  );
+}
+
 // The route `/repository/layers/...` shadows `/repository/[slug]` for the static
 // segment. A record whose slug is that segment would 200 with the wrong page.
 for (const segment of layersMod.RESERVED_REPOSITORY_SEGMENTS) {
@@ -121,6 +146,14 @@ if (!QUIET) {
   );
   console.log(
     `  ${census.anchored} carry a corpus record (${census.distinctEntries} distinct records referenced of ${corpus.size})`,
+  );
+  // The separation the owner asked for, as two numbers. `corpus.size` is the
+  // wrong denominator for "how much of the Atlas is on the map" and always has
+  // been: 213 of the 283 are benchmark circuits, operators, gates and states,
+  // none of which a layer node could honestly anchor. Against the eligible set
+  // the coverage is a real fraction and the shortfall is a reading list.
+  console.log(
+    `  ${anchorAudit.anchored} of ${anchorAudit.eligible} map-eligible records anchored — ${anchorAudit.unanchored.length} algorithm records no node reaches`,
   );
   console.log(
     `  ${census.openCapabilities} capabilities nothing realises yet · ${census.undecomposedMethods} methods nobody has decomposed`,

@@ -182,3 +182,45 @@ test("every topic an entry can carry resolves to a facet", () => {
     assert.equal(TOPICS_BY_ID.get(topic.id)?.facet, topic.facet);
   }
 });
+
+test("a width-family member is a benchmark circuit whatever its family says", () => {
+  // The one family whose members do not share a role. `FAMILY_RULES` is
+  // exhaustive over families and each rule assigns exactly one role, so this is
+  // the case it structurally cannot express — and it was wrong on eight records:
+  // "Quantum machine learning" holds `quantum-kernel-svm`, a genuine algorithm
+  // reference, and the same feature-map circuit published at eight widths.
+  const reference = deriveTopics({
+    slug: "quantum-kernel-svm",
+    category: "algorithms",
+    algorithmFamily: "Quantum machine learning",
+    tags: ["quantum kernel", "machine learning"],
+  });
+  const instance = deriveTopics({
+    slug: "benchmark-phase-feature-map-16q",
+    category: "algorithms",
+    algorithmFamily: "Quantum machine learning",
+    tags: ["quantum kernel", "machine learning", "feature map"],
+  });
+
+  assert.equal(roleOf(reference), "algorithm-reference");
+  assert.equal(roleOf(instance), "benchmark-circuit");
+  // The reclassification REPLACES the role and leaves everything else standing —
+  // the instance is still a quantum-kernel record, and losing that would trade
+  // one wrong facet for another.
+  assert.ok(instance.includes("quantum-kernel"));
+  assert.ok(instance.includes("machine-learning"));
+  // Exactly one role, always. Two is the same failure as none.
+  assert.equal(topicsInFacetOf(instance, "role").length, 1);
+});
+
+test("the width rule reads the slug, so a family whose rule already says benchmark is unchanged", () => {
+  // Guards against the reclassification being written as "anything in a family
+  // containing a width slug", which would be a different and much wider rule.
+  const plain = deriveTopics({
+    slug: "grover-unstructured-search",
+    category: "algorithms",
+    algorithmFamily: "Amplitude amplification",
+    tags: ["grover", "oracle"],
+  });
+  assert.equal(roleOf(plain), "algorithm-reference");
+});
