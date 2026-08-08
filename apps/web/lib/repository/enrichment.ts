@@ -34,10 +34,10 @@ export type EntryEnrichment = Partial<
 // overwritten by the barrel's shallow spread merge for entries that already
 // carry citations).
 const NIELSEN_CHUANG: PublicRepositoryCitation = {
-  title: "Quantum Computation and Quantum Information",
-  authors: "Michael A. Nielsen, Isaac L. Chuang",
-  year: "2010 (10th anniversary edition)",
-  url: "https://doi.org/10.1017/CBO9780511976667",
+  title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+  authors: "Michael A. Nielsen and Isaac L. Chuang",
+  year: "2010",
+  url: "https://doi.org/10.1017/cbo9780511976667",
   relevance:
     "Standard graduate textbook covering the single- and two-qubit gate definitions, matrix identities, and circuit primitives this record states.",
   relevanceJa:
@@ -48,7 +48,7 @@ const BELL_1964: PublicRepositoryCitation = {
   title: "On the Einstein Podolsky Rosen Paradox",
   authors: "John S. Bell",
   year: "1964",
-  url: "https://doi.org/10.1103/PhysicsPhysiqueFizika.1.195",
+  url: "https://doi.org/10.1103/physicsphysiquefizika.1.195",
   relevance:
     "Introduces the Bell inequality that distinguishes entangled correlations, such as the Bell state, from any local hidden-variable model.",
   relevanceJa: "ベル状態のようなエンタングルした相関を局所隠れ変数モデルと区別するベル不等式の原論文です。",
@@ -56,7 +56,7 @@ const BELL_1964: PublicRepositoryCitation = {
 
 const COPPERSMITH_APPROX_QFT: PublicRepositoryCitation = {
   title: "An approximate Fourier transform useful in quantum factoring",
-  authors: "Don Coppersmith",
+  authors: "D. Coppersmith",
   year: "2002",
   url: "https://arxiv.org/abs/quant-ph/0201067",
   relevance: "Analyzes an approximate QFT construction and the gate-count/precision trade-off this record describes.",
@@ -67,7 +67,7 @@ const BENNETT_WIESNER_1992: PublicRepositoryCitation = {
   title: "Communication via one- and two-particle operators on Einstein-Podolsky-Rosen states",
   authors: "Charles H. Bennett, Stephen J. Wiesner",
   year: "1992",
-  url: "https://doi.org/10.1103/PhysRevLett.69.2881",
+  url: "https://doi.org/10.1103/physrevlett.69.2881",
   relevance: "Original superdense-coding protocol: encoding two classical bits into one transmitted qubit using a shared entangled pair.",
   relevanceJa: "共有エンタングル対を使い、1量子ビットの送信で2古典ビットを符号化する超密符号化の原論文です。",
 };
@@ -113,8 +113,8 @@ export const ENTRY_ENRICHMENT: Record<string, EntryEnrichment> = {
         citations: [
           {
             title: "Subspace-search variational quantum eigensolver for excited states",
-            authors: "K. M. Nakanishi, K. Mitarai, K. Fujii",
-            year: "2019",
+            authors: "Ken M Nakanishi, Kosuke Mitarai, Keisuke Fujii",
+            year: "2018",
             url: "https://arxiv.org/abs/1810.09434",
             relevance:
               "The source this gap is declared against. Read end to end for gate G1 on 2026-08-06; it reports simulated results for 4-qubit Hamiltonians but publishes no error or precision figures for them.",

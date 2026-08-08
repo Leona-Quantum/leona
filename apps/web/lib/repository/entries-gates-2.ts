@@ -10,14 +10,14 @@ const NIELSEN_CHUANG = {
   title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
   authors: "Michael A. Nielsen and Isaac L. Chuang",
   year: "2010",
-  url: "https://www.cambridge.org/highereducation/books/quantum-computation-and-quantum-information/01E10196D0A682A6AEFFEA52D53BE9AE",
+  url: "https://doi.org/10.1017/cbo9780511976667",
   relevance: "Standard reference for gate matrices, the Clifford/non-Clifford distinction, and controlled-gate constructions used throughout this record.",
   relevanceJa: "ゲート行列、クリフォード／非クリフォードの区別、制御ゲートの構成に関する標準的な参考文献です。",
 };
 
 const OPENQASM3_PAPER = {
   title: "OpenQASM 3: A broader and deeper quantum assembly language",
-  authors: "Andrew W. Cross, Ali Javadi-Abhari, Thomas Alexander, et al.",
+  authors: "Andrew W. Cross, Ali Javadi-Abhari, Thomas Alexander, Niel de Beaudrap, Lev S. Bishop, Steven Heidel, Colm A. Ryan, Prasahnt Sivarajah, John Smolin, Jay M. Gambetta, Blake R. Johnson",
   year: "2021",
   url: "https://arxiv.org/abs/2104.14722",
   relevance: "Defines the standard gate library (id, sdg, tdg, cy, crz, rxx, rzz, ccx, cx…) used natively by the code snippets on this record.",
@@ -25,16 +25,16 @@ const OPENQASM3_PAPER = {
 };
 
 const MCKAY_2017 = {
-  title: "Efficient Z gates for quantum computing",
+  title: "Efficient Z-Gates for Quantum Computing",
   authors: "David C. McKay, Christopher J. Wood, Sarah Sheldon, Jerry M. Chow, Jay M. Gambetta",
-  year: "2017",
+  year: "2016",
   url: "https://arxiv.org/abs/1612.00858",
   relevance: "Establishes the virtual-Z / calibrated-pulse framework that IBM's native two-qubit gates, including the cross-resonance family, are compiled within.",
   relevanceJa: "IBMのネイティブ2量子ビットゲート（クロス共鳴系列を含む）がその中でコンパイルされる、仮想Z・較正済みパルスの枠組みを確立します。",
 };
 
 const SHELDON_2016 = {
-  title: "Procedure for systematically tuning up crosstalk in the cross-resonance gate",
+  title: "Procedure for systematically tuning up crosstalk in the cross resonance gate",
   authors: "Sarah Sheldon, Easwar Magesan, Jerry M. Chow, Jay M. Gambetta",
   year: "2016",
   url: "https://arxiv.org/abs/1603.04821",

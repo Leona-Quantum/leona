@@ -71,9 +71,9 @@ export const LAYER_GRAPH: LayerGraph = {
       "time-discretization": "forward-euler",
     },
     citations: [
-      { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Liu, Kolden, Krovi, Loureiro, Trivisa, Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
-      { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
-      { title: "Detailed assessment of calculating drag force with quantum computers: Explicit time-evolution precludes exponential advantage for nonlinear differential equations", authors: "Penuel, Katabarwa, Johnson, Kuklinski, Rempfer, Farquhar, Cao, Garrett", year: "2024", url: "https://arxiv.org/abs/2406.06323" },
+      { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Jin-Peng Liu, Herman Øie Kolden, Hari K. Krovi, Nuno F. Loureiro, Konstantina Trivisa, Andrew M. Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
+      { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
+      { title: "Detailed assessment of calculating drag force with quantum computers: Explicit time-evolution precludes exponential advantage for nonlinear differential equations", authors: "John Penuel, Amara Katabarwa, Peter D. Johnson, Parker Kuklinski, Benjamin Rempfer, Collin Farquhar, Yudong Cao, Michael C. Garrett", year: "2024", url: "https://arxiv.org/abs/2406.06323" },
     ],
   },
   {
@@ -102,7 +102,7 @@ export const LAYER_GRAPH: LayerGraph = {
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["amplitude-estimation"],
     citations: [
-      { title: "Koopman-von Neumann Approach to Quantum Simulation of Nonlinear Classical Dynamics", authors: "Joseph", year: "2020", url: "https://arxiv.org/abs/2003.09980" },
+      { title: "Koopman-von Neumann Approach to Quantum Simulation of Nonlinear Classical Dynamics", authors: "Ilon Joseph", year: "2020", url: "https://arxiv.org/abs/2003.09980" },
     ],
   },
   {
@@ -123,7 +123,7 @@ export const LAYER_GRAPH: LayerGraph = {
     // "solve the linear problem quantumly" and names no algorithm.
     via: { "nonlinear-linear-embedding": "level-set-linearization" },
     citations: [
-      { title: "Quantum algorithms for computing observables of nonlinear partial differential equations", authors: "Jin, Liu", year: "2022", url: "https://arxiv.org/abs/2202.07834" },
+      { title: "Quantum algorithms for computing observables of nonlinear partial differential equations", authors: "Shi Jin, Nana Liu", year: "2022", url: "https://arxiv.org/abs/2202.07834" },
     ],
   },
   {
@@ -144,8 +144,8 @@ export const LAYER_GRAPH: LayerGraph = {
     // "a quantum linear-ODE algorithm", unnamed, so that hop stays a slot.
     via: { "nonlinear-linear-embedding": "homotopy-perturbation-lift" },
     citations: [
-      { title: "Quantum homotopy perturbation method for nonlinear dissipative ordinary differential equations", authors: "Xue, Wu, Guo", year: "2021", url: "https://arxiv.org/abs/2111.07486" },
-      { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
+      { title: "Quantum homotopy perturbation method for nonlinear dissipative ordinary differential equations", authors: "Cheng Xue, Yu-Chun Wu, Guo-Ping Guo", year: "2021", url: "https://arxiv.org/abs/2111.07486" },
+      { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
     ],
   },
   {
@@ -182,8 +182,8 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Liu, Kolden, Krovi, Loureiro, Trivisa, Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
-      { title: "Quantum Algorithms for Nonlinear Dynamics: Revisiting Carleman Linearization with No Dissipative Conditions", authors: "Wu, Wang, Li", year: "2024", url: "https://arxiv.org/abs/2405.12714" },
+      { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Jin-Peng Liu, Herman Øie Kolden, Hari K. Krovi, Nuno F. Loureiro, Konstantina Trivisa, Andrew M. Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
+      { title: "Quantum Algorithms for Nonlinear Dynamics: Revisiting Carleman Linearization with No Dissipative Conditions", authors: "Hsuan-Cheng Wu, Jingyao Wang, Xiantao Li", year: "2024", url: "https://arxiv.org/abs/2405.12714" },
     ],
   },
   {
@@ -201,7 +201,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Koopman-von Neumann Approach to Quantum Simulation of Nonlinear Classical Dynamics", authors: "Joseph", year: "2020", url: "https://arxiv.org/abs/2003.09980" },
+      { title: "Koopman-von Neumann Approach to Quantum Simulation of Nonlinear Classical Dynamics", authors: "Ilon Joseph", year: "2020", url: "https://arxiv.org/abs/2003.09980" },
     ],
   },
   {
@@ -217,7 +217,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Quantum algorithms for computing observables of nonlinear partial differential equations", authors: "Jin, Liu", year: "2022", url: "https://arxiv.org/abs/2202.07834" },
+      { title: "Quantum algorithms for computing observables of nonlinear partial differential equations", authors: "Shi Jin, Nana Liu", year: "2022", url: "https://arxiv.org/abs/2202.07834" },
     ],
   },
   {
@@ -235,9 +235,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Quantum homotopy perturbation method for nonlinear dissipative ordinary differential equations", authors: "Xue, Wu, Guo", year: "2021", url: "https://arxiv.org/abs/2111.07486" },
-      { title: "Quantum homotopy analysis method with quantum-compatible linearization for nonlinear partial differential equations", authors: "Xue, Xu, Zhuang, Sun, Wang, Tan, Ye, Liu, Wu, Chen, Guo", year: "2024", url: "https://arxiv.org/abs/2411.06759" },
-      { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
+      { title: "Quantum homotopy perturbation method for nonlinear dissipative ordinary differential equations", authors: "Cheng Xue, Yu-Chun Wu, Guo-Ping Guo", year: "2021", url: "https://arxiv.org/abs/2111.07486" },
+      { title: "Quantum homotopy analysis method with quantum-compatible linearization for nonlinear partial differential equations", authors: "Cheng Xue, Xiao-Fan Xu, Xi-Ning Zhuang, Tai-Ping Sun, Yun-Jie Wang, Ming-Yang Tan, Chuang-Chao Ye, Huan-Yu Liu, Yu-Chun Wu, Zhao-Yun Chen, Guo-Ping Guo", year: "2024", url: "https://arxiv.org/abs/2411.06759" },
+      { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
     ],
   },
   {
@@ -273,7 +273,7 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "計算量は誤差の逆数の対数について多項式であり、この問題に対する従来の量子アルゴリズムからの指数的な改善です。要旨には行列クエリ数も状態準備クエリ数も示されていません。二次的な要約でこの手法に付されがちな κ_V を含む式は、後年の比較表におけるスペクトル法の行のものですので、ここでは再掲しません。",
     steps: ["time-discretization", "quantum-linear-solve"],
     citations: [
-      { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Berry, Childs, Ostrander, Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
+      { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
   },
   {
@@ -291,8 +291,8 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "論文自身の言い方では、線形常微分方程式に対する量子アルゴリズムの実行時間を特徴づけるのは行列指数のノルムです。厳密な評価式はここでは再掲しません。",
     steps: ["time-discretization", "quantum-linear-solve"],
     citations: [
-      { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
-      { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Berry, Childs, Ostrander, Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
+      { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
+      { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
   },
   {
@@ -309,8 +309,8 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "計算量は誤差および生成子の微分に対して対数的に依存します。次元に関しては古典的手法に対する通常どおりの指数的な改善があり、解は量子状態の振幅に符号化されます。",
     steps: ["time-discretization", "quantum-linear-solve"],
     citations: [
-      { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Berry, Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
-      { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "An, Childs, Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
+      { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
+      { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
     ],
   },
   {
@@ -337,8 +337,8 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     bypasses: ["quantum-linear-solve"],
     citations: [
-      { title: "Time-marching based quantum solvers for time-dependent linear differential equations", authors: "Fang, Lin, Tong", year: "2022", url: "https://arxiv.org/abs/2208.06941" },
-      { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "An, Childs, Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
+      { title: "Time-marching based quantum solvers for time-dependent linear differential equations", authors: "Di Fang, Lin Lin, Yu Tong", year: "2022", url: "https://arxiv.org/abs/2208.06941" },
+      { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
     ],
   },
   {
@@ -355,7 +355,7 @@ export const LAYER_GRAPH: LayerGraph = {
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["linear-combination-unitaries"],
     citations: [
-      { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "An, Liu, Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
+      { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
     ],
   },
   {
@@ -375,8 +375,8 @@ export const LAYER_GRAPH: LayerGraph = {
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["linear-combination-unitaries"],
     citations: [
-      { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "An, Childs, Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
-      { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "An, Liu, Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
+      { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
+      { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
     ],
   },
   {
@@ -392,8 +392,8 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["hamiltonian-simulation"],
     bypasses: ["quantum-linear-solve", "time-discretization"],
     citations: [
-      { title: "Quantum simulation of partial differential equations via Schrodingerisation", authors: "Jin, Liu, Yu", year: "2022", url: "https://arxiv.org/abs/2212.13969" },
-      { title: "Quantum simulation of partial differential equations via Schrodingerisation: technical details", authors: "Jin, Liu, Yu", year: "2022", url: "https://arxiv.org/abs/2212.14703" },
+      { title: "Quantum simulation of partial differential equations via Schrodingerisation", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.13969" },
+      { title: "Quantum simulation of partial differential equations via Schrodingerisation: technical details", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.14703" },
     ],
   },
   {
@@ -428,7 +428,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Liu, Kolden, Krovi, Loureiro, Trivisa, Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
+      { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Jin-Peng Liu, Herman Øie Kolden, Hari K. Krovi, Nuno F. Loureiro, Konstantina Trivisa, Andrew M. Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
     ],
   },
   {
@@ -452,7 +452,7 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     citations: [
-      { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dong, Li, Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
+      { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
   },
   {
@@ -476,7 +476,7 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     citations: [
-      { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dong, Li, Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
+      { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
   },
   {
@@ -494,7 +494,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Berry, Childs, Ostrander, Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
+      { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
   },
   {
@@ -550,9 +550,9 @@ export const LAYER_GRAPH: LayerGraph = {
     bypasses: ["polynomial-approximation", "qsp-phase-factors"],
     entries: ["hhl-linear-systems"],
     citations: [
-      { title: "Quantum algorithm for solving linear systems of equations", authors: "Harrow, Hassidim, Lloyd", year: "2008", url: "https://arxiv.org/abs/0811.3171" },
-      { title: "Quantum tomography using state-preparation unitaries", authors: "van Apeldoorn, Cornelissen, Gilyén, Nannicini", year: "2022", url: "https://arxiv.org/abs/2207.08800" },
-      { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Costa, An, Sanders, Su, Babbush, Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
+      { title: "Quantum algorithm for solving linear systems of equations", authors: "Aram W. Harrow, Avinatan Hassidim, Seth Lloyd", year: "2008", url: "https://arxiv.org/abs/0811.3171" },
+      { title: "Quantum tomography using state-preparation unitaries", authors: "Joran van Apeldoorn, Arjan Cornelissen, András Gilyén, Giacomo Nannicini", year: "2022", url: "https://arxiv.org/abs/2207.08800" },
+      { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Pedro C. S. Costa, Dong An, Yuval R. Sanders, Yuan Su, Ryan Babbush, Dominic W. Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
     ],
   },
   {
@@ -580,9 +580,9 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     citations: [
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
-      { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Chakraborty, Gilyén, Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
-      { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin, Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Shantanav Chakraborty, András Gilyén, Stacey Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
+      { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin Lin, Yu Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
     ],
   },
   {
@@ -602,7 +602,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["state-preparation", "matrix-function", "success-amplification"],
     bypasses: ["hamiltonian-simulation"],
     citations: [
-      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
+      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],
   },
   {
@@ -621,8 +621,8 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "この系統の定数因子は決着していません。Costa・An・Babbush・Berry（arXiv は 2023 年 12 月、Quantum 9, 1887 (2025)）はランダム行列を用いた数値実験により、離散断熱の解法の定数因子が実際には公表された上界のおよそ 1,200 分の 1 であり、arXiv:2305.11352 の乱択断熱の手法よりおよそ一桁効率が良いと報告しています。ただしこの比較は当該研究の 2023 年版に対するもので、2025 年に公表された版はそれより後になります。したがってこの順位付けは 2023 年時点の比較にもとづくものです。公表された Quantum 版の離散断熱のベンチマークも、乱択断熱の解法については 2023 年のプレプリントを引いています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
     citations: [
-      { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Costa, An, Sanders, Su, Babbush, Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
-      { title: "The discrete adiabatic quantum linear system solver has lower constant factors than the randomized adiabatic solver", authors: "Costa, An, Babbush, Berry", year: "2023", url: "https://arxiv.org/abs/2312.07690" },
+      { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Pedro C. S. Costa, Dong An, Yuval R. Sanders, Yuan Su, Ryan Babbush, Dominic W. Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
+      { title: "The discrete adiabatic quantum linear system solver has lower constant factors than the randomized adiabatic solver", authors: "Pedro C. S. Costa, Dong An, Ryan Babbush, Dominic Berry", year: "2023", url: "https://arxiv.org/abs/2312.07690" },
     ],
   },
   {
@@ -640,7 +640,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
     bypasses: ["success-amplification"],
     citations: [
-      { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin, Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
+      { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin Lin, Yu Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
     ],
   },
   {
@@ -688,9 +688,9 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     entries: ["quantum-singular-value-transformation"],
     citations: [
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
-      { title: "A Grand Unification of Quantum Algorithms", authors: "Martyn, Rossi, Tan, Chuang", year: "2021", url: "https://arxiv.org/abs/2105.02859" },
-      { title: "Sampling-based sublinear low-rank matrix arithmetic framework for dequantizing quantum machine learning", authors: "Chia, Gilyén, Li, Lin, Tang, Wang", year: "2019", url: "https://arxiv.org/abs/1910.06151" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "A Grand Unification of Quantum Algorithms", authors: "John M. Martyn, Zane M. Rossi, Andrew K. Tan, Isaac L. Chuang", year: "2021", url: "https://arxiv.org/abs/2105.02859" },
+      { title: "Sampling-based sublinear low-rank matrix arithmetic framework for dequantizing quantum machine learning", authors: "Nai-Hui Chia, András Gilyén, Tongyang Li, Han-Hsuan Lin, Ewin Tang, Chunhao Wang", year: "2019", url: "https://arxiv.org/abs/1910.06151" },
     ],
   },
   {
@@ -707,8 +707,8 @@ export const LAYER_GRAPH: LayerGraph = {
     bypasses: ["qsp-phase-factors"],
     entries: ["linear-combination-unitaries"],
     citations: [
-      { title: "Hamiltonian Simulation Using Linear Combinations of Unitary Operations", authors: "Childs, Wiebe", year: "2012", url: "https://arxiv.org/abs/1202.5822" },
-      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
+      { title: "Hamiltonian Simulation Using Linear Combinations of Unitary Operations", authors: "Andrew M. Childs, Nathan Wiebe", year: "2012", url: "https://arxiv.org/abs/1202.5822" },
+      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],
   },
   {
@@ -747,9 +747,9 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "要求される精度をめぐっては見解の対立が残っています。上記の整理は Chao・Ding・Gilyén・Huang・Szegedy の halving と capitalization による手法を O(d polylog(d/ε)) ビットを要する求根系に位置づけていますが、当の論文自身は、標準的な倍精度演算で 3000 を超える角度列を 5 分以内に求めたと報告しています。この 2 つの主張は現時点で整合していません。",
     steps: [],
     citations: [
-      { title: "Product Decomposition of Periodic Functions in Quantum Signal Processing", authors: "Haah", year: "2018", url: "https://arxiv.org/abs/1806.10236" },
-      { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Ni, Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
-      { title: "Finding Angles for Quantum Signal Processing with Machine Precision", authors: "Chao, Ding, Gilyén, Huang, Szegedy", year: "2020", url: "https://arxiv.org/abs/2003.02831" },
+      { title: "Product Decomposition of Periodic Functions in Quantum Signal Processing", authors: "Jeongwan Haah", year: "2018", url: "https://arxiv.org/abs/1806.10236" },
+      { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Hongkang Ni, Lexing Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
+      { title: "Finding Angles for Quantum Signal Processing with Machine Precision", authors: "Rui Chao, Dawei Ding, Andras Gilyen, Cupjin Huang, Mario Szegedy", year: "2020", url: "https://arxiv.org/abs/2003.02831" },
     ],
   },
   {
@@ -768,8 +768,8 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "この系統は倍精度で効率的かつ安定ですが、‖f‖_∞ → 1 となる完全コヒーレント領域では性能が落ちると理解されています。対称 QSP に対するニュートン法や非線形フーリエ変換に基づく経路は、まさにその領域のために開発されました。標準的な初期値を正当化する強凸性の保証も ‖f‖_∞ = O(d^{-1}) のもとでのみ証明されており、その領域には届きません。",
     steps: [],
     citations: [
-      { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Dong, Meng, Whaley, Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
-      { title: "On the energy landscape of symmetric quantum signal processing", authors: "Wang, Dong, Lin", year: "2021", url: "https://arxiv.org/abs/2110.04993" },
+      { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
+      { title: "On the energy landscape of symmetric quantum signal processing", authors: "Jiasu Wang, Yulong Dong, Lin Lin", year: "2021", url: "https://arxiv.org/abs/2110.04993" },
     ],
   },
   {
@@ -786,7 +786,7 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "頑健性についての主張は論文自身のものであり、そのまま成り立ちます。ただし効率の順位付けはその後動いています。Ni と Ying は、すべての領域に適用できる手法のなかで最も高速だとする構造行列に基づく手法を提示し、このニュートン反復の 1 反復あたりのコストを線形方程式の求解が支配するものとして特徴付けています。これは両氏による評価であり、計算量を何も主張していないこの論文自身の数字ではありません。",
     steps: [],
     citations: [
-      { title: "Robust iterative method for symmetric quantum signal processing in all parameter regimes", authors: "Dong, Lin, Ni, Wang", year: "2023", url: "https://arxiv.org/abs/2307.12468" },
+      { title: "Robust iterative method for symmetric quantum signal processing in all parameter regimes", authors: "Yulong Dong, Lin Lin, Hongkang Ni, Jiasu Wang", year: "2023", url: "https://arxiv.org/abs/2307.12468" },
     ],
   },
   {
@@ -803,8 +803,8 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "論文が主張しているのは倍精度での安定性であって漸近計算量の改善ではなく、求根系と分ける鋭い最悪計算量は与えられていません。さらに Ni と Ying は、この手法を含め多くの直接法が依拠する層剥がしの安定性は未解決の問題のままだと指摘しています。",
     steps: [],
     citations: [
-      { title: "Stable factorization for phase factors of quantum signal processing", authors: "Ying", year: "2022", url: "https://arxiv.org/abs/2202.02671" },
-      { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Ni, Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
+      { title: "Stable factorization for phase factors of quantum signal processing", authors: "Lexing Ying", year: "2022", url: "https://arxiv.org/abs/2202.02671" },
+      { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Hongkang Ni, Lexing Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
     ],
   },
   {
@@ -841,9 +841,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Childs, Kothari, Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
-      { title: "Optimal Hamiltonian Simulation by Quantum Signal Processing", authors: "Low, Chuang", year: "2016", url: "https://arxiv.org/abs/1606.02685" },
+      { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "Optimal Hamiltonian Simulation by Quantum Signal Processing", authors: "Guang Hao Low, Isaac L. Chuang", year: "2016", url: "https://arxiv.org/abs/1606.02685" },
     ],
   },
   {
@@ -859,7 +859,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Dong, Meng, Whaley, Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
+      { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
     ],
   },
   {
@@ -897,8 +897,8 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "Lemma 48 が数えているのはクエリ数であって、ゲート数ではありません。Zhang と Yuan はそのオラクルの中身を開き、「一般の行列については（スパースなものを含めても）、スパースアクセス入力モデルとブロックエンコーディングのいずれも、行列次元に対してほぼ線形の回路計算量を必要とすることを証明する」と述べています。オラクルへのクエリ数が対数的でも、そのオラクル自身の回路が N に線形であれば、全体としては線形コストのルーチンです。",
     steps: [],
     citations: [
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
-      { title: "Circuit complexity of quantum access models for encoding classical data", authors: "Zhang, Yuan", year: "2023", url: "https://arxiv.org/abs/2311.11365" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "Circuit complexity of quantum access models for encoding classical data", authors: "Xiao-Ming Zhang, Xiao Yuan", year: "2023", url: "https://arxiv.org/abs/2311.11365" },
     ],
   },
   {
@@ -916,8 +916,8 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["state-preparation"],
     entries: ["linear-combination-unitaries"],
     citations: [
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
-      { title: "Encoding Electronic Spectra in Quantum Circuits with Linear T Complexity", authors: "Babbush, Gidney, Berry, Wiebe, McClean, Paler, Fowler, Neven", year: "2018", url: "https://arxiv.org/abs/1805.03662" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "Encoding Electronic Spectra in Quantum Circuits with Linear T Complexity", authors: "Ryan Babbush, Craig Gidney, Dominic W. Berry, Nathan Wiebe, Jarrod McClean, Alexandru Paler, Austin Fowler, Hartmut Neven", year: "2018", url: "https://arxiv.org/abs/1805.03662" },
     ],
   },
   {
@@ -937,8 +937,8 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "FABLE: Fast Approximate Quantum Circuits for Block-Encodings", authors: "Camps, Van Beeumen", year: "2022", url: "https://arxiv.org/abs/2205.00081" },
-      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
+      { title: "FABLE: Fast Approximate Quantum Circuits for Block-Encodings", authors: "Daan Camps, Roel Van Beeumen", year: "2022", url: "https://arxiv.org/abs/2205.00081" },
+      { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
     ],
   },
   {
@@ -975,9 +975,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Transformation of quantum states using uniformly controlled rotations", authors: "Mottonen, Vartiainen, Bergholm, Salomaa", year: "2004", url: "https://arxiv.org/abs/quant-ph/0407010" },
-      { title: "Optimal (controlled) quantum state preparation and improved unitary synthesis by quantum circuits with any number of ancillary qubits", authors: "Yuan, Zhang", year: "2022", url: "https://arxiv.org/abs/2202.11302" },
-      { title: "Nearly Optimal Circuit Size for Sparse Quantum State Preparation", authors: "Li, Luo", year: "2024", url: "https://arxiv.org/abs/2406.16142" },
+      { title: "Transformation of quantum states using uniformly controlled rotations", authors: "Mikko Mottonen, Juha J. Vartiainen, Ville Bergholm, Martti M. Salomaa", year: "2004", url: "https://arxiv.org/abs/quant-ph/0407010" },
+      { title: "Optimal (controlled) quantum state preparation and improved unitary synthesis by quantum circuits with any number of ancillary qubits", authors: "Pei Yuan, Shengyu Zhang", year: "2022", url: "https://arxiv.org/abs/2202.11302" },
+      { title: "Nearly Optimal Circuit Size for Sparse Quantum State Preparation", authors: "Lvzhou Li, Jingquan Luo", year: "2024", url: "https://arxiv.org/abs/2406.16142" },
     ],
   },
   {
@@ -995,8 +995,8 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Creating superpositions that correspond to efficiently integrable probability distributions", authors: "Grover, Rudolph", year: "2002", url: "https://arxiv.org/abs/quant-ph/0208112" },
-      { title: "The Problem with Grover-Rudolph State Preparation for Quantum Monte-Carlo", authors: "Herbert", year: "2021", url: "https://arxiv.org/abs/2101.02240" },
+      { title: "Creating superpositions that correspond to efficiently integrable probability distributions", authors: "Lov Grover, Terry Rudolph", year: "2002", url: "https://arxiv.org/abs/quant-ph/0208112" },
+      { title: "The Problem with Grover-Rudolph State Preparation for Quantum Monte-Carlo", authors: "Steven Herbert", year: "2021", url: "https://arxiv.org/abs/2101.02240" },
     ],
   },
   {
@@ -1014,8 +1014,8 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Nearly Optimal Circuit Size for Sparse Quantum State Preparation", authors: "Li, Luo", year: "2024", url: "https://arxiv.org/abs/2406.16142" },
-      { title: "An Efficient Algorithm for Sparse Quantum State Preparation", authors: "Gleinig, Hoefler", year: "2021", url: "https://doi.org/10.1109/DAC18074.2021.9586240" },
+      { title: "Nearly Optimal Circuit Size for Sparse Quantum State Preparation", authors: "Lvzhou Li, Jingquan Luo", year: "2024", url: "https://arxiv.org/abs/2406.16142" },
+      { title: "An Efficient Algorithm for Sparse Quantum State Preparation", authors: "Gleinig, Hoefler", year: "2021", url: "https://doi.org/10.1109/dac18074.2021.9586240" },
     ],
   },
   {
@@ -1050,9 +1050,9 @@ export const LAYER_GRAPH: LayerGraph = {
     conditionsJa: "必要なのは λ そのものではなく、初期状態のうち目標状態が占める割合 λ の信頼できる下界です。Grover による先行の π/3 構成は不動点的な収束を達成しますが、Yoder–Low–Chuang の表現を借りれば、この種のアルゴリズムは「Grover のアルゴリズムを魅力的にしているまさにその二次的な優位を失う」ものです。彼ら自身の構成については「量子的な高速化を犠牲にせずに不動点的な挙動を達成する、振幅増幅の最初の方式」と述べられており、失敗確率の上界を調整できる点も特徴です。",
     steps: ["state-preparation"],
     citations: [
-      { title: "Fixed-point quantum search with an optimal number of queries", authors: "Yoder, Low, Chuang", year: "2014", url: "https://arxiv.org/abs/1409.3305" },
-      { title: "A different kind of quantum search", authors: "Grover", year: "2005", url: "https://arxiv.org/abs/quant-ph/0503205" },
-      { title: "Quantum Amplitude Amplification and Estimation", authors: "Brassard, Hoyer, Mosca, Tapp", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005055" },
+      { title: "Fixed-point quantum search with an optimal number of queries", authors: "Theodore J. Yoder, Guang Hao Low, Isaac L. Chuang", year: "2014", url: "https://arxiv.org/abs/1409.3305" },
+      { title: "A different kind of quantum search", authors: "Lov K. Grover", year: "2005", url: "https://arxiv.org/abs/quant-ph/0503205" },
+      { title: "Quantum Amplitude Amplification and Estimation", authors: "Gilles Brassard, Peter Hoyer, Michele Mosca, Alain Tapp", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005055" },
     ],
   },
   {
@@ -1069,8 +1069,8 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Ambainis は、振幅増幅を「増幅されている量子アルゴリズムの各部分が異なる時刻で停止する場合」へ一般化することにより、Harrow らの線形方程式アルゴリズムの実行時間を「O(kappa^2 log N) から O(kappa log^3 kappa log N) へ（kappa は方程式系の条件数）」改善すると述べています。Chakraborty–Gilyén–Jeffery はこれを直接踏まえ、「Ambainis の可変時間振幅増幅の技法に基づく可変時間振幅推定の技法を開発する」と述べています。",
     steps: [],
     citations: [
-      { title: "Variable time amplitude amplification and a faster quantum algorithm for solving systems of linear equations", authors: "Ambainis", year: "2010", url: "https://arxiv.org/abs/1010.4458" },
-      { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Chakraborty, Gilyén, Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
+      { title: "Variable time amplitude amplification and a faster quantum algorithm for solving systems of linear equations", authors: "Andris Ambainis", year: "2010", url: "https://arxiv.org/abs/1010.4458" },
+      { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Shantanav Chakraborty, András Gilyén, Stacey Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
     ],
   },
   {
@@ -1112,9 +1112,9 @@ export const LAYER_GRAPH: LayerGraph = {
     bypasses: ["block-encode-matrix"],
     entries: ["trotter-suzuki-simulation"],
     citations: [
-      { title: "Efficient quantum algorithms for simulating sparse Hamiltonians", authors: "Berry, Ahokas, Cleve, Sanders", year: "2005", url: "https://arxiv.org/abs/quant-ph/0508139" },
-      { title: "A Theory of Trotter Error", authors: "Childs, Su, Tran, Wiebe, Zhu", year: "2019", url: "https://arxiv.org/abs/1912.08854" },
-      { title: "Simulating Hamiltonian dynamics with a truncated Taylor series", authors: "Berry, Childs, Cleve, Kothari, Somma", year: "2014", url: "https://arxiv.org/abs/1412.4687" },
+      { title: "Efficient quantum algorithms for simulating sparse Hamiltonians", authors: "Dominic W. Berry, Graeme Ahokas, Richard Cleve, Barry C. Sanders", year: "2005", url: "https://arxiv.org/abs/quant-ph/0508139" },
+      { title: "A Theory of Trotter Error", authors: "Andrew M. Childs, Yuan Su, Minh C. Tran, Nathan Wiebe, Shuchen Zhu", year: "2019", url: "https://arxiv.org/abs/1912.08854" },
+      { title: "Simulating Hamiltonian dynamics with a truncated Taylor series", authors: "Dominic W. Berry, Andrew M. Childs, Richard Cleve, Robin Kothari, Rolando D. Somma", year: "2014", url: "https://arxiv.org/abs/1412.4687" },
     ],
   },
   {
@@ -1132,9 +1132,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["block-encode-matrix", "state-preparation", "success-amplification"],
     entries: ["linear-combination-unitaries"],
     citations: [
-      { title: "Simulating Hamiltonian dynamics with a truncated Taylor series", authors: "Berry, Childs, Cleve, Kothari, Somma", year: "2014", url: "https://arxiv.org/abs/1412.4687" },
-      { title: "Hamiltonian simulation with nearly optimal dependence on all parameters", authors: "Berry, Childs, Kothari", year: "2015", url: "https://arxiv.org/abs/1501.01715" },
-      { title: "Hamiltonian Simulation Using Linear Combinations of Unitary Operations", authors: "Childs, Wiebe", year: "2012", url: "https://arxiv.org/abs/1202.5822" },
+      { title: "Simulating Hamiltonian dynamics with a truncated Taylor series", authors: "Dominic W. Berry, Andrew M. Childs, Richard Cleve, Robin Kothari, Rolando D. Somma", year: "2014", url: "https://arxiv.org/abs/1412.4687" },
+      { title: "Hamiltonian simulation with nearly optimal dependence on all parameters", authors: "Dominic W. Berry, Andrew M. Childs, Robin Kothari", year: "2015", url: "https://arxiv.org/abs/1501.01715" },
+      { title: "Hamiltonian Simulation Using Linear Combinations of Unitary Operations", authors: "Andrew M. Childs, Nathan Wiebe", year: "2012", url: "https://arxiv.org/abs/1202.5822" },
     ],
   },
   {
@@ -1152,9 +1152,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["block-encode-matrix", "qsp-phase-factors"],
     entries: ["quantum-signal-processing"],
     citations: [
-      { title: "Hamiltonian Simulation by Qubitization", authors: "Low, Chuang", year: "2016", url: "https://arxiv.org/abs/1610.06546" },
-      { title: "Optimal Hamiltonian Simulation by Quantum Signal Processing", authors: "Low, Chuang", year: "2016", url: "https://arxiv.org/abs/1606.02685" },
-      { title: "On the relationship between continuous- and discrete-time quantum walk", authors: "Childs", year: "2008", url: "https://arxiv.org/abs/0810.0312" },
+      { title: "Hamiltonian Simulation by Qubitization", authors: "Guang Hao Low, Isaac L. Chuang", year: "2016", url: "https://arxiv.org/abs/1610.06546" },
+      { title: "Optimal Hamiltonian Simulation by Quantum Signal Processing", authors: "Guang Hao Low, Isaac L. Chuang", year: "2016", url: "https://arxiv.org/abs/1606.02685" },
+      { title: "On the relationship between continuous- and discrete-time quantum walk", authors: "Andrew M. Childs", year: "2008", url: "https://arxiv.org/abs/0810.0312" },
     ],
   },
   {
@@ -1201,9 +1201,9 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     citations: [
-      { title: "A variational eigenvalue solver on a quantum processor", authors: "Peruzzo, McClean, Shadbolt, Yung, Zhou, Love, Aspuru-Guzik, O'Brien", year: "2013", url: "https://arxiv.org/abs/1304.3061" },
-      { title: "Measurements as a roadblock to near-term practical quantum advantage in chemistry: resource analysis", authors: "Gonthier, Radin, Buda, Doskocil, Abuan, Romero", year: "2020", url: "https://arxiv.org/abs/2012.04001" },
-      { title: "Nearly Optimal Quantum Algorithm for Estimating Multiple Expectation Values", authors: "Huggins, Wan, McClean, O'Brien, Wiebe, Babbush", year: "2021", url: "https://arxiv.org/abs/2111.09283" },
+      { title: "A variational eigenvalue solver on a quantum processor", authors: "Alberto Peruzzo, Jarrod McClean, Peter Shadbolt, Man-Hong Yung, Xiao-Qi Zhou, Peter J. Love, Alán Aspuru-Guzik, Jeremy L. O'Brien", year: "2013", url: "https://arxiv.org/abs/1304.3061" },
+      { title: "Measurements as a roadblock to near-term practical quantum advantage in chemistry: resource analysis", authors: "Jérôme F. Gonthier, Maxwell D. Radin, Corneliu Buda, Eric J. Doskocil, Clena M. Abuan, Jhonathan Romero", year: "2020", url: "https://arxiv.org/abs/2012.04001" },
+      { title: "Nearly Optimal Quantum Algorithm for Estimating Multiple Expectation Values", authors: "William J. Huggins, Kianna Wan, Jarrod McClean, Thomas E. O'Brien, Nathan Wiebe, Ryan Babbush", year: "2021", url: "https://arxiv.org/abs/2111.09283" },
     ],
   },
   {
@@ -1232,9 +1232,9 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     entries: ["amplitude-estimation"],
     citations: [
-      { title: "Quantum Amplitude Amplification and Estimation", authors: "Brassard, Hoyer, Mosca, Tapp", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005055" },
-      { title: "Optimal quantum measurements of expectation values of observables", authors: "Knill, Ortiz, Somma", year: "2006", url: "https://arxiv.org/abs/quant-ph/0607019" },
-      { title: "Low depth algorithms for quantum amplitude estimation", authors: "Giurgica-Tiron, Kerenidis, Labib, Prakash, Zeng", year: "2020", url: "https://arxiv.org/abs/2012.03348" },
+      { title: "Quantum Amplitude Amplification and Estimation", authors: "Gilles Brassard, Peter Hoyer, Michele Mosca, Alain Tapp", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005055" },
+      { title: "Optimal Quantum Measurements of Expectation Values of Observables", authors: "Emanuel Knill, Gerardo Ortiz, Rolando D. Somma", year: "2006", url: "https://arxiv.org/abs/quant-ph/0607019" },
+      { title: "Low depth algorithms for quantum amplitude estimation", authors: "Tudor Giurgica-Tiron, Iordanis Kerenidis, Farrokh Labib, Anupam Prakash, William Zeng", year: "2020", url: "https://arxiv.org/abs/2012.03348" },
     ],
   },
   {
@@ -1262,9 +1262,9 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     citations: [
-      { title: "Predicting Many Properties of a Quantum System from Very Few Measurements", authors: "Huang, Kueng, Preskill", year: "2020", url: "https://arxiv.org/abs/2002.08953" },
-      { title: "Shadow Tomography of Quantum States", authors: "Aaronson", year: "2017", url: "https://arxiv.org/abs/1711.01053" },
-      { title: "Efficient quantum tomography", authors: "O'Donnell, Wright", year: "2015", url: "https://arxiv.org/abs/1508.01907" },
+      { title: "Predicting Many Properties of a Quantum System from Very Few Measurements", authors: "Hsin-Yuan Huang, Richard Kueng, John Preskill", year: "2020", url: "https://arxiv.org/abs/2002.08953" },
+      { title: "Shadow Tomography of Quantum States", authors: "Scott Aaronson", year: "2017", url: "https://arxiv.org/abs/1711.01053" },
+      { title: "Efficient quantum tomography", authors: "Ryan O'Donnell, John Wright", year: "2015", url: "https://arxiv.org/abs/1508.01907" },
     ],
   },
   {
@@ -1300,7 +1300,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["qubit-routing"],
     bypasses: ["gate-synthesis"],
     citations: [
-      { title: "t|ket>: A Retargetable Compiler for NISQ Devices", authors: "Sivarajah, Dilkes, Cowtan, Simmons, Edgington, Duncan", year: "2020", url: "https://arxiv.org/abs/2003.10611" },
+      { title: "t|ket⟩: A Retargetable Compiler for NISQ Devices", authors: "Seyon Sivarajah, Silas Dilkes, Alexander Cowtan, Will Simmons, Alec Edgington, Ross Duncan", year: "2020", url: "https://arxiv.org/abs/2003.10611" },
     ],
   },
   {
@@ -1317,8 +1317,8 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "費用はゲート数ではなく、T 数・T 深さ・論理量子ビット数・格子面積で数えます。Litinski の試算では、p = 1e-4、符号周期 1 μs のもとで、論理量子ビット 100 個・T 数 1e8・T 深さ 1e6 の計算は、55,000 量子ビットなら 4 時間、120,000 量子ビットなら 22 分、330,000,000 量子ビットなら 1 秒で終わります。",
     steps: ["gate-synthesis", "error-correction"],
     citations: [
-      { title: "A Game of Surface Codes: Large-Scale Quantum Computing with Lattice Surgery", authors: "Litinski", year: "2018", url: "https://arxiv.org/abs/1808.02892" },
-      { title: "Low overhead quantum computation using lattice surgery", authors: "Fowler, Gidney", year: "2018", url: "https://arxiv.org/abs/1808.06709" },
+      { title: "A Game of Surface Codes: Large-Scale Quantum Computing with Lattice Surgery", authors: "Daniel Litinski", year: "2018", url: "https://arxiv.org/abs/1808.02892" },
+      { title: "Low overhead quantum computation using lattice surgery", authors: "Austin G. Fowler, Craig Gidney", year: "2018", url: "https://arxiv.org/abs/1808.06709" },
     ],
   },
   {
@@ -1353,9 +1353,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices", authors: "Li, Ding, Xie", year: "2018", url: "https://arxiv.org/abs/1809.02573" },
+      { title: "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices", authors: "Gushu Li, Yufei Ding, Yuan Xie", year: "2018", url: "https://arxiv.org/abs/1809.02573" },
       { title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
-      { title: "LightSABRE: A Lightweight and Enhanced SABRE Algorithm", authors: "Zou, Treinish, Hartman, Ivrii, Lishman", year: "2024", url: "https://arxiv.org/abs/2409.08368" },
+      { title: "LightSABRE: A Lightweight and Enhanced SABRE Algorithm", authors: "Henry Zou, Matthew Treinish, Kevin Hartman, Alexander Ivrii, Jake Lishman", year: "2024", url: "https://arxiv.org/abs/2409.08368" },
     ],
   },
   {
@@ -1374,7 +1374,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "LightSABRE: A Lightweight and Enhanced SABRE Algorithm", authors: "Zou, Treinish, Hartman, Ivrii, Lishman", year: "2024", url: "https://arxiv.org/abs/2409.08368" },
+      { title: "LightSABRE: A Lightweight and Enhanced SABRE Algorithm", authors: "Henry Zou, Matthew Treinish, Kevin Hartman, Alexander Ivrii, Jake Lishman", year: "2024", url: "https://arxiv.org/abs/2409.08368" },
     ],
   },
   {
@@ -1392,7 +1392,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Optimal Layout Synthesis for Quantum Computing", authors: "Tan, Cong", year: "2020", url: "https://arxiv.org/abs/2007.15671" },
+      { title: "Optimal Layout Synthesis for Quantum Computing", authors: "Bochen Tan, Jason Cong", year: "2020", url: "https://arxiv.org/abs/2007.15671" },
       { title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
     ],
   },
@@ -1432,8 +1432,8 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "The Solovay-Kitaev algorithm", authors: "Dawson, Nielsen", year: "2005", url: "https://arxiv.org/abs/quant-ph/0505030" },
-      { title: "Breaking the cubic barrier in the Solovay-Kitaev algorithm", authors: "Kuperberg", year: "2023", url: "https://arxiv.org/abs/2306.13158" },
+      { title: "The Solovay-Kitaev algorithm", authors: "Christopher M. Dawson, Michael A. Nielsen", year: "2005", url: "https://arxiv.org/abs/quant-ph/0505030" },
+      { title: "Breaking the cubic barrier in the Solovay-Kitaev algorithm", authors: "Greg Kuperberg", year: "2023", url: "https://arxiv.org/abs/2306.13158" },
     ],
   },
   {
@@ -1451,9 +1451,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Optimal ancilla-free Clifford+T approximation of z-rotations", authors: "Ross, Selinger", year: "2014", url: "https://arxiv.org/abs/1403.2975" },
-      { title: "Efficient Clifford+T approximation of single-qubit operators", authors: "Selinger", year: "2012", url: "https://arxiv.org/abs/1212.6253" },
-      { title: "Fast and efficient exact synthesis of single qubit unitaries generated by Clifford and T gates", authors: "Kliuchnikov, Maslov, Mosca", year: "2012", url: "https://arxiv.org/abs/1206.5236" },
+      { title: "Optimal ancilla-free Clifford+T approximation of z-rotations", authors: "Neil J. Ross, Peter Selinger", year: "2014", url: "https://arxiv.org/abs/1403.2975" },
+      { title: "Efficient Clifford+T approximation of single-qubit operators", authors: "Peter Selinger", year: "2012", url: "https://arxiv.org/abs/1212.6253" },
+      { title: "Fast and efficient exact synthesis of single qubit unitaries generated by Clifford and T gates", authors: "Vadym Kliuchnikov, Dmitri Maslov, Michele Mosca", year: "2012", url: "https://arxiv.org/abs/1206.5236" },
     ],
   },
   {
@@ -1490,9 +1490,9 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Error mitigation for short-depth quantum circuits", authors: "Temme, Bravyi, Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
-      { title: "Efficient tensor network simulation of IBM's Eagle kicked Ising experiment", authors: "Tindall, Fishman, Stoudenmire, Sels", year: "2023", url: "https://arxiv.org/abs/2306.14887" },
-      { title: "Fast classical simulation of evidence for the utility of quantum computing before fault tolerance", authors: "Begusic, Chan", year: "2023", url: "https://arxiv.org/abs/2306.16372" },
+      { title: "Error mitigation for short-depth quantum circuits", authors: "Kristan Temme, Sergey Bravyi, Jay M. Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
+      { title: "Efficient tensor network simulation of IBM's Eagle kicked Ising experiment", authors: "Joseph Tindall, Matt Fishman, Miles Stoudenmire, Dries Sels", year: "2023", url: "https://arxiv.org/abs/2306.14887" },
+      { title: "Fast classical simulation of evidence for the utility of quantum computing before fault tolerance", authors: "Tomislav Begušić, Garnet Kin-Lic Chan", year: "2023", url: "https://arxiv.org/abs/2306.16372" },
     ],
   },
   {
@@ -1507,9 +1507,9 @@ export const LAYER_GRAPH: LayerGraph = {
     conditionsJa: "雑音チャネルの正確な特性評価が必要で、そこが律速になります。PEC の実験史は、ほぼそのまま雑音学習の手法が追いついてきた歴史です。van den Berg らは、トワリング（twirling）を施した回路の上で、クロストークまで捉える疎な Pauli–Lindblad モデルを学習し、雑音を実際に確率的なパウリ雑音にすることで、大規模でも成立させました。Endo・Benjamin・Li は、誤りモデルの知識が不完全な場合を明示的に扱っています。Temme・Bravyi・Gambetta は、この手法を適用できる回路の規模が、誤りの発生率によって制約されると述べています。",
     steps: [],
     citations: [
-      { title: "Error mitigation for short-depth quantum circuits", authors: "Temme, Bravyi, Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
-      { title: "Probabilistic error cancellation with sparse Pauli-Lindblad models on noisy quantum processors", authors: "van den Berg, Minev, Kandala, Temme", year: "2022", url: "https://arxiv.org/abs/2201.09866" },
-      { title: "Practical Quantum Error Mitigation for Near-Future Applications", authors: "Endo, Benjamin, Li", year: "2017", url: "https://arxiv.org/abs/1712.09271" },
+      { title: "Error mitigation for short-depth quantum circuits", authors: "Kristan Temme, Sergey Bravyi, Jay M. Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
+      { title: "Probabilistic error cancellation with sparse Pauli-Lindblad models on noisy quantum processors", authors: "Ewout van den Berg, Zlatko K. Minev, Abhinav Kandala, Kristan Temme", year: "2022", url: "https://arxiv.org/abs/2201.09866" },
+      { title: "Practical Quantum Error Mitigation for Near-Future Applications", authors: "Suguru Endo, Simon C. Benjamin, Ying Li", year: "2017", url: "https://arxiv.org/abs/1712.09271" },
     ],
   },
   {
@@ -1527,7 +1527,7 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     citations: [
-      { title: "Scalable mitigation of measurement errors on quantum computers", authors: "Nation, Kang, Sundaresan, Gambetta", year: "2021", url: "https://arxiv.org/abs/2108.12518" },
+      { title: "Scalable mitigation of measurement errors on quantum computers", authors: "Paul D. Nation, Hwajung Kang, Neereja Sundaresan, Jay M. Gambetta", year: "2021", url: "https://arxiv.org/abs/2108.12518" },
     ],
   },
   {
@@ -1563,9 +1563,9 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Fowler・Mariantoni・Martinis・Cleland は経験則 P_L ≈ 0.03 (p/p_th)^d_e（誤り次元 d_e は奇数の d では (d+1)/2、偶数の d では d/2 に切り下げ）を与え、自らの回路と雑音モデルで p_th = 0.57% を測っています。同論文の欠陥に基づく構成では、論理量子ビット 1 個あたり 2.5 x 1.25 x (2d)^2 ≈ 12.5 d^2 個の物理量子ビットを要し、d = 17 でおよそ 3600 個、d = 34 でおよそ 14500 個になります。Google は距離 2 単位あたり Λ = 2.14 ± 0.02 の論理誤り抑制を報告し、101 量子ビットの距離 7 の符号で 1 周期あたり 0.143% ± 0.003%、損益分岐点を 2.4 ± 0.3 倍上回ったとしています。",
     steps: [],
     citations: [
-      { title: "Surface codes: Towards practical large-scale quantum computation", authors: "Fowler, Mariantoni, Martinis, Cleland", year: "2012", url: "https://arxiv.org/abs/1208.0928" },
-      { title: "Quantum error correction below the surface code threshold", authors: "Acharya et al. (Google Quantum AI)", year: "2024", url: "https://arxiv.org/abs/2408.13687" },
-      { title: "Topological quantum memory", authors: "Dennis, Kitaev, Landahl, Preskill", year: "2001", url: "https://arxiv.org/abs/quant-ph/0110143" },
+      { title: "Surface codes: Towards practical large-scale quantum computation", authors: "Austin G. Fowler, Matteo Mariantoni, John M. Martinis, Andrew N. Cleland", year: "2012", url: "https://arxiv.org/abs/1208.0928" },
+      { title: "Quantum error correction below the surface code threshold", authors: "Rajeev Acharya, Laleh Aghababaie-Beni, Igor Aleiner, Trond I. Andersen, Markus Ansmann, Frank Arute, Kunal Arya, Abraham Asfaw, Nikita Astrakhantsev, Juan Atalaya, Ryan Babbush, Dave Bacon, Brian Ballard, Joseph C. Bardin, Johannes Bausch, Andreas Bengtsson, Alexander Bilmes, Sam Blackwell, Sergio Boixo, Gina Bortoli, Alexandre Bourassa, Jenna Bovaird, Leon Brill, Michael Broughton, David A. Browne, Brett Buchea, Bob B. Buckley, David A. Buell, Tim Burger, Brian Burkett, Nicholas Bushnell, Anthony Cabrera, Juan Campero, Hung-Shen Chang, Yu Chen, Zijun Chen, Ben Chiaro, Desmond Chik, Charina Chou, Jahan Claes, Agnetta Y. Cleland, Josh Cogan, Roberto Collins, Paul Conner, William Courtney, Alexander L. Crook, Ben Curtin, Sayan Das, Alex Davies, Laura De Lorenzo, Dripto M. Debroy, Sean Demura, Michel Devoret, Agustin Di Paolo, Paul Donohoe, Ilya Drozdov, Andrew Dunsworth, Clint Earle, Thomas Edlich, Alec Eickbusch, Aviv Moshe Elbag, Mahmoud Elzouka, Catherine Erickson, Lara Faoro, Edward Farhi, Vinicius S. Ferreira, Leslie Flores Burgos, Ebrahim Forati, Austin G. Fowler, Brooks Foxen, Suhas Ganjam, Gonzalo Garcia, Robert Gasca, Élie Genois, William Giang, Craig Gidney, Dar Gilboa, Raja Gosula, Alejandro Grajales Dau, Dietrich Graumann, Alex Greene, Jonathan A. Gross, Steve Habegger, John Hall, Michael C. Hamilton, Monica Hansen, Matthew P. Harrigan, Sean D. Harrington, Francisco J. H. Heras, Stephen Heslin, Paula Heu, Oscar Higgott, Gordon Hill, Jeremy Hilton, George Holland, Sabrina Hong, Hsin-Yuan Huang, Ashley Huff, William J. Huggins, Lev B. Ioffe, Sergei V. Isakov, Justin Iveland, Evan Jeffrey, Zhang Jiang, Cody Jones, Stephen Jordan, Chaitali Joshi, Pavol Juhas, Dvir Kafri, Hui Kang, Amir H. Karamlou, Kostyantyn Kechedzhi, Julian Kelly, Trupti Khaire, Tanuj Khattar, Mostafa Khezri, Seon Kim, Paul V. Klimov, Andrey R. Klots, Bryce Kobrin, Pushmeet Kohli, Alexander N. Korotkov, Fedor Kostritsa, Robin Kothari, Borislav Kozlovskii, John Mark Kreikebaum, Vladislav D. Kurilovich, Nathan Lacroix, David Landhuis, Tiano Lange-Dei, Brandon W. Langley, Pavel Laptev, Kim-Ming Lau, Loïck Le Guevel, Justin Ledford, Kenny Lee, Yuri D. Lensky, Shannon Leon, Brian J. Lester, Wing Yan Li, Yin Li, Alexander T. Lill, Wayne Liu, William P. Livingston, Aditya Locharla, Erik Lucero, Daniel Lundahl, Aaron Lunt, Sid Madhuk, Fionn D. Malone, Ashley Maloney, Salvatore Mandrá, Leigh S. Martin, Steven Martin, Orion Martin, Cameron Maxfield, Jarrod R. McClean, Matt McEwen, Seneca Meeks, Anthony Megrant, Xiao Mi, Kevin C. Miao, Amanda Mieszala, Reza Molavi, Sebastian Molina, Shirin Montazeri, Alexis Morvan, Ramis Movassagh, Wojciech Mruczkiewicz, Ofer Naaman, Matthew Neeley, Charles Neill, Ani Nersisyan, Hartmut Neven, Michael Newman, Jiun How Ng, Anthony Nguyen, Murray Nguyen, Chia-Hung Ni, Thomas E. O'Brien, William D. Oliver, Alex Opremcak, Kristoffer Ottosson, Andre Petukhov, Alex Pizzuto, John Platt, Rebecca Potter, Orion Pritchard, Leonid P. Pryadko, Chris Quintana, Ganesh Ramachandran, Matthew J. Reagor, David M. Rhodes, Gabrielle Roberts, Eliott Rosenberg, Emma Rosenfeld, Pedram Roushan, Nicholas C. Rubin, Negar Saei, Daniel Sank, Kannan Sankaragomathi, Kevin J. Satzinger, Henry F. Schurkus, Christopher Schuster, Andrew W. Senior, Michael J. Shearn, Aaron Shorter, Noah Shutty, Vladimir Shvarts, Shraddha Singh, Volodymyr Sivak, Jindra Skruzny, Spencer Small, Vadim Smelyanskiy, W. Clarke Smith, Rolando D. Somma, Sofia Springer, George Sterling, Doug Strain, Jordan Suchard, Aaron Szasz, Alex Sztein, Douglas Thor, Alfredo Torres, M. Mert Torunbalci, Abeer Vaishnav, Justin Vargas, Sergey Vdovichev, Guifre Vidal, Benjamin Villalonga, Catherine Vollgraff Heidweiller, Steven Waltman, Shannon X. Wang, Brayden Ware, Kate Weber, Theodore White, Kristi Wong, Bryan W. K. Woo, Cheng Xing, Z. Jamie Yao, Ping Yeh, Bicheng Ying, Juhwan Yoo, Noureldin Yosri, Grayson Young, Adam Zalcman, Yaxing Zhang, Ningfeng Zhu, Nicholas Zobrist", year: "2024", url: "https://arxiv.org/abs/2408.13687" },
+      { title: "Topological quantum memory", authors: "Eric Dennis, Alexei Kitaev, Andrew Landahl, John Preskill", year: "2001", url: "https://arxiv.org/abs/quant-ph/0110143" },
     ],
   },
   {
@@ -1582,7 +1582,7 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "標準的な回路レベル雑音モデルのもとでのしきい値は 0.8% で、表面符号と同程度です。長さ n の符号の症候群 1 周期は、n 個のアンシラ量子ビットと深さ 7 の最近接 CNOT 回路で構成されます。Bravyi らは、物理誤り率 0.1% のもとで合計 288 個の物理量子ビットを使い、12 個の論理量子ビットを 100 万に近い症候群周期にわたって保持しています。同等の抑制を表面符号で得るには 3000 個近い物理量子ビットが要る、というのが同論文の議論です。",
     steps: [],
     citations: [
-      { title: "High-threshold and low-overhead fault-tolerant quantum memory", authors: "Bravyi, Cross, Gambetta, Maslov, Rall, Yoder", year: "2023", url: "https://arxiv.org/abs/2308.07915" },
+      { title: "High-threshold and low-overhead fault-tolerant quantum memory", authors: "Sergey Bravyi, Andrew W. Cross, Jay M. Gambetta, Dmitri Maslov, Patrick Rall, Theodore J. Yoder", year: "2023", url: "https://arxiv.org/abs/2308.07915" },
     ],
   },
   ],

@@ -246,9 +246,9 @@ print(stab.clifford.to_labels(mode="S"))
     relatedSlugs: ["graph-state-ring", "surface-code-memory", "shor-code-error-correction"],
     literature: [
       {
-        title: "A one-way quantum computer",
-        authors: "R. Raussendorf, H. J. Briegel",
-        year: "2001",
+        title: "Quantum computing via measurements only",
+        authors: "Robert Raussendorf, Hans J. Briegel",
+        year: "2000",
         url: "https://arxiv.org/abs/quant-ph/0010033",
         relevance: "Introduces the cluster state as a universal resource for measurement-based quantum computation.",
         relevanceJa: "測定型量子計算の万能リソースとしてクラスター状態を導入します。",
@@ -380,9 +380,9 @@ print(state)
     relatedSlugs: ["cluster-state-1d", "w-state", "surface-code-memory"],
     literature: [
       {
-        title: "Multiparty entanglement in graph states",
+        title: "Multi-party entanglement in graph states",
         authors: "M. Hein, J. Eisert, H. J. Briegel",
-        year: "2004",
+        year: "2003",
         url: "https://arxiv.org/abs/quant-ph/0307130",
         relevance: "Derives the stabilizer formalism for graph states on arbitrary graphs, including cycles.",
         relevanceJa: "サイクルを含む任意のグラフ上のグラフ状態に対するスタビライザー形式を導出します。",
@@ -503,13 +503,13 @@ print({k: round(v, 4) for k, v in sv.probabilities_dict().items() if v > 1e-6})
         title: "Coherence in Spontaneous Radiation Processes",
         authors: "R. H. Dicke",
         year: "1954",
-        url: "https://doi.org/10.1103/PhysRev.93.99",
+        url: "https://doi.org/10.1103/physrev.93.99",
         relevance: "Introduces the symmetric collective states of an ensemble with a fixed number of excitations.",
         relevanceJa: "固定数の励起を持つ集団の対称的な集合状態を導入します。",
       },
       {
         title: "Deterministic Preparation of Dicke States",
-        authors: "A. Bärtschi, S. Eidenbenz",
+        authors: "Andreas Bärtschi, Stephan Eidenbenz",
         year: "2019",
         url: "https://arxiv.org/abs/1904.07358",
         relevance: "Gives the deterministic, closed-form recursive circuit used here to prepare |D^n_k⟩ exactly.",
@@ -620,9 +620,9 @@ print(result.final_state_vector)
     relatedSlugs: ["t-phase-gate", "shor-code-error-correction"],
     literature: [
       {
-        title: "Universal quantum computation with ideal Clifford gates and noisy ancillas",
-        authors: "S. Bravyi, A. Kitaev",
-        year: "2005",
+        title: "Universal Quantum Computation with ideal Clifford gates and noisy ancillas",
+        authors: "Sergei Bravyi, Alexei Kitaev",
+        year: "2004",
         url: "https://arxiv.org/abs/quant-ph/0403025",
         relevance: "Introduces magic-state distillation, the 15-to-1 protocol, and the definition of the T magic state used here.",
         relevanceJa: "マジック状態蒸留、15対1プロトコル、およびここで用いるTマジック状態の定義を導入します。",
@@ -735,7 +735,7 @@ print(np.real(system_rho.data))
     literature: [
       {
         title: "Sampling from the thermal quantum Gibbs state and evaluating partition functions with a quantum computer",
-        authors: "D. Poulin, P. Wocjan",
+        authors: "David Poulin, Pawel Wocjan",
         year: "2009",
         url: "https://arxiv.org/abs/0905.2199",
         relevance: "Surveys quantum algorithms for Gibbs-state sampling, of which the single-qubit ancilla purification is the minimal instance.",
@@ -855,7 +855,7 @@ RESULT = {"ground_energy": float(diag.min()), "classical_energies": [float(v) fo
         title: "Quantum Phase Transitions",
         authors: "S. Sachdev",
         year: "2011",
-        url: "https://doi.org/10.1017/CBO9780511973765",
+        url: "https://doi.org/10.1017/cbo9780511973765",
         relevance: "Standard textbook treatment of the Ising Hamiltonian as the classical limit contrasted with its transverse-field quantum extension.",
         relevanceJa: "イジング・ハミルトニアンを、横磁場による量子拡張と対比される古典極限として扱う標準的な教科書です。",
       },
@@ -964,9 +964,9 @@ RESULT = {"max_commutator_norm": float(np.abs(commutator).max()), "conserves_tot
     relatedSlugs: ["ising-hamiltonian-operator", "transverse-field-ising-operator", "vqe-ground-state-energy"],
     literature: [
       {
-        title: "An Introduction to Integrable Techniques for One-Dimensional Quantum Spin Systems",
-        authors: "F. Franchini",
-        year: "2017",
+        title: "An introduction to integrable techniques for one-dimensional quantum systems",
+        authors: "Fabio Franchini",
+        year: "2016",
         url: "https://arxiv.org/abs/1609.02100",
         relevance: "Modern review deriving the XXZ chain's symmetries, Bethe-ansatz solvability, and phase diagram used in this entry.",
         relevanceJa: "このエントリで用いるXXZ鎖の対称性、Bethe仮説による可解性、相図を導出する現代的なレビューです。",
@@ -1121,7 +1121,7 @@ RESULT = {"ground_energy": float(min(eigenvalues)), "spectrum": [float(v) for v 
         title: "Quantum Phase Transitions",
         authors: "S. Sachdev",
         year: "2011",
-        url: "https://doi.org/10.1017/CBO9780511973765",
+        url: "https://doi.org/10.1017/cbo9780511973765",
         relevance: "Standard textbook treatment of the TFIM as the canonical example of a quantum (zero-temperature) phase transition.",
         relevanceJa: "TFIMを量子（絶対零度）相転移の標準例として扱う定番教科書です。",
       },
@@ -1257,8 +1257,8 @@ RESULT = {"max_commutator_norm": float(np.abs(commutator).max()), "conserves_par
       },
       {
         title: "Strategies for solving the Fermi-Hubbard model on near-term quantum computers",
-        authors: "C. Cade, L. Mineh, A. Montanaro, S. Stanisic",
-        year: "2020",
+        authors: "Chris Cade, Lana Mineh, Ashley Montanaro, Stasja Stanisic",
+        year: "2019",
         url: "https://arxiv.org/abs/1912.06007",
         relevance: "Analyzes Jordan-Wigner-encoded Hubbard Hamiltonians and their resource requirements for near-term quantum simulation.",
         relevanceJa: "Jordan-Wigner符号化されたハバード・ハミルトニアンと、近未来の量子シミュレーションに必要なリソースを分析します。",
@@ -1392,7 +1392,7 @@ RESULT = {"eigenvalues": [float(v) for v in eigenvalues]}
         title: "Über das Paulische Äquivalenzverbot",
         authors: "P. Jordan, E. Wigner",
         year: "1928",
-        url: "https://doi.org/10.1007/BF01331938",
+        url: "https://doi.org/10.1007/bf01331938",
         relevance: "Original paper introducing the Jordan-Wigner transformation from which the number operator's (I-Z)/2 form is derived.",
         relevanceJa: "数演算子の(I-Z)/2という形が導かれるJordan-Wigner変換を導入した原論文です。",
       },
@@ -1521,10 +1521,10 @@ print(FINAL_CIRCUIT)
     relatedSlugs: ["number-operator", "surface-code-memory", "shor-code-error-correction", "graph-state-ring"],
     literature: [
       {
-        title: "Quantum Computation and Quantum Information",
-        authors: "M. A. Nielsen, I. L. Chuang",
+        title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+        authors: "Michael A. Nielsen and Isaac L. Chuang",
         year: "2010",
-        url: "https://doi.org/10.1017/CBO9780511976667",
+        url: "https://doi.org/10.1017/cbo9780511976667",
         relevance: "Standard textbook derivation of ancilla-based non-destructive parity and stabilizer measurement circuits.",
         relevanceJa: "補助量子ビットによる非破壊パリティ・スタビライザー測定回路の標準的な教科書での導出です。",
       },

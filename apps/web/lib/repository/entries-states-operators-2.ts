@@ -133,10 +133,10 @@ print(plus_minus())
     relatedSlugs: ["hadamard-gate", "bell-state-qiskit", "pauli-x-operator"],
     literature: [
       {
-        title: "Quantum Computation and Quantum Information",
-        authors: "M. A. Nielsen, I. L. Chuang",
+        title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+        authors: "Michael A. Nielsen and Isaac L. Chuang",
         year: "2010",
-        url: "https://doi.org/10.1017/CBO9780511976667",
+        url: "https://doi.org/10.1017/cbo9780511976667",
         relevance:
           "Standard textbook definition of the Hadamard/X-eigenbasis states and their role as the second measurement basis in mutually-unbiased-basis protocols such as BB84.",
         relevanceJa: "アダマール／X固有基底状態の標準的な教科書での定義と、BB84のような相互不偏基底プロトコルにおける第2測定基底としての役割です。",
@@ -256,7 +256,7 @@ RESULT = {"separable_by_ppt": separability}
         title: "Quantum states with Einstein-Podolsky-Rosen correlations admitting a hidden-variable model",
         authors: "R. F. Werner",
         year: "1989",
-        url: "https://doi.org/10.1103/PhysRevA.40.4277",
+        url: "https://doi.org/10.1103/physreva.40.4277",
         relevance:
           "Introduces the Werner state family and proves both the separability/entanglement structure and the existence of a local hidden-variable model for projective measurements up to p=1/2.",
         relevanceJa: "ワーナー状態族を導入し、分離可能性・エンタングルメント構造と、射影測定に対しp=1/2まで局所隠れ変数モデルが存在することを証明します。",
@@ -396,8 +396,8 @@ print(noon_qubit_embedding(2, np.pi / 8))
     relatedSlugs: ["ghz-state-pennylane", "quantum-phase-estimation", "amplitude-estimation"],
     literature: [
       {
-        title: "A quantum Rosetta stone for interferometry",
-        authors: "H. Lee, P. Kok, J. P. Dowling",
+        title: "A Quantum Rosetta Stone for Interferometry",
+        authors: "Hwang Lee, Pieter Kok, Jonathan P. Dowling",
         year: "2002",
         url: "https://arxiv.org/abs/quant-ph/0202133",
         relevance:
@@ -508,10 +508,10 @@ print("Reduced state of one Bell-pair qubit:\\n", np.real(reduced.data))  # [[0.
     relatedSlugs: ["thermal-gibbs-state", "werner-state", "bell-state-qiskit"],
     literature: [
       {
-        title: "Quantum Computation and Quantum Information",
-        authors: "M. A. Nielsen, I. L. Chuang",
+        title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+        authors: "Michael A. Nielsen and Isaac L. Chuang",
         year: "2010",
-        url: "https://doi.org/10.1017/CBO9780511976667",
+        url: "https://doi.org/10.1017/cbo9780511976667",
         relevance:
           "Standard textbook treatment of the maximally mixed state, its unitary invariance, and its role as the partial trace of a maximally entangled state.",
         relevanceJa: "最大混合状態、そのユニタリ不変性、および最大エンタングル状態の部分トレースとしての役割についての標準的な教科書での扱いです。",
@@ -630,8 +630,8 @@ RESULT = {"ground_state_energy_hartree": float(eigvals.min()), "eigenvalues_hart
     literature: [
       {
         title: "Scalable Quantum Simulation of Molecular Energies",
-        authors: "P. J. J. O'Malley, R. Babbush, I. D. Kivlichan, et al.",
-        year: "2016",
+        authors: "P. J. J. O'Malley, R. Babbush, I. D. Kivlichan, J. Romero, J. R. McClean, R. Barends, J. Kelly, P. Roushan, A. Tranter, N. Ding, B. Campbell, Y. Chen, Z. Chen, B. Chiaro, A. Dunsworth, A. G. Fowler, E. Jeffrey, A. Megrant, J. Y. Mutus, C. Neill, C. Quintana, D. Sank, A. Vainsencher, J. Wenner, T. C. White, P. V. Coveney, P. J. Love, H. Neven, A. Aspuru-Guzik, J. M. Martinis",
+        year: "2015",
         url: "https://arxiv.org/abs/1512.06860",
         relevance:
           "Source of the 2-qubit tapered H₂ Hamiltonian coefficients used here, computed at the STO-3G equilibrium bond length.",

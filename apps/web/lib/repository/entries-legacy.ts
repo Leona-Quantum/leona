@@ -446,7 +446,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         title: "The QAOA for MaxCut: a fermionic view",
         authors: "Wang, Hadfield, Jiang, Rieffel",
         year: "2018",
-        url: "https://doi.org/10.1103/PhysRevA.97.022304",
+        url: "https://doi.org/10.1103/physreva.97.022304",
         relevance: "Analyzes parameter setting and the ring-of-disagrees instance used by this record.",
         relevanceJa: "この項目と同じリング型の問題とパラメータ設定を分析します。",
       },
@@ -613,7 +613,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       {
         title: "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer",
         authors: "Peter W. Shor",
-        year: "1994/1995",
+        year: "1995",
         url: "https://arxiv.org/abs/quant-ph/9508027",
         relevance: "Original factoring and discrete-logarithm algorithm based on quantum period finding.",
         relevanceJa: "量子周期発見に基づく因数分解・離散対数アルゴリズムの原論文です。",
@@ -696,7 +696,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     literature: [
       {
         title: "Quantum Amplitude Amplification and Estimation",
-        authors: "Gilles Brassard, Peter Høyer, Michele Mosca, Alain Tapp",
+        authors: "Gilles Brassard, Peter Hoyer, Michele Mosca, Alain Tapp",
         year: "2000",
         url: "https://arxiv.org/abs/quant-ph/0005055",
         relevance: "Introduces amplitude amplification and the amplitude-estimation scaling used in Monte Carlo applications.",
@@ -781,15 +781,15 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     literature: [
       {
         title: "A variational eigenvalue solver on a quantum processor",
-        authors: "Alberto Peruzzo et al.",
-        year: "2013/2014",
+        authors: "Alberto Peruzzo, Jarrod McClean, Peter Shadbolt, Man-Hong Yung, Xiao-Qi Zhou, Peter J. Love, Alán Aspuru-Guzik, Jeremy L. O'Brien",
+        year: "2013",
         url: "https://arxiv.org/abs/1304.3061",
         relevance: "Original VQE proposal and photonic demonstration for a small chemistry problem.",
         relevanceJa: "小さな化学問題でのVQE提案とフォトニック実証を示す原論文です。",
       },
       {
         title: "Optimization of the Variational Quantum Eigensolver for Quantum Chemistry Applications",
-        authors: "de Keijzer, Colussi, Škorić, Kokkelmans",
+        authors: "R. J. P. T. de Keijzer, V. E. Colussi, B. Škorić, S. J. J. M. F. Kokkelmans",
         year: "2021",
         url: "https://arxiv.org/abs/2102.01781",
         relevance: "Surveys optimizer, ansatz, and measurement choices that affect chemistry-oriented VQE runs.",
@@ -873,7 +873,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     literature: [
       {
         title: "Quantum measurements and the Abelian Stabilizer Problem",
-        authors: "Alexei Kitaev",
+        authors: "A. Yu. Kitaev",
         year: "1995",
         url: "https://arxiv.org/abs/quant-ph/9511026",
         relevance: "Foundational quantum measurement setting associated with phase estimation and hidden subgroup structure.",
@@ -964,9 +964,9 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     relatedSlugs: ["quantum-phase-estimation", "amplitude-estimation", "vqe-ground-state-energy"],
     literature: [
       {
-        title: "Quantum algorithm for linear systems of equations",
+        title: "Quantum algorithm for solving linear systems of equations",
         authors: "Aram W. Harrow, Avinatan Hassidim, Seth Lloyd",
-        year: "2009",
+        year: "2008",
         url: "https://arxiv.org/abs/0811.3171",
         relevance: "Original HHL linear-systems algorithm and its sparse-access/output-observable assumptions.",
         relevanceJa: "HHL線形方程式アルゴリズムと、疎性・出力観測量の前提を示す原論文です。",
@@ -1057,7 +1057,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       },
       {
         title: "Application of Quantum Machine Learning using the Quantum Kernel Algorithm on High Energy Physics Analysis at the LHC",
-        authors: "Wu et al.",
+        authors: "Sau Lan Wu, Shaojun Sun, Wen Guan, Chen Zhou, Jay Chan, Chi Lung Cheng, Tuan Pham, Yan Qian, Alex Zeng Wang, Rui Zhang, Miron Livny, Jennifer Glick, Panagiotis Kl. Barkoutsos, Stefan Woerner, Ivano Tavernelli, Federico Carminati, Alberto Di Meglio, Andy C. Y. Li, Joseph Lykken, Panagiotis Spentzouris, Samuel Yen-Chi Chen, Shinjae Yoo, Tzu-Chieh Wei",
         year: "2021",
         url: "https://arxiv.org/abs/2104.05059",
         relevance: "A domain application that reports quantum-kernel performance alongside classical counterparts.",
@@ -1143,7 +1143,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         title: "Teleporting an unknown quantum state via dual classical and EPR channels",
         authors: "Charles H. Bennett et al.",
         year: "1993",
-        url: "https://doi.org/10.1103/PhysRevLett.70.1895",
+        url: "https://doi.org/10.1103/physrevlett.70.1895",
         relevance: "Original teleportation protocol using an entangled pair and two classical bits.",
         relevanceJa: "エンタングルした対と2ビットの古典通信によるテレポーテーションの原論文です。",
       },
@@ -1227,14 +1227,14 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         title: "Scheme for reducing decoherence in quantum computer memory",
         authors: "Peter W. Shor",
         year: "1995",
-        url: "https://doi.org/10.1103/PhysRevA.52.R2493",
+        url: "https://doi.org/10.1103/physreva.52.r2493",
         relevance: "Introduces an early quantum error-correction scheme for reducing decoherence in memory.",
         relevanceJa: "メモリのデコヒーレンスを低減する初期の量子誤り訂正方式を導入します。",
       },
       {
         title: "Good Quantum Error-Correcting Codes Exist",
-        authors: "Calderbank and Shor",
-        year: "1996",
+        authors: "A. R. Calderbank, Peter W. Shor",
+        year: "1995",
         url: "https://arxiv.org/abs/quant-ph/9512032",
         relevance: "Places quantum codes in a broader rate and distance framework.",
         relevanceJa: "量子符号をレートと距離のより広い枠組みに位置づけます。",
@@ -1316,9 +1316,9 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     relatedSlugs: ["shor-code-error-correction", "quantum-teleportation", "bell-state-qiskit"],
     literature: [
       {
-        title: "The XZZX surface code",
-        authors: "Bonilla Ataides et al.",
-        year: "2021",
+        title: "The XZZX Surface Code",
+        authors: "J. Pablo Bonilla Ataides, David K. Tuckett, Stephen D. Bartlett, Steven T. Flammia, Benjamin J. Brown",
+        year: "2020",
         url: "https://arxiv.org/abs/2009.07851",
         relevance: "Shows how a surface-code variant can exploit structure in biased Pauli noise and decoder design.",
         relevanceJa: "偏ったパウリノイズとデコーダ設計の構造を活用する表面符号の変種を示します。",
@@ -1327,7 +1327,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
         title: "Scheme for reducing decoherence in quantum computer memory",
         authors: "Peter W. Shor",
         year: "1995",
-        url: "https://doi.org/10.1103/PhysRevA.52.R2493",
+        url: "https://doi.org/10.1103/physreva.52.r2493",
         relevance: "Provides a foundational contrast between early block-code protection and scalable local-check architectures.",
         relevanceJa: "初期のブロック符号とスケーラブルな局所検査構成を比較する基礎文献です。",
       },

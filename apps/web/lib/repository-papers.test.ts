@@ -1,0 +1,196 @@
+// The identity rule, which is the part that has to survive thousands of papers,
+// and the audit that keeps 438 citations agreeing with 143 rows.
+//
+// The corpus is not imported here, for the reason `repository-topics.test.ts`
+// states. `scripts/check-paper-register.mjs` runs the same functions over the
+// real corpus and the real graph.
+import assert from "node:assert/strict";
+import test from "node:test";
+
+import {
+  auditCitations,
+  canonicalPaperUrl,
+  paperIdFromUrl,
+  validatePaperRegister,
+  type PaperRegister,
+} from "./repository/papers.ts";
+import { PAPER_REGISTER } from "./repository/paper-register.ts";
+
+test("five strings for one paper collapse to one id", () => {
+  // This is the whole reason the register is keyed on an id rather than a URL. A
+  // corpus growing to thousands of papers acquires every one of these variants,
+  // and a register keyed on whichever string arrived first silently splits a
+  // paper in two — two rows, two titles, and no rule can see they are one thing.
+  const arxiv = "arxiv:2011.03185";
+  for (const url of [
+    "https://arxiv.org/abs/2011.03185",
+    "https://arxiv.org/abs/2011.03185v2",
+    "https://arxiv.org/pdf/2011.03185",
+    "https://arxiv.org/pdf/2011.03185v7",
+    "http://www.arxiv.org/abs/2011.03185",
+  ]) {
+    assert.equal(paperIdFromUrl(url), arxiv, url);
+  }
+  // Pre-2007 ids keep their native form. Rewriting `quant-ph/9508027` into
+  // anything else would make the register's keys stop matching arXiv's own.
+  assert.equal(paperIdFromUrl("https://arxiv.org/abs/quant-ph/9508027v2"), "arxiv:quant-ph/9508027");
+});
+
+test("a publisher's front door to a DOI is the same paper as the DOI", () => {
+  // `link.aps.org/doi/10.1103/PhysRevA.53.2855` and `doi.org/10.1103/…` are one
+  // paper. The corpus carried the first; without this rule, pasting the second
+  // one day would create a second row.
+  assert.equal(
+    paperIdFromUrl("https://link.aps.org/doi/10.1103/PhysRevA.53.2855"),
+    "doi:10.1103/physreva.53.2855",
+  );
+  assert.equal(
+    paperIdFromUrl("https://doi.org/10.1103/PhysRevA.53.2855"),
+    "doi:10.1103/physreva.53.2855",
+  );
+  // Case is not identity for a DOI, and two casings of one DOI are one paper.
+  assert.equal(
+    paperIdFromUrl("https://doi.org/10.1017/CBO9780511976667"),
+    paperIdFromUrl("https://doi.org/10.1017/cbo9780511976667"),
+  );
+});
+
+test("an address the register cannot key on is refused, not guessed at", () => {
+  // Returning some fabricated id here would put an unjoinable island in the
+  // register that looks exactly like a paper. The build refuses instead.
+  assert.equal(paperIdFromUrl("https://example.org/some-preprint"), null);
+  assert.equal(paperIdFromUrl("https://www.nature.com/articles/nature23879"), null);
+  assert.equal(paperIdFromUrl(""), null);
+});
+
+test("every id round-trips through its canonical url", () => {
+  for (const paper of PAPER_REGISTER.papers) {
+    assert.equal(paperIdFromUrl(canonicalPaperUrl(paper.id)), paper.id, paper.id);
+  }
+});
+
+test("the authored register satisfies every structural rule", () => {
+  assert.deepEqual(validatePaperRegister(PAPER_REGISTER), []);
+  // A floor, not the exact count: pinning 143 would fail the day a paper is
+  // added, which is the one thing this file should never discourage.
+  assert.ok(PAPER_REGISTER.papers.length >= 140);
+});
+
+test("validation refuses the rows that would reintroduce drift one level up", () => {
+  const one = (over: Record<string, unknown>): PaperRegister => ({
+    papers: [
+      {
+        id: "arxiv:2011.03185",
+        title: "T",
+        authors: "A",
+        year: "2020",
+        url: "https://arxiv.org/abs/2011.03185",
+        ...over,
+      },
+    ],
+  });
+  assert.deepEqual(validatePaperRegister(one({})), []);
+  // A row whose link points somewhere its own key does not is the exact failure
+  // the register exists to stop, moved up one level.
+  assert.match(
+    validatePaperRegister(one({ url: "https://arxiv.org/abs/1701.03684" })).join("\n"),
+    /url is https:\/\/arxiv\.org\/abs\/1701\.03684/,
+  );
+  assert.match(validatePaperRegister(one({ year: "2020a" })).join("\n"), /year is not four digits/);
+  assert.match(validatePaperRegister(one({ authors: "  " })).join("\n"), /authors is empty/);
+  assert.match(
+    validatePaperRegister({ papers: [...one({}).papers, ...one({}).papers] }).join("\n"),
+    /listed twice/,
+  );
+});
+
+test("two ids carrying one title and year are reported as the same paper twice", () => {
+  // A preprint and its journal DOI, both registered. Not always wrong — but it
+  // is the thing to look at, and it is invisible without this.
+  const errors = validatePaperRegister({
+    papers: [
+      { id: "arxiv:2011.03185", title: "One paper", authors: "A", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
+      { id: "doi:10.1000/x", title: "One Paper", authors: "A", year: "2020", url: "https://doi.org/10.1000/x" },
+    ],
+  });
+  assert.match(errors.join("\n"), /the same title and year appear under/);
+});
+
+const FIXTURE: PaperRegister = {
+  papers: [
+    { id: "arxiv:1", title: "Real title", authors: "Real authors", year: "2020", url: "https://arxiv.org/abs/1" },
+    { id: "arxiv:2", title: "Unplaced", authors: "Somebody", year: "2021", url: "https://arxiv.org/abs/2" },
+  ],
+};
+
+test("a citation is audited on all four fields, against the row and not its neighbours", () => {
+  const audit = auditCitations(
+    [
+      {
+        where: "entry:a",
+        title: "A Quantum-Classical Algorithm for Molecular Properties",
+        authors: "Real authors",
+        year: "2020",
+        url: "https://arxiv.org/abs/1",
+      },
+      // Same paper, different URL spelling, and every field right. The version
+      // suffix must not make this a second paper or a drift.
+      {
+        where: "node:n",
+        title: "Real title",
+        authors: "Real authors",
+        year: "2020",
+        url: "https://arxiv.org/abs/1v3",
+      },
+    ],
+    FIXTURE,
+  );
+  // The wrong-title citation drifts on title AND on url (the row publishes the
+  // canonical form), and the v3 one drifts only on url.
+  assert.deepEqual(
+    audit.drifted.filter((d) => d.field === "title").map((d) => d.expected),
+    ["Real title"],
+  );
+  assert.equal(audit.unregistered.length, 0);
+  assert.equal(audit.unparseable.length, 0);
+});
+
+test("a paper cited from both sides is reported, and one cited from neither is not an error", () => {
+  const audit = auditCitations(
+    [
+      { where: "entry:a", title: "Real title", authors: "Real authors", year: "2020", url: "https://arxiv.org/abs/1" },
+      { where: "node:n", title: "Real title", authors: "Real authors", year: "2020", url: "https://arxiv.org/abs/1" },
+    ],
+    FIXTURE,
+  );
+  // The substrate for "papers as traces": the map and the Atlas agree about this
+  // one. `arxiv:2` is cited by nobody, which is a queue, not a defect.
+  assert.deepEqual(audit.shared, ["arxiv:1"]);
+  assert.deepEqual(audit.uncited, ["arxiv:2"]);
+  assert.deepEqual(audit.drifted, []);
+});
+
+test("two citations of one paper from the same side do not count as shared", () => {
+  // `shared` means the two *bibliographies* meet. Counting two entries citing
+  // one paper would report the Atlas agreeing with itself.
+  const cite = (where: string) => ({
+    where,
+    title: "Real title",
+    authors: "Real authors",
+    year: "2020",
+    url: "https://arxiv.org/abs/1",
+  });
+  assert.deepEqual(auditCitations([cite("entry:a"), cite("entry:b")], FIXTURE).shared, []);
+  assert.deepEqual(auditCitations([cite("node:a"), cite("node:b")], FIXTURE).shared, []);
+});
+
+test("an unregistered paper is reported as unregistered, never as drift", () => {
+  // The fix is "add the row", and a drift error would send the reader to edit a
+  // row that does not exist.
+  const audit = auditCitations(
+    [{ where: "entry:a", title: "x", authors: "y", year: "1999", url: "https://arxiv.org/abs/9999" }],
+    FIXTURE,
+  );
+  assert.equal(audit.unregistered.length, 1);
+  assert.deepEqual(audit.drifted, []);
+});
