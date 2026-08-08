@@ -200,21 +200,10 @@ function Lane({
   lane,
   copy,
   atlas,
-  named,
 }: {
   lane: ConvergeLane;
   copy: ConvergeCopy;
   atlas: ReadonlySet<string>;
-  /**
-   * Ids that have already claimed a view-transition name on this document.
-   *
-   * A name must be unique per document or the browser skips the transition for
-   * every element claiming it, and one node genuinely can appear twice on one
-   * figure — a slot that is a step of two different methods. So the first
-   * occurrence carries the pairing and the rest do not, which is deterministic
-   * and costs the later ones nothing they had.
-   */
-  named: Set<string>;
 }): React.ReactElement {
   const standingNote =
     lane.standing === "unpublished"
@@ -233,18 +222,20 @@ function Lane({
     documented ? ` · ${copy.inAtlas}` : ""
   }`;
 
-  // The zoom pairing goes on the *name*, because the name is what navigates —
-  // so a strand that draws no name must not take the claim either.
+  // **A lane carries no `view-transition-name`, and never usefully did.**
   //
-  // An opened strand is nameless (see `place` in the layout). Claiming the id
-  // anyway consumed it twice over: the opened lane applied no
-  // `view-transition-name` because it renders no `<text>`, and a later lane for
-  // the same node found the id already spoken for and rendered none either. The
-  // pairing for that node was simply gone, and a missing view transition is
-  // invisible — the page still loads, it just cuts instead of zooming.
-  const claimsTransition =
-    lane.label !== "" && lane.nodeId !== null && !named.has(lane.nodeId);
-  if (claimsTransition) named.add(lane.nodeId!);
+  // It used to, on the `<text>`, with a per-document set making sure no two lanes
+  // claimed one id — careful bookkeeping over a property the browser ignores.
+  // Measured under Playwright, because a hidden agent tab skips every view
+  // transition and so cannot tell "does not work" from "did not run":
+  // `view-transition-name` on a `<path>`, a `<text>`, a `<circle>` or a `<g>`
+  // inside an `<svg>` is **never captured** — `getComputedStyle` reports the name
+  // and no `::view-transition-group(<name>)` is ever built — while the same name
+  // on a `<div>` is. The root `<svg>` is captured, and that one is kept below.
+  //
+  // What moves a lane now is a CSS transition on its geometry, which does work
+  // inside an SVG and is strictly better here: it bends the actual curve instead
+  // of crossfading a snapshot of it. See the converge block in `styles.css`.
 
   return (
     <g
@@ -257,10 +248,22 @@ function Lane({
           place. Shut: the tapered body. Never both — an opened strand still
           drawing its own body would claim to be a way across at the same time
           as showing the ways across it decomposes into. */}
+      {/* The `<title>` rides on the drawn shape, not only on the two anchors.
+          Exactly one lane on the whole surface had none — the run of named hops,
+          which is drawn open and has no id, so it gets neither anchor and so got
+          neither `<title>`. It is also the longest label in the graph. Hanging
+          the description off the *drawing* rather than off the *controls* means
+          a lane cannot lose its description by losing a control, which is how
+          that one went missing. The anchors keep their own, action-specific
+          titles: "click the line to open it here" is about the control. */}
       {lane.open ? (
-        <path className="mj-converge-spine" d={lane.d} />
+        <path className="mj-converge-spine" d={lane.d}>
+          <title>{title}</title>
+        </path>
       ) : (
-        <path className="mj-converge-strand-body" d={lane.outline} />
+        <path className="mj-converge-strand-body" d={lane.outline}>
+          <title>{title}</title>
+        </path>
       )}
 
       {/* Target one: the line. Opens or shuts it, here. */}
@@ -283,23 +286,31 @@ function Lane({
       {lane.label === "" ? null : (
         <a href={lane.href} aria-label={`${lane.fullLabel} — ${copy.readAbout}`}>
           <title>{`${title} — ${copy.readAbout}`}</title>
+          {/* Sized to the name, not to a constant. It was a fixed 120x15 under
+              text whose median drawn width is 235px, so **96% of English names
+              and 80% of Japanese ones were wider than their own click target** —
+              a reader aiming at the middle of a word hit nothing. The width comes
+              from `lane.labelWidth`, which is the engine's own measurement of
+              this string: the same number that sized the column, carried, never
+              re-derived here. A second derivation of a width is exactly what
+              clipped the widest label in a column built for it, twice. */}
           <rect
             className="mj-converge-hit"
-            x={n(lane.labelX - 60)}
+            x={n(lane.labelX - lane.labelWidth / 2 - 4)}
             y={n(lane.labelY - 12)}
-            width="120"
+            width={n(lane.labelWidth + 8)}
             height="15"
           />
           <text
             className="mj-converge-lane-name"
-            x={n(lane.labelX)}
-            y={n(lane.labelY)}
+            /* Positioned by `transform`, not by `x`/`y`. Those are not animatable
+               CSS properties on a `<text>` (measured), so a name set with them
+               jumps to its new place while every line around it glides. The
+               transform *is* animatable, and the canvas transitions it. */
+            x="0"
+            y="0"
+            transform={`translate(${n(lane.labelX)} ${n(lane.labelY)})`}
             textAnchor="middle"
-            style={
-              claimsTransition
-                ? ({ viewTransitionName: transitionNameFor(lane.nodeId!) } as React.CSSProperties)
-                : undefined
-            }
           >
             {lane.label}
           </text>
@@ -363,12 +374,12 @@ export function ConvergeCanvas({
 }): React.ReactElement | null {
   if (diagram.empty) return null;
   const copy = COPY[locale === "ja" ? "ja" : "en"];
-  // Mutated as the lanes render, in order, so the first occurrence of a node id
-  // is the one that carries the pairing. Rendering is synchronous and
-  // single-pass here, which is the only reason a mutable set is safe.
+  // The set now has exactly one kind of claimant — the figure itself — because
+  // the root `<svg>` is the only element here a `view-transition-name` reaches.
+  // It is still needed: the unfocused surface draws four figures at once and one
+  // node can be the subject of more than one of them, and a duplicate name does
+  // not degrade politely, it kills the transition for every element claiming it.
   const named = claimed ?? new Set<string>();
-  // The figure's own subject claims its name before any lane can take it: the
-  // figure is the larger of the two shapes and the one a reader is arriving at.
   const subjectClaims = subjectId !== null && !named.has(subjectId);
   if (subjectClaims) named.add(subjectId);
   return (
@@ -385,7 +396,7 @@ export function ConvergeCanvas({
     >
       <title>{title}</title>
       {diagram.lanes.map((lane) => (
-        <Lane key={lane.key} lane={lane} copy={copy} atlas={atlas} named={named} />
+        <Lane key={lane.key} lane={lane} copy={copy} atlas={atlas} />
       ))}
       {diagram.feeds.map((feed) => (
         <Feed key={feed.key} feed={feed} copy={copy} />

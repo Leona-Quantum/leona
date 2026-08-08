@@ -399,9 +399,25 @@ export interface ConvergeLane {
   label: string;
   fullLabel: string;
   labelTruncated: boolean;
+  /**
+   * A run of named hops, drawn as its hops and never under a name of its own.
+   * Its `fullLabel` is `A → B`, which is the honest answer in a `<title>` and is
+   * the coined composite the owner refused when drawn. See `PlanStrand.composite`.
+   */
+  composite: boolean;
   /** Where the label sits — clear of the strand's own edge. */
   labelX: number;
   labelY: number;
+  /**
+   * How wide the drawn label is, so the click target can be the size of the word.
+   *
+   * Emitted rather than recomputed by the canvas. The renderer would have to
+   * import `estimateTextWidth` and call it on the same string, which is a second
+   * derivation of one measurement — the mistake this file has already made twice
+   * with `hFit`, both times clipping the widest label in a column built to hold
+   * it. 0 on a lane that draws no name.
+   */
+  labelWidth: number;
   /**
    * The node this line *is*, for `?open=` and for the zoom pairing.
    *
@@ -763,6 +779,26 @@ interface PlanStrand {
    * teaches the wrong rule about every other line on the canvas.
    */
   openable: boolean;
+  /**
+   * A run of named hops, whose `label` is `A → B` and must never be **drawn**.
+   *
+   * > *"don't invent composite processes… integrator+qls should not be one
+   * > composite process"* — owner
+   *
+   * The string exists because a `<title>` and a list row still have to say what
+   * the line is, and "A → B" is the honest answer there: it names the hops rather
+   * than coining a name for their union. Drawn on the canvas it becomes exactly
+   * the coined composite the owner refused — so the run lane is drawn as its
+   * hops, and the hops carry the names.
+   *
+   * An explicit field rather than the coincidence that `open && !openable` picks
+   * out the same lane. It does today, and relying on it is how the `openHref`
+   * expression above ended up with two clauses that cancelled: this restored the
+   * canvas's opened names and the composite came back with them, because the
+   * suppression that had been holding it down was `strand.open ? "" : …` and was
+   * doing two unrelated jobs at once.
+   */
+  composite: boolean;
   opensInto: OpensInto | null;
   slots: readonly string[];
   interior: readonly string[];
@@ -891,6 +927,7 @@ function chainInside(
       boundaries: [],
       inside: 0,
       openable: false,
+      composite: false,
       opensInto: null,
       slots: [],
       interior: [],
@@ -955,6 +992,7 @@ function planForSlot(
     boundaries: [],
     inside: methods.length,
     openable: canOpen,
+    composite: false,
     opensInto: methods.length > 0 ? "ways" : null,
     slots: [slotId],
     interior: [],
@@ -1017,6 +1055,7 @@ function planForMethod(
     boundaries: inside?.boundaries ?? [],
     inside: holds ? segments + feeds.length : 0,
     openable: canOpen && holds,
+    composite: false,
     opensInto: holds ? "steps" : null,
     slots: [],
     interior: [],
@@ -1099,6 +1138,7 @@ function planForLane(
     // A run of named hops is drawn open from the start and has no id for
     // `?open=` to name it by, so there was never anything to click.
     openable: false,
+    composite: true,
     opensInto: "steps",
     slots: named.slots,
     interior: lane.interior,
@@ -1376,7 +1416,13 @@ function place(
       ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
       : peak.y - bandHalf - M.labelLift;
 
-  const fitted = fitLabel(strand.label, M.laneFont, context.columnFit);
+  // A run of named hops is the one lane that keeps drawing nothing, and for a
+  // different reason from the one this commit removed: its label is `A → B`, and
+  // that string on the canvas is the coined composite the owner refused. It is
+  // drawn as its hops, and the hops carry the names.
+  const fitted = strand.composite
+    ? { text: "", truncated: false }
+    : fitLabel(strand.label, M.laneFont, context.columnFit);
   if (strand.standing === "unpublished") out.unpublished += 1;
   if (!strand.open && strand.inside > 0) out.collapsed += 1;
   if (depth >= CONVERGE_DEPTH_MAX && strand.inside > 0 && !strand.open) out.depthCapped = true;
@@ -1396,8 +1442,10 @@ function place(
     label: fitted.text,
     fullLabel: strand.label,
     labelTruncated: fitted.truncated,
+    composite: strand.composite,
     labelX: peak.x,
     labelY,
+    labelWidth: fitted.text === "" ? 0 : estimateTextWidth(fitted.text, M.laneFont),
     nodeId: strand.id,
     // `openable`, not `id`. A line at the depth ceiling has an id and something
     // inside and still cannot draw it, and offering the click anyway is what

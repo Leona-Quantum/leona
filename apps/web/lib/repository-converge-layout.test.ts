@@ -457,6 +457,76 @@ test("two lane labels never overlap", () => {
   }
 });
 
+test("a name's click target covers the name, and is no greedier than the one it replaced", () => {
+  // The target was a fixed **120×15** rect under text whose median drawn width is
+  // 235px: measured over every figure in both locales, shut and fully opened,
+  // only **85 of 780** names fitted inside their own click target. A reader
+  // aiming at the middle of a long name hit nothing.
+  //
+  // Sizing it to the label fixes that — 780 of 780 — and the risk it introduces
+  // is the opposite one, a rect wide enough to steal its neighbour's clicks on a
+  // canvas where lanes sit `laneGap: 10` apart at the peak. So both halves are
+  // asserted, and the second is asserted **against the rect it replaced** rather
+  // than against zero: 44 pairs of targets already overlapped at 120px wide,
+  // because what makes them overlap is the 15px height on a crowded opened
+  // figure, not the width. Measured after: still 44. The change is free.
+  //
+  // `labelWidth` is the engine's own measurement of the drawn string, carried
+  // rather than recomputed here — a second derivation of a width is what clipped
+  // the widest label in a column built for it, twice.
+  const overlapping = (rects: { x0: number; x1: number; y0: number; y1: number }[]) => {
+    let n = 0;
+    for (let i = 0; i < rects.length; i += 1) {
+      for (let j = i + 1; j < rects.length; j += 1) {
+        const a = rects[i]!;
+        const b = rects[j]!;
+        if (a.x0 < b.x1 - EPS && b.x0 < a.x1 - EPS && a.y0 < b.y1 - EPS && b.y0 < a.y1 - EPS) n += 1;
+      }
+    }
+    return n;
+  };
+  let boxes = 0;
+  let mine = 0;
+  let fixed = 0;
+  for (const locale of ["en", "ja"] as const) {
+    for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+      for (const open of [new Set<string>(), new Set(openableAddresses(focus.id))]) {
+        const drawn = openDiagram(focus.id, open, locale).lanes.filter((lane) => lane.label !== "");
+        boxes += drawn.length;
+        for (const lane of drawn) {
+          assert.ok(
+            lane.labelWidth + 8 >= estimateTextWidth(lane.label, M.laneFont) - EPS,
+            `${lane.key}: the target is narrower than the name it is for`,
+          );
+        }
+        // Exactly the rect `repository-converge-map.tsx` emits, and the one it
+        // replaced, on the same geometry.
+        mine += overlapping(
+          drawn.map((lane) => ({
+            x0: lane.labelX - lane.labelWidth / 2 - 4,
+            x1: lane.labelX + lane.labelWidth / 2 + 4,
+            y0: lane.labelY - 12,
+            y1: lane.labelY + 3,
+          })),
+        );
+        fixed += overlapping(
+          drawn.map((lane) => ({
+            x0: lane.labelX - 60,
+            x1: lane.labelX + 60,
+            y0: lane.labelY - 12,
+            y1: lane.labelY + 3,
+          })),
+        );
+      }
+    }
+  }
+  assert.ok(boxes > 700, `only ${boxes} click targets checked`);
+  assert.ok(
+    mine <= fixed,
+    `label-sized targets overlap ${mine} times, the fixed 120px ones ${fixed} — sizing to the name made targeting worse`,
+  );
+});
+
 test("no lane label sits on a lane", () => {
   // The other text invariant, and the one the old canvas did not have: three of
   // the four collisions it shipped were <text> against <text>, so a label-vs-
@@ -684,8 +754,16 @@ test("no figure clips a label the column was sized to hold", () => {
           `${focus.id} (${locale}) clipped "${lane.fullLabel}" into "${lane.label}"`,
         );
         // Opened strands used to be exempt here because they drew no name at
-        // all. They draw one now, and it is fitted against the same budget as
-        // every other, so there is nothing left to exempt.
+        // all. They draw one now, fitted against the same budget as every other.
+        // Exactly one lane is still nameless and it is the run of named hops,
+        // whose `fullLabel` is `A → B` — the coined composite the owner refused.
+        // Asserted by *kind*, not by "if the label is empty, skip": that shape of
+        // exemption is how 128 nameless lanes went unnoticed here for two
+        // sessions.
+        if (lane.composite) {
+          assert.equal(lane.label, "", `${lane.key} drew the composite name "${lane.label}"`);
+          continue;
+        }
         assert.equal(lane.label, lane.fullLabel);
       }
     }
@@ -1385,13 +1463,68 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   const shutRate = shutHit / shutNamed;
   assert.ok(
     openedRate <= shutRate,
-    `opened names collide ${openedHit}/${openedNamed} (${(openedRate * 100).toFixed(1)}%), ` +
+    `opened names collide with a line ${openedHit}/${openedNamed} (${(openedRate * 100).toFixed(1)}%), ` +
       `shut names ${shutHit}/${shutNamed} (${(shutRate * 100).toFixed(1)}%) — ` +
       `restoring the opened names made the picture worse, not better`,
   );
   assert.ok(
     openedRate < 0.15,
     `${openedHit} of ${openedNamed} opened names collide, which is past the ceiling`,
+  );
+});
+
+test("name-on-name overlap on an opened figure stays where it was measured", () => {
+  // **The residue of restoring the opened names, counted rather than hidden.**
+  //
+  // `two lane labels never overlap` above is absolute and passes — but it only
+  // ever ran on figures with **nothing open**, and at full saturation the picture
+  // is not clean: 8 pairs of *shut* names already overlapped before any of this,
+  // and restoring 254 opened names added 12 more (4 opened-against-shut, 8
+  // opened-against-opened).
+  //
+  // Those 12 are shipped deliberately. The alternative measured was widening the
+  // reserved label band from 13px to 17px so it covers the name's actual vertical
+  // reach (`labelLift + 0.8 × laneFont` = 16.6, which it does not) — that removes
+  // 4 of the 20 and costs **16% more width and 14% more height on every figure**,
+  // on a canvas the owner has already said is too wide. Twelve overlaps in a
+  // state a reader reaches after ~54 deliberate clicks is a better trade than 128
+  // lines that draw no name at all in the state they reach on the first one.
+  //
+  // Pinned by kind so the trade cannot quietly get worse, and so the 8 that were
+  // here first stay attributable to what caused them.
+  let openNames = 0;
+  let shutNames = 0;
+  const kinds = { shutShut: 0, openShut: 0, openOpen: 0 };
+  for (const locale of ["en", "ja"] as const) {
+    for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+      const diagram = openDiagram(focus.id, openableAddresses(focus.id), locale);
+      const drawn = diagram.lanes.filter((lane) => lane.label !== "");
+      for (const lane of drawn) if (lane.open) openNames += 1;
+        else shutNames += 1;
+      for (let i = 0; i < drawn.length; i += 1) {
+        for (let j = i + 1; j < drawn.length; j += 1) {
+          const a = nameBox(drawn[i]!);
+          const b = nameBox(drawn[j]!);
+          if (!(a.x0 < b.x1 - EPS && b.x0 < a.x1 - EPS && a.y0 < b.y1 - EPS && b.y0 < a.y1 - EPS))
+            continue;
+          const openCount = Number(drawn[i]!.open) + Number(drawn[j]!.open);
+          if (openCount === 2) kinds.openOpen += 1;
+          else if (openCount === 1) kinds.openShut += 1;
+          else kinds.shutShut += 1;
+        }
+      }
+    }
+  }
+  assert.ok(openNames > 200 && shutNames > 300, `${openNames} opened / ${shutNames} shut names drawn`);
+  assert.equal(
+    kinds.shutShut,
+    8,
+    `${kinds.shutShut} shut-against-shut overlaps; 8 predate the opened names and are not their doing`,
+  );
+  assert.ok(
+    kinds.openShut + kinds.openOpen <= 12,
+    `${kinds.openShut + kinds.openOpen} overlaps involve a restored name (was 12: ` +
+      `${kinds.openShut} opened-against-shut, ${kinds.openOpen} opened-against-opened)`,
   );
 });
 
