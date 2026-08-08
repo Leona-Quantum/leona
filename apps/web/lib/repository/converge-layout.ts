@@ -253,7 +253,42 @@ export const CONVERGE_DEPTH_MAX = 4;
  * silence. Twenty-four is past anything a reader reaches by clicking — the
  * widest figure in the graph fully opened names fewer.
  */
-export const CONVERGE_OPEN_MAX = 24;
+export const CONVERGE_OPEN_MAX = 64;
+
+/**
+ * The shape of a lane address, and the only thing `?open=` validates against.
+ *
+ * Positions and dots. There is nothing to look up: an address that names no lane
+ * on this figure simply never matches during planning, so a stale or invented one
+ * opens nothing rather than erroring. That is the same forgiveness the id form
+ * had — "a URL naming four things, one of which has since been renamed, opens the
+ * other three" — arrived at by construction instead of by a graph lookup.
+ */
+const ADDRESS = /^\d+(?:\.\d+)*$/;
+
+/**
+ * Is this lane opened by the reader's `?open=` set?
+ *
+ * Two forms, and the second is only there so that links already written down keep
+ * working. An **address** opens exactly one lane. A bare **node id** opens every
+ * lane that node appears on, which is what the parameter used to mean and is why
+ * one click flipped five lanes at once on `nonlinear-ode-solve` — a node can hold
+ * twelve positions on one figure. Links minted from today on carry addresses;
+ * `toggleHref` never emits an id.
+ */
+export function isOpenedBy(
+  open: ReadonlySet<string>,
+  address: string,
+  id: string | null,
+): boolean {
+  if (open.has(address)) return true;
+  return id !== null && open.has(id);
+}
+
+/** Whether a `?open=` value is one of the two forms above. */
+export function isOpenValue(value: string, known: (id: string) => boolean): boolean {
+  return ADDRESS.test(value) || known(value);
+}
 
 /**
  * Which of a URL's `?open=` values this figure will honour, and how many it drops.
@@ -267,6 +302,12 @@ export const CONVERGE_OPEN_MAX = 24;
  *
  * Unknown ids are skipped rather than rejected: a URL naming four things, one
  * of which has since been renamed, should open the other three.
+ *
+ * **One function, both surfaces.** The overview page carried a hand-rolled second
+ * copy of this loop with a different predicate and no `reserved` argument. Two
+ * parsers for one parameter is how the two pages come to disagree about what a
+ * URL means, and the disagreement would have arrived the moment the predicate
+ * changed — which is this change.
  */
 export function resolveOpenIds(
   values: readonly string[],
@@ -276,7 +317,7 @@ export function resolveOpenIds(
   const open = new Set<string>();
   let dropped = 0;
   for (const value of values) {
-    if (!known(value)) continue;
+    if (!isOpenValue(value, known)) continue;
     if (open.has(value)) continue;
     if (open.size + reserved >= CONVERGE_OPEN_MAX) {
       dropped += 1;
@@ -317,6 +358,11 @@ export interface ConvergeState {
 
 export interface ConvergeLane {
   key: string;
+  /**
+   * This lane's position in the figure, and what `?open=` names. See
+   * `PlanStrand.address` for why it is a path of positions and not the node id.
+   */
+  address: string;
   /**
    * The **spine**: the centre line of this strand, as SVG path data.
    *
@@ -588,12 +634,25 @@ export function nodeHref(id: string, at?: string | null): string {
 export function toggleHref(
   focus: string | null,
   open: ReadonlySet<string>,
-  id: string,
+  address: string,
   at?: string | null,
+  /**
+   * The node this lane draws, if it has one.
+   *
+   * Shutting has to remove whatever is actually holding the lane open, and an
+   * inherited `?open=<id>` from a link written before addresses existed holds
+   * *every* lane that node appears on. Dropping only the address would leave the
+   * id behind and the lane open, so the shut control would do nothing — the dead
+   * control this canvas has now produced twice. Removing the id shuts its
+   * siblings too, which is the old behaviour and the honest reading of a URL that
+   * asked for it by name.
+   */
+  id?: string | null,
 ): string {
   const next = new Set(open);
-  if (next.has(id)) next.delete(id);
-  else next.add(id);
+  if (next.has(address)) next.delete(address);
+  else if (id && next.has(id)) next.delete(id);
+  else next.add(address);
   return figureHref(focus, next, at);
 }
 
@@ -654,7 +713,32 @@ function laneName(
  */
 interface PlanStrand {
   key: string;
-  /** What `?open=` names. Null on a shape with no node of its own. */
+  /**
+   * What `?open=` names: **this lane**, and no other.
+   *
+   * A dotted path of positions from the figure's root — `1.0.3` is the fourth
+   * child of the first child of bundle 1's lane 0. Not the node id, which is what
+   * it used to be and which opens every lane that node appears on: `nonlinear-ode-solve`
+   * has one node on twelve lanes and one click flipped five of them at once, in
+   * unrelated parts of the canvas. Not `key` either, though `key` is unique and
+   * stable (measured: 0 duplicates and 0 identity mismatches over 41 figure/open-set
+   * pairs) — a key is a path of *names* and runs to 177 characters, so a saturated
+   * figure would need a 6.5 KB query string. A path of positions says the same
+   * thing in eight.
+   *
+   * Stable for the same reason the key is: every position comes from a
+   * `.map()` over a list the graph decides — `methodsRealizing`, `route.segments`,
+   * the bundle's lanes — none of which the open set can reorder.
+   *
+   * Never null: every lane has a position even when it has no node. That is the
+   * point — the run lane and the method's own segment could not be named at all
+   * before, because naming was by id and they have none.
+   */
+  address: string;
+  /**
+   * The node this lane draws, for the Atlas mark and for back-compatible `?open=`.
+   * Null on a shape with no node of its own.
+   */
   id: string | null;
   label: string;
   href: string;
@@ -714,14 +798,26 @@ function fanInside(
    * entirely, which is the usual way a duplicate key is found.
    */
   parentKey: string,
+  /** The parent's `?open=` address; a child's is this plus its position. */
+  parentAddress: string,
 ): { layout: "fan"; children: PlanStrand[]; count: number } | null {
   const methods = methodsRealizing(graph, slotId);
   if (methods.length === 0) return null;
   return {
     layout: "fan",
     count: methods.length,
-    children: methods.map((method) =>
-      planForMethod(graph, vocabulary, method, locale, open, depth, seen, `${parentKey}/`),
+    children: methods.map((method, index) =>
+      planForMethod(
+        graph,
+        vocabulary,
+        method,
+        locale,
+        open,
+        depth,
+        seen,
+        `${parentKey}/`,
+        `${parentAddress}.${index}`,
+      ),
     ),
   };
 }
@@ -750,6 +846,8 @@ function chainInside(
   seen: Set<string>,
   /** The parent's own key — see `fanInside`. */
   parentKey: string,
+  /** The parent's `?open=` address — see `fanInside`. */
+  parentAddress: string,
 ): { layout: "chain"; children: PlanStrand[]; boundaries: string[]; count: number } | null {
   const route = routeOf(graph, vocabulary, method);
   // A single segment is drawn too, now that a method may open for its
@@ -768,6 +866,7 @@ function chainInside(
         depth,
         seen,
         `${parentKey}/${index}/`,
+        `${parentAddress}.${index}`,
       );
     }
     // The part of the route the method performs itself — 23 of the 29 decomposed
@@ -781,6 +880,7 @@ function chainInside(
     // segment inside an unlabelled lane and give the reader nothing to read.
     return {
       key: `${parentKey}/${index}/own`,
+      address: `${parentAddress}.${index}`,
       id: null,
       label: labelOf(method, locale),
       href: `/repository/layers/${method.id}`,
@@ -816,6 +916,7 @@ function planForSlot(
   depth: number,
   seen: Set<string>,
   keyPrefix: string,
+  address: string,
 ): PlanStrand {
   const node = layerNode(graph, slotId);
   const label = node ? labelOf(node, locale) : slotId;
@@ -826,13 +927,24 @@ function planForSlot(
   // slot would otherwise expand until the cap, and the cap is the wrong reason
   // to stop.
   const canOpen = methods.length > 0 && depth < CONVERGE_DEPTH_MAX && !seen.has(slotId);
-  const isOpen = canOpen && open.has(slotId);
+  const isOpen = canOpen && isOpenedBy(open, address, slotId);
   const key = `${keyPrefix}slot:${slotId}`;
   const inside = isOpen
-    ? fanInside(graph, vocabulary, slotId, locale, open, depth + 1, new Set([...seen, slotId]), key)
+    ? fanInside(
+        graph,
+        vocabulary,
+        slotId,
+        locale,
+        open,
+        depth + 1,
+        new Set([...seen, slotId]),
+        key,
+        address,
+      )
     : null;
   return {
     key,
+    address,
     id: methods.length > 0 ? slotId : null,
     label,
     href: `/repository/layers/${slotId}`,
@@ -860,6 +972,7 @@ function planForMethod(
   depth: number,
   seen: Set<string>,
   keyPrefix: string,
+  address: string,
 ): PlanStrand {
   const route = routeOf(graph, vocabulary, method);
   const segments = route.segments.length;
@@ -874,7 +987,7 @@ function planForMethod(
   // names three steps and opened into nothing at all.
   const holds = segments >= 2 || feeds.length > 0;
   const canOpen = holds && depth < CONVERGE_DEPTH_MAX && !seen.has(method.id);
-  const isOpen = canOpen && open.has(method.id);
+  const isOpen = canOpen && isOpenedBy(open, address, method.id);
   const key = `${keyPrefix}method:${method.id}`;
   const inside = isOpen
     ? chainInside(
@@ -886,10 +999,12 @@ function planForMethod(
         depth + 1,
         new Set([...seen, method.id]),
         key,
+        address,
       )
     : null;
   return {
     key,
+    address,
     id: holds ? method.id : null,
     label: labelOf(method, locale),
     href: `/repository/layers/${method.id}`,
@@ -931,20 +1046,47 @@ function planForLane(
   locale: PublicLocale,
   open: ReadonlySet<string>,
   standing: LaneStanding,
+  address: string,
 ): PlanStrand {
   const named = laneName(graph, lane, locale);
   if (lane.edges.length === 1) {
     const plan = named.narrowedBy
-      ? planForNarrowed(graph, vocabulary, named.narrowedBy, locale, open, lane)
-      : planForSlot(graph, vocabulary, lane.edges[0]!.slot, locale, open, 0, new Set(), `${lane.key}:`);
-    return { ...plan, key: `${lane.key}:${plan.key}`, standing, interior: lane.interior };
+      ? planForNarrowed(graph, vocabulary, named.narrowedBy, locale, open, lane, address)
+      : planForSlot(
+          graph,
+          vocabulary,
+          lane.edges[0]!.slot,
+          locale,
+          open,
+          0,
+          new Set(),
+          `${lane.key}:`,
+          address,
+        );
+    // `plan.key`, not `${lane.key}:${plan.key}`. The prefix was applied twice —
+    // once here and once as the `keyPrefix` argument above — which left 20 of 284
+    // child lanes carrying a key their parent's key is not a prefix of. Nothing
+    // depended on the doubling; the keys stayed unique either way, so it was
+    // invisible until something wanted to read the hierarchy back out of a key.
+    return { ...plan, standing, interior: lane.interior };
   }
   const runKey = `run:${lane.key}`;
   const children = lane.edges.map((edge, index) =>
-    planForSlot(graph, vocabulary, edge.slot, locale, open, 1, new Set(), `${runKey}/${index}/`),
+    planForSlot(
+      graph,
+      vocabulary,
+      edge.slot,
+      locale,
+      open,
+      1,
+      new Set(),
+      `${runKey}/${index}/`,
+      `${address}.${index}`,
+    ),
   );
   return {
     key: runKey,
+    address,
     id: null,
     label: named.text,
     href: named.href,
@@ -972,12 +1114,23 @@ function planForNarrowed(
   locale: PublicLocale,
   open: ReadonlySet<string>,
   lane: BundleLane,
+  address: string,
 ): PlanStrand {
   const node = layerNode(graph, methodId);
   if (!node || node.kind !== "method") {
-    return planForSlot(graph, vocabulary, lane.edges[0]!.slot, locale, open, 0, new Set(), `${lane.key}:`);
+    return planForSlot(
+      graph,
+      vocabulary,
+      lane.edges[0]!.slot,
+      locale,
+      open,
+      0,
+      new Set(),
+      `${lane.key}:`,
+      address,
+    );
   }
-  return planForMethod(graph, vocabulary, node, locale, open, 0, new Set(), `${lane.key}:`);
+  return planForMethod(graph, vocabulary, node, locale, open, 0, new Set(), `${lane.key}:`, address);
 }
 
 // ---------------------------------------------------------------------------
@@ -1218,6 +1371,7 @@ function place(
 
   out.lanes.push({
     key: strand.key,
+    address: strand.address,
     d: cubicPath(spine),
     outline: strandOutline(base, bow, half),
     x0: base.x0,
@@ -1241,11 +1395,20 @@ function place(
     // drops on arrival — the same dead control as the depth cap, at the other
     // cap. Shutting something already open is always offered, because that is
     // what makes room.
+    // `openable`, and nothing else. It used to read
+    // `strand.id && (strand.openable || strand.open) && …`, and those first two
+    // clauses cancelled: the only strand with `open` but not `openable` is the
+    // run lane, which is drawn open *by construction* rather than by request —
+    // and `strand.id` is null on exactly that lane, so the `|| strand.open`
+    // admitted it and the `strand.id` threw it back out. Now that a lane has an
+    // address whether or not it has a node, the id clause would have stopped
+    // cancelling and the run lane would have gained a shut control that shuts
+    // nothing. Caught by the census, which counts the controls.
     openHref:
-      strand.id &&
-      (strand.openable || strand.open) &&
-      (context.open.has(strand.id) || context.open.size < CONVERGE_OPEN_MAX)
-        ? toggleHref(context.focusId, context.open, strand.id)
+      strand.openable &&
+      (isOpenedBy(context.open, strand.address, strand.id) ||
+        context.open.size < CONVERGE_OPEN_MAX)
+        ? toggleHref(context.focusId, context.open, strand.address, null, strand.id)
         : null,
     href: strand.href,
     open: strand.open,
@@ -1635,11 +1798,19 @@ function planStateChain(
   return {
     chain: expansion.chain,
     grain: "states",
-    bundles: expansion.bundles.map((bundle) => ({
+    bundles: expansion.bundles.map((bundle, bundleIndex) => ({
       from: bundle.from,
       to: bundle.to,
-      lanes: bundle.lanes.map((lane) =>
-        planForLane(graph, vocabulary, lane, locale, open, standingFor(graph, vocabulary, lane)),
+      lanes: bundle.lanes.map((lane, laneIndex) =>
+        planForLane(
+          graph,
+          vocabulary,
+          lane,
+          locale,
+          open,
+          standingFor(graph, vocabulary, lane),
+          `${bundleIndex}.${laneIndex}`,
+        ),
       ),
     })),
   };
@@ -1670,7 +1841,7 @@ function planMethodFan(
       {
         from: fan.from,
         to: fan.to,
-        lanes: fan.lanes.map((lane) =>
+        lanes: fan.lanes.map((lane, laneIndex) =>
           planForMethod(
             graph,
             vocabulary,
@@ -1680,6 +1851,7 @@ function planMethodFan(
             0,
             new Set([focus.id]),
             `${focus.id}:`,
+            `0.${laneIndex}`,
           ),
         ),
       },

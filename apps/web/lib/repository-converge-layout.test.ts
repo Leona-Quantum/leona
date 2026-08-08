@@ -903,11 +903,15 @@ test("a line that opens into something says so, and a line that does not is not 
         assert.equal(lane.opensInto, null);
       } else {
         openable += 1;
-        assert.ok(lane.nodeId, `${lane.key} is openable but names no node`);
         assert.ok(lane.inside > 0, `${lane.key} opens into nothing`);
         assert.ok(lane.opensInto === "ways" || lane.opensInto === "steps");
         assert.ok(lane.openHref.startsWith("/repository/layers?"));
-        assert.ok(lane.openHref.includes(`open=${encodeURIComponent(lane.nodeId!)}`));
+        // The address, not the node id. A node holds up to twelve positions on
+        // one figure and naming it by id opened all of them.
+        assert.ok(
+          lane.openHref.includes(`open=${encodeURIComponent(lane.address)}`),
+          `${lane.key} does not offer its own address`,
+        );
       }
       // Both halves of the two-target rule are always present: the name always
       // goes to the thing's own page, whether or not the line opens.

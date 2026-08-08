@@ -4,7 +4,7 @@ import { ConvergeView } from "../../../components/repository-converge-view";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
-import { CONVERGE_OPEN_MAX } from "../../../lib/repository/converge-layout";
+import { resolveOpenIds } from "../../../lib/repository/converge-layout";
 import { parseViewport } from "../../../lib/repository/canvas-viewport";
 import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
 
@@ -54,15 +54,21 @@ export async function generateMetadata(): Promise<Metadata> {
  * rendering a layer deeper."* One id would mean opening a second thing shuts the
  * first, which is the surface session 92 shipped and the one this replaces.
  *
- * Ids name **slots and methods** both, because both open — a slot into the
- * methods that fill it, a method into the steps it is made of. Validated against
- * the graph rather than trusted, and unknown ones are dropped rather than
- * rejected: a URL naming four things, one of which has since been renamed, opens
- * the other three instead of failing. `CONVERGE_OPEN_MAX` bounds it, because the
- * parameter is user-supplied and the layout it drives is recursive; the count
- * over the cap is handed to the view, which prints it. The constant is imported
- * rather than repeated — the number that enforces and the number that is
- * reported have to be one number.
+ * A value names **one lane by its position** — `1.0.3`, the fourth child of the
+ * first child of bundle 1's lane 0 — and a node id is still accepted so that
+ * links written before addresses existed keep opening what they always did.
+ * Unknown values are dropped rather than rejected: a URL naming four things, one
+ * of which has since been renamed, opens the other three instead of failing.
+ * `CONVERGE_OPEN_MAX` bounds it, because the parameter is user-supplied and the
+ * layout it drives is recursive; the count over the cap is handed to the view,
+ * which prints it.
+ *
+ * **`resolveOpenIds`, not a copy of it.** This page used to carry its own loop
+ * with a different predicate and no `reserved` argument — two parsers for one
+ * parameter, which is how two pages come to disagree about what a URL means. The
+ * disagreement would have arrived with this change: the node page would have
+ * started honouring addresses while the overview went on validating against the
+ * graph and dropping every one of them.
  */
 function resolveOpenSet(params: Record<string, string | string[] | undefined>): {
   open: ReadonlySet<string>;
@@ -70,19 +76,7 @@ function resolveOpenSet(params: Record<string, string | string[] | undefined>): 
 } {
   const raw = params.open;
   const values = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
-  const open = new Set<string>();
-  let dropped = 0;
-  for (const value of values) {
-    const node = layerNode(LAYER_GRAPH, value);
-    if (!node) continue;
-    if (open.has(value)) continue;
-    if (open.size >= CONVERGE_OPEN_MAX) {
-      dropped += 1;
-      continue;
-    }
-    open.add(value);
-  }
-  return { open, dropped };
+  return resolveOpenIds(values, (id) => layerNode(LAYER_GRAPH, id) !== null);
 }
 
 function one(params: Record<string, string | string[] | undefined>, key: string): string | null {
