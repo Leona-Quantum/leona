@@ -502,7 +502,11 @@ async def _assert_execute_allowance(scope: Scope, session: AsyncSession) -> None
     unlimited number of executions simply by omitting `mode`. This is where that
     closes, because this is where AUTO actually becomes EXECUTE.
 
-    Reads the tier from the same three signals the API does (majorana_api.tiers).
+    Reads the tier from the same three signals the API does (majorana_api.tiers),
+    then uses the API's row-locking reservation repository. AUTO rows were not
+    reserved at API admission because they may resolve to chat; once this
+    worker resolves one to EXECUTE, the reservation must include this row and
+    serialize against other workers resolving the same account concurrently.
 
     The allowlist is read straight from the environment rather than through
     `Settings.from_env()`, and that is not a shortcut. Settings validates the
@@ -519,21 +523,24 @@ async def _assert_execute_allowance(scope: Scope, session: AsyncSession) -> None
     if limits.agent_tokens_per_week is None:
         return
     since = datetime.now(UTC) - _TIER_WINDOW
-    # Tokens, matching the API's admission gate since 2026-08-03. The two must
-    # meter the same thing: this backstop exists precisely for the runs that
-    # never passed the API's tier gate (AUTO ones), so a copy still counting
-    # runs would refuse a different set of people than the front door does.
-    #
-    # No in-flight reservation here, unlike the API's. This is a backstop on a
-    # run that has ALREADY been admitted and is executing; charging it for its
-    # own not-yet-recorded tokens would refuse the run for existing.
-    used = await usage_repo.account_tokens_since(scope, session, since)
-    # The run being resolved has not spent its own tokens yet, so it is not in
-    # this sum — `used >= limit` is the correct comparison, not `>`.
-    if used >= limits.agent_tokens_per_week:
-        raise _RunAllowanceExhausted(
-            used, limits.agent_tokens_per_week, runs=limits.agent_runs_per_week
+    # The repository locks the account row before it reads recorded spend and
+    # in-flight AUTO/EXECUTE rows. Reusing it here closes the multi-worker race:
+    # the second resolver waits for the first to commit its mode, then sees the
+    # reservation and is refused when the allowance is full. The current AUTO
+    # row is intentionally counted as one run-equivalent at this point.
+    try:
+        await runs_repo.reserve_execute_run_slot(
+            scope,
+            session,
+            since,
+            limits.agent_tokens_per_week,
         )
+    except runs_repo.RunAllowanceReached as reached:
+        raise _RunAllowanceExhausted(
+            reached.used,
+            reached.limit,
+            runs=limits.agent_runs_per_week,
+        ) from reached
 
 
 async def _finish_allowance_exhausted(
@@ -609,8 +616,9 @@ async def _resolve_mode(
     if not decision.changed:
         return ctx
     if decision.resolved is RunMode.EXECUTE:
-        # Checked BEFORE the row is rewritten, so this run is not counted
-        # against its own allowance.
+        # Checked BEFORE the row is rewritten. The reservation sees this row as
+        # AUTO, which is exactly the in-flight state that must be charged once
+        # it has been classified as an execution.
         await _assert_execute_allowance(scope, session)
     await runs_repo.set_run_mode(scope, session, ctx.run_id, decision.resolved)
     await session.commit()
