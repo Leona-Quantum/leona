@@ -360,7 +360,9 @@ export interface MethodFan {
  * `expansionOf`'s own doc comment has said since session 92 that opening
  * `time-discretization` *"can only fan out the four methods that fill it, which
  * is what the surface does instead"*. **The surface did not do that.** Measured
- * on production 2026-08-08, `?view=converge&focus=observable-estimation` drew
+ * on production 2026-08-08, `?view=converge&focus=observable-estimation` — the
+ * address before converge became the only surface and `?view=` stopped being
+ * read at all; the same figure is `?focus=observable-estimation` now — drew
  * nothing at all and printed *"Nothing recorded goes through this in more than
  * one way."* — and 16 of the 18 slots are atomic, so that was the whole page for
  * all but two of them. The comment described a feature nobody had written.

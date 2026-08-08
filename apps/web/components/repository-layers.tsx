@@ -26,7 +26,6 @@
 // about the routes; and neither may render as silence, because silence in a
 // panel reads as "there is nothing to say" — the same reason `knownGaps` prints
 // a sentence on the 282 records nobody has reviewed.
-import { ViewSwitch } from "./repository-view-switch";
 import type { PublicLocale } from "../lib/public-locale";
 import {
   alternativesTo,
@@ -45,7 +44,6 @@ import {
   realizedBy,
   refinementsOf,
   repetitionOf,
-  rootCapabilities,
   stateTraffic,
   stepsOutlook,
   type LayerCorpusEntry,
@@ -53,7 +51,8 @@ import {
   type LayerMethod,
   type LayerNode,
 } from "../lib/repository/layers";
-import { layoutProcessZoom } from "../lib/repository/process-layout";
+import { figureHref, layoutConverge } from "../lib/repository/converge-layout";
+import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { paperTraces } from "../lib/repository/paper-traces";
 import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
@@ -66,8 +65,8 @@ import {
   type LayerState,
   type StateVocabulary,
 } from "../lib/repository/states";
-import { ProcessCanvas } from "./repository-process-map";
-import { mapHref, ZoomControl, type MapZoom } from "./repository-process-view";
+import { ConvergeCanvas } from "./repository-converge-map";
+import { InfiniteCanvas } from "./infinite-canvas";
 
 const COPY = {
   en: {
@@ -422,7 +421,7 @@ function ContractPiece({
  * process expanded with connection to the two states before and after, with the
  * original process label in the top right like the strand visualization."*
  *
- * It is the map's own engine at depth one (`layoutProcessZoom`), so there is one
+ * It is the index's own engine (`layoutConverge`), so there is one
  * geometry for one picture. What the page adds around it is the thing a drawing
  * cannot carry: the two states **written out**. Their names are in `<title>` on
  * the canvas, which is a hover — and there is no hover on a phone. Naming them
@@ -433,20 +432,42 @@ function ProcessZoom({
   node,
   locale,
   copy,
-  zoom,
+  viewport,
 }: {
   graph: LayerGraph;
   node: LayerNode;
   locale: PublicLocale;
   copy: LayersCopy;
-  zoom: MapZoom | null;
+  viewport: Viewport;
 }) {
   const resolved = contractFor(graph, node);
-  const diagram = layoutProcessZoom(graph, STATE_VOCABULARY, node.id, locale === "ja" ? "ja" : "en");
+  // **The same drawing as the index, of the same subject.** That is what makes
+  // arriving here read as a zoom rather than as a different screen: the strand a
+  // reader clicked on the index carries `view-transition-name: mj-fig-<id>`, and
+  // so does this figure, so the browser morphs one into the other.
+  //
+  // It used to be `layoutProcessZoom` — the retired map's engine — and the two
+  // pictures did not match, so the pairing animated a shape into a drawing that
+  // did not look like it. There is one canvas now, everywhere.
+  //
+  // A **method** is drawn as the slot it fills, with itself open. A method is
+  // not a place you can stand: it is one way through a slot, so its own figure
+  // is that slot, opened at it.
+  const subject = isCapability(node) ? node : layerNode(graph, node.realizes);
+  const diagram =
+    subject && isCapability(subject)
+      ? layoutConverge({
+          graph,
+          vocabulary: STATE_VOCABULARY,
+          focus: subject,
+          locale,
+          open: isCapability(node) ? new Set<string>() : new Set([node.id]),
+        })
+      : null;
   // An unresolvable contract or an empty layout means the graph does not have
   // the two ends this figure is *about*. Drawing a picture of that would be
   // inventing one; the sections below still say everything they always said.
-  if (!resolved || diagram.width === 0) return null;
+  if (!resolved || !diagram || diagram.empty) return null;
   const from = layerState(STATE_VOCABULARY, resolved.contract.from);
   const to = layerState(STATE_VOCABULARY, resolved.contract.to);
   const unfilled = isCapability(node) && capabilityOutlook(graph, node.id) === "open";
@@ -465,27 +486,25 @@ function ProcessZoom({
       <h2 className="mj-layers-zoom-heading sr-only" id={`zoom-${node.id}`}>
         {copy.zoomHeading}
       </h2>
-      {/* The reader's own size. A figure can be 1,233px wide in an 868px column:
-          *"they can zoom in and out of the page on their own"*, owner, session
-          92. It applies to this figure and stops at this page — the map below is
-          a different drawing at a different natural width. */}
-      <ZoomControl
-        current={zoom}
-        hrefFor={(next) => (next === null ? href(node.id) : `${href(node.id)}?zoom=${next}`)}
-        copy={copy}
-      />
-      <ProcessCanvas
-        diagram={diagram}
+      {/* The reader's own size, and their own position. A figure can be wider
+          than the column — *"they can zoom in and out of the page on their
+          own"*, owner, session 92 — and it is now a viewport they can move
+          rather than a set of sizes they can pick, with `?at=` carrying where
+          they are so the page can be shared from there. */}
+      <InfiniteCanvas
+        initial={viewport}
+        label={copy.zoomHeading}
         locale={locale === "ja" ? "ja" : "en"}
-        title={label(node, locale)}
-        scale={zoom === null ? null : zoom / 100}
-        // The same figure the map draws for this slot, so arriving here moves
-        // that figure rather than replacing the screen it was on. A method's
-        // page is drawn through `soleMethodLens` and is a genuinely different
-        // picture, so it pairs with nothing on the map and gets the page-level
-        // zoom instead — which is the honest animation for "a different figure".
-        subjectId={node.id}
-      />
+      >
+        <ConvergeCanvas
+          diagram={diagram}
+          locale={locale}
+          title={label(node, locale)}
+          // What the reader clicked to get here. The index draws this same
+          // subject under this same name, which is the pairing.
+          subjectId={node.id}
+        />
+      </InfiniteCanvas>
       <figcaption className="mj-layers-zoom-caption">
         {from && to ? (
           <p className="mj-layers-zoom-ends">
@@ -500,10 +519,9 @@ function ProcessZoom({
         <p>
           {diagram.collapsedCount > 0 ? copy.zoomDeeper(diagram.collapsedCount) : copy.zoomAllShallow}{" "}
           {/* No open set, and that is right rather than an omission: a write-up
-              page is not a reading position on the map, so there is nothing to
-              carry. Every link that *is* on the map passes one — see `mapHref`,
-              where leaving it out was a live defect. */}
-          <a href={mapHref(mapId)}>{copy.stateOnMap}</a>
+              page is not a reading position on the figure, so there is nothing
+              to carry. Every link that *is* on the figure passes one. */}
+          <a href={figureHref(mapId, [])}>{copy.stateOnMap}</a>
         </p>
       </figcaption>
     </figure>
@@ -970,13 +988,13 @@ export function LayerNodeView({
   node,
   corpus,
   locale,
-  zoom = null,
+  viewport = IDENTITY,
 }: {
   graph: LayerGraph;
   node: LayerNode;
   corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
-  zoom?: MapZoom | null;
+  viewport?: Viewport;
 }) {
   const copy = copyFor(locale);
   const depth = layerDepths(graph).get(isCapability(node) ? node.id : node.realizes);
@@ -1000,7 +1018,7 @@ export function LayerNodeView({
       {/* Before the prose, not after it. A reader who clicked a name on the map
           came here to see this one thing drawn; the write-up is what they read
           once they have found it. */}
-      <ProcessZoom graph={graph} node={node} locale={locale} copy={copy} zoom={zoom} />
+      <ProcessZoom graph={graph} node={node} locale={locale} copy={copy} viewport={viewport} />
       {isCapability(node) ? (
         <CapabilityView graph={graph} node={node} corpus={corpus} locale={locale} copy={copy} />
       ) : (
@@ -1085,7 +1103,7 @@ export function LayerStateView({
     <article className="mj-layers-node">
       <nav className="mj-layers-crumbs" aria-label={copy.indexHeading}>
         <a href="/repository/layers">{copy.backToLayers}</a>
-        <a href="/repository/layers?view=map">{copy.stateOnMap}</a>
+        <a href={figureHref(null, [])}>{copy.stateOnMap}</a>
         <a href="/repository">{copy.backToAtlas}</a>
       </nav>
       <header className="mj-layers-node-head">
@@ -1166,28 +1184,16 @@ export function LayerStateView({
 }
 
 /**
- * The index: the model, the counted census, and every root opened one level.
- *
- * One level rather than the whole tree on purpose. The tree is the product and
- * it is also unreadable at a glance; what a reader needs on arrival is the shape
- * — a problem, the handful of routes that answer it, and the visible fact that
- * each route names further slots. The `<details>` per root is addressable and
- * needs no JavaScript.
- */
-/**
  * What is here, counted — the only place on this site the graph's own census is
  * printed.
  *
- * **Exported and rendered from two views deliberately.** It lived inside
- * `LayerIndexView`, which is `?view=list` — not the default, and one of the
- * three views OWNER_TODO §5 proposes retiring. So the numbers that say how
- * complete this graph honestly is were reachable only from the surface most
- * likely to be deleted, and a reader on the default view was never shown them.
- *
- * Written once rather than copied onto converge, for the reason `ViewSwitch`
- * exists: four hand-written copies of one control is how `?view=converge`
- * shipped invisible. A census restated in two places is the same failure with
- * numbers, and numbers drift more quietly than links do.
+ * Converge is the only surface now, but this stayed its own function rather
+ * than being inlined into `ConvergeView` when the other three views were
+ * retired: it used to be reachable from two views — the default and
+ * `LayerIndexView`'s `?view=list` — and the census restated on both was the
+ * same failure `ViewSwitch` existed to prevent for links, one layer down, with
+ * numbers instead. One function, called once now, is what one function called
+ * twice was already supposed to buy.
  *
  * Counted from the graph and the corpus in hand — not one of these figures is
  * written into a sentence.
@@ -1225,107 +1231,6 @@ export function LayerCensusPanel({
         {copy.papersLead(paperTraces(graph).length, PAPER_REGISTER.papers.length)}{" "}
         <a href="/repository/papers">{copy.papersLink}</a>
       </p>
-    </section>
-  );
-}
-
-export function LayerIndexView({
-  graph,
-  corpus,
-  locale,
-  openRoot,
-}: {
-  graph: LayerGraph;
-  corpus: readonly LayerCorpusEntry[];
-  locale: PublicLocale;
-  openRoot: string | null;
-}) {
-  const copy = copyFor(locale);
-  const roots = rootCapabilities(graph);
-  return (
-    <section className="mj-layers-index" aria-labelledby="layers-heading">
-      <nav className="mj-layers-crumbs" aria-label={copy.backToAtlas}>
-        <a href="/repository">← {copy.backToAtlas}</a>
-      </nav>
-      {/* The other drawings of this same graph. Every view has an address and
-          none is reachable only from another — a reader who lands here from a
-          bookmark can still get to any canvas.
-
-          The whole control comes from `ViewSwitch`, not just its words. Sharing
-          the labels was not enough: four copies of the *markup* each listed the
-          views they knew about, and when `?view=converge` shipped only its own
-          copy gained the entry, so the default view had no link to it and the
-          owner could not find the surface at all. One list, one place. */}
-      <ViewSwitch current="list" locale={locale} />
-      <h1 id="layers-heading">{copy.indexHeading}</h1>
-      <p className="mj-layers-lede">{copy.indexLead}</p>
-
-      <section className="mj-layers-model">
-        <h2>{copy.modelHeading}</h2>
-        <ul>
-          <li>{copy.modelSlot}</li>
-          <li>{copy.modelMethod}</li>
-          <li>{copy.modelStep}</li>
-          <li>{copy.modelBypass}</li>
-        </ul>
-      </section>
-
-      <LayerCensusPanel graph={graph} corpus={corpus} locale={locale} />
-
-      <h2 className="mj-layers-start">{copy.startHeading}</h2>
-      <div className="mj-layers-roots">
-        {roots.map((root) => {
-          const methods = methodsRealizing(graph, root.id);
-          return (
-            <details
-              key={root.id}
-              className="mj-layers-root"
-              open={openRoot === null ? roots[0]?.id === root.id : openRoot === root.id}
-            >
-              <summary>
-                <span className="mj-layers-root-title">{label(root, locale)}</span>
-                <span className="mj-layers-item-kind">
-                  {capabilityOutlook(graph, root.id) === "open"
-                    ? copy.needsWays(0)
-                    : copy.waysCount(methods.length)}
-                </span>
-              </summary>
-              <div className="mj-layers-root-body">
-                <p>{summary(root, locale)}</p>
-                <p className="mj-layers-root-link">
-                  <a href={href(root.id)}>{label(root, locale)} →</a>
-                </p>
-                {methods.length === 0 ? (
-                  <EmptyNote>{copy.waysNone}</EmptyNote>
-                ) : (
-                  <ul className="mj-layers-list">
-                    {methods.map((method) => {
-                      const steps = method.steps
-                        .map((id) => layerNode(graph, id))
-                        .filter((step): step is LayerNode => step !== null);
-                      return (
-                        <li key={method.id} className="mj-layers-item">
-                          <a href={href(method.id)}>{label(method, locale)}</a>
-                          <p>{summary(method, locale)}</p>
-                          {steps.length > 0 ? (
-                            <ul className="mj-layers-substeps">
-                              {steps.map((step) => (
-                                <li key={step.id}>
-                                  <a href={href(step.id)}>{label(step, locale)}</a>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </details>
-          );
-        })}
-      </div>
     </section>
   );
 }

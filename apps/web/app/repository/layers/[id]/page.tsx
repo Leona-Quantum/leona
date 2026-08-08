@@ -4,15 +4,15 @@
 // namespace, one page per named thing — and `validateLayerGraph` rejects a
 // collision between them. That is only half a design until this file resolves
 // both: until session 93 it looked up `LAYER_GRAPH` alone, so every state circle
-// drawn on `/repository/layers?view=map` (and every "narrower kinds" link in the
-// rail) was an `<a href>` to a 404. Nothing gated it, because a missing route is
+// drawn on `/repository/layers` (and every "narrower kinds" link in the rail)
+// was an `<a href>` to a 404. Nothing gated it, because a missing route is
 // invisible to a build — the page renders, the link is real, and only following
 // it says otherwise.
 import type { Metadata } from "next";
 import { notFound } from "next/navigation";
 import { PublicSite } from "../../../../components/public-site";
 import { LayerNodeView, LayerStateView } from "../../../../components/repository-layers";
-import { resolveZoom } from "../../../../components/repository-process-view";
+import { parseViewport } from "../../../../lib/repository/canvas-viewport";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../lib/repository/layer-graph";
@@ -69,8 +69,6 @@ export default async function RepositoryLayerNodePage({
   // touches a record, so making it wait on the Atlas would buy nothing and hand
   // it a dependency that can be slow or short — the failure mode `censusUnresolved`
   // exists to confess elsewhere on this surface.
-  const raw = query.zoom;
-  const zoom = resolveZoom(typeof raw === "string" ? raw : Array.isArray(raw) ? (raw[0] ?? null) : null);
   const [locale, entries] = await Promise.all([
     getPublicLocale(),
     node ? getRepositoryListEntries() : Promise.resolve([]),
@@ -97,7 +95,7 @@ export default async function RepositoryLayerNodePage({
           node={node}
           corpus={corpus}
           locale={locale}
-          zoom={zoom}
+          viewport={parseViewport(query.at)}
         />
       ) : state ? (
         <LayerStateView
