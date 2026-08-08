@@ -6,9 +6,13 @@ import argparse
 import asyncio
 import json
 import uuid
+from collections.abc import Sequence
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import ImportJobStatus, Role
+from sqlalchemy import select
+
+from . import orm
 
 from .catalog_attestation import AttestationPolicy
 from .catalog_authority import CatalogAuthority
@@ -343,6 +347,75 @@ async def _sync_bootstrap(attested_by: uuid.UUID) -> None:
 
 _NEEDS_REVIEWER = {"attest-bootstrap", "publish-bootstrap", "sync-bootstrap"}
 
+# A user row whose WorkOS id starts with this is a casualty of the environment
+# switch, not an account anybody signs in to. See `_resolve_reviewer_by_email`.
+_RETIRED_WORKOS_PREFIX = "retired-workos-env:"
+
+
+def pick_live_reviewer(email: str, rows: Sequence[tuple[uuid.UUID, str]]) -> uuid.UUID:
+    """Which of the ``users`` rows for one email is the live account.
+
+    Separated from the query so the **rule** is testable without a database.
+    The rule is the part that was wrong in prose and is the part that grants
+    ADMIN; a test that needs Postgres to run is a test that does not run in the
+    unit suite, and this rule earns one that does.
+
+    See `_resolve_reviewer_by_email` for why the tiebreak is what it is.
+    """
+    if not rows:
+        raise SystemExit(f"no user row carries the email {email!r}")
+    live = [row for row in rows if not row[1].startswith(_RETIRED_WORKOS_PREFIX)]
+    if not live:
+        raise SystemExit(
+            f"every user row for {email!r} carries a {_RETIRED_WORKOS_PREFIX} WorkOS id — "
+            "there is no live account to attest as"
+        )
+    if len(live) > 1:
+        raise SystemExit(
+            f"{len(live)} live user rows carry {email!r} "
+            f"({', '.join(str(row[0]) for row in live)}) — resolve which is the real "
+            "account and pass --attested-by explicitly"
+        )
+    return live[0][0]
+
+
+async def _resolve_reviewer_by_email(email: str) -> uuid.UUID:
+    """The live ``users`` row for an email, by the only signal that says which.
+
+    **D70.2, as code rather than as a runbook paragraph.** The WorkOS
+    environment switch minted a second row per account, and the reattachment put
+    the live WorkOS id back on the *original* row while renaming the
+    duplicate's to ``retired-workos-env:<ts>:<original>``. So two rows can carry
+    one email and the live one is the **older** — the opposite of the natural
+    "most recently created wins" tiebreak.
+
+    That matters because ``attest-bootstrap`` grants the account it is handed
+    ADMIN on the catalog workspace: picking wrong is a real grant on a dead row,
+    and nothing in the schema signals which is which. Until now the rule lived
+    only in prose, where an operator had to read it, believe it, and hand-copy a
+    UUID out of an ad-hoc query against production.
+
+    Ambiguity **refuses** rather than guessing. Two live rows for one email is a
+    state nobody has decided how to resolve, and choosing one silently is how a
+    grant lands somewhere nobody looked. ``--attested-by`` stays available for
+    exactly that case.
+    """
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    try:
+        async with factory() as session:
+            rows = (
+                await session.execute(
+                    select(orm.User.id, orm.User.workos_user_id).where(orm.User.email == email)
+                )
+            ).all()
+    finally:
+        await engine.dispose()
+
+    reviewer = pick_live_reviewer(email, [(row.id, row.workos_user_id) for row in rows])
+    print(f"reviewer: {reviewer} (resolved from {email})")
+    return reviewer
+
 
 def main() -> None:
     parser = argparse.ArgumentParser(description=__doc__)
@@ -362,19 +435,41 @@ def main() -> None:
         help="user id of the human reviewer making/holding the attestation "
         "(required by attest-bootstrap, publish-bootstrap and sync-bootstrap)",
     )
+    parser.add_argument(
+        "--attested-by-email",
+        help="resolve the reviewer from a user email instead of pasting a UUID. "
+        "Refuses if the email is ambiguous; see _resolve_reviewer_by_email (D70.2)",
+    )
     args = parser.parse_args()
-    if args.command in _NEEDS_REVIEWER and args.attested_by is None:
-        parser.error(f"{args.command} requires --attested-by")
+    if args.attested_by and args.attested_by_email:
+        parser.error("pass --attested-by or --attested-by-email, not both")
+    if args.command in _NEEDS_REVIEWER and not (args.attested_by or args.attested_by_email):
+        parser.error(f"{args.command} requires --attested-by or --attested-by-email")
     if args.command == "provision":
         asyncio.run(_provision())
-    elif args.command == "bootstrap-import":
+        return
+    if args.command == "bootstrap-import":
         asyncio.run(_bootstrap_import())
-    elif args.command == "attest-bootstrap":
-        asyncio.run(_attest_bootstrap(args.attested_by))
-    elif args.command == "publish-bootstrap":
-        asyncio.run(_publish_bootstrap(args.attested_by))
-    elif args.command == "sync-bootstrap":
-        asyncio.run(_sync_bootstrap(args.attested_by))
+        return
+
+    # Resolved once, before any of the three reviewer commands run. Doing it
+    # inside each would make `sync-bootstrap` import 283 records and only then
+    # discover it cannot name a reviewer — leaving the corpus staged, which is
+    # the half-done state `_sync_bootstrap` exists to prevent.
+    async def _run() -> None:
+        reviewer = (
+            args.attested_by
+            if args.attested_by
+            else await _resolve_reviewer_by_email(args.attested_by_email)
+        )
+        if args.command == "attest-bootstrap":
+            await _attest_bootstrap(reviewer)
+        elif args.command == "publish-bootstrap":
+            await _publish_bootstrap(reviewer)
+        else:
+            await _sync_bootstrap(reviewer)
+
+    asyncio.run(_run())
 
 
 if __name__ == "__main__":

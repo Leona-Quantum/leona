@@ -167,6 +167,8 @@ const COPY = {
     atlasNone:
       "No record in the Atlas covers this yet. The catalogue is 283 records of circuits and primitives; this part of the literature is not in it.",
     citationsHeading: "Sources",
+    papersLead: (n: number) => `Every claim here rests on a source, and all ${n} of them are registered in one place — with what each reports, and everywhere it is cited from.`,
+    papersLink: "Papers",
     sourceOutLabel: "open the paper itself",
     // Printed on every citation, including the ones nobody has read for this.
     // The owner's theory-vs-experimentation question is answered here, on the
@@ -297,6 +299,8 @@ const COPY = {
     atlasNone:
       "これに対応する項目は Atlas にまだありません。カタログは回路と基本要素の283件で構成されており、この領域の文献は含まれていません。",
     citationsHeading: "出典",
+    papersLead: (n: number) => `ここでの主張はすべて出典に基づいており、その ${n} 件は一箇所に登録されています。各論文が何を報告しているか、どこから引用されているかも併せて記録しています。`,
+    papersLink: "論文",
     sourceOutLabel: "論文そのものを開く",
     reportsAxis: { theory: "理論", simulation: "数値計算", hardware: "実機" },
     reportsStatus: { reported: "あり", absent: "なし", unknown: "未確定" },
@@ -1231,6 +1235,14 @@ export function LayerIndexView({
         {census.unresolvedEntries > 0 ? (
           <p className="mj-layers-census-warn">{copy.censusUnresolved(census.unresolvedEntries)}</p>
         ) : null}
+        {/* Counted here rather than written, and linked, because the sentence
+            above is about what this graph documents and this one is about what
+            it documents it *from*. A reader who wants the second is otherwise
+            stuck opening node pages one at a time. */}
+        <p>
+          {copy.papersLead(PAPER_REGISTER.papers.length)}{" "}
+          <a href="/repository/papers">{copy.papersLink}</a>
+        </p>
       </section>
 
       <h2 className="mj-layers-start">{copy.startHeading}</h2>

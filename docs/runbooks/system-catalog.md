@@ -166,8 +166,23 @@ place it is a standing, re-runnable handle on the production database that anyon
 is a comma and `--attested-by` values are fine, but any argument containing a comma would be
 silently split into two.
 
-### Finding `--attested-by` when accounts have been through the WorkOS switch
+### Finding the reviewer — use `--attested-by-email`, not a hand-copied UUID
 
+**`--attested-by-email <you>` resolves the row and refuses if it is ambiguous.** Prefer it.
+The alternative is running an ad-hoc query against production, reading the rule below
+correctly, and pasting a UUID into a shell — three steps that each have to go right, to
+reach a decision the code can make. It prints the id it chose before using it.
+
+```bash
+  --args="^~^-m~majorana_api.catalog_admin~sync-bootstrap~--attested-by-email~<you>"
+```
+
+Two *live* rows for one email refuses rather than choosing, names both ids, and points at
+`--attested-by` — that case is a decision nobody has made, and making it silently is how a
+grant lands somewhere nobody looked. `pick_live_reviewer` is the rule and
+`services/api/tests/test_catalog_admin_reviewer.py` pins it without a database.
+
+**The rule it implements, because it is the opposite of the obvious one.**
 `select id from users where email = '<you>'` can return **two** rows. The environment switch
 (see `plans/` and `memory/DECISIONS.md`) minted new user rows, and the reattachment moved the
 live WorkOS id back onto the *original* row while renaming the duplicate's to
