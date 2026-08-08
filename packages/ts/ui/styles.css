@@ -1,7 +1,11 @@
 /* Component styles for @majorana/ui — consumes tokens.css variables only.
  * No raw hex here (CI-enforced); values come from tokens.
- * Only permitted animations (spec §0.3): rail state transitions (150ms ease-out
- * opacity/color), skeleton/activity shimmer, the running-dot pulse, and toast enter/exit. */
+ *
+ * Animations: the closed list is `docs/ui/components.md` § Permitted animations and is
+ * deliberately NOT restated here. A copy of a list is a third thing to keep true, and this
+ * comment was one — it named four animations while the file ran eleven.
+ * `scripts/check-permitted-animations.mjs` reconciles the table against this file in both
+ * directions, so a new `@keyframes` fails `lint` until it has a row. */
 
 /* ---------- app shell ---------- */
 .mj-shell {
@@ -4270,6 +4274,17 @@ a.mj-facet-option:hover {
 }
 @keyframes mj-chat-caret-blink {
   50% { opacity: 0; }
+}
+/* A blinking caret is the one animation on this surface that runs *indefinitely*
+   in the reader's line of sight, and a reader who asked for less motion should
+   not have to watch it. It stays visible — the caret's job is to say "still
+   writing", and a caret that vanishes says the opposite — it just stops blinking.
+   Found by `scripts/check-permitted-animations.mjs`: every other keyframe here
+   was already gated and this one never had been. */
+@media (prefers-reduced-motion: reduce) {
+  .mj-chat-caret {
+    animation: none;
+  }
 }
 .mj-chat-message--loading {
   display: flex;
@@ -11618,6 +11633,97 @@ div.mj-rail-row:hover {
 .mj-converge-canvas a:focus-visible {
   outline: 2px solid var(--accent);
   outline-offset: 2px;
+}
+
+/* ---------------------------------------------------------------------------
+   Opening a line moves the picture instead of replacing it.
+
+   > *"transitions being perfectly smooth with animation for branches extending
+   > out, zooming in and out, is really needed for this to be professional
+   > product."* — owner, session-101 inbox
+
+   **Why this is a transition and not a view transition, which is not a style
+   call.** `view-transition-name` on an element *inside* an `<svg>` is never
+   captured by the browser. Measured under Playwright (a hidden agent tab skips
+   every view transition, so the in-app browser cannot answer this):
+   `getComputedStyle` keeps the name on a `<path>`, a `<text>`, a `<circle>` and a
+   `<g>` — and no `::view-transition-group(<name>)` is ever built for any of them,
+   while the same name on a plain `<div>` is captured. The only element on this
+   canvas that can carry one is the root `<svg>` itself. So the per-lane pairing
+   `repository-converge-map.tsx` used to hand out was inert: it cost the careful
+   first-occurrence bookkeeping and bought nothing, and nothing could have told
+   us, because an uncaptured name is silent.
+
+   What *does* work inside an SVG is a plain CSS transition on the geometry —
+   `d`, `cx`, `cy`, `r`, `transform`, `opacity` — including when the new value
+   arrives as a presentation attribute, which is exactly how React writes it on a
+   re-render. Measured the same way: `d`, `cx`, `r` and `transform` all produce a
+   running `CSSTransition`.
+
+   That is better than a view transition would have been. A view transition
+   crossfades a *snapshot*; this bends the actual curve, so when opening a fan
+   widens a column (session 101's angle cap) the circles slide apart along the
+   drawing rather than the old picture being scaled into the new one.
+
+   The one property that does NOT animate is `x`/`y` on `<text>`, which is why a
+   lane name is positioned with `transform: translate()` and drawn at the origin.
+
+   Held under a third of a second, same budget as the navigation transition: this
+   is a reading surface, and a move long enough to watch is long enough to wait
+   for. */
+.mj-converge-canvas :where(.mj-converge-strand-body, .mj-converge-spine, .mj-converge-strand-hit) {
+  transition: d var(--dur-converge) var(--ease-converge);
+}
+.mj-converge-canvas :where(.mj-converge-dot, .mj-converge-hit) {
+  transition:
+    cx var(--dur-converge) var(--ease-converge),
+    cy var(--dur-converge) var(--ease-converge),
+    r var(--dur-converge) var(--ease-converge);
+}
+.mj-converge-canvas :where(.mj-converge-lane-name, .mj-converge-feed-name, .mj-converge-hit-name) {
+  transition: transform var(--dur-converge) var(--ease-converge);
+}
+.mj-converge-canvas .mj-converge-feed-line {
+  transition:
+    x1 var(--dur-converge) var(--ease-converge),
+    x2 var(--dur-converge) var(--ease-converge),
+    y1 var(--dur-converge) var(--ease-converge),
+    y2 var(--dur-converge) var(--ease-converge);
+}
+/* A branch that was not there before has no previous value to transition *from*,
+   so growing it out is a keyframe rather than a transition. It runs on insertion,
+   which is precisely when it should: React keeps a lane's element across a
+   re-render when its key is stable, so only the genuinely new shapes animate. The
+   first paint animates everything once, which reads as the figure drawing itself
+   and is worth having. */
+.mj-converge-canvas :where(.mj-converge-lane, .mj-converge-feed) {
+  animation: mj-converge-grow var(--dur-converge) var(--ease-converge) both;
+}
+@keyframes mj-converge-grow {
+  from {
+    opacity: 0;
+  }
+}
+/* Reduced motion keeps the *continuity* and drops the movement: the figure still
+   redraws, it just does not travel. Same call as the navigation transition above,
+   and for the same reader. */
+@media (prefers-reduced-motion: reduce) {
+  .mj-converge-canvas :where(
+      .mj-converge-strand-body,
+      .mj-converge-spine,
+      .mj-converge-strand-hit,
+      .mj-converge-dot,
+      .mj-converge-hit,
+      .mj-converge-lane-name,
+      .mj-converge-feed-name,
+      .mj-converge-hit-name,
+      .mj-converge-feed-line
+    ) {
+    transition: none;
+  }
+  .mj-converge-canvas :where(.mj-converge-lane, .mj-converge-feed) {
+    animation: none;
+  }
 }
 
 /* The convergence stated as sentences under the picture.
