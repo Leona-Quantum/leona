@@ -1,0 +1,43 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="445" viewBox="0 0 1120 445" role="img" aria-labelledby="title desc">
+  <title id="title">Expanded Leona Quantum circuit-generation evaluation overview</title>
+  <desc id="desc">Of 156 trials, 113 passed independent verification, 31 were false positives, and 12 were rejected. Stable pass rate across 52 unique cases was 59.6 percent.</desc>
+  <rect width="1120" height="445" rx="20" fill="#f8fafc"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text x="50" y="48" fill="#0f172a" font-size="24" font-weight="700">拡張回路生成評価 — 156試行</text>
+    <text x="50" y="76" fill="#475569" font-size="15">52 unseen cases / 26 families / 2 seeds / 3 repetitions / real Leona agent</text>
+
+    <rect x="50" y="105" width="240" height="90" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="70" y="134" fill="#475569" font-size="14">独立検証で成功</text>
+    <text x="70" y="174" fill="#15803d" font-size="34" font-weight="700">72.4%</text>
+    <text x="192" y="174" fill="#64748b" font-size="14">113 / 156</text>
+
+    <rect x="310" y="105" width="240" height="90" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="330" y="134" fill="#475569" font-size="14">製品内で accepted</text>
+    <text x="330" y="174" fill="#0369a1" font-size="34" font-weight="700">92.3%</text>
+    <text x="452" y="174" fill="#64748b" font-size="14">144 / 156</text>
+
+    <rect x="570" y="105" width="240" height="90" rx="12" fill="#fff7ed" stroke="#fdba74"/>
+    <text x="590" y="134" fill="#9a3412" font-size="14">accepted 内の誤受理</text>
+    <text x="590" y="174" fill="#c2410c" font-size="34" font-weight="700">21.5%</text>
+    <text x="712" y="174" fill="#9a3412" font-size="14">31 / 144</text>
+
+    <rect x="830" y="105" width="240" height="90" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="850" y="134" fill="#475569" font-size="14">3/3 安定成功case</text>
+    <text x="850" y="174" fill="#7e22ce" font-size="34" font-weight="700">59.6%</text>
+    <text x="972" y="174" fill="#64748b" font-size="14">31 / 52</text>
+
+    <text x="50" y="235" fill="#0f172a" font-size="16" font-weight="600">独立オラクルを基準にした156試行の最終結果</text>
+    <rect x="50" y="255" width="738.85" height="58" rx="8" fill="#22c55e"/>
+    <rect x="788.85" y="255" width="202.69" height="58" fill="#f97316"/>
+    <rect x="991.54" y="255" width="78.46" height="58" rx="8" fill="#94a3b8"/>
+    <text x="419" y="291" text-anchor="middle" fill="#052e16" font-size="16" font-weight="700">正解 113</text>
+    <text x="890" y="291" text-anchor="middle" fill="#431407" font-size="16" font-weight="700">誤受理 31</text>
+    <text x="1031" y="291" text-anchor="middle" fill="#0f172a" font-size="14" font-weight="700">停止 12</text>
+
+    <text x="50" y="352" fill="#334155" font-size="14">初回候補で成功: <tspan font-weight="700">88 / 156 (56.4%)</tspan></text>
+    <text x="390" y="352" fill="#334155" font-size="14">LLM calls: <tspan font-weight="700">785</tspan></text>
+    <text x="585" y="352" fill="#334155" font-size="14">tokens: <tspan font-weight="700">4,793,601 in / 668,565 out</tspan></text>
+    <text x="50" y="390" fill="#64748b" font-size="13">独立成功率 95% Wilson CI: 64.9%–78.8%。前回単発 69.2% と整合するが、安定成功率は59.6%。</text>
+    <text x="50" y="417" fill="#64748b" font-size="13">52 caseの反復分布: 3/3成功=31、2/3=7、1/3=6、0/3=8。</text>
+  </g>
+</svg>

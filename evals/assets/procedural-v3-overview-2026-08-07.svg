@@ -1,0 +1,45 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="420" viewBox="0 0 1120 420" role="img" aria-labelledby="title desc">
+  <title id="title">Leona Quantum procedural v3 evaluation overview</title>
+  <desc id="desc">Of 26 cases, 18 passed the independent oracle, 6 were false positives, and 2 were honest product failures. Product acceptance was 92.3 percent while verified correctness was 69.2 percent.</desc>
+  <rect width="1120" height="420" rx="20" fill="#f8fafc"/>
+  <text x="50" y="48" fill="#0f172a" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="24" font-weight="700">Leona Quantum 回路生成評価 — 全体像</text>
+  <text x="50" y="76" fill="#475569" font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif" font-size="15">procedural-v3 / seed 2026080701 / 26 families / 1 trial each</text>
+
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <rect x="50" y="105" width="240" height="90" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="70" y="134" fill="#475569" font-size="14">独立検証で成功</text>
+    <text x="70" y="174" fill="#15803d" font-size="34" font-weight="700">69.2%</text>
+    <text x="192" y="174" fill="#64748b" font-size="14">18 / 26</text>
+
+    <rect x="310" y="105" width="240" height="90" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="330" y="134" fill="#475569" font-size="14">製品内で accepted</text>
+    <text x="330" y="174" fill="#0369a1" font-size="34" font-weight="700">92.3%</text>
+    <text x="452" y="174" fill="#64748b" font-size="14">24 / 26</text>
+
+    <rect x="570" y="105" width="240" height="90" rx="12" fill="#fff7ed" stroke="#fdba74"/>
+    <text x="590" y="134" fill="#9a3412" font-size="14">accepted 内の誤受理</text>
+    <text x="590" y="174" fill="#c2410c" font-size="34" font-weight="700">25.0%</text>
+    <text x="712" y="174" fill="#9a3412" font-size="14">6 / 24</text>
+
+    <rect x="830" y="105" width="240" height="90" rx="12" fill="#ffffff" stroke="#cbd5e1"/>
+    <text x="850" y="134" fill="#475569" font-size="14">初回候補で成功</text>
+    <text x="850" y="174" fill="#7e22ce" font-size="34" font-weight="700">61.5%</text>
+    <text x="972" y="174" fill="#64748b" font-size="14">16 / 26</text>
+
+    <text x="50" y="235" fill="#0f172a" font-size="16" font-weight="600">独立オラクルを基準にした最終結果</text>
+    <rect x="50" y="255" width="706.15" height="58" rx="8" fill="#22c55e"/>
+    <rect x="756.15" y="255" width="235.38" height="58" fill="#f97316"/>
+    <rect x="991.53" y="255" width="78.47" height="58" rx="8" fill="#94a3b8"/>
+    <text x="403" y="291" text-anchor="middle" fill="#052e16" font-size="16" font-weight="700">正解 18</text>
+    <text x="874" y="291" text-anchor="middle" fill="#431407" font-size="16" font-weight="700">誤受理 6</text>
+    <text x="1031" y="291" text-anchor="middle" fill="#0f172a" font-size="14" font-weight="700">失敗 2</text>
+
+    <circle cx="62" cy="348" r="7" fill="#22c55e"/>
+    <text x="78" y="353" fill="#334155" font-size="14">正解・保存成功</text>
+    <circle cx="242" cy="348" r="7" fill="#f97316"/>
+    <text x="258" y="353" fill="#334155" font-size="14">false positive（誤った成果物を受理）</text>
+    <circle cx="565" cy="348" r="7" fill="#94a3b8"/>
+    <text x="581" y="353" fill="#334155" font-size="14">honest failure（成果物を公開せず停止）</text>
+    <text x="50" y="390" fill="#64748b" font-size="13">独立成功率 95% Wilson CI: 50.0%–83.5%。各 family は1回のみのため、再現性の推定には追加試行が必要。</text>
+  </g>
+</svg>

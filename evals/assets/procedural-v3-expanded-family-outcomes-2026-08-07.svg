@@ -1,0 +1,105 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="1090" viewBox="0 0 1120 1090" role="img" aria-labelledby="title desc">
+  <title id="title">Verified outcomes for 26 quantum circuit families</title>
+  <desc id="desc">Each family has six trials from two unseen seeds and three repetitions. Green is independently verified success, orange is false positive, and gray is rejected product failure.</desc>
+  <rect width="1120" height="1090" rx="20" fill="#f8fafc"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text x="50" y="48" fill="#0f172a" font-size="24" font-weight="700">26 family別の結果 — 各6試行</text>
+    <text x="50" y="76" fill="#475569" font-size="15">未使用seed 2個 × 3反復。緑=独立検証成功、橙=誤受理、灰=製品が停止。</text>
+    <circle cx="55" cy="105" r="7" fill="#22c55e"/><text x="70" y="110" fill="#334155" font-size="13">正解 113</text>
+    <circle cx="175" cy="105" r="7" fill="#f97316"/><text x="190" y="110" fill="#334155" font-size="13">false positive 31</text>
+    <circle cx="365" cy="105" r="7" fill="#94a3b8"/><text x="380" y="110" fill="#334155" font-size="13">rejected 12</text>
+    <text x="970" y="110" fill="#64748b" font-size="12">独立成功率</text>
+  <text x="355" y="161" text-anchor="end" fill="#334155" font-size="13">Amazon Braket statevector</text>
+  <rect x="375" y="142" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="160" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="196" text-anchor="end" fill="#334155" font-size="13">CHSH</text>
+  <rect x="375" y="177" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="195" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="231" text-anchor="end" fill="#334155" font-size="13">Cirq parameter shifts</text>
+  <rect x="375" y="212" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="230" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="266" text-anchor="end" fill="#334155" font-size="13">Entanglement spectrum</text>
+  <rect x="375" y="247" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="265" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="301" text-anchor="end" fill="#334155" font-size="13">Exact indexed-Pauli dynamics</text>
+  <rect x="375" y="282" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="300" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="336" text-anchor="end" fill="#334155" font-size="13">Finite-shot Pauli</text>
+  <rect x="375" y="317" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="335" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="371" text-anchor="end" fill="#334155" font-size="13">Grover</text>
+  <rect x="375" y="352" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="370" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="406" text-anchor="end" fill="#334155" font-size="13">Exact-dyadic HHL</text>
+  <rect x="375" y="387" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="405" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="441" text-anchor="end" fill="#334155" font-size="13">Mixed Kraus channel</text>
+  <rect x="375" y="422" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="440" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="476" text-anchor="end" fill="#334155" font-size="13">PennyLane VQE</text>
+  <rect x="375" y="457" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="475" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="511" text-anchor="end" fill="#334155" font-size="13">Exact dyadic QPE</text>
+  <rect x="375" y="492" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="510" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="546" text-anchor="end" fill="#334155" font-size="13">QUBO</text>
+  <rect x="375" y="527" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="545" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="581" text-anchor="end" fill="#334155" font-size="13">Teleportation</text>
+  <rect x="375" y="562" width="576" height="25" rx="6" fill="#22c55e"/>
+  <text x="970" y="580" fill="#0f172a" font-size="13" font-weight="700">6/6 (100.0%)</text>
+  <text x="355" y="616" text-anchor="end" fill="#334155" font-size="13">Compiled state preparation</text>
+  <rect x="375" y="597" width="480" height="25" rx="0" fill="#22c55e"/>
+  <rect x="855" y="597" width="96" height="25" rx="6" fill="#f97316"/>
+  <text x="970" y="615" fill="#0f172a" font-size="13" font-weight="700">5/6 (83.3%)</text>
+  <text x="355" y="651" text-anchor="end" fill="#334155" font-size="13">Mid-circuit active reset</text>
+  <rect x="375" y="632" width="480" height="25" rx="0" fill="#22c55e"/>
+  <rect x="855" y="632" width="96" height="25" rx="6" fill="#f97316"/>
+  <text x="970" y="650" fill="#0f172a" font-size="13" font-weight="700">5/6 (83.3%)</text>
+  <text x="355" y="686" text-anchor="end" fill="#334155" font-size="13">Quantum Fisher information</text>
+  <rect x="375" y="667" width="480" height="25" rx="0" fill="#22c55e"/>
+  <rect x="855" y="667" width="96" height="25" rx="6" fill="#94a3b8"/>
+  <text x="970" y="685" fill="#0f172a" font-size="13" font-weight="700">5/6 (83.3%)</text>
+  <text x="355" y="721" text-anchor="end" fill="#334155" font-size="13">Single-qubit state</text>
+  <rect x="375" y="702" width="480" height="25" rx="0" fill="#22c55e"/>
+  <rect x="855" y="702" width="96" height="25" rx="6" fill="#f97316"/>
+  <text x="970" y="720" fill="#0f172a" font-size="13" font-weight="700">5/6 (83.3%)</text>
+  <text x="355" y="756" text-anchor="end" fill="#334155" font-size="13">Amplitude estimation</text>
+  <rect x="375" y="737" width="384" height="25" rx="0" fill="#22c55e"/>
+  <rect x="759" y="737" width="192" height="25" rx="6" fill="#f97316"/>
+  <text x="970" y="755" fill="#0f172a" font-size="13" font-weight="700">4/6 (66.7%)</text>
+  <text x="355" y="791" text-anchor="end" fill="#334155" font-size="13">Constrained assignment</text>
+  <rect x="375" y="772" width="384" height="25" rx="0" fill="#22c55e"/>
+  <rect x="759" y="772" width="192" height="25" rx="6" fill="#94a3b8"/>
+  <text x="970" y="790" fill="#0f172a" font-size="13" font-weight="700">4/6 (66.7%)</text>
+  <text x="355" y="826" text-anchor="end" fill="#334155" font-size="13">Non-dyadic QPE</text>
+  <rect x="375" y="807" width="192" height="25" rx="0" fill="#22c55e"/>
+  <rect x="567" y="807" width="288" height="25" rx="0" fill="#f97316"/>
+  <rect x="855" y="807" width="96" height="25" rx="6" fill="#94a3b8"/>
+  <text x="970" y="825" fill="#0f172a" font-size="13" font-weight="700">2/6 (33.3%)</text>
+  <text x="355" y="861" text-anchor="end" fill="#334155" font-size="13">Ordered Trotterization</text>
+  <rect x="375" y="842" width="192" height="25" rx="0" fill="#22c55e"/>
+  <rect x="567" y="842" width="384" height="25" rx="6" fill="#f97316"/>
+  <text x="970" y="860" fill="#0f172a" font-size="13" font-weight="700">2/6 (33.3%)</text>
+  <text x="355" y="896" text-anchor="end" fill="#334155" font-size="13">Repetition-code QEC</text>
+  <rect x="375" y="877" width="192" height="25" rx="0" fill="#22c55e"/>
+  <rect x="567" y="877" width="384" height="25" rx="6" fill="#f97316"/>
+  <text x="970" y="895" fill="#0f172a" font-size="13" font-weight="700">2/6 (33.3%)</text>
+  <text x="355" y="931" text-anchor="end" fill="#334155" font-size="13">Qibo statevector</text>
+  <rect x="375" y="912" width="96" height="25" rx="0" fill="#22c55e"/>
+  <rect x="471" y="912" width="480" height="25" rx="6" fill="#f97316"/>
+  <text x="970" y="930" fill="#0f172a" font-size="13" font-weight="700">1/6 (16.7%)</text>
+  <text x="355" y="966" text-anchor="end" fill="#334155" font-size="13">Amplitude damping</text>
+  <rect x="375" y="947" width="480" height="25" rx="0" fill="#f97316"/>
+  <rect x="855" y="947" width="96" height="25" rx="6" fill="#94a3b8"/>
+  <text x="970" y="965" fill="#0f172a" font-size="13" font-weight="700">0/6 (0.0%)</text>
+  <text x="355" y="1001" text-anchor="end" fill="#334155" font-size="13">Lindblad + Stinespring</text>
+  <rect x="375" y="982" width="576" height="25" rx="6" fill="#94a3b8"/>
+  <text x="970" y="1000" fill="#0f172a" font-size="13" font-weight="700">0/6 (0.0%)</text>
+  <text x="355" y="1036" text-anchor="end" fill="#334155" font-size="13">Qulacs statevector</text>
+  <rect x="375" y="1017" width="480" height="25" rx="0" fill="#f97316"/>
+  <rect x="855" y="1017" width="96" height="25" rx="6" fill="#94a3b8"/>
+  <text x="970" y="1035" fill="#0f172a" font-size="13" font-weight="700">0/6 (0.0%)</text>
+    <text x="50" y="1065" fill="#64748b" font-size="13">6/6の安定familyは13個。0/6は amplitude damping、Lindblad + Stinespring、Qulacs の3個。</text>
+  </g>
+</svg>

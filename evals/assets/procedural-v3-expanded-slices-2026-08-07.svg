@@ -1,0 +1,50 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1120" height="885" viewBox="0 0 1120 885" role="img" aria-labelledby="title desc">
+  <title id="title">Expanded evaluation pass rates by difficulty, workload, and framework</title>
+  <desc id="desc">Scientific workload and Qibo and Qulacs framework cases show the lowest independently verified pass rates.</desc>
+  <rect width="1120" height="885" rx="20" fill="#f8fafc"/>
+  <g font-family="-apple-system,BlinkMacSystemFont,'Segoe UI',sans-serif">
+    <text x="50" y="48" fill="#0f172a" font-size="24" font-weight="700">難易度・用途・フレームワーク別の独立成功率</text>
+    <text x="50" y="76" fill="#475569" font-size="15">各バーは独立オラクル合格率。nが小さいSDKは参考値。</text>
+    <g stroke="#cbd5e1" stroke-width="1">
+      <line x1="280" y1="110" x2="280" y2="842"/>
+      <line x1="455" y1="110" x2="455" y2="842" stroke-dasharray="4 5"/>
+      <line x1="630" y1="110" x2="630" y2="842" stroke-dasharray="4 5"/>
+      <line x1="805" y1="110" x2="805" y2="842" stroke-dasharray="4 5"/>
+      <line x1="980" y1="110" x2="980" y2="842"/>
+    </g>
+    <g fill="#64748b" font-size="12" text-anchor="middle">
+      <text x="280" y="104">0%</text><text x="455" y="104">25%</text><text x="630" y="104">50%</text><text x="805" y="104">75%</text><text x="980" y="104">100%</text>
+    </g>
+
+    <text x="50" y="138" fill="#0f172a" font-size="16" font-weight="700">難易度</text>
+    <g fill="#334155" font-size="14" text-anchor="end">
+      <text x="260" y="180">Basic</text><text x="260" y="222">Intermediate</text><text x="260" y="264">Advanced</text><text x="260" y="306">Research</text>
+    </g>
+    <rect x="280" y="160" width="583.33" height="27" rx="6" fill="#3b82f6"/><text x="875" y="179" fill="#0f172a" font-size="13" font-weight="700">83.3% (5/6)</text>
+    <rect x="280" y="202" width="602.78" height="27" rx="6" fill="#16a34a"/><text x="894" y="221" fill="#0f172a" font-size="13" font-weight="700">86.1% (31/36)</text>
+    <rect x="280" y="244" width="533.33" height="27" rx="6" fill="#6366f1"/><text x="825" y="263" fill="#0f172a" font-size="13" font-weight="700">76.2% (32/42)</text>
+    <rect x="280" y="286" width="437.50" height="27" rx="6" fill="#f97316"/><text x="729" y="305" fill="#0f172a" font-size="13" font-weight="700">62.5% (45/72)</text>
+
+    <line x1="50" y1="340" x2="1070" y2="340" stroke="#e2e8f0"/>
+    <text x="50" y="374" fill="#0f172a" font-size="16" font-weight="700">用途</text>
+    <g fill="#334155" font-size="14" text-anchor="end">
+      <text x="260" y="416">Educational</text><text x="260" y="458">Practical</text><text x="260" y="500">Scientific</text>
+    </g>
+    <rect x="280" y="396" width="676.67" height="27" rx="6" fill="#16a34a"/><text x="968" y="415" fill="#0f172a" font-size="13" font-weight="700">96.7% (29/30)</text>
+    <rect x="280" y="438" width="568.75" height="27" rx="6" fill="#0ea5e9"/><text x="860" y="457" fill="#0f172a" font-size="13" font-weight="700">81.3% (39/48)</text>
+    <rect x="280" y="480" width="403.85" height="27" rx="6" fill="#ef4444"/><text x="695" y="499" fill="#0f172a" font-size="13" font-weight="700">57.7% (45/78)</text>
+
+    <line x1="50" y1="534" x2="1070" y2="534" stroke="#e2e8f0"/>
+    <text x="50" y="568" fill="#0f172a" font-size="16" font-weight="700">フレームワーク</text>
+    <g fill="#334155" font-size="14" text-anchor="end">
+      <text x="260" y="610">Qiskit</text><text x="260" y="652">Cirq</text><text x="260" y="694">PennyLane</text><text x="260" y="736">Braket</text><text x="260" y="778">Qibo</text><text x="260" y="820">Qulacs</text>
+    </g>
+    <rect x="280" y="590" width="522.22" height="27" rx="6" fill="#3b82f6"/><text x="814" y="609" fill="#0f172a" font-size="13" font-weight="700">74.6% (94/126)</text>
+    <rect x="280" y="632" width="700" height="27" rx="6" fill="#16a34a"/><text x="990" y="651" fill="#0f172a" font-size="13" font-weight="700">100% (6/6)</text>
+    <rect x="280" y="674" width="700" height="27" rx="6" fill="#16a34a"/><text x="990" y="693" fill="#0f172a" font-size="13" font-weight="700">100% (6/6)</text>
+    <rect x="280" y="716" width="700" height="27" rx="6" fill="#16a34a"/><text x="990" y="735" fill="#0f172a" font-size="13" font-weight="700">100% (6/6)</text>
+    <rect x="280" y="758" width="116.67" height="27" rx="6" fill="#f97316"/><text x="408" y="777" fill="#0f172a" font-size="13" font-weight="700">16.7% (1/6)</text>
+    <rect x="280" y="800" width="3" height="27" rx="2" fill="#ef4444"/><text x="295" y="819" fill="#0f172a" font-size="13" font-weight="700">0% (0/6)</text>
+    <text x="50" y="858" fill="#64748b" font-size="13">Qiskit以外は各2 unique cases × 3反復。フレームワーク一般の比較には追加caseが必要。</text>
+  </g>
+</svg>
