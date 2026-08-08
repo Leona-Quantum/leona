@@ -127,6 +127,46 @@ private. Expect `published=283 blocked=0`.
 Changing the license, or attesting records the current policy excludes, is a policy-file
 edit plus a normal review. Never a flag and never a command-line override.
 
+### When `attest-bootstrap` refuses — `--re-attest`, and why it names identities
+
+A record whose **provenance claim moved** is refused rather than re-signed: the grant on
+file was given about a stated origin, and that origin is now a different sentence. The run
+prints them under `needs_signature` and writes nothing. This is `AttestedRecord.grant_carries_forward`
+doing its job, and the most common cause is a corrected citation — a source whose title
+was wrong and has been fixed.
+
+Until session 101 the refusal had **no escape hatch**: the message said to re-attest them
+deliberately and there was no flag, no subcommand, and no way to do it. Re-running produced
+the identical refusal forever. `--re-attest` is that hatch, and it is deliberately *not*
+`--force`:
+
+```bash
+uv run --package majorana-api python -m majorana_api.catalog_admin attest-bootstrap \
+  --attested-by-email "<you>" --re-attest "<identity>,<identity>,…"
+```
+
+**The named set must equal the refused set in both directions**, or nothing is written:
+
+- *named but not refused* — the list was written against an earlier state, so whatever was
+  examined is not what this run is doing. **A successful re-attest run lands here on the
+  second run**: it left nothing refused, so repeating the identical command is now a stale
+  list. Drop the flag on later runs.
+- *refused but not named* — a refusal appeared after the list was written. Continuing would
+  attest it on the strength of a decision taken about other records. A `--force` cannot
+  express this direction at all, which is the reason the flag takes identities.
+
+`--re-attest ""` is an error rather than a synonym for omitting it: an operator who believes
+they authorised something and did not should not get a run that prints `re_signed=0` under a
+command line that says otherwise. A repeated identity is an error too — the list is a
+hand-assembled decision record, and a repeat is the signature of one assembled from two
+sources, where the second is the stale list this reconciliation exists to catch.
+`parse_re_attest` and `plan_re_attestation` are pinned without a database in
+`services/api/tests/test_catalog_attestation.py`.
+
+Because the attest step *exits* on a refusal, `publish-bootstrap` never runs either — so the
+visible symptom is a live corpus stuck at the old count, not an error page. Session 101 read
+`x-catalog-total: 274` against a manifest of 283 for exactly this reason.
+
 ## Running these against **production**
 
 Everything above assumes a shell that already holds `DATABASE_URL`. Production's lives in

@@ -97,6 +97,15 @@
   --dur-press: 90ms;
   --dur-hover: 150ms;
 
+  /* The Atlas converge canvas, where the drawing itself moves rather than being
+     replaced. Longer than an interface hover because the reader is watching a
+     picture rearrange rather than acknowledging a control, and matched to the
+     320ms the Atlas navigation transition already gives the figure so the two
+     read as one hand. An ease that settles rather than stops, for the same
+     reason: the shape is arriving somewhere, not being switched off. */
+  --dur-converge: 280ms;
+  --ease-converge: cubic-bezier(0.32, 0.72, 0, 1);
+
   /* workspace geometry — shared shell and composer bounds */
   --sidebar-expanded: 256px;
   --sidebar-collapsed: 64px;
