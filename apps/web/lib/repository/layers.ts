@@ -311,11 +311,18 @@ export interface LayerMethod extends LayerNodeBase {
  * readouts"* lives in.
  *
  * - `coherent` — the turn's output stays a quantum state and feeds the next
- *   turn. Nothing is measured, so nothing is re-prepared; the price is paid in
- *   depth and in success probability, which multiplies down the chain. This is
- *   `time-marching-usva`, which buys the decay back with an amplification per
- *   step, and `amplitude-estimation-readout`, whose iteration is *M* applications
- *   of one Grover operator.
+ *   turn. Nothing is **measured**, so the state is never collapsed and restarted
+ *   from classical data; the price is paid in depth and in success probability,
+ *   which multiplies down the chain. This is `time-marching-usva`, which buys the
+ *   decay back with an amplification per step, and `amplitude-estimation-readout`,
+ *   whose iteration is *M* applications of one Grover operator.
+ *
+ *   **Coherent does not mean the preparation runs once.** HHL prepares |b⟩ afresh
+ *   inside every one of its O(κ) amplification rounds and amplitude estimation
+ *   runs *A* forwards and backwards on every iteration — both are recorded here
+ *   as repeating `state-preparation`, coherently. What a coherent loop never pays
+ *   is a *readout*. Saying otherwise would contradict two of this graph's own
+ *   annotations, which is how it was caught.
  * - `measured` — the turn's output leaves the device as classical data, so every
  *   turn is a fresh preparation **and** a fresh readout. This is shot-based
  *   estimation, and it is the loop a variational optimizer closes.
@@ -856,8 +863,18 @@ export interface LayerCensus {
   measuredLoops: number;
   /** Of those, the ones whose turn stays in superposition and pays in depth. */
   coherentLoops: number;
-  /** Slots some route repeats and another route meets exactly once. */
-  foldedSlots: number;
+  /**
+   * Slots where some route declares a multiplicity **and another declares none**
+   * — the figure the capability page actually draws.
+   *
+   * Was `foldedSlots`, counted as "any route repeats it", and both the name and
+   * the count overclaimed: a slot every route repeats has no contrast to draw,
+   * and no route here "meets it exactly once" — the second list records nothing
+   * at all (see `foldedAgainst`). The renderer already guarded both halves; the
+   * number did not, so the census could report a comparison the page would not
+   * print.
+   */
+  contrastedSlots: number;
   /**
    * Every hop in the graph — the denominator `iteratedSteps` is a numerator of.
    *
@@ -900,9 +917,10 @@ export function layerCensus(
     for (const narrowed of Object.values(method.through ?? {})) produced.add(narrowed);
   }
   const repetitions = methods.flatMap((method) => repeatedSteps(method));
-  const foldedSlots = capabilities.filter(
-    (node) => foldedAgainst(graph, node.id).repeated.length > 0,
-  ).length;
+  const contrastedSlots = capabilities.filter((node) => {
+    const { unpinned, repeated } = foldedAgainst(graph, node.id);
+    return repeated.length > 0 && unpinned.length > 0;
+  }).length;
   const referenced = new Set<string>();
   let unresolved = 0;
   for (const node of graph.nodes) {
@@ -929,7 +947,7 @@ export function layerCensus(
     iteratedSteps: repetitions.length,
     measuredLoops: repetitions.filter(({ repetition }) => repetition.closure === "measured").length,
     coherentLoops: repetitions.filter(({ repetition }) => repetition.closure === "coherent").length,
-    foldedSlots,
+    contrastedSlots,
     stepInstances: methods.reduce((total, method) => total + method.steps.length, 0),
   };
 }

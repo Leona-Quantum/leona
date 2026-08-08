@@ -11,6 +11,7 @@ import {
   auditCitations,
   canonicalPaperUrl,
   paperIdFromUrl,
+  paperRegisterWarnings,
   validatePaperRegister,
   type PaperRegister,
 } from "./repository/papers.ts";
@@ -104,16 +105,31 @@ test("validation refuses the rows that would reintroduce drift one level up", ()
   );
 });
 
-test("two ids carrying one title and year are reported as the same paper twice", () => {
-  // A preprint and its journal DOI, both registered. Not always wrong — but it
-  // is the thing to look at, and it is invisible without this.
-  const errors = validatePaperRegister({
+test("two ids carrying one title and year are a warning, and must not fail the build", () => {
+  // A preprint and its journal DOI, both registered. Not always wrong — it is
+  // the thing to look at, and it is invisible without this. The first draft put
+  // it in `errors`, so the gate exited non-zero on the case its own comment
+  // called legitimate; the split is the fix and this asserts both halves.
+  const register: PaperRegister = {
     papers: [
       { id: "arxiv:2011.03185", title: "One paper", authors: "A", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
       { id: "doi:10.1000/x", title: "One Paper", authors: "A", year: "2020", url: "https://doi.org/10.1000/x" },
     ],
-  });
-  assert.match(errors.join("\n"), /the same title and year appear under/);
+  };
+  assert.deepEqual(validatePaperRegister(register), []);
+  assert.match(paperRegisterWarnings(register).join("\n"), /the same title and year appear under/);
+  // And the authored register is clean on both counts.
+  assert.deepEqual(paperRegisterWarnings(PAPER_REGISTER), []);
+});
+
+test("a query string or a fragment is navigation, never identity", () => {
+  // `arxiv.org/abs/X?context=quant-ph` is what a search result hands you, and
+  // `doi.org/10.1/x#sec3` is what a deep link does. Without stripping, the
+  // trailing pattern swallows both into the key and one paper becomes two rows —
+  // or a citation somebody pasted becomes unregistered.
+  assert.equal(paperIdFromUrl("https://arxiv.org/abs/2011.03185?context=quant-ph"), "arxiv:2011.03185");
+  assert.equal(paperIdFromUrl("https://arxiv.org/abs/2011.03185v2#abstract"), "arxiv:2011.03185");
+  assert.equal(paperIdFromUrl("https://doi.org/10.1103/PhysRevA.53.2855#sec3"), "doi:10.1103/physreva.53.2855");
 });
 
 const FIXTURE: PaperRegister = {

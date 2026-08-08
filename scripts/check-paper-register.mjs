@@ -103,6 +103,12 @@ if (errors.length > 0) {
   process.exit(1);
 }
 
+// Printed whether or not `--quiet`, and never failed: a preprint registered
+// beside its journal DOI is legitimate, and refusing it would block a pair a
+// reader wants both halves of. See `paperRegisterWarnings`.
+const warnings = papers.paperRegisterWarnings(PAPER_REGISTER);
+for (const warning of warnings) console.log(`  ⚠ ${warning}`);
+
 if (!QUIET) {
   const arxiv = PAPER_REGISTER.papers.filter((paper) => paper.id.startsWith("arxiv:")).length;
   console.log("paper register");

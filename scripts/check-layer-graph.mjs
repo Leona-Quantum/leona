@@ -178,7 +178,7 @@ if (!QUIET) {
   // edges are: a route that stops declaring its loop looks exactly like a route
   // that never had one, and the loop is where the dominant cost term lives.
   console.log(
-    `  ${census.iteratedSteps} of ${census.stepInstances} hops declare a multiplicity — ${census.coherentLoops} coherent, ${census.measuredLoops} closing through a measurement · ${census.foldedSlots} slots some route folds and another repeats`,
+    `  ${census.iteratedSteps} of ${census.stepInstances} hops declare a multiplicity — ${census.coherentLoops} coherent, ${census.measuredLoops} closing through a measurement · ${census.contrastedSlots} slots draw the contrast: one route repeats, another records nothing`,
   );
   for (const node of LAYER_GRAPH.nodes) {
     if (!isMethod(node)) continue;

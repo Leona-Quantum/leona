@@ -138,8 +138,13 @@ const COPY = {
     // They are two sentences because they are two facts, and a reader deciding
     // between shot-based and coherent readout is deciding on the second one.
     repeatsBadge: (count: string) => `runs ${count}`,
+    // NOT "so nothing is prepared again" — that was wrong, and wrong against two
+    // of this graph's own records: HHL prepares |b⟩ afresh in every one of its
+    // O(κ) amplification rounds, and amplitude estimation runs the preparation
+    // forwards and backwards on every iteration. What a coherent loop never pays
+    // is a readout.
     repeatsCoherent:
-      "The loop stays coherent: nothing is measured between turns, so nothing is prepared again. The price is depth and a success probability that multiplies down the chain.",
+      "The loop stays coherent: nothing is measured between turns. The preparation may still be reapplied every turn — what the loop never pays is a readout and a restart from classical data. The price is depth, and a success probability that multiplies down the chain.",
     repeatsMeasured:
       "The loop closes through a measurement: every turn ends in a readout and starts from a fresh preparation. The price is a count of runs, not a depth.",
     repeatsHeading: "Steps it runs more than once",
@@ -262,7 +267,7 @@ const COPY = {
     needsWays: (n: number) => (n === 0 ? "手法の記録なし" : `手法${n}件`),
     repeatsBadge: (count: string) => `実行回数：${count}`,
     repeatsCoherent:
-      "反復はコヒーレントに閉じます。回と回の間で測定はせず、したがって準備をやり直すこともありません。代価は深さと、連鎖のあいだ掛け合わされていく成功確率です。",
+      "反復はコヒーレントに閉じます。回と回の間で測定は行われません。準備ユニタリ自体は毎回適用され直すことがありますが、読み出しと、古典的なデータからの再出発は生じません。代価は深さと、連鎖のあいだ掛け合わされていく成功確率です。",
     repeatsMeasured:
       "反復は測定を挟んで閉じます。1 回ごとに読み出しで終わり、次は新たな準備から始まります。代価は深さではなく実行回数です。",
     repeatsHeading: "複数回実行する手順",

@@ -77,7 +77,12 @@ export const PAPER_ID_SCHEMES = ["arxiv", "doi"] as const;
  * like two papers.
  */
 export function paperIdFromUrl(url: string): PaperId | null {
-  const trimmed = url.trim();
+  // A query string and a fragment are navigation, never identity.
+  // `arxiv.org/abs/X?context=quant-ph` and `doi.org/10.1/x#sec3` are the paper,
+  // and without this the trailing `\S+` swallows them into the key — which makes
+  // one paper two rows, or unregisters a citation somebody pasted from a search
+  // result. Stripped before matching so both schemes get it.
+  const trimmed = url.trim().replace(/[?#].*$/, "");
   const arxiv = /^https?:\/\/(?:www\.)?arxiv\.org\/(?:abs|pdf)\/(.+?)(?:v\d+)?(?:\.pdf)?$/i.exec(
     trimmed,
   );
@@ -169,20 +174,37 @@ export function validatePaperRegister(register: PaperRegister): string[] {
       errors.push(`${paper.id}: year is not four digits — ${JSON.stringify(paper.year)}`);
     }
   }
-  // Two rows with the same title and year are almost always one paper reached by
-  // two ids — a preprint and its journal DOI. Reported rather than refused,
-  // because it is occasionally genuine (a paper and its published erratum), and
-  // because refusing it would block a legitimate arXiv/DOI pair a reader wants
-  // both of. It is the thing to look at when the register grows.
+  return errors;
+}
+
+/**
+ * Things worth looking at that are **not** failures.
+ *
+ * Separate from `validatePaperRegister` and separately returned, because the one
+ * item in here says so in its own reasoning and the first draft pushed it into
+ * `errors` anyway — so the script exited non-zero on a case the comment called
+ * legitimate. A diagnostic whose text argues for tolerance and whose call site
+ * refuses is worse than either choice made cleanly.
+ *
+ * Two rows with the same title and year are usually one paper reached by two ids
+ * — a preprint and its journal DOI — and occasionally genuine (a paper beside its
+ * published erratum). Refusing it would block a legitimate arXiv/DOI pair a
+ * reader wants both of. It is the thing to look at as the register grows, and the
+ * script prints it without failing.
+ */
+export function paperRegisterWarnings(register: PaperRegister): string[] {
+  const warnings: string[] = [];
   const byTitle = new Map<string, PaperId[]>();
   for (const paper of register.papers) {
     const key = `${paper.title.toLowerCase().replace(/\W+/g, " ").trim()}|${paper.year}`;
     byTitle.set(key, [...(byTitle.get(key) ?? []), paper.id]);
   }
   for (const [, ids] of byTitle) {
-    if (ids.length > 1) errors.push(`the same title and year appear under ${ids.join(" and ")}`);
+    if (ids.length > 1) {
+      warnings.push(`the same title and year appear under ${ids.join(" and ")} — one paper, two ids?`);
+    }
   }
-  return errors;
+  return warnings;
 }
 
 /** One recorded citation, wherever it lives. */

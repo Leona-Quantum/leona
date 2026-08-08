@@ -285,7 +285,7 @@ test("a repeated hop is counted as a hop, and the denominator is carried with it
   assert.equal(census.iteratedSteps, 1);
   assert.equal(census.coherentLoops, 1);
   assert.equal(census.measuredLoops, 0);
-  assert.equal(census.foldedSlots, 1);
+  assert.equal(census.contrastedSlots, 1);
 });
 
 test("a slot nothing repeats draws no contrast at all", () => {
