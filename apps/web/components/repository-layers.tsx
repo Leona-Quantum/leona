@@ -54,6 +54,10 @@ import {
   type LayerNode,
 } from "../lib/repository/layers";
 import { layoutProcessZoom } from "../lib/repository/process-layout";
+import { PAPER_REGISTER } from "../lib/repository/paper-register";
+import { paperTraces } from "../lib/repository/paper-traces";
+import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
+import { SOURCE_COVERAGE_AXES } from "../lib/repository/types";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import {
   kindsOf,
@@ -164,6 +168,16 @@ const COPY = {
     atlasNone:
       "No record in the Atlas covers this yet. The catalogue is 283 records of circuits and primitives; this part of the literature is not in it.",
     citationsHeading: "Sources",
+    papersLead: (cited: number, total: number) =>
+      `Every claim here rests on a source. This graph cites ${cited} papers; they and the ${total - cited} the Atlas cites alone are registered in one place, with what each reports and everywhere it is cited from.`,
+    papersLink: "Papers",
+    sourceOutLabel: "open the paper itself",
+    // Printed on every citation, including the ones nobody has read for this.
+    // The owner's theory-vs-experimentation question is answered here, on the
+    // map, rather than one navigation away.
+    reportsAxis: { theory: "theory", simulation: "simulation", hardware: "hardware" },
+    reportsStatus: { reported: "yes", absent: "no", unknown: "?" },
+    reportsUnread: "nobody has read this paper for what it reports",
     backToLayers: "← Layers",
     backToAtlas: "Atlas",
     layersLink: "Layers — how the pieces fit together",
@@ -287,6 +301,13 @@ const COPY = {
     atlasNone:
       "これに対応する項目は Atlas にまだありません。カタログは回路と基本要素の283件で構成されており、この領域の文献は含まれていません。",
     citationsHeading: "出典",
+    papersLead: (cited: number, total: number) =>
+      `ここでの主張はすべて出典に基づいています。この図が引用しているのは ${cited} 件で、それらとアトラスのみが引用する ${total - cited} 件は、一箇所に登録されています。各論文が何を報告しているか、どこから引用されているかも併せて記録しています。`,
+    papersLink: "論文",
+    sourceOutLabel: "論文そのものを開く",
+    reportsAxis: { theory: "理論", simulation: "数値計算", hardware: "実機" },
+    reportsStatus: { reported: "あり", absent: "なし", unknown: "未確定" },
+    reportsUnread: "この論文が何を報告しているかは、まだ誰も読んでいません",
     backToLayers: "← 階層",
     backToAtlas: "Atlas",
     layersLink: "階層 — 部品どうしの組み合わさり方",
@@ -532,23 +553,71 @@ function EmptyNote({ children }: { children: string }) {
   return <p className="mj-layers-empty">{children}</p>;
 }
 
-function Citations({ node, copy }: { node: LayerNode; copy: LayersCopy }) {
+/**
+ * The sources behind a node — each now an address on this site as well as a
+ * link off it.
+ *
+ * Two links per citation, deliberately. The title goes to `/repository/papers/…`
+ * because that page is the only place that says what the paper reports and
+ * everywhere else it is cited from; the arrow goes to the paper itself, because
+ * a reader who wants the PDF should not have to make two hops for it. Both are
+ * `<a href>`, so `curl` sees the same surface a browser does.
+ *
+ * The theory/simulation/hardware line is printed **here**, on the map, rather
+ * than only on the paper page. That distinction was the owner's ask, and a fact
+ * a reader has to navigate away to see is a fact the map does not have.
+ * `unread` is printed rather than omitted — an absence that renders as silence
+ * reads as "nothing to say", which is the one thing it does not mean.
+ */
+function Citations({ node, copy, locale }: { node: LayerNode; copy: LayersCopy; locale: PublicLocale }) {
   const citations = node.citations ?? [];
   if (citations.length === 0) return null;
+  const register = indexPapers(PAPER_REGISTER);
   return (
     <section className="mj-layers-section" aria-labelledby={`sources-${node.id}`}>
       <h2 id={`sources-${node.id}`}>{copy.citationsHeading}</h2>
       <ul className="mj-layers-sources">
-        {citations.map((citation) => (
-          <li key={citation.url}>
-            <a href={citation.url} rel="noreferrer noopener" target="_blank">
-              {citation.title}
-            </a>
-            <span className="mj-layers-source-meta">
-              {citation.authors} · {citation.year}
-            </span>
-          </li>
-        ))}
+        {citations.map((citation) => {
+          // A citation whose url the register cannot key on already fails
+          // `check-paper-register.mjs`, so this branch is unreachable on a
+          // green tree. It renders the plain external link rather than a dead
+          // internal one, because a broken tree is exactly when a page must
+          // still render.
+          const paperId = paperIdFromUrl(citation.url);
+          const paper = paperId ? register.get(paperId) : undefined;
+          return (
+            <li key={citation.url}>
+              {paper ? (
+                <a href={`/repository/papers/${paperSlug(paper.id)}`}>{citation.title}</a>
+              ) : (
+                <a href={citation.url} rel="noreferrer noopener" target="_blank">
+                  {citation.title}
+                </a>
+              )}
+              {paper ? (
+                <a
+                  className="mj-layers-source-out"
+                  href={citation.url}
+                  rel="noreferrer noopener"
+                  target="_blank"
+                  aria-label={`${citation.title} — ${copy.sourceOutLabel}`}
+                >
+                  ↗
+                </a>
+              ) : null}
+              <span className="mj-layers-source-meta">
+                {citation.authors} · {citation.year}
+              </span>
+              <span className="mj-layers-source-meta">
+                {paper?.reports
+                  ? SOURCE_COVERAGE_AXES.map(
+                      (axis) => `${copy.reportsAxis[axis]} ${copy.reportsStatus[paper.reports![axis]]}`,
+                    ).join(" · ")
+                  : copy.reportsUnread}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -683,7 +752,7 @@ function CapabilityView({
       <LoopComparison graph={graph} node={node} locale={locale} copy={copy} />
 
       <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} />
-      <Citations node={node} copy={copy} />
+      <Citations node={node} copy={copy} locale={locale} />
     </>
   );
 }
@@ -891,7 +960,7 @@ function MethodView({
       </section>
 
       <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} />
-      <Citations node={node} copy={copy} />
+      <Citations node={node} copy={copy} locale={locale} />
     </>
   );
 }
@@ -1105,6 +1174,61 @@ export function LayerStateView({
  * each route names further slots. The `<details>` per root is addressable and
  * needs no JavaScript.
  */
+/**
+ * What is here, counted — the only place on this site the graph's own census is
+ * printed.
+ *
+ * **Exported and rendered from two views deliberately.** It lived inside
+ * `LayerIndexView`, which is `?view=list` — not the default, and one of the
+ * three views OWNER_TODO §5 proposes retiring. So the numbers that say how
+ * complete this graph honestly is were reachable only from the surface most
+ * likely to be deleted, and a reader on the default view was never shown them.
+ *
+ * Written once rather than copied onto converge, for the reason `ViewSwitch`
+ * exists: four hand-written copies of one control is how `?view=converge`
+ * shipped invisible. A census restated in two places is the same failure with
+ * numbers, and numbers drift more quietly than links do.
+ *
+ * Counted from the graph and the corpus in hand — not one of these figures is
+ * written into a sentence.
+ */
+export function LayerCensusPanel({
+  graph,
+  corpus,
+  locale,
+}: {
+  graph: LayerGraph;
+  corpus: readonly LayerCorpusEntry[];
+  locale: PublicLocale;
+}) {
+  const copy = copyFor(locale);
+  const census = layerCensus(graph, new Set(corpus.map((entry) => entry.slug)), STATE_VOCABULARY);
+  return (
+    <section className="mj-layers-census">
+      <h2>{copy.censusHeading}</h2>
+      <p>{copy.census(census.nodes, census.capabilities, census.methods)}</p>
+      <p>{copy.censusAnchored(census.anchored, census.nodes, census.distinctEntries)}</p>
+      <p>{copy.censusOpen(census.openCapabilities, census.undecomposedMethods)}</p>
+      {/* Absent on a healthy catalogue, and that absence is correct: this is
+          not a status field, it is the sentence that stops the number above
+          from going quietly wrong when the catalogue serves less than the
+          repo does. `check-layer-graph.mjs` proves the links resolve at build
+          time; nothing proves it at read time. */}
+      {census.unresolvedEntries > 0 ? (
+        <p className="mj-layers-census-warn">{copy.censusUnresolved(census.unresolvedEntries)}</p>
+      ) : null}
+      {/* Counted here rather than written, and linked, because the sentence
+          above is about what this graph documents and this one is about what
+          it documents it *from*. A reader who wants the second is otherwise
+          stuck opening node pages one at a time. */}
+      <p>
+        {copy.papersLead(paperTraces(graph).length, PAPER_REGISTER.papers.length)}{" "}
+        <a href="/repository/papers">{copy.papersLink}</a>
+      </p>
+    </section>
+  );
+}
+
 export function LayerIndexView({
   graph,
   corpus,
@@ -1117,11 +1241,6 @@ export function LayerIndexView({
   openRoot: string | null;
 }) {
   const copy = copyFor(locale);
-  const census = layerCensus(
-    graph,
-    new Set(corpus.map((entry) => entry.slug)),
-    STATE_VOCABULARY,
-  );
   const roots = rootCapabilities(graph);
   return (
     <section className="mj-layers-index" aria-labelledby="layers-heading">
@@ -1151,25 +1270,7 @@ export function LayerIndexView({
         </ul>
       </section>
 
-      {/* Counted from the graph and the corpus in hand — not one of these
-          numbers is written into the sentence. Same rule as the Atlas preface,
-          and it matters more here: the honest reading of this surface today is
-          that most of it has no record behind it, and a hard-coded number would
-          stop saying so the moment the graph grew. */}
-      <section className="mj-layers-census">
-        <h2>{copy.censusHeading}</h2>
-        <p>{copy.census(census.nodes, census.capabilities, census.methods)}</p>
-        <p>{copy.censusAnchored(census.anchored, census.nodes, census.distinctEntries)}</p>
-        <p>{copy.censusOpen(census.openCapabilities, census.undecomposedMethods)}</p>
-        {/* Absent on a healthy catalogue, and that absence is correct: this is
-            not a status field, it is the sentence that stops the number above
-            from going quietly wrong when the catalogue serves less than the
-            repo does. `check-layer-graph.mjs` proves the links resolve at build
-            time; nothing proves it at read time. */}
-        {census.unresolvedEntries > 0 ? (
-          <p className="mj-layers-census-warn">{copy.censusUnresolved(census.unresolvedEntries)}</p>
-        ) : null}
-      </section>
+      <LayerCensusPanel graph={graph} corpus={corpus} locale={locale} />
 
       <h2 className="mj-layers-start">{copy.startHeading}</h2>
       <div className="mj-layers-roots">

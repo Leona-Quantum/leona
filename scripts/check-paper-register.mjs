@@ -119,8 +119,12 @@ if (!QUIET) {
   // The two numbers the owner's "papers as traces" rests on. A paper cited from
   // both sides is one the Atlas and the map already agree about; the rest are
   // two bibliographies of one field that have never been joined.
+  // All three, because the pair is the measurement the ingestion plan is aimed
+  // at and the third is the only one that was ever written down by hand — where
+  // it went wrong by one (68 for 67) within a day. The three must satisfy
+  // node + entry − shared = the register size, and a reader can check that here.
   console.log(
-    `  ${audit.shared.length} papers are cited from both an Atlas record and a map node`,
+    `  ${audit.citedByNode.length} papers are cited by the map, ${audit.citedByEntry.length} by an Atlas record, ${audit.shared.length} by both`,
   );
   // Reported, never failed. A registered paper nothing cites is the normal state
   // of an ingestion queue: read, recorded, not yet placed. See ./papers.ts.
@@ -128,11 +132,32 @@ if (!QUIET) {
     console.log(`  ${audit.uncited.length} registered papers nothing cites yet`);
   }
   // What is NOT known about these papers, said out loud. `reports` is where the
-  // theory/simulation/hardware distinction lives, and it is empty.
-  const read = PAPER_REGISTER.papers.filter((paper) => paper.reports !== undefined).length;
+  // theory/simulation/hardware distinction lives, and the three axes were
+  // filled by three different rules — so they are printed as three lines. One
+  // "82 of 143 read" would let `simulation`, which is open on most rows, ride
+  // on `hardware`, which is decided on all of them.
+  const census = papers.reportsCensus(PAPER_REGISTER);
+  const bases = Object.entries(census.byBasis)
+    .filter(([, count]) => count > 0)
+    .map(([basis, count]) => `${count} from the ${basis}`)
+    .join(", ");
   console.log(
-    `  ${read} of ${PAPER_REGISTER.papers.length} papers record what they report on the theory/simulation/hardware axes`,
+    `  ${census.read} of ${census.papers} papers record what they report${bases ? ` — ${bases}` : ""}`,
   );
+  // The denominator that actually governs the pass. `reports` is filled on the
+  // map-cited papers first because they are the ones a process page shows, so
+  // "82 of 143" understates the coverage of the set being worked and would
+  // read as stalled when it is finished. Both numbers, neither alone.
+  const byId = papers.indexPapers(PAPER_REGISTER);
+  const mapCitedRead = audit.citedByNode.filter((id) => byId.get(id)?.reports).length;
+  console.log(
+    `    of the ${audit.citedByNode.length} papers a map node cites: ${mapCitedRead} read, ${audit.citedByNode.length - mapCitedRead} not`,
+  );
+  for (const [axis, counts] of Object.entries(census.byAxis)) {
+    console.log(
+      `    ${axis.padEnd(10)} ${counts.reported} reported · ${counts.absent} absent · ${counts.unknown} unknown`,
+    );
+  }
 }
 
 console.log(`✓ paper register valid (${PAPER_REGISTER.papers.length} papers, ${citations.length} citations)`);

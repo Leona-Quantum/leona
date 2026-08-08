@@ -960,7 +960,7 @@ export function layerCensus(
  * 200 showing the wrong page, which is the failure mode nothing notices.
  * `validateLayerGraph` is given the corpus and checks it.
  */
-export const RESERVED_REPOSITORY_SEGMENTS: readonly string[] = ["layers"];
+export const RESERVED_REPOSITORY_SEGMENTS: readonly string[] = ["layers", "papers"];
 
 /**
  * The contract of a step id, for validation, without assuming it resolves.

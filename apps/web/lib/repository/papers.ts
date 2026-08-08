@@ -50,7 +50,13 @@
 // the only thing anything may key on — a corpus that grows to thousands of
 // papers acquires every one of those variants, and a register keyed on the
 // string it was first written with silently splits a paper in two.
-import type { SourceCoverage } from "./types";
+import type { SourceCoverage, SourceCoverageAxis, SourceCoverageStatus } from "./types";
+// Extensioned on purpose: `node --test` resolves specifiers literally, so an
+// extensionless *runtime* import here takes every test that reaches this module
+// down with `ERR_MODULE_NOT_FOUND`. The `import type` line above is erased
+// before it runs and does not have the problem, which is why the two lines
+// disagree.
+import { SOURCE_COVERAGE_AXES, SOURCE_COVERAGE_STATUSES } from "./types.ts";
 
 /**
  * `arxiv:<id>` or `doi:<lowercased doi>`.
@@ -95,6 +101,33 @@ export function paperIdFromUrl(url: string): PaperId | null {
   return null;
 }
 
+/**
+ * The URL segment for a paper on this site — `/repository/papers/<slug>`.
+ *
+ * A `PaperId` cannot be a route segment as it stands: it carries a `:` and, for
+ * every pre-2007 arXiv id and every DOI, a `/`. A segment containing a slash is
+ * two segments, and the page 404s.
+ *
+ * The mapping is `:` → `-` and `/` → `_`, and it is **checked rather than
+ * proved**. Nothing in the DOI grammar forbids an underscore, so a future row
+ * could in principle collide with another row's slug or fail to round-trip.
+ * `validatePaperRegister` refuses both, over the whole register, so the day it
+ * happens the build says so instead of serving one paper at another's address —
+ * which is the same failure the identity rule exists to stop, one layer up.
+ */
+export function paperSlug(id: PaperId): string {
+  return id.replace(":", "-").replaceAll("/", "_");
+}
+
+/** The inverse of `paperSlug`, or `null` if this is not a slug shape. */
+export function paperIdFromSlug(slug: string): PaperId | null {
+  const separator = slug.indexOf("-");
+  if (separator <= 0) return null;
+  const scheme = slug.slice(0, separator);
+  if (!PAPER_ID_SCHEMES.includes(scheme as (typeof PAPER_ID_SCHEMES)[number])) return null;
+  return `${scheme}:${slug.slice(separator + 1).replaceAll("_", "/")}`;
+}
+
 /** The address the register publishes for an id. One paper, one link. */
 export function canonicalPaperUrl(id: PaperId): string {
   if (id.startsWith("arxiv:")) return `https://arxiv.org/abs/${id.slice("arxiv:".length)}`;
@@ -121,18 +154,100 @@ export interface RegisteredPaper {
   /**
    * What this paper reports, on the three axes `SourceCoverage` already names.
    *
-   * **Absent on every row today, and absent means nobody has read it for this.**
-   * The owner asked for theory and experimentation to be distinguishable, and
-   * this is where that fact belongs — on the *paper*, once, rather than on each
-   * of the up to 20 records citing it. That reframes the size of the job: it is
-   * 143 source reads rather than 283 record reads, and each one is answerable
-   * from the abstract.
+   * **Absent means nobody has read this paper for this.** The owner asked for
+   * theory and experimentation to be distinguishable, and this is where that
+   * fact belongs — on the *paper*, once, rather than on each of the up to 20
+   * records citing it. That reframes the size of the job: it is a read per
+   * paper rather than per record, and each one is answerable from the abstract.
    *
-   * Never derived. A classifier over abstracts would produce 143 confident
-   * labels nobody checked, on the field whose entire purpose is to say what was
+   * Never derived. A classifier over abstracts would produce confident labels
+   * nobody checked, on the field whose entire purpose is to say what was
    * actually done.
+   *
+   * ## The rule the populated rows were filled by, stated because it is not
+   * ## symmetric across the three axes and pretending it were would be a lie
+   *
+   * Every populated row was filled by fetching the source's own abstract and
+   * reading it. That evidence is **much stronger on one axis than the other
+   * two**, so the axes do not get the same treatment:
+   *
+   * - **hardware** — `reported` when the abstract says the work ran on a
+   *   device, `absent` otherwise. A hardware demonstration is headline material
+   *   and does not hide below the abstract, so the negative is well founded.
+   *   This is the axis the owner's theory-vs-experimentation question actually
+   *   turns on.
+   * - **theory** — `reported` when the abstract claims theorems, complexity
+   *   bounds or proved constructions; `absent` when the abstract characterises
+   *   the work as an experiment or a tool and claims none.
+   * - **simulation** — `reported` when the abstract (or the arXiv comment)
+   *   states numerics, benchmarks or numerical experiments; **`unknown`
+   *   otherwise, never `absent`.** Numerics routinely sit in a section the
+   *   abstract does not mention, so "the abstract did not say" is genuinely not
+   *   "the paper does not have any". This is why `simulation` carries most of
+   *   the `unknown`s in the register, and the census prints that per axis
+   *   rather than letting one number stand for all three.
+   *
+   * Upgrading a row from an abstract read to a full-text read is a normal edit:
+   * change the values and change `reportsBasis` with them.
    */
   reports?: SourceCoverage;
+  /**
+   * What was read to fill `reports`. Required whenever `reports` is present,
+   * and refused when it is not (`validatePaperRegister`).
+   *
+   * A judgement without its evidence is the thing this whole module exists to
+   * stop one level down: `reports` says *what the paper does*, and without this
+   * a reader cannot tell a claim backed by the abstract from one backed by the
+   * paper. The two are different strengths — see the `reports` rule above,
+   * where the abstract basis is what forces `simulation` to `unknown`.
+   */
+  reportsBasis?: ReportsBasis;
+}
+
+/**
+ * How much of a paper was read to fill `reports`.
+ *
+ * Two values and no "partial": a basis a reader cannot act on is not a basis.
+ */
+export const REPORTS_BASES = ["abstract", "full-text"] as const;
+export type ReportsBasis = (typeof REPORTS_BASES)[number];
+
+export interface ReportsCensus {
+  papers: number;
+  /** Rows carrying a `reports` judgement at all. */
+  read: number;
+  byBasis: Record<ReportsBasis, number>;
+  /** Per axis, how the populated rows fall. The denominator is `read`. */
+  byAxis: Record<SourceCoverageAxis, Record<SourceCoverageStatus, number>>;
+}
+
+/**
+ * The census, printed rather than summarised to one number.
+ *
+ * "82 of 143 read" hides that `hardware` is decided on all 82 and `simulation`
+ * is open on most of them. Three axes that were filled by different rules have
+ * to be counted by different columns or the weakest one rides on the
+ * strongest's number.
+ */
+export function reportsCensus(register: PaperRegister): ReportsCensus {
+  const byAxis = Object.fromEntries(
+    SOURCE_COVERAGE_AXES.map((axis) => [
+      axis,
+      Object.fromEntries(SOURCE_COVERAGE_STATUSES.map((status) => [status, 0])),
+    ]),
+  ) as ReportsCensus["byAxis"];
+  const byBasis = Object.fromEntries(REPORTS_BASES.map((basis) => [basis, 0])) as Record<
+    ReportsBasis,
+    number
+  >;
+  let read = 0;
+  for (const paper of register.papers) {
+    if (!paper.reports) continue;
+    read += 1;
+    if (paper.reportsBasis) byBasis[paper.reportsBasis] += 1;
+    for (const axis of SOURCE_COVERAGE_AXES) byAxis[axis][paper.reports[axis]] += 1;
+  }
+  return { papers: register.papers.length, read, byBasis, byAxis };
 }
 
 export interface PaperRegister {
@@ -147,6 +262,22 @@ export function indexPapers(register: PaperRegister): ReadonlyMap<PaperId, Regis
 export function validatePaperRegister(register: PaperRegister): string[] {
   const errors: string[] = [];
   const seen = new Set<PaperId>();
+  // Two rows whose slugs agree would put one paper at the other's address, and
+  // the loser is unreachable while the route still returns 200. Checked over
+  // the whole register because a slug collision is a property of the *set*, and
+  // no per-row rule can see it.
+  const bySlug = new Map<string, PaperId>();
+  for (const paper of register.papers) {
+    const slug = paperSlug(paper.id);
+    const other = bySlug.get(slug);
+    if (other !== undefined && other !== paper.id) {
+      errors.push(`${paper.id}: its url segment "${slug}" is already ${other}'s`);
+    }
+    bySlug.set(slug, paper.id);
+    if (paperIdFromSlug(slug) !== paper.id) {
+      errors.push(`${paper.id}: does not survive a round trip through its url segment "${slug}"`);
+    }
+  }
   for (const paper of register.papers) {
     if (seen.has(paper.id)) errors.push(`${paper.id}: listed twice`);
     seen.add(paper.id);
@@ -172,6 +303,41 @@ export function validatePaperRegister(register: PaperRegister): string[] {
     }
     if (!/^\d{4}$/.test(paper.year)) {
       errors.push(`${paper.id}: year is not four digits — ${JSON.stringify(paper.year)}`);
+    }
+    // `reports` and `reportsBasis` stand or fall together, in **both**
+    // directions. A judgement with no basis is a claim whose strength nobody
+    // can weigh; a basis with no judgement says a paper was read and records
+    // nothing, which is a row that will read as "unread" forever while
+    // asserting it was read.
+    if (paper.reports && !paper.reportsBasis) {
+      errors.push(`${paper.id}: reports is recorded with no reportsBasis — say what was read`);
+    }
+    if (paper.reportsBasis && !paper.reports) {
+      errors.push(`${paper.id}: reportsBasis is recorded with no reports — nothing was written down`);
+    }
+    if (paper.reportsBasis && !REPORTS_BASES.includes(paper.reportsBasis)) {
+      errors.push(
+        `${paper.id}: reportsBasis is ${JSON.stringify(paper.reportsBasis)}, not one of ${REPORTS_BASES.join(", ")}`,
+      );
+    }
+    if (paper.reports) {
+      for (const axis of SOURCE_COVERAGE_AXES) {
+        if (!SOURCE_COVERAGE_STATUSES.includes(paper.reports[axis])) {
+          errors.push(
+            `${paper.id}: reports.${axis} is ${JSON.stringify(paper.reports[axis])}, not one of ${SOURCE_COVERAGE_STATUSES.join(", ")}`,
+          );
+        }
+      }
+      // The reading rule in `reports`' doc comment says an abstract cannot
+      // support "this paper runs no numerics" — numerics hide below an
+      // abstract routinely. Without this, the next pass fills 60 rows with
+      // `simulation: absent` from an abstract and the field quietly becomes a
+      // guess, which is the one thing it exists not to be.
+      if (paper.reportsBasis === "abstract" && paper.reports.simulation === "absent") {
+        errors.push(
+          `${paper.id}: reports.simulation is "absent" on an abstract read — an abstract that omits numerics is not a paper without them, so this must be "unknown" until someone reads the full text`,
+        );
+      }
     }
   }
   return errors;
@@ -228,6 +394,25 @@ export interface CitationAudit {
   uncited: PaperId[];
   /** Papers cited from both an Atlas record and a map node. */
   shared: PaperId[];
+  /**
+   * Papers a map node cites, sorted.
+   *
+   * The prioritisation set for every source-read pass: these are the papers a
+   * process page will ever show, so they are the ones `reports` is filled on
+   * first. Published as data rather than left as a `grep`, so the scripts and
+   * any surface agree on which set that is.
+   */
+  citedByNode: PaperId[];
+  /**
+   * Papers an Atlas record cites, sorted.
+   *
+   * Published beside `citedByNode` because the pair is the measurement the
+   * whole ingestion plan is aimed at — two bibliographies of one field, and
+   * `shared` is where they meet. It was carried in prose in
+   * `plans/leona-map-scaling-rules.md` and was **wrong by one** (68 for 67)
+   * within a day of being written, which is the argument for computing it.
+   */
+  citedByEntry: PaperId[];
 }
 
 /**
@@ -254,6 +439,8 @@ export function auditCitations(
     drifted: [],
     uncited: [],
     shared: [],
+    citedByNode: [],
+    citedByEntry: [],
   };
   const citedFromEntry = new Set<PaperId>();
   const citedFromNode = new Set<PaperId>();
@@ -279,5 +466,7 @@ export function auditCitations(
   const cited = new Set([...citedFromEntry, ...citedFromNode]);
   audit.uncited = register.papers.map((paper) => paper.id).filter((id) => !cited.has(id));
   audit.shared = [...citedFromEntry].filter((id) => citedFromNode.has(id)).sort();
+  audit.citedByNode = [...citedFromNode].sort();
+  audit.citedByEntry = [...citedFromEntry].sort();
   return audit;
 }

@@ -80,6 +80,9 @@ const COPY = {
     layersLead:
       "A record says what one circuit is. It does not say what a piece is made of, or what else could fill its place — for that there is a second surface:",
     layersLink: "Layers — the slots a pipeline is made of, and what fills each",
+    papersLead:
+      "Both surfaces cite the same literature, and every citation on either one is checked against a single register:",
+    papersLink: "Papers — every source, what it reports, and where it is cited from",
   },
   ja: {
     heading: "Atlasに収録しているもの",
@@ -94,6 +97,9 @@ const COPY = {
     layersLead:
       "各項目は、ひとつの回路が何であるかを述べます。ある部品が何から成り立っているか、その場所を他に何が埋めうるかは述べません。そのための画面が別にあります。",
     layersLink: "階層 — パイプラインを構成する枠と、それを埋めるもの",
+    papersLead:
+      "どちらの画面も同じ文献を引用しており、その引用はすべて、ひとつの登録簿と照合されています。",
+    papersLink: "論文 — すべての出典、その報告内容、そしてどこから引用されているか",
   },
 } as const;
 
@@ -137,6 +143,14 @@ export function RepositoryPreface({
           the only route to it was a control with no href. */}
       <p className="mj-repo-preface-layers">
         {copy.layersLead} <a href="/repository/layers">{copy.layersLink}</a>
+      </p>
+      {/* The third surface, named here for the same reason as the second: it is
+          reachable from a node's citation list and from a record's, and a
+          reader who has opened neither has no way to learn it exists. A surface
+          whose only route in is another surface's detail page is one nobody
+          finds — the same failure the gates section spent two sessions in. */}
+      <p className="mj-repo-preface-layers">
+        {copy.papersLead} <a href="/repository/papers">{copy.papersLink}</a>
       </p>
 
       <h3 className="mj-repo-preface-kinds">{copy.kinds}</h3>

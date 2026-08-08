@@ -201,7 +201,12 @@ export default async function RepositoryLayersPage({
           openRoot={resolveOpenRoot(params)}
         />
       ) : view === "converge" ? (
-        <ConvergeView graph={LAYER_GRAPH} locale={locale} focusId={resolveFocus(params)} />
+        <ConvergeView
+          graph={LAYER_GRAPH}
+          corpus={corpus}
+          locale={locale}
+          focusId={resolveFocus(params)}
+        />
       ) : view === "strands" ? (
         <StrandView
           graph={LAYER_GRAPH}

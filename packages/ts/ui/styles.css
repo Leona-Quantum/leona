@@ -10442,6 +10442,96 @@ div.mj-rail-row:hover {
   color: var(--text-2);
   font-size: var(--fs-12);
 }
+/* The second link on a citation: the paper itself, beside the title that goes
+   to its page on this site. Small, and given a real hit target rather than
+   relying on the glyph's own box — a 12px arrow is under every pointer-target
+   guideline there is, and padding is what makes it tappable without making it
+   loud. */
+.mj-layers-source-out {
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-1);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-decoration: none;
+  line-height: 1.6;
+}
+.mj-layers-source-out:hover { color: var(--accent); }
+
+/* ── The Papers surface ───────────────────────────────────────────────────
+   Built on the Layers primitives above rather than beside them: a paper page
+   and a node page are one reading, and two type scales for one reading is how
+   a surface starts looking like two products. Only what genuinely differs is
+   written here. */
+.mj-papers-byline {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
+.mj-papers-source-link {
+  color: var(--accent);
+  font-size: var(--fs-13);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-papers-source-link:hover { border-bottom-color: var(--accent); }
+.mj-papers-census { margin-bottom: var(--sp-5); }
+.mj-papers-census p { max-width: 68ch; }
+.mj-papers-list { margin: 0; padding: 0; list-style: none; }
+.mj-papers-list > li {
+  padding: var(--sp-4) 0;
+  border-bottom: 1px solid var(--border-hairline);
+}
+.mj-papers-list > li:last-child { border-bottom: none; }
+.mj-papers-list-title {
+  color: var(--text-0);
+  font-size: var(--fs-14);
+  text-decoration: none;
+  border-bottom: 1px solid var(--border-0);
+}
+.mj-papers-list-title:hover { color: var(--accent); border-bottom-color: var(--accent); }
+.mj-papers-list-meta { margin: var(--sp-2) 0 0; }
+.mj-papers-unread {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-style: italic;
+}
+.mj-papers-chips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1);
+}
+/* Three chips, three states, and the state is in the text as well as in the
+   border — a chip distinguished only by colour is unreadable to a screen
+   reader and unreadable in a screenshot. `unknown` is deliberately the quietest
+   of the three: it means nobody has established this, and a loud treatment
+   would read as a warning about the paper rather than about our reading of it. */
+.mj-papers-chip {
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  white-space: normal;
+}
+.mj-papers-chip[data-status="reported"] {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-hairline));
+  color: var(--text-0);
+}
+.mj-papers-chip[data-status="unknown"] {
+  color: var(--text-2);
+  font-style: italic;
+}
+/* Four shapes and four readings. `point` gets no emphasis at all, because it is
+   the commonest answer — 60 of 84 — and styling it as a deficiency would tell a
+   reader that most of the bibliography is broken when it is merely cited once. */
+.mj-papers-shape {
+  margin: 0;
+  max-width: 68ch;
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  line-height: 1.6;
+}
+.mj-papers-shape[data-shape="scattered"] { color: var(--text-2); }
 .mj-layers-roots {
   display: flex;
   flex-direction: column;
