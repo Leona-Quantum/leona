@@ -141,6 +141,28 @@ if (!QUIET) {
   console.log(
     `  ${census.feedSteps} steps supply an ingredient rather than advancing a route`,
   );
+  // Iteration. Printed rather than merely counted for the same reason the bypass
+  // edges are: a route that stops declaring its loop looks exactly like a route
+  // that never had one, and the loop is where the dominant cost term lives.
+  console.log(
+    `  ${census.iteratedSteps} of ${census.stepInstances} hops declare a multiplicity — ${census.coherentLoops} coherent, ${census.measuredLoops} closing through a measurement · ${census.foldedSlots} slots some route folds and another repeats`,
+  );
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node)) continue;
+    for (const { stepId, repetition } of layersMod.repeatedSteps(node)) {
+      console.log(`  ${node.id} runs ${stepId} ${repetition.count} (${repetition.closure})`);
+    }
+  }
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isCapability(node)) continue;
+    const { unpinned, repeated } = layersMod.foldedAgainst(LAYER_GRAPH, node.id);
+    if (repeated.length === 0 || unpinned.length === 0) continue;
+    console.log(
+      `  ${node.id}: ${repeated.map((r) => r.method.id).join(", ")} repeat it; ${unpinned
+        .map((m) => m.id)
+        .join(", ")} declare no multiplicity`,
+    );
+  }
   for (const node of LAYER_GRAPH.nodes) {
     if (!isMethod(node) || node.steps.length === 0) continue;
     const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, node);

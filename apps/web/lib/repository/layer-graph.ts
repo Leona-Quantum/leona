@@ -326,6 +326,15 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "The complexity depends linearly on the amplification ratio, which quantifies the deviation from a unitary dynamics; that linear dependence is proved to attain the query complexity lower bound and thus cannot be improved in the worst case.",
     costJa: "計算量は、ユニタリな力学からのずれを定量化する増幅比に線形に依存します。この線形依存はクエリ計算量の下界を達成することが証明されており、最悪の場合にはこれ以上改善できません。",
     steps: ["time-discretization"],
+    repeats: {
+      "time-discretization": {
+        count: "once per time step, with an amplification at every one",
+        countJa: "各時間ステップにつき 1 回、そのつど増幅を伴います。",
+        closure: "coherent",
+        note: "Fang, Lin and Tong's method is the repetition stated as the design: propagate one step at a time, and defeat the exponentially vanishing success probability by repeatedly invoking uniform singular value amplification. Nothing is measured between turns — the decay is a coherent one and it is bought back coherently — which is why the cost lands on the amplification ratio rather than on a shot count. The authors prove that linear dependence attains the query-complexity lower bound, so this repetition cannot be made cheaper in the worst case; it can only be avoided by not marching.",
+        noteJa: "Fang・Lin・Tong の手法は、反復そのものを設計として述べたものです。1 ステップずつ前進させ、指数的に小さくなる成功確率を一様特異値増幅の繰り返しで克服します。ステップの間で測定は行われません。減衰はコヒーレントなものであり、コヒーレントに買い戻されます。費用がショット数ではなく増幅比に現れるのはこのためです。著者らはこの線形依存がクエリ計算量の下界を達成することを証明しており、最悪の場合、この反復をこれ以上安くすることはできません。避ける方法は、前進させないことだけです。",
+      },
+    },
     bypasses: ["quantum-linear-solve"],
     citations: [
       { title: "Time-marching based quantum solvers for time-dependent linear differential equations", authors: "Fang, Lin, Tong", year: "2022", url: "https://arxiv.org/abs/2208.06941" },
@@ -433,6 +442,15 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "On a quantum computer the trade differs from the classical one: each implicit step is itself a linear solve, so implicit stepping does not remove the quantum-linear-solve layer — it invokes it repeatedly or folds it into a larger block system. Still first order, so the precision dependence stays polynomial in 1/ε. The nearest published quantum treatment, by Dong, Li and Xue, encodes diagonal Padé approximations of the matrix exponential into a large, block-sparse linear system solved via a quantum linear system algorithm; backward Euler is the subdiagonal (0,1) approximant and is not among the schemes they analyse. No primary quantum source verified here gives an end-to-end complexity or conditioning bound for a pure backward-Euler encoding.",
     conditionsJa: "量子計算機上でのトレードオフは古典の場合と異なります。各陰的ステップ自体が線形ソルバーの呼び出しであるため、陰的な時間刻みは量子線形ソルバーの層を取り除きません。繰り返し呼び出すか、より大きなブロック系に畳み込むかのどちらかになります。依然として一次精度ですので、精度依存性は 1/ε の多項式のままです。最も近い公表された量子的な扱いは Dong・Li・Xue によるもので、行列指数の対角 Padé 近似を大きなブロック疎線形系に符号化し、量子線形システムアルゴリズムで解きます。ただし後退 Euler 法は劣対角の (0,1) 近似であり、そこで解析されている手法には含まれません。後退 Euler 法のみを用いた符号化について、端から端までの計算量や条件数の評価を与える一次資料は、今回の確認では見つかっていません。",
     steps: ["quantum-linear-solve"],
+    repeats: {
+      "quantum-linear-solve": {
+        count: "once per time step — T/h of them to reach time T",
+        countJa: "各時間ステップにつき 1 回。時刻 T に達するまでに T/h 回。",
+        closure: "coherent",
+        note: "Each step's solve consumes the previous step's output as its right-hand side, so the chain is a quantum state passed forward and never a number read out. That is what makes the repetition expensive rather than merely long: a quantum linear solve succeeds only on a flagged branch, and the flags multiply down the chain, so the amplification bill compounds with the number of steps. Folding the whole trajectory into one banded system — which is what the all-at-once encodings do — is how the published treatments spend that once instead of T/h times.",
+        noteJa: "各ステップの線形ソルバーは、前のステップの出力をそのまま右辺として受け取ります。したがってこの連鎖は量子状態を送り続けるものであり、途中で数値を読み出すわけではありません。反復が単に長いだけでなく高価になるのはこのためです。量子線形ソルバーはフラグの立った枝でのみ成功しますので、そのフラグがステップ数だけ掛け合わされ、増幅の代価が累積します。軌道全体をひとつの帯行列系に畳み込む一括符号化は、この代価を T/h 回ではなく 1 回で済ませるための手立てです。",
+      },
+    },
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dong, Li, Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
@@ -448,6 +466,15 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Second order at the same stability class as backward Euler, so it is more accurate at equal step size, but the implicit solve does not disappear on a quantum computer. Second order still leaves a polynomial dependence on 1/ε; only propagator-series or spectral discretizations reach log(1/ε). Dong, Li and Xue encode diagonal Padé approximations of the matrix exponential into a large, block-sparse linear system solved via a quantum linear system algorithm, but state no complexity for the (1,1) case specifically.",
     conditionsJa: "後退 Euler 法と同じ安定性クラスで二次精度ですので、同じ刻み幅ならより正確です。ただし量子計算機上でも陰的な線形ソルバーの呼び出しは消えません。二次精度でも 1/ε への多項式依存は残り、log(1/ε) に達するのは伝播子の級数近似かスペクトル法だけです。Dong・Li・Xue は行列指数の対角 Padé 近似を大きなブロック疎線形系に符号化し、量子線形システムアルゴリズムで解いていますが、(1,1) の場合に限った計算量は示していません。",
     steps: ["quantum-linear-solve"],
+    repeats: {
+      "quantum-linear-solve": {
+        count: "once per time step — T/h of them to reach time T",
+        countJa: "各時間ステップにつき 1 回。時刻 T に達するまでに T/h 回。",
+        closure: "coherent",
+        note: "Second order buys a larger h at the same accuracy, so the loop turns fewer times than backward Euler's — but it is the same loop, and it is still one linear solve per turn with the previous turn's state as its right-hand side. Being A-stable removes the step-size restriction; it does not remove the repetition.",
+        noteJa: "二次精度であるぶん、同じ精度なら h を大きく取れますので、後退 Euler 法より反復回数は少なくなります。しかし反復そのものは同じで、依然として 1 ステップにつき線形ソルバーを 1 回、前のステップの状態を右辺として呼びます。A 安定であることは刻み幅の制約を取り除きますが、反復を取り除くわけではありません。",
+      },
+    },
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dong, Li, Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
@@ -504,6 +531,22 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The headline exponential speedup is over a different deliverable. Learning the full solution vector rather than a functional of it takes Θ̃(d/ε) applications of the preparation unitary and its inverse to obtain an ε-l2 approximation of a d-dimensional pure state (here d is the dimension, written N above; elsewhere in this group d denotes the sparsity) — a characterised complexity, not a loose upper bound — and that linear-in-dimension factor cancels the log-dimension advantage. The κ² is also superseded: later solvers reach O(κ log(1/ε)).",
     contestedJa: "見出しに掲げられる指数的な高速化は、別の成果物に対するものです。x の汎関数ではなく解ベクトル全体を得ようとすると、d 次元の純粋状態（ここでの d は次元であり、上の N にあたります。本群の他の項目では d は疎性を表します）を ε の l2 精度で近似するのに、状態を用意するユニタリとその逆を Θ̃(d/ε) 回適用する必要があります。これは上界の緩い評価ではなく特徴付けられた計算量であり、次元に比例するこの因子は次元の対数ぶんの優位を打ち消します。κ² も置き換えられており、のちの解法は O(κ log(1/ε)) に到達しています。",
     steps: ["state-preparation", "hamiltonian-simulation", "success-amplification"],
+    repeats: {
+      "state-preparation": {
+        count: "O(κ) times — once per amplification round",
+        countJa: "O(κ) 回。増幅の各ラウンドにつき 1 回。",
+        closure: "coherent",
+        note: "The rotation ancilla carries a success amplitude of about 1/κ, so the whole prepare-estimate-rotate-uncompute block is amplified O(κ) times and |b⟩ is prepared afresh inside every one of them. This is where one of the two κ factors in Õ(log(N) s² κ²/ε) comes from, and it is the reason the state-preparation query count is a headline number for this family rather than a footnote: a route whose |b⟩ is expensive pays for it κ times here and once in the all-at-once encodings.",
+        noteJa: "回転用の補助量子ビットが持つ成功振幅はおよそ 1/κ ですので、準備・推定・回転・逆計算のブロック全体が O(κ) 回増幅され、そのたびに |b⟩ が改めて準備されます。Õ(log(N) s² κ²/ε) にある二つの κ のうち一つはここから来ます。この系統で初期状態準備のクエリ数が脚注ではなく主要な数値として扱われる理由でもあります。|b⟩ の準備が高価な経路は、ここではその代価を κ 回、一括符号化では 1 回だけ支払います。",
+      },
+      "hamiltonian-simulation": {
+        count: "O(κ) times — once per amplification round",
+        countJa: "O(κ) 回。増幅の各ラウンドにつき 1 回。",
+        closure: "coherent",
+        note: "Inside the same amplified block as the preparation above: phase estimation runs against e^{-iAt} with t_0 = O(κ/ε), and that whole estimation is repeated by the amplification. The two κ's compose, which is the second factor in Õ(log(N) s² κ²/ε).",
+        noteJa: "上の状態準備と同じ増幅ブロックの内側にあります。位相推定は t_0 = O(κ/ε) のもとで e^{-iAt} に対して実行され、その推定全体が増幅によって繰り返されます。二つの κ が掛け合わさり、それが Õ(log(N) s² κ²/ε) の第二の因子になります。",
+      },
+    },
     bypasses: ["polynomial-approximation", "qsp-phase-factors"],
     entries: ["hhl-linear-systems"],
     citations: [
@@ -527,6 +570,15 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The O(κ log(1/ε)) figure is a query count against the block-encoding, not a gate count, and it carries neither α nor the amplification. Lin and Tong summarise the end-to-end QSP/QSVT query complexity as O(κ² polylog(κ/ε)), reduced to O(κ polylog(κ/ε)) only by variable-time amplitude amplification — and they state that the performance of that technique for this problem has not been quantitatively reported in the literature.",
     contestedJa: "O(κ log(1/ε)) という数字はブロック符号化への問い合わせ回数であってゲート数ではなく、α も増幅ぶんも含んでいません。Lin と Tong は QSP/QSVT の全体としての問い合わせ計算量を O(κ² polylog(κ/ε)) と整理し、O(κ polylog(κ/ε)) まで下がるのは可変時間振幅増幅を用いた場合だけだとしています。さらに両氏は、この問題に対するその技法の性能は定量的に報告されていないと述べています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function", "success-amplification"],
+    repeats: {
+      "block-encode-matrix": {
+        count: "m = O((1/δ) log(1/ε)) applications of U and U†",
+        countJa: "U と U† を m = O((1/δ) log(1/ε)) 回。",
+        closure: "coherent",
+        note: "Gilyén, Su, Low and Wiebe's Theorem 41 count, and δ = 1/κ after normalisation — so this is the condition number, appearing as a number of turns rather than as a mysterious factor. The log(1/ε) is what an approximating polynomial of that degree costs, and it is why this route's precision dependence is logarithmic where phase-estimation inversion's is not.",
+        noteJa: "Gilyén・Su・Low・Wiebe の Theorem 41 による回数で、正規化後は δ = 1/κ です。つまりこれは条件数が、正体不明の因子ではなく反復回数として現れたものです。log(1/ε) はその次数の近似多項式にかかる代価であり、この経路の精度依存性が対数的である一方、位相推定による反転がそうでない理由でもあります。",
+      },
+    },
     citations: [
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Chakraborty, Gilyén, Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
@@ -625,6 +677,15 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Where the matrix is close to low rank and the input model is ℓ²-norm sampling access — the classical counterpart of the QRAM data-structure assumption these algorithms are costed against — Chia, Gilyén, Li, Lin, Tang and Wang give classical algorithms for singular value transformation that run in time independent of the input dimension, and state that their results give compelling evidence that in the corresponding QRAM data structure input model quantum SVT does not yield exponential quantum speedups. Sparse-access QSVT and general Hamiltonian simulation are not dequantized; overstating this in either direction is the usual failure.",
     contestedJa: "行列が低ランクに近く、入力方式が ℓ² ノルムのサンプリングアクセス、すなわちこれらのアルゴリズムが前提としてきた QRAM データ構造の古典版である場合、Chia・Gilyén・Li・Lin・Tang・Wang は入力次元に依存しない時間で動く特異値変換の古典アルゴリズムを与えており、自身の結果は、対応する QRAM データ構造の入力方式のもとで量子 SVT が指数的な高速化をもたらさないことを示す有力な証拠になる、と述べています。疎行列アクセスの QSVT と一般のハミルトニアンシミュレーションは古典化されていません。どちらの向きにも言いすぎるのが、この話題でよくある失敗です。",
     steps: ["block-encode-matrix", "polynomial-approximation", "qsp-phase-factors"],
+    repeats: {
+      "block-encode-matrix": {
+        count: "n uses of U and n of U†, for a degree-n transform",
+        countJa: "次数 n の変換に対して U を n 回、U† を n 回。",
+        closure: "coherent",
+        note: "The repetition is the circuit: U, U†, U, U† interleaved with the phase shifts, and the degree of the polynomial is the number of turns. It is the cleanest case on this map of a count that is set by a *different* layer — the polynomial-approximation step above hands down n, so a coarser approximation is literally a shorter loop here. Nothing is measured; the whole sequence is one coherent circuit, which is why the price shows up as depth and as query count rather than as shots.",
+        noteJa: "反復そのものが回路です。U、U†、U、U† を位相シフトと交互に並べたものであり、多項式の次数がそのまま反復回数になります。この地図のなかで、回数を決めているのが別の層であることが最も明瞭に見える例です。上の多項式近似の層が n を渡しますので、近似を粗くすることは、ここでは文字どおり反復を短くすることにあたります。測定は行われず、全体がひとつのコヒーレントな回路ですので、代価はショット数ではなく深さとクエリ数として現れます。",
+      },
+    },
     entries: ["quantum-singular-value-transformation"],
     citations: [
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "Gilyén, Su, Low, Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
@@ -1130,6 +1191,15 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Gonthier et al.'s resource analysis of combustion energies of small organic molecules to chemical accuracy concludes that modern improvements including low-rank Hamiltonian factorization \"will not be sufficient to achieve practical quantum computational advantage for our molecular set, or for similar molecules\", and points instead at operator estimation that leverages quantum coherence. Any near-term chemistry advantage claim resting on shot-based readout has to answer that analysis.",
     contestedJa: "Gonthier らは、小さな有機分子の燃焼エネルギーを化学的精度で求める場合の資源解析から、低ランクのハミルトニアン分解を含む近年の改良をもってしても「我々の分子群、あるいは同種の分子について、実用的な量子計算上の優位を達成するには十分ではない」と結論し、代わりに量子コヒーレンスを活用する演算子推定を挙げています。ショットに基づく読み出しに依拠した近未来の量子化学における優位の主張は、この解析に答える必要があります。",
     steps: ["state-preparation"],
+    repeats: {
+      "state-preparation": {
+        count: "O(1/ε²) shots, and one preparation per shot",
+        countJa: "O(1/ε²) 回のショット、1 ショットにつき 1 回の準備。",
+        closure: "measured",
+        note: "This is the loop that closes through a measurement, and the whole cost is in that fact. Each shot destroys the state, so the state-preparation circuit below is not run once and read many times — it is run again, in full, for every sample, and the samples needed grow as ε^-2. Grouping commuting terms changes the constant; it cannot change the exponent, because the exponent is what averaging independent classical outcomes costs. A method that keeps the loop coherent pays ε^-1 instead, which is the whole of the row below.",
+        noteJa: "これが測定を挟んで閉じる反復であり、費用のすべてがその事実にあります。1 ショットごとに状態は壊れますので、下層の状態準備回路は 1 回実行して何度も読むのではなく、標本ごとに丸ごと実行し直されます。必要な標本数は ε^-2 で増えます。可換な項をまとめれば定数は変わりますが、指数は変わりません。指数は、独立な古典的結果を平均することの代価そのものだからです。反復をコヒーレントに保つ手法が支払うのは ε^-1 であり、それが次の行の内容です。",
+      },
+    },
     citations: [
       { title: "A variational eigenvalue solver on a quantum processor", authors: "Peruzzo, McClean, Shadbolt, Yung, Zhou, Love, Aspuru-Guzik, O'Brien", year: "2013", url: "https://arxiv.org/abs/1304.3061" },
       { title: "Measurements as a roadblock to near-term practical quantum advantage in chemistry: resource analysis", authors: "Gonthier, Radin, Buda, Doskocil, Abuan, Romero", year: "2020", url: "https://arxiv.org/abs/2012.04001" },
@@ -1151,6 +1221,15 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Reaching additive error ε takes of order 1/ε sequential applications of Q, and that is a depth as much as a count, so a device with a capped coherent depth cannot spend it. Giurgica-Tiron, Kerenidis, Labib, Prakash and Zeng give two algorithms — Power law AE and QoPrime AE — carrying a parameter β ∈ (0,1] with N = Õ(1/ε^{1+β}) oracle calls and D = O(1/ε^{1−β}) sequential calls, so N·D = Õ(1/ε²) throughout and β = 1 recovers classical sampling. A quoted \"quadratic speedup\" that does not state the depth it assumes has not stated its cost.",
     contestedJa: "加法誤差 ε の達成に要する Q の適用回数はおよそ 1/ε ですが、これは回数であると同時に逐次深さでもあり、コヒーレント深さに上限のある装置はそれを使い切れません。Giurgica-Tiron–Kerenidis–Labib–Prakash–Zeng は Power law AE と QoPrime AE という二つのアルゴリズムを与えています。パラメータ β ∈ (0,1] に対しオラクル呼び出しは N = Õ(1/ε^{1+β})、逐次呼び出しは D = O(1/ε^{1−β}) であり、全域で N·D = Õ(1/ε²) が成り立ち、β = 1 で古典的なサンプリングに戻ります。前提とする深さを述べずに「二次的な高速化」と書いた見積もりは、コストを述べたことになりません。",
     steps: ["state-preparation"],
+    repeats: {
+      "state-preparation": {
+        count: "M iterations, M = O(1/ε), each running the preparation forwards and backwards once",
+        countJa: "M 回の反復（M = O(1/ε)）。各反復で準備を順方向と逆方向に 1 度ずつ実行します。",
+        closure: "coherent",
+        note: "The same slot as the row above, repeated the same way, and it is the closure that separates them: Brassard, Høyer, Mosca and Tapp's Theorem 12 uses exactly M iterations of the Grover operator, and one iteration runs A once forwards and once backwards. Nothing is measured until the end, so the ε^-2 of independent sampling becomes ε^-1. The bill does not vanish, it moves: those M applications are sequential, so the count is also a depth, and a device with a capped coherent depth cannot spend it — which is exactly what the contested note below is about.",
+        noteJa: "上の行と同じスロットを同じように繰り返しますが、両者を分けるのは閉じ方です。Brassard–Høyer–Mosca–Tapp の Theorem 12 は Grover 演算子をちょうど M 回反復し、1 回の反復で A を順方向と逆方向に 1 度ずつ実行します。最後まで測定しませんので、独立サンプリングの ε^-2 が ε^-1 になります。代価は消えるのではなく移動します。この M 回の適用は逐次的ですから、回数はそのまま深さでもあり、コヒーレント深さに上限のある装置はそれを使い切れません。下の「異論」の節はまさにその点を扱っています。",
+      },
+    },
     entries: ["amplitude-estimation"],
     citations: [
       { title: "Quantum Amplitude Amplification and Estimation", authors: "Brassard, Hoyer, Mosca, Tapp", year: "2000", url: "https://arxiv.org/abs/quant-ph/0005055" },
@@ -1173,6 +1252,15 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "\"Independent of system size\" holds for observables of bounded shadow norm and is not a claim about arbitrary observables; quoting the log(M) without the max_i ||·||²_shadow factor is the standard misreading of this result. Separately, this is a different construction from Aaronson's shadow tomography, whose Õ(ε^-4 · log⁴M · log D) is a copy count for a procedure that measures the copies collectively, not a hardware shot count. The two results are not interchangeable despite the shared word.",
     contestedJa: "「系のサイズに依存しない」が成り立つのはシャドウノルムが抑えられているオブザーバブルについてであり、任意のオブザーバブルに対する主張ではありません。max_i ||·||²_shadow の因子を落として log(M) だけを引用するのが、この結果の典型的な誤読です。また、これは Aaronson のシャドウトモグラフィとは別の構成です。あちらの Õ(ε^-4 · log⁴M · log D) は、コピーをまとめて測定する手続きに対するコピー数であって、実機のショット数ではありません。名称が似ていても両者は置き換えられません。",
     steps: ["state-preparation"],
+    repeats: {
+      "state-preparation": {
+        count: "N = O(log(M) · max_i ||·||²_shadow / ε²) measurements, one preparation each",
+        countJa: "N = O(log(M) · max_i ||·||²_shadow / ε²) 回の測定。1 回につき 1 度の準備。",
+        closure: "measured",
+        note: "A measured loop like direct sampling, and the same ε^-2 — what shadows buy is not a shorter loop but a loop whose length no longer grows with the number of observables, since M enters only logarithmically and the observables may be chosen after the data is taken. Formally the turns are grouped: K = 2 log(2M/δ) median-of-means batches of N = 34/ε² · max_i ||·||²_shadow each. The shadow norm is the factor that decides whether that is cheap, and it is exponential in locality under the random-Pauli ensemble.",
+        noteJa: "直接サンプリングと同じく測定を挟んで閉じる反復であり、ε^-2 も同じです。古典シャドウが得るのは反復の短さではなく、オブザーバブルの個数とともに伸びない反復です。M は対数でしか効かず、どのオブザーバブルを見るかはデータ取得後に決められます。厳密には反復はまとめられ、K = 2 log(2M/δ) 個のバッチそれぞれで N = 34/ε² · max_i ||·||²_shadow 回を測定します。安く済むかどうかを決めるのはシャドウノルムであり、ランダム Pauli アンサンブルのもとでは局所性に対して指数的です。",
+      },
+    },
     citations: [
       { title: "Predicting Many Properties of a Quantum System from Very Few Measurements", authors: "Huang, Kueng, Preskill", year: "2020", url: "https://arxiv.org/abs/2002.08953" },
       { title: "Shadow Tomography of Quantum States", authors: "Aaronson", year: "2017", url: "https://arxiv.org/abs/1711.01053" },

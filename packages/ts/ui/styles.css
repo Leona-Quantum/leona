@@ -10375,6 +10375,41 @@ div.mj-rail-row:hover {
   color: var(--text-2);
   font-size: var(--fs-12);
 }
+/* How often a route takes a hop, and how the loop closes.
+   Two tones because they are two different bills. A `measured` loop is a count
+   of runs a device can always pay and a schedule may not afford; a `coherent`
+   one is a depth a device may simply not have. Reading them as gradations of
+   one thing is the misreading the badge exists to prevent, so they are not two
+   shades of the same hue — and neither is `--err`, because a loop is a cost,
+   never a fault. `data-closure` carries the same fact for anything that has to
+   assert on it without parsing a class list. */
+.mj-layers-repeat {
+  display: inline-block;
+  margin-left: var(--sp-2);
+  padding: 1px var(--sp-2);
+  border: 1px solid var(--border-hairline);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  /* The count carries ε, κ, †, ‖ and superscripts. `nowrap` here would turn a
+     long one into silent horizontal overflow rather than a second line. */
+  white-space: normal;
+}
+.mj-layers-repeat--coherent {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-hairline));
+  color: var(--accent);
+}
+.mj-layers-repeat--measured {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border-hairline));
+  color: var(--warn);
+}
+.mj-layers-repeat-note {
+  max-width: 68ch;
+}
+.mj-layers-loop-row > p {
+  max-width: 68ch;
+}
 .mj-layers-list li p,
 .mj-layers-steps li p {
   margin: var(--sp-2) 0 0;
