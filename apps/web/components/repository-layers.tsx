@@ -444,6 +444,10 @@ function ProcessZoom({
         </p>
         <p>
           {diagram.collapsedCount > 0 ? copy.zoomDeeper(diagram.collapsedCount) : copy.zoomAllShallow}{" "}
+          {/* No open set, and that is right rather than an omission: a write-up
+              page is not a reading position on the map, so there is nothing to
+              carry. Every link that *is* on the map passes one — see `mapHref`,
+              where leaving it out was a live defect. */}
           <a href={mapHref(mapId)}>{copy.stateOnMap}</a>
         </p>
       </figcaption>

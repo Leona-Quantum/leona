@@ -52,12 +52,13 @@ export type StrandDepth = (typeof STRAND_DEPTHS)[number];
 export function viewSwitchLabels(locale: PublicLocale): {
   view: string;
   map: string;
+  converge: string;
   strands: string;
   list: string;
 } {
   return locale === "ja"
-    ? { view: "表示", map: "マップ", strands: "ストランド", list: "リスト" }
-    : { view: "View", map: "Map", strands: "Strands", list: "List" };
+    ? { view: "表示", map: "マップ", converge: "合流", strands: "ストランド", list: "リスト" }
+    : { view: "View", map: "Map", converge: "Converge", strands: "Strands", list: "List" };
 }
 
 /**

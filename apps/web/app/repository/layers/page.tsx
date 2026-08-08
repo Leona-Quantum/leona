@@ -3,6 +3,7 @@ import { PublicSite } from "../../../components/public-site";
 import { LayerIndexView } from "../../../components/repository-layers";
 import { MAP_OPEN_MAX, ProcessMapView, resolveZoom } from "../../../components/repository-process-view";
 import { StrandView, STRAND_DEPTHS, type StrandDepth } from "../../../components/repository-strand-view";
+import { ConvergeView } from "../../../components/repository-converge-view";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
@@ -111,10 +112,17 @@ function one(params: Record<string, string | string[] | undefined>, key: string)
  * `?view=strands` is still the containment picture, which says something the
  * path picture does not. Reversible in one line.
  */
-function resolveView(params: Record<string, string | string[] | undefined>): "map" | "strands" | "list" {
+function resolveView(
+  params: Record<string, string | string[] | undefined>,
+): "map" | "converge" | "strands" | "list" {
   const value = one(params, "view");
   if (value === "list") return "list";
   if (value === "strands") return "strands";
+  // `?view=converge` draws the same graph with each state as ONE circle, so the
+  // ways into it and out of it meet. Its own address, and the map keeps its
+  // default: this is a second reading of the same data, not a replacement, and
+  // the same rule that kept `?view=strands` alive applies.
+  if (value === "converge") return "converge";
   return "map";
 }
 
@@ -191,6 +199,8 @@ export default async function RepositoryLayersPage({
           locale={locale}
           openRoot={resolveOpenRoot(params)}
         />
+      ) : view === "converge" ? (
+        <ConvergeView graph={LAYER_GRAPH} locale={locale} focusId={resolveFocus(params)} />
       ) : view === "strands" ? (
         <StrandView
           graph={LAYER_GRAPH}
