@@ -29,6 +29,7 @@ import {
 } from "../lib/repository/layers";
 import {
   layoutProcessMap,
+  mapHref,
   resolveZoom,
   zoomHref,
   MAP_ZOOMS,
@@ -180,23 +181,10 @@ const COPY: Record<"en" | "ja", MapViewCopy> = {
 // Re-exported so a page importing this surface gets its parameter parser from
 // the same place it gets the view. The definitions live in `process-layout.ts`
 // beside `slotHref`, which builds the other half of the same address.
-export { MAP_ZOOMS, resolveZoom, zoomHref, type MapZoom };
+export { MAP_ZOOMS, mapHref, resolveZoom, zoomHref, type MapZoom };
 
 function copyFor(locale: PublicLocale): MapViewCopy {
   return locale === "ja" ? COPY.ja : COPY.en;
-}
-
-/**
- * The map's address.
- *
- * `?focus=` is the whole state: which slot you are standing in, opened. Defaults
- * are omitted so the overview keeps one canonical URL.
- */
-export function mapHref(focus: string | null, zoom: MapZoom | null = null): string {
-  const params = new URLSearchParams({ view: "map" });
-  if (focus) params.set("focus", focus);
-  if (zoom !== null) params.set("zoom", String(zoom));
-  return `/repository/layers?${params.toString()}`;
 }
 
 /**
@@ -342,12 +330,19 @@ function Rail({
   focusId,
   locale,
   copy,
+  openIds,
   zoom,
 }: {
   graph: LayerGraph;
   focusId: string;
   locale: PublicLocale;
   copy: MapViewCopy;
+  /**
+   * What the reader has expanded. Carried by the path for the same reason
+   * `zoom` is: the breadcrumb re-focuses *this* map, and arriving with the
+   * expansions dropped is arriving somewhere else.
+   */
+  openIds: ReadonlySet<string>;
   /** Carried by the path, which re-focuses this same map. See `ZoomControl`. */
   zoom: MapZoom | null;
 }): React.ReactElement | null {
@@ -374,7 +369,7 @@ function Rail({
                 {item.id === focusId ? (
                   <strong aria-current="true">{label(item)}</strong>
                 ) : (
-                  <a href={mapHref(item.id, zoom)}>{label(item)}</a>
+                  <a href={mapHref(item.id, openIds, zoom)}>{label(item)}</a>
                 )}
               </li>
             ))}
@@ -507,7 +502,7 @@ export function ProcessMapView({
           <a href="/repository/layers?view=list">{nav.list}</a>
         </div>
         {focusId ? (
-          <a className="mj-strand-back" href={mapHref(null, zoom)}>
+          <a className="mj-strand-back" href={mapHref(null, openIds, zoom)}>
             {copy.back}
           </a>
         ) : null}
@@ -560,7 +555,7 @@ export function ProcessMapView({
           <p className="mj-strand-note">{copy.routes(delegated, partly, whole)}</p>
         </div>
         {focusId ? (
-          <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} zoom={zoom} />
+          <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} openIds={openIds} zoom={zoom} />
         ) : null}
       </div>
 

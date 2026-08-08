@@ -809,13 +809,47 @@ export function slotHref(
   const next = new Set(open);
   if (next.has(id)) next.delete(id);
   else next.add(id);
+  return mapHref(focus, next, zoom);
+}
+
+/**
+ * A reading position on the map, as a URL. **The only place one is built.**
+ *
+ * Which slot you stand in, what you have expanded, and the size you chose are
+ * one position. A link that keeps two of the three takes you somewhere you were
+ * not, and it does it silently, because the page renders either way.
+ *
+ * ## Why this function exists rather than a third copy of the same six lines
+ *
+ * There were three builders and two of them were byte-identical: `zoomHref`
+ * changed the size, `mapHref` (in `repository-process-view.tsx`) changed the
+ * focus, and both emitted `view`, `focus`, `zoom` and a sorted `open`. The third,
+ * `slotHref`, differed only in toggling one id first. Three copies of one
+ * address is the shape that drifts, and it had already drifted:
+ *
+ * **Measured on production 2026-08-08** — from
+ * `?focus=linear-ode-solve&zoom=75&open=linear-ode-solve&open=time-discretization`,
+ * the five zoom rungs carried both opens and the breadcrumb up to
+ * `nonlinear-ode-solve` carried neither, emitting
+ * `?view=map&focus=nonlinear-ode-solve&zoom=75`. `mapHref` had no `open`
+ * parameter to pass. Nothing failed and nothing could: the URL is well-formed
+ * and the page it renders is a real page, just not the one the reader was on.
+ * The owner's brief asks that going back remember *"which branches were opened
+ * and not opened"*, and going back was the single move that forgot.
+ *
+ * `open` is sorted so one arrangement of the map has exactly one URL: two
+ * readers who opened the same three slots in different orders must be able to
+ * compare links, and a cache must not hold the same page twice.
+ */
+export function mapHref(
+  focus: string | null,
+  open: ReadonlySet<string> = new Set(),
+  zoom: number | null = null,
+): string {
   const params: string[] = ["view=map"];
   if (focus !== null) params.push(`focus=${encodeURIComponent(focus)}`);
   if (zoom !== null) params.push(`zoom=${zoom}`);
-  // Sorted so one arrangement of the map has exactly one URL: two readers who
-  // opened the same three slots in different orders must be able to compare
-  // links, and a cache must not hold the same page twice.
-  for (const openId of [...next].sort()) params.push(`open=${encodeURIComponent(openId)}`);
+  for (const openId of [...open].sort()) params.push(`open=${encodeURIComponent(openId)}`);
   return `/repository/layers?${params.join("&")}`;
 }
 
@@ -864,11 +898,7 @@ export function zoomHref(
   open: ReadonlySet<string>,
   zoom: MapZoom | null,
 ): string {
-  const params: string[] = ["view=map"];
-  if (focus !== null) params.push(`focus=${encodeURIComponent(focus)}`);
-  if (zoom !== null) params.push(`zoom=${zoom}`);
-  for (const id of [...open].sort()) params.push(`open=${encodeURIComponent(id)}`);
-  return `/repository/layers?${params.join("&")}`;
+  return mapHref(focus, open, zoom);
 }
 
 function placeStates(

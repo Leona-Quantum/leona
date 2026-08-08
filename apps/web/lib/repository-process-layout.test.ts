@@ -68,6 +68,7 @@ import {
   fitLabel,
   layoutProcessMap,
   layoutProcessZoom,
+  mapHref,
   processPageHref,
   resolveZoom,
   zoomHref,
@@ -1070,6 +1071,36 @@ test("a line toggles one slot and leaves the rest of the map alone", () => {
   // An id needing escaping still produces one link rather than a broken query.
   assert.ok(slotHref("a b", new Set(), null).endsWith("open=a%20b"));
   assert.ok(slotHref("x", new Set(), "a b").includes("focus=a%20b"));
+});
+
+test("every link that stays on the map carries the whole reading position", () => {
+  // Which slot, what is expanded, and what size: one position. This shipped
+  // broken — `mapHref` had no `open` parameter, so the breadcrumb and the
+  // "all four" link discarded every expansion while the zoom rungs kept them.
+  // Measured on production 2026-08-08, from
+  // `?focus=linear-ode-solve&zoom=75&open=linear-ode-solve&open=time-discretization`,
+  // the breadcrumb emitted `?view=map&focus=nonlinear-ode-solve&zoom=75`.
+  const open = new Set(["ode", "qls"]);
+  assert.equal(
+    mapHref("ode", open, 75),
+    "/repository/layers?view=map&focus=ode&zoom=75&open=ode&open=qls",
+  );
+
+  // Re-focusing keeps the expansions. This is the assertion the defect failed.
+  assert.ok(mapHref("other", open, 75).includes("open=ode"));
+  assert.ok(mapHref("other", open, 75).includes("open=qls"));
+
+  // So does going back out to the overview.
+  assert.ok(mapHref(null, open, 75).includes("open=ode"));
+
+  // The three builders are one builder. `zoomHref` and `mapHref` were byte
+  // identical copies; `slotHref` is the same address after toggling one id.
+  // Asserted rather than reviewed, because two of the three had already drifted.
+  assert.equal(zoomHref("ode", open, 100), mapHref("ode", open, 100));
+  assert.equal(slotHref("qls", new Set(["ode"]), "ode"), mapHref("ode", open, null));
+
+  // Same sorting rule as `slotHref`: one arrangement, one URL.
+  assert.equal(mapHref("x", new Set(["b", "a"]), null), mapHref("x", new Set(["a", "b"]), null));
 });
 
 test("a toggle on the overview stays on the overview", () => {
