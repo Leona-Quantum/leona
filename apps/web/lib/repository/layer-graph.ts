@@ -333,17 +333,27 @@ export const LAYER_GRAPH: LayerGraph = {
     // This method's own name says *truncated Taylor propagator*, and
     // `truncated-taylor-propagator` already exists one level down as a way
     // through `time-discretization` — the same Berry-Childs-Ostrander-Wang
-    // construction, filed where it belongs. Unpinned, this method drew
-    // `time-discretization + quantum-linear-solve`, which is character for
-    // character what `krovi-linear-ode` and `dyson-all-at-once` drew, and the
-    // name was on the map twice as two separate nodes.
+    // construction, filed where it belongs.
     //
-    // Pinning is not collapsing. The three stay three methods, because they are
-    // three papers with three sets of conditions. What stops being identical is
-    // the *picture*: this one now says which discretization it uses and the
-    // other two do not — `dyson-all-at-once` wants a `truncated-dyson-series`
-    // node nobody has authored, and that needs the paper and a citation (R1,
-    // R10), so it is content work rather than a pin.
+    // Pinning is not collapsing. The three all-at-once methods stay three
+    // methods, because they are three papers with three sets of conditions.
+    // What stops being identical is the *picture*: this hop now names the
+    // Taylor propagator, `dyson-all-at-once`'s names the Dyson series, and
+    // `krovi-linear-ode`'s still names the slot, which is right — Krovi's paper
+    // re-analyses the construction rather than changing it, and inventing a
+    // discretization for it to point at would be the map asserting something no
+    // source does.
+    //
+    // **What this comment used to say was false, and the way it was false is
+    // worth keeping.** Until session 107 it claimed the pin had already stopped
+    // the three drawing one picture. It had not: `routeOf` read `through` and
+    // never `via`, and `chainInside` labelled every hop with its *slot*, so the
+    // pin was recorded, validated, and drawn nowhere. Seven of the corpus's
+    // eight pins were inert the same way. `scripts/check-layer-graph.mjs` was
+    // meanwhile grouping on `steps` **plus** `via` — a second, hand-written
+    // model of the drawing — so the gate saw two groups where the canvas drew
+    // one, went green, and the claim above survived twenty-odd merges. A pin is
+    // only a fix once something reads it.
     via: { "time-discretization": "truncated-taylor-propagator" },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
@@ -357,6 +367,30 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Reanalyses the all-at-once propagator encoding and shows that the norm of the matrix exponential, rather than the eigenvector condition number, characterizes the run time. It still forms a global linear system and still calls a quantum linear solver.",
     summaryJa: "一括符号化を再解析し、実行時間を特徴づけるのは固有ベクトル行列の条件数ではなく行列指数のノルムであることを示します。それでもなお大域的な線形系を組み立て、量子線形ソルバーを呼ぶ点は変わりません。",
     realizes: "linear-ode-solve",
+    // **Recorded and, on the canvas, still unread.** `refines` is what tells a
+    // reader that this is the same construction re-analysed rather than a fifth
+    // way of solving a linear ODE, and it is honoured in two places: the method
+    // page's siblings split (`alternativesTo` / `refinementsOf`), and the
+    // duplicate gates in `scripts/check-layer-graph.mjs` and
+    // `repository-converge-layout.test.ts`, both of which let a refinement chain
+    // through without an exemption row. The **map** draws nothing for it —
+    // measured by grep over `converge-layout.ts`, `repository-converge-map.tsx`
+    // and `repository-converge-view.tsx`: zero reads. Krovi is drawn as a flat
+    // peer of the Taylor route it refines.
+    //
+    // Left that way on purpose in session 107. Nesting a refinement under what
+    // it refines is a change to how a fan allocates bows and reserves bands —
+    // the one property this whole figure rests on is that siblings never cross,
+    // and it is asserted over sampled points on every lane of every figure. That
+    // is not a change to make in passing while the subject is labelling. It is
+    // owner-facing work with a real decision in it (does a refinement nest, or
+    // wear a mark and stay a peer?), and it is written here rather than only in
+    // a session note so the next reader of this node finds it.
+    //
+    // Do **not** resolve it by inventing a `via` pin for this method. The paper
+    // chooses no discretization; it re-analyses the one Berry, Childs, Ostrander
+    // and Wang already chose. A pin here would put a name on a hop that no
+    // source puts there.
     refines: "taylor-all-at-once",
     conditions: "Extends to many classes of non-diagonalizable matrices, which the Berry-Childs-Ostrander-Wang analysis required to be diagonalizable, and is exponentially faster than those bounds for certain classes of diagonalizable matrices. Applied back to nonlinear ODEs through Carleman linearization, it handles any sparse, invertible matrix modelling dissipation that has a negative log-norm, where Liu et al. and Xue et al. additionally require normality. It improves the constant of the bottleneck; it does not remove the quantum-linear-solve layer.",
     conditionsJa: "Berry・Childs・Ostrander・Wang の解析が対角化可能性を要求していたのに対し、非対角化可能な行列の多くのクラスにも適用でき、ある種の対角化可能な行列については従来の評価より指数的に高速です。Carleman 線形化を通じて非線形常微分方程式に適用する場合、対数ノルムが負であれば疎で正則な任意の散逸行列を扱えます。Liu らと Xue らはこれに加えて正規性を要求していました。この手法はボトルネックの定数を改善するものであり、量子線形ソルバーの層を取り除くものではありません。",
@@ -381,6 +415,16 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Logarithmic dependence of the complexity on the error and derivative, with the usual exponential improvement over classical approaches in the scaling with the dimension, the solution being encoded in the amplitudes of a quantum state.",
     costJa: "計算量は誤差および生成子の微分に対して対数的に依存します。次元に関しては古典的手法に対する通常どおりの指数的な改善があり、解は量子状態の振幅に符号化されます。",
     steps: ["time-discretization", "quantum-linear-solve"],
+    // This method's own first four words: *"Encode the Dyson series"*. The pin
+    // was impossible until session 107 because the node it needed did not
+    // exist — `truncated-dyson-series` is authored now, as a sibling of the
+    // Taylor propagator and out of this method's own summary and citation, with
+    // no cost or conditions invented for it.
+    //
+    // The second hop stays the slot, deliberately. This route says *"the optimal
+    // quantum linear equation solver"* and names none of the five recorded ways
+    // through `quantum-linear-solve`, so a pin there would be a guess.
+    via: { "time-discretization": "truncated-dyson-series" },
     citations: [
       { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -661,6 +705,35 @@ export const LAYER_GRAPH: LayerGraph = {
     atomic: true,
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "truncated-dyson-series",
+    // `truncated-taylor-propagator` has had a pin since the `via` field was
+    // built; this node is the sibling that never existed to be pinned to, and
+    // its absence was the whole of the reason `dyson-all-at-once` drew the same
+    // picture as `krovi-linear-ode`.
+    //
+    // **Only what `dyson-all-at-once` already states is repeated here.** Neither
+    // `cost` nor `conditions` is authored, and that is a decision rather than an
+    // omission to fill in later: Berry and Costa's complexity is a statement
+    // about the whole algorithm, and this node is the discretization alone. An
+    // absent field renders as "nobody stated one", which is true; a plausible
+    // number in the hole would be this map asserting a bound no paper carries,
+    // on the one surface whose whole claim is that the costs are honest. The
+    // Taylor sibling *does* carry a `cost` and says in the field itself that it
+    // is the full algorithm's — that wording is available if a session ever
+    // wants to do the same here from the paper rather than from memory.
+    label: "Truncated Dyson series of the propagator",
+    labelJa: "伝播子の Dyson 級数打ち切り",
+    summary: "Truncate the Dyson series — the expansion that stands in for the propagator once the generator varies with time — and encode its terms as rows of a system of linear equations. This is what extends the all-at-once approach to genuinely time-dependent generators; solving the system those rows make up is the layer below.",
+    summaryJa: "生成子が時間に依存する場合に伝播子の役割を担うのが Dyson 級数です。これを打ち切り、その各項を連立一次方程式の行として符号化します。一括符号化の手法が真に時間依存な生成子にまで拡張されるのは、この置き換えによるものです。組み上がった系を解くのは一つ下の層です。",
+    realizes: "time-discretization",
+    steps: [],
+    atomic: true,
+    citations: [
+      { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
     ],
   },
   {

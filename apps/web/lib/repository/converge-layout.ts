@@ -120,6 +120,7 @@ import {
 import type { Crossing as EdgeChoice } from "./state-graph.ts";
 import {
   isCapability,
+  isMethod,
   layerNode,
   methodsRealizing,
   routeOf,
@@ -1224,6 +1225,9 @@ function fanInside(
  * makes the method itself the last hop where the delegated steps do not reach
  * the exit — which is 23 of the 29 decomposed routes.
  *
+ * A hop this route has **pinned** with `via` is drawn as the pinned method, not
+ * as the slot; see the comment on that branch below for what that was costing.
+ *
  * Returns null for a single-segment route. One segment is the method being
  * itself, and drawing "inside" it would be drawing the same line again one level
  * down with a smaller name.
@@ -1249,6 +1253,52 @@ function chainInside(
   if (route.segments.length === 0) return null;
   const children = route.segments.map((segment, index) => {
     if (segment.capabilityId) {
+      // **The `via` pin, drawn.** `via[step]` is the graph saying *this* route
+      // fills that step with *that* algorithm, read off a primary source; the
+      // field has existed since session 94 and until now nothing on the canvas
+      // read it, so seven of the corpus's eight pins were inert. Measured on the
+      // authored graph before this: `taylor-all-at-once`, `krovi-linear-ode` and
+      // `dyson-all-at-once` drew one identical interior — *discretize, then
+      // solve* — and so did `lchs-route`, `lchs-improved-kernel` and
+      // `schrodingerisation`, and so did `level-set-observable-route` and
+      // `homotopy-perturbation-route`. Six methods out of eight in three groups,
+      // each group one picture, because the hop could only ever name the slot
+      // several routes share.
+      //
+      // Pinned, the hop is the **filler's** own lane rather than the slot's, so
+      // it wears the algorithm's name and opens into that algorithm's interior
+      // instead of into the fan of alternatives the route did not take. That
+      // second half is the point as much as the name is: a route that says it
+      // uses the truncated Taylor propagator is not offering the reader a choice
+      // of four discretizations at that hop.
+      //
+      // The same shape as `planForNarrowed`, including the fallback: a pin that
+      // does not resolve to a method draws the slot. `validateLayerGraph`
+      // already refuses a pin that names a capability, an unknown id, or a
+      // method filling some other slot — but this function is reached from a
+      // route handler and has to be total on any input, and a silent slot is a
+      // truthful drawing where a throw is a 500.
+      const pinned = method.via?.[segment.capabilityId];
+      const filler = pinned === undefined ? null : layerNode(graph, pinned);
+      if (filler && isMethod(filler) && filler.realizes === segment.capabilityId) {
+        return planForMethod(
+          graph,
+          vocabulary,
+          filler,
+          locale,
+          open,
+          depth,
+          // The **slot** joins `seen`, not just the filler. `planForMethod` cuts
+          // the recursion on the method's own id; the slot is what a route below
+          // could delegate back to, and pinning must not open a door the
+          // unpinned hop had shut. Every pin in the corpus today names an
+          // atomic filler, so this cannot bite yet — which is exactly when a
+          // cycle guard is cheap to get right.
+          new Set([...seen, segment.capabilityId]),
+          `${parentKey}/${index}/`,
+          `${parentAddress}.${index}`,
+        );
+      }
       return planForSlot(
         graph,
         vocabulary,
