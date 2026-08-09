@@ -1674,7 +1674,17 @@ test("an opened line draws its name, and the name is not worse placed than a shu
 test("a name on the bone stays inside the band the layout reserved for it", () => {
   // The half of the opened-name guard that survives in the layout, and the thing
   // that keeps `.mj-converge-name-plate` honest: a plate is only acceptable
-  // because it is *small*. If an opened name drifted outside `spineBand` the
+  // because it is *small*.
+  //
+  // **The other half is `packages/ts/ui-visual/tests/converge-plate.spec.ts`**,
+  // and it has to be somewhere else because this file cannot reach it: everything
+  // here is a number the layout computed, and whether the plate is drawn at all —
+  // or is opaque, or is painted before its own text — is a fact about the
+  // renderer. That file also records the part neither half can gate on, which is
+  // the ink: the app's face is loaded at build time by Next and is Latin-only, so
+  // Japanese names fall back in production to the reader's own font.
+  //
+  // If an opened name drifted outside `spineBand` the
   // plate would be rubbing out whole branches rather than the few crossings near
   // the ends of the span, and "the name is readable" would have been bought by
   // erasing the drawing.
