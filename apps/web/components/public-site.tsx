@@ -17,14 +17,43 @@ export async function PublicSite({
   className = "",
   locale,
   showLanguageToggle = true,
+  chrome = "full",
 }: {
   activePath?: string;
   children: ReactNode;
   className?: string;
   locale?: PublicLocale;
   showLanguageToggle?: boolean;
+  /**
+   * `"none"` drops the header, the frame and the footer, leaving the `<main>`
+   * and its classes.
+   *
+   * Added rather than letting the one route that needs it render its own
+   * `<main class="mj-public-site …">` and skip this component, because the
+   * moment two files know what the public shell is they start disagreeing about
+   * it — and the disagreement is invisible, since neither of them fails. The
+   * class list is the load-bearing part: `styles.css` scopes the entire Atlas
+   * view transition on `:root:has(.mj-repository-site)`, so a surface that
+   * dropped this element would lose every Atlas navigation animation with no
+   * error at all, the animation simply not playing.
+   *
+   * What a chrome-less surface loses is the *controls*, not the settings:
+   * `data-theme` is stamped on `<html>` by `app/layout.tsx` and the locale
+   * comes from a cookie read on the server, so both still apply. A surface
+   * asking for `"none"` therefore owes its reader a theme and a language
+   * control somewhere of its own — `/repository/layers` puts both in the
+   * information box's footer.
+   */
+  chrome?: "full" | "none";
 }) {
   const resolvedLocale = locale ?? await getPublicLocale();
+  if (chrome === "none") {
+    // Returned before `getMajoranaAuth()` and `getMajoranaSignInUrl()`, which
+    // exist only to decide what the header's call-to-action says. Calling them
+    // for a page that renders no header would put a WorkOS round trip in front
+    // of a public, cacheable figure for no output at all.
+    return <main className={["mj-public-site", "mj-public-site--bare", className].filter(Boolean).join(" ")}>{children}</main>;
+  }
   const copy = PUBLIC_SHELL_COPY[resolvedLocale];
   const publicNav = [
     { href: "/", label: copy.nav.product },

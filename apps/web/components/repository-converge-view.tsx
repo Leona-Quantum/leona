@@ -1,5 +1,31 @@
 // The surface around the convergence canvas — and, since this session, the only
-// drawing of the layer graph there is.
+// drawing of the layer graph there is, on a page that is now nothing but the
+// drawing.
+//
+// > *"The map page is an infinite canvas that takes up the entire page, only
+// > with an option/arrow to go back to the atlas page and a small overlayed
+// > information icon both in the top left … Overly pedantic explanations like
+// > what is on the page right now should be removed — users can figure out
+// > EXACT functionality as they interact."* — owner, ask H
+//
+// So the h1, the lede, the size rungs, the notes under the canvas, the key, the
+// rail and the two disclosures are all off the visible page. Two of them are
+// **not** deleted, because they were never decoration:
+//
+//   - **The linear reading** moves, whole, into `.mj-map-reading` at the end of
+//     the document. That block is clipped to a pixel rather than removed, so a
+//     screen reader still reads it, `curl` still returns it, a printout still
+//     carries it (see the `@media print` rule beside the class), and a keyboard
+//     reader who Tabs into it gets it revealed — every link in it is still a
+//     link somebody can reach. Nothing in it is a control the visible surface
+//     needs, and everything in it states a fact the canvas states in a pattern.
+//   - **The key** moves into the information box, `map-info-popup.tsx` §2,
+//     drawn with the canvas's own marks.
+//
+// The size rungs move into that box as well rather than into the clipped
+// reading, because they are a control and not a reading: D88.2 says a named
+// size has to stay clickable for somebody with no JavaScript, and the box is
+// the one place left on this page where such a reader can click one.
 //
 // Map, Strands and List are retired. That decision was the owner's and it had
 // been open for four sessions behind a contradiction their own notes recorded:
@@ -31,6 +57,13 @@ import { LayerCensusPanel } from "./repository-layers";
 import { ConvergeCanvas } from "./repository-converge-map";
 import { CanvasContinuity } from "./canvas-continuity";
 import { InfiniteCanvas } from "./infinite-canvas";
+import { MapInfoPopup } from "./map-info-popup";
+import { ArrowLeftIcon, InfoIcon } from "./icons";
+import {
+  MAP_ABOUT_SECTIONS,
+  withAbout,
+  type MapAboutSection,
+} from "../lib/repository/map-about";
 import {
   CONVERGE_OPEN_MAX,
   convergingSlots,
@@ -66,7 +99,6 @@ interface ConvergeCopy {
   lede: string;
   ledeFan: string;
   ledeOverview: string;
-  reading: string;
   grainStates: (interior: number) => string;
   grainMethods: (n: number, slot: string) => string;
   truncatedNote: string;
@@ -78,16 +110,21 @@ interface ConvergeCopy {
   pickAll: string;
   pickConverging: (n: number) => string;
   nothing: string;
-  legendShared: string;
   legendUnpublished: string;
   legendUnpinned: string;
   legendStrand: string;
   legendOpen: string;
-  legendInner: string;
-  legendFeed: string;
-  legendAtlas: string;
-  keyHeading: string;
-  /** The one disclosure that holds everything written about the figure. */
+  /**
+   * The heading over the clipped reading.
+   *
+   * The four legend strings that used to sit beside it — the shared circle, the
+   * inner circle, the ingredient line, the dotted-underlined name — are gone
+   * from this file, because the key is now drawn in the information box (§2 of
+   * `map-info-popup.tsx`) and a legend written twice is a legend that starts
+   * describing two different pictures. What is left here are the two standings
+   * `Lines` states in words and the two words it labels an opened line with,
+   * all four of which are read out per line rather than as a key.
+   */
   readingSummary: string;
   censusSummary: string;
   meets: (state: string, arriving: number, leaving: number) => string;
@@ -101,6 +138,16 @@ interface ConvergeCopy {
   rail: string;
   path: string;
   ways: string;
+  /**
+   * The same heading with its count in it.
+   *
+   * The count used to be a `<span>` immediately after the label and rendered
+   * `ways through7` — read on the page, and the reason a count has to arrive
+   * through a copy function rather than as a sibling node: the separator
+   * between a label and a number is part of the sentence, it differs by
+   * language, and CSS is not where a sentence gets punctuated.
+   */
+  waysCount: (n: number) => string;
   around: string;
   noneAround: string;
   noneWays: string;
@@ -116,6 +163,12 @@ interface ConvergeCopy {
   needs: string;
   routes: (delegated: number, partly: number, whole: number) => string;
   canvasLabel: (subject: string) => string;
+  /** The two overlay controls, which have icons and no visible label. */
+  backToAtlas: string;
+  openInfo: string;
+  closeInfo: string;
+  /** Names the clipped reading for a screen reader and for a printout. */
+  readingRegion: string;
 }
 
 const COPY: Record<"en" | "ja", ConvergeCopy> = {
@@ -127,8 +180,6 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       "Every circle is drawn once. This step has no smaller object recorded inside it, so the strands between its two circles are the recorded ways of taking it — one strand per method.",
     ledeOverview:
       "Four problems nothing else needs — the places a reader arrives. Open a line to see what is recorded inside it, or click its name to go there.",
-    reading:
-      "Click a line to open it here, with everything else still in view. Click its name to go to it. Click a circle to read what that object is.",
     grainStates: (interior: number) =>
       `The ${interior === 1 ? "circle" : `${interior} circles`} between the ends ${interior === 1 ? "is an object" : "are objects"} every way across passes through.`,
     grainMethods: (n: number, slot: string) =>
@@ -146,16 +197,11 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     pickConverging: (n: number) =>
       `${n} of these have an object recorded in the middle; the rest open into the methods that fill them.`,
     nothing: "Nothing recorded goes through this in more than one way.",
-    legendShared: "a circle more than one way reaches or leaves",
     legendUnpublished: "no recorded source takes this path",
     legendUnpinned: "recorded, but no source names which method",
     legendStrand: "a way across — click it to open it here",
     legendOpen: "opened: what was inside is drawn in its place",
-    legendInner: "an object inside one way across",
-    legendFeed: "an ingredient that route needs",
-    legendAtlas: "the Atlas has a full record of it",
-    keyHeading: "What the marks mean",
-    readingSummary: "How to read this figure, and every line on it in words",
+    readingSummary: "Every line on this figure, in words",
     censusSummary: "What is on this map, counted",
     meets: (state: string, arriving: number, leaving: number) =>
       `${arriving} way${arriving === 1 ? "" : "s"} arrive at ${state} and ${leaving} lead on, so ${arriving * leaving} routes cross it.`,
@@ -172,6 +218,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     rail: "Where you are",
     path: "Path",
     ways: "Ways through",
+    waysCount: (n: number) => `Ways through: ${n}`,
     around: "Routes that skip it",
     noneAround: "No recorded route avoids this step.",
     noneWays: "No method is recorded for this slot yet.",
@@ -189,6 +236,10 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `Of the routes that have been taken apart, ${delegated} are built entirely from named slots, ${partly} hand off part of the work and finish the rest themselves, and ${whole} are one undivided act. None of the three is a defect; they are different things to reuse.`,
     canvasLabel: (subject: string) =>
       `${subject} — drag to move the figure, pinch or ctrl-scroll to zoom, arrow keys to pan, 0 to reset`,
+    backToAtlas: "Back to the Atlas",
+    openInfo: "About this map",
+    closeInfo: "Close",
+    readingRegion: "This figure in words",
   },
   ja: {
     heading: "経路が合流する場所",
@@ -198,8 +249,6 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       "円はひとつずつ描かれます。この工程の内側により小さな対象は記録されていないため、二つの円のあいだの帯は、この工程を行う記録された手法そのものです。手法ひとつにつき一本です。",
     ledeOverview:
       "他のどの手法からも必要とされない四つの問題 — 読者が最初に立つ場所です。線をクリックすると内側が開き、名前をクリックするとそこへ移動します。",
-    reading:
-      "線をクリックすると、他をすべて表示したままこの場で展開します。名前をクリックするとその頁へ移動します。円をクリックすると、その対象の説明を読めます。",
     grainStates: (interior: number) =>
       `両端のあいだにある ${interior} 個の円は、どの道を通っても必ず経由する対象です。`,
     grainMethods: (n: number, slot: string) =>
@@ -216,16 +265,11 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     pickConverging: (n: number) =>
       `このうち ${n} 件は中間に対象が記録されています。残りは、それを満たす手法へと開きます。`,
     nothing: "これを複数の方法で通る記録はありません。",
-    legendShared: "複数の道が到達または出発する円",
     legendUnpublished: "この経路をたどる記録された出典はありません",
     legendUnpinned: "記録はありますが、どの手法かを述べた出典はありません",
     legendStrand: "通り道 — クリックするとこの場で展開します",
     legendOpen: "展開中 — 内側にあったものがこの場に描かれています",
-    legendInner: "ひとつの通り道の内側にある対象",
-    legendFeed: "その経路に必要な材料",
-    legendAtlas: "アトラスに完全な記録あり",
-    keyHeading: "記号の意味",
-    readingSummary: "この図の読み方と、描かれている線のすべて",
+    readingSummary: "この図に描かれている線のすべて",
     censusSummary: "この地図にあるものの集計",
     meets: (state: string, arriving: number, leaving: number) =>
       `${state}には ${arriving} 本が到達し、${leaving} 本が続きます。したがって ${arriving * leaving} 通りの経路がここを通ります。`,
@@ -242,6 +286,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     rail: "現在地",
     path: "経路",
     ways: "通り道",
+    waysCount: (n: number) => `通り道：${n} 件`,
     around: "この枠を飛ばす経路",
     noneAround: "この手順を回避する経路は記録されていません。",
     noneWays: "この枠を満たす手法はまだ記録されていません。",
@@ -259,6 +304,10 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `分解されている経路のうち、${delegated} 件は名前のついた枠だけで構成され、${partly} 件は一部を枠に委ね残りを自身で行い、${whole} 件は分けられないひとつの作業です。いずれも欠陥ではなく、再利用の単位が違うということです。`,
     canvasLabel: (subject: string) =>
       `${subject} — ドラッグで移動、ピンチまたは ctrl+スクロールで拡大縮小、矢印キーで移動、0 で元に戻ります`,
+    backToAtlas: "アトラスに戻る",
+    openInfo: "この地図について",
+    closeInfo: "閉じる",
+    readingRegion: "この図の内容を文章で",
   },
 };
 
@@ -336,102 +385,15 @@ function SizeControl({
 }
 
 /**
- * The key, drawn with the canvas's own class names so a stylesheet change
- * reaches the key and the figure together.
+ * The key used to be drawn here, by `KeyMark` and `Key`.
  *
- * Copying the shapes into a second set of classes is how a legend starts
- * describing a picture that no longer looks like that — the process view's own
- * comment, and the reason its `LegendMark` was built this way.
+ * It is now §2 of `map-info-popup.tsx`, drawn there from the same
+ * `legendMark()` geometry so a change to the shape the canvas draws still
+ * reaches the legend. Moved rather than copied, and this note is the whole
+ * reason: two components drawing one key is exactly the failure the old
+ * `KeyMark` shipped — three swatches drawing a lens the canvas had stopped
+ * drawing, read on production after the deploy.
  */
-function KeyMark({
-  kind,
-}: {
-  kind: "strand" | "open" | "unpublished" | "unpinned" | "shared" | "inner" | "feed" | "atlas";
-}): React.ReactElement {
-  const common = { width: 34, height: 18, viewBox: "0 0 34 18", "aria-hidden": true } as const;
-  // **Emitted by the canvas's own geometry, not written out by hand.**
-  //
-  // It was a literal — `M 2 9 C 10 3, 24 3, 32 9 C 24 15, 10 15, 2 9 Z`, the lens
-  // the canvas drew before R14 — and it stayed that lens through the tendons,
-  // while every line on the figure beside it became a ribbon. Read on production
-  // after the deploy: three legend swatches drawing a shape nothing on the canvas
-  // draws any more, in a key whose own comment says copying the shapes is *"how a
-  // legend starts describing a picture that no longer looks like that"*. The
-  // comment was right and the code was not following it.
-  //
-  // `legendMark` lives in the layout module so the claim is checkable without
-  // rendering React, and so the next change to the drawn shape changes this mark
-  // with it.
-  const { outline: body, spine } = legendMark();
-  if (kind === "shared" || kind === "inner") {
-    return (
-      <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
-        <g className={`mj-converge-hub${kind === "shared" ? " mj-converge-hub--shared" : " mj-converge-hub--inner"}`}>
-          <circle className="mj-converge-dot" cx="17" cy="9" r={kind === "shared" ? 6 : 4} />
-        </g>
-      </svg>
-    );
-  }
-  if (kind === "feed") {
-    return (
-      <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
-        <g className="mj-converge-feed">
-          <line className="mj-converge-feed-line" x1="14" y1="4" x2="14" y2="14" />
-        </g>
-      </svg>
-    );
-  }
-  if (kind === "atlas") {
-    return (
-      <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
-        <g className="mj-converge-lane mj-converge-lane--recorded mj-converge-lane--atlas">
-          <text className="mj-converge-lane-name" x="17" y="13" textAnchor="middle">
-            abc
-          </text>
-        </g>
-      </svg>
-    );
-  }
-  if (kind === "open") {
-    return (
-      <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
-        <g className="mj-converge-lane mj-converge-lane--recorded mj-converge-lane--open">
-          <path className="mj-converge-spine" d={spine} />
-        </g>
-      </svg>
-    );
-  }
-  return (
-    <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
-      <g className={`mj-converge-lane mj-converge-lane--${kind === "strand" ? "recorded" : kind}`}>
-        <path className="mj-converge-strand-body" d={body} />
-      </g>
-    </svg>
-  );
-}
-
-function Key({ copy }: { copy: ConvergeCopy }): React.ReactElement {
-  const items: [Parameters<typeof KeyMark>[0]["kind"], string][] = [
-    ["strand", copy.legendStrand],
-    ["open", copy.legendOpen],
-    ["unpinned", copy.legendUnpinned],
-    ["unpublished", copy.legendUnpublished],
-    ["shared", copy.legendShared],
-    ["inner", copy.legendInner],
-    ["feed", copy.legendFeed],
-    ["atlas", copy.legendAtlas],
-  ];
-  return (
-    <ul className="mj-strand-legend">
-      {items.map(([kind, label]) => (
-        <li key={kind}>
-          <KeyMark kind={kind} />
-          <span>{label}</span>
-        </li>
-      ))}
-    </ul>
-  );
-}
 
 /**
  * The rail, brought over from the map and the strand view.
@@ -488,10 +450,14 @@ function Rail({
         </section>
 
         <section>
-          <h3>
-            {copy.ways}
-            {ways.length > 0 ? <span className="mj-strand-rail-count">{ways.length}</span> : null}
-          </h3>
+          {/* One string, not a label with a count element beside it. The
+              element form rendered `ways through7`: `.mj-strand-rail-count` is
+              a pill whose spacing came from CSS, and the reading this heading
+              is now part of has no CSS at all — a screen reader, a printout and
+              `curl` all got the two run together. A separator is punctuation,
+              punctuation is part of a sentence, and a sentence differs by
+              language, so it goes through the copy function. */}
+          <h3>{ways.length > 0 ? copy.waysCount(ways.length) : copy.ways}</h3>
           {ways.length === 0 ? (
             <p className="mj-strand-rail-none">{copy.noneWays}</p>
           ) : (
@@ -620,6 +586,7 @@ export function ConvergeView({
   locale,
   focusId,
   open,
+  about = null,
   droppedOpen = 0,
   viewport = IDENTITY,
 }: {
@@ -629,6 +596,14 @@ export function ConvergeView({
   focusId: string | null;
   /** What the reader has opened, from `?open=`. */
   open: ReadonlySet<string>;
+  /**
+   * Which section of the information box is open, from `?about=`.
+   *
+   * A parameter and not component state, so the box opens with JavaScript off,
+   * `curl` returns it, and a reader can send somebody the exact page of it they
+   * mean — see `lib/repository/map-about.ts` for the argument in full.
+   */
+  about?: MapAboutSection | null;
   /** How many ids the URL asked for over the cap. Reported, never dropped silently. */
   droppedOpen?: number;
   /** Where the reader has panned and how far in, from `?at=`. */
@@ -731,18 +706,124 @@ export function ConvergeView({
   // uniqueness rule the names have to obey is a page-level rule.
   const claimed = new Set<string>();
   const currentSize = currentRung(viewport);
+  // The addresses the information box needs, built here because this is the one
+  // component that knows the reader's focus, their whole open set and where they
+  // have panned to. `withAbout` appends to what `figureHref` already produced
+  // rather than composing a URL of its own, so asking what a line means cannot
+  // cost the reader a line they had opened or the place they were standing —
+  // which is precisely what a box that rebuilt the address from scratch would do,
+  // silently, on every open.
+  const base = figureHref(focusId, open, atParam);
+  const sectionHrefs = Object.fromEntries(
+    MAP_ABOUT_SECTIONS.map((id) => [id, withAbout(base, id)]),
+  ) as Record<MapAboutSection, string>;
+  const closeHref = withAbout(base, null);
+  // One control, two states. A separate close button in the overlay would be a
+  // third thing in a corner the owner asked to hold exactly two.
+  const infoHref = about === null ? sectionHrefs[MAP_ABOUT_SECTIONS[0]] : closeHref;
+  const infoLabel = about === null ? copy.openInfo : copy.closeInfo;
 
   return (
-    <section className="mj-strand-view mj-process-view" aria-labelledby="converge-heading">
-      <div className="mj-strand-controls">
-        {focusId ? (
-          <a className="mj-strand-back" href={figureHref(null, open)}>
-            {copy.back}
-          </a>
-        ) : null}
+    // `CanvasContinuity` wraps the whole surface rather than only the canvas,
+    // which is a widening of its job and deliberate. Every control on this page
+    // that is not the back arrow — the information icon, the five section links,
+    // the close link, the size rungs — is a link to *this* path with a different
+    // query, and that is exactly the click it was built to intercept. Left
+    // around the canvas alone, opening the box would have been a document
+    // replacement: the figure would remount, and a reader who had panned would
+    // be put back where the server last rendered them, because the anchor
+    // carries the rendered `?at=` and not the live one. It substitutes the live
+    // value; that is the whole reason it takes `renderedAt`.
+    <CanvasContinuity className="mj-map-shell" renderedAt={atParam}>
+      {/* The two controls, and nothing else on the page.
+
+          `position: absolute` and outside the flow, so the canvas below is
+          exactly `100dvh` — see the rewritten comment on
+          `.mj-canvas-viewport--fill`, whose old `calc(100dvh - 15rem)` was a
+          hand-measured stand-in for chrome that no longer exists.
+
+          The back arrow is unconditional, unlike the `.mj-strand-back` link it
+          replaces, which only rendered when `?focus=` was set and so was absent
+          on the one view a first-time reader actually lands on. It leaves for
+          `/repository`, a different path, so `CanvasContinuity` above passes it
+          through and the Atlas view transition animates it. */}
+      <div className="mj-map-overlay">
+        <a
+          className="mj-map-overlay-button"
+          href="/repository"
+          aria-label={copy.backToAtlas}
+          title={copy.backToAtlas}
+        >
+          <ArrowLeftIcon />
+        </a>
+        <a
+          className="mj-map-overlay-button"
+          href={infoHref}
+          aria-label={infoLabel}
+          title={infoLabel}
+          aria-expanded={about !== null}
+          // Where the box hands focus back when it closes and the element that
+          // opened it has gone — see `map-info-popup.tsx`'s cleanup.
+          data-modal-return-focus
+        >
+          <InfoIcon />
+        </a>
       </div>
 
-      <div className="mj-strand-head">
+      {drawn.length > 0 ? (
+        <InfiniteCanvas
+          initial={viewport}
+          label={copy.canvasLabel(focus ? label(focus) : copy.heading)}
+          locale={locale}
+          // Still `fill`, and it has to be: `.mj-canvas-viewport--fill` is what
+          // binds a plain two-finger wheel to panning and what contains the
+          // overscroll that would otherwise navigate the page away mid-pan.
+          // Dropping it here would look like a styling change and behave like a
+          // deleted gesture.
+          fill
+        >
+          {drawn.map((figure) => (
+            <ConvergeCanvas
+              key={figure.subject.id}
+              diagram={figure.diagram}
+              locale={locale}
+              title={label(figure.subject)}
+              subjectId={figure.subject.id}
+              atlas={atlas}
+              // One set across all four figures — see `claimed`. Built here
+              // because this is the component that knows how many figures the
+              // page is drawing.
+              claimed={claimed}
+            />
+          ))}
+        </InfiniteCanvas>
+      ) : (
+        <p className="mj-map-empty">{copy.nothing}</p>
+      )}
+
+      <MapInfoPopup
+        locale={lang}
+        section={about}
+        sectionHrefs={sectionHrefs}
+        closeHref={closeHref}
+        // The canvas's own geometry, not a second drawing of it.
+        laneMark={legendMark().outline}
+        sizeControl={<SizeControl focus={focusId} open={open} current={currentSize} copy={copy} />}
+        withRecord={atlas.size}
+        total={graph.nodes.length}
+      />
+
+      {/* The figure in words, clipped rather than deleted.
+
+          `.mj-map-reading` is a pixel on screen and everything in the document:
+          a screen reader reads it, `curl` returns it, the `@media print` rule
+          beside the class puts it back on a printout, and `:focus-within`
+          reveals it the moment a keyboard reader Tabs into it — so none of the
+          links below is a control somebody can focus and not see. That last
+          part is why this is a clip and not `hidden`: `hidden` would take the
+          reading out of the accessibility tree entirely, which is the one thing
+          the retirement of the List view promised would not happen (D90.2). */}
+      <div className="mj-map-reading" role="region" aria-label={copy.readingRegion}>
         <h1 id="converge-heading">{copy.heading}</h1>
         <p className="mj-strand-lede">
           {!focus
@@ -751,247 +832,205 @@ export function ConvergeView({
               ? copy.ledeFan
               : copy.lede}
         </p>
-      </div>
 
-      {drawn.length > 0 ? (
-        <>
-          {/* What this figure is, before the figure. A chain of shared circles
-              and a fan of fillers are different claims — "every way across
-              passes through this object" versus "these are the recorded ways
-              across" — and a reader who takes the second for the first reads
-              three ways to estimate an observable as three objects every
-              estimate passes through. D89.6: say which, never let the picture
-              imply it. */}
-          {focus && first ? (
-            <p className="mj-converge-grain">
-              {first.grain === "states"
-                ? copy.grainStates(first.states.filter((state) => state.depth === 0).length - 2)
-                : copy.grainMethods(
-                    first.lanes.filter((lane) => lane.depth === 0).length,
-                    label(focus),
-                  )}
-            </p>
-          ) : null}
+        {focusId ? (
+          <p>
+            <a className="mj-strand-back" href={figureHref(null, open)}>
+              {copy.back}
+            </a>
+          </p>
+        ) : null}
 
-          {/* A cap that bites is reported. `maxHops` biting makes `expansionOf`
-              return "nothing finer is recorded", which this page would draw as a
-              method fan — identical to a slot the literature genuinely has
-              nothing finer for. Silence here would be the surface asserting the
-              stronger of two readings it cannot tell apart. */}
-          {first?.truncated ? <p className="mj-converge-caveat">{copy.truncatedNote}</p> : null}
-          {first && !first.chainConsistent ? (
-            <p className="mj-converge-caveat">{copy.inconsistentNote}</p>
-          ) : null}
-
-          <SizeControl focus={focusId} open={open} current={currentSize} copy={copy} />
-
-          <div className="mj-strand-body">
-            <div>
-              {/* Two client components, and neither of them draws anything: the
-                  viewport moves the figure, and `CanvasContinuity` changes how a
-                  same-page link is followed so the drawing rearranges instead of
-                  the document being replaced. The figure inside still arrives
-                  from the server as links, so a reader with JavaScript off gets
-                  the same figure at the same place — fixed, and navigating. */}
-              <CanvasContinuity renderedAt={atParam}>
-                <InfiniteCanvas
-                  initial={viewport}
-                  label={copy.canvasLabel(focus ? label(focus) : copy.heading)}
-                  locale={locale}
-                  fill
-                >
-                  {drawn.map((figure) => (
-                    <ConvergeCanvas
-                      key={figure.subject.id}
-                      diagram={figure.diagram}
-                      locale={locale}
-                      title={label(figure.subject)}
-                      subjectId={figure.subject.id}
-                      atlas={atlas}
-                      // One set across all four figures — see `claimed`. Built
-                      // here because this is the component that knows how many
-                      // figures the page is drawing.
-                      claimed={claimed}
-                    />
-                  ))}
-                </InfiniteCanvas>
-              </CanvasContinuity>
-
-              <p className="mj-strand-note">
-                {collapsed > 0 ? copy.collapsed(collapsed) : copy.allOpen}
+        {drawn.length > 0 ? (
+          <>
+            {/* What this figure is. A chain of shared circles and a fan of
+                fillers are different claims — "every way across passes through
+                this object" versus "these are the recorded ways across" — and a
+                reader who takes the second for the first reads three ways to
+                estimate an observable as three objects every estimate passes
+                through. D89.6: say which, never let the picture imply it. */}
+            {focus && first ? (
+              <p className="mj-converge-grain">
+                {first.grain === "states"
+                  ? copy.grainStates(first.states.filter((state) => state.depth === 0).length - 2)
+                  : copy.grainMethods(
+                      first.lanes.filter((lane) => lane.depth === 0).length,
+                      label(focus),
+                    )}
               </p>
-              {/* Both limits, in the engine's own words rather than this
-                  component's — see `converge-notes.ts`. The node page says the
-                  same two things about the same two caps now, and it says them
-                  in the same sentences because there is one copy of each. */}
-              {droppedOpen > 0 ? (
-                <p className="mj-strand-note">{notes.droppedOpen(droppedOpen, CONVERGE_OPEN_MAX)}</p>
-              ) : null}
-              {capped > 0 ? (
-                <p className="mj-strand-note">{notes.cappedInside(capped)}</p>
-              ) : null}
-              <p className="mj-strand-note">{copy.routes(delegated, partly, whole)}</p>
-            </div>
-            {focusId ? (
-              <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} open={open} />
             ) : null}
-          </div>
 
-          {/* Everything written about the figure, behind one disclosure.
+            {/* A cap that bites is reported. `maxHops` biting makes
+                `expansionOf` return "nothing finer is recorded", which this page
+                would draw as a method fan — identical to a slot the literature
+                genuinely has nothing finer for. Silence here would be the
+                surface asserting the stronger of two readings it cannot tell
+                apart. */}
+            {first?.truncated ? <p className="mj-converge-caveat">{copy.truncatedNote}</p> : null}
+            {first && !first.chainConsistent ? (
+              <p className="mj-converge-caveat">{copy.inconsistentNote}</p>
+            ) : null}
 
-              > *"minimal text so maybe an info button or something that creates
-              > a popup"* — owner, session-103 inbox
-
-              A `<details>` and **not** an onClick popup, which is the obvious
-              build and the wrong one here: a control that only works after
-              hydration has no address, so nothing links to it, no crawler sees
-              it, and a reader with JavaScript off cannot reach it (D88.2). That
-              exact bug cost two sessions on `?category=`. `<details>` is the
-              idiom this surface already uses for the rail, it opens with no
-              JavaScript at all, and `curl` still returns every word inside it.
-
-              Shut by default, which is the change: 3,565 characters and 41 list
-              items used to sit under the canvas unasked. What is inside is not
-              decoration — the linear reading is what a screen reader, a printout
-              and `curl` get, and it is the only place a lane's standing is
-              stated in words and its full untruncated name appears. Hidden, not
-              removed, and one click from the figure it describes. */}
-          <details className="mj-canvas-reading">
-            <summary>{copy.readingSummary}</summary>
-          <div className="mj-strand-key">
-            <p className="mj-strand-lede">{copy.reading}</p>
-            <h2 className="mj-converge-lines-heading">{copy.keyHeading}</h2>
-            <Key copy={copy} />
-          </div>
-
-          <h2 className="mj-converge-lines-heading">{copy.linesHeading}</h2>
-          {drawn.map((figure) => (
-            <div key={figure.subject.id}>
-              {/* Which figure this list is of. Only when there is more than one:
-                  the unfocused surface draws all four roots, and four ordered
-                  lists in a row under one heading is a reading that cannot be
-                  followed — the linear reading is the one a screen reader and a
-                  printout get, so it is the one that must not be ambiguous. */}
-              {drawn.length > 1 ? (
-                <h3 className="mj-converge-lines-subject">
-                  <a href={figureHref(figure.subject.id, open)}>{label(figure.subject)}</a>
-                </h3>
-              ) : null}
-              <Lines diagram={figure.diagram} copy={copy} />
-            </div>
-          ))}
-
-          {/* Only when one figure is drawn.
-
-              `shared` and `unpublishedCount` come from the first figure, and on
-              the unfocused overview there are four — so this stated the shared
-              circles and the unpublished count of one root as facts about the
-              page. A count over a mixed population names no problem: the
-              sentence was true of `drawn[0]` and false of what the reader was
-              looking at. `collapsedCount` a few lines up is aggregated across
-              all four because it can be; these two cannot, because "2 ways
-              arrive at Linear ODE system" is a fact about one figure. */}
-          {focus && first ? (
-            <ul className="mj-converge-facts">
-              {shared.map((state) => {
-                const named = layerState(STATE_VOCABULARY, state.stateId);
-                return (
-                  <li key={state.key}>
-                    {copy.meets(named ? label(named) : state.stateId, state.arriving, state.leaving)}
-                  </li>
-                );
-              })}
-              <li>
-                {first.unpublishedCount > 0
-                  ? copy.unpublishedNote(first.unpublishedCount)
-                  : copy.noneUnpublished}
-              </li>
-            </ul>
-          ) : null}
-
-          {census ? (
-            <section className="mj-converge-crossings">
-              <h2>
-                {copy.crossHeading(
-                  layerState(STATE_VOCABULARY, census.stateId)
-                    ? label(layerState(STATE_VOCABULARY, census.stateId)!)
-                    : census.stateId,
-                )}
-              </h2>
-              <p>
-                {copy.crossTally(census.total, census.recorded, census.unpinned, census.unpublished)}
-              </p>
-              {census.examples.length > 0 ? (
-                <ul>
-                  {census.examples.map((crossing) => (
-                    <li key={crossing.key}>
-                      <a href={crossing.inHref}>{crossing.inLabel}</a>
-                      {" → "}
-                      <a href={crossing.outHref}>{crossing.outLabel}</a>
-                    </li>
-                  ))}
-                </ul>
-              ) : (
-                <p>{copy.crossNone}</p>
-              )}
-              {census.examplesTruncated ? (
-                <p>{copy.crossMore(census.examples.length, census.unpublished)}</p>
-              ) : null}
-              <p className="mj-converge-caveat">{copy.crossCaveat}</p>
-            </section>
-          ) : null}
-
-          {/* The focused slot's own write-up, which this surface never linked.
-              Measured before it existed: the converge page emitted 19 hrefs and
-              not one of them was the page for the thing it was drawing. */}
-          </details>
-
-          {/* Outside the disclosure on purpose. This is the one link on the page
-              to the write-up for the thing being drawn, and the surface shipped
-              without it for several sessions — 19 hrefs and not one of them the
-              subject's own page. Putting it back behind a fold would undo that. */}
-          {focus ? (
-            <p className="mj-converge-own">
-              <a href={`/repository/layers/${focus.id}`}>{copy.ownPage}</a>
+            <p className="mj-strand-note">
+              {collapsed > 0 ? copy.collapsed(collapsed) : copy.allOpen}
             </p>
-          ) : null}
-        </>
-      ) : (
-        <p>{copy.nothing}</p>
-      )}
+            {/* Both limits, in the engine's own words rather than this
+                component's — see `converge-notes.ts`. The node page says the
+                same two things about the same two caps now, and it says them in
+                the same sentences because there is one copy of each. */}
+            {droppedOpen > 0 ? (
+              <p className="mj-strand-note">{notes.droppedOpen(droppedOpen, CONVERGE_OPEN_MAX)}</p>
+            ) : null}
+            {capped > 0 ? <p className="mj-strand-note">{notes.cappedInside(capped)}</p> : null}
+            <p className="mj-strand-note">{copy.routes(delegated, partly, whole)}</p>
 
-      {/* Every step, not the two that converge.
-          This list *was* `convergingSlots`, and the mismatch between what it
-          offered and what the page could draw is the whole defect: 16 slots were
-          addressable, rendered nothing, and appeared nowhere to click. It is
-          `drawableSlots` now — the same predicate the layout branches on, so the
-          navigation and the renderer cannot hold different opinions about what
-          exists. */}
-      <section>
-        <h2>{copy.pickAll}</h2>
-        <p>{copy.pickConverging(converging.length)}</p>
-        <ul className="mj-converge-picks">
-          {candidates.map((item) => (
-            <li key={item.id}>
-              {item.id === focus?.id ? (
-                <strong aria-current="true">{label(item)}</strong>
-              ) : (
-                <a href={figureHref(item.id, open)}>{label(item)}</a>
-              )}
-            </li>
-          ))}
-        </ul>
-      </section>
+            <h2 className="mj-converge-lines-heading">{copy.readingSummary}</h2>
+            <h3 className="mj-converge-lines-heading">{copy.linesHeading}</h3>
+            {drawn.map((figure) => (
+              <div key={figure.subject.id}>
+                {/* Which figure this list is of. Only when there is more than
+                    one: the unfocused surface draws all four roots, and four
+                    ordered lists in a row under one heading is a reading that
+                    cannot be followed — this is the reading a screen reader and
+                    a printout get, so it is the one that must not be
+                    ambiguous. */}
+                {drawn.length > 1 ? (
+                  <h4 className="mj-converge-lines-subject">
+                    <a href={figureHref(figure.subject.id, open)}>{label(figure.subject)}</a>
+                  </h4>
+                ) : null}
+                <Lines diagram={figure.diagram} copy={copy} />
+              </div>
+            ))}
 
-      {/* The counted census. It lived only inside `?view=list`, so the numbers
-          saying how complete this graph honestly is were reachable only from a
-          surface that no longer exists. Rendered from the one component rather
-          than restated here: a census written twice drifts, and more quietly
-          than a link does. */}
-      <details className="mj-canvas-reading">
-        <summary>{copy.censusSummary}</summary>
-        <LayerCensusPanel graph={graph} corpus={corpus} locale={locale} />
-      </details>
-    </section>
+            {/* Only when one figure is drawn.
+
+                `shared` and `unpublishedCount` come from the first figure, and
+                on the unfocused overview there are four — so this stated the
+                shared circles and the unpublished count of one root as facts
+                about the page. A count over a mixed population names no
+                problem: the sentence was true of `drawn[0]` and false of what
+                the reader was looking at. `collapsedCount` above is aggregated
+                across all four because it can be; these two cannot, because "2
+                ways arrive at Linear ODE system" is a fact about one figure. */}
+            {focus && first ? (
+              <ul className="mj-converge-facts">
+                {shared.map((state) => {
+                  const named = layerState(STATE_VOCABULARY, state.stateId);
+                  return (
+                    <li key={state.key}>
+                      {copy.meets(named ? label(named) : state.stateId, state.arriving, state.leaving)}
+                    </li>
+                  );
+                })}
+                <li>
+                  {first.unpublishedCount > 0
+                    ? copy.unpublishedNote(first.unpublishedCount)
+                    : copy.noneUnpublished}
+                </li>
+              </ul>
+            ) : null}
+
+            {census ? (
+              <section className="mj-converge-crossings">
+                <h3>
+                  {copy.crossHeading(
+                    layerState(STATE_VOCABULARY, census.stateId)
+                      ? label(layerState(STATE_VOCABULARY, census.stateId)!)
+                      : census.stateId,
+                  )}
+                </h3>
+                <p>
+                  {copy.crossTally(census.total, census.recorded, census.unpinned, census.unpublished)}
+                </p>
+                {census.examples.length > 0 ? (
+                  <ul>
+                    {census.examples.map((crossing) => (
+                      <li key={crossing.key}>
+                        <a href={crossing.inHref}>{crossing.inLabel}</a>
+                        {" → "}
+                        <a href={crossing.outHref}>{crossing.outLabel}</a>
+                      </li>
+                    ))}
+                  </ul>
+                ) : (
+                  <p>{copy.crossNone}</p>
+                )}
+                {census.examplesTruncated ? (
+                  <p>{copy.crossMore(census.examples.length, census.unpublished)}</p>
+                ) : null}
+                <p className="mj-converge-caveat">{copy.crossCaveat}</p>
+              </section>
+            ) : null}
+
+            {/* The focused slot's own write-up.
+
+                This link used to sit outside the disclosure on purpose, and the
+                comment that put it there said so: the surface once emitted 19
+                hrefs and not one of them was the page for the thing it was
+                drawing, so hiding it again would undo that fix. That reasoning
+                is **overruled here, explicitly**, because the place it named no
+                longer exists — there is no visible prose on this page at all,
+                so "outside the fold" is not a location any more. What replaces
+                it is weaker but real: the link is in the document, it is one
+                Tab from the canvas, and `:focus-within` makes this block
+                visible the moment a keyboard reader reaches it. W5's state and
+                process cards are where it becomes a visible control again. */}
+            {focus ? (
+              <p className="mj-converge-own">
+                <a href={`/repository/layers/${focus.id}`}>{copy.ownPage}</a>
+              </p>
+            ) : null}
+          </>
+        ) : null}
+
+        {/* The rail, which is not deleted.
+
+            It is genuinely useful and W5 turns it into the state card and the
+            process card. Until then it lives here rather than on the canvas:
+            every address it emits stays in the document, a screen reader still
+            gets "where you are", and none of it competes with the drawing for
+            the screen the owner asked to give entirely to the drawing. Its
+            write-up link and its breadcrumb are the same links `/repository
+            /layers/<id>` carries, so nothing here is the only way to reach
+            anything. */}
+        {focusId ? (
+          <Rail graph={graph} focusId={focusId} locale={locale} copy={copy} open={open} />
+        ) : null}
+
+        {/* Every step, not the two that converge.
+            This list *was* `convergingSlots`, and the mismatch between what it
+            offered and what the page could draw is the whole defect: 16 slots
+            were addressable, rendered nothing, and appeared nowhere to click. It
+            is `drawableSlots` now — the same predicate the layout branches on,
+            so the navigation and the renderer cannot hold different opinions
+            about what exists. */}
+        <section>
+          <h2>{copy.pickAll}</h2>
+          <p>{copy.pickConverging(converging.length)}</p>
+          <ul className="mj-converge-picks">
+            {candidates.map((item) => (
+              <li key={item.id}>
+                {item.id === focus?.id ? (
+                  <strong aria-current="true">{label(item)}</strong>
+                ) : (
+                  <a href={figureHref(item.id, open)}>{label(item)}</a>
+                )}
+              </li>
+            ))}
+          </ul>
+        </section>
+
+        {/* The counted census. It lived only inside `?view=list`, so the numbers
+            saying how complete this graph honestly is were reachable only from a
+            surface that no longer exists. Rendered from the one component rather
+            than restated here: a census written twice drifts, and more quietly
+            than a link does. */}
+        <section>
+          <h2>{copy.censusSummary}</h2>
+          <LayerCensusPanel graph={graph} corpus={corpus} locale={locale} />
+        </section>
+      </div>
+    </CanvasContinuity>
   );
 }

@@ -10776,25 +10776,20 @@ div.mj-rail-row:hover {
 @media (max-width: 60rem) {
   .mj-strand-body { grid-template-columns: minmax(0, 1fr); }
 }
-/* The 1200px reading measure is right for every other public page and wrong for
-   this one, for the same reason as the rule below: here the figure is the page.
-   Scoped to `.mj-map-site`, which only the map index sets — a node's page and
-   both paper pages carry `.mj-layers-site` and must keep their column. */
-.mj-map-site.mj-public-site .mj-public-frame {
-  width: 100%;
-  padding-inline: var(--sp-4);
-}
-/* The map surface only: give the figure the width the page chrome was holding.
-   `.mj-strand-view` is a reading column — the right shape for a document — and
-   the owner's ruling is that this one page is not a document with a picture in
-   it, the picture *is* the page. Overriding here rather than adding a variant
-   class to the section: the selector is already scoped to the route by
-   `.mj-layers-site`, which `PublicSite` sets, so nothing else can pick it up. */
-.mj-map-site .mj-strand-view {
-  max-width: 100%;
-  padding-left: var(--sp-3);
-  padding-right: var(--sp-3);
-}
+/* Two rules used to sit here, both scoped on `.mj-map-site`, and both were
+   partial escapes from a page frame that no longer exists on that route:
+
+     .mj-map-site.mj-public-site .mj-public-frame { width:100%; padding-inline:var(--sp-4) }
+     .mj-map-site .mj-strand-view { max-width:100%; padding-left/right:var(--sp-3) }
+
+   They are deleted rather than zeroed. `/repository/layers` now renders with
+   `chrome="none"`, so there is no `.mj-public-frame` element to widen, and the
+   map no longer emits `.mj-strand-view` at all — its root is `.mj-map-shell`
+   below. A rule that widens an element nothing renders is not a safe leftover:
+   it reads as the mechanism that makes the map full-bleed, and the next person
+   to change the width would change it here and see nothing happen. The
+   `.mj-strand-view` and `.mj-strand-body` rules above still apply to the node
+   and paper pages, which do render a document with a figure in it. */
 /* The canvas may legitimately be wider than the column, so it scrolls inside its
    own box and the page body never scrolls sideways. */
 .mj-strand-scroll {
@@ -10956,10 +10951,13 @@ div.mj-rail-row:hover {
   font-weight: 400;
   text-transform: lowercase;
 }
-.mj-strand-rail-count {
-  font-family: var(--font-mono);
-  opacity: 0.7;
-}
+/* `.mj-strand-rail-count` was here, a mono pill for the number beside "Ways
+   through". It is deleted with the element: the heading rendered `ways
+   through7`, because the only separator between the label and the count was
+   this rule's own font change, and the rail now lives inside `.mj-map-reading`
+   where a screen reader, a printout and `curl` see no CSS at all. The count is
+   part of the sentence now — `copy.waysCount(n)` — so there is nothing left for
+   this selector to match. */
 .mj-strand-rail ul,
 .mj-strand-rail-path {
   margin: 0;
@@ -12071,37 +12069,60 @@ div.mj-rail-row:hover {
    one — the owner's *"map itself should take up most of the webpage/screen"*.
 
    `dvh`, not `vh`: on a phone `vh` is the viewport with the URL bar retracted,
-   so a `100vh - chrome` box is taller than what is actually on screen until the
-   reader scrolls, and the bottom of the canvas — where the size links live —
-   sits under the browser's own bar. `dvh` tracks the bar as it moves.
+   so a `100vh` box is taller than what is actually on screen until the reader
+   scrolls, and the bottom of the canvas sits under the browser's own bar. `dvh`
+   tracks the bar as it moves.
 
-   The subtraction is the page chrome above the canvas measured at its tallest
-   (the site header, the back link, the heading and the one-line lede), plus the
-   size rungs below it. Deliberately not a `calc()` over custom properties that
-   nothing else sets: `check-token-vars` exists because this stylesheet has
-   already carried `var()`s pointing at properties that were deleted elsewhere.
+   **It used to be `calc(100dvh - 15rem)`, and the 15rem is gone.** That number
+   was a hand measurement of the page chrome above and below the canvas — the
+   site header, the back link, the heading, the one-line lede, and the size
+   rungs underneath — written as a constant because a `calc()` over custom
+   properties nothing else sets is a `var()` waiting to be deleted elsewhere.
+   The constant was correct and is now wrong **by construction**: this route
+   renders `chrome="none"`, the heading and the lede moved into the clipped
+   reading, and the size rungs moved into the information box. The only thing
+   above the canvas is a `position: absolute` overlay that takes no flow height,
+   which is exactly what makes plain `100dvh` the true answer rather than
+   another estimate.
 
-   `min-height` keeps the old fixed box as a floor, so a short window — a laptop
-   in a split screen, a phone in landscape — still gets a canvas it can work in
-   rather than a 90px slot. */
+   `min-height` is gone with it. A floor of 28rem existed so a short window did
+   not leave a 90px slot under a fixed amount of chrome; with the canvas *being*
+   the viewport, a floor taller than the viewport is a page that scrolls to show
+   a map that was supposed to fill the screen. A 300px-tall window now gets a
+   300px map, which is all of it. */
 .mj-canvas-viewport--fill {
-  height: calc(100dvh - 15rem);
-  min-height: 28rem;
+  height: 100dvh;
+  /* The base rule offers `resize: vertical` so a reader can enlarge a figure
+     embedded in a document. Here the figure is the whole document: the handle
+     would sit in the bottom-right corner of the screen and dragging it would
+     make the page scroll to reveal a canvas taller than the viewport. */
+  resize: none;
+  /* Edge to edge. The base rule's hairline and card radius frame a figure
+     *inside* a page; drawn against the viewport edge they read as a browser
+     chrome that does not exist. `--bg-0` rather than the base `--bg-1` for the
+     same reason — full-bleed, the canvas is the page surface, not a panel
+     sitting on one. */
+  border: 0;
+  border-radius: 0;
+  background: var(--bg-0);
   /* `none`, overriding the `pan-y` above, and the override is deliberate rather
      than inherited-by-accident.
 
      `pan-y` was chosen for a figure that is one element of a scrolling
      document; the argument for it is "a reader must be able to get past this
-     thing". On a surface that is `100dvh - 15rem` tall, that argument runs the
-     other way: with `pan-y` a phone reader cannot drag the map north or south
-     **at all** — the only direction the vertical swipe is given back to is the
-     page, and the map is most of the page. A map you can only pan sideways is
-     not a map.
+     thing". Here the canvas is the entire viewport, so there is nothing to get
+     past — the page below it is empty and the page above it is empty. Giving
+     the vertical swipe back to the document would give it to nothing at all,
+     and cost the reader the ability to drag the map north or south, which is
+     half of what a map is for.
 
-     What the reader gets instead of swiping over the canvas: about 15rem of
-     page chrome above and below it to scroll from, the arrow keys, and — since
-     `touch-action` says nothing about a second finger — pinch-to-zoom, which
-     still reaches the pinch handler here exactly as it does above. */
+     **Re-decided rather than inherited.** The `100dvh - 15rem` this rule used
+     to be left about 15rem of page chrome to scroll from, and the argument
+     above named it. That chrome is gone, which strengthens the case for `none`
+     instead of weakening it: there is now no scroll to protect. What the reader
+     still has is the arrow keys, the named sizes in the information box, and —
+     since `touch-action` says nothing about a second finger — pinch-to-zoom,
+     which reaches the pinch handler here exactly as it does above. */
   touch-action: none;
   /* A two-finger horizontal swipe over this surface is a pan (infinite-canvas
      .tsx's `onWheel` binds a plain wheel to panning on this surface only), and
@@ -12169,4 +12190,402 @@ div.mj-rail-row:hover {
    browser is entitled to stop acting on. */
 .mj-canvas-viewport--gesturing .mj-canvas-layer {
   will-change: transform;
+}
+
+/* ===========================================================================
+   The map surface — `/repository/layers`, and nothing else on the site.
+   ---------------------------------------------------------------------------
+   > *"The map page is an infinite canvas that takes up the entire page, only
+   > with an option/arrow to go back to the atlas page and a small overlayed
+   > information icon both in the top left."* — owner, ask H
+
+   Three things are load-bearing here and each one is invisible when it breaks:
+
+   1. The shell is exactly `100dvh` with `overflow: hidden`, so the canvas's own
+      `100dvh` cannot produce a one-pixel document scroll. A page that scrolls by
+      four pixels does not look broken, it looks like a scrollbar appearing and
+      disappearing as the reader pans.
+   2. The overlay is `position: absolute` and therefore contributes no flow
+      height. That is the precondition for the canvas being `100dvh` rather than
+      `100dvh` minus another hand-measured constant — see the rewritten comment
+      on `.mj-canvas-viewport--fill`.
+   3. `.mj-repository-site` still rides on the root element, set by `page.tsx`
+      and passed straight through `PublicSite`'s `chrome="none"` branch. Every
+      Atlas view transition is scoped on `:root:has(.mj-repository-site)`; drop
+      it and they all stop with no error.
+   =========================================================================== */
+.mj-public-site--bare {
+  /* `height`, not the base rule's `min-height`. `min-height: 100dvh` on a page
+     whose only child is already `100dvh` is harmless; `min-height` plus any
+     future block-level sibling is a document that scrolls. Stating the height
+     makes the second case fail visibly instead of quietly. */
+  height: 100dvh;
+  min-height: 0;
+  overflow: hidden;
+}
+.mj-map-shell {
+  position: relative;
+  height: 100%;
+}
+/* Nothing drawn: the graph produced no figure at all. Centred rather than left
+   at the top-left, because on a chrome-less page a sentence in the corner reads
+   as a caption for something that is missing rather than as the whole content. */
+.mj-map-empty {
+  display: grid;
+  place-items: center;
+  height: 100%;
+  margin: 0;
+  padding: var(--sp-6);
+  color: var(--text-1);
+  font-size: var(--fs-16);
+  text-align: center;
+}
+
+/* --- the two controls, top left ------------------------------------------ */
+.mj-map-overlay {
+  position: absolute;
+  top: var(--sp-4);
+  left: var(--sp-4);
+  z-index: 2;
+  display: flex;
+  align-items: center;
+  gap: var(--sp-2);
+}
+/* A framed 32px button rather than a bare glyph. Over a canvas the reader can
+   pan, a control with no background sits on whatever line happens to be under
+   it — measured on the four-root overview, where the top-left corner is drawn
+   through. The border and the panel fill are what keep it a control. */
+.mj-map-overlay-button {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 32px;
+  height: 32px;
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  background: var(--bg-1);
+  text-decoration: none;
+}
+.mj-map-overlay-button:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+.mj-map-overlay-button:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+
+/* --- the figure in words -------------------------------------------------- */
+/* Clipped to a pixel, not removed, and not `.sr-only`.
+
+   `.sr-only` is the site's utility for naming an icon control, and it is used
+   on about two dozen labels. This block is a different thing: it holds the
+   entire linear reading of the figure — every line, its standing in words, the
+   rail, the census and roughly sixty links — and it needs two behaviours
+   `.sr-only` deliberately does not have.
+
+   `:focus-within` reveals it. Every link inside is a real Tab stop, and a Tab
+   stop that cannot be seen when it has focus fails WCAG 2.4.7 and is, more
+   plainly, a control that seems to do nothing. Revealed it is a panel over the
+   map; it disappears again as soon as focus leaves.
+
+   `@media print` reveals it too. `repository-converge-view.tsx` records that
+   this reading is what "a screen reader, a printout and `curl` get", and a clip
+   rectangle satisfies two of those three. `position: fixed` while clipped, so
+   the shell's `overflow: hidden` cannot eat it. */
+.mj-map-reading {
+  position: fixed;
+  left: 0;
+  bottom: 0;
+  z-index: 40;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: 0;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+.mj-map-reading:focus-within {
+  left: var(--sp-4);
+  bottom: var(--sp-4);
+  width: min(calc(100vw - var(--sp-8)), 38rem);
+  height: min(70dvh, 34rem);
+  padding: var(--sp-5);
+  overflow: auto;
+  overscroll-behavior: contain;
+  clip: auto;
+  white-space: normal;
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-card);
+  color: var(--text-1);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+  font-size: var(--fs-13);
+}
+.mj-map-reading h1 {
+  margin: 0 0 var(--sp-3);
+  font-family: var(--font-display);
+  /* The display face is set at 400 everywhere in this stylesheet; an h1 would
+     otherwise inherit the user-agent 700 and synthesise a weight it does not
+     have. */
+  font-weight: 400;
+  font-size: var(--fs-20);
+  line-height: 1.2;
+}
+.mj-map-reading h2,
+.mj-map-reading h3,
+.mj-map-reading h4 {
+  margin: var(--sp-5) 0 var(--sp-2);
+  font-size: var(--fs-14);
+  font-weight: 500;
+  color: var(--text-0);
+}
+@media print {
+  /* A printout has no viewport to fill and no gestures to offer, so the canvas
+     is a picture and this is the text of it. Both print. */
+  .mj-public-site--bare {
+    height: auto;
+    overflow: visible;
+  }
+  .mj-map-reading {
+    position: static;
+    width: auto;
+    height: auto;
+    clip: auto;
+    white-space: normal;
+    overflow: visible;
+  }
+  /* The two controls are navigation, and navigation does not print. */
+  .mj-map-overlay {
+    display: none;
+  }
+}
+
+/* --- the information box -------------------------------------------------- */
+/* Same construction as `.mj-account-modal-backdrop` (see its comment for the
+   measured reason `grid-template-rows: minmax(0, 1fr)` is there: without it
+   `place-items: center` auto-sizes the row, the dialog's `max-height: 100%`
+   resolves against its own content, and an 860px viewport rendered a 1252px
+   dialog with nothing to scroll).
+
+   `[hidden]` is spelled out because this rule sets `display`, and a `display`
+   declaration beats the `hidden` attribute's user-agent `display: none`. The
+   box renders on every response — all five sections, so `curl` and a crawler
+   get the whole explanation whatever `?about=` says — and without this line a
+   shut box would cover the map. */
+.mj-map-info-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  grid-template-rows: minmax(0, 1fr);
+  padding: var(--sp-6);
+  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+}
+.mj-map-info-backdrop[hidden] {
+  display: none;
+}
+.mj-map-info {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 54rem);
+  max-height: 100%;
+  padding: var(--sp-6);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+}
+/* The shell takes focus on open and is not a Tab stop, so its focus ring would
+   be a ring nobody asked for — same rule as `.mj-account-modal:focus-visible`. */
+.mj-map-info:focus-visible {
+  outline: none;
+}
+.mj-map-info-close {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  font-size: var(--fs-20);
+  line-height: 1;
+  text-decoration: none;
+}
+.mj-map-info-eyebrow {
+  margin: 0 0 var(--sp-4);
+  padding-right: var(--sp-8);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-map-info-layout {
+  display: flex;
+  gap: var(--sp-6);
+  align-items: flex-start;
+  min-height: 0;
+}
+
+/* The collapsible sidebar. A `<details>`, which is the idiom the rail already
+   uses on this surface: it collapses with no JavaScript, and React holds its
+   `open` in state so a re-render cannot spring it back open under a reader who
+   just shut it. Collapsed it keeps its summary, so the control that reopens it
+   is where the control that closed it was. */
+.mj-map-info-nav {
+  flex: 0 0 auto;
+  width: 13rem;
+  min-width: 0;
+}
+.mj-map-info-nav:not([open]) {
+  width: auto;
+}
+.mj-map-info-nav > summary {
+  cursor: pointer;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-map-info-nav ul {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-1);
+  margin: var(--sp-3) 0 0;
+  padding: 0;
+  list-style: none;
+}
+.mj-map-info-nav li a,
+.mj-map-info-nav li strong {
+  display: block;
+  padding: var(--sp-2) var(--sp-3);
+  border-radius: var(--radius-control);
+  font-size: var(--fs-13);
+  font-weight: 400;
+  text-decoration: none;
+}
+.mj-map-info-nav li a {
+  color: var(--text-1);
+}
+.mj-map-info-nav li a:hover {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+/* The section being read. A word label rather than colour alone, because
+   `aria-current` is the fact and the background is only its rendering. */
+.mj-map-info-nav li strong {
+  color: var(--text-0);
+  background: var(--bg-2);
+}
+
+.mj-map-info-body {
+  flex: 1 1 auto;
+  min-width: 0;
+  max-height: 100%;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  /* Room for the scrollbar this box grows on a phone. Measured at 375×812 with
+     the Japanese copy: the legend sentences reached the right edge and ran
+     under the overlay scrollbar, because a `scrollbar-gutter` is not reserved
+     for an overlay scrollbar and the line box does not know it is there. */
+  padding-right: var(--sp-2);
+}
+.mj-map-info-body:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: 2px;
+}
+.mj-map-info-section h2 {
+  margin: 0 0 var(--sp-4);
+  font-family: var(--font-display);
+  font-weight: 400;
+  font-size: var(--fs-20);
+  line-height: 1.2;
+  color: var(--text-0);
+}
+.mj-map-info-section p {
+  margin: 0 0 var(--sp-4);
+  max-width: 62ch;
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.65;
+}
+.mj-map-info-section[hidden] {
+  display: none;
+}
+.mj-map-info-list {
+  display: flex;
+  flex-direction: column;
+  gap: var(--sp-3);
+  margin: 0 0 var(--sp-5);
+  padding: 0;
+  list-style: none;
+  max-width: 62ch;
+  color: var(--text-1);
+  font-size: var(--fs-14);
+  line-height: 1.6;
+}
+/* The legend, one mark per row rather than the wrapping row `.mj-strand-legend`
+   lays out. The marks are the canvas's own — same classes, same geometry from
+   `legendMark()` — so a change to the drawing reaches the key. */
+.mj-map-info-legend {
+  flex-direction: column;
+  gap: var(--sp-3);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+}
+.mj-map-info-legend li {
+  gap: var(--sp-4);
+}
+
+.mj-map-info-footer {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-3) var(--sp-5);
+  margin-top: var(--sp-5);
+  padding-top: var(--sp-4);
+  border-top: var(--border-hairline) solid var(--border-0);
+}
+.mj-map-info-settings,
+.mj-map-info-elsewhere {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: var(--sp-2) var(--sp-3);
+}
+.mj-map-info-footer-label {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-map-info-elsewhere a {
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  text-decoration: none;
+}
+.mj-map-info-elsewhere a:hover {
+  color: var(--accent);
+  text-decoration: underline;
+}
+
+/* One column below the width at which a 13rem sidebar and a 62ch measure stop
+   fitting side by side. Measured against the Japanese copy, which is the wider
+   of the two: `--fs-14` Japanese runs about 1.9× the em width of the English
+   for the same sentence, so the English fits at sizes the Japanese does not. */
+@media (max-width: 46rem) {
+  .mj-map-info-layout {
+    flex-direction: column;
+    gap: var(--sp-4);
+  }
+  .mj-map-info-nav,
+  .mj-map-info-nav:not([open]) {
+    width: 100%;
+  }
+  .mj-map-info-nav ul {
+    flex-direction: row;
+    flex-wrap: wrap;
+  }
 }

@@ -25,6 +25,38 @@ export function ChevronIcon(props: IconProps) {
   return <Icon {...props}><path d="m6 4 4 4-4 4" /></Icon>;
 }
 
+/**
+ * Back, as an arrow and not a chevron.
+ *
+ * `ChevronIcon` above is the disclosure mark — it points at something that will
+ * expand where it is. This one leaves the page, and the shaft is what says so:
+ * on the map's overlay it is one of exactly two controls with no label beside
+ * it, so the glyph has to carry the whole distinction between "open this" and
+ * "go back". Drawn to the same 16×16 box and the same 1.35 stroke as the rest,
+ * with the head at x=6 so the arrow reads as centred despite being asymmetric.
+ */
+export function ArrowLeftIcon(props: IconProps) {
+  return <Icon {...props}><path d="M13 8H3.5M7 4 3 8l4 4" /></Icon>;
+}
+
+/**
+ * Information — a lower-case i in a ring.
+ *
+ * The dot is a filled `<circle>` rather than a zero-length stroked path with a
+ * round cap: the path form renders as a dot in most engines and as nothing in
+ * some, which is a mark that disappears on one reader's machine and nowhere
+ * else. `MoreIcon` above sets the same precedent for small solid dots.
+ */
+export function InfoIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <circle cx="8" cy="8" r="5.75" />
+      <path d="M8 7.4v3.2" />
+      <circle cx="8" cy="5.2" r="0.6" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
 export function MenuIcon(props: IconProps) {
   return <Icon {...props}><path d="M3 4.5h10M3 8h10M3 11.5h10" /></Icon>;
 }
