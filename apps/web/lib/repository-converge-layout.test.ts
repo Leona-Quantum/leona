@@ -24,6 +24,7 @@ import {
   tendonRunFor,
   runAcross,
   layoutConverge,
+  legendMark,
   type ConvergeDiagram,
   type ConvergeLane,
 } from "./repository/converge-layout.ts";
@@ -1522,6 +1523,33 @@ test("every strand pinches to a point at both circles and stands 2·half across 
     }
   }
   assert.ok(checked > 50, `only ${checked} outlines checked`);
+});
+
+test("the key's swatch is the same kind of shape the canvas draws", () => {
+  // **A legend drifts by staying still.** The key's mark was the literal lens the
+  // canvas drew before R14 and it stayed that lens through the tendons — three
+  // swatches, on every focused page, describing a shape nothing on the figure
+  // beside them had. Read on production after the deploy, not caught by anything:
+  // the layout tests measure the layout and the render tests render the canvas
+  // without its key.
+  //
+  // Command sequence, not coordinates. The mark is at legend scale and always
+  // will be; what must not diverge is the *kind* of shape. A ribbon outline is
+  // `M C L C L C L C Z`; the lens it replaced was `M C C Z`, so the old literal
+  // fails this and any future change to the drawn shape fails it too.
+  const commands = (d: string) => d.trim().split(/[\s,]+/).filter((token) => /^[A-Za-z]$/.test(token)).join("");
+  const lane = diagramFor("quantum-linear-solve").lanes[0]!;
+  const mark = legendMark();
+  assert.equal(
+    commands(mark.outline),
+    commands(lane.outline),
+    "the key's filled swatch is not the shape a strand is drawn as",
+  );
+  assert.equal(
+    commands(mark.spine),
+    commands(lane.d),
+    "the key's opened-line swatch is not the shape an opened line is drawn as",
+  );
 });
 
 test("no two shapes on one figure share a key", () => {

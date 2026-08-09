@@ -38,6 +38,7 @@ import {
   drawableSlots,
   figureHref,
   layoutConverge,
+  legendMark,
   type ConvergeDiagram,
   type ConvergeLane,
 } from "../lib/repository/converge-layout";
@@ -358,9 +359,20 @@ function KeyMark({
   kind: "strand" | "open" | "unpublished" | "unpinned" | "shared" | "inner" | "feed" | "atlas";
 }): React.ReactElement {
   const common = { width: 34, height: 18, viewBox: "0 0 34 18", "aria-hidden": true } as const;
-  // The same tapered outline the canvas emits, at legend scale: a lens between
-  // two points, pinched at both.
-  const body = "M 2 9 C 10 3, 24 3, 32 9 C 24 15, 10 15, 2 9 Z";
+  // **Emitted by the canvas's own geometry, not written out by hand.**
+  //
+  // It was a literal — `M 2 9 C 10 3, 24 3, 32 9 C 24 15, 10 15, 2 9 Z`, the lens
+  // the canvas drew before R14 — and it stayed that lens through the tendons,
+  // while every line on the figure beside it became a ribbon. Read on production
+  // after the deploy: three legend swatches drawing a shape nothing on the canvas
+  // draws any more, in a key whose own comment says copying the shapes is *"how a
+  // legend starts describing a picture that no longer looks like that"*. The
+  // comment was right and the code was not following it.
+  //
+  // `legendMark` lives in the layout module so the claim is checkable without
+  // rendering React, and so the next change to the drawn shape changes this mark
+  // with it.
+  const { outline: body, spine } = legendMark();
   if (kind === "shared" || kind === "inner") {
     return (
       <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
@@ -394,7 +406,7 @@ function KeyMark({
     return (
       <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
         <g className="mj-converge-lane mj-converge-lane--recorded mj-converge-lane--open">
-          <path className="mj-converge-spine" d="M 2 9 C 10 9, 24 9, 32 9" />
+          <path className="mj-converge-spine" d={spine} />
         </g>
       </svg>
     );
