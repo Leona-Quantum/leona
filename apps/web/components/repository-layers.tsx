@@ -51,7 +51,8 @@ import {
   type LayerMethod,
   type LayerNode,
 } from "../lib/repository/layers";
-import { figureHref, layoutConverge } from "../lib/repository/converge-layout";
+import { CONVERGE_OPEN_MAX, figureHref, layoutConverge } from "../lib/repository/converge-layout";
+import { convergeNotes } from "../lib/repository/converge-notes";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { paperTraces } from "../lib/repository/paper-traces";
@@ -438,6 +439,7 @@ function ProcessZoom({
   copy,
   viewport,
   open,
+  droppedOpen,
   at,
 }: {
   graph: LayerGraph;
@@ -446,8 +448,11 @@ function ProcessZoom({
   copy: LayersCopy;
   viewport: Viewport;
   open: ReadonlySet<string>;
+  /** How many of the reader's `?open=` values `CONVERGE_OPEN_MAX` refused. */
+  droppedOpen: number;
   at: string | null;
 }) {
+  const notes = convergeNotes(locale);
   const resolved = contractFor(graph, node);
   // **The same drawing as the index, of the same subject.** That is what makes
   // arriving here read as a zoom rather than as a different screen: the strand a
@@ -545,6 +550,15 @@ function ProcessZoom({
               to carry. Every link that *is* on the figure passes one. */}
           <a href={figureHref(mapId, [])}>{copy.stateOnMap}</a>
         </p>
+        {/* The two limits this figure can hit, said out loud — and until now
+            said on the index only. The page resolved `?open=` against the very
+            same cap and dropped the count on the floor, and never read
+            `depthCapped` at all, so one URL was honest on one surface and
+            silent on the other. Same engine, same two caps, same sentences:
+            they come from `converge-notes.ts` rather than from either
+            component's own copy table. */}
+        {droppedOpen > 0 ? <p>{notes.droppedOpen(droppedOpen, CONVERGE_OPEN_MAX)}</p> : null}
+        {diagram.depthCapped ? <p>{notes.depthCapped}</p> : null}
       </figcaption>
     </figure>
   );
@@ -1012,6 +1026,7 @@ export function LayerNodeView({
   locale,
   viewport = IDENTITY,
   open,
+  droppedOpen = 0,
   at = null,
 }: {
   graph: LayerGraph;
@@ -1021,6 +1036,12 @@ export function LayerNodeView({
   viewport?: Viewport;
   /** The reader's own `?open=`, carried in from the page they came from. */
   open?: ReadonlySet<string>;
+  /**
+   * And how many of it the cap refused. Not derivable from `open` — the values
+   * are gone by the time they arrive here — so the count travels with them or
+   * the figure cannot say what it left out.
+   */
+  droppedOpen?: number;
   /** The reader's own `?at=`, raw, so every address this page emits keeps it. */
   at?: string | null;
 }) {
@@ -1053,6 +1074,7 @@ export function LayerNodeView({
         copy={copy}
         viewport={viewport}
         open={open ?? EMPTY_OPEN}
+        droppedOpen={droppedOpen}
         at={at}
       />
       {isCapability(node) ? (

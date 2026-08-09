@@ -42,6 +42,7 @@ import {
   type ConvergeDiagram,
   type ConvergeLane,
 } from "../lib/repository/converge-layout";
+import { convergeNotes } from "../lib/repository/converge-notes";
 import { expansionOf } from "../lib/repository/state-graph";
 import { ancestorPath } from "../lib/repository/strand-layout";
 import { formatViewport, IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
@@ -70,10 +71,8 @@ interface ConvergeCopy {
   grainMethods: (n: number, slot: string) => string;
   truncatedNote: string;
   inconsistentNote: string;
-  depthNote: string;
   collapsed: (n: number) => string;
   allOpen: string;
-  droppedOpen: (n: number, max: number) => string;
   linesHeading: string;
   ownPage: string;
   pickAll: string;
@@ -138,14 +137,9 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       "The search for ways across hit its limit, so this figure is part of what the graph records rather than all of it.",
     inconsistentNote:
       "The shared objects are met in a different order on different routes, so they are not drawn as one line.",
-    depthNote:
-      "Something on this figure has more recorded inside it than this drawing goes. Open it on its own page to keep going.",
     collapsed: (n: number) =>
       `${n} line${n === 1 ? " has" : "s have"} something recorded inside that you have not opened.`,
     allOpen: "Everything on this figure that opens is open.",
-    droppedOpen: (n: number, max: number) =>
-      `This link asked to open ${n} more ${n === 1 ? "thing" : "things"} than the figure will hold at once. `
-      + `${max} are drawn; the rest are shown shut.`,
     linesHeading: "The lines on this figure",
     ownPage: "Read the full write-up",
     pickAll: "Every step you can open",
@@ -214,12 +208,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       "経路の探索が上限に達したため、この図はグラフが記録する全体ではなく、その一部です。",
     inconsistentNote:
       "共有される対象に出会う順序が経路によって異なるため、ひとつの線としては描いていません。",
-    depthNote:
-      "この図の描画の深さを超えて内側が記録されている線があります。その頁を開くと続きを見られます。",
     collapsed: (n: number) => `内側に記録がありまだ開いていない線が ${n} 本あります。`,
     allOpen: "この図で開ける線はすべて開いています。",
-    droppedOpen: (n: number, max: number) =>
-      `このリンクは、同時に開ける上限より ${n} 件多くを要求しました。${max} 件を描画し、残りは閉じたまま表示しています。`,
     linesHeading: "この図の線",
     ownPage: "解説を読む",
     pickAll: "開くことのできる工程",
@@ -646,6 +636,7 @@ export function ConvergeView({
 }): React.ReactElement {
   const lang: "en" | "ja" = locale === "ja" ? "ja" : "en";
   const copy = COPY[lang];
+  const notes = convergeNotes(lang);
   const candidates = drawableSlots(graph, STATE_VOCABULARY);
   const converging = convergingSlots(graph, STATE_VOCABULARY);
 
@@ -824,11 +815,15 @@ export function ConvergeView({
               <p className="mj-strand-note">
                 {collapsed > 0 ? copy.collapsed(collapsed) : copy.allOpen}
               </p>
+              {/* Both limits, in the engine's own words rather than this
+                  component's — see `converge-notes.ts`. The node page says the
+                  same two things about the same two caps now, and it says them
+                  in the same sentences because there is one copy of each. */}
               {droppedOpen > 0 ? (
-                <p className="mj-strand-note">{copy.droppedOpen(droppedOpen, CONVERGE_OPEN_MAX)}</p>
+                <p className="mj-strand-note">{notes.droppedOpen(droppedOpen, CONVERGE_OPEN_MAX)}</p>
               ) : null}
               {drawn.some((figure) => figure.diagram.depthCapped) ? (
-                <p className="mj-strand-note">{copy.depthNote}</p>
+                <p className="mj-strand-note">{notes.depthCapped}</p>
               ) : null}
               <p className="mj-strand-note">{copy.routes(delegated, partly, whole)}</p>
             </div>

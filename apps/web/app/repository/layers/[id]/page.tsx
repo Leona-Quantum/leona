@@ -102,6 +102,24 @@ export default async function RepositoryLayerNodePage({
     descriptionJa: entry.descriptionJa,
   }));
 
+  // **Both halves of what the parser returns, because the count is the point.**
+  // `resolveOpenIds` says of itself that "the count over the cap is reported
+  // rather than dropped in silence" — and that was true on the overview and
+  // false here, because this page took `.open` off the end of the call and let
+  // `.dropped` fall on the floor. One function, two surfaces, one report: a
+  // reader who follows a link past the cap is told so wherever they land.
+  //
+  // A METHOD's own figure opens itself, so one slot of the cap is spoken for
+  // before the reader's ids are counted. A capability's does not, and reserving
+  // there would drop one of the reader's ids for nothing.
+  const openSet = node
+    ? resolveOpenIds(
+        openValues(query),
+        (id) => layerNode(LAYER_GRAPH, id) !== null,
+        isCapability(node) ? 0 : 1,
+      )
+    : { open: new Set<string>(), dropped: 0 };
+
   return (
     <PublicSite
       activePath="/repository"
@@ -116,16 +134,8 @@ export default async function RepositoryLayerNodePage({
           corpus={corpus}
           locale={locale}
           viewport={parseViewport(query.at)}
-          // A METHOD's own figure opens itself, so one slot of the cap is spoken
-          // for before the reader's ids are counted. A capability's does not,
-          // and reserving there would drop one of the reader's ids for nothing.
-          open={
-            resolveOpenIds(
-              openValues(query),
-              (id) => layerNode(LAYER_GRAPH, id) !== null,
-              isCapability(node) ? 0 : 1,
-            ).open
-          }
+          open={openSet.open}
+          droppedOpen={openSet.dropped}
           // Canonical, not raw. `parseViewport` falls back to IDENTITY on a
           // malformed `?at=`, so handing the original back out would render one
           // viewport and link to a different one — and keep the bad value alive
