@@ -171,19 +171,70 @@ function Hub({ state, copy }: { state: ConvergeState; copy: ConvergeCopy }): Rea
   );
 }
 
-/** An ingredient a route needs, hanging under the strand that consumes it. */
+/**
+ * An ingredient a route needs, hanging under the strand that consumes it.
+ *
+ * **Two targets, the same split a `Lane` has** — and until this was written the
+ * stub had only one. `layoutConverge` has computed `openHref` for every stub, and
+ * drawn the fan of methods behind an opened one, since ingredients became
+ * openable; this component read `feed.href` and nothing else, so the only way to
+ * open an ingredient was to type its address into `?open=` by hand. The layout
+ * described a control no reader could reach.
+ *
+ * That is the ask: *"they are neither state nor process visually. They **are**
+ * processes."* A thing you can open is a process; a thing you can only follow is
+ * a tag. So the **stub** opens and shuts it here, and the **name** goes to its
+ * own page — the line and the name being two destinations is the rule this canvas
+ * already follows, and the reason `.mj-converge-canvas a:hover` is written per
+ * target rather than per group.
+ *
+ * A stub with nothing recorded inside it gets no control at all, which is the
+ * same rule R12.2 gives every line: `openHref` is null there, and the bare line
+ * keeps the descriptive title so it does not lose its name along with its action.
+ */
 function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React.ReactElement {
+  const title = `${copy.needs}: ${feed.fullLabel}`;
+  const action = feed.open ? copy.closeHere : copy.openHere;
+  const stub = (
+    <line
+      className="mj-converge-feed-line"
+      x1={n(feed.x)}
+      y1={n(feed.y0)}
+      x2={n(feed.x)}
+      y2={n(feed.y1)}
+    />
+  );
   return (
-    <g className="mj-converge-feed" data-depth={feed.depth}>
-      <a href={feed.href} aria-label={`${copy.needs}: ${feed.fullLabel}`}>
-        <title>{`${copy.needs}: ${feed.fullLabel}`}</title>
-        <line
-          className="mj-converge-feed-line"
-          x1={n(feed.x)}
-          y1={n(feed.y0)}
-          x2={n(feed.x)}
-          y2={n(feed.y1)}
-        />
+    <g
+      className={`mj-converge-feed${feed.open ? " mj-converge-feed--open" : ""}`}
+      data-depth={feed.depth}
+    >
+      {/* Target one: the stub. Opens or shuts the ingredient, here. */}
+      {feed.openHref === null ? (
+        <g>
+          <title>{title}</title>
+          {stub}
+        </g>
+      ) : (
+        <a href={feed.openHref} aria-label={`${feed.fullLabel} — ${action}`}>
+          <title>{`${title} — ${action}`}</title>
+          {stub}
+          {/* A 1.5px stub is not a click target. A stroke, not a fill — the shape
+              is a line and has no interior to hit. Same trick, same reason, as
+              `.mj-converge-strand-hit`. */}
+          <line
+            className="mj-converge-feed-hit"
+            x1={n(feed.x)}
+            y1={n(feed.y0)}
+            x2={n(feed.x)}
+            y2={n(feed.y1)}
+          />
+        </a>
+      )}
+
+      {/* Target two: the name. Goes to the ingredient's own page. */}
+      <a href={feed.href} aria-label={title}>
+        <title>{title}</title>
         <text
           className="mj-converge-feed-name"
           x={n(feed.x + 4)}
