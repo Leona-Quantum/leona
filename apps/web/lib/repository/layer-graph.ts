@@ -168,17 +168,25 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "A linear generator with any inhomogeneity, a lift map, a readout map, and an error bound as a function of the truncation parameter.",
       returnsJa: "線形生成子と非斉次項、持ち上げ写像、読み出し写像、および打ち切りパラメータの関数としての誤差評価。",
     },
-    whyALayer: "Genuinely different lifts exist and they are not interchangeable: tensor powers (Carleman), functions on phase space (Koopman-von Neumann), level sets (Jin-Liu), and homotopy series terms (Xue et al.) differ in admissible nonlinearity, in whether the truncation converges at all, and in what the lifted state physically means. Choosing wrongly here, not downstream, is what usually breaks an end-to-end claim.",
-    whyALayerJa: "持ち上げ方は本質的に異なり、互換ではありません。テンソル冪（Carleman）、位相空間上の関数（Koopman-von Neumann）、レベルセット（Jin-Liu）、ホモトピー級数の各項（Xue ら）は、許容される非線形性、打ち切りがそもそも収束するかどうか、持ち上げた状態が物理的に何を意味するかの点で違っています。端から端までの主張が崩れるのは、たいてい下流ではなくこの選択の段階です。",
+    whyALayer: "The lifts here are not interchangeable, and they are not all siblings either: Carleman is the monomial-basis instance of Koopman linearization and the Fourier basis is a second instance, so choosing between those two is choosing a basis on a space of observables. Katz et al. list Koopman-von Neumann linearization as its own entry beside Carleman and do not say whether it too is a basis choice, and nothing cited here places level sets (Jin-Liu) or homotopy series terms (Xue et al.) inside that framework either, so all three stay separate on this map. What divides all of them is admissible nonlinearity, whether the truncation converges at all, and what the lifted state physically means — and choosing wrongly here, not downstream, is what usually breaks an end-to-end claim.",
+    whyALayerJa: "ここに並ぶ持ち上げ方は互換ではなく、また互いに対等な並列項でもありません。Carleman は Koopman 線形化を単項式基底でとった実例であり、Fourier 基底はもう一つの実例です。したがってこの二つの選択は、観測量の空間上でどの基底をとるかの選択です。Katz らは Koopman-von Neumann 線形化を Carleman と並ぶ独立の項目として挙げており、これも基底の選択にあたるかどうかは述べていません。レベルセット（Jin-Liu）やホモトピー級数の各項（Xue ら）についても、この枠組みの内側に位置づけた文献をここでは引いていません。そのため本図ではいずれも別扱いのままにしています。これらを分けるのは、許容される非線形性、打ち切りがそもそも収束するかどうか、持ち上げた状態が物理的に何を意味するかであり、端から端までの主張が崩れるのは、たいてい下流ではなくこの選択の段階です。",
   },
   {
     kind: "method",
     id: "carleman-linearization",
     label: "Carleman linearization",
     labelJa: "Carleman 線形化",
-    summary: "Lift the quadratic ODE onto the tower y, y⊗y, y⊗y⊗y, … , on which the dynamics is exactly linear and each level couples only to its neighbours, then truncate at level N. The lift itself is exact; all of the error comes from the truncation.",
-    summaryJa: "二次の常微分方程式を y, y⊗y, y⊗y⊗y, … という塔に持ち上げると、力学は厳密に線形になり、各水準は隣接水準としか結合しません。これを水準 N で打ち切ります。持ち上げ自体は厳密であり、誤差はすべて打ち切りから生じます。",
+    summary: "Lift the quadratic ODE onto the tower y, y⊗y, y⊗y⊗y, … , on which the dynamics is exactly linear and each level couples only to its neighbours, then truncate at level N. The lift itself is exact; all of the error comes from the truncation. Katz, Muraleedharan and Alase derive it as one instance of Koopman linearization: taking the space of observables to be the polynomials and the basis functions to be the monomials reproduces exactly this tower, in one variable and in n.",
+    summaryJa: "二次の常微分方程式を y, y⊗y, y⊗y⊗y, … という塔に持ち上げると、力学は厳密に線形になり、各水準は隣接水準としか結合しません。これを水準 N で打ち切ります。持ち上げ自体は厳密であり、誤差はすべて打ち切りから生じます。Katz・Muraleedharan・Alase は、これを Koopman 線形化の一つの実例として導いています。観測量の空間を多項式にとり、基底関数を単項式にとると、一変数の場合も n 変数の場合も、ちょうどこの塔が再現されます。",
     realizes: "nonlinear-linear-embedding",
+    // The owner's ruling, session 103: Koopman linearization is the larger
+    // process and Carleman is the monomial-basis instance of it. `refines` is
+    // the relation this already needed — child declares the broader parent, both
+    // must realize the same capability — so no new field. The witness is the
+    // summary sentence above and Example 3.4 of arXiv:2512.06488, which the node
+    // now cites: the map cannot check a `refines` assertion against a source, so
+    // the source has to be named in prose beside it.
+    refines: "koopman-linearization",
     conditions: "Stated for du/dt = F_2 u^{⊗2} + F_1 u + F_0(t) with F_1 diagonalizable and eigenvalues ordered Re(λ_n) ≤ … ≤ Re(λ_1) < 0, that is, a strictly dissipative linear part. Liu et al. give a convergence theorem for R < 1, where R = (1/|Re(λ_1)|)(||u_in|| ||F_2|| + ||F_0||/||u_in||). It does not apply when the linear part has an eigenvalue with non-negative real part.",
     conditionsJa: "du/dt = F_2 u^{⊗2} + F_1 u + F_0(t) の形で述べられており、F_1 は対角化可能で、固有値が Re(λ_n) ≤ … ≤ Re(λ_1) < 0 の順に並ぶこと、すなわち線形部が厳密に散逸的であることを要求します。Liu らは R = (1/|Re(λ_1)|)(||u_in|| ||F_2|| + ||F_0||/||u_in||) として R < 1 の場合に収束定理を与えています。線形部が実部非負の固有値をもつ場合には適用できません。",
     contested: "Liu et al. also prove that the general quadratic ODE problem is intractable for R ≥ √2, so the band 1 ≤ R < √2 is open and R < 1 must not be described as necessary. Wu, Wang and Li subsequently prove linear convergence with respect to the truncation level N under a resonance condition instead of a dissipative one, with numerical experiments on Burgers' equation, Fermi-Pasta-Ulam chains and the Korteweg-de Vries equation; that enlarges the set of systems for which the embedding is known to converge and does not overturn the R ≥ √2 result.",
@@ -188,6 +196,47 @@ export const LAYER_GRAPH: LayerGraph = {
     citations: [
       { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Jin-Peng Liu, Herman Øie Kolden, Hari K. Krovi, Nuno F. Loureiro, Konstantina Trivisa, Andrew M. Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
       { title: "Quantum Algorithms for Nonlinear Dynamics: Revisiting Carleman Linearization with No Dissipative Conditions", authors: "Hsuan-Cheng Wu, Jingyao Wang, Xiantao Li", year: "2024", url: "https://arxiv.org/abs/2405.12714" },
+      { title: "Efficient quantum algorithm for solving differential equations with Fourier nonlinearity via Koopman linearization", authors: "Judd Katz, Gopikrishnan Muraleedharan, Abhijeet Alase", year: "2025", url: "https://arxiv.org/abs/2512.06488" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "koopman-linearization",
+    label: "Koopman linearization",
+    labelJa: "Koopman 線形化",
+    summary: "Pick a space of observables G containing the quantity of interest and a basis Ψ for it; the Koopman generator acting on Ψ gives an infinite-dimensional linear ODE, truncated by projecting onto N basis functions. G fixes which observables the lifted dynamics can report and Ψ fixes the structure of the generator, so this is a family of lifts parameterised by that choice rather than a single lift. Only basis choices a cited paper has carried through are recorded here — Katz, Muraleedharan and Alase name Chebyshev and Hermite bases as directions rather than results — so the narrower versions recorded under it are a sample of the framework and not an enumeration of it.",
+    summaryJa: "対象となる量を含む観測量の空間 G と、その基底 Ψ を選びます。Ψ に作用する Koopman 生成子が無限次元の線形常微分方程式を与え、N 個の基底関数への射影によって打ち切ります。G は持ち上げた力学から読み取れる観測量を決め、Ψ は生成子の構造を決めるため、これは単一の持ち上げではなく、その選択でパラメータ付けられた族です。ここに記録するのは、引用元の論文が実際に用いた基底の選び方だけです。Katz・Muraleedharan・Alase は Chebyshev 基底や Hermite 基底を今後の方向として挙げるにとどめており、ここに記録されているより狭い種類は枠組みの一例であって、その全体を数え上げたものではありません。",
+    realizes: "nonlinear-linear-embedding",
+    // No `conditions` and no `cost`, and that is a reading of the paper rather
+    // than a gap. Every stated hypothesis and every complexity in
+    // arXiv:2512.06488 is for the Fourier basis — that is, for the child below,
+    // not for the framework. Filling these from the child would attribute one
+    // instance's costs to the family.
+    steps: [],
+    atomic: true,
+    citations: [
+      { title: "Efficient quantum algorithm for solving differential equations with Fourier nonlinearity via Koopman linearization", authors: "Judd Katz, Gopikrishnan Muraleedharan, Abhijeet Alase", year: "2025", url: "https://arxiv.org/abs/2512.06488" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "carleman-fourier-linearization",
+    label: "Carleman-Fourier linearization",
+    labelJa: "Carleman-Fourier 線形化",
+    summary: "Lift the rescaled ODE dx/dt = F_0 + F_1 e^{ix} — the problem as posed is du/dt = G_0 + G_1 e^{iu}, rescaled so that F_0 = G_0 and F_1 = νG_1 — onto the Fourier tower e^{ix}, (e^{ix})^{⊗2}, … instead of the monomial tower, then truncate at level N. Katz, Muraleedharan and Alase give the reason for the choice: expanding the same equation in monomials leaves the coefficient matrix non-sparse, whereas in the Fourier basis the coefficient matrix of their single-variable illustration has only two non-zero entries in each row.",
+    summaryJa: "再スケーリングした常微分方程式 dx/dt = F_0 + F_1 e^{ix}（もとの問題は du/dt = G_0 + G_1 e^{iu} であり、F_0 = G_0、F_1 = νG_1 と再スケーリングしたもの）を、単項式の塔ではなく e^{ix}, (e^{ix})^{⊗2}, … という Fourier の塔に持ち上げ、水準 N で打ち切ります。Katz・Muraleedharan・Alase はこの選択の理由を述べています。同じ方程式を単項式で展開すると係数行列は疎になりませんが、Fourier 基底では、著者らの一変数の例において係数行列の各行がもつ非零成分は二つです。",
+    realizes: "nonlinear-linear-embedding",
+    refines: "koopman-linearization",
+    conditions: "Stated for the rescaled ODE dx/dt = F_0 + F_1 e^{ix} with time-independent coefficient matrices. Katz et al. give two truncation regimes. The dissipative one requires µ̃_0 := min_j Im{(F_0)_j} ≥ 0 and R_p := ||F_1||_row,q ||Ψ_1(0)||_p / µ̃_0 < 1, under which the k-th truncation error component is bounded by (||Ψ_1(0)||_p)^{N+1} (||F_1||_row,q / µ̃_0)^{N+1−k}. The second drops dissipativity and holds only on a finite interval [0, T_max] with T_max = min{T_r, ln r / (||F_0||_∞ + ||F_1||_row,q)}, where r is the rescaling parameter and T_r is the horizon their Lemma 4.3 supplies. Chen, Motee and Sun state the linearization for periodic vector fields with several fundamental frequencies and prove exponential convergence in the truncation length, achieved across the whole time horizon only for particular classes of system.",
+    conditionsJa: "係数行列が時間に依存しない、再スケーリング後の dx/dt = F_0 + F_1 e^{ix} について述べられています。Katz らは打ち切りに関して二つの領域を与えています。散逸的な領域では µ̃_0 := min_j Im{(F_0)_j} ≥ 0 かつ R_p := ||F_1||_row,q ||Ψ_1(0)||_p / µ̃_0 < 1 を要求し、このとき打ち切り誤差の第 k 成分は (||Ψ_1(0)||_p)^{N+1} (||F_1||_row,q / µ̃_0)^{N+1−k} で抑えられます。もう一方は散逸性の仮定を外す代わりに、有限区間 [0, T_max] でのみ成り立ち、T_max = min{T_r, ln r / (||F_0||_∞ + ||F_1||_row,q)} で与えられます。ここで r は再スケーリングのパラメータ、T_r は補題 4.3 が与える時間の上限です。Chen・Motee・Sun は、複数の基本周波数をもつ周期的なベクトル場に対してこの線形化を述べ、打ち切り長に関する指数的収束を証明しています。時間区間全体にわたって指数的収束が得られるのは、特定の系のクラスに限られます。",
+    // No `cost`: every complexity in arXiv:2512.06488 is the end-to-end query
+    // complexity of their algorithm, which is a route-level fact, not a fact
+    // about this embedding.
+    steps: [],
+    atomic: true,
+    citations: [
+      { title: "Carleman-Fourier Linearization of Complex Dynamical Systems: Convergence and Explicit Error Bounds", authors: "Panpan Chen, Nader Motee, Qiyu Sun", year: "2024", url: "https://arxiv.org/abs/2411.11598" },
+      { title: "Efficient quantum algorithm for solving differential equations with Fourier nonlinearity via Koopman linearization", authors: "Judd Katz, Gopikrishnan Muraleedharan, Abhijeet Alase", year: "2025", url: "https://arxiv.org/abs/2512.06488" },
     ],
   },
   {

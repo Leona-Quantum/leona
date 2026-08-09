@@ -860,12 +860,19 @@ test("the crossings at a shared circle count methods, and count each one once", 
   const census = crossingsAt(LAYER_GRAPH, STATE_VOCABULARY, expansion, "linear-ivp", "en");
   assert.ok(census);
 
-  // Four embeddings, not five. The Koopman-von Neumann lift fills the broad
-  // lane AND is the sole filler of its own narrowed lane, so counting lanes
-  // instead of methods reported it twice — measured before the dedupe went in,
-  // this said 5 ways in, 40 crossings, and listed KvN → Schrödingerisation
-  // twice.
-  assert.equal(census.waysIn, 4, "one entry per embedding method, however many lanes reach it");
+  // Six embeddings, not seven. The Koopman-von Neumann lift fills the broad lane
+  // AND is the sole filler of its own narrowed lane, so counting lanes instead
+  // of methods reported it twice — measured before the dedupe went in, this said
+  // 5 ways in against 4 methods, 40 crossings, and listed KvN →
+  // Schrödingerisation twice. The dedupe is what this number is defending, and
+  // it is still one apart from the lane count.
+  //
+  // Was 4 until session 103, when the owner's Koopman ruling added
+  // `koopman-linearization` and `carleman-fourier-linearization` as fillers of
+  // this same slot. The `refines` edge between Carleman and its parent adds no
+  // lane — nothing in the layout engine reads that field — so the +2 here is the
+  // two new nodes and nothing else.
+  assert.equal(census.waysIn, 6, "one entry per embedding method, however many lanes reach it");
   assert.equal(census.total, census.waysIn * census.waysOut);
   assert.equal(census.recorded + census.unpinned + census.unpublished, census.total);
 
@@ -1029,9 +1036,13 @@ test("a line that opens into something says so, and a line that does not is not 
   // affordance — which is exactly how it showed up while this was being built:
   // requiring two route segments to open made twelve methods inert, and the
   // count here was 15 rather than 24.
-  assert.equal(openable + leaves + 1, 55, "the eighteen figures draw 55 lines between them");
+  // 55 until session 103. The Koopman ruling added two atomic fillers to
+  // `nonlinear-linear-embedding`, so both land in `leaves` — they are lines with
+  // nothing finer recorded, which is the honest state for a framework node whose
+  // instances are its children rather than its steps.
+  assert.equal(openable + leaves + 1, 57, "the eighteen figures draw 57 lines between them");
   assert.equal(openable, 24, "24 of them open into something recorded");
-  assert.equal(leaves, 30, "30 are leaves — nothing finer is recorded for them");
+  assert.equal(leaves, 32, "32 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
