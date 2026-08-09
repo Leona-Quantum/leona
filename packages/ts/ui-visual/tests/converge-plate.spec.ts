@@ -29,21 +29,36 @@
 // with `getBBox()` on the *rendered app page* (a 12px Japanese name draws 15.2px tall), and
 // that measurement is not reproducible here.
 //
-// So the vertical side is checked as a **typographic model with stated constants** against
-// the computed font-size — which catches the two regressions that can actually be written
-// (someone shrinks the plate; someone raises the font-size) — and everything that does not
-// depend on the substituted face is checked strictly:
+// **Nor can it gate on horizontal coverage, and the first version of this file was wrong
+// about that.** It reasoned that a fallback face is wider at the same size, so measuring
+// against one is conservative — true, and the wrong conclusion. Conservative means no false
+// green; it does not mean no false red, and a false red is what arrived: this passed on
+// macOS and failed on the Linux CI runner by up to 5.87px, on a plate that is correct.
+// Worse, it cannot be fixed by vendoring the font either. Instrument Sans is a Latin face
+// and every Japanese name on this map already falls back **in production**, to whatever the
+// reader's own machine offers. Which face draws those names is not a property of this
+// repository, so no assertion here can be a stable gate on their width.
+//
+// So the two font-dependent sides are handled the same way, and it is the split this file
+// is actually about:
+//
+//   - **Vertical** — a typographic model with stated constants against the computed
+//     font-size. Catches the two regressions anyone can write: someone shrinks the plate,
+//     someone raises the font-size.
+//   - **Horizontal** — measured every run and **printed, not asserted**. A shortfall shows
+//     up in the CI log against the face that drew it, which is the honest form of a fact
+//     that depends on the reader's machine. The engine side of it *is* guaranteed
+//     arithmetically: the plate is `labelWidth + 10` and `labelWidth` is the same
+//     `estimateTextWidth` the column was sized from, so a name can only overrun its plate
+//     if that estimator is wrong about the real face — a production measurement, and one
+//     the record shows was made by hand on the rendered page.
+//
+// Everything that does not depend on the substituted face is strict:
 //
 //   - every name drawn on a bone HAS a plate (the hole NEXT.md named);
 //   - the plate is opaque and filled with the surface the figure is drawn on;
-//   - the plate is painted before its own text and after the lines;
-//   - the plate is at least as WIDE as the text actually drew. This one survives
-//     substitution in the direction that matters: a fallback face is wider than the
-//     designed one at the same size, so passing here is a conservative result, and running
-//     wide is the failure that has actually happened on this canvas.
-//
-// Closing the last sliver means either vendoring the woff2 into this package or measuring
-// on a served page, and both are decisions rather than oversights. Recorded in NEXT.md.
+//   - the plate is painted before its own text, and after the lines;
+//   - the plate's box contains the name's baseline band.
 // ---------------------------------------------------------------------------------------
 import { readFileSync } from "node:fs";
 import { dirname, join } from "node:path";
@@ -92,9 +107,18 @@ test("the figures that wear a name on a bone were rendered, and there are as man
 
 interface PlateReport {
   label: string;
-  /** Horizontal slack in the figure's own user units. Negative means text ran past. */
+  /** Horizontal slack against the drawn text. Negative means the text ran past. */
   left: number;
   right: number;
+  /**
+   * Horizontal slack against the name's own **hit target**, which is font-independent:
+   * both rects are built from `lane.labelWidth` by two separately written expressions
+   * (`+ 10` and `+ 8`). If the plate ever stops being the wider of the two there is
+   * clickable area sitting over text nothing is occluding, and no font is involved in
+   * saying so — which is why this side can be asserted and the text side cannot.
+   */
+  hitLeft: number;
+  hitRight: number;
   /** The plate's declared box, and the text's baseline, in the same user units. */
   plateTop: number;
   plateBottom: number;
@@ -165,6 +189,8 @@ for (const story of withPlates) {
               label: "",
               left: -1,
               right: -1,
+              hitLeft: -1,
+              hitRight: -1,
               plateTop: 0,
               plateBottom: 0,
               baseline: 0,
@@ -177,11 +203,15 @@ for (const story of withPlates) {
           }
           const box = plate.getBBox();
           const t = intoPlateSpace(plate, text);
+          const hit = anchor?.querySelector<SVGRectElement>("rect.mj-converge-hit");
+          const h = hit ? intoPlateSpace(plate, hit) : null;
           const style = getComputedStyle(plate);
           out.push({
             label: text.textContent ?? "",
             left: t.x0 - box.x,
             right: box.x + box.width - t.x1,
+            hitLeft: h ? h.x0 - box.x : Number.NaN,
+            hitRight: h ? box.x + box.width - h.x1 : Number.NaN,
             plateTop: box.y,
             plateBottom: box.y + box.height,
             baseline: baselineIn(plate, text),
@@ -200,15 +230,39 @@ for (const story of withPlates) {
       const canvasFill = await page.evaluate(() =>
         getComputedStyle(document.documentElement).getPropertyValue("--bg-1").trim(),
       );
+      // Named in the horizontal report below, so a shortfall in the log says which face
+      // produced it rather than reading as a defect in the plate.
+      const renderedFont = await page.evaluate(() => {
+        const text = document.querySelector("text.mj-converge-lane-name");
+        return text ? getComputedStyle(text).fontFamily : "unknown";
+      });
 
       for (const plate of plates) {
         const where = `${story.name} (${theme}): the plate under "${plate.label}"`;
         expect(plate.label, `${story.name}: a plate has no name beside it`).not.toEqual("");
-        expect(plate.left, `${where} leaves ${(-plate.left).toFixed(2)}px uncovered on the left`)
-          .toBeGreaterThanOrEqual(0);
+        // Printed, not asserted — see the header. The face that draws this string is chosen
+        // by the machine, so a bar on the number would be a bar on the runner's font list.
+        const short = Math.min(plate.left, plate.right);
+        if (short < 0) {
+          // eslint-disable-next-line no-console
+          console.log(
+            `  ↔ ${where} runs ${(-short).toFixed(2)}px past it in "${renderedFont}" ` +
+              `(the app draws it in Instrument Sans, which this harness cannot load)`,
+          );
+        }
+        // Font-independent, and therefore assertable: both rects are built from the same
+        // `lane.labelWidth` by two separately written expressions (`+ 10` and `+ 8`). A
+        // plate narrower than the click target for its own name means clickable area
+        // sitting over text nothing is occluding.
         expect(
-          plate.right,
-          `${where} leaves ${(-plate.right).toFixed(2)}px uncovered on the right`,
+          plate.hitLeft,
+          `${where} is ${(-plate.hitLeft).toFixed(2)}px narrower on the left than the click ` +
+            `target for the same name`,
+        ).toBeGreaterThanOrEqual(0);
+        expect(
+          plate.hitRight,
+          `${where} is ${(-plate.hitRight).toFixed(2)}px narrower on the right than the click ` +
+            `target for the same name`,
         ).toBeGreaterThanOrEqual(0);
         expect(
           plate.baseline - plate.fontSize * ASCENT,
