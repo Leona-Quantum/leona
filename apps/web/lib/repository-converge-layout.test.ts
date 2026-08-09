@@ -13,7 +13,6 @@ import test from "node:test";
 
 import {
   CONVERGE_METRICS,
-  bowAt,
   convergingSlots,
   crossingsAt,
   drawableSlots,
@@ -22,7 +21,8 @@ import {
   chainColumnNeed,
   laneOffsets,
   reservedHalfHeight,
-  spanForBow,
+  tendonRunFor,
+  runAcross,
   layoutConverge,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -143,77 +143,162 @@ test("the shared circle is the one everything converges on, and it says so", () 
  * not. A geometric test that measures the metadata instead of the geometry
  * cannot see a renderer drift away from it.
  */
-interface Cubic {
-  p0: [number, number];
-  p1: [number, number];
-  p2: [number, number];
-  p3: [number, number];
+interface Segment {
+  x0: number;
+  y0: number;
+  x1: number;
+  y1: number;
+  /** Absent on a straight `L` — the belly, and the two joins of an outline. */
+  controls?: [number, number, number, number];
 }
 
 /**
- * The full cubic, parsed out of the emitted `d`.
+ * The emitted `d`, parsed into segments.
  *
- * Both control points, not just the endpoints. Sampling y from `bowAt` while
- * only the endpoints came from `d` is what let a real defect through review:
- * `bowAt` returned the curve for control height `bow` while the emitter used
- * `4·bow/3`, so every invariant was measuring a curve **three quarters** the
- * height of the rendered one. The label-clearance check therefore had 25% more
- * room than the page does, and mutating either side alone kept the two
- * consistently wrong with each other, so the mutation sweep could not see it.
+ * **A ribbon, not a cubic, since R14**: `M … C … L … C …`. The old parser
+ * demanded a single cubic and asserted on anything else, which is the right
+ * shape of parser to have had — it would have failed loudly rather than
+ * silently measuring the wrong thing.
  *
- * Parse the artifact, sample the artifact.
+ * This is a second, independent reading of the emitter, and it stays that way on
+ * purpose. `repository-strand-geometry.test.ts` has its own; the two are not
+ * shared, because a parser shipped beside the thing it parses goes wrong with it,
+ * and a test that measures with the code under test measures nothing. Both know
+ * only that path data is commands and numbers.
  */
-function parseCubic(d: string): Cubic {
-  const match =
-    /^M\s+(-?[\d.]+)\s+(-?[\d.]+)\s+C\s+(-?[\d.]+)\s+(-?[\d.]+),\s*(-?[\d.]+)\s+(-?[\d.]+),\s*(-?[\d.]+)\s+(-?[\d.]+)\s*$/.exec(
-      d.trim(),
-    );
-  assert.ok(match, `not a single-cubic path: ${d}`);
-  const n = (at: number) => Number(match[at]);
-  return { p0: [n(1), n(2)], p1: [n(3), n(4)], p2: [n(5), n(6)], p3: [n(7), n(8)] };
+function parsePath(d: string): Segment[] {
+  const tokens = d.trim().split(/[\s,]+/);
+  const out: Segment[] = [];
+  let at: [number, number] = [0, 0];
+  let index = 0;
+  while (index < tokens.length) {
+    const command = tokens[index++]!;
+    const take = (): number => {
+      const value = Number(tokens[index++]);
+      assert.ok(Number.isFinite(value), `not a number in path data: ${d}`);
+      return value;
+    };
+    if (command === "M") {
+      at = [take(), take()];
+    } else if (command === "L") {
+      const next: [number, number] = [take(), take()];
+      out.push({ x0: at[0], y0: at[1], x1: next[0], y1: next[1] });
+      at = next;
+    } else if (command === "C") {
+      const c1x = take();
+      const c1y = take();
+      const c2x = take();
+      const c2y = take();
+      const next: [number, number] = [take(), take()];
+      out.push({ x0: at[0], y0: at[1], x1: next[0], y1: next[1], controls: [c1x, c1y, c2x, c2y] });
+      at = next;
+    } else if (command === "Z") {
+      // Closes an outline; contributes no span to sample.
+    } else {
+      assert.fail(`unexpected path command "${command}" in ${d}`);
+    }
+  }
+  assert.ok(out.length > 0, `empty path: ${d}`);
+  return out;
 }
 
-/** A point on the parsed cubic. This is the curve the browser draws. */
-function pointOn(cubic: Cubic, t: number): [number, number] {
-  const b = (a: number, bb: number, c: number, dd: number) =>
-    (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * bb + 3 * (1 - t) * t ** 2 * c + t ** 3 * dd;
-  return [
-    b(cubic.p0[0], cubic.p1[0], cubic.p2[0], cubic.p3[0]),
-    b(cubic.p0[1], cubic.p1[1], cubic.p2[1], cubic.p3[1]),
-  ];
+/** y of the drawn path at x. Bisected in t, direction-aware — see the outline. */
+function drawnYAt(segments: readonly Segment[], x: number): number {
+  const segment =
+    segments.find((s) => x >= Math.min(s.x0, s.x1) && x <= Math.max(s.x0, s.x1)) ??
+    segments[segments.length - 1]!;
+  if (!segment.controls) {
+    const span = segment.x1 - segment.x0;
+    const t = span === 0 ? 0 : (x - segment.x0) / span;
+    return segment.y0 + (segment.y1 - segment.y0) * t;
+  }
+  const [c1x, c1y, c2x, c2y] = segment.controls;
+  const bez = (a: number, b: number, c: number, d: number, t: number) =>
+    (1 - t) ** 3 * a + 3 * (1 - t) ** 2 * t * b + 3 * (1 - t) * t ** 2 * c + t ** 3 * d;
+  const rising = segment.x1 >= segment.x0;
+  let lo = 0;
+  let hi = 1;
+  for (let step = 0; step < 60; step += 1) {
+    const mid = (lo + hi) / 2;
+    const here = bez(segment.x0, c1x, c2x, segment.x1, mid);
+    if (rising ? here < x : here > x) lo = mid;
+    else hi = mid;
+  }
+  return bez(segment.y0, c1y, c2y, segment.y1, (lo + hi) / 2);
+}
+
+/** The drawn curve, ready to sample. Parse the artifact, sample the artifact. */
+function drawn(d: string): { segments: Segment[]; x0: number; x1: number } {
+  const segments = parsePath(d);
+  return { segments, x0: segments[0]!.x0, x1: segments[segments.length - 1]!.x1 };
+}
+
+/**
+ * A point on the drawn path at `t` — the fraction of the way **along x**.
+ *
+ * The same parameterisation the old cubic sampler had, and for a reason rather
+ * than for convenience: a lane's x controls sat at exact thirds, so `x(t)` was
+ * linear and the Bézier parameter *was* the fraction along x. A ribbon's x is
+ * piecewise but still monotone and still spans the same range, so every call
+ * site that asked for "the point a quarter of the way across" still gets it.
+ */
+function pointOn(path: ReturnType<typeof drawn>, t: number): [number, number] {
+  const x = path.x0 + (path.x1 - path.x0) * t;
+  return [x, drawnYAt(path.segments, x)];
+}
+
+/** Two numbers that must be the same number, not merely near each other. */
+function close(actual: number, expected: number, why: string, tol = 0.02): void {
+  assert.ok(
+    Math.abs(actual - expected) <= tol,
+    `${why}: expected ${expected}, got ${actual} (Δ ${Math.abs(actual - expected).toFixed(4)})`,
+  );
 }
 
 function drawnEnds(d: string): { sx: number; sy: number; ex: number; ey: number } {
-  const cubic = parseCubic(d);
-  return { sx: cubic.p0[0], sy: cubic.p0[1], ex: cubic.p3[0], ey: cubic.p3[1] };
+  const path = drawn(d);
+  const first = path.segments[0]!;
+  const last = path.segments[path.segments.length - 1]!;
+  return { sx: first.x0, sy: first.y0, ex: last.x1, ey: last.y1 };
 }
 
-test("bowAt describes the curve that is actually emitted", () => {
-  // The helper and the emitter are two expressions of one shape, and they had
-  // drifted by a factor of 4/3. Pinned against the parsed path so they cannot
-  // drift again without something failing.
+test("every number a lane reports is the number it draws", () => {
+  // The fields and the emitter are two expressions of one shape, and they have
+  // drifted before — by a factor of 4/3, for two sessions, agreeing with
+  // themselves the whole time. So every number a lane *reports* is checked
+  // against the path it *draws*, on **every** lane at every depth. That is
+  // stronger than the check this replaced, which had to skip nested lanes:
+  // a nested strand used to sit on a parent's curve, whose law `bowAt` did not
+  // describe. A ribbon's base is level all the way down, so there is no longer
+  // a case this cannot reach.
   for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const lane of diagramFor(focus.id).lanes) {
-      // `yc` and `bow` describe a lane of the figure's own bundles, whose base
-      // is level. A nested lane is an offset of its *parent's* curve, which is
-      // not level, and the general law it obeys is asserted directly in
-      // `repository-strand-geometry.test.ts`. Sampling it against `bowAt` here
-      // would be asserting the wrong formula and calling the disagreement a bug.
-      if (lane.depth > 0) continue;
-      const cubic = parseCubic(lane.d);
+      const path = drawn(lane.d);
+      const ends = drawnEnds(lane.d);
+      close(ends.sx, lane.x0, `${lane.key}: drawn start x against x0`);
+      close(ends.ex, lane.x1, `${lane.key}: drawn end x against x1`);
+      close(ends.sy, lane.yc, `${lane.key}: drawn start y against yc`);
+      close(ends.ey, lane.yc, `${lane.key}: drawn end y against yc`);
+      close(lane.bellyX0, lane.x0 + lane.run, `${lane.key}: bellyX0 against x0 + run`);
+      close(lane.bellyX1, lane.x1 - lane.run, `${lane.key}: bellyX1 against x1 − run`);
+      close(lane.bellyY, lane.yc + lane.bow, `${lane.key}: bellyY against yc + bow`);
+      // The belly is level, at exactly `bow` off the base, over its whole run.
+      // This is the property the owner asked the shape for and the one every
+      // label placement on this canvas now assumes.
       for (let step = 0; step <= 20; step += 1) {
-        const t = step / 20;
-        const [, drawnY] = pointOn(cubic, t);
-        assert.ok(
-          Math.abs(drawnY - bowAt(lane.yc, lane.bow, t)) < 0.05,
-          `${lane.key}: bowAt says ${bowAt(lane.yc, lane.bow, t)} at t=${t}, the path draws ${drawnY}`,
+        const x = lane.bellyX0 + ((lane.bellyX1 - lane.bellyX0) * step) / 20;
+        close(
+          drawnYAt(path.segments, x),
+          lane.bellyY,
+          `${lane.key}: the belly is not level at x=${x}`,
+          0.05,
         );
       }
     }
   }
 });
 
-test("the peak of a bow is exactly its `bow`, and the canvas reserves that much", () => {
+test("a belly sits exactly `bow` off the base, and the canvas reserves that much", () => {
   // Two claims, and the second is the one a bigger fan would break first.
   //
   // `controlHeight` exists so the drawn peak equals `bow` rather than 3/4 of it.
@@ -226,11 +311,13 @@ test("the peak of a bow is exactly its `bow`, and the canvas reserves that much"
   for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     const diagram = diagramFor(focus.id);
     for (const lane of diagram.lanes) {
-      if (lane.depth > 0) continue; // see `bowAt describes the curve…` above
-      const peak = pointOn(parseCubic(lane.d), 0.5)[1] - lane.yc;
+      // Every depth now, where this had to skip nested lanes: a ribbon's base
+      // is level all the way down, so the middle of a lane's drawn belly is
+      // comparable with `yc + bow` whatever it is nested inside.
+      const middle = pointOn(drawn(lane.d), 0.5)[1] - lane.yc;
       assert.ok(
-        Math.abs(peak - lane.bow) < 0.05,
-        `${lane.key}: bow is ${lane.bow} but the drawn peak is ${peak}`,
+        Math.abs(middle - lane.bow) < 0.05,
+        `${lane.key}: bow is ${lane.bow} but the drawn belly sits at ${middle}`,
       );
     }
     const tallest = Math.max(
@@ -258,7 +345,7 @@ test("the canvas reserves the height the fan actually reaches", () => {
     for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
       const diagram = diagramFor(focus.id, locale);
       for (const lane of diagram.lanes) {
-        const cubic = parseCubic(lane.d);
+        const cubic = drawn(lane.d);
         for (let step = 0; step <= 40; step += 1) {
           const [x, y] = pointOn(cubic, step / 40);
           assert.ok(y >= 0 && y <= diagram.height, `${lane.key} leaves the canvas at y=${y}`);
@@ -315,8 +402,8 @@ test("two lanes of one bundle touch at both ends and are apart everywhere betwee
         for (let j = i + 1; j < bundle.length; j += 1) {
           const a = bundle[i]!;
           const b = bundle[j]!;
-          const ca = parseCubic(a.d);
-          const cb = parseCubic(b.d);
+          const ca = drawn(a.d);
+          const cb = drawn(b.d);
           assert.equal(pointOn(ca, 0)[1], pointOn(cb, 0)[1], "must meet at the start");
           assert.equal(pointOn(ca, 1)[1], pointOn(cb, 1)[1], "must meet at the end");
           for (let step = 1; step < 40; step += 1) {
@@ -363,7 +450,7 @@ test("no lane crosses the spine it bows around, except at the two shared circles
       if (lane.bow === 0) continue; // the straight middle lane IS the spine
       for (let step = 1; step < 20; step += 1) {
         const t = step / 20;
-        const offset = bowAt(lane.yc, lane.bow, t) - lane.yc;
+        const offset = pointOn(drawn(lane.d), t)[1] - lane.yc;
         assert.ok(
           Math.sign(offset) === Math.sign(lane.bow),
           `${lane.key} changes side of the spine at t=${t}`,
@@ -638,7 +725,7 @@ test("no lane label sits on a lane", () => {
           // Sampled off the PARSED path. A parallel formula here is what let the
           // 4/3 drift hide: the check ran against a curve 3/4 as tall as the one
           // a reader sees, so it had 25% more clearance than the page does.
-          const cubic = parseCubic(other.d);
+          const cubic = drawn(other.d);
           for (let step = 0; step <= 120; step += 1) {
             const [x, y] = pointOn(cubic, step / 120);
             const inside = x > box.x0 && x < box.x1 && y > box.y0 && y < box.y1;
@@ -1149,8 +1236,8 @@ test("opening a line keeps every line apart — the crossing-free claim, with th
       for (const bundle of siblingsOf(diagram)) {
         for (let i = 0; i < bundle.length; i += 1) {
           for (let j = i + 1; j < bundle.length; j += 1) {
-            const a = parseCubic(bundle[i]!.d);
-            const b = parseCubic(bundle[j]!.d);
+            const a = drawn(bundle[i]!.d);
+            const b = drawn(bundle[j]!.d);
             for (let step = 1; step < 40; step += 1) {
               const t = step / 40;
               const gap = Math.abs(pointOn(a, t)[1] - pointOn(b, t)[1]);
@@ -1181,7 +1268,7 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
         assert.ok(lane.parentKey, `${lane.key} is nested but names no parent`);
         const parent = byKey.get(lane.parentKey);
         assert.ok(parent, `${lane.key} names a parent ${lane.parentKey} that is not drawn`);
-        const on = parseCubic(parent.d);
+        const on = drawn(parent.d);
         const ends = drawnEnds(lane.d);
         // A minimum distance over a fine sweep, not a per-sample box.
         //
@@ -1242,7 +1329,7 @@ test("nothing an opened figure draws leaves the canvas", () => {
     for (const open of openings(focus.id)) {
       const diagram = openDiagram(focus.id, open);
       for (const lane of diagram.lanes) {
-        const cubic = parseCubic(lane.d);
+        const cubic = drawn(lane.d);
         for (let step = 0; step <= 40; step += 1) {
           const [x, y] = pointOn(cubic, step / 40);
           assert.ok(
@@ -1364,31 +1451,77 @@ test("allocateBows reproduces laneOffsets exactly when every sibling is a leaf",
   }
 });
 
-test("every strand is drawn as a tapered shape that pinches at both of its ends", () => {
+/**
+ * The two edges of a closed outline, as samplers in x.
+ *
+ * The outline is emitted as the upper edge forwards and the lower edge backwards
+ * so the shape closes without a winding rule, which is what makes the split
+ * findable: it is the first segment whose x decreases.
+ */
+function outlineEdges(d: string): { upper: (x: number) => number; lower: (x: number) => number } {
+  const segments = parsePath(d);
+  const turn = segments.findIndex((segment, index) => index > 0 && segment.x1 < segment.x0);
+  assert.ok(turn > 0, `an outline that never turns back: ${d}`);
+  return {
+    upper: (x: number) => drawnYAt(segments.slice(0, turn), x),
+    lower: (x: number) => drawnYAt(segments.slice(turn), x),
+  };
+}
+
+test("every strand pinches to a point at both circles and stands 2·half across its belly", () => {
   // The taper is not decoration: a line of constant width arriving at a circle
   // says "this ends here", and a strand pinching to a point says "this and the
   // others become one thing here", which is what a convergence is. Read off the
   // emitted outline, because that is the shape a reader sees.
+  //
+  // **A ribbon since R14, and the claim got sharper rather than weaker.** The
+  // old shape was a lens — thickest at one point and thinning everywhere else —
+  // and the check that matched it counted the numbers in the path string, which
+  // is a check on the *arity* of the emitter rather than on the shape. The
+  // muscle is a taper, a constant belly, and a taper, so all three are asserted
+  // against samples of the drawn edges.
+  let checked = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     const diagram = diagramFor(focus.id);
     for (const lane of diagram.lanes) {
-      const numbers = lane.outline.match(/-?\d+(?:\.\d+)?/g)?.map(Number) ?? [];
-      assert.equal(numbers.length, 14, `${lane.key}: an outline is a move and two cubics`);
       assert.ok(lane.outline.endsWith("Z"), `${lane.key}: an outline is closed`);
-      const start = { x: numbers[0]!, y: numbers[1]! };
-      const turn = { x: numbers[6]!, y: numbers[7]! };
-      const back = { x: numbers[12]!, y: numbers[13]! };
-      // Both edges meet at the same two points — that is the pinch.
-      assert.ok(Math.abs(back.x - start.x) < 0.02 && Math.abs(back.y - start.y) < 0.02,
-        `${lane.key}: the outline does not close on its own start`);
-      const spine = drawnEnds(lane.d);
-      assert.ok(Math.abs(start.x - spine.sx) < 0.02, `${lane.key}: outline starts off the spine`);
-      assert.ok(Math.abs(turn.x - spine.ex) < 0.02, `${lane.key}: outline turns off the spine end`);
-      // And it is genuinely two different curves in between.
-      assert.notEqual(numbers[3], numbers[11], `${lane.key}: both edges are the same curve`);
       assert.ok(lane.half > 0, `${lane.key}: a strand with no thickness`);
+      const edges = outlineEdges(lane.outline);
+      checked += 1;
+      // Sampled at the ends the OUTLINE draws, not at `lane.x0`/`lane.x1`. The
+      // emitter rounds to a hundredth and the layout's own numbers are exact, so
+      // a sample taken at the exact end can fall a thousandth outside the drawn
+      // range — where a sampler has to guess, and this one guesses by falling
+      // back to the last segment. That returned the far end of the shape and
+      // read as a 7px gap at a pinch that is exact.
+      const ends = drawnEnds(lane.outline);
+      close(edges.upper(ends.sx), edges.lower(ends.sx), `${lane.key}: not pinched at its start`, 0.05);
+      close(edges.upper(ends.ex), edges.lower(ends.ex), `${lane.key}: not pinched at its end`, 0.05);
+      close(edges.upper(ends.sx), lane.yc, `${lane.key}: the pinch is off the base`, 0.05);
+      // Constant across the belly, at exactly the thickness the lane reports.
+      for (let step = 1; step < 20; step += 1) {
+        const x = lane.bellyX0 + ((lane.bellyX1 - lane.bellyX0) * step) / 20;
+        close(
+          edges.lower(x) - edges.upper(x),
+          2 * lane.half,
+          `${lane.key}: thickness across the belly at x=${x}`,
+          0.05,
+        );
+      }
+      // And it tapers rather than stepping: halfway up a tendon the shape is
+      // thinner than the belly and thicker than the pinch.
+      if (lane.run > 1) {
+        const mid = lane.x0 + lane.run / 2;
+        const thickness = edges.lower(mid) - edges.upper(mid);
+        assert.ok(
+          thickness > 0.02 && thickness < 2 * lane.half - 0.02,
+          `${lane.key}: the tendon is ${thickness.toFixed(2)} thick against a belly of ` +
+            `${(2 * lane.half).toFixed(2)} — it steps rather than tapers`,
+        );
+      }
     }
   }
+  assert.ok(checked > 50, `only ${checked} outlines checked`);
 });
 
 test("no two shapes on one figure share a key", () => {
@@ -1559,7 +1692,7 @@ function nameBox(lane: ConvergeLane): { x0: number; x1: number; y0: number; y1: 
  * miss a hit but never the other way round.
  */
 function laneEnters(lane: ConvergeLane, box: ReturnType<typeof nameBox>): boolean {
-  const c = parseCubic(lane.d);
+  const c = drawn(lane.d);
   const pad = lane.open ? 1 : lane.half;
   for (let i = 0; i <= 400; i += 1) {
     const [x, y] = pointOn(c, i / 400);
@@ -1661,24 +1794,42 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   //
   // What survives is the half this file can see, plus a new test below for the
   // property that keeps the plate small enough to be honest.
-  assert.ok(
-    shutRate < 0.134,
-    `shut names collide with a line ${shutHit}/${shutNamed} (${(shutRate * 100).toFixed(1)}%), ` +
-      `past the 13.4% they were measured at — the placement of the names nothing occludes got worse`,
+  // **Both bars are now zero, and that is the tendons rather than a tightening
+  // for its own sake.**
+  //
+  // They were `shutRate < 0.134` and `shutHit <= 28`, pinned to what the drawing
+  // measured when a lane was a bow: every line converged to a point at both
+  // circles, so it entered its neighbours' label bands near the ends of the span
+  // whatever room was reserved. That is what the owner meant by *"labels and
+  // lines don't cross structurally"* being the thing tendons would fix — and
+  // measured over all 19 figures × both locales at saturation, they fix it
+  // completely: **11 opened and 34 shut crossings before, 0 and 0 after.**
+  //
+  // So the bar is 0. A bar of 28 against a truth of 0 is a guard that has stopped
+  // guarding: it would let twenty-eight crossings back in without a word, and the
+  // whole reason this measurement exists is that a name with a line through it is
+  // the defect the owner reported. If a graph change or a placement change puts
+  // one back, that is a regression now, not a fact of the medium.
+  //
+  // The sweep is not vacuous — `openedNamed`/`shutNamed` are floored above, and a
+  // positive control was run by hand: inflating the name box by 30px finds 128
+  // names with a line nearby, so the detector sees lines. It is the crossings
+  // that are gone.
+  assert.equal(
+    shutHit,
+    0,
+    `${shutHit}/${shutNamed} shut names have a line through them. This was 34 before the ` +
+      `tendons and 0 after: a belly is level and its neighbours' bellies are level too, so a ` +
+      `name is only crossed if something moved it off its own belly`,
   );
-  assert.ok(
-    shutHit <= 28,
-    `${shutHit} shut names collide with a line across every figure, past the 28 measured once ` +
-      `labels were shortened — the drawing got busier where no plate is hiding it`,
+  assert.equal(
+    openedHit,
+    0,
+    `${openedHit}/${openedNamed} opened names have a line through them. The plate is a backstop ` +
+      `for this, not a licence for it`,
   );
-  // Reported, not barred. This is the number the owner's instruction moved on
-  // purpose, and a bar on it would be a bar on following the instruction.
-  assert.ok(
-    openedRate >= 0,
-    `${openedHit}/${openedNamed} opened names cross a line and rely on the plate`,
-  );
+  assert.ok(shutRate === 0 && openedRate === 0, "the two rates must follow the two counts");
 });
-
 test("a name on the bone stays inside the band the layout reserved for it", () => {
   // The half of the opened-name guard that survives in the layout, and the thing
   // that keeps `.mj-converge-name-plate` honest: a plate is only acceptable
@@ -1713,12 +1864,13 @@ test("a name on the bone stays inside the band the layout reserved for it", () =
       // is the case the exoskeleton is for, and until it is drawn a chain's name
       // stays where it was. R12.3 is the same distinction.
       if (!lane.bone || lane.label === "") continue;
-      // The bone read off its own drawn path, not rebuilt from `yc`/`bow`.
-      // `bowAt(yc, bow, t)` assumes a flat base and a nested strand's base is a
-      // piece of its parent's curve — reconstructing it that way put the bone at
-      // 519.7 for a name at 68, which is the second derivation this file's own
-      // comments keep warning about.
-      const [, spineY] = pointOn(parseCubic(lane.d), 0.5);
+      // The bone read off its own drawn path, never rebuilt from `yc`/`bow`. The
+      // helper that used to be reached for here assumed a flat base while a
+      // nested strand sat on a piece of its parent's curve, and reconstructing
+      // it that way put the bone at 519.7 for a name at 68 — the second
+      // derivation this file's own comments keep warning about. A ribbon's base
+      // *is* flat now, which removes the trap and not the reason for the rule.
+      const [, spineY] = pointOn(drawn(lane.d), 0.5);
       const top = lane.labelY - M.laneFont * 0.8;
       const bottom = lane.labelY + M.laneFont * 0.2;
       assert.ok(
@@ -1803,6 +1955,64 @@ test("a name past the cap is cut, and the full text survives in the title", () =
   }
 });
 
+test("two ingredient names never overlap", () => {
+  // **A latent defect the tendons made visible, and the reason it was latent.**
+  //
+  // `placeFeeds` spreads stubs at `(i+1)/(n+1)` along their strand and writes
+  // each name from its own stub *rightwards*. `measure` asked the column for the
+  // **widest single** stub name and never for `n` of them side by side, so a
+  // method with three ingredients could always have written one over another —
+  // it just happened not to while a strand's whole span was available. A belly is
+  // shorter than the span it sits in, so the same spacing rule over a shorter run
+  // brought it out: read on the rendered page at `hhl-qpe-inversion`,
+  // *"Simulate Hamiltonian evolutiAmplify a success branch"*.
+  //
+  // Failable: deleting the `feedSpread` term from `measure`'s chain arm brings
+  // that overlap straight back on this figure.
+  let checked = 0;
+  // **Every opening, not just saturation.** Saturation is the *widest* a column
+  // ever gets, so it is the state least likely to show this: measured, the
+  // overlap is 0 there and 8 across the partial openings. A sweep that only ever
+  // fully opens a figure would have gone green over the defect that was on the
+  // screen — which is what it did, until this loop was widened.
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of openings(focus.id)) {
+      const diagram = openDiagram(focus.id, open, locale);
+      // Grouped by the strand they hang off, because two stubs on two different
+      // strands are at two different heights and a shared x means nothing.
+      const rows = new Map<string, typeof diagram.feeds[number][]>();
+      for (const feed of diagram.feeds) {
+        const key = `${feed.y1}|${feed.outward}`;
+        rows.set(key, [...(rows.get(key) ?? []), feed]);
+      }
+      for (const row of rows.values()) {
+        const boxes = row
+          .filter((feed) => feed.label !== "")
+          .map((feed) => ({
+            label: feed.label,
+            x0: feed.x + 4,
+            x1: feed.x + 4 + estimateTextWidth(feed.label, M.laneFont),
+          }))
+          .sort((a, b) => a.x0 - b.x0);
+        for (let index = 1; index < boxes.length; index += 1) {
+          checked += 1;
+          assert.ok(
+            boxes[index]!.x0 >= boxes[index - 1]!.x1,
+            `${focus.id} (${locale}): "${boxes[index - 1]!.label}" runs into ` +
+              `"${boxes[index]!.label}" — the belly is too short to stand ${boxes.length} ` +
+              `ingredient names side by side`,
+          );
+        }
+      }
+      }
+    }
+  }
+  // A guard over an empty set passes for the wrong reason: 117 stub instances
+  // across the graph, most of them on methods with more than one.
+  assert.ok(checked > 40, `only ${checked} adjacent ingredient pairs checked`);
+});
+
 test("no two names overlap on an opened figure either", () => {
   // **This used to be a budget. It is now zero, and the zero was not bought.**
   //
@@ -1864,53 +2074,80 @@ test("no two names overlap on an opened figure either", () => {
   );
 });
 
-/** The steepest the drawn curve gets, in degrees from horizontal. Sampled off `d`. */
-function steepestDegrees(d: string): number {
-  const c = parseCubic(d);
-  // The derivative of a cubic Bézier. Sampled densely rather than evaluated at
-  // the endpoints: "the steepest point is always an endpoint" is a property of
-  // *this* family of curves, and asserting it against a formula that assumes it
-  // would be the test agreeing with the emitter about the thing in question.
+/** The steepest the drawn path gets, as a slope. Sampled off `d`, never rebuilt. */
+function steepestSlope(d: string): number {
+  const path = drawn(d);
+  // Sampled densely rather than evaluated where the steepest point is *supposed*
+  // to be. "The steepest point is the middle of the tendon" is a property of this
+  // family of curves, and asserting it against a formula that assumes it would be
+  // the test agreeing with the emitter about the thing in question.
+  const steps = 2000;
+  const width = path.x1 - path.x0;
+  if (width <= 0) return 0;
   let worst = 0;
-  for (let i = 0; i <= 200; i += 1) {
-    const t = i / 200;
-    const dx =
-      3 * (1 - t) ** 2 * (c.p1[0] - c.p0[0]) +
-      6 * (1 - t) * t * (c.p2[0] - c.p1[0]) +
-      3 * t ** 2 * (c.p3[0] - c.p2[0]);
-    const dy =
-      3 * (1 - t) ** 2 * (c.p1[1] - c.p0[1]) +
-      6 * (1 - t) * t * (c.p2[1] - c.p1[1]) +
-      3 * t ** 2 * (c.p3[1] - c.p2[1]);
-    if (dx === 0) return 90;
-    worst = Math.max(worst, Math.abs(Math.atan2(Math.abs(dy), Math.abs(dx))));
+  for (let i = 0; i < steps; i += 1) {
+    const a = path.x0 + (width * i) / steps;
+    const b = path.x0 + (width * (i + 1)) / steps;
+    worst = Math.max(worst, Math.abs(drawnYAt(path.segments, b) - drawnYAt(path.segments, a)) / (b - a));
   }
-  return (worst * 180) / Math.PI;
+  return worst;
 }
 
-test("no line stands up on end, however much is opened", () => {
-  // The owner asked for two things — *"distances between states should increase
-  // as branches between them are opened out"* and *"no branch should be at such
-  // a steep angle that it becomes weird to look at"* — and they are one
-  // constraint, because a lane's tangent is `4·bow/span`. Capping the angle is
-  // what widens the column.
+test("every belly is level, and every rise happens inside a tendon", () => {
+  // **What replaced the angle cap, and why it is not simply its removal.**
   //
-  // Measured before the cap existed, over these same figures: 186 of 337 lanes
-  // past 45 degrees, 90 past 60, steepest 79.1 — and four figures already past
-  // 45 *shut*. Sampled off the emitted `d`, because a test that recomputes the
-  // geometry beside the emitter cannot see the emitter break (session 100).
+  // `maxLaneAngleDeg` existed because *"no branch should be at such a steep angle
+  // that it becomes weird to look at"*, and it bought that by widening the column
+  // — `span ≥ 4·|bow|`, which is why a saturated figure measured 87,449px wide.
+  // R14 says a tendon is not a branch: it carries no name, no destination and no
+  // claim, so the reason for the cap does not reach it. What the cap was reaching
+  // for is asserted directly here instead, and it is a stronger claim than an
+  // angle: **the part of a line that carries anything is horizontal.** A name, a
+  // fan of methods, a run of steps — all of it sits on a level belly.
+  //
+  // Failable, checked by hand three ways: emitting the belly as a `C` with any
+  // bow in it fails the flatness sweep on the first figure; setting `run` to half
+  // the span (so the belly is a point) fails the "a tendon is not the whole line"
+  // arm; and letting each lane pick its own run from its own bow fails the shared
+  // -run test below.
   let checked = 0;
+  let steepest = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const locale of ["en", "ja"] as const) {
       for (const open of openings(focus.id)) {
         const diagram = openDiagram(focus.id, open, locale);
         for (const lane of diagram.lanes) {
-          const degrees = steepestDegrees(lane.d);
+          const path = drawn(lane.d);
           checked += 1;
+          // The belly is flat, at exactly `bellyY`, over its whole length.
+          for (let step = 0; step <= 24; step += 1) {
+            const x = lane.bellyX0 + ((lane.bellyX1 - lane.bellyX0) * step) / 24;
+            close(
+              drawnYAt(path.segments, x),
+              lane.bellyY,
+              `${focus.id} (${locale}) ${lane.key}: the belly is not level`,
+              0.05,
+            );
+          }
+          // And the belly is a real part of the line rather than a formality: a
+          // ribbon that were all tendon would pass the sweep above vacuously.
           assert.ok(
-            degrees <= M.maxLaneAngleDeg + 1e-6,
-            `${focus.id} (${locale}) ${lane.key}: ${degrees.toFixed(1)}deg exceeds ` +
-              `${M.maxLaneAngleDeg}deg`,
+            lane.bellyX1 - lane.bellyX0 >= 1,
+            `${focus.id} (${locale}) ${lane.key}: belly is ${(lane.bellyX1 - lane.bellyX0).toFixed(1)}px ` +
+              `long against a span of ${(lane.x1 - lane.x0).toFixed(1)} — the tendons ate the line`,
+          );
+          // The steepest the drawn curve gets is the slope the layout claims for
+          // its tendon. Reported rather than capped (R14) — but it must be the
+          // truth about the drawing, or the bound below is measured against
+          // nothing.
+          const drawnSlope = steepestSlope(lane.d);
+          steepest = Math.max(steepest, drawnSlope);
+          const claimed =
+            lane.run <= 0 ? drawnSlope : (1.5 * Math.abs(lane.bow)) / lane.run;
+          assert.ok(
+            drawnSlope <= claimed + 0.02,
+            `${focus.id} (${locale}) ${lane.key}: drawn slope ${drawnSlope.toFixed(3)} past the ` +
+              `${claimed.toFixed(3)} its bow and run imply`,
           );
         }
       }
@@ -1918,33 +2155,119 @@ test("no line stands up on end, however much is opened", () => {
   }
   // A guard over an empty set passes for the wrong reason.
   assert.ok(checked > 300, `only ${checked} lanes checked`);
+  // Printed, not barred. A tendon is *allowed* past 45°, and the number is worth
+  // having in the log because it is the thing the owner traded readability of the
+  // whole figure for. Measured at saturation across every figure and both
+  // locales.
+  assert.ok(
+    steepest >= 0,
+    `steepest tendon on any figure: ${(Math.atan(steepest) * 180 / Math.PI).toFixed(1)}deg`,
+  );
 });
 
-test("a column is wide enough for the bows it holds, and that is what makes it grow", () => {
-  // `spanForBand` inverts the tangent, so it is checkable as arithmetic without
-  // building a figure — which matters because the property it defends is about
-  // figures the authored graph cannot currently produce.
-  assert.equal(spanForBow(0), 0);
-  // At 45 degrees, tan is 1, so the span is exactly four times the bow.
-  assert.ok(Math.abs(spanForBow(100) - 400) < 1e-9);
-  // Sign-blind: a lane bowed upward asks for exactly what one bowed down does.
-  assert.equal(spanForBow(-137), spanForBow(137));
-  // Monotone: a further-bowed lane never asks for a narrower column.
+test("a row of siblings shares one run — the crossing-free precondition", () => {
+  // The whole geometry is `base + bow·φ(x)` for **one** φ per row, and φ is built
+  // from the run. Two siblings with different runs are not a one-parameter family
+  // and can cross between their bellies without touching a circle;
+  // `repository-strand-geometry.test.ts` drives exactly that case with two
+  // ribbons and shows the ordering break.
+  //
+  // So this is the layout-side half: the obvious implementation — each lane takes
+  // `tendonRunFor(its own bow)` — is what it forbids.
+  let rows = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const open of openings(focus.id)) {
+      const diagram = openDiagram(focus.id, open, "en");
+      const byRow = new Map<string, ConvergeLane[]>();
+      for (const lane of diagram.lanes) {
+        const key = `${lane.parentKey ?? "-"}#${lane.x0}>${lane.x1}`;
+        byRow.set(key, [...(byRow.get(key) ?? []), lane]);
+      }
+      for (const [key, row] of byRow) {
+        if (row.length < 2) continue;
+        rows += 1;
+        const runs = new Set(row.map((lane) => lane.run));
+        assert.equal(
+          runs.size,
+          1,
+          `${focus.id} row ${key}: ${[...runs].join(", ")} — siblings drew different runs, ` +
+            `so they are no longer offsets of one shape and may cross between their bellies`,
+        );
+      }
+    }
+  }
+  assert.ok(rows > 100, `only ${rows} sibling rows checked`);
+});
+
+test("a tendon's run is bounded, and every strand gets one", () => {
+  // The number that replaced `span ≥ 4·|bow|`, checked as arithmetic so it does
+  // not depend on the graph happening to contain a big enough fan.
+  assert.equal(tendonRunFor(0), M.minTendonRun, "a straight strand still tapers");
+  assert.equal(tendonRunFor(-137), tendonRunFor(137), "sign-blind: up costs what down costs");
+  // Monotone up to the ceiling, then flat — and the ceiling is the point. Under
+  // the old law a bow of 2300 demanded a 9200px column; here it demands 220.
   let previous = -1;
   for (const bow of [0, 10, 55, 120, 400, 2300]) {
-    const span = spanForBow(bow);
-    assert.ok(span > previous, `spanForBow(${bow}) = ${span} did not grow`);
-    previous = span;
+    const run = tendonRunFor(bow);
+    assert.ok(run >= previous, `tendonRunFor(${bow}) = ${run} went backwards`);
+    assert.ok(run <= M.maxTendonRun, `tendonRunFor(${bow}) = ${run} passed the ceiling`);
+    previous = run;
   }
-  // And the figure actually uses it: opening the widest fan in the graph must
-  // widen the figure, which is the behaviour that was missing entirely — a
-  // seven-method fan used to add 322px of height and exactly 0px of width.
+  assert.equal(tendonRunFor(2300), M.maxTendonRun, "the ceiling must actually be reached");
+  // `runAcross` takes the row's widest demand, and clamps so a belly cannot
+  // invert.
+  assert.equal(runAcross([0, 40, -900], Number.POSITIVE_INFINITY), M.maxTendonRun);
+  assert.equal(runAcross([0, 0], 20), 10, "a short range clamps the run to half of it");
+  // And on the drawing: no lane anywhere is drawn past the ceiling.
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const open of openings(focus.id)) {
+      for (const lane of openDiagram(focus.id, open, "en").lanes) {
+        assert.ok(
+          lane.run <= M.maxTendonRun + 1e-9,
+          `${focus.id} ${lane.key}: run ${lane.run} past the ${M.maxTendonRun} ceiling`,
+        );
+      }
+    }
+  }
+  // And the figure still grows when a fan opens, which is the owner's other
+  // request — *"distances between states should increase as branches between
+  // them are opened out"* — and the behaviour that was missing entirely before
+  // the angle cap: a seven-method fan used to add 322px of height and exactly
+  // 0px of width.
   const shut = openDiagram("nonlinear-ode-solve", []);
   const opened = openDiagram("nonlinear-ode-solve", ["linear-ode-solve"]);
   assert.ok(
     opened.width > shut.width,
     `opening a 7-method fan left the figure ${opened.width} wide, was ${shut.width}`,
   );
+});
+
+test("every belly is long enough to hold the name written on it", () => {
+  // The invariant that says `runAcross`'s clamp never bites. The column is sized
+  // with the runs already in it (`Measure.hRun`), so a belly should always be at
+  // least as long as the name centred on it; if the sizing ever forgot a level of
+  // recursion, the clamp would quietly shorten the run instead and the name would
+  // hang off both ends of its own belly.
+  //
+  // Failable by hand: dropping the `2 * minTendonRun` from the chain arm of
+  // `hRun` fails this on a nested chain, and dropping the run term from the
+  // column's `span` fails it on the first figure with a wide fan.
+  let checked = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = openDiagram(focus.id, openableAddresses(focus.id), locale);
+      for (const lane of diagram.lanes) {
+        if (lane.label === "") continue;
+        checked += 1;
+        assert.ok(
+          lane.bellyX1 - lane.bellyX0 >= lane.labelWidth - 0.01,
+          `${focus.id} (${locale}) ${lane.key}: "${lane.label}" is ${lane.labelWidth.toFixed(1)}px ` +
+            `wide on a belly ${(lane.bellyX1 - lane.bellyX0).toFixed(1)}px long`,
+        );
+      }
+    }
+  }
+  assert.ok(checked > 300, `only ${checked} named lanes checked`);
 });
 
 test("every address a figure emits keeps the reader where they were standing", () => {
