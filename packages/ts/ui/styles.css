@@ -11734,8 +11734,28 @@ div.mj-rail-row:hover {
   opacity: 0.75;
   stroke-width: 1.75;
 }
+/* **And its name becomes a footnote to the fan, rather than a second headline.**
+   This rule used to brighten the stub's name to `--text-1` when the ingredient
+   opened. That was written before a stub could open anything: since PR 328 the
+   fan that opens beneath it draws the *same name* on its own spine, ~75px away, at
+   12px `--text-1` — so the one rule meant to say "this is the open one" was
+   raising a duplicate to the weight of the original.
+
+   Not deleted, though it is the obvious fix. The stub's name is the **only link
+   from the map to that ingredient's own page** — the line is the open/shut
+   target, the name is the destination — so dropping it when open would tidy a
+   repetition by removing a way through the site. It is shrunk and quietened
+   instead: 10px, `--text-2`, italic, which is the treatment
+   `.mj-process--method .mj-process-name` already uses on the sibling canvas for
+   a name subordinate to one drawn above it.
+
+   The "which stub is open" signal is not lost with it: the line above already
+   carries it in weight (0.75 opacity, 1.75 stroke), which is where this canvas
+   puts state — and italic is itself a second reading of the same fact. */
 .mj-converge-feed--open .mj-converge-feed-name {
-  fill: var(--text-1);
+  fill: var(--text-2);
+  font-size: 10px;
+  font-style: italic;
 }
 
 /* --- hit targets --------------------------------------------------------- */
