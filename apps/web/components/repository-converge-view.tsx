@@ -809,8 +809,6 @@ export function ConvergeView({
         // The canvas's own geometry, not a second drawing of it.
         laneMark={legendMark().outline}
         sizeControl={<SizeControl focus={focusId} open={open} current={currentSize} copy={copy} />}
-        withRecord={atlas.size}
-        total={graph.nodes.length}
       />
 
       {/* The figure in words, clipped rather than deleted.

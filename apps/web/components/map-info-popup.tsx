@@ -77,8 +77,6 @@ interface MapInfoCopy {
   move: readonly string[];
   claims: readonly string[];
   gaps: readonly string[];
-  /** Never typed into the sentence — `repository-preface.tsx:16-21` states why. */
-  linked: (withRecord: number, total: number) => string;
   display: string;
   elsewhere: string;
 }
@@ -122,9 +120,8 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
     ],
     gaps: [
       "The map covers the algorithm literature. The repository covers circuits and primitives. They overlap less than you would expect, and where a method has no record we say so on its page rather than leaving the space blank.",
+      "Where something named here does have a record, its name links straight to it.",
     ],
-    linked: (withRecord: number, total: number) =>
-      `${withRecord} of the ${total} things named on this map have a record in the repository.`,
     display: "Display",
     elsewhere: "Elsewhere",
   },
@@ -166,9 +163,8 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
     ],
     gaps: [
       "この地図が扱うのはアルゴリズムの文献です。リポジトリが扱うのは回路とプリミティブです。両者の重なりは思うより小さく、ある手法に記録がない場合は、空白のままにせず、その頁でそう述べます。",
+      "ここに名前のあるもののうち記録があるものは、その名前から直接その記録へ行けます。",
     ],
-    linked: (withRecord: number, total: number) =>
-      `この地図に名前のあるもの ${total} 件のうち、${withRecord} 件にはリポジトリの記録があります。`,
     display: "表示",
     elsewhere: "サイト内の他のページ",
   },
@@ -258,8 +254,6 @@ export function MapInfoPopup({
   closeHref,
   laneMark,
   sizeControl,
-  withRecord,
-  total,
 }: {
   locale: PublicLocale;
   /** Which section `?about=` names, or null for a shut box. */
@@ -271,8 +265,13 @@ export function MapInfoPopup({
   laneMark: string;
   /** The named size rungs, rendered on the server; see §3 below for why here. */
   sizeControl: ReactNode;
-  withRecord: number;
-  total: number;
+  // `withRecord` and `total` were props until session 110. They fed one
+  // sentence — "N of the M things named on this map have a record in the
+  // repository" — which the owner asked to lose along with every other number
+  // in this box. They are removed rather than left unused, because a prop
+  // nothing reads is a fact the caller still computes and a later session still
+  // has to reason about. `repository-preface.tsx` states the rule that governed
+  // them and still governs any number that comes back: counted, never typed.
 }): React.ReactElement {
   const copy = COPY[locale];
   const shell = PUBLIC_SHELL_COPY[locale];
@@ -533,7 +532,6 @@ export function MapInfoPopup({
               {copy.gaps.map((paragraph) => (
                 <p key={paragraph}>{paragraph}</p>
               ))}
-              <p>{copy.linked(withRecord, total)}</p>
             </section>
           </div>
         </div>
