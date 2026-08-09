@@ -66,6 +66,7 @@ import {
   type StateVocabulary,
 } from "../lib/repository/states";
 import { ConvergeCanvas } from "./repository-converge-map";
+import { CanvasContinuity } from "./canvas-continuity";
 import { InfiniteCanvas } from "./infinite-canvas";
 
 const COPY = {
@@ -504,20 +505,28 @@ function ProcessZoom({
           own"*, owner, session 92 — and it is now a viewport they can move
           rather than a set of sizes they can pick, with `?at=` carrying where
           they are so the page can be shared from there. */}
-      <InfiniteCanvas
-        initial={viewport}
-        label={copy.zoomHeading}
-        locale={locale === "ja" ? "ja" : "en"}
-      >
-        <ConvergeCanvas
-          diagram={diagram}
-          locale={locale}
-          title={label(node, locale)}
-          // What the reader clicked to get here. The index draws this same
-          // subject under this same name, which is the pairing.
-          subjectId={node.id}
-        />
-      </InfiniteCanvas>
+      {/* `CanvasContinuity` was on the index and not here, so one gesture had
+          two behaviours: opening a line on `/repository/layers` bent the curves
+          in place, and the identical click on this page replaced the document.
+          Nothing chose that — the index grew the wrapper and this figure did not
+          — and it is the kind of split a reader reads as the second one being
+          broken. Same wrapper, same `?at=`, same behaviour. */}
+      <CanvasContinuity renderedAt={at}>
+        <InfiniteCanvas
+          initial={viewport}
+          label={copy.zoomHeading}
+          locale={locale === "ja" ? "ja" : "en"}
+        >
+          <ConvergeCanvas
+            diagram={diagram}
+            locale={locale}
+            title={label(node, locale)}
+            // What the reader clicked to get here. The index draws this same
+            // subject under this same name, which is the pairing.
+            subjectId={node.id}
+          />
+        </InfiniteCanvas>
+      </CanvasContinuity>
       <figcaption className="mj-layers-zoom-caption">
         {from && to ? (
           <p className="mj-layers-zoom-ends">

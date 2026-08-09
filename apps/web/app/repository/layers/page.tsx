@@ -131,7 +131,13 @@ export default async function RepositoryLayersPage({
   return (
     <PublicSite
       activePath="/repository"
-      className="mj-repository-site mj-layers-site"
+      // `mj-map-site` is this route ONLY, and the distinction matters: three
+      // other surfaces carry `mj-layers-site` (a node's page and both paper
+      // pages) and on all three the figure illustrates a written record, so the
+      // reading column is right for them. Here the figure IS the page, and the
+      // full-bleed rules key on this class so widening the map cannot widen a
+      // document by accident.
+      className="mj-repository-site mj-layers-site mj-map-site"
       locale={locale}
       showLanguageToggle
     >

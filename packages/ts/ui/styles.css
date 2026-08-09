@@ -10762,12 +10762,38 @@ div.mj-rail-row:hover {
    so it scrolls inside its own box. The page body must never scroll sideways. */
 .mj-strand-body {
   display: grid;
-  grid-template-columns: minmax(0, 1fr) 14rem;
+  /* `auto`, not a fixed `14rem`, so the rail's track collapses to nothing when
+     there is no rail to put in it. The unfocused overview renders no `Rail` —
+     it has no focused slot to describe — and the fixed track was reserving
+     224px plus the gap anyway: measured on the rendered page, the canvas got
+     868 of 1112px and 244px of the figure's own room was held for a column with
+     nothing in it. The focused surface is unchanged, because there the rail
+     element exists and `auto` resolves to its own width. */
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: var(--sp-5);
   align-items: start;
 }
 @media (max-width: 60rem) {
   .mj-strand-body { grid-template-columns: minmax(0, 1fr); }
+}
+/* The 1200px reading measure is right for every other public page and wrong for
+   this one, for the same reason as the rule below: here the figure is the page.
+   Scoped to `.mj-map-site`, which only the map index sets — a node's page and
+   both paper pages carry `.mj-layers-site` and must keep their column. */
+.mj-map-site.mj-public-site .mj-public-frame {
+  width: 100%;
+  padding-inline: var(--sp-4);
+}
+/* The map surface only: give the figure the width the page chrome was holding.
+   `.mj-strand-view` is a reading column — the right shape for a document — and
+   the owner's ruling is that this one page is not a document with a picture in
+   it, the picture *is* the page. Overriding here rather than adding a variant
+   class to the section: the selector is already scoped to the route by
+   `.mj-layers-site`, which `PublicSite` sets, so nothing else can pick it up. */
+.mj-map-site .mj-strand-view {
+  max-width: 100%;
+  padding-left: var(--sp-3);
+  padding-right: var(--sp-3);
 }
 /* The canvas may legitimately be wider than the column, so it scrolls inside its
    own box and the page body never scrolls sideways. */
@@ -11937,6 +11963,27 @@ div.mj-rail-row:hover {
      reaches the pinch handler. What is lost is dragging the figure *vertically*
      by touch, which the arrow keys and the size links both cover. */
   touch-action: pan-y;
+}
+/* The map surface, where the figure is the page rather than an illustration in
+   one — the owner's *"map itself should take up most of the webpage/screen"*.
+
+   `dvh`, not `vh`: on a phone `vh` is the viewport with the URL bar retracted,
+   so a `100vh - chrome` box is taller than what is actually on screen until the
+   reader scrolls, and the bottom of the canvas — where the size links live —
+   sits under the browser's own bar. `dvh` tracks the bar as it moves.
+
+   The subtraction is the page chrome above the canvas measured at its tallest
+   (the site header, the back link, the heading and the one-line lede), plus the
+   size rungs below it. Deliberately not a `calc()` over custom properties that
+   nothing else sets: `check-token-vars` exists because this stylesheet has
+   already carried `var()`s pointing at properties that were deleted elsewhere.
+
+   `min-height` keeps the old fixed box as a floor, so a short window — a laptop
+   in a split screen, a phone in landscape — still gets a canvas it can work in
+   rather than a 90px slot. */
+.mj-canvas-viewport--fill {
+  height: calc(100dvh - 15rem);
+  min-height: 28rem;
 }
 /* Set by InfiniteCanvas only once a pointer has moved past the drag
    threshold — never on a plain press — so a reader mousing over the canvas

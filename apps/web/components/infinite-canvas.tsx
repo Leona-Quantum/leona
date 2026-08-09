@@ -84,11 +84,25 @@ export function InfiniteCanvas({
   initial,
   label,
   locale,
+  fill = false,
 }: {
   children: ReactNode;
   initial: Viewport;
   label: string;
   locale: PublicLocale;
+  /**
+   * Take the height of the screen rather than the fixed 32rem box.
+   *
+   * > *"map itself should take up most of the webpage/screen"* — owner,
+   * > session-103 inbox
+   *
+   * A flag rather than a change to `.mj-canvas-viewport`, because the same
+   * component draws a **second** figure — the one on a node's own page — where
+   * the map is one section of a written record and taking the whole screen
+   * would push the prose it illustrates off it. The map surface passes `fill`;
+   * the node page does not.
+   */
+  fill?: boolean;
 }) {
   const [view, setView] = useState<Viewport>(initial);
   const [dragging, setDragging] = useState(false);
@@ -404,7 +418,7 @@ export function InfiniteCanvas({
       // repository canvas's shapes), which still need to work with a screen
       // reader's native link list and its usual navigation — a control
       // surface, not an application, is what this is.
-      className={`mj-canvas-viewport${dragging ? " mj-canvas-viewport--dragging" : ""}`}
+      className={`mj-canvas-viewport${fill ? " mj-canvas-viewport--fill" : ""}${dragging ? " mj-canvas-viewport--dragging" : ""}`}
       tabIndex={0}
       aria-label={label}
       aria-describedby={hintId}
