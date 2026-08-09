@@ -450,3 +450,107 @@ for (const story of withPlates) {
     });
   }
 }
+
+// ---------------------------------------------------------------------------------------
+// **An opened ingredient's name is drawn twice, and the second copy is a footnote.**
+//
+// Since #328 a stub can be opened in place, and the fan of methods that opens beneath it is
+// a strand like any other — so `place` draws its name on its own spine. The stub it hangs
+// from still draws that same name, ~75px away. Two copies of one string.
+//
+// The obvious fix is to drop the stub's copy when open, and it is the wrong one: the stub's
+// name is the **only link from the map to that ingredient's own page** (the line is the
+// open/shut target, the name is the destination), so tidying the repetition that way removes
+// a way through the site. It is demoted instead — smaller, quieter, italic — and this is what
+// says so on the rendered page rather than in the stylesheet.
+//
+// **`.mj-converge-feed--open` had never been rendered here.** `saturate` in
+// `converge-stories.tsx` walked `diagram.lanes` only, while its own comment claimed it walked
+// what the layout test walks — which has included `diagram.feeds` since #328. So every
+// occurrence of this class in the built stories was in the inlined stylesheet, and ask D's
+// whole render-level surface was uncovered while documented as covered. 20 figures and 188
+// opened stubs now, and the counts below are what stop that recurring.
+const FEED_OPEN_IN_MARKUP = `class="mj-converge-feed mj-converge-feed--open"`;
+const withOpenFeeds = manifest.filter((story) => source(story).includes(FEED_OPEN_IN_MARKUP));
+
+test("an opened ingredient is actually rendered somewhere, or the check below is vacuous", () => {
+  const stubs = withOpenFeeds.reduce(
+    (total, story) => total + (source(story).split(FEED_OPEN_IN_MARKUP).length - 1),
+    0,
+  );
+  expect(
+    withOpenFeeds.length,
+    "no rendered figure opens an ingredient — `saturate` has stopped walking `diagram.feeds`, " +
+      "which is how this went uncovered for a whole feature once already",
+  ).toBeGreaterThanOrEqual(18);
+  expect(stubs, "too few opened stubs to be checking anything").toBeGreaterThanOrEqual(160);
+});
+
+for (const story of withOpenFeeds) {
+  test(`an opened stub's name reads as a footnote to its fan — ${story.name}`, async ({ page }) => {
+    await page.setContent(source(story), { waitUntil: "load" });
+    await page.evaluate(() => document.fonts.ready);
+
+    const report = await page.evaluate(() => {
+      const px = (element: Element) => Number.parseFloat(getComputedStyle(element).fontSize);
+      const read = (element: Element) => {
+        const style = getComputedStyle(element);
+        return {
+          text: element.textContent ?? "",
+          size: Number.parseFloat(style.fontSize),
+          fill: style.fill,
+          italic: style.fontStyle === "italic",
+        };
+      };
+      const opened = [...document.querySelectorAll(".mj-converge-feed--open .mj-converge-feed-name")];
+      const shut = [...document.querySelectorAll(".mj-converge-feed:not(.mj-converge-feed--open) .mj-converge-feed-name")];
+      const lanes = [...document.querySelectorAll("text.mj-converge-lane-name")];
+      return {
+        opened: opened.map(read),
+        laneNames: lanes.map((lane) => lane.textContent ?? ""),
+        smallestLane: lanes.length === 0 ? null : Math.min(...lanes.map(px)),
+        largestShutStub: shut.length === 0 ? null : Math.max(...shut.map(px)),
+        laneFill: lanes.length === 0 ? null : getComputedStyle(lanes[0]!).fill,
+      };
+    });
+
+    expect(report.opened.length, `${story.name} draws no opened stub`).toBeGreaterThan(0);
+
+    // The repetition this is about is real and is *not* being asserted away: at least one
+    // opened stub on this figure draws a string that a lane on the same figure also draws.
+    // If that stopped being true the demotion would be quieting a name nothing repeats.
+    const repeated = report.opened.filter((stub) => report.laneNames.includes(stub.text));
+    expect(
+      repeated.length,
+      `${story.name}: no opened stub's name is repeated by a lane, so there is no duplicate ` +
+        `for this treatment to be a footnote to`,
+    ).toBeGreaterThan(0);
+
+    for (const stub of report.opened) {
+      const where = `${story.name}: opened stub "${stub.text}"`;
+      if (report.smallestLane !== null) {
+        expect(
+          stub.size,
+          `${where} is drawn at ${stub.size}px against the smallest lane name's ` +
+            `${report.smallestLane}px — the copy on the stub is not smaller than the copy on ` +
+            `the fan, so the two read as two headlines rather than a name and its footnote`,
+        ).toBeLessThan(report.smallestLane);
+      }
+      if (report.largestShutStub !== null) {
+        expect(
+          stub.size,
+          `${where} is ${stub.size}px while a shut stub on the same figure is ` +
+            `${report.largestShutStub}px — opening an ingredient made its stub label louder, ` +
+            `which is the rule this replaced`,
+        ).toBeLessThan(report.largestShutStub);
+      }
+      expect(stub.italic, `${where} is not italic`).toBe(true);
+      if (report.laneFill !== null) {
+        expect(
+          stub.fill,
+          `${where} is filled "${stub.fill}", the same shade a lane name uses`,
+        ).not.toEqual(report.laneFill);
+      }
+    }
+  });
+}
