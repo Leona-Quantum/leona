@@ -1413,14 +1413,25 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
         if (lane.feedKey !== null) {
           const stub = stubs.get(lane.feedKey);
           assert.ok(stub, `${lane.key} hangs off a stub ${lane.feedKey} that is not drawn`);
+          // **Not `stub.y1`.** `feedReach`/`placeFeeds` push the fan's base
+          // out past the stub's own drawn end whenever the fan's half-band
+          // (`stub.vHalf`) exceeds `feedRun` — see the comment on `feedReach`
+          // — so a lane hanging off an *opened* stub sits on the fan's base,
+          // `y1 + outward · max(0, vHalf − feedRun)`, not on `y1` itself.
+          // Derived from `stub.vHalf`, which `placeFeeds` recorded from the
+          // same `Measure` this formula reads in production, rather than a
+          // constant copied in by hand — so a future change to the push
+          // amount fails this test by disagreeing with itself, not by
+          // silently drifting out of sync with a number pinned here.
+          const fanY = stub.y1 + stub.outward * Math.max(0, stub.vHalf - M.feedRun);
           const ends = drawnEnds(lane.d);
           for (const [x, y] of [
             [ends.sx, ends.sy],
             [ends.ex, ends.ey],
           ] as const) {
             assert.ok(
-              Math.abs(y - stub.y1) < 0.6,
-              `${focus.id}: ${lane.key} ends at y=${y}, off the end of stub ${stub.key} at ${stub.y1}`,
+              Math.abs(y - fanY) < 0.6,
+              `${focus.id}: ${lane.key} ends at y=${y}, off the fan base of stub ${stub.key} at ${fanY}`,
             );
             void x;
           }

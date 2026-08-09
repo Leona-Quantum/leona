@@ -770,6 +770,15 @@ export interface ConvergeFeed {
   open: boolean;
   /** What is inside, whether or not it is open — so a shut stub can say so. */
   inside: number;
+  /**
+   * The half-band this ingredient's own fan needs — `size.feeds[index].vHalf`
+   * from `measure`, the same number `feedReach` and `placeFeeds` compute the
+   * fan's actual base from. Recorded rather than left internal so a check can
+   * confirm the fan landed where that arithmetic says it should, `y1 +
+   * outward · max(0, vHalf − feedRun)`, without a second, hand-carried copy of
+   * the formula going stale next to the one that draws it.
+   */
+  vHalf: number;
 }
 
 export interface ConvergeDiagram {
@@ -1730,20 +1739,34 @@ export function chainColumnNeed(childNeeds: readonly number[]): number {
  */
 function feedReach(feeds: readonly Measure[]): number {
   if (feeds.length === 0) return 0;
-  // **Twice the fan's half-band, not once.** A fan is allocated around its own
-  // base, so a base placed at the stub's end puts half the fan back *inward* —
-  // through the belly the stub hangs off and into whatever that strand drew
-  // inside itself. Measured, before this line said `2`: on `quantum-linear-solve`
-  // the `state-preparation` stub ended at y=6272.7 and two of its three children
-  // were drawn at 6162.8 and 6209.7, 110px and 63px the wrong side of it, landing
-  // on a lane inside the chain at 6167.0 — same x, 4.2px apart. That is 10 of the
-  // 10 opened-against-shut name overlaps this branch was parked on.
+  // **The fan's own half-band, twice, only for the part of it that is not
+  // already spent on the stub.** A fan is allocated around its own base, so a
+  // base placed at the stub's end puts half the fan back *inward* — through
+  // the belly the stub hangs off and into whatever that strand drew inside
+  // itself. Measured, before the fix below existed: on `quantum-linear-solve`
+  // the `state-preparation` stub ended at y=6272.7 and two of its three
+  // children were drawn at 6162.8 and 6209.7, 110px and 63px the wrong side of
+  // it, landing on a lane inside the chain at 6167.0 — same x, 4.2px apart.
+  // That is 10 of the 10 opened-against-shut name overlaps this branch was
+  // parked on. So `placeFeeds` pushes the base out by the fan's own half-band
+  // and the fan occupies `[stub end, stub end + 2·vHalf]` outward — that fixed
+  // the 10 overlaps, at the cost of `feedRun + 2·vHalf` of height for every
+  // opened ingredient, which tripped the height ceiling: `time-discretization`
+  // (en) measured 16,836px against the 16,000px bar.
   //
-  // So `placeFeeds` pushes the base out by the fan's own half-band and the fan
-  // occupies `[stub end, stub end + 2·vHalf]` outward. The band reserved here is
-  // the band drawn there, from this one number, which is what the note above
-  // promises and what was not true before.
-  return CONVERGE_METRICS.feedRun + 2 * Math.max(...feeds.map((feed) => feed.vHalf));
+  // **`feedRun` was never a clearance requirement — it is the length the
+  // *stub itself* is drawn.** The clearance requirement is only that the fan's
+  // inward half not reach back past `innerReach`, which is `max(feedRun,
+  // vHalf)` beyond it, not `feedRun + vHalf`: when `vHalf ≤ feedRun` the stub
+  // is already long enough that the fan's own half-band, folded back inward
+  // from the stub's end, cannot reach `innerReach` at all, and no push is
+  // owed. Only the excess of `vHalf` over `feedRun`, if any, is real demand.
+  // Reserved here, spent in `placeFeeds`'s `fanY` by the identical formula —
+  // one number, so a reservation and a drawing still cannot come to different
+  // answers.
+  return Math.max(
+    ...feeds.map((feed) => Math.max(CONVERGE_METRICS.feedRun, feed.vHalf) + feed.vHalf),
+  );
 }
 
 
@@ -2405,6 +2428,7 @@ function placeFeeds(
       address: feed.address,
       open: feed.open,
       inside: feed.inside,
+      vHalf: size.feeds[index]!.vHalf,
     });
     if (!feed.open) continue;
     // **The fan itself, as lanes.** Drawn on a level base at the end of the stub,
@@ -2413,14 +2437,18 @@ function placeFeeds(
     // lands in `diagram.lanes` where the sweeps can see it. A fan emitted as some
     // private shape on `ConvergeFeed` would leave the crossing-free, canvas-bounds
     // and angle-cap checks passing over a set with the whole feature missing.
-    // **Pushed out by the fan's own half-band**, so the whole fan sits beyond the
-    // stub's end instead of straddling it. `place` allocates a fan's bows around
-    // its base, so a base *at* `y1` draws half the ingredient back through the
-    // belly — see `feedReach`, which reserves the `2·vHalf` this spends. The
-    // comment at the top of this function has always said a stub never points
-    // back through the figure; until this line the stub obeyed it and its fan
+    // **Pushed out only as far as the fan's own half-band actually demands
+    // past `innerReach`**, so the whole fan clears what is drawn inside this
+    // strand instead of straddling it, without spending more of the stub than
+    // that requires. `place` allocates a fan's bows around its base, so a base
+    // *at* `y1` draws half the ingredient back through the belly whenever the
+    // fan's half-band exceeds `feedRun` — see `feedReach`, which reserves the
+    // identical `max(feedRun, vHalf) + vHalf` this spends. The comment at the
+    // top of this function has always said a stub never points back through
+    // the figure; until the fix this replaced, the stub obeyed it and its fan
     // did not.
-    const fanY = y1 + outward * size.feeds[index]!.vHalf;
+    const feedVHalf = size.feeds[index]!.vHalf;
+    const fanY = at.y + outward * (inner + Math.max(M.feedRun, feedVHalf));
     const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: fanY };
     place(
       fanBase,
