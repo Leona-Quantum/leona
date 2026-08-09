@@ -739,7 +739,21 @@ export interface ConvergeDiagram {
   empty: boolean;
   /** How many lanes on this figure no recorded source walks. */
   unpublishedCount: number;
-  /** Lines with something recorded inside that the reader has not opened. */
+  /**
+   * Lines with something recorded inside that the reader **can still open**.
+   *
+   * The `openable` clause is the whole point and it was missing. This counted
+   * every shut line with anything inside it, and a line at `CONVERGE_DEPTH_MAX`
+   * has something inside and no click — so a reader who had opened literally
+   * every line on `nonlinear-ode-solve` was told *"33 lines have something
+   * recorded inside that you have not opened"* with no clicks left to make.
+   * Three of the nineteen figures could never reach *"everything that opens is
+   * open"*, which is the sentence this count exists to earn.
+   *
+   * `cappedCount` is the other half, and the two partition the old number
+   * exactly: a lane is shut with something inside, and this figure either will
+   * open it or will not.
+   */
   collapsedCount: number;
   /** What the circles between the ends mean. See `ConvergeGrain`. */
   grain: ConvergeGrain;
@@ -759,8 +773,24 @@ export interface ConvergeDiagram {
   truncated: boolean;
   /** The dominator order differs between paths, so the chain is not drawable as one line. */
   chainConsistent: boolean;
-  /** A chain of clicks was cut short by `CONVERGE_DEPTH_MAX`. Reported, never silent. */
-  depthCapped: boolean;
+  /**
+   * Lines with something recorded inside that this figure will **not** open.
+   *
+   * A count rather than the boolean it replaces, because the sentence a reader
+   * gets is now *how many* — a figure that says "something here goes deeper"
+   * gives them nothing to look for, and the number is the difference between
+   * the note explaining the shortfall in `collapsedCount` and merely coexisting
+   * with it.
+   *
+   * **Two cuts land here and only one of them is the depth cap.** `openable` is
+   * false when the chain hit `CONVERGE_DEPTH_MAX`, and also when the walk has
+   * already drawn this node on the way down — a slot whose method delegates
+   * back to it. On today's graph the second is **0 of 45** (all 45 sit at the
+   * depth ceiling, on three figures), so the note names depth. If a cycle ever
+   * arrives, this count is still right and the note's wording is the thing to
+   * revisit; that is why the reason is not baked into the number.
+   */
+  cappedCount: number;
 }
 
 /**
@@ -1771,8 +1801,10 @@ interface Placement {
   rightmost: number;
   /** Ids already given a view-transition name, so no two elements claim one. */
   named: Set<string>;
-  depthCapped: boolean;
+  /** Shut, something inside, and openable — a click the reader has not made. */
   collapsed: number;
+  /** Shut, something inside, and not openable — a click that does not exist. */
+  capped: number;
   unpublished: number;
 }
 
@@ -1900,8 +1932,20 @@ function place(
       ? { text: "", truncated: false }
       : fitLabel(strand.shortLabel ?? strand.label, M.laneFont, nameBudget(context.columnFit));
   if (strand.standing === "unpublished") out.unpublished += 1;
-  if (!strand.open && strand.inside > 0) out.collapsed += 1;
-  if (depth >= CONVERGE_DEPTH_MAX && strand.inside > 0 && !strand.open) out.depthCapped = true;
+  // **A partition of the old single count, on `openable`.** Both arms need
+  // `!open` and neither can drop it: a run of named hops is drawn open from the
+  // start and carries `openable: false` with `inside > 0`, so a bare
+  // `!openable && inside > 0` would count the one lane on the canvas that is
+  // already showing everything it has as a thing the reader cannot reach.
+  //
+  // `openable`, not `depth >= CONVERGE_DEPTH_MAX`, which is what the boolean
+  // this replaces tested. The two agree on today's graph and the field is the
+  // honest question — *will this figure open it* — where the depth comparison
+  // is one of the two reasons the answer can be no.
+  if (!strand.open && strand.inside > 0) {
+    if (strand.openable) out.collapsed += 1;
+    else out.capped += 1;
+  }
 
   out.lanes.push({
     key: strand.key,
@@ -2216,7 +2260,7 @@ export function layoutConverge(options: {
       grain: "methods",
       truncated: expansion.truncated,
       chainConsistent: expansion.chainConsistent,
-      depthCapped: false,
+      cappedCount: 0,
     };
   }
 
@@ -2319,8 +2363,8 @@ export function layoutConverge(options: {
     feeds: [],
     named: new Set(),
     rightmost: 0,
-    depthCapped: false,
     collapsed: 0,
+    capped: 0,
     unpublished: 0,
   };
 
@@ -2365,7 +2409,7 @@ export function layoutConverge(options: {
     grain: plan.grain,
     truncated: expansion.truncated,
     chainConsistent: expansion.chainConsistent,
-    depthCapped: out.depthCapped,
+    cappedCount: out.capped,
   };
 }
 

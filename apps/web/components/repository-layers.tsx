@@ -558,7 +558,7 @@ function ProcessZoom({
             they come from `converge-notes.ts` rather than from either
             component's own copy table. */}
         {droppedOpen > 0 ? <p>{notes.droppedOpen(droppedOpen, CONVERGE_OPEN_MAX)}</p> : null}
-        {diagram.depthCapped ? <p>{notes.depthCapped}</p> : null}
+        {diagram.cappedCount > 0 ? <p>{notes.cappedInside(diagram.cappedCount)}</p> : null}
       </figcaption>
     </figure>
   );

@@ -721,7 +721,12 @@ export function ConvergeView({
   const partly = decomposed.filter((route) => route.coverage === "partly-own").length;
   const whole = decomposed.filter((route) => route.coverage === "all-own").length;
 
+  // Summed the same way, over the same figures, because on the overview the
+  // two sentences are about all four at once. `capped` used to be a `.some()`
+  // over a boolean: four figures could be hiding forty-five lines between them
+  // and the page said "something".
   const collapsed = drawn.reduce((total, figure) => total + figure.diagram.collapsedCount, 0);
+  const capped = drawn.reduce((total, figure) => total + figure.diagram.cappedCount, 0);
   // Every `view-transition-name` this page hands out, in one set, because the
   // uniqueness rule the names have to obey is a page-level rule.
   const claimed = new Set<string>();
@@ -822,8 +827,8 @@ export function ConvergeView({
               {droppedOpen > 0 ? (
                 <p className="mj-strand-note">{notes.droppedOpen(droppedOpen, CONVERGE_OPEN_MAX)}</p>
               ) : null}
-              {drawn.some((figure) => figure.diagram.depthCapped) ? (
-                <p className="mj-strand-note">{notes.depthCapped}</p>
+              {capped > 0 ? (
+                <p className="mj-strand-note">{notes.cappedInside(capped)}</p>
               ) : null}
               <p className="mj-strand-note">{copy.routes(delegated, partly, whole)}</p>
             </div>

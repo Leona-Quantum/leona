@@ -27,26 +27,36 @@ test("the cap notes say both numbers, in both locales", () => {
       `${locale}: the note does not say how many are drawn (${CONVERGE_OPEN_MAX})`,
     );
 
-    assert.ok(notes.depthCapped.trim().length > 0, `${locale}: the depth note is empty`);
+    // The same demand of the second note, which used to carry no number at all
+    // and said only that *something* went deeper.
+    assert.match(
+      notes.cappedInside(33),
+      /(?<!\d)33(?!\d)/,
+      `${locale}: the note does not say how many lines it is about`,
+    );
   }
 });
 
 test("a Japanese reader gets Japanese", () => {
   const en = convergeNotes("en");
   const ja = convergeNotes("ja");
-  assert.notEqual(ja.depthCapped, en.depthCapped);
+  assert.notEqual(ja.cappedInside(3), en.cappedInside(3));
   assert.notEqual(ja.droppedOpen(2, 128), en.droppedOpen(2, 128));
   // Kana or kanji, not merely "a different string". Two English variants would
   // pass a `notEqual` and fail a reader, which is the standing rule about
   // rendering `ja` before calling a UI change verified, made failable here.
-  for (const text of [ja.depthCapped, ja.droppedOpen(2, 128)]) {
+  for (const text of [ja.cappedInside(3), ja.droppedOpen(2, 128)]) {
     assert.match(text, /[぀-ヿ一-鿿]/, `not Japanese: ${text}`);
   }
 });
 
 test("one thing dropped is not “1 things”", () => {
-  // The English note is the only one that inflects, and the singular is the
-  // case a reader is most likely to hit: one click past the cap.
-  assert.match(convergeNotes("en").droppedOpen(1, 128), /1 more thing than/);
-  assert.match(convergeNotes("en").droppedOpen(2, 128), /2 more things than/);
+  // The English notes are the only ones that inflect, and the singular is the
+  // case a reader is most likely to hit: one click past the cap, one line at
+  // the ceiling.
+  const en = convergeNotes("en");
+  assert.match(en.droppedOpen(1, 128), /1 more thing than/);
+  assert.match(en.droppedOpen(2, 128), /2 more things than/);
+  assert.match(en.cappedInside(1), /1 line here has more/);
+  assert.match(en.cappedInside(6), /6 lines here have more/);
 });

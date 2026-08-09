@@ -12,6 +12,7 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  CONVERGE_DEPTH_MAX,
   CONVERGE_METRICS,
   CONVERGE_OPEN_MAX,
   resolveOpenIds,
@@ -1538,11 +1539,88 @@ test("opening is a toggle, and toggling twice is where you started", () => {
 
 test("a shut line says what is inside it, and the figure counts them", () => {
   // A cap or a fold a reader cannot see is a map quietly missing something.
+  //
+  // **Swept at saturation as well as shut, and that is where this was wrong.**
+  // With nothing open the two counts are indistinguishable from the one they
+  // replace, because every shut line still has a click waiting on it. The
+  // defect only exists on a figure a reader has finished opening: 33 lines on
+  // `nonlinear-ode-solve` sat at `CONVERGE_DEPTH_MAX` with something inside and
+  // no way in, and all 33 were counted as clicks the reader had not made.
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    const diagram = diagramFor(focus.id);
-    const shut = diagram.lanes.filter((lane) => !lane.open && lane.inside > 0).length;
-    assert.equal(diagram.collapsedCount, shut, `${focus.id}: the count must be the thing counted`);
+    for (const open of [new Set<string>(), new Set(openableAddresses(focus.id))]) {
+      const diagram = openDiagram(focus.id, open);
+      const shut = diagram.lanes.filter((lane) => !lane.open && lane.inside > 0);
+      const clickable = shut.filter((lane) => lane.openHref !== null).length;
+
+      // The count is the thing counted, and it is only the clickable half.
+      assert.equal(
+        diagram.collapsedCount,
+        clickable,
+        `${focus.id}: the count must be the thing counted`,
+      );
+      // Nothing falls between them. The two arms partition the old number, so a
+      // third state — a lane that is shut with something inside and neither
+      // counted nor excused — cannot appear without this failing.
+      assert.equal(
+        diagram.collapsedCount + diagram.cappedCount,
+        shut.length,
+        `${focus.id}: ${shut.length} shut lines, ${diagram.collapsedCount} counted, ${diagram.cappedCount} excused`,
+      );
+    }
   }
+});
+
+test("a figure the reader has finished opening says so", () => {
+  // The sentence `collapsedCount` exists to earn. Three of the nineteen figures
+  // could never reach it: they carry lines at the depth ceiling, those lines
+  // have something inside, and the count did not ask whether they could be
+  // opened — so the figure went on reporting unmade clicks after the reader had
+  // made every one there was.
+  let reachedTheEnd = 0;
+  let capped = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const diagram = openDiagram(focus.id, openableAddresses(focus.id));
+    assert.equal(
+      diagram.collapsedCount,
+      0,
+      `${focus.id}: ${diagram.collapsedCount} lines still counted as unopened with every address open`,
+    );
+    reachedTheEnd += 1;
+    capped += diagram.cappedCount;
+  }
+  console.log(`${reachedTheEnd} figures reach "everything that opens is open", holding ${capped} capped lines`);
+  // Not vacuous: the capped lines have to still exist somewhere, or this passes
+  // because the layout stopped drawing them rather than because the count
+  // learned to tell the two apart.
+  assert.ok(capped > 0, "no figure has a line it will not open — the second count is measuring nothing");
+});
+
+test("a line this figure will not open is not a line at the depth ceiling by definition", () => {
+  // `cappedCount` asks `openable`, and `openable` is false for two reasons: the
+  // depth cap, and the walk having already drawn this node further up. Today
+  // every one of them is the first reason, and the note is worded for depth on
+  // the strength of that measurement rather than on the strength of the
+  // predicate — so the measurement is on the record and will say when it stops
+  // holding.
+  let atCeiling = 0;
+  let elsewhere = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const diagram = openDiagram(focus.id, openableAddresses(focus.id));
+    for (const lane of diagram.lanes) {
+      if (lane.open || lane.inside === 0 || lane.openHref !== null) continue;
+      // Depth off the address: `subject:1.0.3` is three levels below the root.
+      const depth = lane.address.split(":")[1].split(".").length - 1;
+      if (depth >= CONVERGE_DEPTH_MAX) atCeiling += 1;
+      else elsewhere += 1;
+    }
+  }
+  console.log(`lines this figure will not open: ${atCeiling} at the depth ceiling, ${elsewhere} for another reason`);
+  assert.ok(atCeiling > 0, "nothing sits at the depth ceiling — the sweep found no capped lines at all");
+  assert.equal(
+    elsewhere,
+    0,
+    `${elsewhere} lines are unopenable for a reason that is not depth — the note's wording needs revisiting`,
+  );
 });
 
 test("allocateBows reproduces laneOffsets exactly when every sibling is a leaf", () => {

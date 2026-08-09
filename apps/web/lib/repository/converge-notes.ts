@@ -26,8 +26,22 @@ export interface ConvergeNotes {
    * picture in front of them.
    */
   droppedOpen: (dropped: number, max: number) => string;
-  /** Something drawn here has more inside it than this figure goes deep. */
-  depthCapped: string;
+  /**
+   * Lines with more recorded inside them than this figure will open.
+   *
+   * **Carries the count**, because it is the other half of the sentence beside
+   * it. A figure that has opened everything it can says "everything that opens
+   * is open" and then "and 33 lines go deeper than this drawing does" — two
+   * numbers that add up to what a reader can see. Before, the deep lines were
+   * folded into the first count, so the figure claimed 33 unmade clicks that
+   * did not exist, and the second sentence merely said *something* went deeper.
+   *
+   * Worded for what is true of every such line rather than for the depth cap
+   * specifically: the reason may also be that the walk has already drawn this
+   * node further up. Either way the line has its own page, and there it is the
+   * subject rather than a descendant.
+   */
+  cappedInside: (n: number) => string;
 }
 
 const NOTES: Record<PublicLocale, ConvergeNotes> = {
@@ -35,14 +49,15 @@ const NOTES: Record<PublicLocale, ConvergeNotes> = {
     droppedOpen: (dropped: number, max: number) =>
       `This link asked to open ${dropped} more ${dropped === 1 ? "thing" : "things"} than the figure will hold at once. `
       + `${max} are drawn; the rest are shown shut.`,
-    depthCapped:
-      "Something on this figure has more recorded inside it than this drawing goes. Open it on its own page to keep going.",
+    cappedInside: (n: number) =>
+      `${n} line${n === 1 ? "" : "s"} here ${n === 1 ? "has" : "have"} more recorded inside than this figure opens. `
+      + `Open ${n === 1 ? "it" : "one"} on its own page to keep going.`,
   },
   ja: {
     droppedOpen: (dropped: number, max: number) =>
       `このリンクは、同時に開ける上限より ${dropped} 件多くを要求しました。${max} 件を描画し、残りは閉じたまま表示しています。`,
-    depthCapped:
-      "この図の描画の深さを超えて内側が記録されている線があります。その頁を開くと続きを見られます。",
+    cappedInside: (n: number) =>
+      `この図が開く範囲を超えて内側が記録されている線が ${n} 本あります。その頁を開くと続きを見られます。`,
   },
 };
 
