@@ -196,15 +196,138 @@ function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React
   );
 }
 
-function Lane({
+/**
+ * The classes a lane's `<g>` carries, shared by its **body** group and its
+ * **name** group.
+ *
+ * Two groups per lane, because paint order decides what a plate can hide — see
+ * `ConvergeCanvas`. One expression rather than two so a standing, an atlas mark
+ * or a depth cannot apply to half of a lane: `.mj-converge-lane--unpublished
+ * .mj-converge-lane-name` styles the name and
+ * `.mj-converge-lane--unpublished .mj-converge-strand-body` styles the body,
+ * and a second copy of this string is how one of them would quietly stop
+ * matching.
+ */
+function laneClass(lane: ConvergeLane, documented: boolean): string {
+  return `mj-converge-lane mj-converge-lane--${lane.standing}${
+    lane.open ? " mj-converge-lane--open" : ""
+  }${documented ? " mj-converge-lane--atlas" : ""}`;
+}
+
+function isDocumented(lane: ConvergeLane, atlas: ReadonlySet<string>): boolean {
+  return lane.nodeId !== null && atlas.has(lane.nodeId);
+}
+
+/**
+ * The plate under a name, in the pass that draws **only** plates.
+ *
+ * **Every name, not only an opened one** (owner, session 107: *"plate every
+ * name, but opened ones are fainter and within their lines"*). The split that
+ * existed before was an accident of when the plate was built rather than a
+ * decision: an opened name got one because its own branches structurally cross
+ * it, and a shut name did not because a mostly-empty figure had nothing to cross
+ * it with. Measured over all 19 figures × both locales, fully opened, **34 of
+ * 478 shut names already have a line through them** — and drawing ingredient
+ * fans takes that to 58. "Readable when open, sometimes not when shut" is also
+ * the harder rule to explain to a reader.
+ *
+ * Not inside the name's `<a>`, and that is the point of the separate pass: a
+ * plate that sits in the anchor is a filled rect and therefore a click target,
+ * so it grows the name's box past the *small* one the owner asked for and eats
+ * the collapse click on the line underneath it. Out here it is inert, and the
+ * name's target is exactly `.mj-converge-hit`.
+ */
+function NamePlate({ lane }: { lane: ConvergeLane }): React.ReactElement | null {
+  if (lane.label === "") return null;
+  return (
+    <rect
+      className={`mj-converge-name-plate${lane.bone ? " mj-converge-name-plate--open" : ""}`}
+      data-name={lane.key}
+      x={n(lane.labelX - lane.labelWidth / 2 - 5)}
+      /* `-12.5` / 17, not `-12` / 16. The 16px height was measured against
+         `getBBox()` on the rendered page — a 12px Japanese name draws 15.2px
+         tall — but the *placement* was not: at `labelY - 12` the cover was
+         0.5px above the name and 1.0px below, and the asymmetry is placement,
+         not size. Half a pixel is nothing for the Latin face this repository
+         ships; it is not nothing for a Japanese name, because Instrument Sans
+         has no CJK glyphs and those fall back to whatever face the *reader's*
+         machine offers, which may have a taller ascent than 0.5px allows.
+         1.0 / 1.5, one pixel taller. OWNER_TODO §3, taken with the change to
+         this component it was waiting for. */
+      y={n(lane.labelY - 12.5)}
+      width={n(lane.labelWidth + 10)}
+      height="17"
+    />
+  );
+}
+
+function LaneName({
   lane,
   copy,
   atlas,
+  title,
 }: {
   lane: ConvergeLane;
   copy: ConvergeCopy;
   atlas: ReadonlySet<string>;
-}): React.ReactElement {
+  title: string;
+}): React.ReactElement | null {
+  if (lane.label === "") return null;
+  return (
+    <g className={laneClass(lane, isDocumented(lane, atlas))} data-depth={lane.depth}>
+      <a href={lane.href} aria-label={`${lane.fullLabel} — ${copy.readAbout}`}>
+        <title>{`${title} — ${copy.readAbout}`}</title>
+        {/* Sized to the name, not to a constant. It was a fixed 120x15 under
+            text whose median drawn width is 235px, so **96% of English names
+            and 80% of Japanese ones were wider than their own click target** —
+            a reader aiming at the middle of a word hit nothing. The width comes
+            from `lane.labelWidth`, which is the engine's own measurement of
+            this string: the same number that sized the column, carried, never
+            re-derived here. A second derivation of a width is exactly what
+            clipped the widest label in a column built for it, twice.
+
+            **This rect is the whole of the name's target**, which is what makes
+            the owner's *"small click box for the label itself, and the rest of
+            the line can be clickable to collapse as well"* true rather than
+            approximately true. The plate is drawn in an earlier pass and takes
+            no clicks; nothing else in this anchor is filled. So outside these
+            few hundred square pixels the 24px stroke along the line is still
+            the topmost target, and it still collapses. */}
+        <rect
+          className="mj-converge-hit"
+          x={n(lane.labelX - lane.labelWidth / 2 - 4)}
+          y={n(lane.labelY - 12)}
+          width={n(lane.labelWidth + 8)}
+          height="15"
+        />
+        <text
+          className="mj-converge-lane-name"
+          data-name={lane.key}
+          /* Positioned by `transform`, not by `x`/`y`. Those are not animatable
+             CSS properties on a `<text>` (measured), so a name set with them
+             jumps to its new place while every line around it glides. The
+             transform *is* animatable, and the canvas transitions it. */
+          x="0"
+          y="0"
+          transform={`translate(${n(lane.labelX)} ${n(lane.labelY)})`}
+          textAnchor="middle"
+        >
+          {lane.label}
+        </text>
+      </a>
+    </g>
+  );
+}
+
+/**
+ * What every shape of one lane says it is.
+ *
+ * One writer, read by the body group and by the name group, which are two
+ * elements in two passes now. The `<title>` a reader hovers has to be the same
+ * sentence whichever shape they land on, and two expressions of it is how the
+ * name and the line come to describe the same thing differently.
+ */
+function laneTitle(lane: ConvergeLane, copy: ConvergeCopy, atlas: ReadonlySet<string>): string {
   const standingNote =
     lane.standing === "unpublished"
       ? ` — ${copy.unpublished}`
@@ -217,10 +340,29 @@ function Lane({
           lane.open ? `, ${copy.inside}` : ""
         }`
       : "";
-  const documented = lane.nodeId !== null && atlas.has(lane.nodeId);
-  const title = `${lane.fullLabel}${insideNote}${standingNote}${
-    documented ? ` · ${copy.inAtlas}` : ""
+  return `${lane.fullLabel}${insideNote}${standingNote}${
+    isDocumented(lane, atlas) ? ` · ${copy.inAtlas}` : ""
   }`;
+}
+
+/**
+ * A lane's **body**: what it is drawn as, and the target that opens or shuts it.
+ *
+ * The name is not here. It is drawn by `NamePlate` and `LaneName` in two later
+ * passes, because a plate can only rub out lines that were painted before it and
+ * a lane's own branches are painted *after* it — see `ConvergeCanvas`.
+ */
+function Lane({
+  lane,
+  copy,
+  atlas,
+}: {
+  lane: ConvergeLane;
+  copy: ConvergeCopy;
+  atlas: ReadonlySet<string>;
+}): React.ReactElement {
+  const documented = isDocumented(lane, atlas);
+  const title = laneTitle(lane, copy, atlas);
 
   // **A lane carries no `view-transition-name`, and never usefully did.**
   //
@@ -238,12 +380,7 @@ function Lane({
   // of crossfading a snapshot of it. See the converge block in `styles.css`.
 
   return (
-    <g
-      className={`mj-converge-lane mj-converge-lane--${lane.standing}${
-        lane.open ? " mj-converge-lane--open" : ""
-      }${documented ? " mj-converge-lane--atlas" : ""}`}
-      data-depth={lane.depth}
-    >
+    <g className={laneClass(lane, documented)} data-depth={lane.depth}>
       {/* Open: the centre line stays, faint, and what was inside is drawn in its
           place. Shut: the tapered body. Never both — an opened strand still
           drawing its own body would claim to be a way across at the same time
@@ -280,75 +417,15 @@ function Lane({
         </a>
       )}
 
-      {/* Target two: the name. Goes to the thing's own page, and carries the
-          pairing that makes the arrival read as a zoom into it.
-          An opened strand draws no name — see `place` in the layout for why it
-          cannot have one that does not collide — so there is nothing here to
-          hang a target on, and an invisible band claiming a name that is not
-          drawn would be a hit target for nothing. */}
-      {lane.label === "" ? null : (
-        <a href={lane.href} aria-label={`${lane.fullLabel} — ${copy.readAbout}`}>
-          <title>{`${title} — ${copy.readAbout}`}</title>
-          {/* Sized to the name, not to a constant. It was a fixed 120x15 under
-              text whose median drawn width is 235px, so **96% of English names
-              and 80% of Japanese ones were wider than their own click target** —
-              a reader aiming at the middle of a word hit nothing. The width comes
-              from `lane.labelWidth`, which is the engine's own measurement of
-              this string: the same number that sized the column, carried, never
-              re-derived here. A second derivation of a width is exactly what
-              clipped the widest label in a column built for it, twice. */}
-          {/* **The plate under a bone's name.**
-              An opened line wears its name on itself now (owner, session 104:
-              *"the name of the process line resides there not in some
-              surrounding area"*), and that position is structurally crossed:
-              every child of an opened fan converges to the parent's spine at
-              both ends, so a name written near it is passed through by its own
-              branches near the ends of the span whatever band is reserved.
-              Measured — the branches clear the middle 76% of the span and cross
-              the rest, so no band width fixes it and fitting the name to 76% of
-              the column would machine-truncate exactly the names the owner asked
-              not to be cut.
-              So the name is occluded rather than moved: an opaque plate in the
-              canvas fill, drawn under the text and over the lines. Only for
-              opened lanes — a shut name sits clear of its own band and a plate
-              there would rub out lines for nothing. */}
-          {lane.bone ? (
-            <rect
-              className="mj-converge-name-plate"
-              x={n(lane.labelX - lane.labelWidth / 2 - 5)}
-              y={n(lane.labelY - 12)}
-              width={n(lane.labelWidth + 10)}
-              /* 16, not 14. Measured against `getBBox()` on the rendered page:
-                 a 12px Japanese name draws 15.2px tall (ascender to descender)
-                 and a 14px plate left 1.2px of it uncovered, which is exactly
-                 the row of pixels a dotted line runs through. The plate has to
-                 be measured against the *drawn* text, not against the font
-                 size. */
-              height="16"
-            />
-          ) : null}
-          <rect
-            className="mj-converge-hit"
-            x={n(lane.labelX - lane.labelWidth / 2 - 4)}
-            y={n(lane.labelY - 12)}
-            width={n(lane.labelWidth + 8)}
-            height="15"
-          />
-          <text
-            className="mj-converge-lane-name"
-            /* Positioned by `transform`, not by `x`/`y`. Those are not animatable
-               CSS properties on a `<text>` (measured), so a name set with them
-               jumps to its new place while every line around it glides. The
-               transform *is* animatable, and the canvas transitions it. */
-            x="0"
-            y="0"
-            transform={`translate(${n(lane.labelX)} ${n(lane.labelY)})`}
-            textAnchor="middle"
-          >
-            {lane.label}
-          </text>
-        </a>
-      )}
+      {/* Target two — the name — is **not here**. It is drawn by `LaneName` in a
+          later pass over the same lanes, with `NamePlate` in the pass before
+          that, and the reason is paint order: SVG paints in document order, so a
+          plate can only rub out lines emitted *before* it, and a lane's own
+          branches are emitted *after* it. A plate that sits in this group is
+          therefore under exactly the lines it was built to hide. Measured on
+          this graph, fully opened: of the 45 names a line runs through, 12 are
+          crossed by a line drawn later, and those 12 were unfixable while the
+          plate lived here. */}
     </g>
   );
 }
@@ -360,11 +437,13 @@ function Lane({
  * one alt string, and the whole point is that each shape is its own link. Same
  * call as the process canvas, D90.2.
  *
- * Z-order is load-bearing. Strands first, then the stubs hanging off them, then
- * the circles — a circle is the thing several strands share, so it has to sit on
- * top of all of them or the shared circle reads as lines passing behind a dot.
- * Within the strands, deeper ones are emitted after shallower ones, which the
- * layout already guarantees by emitting a parent before its children.
+ * Z-order is load-bearing, and it is now five passes rather than three: strands,
+ * the stubs hanging off them, every name's plate, every name, then the circles —
+ * a circle is the thing several strands share, so it has to sit on top of all of
+ * them or the shared circle reads as lines passing behind a dot. Within the
+ * strands, deeper ones are emitted after shallower ones, which the layout
+ * already guarantees by emitting a parent before its children. See the passes
+ * themselves for why the names had to come out of their lanes' groups.
  */
 export function ConvergeCanvas({
   diagram,
@@ -433,6 +512,32 @@ export function ConvergeCanvas({
       ))}
       {diagram.feeds.map((feed) => (
         <Feed key={feed.key} feed={feed} copy={copy} />
+      ))}
+      {/* Every plate, then every name, and both after every line. Three passes
+          over one list rather than one pass emitting three things, because on
+          this canvas paint order *is* the occlusion rule and there is no other
+          lever: a plate hides what was drawn before it and nothing else.
+          - Plates after lines, or a lane's own branches — emitted after it —
+            paint straight back over the name it is hiding them from.
+          - Names after every plate, so a plate can never rub out a *name*. With
+            the two interleaved, a plate covers any earlier name it overlaps,
+            which measured as 4 pairs today and is exactly the case ingredient
+            fans multiply. Text over text is hard to read; text erased by a
+            neighbour's box is not there at all, and the reader cannot tell it
+            was ever drawn.
+          - Circles last, unchanged: a circle is the thing several lines share,
+            so it sits on top of all of them. */}
+      {diagram.lanes.map((lane) => (
+        <NamePlate key={lane.key} lane={lane} />
+      ))}
+      {diagram.lanes.map((lane) => (
+        <LaneName
+          key={lane.key}
+          lane={lane}
+          copy={copy}
+          atlas={atlas}
+          title={laneTitle(lane, copy, atlas)}
+        />
       ))}
       {diagram.states.map((state) => (
         <Hub key={state.key} state={state} copy={copy} />

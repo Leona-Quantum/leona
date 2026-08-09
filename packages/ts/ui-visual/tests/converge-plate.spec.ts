@@ -1,19 +1,21 @@
-// **The render-level half of the opened-name guard.**
+// **The render-level half of the name-plate guard.**
 //
-// An opened line on the Atlas map wears its own name on itself (owner, session 104:
-// *"the name of the process line resides there not in some surrounding area"*), and that
-// position is structurally crossed — every child of an opened fan converges onto its
-// parent's spine at both ends, so branches pass through the name near the ends of the span
-// whatever band the layout reserves. Measured: they clear the middle 76% and cross the
-// rest, so no band width fixes it. The name is therefore **occluded** rather than moved: an
-// opaque `<rect class="mj-converge-name-plate">` in the canvas fill, drawn under the text
-// and over the lines.
+// A name on the Atlas map is drawn on a plate — an `<rect class="mj-converge-name-plate">` in
+// the canvas fill, painted over the lines and under the text — so that a line running through
+// it does not make it unreadable.
+//
+// **Every name, since session 107** (owner: *"plate every name, but opened ones are fainter
+// and within their lines"*). The split it replaces gave a plate to an opened line's name and
+// none to a shut one's, which was an accident of when the plate was built rather than a
+// decision: an opened name is structurally crossed by its own branches, and a shut one went
+// without because a mostly-empty figure had nothing to cross it with. Measured over all 19
+// figures × both locales, fully opened, 34 of 478 shut names already have a line through them.
 //
 // `repository-converge-layout.test.ts` guards the layout half — that a name on a bone stays
-// inside the band reserved for it — and **cannot see this half at all**. It measures
-// numbers the layout computed. Delete the plate, shrink it, make it transparent, or move it
-// after the text, and every layout assertion in this repository stays green while every
-// opened name on the Atlas goes illegible.
+// inside the band reserved for it — and **cannot see this half at all**. It measures numbers
+// the layout computed. Delete the plate, shrink it, make it transparent, or move it after the
+// text, and every layout assertion in this repository stays green while every crossed name on
+// the Atlas goes illegible.
 //
 // ---------------------------------------------------------------------------------------
 // **What this file can prove, and what it cannot.**
@@ -25,7 +27,7 @@
 // on the runner — and the substitute's metrics are not the app's. Measured: the same 12px
 // string reports a 20.57px ascent in this harness against the ~9px the real face draws, so
 // a strict ink containment check would be red for a plate that is correct in production and
-// green for one that is not. The 16px plate height is backed by a hand measurement made
+// green for one that is not. The 17px plate height is backed by a hand measurement made
 // with `getBBox()` on the *rendered app page* (a 12px Japanese name draws 15.2px tall), and
 // that measurement is not reproducible here.
 //
@@ -55,9 +57,14 @@
 //
 // Everything that does not depend on the substituted face is strict:
 //
-//   - every name drawn on a bone HAS a plate (the hole NEXT.md named);
-//   - the plate is opaque and filled with the surface the figure is drawn on;
-//   - the plate is painted before its own text, and after the lines;
+//   - every drawn name HAS a plate, and every plate has a name;
+//   - a **shut** name's plate is fully opaque and filled with the surface the figure is
+//     drawn on;
+//   - an **opened** name's plate is fainter — the owner asked for it, so that the bone a
+//     reader clicks to collapse still reads through its own name — but held above a floor,
+//     because "fainter" with no floor is indistinguishable from "does nothing";
+//   - every plate is painted before **every** name and after **every** line, which is the
+//     whole occlusion rule on this canvas and is not visible from the layout side;
 //   - the plate's box contains the name's baseline band.
 // ---------------------------------------------------------------------------------------
 import { readFileSync } from "node:fs";
@@ -79,9 +86,12 @@ const manifest: StoryEntry[] = JSON.parse(
 
 const PLATE = "mj-converge-name-plate";
 // The *markup* form, not the bare class name: `styles.css` is inlined into every document,
-// so `.mj-converge-name-plate` appears in all 36 of them and a filter on the bare name
-// selects every figure, including the 12 that draw no plate at all.
-const PLATE_IN_MARKUP = `class="${PLATE}"`;
+// so `.mj-converge-name-plate` appears in all of them and a filter on the bare name selects
+// every figure whether or not it draws a plate. Left open at the end of the class value
+// rather than closed with a quote, because an opened name's plate carries a second class
+// (`--open`) and `class="mj-converge-name-plate"` would silently select only the shut ones —
+// which is the half this file least needs to check.
+const PLATE_IN_MARKUP = `class="${PLATE}`;
 
 const source = (story: StoryEntry): string => readFileSync(join(distDir, story.file), "utf8");
 const withPlates = manifest.filter((story) => source(story).includes(PLATE_IN_MARKUP));
@@ -90,20 +100,81 @@ const plateCount = withPlates.reduce(
   0,
 );
 
-test("the figures that wear a name on a bone were rendered, and there are as many as before", () => {
+test("every rendered figure wears its names on plates, and there are as many as before", () => {
   // The floors are what stop the filter above becoming an escape hatch. If the plate
   // stopped being rendered at all, `withPlates` empties and this goes red — rather than the
   // suite going quietly green over an empty subject list, which is a failure this
   // repository has shipped before.
   expect(manifest.length, "converge-manifest.json is empty").toBeGreaterThanOrEqual(30);
-  // 12 of the 36 rendered figures (18 slots × 2 locales) open into a fan, and they carry 86
-  // plates between them — 43 per locale, the same 43 names-on-a-bone the layout test
-  // counts. Pinned just under both.
-  expect(withPlates.length, "no rendered figure draws a name on a bone").toBeGreaterThanOrEqual(
-    12,
+  // **All 38 now, not 12 of 36.** Every one of the 19 slots × 2 locales draws at least one
+  // name, and since session 107 every drawn name wears a plate — so a figure with no plate
+  // in it is a figure that drew no name, which is itself a defect. 576 plates between them,
+  // the same 576 the layout test counts as drawn labels at saturation. Pinned just under
+  // both: these numbers only move when the graph does, and a drop is the thing to catch.
+  expect(withPlates.length, "a rendered figure draws no name plate at all").toBeGreaterThanOrEqual(
+    36,
   );
-  expect(plateCount, "too few name plates to be checking anything").toBeGreaterThanOrEqual(80);
+  expect(plateCount, "too few name plates to be checking anything").toBeGreaterThanOrEqual(540);
 });
+
+// The occlusion rule on this canvas, stated as a fact about the markup.
+//
+// SVG paints in document order, so a plate hides what was emitted before it and nothing
+// else. That makes the ORDER of the three passes the whole of the feature, and nothing on
+// the layout side can see it: `repository-converge-layout.test.ts` measures numbers the
+// layout computed, and every one of them is identical whichever order these are drawn in.
+//
+// Both halves have a failable case that shipped. Before session 107 the plate sat inside the
+// name's own `<a>`, one element per lane, so it was emitted *between* its lane's body and
+// that lane's own branches — and a lane's branches are exactly the lines that cross its
+// name. Measured on this graph fully opened, 12 of the 45 crossed names were crossed by a
+// line drawn later, and no plate could ever have hidden those. Interleave the plates with
+// the names instead and the other half breaks: a plate rubs out any earlier *name* it
+// overlaps, which is 4 pairs today and is the case ingredient fans multiply.
+//
+// Read off the source rather than the DOM on purpose. It is the same claim, it needs no
+// browser, and it runs over all 38 figures instead of the ones a `page.setContent` happens
+// to reach.
+const MARK = {
+  body: 'class="mj-converge-strand-body',
+  spine: 'class="mj-converge-spine',
+  lineHit: 'class="mj-converge-strand-hit',
+  plate: PLATE_IN_MARKUP,
+  name: 'class="mj-converge-lane-name',
+};
+
+for (const story of withPlates) {
+  test(`plates are drawn after every line and before every name — ${story.name}`, () => {
+    const html = source(story);
+    const last = (needle: string) => html.lastIndexOf(needle);
+    const first = (needle: string) => html.indexOf(needle);
+
+    const firstPlate = first(MARK.plate);
+    expect(firstPlate, `${story.name} draws no plate`).toBeGreaterThan(-1);
+    const firstName = first(MARK.name);
+    expect(firstName, `${story.name} draws no name`).toBeGreaterThan(-1);
+
+    for (const [what, mark] of [
+      ["a strand body", MARK.body],
+      ["an opened line's spine", MARK.spine],
+      ["a line's click target", MARK.lineHit],
+    ] as const) {
+      const lastLine = last(mark);
+      if (lastLine === -1) continue;
+      expect(
+        lastLine,
+        `${story.name}: ${what} is emitted after the first name plate, so it paints over a ` +
+          `name the plate was supposed to clear`,
+      ).toBeLessThan(firstPlate);
+    }
+
+    expect(
+      last(MARK.plate),
+      `${story.name}: a name plate is emitted after the first name, so it rubs out a name ` +
+        `instead of the lines under one`,
+    ).toBeLessThan(firstName);
+  });
+}
 
 interface PlateReport {
   label: string;
@@ -126,6 +197,8 @@ interface PlateReport {
   fontSize: number;
   fill: string;
   opacity: number;
+  /** An opened line's plate — the one the owner asked to be fainter. */
+  open: boolean;
   /** Does the plate come before its own text in paint order? */
   beforeText: boolean;
 }
@@ -179,10 +252,17 @@ for (const story of withPlates) {
 
         const out: PlateReport[] = [];
         for (const plate of document.querySelectorAll<SVGRectElement>(`.${plateClass}`)) {
-          // Sibling, not descendant: both live inside the name's own <a>. Reading the
-          // <text> off that anchor is what makes this a check of *this* plate against *its*
-          // name rather than against whatever text is nearest.
-          const anchor = plate.parentElement;
+          // Paired by `data-name`, which is the lane's key, because the plate and the text
+          // are no longer relatives: the plate is drawn in a pass over every lane and the
+          // name in the pass after it, so that no plate can rub out any name. Reading the
+          // <text> off `plate.parentElement` — which is what this did while both sat inside
+          // the name's own `<a>` — now finds the whole canvas and returns whichever name is
+          // first in it, so every plate on a figure would be checked against one name and
+          // 575 of the 576 checks would be nonsense that happened to pass or fail together.
+          const key = plate.getAttribute("data-name");
+          const anchor = key === null ? null : document.querySelector<SVGAElement>(
+            `a:has(> text.mj-converge-lane-name[data-name="${CSS.escape(key)}"])`,
+          );
           const text = anchor?.querySelector<SVGTextElement>("text.mj-converge-lane-name");
           if (!text) {
             out.push({
@@ -197,6 +277,7 @@ for (const story of withPlates) {
               fontSize: 0,
               fill: "",
               opacity: 1,
+              open: false,
               beforeText: false,
             });
             continue;
@@ -218,6 +299,7 @@ for (const story of withPlates) {
             fontSize: Number.parseFloat(getComputedStyle(text).fontSize),
             fill: style.fill,
             opacity: Number(style.fillOpacity || "1") * Number(style.opacity || "1"),
+            open: plate.classList.contains(`${plateClass}--open`),
             beforeText:
               (plate.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
           });
@@ -278,9 +360,32 @@ for (const story of withPlates) {
         expect(plate.beforeText, `${where} is painted after the name it should sit under`).toBe(
           true,
         );
-        // Opaque, or it occludes nothing — a see-through plate satisfies every geometry
-        // assertion above and does no work at all.
-        expect(plate.opacity, `${where} is not opaque`).toBeCloseTo(1, 3);
+        // **Two bars, because the owner asked for two kinds of plate.**
+        //
+        // A **shut** name sits out on open canvas with its own strand well clear of it, so
+        // its plate hides other people's lines and nothing else — opaque, or it occludes
+        // nothing and satisfies every geometry assertion above while doing no work at all.
+        //
+        // An **opened** name sits on its own bone, and the owner asked for *"opened ones
+        // fainter and within their lines"*: an opaque plate there cuts the dotted line a
+        // reader has to find and click to collapse, exactly where it is most findable. So
+        // the bone reads through its own name. Floored rather than pinned, because the
+        // amount is a taste call and the failure to catch is the drift to nothing — a plate
+        // at 0.1 looks deliberate in a diff and is illegible on the page.
+        if (plate.open) {
+          expect(
+            plate.opacity,
+            `${where} is an opened name's plate at ${plate.opacity.toFixed(2)} — faint enough ` +
+              `that it stops occluding the lines it exists to hide`,
+          ).toBeGreaterThanOrEqual(0.7);
+          expect(
+            plate.opacity,
+            `${where} is an opened name's plate and is fully opaque — the owner asked for ` +
+              `these to be fainter than a shut name's so the bone reads through its own name`,
+          ).toBeLessThan(1);
+        } else {
+          expect(plate.opacity, `${where} is not opaque`).toBeCloseTo(1, 3);
+        }
         expect(
           plate.fill,
           `${where} is filled "${plate.fill}" on a canvas drawn on "${canvasFill}" — ` +

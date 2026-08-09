@@ -11546,22 +11546,61 @@ div.mj-rail-row:hover {
 }
 .mj-converge-canvas a:hover .mj-converge-spine--bone { opacity: 0.85; }
 
-/* The plate that makes a name on the bone readable.
+/* The plate that makes a name readable where a line runs through it.
 
-   An opened fan's branches converge to its spine at both ends, so they cross the
-   band the name sits in near the ends of the span whatever room is reserved —
-   measured, they clear the middle 76% and cross the rest. So the name is
-   occluded rather than moved: this rubs out the lines behind the text, and only
-   there.
+   **Every name wears one** (owner, session 107: *"plate every name, but opened
+   ones are fainter and within their lines"*). The split it replaces — a plate
+   for an opened line's name, none for a shut one's — was an accident of when the
+   plate was built: an opened name got one because its own branches structurally
+   cross it, and a shut name went without because a mostly-empty figure had
+   nothing to cross it with. Measured over all 19 figures × both locales, fully
+   opened, **34 of 478 shut names already have a line through them**, and drawing
+   ingredient fans takes that to 58.
 
    `--bg-1` — the panel/card token, which is what the figure is drawn on. Hiding
    what is behind is the entire job, so `transparent` is not an option and a raw
    hex would fail `check-raw-hex.mjs`. If a theme ever draws this canvas on
    something other than `--bg-1`, this is the line that has to follow it, and it
-   will be visible immediately as a rectangle in the wrong shade. */
+   will be visible immediately as a rectangle in the wrong shade.
+
+   `pointer-events: none` is not tidying. The plate is a filled rect, so inside a
+   link it is a click target, and it is wider and taller than the name's own
+   target — which would make the name's box bigger than the *small* one the owner
+   asked for and would eat the collapse click on the line under it. It is drawn
+   outside both anchors now (see `NamePlate`), so this only says out loud what
+   that placement already means, and it keeps meaning it if anyone moves the rect
+   back inside an `<a>`. */
 .mj-converge-name-plate {
   fill: var(--bg-1);
   stroke: none;
+  pointer-events: none;
+  /* Rounded, because a strand here is a filled shape rather than a stroke. Read
+     on the rendered page: a square plate over a lane body reads as a rectangular
+     bite taken out of the drawing, and a rounded one reads as a chip the name
+     sits in. It hides exactly as much either way — this only changes what the
+     four corners say. */
+  rx: 3;
+  ry: 3;
+}
+/* An **opened** line's name: fainter, and reading as part of the line rather
+   than as a hole cut in the canvas.
+
+   *"opened ones are fainter and within their lines"*. A shut name sits out on
+   open canvas with its own strand well clear of it, so an opaque plate there
+   costs nothing — it hides other people's lines. An opened name sits **on its
+   own bone**, inside the `spineBand` the layout reserves for it, and a fully
+   opaque plate there cuts the bone in half exactly where a reader is meant to
+   find it and click it shut. So this one lets the line show through.
+
+   0.82 and not lower: the plate still has to win against a 0.55-opacity dotted
+   bone and against branches at 0.5, and `converge-plate.spec.ts` holds a floor
+   so "fainter" cannot drift into "does nothing" without a test going red. The
+   rounding is the rest of *"within their lines"* — a lozenge on the line rather
+   than a rectangle over it. */
+.mj-converge-name-plate--open {
+  fill-opacity: 0.82;
+  rx: 4;
+  ry: 4;
 }
 
 /* --- depth: nested strands recede ------------------------------------------
@@ -11763,7 +11802,12 @@ div.mj-rail-row:hover {
    to its new place while the name itself glided there — an invisible target
    200ms out of step with the visible thing it belongs to, which is worse than
    not animating either. Caught in review. */
-.mj-converge-canvas rect.mj-converge-hit {
+/* The plate moves with the name for the same reason and by the same three
+   properties. Left out, it snapped to its new place while the word it sits under
+   glided there — the same 200ms mismatch the hit target had, and this one is
+   visible. */
+.mj-converge-canvas rect.mj-converge-hit,
+.mj-converge-canvas .mj-converge-name-plate {
   transition:
     x var(--dur-converge) var(--ease-converge),
     y var(--dur-converge) var(--ease-converge),
