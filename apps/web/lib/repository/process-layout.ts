@@ -21,6 +21,21 @@
 // with no behaviour change; they stay here, named for what they still do.
 
 /**
+ * The size the map draws a line's name at, in px.
+ *
+ * Here rather than in `converge-layout.ts` because two modules need it and this
+ * one has no imports, so it can be the single writer. `CONVERGE_METRICS.laneFont`
+ * reads it, and so does `validateLayerGraph`, which has to answer "is this short
+ * form actually narrower than the label it replaces" in the units the map draws
+ * in — a question that is meaningless at an assumed font size, and wrong in the
+ * one direction that matters, since a Japanese short form can shed half its
+ * characters and get wider. Two copies of this number is the
+ * tally-computed-in-five-places class of bug the repository has already paid for
+ * twice; see `AGENTS.md`.
+ */
+export const LANE_FONT_PX = 12;
+
+/**
  * Width of a string, without a DOM. Carried over from `strand-layout.ts`
  * unchanged, including the deliberate Latin over-estimate — guessing high makes
  * a shape slightly too wide, guessing low pushes a Japanese label outside it.

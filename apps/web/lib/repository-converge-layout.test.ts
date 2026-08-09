@@ -26,6 +26,7 @@ import {
   type ConvergeDiagram,
   type ConvergeLane,
 } from "./repository/converge-layout.ts";
+import type { LayerGraph } from "./repository/layers.ts";
 import { PATH_LIMITS, expansionOf, methodFanOf } from "./repository/state-graph.ts";
 import { estimateTextWidth } from "./repository/process-layout.ts";
 import {
@@ -580,7 +581,19 @@ test("a truncated label is strictly shorter than the whole one and says so", () 
           assert.ok(lane.label.endsWith("…"));
           assert.ok([...lane.label].length < [...lane.fullLabel].length);
         } else {
-          assert.equal(lane.label, lane.fullLabel);
+          // Drawn whole — but "whole" means the authored short form when the
+          // node has one, not the full label. The full label still has to be
+          // sitting in `fullLabel`, because that is what the `<title>` reads,
+          // and the assertion below is the one that keeps a short form from
+          // quietly being written there instead.
+          assert.equal(lane.label, lane.shortLabel ?? lane.fullLabel);
+          if (lane.shortLabel !== null) {
+            assert.notEqual(
+              lane.shortLabel,
+              lane.fullLabel,
+              `${lane.key}: the short form reached fullLabel, so the hover text lost the full name`,
+            );
+          }
         }
       }
     }
@@ -764,7 +777,7 @@ test("no figure clips a label the column was sized to hold", () => {
           assert.equal(lane.label, "", `${lane.key} drew the composite name "${lane.label}"`);
           continue;
         }
-        assert.equal(lane.label, lane.fullLabel);
+        assert.equal(lane.label, lane.shortLabel ?? lane.fullLabel);
       }
     }
   }
@@ -1471,16 +1484,82 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   assert.ok(shutNamed > 100, `only ${shutNamed} shut lanes drew a name`);
   const openedRate = openedHit / openedNamed;
   const shutRate = shutHit / shutNamed;
+  // **The bar was `openedRate <= shutRate` and that turned out to punish an
+  // improvement.** Authoring short forms narrowed the columns and took the shut
+  // collisions from 28/209 to 23/209 while the opened ones stayed at 15/127 —
+  // five fewer collisions on the figure in total, and the relative bar went red,
+  // because the side that got better was the one the other was being compared
+  // against. A guard that fails when the drawing improves is measuring the wrong
+  // thing, and loosening it to `<= shutRate + something` would just be picking a
+  // number that makes today pass.
+  //
+  // So: two absolute bars, both pinned to a measurement, which between them say
+  // what the relative one was reaching for. An opened name is not systematically
+  // worse placed than a shut one (the ceiling, which sits just above the shut
+  // rate as measured before the opened names were ever restored), and the
+  // picture as a whole does not get busier (the total). The failable case is
+  // unchanged and is still checked by hand: putting the name back at `half` —
+  // the thin spine an opened lane draws — instead of `size.vHalf`, the band its
+  // children fill, takes opened collisions from 15 to 41 and trips both bars.
   assert.ok(
-    openedRate <= shutRate,
+    openedRate < 0.134,
     `opened names collide with a line ${openedHit}/${openedNamed} (${(openedRate * 100).toFixed(1)}%), ` +
-      `shut names ${shutHit}/${shutNamed} (${(shutRate * 100).toFixed(1)}%) — ` +
-      `restoring the opened names made the picture worse, not better`,
+      `past the 13.4% the shut names were measured at before the opened names were restored — ` +
+      `an opened name is now worse placed than a shut one was`,
   );
   assert.ok(
-    openedRate < 0.15,
-    `${openedHit} of ${openedNamed} opened names collide, which is past the ceiling`,
+    openedHit + shutHit <= 38,
+    `${openedHit + shutHit} names collide with a line across every figure, up from the 38 measured ` +
+      `once labels were shortened — the drawing got busier, whichever side it happened on`,
   );
+  // Reported, not asserted: the shut rate is the thing the ceiling above was
+  // derived from, and it has to stay visible or the next person cannot tell
+  // whether 13.4% is still the right number.
+  assert.ok(shutRate < 0.15, `shut names collide ${shutHit}/${shutNamed}`);
+});
+
+test("a name past the cap is cut, and the full text survives in the title", () => {
+  // **The cap bites nothing on the authored graph, which is the intended state
+  // and the reason this test exists.** Every label is either short enough or has
+  // an authored `shortLabel`, so `labelCap` is a backstop against the next long
+  // name somebody writes rather than a tool doing work today. A backstop nothing
+  // has ever driven is a backstop nobody has tested — this repository has shipped
+  // that shape of guard before — so the cap is driven here with a fixture instead
+  // of waiting for the graph to grow into it.
+  const long = "A".repeat(200);
+  const graph: LayerGraph = {
+    nodes: LAYER_GRAPH.nodes.map((node) =>
+      node.id === "quantum-linear-solve"
+        ? { ...node, label: long, labelJa: long, shortLabel: undefined, shortLabelJa: undefined }
+        : node,
+    ),
+  };
+  // Swept rather than aimed at one figure: which figures draw a given node as a
+  // lane depends on the route walk, and a test that guessed wrong would report
+  // "the cap does not bite" when what actually happened is that the name was
+  // never on screen. That reads identically to a working cap.
+  const drawn = drawableSlots(graph, STATE_VOCABULARY).flatMap((slot) => {
+    const focus = layerNode(graph, slot.id);
+    assert.ok(focus && isCapability(focus));
+    return layoutConverge({ graph, vocabulary: STATE_VOCABULARY, focus, locale: "en" }).lanes;
+  }).filter((lane) => lane.fullLabel === long);
+  assert.ok(drawn.length > 0, "the fixture's long name is drawn on no figure at all");
+  for (const lane of drawn) {
+    assert.equal(lane.labelTruncated, true, "a 1272px name was not cut by a 300px cap");
+    assert.ok(lane.label.endsWith("…"));
+    // The cut respects the cap it was sized against, and the column did not grow
+    // to fit the uncapped name — that second half is the part that would silently
+    // stop being true if the cap were applied at `fitLabel` instead of at the
+    // demand `measure` reports.
+    assert.ok(
+      estimateTextWidth(lane.label, M.laneFont) <= M.labelCap,
+      `cut name is ${estimateTextWidth(lane.label, M.laneFont)}px, past the ${M.labelCap}px cap`,
+    );
+    // And the whole point: nothing was lost from the page. The `<title>` reads
+    // `fullLabel`, so the reader still gets every character on hover.
+    assert.equal(lane.fullLabel, long);
+    assert.equal(lane.shortLabel, null, "a machine cut is not an authored short form");
+  }
 });
 
 test("name-on-name overlap on an opened figure stays where it was measured", () => {

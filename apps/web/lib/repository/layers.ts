@@ -53,6 +53,7 @@
 //    set which was empty on the record that motivated the feature.
 // 4. **Never fill a hole.** An unstated applicability condition is `undefined`,
 //    not a plausible sentence. Same rule §3.6 applies to a gap in a record.
+import { estimateTextWidth, LANE_FONT_PX } from "./process-layout.ts";
 import { stateSatisfies, validateStateVocabulary, type StateVocabulary } from "./states.ts";
 import type { PublicRepositoryCategory } from "./types";
 
@@ -115,6 +116,35 @@ interface LayerNodeBase {
   id: string;
   label: string;
   labelJa: string;
+  /**
+   * The name the **map draws** on a line, when the full `label` is too long for
+   * one. Optional, and absent on most nodes on purpose.
+   *
+   * `label` stays the full name everywhere else: the node page, the accessible
+   * list beside the figure, and — the load-bearing one — the `<title>` on every
+   * drawn shape. So a short form never removes information from the page, it
+   * only chooses which of two names the reader sees first. That is what makes
+   * this different from the width cap it sits in front of: a cap machine-cuts a
+   * sentence mid-word and leaves an ellipsis, and measured over the whole graph
+   * a 200px cap does that to 30 names. Authoring a short form cuts nothing.
+   *
+   * **A short form must be a name a reader of this literature already uses** —
+   * LCHS, SABRE, HHL, QSVT, qLDPC, Ross–Selinger. An acronym coined at this desk
+   * is a second name for the same thing, which is the duplication rule §2 in the
+   * one place the reader cannot check it against the source. When no honest
+   * short form exists, leave the field absent and let the label stay long.
+   *
+   * **A capability keeps its verb.** Capability labels are contracts, not topic
+   * tags (see `whyALayer`), so a short form for one may compress the object but
+   * must not collapse to the id.
+   *
+   * Both locales or neither — see `validateLayerGraph`. A short EN form with no
+   * JA twin draws two different pictures in the two locales, and this project's
+   * standing rule is that a UI change is not verified until it has been rendered
+   * in `ja`.
+   */
+  shortLabel?: string;
+  shortLabelJa?: string;
   summary: string;
   summaryJa: string;
   /**
@@ -1360,15 +1390,26 @@ export function conjoinedCompositeNames(
       ...graph.nodes.filter((other) => other.id !== node.id),
       ...vocabulary.states,
     ];
+    // **Every name this node can be DRAWN under**, not just `label`. A
+    // `shortLabel` is a name a human authored for the canvas, which makes it
+    // exactly the kind of string this rule is about — and the more tempting
+    // place to coin one, because the pressure that produces "Carleman + Euler +
+    // QLS" is the pressure to fit a lane. Reading only `label` would leave the
+    // rule refusing the long name while the short one, the one actually on
+    // screen, went unchecked.
+    const drawnEn = [node.label, node.shortLabel].filter((name) => name !== undefined);
+    const drawnJa = [node.labelJa, node.shortLabelJa].filter((name) => name !== undefined);
     const relisted: { fragment: string; concept: string }[] = [];
-    for (const fragment of node.label.split(JOINER_SPLIT)) {
-      const concept = conceptNamedBy(fragment, candidates);
-      if (concept !== null) relisted.push({ fragment: fragment.trim(), concept });
+    for (const name of drawnEn) {
+      for (const fragment of name.split(JOINER_SPLIT)) {
+        const concept = conceptNamedBy(fragment, candidates);
+        if (concept !== null) relisted.push({ fragment: fragment.trim(), concept });
+      }
     }
     const distinct = new Set(relisted.map((entry) => entry.concept));
 
     const locales = (["en", "ja"] as const).filter((locale) =>
-      JOINER_SPACED.test(locale === "ja" ? node.labelJa : node.label),
+      (locale === "ja" ? drawnJa : drawnEn).some((name) => JOINER_SPACED.test(name)),
     );
     if (locales.length === 0 && distinct.size < 2) continue;
     found.push({ node: node.id, locales, advancing, relisted });
@@ -1392,10 +1433,25 @@ export function conjoinedCompositeNames(
  *   prints every row on every run, and a row whose node has stopped conjoining is
  *   an error, so a rename cannot leave its excuse behind.
  *
- * Both rows below are the owner's, not a subagent's, to clear. Neither name
- * appears in the cited papers under that form — Liu et al. do not call their
- * route "Carleman + forward Euler + quantum linear solver" — so `source-framing`
- * would have been a fabrication and is deliberately not used.
+ * **Empty, and that is the finished state rather than an unwritten one.** It
+ * held two rows for several sessions — `carleman-euler-qls-route` and
+ * `kvn-simulation-route`, both coined by conjoining node names, both the owner's
+ * "integrator+qls" example. The owner's ruling was that a composite may keep a
+ * name only if it is one *"that people or the paper uses"*, and re-reading the
+ * primary sources found that both papers do name their own route:
+ *
+ * - Liu et al. head their §3 *"Quantum Carleman linearization"* and name
+ *   Theorem 1 *"Quantum Carleman linearization algorithm"* (arXiv:2011.03185).
+ * - Joseph writes *"Quantum simulation of the KvN representation"*
+ *   (arXiv:2003.09980, §VI) — so this file's previous claim that his paper "does
+ *   not name this pipeline" was false. It is easy to see how: the paper is
+ *   two-column, and a naive text extraction interleaves the columns and splits
+ *   that phrase across the boundary, so searching for it returns nothing.
+ *
+ * Both nodes were renamed to the source's own words and both rows deleted, which
+ * is the required move rather than a tidy one: a row whose node has stopped
+ * conjoining is an **error** by the rule above, so a rename cannot leave its
+ * excuse behind. The register stays because the rule that fills it stays.
  */
 export interface CompositeNameDisposition {
   node: string;
@@ -1408,20 +1464,7 @@ export interface CompositeNameDisposition {
   phrase?: string;
 }
 
-export const COMPOSITE_NAME_DISPOSITIONS: readonly CompositeNameDisposition[] = [
-  {
-    node: "carleman-euler-qls-route",
-    disposition: "awaiting-owner-rename",
-    reason:
-      "Three concepts in one name, and all three are separate nodes the map already draws between: carleman-linearization -> linear-ivp -> forward-euler -> linear-system -> quantum-linear-solve. This is the owner's integrator+qls example exactly. No cited paper names the route this way, so it cannot be filed as source framing; picking the replacement is a domain call.",
-  },
-  {
-    node: "kvn-simulation-route",
-    disposition: "awaiting-owner-rename",
-    reason:
-      "Two concepts: koopman-von-neumann-lift and hamiltonian-simulation, both nodes, and the route already pins the first with `via`. Joseph's paper is titled a Koopman-von Neumann *approach*; it does not name this pipeline, so the compound is ours.",
-  },
-];
+export const COMPOSITE_NAME_DISPOSITIONS: readonly CompositeNameDisposition[] = [];
 
 /**
  * The contract of a step id, for validation, without assuming it resolves.
@@ -1534,6 +1577,50 @@ export function validateLayerGraph(
     ] as const) {
       if (typeof value !== "string" || value.trim() === "") {
         errors.push(`${node.id}: ${field} is empty`);
+      }
+    }
+
+    // A short form is the name the map DRAWS, so everything that is true of a
+    // label has to be true of it, plus two things that are only true of it.
+    //
+    // The pair rule first: a short EN form with no JA twin means the two locales
+    // draw different pictures, and the one that is not shortened is the one
+    // nobody looks at. Measured before this field existed, JA labels are half
+    // the character count of their EN twins but only 1.3x narrower in pixels, so
+    // "the Japanese is already short" is not true and is exactly the assumption
+    // this catches.
+    const shortPresent = node.shortLabel !== undefined;
+    const shortJaPresent = node.shortLabelJa !== undefined;
+    if (shortPresent !== shortJaPresent) {
+      errors.push(
+        `${node.id}: ${shortPresent ? "shortLabel" : "shortLabelJa"} is set and ${shortPresent ? "shortLabelJa" : "shortLabel"} is not — a short form must be authored in both locales or neither`,
+      );
+    }
+    for (const [field, short, long] of [
+      ["shortLabel", node.shortLabel, node.label],
+      ["shortLabelJa", node.shortLabelJa, node.labelJa],
+    ] as const) {
+      if (short === undefined) continue;
+      if (short.trim() === "") {
+        errors.push(`${node.id}: ${field} is empty — omit the field rather than setting it to ""`);
+        continue;
+      }
+      if (short === long) {
+        errors.push(
+          `${node.id}: ${field} is a copy of the full label — that is a second place for one string to drift, not a short form`,
+        );
+        continue;
+      }
+      // Narrower in PIXELS, not in characters, and this is the whole reason the
+      // check exists rather than being obvious. One CJK code point is 1em and
+      // one Latin is 0.53em, so a Japanese short form can drop half its
+      // characters and get wider. `laneFont` because that is the size the map
+      // actually draws a lane name at; a form that is not narrower there is not
+      // doing the job the field exists for.
+      if (estimateTextWidth(short, LANE_FONT_PX) >= estimateTextWidth(long, LANE_FONT_PX)) {
+        errors.push(
+          `${node.id}: ${field} is not narrower than the full label when drawn (${estimateTextWidth(short, LANE_FONT_PX).toFixed(1)}px vs ${estimateTextWidth(long, LANE_FONT_PX).toFixed(1)}px)`,
+        );
       }
     }
 
