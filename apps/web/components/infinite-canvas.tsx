@@ -1,15 +1,20 @@
 "use client";
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
-import { IDENTITY, formatViewport, transformOf, zoomAbout, type Viewport } from "../lib/repository/canvas-viewport";
+import {
+  IDENTITY,
+  KEYBOARD_ZOOM_FACTOR,
+  createCanvasGesture,
+  formatViewport,
+  panBy,
+  transformOf,
+  wheelPixels,
+  wheelZoomFactor,
+  zoomAbout,
+  type GestureOutcome,
+  type Viewport,
+} from "../lib/repository/canvas-viewport";
 import type { PublicLocale } from "../lib/public-locale";
-
-/** Pixels the pointer has to travel before a press becomes a pan rather than a
- * click. Small enough that a deliberate drag registers almost immediately,
- * large enough to absorb the few pixels of jitter a real mouse or a finger
- * produces between pressing down and lifting on the same spot — the gap a
- * "0px" threshold would misread as a drag and use to eat every click. */
-const DRAG_THRESHOLD_PX = 4;
 
 /** Viewport pixels per keyboard pan step. Not measured — chosen so a single
  * press moves a visibly deliberate amount (about a finger's width of the
@@ -17,47 +22,43 @@ const DRAG_THRESHOLD_PX = 4;
  * needing more than a few presses to cross the canvas. */
 const KEYBOARD_PAN_STEP_PX = 40;
 
-/** Zoom multiplier per `+`/`-` keypress. 20%, matching the step size most
- * browsers' own Ctrl/Cmd+`+`/`-` page-zoom uses, so a keyboard user already
- * has an intuition for how far one press goes. */
-const KEYBOARD_ZOOM_FACTOR = 1.2;
-
-/** `deltaMode` 1 ("line") events report a small integer count of lines rather
- * than pixels; 16 is a standard single-line height used to bring that count
- * into the same rough unit as `deltaMode` 0 ("pixel") before both are fed to
- * the same exponential curve. `deltaMode` 2 ("page") is normalized against the
- * canvas's own rect instead, immediately below, since "a page" has no fixed
- * pixel size. Real wheel and trackpad hardware almost always reports mode 0;
- * this exists so the other two do not produce a huge, jarring zoom jump
- * instead of simply being rare. */
-const WHEEL_LINE_HEIGHT_PX = 16;
-
-/**
- * Wheel-to-zoom speed. Not derived from a measurement — there is nothing in
- * this codebase to derive it from — so treat it as a feel constant subject to
- * an owner taste-check, the same way the "lab" palette in tokens.css is
- * flagged not-yet-ratified. Picked so one physical mouse-wheel notch
- * (deltaY ~100px in Chrome's default pixel mode) is roughly a 15% zoom step —
- * `Math.exp(-100 * 0.0015) ≈ 0.86` — which is the same order of magnitude as
- * Figma's and Miro's default wheel-zoom speed.
- */
-const WHEEL_ZOOM_SENSITIVITY = 0.0015;
-
 /** `?at=` is written this long after the last viewport change, not on every
  * change — see the effect below for why replaceState still has to run at all
  * during an in-progress drag, just not on every one of its many pointermoves. */
 const URL_SYNC_DEBOUNCE_MS = 250;
 
-const KEYBOARD_HINT_COPY: Record<PublicLocale, string> = {
+/**
+ * How long after the last gesture event the layer stays promoted to its own
+ * compositor layer (`.mj-canvas-viewport--gesturing`, see styles.css).
+ *
+ * A gap, not a duration: every event restarts it, so the promotion survives a
+ * whole gesture however long it runs. 200ms is more than an order of magnitude
+ * above the ~8-16ms between the wheel events macOS keeps emitting during
+ * momentum, so the layer is never dropped and re-created in the middle of a
+ * glide — which would cost exactly the repaint the promotion exists to avoid —
+ * and short enough that the rasterized copy of up to four full SVG figures is
+ * handed back promptly once the reader stops.
+ */
+const GESTURE_SETTLE_MS = 200;
+
+/**
+ * The `sr-only` description of what the pointer can do here, per surface.
+ *
+ * Two records rather than one string with a clause spliced in, because the two
+ * surfaces genuinely offer different gestures: only the map binds a plain
+ * wheel/two-finger scroll to panning (see `onWheel`), so telling a reader of
+ * the node-page figure to "scroll to pan" would be describing a control that
+ * does nothing there.
+ */
+const CANVAS_HINT_COPY: Record<PublicLocale, string> = {
   en: "Drag to pan. Pinch, or hold ctrl and scroll, to zoom. Arrow keys pan, plus and minus zoom, zero resets the view.",
   ja: "ドラッグでパン。ピンチ、または ctrl を押しながらスクロールでズーム。矢印キーでパン、プラス／マイナスでズーム、ゼロで表示をリセットします。",
 };
 
-/** The straight-line distance between two viewport-local points — used for
- * both drag distance and the two-finger pinch's finger separation. */
-function distance(a: { x: number; y: number }, b: { x: number; y: number }): number {
-  return Math.hypot(a.x - b.x, a.y - b.y);
-}
+const CANVAS_HINT_COPY_FILL: Record<PublicLocale, string> = {
+  en: "Scroll or drag to pan. Pinch, or hold ctrl and scroll, to zoom. Arrow keys pan, plus and minus zoom, zero resets the view.",
+  ja: "スクロールまたはドラッグでパン。ピンチ、または ctrl を押しながらスクロールでズーム。矢印キーでパン、プラス／マイナスでズーム、ゼロで表示をリセットします。",
+};
 
 /**
  * An addressable pan/zoom viewport for `/repository/layers`'s converge canvas.
@@ -70,6 +71,12 @@ function distance(a: { x: number; y: number }, b: { x: number; y: number }): num
  * this component ever applies goes through `transformOf`, the same function
  * the server used to render the initial one — see that file's header for why
  * a second writer of the same string is the specific bug this avoids.
+ *
+ * The pan/pinch state machine is `createCanvasGesture`, in that same file and
+ * likewise DOM-free; what is left here is the adapter that turns DOM events
+ * into `PointerSample`s and its instructions back into capture calls and React
+ * state. That split exists so the threshold and the ghost-contact guard — both
+ * of them silent when they break — can be tested without a browser.
  *
  * State initializes from `initial` directly (`useState(initial)`), not from
  * an effect: an effect only runs after the first client render commits, so
@@ -91,7 +98,7 @@ export function InfiniteCanvas({
   label: string;
   locale: PublicLocale;
   /**
-   * Take the height of the screen rather than the fixed 32rem box.
+   * This is the map surface, not an illustration inside a written record.
    *
    * > *"map itself should take up most of the webpage/screen"* — owner,
    * > session-103 inbox
@@ -101,11 +108,19 @@ export function InfiniteCanvas({
    * the map is one section of a written record and taking the whole screen
    * would push the prose it illustrates off it. The map surface passes `fill`;
    * the node page does not.
+   *
+   * It now decides two things rather than one: the height, and whether a plain
+   * wheel pans the canvas or scrolls the page (`onWheel`). A second prop was
+   * considered and dropped — it would be set to the same value as this one at
+   * both call sites forever, and two flags that must agree are two flags that
+   * eventually will not. What the flag really names is *which of the two
+   * surfaces this is*, and both behaviours follow from that.
    */
   fill?: boolean;
 }) {
   const [view, setView] = useState<Viewport>(initial);
   const [dragging, setDragging] = useState(false);
+  const [gesturing, setGesturing] = useState(false);
   const hintId = useId();
 
   // Event handlers below are registered once (empty dependency array) so a
@@ -116,6 +131,15 @@ export function InfiniteCanvas({
   useEffect(() => {
     viewRef.current = view;
   }, [view]);
+
+  // Same reason, for the surface flag: the wheel handler is registered once and
+  // needs `fill` at event time, not at registration time. In practice neither
+  // call site ever changes it after mount, which is exactly why reading it out
+  // of a stale closure would go unnoticed if one ever did.
+  const fillRef = useRef(fill);
+  useEffect(() => {
+    fillRef.current = fill;
+  }, [fill]);
 
   const rootRef = useRef<HTMLDivElement>(null);
 
@@ -151,30 +175,120 @@ export function InfiniteCanvas({
     return () => window.clearTimeout(timer);
   }, [view]);
 
-  // --- pointer drag (pan), two-finger pinch (zoom), wheel (zoom) -----------
+  // --- pointer drag (pan), two-finger pinch (zoom), wheel (pan and zoom) ----
   useEffect(() => {
     const el = rootRef.current;
     if (!el) return;
 
-    const pointers = new Map<number, { x: number; y: number }>();
-    let drag: {
-      pointerId: number;
-      startClientX: number;
-      startClientY: number;
-      startView: Viewport;
-      moved: boolean;
-    } | null = null;
-    let pinch: { startDistance: number; startView: Viewport } | null = null;
-    // Set the instant a drag ends with `moved: true`, read and cleared by the
-    // very next click. Between those two points nothing else runs on this
-    // thread (pointerup and click are both dispatched synchronously for the
-    // same user gesture), so there is no window in which a click from an
-    // unrelated later gesture could see a stale `true` left over.
+    const gesture = createCanvasGesture();
+    // Set the instant a gesture ends having moved the picture, read and cleared
+    // by the very next click — and cleared again by the next `pointerdown`,
+    // which bounds its life to one gesture. That second reset is not
+    // decorative: a two-finger pinch on a touch screen produces no synthesized
+    // click at all, so without it a flag raised by a pinch would sit there and
+    // eat the next unrelated tap on a link.
     let suppressNextClick = false;
 
-    function localPoint(clientX: number, clientY: number) {
-      const rect = el!.getBoundingClientRect();
-      return { x: clientX - rect.left, y: clientY - rect.top };
+    // --- one layout read per gesture, not one per event --------------------
+    //
+    // `getBoundingClientRect()` forces the browser to flush pending layout
+    // before it can answer. The old handlers called it once per pinch move and
+    // once per wheel event, i.e. at trackpad event rate, on a page that draws
+    // up to four full SVG figures — a synchronous layout each time, which is
+    // the shape of "the canvas is slow" that has nothing to do with React.
+    //
+    // The rule is one measurement per gesture: the cache is dropped at the
+    // start of each one (a `pointerdown`, the first wheel event of a burst) and
+    // again whenever the element could have moved under it — a scroll in any
+    // ancestor, a window resize, or the element's own `resize: vertical`
+    // handle, which no window event reports.
+    //
+    // Caching within a gesture also makes a drag *more* correct than reading
+    // the rect live did: a drag delta is measured against the anchor stored at
+    // `pointerdown`, so a rect that shifted mid-gesture (a page scroll) would
+    // have teleported the content by the scroll distance.
+    let rect: { left: number; top: number; width: number; height: number } | null = null;
+    function measure() {
+      const cached = rect;
+      if (cached) return cached;
+      const r = el!.getBoundingClientRect();
+      const measured = { left: r.left, top: r.top, width: r.width, height: r.height };
+      rect = measured;
+      return measured;
+    }
+    function invalidateRect() {
+      rect = null;
+    }
+
+    // --- one React commit per animation frame ------------------------------
+    //
+    // A trackpad reports faster than the display refreshes, so binding
+    // `setView` straight to each event renders and writes `style.transform`
+    // several times for one painted frame. The pending viewport is held here
+    // and handed to React once per frame instead.
+    //
+    // `viewRef.current` is written **synchronously**, not in the frame
+    // callback: wheel zoom and wheel pan both compose against the current
+    // viewport, so two events inside one frame have to see each other's result
+    // or the second one silently undoes the first.
+    let frame = 0;
+    let pending: Viewport | null = null;
+    function commit(next: Viewport) {
+      viewRef.current = next;
+      pending = next;
+      if (frame) return;
+      frame = window.requestAnimationFrame(() => {
+        frame = 0;
+        const settled = pending;
+        pending = null;
+        // Only if nothing newer has landed. A keypress inside the same frame
+        // writes `viewRef` and its own state directly (`stepByKeyboard`), and
+        // handing React the pointer-derived viewport afterwards would undo it.
+        if (settled && viewRef.current === settled) setView(settled);
+      });
+    }
+
+    // --- compositor-layer promotion, for the duration of a gesture ---------
+    //
+    // Nothing in this stylesheet used `will-change` before this. Every
+    // transform write therefore repainted the SVG figures from scratch. The
+    // class is carried in React state rather than poked onto the node, because
+    // React owns this element's `className` and would reconcile an imperative
+    // change away on its next render.
+    let promoted = false;
+    let settleTimer = 0;
+    function markGesturing() {
+      if (!promoted) {
+        promoted = true;
+        setGesturing(true);
+      }
+      if (settleTimer) window.clearTimeout(settleTimer);
+      settleTimer = window.setTimeout(() => {
+        settleTimer = 0;
+        promoted = false;
+        setGesturing(false);
+      }, GESTURE_SETTLE_MS);
+    }
+
+    function apply(outcome: GestureOutcome) {
+      for (const id of outcome.capture) {
+        if (!el!.hasPointerCapture(id)) el!.setPointerCapture(id);
+      }
+      // Ended before began: a pinch handing its gesture over to the one finger
+      // still down reports both in the same outcome, and the reader should be
+      // left with the grabbing cursor, not without it.
+      if (outcome.endedDrag) setDragging(false);
+      if (outcome.beganDrag) setDragging(true);
+      if (outcome.suppressClick) suppressNextClick = true;
+      if (outcome.view) {
+        commit(outcome.view);
+        markGesturing();
+      }
+    }
+
+    function sample(e: PointerEvent) {
+      const r = measure();
+      return { id: e.pointerId, x: e.clientX - r.left, y: e.clientY - r.top, isPrimary: e.isPrimary };
     }
 
     function onPointerDown(e: PointerEvent) {
@@ -183,96 +297,34 @@ export function InfiniteCanvas({
       // pen report `button: 0` on their primary contact, so this does not
       // filter them.
       if (e.pointerType === "mouse" && e.button !== 0) return;
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-      // **Capture is NOT taken here.** It is taken in `onPointerMove`, the
-      // moment the drag threshold is crossed.
-      //
-      // Pointer capture retargets the compatibility mouse events — `click`
-      // among them — at the capturing element for as long as it is held. Taking
-      // it on every `pointerdown` would therefore deliver every click to this
-      // `<div>` instead of to the `<a>` underneath it, and every link on the
-      // canvas would be dead: no error, no warning, nothing in the console, just
-      // shapes that do not navigate. That is the same failure the movement
-      // threshold below exists to prevent, arriving by a different door, so the
-      // capture is deferred to exactly the case that needs it — a drag that has
-      // left the element — and a plain click never involves capture at all.
-      if (pointers.size === 2) {
-        // A second finger just landed: this gesture is a pinch, not a pan.
-        // A pinch needs capture from the start — there is no threshold to wait
-        // for and two fingers are never a click.
-        for (const id of pointers.keys()) {
-          if (!el!.hasPointerCapture(id)) el!.setPointerCapture(id);
-        }
-        // Whatever single-finger drag was starting under the first finger is
-        // abandoned outright rather than resumed later — resuming it on
-        // pinch-end would pan by the sum of both fingers' movement, which is
-        // not what either finger did on its own.
-        drag = null;
-        setDragging(false);
-        const [a, b] = [...pointers.values()];
-        pinch = { startDistance: distance(a, b), startView: viewRef.current };
-        return;
-      }
-      if (pointers.size === 1) {
-        drag = {
-          pointerId: e.pointerId,
-          startClientX: e.clientX,
-          startClientY: e.clientY,
-          startView: viewRef.current,
-          moved: false,
-        };
-      }
+      // The click belonging to the previous gesture, if the browser was going
+      // to synthesize one, has already been dispatched by now: `pointerup` and
+      // `click` are delivered synchronously for the same gesture. Anything
+      // still set here is therefore a flag nothing ever collected.
+      suppressNextClick = false;
+      // A gesture starts here, so this is where the one layout read it is
+      // allowed belongs.
+      invalidateRect();
+      apply(gesture.down(sample(e), viewRef.current));
     }
 
     function onPointerMove(e: PointerEvent) {
-      if (!pointers.has(e.pointerId)) return;
-      pointers.set(e.pointerId, { x: e.clientX, y: e.clientY });
-
-      if (pinch && pointers.size === 2) {
-        const [a, b] = [...pointers.values()];
-        const mid = localPoint((a.x + b.x) / 2, (a.y + b.y) / 2);
-        const factor = distance(a, b) / pinch.startDistance;
-        setView(zoomAbout(pinch.startView, mid.x, mid.y, factor));
-        return;
-      }
-
-      if (!drag || e.pointerId !== drag.pointerId) return;
-      const dx = e.clientX - drag.startClientX;
-      const dy = e.clientY - drag.startClientY;
-      // This threshold check is the single most important correctness
-      // property this component has. Below DRAG_THRESHOLD_PX the pointer has
-      // not moved far enough to tell a real drag apart from the jitter of an
-      // ordinary click, so nothing is repainted and `moved` stays false — and
-      // `moved` is exactly what the click-capture handler below checks before
-      // it will call preventDefault(). A pan implementation that swallowed
-      // every click regardless of movement would make every link this canvas
-      // ever contains permanently unclickable; that failure is silent (no
-      // error, the link is just dead) and would not show up in anything short
-      // of actually clicking one, which is why the threshold and the
-      // suppression it gates are kept next to each other in one file.
-      if (!drag.moved && Math.hypot(dx, dy) < DRAG_THRESHOLD_PX) return;
-      if (!drag.moved) {
-        // Now, and only now: this is a drag. Capturing here keeps it alive if
-        // the pointer leaves the viewport, and keeps it away from every click
-        // that never became one. See the note in `onPointerDown`.
-        el!.setPointerCapture(e.pointerId);
-      }
-      drag.moved = true;
-      setDragging(true);
-      setView({ ...drag.startView, x: drag.startView.x + dx, y: drag.startView.y + dy });
+      apply(gesture.move(sample(e)));
     }
 
-    function endPointer(e: PointerEvent) {
-      pointers.delete(e.pointerId);
+    function onPointerEnd(e: PointerEvent) {
+      const outcome = gesture.end(e.pointerId);
       if (el!.hasPointerCapture(e.pointerId)) el!.releasePointerCapture(e.pointerId);
+      apply(outcome);
+    }
 
-      if (pinch && pointers.size < 2) pinch = null;
-
-      if (drag && e.pointerId === drag.pointerId) {
-        if (drag.moved) suppressNextClick = true;
-        drag = null;
-        setDragging(false);
+    function onWindowBlur() {
+      // The pointer left the window and was released somewhere we will never
+      // hear about — the classic source of a contact that is tracked forever.
+      for (const id of gesture.ids()) {
+        if (el!.hasPointerCapture(id)) el!.releasePointerCapture(id);
       }
+      apply(gesture.cancelAll());
     }
 
     // Capture phase, registered on this element: it runs before the click
@@ -287,38 +339,72 @@ export function InfiniteCanvas({
     }
 
     function onWheel(e: WheelEvent) {
-      // **A plain wheel is the page scrolling, not this figure zooming.**
+      // **What a plain wheel does depends on which surface this is.**
       //
-      // This canvas is a box in the middle of a long document, not a full-screen
-      // map, and it is wide: with a plain wheel bound to zoom, a reader scrolling
-      // down the page with the pointer anywhere over the figure zooms it instead
-      // of moving down the page, and cannot get past it without aiming at the
-      // margin. Measured on the built page while verifying this session's work —
-      // the figure had silently zoomed itself to 73% and panned off-centre from
-      // nothing but ordinary scrolling.
+      // It used to do nothing at all, anywhere, and the comment justifying that
+      // was right about one surface and wrong about the other:
       //
-      // So zoom needs the modifier, which costs nothing where it matters: a
-      // trackpad pinch is *delivered* as `ctrl + wheel` by every browser, so
-      // pinch-to-zoom keeps working untouched, and it is the gesture a reader
-      // actually reaches for. A mouse wheel scrolls the page, which is what a
-      // wheel does everywhere else on it. Keyboard `+`/`-` and the size links
-      // are the two ways in that need no pointer at all.
-      if (!e.ctrlKey && !e.metaKey) return;
-      // A horizontal-only wheel event (deltaY === 0) is not a zoom input on
-      // this surface — the common source is a two-finger horizontal trackpad
-      // swipe, which several browsers reserve for back/forward navigation.
-      if (e.deltaY === 0) return;
-      const rect = el!.getBoundingClientRect();
-      const px = e.clientX - rect.left;
-      const py = e.clientY - rect.top;
-      const pixels =
-        e.deltaMode === 1 ? e.deltaY * WHEEL_LINE_HEIGHT_PX : e.deltaMode === 2 ? e.deltaY * rect.height : e.deltaY;
-      const factor = Math.exp(-pixels * WHEEL_ZOOM_SENSITIVITY);
-      setView(zoomAbout(viewRef.current, px, py, factor));
-      // Only when cancelable: a wheel event dispatched during a passive
-      // listener pass (not the case for the { passive: false } listener
-      // below, but true of some synthetic replays) throws if preventDefault()
-      // is called on it regardless of intent.
+      // - **The node-page figure** is a box in the middle of a long document,
+      //   and a wide one. With a plain wheel bound to the canvas, a reader
+      //   scrolling down the page with the pointer over the figure moves the
+      //   figure instead of the page and cannot get past it without aiming at
+      //   the margin. Measured while building it: the figure had silently
+      //   zoomed itself to 73% and panned off-centre from ordinary scrolling.
+      //   That surface keeps the old rule — a plain wheel is the page.
+      // - **The map surface** (`fill`) is `calc(100dvh - 15rem)` tall and is the
+      //   page rather than an illustration in one. There, a two-finger scroll
+      //   that does nothing is not restraint, it is a dead control: *"On
+      //   trackpad, I should be able to scroll through with my two fingers, not
+      //   click and drag"* — owner, session-104 inbox. A plain wheel pans it,
+      //   and the page around it (about 15rem of chrome) is what a reader
+      //   scrolls with instead.
+      //
+      // **Momentum is not implemented, deliberately.** macOS keeps emitting
+      // `wheel` events with decaying deltas for up to a second or so after the
+      // fingers lift; a pan bound 1:1 to those deltas glides and settles on its
+      // own, with the OS's own curve. A velocity-and-rAF fling layered on top
+      // would run *at the same time* as those events, not instead of them, and
+      // the two would add — the "don't overdo it" failure, arrived at by
+      // writing more code. Drag-panning with a mouse has no OS momentum and
+      // gets none here either; that is a separate feature, not this one leaking.
+      //
+      // ⌘+scroll is left alone: it is the browser's own page zoom, and this
+      // canvas taking it was a hijack of a system-level gesture. Only `ctrlKey`
+      // means zoom now — which is also how every browser delivers a trackpad
+      // pinch, so pinch-to-zoom keeps working on both surfaces untouched.
+      //
+      // `promoted` is false exactly when no gesture is in flight, so this is
+      // the first event of a wheel burst and the moment to re-read the rect.
+      // Every later event in the burst, momentum included, reuses it.
+      if (!promoted) invalidateRect();
+      if (e.ctrlKey) {
+        // A horizontal-only event (deltaY === 0) is not a zoom input: the
+        // common source is a two-finger horizontal swipe, which is a pan.
+        if (e.deltaY === 0) return;
+        const r = measure();
+        const factor = wheelZoomFactor(wheelPixels(e.deltaY, e.deltaMode, r.height));
+        commit(zoomAbout(viewRef.current, e.clientX - r.left, e.clientY - r.top, factor));
+        markGesturing();
+        // Only when cancelable: a wheel event dispatched during a passive
+        // listener pass (not the case for the { passive: false } listener
+        // below, but true of some synthetic replays) throws if preventDefault()
+        // is called on it regardless of intent.
+        if (e.cancelable) e.preventDefault();
+        return;
+      }
+      if (e.metaKey) return;
+      if (!fillRef.current) return;
+      const r = measure();
+      const dx = wheelPixels(e.deltaX, e.deltaMode, r.width);
+      const dy = wheelPixels(e.deltaY, e.deltaMode, r.height);
+      if (dx === 0 && dy === 0) return;
+      // Negated, and 1:1 with the reported delta. Scrolling down means "show me
+      // what is further down", which moves the content up. No multiplier: the
+      // deltas macOS reports already carry its own scroll acceleration, so a
+      // fast flick is already a big delta, and a pan that does not track the
+      // fingers exactly is the thing that stops a canvas feeling like one.
+      commit(panBy(viewRef.current, -dx, -dy));
+      markGesturing();
       if (e.cancelable) e.preventDefault();
     }
 
@@ -331,18 +417,44 @@ export function InfiniteCanvas({
     // default beyond the one gated click, so they stay passive.
     el.addEventListener("pointerdown", onPointerDown);
     el.addEventListener("pointermove", onPointerMove, { passive: true });
-    el.addEventListener("pointerup", endPointer);
-    el.addEventListener("pointercancel", endPointer);
+    // `lostpointercapture` closes the case where the browser takes a capture
+    // away from us mid-drag (a system gesture, a context menu) and then never
+    // sends the `pointerup` that would have ended it.
+    el.addEventListener("lostpointercapture", onPointerEnd);
     el.addEventListener("click", onClickCapture, true);
     el.addEventListener("wheel", onWheel, { passive: false });
+    // Releases are heard on `window`, not on the element. A press that stayed
+    // under the drag threshold never took capture, so its `pointerup` is
+    // delivered to whatever is under the pointer at the time — which, for a
+    // press that wandered off the canvas, is not this element. Element-scoped
+    // listeners simply never heard about it, and the contact stayed tracked.
+    window.addEventListener("pointerup", onPointerEnd);
+    window.addEventListener("pointercancel", onPointerEnd);
+    window.addEventListener("blur", onWindowBlur);
+
+    // The cached rect goes stale when the element moves or resizes. A window
+    // `resize` does not cover the element's own `resize: vertical` handle, so
+    // observe the element too; `scroll` is capture-phase because a scroll
+    // inside any ancestor moves this element without bubbling.
+    const observer = typeof ResizeObserver === "function" ? new ResizeObserver(invalidateRect) : null;
+    observer?.observe(el);
+    window.addEventListener("scroll", invalidateRect, { passive: true, capture: true });
+    window.addEventListener("resize", invalidateRect, { passive: true });
 
     return () => {
       el.removeEventListener("pointerdown", onPointerDown);
       el.removeEventListener("pointermove", onPointerMove);
-      el.removeEventListener("pointerup", endPointer);
-      el.removeEventListener("pointercancel", endPointer);
+      el.removeEventListener("lostpointercapture", onPointerEnd);
       el.removeEventListener("click", onClickCapture, true);
       el.removeEventListener("wheel", onWheel);
+      window.removeEventListener("pointerup", onPointerEnd);
+      window.removeEventListener("pointercancel", onPointerEnd);
+      window.removeEventListener("blur", onWindowBlur);
+      window.removeEventListener("scroll", invalidateRect, { capture: true });
+      window.removeEventListener("resize", invalidateRect);
+      observer?.disconnect();
+      if (frame) window.cancelAnimationFrame(frame);
+      if (settleTimer) window.clearTimeout(settleTimer);
     };
   }, []);
 
@@ -358,8 +470,13 @@ export function InfiniteCanvas({
    * extending it is the owner's call rather than a side effect of building a
    * viewport. Nothing is lost for the readers it would have mattered to most —
    * an instant step is what they were getting anyway.
+   *
+   * It also does not go through the per-frame coalescing the pointer and wheel
+   * paths use: one keypress is one step, and there is never a second one in the
+   * same frame to fold it into.
    */
   function stepByKeyboard(next: Viewport) {
+    viewRef.current = next;
     setView(next);
   }
 
@@ -377,16 +494,16 @@ export function InfiniteCanvas({
     const rect = e.currentTarget.getBoundingClientRect();
     switch (e.key) {
       case "ArrowLeft":
-        stepByKeyboard({ ...current, x: current.x + KEYBOARD_PAN_STEP_PX });
+        stepByKeyboard(panBy(current, KEYBOARD_PAN_STEP_PX, 0));
         break;
       case "ArrowRight":
-        stepByKeyboard({ ...current, x: current.x - KEYBOARD_PAN_STEP_PX });
+        stepByKeyboard(panBy(current, -KEYBOARD_PAN_STEP_PX, 0));
         break;
       case "ArrowUp":
-        stepByKeyboard({ ...current, y: current.y + KEYBOARD_PAN_STEP_PX });
+        stepByKeyboard(panBy(current, 0, KEYBOARD_PAN_STEP_PX));
         break;
       case "ArrowDown":
-        stepByKeyboard({ ...current, y: current.y - KEYBOARD_PAN_STEP_PX });
+        stepByKeyboard(panBy(current, 0, -KEYBOARD_PAN_STEP_PX));
         break;
       // "=" is the unshifted key that produces "+" on a US layout; both are
       // accepted so a reader does not have to hold Shift to zoom in.
@@ -418,7 +535,7 @@ export function InfiniteCanvas({
       // repository canvas's shapes), which still need to work with a screen
       // reader's native link list and its usual navigation — a control
       // surface, not an application, is what this is.
-      className={`mj-canvas-viewport${fill ? " mj-canvas-viewport--fill" : ""}${dragging ? " mj-canvas-viewport--dragging" : ""}`}
+      className={`mj-canvas-viewport${fill ? " mj-canvas-viewport--fill" : ""}${dragging ? " mj-canvas-viewport--dragging" : ""}${gesturing ? " mj-canvas-viewport--gesturing" : ""}`}
       tabIndex={0}
       aria-label={label}
       aria-describedby={hintId}
@@ -431,7 +548,7 @@ export function InfiniteCanvas({
         {children}
       </div>
       <p id={hintId} className="sr-only">
-        {KEYBOARD_HINT_COPY[locale]}
+        {(fill ? CANVAS_HINT_COPY_FILL : CANVAS_HINT_COPY)[locale]}
       </p>
     </div>
   );

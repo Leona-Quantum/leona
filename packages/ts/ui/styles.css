@@ -12038,6 +12038,15 @@ div.mj-rail-row:hover {
   border-radius: var(--radius-card);
   background: var(--bg-1);
   cursor: grab;
+  /* Layout and paint are isolated here so a `transform` write on the layer
+     inside cannot invalidate anything in the surrounding document. `overflow:
+     hidden` above already clips, so `paint` costs nothing new; `layout` is the
+     one that matters, because the content inside is up to four full SVG figures
+     and without it their invalidation walks back out into the page. Not
+     `content` or `strict` — both imply size containment, and this box is sized
+     by its own `height`/`resize` rules rather than by a parent that could
+     supply one. */
+  contain: layout paint;
   /* Pointer Events drive the gestures here (drag-to-pan, two-finger
      pinch-to-zoom — see infinite-canvas.tsx) rather than native touch
      scrolling: without this the browser starts its own scroll or pinch from the
@@ -12045,11 +12054,11 @@ div.mj-rail-row:hover {
      two fight over one finger.
 
      `pan-y` rather than `none`, and the difference is whether a phone can read
-     this page at all. This canvas is a box in a long document — 303×512 in a
-     375px viewport, measured — so with `none` a reader swiping up anywhere over
-     the figure pans the figure and cannot get past it. It is the same trap as
-     binding zoom to a plain wheel, and it is worse on a phone because there is
-     almost no margin to aim at.
+     this page at all. **This value is for the node-page figure only** — a box
+     in a long document, 303×512 in a 375px viewport, measured — so with `none`
+     a reader swiping up anywhere over the figure pans the figure and cannot get
+     past it, and there is almost no margin to aim at instead. The map surface
+     inverts this reasoning and overrides it below.
 
      `pan-y` gives the vertical swipe back to the page and keeps everything
      else: a horizontal drag is still ours, and since `pinch-zoom` is not in the
@@ -12078,6 +12087,31 @@ div.mj-rail-row:hover {
 .mj-canvas-viewport--fill {
   height: calc(100dvh - 15rem);
   min-height: 28rem;
+  /* `none`, overriding the `pan-y` above, and the override is deliberate rather
+     than inherited-by-accident.
+
+     `pan-y` was chosen for a figure that is one element of a scrolling
+     document; the argument for it is "a reader must be able to get past this
+     thing". On a surface that is `100dvh - 15rem` tall, that argument runs the
+     other way: with `pan-y` a phone reader cannot drag the map north or south
+     **at all** — the only direction the vertical swipe is given back to is the
+     page, and the map is most of the page. A map you can only pan sideways is
+     not a map.
+
+     What the reader gets instead of swiping over the canvas: about 15rem of
+     page chrome above and below it to scroll from, the arrow keys, and — since
+     `touch-action` says nothing about a second finger — pinch-to-zoom, which
+     still reaches the pinch handler here exactly as it does above. */
+  touch-action: none;
+  /* A two-finger horizontal swipe over this surface is a pan (infinite-canvas
+     .tsx's `onWheel` binds a plain wheel to panning on this surface only), and
+     the browser reads that same gesture as back/forward navigation once a
+     scroll container runs out of room. `overflow: hidden` above makes this a
+     scroll container with no room at all, i.e. permanently at its boundary, so
+     without this every horizontal pan is a candidate for navigating away from
+     the page. The handler calls preventDefault() as well; this is the half that
+     still holds if a browser routes the overscroll before the listener. */
+  overscroll-behavior: contain;
 }
 /* Set by InfiniteCanvas only once a pointer has moved past the drag
    threshold — never on a plain press — so a reader mousing over the canvas
@@ -12112,3 +12146,27 @@ div.mj-rail-row:hover {
    effect of building a viewport. An instant step is also the correct default
    under `prefers-reduced-motion`, so nothing is lost for the readers the
    transition would have mattered to most. */
+/* The layer is promoted to its own compositor layer, for the length of a
+   gesture only. `InfiniteCanvas` adds `--gesturing` on the first event of a
+   pan/zoom and removes it 200ms after the last one (`GESTURE_SETTLE_MS`, which
+   is a gap rather than a duration, so a gesture and the momentum that follows
+   it are one promotion and not several).
+
+   Not an animation and not on the closed permitted-animation list above it:
+   `will-change` declares nothing about how a property changes over time, it
+   tells the compositor which property is about to change so the change does not
+   have to be repainted. Before this there was no `will-change`, no `contain`
+   and no layer promotion anywhere in this stylesheet, so every transform write
+   repainted the whole canvas — up to four full SVG figures, five drawing passes
+   each — at trackpad event rate. That is the slowness, and it is not React's:
+   the map is a server component, so `children` reaches the viewport as a stable
+   element reference and React bails out of the entire SVG subtree.
+
+   Scoped to the gesture rather than left on permanently because the promotion
+   is not free: it holds a rasterized copy of the whole layer, and the layer is
+   as large as its content at the current zoom, which near the top of
+   `VIEWPORT_LIMITS` is very large. A hint that is always on is also a hint the
+   browser is entitled to stop acting on. */
+.mj-canvas-viewport--gesturing .mj-canvas-layer {
+  will-change: transform;
+}
