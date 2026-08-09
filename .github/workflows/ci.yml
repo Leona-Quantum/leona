@@ -46,7 +46,10 @@ jobs:
       - run: pnpm install --frozen-lockfile
       - name: install chromium
         run: pnpm --filter @majorana/ui-visual exec playwright install --with-deps chromium
-      - name: axe (WCAG A/AA over rendered @majorana/ui stories)
+      # `a11y` runs every spec in the package, not only axe: the Atlas name-plate check
+      # rides in the same job because it needs the same Chromium and the same
+      # render-from-source step.
+      - name: axe over the @majorana/ui stories, plus the Atlas render checks
         run: pnpm --filter @majorana/ui-visual run a11y
 
   py:

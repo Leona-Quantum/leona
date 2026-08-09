@@ -16,6 +16,26 @@ What it does:
 - `tests/a11y.spec.ts` loads each rendered story in chromium and asserts **zero** WCAG A/AA
   violations via `@axe-core/playwright`. Scoped to WCAG tags only (not axe best-practice
   rules like `region`, which flag any standalone fragment for not being a full page).
+- `src/converge-stories.tsx` renders the **Atlas convergence figures** — every drawable slot
+  × both locales, saturated so every openable line is open — by importing `ConvergeCanvas`
+  and the layout out of `apps/web` **by relative path**. Not through a package name: that app
+  is a Next app, and depending on it here would pull Next into a harness whose whole point is
+  not having it. `ConvergeCanvas` carries no `"use client"` and imports nothing but types, so
+  esbuild bundles it as a plain function of its props. They go to
+  `dist/converge-manifest.json`, a **second** manifest rather than a flag on `Story` — a flag
+  the axe sweep filtered by would be one flip away from emptying that sweep's subject list.
+- `tests/converge-plate.spec.ts` is the render-level half of the opened-name guard. The
+  layout tests in `apps/web` measure numbers and cannot see whether
+  `.mj-converge-name-plate` is drawn at all: delete it and every one of them stays green
+  while every opened name on the Atlas goes illegible. This asserts the plate exists for all
+  86 names on a bone, is opaque, is filled with the surface the figure is drawn on, is
+  painted before its own text, and is at least as wide as the text drew. **It cannot assert
+  ink-level vertical coverage**, and the file says why at length: Instrument Sans arrives
+  through `next/font/google` at build time, so text here draws in the runner's `system-ui`
+  substitute whose metrics are not the app's (measured: a 20.57px ascent against the ~9px
+  the real face draws). The vertical side is a typographic model against the computed
+  font-size instead. Closing that sliver means vendoring the woff2 or measuring on a served
+  page — a decision, not an oversight.
 
 Invariants:
 - No Next, no auth, no dev server, for the **rendering and a11y** work this package exists
