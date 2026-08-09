@@ -714,7 +714,7 @@ test("every shape is a link", () => {
 
 test("every capability draws a figure — not just the two that converge", () => {
   const capabilities = LAYER_GRAPH.nodes.filter(isCapability);
-  assert.equal(capabilities.length, 18, "the graph's slot count changed; update these figures");
+  assert.equal(capabilities.length, 19, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -726,11 +726,13 @@ test("every capability draws a figure — not just the two that converge", () =>
   }
 
   // The split is measured, not assumed: 2 slots have interior states and the
-  // other 16 are method fans. If a future edit gives a method its own contract
+  // other 17 are method fans. If a future edit gives a method its own contract
   // this number moves, and moving it should be a deliberate edit here.
+  // 16 → 17 in session 106: `hamiltonian-recasting`'s two methods are both
+  // atomic, so it fans them rather than drawing a chain.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 2);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 16);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 17);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -743,7 +745,7 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     .filter((focus) => !diagramFor(focus.id).empty)
     .map((focus) => focus.id);
   assert.deepEqual(offered, draws);
-  assert.equal(offered.length, 18);
+  assert.equal(offered.length, 19);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement.
@@ -767,7 +769,7 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     !strippedOffer.includes("time-discretization"),
     "a slot nothing fills is still being offered as a figure",
   );
-  assert.equal(strippedOffer.length, 17);
+  assert.equal(strippedOffer.length, 18);
   // …and the two lists still agree on that graph, which is the actual contract.
   const strippedDraws = stripped.nodes
     .filter(isCapability)
@@ -1031,13 +1033,15 @@ test("the narrowed lane is named after its filler, not after the slot four route
  * opens *more* lanes per value, so it is not even the harder case for the ones
  * that count things. The id path keeps its own test.
  */
-function openableAddresses(id: string): string[] {
+/** Every address `id`'s figure can open, to saturation. `graph` so a fixture
+ *  graph can be saturated too — the cap's own test needs that. */
+function openableAddresses(id: string, graph: LayerGraph = LAYER_GRAPH): string[] {
   const seen = new Set<string>();
   const walk = (open: ReadonlySet<string>) => {
-    const node = layerNode(LAYER_GRAPH, id);
+    const node = layerNode(graph, id);
     assert.ok(node && isCapability(node));
     const diagram = layoutConverge({
-      graph: LAYER_GRAPH,
+      graph,
       vocabulary: STATE_VOCABULARY,
       focus: node,
       locale: "en",
@@ -1129,9 +1133,13 @@ test("a line that opens into something says so, and a line that does not is not 
   // `nonlinear-linear-embedding`, so both land in `leaves` — they are lines with
   // nothing finer recorded, which is the honest state for a framework node whose
   // instances are its children rather than its steps.
-  assert.equal(openable + leaves + 1, 57, "the eighteen figures draw 57 lines between them");
+  // 57 until session 106. `hamiltonian-recasting` brought a nineteenth figure
+  // carrying its two atomic methods, and both land in `leaves` — the openable
+  // count did not move, because `lchs-route` and `schrodingerisation` already
+  // opened into their steps and gaining a second step did not change that.
+  assert.equal(openable + leaves + 1, 59, "the nineteen figures draw 59 lines between them");
   assert.equal(openable, 24, "24 of them open into something recorded");
-  assert.equal(leaves, 32, "32 are leaves — nothing finer is recorded for them");
+  assert.equal(leaves, 34, "34 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -1755,11 +1763,27 @@ test("a name past the cap is cut, and the full text survives in the title", () =
   // lane depends on the route walk, and a test that guessed wrong would report
   // "the cap does not bite" when what actually happened is that the name was
   // never on screen. That reads identically to a working cap.
-  const drawn = drawableSlots(graph, STATE_VOCABULARY).flatMap((slot) => {
-    const focus = layerNode(graph, slot.id);
+  //
+  // **Shut and saturated, because only one of the two ever reaches the cap.** A
+  // column's `fit` is the widest thing in that column, and an opened chain
+  // stacks its steps' widths into it — so a capped name sharing a column with an
+  // opened run was fitted against the run's width rather than against the cap.
+  // With every figure shut, no column on this graph is wide enough for that to
+  // show, and this sweep ran shut-only while `fitLabel` took the raw column
+  // width. It measured **445px against a 300px cap** the first time a nineteenth
+  // slot widened one (session 106). Saturating is what makes the cap the
+  // assertion rather than the column.
+  const lanesOn = (slotId: string, open: ReadonlySet<string>) => {
+    const focus = layerNode(graph, slotId);
     assert.ok(focus && isCapability(focus));
-    return layoutConverge({ graph, vocabulary: STATE_VOCABULARY, focus, locale: "en" }).lanes;
-  }).filter((lane) => lane.fullLabel === long);
+    return layoutConverge({ graph, vocabulary: STATE_VOCABULARY, focus, locale: "en", open }).lanes;
+  };
+  const drawn = drawableSlots(graph, STATE_VOCABULARY)
+    .flatMap((slot) => [
+      ...lanesOn(slot.id, new Set()),
+      ...lanesOn(slot.id, new Set(openableAddresses(slot.id, graph))),
+    ])
+    .filter((lane) => lane.fullLabel === long);
   assert.ok(drawn.length > 0, "the fixture's long name is drawn on no figure at all");
   for (const lane of drawn) {
     assert.equal(lane.labelTruncated, true, "a 1272px name was not cut by a 300px cap");

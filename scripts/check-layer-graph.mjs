@@ -211,16 +211,36 @@ const chainOf = (method) =>
     .map((step) => `${step}${method.via?.[step] ? ` via ${method.via[step]}` : ""}`)
     .join(" + ");
 
+// A group is **declared** when its members form one refinement chain: exactly one
+// member refines nothing inside the group, and every other member names a
+// distinct member as what it refines. Two siblings both refining the same parent
+// is deliberately *not* enough — they say nothing about each other, which is the
+// thing being asked for. **That clause has no witness in the graph today**, so it
+// is asserted rather than exercised; it is written the strict way round because
+// an unexercised clause that is too permissive is a wrong-reason pass waiting,
+// and one that is too strict is an error somebody has to answer.
+//
+// This is the remedy the error message below has always offered — *"declare one a
+// `refines` of another"* — and, until session 106, never honoured: the message
+// named a fix that left the error in place, so the only route out was a
+// KNOWN_TWINS row for a pair that had already said why. `validateLayerGraph`
+// guarantees a `refines` target realizes the same capability, so a chain found
+// here cannot silently cross slots.
+const nodesById = new Map(LAYER_GRAPH.nodes.map((node) => [node.id, node]));
+const refinementChain = (ids) => {
+  const members = new Set(ids);
+  const parents = ids
+    .map((id) => nodesById.get(id)?.refines)
+    .filter((parent) => parent !== undefined && members.has(parent));
+  if (parents.length !== ids.length - 1) return false;
+  return new Set(parents).size === parents.length;
+};
+
 const KNOWN_TWINS = [
   {
     slot: "linear-ode-solve",
     methods: ["krovi-linear-ode", "dyson-all-at-once"],
-    why: "krovi-linear-ode re-analyses the all-at-once construction it already `refines`, and whether it survives as its own node is an owner ruling (OWNER_TODO §4a). dyson-all-at-once wants a `truncated-dyson-series` node under `time-discretization` that nobody has authored — that needs the paper and a citation (R1, R10), so it is content work, not a pin.",
-  },
-  {
-    slot: "linear-ode-solve",
-    methods: ["lchs-route", "lchs-improved-kernel", "schrodingerisation"],
-    why: "lchs-improved-kernel already `refines: lchs-route`, so that pair is declared. lchs-route and schrodingerisation must NOT collapse — genuinely different mathematics, one requiring a positive-semidefinite Hermitian part throughout and the other requiring nothing of the kind. What is missing is an intermediate slot between them, which needs R2's two-method contest and a state-vocabulary entry (OWNER_TODO §4b).",
+    why: "krovi-linear-ode re-analyses the all-at-once construction it already `refines`, and the owner ruled in session 106 that it **keeps** its own node (OWNER_TODO §1): extending to non-diagonalizable matrices changes what the method applies to, and reach is part of what a method is. So this half of the pair is settled and will not be pinned apart — it is here permanently, by decision. dyson-all-at-once is the half still open: it wants a `truncated-dyson-series` node under `time-discretization` that nobody has authored, and that needs the paper and a citation (R1, R10), so it is content work, not a pin.",
   },
   {
     slot: "time-discretization",
@@ -248,6 +268,7 @@ for (const node of LAYER_GRAPH.nodes) {
 const matchedTwins = new Set();
 for (const [key, ids] of chainGroups) {
   if (ids.length < 2) continue;
+  if (refinementChain(ids)) continue;
   const [slot, chain] = key.split(" ");
   const known = KNOWN_TWINS.find(
     (row) =>
