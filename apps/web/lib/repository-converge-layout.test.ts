@@ -36,9 +36,11 @@ import { PATH_LIMITS, expansionOf, methodFanOf } from "./repository/state-graph.
 import { estimateTextWidth } from "./repository/process-layout.ts";
 import {
   isCapability,
+  isMethod,
   layerNode,
   methodsRealizing,
   rootCapabilities,
+  routeOf,
   type LayerCapability,
 } from "./repository/layers.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
@@ -1339,9 +1341,16 @@ test("a line that opens into something says so, and a line that does not is not 
   // carrying its two atomic methods, and both land in `leaves` — the openable
   // count did not move, because `lchs-route` and `schrodingerisation` already
   // opened into their steps and gaining a second step did not change that.
-  assert.equal(openable + leaves + 1, 59, "the nineteen figures draw 59 lines between them");
+  // 59 until session 107. `truncated-dyson-series` was authored so that
+  // `dyson-all-at-once` had something to pin its discretization to, and it is a
+  // fifth filler of `time-discretization` — one more lane on that figure, and a
+  // leaf, because Berry and Costa's construction has nothing finer recorded
+  // under it. `openable` again did not move: these counts are taken on the
+  // **shut** figures, where every lane is a top-level filler of the focused
+  // slot, and pinning changes what is drawn one level *inside* an opened method.
+  assert.equal(openable + leaves + 1, 60, "the nineteen figures draw 60 lines between them");
   assert.equal(openable, 24, "24 of them open into something recorded");
-  assert.equal(leaves, 34, "34 are leaves — nothing finer is recorded for them");
+  assert.equal(leaves, 35, "35 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -2479,7 +2488,17 @@ test("a tendon's run is bounded, and every strand gets one", () => {
 const SIZE_CEILING = {
   /** Widest figure, fully opened, either locale. Today 5,134 (`ja`). */
   saturatedWidth: 12_000,
-  /** Tallest, same sweep. Today 9,058, unchanged by the tendons — R14 was horizontal. */
+  /**
+   * Tallest, same sweep. Today 9,677 — `nonlinear-ode-solve` in `en`.
+   *
+   * 9,058 until session 107, and the 619px is content rather than layout:
+   * `truncated-dyson-series` is a fifth way through `time-discretization`, and
+   * that slot is a nested fan on this figure, so one more filler is one more
+   * branch to reserve a band for. Drawing the `via` pins pushed the other way
+   * and did not cancel it — a pinned hop is one method's lane instead of a fan
+   * of the six that fill its slot, which is why the *width* did not move at all
+   * (5,134 in `ja`, the same number as before the pins were drawn).
+   */
   saturatedHeight: 16_000,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
@@ -2813,4 +2832,268 @@ test("a node id in ?open= still opens what it always opened", () => {
     byId > byAddress,
     `${found.id} opens ${byId} lanes and its address opens ${byAddress} — the two forms have become one`,
   );
+});
+
+// --- what a route DRAWS inside itself, and when two of them draw one picture --
+//
+// The owner, session 107: *"Truncated Taylor propagator, all-at-once encoding",
+// "Krovi's reanalysis of the all-at-once encoding" and "Truncated Dyson series,
+// all-at-once encoding" all draw the identical picture.* They did. All three
+// delegate `time-discretization` then `quantum-linear-solve`, `chainInside`
+// labelled each hop with the **slot**, and the `via` pin that says which
+// discretization a route actually uses was read by nothing on the canvas.
+//
+// The assertions below are on the **drawn** sequence — lane labels off a real
+// `layoutConverge` result — and not on `routeOf`, `steps` or `via`. That
+// distinction is the whole point of writing them: `scripts/check-layer-graph.mjs`
+// had been grouping on `steps` plus `via` since the pin was introduced, which is
+// a second hand-written model of the picture, and it read the Taylor group as
+// split for twenty-odd merges while the canvas drew it as one.
+
+/**
+ * The interior of one lane, as a reader sees it: the hops along it, then the
+ * ingredients hanging off it.
+ *
+ * `fullLabel`, because that is the name of the hop — `label` is the same string
+ * cut to the column, so two hops whose names differ only past the cut would read
+ * as identical here and the census would report a duplicate the canvas does not
+ * draw.
+ *
+ * The exception is the hop a method performs itself, which is `nameless` and
+ * draws no text at all: its name is the method's own and the lane above already
+ * carries it. It is `«own»` here for exactly that reason. Keying it by the
+ * method's id instead would make every route with an own-work tail unique by
+ * construction, and this census — whose job is to find two routes drawing one
+ * picture — would stop being able to find anything.
+ */
+function drawnInterior(diagram: ConvergeDiagram, lane: ConvergeLane): string | null {
+  const hops = diagram.lanes
+    .filter((child) => child.parentKey === lane.key)
+    .sort((a, b) => a.x0 - b.x0)
+    .map((child) => (child.nameless ? "«own»" : child.fullLabel));
+  const feeds = diagram.feeds
+    .filter((feed) => feed.key.startsWith(`${lane.key}~`))
+    .map((feed) => feed.fullLabel)
+    .sort();
+  if (hops.length === 0 && feeds.length === 0) return null;
+  return `${hops.join(" ▸ ")}${feeds.length > 0 ? ` + needs ${feeds.join(" & ")}` : ""}`;
+}
+
+/**
+ * Every method the map draws an interior for, anywhere, with what it draws.
+ *
+ * A `Set` per method rather than one string, because a method is drawn on more
+ * than one figure — `qsvt-transform` appears under `matrix-function` and again
+ * inside `qsvt-matrix-inversion` on another figure — and a method that drew two
+ * different interiors depending on where it was reached would be a defect this
+ * would otherwise average away. Asserted below to be exactly one each.
+ */
+function drawnInteriors(): Map<string, Set<string>> {
+  const found = new Map<string, Set<string>>();
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const diagram = openDiagram(focus.id, openableAddresses(focus.id));
+    for (const lane of diagram.lanes) {
+      if (!lane.nodeId || !lane.open) continue;
+      const node = layerNode(LAYER_GRAPH, lane.nodeId);
+      if (!node || !isMethod(node)) continue;
+      const drawn = drawnInterior(diagram, lane);
+      if (drawn === null) continue;
+      found.set(lane.nodeId, (found.get(lane.nodeId) ?? new Set()).add(drawn));
+    }
+  }
+  return found;
+}
+
+/** The one drawn interior of `id`, or null where the map draws none. */
+function interiorOf(drawn: Map<string, Set<string>>, id: string): string | null {
+  const set = drawn.get(id);
+  if (set === undefined) return null;
+  assert.equal(set.size, 1, `${id} draws ${set.size} different interiors depending on where it is reached`);
+  return [...set][0]!;
+}
+
+test("a route that pins its step draws the algorithm's name there, not the slot's", () => {
+  const drawn = drawnInteriors();
+  const taylor = interiorOf(drawn, "taylor-all-at-once");
+  const krovi = interiorOf(drawn, "krovi-linear-ode");
+  const dyson = interiorOf(drawn, "dyson-all-at-once");
+  assert.ok(taylor && krovi && dyson, "the three all-at-once routes are drawn");
+
+  // Three routes, three pictures. Not three *routes* — `steps` is still
+  // `time-discretization + quantum-linear-solve` on all three, which is correct
+  // and is why comparing routes here would prove nothing.
+  assert.equal(new Set([taylor, krovi, dyson]).size, 3, `${taylor}\n${krovi}\n${dyson}`);
+
+  // And the names are the pinned ones, read off the drawing rather than inferred
+  // from the count above being 3 — a count of 3 is also what three *wrongly*
+  // labelled hops would give.
+  assert.match(taylor, /^Truncated Taylor series of the propagator ▸ /);
+  assert.match(dyson, /^Truncated Dyson series of the propagator ▸ /);
+  // Krovi keeps the slot, and that is the honest drawing rather than a gap: the
+  // paper re-analyses the all-at-once construction and chooses no discretization
+  // of its own, so a pin here would be this map asserting something no source
+  // does. See the note on its `refines` edge in `layer-graph.ts`.
+  assert.match(krovi, /^Choose a time discretization or propagator approximation ▸ /);
+
+  // The other group the same pin splits. Schrödingerisation recasts through the
+  // warped phase transformation and the two LCHS routes through the kernel
+  // identity; unpinned, all three drew `hamiltonian-recasting → simulate`.
+  const lchs = interiorOf(drawn, "lchs-route");
+  const schrodinger = interiorOf(drawn, "schrodingerisation");
+  assert.ok(lchs && schrodinger);
+  assert.notEqual(lchs, schrodinger);
+  assert.match(lchs, /^Kernel-weighted combination of unitary propagators ▸ /);
+  assert.match(schrodinger, /^Warped phase transformation ▸ /);
+
+  // `lchs-improved-kernel` is *deliberately* still identical to `lchs-route`:
+  // it pins the same kernel identity and simulates the same way, and it says so
+  // with `refines`. That is the declared case the census below lets through, and
+  // asserting it here is what stops the census's exemption being a licence
+  // nobody re-reads.
+  assert.equal(interiorOf(drawn, "lchs-improved-kernel"), lchs);
+});
+
+/**
+ * Groups of methods that fill one slot and draw one interior, with the reason
+ * each survives.
+ *
+ * **The twin of `KNOWN_TWINS` in `scripts/check-layer-graph.mjs`, and the two
+ * are expected to hold the same groups.** They are not one list because they
+ * measure two different things — that script groups the authored routes, this
+ * groups a rendered diagram — and the whole reason this session exists is that
+ * the two models had silently disagreed. What keeps them honest is that
+ * **both sides error on a row nothing exercises**: a group that stops colliding
+ * fails here and there, so a drift is red on one side rather than quiet on both.
+ *
+ * A `refines` chain is not on this list and never needs to be. Declaring one
+ * method a narrower version of another is the graph already saying why two
+ * pictures are one, and it is checked structurally below.
+ */
+const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why: string }> = [
+  {
+    slot: "time-discretization",
+    methods: ["backward-euler", "trapezoidal-rule"],
+    why:
+      "Two quadratures that each call one linear solve and nothing else. What differs is the "
+      + "discretization itself, which IS this slot, so there is no lower hop to pin them apart with.",
+  },
+  {
+    slot: "quantum-linear-solve",
+    methods: ["discrete-adiabatic-inversion", "eigenstate-filtering-inversion"],
+    why:
+      "Both walk block-encode → matrix function and prepare a state on the side. The difference is "
+      + "which function and how its phases are found, which lives inside `matrix-function` — a pin "
+      + "waiting on that slot being decomposed.",
+  },
+  {
+    slot: "observable-estimation",
+    methods: ["direct-sampling-readout", "amplitude-estimation-readout", "classical-shadow-readout"],
+    why:
+      "Three readouts that each consume a prepared state and do their own work on it. The interior is "
+      + "one hop long, so there is no second hop to tell them apart by; what tells them apart is their "
+      + "own cost, which is on the method and not in the drawing.",
+  },
+];
+
+/**
+ * Methods with an interior that the map draws **nowhere**, and why.
+ *
+ * Not a footnote — it is the denominator of the census below, and without it
+ * that census reads as covering the graph when it covers what the graph happens
+ * to nest. All four are the fillers of `nonlinear-ode-solve`, which is a **root**:
+ * its figure is the state chain over its own dominators, so the four routes are
+ * aggregated into slot lanes and never drawn as lanes of their own. Their pins
+ * are therefore recorded, validated, and drawn nowhere — the same condition
+ * every pin was in before session 107, surviving in the one place the fix cannot
+ * reach from `chainInside`.
+ *
+ * Deliberately a `deepEqual` rather than a subset check: a method leaving this
+ * list is the map having started to draw it, and it must then be swept by the
+ * census rather than quietly exempt from both.
+ */
+const DRAWN_NOWHERE: readonly string[] = [
+  "carleman-euler-qls-route",
+  "kvn-simulation-route",
+  "level-set-observable-route",
+  "homotopy-perturbation-route",
+];
+
+test("no two routes through one slot draw the same interior unless something says why", () => {
+  const drawn = drawnInteriors();
+
+  // The denominator first. A census that swept nothing passes every clause below
+  // it, and this one *cannot* sweep everything — see `DRAWN_NOWHERE`.
+  const holders = LAYER_GRAPH.nodes.filter((node) => {
+    if (!isMethod(node)) return false;
+    const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, node);
+    // `planForMethod`'s own `holds`: two hops, or at least one ingredient. A leaf
+    // draws no interior at all, and two nothings are not one picture — without
+    // this the four atomic ways through `qsp-phase-factors` would read as a
+    // group of four drawing the same blank.
+    return route.segments.length >= 2 || route.feeds.length > 0;
+  });
+  const undrawn = holders.map((node) => node.id).filter((id) => !drawn.has(id));
+  console.log(
+    `drawn interiors: ${drawn.size} of ${holders.length} methods that hold one, over `
+      + `${drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).length} saturated figures`,
+  );
+  assert.deepEqual(undrawn.sort(), [...DRAWN_NOWHERE].sort());
+  assert.ok(drawn.size >= 20, `only ${drawn.size} methods drew an interior — the sweep has gone quiet`);
+
+  const groups = new Map<string, { slot: string; drawn: string; ids: string[] }>();
+  for (const id of drawn.keys()) {
+    const node = layerNode(LAYER_GRAPH, id);
+    assert.ok(node && isMethod(node));
+    const interior = interiorOf(drawn, id)!;
+    const key = `${node.realizes}\n${interior}`;
+    const group = groups.get(key) ?? { slot: node.realizes, drawn: interior, ids: [] };
+    group.ids.push(id);
+    groups.set(key, group);
+  }
+
+  // A group is declared when its members form one refinement chain: exactly one
+  // member refines nothing inside the group and every other names a distinct
+  // member. Same rule as the lint script's, and `validateLayerGraph` guarantees
+  // a `refines` target fills the same slot, so a chain found here cannot cross
+  // slots.
+  const declared = (ids: readonly string[]): boolean => {
+    const members = new Set(ids);
+    const parents = ids
+      .map((id) => {
+        const node = layerNode(LAYER_GRAPH, id);
+        return node && isMethod(node) ? node.refines : undefined;
+      })
+      .filter((parent): parent is string => parent !== undefined && members.has(parent));
+    return parents.length === ids.length - 1 && new Set(parents).size === parents.length;
+  };
+
+  const matched = new Set<(typeof DRAWN_TWINS)[number]>();
+  for (const group of groups.values()) {
+    if (group.ids.length < 2) continue;
+    if (declared(group.ids)) continue;
+    const known = DRAWN_TWINS.find(
+      (row) =>
+        row.slot === group.slot &&
+        row.methods.length === group.ids.length &&
+        row.methods.every((id) => group.ids.includes(id)),
+    );
+    assert.ok(
+      known,
+      `${group.slot}: ${group.ids.join(", ")} all draw "${group.drawn}" and nothing says why. `
+        + "Pin a hop with `via`, declare one a `refines` of another, or add the group to DRAWN_TWINS "
+        + "with the reason it survives.",
+    );
+    matched.add(known);
+  }
+  for (const row of DRAWN_TWINS) {
+    assert.ok(
+      matched.has(row),
+      `${row.slot}: DRAWN_TWINS records ${row.methods.join(", ")} as drawing one interior, and they no `
+        + "longer do. Delete the row — a standing exception nothing exercises is a licence nobody watches.",
+    );
+  }
+
+  // Not vacuous in the other direction either: if every group were a singleton
+  // the loop above would assert nothing at all and the list would look clean.
+  assert.equal(matched.size, DRAWN_TWINS.length);
 });

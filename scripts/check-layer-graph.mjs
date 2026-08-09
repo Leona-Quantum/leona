@@ -198,18 +198,89 @@ for (const [standing, count] of [
 //     is an error even if the total fell.
 //   - **Across slots: printed, never barred.** Barring it would bar the
 //     recurrence R13 exists to permit. There is one today, worth saying plainly
-//     because the plan records this number as 0: `state-preparation` alone is a
-//     whole chain, shared by five methods across three slots. It was already
-//     non-zero when the rule was written.
+//     because the plan records this number as 0: *do the method's own work, with
+//     a prepared state as the ingredient* — printed as `«own» + needs
+//     state-preparation` — is shared by five methods across three slots. It was
+//     already non-zero when the rule was written. The wording of that line
+//     changed in session 107 when the key stopped being a list of `steps` and
+//     became what the canvas draws; the five methods and three slots did not.
 //
-// The comparison includes each step's `via` pin, because a pin is exactly how
-// two methods sharing a step stop drawing the same picture — `taylor-all-at-once`
-// left this list by pinning `time-discretization` to the propagator node whose
-// name it was already carrying.
-const chainOf = (method) =>
-  method.steps
-    .map((step) => `${step}${method.via?.[step] ? ` via ${method.via[step]}` : ""}`)
-    .join(" + ");
+// ## The key is the drawing, and it must not become a second model of it
+//
+// **This is the half that was broken, and the way it was broken is the lesson.**
+// Until session 107 the key was built from `steps` **plus `via`**, by hand, in
+// this file. The canvas built its picture from `routeOf` **minus `via`** —
+// `chainInside` labelled every hop with the *slot*, and nothing anywhere read a
+// pin. So the two sides disagreed in both directions at once: the gate saw two
+// groups where the canvas drew one, reported nothing, and ran green in `lint` on
+// every build while three groups of methods drew one picture each. A pin was
+// enough to leave this list without being enough to change the drawing.
+//
+// So the key is now derived from **the same traversal `chainInside` walks**:
+// `routeOf` for the hops, `via` for the ones this route has pinned, and the
+// feeds `routeOf` files as ingredients rather than stages. `routeOf` is imported
+// from `layers.ts` above, so the walk itself is shared code and cannot drift;
+// what is written out here is only the *labelling* rule, and it is three lines
+// so that a reader can hold it beside `chainInside` and see they agree.
+//
+// **If `chainInside` changes what a hop is named, this changes with it.** The
+// two must not diverge again. In particular:
+//
+//   - a delegated hop draws the pinned method when `via` names one that fills
+//     it, and the slot otherwise — the same fallback and the same resolution
+//     check the canvas uses, because a pin the canvas would not honour must not
+//     split a group here;
+//   - the hop a method performs itself is `«own»` and is deliberately
+//     **anonymous**. It carries no name on the canvas: `PlanStrand.nameless` is
+//     true for it and `place` draws no text, because the name would be the
+//     parent lane's own and that is already on the page. Keying it by the
+//     method's id instead would make every route with an own-work tail unique by
+//     construction and this check would stop finding anything — the readouts,
+//     the two Euler-family quadratures and the two adiabatic solvers all end in
+//     one, and all three groups are real;
+//   - the ingredients are in the key because the canvas draws them, as named
+//     stubs off the belly. They are load-bearing here: `qsvt-transform` and
+//     `lcu-chebyshev-transform` walk the identical hops and are told apart only
+//     by qsvt needing a phase sequence.
+//
+// **This is still a model of the drawing, not the drawing.** The assertion that
+// measures the real thing is *"no two routes through one slot draw the same
+// interior unless something says why"* in `repository-converge-layout.test.ts`,
+// which reads lane labels off a rendered `layoutConverge` result. The two are
+// not redundant and neither subsumes the other: that one cannot see the four
+// fillers of `nonlinear-ode-solve`, because a root's figure is the state chain
+// over its dominators and those four routes are aggregated into slot lanes and
+// drawn as lanes nowhere — and this one, working from the authored graph, sees
+// them. Keep both, and keep them agreeing.
+const nodesById = new Map(LAYER_GRAPH.nodes.map((node) => [node.id, node]));
+
+const drawnHops = (method) => {
+  const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
+  const hops = route.segments.map((segment) => {
+    if (segment.capabilityId === null) return "«own»";
+    const pinned = method.via?.[segment.capabilityId];
+    const filler = pinned === undefined ? null : nodesById.get(pinned);
+    const honoured = filler && isMethod(filler) && filler.realizes === segment.capabilityId;
+    return honoured ? pinned : segment.capabilityId;
+  });
+  return { hops, feeds: route.feeds, holds: route.segments.length >= 2 || route.feeds.length > 0 };
+};
+
+const chainOf = (method) => {
+  const { hops, feeds } = drawnHops(method);
+  return `${hops.join(" → ")}${feeds.length > 0 ? ` + needs ${feeds.join(", ")}` : ""}`;
+};
+
+// **Only the methods a reader can actually open**, which is `planForMethod`'s
+// own `holds`: two hops or at least one ingredient. The predecessor of this test
+// skipped `steps.length === 0` for the same purpose and got it slightly wrong in
+// both directions — `backward-euler` names one step that is an ingredient rather
+// than a stage and was compared as though it drew a chain, while a method whose
+// every step is an ingredient (`hhl-qpe-inversion`, three of them) is genuinely
+// openable and was too. What a leaf draws inside is nothing, and two nothings are
+// not a duplicate picture; that is why the four atomic phase-factor methods do
+// not show up here as one group of four.
+const opensIntoSomething = (method) => drawnHops(method).holds;
 
 // A group is **declared** when its members form one refinement chain: exactly one
 // member refines nothing inside the group, and every other member names a
@@ -226,7 +297,6 @@ const chainOf = (method) =>
 // KNOWN_TWINS row for a pair that had already said why. `validateLayerGraph`
 // guarantees a `refines` target realizes the same capability, so a chain found
 // here cannot silently cross slots.
-const nodesById = new Map(LAYER_GRAPH.nodes.map((node) => [node.id, node]));
 const refinementChain = (ids) => {
   const members = new Set(ids);
   const parents = ids
@@ -236,12 +306,20 @@ const refinementChain = (ids) => {
   return new Set(parents).size === parents.length;
 };
 
+// **Re-derived in session 107 against the drawing, not carried forward.** The
+// row that used to sit at the top of this list — `krovi-linear-ode` with
+// `dyson-all-at-once` under `linear-ode-solve` — is gone, because the two no
+// longer draw one picture: `truncated-dyson-series` is authored and
+// `dyson-all-at-once` pins its first hop to it, so that hop reads *"Truncated
+// Dyson series of the propagator"* where Krovi's still reads *"Discretize time
+// or the propagator"*. Krovi keeps its own node by the owner's session-106
+// ruling and keeps its unpinned hop, which is the honest drawing: that paper
+// re-analyses the construction rather than choosing a different one.
+//
+// A row is deleted rather than left to lapse. The loop below already errors on a
+// row nothing exercises, and that error is the reason this list is worth having
+// — a stale exemption is where the next real collision hides.
 const KNOWN_TWINS = [
-  {
-    slot: "linear-ode-solve",
-    methods: ["krovi-linear-ode", "dyson-all-at-once"],
-    why: "krovi-linear-ode re-analyses the all-at-once construction it already `refines`, and the owner ruled in session 106 that it **keeps** its own node (OWNER_TODO §1): extending to non-diagonalizable matrices changes what the method applies to, and reach is part of what a method is. So this half of the pair is settled and will not be pinned apart — it is here permanently, by decision. dyson-all-at-once is the half still open: it wants a `truncated-dyson-series` node under `time-discretization` that nobody has authored, and that needs the paper and a citation (R1, R10), so it is content work, not a pin.",
-  },
   {
     slot: "time-discretization",
     methods: ["backward-euler", "trapezoidal-rule"],
@@ -259,17 +337,37 @@ const KNOWN_TWINS = [
   },
 ];
 
+// A group carries its slot and its chain as **fields**. The version this
+// replaces built one string, `slot + sep + chain`, and took it apart again with
+// `key.split(sep)` — and the separator it used for that was a **literal NUL
+// byte**, typed into the source, because every other candidate appears inside a
+// chain. It worked. It is still worth removing: a NUL renders as a space in
+// every viewer that does not go looking for it, so the line read as
+// `key.split(" ")` — which would have truncated every chain at its first hop —
+// and this session was handed exactly that misreading as a fact to fix. A value
+// that has to be split back out of a key was never in the key, and no separator
+// has to be chosen at all when nothing is ever taken apart.
 const chainGroups = new Map();
 for (const node of LAYER_GRAPH.nodes) {
-  if (!isMethod(node) || node.steps.length === 0) continue;
-  const key = `${node.realizes} ${chainOf(node)}`;
-  chainGroups.set(key, [...(chainGroups.get(key) ?? []), node.id]);
+  if (!isMethod(node) || !opensIntoSomething(node)) continue;
+  const chain = chainOf(node);
+  // The map key still joins the two and still needs a separator no chain can
+  // contain — a newline, which no kebab-case id holds and neither joiner above
+  // introduces. But nothing reads it back any more, so choosing it wrong can
+  // only merge two groups that would have been reported together anyway; it can
+  // no longer mislabel one, which is the failure the NUL was defending against.
+  const group = chainGroups.get(`${node.realizes}\n${chain}`) ?? {
+    slot: node.realizes,
+    chain,
+    ids: [],
+  };
+  group.ids.push(node.id);
+  chainGroups.set(`${node.realizes}\n${chain}`, group);
 }
 const matchedTwins = new Set();
-for (const [key, ids] of chainGroups) {
+for (const { slot, chain, ids } of chainGroups.values()) {
   if (ids.length < 2) continue;
   if (refinementChain(ids)) continue;
-  const [slot, chain] = key.split(" ");
   const known = KNOWN_TWINS.find(
     (row) =>
       row.slot === slot &&
@@ -302,15 +400,24 @@ if (errors.length > 0) {
 
 // Recurrence across slots — reported, never barred. R13 above says why the two
 // directions are treated differently.
+//
+// The same `chainOf` and the same `opensIntoSomething` as the failable half, so
+// the printed line and the error describe one drawing. Holders carry their slot
+// beside them rather than joined into a string, for the reason the group above
+// stopped joining: nothing then has to know a separator to read it back.
 {
   const acrossSlots = new Map();
   for (const node of LAYER_GRAPH.nodes) {
-    if (!isMethod(node) || node.steps.length === 0) continue;
+    if (!isMethod(node) || !opensIntoSomething(node)) continue;
     const chain = chainOf(node);
-    acrossSlots.set(chain, [...(acrossSlots.get(chain) ?? []), `${node.realizes}/${node.id}`]);
+    acrossSlots.set(chain, [
+      ...(acrossSlots.get(chain) ?? []),
+      { slot: node.realizes, id: node.id },
+    ]);
   }
-  for (const [chain, holders] of acrossSlots) {
-    const slots = new Set(holders.map((holder) => holder.split("/")[0]));
+  for (const [chain, held] of acrossSlots) {
+    const slots = new Set(held.map((holder) => holder.slot));
+    const holders = held.map((holder) => `${holder.slot}/${holder.id}`);
     if (slots.size < 2) continue;
     console.log(
       `  ↻ "${chain}" recurs across ${slots.size} slots — ${holders.join(", ")} (R13: a recurrence, not a duplicate)`,
