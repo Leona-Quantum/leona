@@ -11736,8 +11736,8 @@ div.mj-rail-row:hover {
 }
 /* **And its name becomes a footnote to the fan, rather than a second headline.**
    This rule used to brighten the stub's name to `--text-1` when the ingredient
-   opened. That was written before a stub could open anything: since #328 the fan
-   that opens beneath it draws the *same name* on its own spine, ~75px away, at
+   opened. That was written before a stub could open anything: since PR 328 the
+   fan that opens beneath it draws the *same name* on its own spine, ~75px away, at
    12px `--text-1` — so the one rule meant to say "this is the open one" was
    raising a duplicate to the weight of the original.
 
