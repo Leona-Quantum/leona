@@ -857,6 +857,90 @@ test("a coined composite is refused and a gate-set name is not", () => {
   assert.deepEqual(conjoins("Lift+solver-free shortcut"), []);
 });
 
+test("a coined composite is refused in the short form too, where it is likeliest", () => {
+  // A `shortLabel` is a name a human wrote **for the canvas**, so it is the one
+  // string on the node that is under pressure to become "Carleman + Euler + QLS":
+  // the pressure that coins a composite is the pressure to fit a lane. Reading
+  // only `label` would leave the rule refusing the long name while the short one
+  // — the name actually on screen — went unchecked.
+  const withShort = (short: string, shortJa = short): LayerGraph => {
+    const base = composite("A perfectly innocent route name");
+    return {
+      nodes: base.nodes.map((node) =>
+        node.id === "route" ? { ...node, shortLabel: short, shortLabelJa: shortJa } : node,
+      ),
+    };
+  };
+
+  // The long name is clean; the short one relists the chain. Caught.
+  assert.deepEqual(
+    conjoinedCompositeNames(withShort("Lift + solve"), CHAIN).map((e) => e.node),
+    ["route"],
+  );
+  // The closed-up evasion, in the short field.
+  assert.deepEqual(
+    conjoinedCompositeNames(withShort("Lift+solve"), CHAIN).map((e) => e.node),
+    ["route"],
+  );
+  // A short form that is a genuine term of art is still fine — the rule has to
+  // stay usable, or the field it guards goes unused.
+  assert.deepEqual(conjoinedCompositeNames(withShort("Clifford+T pipeline"), CHAIN), []);
+  // Japanese only. The spaced-joiner arm reads whichever locale carries it, and a
+  // coinage authored in one locale is a coinage.
+  assert.deepEqual(
+    conjoinedCompositeNames(withShort("Short name", "Lift + solve"), CHAIN)
+      .flatMap((e) => e.locales),
+    ["ja"],
+  );
+});
+
+test("a short form must be shorter, in both locales, and measured in pixels", () => {
+  const withShort = (fields: Record<string, unknown>): string[] => {
+    const base = composite("Lift then solve");
+    return validateLayerGraph(
+      { nodes: base.nodes.map((n) => (n.id === "route" ? { ...n, ...fields } : n)) },
+      new Set<string>(),
+      CHAIN,
+      NO_DISPOSITIONS,
+    ).filter((error) => error.startsWith("route:"));
+  };
+
+  // Both locales or neither. A short EN form with no JA twin draws two different
+  // pictures in the two locales — different column widths, different geometry —
+  // and the locale nobody checks is the one left long.
+  assert.deepEqual(withShort({ shortLabel: "Lift" }), [
+    "route: shortLabel is set and shortLabelJa is not — a short form must be authored in both locales or neither",
+  ]);
+  assert.deepEqual(withShort({ shortLabelJa: "Lift" }), [
+    "route: shortLabelJa is set and shortLabel is not — a short form must be authored in both locales or neither",
+  ]);
+
+  // A copy is not a short form; it is a second place for one string to drift.
+  assert.deepEqual(withShort({ shortLabel: "Lift then solve", shortLabelJa: "Lift" }), [
+    "route: shortLabel is a copy of the full label — that is a second place for one string to drift, not a short form",
+  ]);
+
+  // Empty is refused rather than treated as absent — the ambiguous middle
+  // between "no short form" and "an empty one" is exactly what `conditions`
+  // already refuses on this node type.
+  assert.deepEqual(withShort({ shortLabel: "", shortLabelJa: "Lift" }), [
+    'route: shortLabel is empty — omit the field rather than setting it to ""',
+  ]);
+
+  // **Pixels, not characters, and this is the case that makes the difference.**
+  // Nine CJK code points are 108px at the lane font; the fifteen Latin
+  // characters of "Lift then solve" are 95.4px. So this "short" form has fewer
+  // than two thirds the characters and is still wider on the canvas — a
+  // character-counting check would wave it through.
+  const jaWider = withShort({ shortLabel: "Lift", shortLabelJa: "持ち上げて解く手法" });
+  assert.equal(jaWider.length, 1);
+  assert.match(jaWider[0]!, /^route: shortLabelJa is not narrower than the full label when drawn/);
+  assert.match(jaWider[0]!, /108\.0px vs 95\.4px/);
+
+  // The honest case passes clean.
+  assert.deepEqual(withShort({ shortLabel: "Lift", shortLabelJa: "持ち上げ" }), []);
+});
+
 test("only a composite can invent a composite", () => {
   // An atomic method may carry a compound name — there is no chain to relist,
   // because there is no chain. `ross-selinger-synthesis` is exactly this shape.
@@ -951,38 +1035,58 @@ test("a coined name must be disposed of, and the disposition cannot be a sentenc
   );
 });
 
-test("the authored graph's three honest plus signs are not refused", () => {
+test("the authored graph's honest plus signs are not refused, and nothing else is", () => {
   const conjoined = conjoinedCompositeNames(LAYER_GRAPH, STATE_VOCABULARY).map((e) => e.node);
 
-  // Two gate-set names and one equation. If the rule ever takes one of these, it
-  // has stopped being a rule about coined composites and become a ban on `+`.
-  for (const id of ["fault-tolerant-compilation", "ross-selinger-synthesis", "linear-ode-solve"]) {
-    assert.ok(!conjoined.includes(id), `${id} is a real name, not a coined composite`);
+  // **The graph is clean now**, which is the state the owner's ruling was for:
+  // both coined composites were renamed to the names their own papers use
+  // ("Quantum Carleman linearization algorithm", Liu et al. Theorem 1;
+  // "Quantum simulation of the KvN representation", Joseph §VI).
+  // Spread rather than passed directly: `assert.deepEqual` carries an `asserts`
+  // signature, so comparing the variable against `[]` narrows it to `never[]`
+  // for the rest of the function and the `includes` checks below stop
+  // type-checking against anything.
+  assert.deepEqual([...conjoined], []);
+
+  // …and that empty result is exactly what makes the next assertion the load-
+  // bearing one. `assert.ok(!conjoined.includes(id))` against an empty array
+  // passes for every id in the world, including ids that do not exist — a scan
+  // that scans nothing, reported as a clean bill of health. So the honest names
+  // are re-anchored: each must still CARRY a joiner (or the rule is not being
+  // asked anything) and still not be refused.
+  const named = new Map(LAYER_GRAPH.nodes.map((node) => [node.id, node]));
+  for (const id of ["fault-tolerant-compilation", "ross-selinger-synthesis"]) {
+    const node = named.get(id);
+    assert.ok(node, `${id} has left the graph — this guard has lost its subject`);
+    assert.match(
+      node.label,
+      /\+/,
+      `${id} no longer carries a "+", so it can no longer show that the rule is not a ban on "+"`,
+    );
+    assert.ok(!conjoined.includes(id), `${id} is a real name (a gate set), not a coined composite`);
   }
 
-  // …and the two it does take. Renaming either is a domain call the owner has not
-  // made yet; when it is made, this line and the register row go together, and
-  // the validator already refuses a row whose node has stopped conjoining.
-  assert.deepEqual(conjoined.sort(), ["carleman-euler-qls-route", "kvn-simulation-route"]);
+  // `linear-ode-solve` used to sit in that list and never belonged: its label is
+  // an equation, `du/dt = A(t)u + b(t)`, but it is a **capability**, and the rule
+  // returns before any name test for anything that is not a method with two
+  // advancing hops. It was passing for the wrong reason. Asserted here as what it
+  // actually is, so the distinction stays visible.
+  const equation = named.get("linear-ode-solve");
+  assert.ok(equation && equation.kind === "capability");
+  assert.match(equation.label, /\+/);
 
-  // The message a human acts on has to name the right node. `Hamiltonian
-  // simulation` is covered by `hamiltonian-simulation` **and** by `lchs-route`,
-  // whose label contains the phrase, and the first draft reported `lchs-route` —
-  // an instruction to go and look at a node that has nothing to do with it.
-  const byNode = new Map(
-    conjoinedCompositeNames(LAYER_GRAPH, STATE_VOCABULARY).map((e) => [e.node, e]),
-  );
+  // The register empties with the rename. A row whose node has stopped
+  // conjoining is an error by the register's own rule, so the rename and the row
+  // removal are one change, not two.
+  assert.deepEqual(COMPOSITE_NAME_DISPOSITIONS, []);
+
+  // The rule itself is still live — proven against a fixture rather than against
+  // the authored graph, because the authored graph no longer offends. Without
+  // this, every assertion above would keep passing if `conjoinedCompositeNames`
+  // were replaced by `() => []`.
   assert.deepEqual(
-    byNode.get("kvn-simulation-route")?.relisted.map((e) => e.concept),
-    ["koopman-von-neumann-lift", "hamiltonian-simulation"],
-  );
-  assert.deepEqual(
-    byNode.get("carleman-euler-qls-route")?.relisted.map((e) => e.concept),
-    ["carleman-linearization", "forward-euler", "quantum-linear-solve"],
-  );
-  assert.deepEqual(
-    COMPOSITE_NAME_DISPOSITIONS.map((row) => row.disposition),
-    ["awaiting-owner-rename", "awaiting-owner-rename"],
+    conjoinedCompositeNames(composite("Lift + solve"), CHAIN).map((e) => e.node),
+    ["route"],
   );
 });
 

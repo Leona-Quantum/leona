@@ -93,7 +93,7 @@
 // the same estimator the other canvases use, so nothing here needs a DOM. What a
 // reader has opened is in the URL (`?open=`), never in component state — a
 // control that only works after hydration has no address (D88.2).
-import { estimateTextWidth, fitLabel, stateHref } from "./process-layout.ts";
+import { estimateTextWidth, fitLabel, LANE_FONT_PX, stateHref } from "./process-layout.ts";
 import {
   cubicPath,
   levelCubic,
@@ -170,9 +170,38 @@ export const CONVERGE_METRICS = {
   minSpan: 150,
   /** Slack either side of a lane's label. */
   labelPad: 18,
+  /**
+   * The widest a name may make its column, in px. Past this the name is cut and
+   * the full text stays in the `<title>`.
+   *
+   * **300 and not lower, and the reason is a measurement, not taste.** Bisected
+   * against the name-collision invariant ("an opened line draws its name, and
+   * the name is not worse placed than a shut one's"): a cap of 200 passes, 195
+   * fails at 11.8% of opened names hit by a line against 11.5% of shut ones, and
+   * 127 — the value costed in an earlier session's notes — fails outright at
+   * 8.7% against 2.9%. So **no cap below about 200 is shippable at all**,
+   * whatever it does to the width, and that was not known when 127 was proposed.
+   *
+   * 300 sits above that floor on purpose, because the owner's instruction was
+   * *"attempt to make each label shorter, then the width cap"* and the
+   * shortening is what should be doing the work: authored short forms take the
+   * eighteen figures from 8,487px to 7,138px with **nothing** machine-cut, while
+   * a 240px cap buys a further 93px by cutting fifteen names mid-word. A name
+   * ending "Choose a time discretization or…" is worse than the long one.
+   *
+   * So this is a **backstop against the next long label somebody authors**, not
+   * a tool for reclaiming width today, and on the current graph it bites
+   * nothing. A guard that never fires is a guard nothing has tested, so
+   * `a label past the cap is cut, and the full text survives in the title`
+   * drives it with a fixture rather than waiting for the graph to grow into it.
+   */
+  labelCap: 300,
   /** Room above and below the whole fan. */
   margin: 34,
-  laneFont: 12,
+  /** Read from `process-layout.ts`, which is also what `validateLayerGraph`
+   *  measures a `shortLabel` against. One writer: a second copy of this number
+   *  would let the lint accept a short form the map then draws too wide. */
+  laneFont: LANE_FONT_PX,
   stateFont: 12,
   captionFont: 13,
   /** A lane's label sits this far off its own edge. */
@@ -415,8 +444,21 @@ export interface ConvergeLane {
    * to a person is not the same as a structure something can rely on.
    */
   parentKey: string | null;
+  /** What is drawn: the short form if the node has one, else the full label,
+   *  either way cut to the column by `fitLabel`. */
   label: string;
+  /** The full name, always — the `<title>`, the accessible list, the print view. */
   fullLabel: string;
+  /**
+   * The authored short name if this lane drew one, else null.
+   *
+   * Carried so a test — and a reader of the data — can tell "drawn short because
+   * a human wrote a short name" from "machine-cut by the width cap", which is
+   * `labelTruncated`. Those are different events and only one of them is a
+   * defect: the two existing assertions that `label === fullLabel` must relax to
+   * allow the first while still catching a short form written into `fullLabel`.
+   */
+  shortLabel: string | null;
   labelTruncated: boolean;
   /**
    * A run of named hops, drawn as its hops and never under a name of its own.
@@ -499,6 +541,8 @@ export interface ConvergeFeed {
   nodeId: string;
   label: string;
   fullLabel: string;
+  /** The authored short name if this stub drew one. See `ConvergeLane.shortLabel`. */
+  shortLabel: string | null;
   labelTruncated: boolean;
   href: string;
   /** The stub: from a point beside the strand, outward. */
@@ -626,6 +670,27 @@ export function allocateBows(halves: readonly number[], centre: number, gap: num
 
 function labelOf(item: { label: string; labelJa: string }, locale: PublicLocale): string {
   return locale === "ja" ? item.labelJa : item.label;
+}
+
+/**
+ * The name to **draw**, when the node carries one authored for drawing.
+ *
+ * Resolved here, at the plan, and never in the renderer. The renderer's only
+ * handle on a node would be `lane.nodeId`, and that is `null` on 586 of the 1914
+ * named lanes the graph can draw — including the widest name in the whole graph
+ * (`ross-selinger-synthesis`, four levels down under `compile-to-device`). A
+ * renderer-side lookup would therefore have shortened exactly the lanes that did
+ * not need it and left the ones that did.
+ *
+ * Returns null rather than falling back to the full label, so that every caller
+ * has to write `?? label` and the one place that must NOT — `fullLabel`, which
+ * feeds the `<title>` — is visible as an absence of that operator.
+ */
+function shortLabelOf(
+  item: { shortLabel?: string; shortLabelJa?: string },
+  locale: PublicLocale,
+): string | null {
+  return (locale === "ja" ? item.shortLabelJa : item.shortLabel) ?? null;
 }
 
 /**
@@ -782,7 +847,16 @@ interface PlanStrand {
    * Null on a shape with no node of its own.
    */
   id: string | null;
+  /** The full name. Always. This is what rides in the `<title>`. */
   label: string;
+  /**
+   * The authored short name, when the node has one — what the map draws instead.
+   *
+   * Carried on the strand rather than looked up at the shape, because `id` is
+   * null on 586 of the 1914 named lanes and a lookup keyed on it would miss
+   * precisely the deepest, widest ones. Null means "draw `label`".
+   */
+  shortLabel: string | null;
   href: string;
   standing: LaneStanding;
   open: boolean;
@@ -830,7 +904,7 @@ interface PlanStrand {
   interior: readonly string[];
   ways: number;
   /** Ingredients this strand consumes, drawn once it is open. */
-  feeds: { id: string; label: string; href: string }[];
+  feeds: { id: string; label: string; shortLabel: string | null; href: string }[];
 }
 
 /**
@@ -945,6 +1019,7 @@ function chainInside(
       address: `${parentAddress}.${index}`,
       id: null,
       label: labelOf(method, locale),
+      shortLabel: shortLabelOf(method, locale),
       href: `/repository/layers/${method.id}`,
       standing: "recorded" as LaneStanding,
       open: false,
@@ -1010,6 +1085,7 @@ function planForSlot(
     address,
     id: methods.length > 0 ? slotId : null,
     label,
+    shortLabel: node ? shortLabelOf(node, locale) : null,
     href: `/repository/layers/${slotId}`,
     standing: "recorded",
     open: isOpen && inside !== null,
@@ -1042,7 +1118,12 @@ function planForMethod(
   const segments = route.segments.length;
   const feeds = route.feeds.map((id) => {
     const node = layerNode(graph, id);
-    return { id, label: node ? labelOf(node, locale) : id, href: `/repository/layers/${id}` };
+    return {
+      id,
+      label: node ? labelOf(node, locale) : id,
+      shortLabel: node ? shortLabelOf(node, locale) : null,
+      href: `/repository/layers/${id}`,
+    };
   });
   // **Or `feeds`, not just `segments`.** Twelve of the twenty-nine decomposed
   // methods have exactly one segment and at least one ingredient — every step
@@ -1071,6 +1152,7 @@ function planForMethod(
     address,
     id: holds ? method.id : null,
     label: labelOf(method, locale),
+    shortLabel: shortLabelOf(method, locale),
     href: `/repository/layers/${method.id}`,
     standing: "recorded",
     // Open even when there is no chain to draw: the ingredients are the whole
@@ -1154,6 +1236,11 @@ function planForLane(
     address,
     id: null,
     label: named.text,
+    // A run lane's name is `A → B`, built from its hops rather than authored on
+    // any one node, so there is nothing to shorten and nothing to shorten it
+    // from. It is never drawn anyway — `composite` below — so this is null for
+    // the same reason the label is not drawn: the hops carry the names.
+    shortLabel: null,
     href: named.href,
     standing,
     open: true,
@@ -1289,7 +1376,19 @@ interface Measure {
 
 function measure(strand: PlanStrand, depth: number): Measure {
   const M = CONVERGE_METRICS;
-  const own = estimateTextWidth(strand.label, M.laneFont);
+  // The **drawn** name, which is the short form when one is authored. Sizing a
+  // column to the full label and then drawing the short one would leave every
+  // shortened column padded out to a width nothing in it uses.
+  //
+  // Capped here, at the demand, rather than at `fitLabel` where the cut happens.
+  // `hFit` is the budget the label is later fitted against and the comment on it
+  // records two sessions lost to deriving that budget a second way; capping the
+  // demand keeps one number flowing through `need` → `span` → `fit` →
+  // `columnFit` → `fitLabel`, so the column and the cut agree by construction.
+  const own = Math.min(
+    M.labelCap,
+    estimateTextWidth(strand.shortLabel ?? strand.label, M.laneFont),
+  );
   if (!strand.open || strand.children.length === 0) {
     return { vHalf: halfAt(depth) + M.labelBand, hFit: own, hDev: 0, hScale: 1, children: [] };
   }
@@ -1319,7 +1418,12 @@ function measure(strand: PlanStrand, depth: number): Measure {
         feedRoom,
       hFit: Math.max(
         chainColumnNeed(children.map((child) => child.hFit)),
-        ...strand.feeds.map((feed) => estimateTextWidth(feed.label, M.laneFont)),
+        // Capped too. Leaving this site uncapped lets one ingredient name widen
+        // a chain's column straight past the cap the lane names respect — and
+        // the widest stub today is 324px, so it would have.
+        ...strand.feeds.map((feed) =>
+          Math.min(M.labelCap, estimateTextWidth(feed.shortLabel ?? feed.label, M.laneFont)),
+        ),
       ),
       // A step sits *on* the spine — `place` hands it bow 0 — so a chain adds no
       // bow of its own. What it does is shrink the room: each step is drawn in a
@@ -1448,7 +1552,7 @@ function place(
   // drawn as its hops, and the hops carry the names.
   const fitted = strand.composite
     ? { text: "", truncated: false }
-    : fitLabel(strand.label, M.laneFont, context.columnFit);
+    : fitLabel(strand.shortLabel ?? strand.label, M.laneFont, context.columnFit);
   if (strand.standing === "unpublished") out.unpublished += 1;
   if (!strand.open && strand.inside > 0) out.collapsed += 1;
   if (depth >= CONVERGE_DEPTH_MAX && strand.inside > 0 && !strand.open) out.depthCapped = true;
@@ -1466,7 +1570,14 @@ function place(
     depth,
     parentKey: context.parentKey,
     label: fitted.text,
+    // The FULL name, never the short one. This is what the `<title>` on every
+    // drawn shape reads, and what the accessible list beside the figure prints,
+    // so it is the line that keeps a short form from removing anything from the
+    // page. Two tests assert `label === fullLabel`; they now have to allow the
+    // authored short form, and the thing they must keep refusing is a short form
+    // leaking into this field.
     fullLabel: strand.label,
+    shortLabel: strand.shortLabel,
     labelTruncated: fitted.truncated,
     composite: strand.composite,
     labelX: peak.x,
@@ -1584,7 +1695,7 @@ function placeFeeds(
   for (const [index, feed] of strand.feeds.entries()) {
     const t = (index + 1) / (strand.feeds.length + 1);
     const at = pointOn(base, bow, t);
-    const fitted = fitLabel(feed.label, M.laneFont, context.columnFit);
+    const fitted = fitLabel(feed.shortLabel ?? feed.label, M.laneFont, context.columnFit);
     context.out.rightmost = Math.max(
       context.out.rightmost,
       at.x + 4 + estimateTextWidth(fitted.text, M.laneFont),
@@ -1594,6 +1705,7 @@ function placeFeeds(
       nodeId: feed.id,
       label: fitted.text,
       fullLabel: feed.label,
+      shortLabel: feed.shortLabel,
       labelTruncated: fitted.truncated,
       href: feed.href,
       x: round(at.x),

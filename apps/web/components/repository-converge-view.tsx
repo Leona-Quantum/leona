@@ -87,6 +87,9 @@ interface ConvergeCopy {
   legendFeed: string;
   legendAtlas: string;
   keyHeading: string;
+  /** The one disclosure that holds everything written about the figure. */
+  readingSummary: string;
+  censusSummary: string;
   meets: (state: string, arriving: number, leaving: number) => string;
   unpublishedNote: (n: number) => string;
   noneUnpublished: string;
@@ -157,6 +160,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     legendFeed: "an ingredient that route needs",
     legendAtlas: "the Atlas has a full record of it",
     keyHeading: "What the marks mean",
+    readingSummary: "How to read this figure, and every line on it in words",
+    censusSummary: "What is on this map, counted",
     meets: (state: string, arriving: number, leaving: number) =>
       `${arriving} way${arriving === 1 ? "" : "s"} arrive at ${state} and ${leaving} lead on, so ${arriving * leaving} routes cross it.`,
     unpublishedNote: (n: number) =>
@@ -229,6 +234,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     legendFeed: "その経路に必要な材料",
     legendAtlas: "アトラスに完全な記録あり",
     keyHeading: "記号の意味",
+    readingSummary: "この図の読み方と、描かれている線のすべて",
+    censusSummary: "この地図にあるものの集計",
     meets: (state: string, arriving: number, leaving: number) =>
       `${state}には ${arriving} 本が到達し、${leaving} 本が続きます。したがって ${arriving * leaving} 通りの経路がここを通ります。`,
     unpublishedNote: (n: number) =>
@@ -783,6 +790,7 @@ export function ConvergeView({
                   initial={viewport}
                   label={copy.canvasLabel(focus ? label(focus) : copy.heading)}
                   locale={locale}
+                  fill
                 >
                   {drawn.map((figure) => (
                     <ConvergeCanvas
@@ -817,6 +825,27 @@ export function ConvergeView({
             ) : null}
           </div>
 
+          {/* Everything written about the figure, behind one disclosure.
+
+              > *"minimal text so maybe an info button or something that creates
+              > a popup"* — owner, session-103 inbox
+
+              A `<details>` and **not** an onClick popup, which is the obvious
+              build and the wrong one here: a control that only works after
+              hydration has no address, so nothing links to it, no crawler sees
+              it, and a reader with JavaScript off cannot reach it (D88.2). That
+              exact bug cost two sessions on `?category=`. `<details>` is the
+              idiom this surface already uses for the rail, it opens with no
+              JavaScript at all, and `curl` still returns every word inside it.
+
+              Shut by default, which is the change: 3,565 characters and 41 list
+              items used to sit under the canvas unasked. What is inside is not
+              decoration — the linear reading is what a screen reader, a printout
+              and `curl` get, and it is the only place a lane's standing is
+              stated in words and its full untruncated name appears. Hidden, not
+              removed, and one click from the figure it describes. */}
+          <details className="mj-canvas-reading">
+            <summary>{copy.readingSummary}</summary>
           <div className="mj-strand-key">
             <p className="mj-strand-lede">{copy.reading}</p>
             <h2 className="mj-converge-lines-heading">{copy.keyHeading}</h2>
@@ -903,6 +932,12 @@ export function ConvergeView({
           {/* The focused slot's own write-up, which this surface never linked.
               Measured before it existed: the converge page emitted 19 hrefs and
               not one of them was the page for the thing it was drawing. */}
+          </details>
+
+          {/* Outside the disclosure on purpose. This is the one link on the page
+              to the write-up for the thing being drawn, and the surface shipped
+              without it for several sessions — 19 hrefs and not one of them the
+              subject's own page. Putting it back behind a fold would undo that. */}
           {focus ? (
             <p className="mj-converge-own">
               <a href={`/repository/layers/${focus.id}`}>{copy.ownPage}</a>
@@ -941,7 +976,10 @@ export function ConvergeView({
           surface that no longer exists. Rendered from the one component rather
           than restated here: a census written twice drifts, and more quietly
           than a link does. */}
-      <LayerCensusPanel graph={graph} corpus={corpus} locale={locale} />
+      <details className="mj-canvas-reading">
+        <summary>{copy.censusSummary}</summary>
+        <LayerCensusPanel graph={graph} corpus={corpus} locale={locale} />
+      </details>
     </section>
   );
 }
