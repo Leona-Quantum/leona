@@ -12,10 +12,28 @@ import { AboutTheAtlas, RepositoryPreface } from "../../../components/repository
 import { resolveBrowseParams } from "../../../lib/repository/browse-params";
 import { RepositoryBrowser } from "../repository-browser";
 
-export const metadata: Metadata = {
-  title: "Atlas",
-  description: "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
-};
+/**
+ * Localised, for the reason `layers/page.tsx:12-19` already states: a static
+ * English export here gives a Japanese reader an English title on the index and
+ * a Japanese one on every entry page, and the inconsistency is the tell. This
+ * was the last public Atlas route still breaking that rule — its two siblings
+ * (`layers/page.tsx`, `layers/[id]/page.tsx`) had both been converted. The page
+ * reads the locale cookie anyway, so it costs nothing.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getPublicLocale();
+  return locale === "ja"
+    ? {
+        title: "量子アトラス",
+        description:
+          "回路とアルゴリズムの公開研究データベース。各項目について、出典、どこまで検証されているか、そしてエクスポートの境界を明示しています。",
+      }
+    : {
+        title: "The Quantum Atlas",
+        description:
+          "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
+      };
+}
 
 /**
  * The Atlas browse page: a preface, then the controls over the corpus.

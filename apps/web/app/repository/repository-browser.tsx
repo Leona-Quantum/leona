@@ -127,8 +127,18 @@ const COPY = {
     sortTwoQubit: "Two-qubit gates",
     sortTwoQubitDesc: "Two-qubit gates (most first)",
     circuitOnly: "Only entries with a circuit",
-    circuitOnlyHint:
-      "163 of the published entries are literature and operator records that pin no gate sequence, so they have no measurable structure.",
+    // `circuitOnlyHint` was here and is deleted. It was the one place on any
+    // public Atlas surface where a number was **typed** into a translated
+    // sentence rather than counted — "163 of the published entries" — correct
+    // only for as long as 283 − 120 stayed 163, with nothing failing when it
+    // drifted. That is exactly the failure the counting rule exists to prevent.
+    //
+    // It is deleted rather than rewritten because **nothing rendered it**: the
+    // key had no reader. `copy.circuitOnly` (the toggle's own label) is used at
+    // :1127 and :1374; this hint was used nowhere, so it was a stale fact with
+    // no surface, which is the worst of both. The claim it made — that a record
+    // with no gate sequence has nothing to measure — is still made where a
+    // reader meets it, in `structureUnrankedBody` below, rendered at :1625.
     structureUnrankedBody:
       "These entries carry no published gate sequence, so there is nothing to measure. They are listed after the ranked ones rather than sorted among them: an unmeasured circuit is not a small one.",
     depthLabel: "depth",
@@ -215,8 +225,7 @@ const COPY = {
     sortTwoQubit: "2量子ビットゲート数",
     sortTwoQubitDesc: "2量子ビットゲート数（多い順）",
     circuitOnly: "回路があるエントリのみ",
-    circuitOnlyHint:
-      "公開エントリのうち163件は、ゲート列を持たない文献・演算子の記録です。構造を測定する対象がありません。",
+    // `circuitOnlyHint` deleted with its English twin — see the note there.
     structureUnrankedBody:
       "これらの項目にはゲート列が公開されていないため、測定できる構造がありません。順位付けされた項目の後にまとめて表示しています。測定されていないことは、小さいことではありません。",
     depthLabel: "深さ",
