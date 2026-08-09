@@ -1,11 +1,22 @@
 // The authored state vocabulary: every object a route can be holding.
 //
-// Small on purpose. These 28 names were read off the `takes` and `returns` prose
-// already written on the 18 slots in `layer-graph.ts` — nothing here is a new
-// claim about the literature, it is the same claim with the nouns pulled out and
-// given one spelling each. Where two slots described the same object in different
-// words, that is now one state; where they described genuinely different objects,
-// it is two, and `specializes` records the cases where one is a kind of another.
+// Small on purpose. Twenty-eight of these 29 names were read off the `takes` and
+// `returns` prose already written on the slots in `layer-graph.ts` — nothing in
+// that first tranche is a new claim about the literature, it is the same claim
+// with the nouns pulled out and given one spelling each. Where two slots
+// described the same object in different words, that is now one state; where
+// they described genuinely different objects, it is two, and `specializes`
+// records the cases where one is a kind of another.
+//
+// `hamiltonian-surrogate` is the exception and the first of its kind: it was
+// authored **with** a slot rather than lifted from one, because the object it
+// names had no contract to be lifted from — `lchs-route` and `schrodingerisation`
+// were both filed as reaching Hamiltonian simulation directly from a linear ODE
+// system, and the conversion between the two was the thing nobody had written
+// down. That is the growth path the owner set in session 106: granularity gets
+// finer as methods arrive, and a submethod earns a state of its own where it
+// diverges from its siblings in the mathematics rather than in the wording.
+// Every such addition is recorded in `plans/leona-map-scaling-rules.md` §R15.
 //
 // The test of whether a state belongs here is the one `whyALayer` applies to a
 // slot: can you name **two different processes that arrive at it** or **two that
@@ -47,6 +58,40 @@ export const STATE_VOCABULARY: StateVocabulary = {
       summaryJa:
         "たまたまエルミートであった線形生成子。これが駆動する発展はユニタリであり、シミュレータがそのまま実行できます。線形系を組み立てることなく答えにたどり着く持ち上げがあるのは、このためです。",
       specializes: ["linear-ivp", "hamiltonian-access"],
+    },
+    {
+      id: "hamiltonian-surrogate",
+      label: "Hamiltonian surrogate, with the map back",
+      labelJa: "ハミルトニアン代理系と復元写像",
+      summary:
+        "A Hermitian generator manufactured from one that was not — on a space at least as large as the one you were in — whose unitary evolution carries the non-unitary dynamics you started with, together with the map that reads the original solution back out. The map is part of the object rather than an afterthought: it is where the norm the true dynamics lost gets paid back, and it is the half that costs.",
+      summaryJa:
+        "エルミートでなかった生成子から作り出したエルミート生成子であり、元より小さくない空間の上で、そのユニタリな発展が元の非ユニタリな力学を担います。あわせて、元の解を読み出すための復元写像を伴います。この写像は付随物ではなく対象の一部です。真の力学が失ったノルムはここで払い戻され、費用が現れるのもこの側です。",
+      // `hamiltonian-access`, and deliberately **not** `hermitian-generator` —
+      // which would be the tempting one, since the object is Hermitian and
+      // `hermitian-generator` is right there carrying exactly the two parents a
+      // reader would want.
+      //
+      // It was written that way first and measured: `hermitian-generator`
+      // specializes `linear-ivp`, so the walk read a surrogate as a linear ODE
+      // system you could hand back to `linear-ode-solve`, and `nonlinear-ode-solve`
+      // grew two ways across that drew **`linear-ode-solve` inside itself** —
+      // recast-then-solve-the-ODE, and recast-then-discretize-then-linear-solve.
+      // Neither is anything a source records: LCHS and Schrödingerisation both
+      // hand the surrogate to a simulator and nothing else.
+      //
+      // The distinction is real and not a convenience. A Koopman-von Neumann
+      // lift produces the problem you go on to solve. A surrogate is not the
+      // problem — it is an instrument, and its solution means nothing until the
+      // recovery map has been applied. So what it *is*, for the purpose of what
+      // may consume it, is a Hamiltonian you can query.
+      //
+      // Sometimes a *family* of them rather than one: LCHS produces
+      // {kL(t)+H(t)} indexed by a quadrature variable and combines them with an
+      // LCU. The claim survives, because what a simulator is ever handed is one
+      // member and every member is Hermitian by construction — but it is written
+      // here rather than left to be read off the arrow.
+      specializes: ["hamiltonian-access"],
     },
     {
       id: "linear-system",

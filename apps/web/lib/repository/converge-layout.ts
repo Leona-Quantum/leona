@@ -1655,6 +1655,23 @@ interface Placement {
   unpublished: number;
 }
 
+/**
+ * The width a **drawn** name is cut to: this lane's share of its column, and
+ * never past the cap whatever that share is.
+ *
+ * `measure` caps the demand — see its comment — and that was read as making the
+ * cut safe by construction, because the column would then be the label's own
+ * capped demand. It is not: a column's `fit` is the widest thing *in* the
+ * column, and a chain stacks its steps' widths into it, so a capped label can
+ * land in a column wider than the cap and be fitted against all of it. Measured
+ * when `hamiltonian-recasting` was authored (session 106): the 300px cap's own
+ * fixture drew a **445px** name. A latent hole, reached by adding a slot.
+ *
+ * One function, two call sites, so the two cannot drift the way `hFit` did.
+ */
+const nameBudget = (columnFit: number): number =>
+  Math.min(columnFit, CONVERGE_METRICS.labelCap);
+
 function place(
   base: Cubic,
   strand: PlanStrand,
@@ -1707,6 +1724,20 @@ function place(
   // exactly where the layout has already reserved room, rather than on top of its
   // own children. Deriving it from the children's drawn edges instead puts the
   // name on its own child's name: 16 collisions rather than 6.
+  // `bow >= 0`, and it is only sound because **no chain run bows up**. A chain's
+  // steps are drawn on their parent's spine at bow 0, so every step reads this as
+  // +1 and writes its name below itself — clear of the arc for a run that bows
+  // down, and straight through the parent's own curve for one that bows up.
+  //
+  // Session 106 hit the second case and then removed it: a first draft of
+  // `hamiltonian-surrogate` specialised `hermitian-generator`, which let the walk
+  // hand a surrogate back to `linear-ode-solve` and gave `nonlinear-ode-solve` an
+  // upward two-hop run whose own line crossed its own step's name. Inheriting the
+  // parent's side fixes it and moves 64 labels; the state's parentage was wrong
+  // for its own reasons, correcting that removed the only witness, and 37 of 576
+  // opened labels sit under a line either way. So the inheritance is **not**
+  // carried here — it would be a placement rule nothing on this graph exercises.
+  // The measurement and what it is owed are in NEXT.md, for the tendons.
   const outward = bow >= 0 ? 1 : -1;
   const bandHalf = strand.open ? size.vHalf : half;
   // **An opened fan wears its name on the bone.**
@@ -1739,7 +1770,7 @@ function place(
   const fitted =
     strand.composite || strand.nameless
       ? { text: "", truncated: false }
-      : fitLabel(strand.shortLabel ?? strand.label, M.laneFont, context.columnFit);
+      : fitLabel(strand.shortLabel ?? strand.label, M.laneFont, nameBudget(context.columnFit));
   if (strand.standing === "unpublished") out.unpublished += 1;
   if (!strand.open && strand.inside > 0) out.collapsed += 1;
   if (depth >= CONVERGE_DEPTH_MAX && strand.inside > 0 && !strand.open) out.depthCapped = true;
@@ -1886,7 +1917,7 @@ function placeFeeds(
   for (const [index, feed] of strand.feeds.entries()) {
     const t = (index + 1) / (strand.feeds.length + 1);
     const at = pointOn(base, bow, t);
-    const fitted = fitLabel(feed.shortLabel ?? feed.label, M.laneFont, context.columnFit);
+    const fitted = fitLabel(feed.shortLabel ?? feed.label, M.laneFont, nameBudget(context.columnFit));
     context.out.rightmost = Math.max(
       context.out.rightmost,
       at.x + 4 + estimateTextWidth(fitted.text, M.laneFont),

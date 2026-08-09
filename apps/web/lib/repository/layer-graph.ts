@@ -428,7 +428,14 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "linear-ode-solve",
     conditions: "Requires the decomposition A(t) = L(t) + iH(t) with L(t) = (A(t)+A(t)^†)/2 the Hermitian part, and L(t) ⪰ 0 throughout the interval. Without a shift it does not apply when the Hermitian part has a negative eigenvalue anywhere on the interval — this is a real restriction, and the analogue at the linear layer of Carleman's dissipativity requirement. It does not rely on converting the problem into a dilated linear system problem, or on the spectral mapping theorem that underpins QSVT-based approaches, which is what substantiates the bypass rather than merely asserting it.",
     conditionsJa: "A(t) = L(t) + iH(t) の分解を要求します。ここで L(t) = (A(t)+A(t)^†)/2 はエルミート部で、区間全体で L(t) ⪰ 0 でなければなりません。シフトを入れない限り、区間のどこかでエルミート部が負の固有値をもつ場合には適用できません。これは実際の制約であり、線形層における Carleman の散逸条件に相当します。問題を拡大された線形系に変換することにも、QSVT 系の手法を支えるスペクトル写像定理にも依存しません。この点が、迂回を主張だけでなく裏付けています。",
-    steps: ["hamiltonian-simulation"],
+    // Two steps, not one, since session 106. This route was filed as reaching
+    // `hamiltonian-simulation` straight from a linear ODE system, which is a
+    // generator that is *not* Hermitian — so the conversion was missing from the
+    // picture, and `schrodingerisation` was missing the same one, which is why
+    // the two drew the same chain (R13, KNOWN_TWINS). The conversion is now its
+    // own slot and the two pin different ways through it.
+    steps: ["hamiltonian-recasting", "hamiltonian-simulation"],
+    via: { "hamiltonian-recasting": "lchs-kernel-identity" },
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["linear-combination-unitaries"],
     citations: [
@@ -448,7 +455,14 @@ export const LAYER_GRAPH: LayerGraph = {
     conditionsJa: "元の LCHS と同じ条件を引き継ぎます。すなわち、エルミート部 L(t) = (A(t)+A(t)^†)/2 が区間全体で半正定値でなければなりません。著者らはこれを、状態準備の最適な費用と、すべてのパラメータに関する行列クエリのほぼ最適なスケーリングを同時に達成した最初の手法と位置づけています。この層の現在の基準点とされるのはそのためです。",
     cost: "Õ( ((||u_0|| + ||b||_{L^1})/||u(T)||) α_A T (log(1/ε))^{1+1/β} ) matrix queries, with α_A ≥ max_t ||A(t)||, T the evolution time and β ∈ (0,1); this improves to (log(1/ε))^{1/β} for time-independent A. State preparation costs O( (||u_0|| + ||b||_{L^1})/||u(T)|| ) queries, independent of both T and ε.",
     costJa: "行列クエリは Õ( ((||u_0|| + ||b||_{L^1})/||u(T)||) α_A T (log(1/ε))^{1+1/β} ) です。ここで α_A ≥ max_t ||A(t)||、T は発展時間、β ∈ (0,1) です。時間非依存な A では (log(1/ε))^{1/β} に改善されます。状態準備のクエリ数は O( (||u_0|| + ||b||_{L^1})/||u(T)|| ) で、T にも ε にも依存しません。",
-    steps: ["hamiltonian-simulation"],
+    // Same chain as `lchs-route`, and that is correct rather than a duplicate:
+    // what this paper changes is the kernel inside the identity, which is a
+    // parameter of `lchs-kernel-identity` and not a different construction.
+    // `refines: lchs-route` is what declares it, and as of session 106 the R13
+    // checker reads that declaration instead of only naming it in an error
+    // message it never acted on.
+    steps: ["hamiltonian-recasting", "hamiltonian-simulation"],
+    via: { "hamiltonian-recasting": "lchs-kernel-identity" },
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["linear-combination-unitaries"],
     citations: [
@@ -468,8 +482,79 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "linear-ode-solve",
     conditions: "Stated for general linear partial differential equations: unlike LCHS there is no positive-semidefiniteness requirement in order to form the Schrödinger system, and that is the structural difference between the two. The cost reappears at recovery: the original solution is read back from the warped variable, either as u(t,x) = ∫_0^∞ w(t,x,p) dp or pointwise as u(t,x) = e^{p*} w(t,x,p*) for a chosen p* > 0. Worked examples include the heat, convection, Fokker-Planck, linear Boltzmann and Black-Scholes equations, with extensions to the Vlasov-Fokker-Planck equation and to the Liouville representation equation for nonlinear ODEs — which is how a nonlinear problem reaches this method. The primary papers present the transformation and worked examples rather than a single unified query-complexity theorem, so no like-for-like count against the LCHS figures is given here.",
     conditionsJa: "一般の線形偏微分方程式について述べられています。LCHS と異なり、Schrödinger 方程式系を作る段階では半正定値性の要求がありません。これが両者の構造的な違いです。費用は復元の段階で現れます。元の解は、warped 変数から u(t,x) = ∫_0^∞ w(t,x,p) dp として、あるいは p* > 0 を選んで u(t,x) = e^{p*} w(t,x,p*) として取り出します。扱われている例には、熱方程式、移流方程式、Fokker-Planck 方程式、線形 Boltzmann 方程式、Black-Scholes 方程式が含まれ、Vlasov-Fokker-Planck 方程式や、非線形常微分方程式の Liouville 表現方程式への拡張も示されています。非線形問題がこの手法に到達する経路がまさにこれです。原論文は変換と適用例を示すものであり、単一の統一されたクエリ計算量の定理を与えてはいませんので、LCHS の数値と同一条件で比較した数値はここでは示しません。",
-    steps: ["hamiltonian-simulation"],
+    steps: ["hamiltonian-recasting", "hamiltonian-simulation"],
+    via: { "hamiltonian-recasting": "warped-phase-transformation" },
     bypasses: ["quantum-linear-solve", "time-discretization"],
+    citations: [
+      { title: "Quantum simulation of partial differential equations via Schrodingerisation", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.13969" },
+      { title: "Quantum simulation of partial differential equations via Schrodingerisation: technical details", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.14703" },
+    ],
+  },
+  {
+    // Authored session 106 on the owner's ruling (OWNER_TODO §2, "author the
+    // slot"). `lchs-route` and `schrodingerisation` drew the same chain and must
+    // not collapse — LCHS needs the Hermitian part positive semi-definite across
+    // the interval and the warped phase transformation needs nothing of the kind,
+    // which is different mathematics, not different wording. What was missing was
+    // never a distinguishing label: it was this step. Both routes were filed as
+    // handing a non-Hermitian generator straight to a simulator, and no route
+    // does that, because a simulator runs e^{-iHt} and H has to be Hermitian.
+    kind: "capability",
+    id: "hamiltonian-recasting",
+    label: "Recast a non-Hermitian generator as Hamiltonian evolution",
+    labelJa: "非エルミート生成子をハミルトニアン発展に書き換える",
+    shortLabel: "Recast as Hamiltonian evolution",
+    shortLabelJa: "ハミルトニアン発展への書き換え",
+    summary: "Given a generator A(t) whose evolution is not unitary, produce a Hermitian generator — or a quadrature-indexed family of them — on a space at least as large, whose unitary evolution reproduces the original dynamics, together with the map that recovers the original solution. Both halves are required: a construction that reaches a Hamiltonian and cannot get back is not a route.",
+    summaryJa: "発展がユニタリでない生成子 A(t) が与えられたとき、元より小さくない空間の上に、そのユニタリな発展が元の力学を再現するエルミート生成子（あるいは求積変数で添字づけられたその族）を作り、あわせて元の解を復元する写像を与えます。この二つは両方が必要です。ハミルトニアンにたどり着いても戻れない構成は、経路ではありません。",
+    contract: {
+      from: "linear-ivp",
+      to: "hamiltonian-surrogate",
+
+      takes: "The generator A(t) with no Hermiticity assumed, the interval [0,T], and an error tolerance ε.",
+      takesJa: "エルミート性を仮定しない生成子 A(t)、区間 [0,T]、誤差許容度 ε。",
+      returns: "A Hermitian generator or a family of them, the enlargement of the space that carrying them cost, and the map that reads the original solution back — with the weight that map applies stated, because that weight is where the non-unitarity was moved to rather than removed.",
+      returnsJa: "エルミート生成子またはその族、それを担うために要した空間の拡大、そして元の解を読み戻す写像。あわせて、その写像がかける重みも示します。非ユニタリ性は取り除かれたのではなくこの重みに移されているためです。",
+    },
+    whyALayer: "Every route that reaches a simulator without forming a linear system has to pass through here, and the two ways through it demand different things of A — a precondition, not a constant. LCHS requires the Hermitian part L(t) = (A(t)+A(t)^†)/2 to be positive semi-definite across the whole interval, and buys unitarity with a quadrature: the propagator becomes a kernel-weighted combination of unitary evolutions, and how fast the kernel decays is how many of them there are. The warped phase transformation requires nothing of the spectrum and buys unitarity with a dimension: one extra variable turns the system into a Schrödinger equation, and the price reappears at recovery, where the answer is read back out of that variable under a factor that grows with the decay being undone. Neither is a special case of the other. A cost model that says \"reduce to Hamiltonian simulation\" without saying which of these it used has not stated its precondition, and the precondition is the part that decides whether the route applies at all. This is also the slot that says which routes do *not* need it: the Koopman-von Neumann lift arrives holding a generator that is already Hermitian, so it goes straight to the simulator and this layer is not on its path.",
+    whyALayerJa: "線形系を組まずにシミュレータに到達する経路は、すべてここを通ります。そして、ここを通る二つの道は A に対して異なるものを要求します。定数の違いではなく前提条件の違いです。LCHS はエルミート部 L(t) = (A(t)+A(t)^†)/2 が区間全体で半正定値であることを要求し、ユニタリ性を求積によって購います。伝播子はユニタリな発展のカーネル重み付き結合になり、カーネルの減衰の速さがその項数を決めます。warped phase 変換はスペクトルについて何も要求せず、ユニタリ性を次元によって購います。変数をひとつ加えると系は Schrödinger 方程式になり、費用は復元の段階で、打ち消そうとしている減衰とともに増大する係数として現れます。どちらも他方の特別な場合ではありません。どちらを使ったかを言わずに「ハミルトニアンシミュレーションに帰着する」とだけ書いたコストモデルは、前提条件を述べていません。そしてその前提条件こそが、経路が適用できるかどうかを決めます。この層はまた、どの経路がここを必要としないかも示します。Koopman–von Neumann による持ち上げは、すでにエルミートな生成子を手にして到達するため、そのままシミュレータに進み、この層はその経路上にありません。",
+  },
+  {
+    kind: "method",
+    id: "lchs-kernel-identity",
+    label: "Kernel-weighted combination of unitary propagators",
+    labelJa: "ユニタリ伝播子のカーネル重み付き結合",
+    shortLabel: "LCHS identity",
+    shortLabelJa: "LCHS 恒等式",
+    summary: "Split A(t) into its Hermitian and anti-Hermitian parts, A = L + iH, and write the non-unitary propagator as a kernel-weighted integral over the unitary propagators generated by the one-parameter family kL(t) + H(t). Every member of that family is Hermitian by construction, so each is an ordinary Hamiltonian simulation problem and the combination is an LCU over them.",
+    summaryJa: "A(t) をエルミート部と反エルミート部に分けて A = L + iH と書き、非ユニタリな伝播子を、1 パラメータ族 kL(t) + H(t) が生成するユニタリ伝播子についてのカーネル重み付き積分として表します。この族の各要素は構成上エルミートですから、それぞれが通常のハミルトニアンシミュレーション問題であり、その結合は LCU になります。",
+    realizes: "hamiltonian-recasting",
+    conditions: "Requires L(t) = (A(t)+A(t)^†)/2 ⪰ 0 throughout the interval; without a shift the identity does not apply when the Hermitian part has a negative eigenvalue anywhere on [0,T]. That restriction is the whole of what this construction demands, and it is a real one — it is the linear-layer analogue of Carleman's dissipativity requirement. What it does not require is anything the alternatives do: no dilated linear system, and no spectral mapping theorem of the kind QSVT-based approaches rest on.",
+    conditionsJa: "区間全体で L(t) = (A(t)+A(t)^†)/2 ⪰ 0 であることを要求します。シフトを入れない限り、[0,T] のどこかでエルミート部が負の固有値をもつ場合、この恒等式は適用できません。この構成が要求するのはこれだけですが、これは実際の制約であり、線形層における Carleman の散逸条件に相当します。一方で、代替手法が必要とするものは不要です。拡大された線形系も、QSVT 系の手法が依拠するスペクトル写像定理も用いません。",
+    cost: "The count this construction hands downstream is the number of unitary propagators surviving truncation and discretization of the k-integral, and that number is set by how fast the kernel decays — which is why the kernel is the thing later work changed rather than the identity. The original Cauchy kernel 1/(π(1+k²)) decays quadratically; An, Childs and Lin's f(z) = 1/(C_β e^{(1+iz)^β}) decays at a near-exponential e^{-c|k|^β}. The end-to-end query bounds those two produce are stated on `lchs-route` and `lchs-improved-kernel`, where the papers state them, and are not restated here.",
+    costJa: "この構成が下流に渡す個数は、k 積分を打ち切り離散化したあとに残るユニタリ伝播子の数であり、それはカーネルの減衰の速さで決まります。後続の研究が変えたのが恒等式ではなくカーネルであったのは、このためです。元の Cauchy カーネル 1/(π(1+k²)) の減衰は二次的であり、An・Childs・Lin の f(z) = 1/(C_β e^{(1+iz)^β}) はほぼ指数的な e^{-c|k|^β} で減衰します。両者が与える端から端までのクエリ評価は、論文がそれを述べている `lchs-route` と `lchs-improved-kernel` に記してあり、ここでは再掲しません。",
+    steps: [],
+    atomic: true,
+    entries: ["linear-combination-unitaries"],
+    citations: [
+      { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
+      { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "warped-phase-transformation",
+    label: "Warped phase transformation",
+    labelJa: "warped phase 変換",
+    summary: "Introduce one extra variable and change to it, so that a linear ODE or PDE system becomes a system of Schrödinger equations in real time — which a simulator runs as it stands. The original solution lives in the auxiliary dimension and is recovered from it afterwards.",
+    summaryJa: "変数をひとつ追加してその変数へ移ることで、線形の常微分方程式系や偏微分方程式系を、実時間の Schrödinger 方程式系に変えます。これはシミュレータがそのまま実行できます。元の解は追加した補助次元の中にあり、あとからそこで復元します。",
+    realizes: "hamiltonian-recasting",
+    conditions: "Unlike the LCHS identity there is no positive-semidefiniteness requirement in order to form the Schrödinger system, and that is the structural difference between the two ways through this slot. What it does require is the extra dimension: the auxiliary variable is continuous, so it has to be truncated and discretized, and the recovery is not free. The original solution is read back either as u(t,x) = ∫_0^∞ w(t,x,p) dp or pointwise as u(t,x) = e^{p*} w(t,x,p*) for a chosen p* > 0, and that e^{p*} is the factor the non-unitarity was moved into.",
+    conditionsJa: "LCHS 恒等式とは異なり、Schrödinger 方程式系を作る段階で半正定値性の要求はありません。これがこの層を通る二つの道の構造的な違いです。代わりに必要になるのが追加の次元です。補助変数は連続なので、打ち切りと離散化が要り、復元も無償ではありません。元の解は u(t,x) = ∫_0^∞ w(t,x,p) dp として、あるいは p* > 0 を選んで u(t,x) = e^{p*} w(t,x,p*) として読み戻します。この e^{p*} こそが、非ユニタリ性の移された先です。",
+    cost: "Jin, Liu and Yu present the transformation and worked examples — the heat, convection, Fokker-Planck, linear Boltzmann and Black-Scholes equations, with extensions to Vlasov-Fokker-Planck and to the Liouville representation of nonlinear ODEs — rather than a single unified query-complexity theorem. So no like-for-like count against the LCHS figures is given here, and the absence is the paper's shape rather than an omission at this desk.",
+    costJa: "Jin・Liu・Yu は、統一されたひとつのクエリ計算量の定理ではなく、変換と適用例を示しています。熱方程式、移流方程式、Fokker-Planck 方程式、線形 Boltzmann 方程式、Black-Scholes 方程式であり、Vlasov-Fokker-Planck 方程式および非線形常微分方程式の Liouville 表現への拡張も含みます。したがって LCHS の数値と同一条件で比較した数値はここには示しません。この欠落は当方の手落ちではなく、原論文の形です。",
+    steps: [],
+    atomic: true,
     citations: [
       { title: "Quantum simulation of partial differential equations via Schrodingerisation", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.13969" },
       { title: "Quantum simulation of partial differential equations via Schrodingerisation: technical details", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.14703" },
