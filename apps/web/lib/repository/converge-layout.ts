@@ -306,6 +306,29 @@ export const CONVERGE_METRICS = {
 } as const;
 
 /**
+ * The key's swatch, emitted by the same geometry that draws the canvas.
+ *
+ * **Not a convenience.** The legend's mark was a literal — the lens the canvas
+ * drew before R14 — and it stayed a lens right through the tendons, so the key
+ * beside a figure of ribbons described a shape nothing on that figure had. Read
+ * on production after the deploy. The key's own comment already said copying the
+ * shapes is *"how a legend starts describing a picture that no longer looks like
+ * that"*; it was the code that was not following it.
+ *
+ * Lives here rather than in the component so that `the key's swatch is the same
+ * kind of shape the canvas draws` is checkable without rendering React — the
+ * layout tests measure the layout, and the render harness draws the canvas
+ * without its key, so between them there was nowhere this could have been seen.
+ *
+ * The numbers are a legend-scale ribbon inside the key's 34×18 box, and nothing
+ * else on the canvas depends on them.
+ */
+export function legendMark(): { outline: string; spine: string } {
+  const mark: Ribbon = { x0: 2, x1: 32, y: 13, bow: -4, run: 9 };
+  return { outline: ribbonOutline(mark, 3.5), spine: ribbonPath(mark) };
+}
+
+/**
  * How much of each end a strand bowed this far off its base gives to its tendon.
  *
  * `tendonProfile`'s steepest slope is `1.5·|bow| / run`, so aiming at
