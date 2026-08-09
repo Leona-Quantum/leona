@@ -8,7 +8,7 @@ import {
   getRepositoryProfiles,
 } from "../../../lib/repository-source";
 import { VerificationLegend } from "../../../components/repository-verification";
-import { RepositoryPreface } from "../../../components/repository-preface";
+import { AboutTheAtlas, RepositoryPreface } from "../../../components/repository-preface";
 import { resolveBrowseParams } from "../../../lib/repository/browse-params";
 import { RepositoryBrowser } from "../repository-browser";
 
@@ -86,6 +86,11 @@ export default async function RepositoryPage({
             ? "回路とアルゴリズムを検索し、仕組み、シミュレーション結果、コード、出典、ライセンス、どこまで検証済みかを確認できます。"
             : "Search circuits and algorithms, then inspect how they work, what simulation shows, which code is available, and where source, license, and verification boundaries begin."}
         </p>
+        {/* Above the preface and therefore above the search bar, which is the
+            order the owner specified: what this is, then what is in it counted,
+            then the controls. Shut by default — a returning reader came here to
+            search. */}
+        <AboutTheAtlas locale={locale} />
         {/* Between the one-line hero and the controls, and it is deliberately
             above them: a reader who scrolls past it has still been told what
             these records are, and a reader who starts filtering does not need

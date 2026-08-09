@@ -7954,6 +7954,14 @@ div.mj-rail-row:hover {
 .mj-repo-section-body {
   padding: 0 var(--sp-4) var(--sp-4);
 }
+/* Consecutive paragraphs inside a disclosure were touching, so two paragraphs
+   read as one run-on block — visible the moment a disclosure carried prose
+   rather than a table or a code block, which is what the Atlas's "About" box
+   is. Scoped to `p + p` so a body whose first child is a paragraph keeps
+   sitting tight under its summary. */
+.mj-repo-section-body > p + p {
+  margin-top: var(--sp-3);
+}
 .mj-repo-code-controls {
   display: flex;
   align-items: end;

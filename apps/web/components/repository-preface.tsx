@@ -27,6 +27,83 @@ import type { PublicLocale } from "../lib/public-locale";
 import type { PublicRepositoryListEntry } from "../lib/repository/types";
 import { PUBLIC_REPOSITORY_CATEGORY_IDS, type PublicRepositoryCategory } from "../lib/repository/types";
 
+/**
+ * "About the Atlas" — the box above everything else on `/repository`.
+ *
+ * > *"The atlas page on the website has link to 'about the atlas', and it opens
+ * > up a page that BRIEFLY explains the atlas repository surface and then the map
+ * > surface. these are not technical, they are hype, revolutionary, and simply
+ * > understandable. It also has a brief sentence about the map, hypes it up, and
+ * > a link to the 'interactive quantum map'. Those two sentences are in the same
+ * > collapsible box. Then the search bar and rest of the atlas repository below."*
+ * > — owner, session-109 inbox
+ *
+ * ## Why this is quieter than "hype" sounds
+ *
+ * `docs/ui/copy.md` binds the whole product: *"Tone: technical, calm. Zero
+ * exclamation marks, no emoji."* The owner asked for the opposite register on
+ * this one box, and the two are reconcilable exactly once — by putting the
+ * confidence in the **claim** rather than in the punctuation. "The first drawing
+ * of quantum algorithms as one connected structure rather than a bibliography"
+ * is a large thing to say; it does not need a mark after it to be large.
+ *
+ * Relayed to the owner in `memory/OWNER_TODO.md` §4 rather than decided quietly:
+ * if this should be louder than the tone rule allows, the tone rule is what has
+ * to change, and that is the owner's call.
+ *
+ * ## Why `<details>` and not the map's `?about=` box
+ *
+ * The owner said *"collapsible box"*, and this one has nothing to address: it is
+ * two paragraphs with no sections, so a URL parameter would name a state nobody
+ * would ever link to. `<details>` needs no JavaScript, and a reader who never
+ * opens it still gets the search bar immediately below — which is the ordering
+ * the owner specified.
+ *
+ * **Shut by default.** A returning reader came here to search, and the preface
+ * under it already carries the counted description of the corpus.
+ */
+const ABOUT_COPY: Record<PublicLocale, { summary: string; repository: string; map: string; mapLink: string }> = {
+  en: {
+    summary: "About the Atlas",
+    repository:
+      "Every quantum algorithm worth knowing about, written down the same way: what it takes, what it returns, what it costs, and who proved it. No two papers describe a method the same way, so we re-describe them all in one vocabulary — and record where the claims are contested rather than smoothing them over.",
+    map: "The repository is a list. The map is the picture behind it: every method is a route between the things you can hold, and the routes share their steps. Open a step and you see the ways through it. It is the first drawing of quantum algorithms as one connected structure rather than a bibliography.",
+    mapLink: "Open the interactive map",
+  },
+  ja: {
+    summary: "Atlas について",
+    repository:
+      "知る価値のある量子アルゴリズムを、すべて同じ形式で記述しています。何を入力に取り、何を返し、どれだけの費用がかかり、誰が証明したのか。手法の記述の仕方は論文ごとに異なるため、ここではすべてをひとつの語彙で書き直しています。主張が争われている箇所は、均さずにそのまま記録します。",
+    map: "リポジトリは一覧です。地図はその背後にある絵です。どの手法も、手にできる対象のあいだを結ぶ一本の経路であり、経路どうしは工程を共有しています。工程を開けば、そこを通る方法が見えます。量子アルゴリズムを文献目録ではなくひとつのつながった構造として描いた、最初の図です。",
+    mapLink: "対話型の地図を開く",
+  },
+};
+
+/**
+ * Server component, no state, no client JavaScript. Rendered above
+ * `RepositoryPreface` so the order on the page is: what this is → what is in it,
+ * counted → the controls.
+ */
+export function AboutTheAtlas({ locale }: { locale: PublicLocale }) {
+  const copy = ABOUT_COPY[locale === "ja" ? "ja" : "en"];
+  return (
+    <details className="mj-repo-section">
+      <summary>{copy.summary}</summary>
+      {/* `mj-repo-section-body` and not a new rule: the inset that lines the
+          prose up under the summary already exists on this pattern, and a
+          second class doing the same job is how one disclosure ends up
+          looking different from every other one on the site. */}
+      <div className="mj-repo-section-body">
+        <p>{copy.repository}</p>
+        <p>{copy.map}</p>
+        <p>
+          <a href="/repository/layers">{copy.mapLink}</a>
+        </p>
+      </div>
+    </details>
+  );
+}
+
 /** Section copy per category. The label is the browse control's own wording. */
 const KIND_COPY: Record<
   PublicRepositoryCategory,
