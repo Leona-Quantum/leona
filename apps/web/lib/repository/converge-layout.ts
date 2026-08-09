@@ -739,6 +739,26 @@ export type ConvergeGrain = "states" | "methods";
  */
 export interface ConvergeFeed {
   key: string;
+  /**
+   * The strand this stub hangs off, as an identity rather than as a prefix.
+   *
+   * `ConvergeLane` has carried this since keys became hierarchical; a stub never
+   * did, so the only way to ask "which ingredients belong to this method" was
+   * `feed.key.startsWith(`${lane.key}~`)` — and a **grandchild's** key starts with
+   * that same prefix, because a nested stub's key is built from its parent
+   * strand's key, which already contains one `~`. A prefix of an address selects
+   * the whole subtree under it, never one generation.
+   *
+   * That is not hypothetical. `no two routes through one slot draw the same
+   * interior` summarises a method by its steps and its ingredients, and with the
+   * prefix it absorbed the ingredients of anything reachable below it — so the
+   * summary changed with **how far that branch happened to open**, which the
+   * depth cap and the cycle guard make different at different reach points. It
+   * reported `hhl-qpe-inversion draws 3 different interiors depending on where it
+   * is reached`. The three interiors were the same method; the helper was reading
+   * three different depths of its subtree.
+   */
+  parentKey: string;
   /** The ingredient's own node id. */
   nodeId: string;
   label: string;
@@ -2406,6 +2426,7 @@ function placeFeeds(
     );
     context.out.feeds.push({
       key: `${strand.key}~${feed.id ?? index}`,
+      parentKey: strand.key,
       nodeId: feed.id ?? "",
       label: fitted.text,
       fullLabel: feed.label,

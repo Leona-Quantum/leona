@@ -2919,12 +2919,29 @@ test("a node id in ?open= still opens what it always opened", () => {
  * picture — would stop being able to find anything.
  */
 function drawnInterior(diagram: ConvergeDiagram, lane: ConvergeLane): string | null {
+  // **Steps only — `feedKey === null` excludes the hop off the side.** An opened
+  // ingredient's own lane is placed with `parentKey` set to the method it hangs
+  // off (its geometry is checked against the stub, which is not a lane, so it
+  // cannot point at one), which put it in this list *as well as* in `feeds`
+  // below. Two consequences, both wrong: the ingredient was named twice, and the
+  // string only grew the second name when that branch was shallow enough for the
+  // depth cap to let the ingredient open at all. `hhl-qpe-inversion` read as
+  // `«own»` at depth 3 and as `«own» ▸ Prepare an input state ▸ …` at depth ≤ 2 —
+  // the "2 different interiors" this gate reported about one unchanged method.
   const hops = diagram.lanes
-    .filter((child) => child.parentKey === lane.key)
+    .filter((child) => child.parentKey === lane.key && child.feedKey === null)
     .sort((a, b) => a.x0 - b.x0)
     .map((child) => (child.nameless ? "«own»" : child.fullLabel));
+  // **`parentKey`, not a key prefix.** A nested stub's key is built from its
+  // parent strand's key, which already carries a `~`, so
+  // `startsWith(`${lane.key}~`)` matched every stub in the whole subtree rather
+  // than this method's own. The interior string then grew or shrank with how far
+  // that branch happened to open — and the depth cap and the cycle guard make
+  // that different at different reach points — so this helper reported
+  // `hhl-qpe-inversion draws 3 different interiors depending on where it is
+  // reached` about three readings of one unchanged method.
   const feeds = diagram.feeds
-    .filter((feed) => feed.key.startsWith(`${lane.key}~`))
+    .filter((feed) => feed.parentKey === lane.key)
     .map((feed) => feed.fullLabel)
     .sort();
   if (hops.length === 0 && feeds.length === 0) return null;
