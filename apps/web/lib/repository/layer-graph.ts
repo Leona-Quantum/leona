@@ -710,9 +710,10 @@ export const LAYER_GRAPH: LayerGraph = {
   {
     kind: "method",
     id: "truncated-dyson-series",
-    // The sibling `truncated-taylor-propagator` had been waiting for since the
-    // `via` field was built, and whose absence was the whole of the reason
-    // `dyson-all-at-once` could not be pinned apart from `krovi-linear-ode`.
+    // `truncated-taylor-propagator` has had a pin since the `via` field was
+    // built; this node is the sibling that never existed to be pinned to, and
+    // its absence was the whole of the reason `dyson-all-at-once` drew the same
+    // picture as `krovi-linear-ode`.
     //
     // **Only what `dyson-all-at-once` already states is repeated here.** Neither
     // `cost` nor `conditions` is authored, and that is a decision rather than an
