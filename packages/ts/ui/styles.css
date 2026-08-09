@@ -11713,6 +11713,30 @@ div.mj-rail-row:hover {
   font-family: var(--font-ui);
   font-size: 11px;
 }
+/* The stub's click target. A stroke and not a fill, because the shape is a line
+   and a line has no interior to hit — the same reason `.mj-converge-strand-hit`
+   is written this way. Narrower than a strand's 24 because a stub is short and
+   its neighbours are `belly/(n+1)` apart, so a target that wide would overlap
+   the next ingredient's. */
+.mj-converge-feed-hit {
+  stroke: currentColor;
+  stroke-width: 14;
+  fill: none;
+  opacity: 0;
+  pointer-events: stroke;
+}
+.mj-converge-canvas a:hover .mj-converge-feed-hit { opacity: 0.07; }
+/* An opened ingredient reads as opened on the stub itself, the way an opened
+   lane reads on its own line: the reader has to be able to see which of several
+   stubs is the one whose fan is now on the canvas, without tracing it. Weight,
+   not colour — colour on this canvas means hover. */
+.mj-converge-feed--open .mj-converge-feed-line {
+  opacity: 0.75;
+  stroke-width: 1.75;
+}
+.mj-converge-feed--open .mj-converge-feed-name {
+  fill: var(--text-1);
+}
 
 /* --- hit targets --------------------------------------------------------- */
 /* A fat transparent STROKE, never a fill: a filled region would cover its own

@@ -594,6 +594,21 @@ export interface ConvergeLane {
    * to a person is not the same as a structure something can rely on.
    */
   parentKey: string | null;
+  /**
+   * The **stub** this lane hangs off, or null when it lies on its parent's own
+   * line.
+   *
+   * The two are different claims and only one of them is "this is a
+   * decomposition of that". A step is drawn *on* the line it decomposes, and
+   * `a step drawn inside a lane sits ON that lane, at both of its ends` asserts
+   * exactly that over every nested lane. An **ingredient** is not a
+   * decomposition of the strand that consumes it — it hangs off the side, at the
+   * end of a stub — so its fan starts at the stub's end and is off its parent's
+   * curve by construction. Carried as a field rather than inferred, because the
+   * alternative is that invariant quietly acquiring a "unless it looks like a
+   * feed" clause and stopping being total.
+   */
+  feedKey: string | null;
   /** What is drawn: the short form if the node has one, else the full label,
    *  either way cut to the column by `fitLabel`. */
   label: string;
@@ -724,6 +739,26 @@ export type ConvergeGrain = "states" | "methods";
  */
 export interface ConvergeFeed {
   key: string;
+  /**
+   * The strand this stub hangs off, as an identity rather than as a prefix.
+   *
+   * `ConvergeLane` has carried this since keys became hierarchical; a stub never
+   * did, so the only way to ask "which ingredients belong to this method" was
+   * `feed.key.startsWith(`${lane.key}~`)` — and a **grandchild's** key starts with
+   * that same prefix, because a nested stub's key is built from its parent
+   * strand's key, which already contains one `~`. A prefix of an address selects
+   * the whole subtree under it, never one generation.
+   *
+   * That is not hypothetical. `no two routes through one slot draw the same
+   * interior` summarises a method by its steps and its ingredients, and with the
+   * prefix it absorbed the ingredients of anything reachable below it — so the
+   * summary changed with **how far that branch happened to open**, which the
+   * depth cap and the cycle guard make different at different reach points. It
+   * reported `hhl-qpe-inversion draws 3 different interiors depending on where it
+   * is reached`. The three interiors were the same method; the helper was reading
+   * three different depths of its subtree.
+   */
+  parentKey: string;
   /** The ingredient's own node id. */
   nodeId: string;
   label: string;
@@ -739,6 +774,31 @@ export interface ConvergeFeed {
   /** Which way the label sits, so the renderer does not re-derive it. */
   outward: 1 | -1;
   depth: number;
+  /**
+   * This stub's position in the figure, and what `?open=` names.
+   *
+   * Numbered after the strand's steps in the same dot path, because `ADDRESS` is
+   * positions and dots and nothing else parses — see `planForMethod`.
+   */
+  address: string;
+  /**
+   * Where clicking the stub goes: this figure, with the ingredient opened or
+   * shut. Null when nothing is recorded inside it, and then it is not a control
+   * at all — the same rule R12.2 gives every line.
+   */
+  openHref: string | null;
+  open: boolean;
+  /** What is inside, whether or not it is open — so a shut stub can say so. */
+  inside: number;
+  /**
+   * The half-band this ingredient's own fan needs — `size.feeds[index].vHalf`
+   * from `measure`, the same number `feedReach` and `placeFeeds` compute the
+   * fan's actual base from. Recorded rather than left internal so a check can
+   * confirm the fan landed where that arithmetic says it should, `y1 +
+   * outward · max(0, vHalf − feedRun)`, without a second, hand-carried copy of
+   * the formula going stale next to the one that draws it.
+   */
+  vHalf: number;
 }
 
 export interface ConvergeDiagram {
@@ -1174,8 +1234,21 @@ interface PlanStrand {
   slots: readonly string[];
   interior: readonly string[];
   ways: number;
-  /** Ingredients this strand consumes, drawn once it is open. */
-  feeds: { id: string; label: string; shortLabel: string | null; href: string }[];
+  /**
+   * Ingredients this strand consumes, drawn once it is open.
+   *
+   * **A full strand each, not a name and a link.** They were a flat
+   * `{id,label,href}` record, which is what made `state-preparation` and
+   * `success-amplification` — the two the owner named — unopenable: the layout
+   * read "not a stage" as "not openable" and there was nothing on a feed to
+   * open. They are slots like any other, planned by `planForSlot`, so a feed
+   * that is open carries its own fan of methods and every one of those is a
+   * `ConvergeLane`. That last part is the load-bearing half: the test sweep
+   * enumerates `diagram.lanes`, so a fan emitted any other way would leave the
+   * crossing-free, canvas-bounds and angle-cap checks green over a set that
+   * excludes the whole feature.
+   */
+  feeds: PlanStrand[];
 }
 
 /**
@@ -1453,21 +1526,12 @@ function planForMethod(
 ): PlanStrand {
   const route = routeOf(graph, vocabulary, method);
   const segments = route.segments.length;
-  const feeds = route.feeds.map((id) => {
-    const node = layerNode(graph, id);
-    return {
-      id,
-      label: node ? labelOf(node, locale) : id,
-      shortLabel: node ? shortLabelOf(node, locale) : null,
-      href: `/repository/layers/${id}`,
-    };
-  });
   // **Or `feeds`, not just `segments`.** Twelve of the twenty-nine decomposed
   // methods have exactly one segment and at least one ingredient — every step
   // they name is something they *need* rather than a stage they pass through —
   // and requiring two segments made all twelve of them inert. `hhl-qpe-inversion`
   // names three steps and opened into nothing at all.
-  const holds = segments >= 2 || feeds.length > 0;
+  const holds = segments >= 2 || route.feeds.length > 0;
   const canOpen = holds && depth < CONVERGE_DEPTH_MAX && !seen.has(method.id);
   const isOpen = canOpen && isOpenedBy(open, address, method.id);
   const key = `${keyPrefix}method:${method.id}`;
@@ -1484,6 +1548,32 @@ function planForMethod(
         address,
       )
     : null;
+  // An ingredient is a slot, so it plans as one — the same `planForSlot` the
+  // steps use, which is what gives a feed a fan, an `openHref` and an address.
+  //
+  // **Positions continue past the steps rather than starting a namespace of
+  // their own.** `ADDRESS` is `<subject>:\d+(\.\d+)*` and nothing else parses,
+  // so a `~n` or `f n` segment would need the grammar widened on both surfaces
+  // that read `?open=`. A feed *is* one of the things inside this strand, and
+  // numbering it after the steps says exactly that. The count is taken from the
+  // planned children rather than from `segments`, because those are the same
+  // positions `chainInside` just handed out.
+  const childCount = inside?.children.length ?? 0;
+  const feeds = isOpen
+    ? route.feeds.map((id, index) =>
+        planForSlot(
+          graph,
+          vocabulary,
+          id,
+          locale,
+          open,
+          depth + 1,
+          new Set([...seen, method.id]),
+          `${key}~`,
+          `${address}.${childCount + index}`,
+        ),
+      )
+    : [];
   return {
     key,
     address,
@@ -1498,7 +1588,10 @@ function planForMethod(
     layout: inside?.layout ?? null,
     children: inside?.children ?? [],
     boundaries: inside?.boundaries ?? [],
-    inside: holds ? segments + feeds.length : 0,
+    // `route.feeds`, not the planned `feeds`: a shut method has no planned
+    // feeds and still has to say how many things are inside it, or its own
+    // control reads as opening into nothing.
+    inside: holds ? segments + route.feeds.length : 0,
     openable: canOpen && holds,
     composite: false,
     nameless: false,
@@ -1506,7 +1599,7 @@ function planForMethod(
     slots: [],
     interior: [],
     ways: 0,
-    feeds: isOpen ? feeds : [],
+    feeds,
   };
 }
 
@@ -1650,6 +1743,53 @@ export function chainColumnNeed(childNeeds: readonly number[]): number {
   return childNeeds.length * Math.max(...childNeeds);
 }
 
+/**
+ * How much further out an ingredient reaches than what is drawn inside the
+ * strand consuming it.
+ *
+ * **The stub's own length plus whatever is drawn at the end of it** — not the
+ * constant `innerStateRadius + feedRun + labelBand` this replaced. That constant
+ * was the height of a stub with a name on the end, which was the whole of what
+ * an ingredient could ever be while it could not open. It can now, so the room
+ * it needs is a measurement of its own fan.
+ *
+ * One function, read by the three `measure` branches that reserve the band and
+ * by the `placeFeeds` that draws into it, so a reservation and a drawing cannot
+ * come to different answers.
+ */
+function feedReach(feeds: readonly Measure[]): number {
+  if (feeds.length === 0) return 0;
+  // **The fan's own half-band, twice, only for the part of it that is not
+  // already spent on the stub.** A fan is allocated around its own base, so a
+  // base placed at the stub's end puts half the fan back *inward* — through
+  // the belly the stub hangs off and into whatever that strand drew inside
+  // itself. Measured, before the fix below existed: on `quantum-linear-solve`
+  // the `state-preparation` stub ended at y=6272.7 and two of its three
+  // children were drawn at 6162.8 and 6209.7, 110px and 63px the wrong side of
+  // it, landing on a lane inside the chain at 6167.0 — same x, 4.2px apart.
+  // That is 10 of the 10 opened-against-shut name overlaps this branch was
+  // parked on. So `placeFeeds` pushes the base out by the fan's own half-band
+  // and the fan occupies `[stub end, stub end + 2·vHalf]` outward — that fixed
+  // the 10 overlaps, at the cost of `feedRun + 2·vHalf` of height for every
+  // opened ingredient, which tripped the height ceiling: `time-discretization`
+  // (en) measured 16,836px against the 16,000px bar.
+  //
+  // **`feedRun` was never a clearance requirement — it is the length the
+  // *stub itself* is drawn.** The clearance requirement is only that the fan's
+  // inward half not reach back past `innerReach`, which is `max(feedRun,
+  // vHalf)` beyond it, not `feedRun + vHalf`: when `vHalf ≤ feedRun` the stub
+  // is already long enough that the fan's own half-band, folded back inward
+  // from the stub's end, cannot reach `innerReach` at all, and no push is
+  // owed. Only the excess of `vHalf` over `feedRun`, if any, is real demand.
+  // Reserved here, spent in `placeFeeds`'s `fanY` by the identical formula —
+  // one number, so a reservation and a drawing still cannot come to different
+  // answers.
+  return Math.max(
+    ...feeds.map((feed) => Math.max(CONVERGE_METRICS.feedRun, feed.vHalf) + feed.vHalf),
+  );
+}
+
+
 /** Half a strand's drawn thickness at `depth`. */
 function halfAt(depth: number): number {
   return CONVERGE_METRICS.strandHalf * CONVERGE_METRICS.depthTaper ** depth;
@@ -1696,6 +1836,22 @@ interface Measure {
    */
   hRun: number;
   children: Measure[];
+  /** One per `PlanStrand.feed`, in the same order — `placeFeeds` indexes it. */
+  feeds: Measure[];
+  /**
+   * How far out everything drawn **inside** this strand reaches, before its own
+   * name and before anything hanging off it.
+   *
+   * The number a stub has to start past, and it is stored rather than recomputed
+   * because the two ways of getting it disagree on exactly the shape that
+   * matters. `placeFeeds` took `max(children.vHalf) + innerStateRadius`, which is
+   * right for a **chain** — its steps sit on the spine — and wrong for a **fan**,
+   * whose children are at allocated offsets and reach `|offset| + vHalf`. So a
+   * fan's stubs started inside its own spread, its ingredient's fan came out into
+   * the neighbouring lane's band, and eight names landed on each other the first
+   * time ingredients could open. Same measurement, one writer.
+   */
+  innerReach: number;
 }
 
 /** An ingredient stub's drawn name width, capped the same way a lane's is. */
@@ -1737,16 +1893,52 @@ function measure(strand: PlanStrand, depth: number): Measure {
     M.labelCap,
     estimateTextWidth(strand.shortLabel ?? strand.label, M.laneFont),
   );
-  if (!strand.open || strand.children.length === 0) {
-    return { vHalf: halfAt(depth) + M.labelBand, hFit: own, hRun: 0, children: [] };
+  const feeds = strand.feeds.map((feed) => measure(feed, depth + 1));
+  // **The horizontal demand a stub's own fan makes.** `placeFeeds` gives stub `i`
+  // a `1/(n+1)` slice of the belly to draw its fan in, so a run spent inside one
+  // is a run the belly has to find `(n+1)` times over — the exact analogue of a
+  // chain's `k`, and `chainColumnNeed` is the same multiplier for the same
+  // reason. Without it the sizing simply does not see the new shapes.
+  const feedScale = feeds.length + 1;
+  const feedFit = feeds.length > 0 ? Math.max(...feeds.map((feed) => feed.hFit)) * feedScale : 0;
+  // Each stub's fan also spends its own two tendons inside its slice, at bow 0,
+  // so `minTendonRun` each — the same charge a chain's step pays.
+  const feedRun =
+    feeds.length > 0
+      ? Math.max(...feeds.map((feed) => feed.hRun + 2 * M.minTendonRun)) * feedScale
+      : 0;
+  // **`|| feeds.length > 0`, and that clause is the bug this feature is made
+  // of.** Twelve of the twenty-nine decomposed methods have one segment and at
+  // least one ingredient, so they plan with no children at all — and the leaf
+  // return below hands back a band with no room in it for anything hanging off
+  // the side. `place` had the same early return, one line apart, and dropped the
+  // stubs silently.
+  if (!strand.open || (strand.children.length === 0 && feeds.length === 0)) {
+    return {
+      vHalf: halfAt(depth) + M.labelBand,
+      hFit: own,
+      hRun: 0,
+      children: [],
+      feeds: [],
+      innerReach: halfAt(depth),
+    };
   }
   const children = strand.children.map((child) => measure(child, depth + 1));
-  // Ingredients hang past everything drawn inside, on one side, and their names
-  // sit past that. Reserved symmetrically because the band model is symmetric —
-  // costing a strand room on the side it does not use is cheaper than a second,
-  // signed notion of "how tall is this".
-  const feedRoom =
-    strand.feeds.length > 0 ? M.innerStateRadius + M.feedRun + M.labelBand : 0;
+  if (strand.children.length === 0) {
+    // Open, and everything it holds is hanging off the side. The band is the
+    // strand's own plus the feed room; the column is whatever the feeds demand.
+    const innerReach = halfAt(depth);
+    return {
+      vHalf: innerReach + feedReach(feeds) + M.labelBand,
+      hFit: Math.max(own, feedFit),
+      // Only the stubs' own runs and their spacing: this strand has no children,
+      // so nothing else is drawn inside its belly.
+      hRun: feedRun + feedSpread(strand.feeds, own),
+      children: [],
+      feeds,
+      innerReach,
+    };
+  }
   if (strand.layout === "chain") {
     // Children run one after another **along** this strand's belly, so they
     // share its band and stack its width. The extra `innerStateRadius` is the
@@ -1758,19 +1950,14 @@ function measure(strand: PlanStrand, depth: number): Measure {
     // that many times. Summing would size the column for a division the
     // placement does not make, and the step with the longest name would be the
     // one clipped.
+    const innerReach =
+      Math.max(...children.map((child) => child.vHalf)) + M.innerStateRadius;
     return {
-      vHalf:
-        Math.max(...children.map((child) => child.vHalf)) +
-        M.innerStateRadius +
-        M.labelBand +
-        feedRoom,
-      hFit: Math.max(
-        chainColumnNeed(children.map((child) => child.hFit)),
-        // Capped too. Leaving this site uncapped lets one ingredient name widen
-        // a chain's column straight past the cap the lane names respect — and
-        // the widest stub today is 324px, so it would have.
-        ...strand.feeds.map(feedWidth),
-      ),
+      vHalf: innerReach + feedReach(feeds) + M.labelBand,
+      // The feed clause used to be a bare label width, capped. It is now the
+      // feed's own measured demand times `(n+1)` — which subsumes that label,
+      // since a shut feed measures as a leaf whose `hFit` *is* its capped name.
+      hFit: Math.max(chainColumnNeed(children.map((child) => child.hFit)), feedFit),
       // A step sits **on** the belly — `place` hands it bow 0 — so a chain adds
       // no bow of its own and buys no tendon of its own. What each step *does*
       // spend is its own two tendons, which at bow 0 are exactly `minTendonRun`
@@ -1780,7 +1967,10 @@ function measure(strand: PlanStrand, depth: number): Measure {
       // slice, so a run spent inside one is a run the belly has to find `k`
       // times over.
       hRun:
-        chainColumnNeed(children.map((child) => child.hRun + 2 * M.minTendonRun)) +
+        Math.max(
+          chainColumnNeed(children.map((child) => child.hRun + 2 * M.minTendonRun)),
+          feedRun,
+        ) +
         // **Room for the stubs to stand side by side**, over and above whatever
         // the steps' own names already ask for.
         //
@@ -1799,6 +1989,8 @@ function measure(strand: PlanStrand, depth: number): Measure {
         // ingredients has not earned its labels more characters.
         feedSpread(strand.feeds, chainColumnNeed(children.map((child) => child.hFit))),
       children,
+      feeds,
+      innerReach,
     };
   }
   // A fan: children stack **across**, so their bands sum. The extra `labelBand`
@@ -1828,18 +2020,22 @@ function measure(strand: PlanStrand, depth: number): Measure {
     ...children.map((child, index) => Math.abs(offsets[index]!) + child.vHalf),
   );
   return {
-    vHalf: reach + M.labelBand,
-    hFit: Math.max(own, ...children.map((child) => child.hFit)),
+    vHalf: reach + feedReach(feeds) + M.labelBand,
+    hFit: Math.max(own, feedFit, ...children.map((child) => child.hFit)),
     // The two runs this fan spends getting its children off its own belly, plus
-    // whatever the deepest of them spends inside itself. **Not** clamped to a
-    // range here: `measure` runs before any span exists, and a run that depended
-    // on the span would have to be derived a second time in `place`. The clamp
-    // lives in `runAcross`, once, and `every belly is long enough to hold its
-    // own name` is what says it never bites.
+    // whatever the deepest thing inside it spends — a child, or a stub's own fan
+    // in its `1/(n+1)` slice. **Not** clamped to a range here: `measure` runs
+    // before any span exists, and a run that depended on the span would have to
+    // be derived a second time in `place`. The clamp lives in `runAcross`, once,
+    // and `every belly is long enough to hold its own name` is what says it never
+    // bites.
     hRun:
       2 * Math.max(0, ...offsets.map((offset) => tendonRunFor(offset))) +
-      Math.max(0, ...children.map((child) => child.hRun)),
+      Math.max(0, feedRun, ...children.map((child) => child.hRun)) +
+      feedSpread(strand.feeds, Math.max(own, ...children.map((child) => child.hFit))),
     children,
+    feeds,
+    innerReach: reach,
   };
 }
 
@@ -1905,6 +2101,8 @@ function place(
     out: Placement;
     columnFit: number;
     parentKey: string | null;
+    /** The stub this strand hangs off. See `ConvergeLane.feedKey`. */
+    feedKey: string | null;
   },
 ): void {
   const M = CONVERGE_METRICS;
@@ -2036,6 +2234,7 @@ function place(
     bellyY: belly.y,
     depth,
     parentKey: context.parentKey,
+    feedKey: context.feedKey,
     label: fitted.text,
     // The FULL name, never the short one. This is what the `<title>` on every
     // drawn shape reads, and what the accessible list beside the figure prints,
@@ -2086,7 +2285,16 @@ function place(
     ways: strand.ways,
   });
 
-  if (!strand.open || strand.children.length === 0) return;
+  if (!strand.open) return;
+  // **Before the children check, not after it.** This return read
+  // `|| strand.children.length === 0`, so an opened method whose whole content
+  // is ingredients — twelve of the twenty-nine decomposed ones — dropped every
+  // stub without a word. It is the same clause `measure` had, one function away,
+  // and the two were wrong together, which is why nothing ever disagreed.
+  if (strand.children.length === 0) {
+    placeFeeds(belly, strand, size, bow, depth, context);
+    return;
+  }
 
   if (strand.layout === "chain") {
     // The steps are laid out on the **belly**, which is level, so cutting it is
@@ -2105,9 +2313,25 @@ function place(
       place(pieces[index]!, child, size.children[index]!, 0, stepRun, depth + 1, {
         ...context,
         parentKey: strand.key,
+        // Cleared: a step lies on the line it decomposes even when that line is
+        // itself an ingredient's. `feedKey` marks the one hop off the side.
+        feedKey: null,
         // Each step gets its share of the column, so a chain of three names is
         // fitted against a third of the width rather than against all of it.
-        columnFit: context.columnFit / strand.children.length,
+        //
+        // Floored at the step's **own measured demand**, which is the number the
+        // column was sized to hold in the first place. The share and the demand
+        // are the same value when the column is exactly sized, so this changes
+        // nothing in the ordinary case — but the two are computed by dividing
+        // and by multiplying, in different orders, down four levels of nesting,
+        // and they came apart by **0.05px** on a 229px name once ingredients
+        // could open. A label cut by a twentieth of a pixel is a wrong-reason
+        // truncation, and floor-at-demand is what makes the two arithmetics
+        // agree by construction rather than by luck.
+        columnFit: Math.max(
+          size.children[index]!.hFit,
+          context.columnFit / strand.children.length,
+        ),
       });
     }
     placeFeeds(belly, strand, size, bow, depth, context);
@@ -2155,6 +2379,7 @@ function place(
     place(belly, child, size.children[index]!, bows[index]!, childRun, depth + 1, {
       ...context,
       parentKey: strand.key,
+      feedKey: null,
     });
   }
 }
@@ -2178,34 +2403,96 @@ function placeFeeds(
   size: Measure,
   bow: number,
   depth: number,
-  context: { locale: PublicLocale; out: Placement; columnFit: number },
+  context: Parameters<typeof place>[6],
 ): void {
   if (strand.feeds.length === 0) return;
   const M = CONVERGE_METRICS;
   const outward: 1 | -1 = bow >= 0 ? 1 : -1;
-  const inner = Math.max(0, ...size.children.map((child) => child.vHalf)) + M.innerStateRadius;
+  // `size.innerReach`, not a second derivation from the children. See `Measure`.
+  const inner = size.innerReach;
+  // The slice each stub owns, and the same `(n+1)` `measure` costed the column
+  // in. One number, used for the geometry and for the budget, so the drawing and
+  // the demand cannot describe different pictures.
+  const slice = (belly.x1 - belly.x0) / (strand.feeds.length + 1);
   for (const [index, feed] of strand.feeds.entries()) {
     const t = (index + 1) / (strand.feeds.length + 1);
     const at = { x: belly.x0 + (belly.x1 - belly.x0) * t, y: belly.y };
     const fitted = fitLabel(feed.shortLabel ?? feed.label, M.laneFont, nameBudget(context.columnFit));
+    const y0 = at.y + outward * inner;
+    const y1 = at.y + outward * (inner + M.feedRun);
     context.out.rightmost = Math.max(
       context.out.rightmost,
       at.x + 4 + estimateTextWidth(fitted.text, M.laneFont),
     );
     context.out.feeds.push({
-      key: `${strand.key}~${feed.id}`,
-      nodeId: feed.id,
+      key: `${strand.key}~${feed.id ?? index}`,
+      parentKey: strand.key,
+      nodeId: feed.id ?? "",
       label: fitted.text,
       fullLabel: feed.label,
       shortLabel: feed.shortLabel,
       labelTruncated: fitted.truncated,
       href: feed.href,
       x: round(at.x),
-      y0: round(at.y + outward * inner),
-      y1: round(at.y + outward * (inner + M.feedRun)),
+      y0: round(y0),
+      y1: round(y1),
       outward,
       depth: depth + 1,
+      // The control that opens the ingredient. Same two conditions as a lane's:
+      // something recorded inside, and room left under the cap.
+      openHref:
+        feed.openable &&
+        (isOpenedBy(context.open, feed.address, feed.id) ||
+          context.open.size < CONVERGE_OPEN_MAX)
+          ? toggleHref(context.focusId, context.open, feed.address, null, feed.id)
+          : null,
+      address: feed.address,
+      open: feed.open,
+      inside: feed.inside,
+      vHalf: size.feeds[index]!.vHalf,
     });
+    if (!feed.open) continue;
+    // **The fan itself, as lanes.** Drawn on a level base at the end of the stub,
+    // spanning this stub's slice of the parent — so it is the same shape as every
+    // other fan on the canvas, obeys the angle cap by the same arithmetic, and
+    // lands in `diagram.lanes` where the sweeps can see it. A fan emitted as some
+    // private shape on `ConvergeFeed` would leave the crossing-free, canvas-bounds
+    // and angle-cap checks passing over a set with the whole feature missing.
+    // **Pushed out only as far as the fan's own half-band actually demands
+    // past `innerReach`**, so the whole fan clears what is drawn inside this
+    // strand instead of straddling it, without spending more of the stub than
+    // that requires. `place` allocates a fan's bows around its base, so a base
+    // *at* `y1` draws half the ingredient back through the belly whenever the
+    // fan's half-band exceeds `feedRun` — see `feedReach`, which reserves the
+    // identical `max(feedRun, vHalf) + vHalf` this spends. The comment at the
+    // top of this function has always said a stub never points back through
+    // the figure; until the fix this replaced, the stub obeyed it and its fan
+    // did not.
+    const feedVHalf = size.feeds[index]!.vHalf;
+    const fanY = at.y + outward * (inner + Math.max(M.feedRun, feedVHalf));
+    const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: fanY };
+    place(
+      fanBase,
+      feed,
+      size.feeds[index]!,
+      0,
+      // The stub's own fan is one strand on a level base, so its row is a row of
+      // one and its run is `minTendonRun` — the taper that pinches it to a point
+      // at each end of its slice. Through `runAcross` so the clamp against a
+      // short slice applies here as everywhere else.
+      runAcross([0], slice),
+      depth + 1,
+      {
+        ...context,
+        parentKey: strand.key,
+        feedKey: `${strand.key}~${feed.id ?? index}`,
+        // Floored at the ingredient's own demand, same reason as a chain's steps.
+        columnFit: Math.max(
+          size.feeds[index]!.hFit,
+          context.columnFit / (strand.feeds.length + 1),
+        ),
+      },
+    );
   }
 }
 
@@ -2578,6 +2865,7 @@ function layoutFigure(options: {
         out,
         columnFit: columns[index]!.fit,
         parentKey: null,
+        feedKey: null,
       });
     }
   }
