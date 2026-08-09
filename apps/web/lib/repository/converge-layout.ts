@@ -384,12 +384,30 @@ export const CONVERGE_DEPTH_MAX = 4;
 /**
  * How many things `?open=` may name at once.
  *
- * The parameter is user-supplied and drives a recursive layout, so it is
- * bounded, and the count over the cap is reported rather than dropped in
- * silence. Twenty-four is past anything a reader reaches by clicking — the
- * widest figure in the graph fully opened names fewer.
+ * The parameter is user-supplied, so it is bounded, and the count over the cap
+ * is reported rather than dropped in silence.
+ *
+ * **The number must stay above what a reader can reach by clicking**, and twice
+ * now it has not. The comment here read *"twenty-four is past anything a reader
+ * reaches by clicking"* while the constant said 64 — so the sentence defending
+ * the number had stopped describing it — and 64 was itself below the graph:
+ * `nonlinear-ode-solve` fully opened names **66** addresses, and the four-root
+ * overview, which hands one `?open=` set to every figure it draws, names **73**.
+ * A reader who opened that figure line by line lost the last two clicks to a
+ * cap, which is R12.5 (*every reading position is in the URL*) failing on the
+ * one position that takes the most work to reach.
+ *
+ * 128 is not a guess about the future either. It is today's 73, plus the one
+ * slot a method's own page reserves for itself, with room for the corpus to
+ * roughly double — and `the cap is above what a reader can reach by clicking`
+ * re-measures both numbers off the graph on every run, so the next time growth
+ * passes it the build says so instead of a reader quietly losing clicks.
+ *
+ * Raising it costs no layout work. Only an address that matches a lane opens
+ * anything; the rest sit inert in a `Set` at O(1). What the cap actually bounds
+ * is the size of the parsed set, and at 128 a hand-written URL is about 3KB.
  */
-export const CONVERGE_OPEN_MAX = 64;
+export const CONVERGE_OPEN_MAX = 128;
 
 /**
  * The shape of a lane address, and the only thing `?open=` validates against.

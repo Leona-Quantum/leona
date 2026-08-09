@@ -13,6 +13,8 @@ import test from "node:test";
 
 import {
   CONVERGE_METRICS,
+  CONVERGE_OPEN_MAX,
+  resolveOpenIds,
   convergingSlots,
   crossingsAt,
   drawableSlots,
@@ -35,6 +37,7 @@ import {
   isCapability,
   layerNode,
   methodsRealizing,
+  rootCapabilities,
   type LayerCapability,
 } from "./repository/layers.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
@@ -1165,6 +1168,116 @@ function openings(id: string): Set<string>[] {
   const ids = openableAddresses(id);
   return [...ids.map((one) => new Set([one])), new Set(ids)];
 }
+
+// --- the cap, against what a reader can actually reach -----------------------
+//
+// `CONVERGE_OPEN_MAX` had no test, and the comment beside it named one: *"the
+// cap's own test needs that"*, on `openableAddresses`'s `graph` parameter. It
+// was never written, and in its absence the constant drifted twice — the prose
+// said twenty-four while the value said 64, and 64 was already below the graph.
+//
+// The claim asserted below is deliberately **not** arithmetic on the constant.
+// A test comparing 128 to 74 passes whether or not the saturation walk found
+// anything, and the way this fails is the walk going quiet, not the subtraction
+// going wrong. So the widest figure's whole address set is pushed through the
+// real parser and the reader's own path is the assertion: every address a
+// reader could click survives `resolveOpenIds`, and nothing is dropped.
+
+/**
+ * Every address the overview can open, across all four roots at once.
+ *
+ * The unfocused surface draws four figures and hands **one** `?open=` set to
+ * every one of them, so the number the cap has to clear is the union and not
+ * the widest figure. Addresses carry their subject's id as a prefix, so the
+ * four sets are disjoint by construction — asserted rather than assumed, since
+ * a prefix that stopped being unique would make this count too small and the
+ * cap look safer than it is.
+ */
+function overviewAddresses(): string[] {
+  const all = new Set<string>();
+  let summed = 0;
+  for (const root of rootCapabilities(LAYER_GRAPH)) {
+    const addresses = openableAddresses(root.id);
+    summed += addresses.length;
+    for (const address of addresses) all.add(address);
+  }
+  assert.equal(all.size, summed, "two roots emitted the same address — the subject prefix is not unique");
+  return [...all];
+}
+
+test("the cap is above what a reader can reach by clicking", () => {
+  const perFigure = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)
+    .map((slot) => ({ id: slot.id, addresses: openableAddresses(slot.id) }))
+    .sort((a, b) => b.addresses.length - a.addresses.length);
+  const widest = perFigure[0];
+  const overview = overviewAddresses();
+
+  // The denominator, printed. A run that reports "0 of 0 dropped" is the shape
+  // this test exists to catch, so the numbers it measured are on the record
+  // beside the verdict rather than only inside a passing assertion.
+  console.log(
+    `open cap ${CONVERGE_OPEN_MAX}: widest figure ${widest.id} reaches ${widest.addresses.length}, `
+      + `the four-root overview reaches ${overview.length}, over ${perFigure.length} figures`,
+  );
+
+  // Not vacuous. If the saturation walk ever returns nothing, every assertion
+  // below passes while measuring an empty map — which is exactly how a cap test
+  // goes green over a cap that is too small.
+  assert.ok(widest.addresses.length >= 20, `the widest figure reaches only ${widest.addresses.length} addresses`);
+  assert.ok(
+    overview.length >= widest.addresses.length,
+    "the overview draws the widest figure, so it cannot reach fewer addresses than it does",
+  );
+
+  // The reader's own path, through the real parser, on the hardest case there
+  // is. This is what fails when the cap falls behind the graph: at 64 the
+  // widest figure alone dropped 2 and the overview dropped 9.
+  for (const [what, addresses] of [
+    [widest.id, widest.addresses],
+    ["the overview", overview],
+  ] as const) {
+    const resolved = resolveOpenIds(addresses, (id) => layerNode(LAYER_GRAPH, id) !== null);
+    assert.equal(resolved.dropped, 0, `${what}: the cap dropped ${resolved.dropped} of ${addresses.length} clicks`);
+    assert.equal(resolved.open.size, addresses.length, `${what}: ${addresses.length - resolved.open.size} addresses did not survive`);
+  }
+
+  // And with the slot a method's own page reserves for itself spoken for. That
+  // page draws its slot with the method already open, so the reader arrives
+  // with one of the cap's places gone before any of their own ids are counted.
+  const reserved = resolveOpenIds(overview, (id) => layerNode(LAYER_GRAPH, id) !== null, 1);
+  assert.equal(reserved.dropped, 0, "a method's page reserves one slot, and the overview no longer fits beside it");
+});
+
+test("`?open=` is parsed the same way wherever it is read", () => {
+  const known = (id: string) => layerNode(LAYER_GRAPH, id) !== null;
+  const real = openableAddresses("nonlinear-ode-solve")[0];
+  assert.ok(real, "the widest figure opens nothing");
+
+  // An address needs no lookup — the graph is not consulted for it — and a bare
+  // node id is still honoured so that links written before addresses existed
+  // keep opening what they always did.
+  assert.deepEqual([...resolveOpenIds([real], () => false).open], [real]);
+  assert.deepEqual([...resolveOpenIds(["hhl-qpe-inversion"], known).open], ["hhl-qpe-inversion"]);
+
+  // Skipped, not rejected: a URL naming four things, one of which has since
+  // been renamed, opens the other three.
+  const forgiving = resolveOpenIds([real, "no-such-node", "not an address"], known);
+  assert.deepEqual([...forgiving.open], [real]);
+  assert.equal(forgiving.dropped, 0, "an unknown value is not a value the cap dropped");
+
+  // A repeat is one thing opened, not two places spent.
+  assert.equal(resolveOpenIds([real, real], known).open.size, 1);
+
+  // Past the cap, counted rather than silent — and `reserved` narrows the cap
+  // by exactly what it claims, which is the only thing the method page passes.
+  const many = Array.from({ length: CONVERGE_OPEN_MAX + 3 }, (_, i) => `x:0.${i}`);
+  const over = resolveOpenIds(many, known);
+  assert.equal(over.open.size, CONVERGE_OPEN_MAX);
+  assert.equal(over.dropped, 3);
+  const withReserved = resolveOpenIds(many, known, 1);
+  assert.equal(withReserved.open.size, CONVERGE_OPEN_MAX - 1);
+  assert.equal(withReserved.dropped, 4);
+});
 
 test("a line that opens into something says so, and a line that does not is not a link", () => {
   // The half of this that matters is the second one. A line whose click
