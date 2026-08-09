@@ -1730,7 +1730,20 @@ export function chainColumnNeed(childNeeds: readonly number[]): number {
  */
 function feedReach(feeds: readonly Measure[]): number {
   if (feeds.length === 0) return 0;
-  return CONVERGE_METRICS.feedRun + Math.max(...feeds.map((feed) => feed.vHalf));
+  // **Twice the fan's half-band, not once.** A fan is allocated around its own
+  // base, so a base placed at the stub's end puts half the fan back *inward* —
+  // through the belly the stub hangs off and into whatever that strand drew
+  // inside itself. Measured, before this line said `2`: on `quantum-linear-solve`
+  // the `state-preparation` stub ended at y=6272.7 and two of its three children
+  // were drawn at 6162.8 and 6209.7, 110px and 63px the wrong side of it, landing
+  // on a lane inside the chain at 6167.0 — same x, 4.2px apart. That is 10 of the
+  // 10 opened-against-shut name overlaps this branch was parked on.
+  //
+  // So `placeFeeds` pushes the base out by the fan's own half-band and the fan
+  // occupies `[stub end, stub end + 2·vHalf]` outward. The band reserved here is
+  // the band drawn there, from this one number, which is what the note above
+  // promises and what was not true before.
+  return CONVERGE_METRICS.feedRun + 2 * Math.max(...feeds.map((feed) => feed.vHalf));
 }
 
 
@@ -2400,7 +2413,15 @@ function placeFeeds(
     // lands in `diagram.lanes` where the sweeps can see it. A fan emitted as some
     // private shape on `ConvergeFeed` would leave the crossing-free, canvas-bounds
     // and angle-cap checks passing over a set with the whole feature missing.
-    const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: y1 };
+    // **Pushed out by the fan's own half-band**, so the whole fan sits beyond the
+    // stub's end instead of straddling it. `place` allocates a fan's bows around
+    // its base, so a base *at* `y1` draws half the ingredient back through the
+    // belly — see `feedReach`, which reserves the `2·vHalf` this spends. The
+    // comment at the top of this function has always said a stub never points
+    // back through the figure; until this line the stub obeyed it and its fan
+    // did not.
+    const fanY = y1 + outward * size.feeds[index]!.vHalf;
+    const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: fanY };
     place(
       fanBase,
       feed,
