@@ -6,6 +6,7 @@ import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { resolveOpenIds } from "../../../lib/repository/converge-layout";
 import { parseViewport } from "../../../lib/repository/canvas-viewport";
+import { parseAboutSection } from "../../../lib/repository/map-about";
 import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
 
 /**
@@ -137,8 +138,27 @@ export default async function RepositoryLayersPage({
       // reading column is right for them. Here the figure IS the page, and the
       // full-bleed rules key on this class so widening the map cannot widen a
       // document by accident.
+      //
+      // `mj-repository-site` is the one that must not be dropped: `styles.css`
+      // scopes every Atlas view transition on `:root:has(.mj-repository-site)`,
+      // and a page that lost it would lose the whole navigation animation with
+      // no error — the animation simply not playing is the only symptom.
       className="mj-repository-site mj-layers-site mj-map-site"
       locale={locale}
+      // > *"The map page is an infinite canvas that takes up the entire page,
+      // > only with an option/arrow to go back to the atlas page and a small
+      // > overlayed information icon both in the top left."* — owner, ask H
+      //
+      // So: no header, no nav, no footer, and no language or theme toggle in
+      // the chrome. Both toggles moved into the information box's footer rather
+      // than being dropped — `ConvergeView` renders it — because `data-theme`
+      // living on `<html>` means removing the header removed the control and
+      // not the setting, and a reader left holding a setting they cannot change
+      // is worse off than one who never had the control.
+      chrome="none"
+      // Kept in the call even though `chrome="none"` renders no toggle. It is
+      // the default anyway, and a surface that goes back to `"full"` should not
+      // silently go back to it *without* a language switch.
       showLanguageToggle
     >
       <ConvergeView
@@ -147,6 +167,10 @@ export default async function RepositoryLayersPage({
         locale={locale}
         focusId={resolveFocus(params)}
         open={openSet.open}
+        // Which page of the information box is open, resolved on the server so
+        // the box works with JavaScript off and so a link to one section of it
+        // is a link somebody can send. See `lib/repository/map-about.ts`.
+        about={parseAboutSection(params.about)}
         droppedOpen={openSet.dropped}
         // Resolved on the server so the figure arrives already panned and
         // scaled: a shared link lands where its sender was standing even with

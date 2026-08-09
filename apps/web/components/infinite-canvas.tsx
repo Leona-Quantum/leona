@@ -351,13 +351,20 @@ export function InfiniteCanvas({
       //   the margin. Measured while building it: the figure had silently
       //   zoomed itself to 73% and panned off-centre from ordinary scrolling.
       //   That surface keeps the old rule — a plain wheel is the page.
-      // - **The map surface** (`fill`) is `calc(100dvh - 15rem)` tall and is the
-      //   page rather than an illustration in one. There, a two-finger scroll
-      //   that does nothing is not restraint, it is a dead control: *"On
-      //   trackpad, I should be able to scroll through with my two fingers, not
-      //   click and drag"* — owner, session-104 inbox. A plain wheel pans it,
-      //   and the page around it (about 15rem of chrome) is what a reader
-      //   scrolls with instead.
+      // - **The map surface** (`fill`) is `100dvh` tall and *is* the page rather
+      //   than an illustration in one. There, a two-finger scroll that does
+      //   nothing is not restraint, it is a dead control: *"On trackpad, I
+      //   should be able to scroll through with my two fingers, not click and
+      //   drag"* — owner, session-104 inbox. A plain wheel pans it.
+      //
+      //   It was `calc(100dvh - 15rem)` when this rule was written, and the
+      //   sentence that stood here said the ~15rem of chrome around it was what
+      //   a reader scrolled with instead. Session 109 took that chrome away —
+      //   the map is now edge to edge with a back arrow and an info icon over
+      //   it, and there is nothing left to scroll past. So the canvas swallowing
+      //   the wheel is total on this surface, which is the intended reading of
+      //   the owner's ask and not an oversight: there is no longer a document
+      //   underneath for the gesture to belong to.
       //
       // **Momentum is not implemented, deliberately.** macOS keeps emitting
       // `wheel` events with decaying deltas for up to a second or so after the
