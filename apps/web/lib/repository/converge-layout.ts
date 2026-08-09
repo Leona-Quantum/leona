@@ -281,6 +281,41 @@ export const CONVERGE_METRICS = {
    */
   maxTendonRun: 110,
   /**
+   * How much of a **first-order** line each of its two tendons takes, as a
+   * fraction — the owner's ask B.
+   *
+   * The two numbers above are lengths, and a length is the wrong instrument for
+   * this one. Measured on the corpus: the longest first-order line is 4,376px
+   * (`ja`) and took the 110px ceiling — 2.5% per end — while the worst case, a
+   * single-lane bundle at bow 0, was a **2,633px line taking the 16px floor**,
+   * 0.61%. Drawn, both are blunt bars with pinpricks at the ends rather than
+   * something that rises, runs level and falls. But the *short* first-order
+   * lines have no such defect: a 450px column already spends 24% of itself on
+   * its two tendons, and raising a flat floor to fix the long lines widened
+   * every shut figure — 1,026px → 1,393px against a 1,204px canvas, which would
+   * have made every figure arrive scaled down to buy a taper it did not need.
+   *
+   * So the rule is a share of the line, floored by what the bow already asks for
+   * (`tendonRunFor`) so nothing ever gets *less* taper than it does today, and
+   * ceilinged below. 8% leaves 84% of the line level.
+   *
+   * **It is derived once.** The circularity — a longer tendon needs a longer
+   * column, and the column's length is what sets the tendon — is cut by taking
+   * the share of the line **without** its tendons on it, which is the content's
+   * own demand and is known before any span exists. See `firstOrderRun`.
+   */
+  firstOrderTendonShare: 0.08,
+  /**
+   * The longest tendon on a first-order line.
+   *
+   * `maxTendonRun`'s own note holds it at 110 "because it is paid twice per level
+   * of nesting, on every column". A first-order line has no level above it and
+   * pays once, so that argument does not reach here. 340 costs at most
+   * `2 × (340 − 110) = 460px` of column and only on a line already past 1,375px
+   * — measured against all three of `SIZE_CEILING`'s bars rather than asserted.
+   */
+  maxFirstOrderTendonRun: 340,
+  /**
    * The angle a tendon is *aimed* at before the ceiling above takes over.
    *
    * R14: a tendon is not a branch. It carries no name, no destination and no
@@ -343,6 +378,11 @@ export function legendMark(): { outline: string; spine: string } {
  * run that depended on the span would have to be derived twice. The one clamp
  * that does involve the span — a run may never eat more than half its own range —
  * is applied once, per parent, in `runAcross` below.
+ *
+ * **This is the run for a strand drawn inside something.** A first-order strand
+ * — one on the figure's own base, at depth 0 — takes this as its floor and then
+ * grows it with its own length: see `firstOrderRun`, which is applied once, in
+ * the one place a first-order line's length is decided.
  */
 export function tendonRunFor(bow: number): number {
   const M = CONVERGE_METRICS;
@@ -370,6 +410,31 @@ export function tendonRunFor(bow: number): number {
 export function runAcross(bows: readonly number[], length: number): number {
   const wanted = Math.max(0, ...bows.map((bow) => tendonRunFor(bow)));
   return Math.min(wanted, length / 2);
+}
+
+/**
+ * The run a **first-order** row shares — a row on the figure's own base, at depth 0.
+ *
+ * `tendonRunFor` cannot see how long a line is, and for a strand nested inside
+ * something that is right: its length is its parent's belly, decided later, and a
+ * run that read it would have to be derived twice. A first-order line is the one
+ * case where the length is decided in the same expression as the run, so this is
+ * the one place a share of the line is derivable without a second derivation.
+ *
+ * `bare` is the line **without its tendons on it** — the content's own demand,
+ * `need + hRun + padding`. Taking the share of that rather than of the finished
+ * span is what cuts the circularity: a longer tendon needs a longer column, and
+ * if the share were read off the column the two would chase each other.
+ *
+ * Floored at `aimed`, which is `runAcross` over the row's bows, so a first-order
+ * line never gets a *shorter* tendon than the shared-run rule already gives it —
+ * and the crossing-free argument is untouched, because this returns one number for
+ * the whole row exactly as `runAcross` does. `repository-strand-geometry.test.ts`'s
+ * "two ribbons with DIFFERENT runs" control is what says that matters.
+ */
+export function firstOrderRun(aimed: number, bare: number): number {
+  const M = CONVERGE_METRICS;
+  return Math.min(M.maxFirstOrderTendonRun, Math.max(aimed, M.firstOrderTendonShare * bare));
 }
 
 /**
@@ -2778,14 +2843,27 @@ function layoutFigure(options: {
     // `quantum-linear-solve`. A tendon confines the rise to its own run and the
     // run has a ceiling, so what a bow costs is now two runs, bounded, per level.
     const offsets = allocateBows(lanes.map((lane) => lane.vHalf), 0, M.laneGap);
-    const runs =
-      2 * runAcross(offsets, Number.POSITIVE_INFINITY) +
-      Math.max(0, ...lanes.map((lane) => lane.hRun));
+    // The line **without its tendons on it**: everything drawn along it, plus the
+    // padding. This is what `firstOrderRun` takes its share of, and taking it here
+    // rather than off `span` is what cuts the circularity — `span` is this plus
+    // twice the run, so the two are one derivation read in one direction.
+    const bare = need + Math.max(0, ...lanes.map((lane) => lane.hRun)) + M.labelPad * 2;
+    const run = firstOrderRun(runAcross(offsets, Number.POSITIVE_INFINITY), bare);
+    const span = Math.max(M.minSpan, bare + 2 * run);
     return {
-      span: Math.max(M.minSpan, need + runs + M.labelPad * 2),
+      span,
       fit: Math.max(M.minSpan - M.labelPad * 2, need),
-      /** The bundle's shared run, so `place` uses the number the span paid for. */
-      run: runAcross(offsets, Number.POSITIVE_INFINITY),
+      /**
+       * The bundle's shared run, so `place` uses the number the span paid for.
+       *
+       * **It now does.** This field existed and was read nowhere — `place` derived
+       * the run a second time off the placed base, which is the one thing the note
+       * at the top of this block says not to do, and it is why the first-order run
+       * could not depend on the length before. Clamped here, once, against the
+       * span that was actually built: `minSpan` can win the `max` above, and then
+       * the column is shorter than twice the run the offsets asked for.
+       */
+      run: Math.min(run, span / 2),
     };
   });
   const spans = columns.map((column) => column.span);
@@ -2851,11 +2929,13 @@ function layoutFigure(options: {
     const base: Level = { x0: xs[index]!, x1: xs[index + 1]!, y: yc };
     const halves = measured[index]!.map((lane) => lane.vHalf);
     const bows = allocateBows(halves, 0, M.laneGap);
-    // Clamped against the column that was actually built, not against the
-    // unbounded length the sizing used: `span` is the max of three terms and the
-    // run is only in one of them, so a column that `minSpan` or the label demand
-    // won could in principle be shorter than twice the run the offsets want.
-    const run = runAcross(bows, base.x1 - base.x0);
+    // **Read, not re-derived.** This used to recompute `runAcross` off the placed
+    // base, so the number the column was sized for and the number the row was
+    // drawn with were two derivations of one quantity that happened to agree —
+    // and `columns[].run`, which exists to carry it, was read nowhere. A
+    // first-order run that depends on the line's length cannot survive that: the
+    // two would disagree the moment the length entered only one of them.
+    const run = columns[index]!.run;
     for (const [at, lane] of bundle.lanes.entries()) {
       place(base, lane, measured[index]![at]!, bows[at]!, run, 0, {
         vocabulary,

@@ -26,6 +26,7 @@ import {
   reservedHalfHeight,
   tendonRunFor,
   runAcross,
+  firstOrderRun,
   layoutConverge,
   layoutConvergeForMethod,
   legendMark,
@@ -2498,17 +2499,37 @@ test("a tendon's run is bounded, and every strand gets one", () => {
   // invert.
   assert.equal(runAcross([0, 40, -900], Number.POSITIVE_INFINITY), M.maxTendonRun);
   assert.equal(runAcross([0, 0], 20), 10, "a short range clamps the run to half of it");
-  // And on the drawing: no lane anywhere is drawn past the ceiling.
+  // And on the drawing: no lane anywhere is drawn past its ceiling. There are two
+  // now — a first-order line may take `maxFirstOrderTendonRun` — and the split is
+  // the point, so both halves are checked and the nested half is checked
+  // separately. `maxTendonRun`'s own note holds it at 110 because it is "paid
+  // twice per level of nesting, on every column": if the raise ever leaked below
+  // depth 0 that argument would start compounding, and the second assertion is
+  // what says it has not.
+  let firstOrder = 0;
+  let nested = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       for (const lane of openDiagram(focus.id, open, "en").lanes) {
+        const ceiling = lane.depth === 0 ? M.maxFirstOrderTendonRun : M.maxTendonRun;
         assert.ok(
-          lane.run <= M.maxTendonRun + 1e-9,
-          `${focus.id} ${lane.key}: run ${lane.run} past the ${M.maxTendonRun} ceiling`,
+          lane.run <= ceiling + 1e-9,
+          `${focus.id} ${lane.key} (depth ${lane.depth}): run ${lane.run} past the ${ceiling} ceiling`,
         );
+        if (lane.depth === 0) firstOrder += 1;
+        else {
+          nested += 1;
+          assert.ok(
+            lane.run <= M.maxTendonRun + 1e-9,
+            `${focus.id} ${lane.key}: a nested lane at depth ${lane.depth} drew a run of ` +
+              `${lane.run}, so the first-order raise has leaked into the nesting it is ` +
+              `deliberately kept out of`,
+          );
+        }
       }
     }
   }
+  assert.ok(firstOrder > 100 && nested > 100, `${firstOrder} first-order and ${nested} nested lanes`);
   // And the figure still grows when a fan opens, which is the owner's other
   // request — *"distances between states should increase as branches between
   // them are opened out"* — and the behaviour that was missing entirely before
@@ -2520,6 +2541,78 @@ test("a tendon's run is bounded, and every strand gets one", () => {
     opened.width > shut.width,
     `opening a 7-method fan left the figure ${opened.width} wide, was ${shut.width}`,
   );
+});
+
+test("a first-order line spends a visible share of itself on each tendon", () => {
+  // Ask B, and the defect it names, measured as the ratio it actually is rather
+  // than as a length. A bounded run on an unbounded line is a *shrinking* taper:
+  // before `firstOrderRun`, the bluntest first-order line in the corpus was
+  // 4,848px with a **16px** run — 0.33% of itself at each end — and 31 of the 232
+  // first-order lanes were under 3%. Drawn, that is a bar with two pinpricks.
+  //
+  // This is failable on the code it replaced: reverting `firstOrderRun` to a flat
+  // `runAcross` puts 31 lanes under this bar, four of them under 0.5%.
+  //
+  // Three per cent and not more, because the bar has to hold for the *longest*
+  // line in the corpus (7,930px), where the ceiling binds rather than the share.
+  // Three per cent and not less, because 1% is what the old numbers already gave.
+  const FLOOR = 0.03;
+  const seen: Array<{ id: string; locale: PublicLocale; length: number; run: number }> = [];
+  let bluntest = { id: "", locale: "en" as PublicLocale, share: 1, length: 0, run: 0 };
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const addresses = openableAddresses(focus.id);
+    for (const locale of ["en", "ja"] as PublicLocale[]) {
+      for (const open of [[], addresses]) {
+        for (const lane of openDiagram(focus.id, open, locale).lanes) {
+          if (lane.depth !== 0) continue;
+          const length = lane.x1 - lane.x0;
+          if (length <= 0) continue;
+          const share = lane.run / length;
+          seen.push({ id: focus.id, locale, length, run: lane.run });
+          if (share < bluntest.share) bluntest = { id: focus.id, locale, share, length, run: lane.run };
+          assert.ok(
+            share >= FLOOR,
+            `${focus.id} (${locale}): a first-order line ${length.toFixed(0)}px long drew a ` +
+              `${lane.run.toFixed(0)}px tendon — ${(share * 100).toFixed(2)}% of itself at each ` +
+              `end, under the ${(FLOOR * 100).toFixed(0)}% bar. It reads as a bar, not as a ` +
+              `line that rises, runs level and falls.`,
+          );
+        }
+      }
+    }
+  }
+  assert.ok(seen.length > 200, `only ${seen.length} first-order lanes measured`);
+  console.log(
+    `[first-order tendons] ${seen.length} lanes; bluntest ${(bluntest.share * 100).toFixed(2)}% ` +
+      `(${bluntest.run.toFixed(0)}px on ${bluntest.length.toFixed(0)}px, ${bluntest.id} ${bluntest.locale})`,
+  );
+});
+
+test("firstOrderRun is a share of the line, floored by the bow and ceilinged", () => {
+  // The rule in one place, as arithmetic, so it does not depend on the corpus
+  // happening to contain a long enough line.
+  const share = M.firstOrderTendonShare;
+  // Short line: the bow's own demand wins and nothing changes from today.
+  assert.equal(firstOrderRun(110, 400), 110, "a short line keeps the run its bow asked for");
+  assert.equal(firstOrderRun(16, 100), 16, "a short straight line keeps its 16px taper");
+  // Long line: the share wins, and it is exactly the share.
+  assert.equal(firstOrderRun(16, 2000), share * 2000, "a long line takes its share");
+  assert.equal(firstOrderRun(110, 3000), share * 3000, "the share overtakes the bow's demand");
+  // The crossover is where the two are equal, and it is above every shut column.
+  assert.equal(firstOrderRun(110, 110 / share), 110);
+  // Ceilinged, and the ceiling is reached.
+  assert.equal(firstOrderRun(16, 100_000), M.maxFirstOrderTendonRun, "the ceiling must bind");
+  assert.ok(
+    M.maxFirstOrderTendonRun > M.maxTendonRun,
+    "a first-order line may take a longer tendon than a nested one — that is the change",
+  );
+  // Monotone in the length, so a longer line never gets a shorter tendon.
+  let previous = -1;
+  for (const bare of [0, 100, 500, 1375, 2000, 4250, 8000, 40_000]) {
+    const run = firstOrderRun(runAcross([0], Number.POSITIVE_INFINITY), bare);
+    assert.ok(run >= previous, `firstOrderRun at bare=${bare} went backwards: ${run} < ${previous}`);
+    previous = run;
+  }
 });
 
 // --- how big the drawing is allowed to get ------------------------------------
@@ -2536,26 +2629,42 @@ test("a tendon's run is bounded, and every strand gets one", () => {
 // ratio against the last run: a bar that moves with the drawing goes red when the
 // drawing improves, and cannot be read as "this got worse".
 
-/** Generous, and deliberately so — see the note on tripping, below. */
+/**
+ * Generous, and deliberately so — see the note on tripping, below.
+ *
+ * **The "today" numbers below had drifted, which is the exact failure the block
+ * comment above this one warns about.** They read 5,134 wide and 9,677 tall for
+ * three sessions while the sweep was measuring 9,571 and 15,900 — so the prose
+ * defending the height ceiling was describing a figure with 6,300px of headroom
+ * when the real one had 100. The test prints all three every run; the numbers
+ * here are from that print on the run that recorded them, not from memory.
+ */
 const SIZE_CEILING = {
-  /** Widest figure, fully opened, either locale. Today 5,134 (`ja`). */
+  /**
+   * Widest figure, fully opened, either locale. Today **10,867** —
+   * `linear-ode-solve` in `ja`, up from 9,571 when first-order lines started
+   * taking a share of themselves as tendon (`firstOrderRun`, session 112).
+   */
   saturatedWidth: 12_000,
   /**
-   * Tallest, same sweep. Today 9,677 — `nonlinear-ode-solve` in `en`.
+   * Tallest, same sweep. Today **15,900** — `time-discretization` in `en`, and
+   * this is the tight one: 100px of headroom.
    *
-   * 9,058 until session 107, and the 619px is content rather than layout:
-   * `truncated-dyson-series` is a fifth way through `time-discretization`, and
-   * that slot is a nested fan on this figure, so one more filler is one more
-   * branch to reserve a band for. Drawing the `via` pins pushed the other way
-   * and did not cancel it — a pinned hop is one method's lane instead of a fan
-   * of the six that fill its slot, which is why the *width* did not move at all
-   * (5,134 in `ja`, the same number as before the pins were drawn).
+   * It got there in session 111, pushing a stub's fan out to clear `innerReach`;
+   * 16,836 was the first attempt and it went *over*. The run has no term in the
+   * height, so session 112's tendon work left this untouched to the pixel —
+   * which the sweep is what confirms, rather than the argument.
    */
   saturatedHeight: 16_000,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
-   * arrival. Today 1,026 against a 1,204px canvas, so this one is nearly tight
-   * on purpose: past it, every figure arrives scaled down to fit.
+   * arrival. Today **1,045** against a 1,204px canvas, so this one is nearly
+   * tight on purpose: past 1,204 every figure arrives scaled down to fit.
+   *
+   * 1,026 before session 112, and holding this number down is why the
+   * first-order tendon is a *share* of the line rather than a longer flat run:
+   * a flat 120px floor fixed the long lines and took this to **1,393**, buying
+   * every shut figure a scale-down for a taper its short lines did not need.
    */
   shutWidth: 1_400,
 } as const;
