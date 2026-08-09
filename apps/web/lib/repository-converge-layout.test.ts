@@ -18,6 +18,7 @@ import {
   crossingsAt,
   drawableSlots,
   allocateBows,
+  allocateBowsAroundSpine,
   chainColumnNeed,
   laneOffsets,
   reservedHalfHeight,
@@ -413,6 +414,89 @@ test("laneOffsets is empty for an empty fan rather than drawing one lane", () =>
   assert.deepEqual(laneOffsets(0), []);
 });
 
+test("no branch of a fan enters the band the opened line reserved for itself", () => {
+  // The property `allocateBowsAroundSpine` exists for, asserted on the numbers
+  // it returns rather than on the arrangement it was meant to produce.
+  //
+  // Failable: restoring the first version — insert `spineHalf` as a virtual
+  // member and centre the whole row with `allocateBows` — fails this on the
+  // first case. A fan of one gets `[20, 22]`, which centres the child at
+  // `centre - 27` where its band reaches `centre - 7`, 15px inside a band of
+  // 22. That case is not exotic: 23 of the 29 decomposed routes are a fan of
+  // one, so it was the majority of the drawing.
+  const spineHalf = 22;
+  const gap = 10;
+  for (const halves of [
+    [20],
+    [20, 20],
+    [20, 20, 20],
+    [20, 20, 20, 20],
+    [20, 20, 20, 20, 20],
+    // Uneven bands, which is what a fan with one member opened looks like.
+    [140, 20],
+    [20, 140, 20],
+    [20, 20, 140],
+    [9, 200, 31, 12],
+  ]) {
+    const offsets = allocateBowsAroundSpine(halves, 0, gap, spineHalf);
+    assert.equal(offsets.length, halves.length);
+    for (const [index, offset] of offsets.entries()) {
+      const half = halves[index]!;
+      const near = Math.abs(offset) - half;
+      assert.ok(
+        near >= spineHalf + gap - EPS,
+        `fan ${JSON.stringify(halves)}: member ${index} at ${offset} with half ${half} reaches ` +
+          `${near} from the bone, inside the ${spineHalf} the bone reserved`,
+      );
+    }
+    // Ordered, so the curves still nest, and no two members overlap each other.
+    const sorted = [...offsets].sort((x, y) => x - y);
+    assert.deepEqual(offsets, sorted, `fan ${JSON.stringify(halves)} is out of order`);
+    for (let index = 1; index < offsets.length; index += 1) {
+      const clearance =
+        offsets[index]! - halves[index]! - (offsets[index - 1]! + halves[index - 1]!);
+      assert.ok(
+        clearance >= -EPS,
+        `fan ${JSON.stringify(halves)}: members ${index - 1} and ${index} overlap by ${-clearance}`,
+      );
+    }
+  }
+  assert.deepEqual(allocateBowsAroundSpine([], 0, gap, spineHalf), []);
+});
+
+test("a fan reserves the band its own branches reach, not half of a summed row", () => {
+  // The measurement half of the same bug. `measure` used to return
+  // `spread / 2`, which is the true half-band only when the two groups mirror
+  // each other — and `mid` is a ceil, so for an odd fan they never do.
+  //
+  // Failable: `spread / 2 + labelBand` for the first case below is 47 against a
+  // drawing that reaches 72, so the parent reserved a band its own child
+  // overflowed by 25px and the siblings it was packed against never knew.
+  for (const halves of [[20], [20, 20, 20], [140, 20, 20]]) {
+    const offsets = allocateBowsAroundSpine(halves, 0, M.laneGap, M.spineBand);
+    const reach = Math.max(...offsets.map((offset, index) => Math.abs(offset) + halves[index]!));
+    const spread =
+      halves.reduce((sum, half) => sum + half * 2, 0) + M.spineBand * 2 + M.laneGap * halves.length;
+    assert.ok(
+      reach > spread / 2 + EPS,
+      `fan ${JSON.stringify(halves)} reaches ${reach}, which the old closed form ${spread / 2} ` +
+        `would have covered — this case can no longer tell the two apart`,
+    );
+  }
+  // An even fan is the case where the two agree, and it must keep agreeing —
+  // otherwise the fix moved every figure, not just the odd ones.
+  for (const halves of [[20, 20], [20, 20, 20, 20], [140, 20, 20, 140]]) {
+    const offsets = allocateBowsAroundSpine(halves, 0, M.laneGap, M.spineBand);
+    const reach = Math.max(...offsets.map((offset, index) => Math.abs(offset) + halves[index]!));
+    const spread =
+      halves.reduce((sum, half) => sum + half * 2, 0) + M.spineBand * 2 + M.laneGap * halves.length;
+    assert.ok(
+      Math.abs(reach - spread / 2) < EPS,
+      `a mirrored fan ${JSON.stringify(halves)} reaches ${reach} against ${spread / 2}`,
+    );
+  }
+});
+
 // --- text, which is where the old canvas's collisions actually lived ---------
 
 test("every lane label stays inside the canvas", () => {
@@ -521,7 +605,12 @@ test("a name's click target covers the name, and is no greedier than the one it 
       }
     }
   }
-  assert.ok(boxes > 700, `only ${boxes} click targets checked`);
+  // 630 since session 104, down from over 700. The drop is exactly the remainder
+  // hops: they no longer draw the method's name a second time, so they no longer
+  // carry a name click target either. That pairing is the point — a name that is
+  // not drawn must not leave an invisible band behind claiming it, which is what
+  // `check-invisible-hit-targets.mjs` exists to catch.
+  assert.ok(boxes > 600, `only ${boxes} click targets checked`);
   assert.ok(
     mine <= fixed,
     `label-sized targets overlap ${mine} times, the fixed 120px ones ${fixed} — sizing to the name made targeting worse`,
@@ -1171,10 +1260,33 @@ test("an opened figure still names every drawn label without clipping it", () =>
     for (const locale of ["en", "ja"] as const) {
       for (const open of openings(focus.id)) {
         for (const lane of openDiagram(focus.id, open, locale).lanes) {
+          // Two lanes draw nothing, for opposite reasons, and both are
+          // **declared** rather than inferred:
+          //   `composite` — the run of named hops, whose own name would be
+          //                 `A → B`, the coined composite the owner refused;
+          //   `nameless`  — the remainder hop, the part of a route the method
+          //                 performs itself. Its name is the method's, and the
+          //                 method writes it once, on the bone above it.
+          // Before session 104 the remainder hop drew the method's name a
+          // second time, one level down, which is what the owner saw as
+          // *"time marching expands into propagation then itself"*.
+          //
+          // Checked both ways round, which is what makes it a check rather than
+          // a restatement: `lane.open` was here first and is not the predicate —
+          // an ordinary opened lane that lost its name would have passed.
+          const declaredSilent = lane.composite || lane.nameless;
           if (lane.label === "") {
-            assert.ok(lane.open, `${lane.key} is nameless but not open`);
+            assert.ok(
+              declaredSilent,
+              `${lane.key} draws no name and is neither a composite run nor a remainder hop`,
+            );
             continue;
           }
+          assert.ok(
+            !declaredSilent,
+            `${lane.key} declares itself silent (composite=${lane.composite} ` +
+              `nameless=${lane.nameless}) yet draws "${lane.label}"`,
+          );
           assert.ok(lane.fullLabel !== "", `${lane.key} has a drawn name but no full one`);
           assert.equal(
             lane.labelTruncated,
@@ -1512,21 +1624,115 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   // unchanged and is still checked by hand: putting the name back at `half` —
   // the thin spine an opened lane draws — instead of `size.vHalf`, the band its
   // children fill, takes opened collisions from 15 to 41 and trips both bars.
+  // **The opened-name bar is gone, deliberately — read this before restoring it.**
+  //
+  // It asserted `openedRate < 0.134`, and its own comment above names the
+  // failable case: *"putting the name back at `half` — the thin spine an opened
+  // lane draws — instead of `size.vHalf`, the band its children fill, takes
+  // opened collisions from 15 to 41 and trips both bars."* That is exactly what
+  // the owner asked for in session 104: *"the name of the process line resides
+  // there not in some surrounding area."* This bar was defending the placement
+  // the owner has now rejected, so it cannot be the thing that decides it.
+  //
+  // It is not simply dropped. What changed underneath it is that a line crossing
+  // an opened name **no longer makes the name unreadable**: an opened name is
+  // drawn on an opaque plate (`.mj-converge-name-plate`) that rubs out the lines
+  // behind the text. The crossing is structural and no reserved band removes it
+  // — every child of an opened fan converges to its parent's spine at both ends,
+  // so it enters the name's band near the ends of the span whatever room is left.
+  // Measured on the curve: children clear the middle **76%** of the span and
+  // cross the rest, and fitting the name to 76% of the column would machine-cut
+  // exactly the names the owner asked not to be cut.
+  //
+  // **The hole this leaves, stated rather than papered over.** The plate lives in
+  // `repository-converge-map.tsx`; this file measures the *layout* and cannot see
+  // it. So nothing here proves the plate is drawn or that it covers the text.
+  // Delete the plate today and every opened name goes illegible with **no test
+  // going red**. That is owed work, and it is written up in NEXT.md rather than
+  // left as a comment nobody counts.
+  //
+  // What survives is the half this file can see, plus a new test below for the
+  // property that keeps the plate small enough to be honest.
   assert.ok(
-    openedRate < 0.134,
-    `opened names collide with a line ${openedHit}/${openedNamed} (${(openedRate * 100).toFixed(1)}%), ` +
-      `past the 13.4% the shut names were measured at before the opened names were restored — ` +
-      `an opened name is now worse placed than a shut one was`,
+    shutRate < 0.134,
+    `shut names collide with a line ${shutHit}/${shutNamed} (${(shutRate * 100).toFixed(1)}%), ` +
+      `past the 13.4% they were measured at — the placement of the names nothing occludes got worse`,
   );
   assert.ok(
-    openedHit + shutHit <= 38,
-    `${openedHit + shutHit} names collide with a line across every figure, up from the 38 measured ` +
-      `once labels were shortened — the drawing got busier, whichever side it happened on`,
+    shutHit <= 28,
+    `${shutHit} shut names collide with a line across every figure, past the 28 measured once ` +
+      `labels were shortened — the drawing got busier where no plate is hiding it`,
   );
-  // Reported, not asserted: the shut rate is the thing the ceiling above was
-  // derived from, and it has to stay visible or the next person cannot tell
-  // whether 13.4% is still the right number.
-  assert.ok(shutRate < 0.15, `shut names collide ${shutHit}/${shutNamed}`);
+  // Reported, not barred. This is the number the owner's instruction moved on
+  // purpose, and a bar on it would be a bar on following the instruction.
+  assert.ok(
+    openedRate >= 0,
+    `${openedHit}/${openedNamed} opened names cross a line and rely on the plate`,
+  );
+});
+
+test("a name on the bone stays inside the band the layout reserved for it", () => {
+  // The half of the opened-name guard that survives in the layout, and the thing
+  // that keeps `.mj-converge-name-plate` honest: a plate is only acceptable
+  // because it is *small*.
+  //
+  // **The other half is `packages/ts/ui-visual/tests/converge-plate.spec.ts`**,
+  // and it has to be somewhere else because this file cannot reach it: everything
+  // here is a number the layout computed, and whether the plate is drawn at all —
+  // or is opaque, or is painted before its own text — is a fact about the
+  // renderer. That file also records the part neither half can gate on, which is
+  // the ink: the app's face is loaded at build time by Next and is Latin-only, so
+  // Japanese names fall back in production to the reader's own font.
+  //
+  // If an opened name drifted outside `spineBand` the
+  // plate would be rubbing out whole branches rather than the few crossings near
+  // the ends of the span, and "the name is readable" would have been bought by
+  // erasing the drawing.
+  //
+  // Failable, checked by hand two ways: setting `labelY` back to
+  // `peak.y - bandHalf - labelLift` (where an opened name sat before session 104)
+  // puts every one of them a full fan-height clear of the bone and the first
+  // assertion fails on the first figure; setting it to `peak.y` exactly — the
+  // first attempt at "on the bone" — trips the second.
+  let checked = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const diagram = openDiagram(focus.id, new Set(openableAddresses(focus.id)));
+    for (const lane of diagram.lanes) {
+      // Fans only — `opensInto: "ways"`. A slot opens **across** into its
+      // methods and keeps a clear middle to write in; a method opens **along**
+      // into a chain whose steps sit *on* the spine (`place` hands them bow 0),
+      // so there is no middle left and its name still sits outside the run. That
+      // is the case the exoskeleton is for, and until it is drawn a chain's name
+      // stays where it was. R12.3 is the same distinction.
+      if (!lane.bone || lane.label === "") continue;
+      // The bone read off its own drawn path, not rebuilt from `yc`/`bow`.
+      // `bowAt(yc, bow, t)` assumes a flat base and a nested strand's base is a
+      // piece of its parent's curve — reconstructing it that way put the bone at
+      // 519.7 for a name at 68, which is the second derivation this file's own
+      // comments keep warning about.
+      const [, spineY] = pointOn(parseCubic(lane.d), 0.5);
+      const top = lane.labelY - M.laneFont * 0.8;
+      const bottom = lane.labelY + M.laneFont * 0.2;
+      assert.ok(
+        top >= spineY - M.spineBand && bottom <= spineY + M.spineBand,
+        `${lane.key}: name spans ${top.toFixed(1)}..${bottom.toFixed(1)} against a bone at ` +
+          `${spineY.toFixed(1)} ±${M.spineBand} — a name on the bone left the bone's own band`,
+      );
+      // Above the stroke, not on it. The plate hides other lines; it must not
+      // have to hide the line the name belongs to.
+      assert.ok(
+        bottom <= spineY - M.spineStroke / 2,
+        `${lane.key}: name bottom ${bottom.toFixed(1)} sits on its own ${M.spineStroke}px stroke ` +
+          `at ${spineY.toFixed(1)}`,
+      );
+      checked += 1;
+    }
+  }
+  // 43 across all 18 figures fully opened — one per slot a reader can open into
+  // its methods. Pinned just under the measurement so the sweep cannot quietly
+  // become vacuous, which is a failure this repository has shipped before: a
+  // guard whose subject list empties passes for everything.
+  assert.ok(checked >= 40, `only ${checked} names on a bone checked`);
 });
 
 test("a name past the cap is cut, and the full text survives in the title", () => {
@@ -1573,25 +1779,28 @@ test("a name past the cap is cut, and the full text survives in the title", () =
   }
 });
 
-test("name-on-name overlap on an opened figure stays where it was measured", () => {
-  // **The residue of restoring the opened names, counted rather than hidden.**
+test("no two names overlap on an opened figure either", () => {
+  // **This used to be a budget. It is now zero, and the zero was not bought.**
   //
-  // `two lane labels never overlap` above is absolute and passes — but it only
-  // ever ran on figures with **nothing open**, and at full saturation the picture
-  // is not clean: 8 pairs of *shut* names already overlapped before any of this,
-  // and restoring 254 opened names added 12 more (4 opened-against-shut, 8
-  // opened-against-opened).
+  // `two lane labels never overlap` above is absolute but only ever ran on
+  // figures with **nothing open**. At full saturation the picture used to carry
+  // 20 overlapping pairs: 8 shut-against-shut that predated the opened names, and
+  // 12 more that came in with them. They were pinned by kind and shipped, because
+  // the only fix measured at the time — widening the reserved label band from
+  // 13px to 17px — removed 4 of the 20 and cost 16% more width and 14% more
+  // height on every figure.
   //
-  // Those 12 are shipped deliberately. The alternative measured was widening the
-  // reserved label band from 13px to 17px so it covers the name's actual vertical
-  // reach (`labelLift + 0.8 × laneFont` = 16.6, which it does not) — that removes
-  // 4 of the 20 and costs **16% more width and 14% more height on every figure**,
-  // on a canvas the owner has already said is too wide. Twelve overlaps in a
-  // state a reader reaches after ~54 deliberate clicks is a better trade than 128
-  // lines that draw no name at all in the state they reach on the first one.
+  // All 20 are gone, and none of that was the cause. Two sessions removed them
+  // for unrelated reasons: the remainder hop stopped printing a method's name a
+  // second time (8 → 4, half of them were a name overlapping a *duplicate* of
+  // another name), and then the fan allocator stopped centring a row that
+  // contained the virtual spine. The second one is why the rest went: an odd
+  // fan's half-band was measured as half a mirrored row it is not, so a parent
+  // reserved less room than its own branches occupy and packed its siblings into
+  // the shortfall. Correcting the measurement separated them.
   //
-  // Pinned by kind so the trade cannot quietly get worse, and so the 8 that were
-  // here first stay attributable to what caused them.
+  // Pinned at 0 by kind rather than relaxed to a bound, so any of the three
+  // kinds coming back is red and stays attributable.
   let openNames = 0;
   let shutNames = 0;
   const kinds = { shutShut: 0, openShut: 0, openOpen: 0 };
@@ -1615,16 +1824,19 @@ test("name-on-name overlap on an opened figure stays where it was measured", () 
       }
     }
   }
-  assert.ok(openNames > 200 && shutNames > 300, `${openNames} opened / ${shutNames} shut names drawn`);
-  assert.equal(
-    kinds.shutShut,
-    8,
-    `${kinds.shutShut} shut-against-shut overlaps; 8 predate the opened names and are not their doing`,
-  );
+  // 254 opened / 264 shut since session 104. The shut side fell from over 300
+  // because the remainder hops are shut lanes that stopped drawing a duplicate
+  // name; the sweep still covers both sides heavily enough not to be vacuous.
   assert.ok(
-    kinds.openShut + kinds.openOpen <= 12,
-    `${kinds.openShut + kinds.openOpen} overlaps involve a restored name (was 12: ` +
-      `${kinds.openShut} opened-against-shut, ${kinds.openOpen} opened-against-opened)`,
+    openNames > 200 && shutNames > 250,
+    `${openNames} opened / ${shutNames} shut names drawn`,
+  );
+  assert.deepEqual(
+    kinds,
+    { shutShut: 0, openShut: 0, openOpen: 0 },
+    `names overlap on a fully opened figure: ${kinds.shutShut} shut-against-shut, ` +
+      `${kinds.openShut} opened-against-shut, ${kinds.openOpen} opened-against-opened. ` +
+      `All three were 0 once the fan allocator stopped centring a row containing the spine`,
   );
 });
 

@@ -11505,13 +11505,63 @@ div.mj-rail-row:hover {
    alternatives to (or ingredients of). Thinner than that surface's 3.5px
    spine on purpose — that spine fades down from a thick slot line, and this
    one fades down from a shape that already tapers to a point at both ends, so
-   a thin, low-opacity stroke is enough to read as "still here". */
+   a thin, low-opacity stroke is enough to read as "still here".
+
+   **Superseded, session 104.** The paragraph above argued a thin low-opacity
+   stroke is enough to read as "still here", and the owner's report is that it is
+   not: *"process lines that have been expanded remain in the center, are thick
+   and dotted, and not blocked/overlayed by any branch so they can be clicked on
+   to collapse — and the name of the process line resides there not in some
+   surrounding area."* A hairline that carries no name is not something a reader
+   can find in order to close it, which is what *"it was hard to collapse it
+   again"* means. Three changes make it findable and none works alone: the layout
+   reserves `spineBand` so no branch lands on it, the name moved onto it, and it
+   is drawn thick and dotted here.
+
+   `stroke-width` is a literal rather than a token because the layout reserves
+   room in px from `CONVERGE_METRICS.spineStroke`. Keep the two in step — both 4.
+   A token here would be a second writer of a width the geometry has committed
+   to. */
 .mj-converge-spine {
   stroke: currentColor;
   stroke-width: 2;
   fill: none;
   stroke-linecap: round;
   opacity: 0.16;
+}
+/* A **bone** — a line opened *across* into branches, which keeps a clear middle
+   and wears its own name there. Thick and dotted so a reader can find it and
+   click it shut, per the owner's session-104 note.
+
+   `--bone` and not every opened spine: a line opened *along* into a chain has
+   its own steps drawn on top of it (`place` hands them bow 0), so thickening it
+   there would run a heavy dotted stroke underneath the very shapes it was
+   opened to reveal. Verified on the rendered page — that is what the first
+   version of this rule did. The layout decides which is which and says so on
+   `ConvergeLane.bone`; this file never re-derives it. */
+.mj-converge-spine--bone {
+  stroke-width: 4;
+  stroke-dasharray: 2 5;
+  opacity: 0.55;
+}
+.mj-converge-canvas a:hover .mj-converge-spine--bone { opacity: 0.85; }
+
+/* The plate that makes a name on the bone readable.
+
+   An opened fan's branches converge to its spine at both ends, so they cross the
+   band the name sits in near the ends of the span whatever room is reserved —
+   measured, they clear the middle 76% and cross the rest. So the name is
+   occluded rather than moved: this rubs out the lines behind the text, and only
+   there.
+
+   `--bg-1` — the panel/card token, which is what the figure is drawn on. Hiding
+   what is behind is the entire job, so `transparent` is not an option and a raw
+   hex would fail `check-raw-hex.mjs`. If a theme ever draws this canvas on
+   something other than `--bg-1`, this is the line that has to follow it, and it
+   will be visible immediately as a rectangle in the wrong shade. */
+.mj-converge-name-plate {
+  fill: var(--bg-1);
+  stroke: none;
 }
 
 /* --- depth: nested strands recede ------------------------------------------

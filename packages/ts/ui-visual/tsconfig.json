@@ -6,6 +6,10 @@
     "jsx": "react-jsx",
     "strict": true,
     "noEmit": true,
+    // `src/converge-stories.tsx` reaches into `apps/web` by relative path (that file says
+    // why), and that tree writes its own imports with explicit `.ts` extensions. Safe here
+    // because nothing is emitted from this project — esbuild does the bundling.
+    "allowImportingTsExtensions": true,
     "skipLibCheck": true,
     "isolatedModules": true,
     "types": ["node"],

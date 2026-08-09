@@ -178,10 +178,123 @@ for (const [standing, count] of [
   }
 }
 
+// --- R13: a repeated chain is a duplicate only inside one state pair ---------
+//
+// Two methods that draw the same picture are a defect **only when they realize
+// the same slot**. The same chain under a *different* slot is a recurrence, and
+// recurrence is what a reusable ladder looks like when it is working — R13
+// quotes the owner's own statement, and it is about the hardware-implementation
+// papers that have not arrived yet: an implementation of HHL and one of QSVT
+// will both draw prepare → block-encode → read out, and those are two different
+// pairs of states, not one duplicate.
+//
+// So this groups by slot before comparing, and never across. What it does with
+// each answer differs, and the difference is the rule:
+//
+//   - **Within a slot: failable**, against the named groups below. Not a bare
+//     count. A count goes green when one pair is fixed and a *different* pair
+//     collides, which is the shape of wrong-reason pass the census notes above
+//     are written to avoid. The list is the assertion; a group that is not on it
+//     is an error even if the total fell.
+//   - **Across slots: printed, never barred.** Barring it would bar the
+//     recurrence R13 exists to permit. There is one today, worth saying plainly
+//     because the plan records this number as 0: `state-preparation` alone is a
+//     whole chain, shared by five methods across three slots. It was already
+//     non-zero when the rule was written.
+//
+// The comparison includes each step's `via` pin, because a pin is exactly how
+// two methods sharing a step stop drawing the same picture — `taylor-all-at-once`
+// left this list by pinning `time-discretization` to the propagator node whose
+// name it was already carrying.
+const chainOf = (method) =>
+  method.steps
+    .map((step) => `${step}${method.via?.[step] ? ` via ${method.via[step]}` : ""}`)
+    .join(" + ");
+
+const KNOWN_TWINS = [
+  {
+    slot: "linear-ode-solve",
+    methods: ["krovi-linear-ode", "dyson-all-at-once"],
+    why: "krovi-linear-ode re-analyses the all-at-once construction it already `refines`, and whether it survives as its own node is an owner ruling (OWNER_TODO §4a). dyson-all-at-once wants a `truncated-dyson-series` node under `time-discretization` that nobody has authored — that needs the paper and a citation (R1, R10), so it is content work, not a pin.",
+  },
+  {
+    slot: "linear-ode-solve",
+    methods: ["lchs-route", "lchs-improved-kernel", "schrodingerisation"],
+    why: "lchs-improved-kernel already `refines: lchs-route`, so that pair is declared. lchs-route and schrodingerisation must NOT collapse — genuinely different mathematics, one requiring a positive-semidefinite Hermitian part throughout and the other requiring nothing of the kind. What is missing is an intermediate slot between them, which needs R2's two-method contest and a state-vocabulary entry (OWNER_TODO §4b).",
+  },
+  {
+    slot: "time-discretization",
+    methods: ["backward-euler", "trapezoidal-rule"],
+    why: "Two quadratures reaching the same solver. What differs is the discretization itself, which IS this slot, so there is no lower step to pin them apart with.",
+  },
+  {
+    slot: "quantum-linear-solve",
+    methods: ["discrete-adiabatic-inversion", "eigenstate-filtering-inversion"],
+    why: "Both walk block-encode → prepare → apply a matrix function. The difference is which function and how its phases are found, which lives inside `matrix-function` — a pin waiting on that slot being decomposed.",
+  },
+  {
+    slot: "observable-estimation",
+    methods: ["direct-sampling-readout", "amplitude-estimation-readout", "classical-shadow-readout"],
+    why: "Three readouts that each consume a prepared state and nothing else. The chain is one step long, so there is no second step to tell them apart by; what tells them apart is their own cost, which is on the method.",
+  },
+];
+
+const chainGroups = new Map();
+for (const node of LAYER_GRAPH.nodes) {
+  if (!isMethod(node) || node.steps.length === 0) continue;
+  const key = `${node.realizes} ${chainOf(node)}`;
+  chainGroups.set(key, [...(chainGroups.get(key) ?? []), node.id]);
+}
+const matchedTwins = new Set();
+for (const [key, ids] of chainGroups) {
+  if (ids.length < 2) continue;
+  const [slot, chain] = key.split(" ");
+  const known = KNOWN_TWINS.find(
+    (row) =>
+      row.slot === slot &&
+      row.methods.length === ids.length &&
+      row.methods.every((id) => ids.includes(id)),
+  );
+  if (known) {
+    matchedTwins.add(known);
+    continue;
+  }
+  errors.push(
+    `${slot}: ${ids.join(", ")} all draw "${chain}" and nothing says why. Pin a step with \`via\`, ` +
+      `declare one a \`refines\` of another, collapse them, or add the group to KNOWN_TWINS in this ` +
+      `script with the reason it survives (R13).`,
+  );
+}
+for (const row of KNOWN_TWINS) {
+  if (matchedTwins.has(row)) continue;
+  errors.push(
+    `${row.slot}: KNOWN_TWINS records ${row.methods.join(", ")} as drawing one chain, and they no ` +
+      `longer do. Delete the row — a standing exception nothing exercises is a licence nobody watches.`,
+  );
+}
+
 if (errors.length > 0) {
   console.error(`✖ layer graph invalid (${errors.length} ${errors.length === 1 ? "error" : "errors"})`);
   for (const error of errors) console.error(`  - ${error}`);
   process.exit(1);
+}
+
+// Recurrence across slots — reported, never barred. R13 above says why the two
+// directions are treated differently.
+{
+  const acrossSlots = new Map();
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node) || node.steps.length === 0) continue;
+    const chain = chainOf(node);
+    acrossSlots.set(chain, [...(acrossSlots.get(chain) ?? []), `${node.realizes}/${node.id}`]);
+  }
+  for (const [chain, holders] of acrossSlots) {
+    const slots = new Set(holders.map((holder) => holder.split("/")[0]));
+    if (slots.size < 2) continue;
+    console.log(
+      `  ↻ "${chain}" recurs across ${slots.size} slots — ${holders.join(", ")} (R13: a recurrence, not a duplicate)`,
+    );
+  }
 }
 
 // Printed whether or not `--quiet`, like the paper register's warnings and for

@@ -207,6 +207,40 @@ export const CONVERGE_METRICS = {
   /** A lane's label sits this far off its own edge. */
   labelLift: 7,
   /**
+   * How thick an opened line — the **bone** — is drawn.
+   *
+   * Owner, session 104: *"process lines that have been expanded remain in the
+   * center, are thick and dotted, and not blocked/overlayed by any branch so
+   * they can be clicked on to collapse"*. It was 2px at opacity 0.16, which is
+   * neither thick nor findable, and the reason it was faint is that it had
+   * nothing to be found *for*: the name sat outside the fan and the collapse
+   * control was the invisible hit path.
+   */
+  spineStroke: 4,
+  /**
+   * Half the band an opened line keeps for itself, clear of every branch.
+   *
+   * This is the number that makes *"even an odd number of branches should all be
+   * around it, not a middle one that covered this collapse line"* true. Before
+   * it, `allocateBows` centred the row on the spine, so any odd fan — and every
+   * fan of one, which is 23 of the 29 decomposed routes — put a child at offset
+   * 0, exactly on top of the line the reader has to click to collapse.
+   *
+   * Sized to hold the bone **and its name clear of the stroke**:
+   * `spineStroke/2 + labelLift + laneFont·0.8` = 2 + 7 + 9.6 = 18.6, rounded up
+   * to 22 so the band is not exactly the text's bounding box.
+   *
+   * The first attempt wrote the name at `peak.y` exactly — literally on the line
+   * — and the name-collision invariant caught it immediately: opened names
+   * collided with a line on **36 of 127 (28.3%)**, against the 13.4% the shut
+   * names were measured at. A name *on the bone* has to sit in the bone's band,
+   * not on the bone's stroke.
+   *
+   * Reserved by `allocateBowsAroundSpine`, which both `measure` and `place`
+   * call — one number, two uses, never two derivations.
+   */
+  spineBand: 22,
+  /**
    * How far an ingredient stub hangs off the strand that consumes it.
    *
    * An ingredient is not a stage — `hhl-qpe-inversion` needs a block-encoding
@@ -466,6 +500,29 @@ export interface ConvergeLane {
    * the coined composite the owner refused when drawn. See `PlanStrand.composite`.
    */
   composite: boolean;
+  /**
+   * This lane has a real name and something else on the canvas already draws it,
+   * so it draws none. Distinct from `composite`, which means the name itself
+   * must never appear. See `PlanStrand.nameless`.
+   */
+  nameless: boolean;
+  /**
+   * This is a **bone**: a line the reader opened *across* into branches, which
+   * keeps a clear middle, wears its own name there, and is drawn thick and
+   * dotted so it can be found and clicked to collapse.
+   *
+   * True only for an opened **fan** (`opensInto: "ways"`). An opened *chain*
+   * draws its steps on its own spine — `place` hands them bow 0 — so it has no
+   * clear middle to write in and no visible line to thicken; thickening it there
+   * puts a heavy dotted stroke *underneath* the steps drawn over it. That case
+   * is what the exoskeleton is for and it is not built yet.
+   *
+   * Decided here rather than re-derived in the renderer from `opensInto`. The
+   * plate under the name, the dotted stroke and the reserved band all have to
+   * agree about which lanes are bones, and three readings of one condition is
+   * how they come apart.
+   */
+  bone: boolean;
   /** Where the label sits — clear of the strand's own edge. */
   labelX: number;
   labelY: number;
@@ -643,6 +700,64 @@ export function laneOffsets(n: number): number[] {
   const out: number[] = [];
   const mid = (n - 1) / 2;
   for (let index = 0; index < n; index += 1) out.push((index - mid) * CONVERGE_METRICS.laneBow);
+  return out;
+}
+
+/**
+ * Centre a row of siblings around `centre` **without letting any of them land on
+ * it** — the opened line keeps the middle.
+ *
+ * The owner's rule, session 104, correcting the reading this file shipped:
+ *
+ * > *"Make sure that process lines that have been expanded remain in the center
+ * > … not blocked/overlayed by any branch so they can be clicked on to collapse.
+ * > Even an odd number of branches should all be around it, not a middle one
+ * > that covered this collapse line."*
+ *
+ * The session-96 wording was *"everything expanded from it arranges around it,
+ * including for an odd number of branches"*, and `laneOffsets` above reads that
+ * as **put one lane through the middle**. It is the opposite reading, and it is
+ * the one that shipped: a fan of one — which is what 23 of the 29 decomposed
+ * routes produce — got `[0]`, drawn exactly over the 2px spine it was supposed
+ * to leave clear. The owner's report is the symptom: *"it was hard to collapse
+ * it again."*
+ *
+ * Implemented as a **virtual sibling** rather than as a special case per parity,
+ * so odd and even counts go through one code path and the reserved band is the
+ * same band `measure` reserved. A parity branch here is what would let the
+ * measurement and the placement disagree by one gap.
+ */
+export function allocateBowsAroundSpine(
+  halves: readonly number[],
+  centre: number,
+  gap: number,
+  spineHalf: number,
+): number[] {
+  if (halves.length === 0) return [];
+  // Ceil, so the extra member of an odd fan sits **above** the bone: the reading
+  // order of a fan is top-first, and a reader who opens a line looks up.
+  const mid = Math.ceil(halves.length / 2);
+  const out: number[] = new Array(halves.length);
+  // Packed **outward from the spine's own edges**, not centred as a row that
+  // happens to contain the spine. Centring the row is what the first version
+  // did, and it only holds the spine at `centre` when the two groups are
+  // mirror images: with one child, `[20, 22]` centres to put the child at
+  // `centre - 27` and the spine at `centre + 25`, so the child's band reaches
+  // `centre - 7` — *inside* the band the spine reserved, which is the whole
+  // thing this function exists to prevent, on the 23-of-29 case (a fan of one).
+  // Every odd fan drifts the same way.
+  let cursor = centre - spineHalf - gap;
+  for (let index = mid - 1; index >= 0; index -= 1) {
+    const half = halves[index]!;
+    out[index] = cursor - half;
+    cursor -= half * 2 + gap;
+  }
+  cursor = centre + spineHalf + gap;
+  for (let index = mid; index < halves.length; index += 1) {
+    const half = halves[index]!;
+    out[index] = cursor + half;
+    cursor += half * 2 + gap;
+  }
   return out;
 }
 
@@ -899,6 +1014,23 @@ interface PlanStrand {
    * doing two unrelated jobs at once.
    */
   composite: boolean;
+  /**
+   * This strand has a real name, and something else on the canvas is already
+   * drawing it.
+   *
+   * **A second field rather than a second use of `composite`**, and the comment
+   * above says why in this file's own words: the last time one flag did two
+   * unrelated jobs here, restoring the opened names brought the coined composite
+   * back with them. `composite` means *"this name was coined by joining two
+   * concepts and must never appear"*; this means *"this name is correct and is
+   * already on the page once."* They suppress the same drawing for opposite
+   * reasons, and a future session that lifts one must not lift the other.
+   *
+   * True on exactly one kind of strand today: the remainder hop, the part of a
+   * route the method performs itself. Its name is the method's, and the method's
+   * name is now written on the bone or the exoskeleton above it.
+   */
+  nameless: boolean;
   opensInto: OpensInto | null;
   slots: readonly string[];
   interior: readonly string[];
@@ -1010,10 +1142,25 @@ function chainInside(
     //
     // It has no id of its own: its id would be the method's, so `?open=` could
     // not tell "open the method" from "open the piece of the method that is the
-    // method". It **is** named, with the method's own name, and that is a
-    // correction rather than a repetition — the opened lane above it draws no
-    // name at all, so leaving this one nameless too would put an unlabelled
-    // segment inside an unlabelled lane and give the reader nothing to read.
+    // method".
+    //
+    // **And it is no longer named.** Owner, session 104, on seeing it:
+    // *"Time marching is all over the place — expands into propagation then
+    // itself."* That is this segment: `time-marching-usva` delegates one step,
+    // stops at `linear-system`, and its own name was drawn again as the hop to
+    // the answer, so opening it appeared to produce a copy of itself. There is
+    // no cycle in the graph — measured, 0 cycles over all 78 nodes — only a name
+    // printed twice.
+    //
+    // The reason it *was* named has been removed rather than overruled: the note
+    // here used to argue that an unlabelled segment inside an unlabelled lane
+    // gives the reader nothing to read, and that was true while an opened lane
+    // dropped its own name. It does not any more — an opened fan writes its name
+    // on the bone, and an opened chain wears it on the exoskeleton. The name is
+    // on the page exactly once, which is what it always should have been.
+    //
+    // `fullLabel` still carries the method's name, so the `<title>` and the
+    // accessible list beside the figure lose nothing.
     return {
       key: `${parentKey}/${index}/own`,
       address: `${parentAddress}.${index}`,
@@ -1029,6 +1176,7 @@ function chainInside(
       inside: 0,
       openable: false,
       composite: false,
+      nameless: true,
       opensInto: null,
       slots: [],
       interior: [],
@@ -1095,6 +1243,7 @@ function planForSlot(
     inside: methods.length,
     openable: canOpen,
     composite: false,
+    nameless: false,
     opensInto: methods.length > 0 ? "ways" : null,
     slots: [slotId],
     interior: [],
@@ -1164,6 +1313,7 @@ function planForMethod(
     inside: holds ? segments + feeds.length : 0,
     openable: canOpen && holds,
     composite: false,
+    nameless: false,
     opensInto: holds ? "steps" : null,
     slots: [],
     interior: [],
@@ -1252,6 +1402,7 @@ function planForLane(
     // `?open=` to name it by, so there was never anything to click.
     openable: false,
     composite: true,
+    nameless: false,
     opensInto: "steps",
     slots: named.slots,
     interior: lane.interior,
@@ -1436,15 +1587,32 @@ function measure(strand: PlanStrand, depth: number): Measure {
   }
   // A fan: children stack **across**, so their bands sum. The extra `labelBand`
   // is breathing room between an opened group and the siblings it has just
-  // pushed apart — an opened strand draws no name of its own (see `place`).
-  const spread =
-    children.reduce((sum, child) => sum + child.vHalf * 2, 0) + M.laneGap * (children.length - 1);
+  // pushed apart.
+  //
   // The very offsets `place` will use, computed from the same allocator against
   // the same half-bands, so the bound is measured against the drawing rather
   // than against an idea of it.
-  const offsets = allocateBows(children.map((child) => child.vHalf), 0, M.laneGap);
+  const offsets = allocateBowsAroundSpine(
+    children.map((child) => child.vHalf),
+    0,
+    M.laneGap,
+    M.spineBand,
+  );
+  // Read off those offsets, **not** from a closed form of the row's total. The
+  // closed form (`half the summed spread`) is only the true half-band when the
+  // two groups mirror each other, and since `mid` is a ceil they never do for an
+  // odd fan: a fan of one measured 47 against a drawing that reaches 72, so the
+  // parent reserved a band its own child overflowed by 25px. The groups are
+  // asymmetric by construction now, so the half-band is the furthest edge any
+  // member actually reaches — floored at the spine's own band, because a fan of
+  // one leaves the other side of the bone empty and the bone still needs its
+  // room.
+  const reach = Math.max(
+    M.spineBand,
+    ...children.map((child, index) => Math.abs(offsets[index]!) + child.vHalf),
+  );
   return {
-    vHalf: spread / 2 + M.labelBand,
+    vHalf: reach + M.labelBand,
     hFit: Math.max(own, ...children.map((child) => child.hFit)),
     // A child's bow off *this* base is this fan's offset for it plus whatever it
     // bows inside itself — the offsets add down the tree, which is the part two
@@ -1541,8 +1709,26 @@ function place(
   // name on its own child's name: 16 collisions rather than 6.
   const outward = bow >= 0 ? 1 : -1;
   const bandHalf = strand.open ? size.vHalf : half;
-  const labelY =
-    outward > 0
+  // **An opened fan wears its name on the bone.**
+  //
+  // Owner, session 104: *"the name of the process line resides there not in some
+  // surrounding area."* It did not — an opened line's name was lifted clear of
+  // `size.vHalf`, the whole band its children fill, which put it outside the fan
+  // it names and next to whatever the neighbouring lane's name was doing. On a
+  // three-deep figure that is 300px away from the line it belongs to.
+  //
+  // Safe only because `allocateBowsAroundSpine` now keeps `spineBand` clear:
+  // writing the name at `peak.y` before that reservation existed would have put
+  // it under the middle branch, which is the collision this file previously
+  // refused the name to avoid.
+  //
+  // Fans only. A **chain** draws its steps *on* the spine — `place` hands them
+  // bow 0 — so there is no clear middle to write in, and the parent's identity
+  // is carried by the exoskeleton drawn around the run instead.
+  const onBone = strand.open && strand.layout === "fan";
+  const labelY = onBone
+    ? peak.y - M.spineStroke / 2 - M.labelLift
+    : outward > 0
       ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
       : peak.y - bandHalf - M.labelLift;
 
@@ -1550,9 +1736,10 @@ function place(
   // different reason from the one this commit removed: its label is `A → B`, and
   // that string on the canvas is the coined composite the owner refused. It is
   // drawn as its hops, and the hops carry the names.
-  const fitted = strand.composite
-    ? { text: "", truncated: false }
-    : fitLabel(strand.shortLabel ?? strand.label, M.laneFont, context.columnFit);
+  const fitted =
+    strand.composite || strand.nameless
+      ? { text: "", truncated: false }
+      : fitLabel(strand.shortLabel ?? strand.label, M.laneFont, context.columnFit);
   if (strand.standing === "unpublished") out.unpublished += 1;
   if (!strand.open && strand.inside > 0) out.collapsed += 1;
   if (depth >= CONVERGE_DEPTH_MAX && strand.inside > 0 && !strand.open) out.depthCapped = true;
@@ -1580,6 +1767,8 @@ function place(
     shortLabel: strand.shortLabel,
     labelTruncated: fitted.truncated,
     composite: strand.composite,
+    nameless: strand.nameless,
+    bone: onBone,
     labelX: peak.x,
     labelY,
     labelWidth: fitted.text === "" ? 0 : estimateTextWidth(fitted.text, M.laneFont),
@@ -1655,10 +1844,12 @@ function place(
   }
 
   placeFeeds(base, strand, size, bow, depth, context);
-  const bows = allocateBows(
+  // Around the bone, never on it. See `allocateBowsAroundSpine`.
+  const bows = allocateBowsAroundSpine(
     size.children.map((child) => child.vHalf),
     bow,
     M.laneGap,
+    M.spineBand,
   );
   for (const [index, child] of strand.children.entries()) {
     place(base, child, size.children[index]!, bows[index]!, depth + 1, {
