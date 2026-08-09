@@ -12648,3 +12648,182 @@ div.mj-rail-row:hover {
     flex-wrap: wrap;
   }
 }
+
+/* --- the card ------------------------------------------------------------- */
+/* `?card=` — what the map says about one node, over the map. A sibling of
+   `.mj-map-info` above in every structural respect, so it borrows that block's
+   shell rules rather than inventing a second dialog look: same backdrop, same
+   card surface, same pinned close control, same `[hidden]` rule so a shut card
+   cannot cover the drawing.
+
+   What it does NOT borrow is the two-column layout. The information box has
+   five fixed sections and a sidebar to choose between them; a card has one
+   subject and a stack of sections about it, several of which are empty on
+   purpose. A sidebar over a stack that is mostly gaps would be a table of
+   contents for absences. */
+.mj-card-backdrop {
+  position: fixed;
+  z-index: 100;
+  inset: 0;
+  display: grid;
+  place-items: center;
+  grid-template-rows: minmax(0, 1fr);
+  padding: var(--sp-6);
+  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+}
+.mj-card-backdrop[hidden] {
+  display: none;
+}
+.mj-card {
+  position: relative;
+  display: flex;
+  flex-direction: column;
+  width: min(100%, 44rem);
+  max-height: 100%;
+  padding: var(--sp-6);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: var(--bg-1);
+  box-shadow: var(--shadow-popover);
+}
+.mj-card:focus-visible {
+  outline: none;
+}
+.mj-card-close {
+  position: absolute;
+  top: var(--sp-3);
+  right: var(--sp-3);
+  font-size: var(--fs-20);
+  line-height: 1;
+  text-decoration: none;
+}
+.mj-card-eyebrow {
+  margin: 0 0 var(--sp-2);
+  padding-right: var(--sp-8);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-card h2 {
+  margin: 0;
+  font-size: var(--fs-20);
+}
+.mj-card-lede {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-1);
+}
+/* The way onward, directly under the name and above every section — the card is
+   a preview and the record is the page, so the link out is not something a
+   reader has to scroll a stack of gaps to find. */
+.mj-card-onward {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-4);
+  margin: var(--sp-3) 0 var(--sp-4);
+  font-size: var(--fs-14);
+}
+.mj-card-realizes {
+  color: var(--text-2);
+}
+/* The scroll container is this inner element rather than the shell, so the close
+   control stays pinned while a long card moves under it — which makes it a
+   scrollable region a keyboard reader has to be able to reach, hence the
+   `tabIndex` and the name on it in the component. */
+.mj-card-body {
+  min-height: 0;
+  overflow-y: auto;
+  border-top: var(--border-hairline) solid var(--border-0);
+}
+.mj-card-section {
+  border-bottom: var(--border-hairline) solid var(--border-0);
+}
+.mj-card-section > summary {
+  padding: var(--sp-3) 0;
+  cursor: pointer;
+  font-size: var(--fs-14);
+  font-weight: 500;
+}
+/* **An empty section still has its heading, and still reads as empty.** The
+   owner's rule is that gaps are "loud and clear, but terse" — so the section is
+   never removed (a heading nobody wrote and a heading with nothing under it are
+   indistinguishable once the heading is gone), and it arrives collapsed and
+   quieter so a card of eleven sections does not open as a wall of absences. */
+.mj-card-section--empty > summary {
+  color: var(--text-2);
+  font-weight: 400;
+}
+.mj-card-section-body {
+  padding: 0 0 var(--sp-3);
+  font-size: var(--fs-14);
+}
+.mj-card-section-body > p {
+  margin: 0 0 var(--sp-2);
+}
+.mj-card-gap {
+  margin: 0;
+  color: var(--text-2);
+  font-style: italic;
+}
+/* The two gaps are not the same fact and do not read the same. "None found yet"
+   is a search that came back empty; "no field holds this yet" is a to-do on this
+   repository. The second is dashed rather than plain so it reads as scaffolding
+   — see the block comment in `card-content.ts`. */
+.mj-card-gap--no-field-yet {
+  padding-left: var(--sp-3);
+  border-left: 2px dashed var(--border-0);
+}
+.mj-card-list,
+.mj-card-trace {
+  margin: 0;
+  padding: 0 0 0 var(--sp-4);
+}
+.mj-card-list {
+  list-style: none;
+  padding-left: 0;
+}
+.mj-card-list > li {
+  margin-bottom: var(--sp-3);
+}
+.mj-card-list-blurb {
+  margin: var(--sp-1) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-card-trace > li {
+  margin-bottom: var(--sp-2);
+}
+.mj-card-trace-states {
+  display: block;
+  color: var(--text-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+}
+.mj-card-trace-own {
+  color: var(--text-2);
+  font-style: italic;
+}
+.mj-card-trace-tag {
+  margin-left: var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-card-dl {
+  margin: 0;
+  display: grid;
+  gap: var(--sp-2);
+}
+.mj-card-dl dt {
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-card-dl dd {
+  margin: 0;
+}
+.mj-card-coverage {
+  margin: var(--sp-4) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
