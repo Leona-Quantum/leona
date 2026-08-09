@@ -6,6 +6,7 @@ import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { resolveOpenIds } from "../../../lib/repository/converge-layout";
 import { parseViewport } from "../../../lib/repository/canvas-viewport";
+import { parseCardId } from "../../../lib/repository/map-card";
 import { parseAboutSection } from "../../../lib/repository/map-about";
 import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
 
@@ -171,6 +172,11 @@ export default async function RepositoryLayersPage({
         // the box works with JavaScript off and so a link to one section of it
         // is a link somebody can send. See `lib/repository/map-about.ts`.
         about={parseAboutSection(params.about)}
+        // Which node's card is open, resolved on the server for the same reason
+        // and by the same shape. `parseCardId` validates against the graph: an
+        // id that names nothing means *shut*, because there is no sensible
+        // default node to fall back to. See `lib/repository/map-card.ts`.
+        card={parseCardId(params.card, (id) => layerNode(LAYER_GRAPH, id) !== null)}
         droppedOpen={openSet.dropped}
         // Resolved on the server so the figure arrives already panned and
         // scaled: a shared link lands where its sender was standing even with

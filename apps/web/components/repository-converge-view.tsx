@@ -64,6 +64,9 @@ import {
   withAbout,
   type MapAboutSection,
 } from "../lib/repository/map-about";
+import { withCard, type CardSelection } from "../lib/repository/map-card";
+import { cardFor } from "../lib/repository/card-content";
+import { MapCardPanel } from "./map-card-panel";
 import {
   CONVERGE_OPEN_MAX,
   convergingSlots,
@@ -106,6 +109,8 @@ interface ConvergeCopy {
   collapsed: (n: number) => string;
   allOpen: string;
   linesHeading: string;
+  /** Opens this process's card, here, without leaving the figure. */
+  openCard: string;
   ownPage: string;
   pickAll: string;
   pickConverging: (n: number) => string;
@@ -192,6 +197,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       `${n} line${n === 1 ? " has" : "s have"} something recorded inside that you have not opened.`,
     allOpen: "Everything on this figure that opens is open.",
     linesHeading: "The lines on this figure",
+    openCard: "Open the card",
     ownPage: "Read the full write-up",
     pickAll: "Every step you can open",
     pickConverging: (n: number) =>
@@ -260,6 +266,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     collapsed: (n: number) => `内側に記録がありまだ開いていない線が ${n} 本あります。`,
     allOpen: "この図で開ける線はすべて開いています。",
     linesHeading: "この図の線",
+    openCard: "カードを開く",
     ownPage: "解説を読む",
     pickAll: "開くことのできる工程",
     pickConverging: (n: number) =>
@@ -587,6 +594,7 @@ export function ConvergeView({
   focusId,
   open,
   about = null,
+  card = { id: null, dropped: 0 },
   droppedOpen = 0,
   viewport = IDENTITY,
 }: {
@@ -604,6 +612,15 @@ export function ConvergeView({
    * mean — see `lib/repository/map-about.ts` for the argument in full.
    */
   about?: MapAboutSection | null;
+  /**
+   * Which node's card is open, from `?card=`.
+   *
+   * A parameter for the same reason `about` is, and resolved on the server by
+   * the same shape — see `lib/repository/map-card.ts`. The card is assembled
+   * here rather than passed in because this is the component that already holds
+   * the graph, the vocabulary and the corpus, and a card is a join of all three.
+   */
+  card?: CardSelection;
   /** How many ids the URL asked for over the cap. Reported, never dropped silently. */
   droppedOpen?: number;
   /** Where the reader has panned and how far in, from `?at=`. */
@@ -718,6 +735,13 @@ export function ConvergeView({
     MAP_ABOUT_SECTIONS.map((id) => [id, withAbout(base, id)]),
   ) as Record<MapAboutSection, string>;
   const closeHref = withAbout(base, null);
+  // The card, assembled from the graph, the vocabulary and the corpus — the
+  // three things this component already holds and no other component holds
+  // together. `?about=` is cleared by `withCard` when a card opens, because two
+  // overlays on one map is a URL claiming a state the page cannot draw.
+  const openCard = card.id === null ? null : cardFor({ graph, vocabulary: STATE_VOCABULARY, corpus, locale: lang }, card.id);
+  const cardCloseHref = withCard(base, null);
+  const cardHrefFor = (id: string) => withCard(base, id);
   // One control, two states. A separate close button in the overlay would be a
   // third thing in a corner the owner asked to hold exactly two.
   const infoHref = about === null ? sectionHrefs[MAP_ABOUT_SECTIONS[0]] : closeHref;
@@ -810,6 +834,13 @@ export function ConvergeView({
         laneMark={legendMark().outline}
         sizeControl={<SizeControl focus={focusId} open={open} current={currentSize} copy={copy} />}
       />
+
+      {/* Rendered whether or not a card is open, and `hidden` when it is not —
+          the same shape `MapInfoPopup` uses, and for the same reason: the panel
+          is a parameter, so its markup is server-rendered and its dismissal is a
+          link. A card that only mounted after a click would be a control with no
+          address, which is the thing `?card=` exists to avoid. */}
+      <MapCardPanel card={openCard} closeHref={cardCloseHref} locale={locale} />
 
       {/* The figure in words, clipped rather than deleted.
 
@@ -976,6 +1007,15 @@ export function ConvergeView({
                 process cards are where it becomes a visible control again. */}
             {focus ? (
               <p className="mj-converge-own">
+                {/* **Two links, and the order is the argument.** The card is a
+                    preview of this process — what it takes and returns, why it
+                    is a layer, what fills it, what makes it unnecessary — and
+                    the write-up is the record. The card leads because it is the
+                    cheaper of the two: it opens here, on the figure the reader
+                    is already looking at, without costing them their `?open=`
+                    set or where they had panned to. Neither replaces the other,
+                    and the card's own first link is the page. */}
+                <a href={cardHrefFor(focus.id)}>{copy.openCard}</a>
                 <a href={`/repository/layers/${focus.id}`}>{copy.ownPage}</a>
               </p>
             ) : null}
