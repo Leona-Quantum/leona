@@ -1143,10 +1143,17 @@ function openableAddresses(id: string, graph: LayerGraph = LAYER_GRAPH): string[
       open,
     });
     let grew = false;
-    for (const lane of diagram.lanes) {
-      if (lane.openHref === null) continue;
-      if (seen.has(lane.address)) continue;
-      seen.add(lane.address);
+    // **Feeds as well as lanes, and this line is why the ingredient work could
+    // have shipped broken-green.** This walked `diagram.lanes` only. An
+    // ingredient's control lives on its stub, which is a `ConvergeFeed`, so with
+    // lanes alone no test in this file ever builds a figure with an opened
+    // ingredient — and `opening a line keeps every line apart`, the canvas-bounds
+    // check and `no line stands up on end` would all have stayed green over a
+    // set that excluded the entire feature.
+    for (const openable of [...diagram.lanes, ...diagram.feeds]) {
+      if (openable.openHref === null) continue;
+      if (seen.has(openable.address)) continue;
+      seen.add(openable.address);
       grew = true;
     }
     if (grew) walk(new Set(seen));
@@ -1384,15 +1391,46 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
   // its parent rather than on it, the drawing would say the route leaves the
   // line it is a decomposition of — and it would look like a rendering artefact
   // rather than the false claim it is.
+  //
+  // **Ingredients are the one nested lane this is not true of, and they are held
+  // to the counterpart rather than excused.** A step decomposes the line it is
+  // drawn on; an ingredient is something that line *consumes*, hanging off the
+  // side at the end of a stub. So a lane with a `feedKey` is checked against the
+  // stub instead — both its ends must sit on the stub's far end — which is the
+  // same claim ("you are attached to what you say you are attached to") measured
+  // against the thing it is actually attached to. Both arms carry a denominator,
+  // because an invariant that silently checks nothing is the failure this file
+  // has a whole section of comments about.
+  let onParent = 0;
+  let onStub = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       const diagram = openDiagram(focus.id, open);
       const byKey = new Map(diagram.lanes.map((lane) => [lane.key, lane]));
+      const stubs = new Map(diagram.feeds.map((feed) => [feed.key, feed]));
       for (const lane of diagram.lanes) {
         if (lane.depth === 0) continue;
+        if (lane.feedKey !== null) {
+          const stub = stubs.get(lane.feedKey);
+          assert.ok(stub, `${lane.key} hangs off a stub ${lane.feedKey} that is not drawn`);
+          const ends = drawnEnds(lane.d);
+          for (const [x, y] of [
+            [ends.sx, ends.sy],
+            [ends.ex, ends.ey],
+          ] as const) {
+            assert.ok(
+              Math.abs(y - stub.y1) < 0.6,
+              `${focus.id}: ${lane.key} ends at y=${y}, off the end of stub ${stub.key} at ${stub.y1}`,
+            );
+            void x;
+          }
+          onStub += 1;
+          continue;
+        }
         assert.ok(lane.parentKey, `${lane.key} is nested but names no parent`);
         const parent = byKey.get(lane.parentKey);
         assert.ok(parent, `${lane.key} names a parent ${lane.parentKey} that is not drawn`);
+        onParent += 1;
         const on = drawn(parent.d);
         const ends = drawnEnds(lane.d);
         // A minimum distance over a fine sweep, not a per-sample box.
@@ -1444,6 +1482,8 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
       }
     }
   }
+  assert.ok(onParent > 500, `only ${onParent} nested lanes checked against a parent line`);
+  assert.ok(onStub > 0, `no ingredient fan was drawn at all — ${onStub} lanes hang off a stub`);
 });
 
 test("nothing an opened figure draws leaves the canvas", () => {
