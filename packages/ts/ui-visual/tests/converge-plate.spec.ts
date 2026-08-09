@@ -117,6 +117,32 @@ test("every rendered figure wears its names on plates, and there are as many as 
   expect(plateCount, "too few name plates to be checking anything").toBeGreaterThanOrEqual(540);
 });
 
+/** Every `data-name` on an element with this class, in the order they are drawn. */
+function keysOf(html: string, className: string): string[] {
+  const pattern = new RegExp(`class="${className}[^"]*"\\s+data-name="([^"]*)"`, "g");
+  return [...html.matchAll(pattern)].map((match) => match[1]!);
+}
+
+for (const story of withPlates) {
+  test(`every name has a plate and every plate has a name — ${story.name}`, () => {
+    // **Exact, not a floor**, and the difference matters: the counts above permit
+    // two whole figures and thirty-six plates to vanish and still pass, because
+    // they are pinned *under* the measurement so that graph growth does not turn
+    // them red. That makes them a guard against the feature disappearing, not a
+    // guard on this figure. This is the second one — the plate set and the name
+    // set are compared element by element, so a single name losing its plate goes
+    // red on the figure it happened on.
+    const html = source(story);
+    const plates = keysOf(html, PLATE);
+    const names = keysOf(html, "mj-converge-lane-name");
+    expect(names.length, `${story.name} draws no names`).toBeGreaterThan(0);
+    expect(new Set(plates).size, `${story.name}: two plates claim one name`).toBe(plates.length);
+    expect([...plates].sort(), `${story.name}: the plates and the names are different sets`).toEqual(
+      [...names].sort(),
+    );
+  });
+}
+
 // The occlusion rule on this canvas, stated as a fact about the markup.
 //
 // SVG paints in document order, so a plate hides what was emitted before it and nothing
@@ -141,6 +167,11 @@ const MARK = {
   lineHit: 'class="mj-converge-strand-hit',
   plate: PLATE_IN_MARKUP,
   name: 'class="mj-converge-lane-name',
+  feed: 'class="mj-converge-feed"',
+  feedLine: 'class="mj-converge-feed-line"',
+  feedName: 'class="mj-converge-feed-name"',
+  hub: 'class="mj-converge-hub',
+  dot: 'class="mj-converge-dot"',
 };
 
 for (const story of withPlates) {
@@ -173,6 +204,30 @@ for (const story of withPlates) {
       `${story.name}: a name plate is emitted after the first name, so it rubs out a name ` +
         `instead of the lines under one`,
     ).toBeLessThan(firstName);
+
+    // **The other two passes, so the five-pass contract is checked and not just
+    // its middle.** A stub is a line like any other and a plate has to be able to
+    // hide it; a circle is the thing several lines share, so it sits on top of
+    // everything including the names. Reordering either would leave the two
+    // assertions above perfectly green.
+    for (const mark of [MARK.feed, MARK.feedLine, MARK.feedName]) {
+      const lastFeed = last(mark);
+      if (lastFeed === -1) continue;
+      expect(
+        lastFeed,
+        `${story.name}: an ingredient stub is emitted after the first name plate, so it paints ` +
+          `over a name the plate was supposed to clear`,
+      ).toBeLessThan(firstPlate);
+    }
+    for (const mark of [MARK.hub, MARK.dot]) {
+      const firstHub = first(mark);
+      if (firstHub === -1) continue;
+      expect(
+        firstHub,
+        `${story.name}: a state circle is emitted before the first name, so a name can be drawn ` +
+          `over the circle several lines share`,
+      ).toBeGreaterThan(firstName);
+    }
   });
 }
 
