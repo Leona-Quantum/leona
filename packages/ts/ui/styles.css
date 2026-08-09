@@ -10091,7 +10091,12 @@ div.mj-rail-row:hover {
   font-size: var(--fs-14);
   line-height: 1.65;
 }
-.mj-repo-preface-kinds {
+/* Scoped through the section so it beats `.mj-repo-preface h2` above. Since
+   session 110 this label IS the section's heading — the counted "What is in the
+   Atlas" h2 it used to sit under is gone — and an unscoped class loses to a
+   `class + type` selector, which would silently render this small mono label at
+   display-3. */
+.mj-repo-preface .mj-repo-preface-kinds {
   margin: var(--sp-5) 0 var(--sp-3);
   color: var(--text-2);
   font-family: var(--font-mono);
@@ -10125,14 +10130,8 @@ div.mj-rail-row:hover {
   text-decoration: none;
 }
 .mj-repo-preface-list li > a:hover { color: var(--accent); }
-.mj-repo-preface-count {
-  margin-left: var(--sp-2);
-  color: var(--text-2);
-  font-family: var(--font-mono);
-  font-size: var(--fs-12);
-  /* The count belongs to the link beside it and must not wrap away from it. */
-  white-space: nowrap;
-}
+/* `.mj-repo-preface-count` lived here and is gone with the per-kind record
+   counts (owner, session 110: "No need to mention entries"). */
 .mj-repo-preface-list li p {
   margin: var(--sp-2) 0 0;
   color: var(--text-2);
@@ -10630,22 +10629,12 @@ div.mj-rail-row:hover {
   .mj-layers-piece { grid-template-columns: 1fr; }
   .mj-layers-edge--out { text-align: left; }
 }
-/* The one link out of the Atlas preface into the Layers surface. Set apart from
-   the paragraphs above it so it does not read as a fourth sentence of prose. */
-.mj-repo-preface-layers {
-  margin: var(--sp-4) 0 0;
-  padding-top: var(--sp-4);
-  border-top: 1px solid var(--border-hairline);
-  color: var(--text-1);
-  font-size: var(--fs-13);
-  line-height: 1.6;
-}
-.mj-repo-preface-layers a {
-  color: var(--accent);
-  text-decoration: none;
-  border-bottom: 1px solid var(--border-0);
-}
-.mj-repo-preface-layers a:hover { border-bottom-color: var(--accent); }
+/* The links out of the Atlas preface into the Layers and Papers surfaces used to
+   be two set-apart paragraphs styled by `.mj-repo-preface-layers`. Session 110
+   moved both into the About-the-Atlas box, one sentence each, where they are
+   ordinary prose links — so the rule went with the paragraphs. The anchors did
+   not: a surface reachable only from another surface's detail page is one nobody
+   finds, which is the failure the gates section spent two sessions in. */
 /* Only rendered when a cross-link did not resolve at read time — so it is a
    statement about the catalogue, not a status field, and it is absent on a
    healthy one. Dashed rather than tinted: the same rule the contested section

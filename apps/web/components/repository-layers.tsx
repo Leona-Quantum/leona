@@ -166,8 +166,12 @@ const COPY = {
     refinementsLabel: "Narrower versions of this one",
     variantOf: (label: string) => `a narrower version of ${label}`,
     atlasHeading: "In the Atlas",
+    // "283 records" was typed here, not counted, and this component never sees
+    // the corpus — so the number could only ever be a copy of one kept somewhere
+    // else. The sentence's work is the *kind* of thing the catalogue holds, and
+    // that is what tells a reader why this gap exists; the size of it never did.
     atlasNone:
-      "No record in the Atlas covers this yet. The catalogue is 283 records of circuits and primitives; this part of the literature is not in it.",
+      "No record in the Atlas covers this yet. The catalogue is circuits and primitives; this part of the literature is not in it.",
     citationsHeading: "Sources",
     papersLead: (cited: number, total: number) =>
       `Every claim here rests on a source. This graph cites ${cited} papers; they and the ${total - cited} the Atlas cites alone are registered in one place, with what each reports and everywhere it is cited from.`,
@@ -300,7 +304,7 @@ const COPY = {
     variantOf: (label: string) => `${label}をより狭めた版`,
     atlasHeading: "Atlas 内の項目",
     atlasNone:
-      "これに対応する項目は Atlas にまだありません。カタログは回路と基本要素の283件で構成されており、この領域の文献は含まれていません。",
+      "これに対応する項目は Atlas にまだありません。カタログは回路と基本要素で構成されており、この領域の文献は含まれていません。",
     citationsHeading: "出典",
     papersLead: (cited: number, total: number) =>
       `ここでの主張はすべて出典に基づいています。この図が引用しているのは ${cited} 件で、それらとアトラスのみが引用する ${total - cited} 件は、一箇所に登録されています。各論文が何を報告しているか、どこから引用されているかも併せて記録しています。`,

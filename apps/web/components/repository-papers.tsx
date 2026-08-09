@@ -37,19 +37,12 @@ import { canonicalPaperUrl } from "../lib/repository/papers";
 const COPY = {
   en: {
     title: "Papers",
-    lede: "One row per paper, and the only place its title, authors and year are written down. Every citation on this site — on a map node and on an Atlas record — is checked against these rows, so a paper cannot be two papers.",
+    lede: "Every source behind the map and the Atlas, checked against one register so a paper cannot be two papers.",
     backToAtlas: "Atlas",
     backToPapers: "← Papers",
     layersLink: "Layers — how the pieces fit together",
-    countLine: (n: number) => `${n} papers`,
     readLine: (read: number, total: number) =>
       `${read} of ${total} record what they report. The rest have not been read for it — that is an absence, not a claim that they report nothing.`,
-    reachLine: (census: PaperIndexCensus) =>
-      `${census.onMap} are cited by the map, ${census.inAtlas} by an Atlas record, and ${census.both} by both. That last number is where the two bibliographies actually meet.`,
-    queuedLine: (n: number) =>
-      n === 0
-        ? "Nothing is waiting: every registered paper is cited somewhere."
-        : `${n} are registered and cited nowhere yet — read and recorded, not yet placed. That is a queue, not a defect.`,
     reportsHeading: "What it reports",
     reportsNone:
       "Nobody has read this paper for what it reports. Absent here means unread, never “it reports nothing”.",
@@ -100,19 +93,12 @@ const COPY = {
   },
   ja: {
     title: "論文",
-    lede: "論文ごとに 1 行、そしてその題名・著者・年が書かれている唯一の場所です。本サイトのすべての引用は — 地図のノード上のものも、アトラスの記録上のものも — この行と照合されます。ひとつの論文がふたつの論文になることはありません。",
+    lede: "地図とアトラスが依拠しているすべての出典を、ひとつの登録簿と照合しています。ひとつの論文がふたつの論文になることはありません。",
     backToAtlas: "アトラス",
     backToPapers: "← 論文",
     layersLink: "階層 — 部品どうしの組み合わさり方",
-    countLine: (n: number) => `${n} 件の論文`,
     readLine: (read: number, total: number) =>
       `${total} 件のうち ${read} 件について、何を報告しているかが記録されています。残りはまだそのために読まれていません。これは記載がないということであり、「何も報告していない」という主張ではありません。`,
-    reachLine: (census: PaperIndexCensus) =>
-      `${census.onMap} 件は地図から、${census.inAtlas} 件はアトラスの記録から、${census.both} 件は両方から引用されています。最後の数が、ふたつの文献目録が実際に重なっているところです。`,
-    queuedLine: (n: number) =>
-      n === 0
-        ? "待機中のものはありません。登録済みの論文はすべてどこかから引用されています。"
-        : `${n} 件は登録されていて、まだどこからも引用されていません。読んで記録した段階で、まだ配置していないということです。これは待ち行列であり、欠陥ではありません。`,
     reportsHeading: "何を報告しているか",
     reportsNone:
       "この論文が何を報告しているかについては、まだ誰も読んでいません。ここでの記載なしは未読を意味し、「何も報告していない」という意味ではありません。",
@@ -336,14 +322,25 @@ export function PaperIndexView({
         <h1>{copy.title}</h1>
         <p>{copy.lede}</p>
       </header>
-      {/* Four sentences rather than a dashboard. Each carries its own
-          denominator, and none of them can be read as a percentage of a total
-          it does not belong to. */}
+      {/* One sentence, where there were four.
+          > *"I don't like all the numbers in the atlas description, information
+          > card, papers, etc."* — owner, session 110
+
+          Three went: the bare total, the map/Atlas/both reach line, and the
+          queue. None of them told a reader anything they could act on, and the
+          reach line is the same shape as the "number of routes going through"
+          the owner had already named as noise.
+
+          **`readLine` stays, and it is the one number on this page.** It is not
+          decoration: it is the denominator behind every "not reported" on every
+          paper page. Without it, a reader meeting an empty *What it reports*
+          reads it as "this paper reports nothing" rather than "nobody has read
+          it for that yet" — which is the opposite claim, and the one this site
+          exists to avoid making. Relayed to the owner in OWNER_TODO rather than
+          quietly kept: if it should go too, the honesty it buys has to be
+          bought somewhere else first. */}
       <section className="mj-papers-census" aria-label={copy.title}>
-        <p className="mj-layers-count">{copy.countLine(census.papers)}</p>
         <p className="mj-layers-empty">{copy.readLine(census.read, census.papers)}</p>
-        <p className="mj-layers-empty">{copy.reachLine(census)}</p>
-        <p className="mj-layers-empty">{copy.queuedLine(census.queued)}</p>
       </section>
       {/* Unreachable on the authored register, which has 143 rows — and written
           anyway, because "the list is currently empty" and "the register failed
