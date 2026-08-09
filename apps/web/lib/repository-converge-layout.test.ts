@@ -2461,6 +2461,85 @@ test("a tendon's run is bounded, and every strand gets one", () => {
   );
 });
 
+// --- how big the drawing is allowed to get ------------------------------------
+//
+// Every assertion about size in this file is *containment* — a lane stays inside
+// `diagram.width`, a label stays inside `diagram.height`. All of them held at
+// **105,402px**, because the canvas simply grew to fit. The size itself has never
+// been bounded anywhere, and the way it has been found each time is a session
+// measuring by hand and writing the number into prose. Twice that prose then
+// drifted, which is R10's own lesson: a number that lives only in a document is a
+// number nothing is defending.
+//
+// So the numbers are printed, and they have ceilings. Absolute ceilings, not a
+// ratio against the last run: a bar that moves with the drawing goes red when the
+// drawing improves, and cannot be read as "this got worse".
+
+/** Generous, and deliberately so — see the note on tripping, below. */
+const SIZE_CEILING = {
+  /** Widest figure, fully opened, either locale. Today 5,134 (`ja`). */
+  saturatedWidth: 12_000,
+  /** Tallest, same sweep. Today 9,058, unchanged by the tendons — R14 was horizontal. */
+  saturatedHeight: 16_000,
+  /**
+   * Widest figure with **nothing** open, which is what a reader is handed on
+   * arrival. Today 1,026 against a 1,204px canvas, so this one is nearly tight
+   * on purpose: past it, every figure arrives scaled down to fit.
+   */
+  shutWidth: 1_400,
+} as const;
+
+test("a figure has a ceiling on how big it may get, and the numbers are on the record", () => {
+  const rows: Array<{ id: string; locale: PublicLocale; width: number; height: number }> = [];
+  let shutWidest = { id: "", width: 0 };
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const addresses = openableAddresses(focus.id);
+    for (const locale of ["en", "ja"] as PublicLocale[]) {
+      const shut = openDiagram(focus.id, [], locale);
+      if (shut.width > shutWidest.width) shutWidest = { id: `${focus.id} (${locale})`, width: shut.width };
+      const saturated = openDiagram(focus.id, addresses, locale);
+      rows.push({ id: focus.id, locale, width: saturated.width, height: saturated.height });
+    }
+  }
+
+  const widest = rows.reduce((a, b) => (b.width > a.width ? b : a));
+  const tallest = rows.reduce((a, b) => (b.height > a.height ? b : a));
+  console.log(
+    `saturated: widest ${Math.round(widest.width)}px (${widest.id}, ${widest.locale}), `
+      + `tallest ${Math.round(tallest.height)}px (${tallest.id}, ${tallest.locale}), `
+      + `shut widest ${Math.round(shutWidest.width)}px (${shutWidest.id}), over ${rows.length} figure-locales`,
+  );
+
+  // Not vacuous. A sweep that measured nothing, or measured one locale twice,
+  // passes every ceiling below it.
+  assert.ok(rows.length >= 30, `only ${rows.length} figure-locales measured`);
+  assert.ok(
+    rows.some((row) => rows.some((other) => other.id === row.id && other.width !== row.width)),
+    "no figure changed width between locales — the sweep is drawing one locale twice",
+  );
+
+  // **A trip here is a decision, not a number to raise.** Either the drawing
+  // regressed — this is the class of defect that put a figure at 105,402px, and
+  // nothing but a hand measurement caught it — or the corpus has outgrown the
+  // shape and the shape is what has to change. Bumping the constant is the one
+  // response that is always wrong.
+  for (const row of rows) {
+    assert.ok(
+      row.width <= SIZE_CEILING.saturatedWidth,
+      `${row.id} (${row.locale}) is ${Math.round(row.width)}px wide, over the ${SIZE_CEILING.saturatedWidth}px ceiling`,
+    );
+    assert.ok(
+      row.height <= SIZE_CEILING.saturatedHeight,
+      `${row.id} (${row.locale}) is ${Math.round(row.height)}px tall, over the ${SIZE_CEILING.saturatedHeight}px ceiling`,
+    );
+  }
+  assert.ok(
+    shutWidest.width <= SIZE_CEILING.shutWidth,
+    `${shutWidest.id} is ${Math.round(shutWidest.width)}px wide shut, over the ${SIZE_CEILING.shutWidth}px ceiling — `
+      + "a figure past this arrives scaled down to fit the canvas",
+  );
+});
+
 test("every belly is long enough to hold the name written on it", () => {
   // The invariant that says `runAcross`'s clamp never bites. The column is sized
   // with the runs already in it (`Measure.hRun`), so a belly should always be at
