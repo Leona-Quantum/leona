@@ -95,16 +95,13 @@
 // control that only works after hydration has no address (D88.2).
 import { estimateTextWidth, fitLabel, LANE_FONT_PX, stateHref } from "./process-layout.ts";
 import {
-  cubicPath,
-  levelCubic,
-  offsetCubic,
-  peakOf,
-  pointOn,
-  splitCubicEven,
-  strandOutline,
-  bowDisplacement,
-  controlHeight as controlHeightOf,
-  type Cubic,
+  bellyOf,
+  levelSlices,
+  ribbonOutline,
+  ribbonPath,
+  tendonSlope,
+  type Level,
+  type Ribbon,
 } from "./strand-geometry.ts";
 import {
   expansionOf,
@@ -259,43 +256,96 @@ export const CONVERGE_METRICS = {
    */
   depthTaper: 0.78,
   /**
-   * The steepest a lane may leave or arrive at a circle, in degrees.
+   * The shortest tendon, in px — the taper every strand gets whatever its bow.
    *
-   * The owner asked for two things and they are one constraint: *"distances
-   * between states should increase as branches between them are opened out"*,
-   * and *"no branch should be at such a steep angle that it becomes weird to
-   * look at"*. A lane is a cubic whose x controls sit at exact thirds, so
-   * `x(t) = x0 + span·t` and its displacement is `4·bow·t(1−t)` — which makes
-   * the tangent `4·bow(1−2t)/span`, steepest at both ends, at exactly
-   * `atan(4·|bow|/span)`. So capping the angle *is* the rule that widens a
-   * column when a fan opens inside it: `span ≥ 4·|bow| / tan(cap)`.
-   *
-   * Measured before this existed, over all 18 figures fully opened: 186 of 337
-   * lanes were past 45°, 90 past 60°, the steepest 79.1° — and four figures were
-   * already past 45° *shut*, at 55 lines. Opening the widest fan (7 methods)
-   * added 322px of height and **0px** of width, because `measure` took a `max`
-   * over its children's label widths and nothing in the expression mentioned how
-   * many of them there were.
-   *
-   * 45 rather than 30: at 30° the seven-method fan needs a 1040px column against
-   * today's 392, which pushes `nonlinear-ode-solve` past 4000px wide and trades
-   * the owner's complaint for a horizontal version of it.
+   * A strand with **no** bow still needs one: the tendon is also where the shape
+   * pinches to a point at the circle it reaches, and with a zero run a chain's
+   * step would be a constant-thickness bar butted against its neighbour. This is
+   * therefore the taper length as much as the run-in length, and the two are one
+   * number because they are one curve — `tendonProfile` scales the bow and the
+   * half-thickness by the same φ.
    */
-  maxLaneAngleDeg: 45,
+  minTendonRun: 16,
+  /**
+   * The longest tendon, in px, and the number that bounds the whole figure.
+   *
+   * This is what replaces `span ≥ 4·|bow|`. Under the old law a bow of 400px
+   * demanded a **1600px** column to stay under 45°, and that is why a fully
+   * opened figure measured 87,449px wide. A tendon confines the rise to its own
+   * run, so a bow costs at most `2 × this` of column however large it grows.
+   *
+   * 110 and not less because the tendon still has to read as a curve rather than
+   * as a corner at ordinary bows; not more because it is paid twice per level of
+   * nesting, on every column, whether or not any lane needs it.
+   */
+  maxTendonRun: 110,
+  /**
+   * The angle a tendon is *aimed* at before the ceiling above takes over.
+   *
+   * R14: a tendon is not a branch. It carries no name, no destination and no
+   * claim, so `maxLaneAngleDeg` — which existed because *"no branch should be at
+   * such a steep angle that it becomes weird to look at"* — does not reach it,
+   * and the owner said so explicitly: *"it makes sense to allow tendons to expand
+   * past 45 degrees if only just to allow this horizontal structure for pairs of
+   * states so that things become standardized and easy to read."*
+   *
+   * So this is not a cap. It is the slope a tendon takes while it can afford to,
+   * and past `maxTendonRun` the tendon simply gets steeper rather than the column
+   * getting wider. 62° rather than 45° because the trade only pays if it does:
+   * at 45° the run would be `1.5·|bow|`, which is not far off the old law's
+   * `4·|bow|` and would keep the figure enormous.
+   *
+   * **`maxLaneAngleDeg` is gone, and it has no subject left.** Every strand on
+   * this canvas is now a tendon, a level belly and a tendon; a *branch* at a
+   * steep angle is not a shape the layout can produce. What replaces the guard it
+   * carried is `tendonSlope` — reported per lane and bounded by the two runs
+   * above — plus the invariant that every belly is level, which is the property
+   * the old cap was reaching for by limiting how far from level a line could get.
+   */
+  tendonAngleDeg: 62,
 } as const;
 
 /**
- * The narrowest column in which a lane bowed this far off its base stays inside
- * `maxLaneAngleDeg`.
+ * How much of each end a strand bowed this far off its base gives to its tendon.
  *
- * `atan(4·|bow|/span)` is the tangent at a lane's end (see `maxLaneAngleDeg`),
- * so this inverts it: `span ≥ 4·|bow| / tan(cap)`. Exported because it is the
- * whole rule in one line and deserves a test that does not have to build a
- * figure to reach it.
+ * `tendonProfile`'s steepest slope is `1.5·|bow| / run`, so aiming at
+ * `tendonAngleDeg` means `run = 1.5·|bow| / tan(angle)` — floored so every strand
+ * tapers, and **ceilinged**, which is the whole point: past that bow the tendon
+ * steepens instead of the column widening. Exported because it is the rule in one
+ * line and deserves a test that does not have to build a figure to reach it.
+ *
+ * A pure function of the bow, with no span in it. That is deliberate: `measure`
+ * decides the column width and cannot know the span it is about to produce, so a
+ * run that depended on the span would have to be derived twice. The one clamp
+ * that does involve the span — a run may never eat more than half its own range —
+ * is applied once, per parent, in `runAcross` below.
  */
-export function spanForBow(bow: number): number {
-  const tan = Math.tan((CONVERGE_METRICS.maxLaneAngleDeg * Math.PI) / 180);
-  return (4 * Math.abs(bow)) / tan;
+export function tendonRunFor(bow: number): number {
+  const M = CONVERGE_METRICS;
+  const aimed = (1.5 * Math.abs(bow)) / Math.tan((M.tendonAngleDeg * Math.PI) / 180);
+  return Math.min(M.maxTendonRun, Math.max(M.minTendonRun, aimed));
+}
+
+/**
+ * The run a whole row of siblings shares, which is what keeps them from crossing.
+ *
+ * **One run for the row, not one per member.** The crossing-free argument is that
+ * every line in a row is `base + bow·φ(x)` for one shared φ — see the ribbon
+ * block in `strand-geometry.ts`. φ is built from the run, so siblings with
+ * different runs are compared against different φ and the argument evaporates:
+ * two lines could then cross between their bellies. Taking the max means the
+ * row's anchors line up in two vertical columns, which is also what the owner
+ * asked the shape to buy — *"so that things become standardized and easy to
+ * read"*.
+ *
+ * Clamped to half the range so a belly can never invert. That clamp should never
+ * bite, because the column is sized with the run already in it; `every belly is
+ * long enough to hold its own name` is the invariant that says so, and it is a
+ * check on the sizing arithmetic rather than on this line.
+ */
+export function runAcross(bows: readonly number[], length: number): number {
+  const wanted = Math.max(0, ...bows.map((bow) => tendonRunFor(bow)));
+  return Math.min(wanted, length / 2);
 }
 
 /**
@@ -448,24 +498,48 @@ export interface ConvergeLane {
   /**
    * The **spine**: the centre line of this strand, as SVG path data.
    *
-   * Still the plain cubic it always was, and still what every geometric
-   * invariant is asserted against — the crossing-free property is a property of
-   * these curves, and the outline below is derived from it. Drawn faint when the
-   * strand is open, hidden under the fill when it is shut.
+   * A **ribbon** since R14 — cubic in, straight across, cubic out — and no longer
+   * a single cubic. It is still what every geometric invariant is asserted
+   * against: the crossing-free property is a property of these curves and the
+   * outline below is derived from the same numbers. Drawn faint when the strand
+   * is open, hidden under the fill when it is shut.
    */
   d: string;
   /**
-   * The **outline**: the tapered region between `bow ± half`, closed and
-   * fillable. This is what a reader actually sees.
+   * The **outline**: the region between `bow ± half`, closed and fillable. This
+   * is what a reader actually sees — tapered through the two tendons, exactly
+   * `2·half` thick across the whole belly.
    */
   outline: string;
   x0: number;
   x1: number;
   yc: number;
-  /** Signed bow height at the peak, relative to the figure's spine. */
+  /** Signed height of the **belly** above the base. Constant across the belly. */
   bow: number;
-  /** Half the strand's thickness at its thickest point. */
+  /** Half the strand's thickness across its belly. */
   half: number;
+  /**
+   * How much of each end this strand's tendon takes.
+   *
+   * Emitted rather than recomputed from `bow`, because it is not a function of
+   * this lane's bow alone: a row of siblings shares one run so that they cannot
+   * cross (see `runAcross`), and it is additionally clamped to the range. Two
+   * derivations of it is exactly the mistake this file has already paid for with
+   * `hFit`.
+   */
+  run: number;
+  /**
+   * The flat middle, in x — where this lane's name is written and where anything
+   * drawn inside it is laid out.
+   *
+   * `bellyX0 = x0 + run` and `bellyX1 = x1 − run` by construction, and they are
+   * carried anyway for the same reason `run` is: a test or a renderer that
+   * rebuilds them is a second writer of the drawn shape.
+   */
+  bellyX0: number;
+  bellyX1: number;
+  /** The height of the belly: `yc + bow`. */
+  bellyY: number;
   /** 0 for a lane of the figure's own bundles; deeper inside an opened lane. */
   depth: number;
   /**
@@ -646,27 +720,6 @@ export interface ConvergeDiagram {
   chainConsistent: boolean;
   /** A chain of clicks was cut short by `CONVERGE_DEPTH_MAX`. Reported, never silent. */
   depthCapped: boolean;
-}
-
-/**
- * The control-point offset that makes a cubic peak at exactly `bow`.
- *
- * Re-exported from `strand-geometry.ts` rather than restated. It used to live
- * here beside a second copy of the same law in `bowAt`, and the two drifted:
- * `bowAt` used `h = bow` while the emitter used `h = 4·bow/3`, so every
- * invariant sampled a curve three quarters the height of the one on screen.
- */
-export const controlHeight = controlHeightOf;
-
-/**
- * y of the **drawn** bow at parameter t, on a level base at height `yc`.
- *
- * Still exported and still true: a top-level bundle's base *is* level, so this
- * is the closed form of what `strand-geometry.ts` computes for the general case.
- * It is one line thick on purpose — it must never become a second derivation.
- */
-export function bowAt(yc: number, bow: number, t: number): number {
-  return yc + bowDisplacement(bow, t);
 }
 
 /**
@@ -1484,45 +1537,54 @@ interface Measure {
    */
   hFit: number;
   /**
-   * The narrowest **column** in which everything drawn inside this strand stays
-   * inside `maxLaneAngleDeg`.
+   * How much **tendon run** everything inside this strand consumes, in this
+   * strand's own x-units.
    *
-   * A second number rather than part of `hFit`, because `hFit` is the budget a
-   * label is fitted against and that budget has to stay exactly the measured
-   * label demand — the comment above it records two sessions where deriving it
-   * a second way clipped the widest label in the column.
+   * A second number rather than part of `hFit`, and the reason is the one `hFit`
+   * has already been got wrong for twice: `hFit` is the budget a label is fitted
+   * against, and that budget must stay exactly the measured *label* demand. A
+   * fan that needs room for its tendons has not earned its labels more
+   * characters, and letting it would make the drawn text depend on how many
+   * siblings a line has.
    *
-   * It has to recurse, and two earlier attempts at avoiding that were wrong in
-   * opposite directions. Capping each fan against its own spread misses that a
-   * child is allocated around *its parent's* bow, so the offsets add. Capping
-   * the whole column against its band height fixes that but misses the other
-   * half: `place` gives a chain's step a `1/k` share of the column, so a bow one
-   * step deep needs `k` times the room — the same multiplier, and for the same
-   * reason, as `chainColumnNeed`.
+   * It recurses, and it has to. Each level of nesting spends two runs — one at
+   * each end of the belly — before its children get any x at all, and a chain
+   * multiplies whatever its steps spend by `k`, because `place` hands each step
+   * a `1/k` slice of the belly. Same multiplier and same reason as
+   * `chainColumnNeed`.
+   *
+   * **This is what replaced `hDev`/`hScale`, and it is bounded where they were
+   * not.** Those carried a bow down the tree and turned it into `4·|bow|` of
+   * column at the top, which is why a saturated figure measured 87,449px wide.
+   * A run is capped at `maxTendonRun` however large the bow gets, so the width
+   * a level can demand is bounded by its depth rather than by its geometry.
    */
-  hDev: number;
-  /**
-   * How much narrower than this whole strand the tightest slice inside it is.
-   *
-   * 1 for a leaf and for a fan — a fan's children are redrawn on the same
-   * x-range. A chain of `k` steps multiplies it by `k`, because `place` gives
-   * each step a `1/k` slice, so a bow drawn inside one has `1/k` of the run to
-   * get there and needs `k` times the column to stay inside the cap.
-   *
-   * **Not exercised by the authored graph, and said out loud rather than left to
-   * be discovered.** Mutating this line to a plain `max` leaves every test on
-   * the real data green — the deepest compression today is 6x
-   * (`quantum-linear-solve`, an `lcu-chebyshev-transform` step), but no fan puts
-   * a chain far enough off its spine for the offset to need converting into that
-   * chain's units. `hDev`'s own `k` *is* exercised (mutating it fails), so the
-   * chain path is covered and this one factor of it is not. It is kept because
-   * the shape that needs it is a fan of methods whose members are themselves
-   * decomposed, which is exactly the VQE cluster the map is about to gain, and
-   * because a bound that is right only for the graph that exists is not a bound.
-   * Same reasoning, and the same honesty, as `chainColumnNeed` above.
-   */
-  hScale: number;
+  hRun: number;
   children: Measure[];
+}
+
+/** An ingredient stub's drawn name width, capped the same way a lane's is. */
+function feedWidth(feed: { label: string; shortLabel: string | null }): number {
+  const M = CONVERGE_METRICS;
+  return Math.min(M.labelCap, estimateTextWidth(feed.shortLabel ?? feed.label, M.laneFont));
+}
+
+/**
+ * The extra belly length `n` stubs need to stand side by side.
+ *
+ * `placeFeeds` spreads them at `(i+1)/(n+1)` and draws each name from its stub
+ * rightwards with a 4px offset, so the belly has to be `(n+1)·(widest + 4)` long
+ * before two names can miss each other. Returned as the amount **past** what the
+ * steps' own names already bought, because those two demands share one belly and
+ * charging for both would widen every method that has an ingredient.
+ */
+function feedSpread(
+  feeds: readonly { label: string; shortLabel: string | null }[],
+  already: number,
+): number {
+  if (feeds.length === 0) return 0;
+  const widest = Math.max(...feeds.map(feedWidth));
+  return Math.max(0, (feeds.length + 1) * (widest + 4) - already);
 }
 
 function measure(strand: PlanStrand, depth: number): Measure {
@@ -1541,7 +1603,7 @@ function measure(strand: PlanStrand, depth: number): Measure {
     estimateTextWidth(strand.shortLabel ?? strand.label, M.laneFont),
   );
   if (!strand.open || strand.children.length === 0) {
-    return { vHalf: halfAt(depth) + M.labelBand, hFit: own, hDev: 0, hScale: 1, children: [] };
+    return { vHalf: halfAt(depth) + M.labelBand, hFit: own, hRun: 0, children: [] };
   }
   const children = strand.children.map((child) => measure(child, depth + 1));
   // Ingredients hang past everything drawn inside, on one side, and their names
@@ -1551,14 +1613,14 @@ function measure(strand: PlanStrand, depth: number): Measure {
   const feedRoom =
     strand.feeds.length > 0 ? M.innerStateRadius + M.feedRun + M.labelBand : 0;
   if (strand.layout === "chain") {
-    // Children run one after another **along** this strand, so they share its
-    // band and stack its width. The extra `innerStateRadius` is the boundary
-    // circle between two of them, which sits on the spine and pokes out of the
-    // widest child's band.
+    // Children run one after another **along** this strand's belly, so they
+    // share its band and stack its width. The extra `innerStateRadius` is the
+    // boundary circle between two of them, which sits on the belly and pokes out
+    // of the widest child's band.
     //
-    // `count × widest`, not the sum: `place` hands each step an equal share of
-    // the column, so the column has to be wide enough for the widest of them
-    // taken that many times. Summing would size the column for a division the
+    // `count × widest`, not the sum: `place` hands each step an equal slice of
+    // the belly, so the belly has to be long enough for the widest of them taken
+    // that many times. Summing would size the column for a division the
     // placement does not make, and the step with the longest name would be the
     // one clipped.
     return {
@@ -1572,16 +1634,35 @@ function measure(strand: PlanStrand, depth: number): Measure {
         // Capped too. Leaving this site uncapped lets one ingredient name widen
         // a chain's column straight past the cap the lane names respect — and
         // the widest stub today is 324px, so it would have.
-        ...strand.feeds.map((feed) =>
-          Math.min(M.labelCap, estimateTextWidth(feed.shortLabel ?? feed.label, M.laneFont)),
-        ),
+        ...strand.feeds.map(feedWidth),
       ),
-      // A step sits *on* the spine — `place` hands it bow 0 — so a chain adds no
-      // bow of its own. What it does is shrink the room: each step is drawn in a
-      // `1/k` slice, so a demand made inside one is a demand for `k` times as
-      // much column. Same multiplier, same reason, as `chainColumnNeed`.
-      hDev: chainColumnNeed(children.map((child) => child.hDev)),
-      hScale: chainColumnNeed(children.map((child) => child.hScale)),
+      // A step sits **on** the belly — `place` hands it bow 0 — so a chain adds
+      // no bow of its own and buys no tendon of its own. What each step *does*
+      // spend is its own two tendons, which at bow 0 are exactly `minTendonRun`
+      // — the taper that pinches it to a point at its boundary circles. Those,
+      // plus whatever the step spends inside itself, then get the `k` multiplier
+      // for the same reason `chainColumnNeed` does: the step is drawn in a `1/k`
+      // slice, so a run spent inside one is a run the belly has to find `k`
+      // times over.
+      hRun:
+        chainColumnNeed(children.map((child) => child.hRun + 2 * M.minTendonRun)) +
+        // **Room for the stubs to stand side by side**, over and above whatever
+        // the steps' own names already ask for.
+        //
+        // `placeFeeds` puts stub `i` at `(i+1)/(n+1)` of the belly and writes its
+        // name from there *rightwards*, so two stubs are `belly/(n+1)` apart and
+        // the names collide unless that gap holds one. `measure` only ever asked
+        // for the **widest single** stub, so it has never asked for the room the
+        // placement actually needs — three ingredients on one method could always
+        // have written over each other.
+        //
+        // It became visible rather than latent with the tendons, because a belly
+        // is shorter than the span it sits in: read on the rendered page,
+        // `hhl-qpe-inversion` drew *"Simulate Hamiltonian evolutiAmplify a success
+        // branch"*. Charged to `hRun` and not to `hFit` for the reason `hRun`
+        // exists — this is room the *drawing* needs, and a method with three
+        // ingredients has not earned its labels more characters.
+        feedSpread(strand.feeds, chainColumnNeed(children.map((child) => child.hFit))),
       children,
     };
   }
@@ -1614,16 +1695,15 @@ function measure(strand: PlanStrand, depth: number): Measure {
   return {
     vHalf: reach + M.labelBand,
     hFit: Math.max(own, ...children.map((child) => child.hFit)),
-    // A child's bow off *this* base is this fan's offset for it plus whatever it
-    // bows inside itself — the offsets add down the tree, which is the part two
-    // earlier versions of this missed. `spanForBow` is linear in the bow, so the
-    // sum can be carried as one number and converted to a width once, at the
-    // column: a child's own demand is already in its slice's units, so the
-    // offset has to be put into those units too before they add.
-    hDev: Math.max(
-      ...children.map((child, index) => Math.abs(offsets[index]!) * child.hScale + child.hDev),
-    ),
-    hScale: Math.max(...children.map((child) => child.hScale)),
+    // The two runs this fan spends getting its children off its own belly, plus
+    // whatever the deepest of them spends inside itself. **Not** clamped to a
+    // range here: `measure` runs before any span exists, and a run that depended
+    // on the span would have to be derived a second time in `place`. The clamp
+    // lives in `runAcross`, once, and `every belly is long enough to hold its
+    // own name` is what says it never bites.
+    hRun:
+      2 * Math.max(0, ...offsets.map((offset) => tendonRunFor(offset))) +
+      Math.max(0, ...children.map((child) => child.hRun)),
     children,
   };
 }
@@ -1673,10 +1753,12 @@ const nameBudget = (columnFit: number): number =>
   Math.min(columnFit, CONVERGE_METRICS.labelCap);
 
 function place(
-  base: Cubic,
+  base: Level,
   strand: PlanStrand,
   size: Measure,
   bow: number,
+  /** The run this strand's row shares. Decided by the parent — see `runAcross`. */
+  run: number,
   depth: number,
   context: {
     vocabulary: StateVocabulary;
@@ -1691,8 +1773,13 @@ function place(
   const M = CONVERGE_METRICS;
   const { out } = context;
   const half = halfAt(depth);
-  const spine = offsetCubic(base, bow);
-  const peak = peakOf(base, bow);
+  const ribbon: Ribbon = { x0: base.x0, x1: base.x1, y: base.y, bow, run };
+  // The flat middle. Everything this strand contains is laid out on it, and its
+  // midpoint is where the name goes — a **point on a level line** rather than the
+  // peak of an arc, which is what makes a name here sit still while the figure
+  // around it opens and closes.
+  const belly = bellyOf(ribbon);
+  const peak = { x: (belly.x0 + belly.x1) / 2, y: belly.y };
 
   // **An opened strand draws its name at the edge of its band, not of its spine.**
   //
@@ -1778,13 +1865,22 @@ function place(
   out.lanes.push({
     key: strand.key,
     address: strand.address,
-    d: cubicPath(spine),
-    outline: strandOutline(base, bow, half),
+    d: ribbonPath(ribbon),
+    outline: ribbonOutline(ribbon, half),
     x0: base.x0,
-    x1: base.x3,
-    yc: base.y0,
+    x1: base.x1,
+    yc: base.y,
     bow,
     half,
+    run,
+    // Not rounded, and deliberately not: `x0`/`x1`/`yc` are not either, and a
+    // belly that were rounded while its own base was not would be a second,
+    // slightly different account of the same three numbers. The rounding
+    // happens once, in the path emitter, which is where it is a rendering
+    // decision rather than a fact about the layout.
+    bellyX0: belly.x0,
+    bellyX1: belly.x1,
+    bellyY: belly.y,
     depth,
     parentKey: context.parentKey,
     label: fitted.text,
@@ -1840,9 +1936,20 @@ function place(
   if (!strand.open || strand.children.length === 0) return;
 
   if (strand.layout === "chain") {
-    const pieces = splitCubicEven(spine, strand.children.length);
+    // The steps are laid out on the **belly**, which is level, so cutting it is
+    // arithmetic on two numbers rather than four de Casteljau splits — and, more
+    // to the point, every step is then drawn horizontally. That is the half of
+    // R14 the owner named this session: *"tendons … make everything with content
+    // horizontal, so things are easy to read and labels and lines don't cross
+    // structurally."*
+    const pieces = levelSlices(belly, strand.children.length);
+    // Bow 0 for every step, so the row's run is `minTendonRun` — the taper that
+    // pinches each step to a point at its boundary circles. Through `runAcross`
+    // rather than as a literal, so the clamp against a short slice applies here
+    // too and the run a step is drawn with is the run `measure` charged for it.
+    const stepRun = runAcross([0], pieces[0]!.x1 - pieces[0]!.x0);
     for (const [index, child] of strand.children.entries()) {
-      place(pieces[index]!, child, size.children[index]!, 0, depth + 1, {
+      place(pieces[index]!, child, size.children[index]!, 0, stepRun, depth + 1, {
         ...context,
         parentKey: strand.key,
         // Each step gets its share of the column, so a chain of three names is
@@ -1850,12 +1957,13 @@ function place(
         columnFit: context.columnFit / strand.children.length,
       });
     }
-    placeFeeds(base, strand, size, bow, depth, context);
-    // The objects between the steps, sitting exactly where the pieces meet.
+    placeFeeds(belly, strand, size, bow, depth, context);
+    // The objects between the steps, sitting exactly where the pieces meet — on
+    // the belly, at its own height, which is where the steps themselves are.
     for (let index = 1; index < strand.children.length; index += 1) {
       const stateId = strand.boundaries[index - 1];
       if (!stateId) continue;
-      const at = pointOn(base, bow, index / strand.children.length);
+      const at = { x: pieces[index]!.x0, y: belly.y };
       const named = layerState(context.vocabulary, stateId);
       out.inner.push({
         key: `${strand.key}@${index}`,
@@ -1874,16 +1982,24 @@ function place(
     return;
   }
 
-  placeFeeds(base, strand, size, bow, depth, context);
+  placeFeeds(belly, strand, size, bow, depth, context);
   // Around the bone, never on it. See `allocateBowsAroundSpine`.
+  //
+  // Centred on **0**, not on `bow`: a child's base is now this strand's belly, so
+  // its offset is measured from the belly rather than from the figure's own axis.
+  // Passing `bow` here would add this strand's own displacement a second time.
   const bows = allocateBowsAroundSpine(
     size.children.map((child) => child.vHalf),
-    bow,
+    0,
     M.laneGap,
     M.spineBand,
   );
+  // **One run for the whole row.** See `runAcross`: the crossing-free argument is
+  // that every line in a row is `belly + bow·φ` for one shared φ, and φ is built
+  // from the run.
+  const childRun = runAcross(bows, belly.x1 - belly.x0);
   for (const [index, child] of strand.children.entries()) {
-    place(base, child, size.children[index]!, bows[index]!, depth + 1, {
+    place(belly, child, size.children[index]!, bows[index]!, childRun, depth + 1, {
       ...context,
       parentKey: strand.key,
     });
@@ -1903,7 +2019,8 @@ function place(
  * back through the figure's own spine.
  */
 function placeFeeds(
-  base: Cubic,
+  /** The strand's **belly** — stubs hang off the flat part, never off a tendon. */
+  belly: Level,
   strand: PlanStrand,
   size: Measure,
   bow: number,
@@ -1916,7 +2033,7 @@ function placeFeeds(
   const inner = Math.max(0, ...size.children.map((child) => child.vHalf)) + M.innerStateRadius;
   for (const [index, feed] of strand.feeds.entries()) {
     const t = (index + 1) / (strand.feeds.length + 1);
-    const at = pointOn(base, bow, t);
+    const at = { x: belly.x0 + (belly.x1 - belly.x0) * t, y: belly.y };
     const fitted = fitLabel(feed.shortLabel ?? feed.label, M.laneFont, nameBudget(context.columnFit));
     context.out.rightmost = Math.max(
       context.out.rightmost,
@@ -2088,19 +2205,23 @@ export function layoutConverge(options: {
     // deliberately does **not** widen `fit`: a fan that needs room to stay flat
     // has not earned its labels more characters, and letting it would make the
     // drawn text depend on how many siblings a line has.
-    // The bundle's own lanes are spread across this column by the same
-    // allocator, and that spread is subject to the same cap as any fan inside
-    // one of them.
+    //
+    // **This is where the figure stopped being enormous.** It used to be
+    // `spanForBow(offset·hScale + hDev)` — `4·|bow|` of column for a bow of
+    // `|bow|`, because the old law spread the whole rise over the whole span and
+    // the angle cap then bought it back as width. Saturated, that measured
+    // 21,849px on `hamiltonian-simulation` and **87,449px** on
+    // `quantum-linear-solve`. A tendon confines the rise to its own run and the
+    // run has a ceiling, so what a bow costs is now two runs, bounded, per level.
     const offsets = allocateBows(lanes.map((lane) => lane.vHalf), 0, M.laneGap);
-    const spread = spanForBow(
-      Math.max(
-        0,
-        ...lanes.map((lane, index) => Math.abs(offsets[index]!) * lane.hScale + lane.hDev),
-      ),
-    );
+    const runs =
+      2 * runAcross(offsets, Number.POSITIVE_INFINITY) +
+      Math.max(0, ...lanes.map((lane) => lane.hRun));
     return {
-      span: Math.max(M.minSpan, need + M.labelPad * 2, spread),
+      span: Math.max(M.minSpan, need + runs + M.labelPad * 2),
       fit: Math.max(M.minSpan - M.labelPad * 2, need),
+      /** The bundle's shared run, so `place` uses the number the span paid for. */
+      run: runAcross(offsets, Number.POSITIVE_INFINITY),
     };
   });
   const spans = columns.map((column) => column.span);
@@ -2163,11 +2284,16 @@ export function layoutConverge(options: {
   };
 
   for (const [index, bundle] of plan.bundles.entries()) {
-    const base = levelCubic(xs[index]!, xs[index + 1]!, yc);
+    const base: Level = { x0: xs[index]!, x1: xs[index + 1]!, y: yc };
     const halves = measured[index]!.map((lane) => lane.vHalf);
     const bows = allocateBows(halves, 0, M.laneGap);
+    // Clamped against the column that was actually built, not against the
+    // unbounded length the sizing used: `span` is the max of three terms and the
+    // run is only in one of them, so a column that `minSpan` or the label demand
+    // won could in principle be shorter than twice the run the offsets want.
+    const run = runAcross(bows, base.x1 - base.x0);
     for (const [at, lane] of bundle.lanes.entries()) {
-      place(base, lane, measured[index]![at]!, bows[at]!, 0, {
+      place(base, lane, measured[index]![at]!, bows[at]!, run, 0, {
         vocabulary,
         locale,
         focusId: focusParam,
