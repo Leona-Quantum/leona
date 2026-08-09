@@ -11645,6 +11645,24 @@ div.mj-rail-row:hover {
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
 }
+/* The line this page is about — set only on a method's own page, and on exactly
+   one lane of it.
+
+   Weight, not colour and not a dash. The four dash patterns are already spoken
+   for by `standing`, and colour on this canvas means the accent, which already
+   means hover. Drawing this as a fifth dash or a second accent would make a
+   reader believe the literature says something about the line that it does not:
+   the mark means "this is the one you clicked", never "this one is better".
+
+   `.mj-converge-lane` is the group both the body and the name sit in, so the two
+   cannot drift apart — the comment on `laneClass` states why that matters. */
+.mj-converge-lane--subject .mj-converge-strand-body {
+  stroke: currentColor;
+  stroke-width: 1.25;
+}
+.mj-converge-lane--subject .mj-converge-lane-name {
+  font-weight: 600;
+}
 
 /* --- the shared circles -------------------------------------------------- */
 .mj-converge-dot {

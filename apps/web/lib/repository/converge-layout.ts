@@ -682,6 +682,20 @@ export interface ConvergeLane {
   interior: readonly string[];
   /** How many methods fill it — the fan-out one more click down. */
   ways: number;
+  /**
+   * This is the line the page is *about*. False on every lane of a map figure.
+   *
+   * Only `layoutConvergeForMethod` sets it, and it sets it on exactly one lane:
+   * a method's own page draws the fan its method belongs to, and this is which
+   * of the siblings the reader came to read. It exists because **`nodeId` cannot
+   * do the job** — `planForMethod` writes `id: holds ? method.id : null`, so the
+   * 34 leaf methods with nothing inside them carry no id at all, and those are
+   * precisely the pages where every lane otherwise looks the same.
+   *
+   * Not derived downstream from `open` either: a reader can open a sibling, and
+   * then two lanes are open and only one of them is the subject.
+   */
+  subject: boolean;
 }
 
 /**
@@ -2000,6 +2014,10 @@ function place(
   out.lanes.push({
     key: strand.key,
     address: strand.address,
+    // Set once, at the end of `layoutFigure`, by matching this address against
+    // the one the caller named. `place` deliberately does not know which figure
+    // it is building or who asked for it.
+    subject: false,
     d: ribbonPath(ribbon),
     outline: ribbonOutline(ribbon, half),
     x0: base.x0,
@@ -2250,6 +2268,96 @@ function carryViewport<T extends { href: string }>(
   return href === shape.href ? shape : { ...shape, href: href! };
 }
 
+/**
+ * A figure of one **method** — the picture its own page should draw.
+ *
+ * ## What this fixes
+ *
+ * A method's page used to call `layoutConverge` with the capability the method
+ * realizes and add the method's id to `open`, trusting the fan to pick it up.
+ * That works only when the slot's plan **is** a fan. Two slots on today's graph
+ * are not atomic — `linear-ode-solve` (7 methods) and `nonlinear-ode-solve` (4)
+ * — so `layoutConverge` chose `planStateChain`, whose lanes are *slots*, and the
+ * method's own id matched nothing. Measured on `dev` before this landed:
+ *
+ * - **45 of 63** method pages drew a figure with their own method nowhere on it
+ *   (11 absent entirely; 34 more drawn as a lane carrying no id at all);
+ * - **43 of 63** drew a figure byte-identical to another method's page;
+ * - **0 of the corpus's 10 `via` pins** were drawn on the page of the method
+ *   that authored them;
+ * - and for 4 of `linear-ode-solve`'s 7 the shared figure was **false**, not
+ *   merely generic: `lchs-route` routes `linear-ivp → hamiltonian-surrogate →
+ *   evolution-circuit → solution-answer`, and its page drew
+ *   `time-discretization → quantum-linear-solve`.
+ *
+ * ## Why a separate entry point, and not a flag on `layoutConverge`
+ *
+ * The two callers are asking different questions. The map asks *"what does every
+ * route through this slot pass through"* — and the answer must stay the state
+ * chain, because that convergence is the thing the whole surface exists to show.
+ * A page about one method asks *"which of the ways through this slot is this
+ * one, and what is inside it"*, and the answer is always the fan.
+ *
+ * Threading a condition into `layoutConverge`'s plan selection would put those
+ * two questions one boolean apart, in the expression that decides what the map
+ * draws. They share everything downstream and nothing upstream, so the fork is
+ * here, where a reader can see which question is being asked from the function's
+ * name.
+ *
+ * A slot with no methods has no fan; `planMethodFan` returns null and the
+ * diagram comes back `empty`, which is what the page already handles.
+ */
+export function layoutConvergeForMethod(options: {
+  graph: LayerGraph;
+  vocabulary: StateVocabulary;
+  method: LayerMethod;
+  locale: PublicLocale;
+  open?: ReadonlySet<string>;
+  focusParam?: string | null;
+  at?: string | null;
+}): ConvergeDiagram {
+  const { graph, vocabulary, method, locale } = options;
+  const slot = layerNode(graph, method.realizes);
+  if (!slot || !isCapability(slot)) {
+    return {
+      width: 0,
+      height: 0,
+      states: [],
+      lanes: [],
+      feeds: [],
+      caption: labelOf(method, locale),
+      empty: true,
+      unpublishedCount: 0,
+      collapsedCount: 0,
+      grain: "methods",
+      truncated: false,
+      chainConsistent: true,
+      cappedCount: 0,
+    };
+  }
+  // The reader's own `?open=` **and** this method, which is not negotiable: the
+  // page is about what is inside this one way through the slot.
+  const open = new Set([...(options.open ?? []), method.id]);
+  // Which lane of the fan is the subject, by **address**. `methodFanOf` is the
+  // same list `planMethodFan` maps over, in the same order, so the index is the
+  // index — and `addressRoot` is the same call. Deriving it here rather than
+  // having `planMethodFan` stamp a flag keeps the fan builder ignorant of who is
+  // asking, which is what lets the map and this page share it.
+  const fan = methodFanOf(graph, slot);
+  const at = fan ? fan.lanes.findIndex((lane) => lane.method.id === method.id) : -1;
+  return layoutFigure({
+    graph,
+    vocabulary,
+    focus: slot,
+    locale,
+    open,
+    focusParam: options.focusParam === undefined ? slot.id : options.focusParam,
+    at: options.at,
+    plan: "fan",
+    subjectAddress: at === -1 ? null : addressRoot(slot.id, 0, at),
+  });
+}
+
 export function layoutConverge(options: {
   graph: LayerGraph;
   vocabulary: StateVocabulary;
@@ -2281,9 +2389,43 @@ export function layoutConverge(options: {
    */
   at?: string | null;
 }): ConvergeDiagram {
+  return layoutFigure(options);
+}
+
+/**
+ * The shared body. Both entry points above reach here; they differ in `plan`.
+ *
+ * `plan: "auto"` is the map's rule, unchanged and untouched — the state chain is
+ * asked for first and the fan is the answer only when there is no chain.
+ * `plan: "fan"` is a method page saying it already knows which picture it wants.
+ * Keeping the two words apart, in a parameter, is what stops a future edit to
+ * the map's rule from silently deciding what a method page draws.
+ */
+function layoutFigure(options: {
+  graph: LayerGraph;
+  vocabulary: StateVocabulary;
+  focus: LayerCapability;
+  locale: PublicLocale;
+  open?: ReadonlySet<string>;
+  focusParam?: string | null;
+  at?: string | null;
+  plan?: "auto" | "fan";
+  /**
+   * The address of the one lane this figure is *about*, or null.
+   *
+   * An **address**, not a node id, because `planForMethod` sets
+   * `id: holds ? method.id : null` — 34 of the 63 methods are leaves with
+   * nothing inside them, so they carry no node id, and those are exactly the
+   * pages where nothing else on the drawing would tell a reader which line they
+   * came to read about. Only the top-level lane can match this string exactly,
+   * so a nested child of the same method is never mistaken for it.
+   */
+  subjectAddress?: string | null;
+}): ConvergeDiagram {
   const { graph, vocabulary, focus, locale } = options;
   const focusParam = options.focusParam === undefined ? focus.id : options.focusParam;
   const open = options.open ?? new Set<string>();
+  const subjectAddress = options.subjectAddress ?? null;
   const M = CONVERGE_METRICS;
   const expansion: Expansion = expansionOf(graph, vocabulary, focus);
   const caption = labelOf(focus, locale);
@@ -2292,7 +2434,7 @@ export function layoutConverge(options: {
   // is the answer only when there is no chain — never both, and the answer is
   // recorded on the diagram rather than inferred downstream from `lanes.length`.
   const plan =
-    expansion.atomicAtThisLevel || expansion.bundles.length === 0
+    options.plan === "fan" || expansion.atomicAtThisLevel || expansion.bundles.length === 0
       ? planMethodFan(graph, vocabulary, focus, locale, open)
       : planStateChain(graph, vocabulary, expansion, locale, open, focus.id);
 
@@ -2450,6 +2592,11 @@ export function layoutConverge(options: {
     lanes: out.lanes.map((lane) => ({
       ...carryViewport(lane, options.at, open),
       openHref: withViewport(lane.openHref, options.at),
+      // Matched on the address, and matched here rather than in `place`, so the
+      // placement code stays ignorant of who is asking for the figure. Exact
+      // string equality: a child of the subject has a longer address and is a
+      // different line.
+      subject: subjectAddress !== null && lane.address === subjectAddress,
     })),
     feeds: out.feeds.map((feed) => carryViewport(feed, options.at, open)),
     caption,
