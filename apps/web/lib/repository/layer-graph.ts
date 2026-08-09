@@ -329,6 +329,22 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "The complexity is polynomial in the logarithm of the inverse error, an exponential improvement over previous quantum algorithms for this problem. No matrix-query or state-preparation query count appears in the abstract; a κ_V-dependent expression often attached to this method in secondary summaries belongs to the spectral-method row of a later comparison table, so it is not reproduced here.",
     costJa: "計算量は誤差の逆数の対数について多項式であり、この問題に対する従来の量子アルゴリズムからの指数的な改善です。要旨には行列クエリ数も状態準備クエリ数も示されていません。二次的な要約でこの手法に付されがちな κ_V を含む式は、後年の比較表におけるスペクトル法の行のものですので、ここでは再掲しません。",
     steps: ["time-discretization", "quantum-linear-solve"],
+    // **The pin the owner's "the same picture twice" complaint pointed at.**
+    // This method's own name says *truncated Taylor propagator*, and
+    // `truncated-taylor-propagator` already exists one level down as a way
+    // through `time-discretization` — the same Berry-Childs-Ostrander-Wang
+    // construction, filed where it belongs. Unpinned, this method drew
+    // `time-discretization + quantum-linear-solve`, which is character for
+    // character what `krovi-linear-ode` and `dyson-all-at-once` drew, and the
+    // name was on the map twice as two separate nodes.
+    //
+    // Pinning is not collapsing. The three stay three methods, because they are
+    // three papers with three sets of conditions. What stops being identical is
+    // the *picture*: this one now says which discretization it uses and the
+    // other two do not — `dyson-all-at-once` wants a `truncated-dyson-series`
+    // node nobody has authored, and that needs the paper and a citation (R1,
+    // R10), so it is content work rather than a pin.
+    via: { "time-discretization": "truncated-taylor-propagator" },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
