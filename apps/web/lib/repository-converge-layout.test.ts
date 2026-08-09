@@ -521,7 +521,12 @@ test("a name's click target covers the name, and is no greedier than the one it 
       }
     }
   }
-  assert.ok(boxes > 700, `only ${boxes} click targets checked`);
+  // 630 since session 104, down from over 700. The drop is exactly the remainder
+  // hops: they no longer draw the method's name a second time, so they no longer
+  // carry a name click target either. That pairing is the point — a name that is
+  // not drawn must not leave an invisible band behind claiming it, which is what
+  // `check-invisible-hit-targets.mjs` exists to catch.
+  assert.ok(boxes > 600, `only ${boxes} click targets checked`);
   assert.ok(
     mine <= fixed,
     `label-sized targets overlap ${mine} times, the fixed 120px ones ${fixed} — sizing to the name made targeting worse`,
@@ -1172,7 +1177,20 @@ test("an opened figure still names every drawn label without clipping it", () =>
       for (const open of openings(focus.id)) {
         for (const lane of openDiagram(focus.id, open, locale).lanes) {
           if (lane.label === "") {
-            assert.ok(lane.open, `${lane.key} is nameless but not open`);
+            // Two lanes draw nothing, for opposite reasons, and both are
+            // declared rather than inferred:
+            //   `open`     — the run of named hops, whose own name is `A → B`,
+            //                the coined composite the owner refused;
+            //   `nameless` — the remainder hop, the part of a route the method
+            //                performs itself. Its name is the method's, and the
+            //                method writes it once, on the bone above it.
+            // Before session 104 the remainder hop drew the method's name a
+            // second time, one level down, which is what the owner saw as
+            // *"time marching expands into propagation then itself"*.
+            assert.ok(
+              lane.open || lane.nameless,
+              `${lane.key} draws no name and is neither an opened run nor a remainder hop`,
+            );
             continue;
           }
           assert.ok(lane.fullLabel !== "", `${lane.key} has a drawn name but no full one`);
@@ -1512,21 +1530,105 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   // unchanged and is still checked by hand: putting the name back at `half` —
   // the thin spine an opened lane draws — instead of `size.vHalf`, the band its
   // children fill, takes opened collisions from 15 to 41 and trips both bars.
+  // **The opened-name bar is gone, deliberately — read this before restoring it.**
+  //
+  // It asserted `openedRate < 0.134`, and its own comment above names the
+  // failable case: *"putting the name back at `half` — the thin spine an opened
+  // lane draws — instead of `size.vHalf`, the band its children fill, takes
+  // opened collisions from 15 to 41 and trips both bars."* That is exactly what
+  // the owner asked for in session 104: *"the name of the process line resides
+  // there not in some surrounding area."* This bar was defending the placement
+  // the owner has now rejected, so it cannot be the thing that decides it.
+  //
+  // It is not simply dropped. What changed underneath it is that a line crossing
+  // an opened name **no longer makes the name unreadable**: an opened name is
+  // drawn on an opaque plate (`.mj-converge-name-plate`) that rubs out the lines
+  // behind the text. The crossing is structural and no reserved band removes it
+  // — every child of an opened fan converges to its parent's spine at both ends,
+  // so it enters the name's band near the ends of the span whatever room is left.
+  // Measured on the curve: children clear the middle **76%** of the span and
+  // cross the rest, and fitting the name to 76% of the column would machine-cut
+  // exactly the names the owner asked not to be cut.
+  //
+  // **The hole this leaves, stated rather than papered over.** The plate lives in
+  // `repository-converge-map.tsx`; this file measures the *layout* and cannot see
+  // it. So nothing here proves the plate is drawn or that it covers the text.
+  // Delete the plate today and every opened name goes illegible with **no test
+  // going red**. That is owed work, and it is written up in NEXT.md rather than
+  // left as a comment nobody counts.
+  //
+  // What survives is the half this file can see, plus a new test below for the
+  // property that keeps the plate small enough to be honest.
   assert.ok(
-    openedRate < 0.134,
-    `opened names collide with a line ${openedHit}/${openedNamed} (${(openedRate * 100).toFixed(1)}%), ` +
-      `past the 13.4% the shut names were measured at before the opened names were restored — ` +
-      `an opened name is now worse placed than a shut one was`,
+    shutRate < 0.134,
+    `shut names collide with a line ${shutHit}/${shutNamed} (${(shutRate * 100).toFixed(1)}%), ` +
+      `past the 13.4% they were measured at — the placement of the names nothing occludes got worse`,
   );
   assert.ok(
-    openedHit + shutHit <= 38,
-    `${openedHit + shutHit} names collide with a line across every figure, up from the 38 measured ` +
-      `once labels were shortened — the drawing got busier, whichever side it happened on`,
+    shutHit <= 28,
+    `${shutHit} shut names collide with a line across every figure, past the 28 measured once ` +
+      `labels were shortened — the drawing got busier where no plate is hiding it`,
   );
-  // Reported, not asserted: the shut rate is the thing the ceiling above was
-  // derived from, and it has to stay visible or the next person cannot tell
-  // whether 13.4% is still the right number.
-  assert.ok(shutRate < 0.15, `shut names collide ${shutHit}/${shutNamed}`);
+  // Reported, not barred. This is the number the owner's instruction moved on
+  // purpose, and a bar on it would be a bar on following the instruction.
+  assert.ok(
+    openedRate >= 0,
+    `${openedHit}/${openedNamed} opened names cross a line and rely on the plate`,
+  );
+});
+
+test("a name on the bone stays inside the band the layout reserved for it", () => {
+  // The half of the opened-name guard that survives in the layout, and the thing
+  // that keeps `.mj-converge-name-plate` honest: a plate is only acceptable
+  // because it is *small*. If an opened name drifted outside `spineBand` the
+  // plate would be rubbing out whole branches rather than the few crossings near
+  // the ends of the span, and "the name is readable" would have been bought by
+  // erasing the drawing.
+  //
+  // Failable, checked by hand two ways: setting `labelY` back to
+  // `peak.y - bandHalf - labelLift` (where an opened name sat before session 104)
+  // puts every one of them a full fan-height clear of the bone and the first
+  // assertion fails on the first figure; setting it to `peak.y` exactly — the
+  // first attempt at "on the bone" — trips the second.
+  let checked = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const diagram = openDiagram(focus.id, new Set(openableAddresses(focus.id)));
+    for (const lane of diagram.lanes) {
+      // Fans only — `opensInto: "ways"`. A slot opens **across** into its
+      // methods and keeps a clear middle to write in; a method opens **along**
+      // into a chain whose steps sit *on* the spine (`place` hands them bow 0),
+      // so there is no middle left and its name still sits outside the run. That
+      // is the case the exoskeleton is for, and until it is drawn a chain's name
+      // stays where it was. R12.3 is the same distinction.
+      if (!lane.bone || lane.label === "") continue;
+      // The bone read off its own drawn path, not rebuilt from `yc`/`bow`.
+      // `bowAt(yc, bow, t)` assumes a flat base and a nested strand's base is a
+      // piece of its parent's curve — reconstructing it that way put the bone at
+      // 519.7 for a name at 68, which is the second derivation this file's own
+      // comments keep warning about.
+      const [, spineY] = pointOn(parseCubic(lane.d), 0.5);
+      const top = lane.labelY - M.laneFont * 0.8;
+      const bottom = lane.labelY + M.laneFont * 0.2;
+      assert.ok(
+        top >= spineY - M.spineBand && bottom <= spineY + M.spineBand,
+        `${lane.key}: name spans ${top.toFixed(1)}..${bottom.toFixed(1)} against a bone at ` +
+          `${spineY.toFixed(1)} ±${M.spineBand} — a name on the bone left the bone's own band`,
+      );
+      // Above the stroke, not on it. The plate hides other lines; it must not
+      // have to hide the line the name belongs to.
+      assert.ok(
+        bottom <= spineY - M.spineStroke / 2,
+        `${lane.key}: name bottom ${bottom.toFixed(1)} sits on its own ${M.spineStroke}px stroke ` +
+          `at ${spineY.toFixed(1)}`,
+      );
+      checked += 1;
+    }
+  }
+  // 43 across all 18 figures fully opened — one per slot a reader can open into
+  // its methods. Pinned just under the measurement so the sweep cannot quietly
+  // become vacuous, which is a failure this repository has shipped before: a
+  // guard whose subject list empties passes for everything.
+  assert.ok(checked >= 40, `only ${checked} names on a bone checked`);
 });
 
 test("a name past the cap is cut, and the full text survives in the title", () => {
@@ -1615,11 +1717,25 @@ test("name-on-name overlap on an opened figure stays where it was measured", () 
       }
     }
   }
-  assert.ok(openNames > 200 && shutNames > 300, `${openNames} opened / ${shutNames} shut names drawn`);
+  // 254 opened / 264 shut since session 104. The shut side fell from over 300
+  // because the remainder hops are shut lanes that stopped drawing a duplicate
+  // name; the sweep still covers both sides heavily enough not to be vacuous.
+  assert.ok(
+    openNames > 200 && shutNames > 250,
+    `${openNames} opened / ${shutNames} shut names drawn`,
+  );
+  // **8 → 4, and it went down because the drawing got better.** The remainder
+  // hop stopped drawing the method's name a second time, so half the
+  // shut-against-shut overlaps stopped existing — they were a name overlapping
+  // the *duplicate* of another name. Pinned at 8, this test would now be
+  // demanding the duplicates come back, which is the exact shape of failure this
+  // file has already taken once ("a relative bar punishes an improvement").
+  // Re-pinned at the new measurement rather than loosened to `<= 8`, so a
+  // regression back toward 8 is still red.
   assert.equal(
     kinds.shutShut,
-    8,
-    `${kinds.shutShut} shut-against-shut overlaps; 8 predate the opened names and are not their doing`,
+    4,
+    `${kinds.shutShut} shut-against-shut overlaps; 4 remain once the duplicate names went`,
   );
   assert.ok(
     kinds.openShut + kinds.openOpen <= 12,

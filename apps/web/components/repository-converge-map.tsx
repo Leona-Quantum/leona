@@ -257,7 +257,10 @@ function Lane({
           that one went missing. The anchors keep their own, action-specific
           titles: "click the line to open it here" is about the control. */}
       {lane.open ? (
-        <path className="mj-converge-spine" d={lane.d}>
+        <path
+          className={`mj-converge-spine${lane.bone ? " mj-converge-spine--bone" : ""}`}
+          d={lane.d}
+        >
           <title>{title}</title>
         </path>
       ) : (
@@ -294,6 +297,36 @@ function Lane({
               this string: the same number that sized the column, carried, never
               re-derived here. A second derivation of a width is exactly what
               clipped the widest label in a column built for it, twice. */}
+          {/* **The plate under a bone's name.**
+              An opened line wears its name on itself now (owner, session 104:
+              *"the name of the process line resides there not in some
+              surrounding area"*), and that position is structurally crossed:
+              every child of an opened fan converges to the parent's spine at
+              both ends, so a name written near it is passed through by its own
+              branches near the ends of the span whatever band is reserved.
+              Measured — the branches clear the middle 76% of the span and cross
+              the rest, so no band width fixes it and fitting the name to 76% of
+              the column would machine-truncate exactly the names the owner asked
+              not to be cut.
+              So the name is occluded rather than moved: an opaque plate in the
+              canvas fill, drawn under the text and over the lines. Only for
+              opened lanes — a shut name sits clear of its own band and a plate
+              there would rub out lines for nothing. */}
+          {lane.bone ? (
+            <rect
+              className="mj-converge-name-plate"
+              x={n(lane.labelX - lane.labelWidth / 2 - 5)}
+              y={n(lane.labelY - 12)}
+              width={n(lane.labelWidth + 10)}
+              /* 16, not 14. Measured against `getBBox()` on the rendered page:
+                 a 12px Japanese name draws 15.2px tall (ascender to descender)
+                 and a 14px plate left 1.2px of it uncovered, which is exactly
+                 the row of pixels a dotted line runs through. The plate has to
+                 be measured against the *drawn* text, not against the font
+                 size. */
+              height="16"
+            />
+          ) : null}
           <rect
             className="mj-converge-hit"
             x={n(lane.labelX - lane.labelWidth / 2 - 4)}
