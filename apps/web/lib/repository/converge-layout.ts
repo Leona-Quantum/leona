@@ -737,9 +737,28 @@ export function allocateBowsAroundSpine(
   // Ceil, so the extra member of an odd fan sits **above** the bone: the reading
   // order of a fan is top-first, and a reader who opens a line looks up.
   const mid = Math.ceil(halves.length / 2);
-  const withSpine = [...halves.slice(0, mid), spineHalf, ...halves.slice(mid)];
-  const all = allocateBows(withSpine, centre, gap);
-  return [...all.slice(0, mid), ...all.slice(mid + 1)];
+  const out: number[] = new Array(halves.length);
+  // Packed **outward from the spine's own edges**, not centred as a row that
+  // happens to contain the spine. Centring the row is what the first version
+  // did, and it only holds the spine at `centre` when the two groups are
+  // mirror images: with one child, `[20, 22]` centres to put the child at
+  // `centre - 27` and the spine at `centre + 25`, so the child's band reaches
+  // `centre - 7` — *inside* the band the spine reserved, which is the whole
+  // thing this function exists to prevent, on the 23-of-29 case (a fan of one).
+  // Every odd fan drifts the same way.
+  let cursor = centre - spineHalf - gap;
+  for (let index = mid - 1; index >= 0; index -= 1) {
+    const half = halves[index]!;
+    out[index] = cursor - half;
+    cursor -= half * 2 + gap;
+  }
+  cursor = centre + spineHalf + gap;
+  for (let index = mid; index < halves.length; index += 1) {
+    const half = halves[index]!;
+    out[index] = cursor + half;
+    cursor += half * 2 + gap;
+  }
+  return out;
 }
 
 /**
@@ -1570,15 +1589,6 @@ function measure(strand: PlanStrand, depth: number): Measure {
   // is breathing room between an opened group and the siblings it has just
   // pushed apart.
   //
-  // `spineBand` and one more `laneGap` than there are gaps between children:
-  // the opened line is a member of this row now, holding the middle so no branch
-  // covers it. Written as the closed form of what `allocateBowsAroundSpine`
-  // packs, and the test file checks the two agree — the same arrangement
-  // `laneOffsets` has with `allocateBows`.
-  const spread =
-    children.reduce((sum, child) => sum + child.vHalf * 2, 0) +
-    M.spineBand * 2 +
-    M.laneGap * children.length;
   // The very offsets `place` will use, computed from the same allocator against
   // the same half-bands, so the bound is measured against the drawing rather
   // than against an idea of it.
@@ -1588,8 +1598,21 @@ function measure(strand: PlanStrand, depth: number): Measure {
     M.laneGap,
     M.spineBand,
   );
+  // Read off those offsets, **not** from a closed form of the row's total. The
+  // closed form (`half the summed spread`) is only the true half-band when the
+  // two groups mirror each other, and since `mid` is a ceil they never do for an
+  // odd fan: a fan of one measured 47 against a drawing that reaches 72, so the
+  // parent reserved a band its own child overflowed by 25px. The groups are
+  // asymmetric by construction now, so the half-band is the furthest edge any
+  // member actually reaches — floored at the spine's own band, because a fan of
+  // one leaves the other side of the bone empty and the bone still needs its
+  // room.
+  const reach = Math.max(
+    M.spineBand,
+    ...children.map((child, index) => Math.abs(offsets[index]!) + child.vHalf),
+  );
   return {
-    vHalf: spread / 2 + M.labelBand,
+    vHalf: reach + M.labelBand,
     hFit: Math.max(own, ...children.map((child) => child.hFit)),
     // A child's bow off *this* base is this fan's offset for it plus whatever it
     // bows inside itself — the offsets add down the tree, which is the part two

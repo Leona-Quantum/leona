@@ -18,6 +18,7 @@ import {
   crossingsAt,
   drawableSlots,
   allocateBows,
+  allocateBowsAroundSpine,
   chainColumnNeed,
   laneOffsets,
   reservedHalfHeight,
@@ -411,6 +412,89 @@ test("an odd fan runs one lane straight through the middle; an even fan straddle
 
 test("laneOffsets is empty for an empty fan rather than drawing one lane", () => {
   assert.deepEqual(laneOffsets(0), []);
+});
+
+test("no branch of a fan enters the band the opened line reserved for itself", () => {
+  // The property `allocateBowsAroundSpine` exists for, asserted on the numbers
+  // it returns rather than on the arrangement it was meant to produce.
+  //
+  // Failable: restoring the first version — insert `spineHalf` as a virtual
+  // member and centre the whole row with `allocateBows` — fails this on the
+  // first case. A fan of one gets `[20, 22]`, which centres the child at
+  // `centre - 27` where its band reaches `centre - 7`, 15px inside a band of
+  // 22. That case is not exotic: 23 of the 29 decomposed routes are a fan of
+  // one, so it was the majority of the drawing.
+  const spineHalf = 22;
+  const gap = 10;
+  for (const halves of [
+    [20],
+    [20, 20],
+    [20, 20, 20],
+    [20, 20, 20, 20],
+    [20, 20, 20, 20, 20],
+    // Uneven bands, which is what a fan with one member opened looks like.
+    [140, 20],
+    [20, 140, 20],
+    [20, 20, 140],
+    [9, 200, 31, 12],
+  ]) {
+    const offsets = allocateBowsAroundSpine(halves, 0, gap, spineHalf);
+    assert.equal(offsets.length, halves.length);
+    for (const [index, offset] of offsets.entries()) {
+      const half = halves[index]!;
+      const near = Math.abs(offset) - half;
+      assert.ok(
+        near >= spineHalf + gap - EPS,
+        `fan ${JSON.stringify(halves)}: member ${index} at ${offset} with half ${half} reaches ` +
+          `${near} from the bone, inside the ${spineHalf} the bone reserved`,
+      );
+    }
+    // Ordered, so the curves still nest, and no two members overlap each other.
+    const sorted = [...offsets].sort((x, y) => x - y);
+    assert.deepEqual(offsets, sorted, `fan ${JSON.stringify(halves)} is out of order`);
+    for (let index = 1; index < offsets.length; index += 1) {
+      const clearance =
+        offsets[index]! - halves[index]! - (offsets[index - 1]! + halves[index - 1]!);
+      assert.ok(
+        clearance >= -EPS,
+        `fan ${JSON.stringify(halves)}: members ${index - 1} and ${index} overlap by ${-clearance}`,
+      );
+    }
+  }
+  assert.deepEqual(allocateBowsAroundSpine([], 0, gap, spineHalf), []);
+});
+
+test("a fan reserves the band its own branches reach, not half of a summed row", () => {
+  // The measurement half of the same bug. `measure` used to return
+  // `spread / 2`, which is the true half-band only when the two groups mirror
+  // each other — and `mid` is a ceil, so for an odd fan they never do.
+  //
+  // Failable: `spread / 2 + labelBand` for the first case below is 47 against a
+  // drawing that reaches 72, so the parent reserved a band its own child
+  // overflowed by 25px and the siblings it was packed against never knew.
+  for (const halves of [[20], [20, 20, 20], [140, 20, 20]]) {
+    const offsets = allocateBowsAroundSpine(halves, 0, M.laneGap, M.spineBand);
+    const reach = Math.max(...offsets.map((offset, index) => Math.abs(offset) + halves[index]!));
+    const spread =
+      halves.reduce((sum, half) => sum + half * 2, 0) + M.spineBand * 2 + M.laneGap * halves.length;
+    assert.ok(
+      reach > spread / 2 + EPS,
+      `fan ${JSON.stringify(halves)} reaches ${reach}, which the old closed form ${spread / 2} ` +
+        `would have covered — this case can no longer tell the two apart`,
+    );
+  }
+  // An even fan is the case where the two agree, and it must keep agreeing —
+  // otherwise the fix moved every figure, not just the odd ones.
+  for (const halves of [[20, 20], [20, 20, 20, 20], [140, 20, 20, 140]]) {
+    const offsets = allocateBowsAroundSpine(halves, 0, M.laneGap, M.spineBand);
+    const reach = Math.max(...offsets.map((offset, index) => Math.abs(offset) + halves[index]!));
+    const spread =
+      halves.reduce((sum, half) => sum + half * 2, 0) + M.spineBand * 2 + M.laneGap * halves.length;
+    assert.ok(
+      Math.abs(reach - spread / 2) < EPS,
+      `a mirrored fan ${JSON.stringify(halves)} reaches ${reach} against ${spread / 2}`,
+    );
+  }
 });
 
 // --- text, which is where the old canvas's collisions actually lived ---------
@@ -1176,23 +1260,33 @@ test("an opened figure still names every drawn label without clipping it", () =>
     for (const locale of ["en", "ja"] as const) {
       for (const open of openings(focus.id)) {
         for (const lane of openDiagram(focus.id, open, locale).lanes) {
+          // Two lanes draw nothing, for opposite reasons, and both are
+          // **declared** rather than inferred:
+          //   `composite` — the run of named hops, whose own name would be
+          //                 `A → B`, the coined composite the owner refused;
+          //   `nameless`  — the remainder hop, the part of a route the method
+          //                 performs itself. Its name is the method's, and the
+          //                 method writes it once, on the bone above it.
+          // Before session 104 the remainder hop drew the method's name a
+          // second time, one level down, which is what the owner saw as
+          // *"time marching expands into propagation then itself"*.
+          //
+          // Checked both ways round, which is what makes it a check rather than
+          // a restatement: `lane.open` was here first and is not the predicate —
+          // an ordinary opened lane that lost its name would have passed.
+          const declaredSilent = lane.composite || lane.nameless;
           if (lane.label === "") {
-            // Two lanes draw nothing, for opposite reasons, and both are
-            // declared rather than inferred:
-            //   `open`     — the run of named hops, whose own name is `A → B`,
-            //                the coined composite the owner refused;
-            //   `nameless` — the remainder hop, the part of a route the method
-            //                performs itself. Its name is the method's, and the
-            //                method writes it once, on the bone above it.
-            // Before session 104 the remainder hop drew the method's name a
-            // second time, one level down, which is what the owner saw as
-            // *"time marching expands into propagation then itself"*.
             assert.ok(
-              lane.open || lane.nameless,
-              `${lane.key} draws no name and is neither an opened run nor a remainder hop`,
+              declaredSilent,
+              `${lane.key} draws no name and is neither a composite run nor a remainder hop`,
             );
             continue;
           }
+          assert.ok(
+            !declaredSilent,
+            `${lane.key} declares itself silent (composite=${lane.composite} ` +
+              `nameless=${lane.nameless}) yet draws "${lane.label}"`,
+          );
           assert.ok(lane.fullLabel !== "", `${lane.key} has a drawn name but no full one`);
           assert.equal(
             lane.labelTruncated,
@@ -1675,25 +1769,28 @@ test("a name past the cap is cut, and the full text survives in the title", () =
   }
 });
 
-test("name-on-name overlap on an opened figure stays where it was measured", () => {
-  // **The residue of restoring the opened names, counted rather than hidden.**
+test("no two names overlap on an opened figure either", () => {
+  // **This used to be a budget. It is now zero, and the zero was not bought.**
   //
-  // `two lane labels never overlap` above is absolute and passes — but it only
-  // ever ran on figures with **nothing open**, and at full saturation the picture
-  // is not clean: 8 pairs of *shut* names already overlapped before any of this,
-  // and restoring 254 opened names added 12 more (4 opened-against-shut, 8
-  // opened-against-opened).
+  // `two lane labels never overlap` above is absolute but only ever ran on
+  // figures with **nothing open**. At full saturation the picture used to carry
+  // 20 overlapping pairs: 8 shut-against-shut that predated the opened names, and
+  // 12 more that came in with them. They were pinned by kind and shipped, because
+  // the only fix measured at the time — widening the reserved label band from
+  // 13px to 17px — removed 4 of the 20 and cost 16% more width and 14% more
+  // height on every figure.
   //
-  // Those 12 are shipped deliberately. The alternative measured was widening the
-  // reserved label band from 13px to 17px so it covers the name's actual vertical
-  // reach (`labelLift + 0.8 × laneFont` = 16.6, which it does not) — that removes
-  // 4 of the 20 and costs **16% more width and 14% more height on every figure**,
-  // on a canvas the owner has already said is too wide. Twelve overlaps in a
-  // state a reader reaches after ~54 deliberate clicks is a better trade than 128
-  // lines that draw no name at all in the state they reach on the first one.
+  // All 20 are gone, and none of that was the cause. Two sessions removed them
+  // for unrelated reasons: the remainder hop stopped printing a method's name a
+  // second time (8 → 4, half of them were a name overlapping a *duplicate* of
+  // another name), and then the fan allocator stopped centring a row that
+  // contained the virtual spine. The second one is why the rest went: an odd
+  // fan's half-band was measured as half a mirrored row it is not, so a parent
+  // reserved less room than its own branches occupy and packed its siblings into
+  // the shortfall. Correcting the measurement separated them.
   //
-  // Pinned by kind so the trade cannot quietly get worse, and so the 8 that were
-  // here first stay attributable to what caused them.
+  // Pinned at 0 by kind rather than relaxed to a bound, so any of the three
+  // kinds coming back is red and stays attributable.
   let openNames = 0;
   let shutNames = 0;
   const kinds = { shutShut: 0, openShut: 0, openOpen: 0 };
@@ -1724,23 +1821,12 @@ test("name-on-name overlap on an opened figure stays where it was measured", () 
     openNames > 200 && shutNames > 250,
     `${openNames} opened / ${shutNames} shut names drawn`,
   );
-  // **8 → 4, and it went down because the drawing got better.** The remainder
-  // hop stopped drawing the method's name a second time, so half the
-  // shut-against-shut overlaps stopped existing — they were a name overlapping
-  // the *duplicate* of another name. Pinned at 8, this test would now be
-  // demanding the duplicates come back, which is the exact shape of failure this
-  // file has already taken once ("a relative bar punishes an improvement").
-  // Re-pinned at the new measurement rather than loosened to `<= 8`, so a
-  // regression back toward 8 is still red.
-  assert.equal(
-    kinds.shutShut,
-    4,
-    `${kinds.shutShut} shut-against-shut overlaps; 4 remain once the duplicate names went`,
-  );
-  assert.ok(
-    kinds.openShut + kinds.openOpen <= 12,
-    `${kinds.openShut + kinds.openOpen} overlaps involve a restored name (was 12: ` +
-      `${kinds.openShut} opened-against-shut, ${kinds.openOpen} opened-against-opened)`,
+  assert.deepEqual(
+    kinds,
+    { shutShut: 0, openShut: 0, openOpen: 0 },
+    `names overlap on a fully opened figure: ${kinds.shutShut} shut-against-shut, ` +
+      `${kinds.openShut} opened-against-shut, ${kinds.openOpen} opened-against-opened. ` +
+      `All three were 0 once the fan allocator stopped centring a row containing the spine`,
   );
 });
 
