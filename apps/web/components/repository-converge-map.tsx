@@ -211,7 +211,14 @@ function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React
 function laneClass(lane: ConvergeLane, documented: boolean): string {
   return `mj-converge-lane mj-converge-lane--${lane.standing}${
     lane.open ? " mj-converge-lane--open" : ""
-  }${documented ? " mj-converge-lane--atlas" : ""}`;
+  }${documented ? " mj-converge-lane--atlas" : ""}${
+    // The line the page is *about*, on a method's own page. Not a standing and
+    // not a category: those say what the literature records about a line, and
+    // this says which line the reader clicked to get here. It is also the only
+    // thing that tells two sibling leaves' pages apart — their fans are the same
+    // drawing otherwise, which is how 43 of 63 method pages came to share one.
+    lane.subject ? " mj-converge-lane--subject" : ""
+  }`;
 }
 
 function isDocumented(lane: ConvergeLane, atlas: ReadonlySet<string>): boolean {

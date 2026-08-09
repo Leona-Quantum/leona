@@ -27,6 +27,7 @@ import {
   tendonRunFor,
   runAcross,
   layoutConverge,
+  layoutConvergeForMethod,
   legendMark,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -2996,7 +2997,15 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
 ];
 
 /**
- * Methods with an interior that the map draws **nowhere**, and why.
+ * Methods with an interior **the map** draws nowhere, and why.
+ *
+ * Since session 110 the qualifier is load-bearing and the name is a little
+ * narrow: all four of these ARE drawn, on their own pages, because
+ * `layoutConvergeForMethod` fans their slot unconditionally. What they are
+ * missing is a lane on the *map*, whose root figures stay state chains on
+ * purpose — that convergence is the thing the map exists to show. So this list
+ * is still exactly right about `drawnInteriors()`, which sweeps saturated slot
+ * figures, and a later session must not read it as "nothing draws these".
  *
  * Not a footnote — it is the denominator of the census below, and without it
  * that census reads as covering the graph when it covers what the graph happens
@@ -3096,4 +3105,168 @@ test("no two routes through one slot draw the same interior unless something say
   // Not vacuous in the other direction either: if every group were a singleton
   // the loop above would assert nothing at all and the list would look clean.
   assert.equal(matched.size, DRAWN_TWINS.length);
+});
+
+// --- a method's own page draws that method -------------------------------
+//
+// Nothing tested this surface at all until session 110: every `layoutConverge(`
+// call in this file passed a **capability**, and `repository-layers.test.ts`
+// (1,302 lines) mentions neither the zoom nor the layout. So the page a reader
+// reaches from every method name on the map was unguarded, and it was wrong —
+// 45 of 63 pages drew a figure with their own method nowhere on it, 43 of 63
+// drew a figure byte-identical to another method's page, and not one of the
+// corpus's ten `via` pins was drawn on the page of the method that pinned it.
+//
+// The three assertions below are the three failures, one each. They are stated
+// over **every** method rather than over a list, because a list is what let this
+// survive: the census above sweeps saturated *slot* figures, so no matter how
+// carefully it was written it could not see a defect that lives on the pages.
+
+/** The figure `ProcessZoom` builds for a method's own page. One definition. */
+function pageFigure(methodId: string, locale: "en" | "ja" = "en"): ConvergeDiagram {
+  const node = layerNode(LAYER_GRAPH, methodId);
+  assert.ok(node && isMethod(node), `${methodId} is not a method`);
+  return layoutConvergeForMethod({
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    method: node,
+    locale,
+    at: null,
+  });
+}
+
+/**
+ * What a reader can **see** of a figure, and nothing else.
+ *
+ * Deliberately excludes `href` and `address`: those already differed across all
+ * 63 pages while the drawing was identical on 43 of them, because `withOpen`
+ * copies the unmatched id into every link. Hashing them would have made the
+ * duplicate assertion below pass on the defect it exists to catch.
+ */
+function drawnShape(diagram: ConvergeDiagram): string {
+  return JSON.stringify({
+    w: diagram.width,
+    h: diagram.height,
+    grain: diagram.grain,
+    caption: diagram.caption,
+    states: diagram.states.map((state) => [state.stateId, state.cx, state.cy, state.r]),
+    lanes: diagram.lanes.map((lane) => [
+      lane.fullLabel,
+      lane.d,
+      lane.outline,
+      lane.open,
+      lane.depth,
+      lane.subject,
+    ]),
+    feeds: diagram.feeds.map((feed) => [feed.nodeId, feed.x, feed.y0, feed.y1]),
+  });
+}
+
+const METHOD_IDS = LAYER_GRAPH.nodes.filter(isMethod).map((node) => node.id);
+
+test("every method's own page draws that method, marked as the one it is about", () => {
+  // The denominator, printed. A sweep over an empty list passes every clause
+  // under it, and this one is built from a filter.
+  console.log(`method pages swept: ${METHOD_IDS.length}`);
+  assert.ok(METHOD_IDS.length >= 60, `only ${METHOD_IDS.length} methods — the sweep has gone quiet`);
+
+  const empty: string[] = [];
+  for (const id of METHOD_IDS) {
+    const diagram = pageFigure(id);
+    if (diagram.empty) {
+      empty.push(id);
+      continue;
+    }
+    const subjects = diagram.lanes.filter((lane) => lane.subject);
+    assert.equal(
+      subjects.length,
+      1,
+      `${id}: ${subjects.length} lanes marked as the subject of its own page, expected exactly 1`,
+    );
+    // The mark is on the right line, checked against the node rather than
+    // against the flag that set it. `nodeId` is null on a leaf — that is the
+    // whole reason `subject` exists — so the href is what identifies it, and it
+    // carries query parameters by the time it reaches here.
+    assert.ok(
+      subjects[0]!.href.startsWith(`/repository/layers/${id}?`)
+        || subjects[0]!.href === `/repository/layers/${id}`,
+      `${id}: the subject lane points at ${subjects[0]!.href}`,
+    );
+  }
+  assert.deepEqual(empty, [], "a method whose page draws nothing at all");
+});
+
+test("no two method pages draw the same picture", () => {
+  const byShape = new Map<string, string[]>();
+  for (const id of METHOD_IDS) {
+    const diagram = pageFigure(id);
+    if (diagram.empty) continue;
+    const shape = drawnShape(diagram);
+    byShape.set(shape, [...(byShape.get(shape) ?? []), id]);
+  }
+  const drawn = [...byShape.values()].flat().length;
+  console.log(`method pages drawn: ${drawn}, distinct pictures: ${byShape.size}`);
+  assert.equal(byShape.size, drawn, "two method pages draw one picture");
+  // Not vacuous: a sweep that drew nothing would satisfy the equality above.
+  assert.ok(drawn >= 60, `only ${drawn} method pages drew anything`);
+});
+
+test("a pinned step is drawn on the page of the method that pinned it", () => {
+  // > *"taylor and krovi's definitely have some unique math that is not the
+  // > simple propagator/QLS path, so why isn't that reflected in the map?"*
+  // > — owner, session 109
+  //
+  // `chainInside` has honoured a `via` pin since PR 322. What it could not do is
+  // run: a pin is drawn inside an **opened method lane**, and on the two
+  // non-atomic slots the method had no lane to open. Every one of the ten was
+  // therefore invisible on the one page that is about the method that authored
+  // it, which is the page a reader goes to for exactly this fact.
+  const pins: { method: string; step: string; filler: string }[] = [];
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node)) continue;
+    for (const [step, filler] of Object.entries(node.via ?? {})) {
+      pins.push({ method: node.id, step, filler });
+    }
+  }
+  console.log(`via pins in the corpus: ${pins.length}`);
+  assert.ok(pins.length >= 8, `only ${pins.length} pins — the corpus sweep has gone quiet`);
+
+  const missing = pins
+    .filter(({ method, filler }) => {
+      const diagram = pageFigure(method);
+      return !diagram.lanes.some(
+        (lane) =>
+          lane.nodeId === filler
+          || lane.href.startsWith(`/repository/layers/${filler}?`)
+          || lane.href === `/repository/layers/${filler}`,
+      );
+    })
+    .map(({ method, step, filler }) => `${method} pins ${step} to ${filler}`);
+  assert.deepEqual(missing, [], "a pin the page of its own method does not draw");
+});
+
+test("the map never marks a subject lane", () => {
+  // `subject` belongs to a method's page and to nothing else. If a map figure
+  // ever grows one, `layoutConverge` has started answering the other question —
+  // and the state chain that shows the convergence is what would have gone.
+  let sweptFigures = 0;
+  let sweptLanes = 0;
+  for (const capability of LAYER_GRAPH.nodes.filter(isCapability)) {
+    for (const open of [new Set<string>(), new Set(LAYER_GRAPH.nodes.map((node) => node.id))]) {
+      const diagram = layoutConverge({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        focus: capability,
+        locale: "en",
+        open,
+        at: null,
+      });
+      sweptFigures += 1;
+      sweptLanes += diagram.lanes.length;
+      const marked = diagram.lanes.filter((lane) => lane.subject).map((lane) => lane.fullLabel);
+      assert.deepEqual(marked, [], `${capability.id}: the map marked a subject lane`);
+    }
+  }
+  console.log(`map figures swept for subject marks: ${sweptFigures}, lanes: ${sweptLanes}`);
+  assert.ok(sweptLanes >= 200, `only ${sweptLanes} lanes swept — the sweep has gone quiet`);
 });

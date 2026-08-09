@@ -51,7 +51,12 @@ import {
   type LayerMethod,
   type LayerNode,
 } from "../lib/repository/layers";
-import { CONVERGE_OPEN_MAX, figureHref, layoutConverge } from "../lib/repository/converge-layout";
+import {
+  CONVERGE_OPEN_MAX,
+  figureHref,
+  layoutConverge,
+  layoutConvergeForMethod,
+} from "../lib/repository/converge-layout";
 import { convergeNotes } from "../lib/repository/converge-notes";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
@@ -219,8 +224,13 @@ const COPY = {
     zoomTo: "to",
     zoomReadingSlot:
       "A circle is an object you are holding. Each line between the two ends is one recorded way through this slot; where a way is built from smaller slots, those are its own lines.",
+    // Rewritten in session 110, because it was false on all 63 method pages.
+    // It described a *chain* — "each line along the row is one step of this
+    // method" — and a method's page has never drawn one. It draws the fan of
+    // ways through the slot this method fills, so the lines beside it are its
+    // alternatives, not its steps. Its steps are what is drawn *inside* it.
     zoomReadingMethod:
-      "A circle is an object you are holding. Each line along the row is one step of this method — a slot, with its own ways through it — and the two ends are what you start and finish holding.",
+      "A circle is an object you are holding. This method is drawn heavier, opened into its own steps; the other lines between the same two ends are the alternatives recorded for the same slot.",
     zoomUnfilled:
       "The line is drawn broken because no method is recorded for this slot. The two ends are still what it would take and return.",
     zoomDeeper: (n: number) =>
@@ -349,7 +359,7 @@ const COPY = {
     zoomReadingSlot:
       "円は、手にしている対象です。両端のあいだに引かれた各線が、この枠を通る記録済みの一つのやり方です。より小さな枠から組み立てられているやり方では、その枠が線として並びます。",
     zoomReadingMethod:
-      "円は、手にしている対象です。行に並ぶ各線がこの手法の一段階——それぞれ通り道をもつ枠——であり、両端が、始めと終わりに手にしている対象です。",
+      "円は、手にしている対象です。この手法は太く描かれ、その内側に自身の各段階が開かれています。同じ両端のあいだに並ぶほかの線は、同じ枠に記録されている別のやり方です。",
     zoomUnfilled:
       "この枠に手法が記録されていないため、線は破線で描かれています。両端は、それでもこの枠が受け取り返すはずの対象です。",
     zoomDeeper: (n: number) =>
@@ -470,23 +480,47 @@ function ProcessZoom({
   // A **method** is drawn as the slot it fills, with itself open. A method is
   // not a place you can stand: it is one way through a slot, so its own figure
   // is that slot, opened at it.
-  const subject = isCapability(node) ? node : layerNode(graph, node.realizes);
-  const diagram =
-    subject && isCapability(subject)
-      ? layoutConverge({
-          graph,
-          vocabulary: STATE_VOCABULARY,
-          focus: subject,
-          locale,
-          // The reader's own `?open=` **and** what this page is about. A method
-          // is drawn as the slot it fills with itself open, and that is not
-          // negotiable — but everything else the reader had expanded on the way
-          // here survives the click now, instead of the figure quietly
-          // resetting to the one line the URL happens to name.
-          open: isCapability(node) ? new Set(open) : new Set([...open, node.id]),
-          at,
-        })
-      : null;
+  //
+  // ## Why a method goes through a different entry point (session 110)
+  //
+  // That paragraph was the intent and the code did not achieve it. Passing the
+  // slot to `layoutConverge` and adding the method to `open` works only when the
+  // slot's plan happens to be a fan. `linear-ode-solve` and `nonlinear-ode-solve`
+  // are not atomic, so their plan is a **state chain** whose lanes are slots —
+  // and the method's id then matched no lane at all.
+  //
+  // Measured on `dev` immediately before this changed: **45 of 63** method pages
+  // drew a figure with their own method nowhere on it, **43 of 63** drew a figure
+  // byte-identical to another method's page, and **not one** of the corpus's ten
+  // `via` pins was drawn on the page of the method that authored it. For four of
+  // `linear-ode-solve`'s seven the figure was not merely generic but false —
+  // `lchs-route`'s page drew `time-discretization → quantum-linear-solve`, and
+  // `lchs-route` does not go that way.
+  //
+  // `layoutConvergeForMethod` asks the other question: not "what does every route
+  // through this slot pass through" but "which of the ways through it is this
+  // one". The answer to that is always the fan.
+  const diagram = isMethod(node)
+    ? layoutConvergeForMethod({
+        graph,
+        vocabulary: STATE_VOCABULARY,
+        method: node,
+        locale,
+        // Everything else the reader had expanded on the way here survives the
+        // click, instead of the figure resetting to the one line the URL names.
+        // The method's own id is added by the entry point — it is not optional,
+        // so it is not the caller's to forget.
+        open: new Set(open),
+        at,
+      })
+    : layoutConverge({
+        graph,
+        vocabulary: STATE_VOCABULARY,
+        focus: node,
+        locale,
+        open: new Set(open),
+        at,
+      });
   // An unresolvable contract or an empty layout means the graph does not have
   // the two ends this figure is *about*. Drawing a picture of that would be
   // inventing one; the sections below still say everything they always said.
@@ -544,7 +578,20 @@ function ProcessZoom({
           </p>
         ) : null}
         <p>
-          {unfilled ? copy.zoomUnfilled : isCapability(node) ? copy.zoomReadingSlot : copy.zoomReadingMethod}{" "}
+          {/* Chosen from what was **drawn**, not from the node's kind. Those two
+              agree today — a method always gets a fan and a slot's picture is
+              whichever its expansion asks for — and they agreed before too,
+              wrongly: the sentence for a method described a chain and a method
+              page has never drawn one. Reading `diagram.grain` is how the
+              caption stays true if either rule moves, and it is what
+              `repository-converge-view.tsx` already does. */}
+          {unfilled
+            ? copy.zoomUnfilled
+            : diagram.grain === "states"
+              ? copy.zoomReadingSlot
+              : isCapability(node)
+                ? copy.zoomReadingSlot
+                : copy.zoomReadingMethod}{" "}
           {copy.zoomNames}
         </p>
         <p>
