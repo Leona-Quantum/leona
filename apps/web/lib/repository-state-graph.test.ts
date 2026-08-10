@@ -278,12 +278,17 @@ test("expanding the nonlinear ODE slot yields exactly one interior state, and it
 });
 
 test("the Koopman-von Neumann narrowing is witnessed only by its own route", () => {
-  assert.ok(nonlinear && isCapability(nonlinear));
-  const expansion = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, nonlinear);
-  const narrowed = expansion.bundles[0]!.lanes.find((lane) =>
-    lane.edges.some((edge) => edge.narrowedBy === "koopman-von-neumann-lift"),
+  // The lane is built from the EDGE rather than found in an expansion since
+  // session 119: as a single-edge lane the narrowing is the duplicate the
+  // bundle dedup removes (the plain embedding lane's fan contains the same
+  // method), so no figure draws it — but the edge stays in the walkable
+  // graph, the multi-edge continuations from the narrower landing depend on
+  // it, and its witnessing rule is what this test pins.
+  const edge = stateEdges(LAYER_GRAPH).find(
+    (candidate) => candidate.narrowedBy === "koopman-von-neumann-lift",
   );
-  assert.ok(narrowed, "the narrowed landing is drawn as its own lane");
+  assert.ok(edge, "the narrowing edge left the walkable graph entirely");
+  const narrowed = { key: edge.key, edges: [edge], interior: [] as string[] };
   assert.deepEqual(
     pathWitnesses(LAYER_GRAPH, STATE_VOCABULARY, narrowed).map((method) => method.id),
     ["kvn-simulation-route"],
