@@ -91,6 +91,24 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Joseph limits both claims himself. On the exponential one: some important calculations can require a large number of time steps, potentially scaling as a power of D, which would reduce the expected savings to polynomial at best. On the quadratic one: because the Koopman-von Neumann lift doubles the phase-space dimension, if the gains over classical Monte Carlo are only quadratic then that doubling would effectively eliminate the advantage — so where the underlying system is Hamiltonian and simulating the quantized Hamiltonian system suffices for the intended calculation, he states that quantizing the Hamiltonian is the more efficient approach.",
     contestedJa: "Joseph は二つの主張のいずれにも自ら限界を付しています。指数的な主張については、重要な計算のなかには必要な時間ステップ数が D の冪で増えうるものがあり、その場合、期待される節約はよくても多項式にとどまると述べています。二次の主張については、Koopman-von Neumann の持ち上げが位相空間の次元を倍にするため、古典モンテカルロに対する利得が二次にとどまるなら、この次元の倍加が優位性を実質的に打ち消すと述べています。したがって元の系がハミルトン系であり、量子化したハミルトニアンのシミュレーションで目的が果たせる場合には、そちらのほうが効率的な計算方法である、というのが著者の判断です。",
     steps: ["nonlinear-linear-embedding", "hamiltonian-simulation"],
+    // **This route does not end in a state at all**, and that single fact is why
+    // the four routes with a blank stretch cannot share one slot. LCHS and
+    // Schrödingerisation recover a solution *state*; Joseph recovers an
+    // observable's expectation value and declines the state readout by name. A
+    // capability whose realizations disagree about what they return is not a
+    // capability. See `plans/atlas-revamp/W11-readout-stretch.md`.
+    hops: {
+      "kvn-simulation-route": {
+        theory:
+          "No state is read out here: what is produced is ⟨O⟩ = Σ_x O(x) f(x), the expectation value of a phase-space observable. An ancilla is appended and R̂_φ built by a reversible computation of φ = O^{1/2}ψ — \"the reversible calculation requires two KvN simulations: one to compute φ … and one to uncompute φ, which requires running the KvN simulation backward in time\". Amplitude estimation of the ancilla's |1⟩ amplitude then gives the estimate. " +
+          "[[approximation: Amplitude estimation returns an estimate rather than the value. \"Since each evaluation of R̂_φ and R̂†_φ uses two evaluations of |ψ⟩, the amplitude amplification algorithm requires four KvN simulations to be performed per step\", so accuracy ε costs 4K ∼ O(1/ε) simulations — the readout re-invokes the step above it rather than measuring its output.]] " +
+          "Joseph rules out the two alternatives by name: averaging repeated projective measurements returns to the classical 1/ε^2 law, and measuring the entire PDF over all states he calls \"not desirable\".",
+        theoryJa:
+          "ここでは状態そのものは読み出されません。得られるのは位相空間の観測量の期待値 ⟨O⟩ = Σ_x O(x) f(x) です。補助量子ビットを一つ加え、φ = O^{1/2}ψ の可逆計算によって R̂_φ を構成します。「この可逆計算には二回の KvN シミュレーションが必要である。一回は φ を計算するため、もう一回は φ を打ち消すためで、後者は KvN シミュレーションを時間逆向きに走らせることを要する」とされています。続いて補助量子ビットの |1⟩ 振幅を振幅推定します。" +
+          "[[approximation: 振幅推定が返すのは値ではなく推定値です。「R̂_φ と R̂†_φ の各評価が |ψ⟩ の評価を二回使うため、振幅増幅アルゴリズムは一段あたり四回の KvN シミュレーションを要する」とされ、精度 ε には 4K ∼ O(1/ε) 回かかります。読み出しは上の工程の出力を測るのではなく、上の工程を呼び直しています。]] " +
+          "Joseph は代替案を名指しで退けています。射影測定を繰り返して平均を取る方法は古典的な 1/ε^2 の法則に戻ってしまい、全状態にわたって確率密度関数そのものを測ることは「望ましくない」と述べています。",
+      },
+    },
     // The lift this route uses returns a *Hermitian* generator, and that is the
     // whole reason a simulator can be handed it directly. The slot it descends
     // into promises a linear generator and no more, so without this the route
@@ -479,6 +497,26 @@ export const LAYER_GRAPH: LayerGraph = {
     // the two drew the same chain (R13, KNOWN_TWINS). The conversion is now its
     // own slot and the two pin different ways through it.
     steps: ["hamiltonian-recasting", "hamiltonian-simulation"],
+    // **The blank stretch after Hamiltonian simulation, written down.** The owner
+    // asked in session 113 why the map goes quiet once the simulation has run.
+    // Session 115 read the four routes' own papers to find out, and what it found
+    // is that they do **not** end the same way — so the answer is four hop notes,
+    // each quoting the paper that owns it, and not a twentieth slot. The whole
+    // argument, with the quotes, is `plans/atlas-revamp/W11-readout-stretch.md`.
+    hops: {
+      "lchs-route": {
+        theory:
+          "The simulated unitaries are combined by LCU: a prepare pair loads the quadrature weights onto an ancilla register and a select oracle indexes the family, so that W block-encodes Σ_j c_j U_j on the all-zeros branch. " +
+          "[[assumption: \"The final step is to measure all the ancilla registers, and if all the outcomes are 0, then the resulting state approximately encodes the solution u(t) of the ODE\" — that outcome is the flag every theorem in the paper refers to.]] " +
+          "One shot succeeds with probability (‖T|ψ⟩‖/‖α‖_1)^2, and amplitude amplification raises it to Ω(1) at O(‖α‖_1/‖T|ψ⟩‖) queries. " +
+          "The paper gives a second ending the map does not draw: a hybrid implementation that estimates ⟨u_0|U†_k O U_k'|u_0⟩ by a Hadamard test and amplitude estimation, and performs the summation classically by Monte Carlo sampling.",
+        theoryJa:
+          "シミュレートしたユニタリ群は LCU で線形結合されます。prepare 対が求積の重みを補助レジスタに載せ、select オラクルが各ユニタリを選びますので、W は Σ_j c_j U_j を全ゼロの枝にブロック符号化します。" +
+          "[[assumption: 「最後に補助レジスタをすべて測定し、結果がすべて 0 であれば、得られる状態が ODE の解 u(t) を近似的に符号化する」とされており、この結果が論文の各定理のいう成功フラグです。]] " +
+          "一回の成功確率は (‖T|ψ⟩‖/‖α‖_1)^2 で、振幅増幅により O(‖α‖_1/‖T|ψ⟩‖) 回の問い合わせで Ω(1) まで引き上げられます。" +
+          "論文には地図が描いていないもう一つの終わり方もあります。ハイブリッド実装で、⟨u_0|U†_k O U_k'|u_0⟩ を Hadamard テストと振幅推定で見積もり、総和は古典的なモンテカルロ標本抽出で取ります。",
+      },
+    },
     via: { "hamiltonian-recasting": "lchs-kernel-identity" },
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["linear-combination-unitaries"],
@@ -506,6 +544,24 @@ export const LAYER_GRAPH: LayerGraph = {
     // checker reads that declaration instead of only naming it in an error
     // message it never acted on.
     steps: ["hamiltonian-recasting", "hamiltonian-simulation"],
+    // **The same ending as LCHS, and its own paper says so.** Lemma 24 here is
+    // structurally Lemma 6 there. Written out rather than left to the `refines`
+    // link because it is this paper's own statement of it, not a copy of the
+    // parent's — two papers each stating a fact is not the drift that rule
+    // guards against. What the note does *not* restate is the difference; that
+    // is this method's lede, one click away.
+    hops: {
+      "lchs-improved-kernel": {
+        theory:
+          "The ending is the parent's: \"postselecting the ancilla registers on 0 yields the desired state\", and \"for a constant-level success probability, we need to run O(‖c‖_1) rounds of the amplitude amplification\". " +
+          "[[assumption: The state kept is the one where the ancilla registers read 0; everything else is discarded, and the repetition count is the price of that.]] " +
+          "What this paper changes is upstream of here — the kernel and the composite Gaussian quadrature feeding it, and a truncated Dyson series for each evolution — not this stretch.",
+        theoryJa:
+          "終わり方は親と同じです。「補助レジスタを 0 で後選択すると目的の状態が得られる」「一定水準の成功確率を得るには O(‖c‖_1) 回の振幅増幅が必要である」と述べられています。" +
+          "[[assumption: 残すのは補助レジスタが 0 を示した状態だけで、それ以外は捨てられます。反復回数はその代価です。]] " +
+          "この論文が変えているのはここより上流、すなわちカーネルとそれに与える複合 Gauss 求積、そして各時間発展に用いる打ち切り Dyson 級数であって、この区間ではありません。",
+      },
+    },
     via: { "hamiltonian-recasting": "lchs-kernel-identity" },
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["linear-combination-unitaries"],
@@ -527,6 +583,23 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "Stated for general linear partial differential equations: unlike LCHS there is no positive-semidefiniteness requirement in order to form the Schrödinger system, and that is the structural difference between the two. The cost reappears at recovery: the original solution is read back from the warped variable, either as u(t,x) = ∫_0^∞ w(t,x,p) dp or pointwise as u(t,x) = e^{p*} w(t,x,p*) for a chosen p* > 0. Worked examples include the heat, convection, Fokker-Planck, linear Boltzmann and Black-Scholes equations, with extensions to the Vlasov-Fokker-Planck equation and to the Liouville representation equation for nonlinear ODEs — which is how a nonlinear problem reaches this method. The primary papers present the transformation and worked examples rather than a single unified query-complexity theorem, so no like-for-like count against the LCHS figures is given here.",
     conditionsJa: "一般の線形偏微分方程式について述べられています。LCHS と異なり、Schrödinger 方程式系を作る段階では半正定値性の要求がありません。これが両者の構造的な違いです。費用は復元の段階で現れます。元の解は、warped 変数から u(t,x) = ∫_0^∞ w(t,x,p) dp として、あるいは p* > 0 を選んで u(t,x) = e^{p*} w(t,x,p*) として取り出します。扱われている例には、熱方程式、移流方程式、Fokker-Planck 方程式、線形 Boltzmann 方程式、Black-Scholes 方程式が含まれ、Vlasov-Fokker-Planck 方程式や、非線形常微分方程式の Liouville 表現方程式への拡張も示されています。非線形問題がこの手法に到達する経路がまさにこれです。原論文は変換と適用例を示すものであり、単一の統一されたクエリ計算量の定理を与えてはいませんので、LCHS の数値と同一条件で比較した数値はここでは示しません。",
     steps: ["hamiltonian-recasting", "hamiltonian-simulation"],
+    // **Nothing like LCHS's ending, which is why there is no shared slot.** The
+    // inverse Fourier transform on the auxiliary register has no LCHS analogue at
+    // all, and the projector is a half-line rather than an all-zeros flag. Two
+    // endings this different under one capability would be a claim the sources do
+    // not make — `plans/atlas-revamp/W11-readout-stretch.md` has the comparison.
+    hops: {
+      schrodingerisation: {
+        theory:
+          "\"By applying an inverse quantum Fourier transform F_p^{-1}, with respect to p, onto the second register we obtain |w(t)⟩\", and the solution is then recovered by restricting to p > 0 — as the integral u(t,x) = ∫_0^∞ w(t,x,p) dp, or on the state by projecting onto 1 ⊗ Σ_{k=N/2}^{N} |k⟩⟨k|. " +
+          "[[assumption: Only the p > 0 half-line carries u, so what survives is what that projection keeps: \"a simple projection retrieves |u(t)⟩ with probability (‖u(t)‖‖exp(−p)‖/‖w(t)‖)^2 ∼ N(‖u(t)‖/‖w(t)‖)^2\".]] " +
+          "Amplitude amplification with the oracle Q = −S_w S_p raises that to ∼√N‖u(t)‖/‖w(t)‖, at Õ(‖w(t)‖/(√N‖u(t)‖)) queries to Q. The paper also allows a pointwise recovery instead: choose any p* > 0 and take u(t,x) = e^{p*} w(t,x,p*).",
+        theoryJa:
+          "「第二レジスタに対して p に関する逆量子 Fourier 変換 F_p^{-1} を施すと |w(t)⟩ が得られる」とされ、解はそこから p > 0 に制限して復元されます。積分としては u(t,x) = ∫_0^∞ w(t,x,p) dp、状態としては 1 ⊗ Σ_{k=N/2}^{N} |k⟩⟨k| への射影です。" +
+          "[[assumption: u を担うのは p > 0 の半直線だけですので、残るのはその射影が残したものです。「単純な射影は確率 (‖u(t)‖‖exp(−p)‖/‖w(t)‖)^2 ∼ N(‖u(t)‖/‖w(t)‖)^2 で |u(t)⟩ を取り出す」とされています。]] " +
+          "オラクル Q = −S_w S_p による振幅増幅はこれを ∼√N‖u(t)‖/‖w(t)‖ まで引き上げ、Q への問い合わせは Õ(‖w(t)‖/(√N‖u(t)‖)) 回です。論文は各点での復元も認めています。任意の p* > 0 を選び u(t,x) = e^{p*} w(t,x,p*) とするやり方です。",
+      },
+    },
     via: { "hamiltonian-recasting": "warped-phase-transformation" },
     bypasses: ["quantum-linear-solve", "time-discretization"],
     citations: [
