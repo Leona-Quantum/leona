@@ -116,6 +116,13 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
     ],
     claims: [
       "A solid line means a paper puts those two steps together and we have the citation. A long-dashed line means the route is recorded but no single method has been named for that step. A short-dashed line means nothing published fills it — the step is real, the way through is not written yet.",
+      // **The mark, explained where the line's other claims are.** Not a legend
+      // row: those are strokes, drawn with the canvas's own shapes, and this is
+      // text at the end of a name. It belongs with the claims because that is
+      // what it is — the route saying it walks this step many times, in the
+      // source's own symbol. A mark with no key says *special* without saying
+      // what, which is the failure this repository has already written down once.
+      "A count after a step's name — ×T/h, ×O(κ) — means the route walks that step that many times rather than once. It is the source's own symbol, and the card says what it stands for and what one turn costs. A step with no count is a step no source we read said is repeated, which is not the same as one taken once.",
       "The map does not hide the gaps. An empty step is drawn as an empty step.",
     ],
     gaps: [
@@ -159,6 +166,7 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
     ],
     claims: [
       "実線は、その二つの工程を結びつけた論文があり、その出典を保持していることを意味します。長い破線は、経路は記録されているものの、その工程を満たす手法が名指しされていないことを意味します。短い破線は、公開された文献がそこを満たしていないことを意味します。工程は実在し、通る方法がまだ書かれていません。",
+      "工程の名前のうしろに付く回数 — ×T/h、×O(κ) — は、その経路がその工程を 1 回ではなく、その回数だけ実行することを表します。出典が用いている記号そのままであり、その記号が何を指すのか、また 1 回あたり何が費やされるのかはカードに記してあります。回数の付かない工程は、繰り返すと述べた出典を確認できていない工程であって、1 回だけ実行するという意味ではありません。",
       "この地図は欠落を隠しません。空の工程は空の工程として描かれます。",
     ],
     gaps: [

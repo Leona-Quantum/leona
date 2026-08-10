@@ -467,6 +467,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "time-discretization": {
         count: "once per time step, with an amplification at every one",
         countJa: "各時間ステップにつき 1 回、そのつど増幅を伴います。",
+        mark: "×per step",
+        markJa: "×毎ステップ",
         closure: "coherent",
         note: "Fang, Lin and Tong's method is the repetition stated as the design: propagate one step at a time, and defeat the exponentially vanishing success probability by repeatedly invoking uniform singular value amplification. Nothing is measured between turns — the decay is a coherent one and it is bought back coherently — which is why the cost lands on the amplification ratio rather than on a shot count. The authors prove that linear dependence attains the query-complexity lower bound, so this repetition cannot be made cheaper in the worst case; it can only be avoided by not marching.",
         noteJa: "Fang・Lin・Tong の手法は、反復そのものを設計として述べたものです。1 ステップずつ前進させ、指数的に小さくなる成功確率を一様特異値増幅の繰り返しで克服します。ステップの間で測定は行われません。減衰はコヒーレントなものであり、コヒーレントに買い戻されます。費用がショット数ではなく増幅比に現れるのはこのためです。著者らはこの線形依存がクエリ計算量の下界を達成することを証明しており、最悪の場合、この反復をこれ以上安くすることはできません。避ける方法は、前進させないことだけです。",
@@ -812,6 +814,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "quantum-linear-solve": {
         count: "once per time step — T/h of them to reach time T",
         countJa: "各時間ステップにつき 1 回。時刻 T に達するまでに T/h 回。",
+        mark: "×T/h",
+        markJa: "×T/h",
         closure: "coherent",
         note: "Each step's solve consumes the previous step's output as its right-hand side, so the chain is a quantum state passed forward and never a number read out. That is what makes the repetition expensive rather than merely long: a quantum linear solve succeeds only on a flagged branch, and the flags multiply down the chain, so the amplification bill compounds with the number of steps. Folding the whole trajectory into one banded system — which is what the all-at-once encodings do — is how the published treatments spend that once instead of T/h times.",
         noteJa: "各ステップの線形ソルバーは、前のステップの出力をそのまま右辺として受け取ります。したがってこの連鎖は量子状態を送り続けるものであり、途中で数値を読み出すわけではありません。反復が単に長いだけでなく高価になるのはこのためです。量子線形ソルバーはフラグの立った枝でのみ成功しますので、そのフラグがステップ数だけ掛け合わされ、増幅の代価が累積します。軌道全体をひとつの帯行列系に畳み込む一括符号化は、この代価を T/h 回ではなく 1 回で済ませるための手立てです。",
@@ -836,6 +840,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "quantum-linear-solve": {
         count: "once per time step — T/h of them to reach time T",
         countJa: "各時間ステップにつき 1 回。時刻 T に達するまでに T/h 回。",
+        mark: "×T/h",
+        markJa: "×T/h",
         closure: "coherent",
         note: "Second order buys a larger h at the same accuracy, so the loop turns fewer times than backward Euler's — but it is the same loop, and it is still one linear solve per turn with the previous turn's state as its right-hand side. Being A-stable removes the step-size restriction; it does not remove the repetition.",
         noteJa: "二次精度であるぶん、同じ精度なら h を大きく取れますので、後退 Euler 法より反復回数は少なくなります。しかし反復そのものは同じで、依然として 1 ステップにつき線形ソルバーを 1 回、前のステップの状態を右辺として呼びます。A 安定であることは刻み幅の制約を取り除きますが、反復を取り除くわけではありません。",
@@ -930,6 +936,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "state-preparation": {
         count: "O(κ) times — once per amplification round",
         countJa: "O(κ) 回。増幅の各ラウンドにつき 1 回。",
+        mark: "×O(κ)",
+        markJa: "×O(κ)",
         closure: "coherent",
         note: "The rotation ancilla carries a success amplitude of about 1/κ, so the whole prepare-estimate-rotate-uncompute block is amplified O(κ) times and |b⟩ is prepared afresh inside every one of them. This is where one of the two κ factors in Õ(log(N) s² κ²/ε) comes from, and it is the reason the state-preparation query count is a headline number for this family rather than a footnote: a route whose |b⟩ is expensive pays for it κ times here and once in the all-at-once encodings.",
         noteJa: "回転用の補助量子ビットが持つ成功振幅はおよそ 1/κ ですので、準備・推定・回転・逆計算のブロック全体が O(κ) 回増幅され、そのたびに |b⟩ が改めて準備されます。Õ(log(N) s² κ²/ε) にある二つの κ のうち一つはここから来ます。この系統で初期状態準備のクエリ数が脚注ではなく主要な数値として扱われる理由でもあります。|b⟩ の準備が高価な経路は、ここではその代価を κ 回、一括符号化では 1 回だけ支払います。",
@@ -937,6 +945,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "hamiltonian-simulation": {
         count: "O(κ) times — once per amplification round",
         countJa: "O(κ) 回。増幅の各ラウンドにつき 1 回。",
+        mark: "×O(κ)",
+        markJa: "×O(κ)",
         closure: "coherent",
         note: "Inside the same amplified block as the preparation above: phase estimation runs against e^{-iAt} with t_0 = O(κ/ε), and that whole estimation is repeated by the amplification. The two κ's compose, which is the second factor in Õ(log(N) s² κ²/ε).",
         noteJa: "上の状態準備と同じ増幅ブロックの内側にあります。位相推定は t_0 = O(κ/ε) のもとで e^{-iAt} に対して実行され、その推定全体が増幅によって繰り返されます。二つの κ が掛け合わさり、それが Õ(log(N) s² κ²/ε) の第二の因子になります。",
@@ -969,6 +979,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "block-encode-matrix": {
         count: "m = O((1/δ) log(1/ε)) applications of U and U†",
         countJa: "U と U† を m = O((1/δ) log(1/ε)) 回。",
+        mark: "×m",
+        markJa: "×m",
         closure: "coherent",
         note: "Gilyén, Su, Low and Wiebe's Theorem 41 count, and δ = 1/κ after normalisation — so this is the condition number, appearing as a number of turns rather than as a mysterious factor. The log(1/ε) is what an approximating polynomial of that degree costs, and it is why this route's precision dependence is logarithmic where phase-estimation inversion's is not.",
         noteJa: "Gilyén・Su・Low・Wiebe の Theorem 41 による回数で、正規化後は δ = 1/κ です。つまりこれは条件数が、正体不明の因子ではなく反復回数として現れたものです。log(1/ε) はその次数の近似多項式にかかる代価であり、この経路の精度依存性が対数的である一方、位相推定による反転がそうでない理由でもあります。",
@@ -1076,6 +1088,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "block-encode-matrix": {
         count: "n uses of U and n of U†, for a degree-n transform",
         countJa: "次数 n の変換に対して U を n 回、U† を n 回。",
+        mark: "×n",
+        markJa: "×n",
         closure: "coherent",
         note: "The repetition is the circuit: U, U†, U, U† interleaved with the phase shifts, and the degree of the polynomial is the number of turns. It is the cleanest case on this map of a count that is set by a *different* layer — the polynomial-approximation step above hands down n, so a coarser approximation is literally a shorter loop here. Nothing is measured; the whole sequence is one coherent circuit, which is why the price shows up as depth and as query count rather than as shots.",
         noteJa: "反復そのものが回路です。U、U†、U、U† を位相シフトと交互に並べたものであり、多項式の次数がそのまま反復回数になります。この地図のなかで、回数を決めているのが別の層であることが最も明瞭に見える例です。上の多項式近似の層が n を渡しますので、近似を粗くすることは、ここでは文字どおり反復を短くすることにあたります。測定は行われず、全体がひとつのコヒーレントな回路ですので、代価はショット数ではなく深さとクエリ数として現れます。",
@@ -1594,6 +1608,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "state-preparation": {
         count: "O(1/ε²) shots, and one preparation per shot",
         countJa: "O(1/ε²) 回のショット、1 ショットにつき 1 回の準備。",
+        mark: "×O(1/ε²)",
+        markJa: "×O(1/ε²)",
         closure: "measured",
         note: "This is the loop that closes through a measurement, and the whole cost is in that fact. Each shot destroys the state, so the state-preparation circuit below is not run once and read many times — it is run again, in full, for every sample, and the samples needed grow as ε^-2. Grouping commuting terms changes the constant; it cannot change the exponent, because the exponent is what averaging independent classical outcomes costs. A method that keeps the loop coherent pays ε^-1 instead, which is the whole of the row below.",
         noteJa: "これが測定を挟んで閉じる反復であり、費用のすべてがその事実にあります。1 ショットごとに状態は壊れますので、下層の状態準備回路は 1 回実行して何度も読むのではなく、標本ごとに丸ごと実行し直されます。必要な標本数は ε^-2 で増えます。可換な項をまとめれば定数は変わりますが、指数は変わりません。指数は、独立な古典的結果を平均することの代価そのものだからです。反復をコヒーレントに保つ手法が支払うのは ε^-1 であり、それが次の行の内容です。",
@@ -1624,6 +1640,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "state-preparation": {
         count: "M iterations, M = O(1/ε), each running the preparation forwards and backwards once",
         countJa: "M 回の反復（M = O(1/ε)）。各反復で準備を順方向と逆方向に 1 度ずつ実行します。",
+        mark: "×M",
+        markJa: "×M",
         closure: "coherent",
         note: "The same slot as the row above, repeated the same way, and it is the closure that separates them: Brassard, Høyer, Mosca and Tapp's Theorem 12 uses exactly M iterations of the Grover operator, and one iteration runs A once forwards and once backwards. Nothing is measured until the end, so the ε^-2 of independent sampling becomes ε^-1. The bill does not vanish, it moves: those M applications are sequential, so the count is also a depth, and a device with a capped coherent depth cannot spend it — which is exactly what the contested note below is about.",
         noteJa: "上の行と同じスロットを同じように繰り返しますが、両者を分けるのは閉じ方です。Brassard–Høyer–Mosca–Tapp の Theorem 12 は Grover 演算子をちょうど M 回反復し、1 回の反復で A を順方向と逆方向に 1 度ずつ実行します。最後まで測定しませんので、独立サンプリングの ε^-2 が ε^-1 になります。代価は消えるのではなく移動します。この M 回の適用は逐次的ですから、回数はそのまま深さでもあり、コヒーレント深さに上限のある装置はそれを使い切れません。下の「異論」の節はまさにその点を扱っています。",
@@ -1655,6 +1673,8 @@ export const LAYER_GRAPH: LayerGraph = {
       "state-preparation": {
         count: "N = O(log(M) · max_i ||·||²_shadow / ε²) measurements, one preparation each",
         countJa: "N = O(log(M) · max_i ||·||²_shadow / ε²) 回の測定。1 回につき 1 度の準備。",
+        mark: "×N",
+        markJa: "×N",
         closure: "measured",
         note: "A measured loop like direct sampling, and the same ε^-2 — what shadows buy is not a shorter loop but a loop whose length no longer grows with the number of observables, since M enters only logarithmically and the observables may be chosen after the data is taken. Formally the turns are grouped: K = 2 log(2M/δ) median-of-means batches of N = 34/ε² · max_i ||·||²_shadow each. The shadow norm is the factor that decides whether that is cheap, and it is exponential in locality under the random-Pauli ensemble.",
         noteJa: "直接サンプリングと同じく測定を挟んで閉じる反復であり、ε^-2 も同じです。古典シャドウが得るのは反復の短さではなく、オブザーバブルの個数とともに伸びない反復です。M は対数でしか効かず、どのオブザーバブルを見るかはデータ取得後に決められます。厳密には反復はまとめられ、K = 2 log(2M/δ) 個のバッチそれぞれで N = 34/ε² · max_i ||·||²_shadow 回を測定します。安く済むかどうかを決めるのはシャドウノルムであり、ランダム Pauli アンサンブルのもとでは局所性に対して指数的です。",

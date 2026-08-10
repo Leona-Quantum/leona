@@ -45,6 +45,7 @@
 // name, so the browser morphs one into the other.
 import {
   ownStepName,
+  spokenName,
   type ConvergeDiagram,
   type ConvergeFeed,
   type ConvergeLane,
@@ -216,7 +217,7 @@ function Hub({ state, copy }: { state: ConvergeState; copy: ConvergeCopy }): Rea
  * keeps the descriptive title so it does not lose its name along with its action.
  */
 function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React.ReactElement {
-  const title = `${copy.needs}: ${feed.fullLabel}`;
+  const title = `${copy.needs}: ${spokenName(feed)}`;
   const action = feed.open ? copy.closeHere : copy.openHere;
   const stub = (
     <line
@@ -239,7 +240,7 @@ function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React
           {stub}
         </g>
       ) : (
-        <a href={feed.openHref} aria-label={`${feed.fullLabel} — ${action}`}>
+        <a href={feed.openHref} aria-label={`${spokenName(feed)} — ${action}`}>
           <title>{`${title} — ${action}`}</title>
           {stub}
           {/* A 1.5px stub is not a click target. A stroke, not a fill — the shape
@@ -384,7 +385,9 @@ function LaneName({
   const nameAction = lane.cardHref === null ? copy.readAbout : copy.readHere;
   return (
     <g className={laneClass(lane, isDocumented(lane, atlas))} data-depth={lane.depth}>
-      <a href={nameHref} aria-label={`${lane.fullLabel} — ${nameAction}`}>
+      {/* `spokenName`, not `fullLabel`: the count must reach a reader who is not
+          looking at the picture. See `spokenName`. */}
+      <a href={nameHref} aria-label={`${spokenName(lane)} — ${nameAction}`}>
         <title>{`${title} — ${nameAction}`}</title>
         {/* Sized to the name, not to a constant. It was a fixed 120x15 under
             text whose median drawn width is 235px, so **96% of English names
@@ -449,7 +452,7 @@ function laneTitle(lane: ConvergeLane, copy: ConvergeCopy, atlas: ReadonlySet<st
           lane.open ? `, ${copy.inside}` : ""
         }`
       : "";
-  return `${lane.fullLabel}${insideNote}${standingNote}${
+  return `${spokenName(lane)}${insideNote}${standingNote}${
     isDocumented(lane, atlas) ? ` · ${copy.inAtlas}` : ""
   }`;
 }
@@ -519,7 +522,7 @@ function Lane({
       {lane.openHref === null ? null : (
         <a
           href={lane.openHref}
-          aria-label={`${lane.fullLabel} — ${lane.open ? copy.closeHere : copy.openHere}`}
+          aria-label={`${spokenName(lane)} — ${lane.open ? copy.closeHere : copy.openHere}`}
         >
           <title>{`${title} — ${lane.open ? copy.closeHere : copy.openHere}`}</title>
           <path className="mj-converge-strand-hit" d={lane.d} />

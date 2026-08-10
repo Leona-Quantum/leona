@@ -30,6 +30,7 @@ import {
   layoutConverge,
   layoutConvergeForMethod,
   legendMark,
+  spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
 } from "./repository/converge-layout.ts";
@@ -41,6 +42,7 @@ import {
   isMethod,
   layerNode,
   methodsRealizing,
+  REPEAT_MARK_MAX,
   rootCapabilities,
   routeOf,
   type LayerCapability,
@@ -1926,6 +1928,126 @@ test("on the overview, opening a line comes back to the overview", () => {
   }
 });
 
+test("every recorded multiplicity is drawn on the lane that walks it, on the route that walks it", () => {
+  // **The map's one silent relation, measured in `W12-what-the-map-cannot-say.md`.**
+  // `repeats` is on 9 methods — nearly twice as many as `refines` — and neither
+  // the canvas nor the card said a word about it. A reader looking at a lane into
+  // `quantum-linear-solve` had no way to learn it is walked T/h times, and two
+  // methods filling one slot at wildly different prices drew the same stroke.
+  //
+  // The subject here is **which lane** carries it, because the mark is a fact
+  // about an occurrence and the layout draws one node on many lanes: the same
+  // `quantum-linear-solve` is walked once by `taylor-all-at-once` and T/h times
+  // by `backward-euler`. A lookup keyed on the node id would put one route's
+  // count on the other's line, and the picture would read as a claim no source
+  // makes. So the expected set is read off the graph, per (method, step) pair.
+  const expected = new Map<string, string>();
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node) || node.repeats === undefined) continue;
+    for (const [stepId, repetition] of Object.entries(node.repeats)) {
+      expected.set(`${node.id}|${stepId}`, repetition.mark);
+    }
+  }
+  assert.ok(expected.size > 0, "no multiplicity is recorded at all — this test measures nothing");
+  const drawn = new Set<string>();
+  let marked = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of openings(focus.id)) {
+        const diagram = openDiagram(focus.id, open, locale);
+        for (const lane of diagram.lanes) {
+          if (lane.repeatMark === null) continue;
+          marked += 1;
+          // The mark is at the end of what is drawn, whether or not the name in
+          // front of it was cut. This is the invariant the whole placement is
+          // for: a name is legible from the figure's other lanes, and the count
+          // is not.
+          assert.ok(
+            lane.label.endsWith(` ${lane.repeatMark}`),
+            `${lane.key} carries ${lane.repeatMark} and draws "${lane.label}"`,
+          );
+          assert.ok(
+            [...lane.repeatMark].length <= REPEAT_MARK_MAX,
+            `${lane.key}: ${lane.repeatMark} is longer than a mark may be`,
+          );
+        }
+        for (const feed of diagram.feeds) {
+          if (feed.repeatMark === null) continue;
+          marked += 1;
+          assert.ok(
+            feed.label.endsWith(` ${feed.repeatMark}`),
+            `${feed.key} carries ${feed.repeatMark} and draws "${feed.label}"`,
+          );
+        }
+      }
+    }
+  }
+  // Which pairs actually reached a drawing, checked against the graph. A record
+  // that reaches no figure is the failure this shape allows: nothing renders, no
+  // gate fires, and the map goes on being silent about the most expensive lane
+  // on it.
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const open of openings(focus.id)) {
+      for (const method of LAYER_GRAPH.nodes) {
+        if (!isMethod(method) || method.repeats === undefined) continue;
+        const diagram = openDiagram(focus.id, open);
+        for (const [stepId] of Object.entries(method.repeats)) {
+          const key = `${method.id}|${stepId}`;
+          const onLane = diagram.lanes.some(
+            (lane) => lane.repeatMark === expected.get(key) && lane.key.includes(method.id),
+          );
+          const onFeed = diagram.feeds.some(
+            (feed) => feed.repeatMark === expected.get(key) && feed.parentKey.includes(method.id),
+          );
+          if (onLane || onFeed) drawn.add(key);
+        }
+      }
+    }
+  }
+  assert.deepEqual(
+    [...expected.keys()].filter((key) => !drawn.has(key)),
+    [],
+    "a recorded multiplicity reaches no figure at all",
+  );
+  console.log(`[map repeat census] ${expected.size} records, ${marked} marked lanes drawn across every figure and opening`);
+});
+
+test("the count reaches a reader who is not looking at the picture", () => {
+  // **The drawn label can be cut; the spoken one cannot.** The `<title>`, the
+  // `aria-label` and the accessible list beside every figure all read the full
+  // name rather than the fitted one, which is exactly why the mark had to be
+  // given to them explicitly: appended to `label` alone it would have been a
+  // quantitative fact about cost available by eye and by no other route.
+  //
+  // Asserted through `spokenName`, the one function those three surfaces call,
+  // so a surface that started building the string itself is what fails here.
+  let checked = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const open of openings(focus.id)) {
+      const diagram = openDiagram(focus.id, open);
+      for (const lane of diagram.lanes) {
+        assert.equal(
+          spokenName(lane),
+          lane.repeatMark === null ? lane.fullLabel : `${lane.fullLabel} ${lane.repeatMark}`,
+          `${lane.key}: the spoken name is not the full name plus its count`,
+        );
+        if (lane.repeatMark !== null) {
+          // The full name is never shortened, so the spoken string carries every
+          // character of it — including on the lanes whose drawn label was cut.
+          assert.ok(spokenName(lane).startsWith(lane.fullLabel));
+          checked += 1;
+        }
+      }
+      for (const feed of diagram.feeds) {
+        if (feed.repeatMark === null) continue;
+        assert.equal(spokenName(feed), `${feed.fullLabel} ${feed.repeatMark}`);
+        checked += 1;
+      }
+    }
+  }
+  assert.ok(checked > 0, "no marked lane was checked — this test measures nothing");
+});
+
 test("an ingredient's name stays on the canvas", () => {
   // A lane name is centred in a column sized to hold it, so it cannot escape. An
   // ingredient's name is drawn from its stub *rightwards* and had no such
@@ -2222,7 +2344,17 @@ test("a name past the cap is cut, and the full text survives in the title", () =
   assert.ok(drawn.length > 0, "the fixture's long name is drawn on no figure at all");
   for (const lane of drawn) {
     assert.equal(lane.labelTruncated, true, "a 1272px name was not cut by a 300px cap");
-    assert.ok(lane.label.endsWith("…"));
+    // **The ellipsis ends the name, and the mark comes after it.** The fixture
+    // renames `quantum-linear-solve`, which is the step `backward-euler` and the
+    // trapezoidal rule declare they walk T/h times — so on those two lanes the
+    // drawn string is `AAA… ×T/h`. That is the invariant the mark exists for: a
+    // count is the one thing on a lane the reader cannot learn anywhere else on
+    // the canvas, so the *name* gives way to it and never the other way round.
+    const mark = lane.repeatMark === null ? "" : ` ${lane.repeatMark}`;
+    assert.ok(
+      lane.label.endsWith(`…${mark}`),
+      `cut name "${lane.label}" does not end in an ellipsis followed by its mark`,
+    );
     // The cut respects the cap it was sized against, and the column did not grow
     // to fit the uncapped name — that second half is the part that would silently
     // stop being true if the cap were applied at `fitLabel` instead of at the
