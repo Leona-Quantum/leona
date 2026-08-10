@@ -211,29 +211,19 @@ export interface LayerMethod extends LayerNodeBase {
    */
   refines?: string;
   /**
-   * The refined method's name **as it is drawn on the canvas**, without the
-   * symbol — `Koopman`, `Taylor`, `LCHS`, `SABRE`.
+   * The refined method's name, shortened — `Koopman`, `Taylor`, `LCHS`,
+   * `SABRE`.
    *
-   * ## Why the name is authored and the symbol is not
+   * ## What it is for, now that the canvas no longer draws it
    *
-   * The canvas draws `LightSABRE ⊂ SABRE`. The `⊂` has exactly one writer,
-   * `drawnName`, because it means the same thing on all five lanes. The *name*
-   * cannot be derived the same way: the parent's drawn name is written for a
-   * lane of its own, where it has to be told apart from its siblings, and as a
-   * suffix it does not — `taylor-all-at-once` is `Taylor, all-at-once` on its
-   * own lane precisely because `truncated-taylor` sits five lanes away, and on
-   * Krovi's lane that lane is adjacent and supplies the disambiguation itself.
-   * Taking the first word instead is a regex over a name, which is the failure
-   * `StepRepetition.mark` documents: right for four of these and wrong for the
-   * one with a comma in it, silently, on the drawing.
-   *
-   * ## So it is authored, and gated against the thing it names
-   *
-   * Validation requires this string to occur in the parent's own `label` or
-   * `shortLabel` for the same locale. That is what keeps a hand-copied name
-   * from outliving a rename: the mark may be shorter than the parent's name,
-   * never a different name. Required in both locales whenever `refines` is set,
-   * absent whenever it is not.
+   * The map drew `LightSABRE ⊂ SABRE` until W13; a refinement now nests under
+   * its parent inside a bracket, and adjacency says the relation without
+   * repeating the name. The mark stays authored because it is the hand-copied
+   * name that keeps `refines` *verifiable*: validation requires this string to
+   * occur in the parent's own `label` or `shortLabel` for the same locale, so
+   * a rename can shorten the mark's meaning but can never leave it pointing at
+   * a method that no longer exists under that name. Required in both locales
+   * whenever `refines` is set, absent whenever it is not.
    */
   refinesMark?: string;
   refinesMarkJa?: string;
@@ -620,14 +610,15 @@ export interface StepRepetition {
 export const REPEAT_MARK_MAX = 12;
 
 /**
- * How long a refinement mark may be, in characters — the name only, before the
- * `⊂ ` the renderer adds.
+ * How long a refinement mark may be, in characters — the name only.
  *
- * Same budget argument as `REPEAT_MARK_MAX` and a tighter number, because this
- * mark is on the lane of the *narrower* method, whose name is the longer of the
- * two by construction (`LCHS with the improved kernel ⊂ LCHS`). Ten characters
- * fits every parent's drawn short name in both locales with room, and refuses
- * a mark that would restate the parent's whole title on somebody else's lane.
+ * The canvas no longer draws the mark at all (W13: a refinement nests under
+ * its parent inside a bracket, and adjacency says what the `⊂ <mark>` suffix
+ * used to), but the mark stays authored and stays bounded: it is the
+ * hand-copied name that keeps `refines` verifiable against the parent's own
+ * label, and card surfaces may still print it. Ten characters fits every
+ * parent's drawn short name in both locales with room, and refuses a mark
+ * that would restate the parent's whole title.
  */
 export const REFINES_MARK_MAX = 10;
 
@@ -763,6 +754,56 @@ export function siblingsOf(graph: LayerGraph, method: LayerMethod): LayerMethod[
 /** Siblings that are narrower versions of *this* method. */
 export function refinementsOf(graph: LayerGraph, method: LayerMethod): LayerMethod[] {
   return siblingsOf(graph, method).filter((other) => other.refines === method.id);
+}
+
+/**
+ * A slot's methods with each refinement grouped under the method it narrows.
+ *
+ * The shape every drawing of a fan reads (W13): a refinement is not another
+ * way through the slot, it is a narrower version of one of the ways, so the
+ * fan draws it nested under its parent instead of interleaved with the
+ * alternatives — `nonlinear-linear-embedding` drew Carleman at bow −135 and
+ * the Koopman it narrows at −81, two lanes apart, which is why the `⊂` mark
+ * had to repeat the parent's name at all.
+ *
+ * **A partition of `methodsRealizing`, and the chain case is why the walk
+ * exists.** `refines` may name a method that itself refines a third
+ * (validation permits it; today's corpus has none), and attaching a variant to
+ * its direct parent would drop it the moment that parent stopped being top
+ * level. So a variant attaches to its top-level ancestor: every method appears
+ * exactly once, as a group or inside one, whatever the depth of the chain.
+ * The test file asserts the partition rather than trusting this sentence.
+ */
+export interface MethodFanGroup {
+  method: LayerMethod;
+  /** Members of the same fan that narrow `method`, in graph order. */
+  variants: readonly LayerMethod[];
+}
+
+export function methodFanGroups(graph: LayerGraph, capabilityId: string): MethodFanGroup[] {
+  const methods = methodsRealizing(graph, capabilityId);
+  const byId = new Map(methods.map((method) => [method.id, method]));
+  // The top-level ancestor within this fan. Validation refuses `refines
+  // itself` but not a two-cycle, so the walk tracks what it has visited: on a
+  // cycle every member answers *itself* and the cycle draws flat — a degraded
+  // picture, never a dropped method, because the partition is what "every
+  // method's own page draws that method" stands on.
+  const topOf = (method: LayerMethod): LayerMethod => {
+    let at = method;
+    const seen = new Set<string>([at.id]);
+    for (;;) {
+      const parent = at.refines === undefined ? undefined : byId.get(at.refines);
+      if (!parent) return at;
+      if (seen.has(parent.id)) return method;
+      seen.add(parent.id);
+      at = parent;
+    }
+  };
+  const top = methods.filter((method) => topOf(method) === method);
+  return top.map((method) => ({
+    method,
+    variants: methods.filter((other) => other !== method && topOf(other) === method),
+  }));
 }
 
 /**

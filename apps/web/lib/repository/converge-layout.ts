@@ -124,6 +124,7 @@ import {
   isCapability,
   isMethod,
   layerNode,
+  methodFanGroups,
   methodsRealizing,
   repetitionOf,
   routeOf,
@@ -787,9 +788,8 @@ export interface ConvergeLane {
    *
    * True only for an opened **fan** (`opensInto: "ways"`). An opened *chain*
    * draws its steps on its own spine — `place` hands them bow 0 — so it has no
-   * clear middle to write in and no visible line to thicken; thickening it there
-   * puts a heavy dotted stroke *underneath* the steps drawn over it. That case
-   * is what the exoskeleton is for and it is not built yet.
+   * clear middle to write in and no visible line to thicken; that case is what
+   * the **exoskeleton** (`frame`, below) carries instead.
    *
    * Decided here rather than re-derived in the renderer from `opensInto`. The
    * plate under the name, the dotted stroke and the reserved band all have to
@@ -797,6 +797,40 @@ export interface ConvergeLane {
    * how they come apart.
    */
   bone: boolean;
+  /**
+   * The **exoskeleton** (W13): the outline of this opened chain's whole band,
+   * drawn as a shell around the steps and clickable to collapse.
+   *
+   * The bone's counterpart for a line opened *along*: its steps partition the
+   * belly end to end — measured, 85 of 275 opened lanes had zero collapsible
+   * pixels there — so the collapse target moves off the spine entirely, onto
+   * the boundary of the band the measurement already reserves. The shape is
+   * `ribbonOutline` at the lane's own bow: its two edges are members of the
+   * same one-parameter family as every lane, so the crossing-free argument
+   * covers the shell without a new proof. The lane's name is written on the
+   * shell's outer edge, and the whole outline shares the lane's `openHref`.
+   *
+   * Null on everything but an opened, non-composite chain.
+   */
+  frame: { d: string; half: number } | null;
+  /**
+   * The **bracket** (W13): the outline drawn around this lane's nested
+   * refinements, when it has any. Path data only — it is inert (the variants
+   * carry their own names and clicks); it exists so adjacency reads as the
+   * relation the `⊂` suffix used to spell out. Null when nothing nests here.
+   */
+  variantBracket: string | null;
+  /**
+   * This lane IS a nested refinement — drawn under the method it narrows,
+   * inside that method's bracket (W13).
+   *
+   * Carried because `parentKey` alone cannot say it: a variant and a chain
+   * step both name the lane they are drawn within, and only one of them is a
+   * hop of that lane's route. The interior census reads this to keep a
+   * nested peer out of its parent's drawn sequence, and the renderer styles
+   * the row as the aside it is.
+   */
+  variant: boolean;
   /** Where the label sits — clear of the strand's own edge. */
   labelX: number;
   labelY: number;
@@ -1131,6 +1165,32 @@ export function allocateBowsAroundSpine(
  * others outward by precisely the room that member now needs, rather than
  * drawing over them.
  */
+/**
+ * Pack a row of siblings on **one side only**, outward from a clearance.
+ *
+ * The variant row's allocator (W13): refinements nest under their parent's own
+ * line, on the side the parent already bows, so the packing starts past the
+ * band the parent keeps for itself — its content, its ingredients, its name —
+ * and walks outward. Returns unsigned magnitudes off the parent's base; the
+ * placement multiplies by the outward sign, so measurement and drawing read
+ * one arithmetic. Exported for the same reason `allocateBowsAroundSpine` is:
+ * the row is measured and placed from the same call, and the test file can
+ * reach the rule without building a figure.
+ */
+export function allocateBowsOutward(
+  halves: readonly number[],
+  gap: number,
+  clearance: number,
+): number[] {
+  const out: number[] = [];
+  let cursor = clearance + gap;
+  for (const half of halves) {
+    out.push(cursor + half);
+    cursor += half * 2 + gap;
+  }
+  return out;
+}
+
 export function allocateBows(halves: readonly number[], centre: number, gap: number): number[] {
   if (halves.length === 0) return [];
   const total =
@@ -1487,6 +1547,21 @@ interface PlanStrand {
    * excludes the whole feature.
    */
   feeds: PlanStrand[];
+  /**
+   * Narrower versions of this method, nested under its own line (W13).
+   *
+   * Planned whether or not the strand is open — the owner's rule is that
+   * *"the refinements are there during the same expansion"*, and the expansion
+   * they mean is the fan that drew the parent, not a further click on it. Full
+   * strands, for the reason `feeds` are: a refinement is a method, it can open
+   * into its own chain, and everything it draws has to land in
+   * `diagram.lanes` where the sweeps can see it.
+   *
+   * Empty on every strand that is not a fan-grouped parent —
+   * `methodFanGroups` is the one writer of who nests under whom, so a method
+   * that is itself a variant plans none and the recursion grounds there.
+   */
+  variants: PlanStrand[];
 }
 
 /**
@@ -1519,16 +1594,19 @@ function fanInside(
   /** The parent's `?open=` address; a child's is this plus its position. */
   parentAddress: string,
 ): { layout: "fan"; children: PlanStrand[]; count: number } | null {
-  const methods = methodsRealizing(graph, slotId);
-  if (methods.length === 0) return null;
+  // Grouped (W13): a refinement rides inside its parent's lane, here exactly
+  // as on the figure's own fan — `methodFanGroups` is the one writer of the
+  // grouping, and `planForMethod` nests each group's variants itself.
+  const groups = methodFanGroups(graph, slotId);
+  if (groups.length === 0) return null;
   return {
     layout: "fan",
-    count: methods.length,
-    children: methods.map((method, index) =>
+    count: groups.length,
+    children: groups.map((group, index) =>
       planForMethod(
         graph,
         vocabulary,
-        method,
+        group.method,
         locale,
         open,
         depth,
@@ -1702,6 +1780,7 @@ function chainInside(
       interior: [],
       ways: 0,
       feeds: [],
+      variants: [],
     } satisfies PlanStrand;
   });
   return {
@@ -1777,7 +1856,28 @@ function planForSlot(
     interior: [],
     ways: methods.length,
     feeds: [],
+    // A slot is a capability, and only a method narrows a method — the same
+    // reason its `refinement` above is null.
+    variants: [],
   };
+}
+
+/**
+ * The position a variant takes in its parent's address namespace: after the
+ * steps and after the feeds.
+ *
+ * Derived from the **route** rather than from what was planned, because a shut
+ * parent plans neither its children nor its feeds and its variants are drawn
+ * anyway — an address that shifted when the parent opened would silently shut
+ * a variant the reader had opened. One writer: `planForMethod` numbers the
+ * variants with it and the subject match on a method's own page
+ * (`layoutConvergeForMethod`) reads it back.
+ */
+function variantPosition(
+  route: { segments: readonly unknown[]; feeds: readonly unknown[] },
+  index: number,
+): number {
+  return route.segments.length + route.feeds.length + index;
 }
 
 function planForMethod(
@@ -1850,6 +1950,44 @@ function planForMethod(
         ),
       )
     : [];
+  // The narrower versions nested under this line (W13). `methodFanGroups` is
+  // the one writer of the grouping: a method that is itself a variant finds no
+  // group of its own here, so the recursion grounds one level down, and a
+  // `refines` cycle — which the grouping degrades to a flat fan — plans no
+  // nesting at all. `seen` is honoured for the same reason it is everywhere
+  // else: a variant already drawn on the way down must not be drawn again
+  // inside itself.
+  const ownGroup = methodFanGroups(graph, method.realizes).find(
+    (group) => group.method.id === method.id,
+  );
+  // `flatMap` over the group with its own index, never filter-then-map: a
+  // variant skipped by the `seen` guard must not shift its siblings' positions,
+  // or the same variant would answer to different addresses in different
+  // drawings of one figure.
+  // Planned at the PARENT's depth, not one deeper. A refinement is a peer of
+  // the method it narrows — another way of filling the same slot, re-analysed
+  // — so nesting it must not spend a rung of the reader's depth budget: at the
+  // ceiling, `depth + 1` here cost the four-root overview eight open controls
+  // that existed before the grouping (73 → 65 reachable addresses, measured).
+  // The drawing still steps it visually — `place` and `measure` take their own
+  // depth argument and pass `depth + 1` for the taper and the receding style.
+  const variants = (ownGroup?.variants ?? []).flatMap((variant, index) =>
+    seen.has(variant.id)
+      ? []
+      : [
+          planForMethod(
+            graph,
+            vocabulary,
+            variant,
+            locale,
+            open,
+            depth,
+            new Set([...seen, method.id]),
+            `${key}+`,
+            `${address}.${variantPosition(route, index)}`,
+          ),
+        ],
+  );
   return {
     key,
     address,
@@ -1885,6 +2023,7 @@ function planForMethod(
     interior: [],
     ways: 0,
     feeds,
+    variants,
   };
 }
 
@@ -1980,6 +2119,7 @@ function planForLane(
     interior: lane.interior,
     ways: laneFillers(graph, lane).length,
     feeds: [],
+    variants: [],
   };
 }
 
@@ -2129,6 +2269,9 @@ interface Measure {
   children: Measure[];
   /** One per `PlanStrand.feed`, in the same order — `placeFeeds` indexes it. */
   feeds: Measure[];
+  /** One per `PlanStrand.variants`, in the same order — the variant row in
+   *  `place` indexes it, and the wrapper half of `measure` is its one writer. */
+  variants: Measure[];
   /**
    * How far out everything drawn **inside** this strand reaches, before its own
    * name and before anything hanging off it.
@@ -2264,23 +2407,21 @@ type MarkedStrand = {
  * **One writer, because the budget is one number.** `fitLabel` measures the
  * kept name and this suffix together in a single `estimateTextWidth` call — the
  * standing lesson from the `repeats` mark, where subtracting the mark's width
- * from the budget first cut a name at a budget equal to its own demand. A
- * second suffix makes that arithmetic worse, not better, so there is no second
- * one: both marks live here.
+ * from the budget first cut a name at a budget equal to its own demand.
  *
- * **The order is the reading order and it is not arbitrary.** The refinement
- * qualifies the *name* — it says which of two same-shaped lanes this is — so it
- * sits against the name. The count qualifies the *lane* and belongs at the end,
- * where `spokenName` also puts it. `LCHS with the improved kernel ⊂ LCHS ×T/h`
- * reads as one phrase; the other order reads as two.
+ * **The `⊂ <parent>` suffix is gone (W13), and it is not a loss of the fact.**
+ * It shipped in session 117 and the owner rejected it in 118: the reason a
+ * drawn name ever needed the parent's name repeated is that graph order
+ * interleaved the group — Carleman drew two lanes away from the Koopman it
+ * narrows. The fan is grouped now, so adjacency and the bracket say the same
+ * thing without the repetition; `spokenName` keeps the full sentence, because
+ * a screen reader gets no bracket.
  */
 function markSuffix(strand: {
   repeatMark: string | null;
   refinement: StrandRefinement | null;
 }): string {
-  const refines = strand.refinement === null ? "" : ` ⊂ ${strand.refinement.mark}`;
-  const repeats = strand.repeatMark === null ? "" : ` ${strand.repeatMark}`;
-  return `${refines}${repeats}`;
+  return strand.repeatMark === null ? "" : ` ${strand.repeatMark}`;
 }
 
 /**
@@ -2367,7 +2508,58 @@ export function drawnName(strand: MarkedStrand): string {
   return `${strand.shortLabel ?? strand.label}${markSuffix(strand)}`;
 }
 
+/** How far past its own edge a strand must clear before a variant row starts:
+ *  room for the name written at that edge, which `labelLift` is already the
+ *  unit of everywhere else on this canvas. */
+const VARIANT_FRAME_PAD = 3;
+
+/**
+ * The band a strand keeps for itself before anything nests outward of it —
+ * its content, its ingredients, and the `labelBand` its own name sits in.
+ *
+ * Equal to every arm of `measureCore`'s `vHalf` by construction (each arm is
+ * `innerReach + feedReach + labelBand`, with the leaf's `feedReach` zero), and
+ * written once here because `place`'s variant row and the exoskeleton frame
+ * both need it back from a `Measure` whose `vHalf` has since grown to include
+ * the variants. A second derivation of a band is the `hFit` mistake again.
+ */
+function coreBandHalf(size: { innerReach: number; feeds: readonly Measure[] }): number {
+  return size.innerReach + feedReach(size.feeds) + CONVERGE_METRICS.labelBand;
+}
+
+/**
+ * `measureCore` folded together with the strand's variant row (W13).
+ *
+ * The core is the strand as it always measured; the wrapper stacks the
+ * refinements nested under it — packed outward from the band the core already
+ * claims, plus the bracket's own pad — into `vHalf`, takes the widest variant
+ * name into `hFit` (a variant spans the whole belly, so there is no `k`
+ * multiplier), and charges `hRun` the row's two tendons exactly as a fan
+ * charges its children's. One wrapper rather than four edited arms, so no arm
+ * can forget the row.
+ */
 function measure(strand: PlanStrand, depth: number): Measure {
+  const core = measureCore(strand, depth);
+  if (strand.variants.length === 0) return { ...core, variants: [] };
+  const M = CONVERGE_METRICS;
+  const variants = strand.variants.map((variant) => measure(variant, depth + 1));
+  const clear = coreBandHalf(core) + M.labelLift;
+  const offsets = allocateBowsOutward(variants.map((v) => v.vHalf), M.laneGap, clear);
+  const reach = Math.max(...offsets.map((offset, i) => offset + variants[i]!.vHalf));
+  return {
+    ...core,
+    vHalf: reach + VARIANT_FRAME_PAD + M.laneGap,
+    hFit: Math.max(core.hFit, ...variants.map((v) => v.hFit)),
+    hRun: Math.max(
+      core.hRun,
+      2 * Math.max(...offsets.map((offset) => tendonRunFor(offset))) +
+        Math.max(0, ...variants.map((v) => v.hRun)),
+    ),
+    variants,
+  };
+}
+
+function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants"> {
   const M = CONVERGE_METRICS;
   // The **drawn** name, which is the short form when one is authored. Sizing a
   // column to the full label and then drawing the short one would leave every
@@ -2589,6 +2781,10 @@ function place(
     parentKey: string | null;
     /** The stub this strand hangs off. See `ConvergeLane.feedKey`. */
     feedKey: string | null;
+    /** This placement is a nested refinement. See `ConvergeLane.variant`.
+     *  Every child call site resets it explicitly, the same discipline
+     *  `feedKey` has — a variant's own steps are not variants. */
+    variant: boolean;
     /**
      * This figure's own address, for hanging a `?card=` off. Null on a surface
      * with no card layer — see `layoutFigure`'s `cards` option.
@@ -2670,11 +2866,59 @@ function place(
   // bow 0 — so there is no clear middle to write in, and the parent's identity
   // is carried by the exoskeleton drawn around the run instead.
   const onBone = strand.open && strand.layout === "fan";
+  // **The exoskeleton (W13).** An opened chain's steps partition its belly end
+  // to end — measured, 85 of 275 opened lanes had zero collapsible pixels
+  // there — so the collapse target moves onto the outline of the band the
+  // measurement already reserves: `ribbonOutline` at the lane's own bow, whose
+  // two edges are members of the same one-parameter family as every lane. The
+  // composite run lane is drawn open by construction and has no click to
+  // carry, so it gets no shell.
+  const framed = strand.open && strand.opensInto === "steps" && !strand.composite;
+  const frameHalf = coreBandHalf(size) - M.labelBand;
+  const frame = framed ? { d: ribbonOutline(ribbon, frameHalf), half: frameHalf } : null;
+  // **The variant row (W13):** refinements nested under this lane's own line,
+  // packed outward from the band the lane keeps for itself, wrapped in a
+  // bracket. Same allocator, same clearance and same shared run as `measure`
+  // charged, so the reservation and the drawing are one arithmetic.
+  const variantRow =
+    strand.variants.length === 0
+      ? null
+      : (() => {
+          const clear = coreBandHalf(size) + M.labelLift;
+          const offsets = allocateBowsOutward(
+            size.variants.map((v) => v.vHalf),
+            M.laneGap,
+            clear,
+          );
+          const run = runAcross(offsets, belly.x1 - belly.x0);
+          const lo = offsets[0]! - size.variants[0]!.vHalf - VARIANT_FRAME_PAD;
+          const hi =
+            Math.max(...offsets.map((offset, i) => offset + size.variants[i]!.vHalf)) +
+            VARIANT_FRAME_PAD;
+          const bracket: Ribbon = {
+            x0: belly.x0,
+            x1: belly.x1,
+            y: belly.y,
+            bow: outward * ((lo + hi) / 2),
+            run,
+          };
+          return { offsets, run, d: ribbonOutline(bracket, (hi - lo) / 2) };
+        })();
   const labelY = onBone
     ? peak.y - M.spineStroke / 2 - M.labelLift
-    : outward > 0
-      ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
-      : peak.y - bandHalf - M.labelLift;
+    : framed
+      ? // On the shell's **inward** edge — the side away from the ingredients.
+        // Feeds and their fans hang on the outward side only, and the
+        // outermost fan name pokes its known ~3.6px past the band it sits in,
+        // so a name on the outward line is grazed by them at a deterministic
+        // 14.8px — measured five times across three figures before this
+        // moved. The inward line faces nothing but step bands, which carry
+        // their names on their own outward sides. Baseline-dropped so the
+        // name sits ON the line, the treatment the bone gives its own.
+        peak.y - outward * frameHalf + M.laneFont * 0.35
+      : outward > 0
+        ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
+        : peak.y - bandHalf - M.labelLift;
 
   // Two lanes keep drawing nothing, for two different reasons.
   //
@@ -2702,6 +2946,18 @@ function place(
     strand.composite || strand.nameless
       ? { text: "", truncated: false }
       : fitMarkedName(strand, M.laneFont, nameBudget(context.columnFit));
+  const fittedWidth = fitted.text === "" ? 0 : estimateTextWidth(fitted.text, M.laneFont);
+  // A framed name sits at the LEFT of the shell, not the centre — the owner's
+  // own bracket sketch, and a measured constraint: `placeFeeds` puts a lone
+  // ingredient stub at the belly's exact middle, and the outermost fan name
+  // under that stub pokes its known ~3.6px past the band, which grazed a
+  // centre-placed shell name's click target by 0.2px on `quantum-linear-solve`
+  // (ja). The left end of the flat part faces no stub and no step name at
+  // shell height. `min(…, peak.x)` so a name wider than the belly stays
+  // centred rather than hanging off the left tendon.
+  const labelX = framed
+    ? Math.min(belly.x0 + M.labelPad + fittedWidth / 2, peak.x)
+    : peak.x;
   if (strand.standing === "unpublished") out.unpublished += 1;
   // **A partition of the old single count, on `openable`.** Both arms need
   // `!open` and neither can drop it: a run of named hops is drawn open from the
@@ -2777,9 +3033,12 @@ function place(
     own: strand.own,
     draws: strand.draws,
     bone: onBone,
-    labelX: peak.x,
+    frame,
+    variantBracket: variantRow === null ? null : variantRow.d,
+    variant: context.variant,
+    labelX,
     labelY,
-    labelWidth: fitted.text === "" ? 0 : estimateTextWidth(fitted.text, M.laneFont),
+    labelWidth: fittedWidth,
     nodeId: strand.id,
     // `openable`, not `id`. A line at the depth ceiling has an id and something
     // inside and still cannot draw it, and offering the click anyway is what
@@ -2814,6 +3073,33 @@ function place(
     ways: strand.ways,
   });
 
+  // **The variant row is drawn whether or not the strand is open** — the
+  // owner's rule is that refinements are there during the same expansion that
+  // drew their parent, with no further click — which is why this precedes the
+  // shut return below.
+  if (variantRow !== null) {
+    for (const [index, variant] of strand.variants.entries()) {
+      place(
+        belly,
+        variant,
+        size.variants[index]!,
+        outward * variantRow.offsets[index]!,
+        variantRow.run,
+        depth + 1,
+        {
+          ...context,
+          parentKey: strand.key,
+          feedKey: null,
+          variant: true,
+          // A variant spans the whole belly, so it is fitted against the
+          // parent's own column — floored at its measured demand, the same
+          // guard a chain's steps carry.
+          columnFit: Math.max(size.variants[index]!.hFit, context.columnFit),
+        },
+      );
+    }
+  }
+
   if (!strand.open) return;
   // **Before the children check, not after it.** This return read
   // `|| strand.children.length === 0`, so an opened method whose whole content
@@ -2845,6 +3131,8 @@ function place(
         // Cleared: a step lies on the line it decomposes even when that line is
         // itself an ingredient's. `feedKey` marks the one hop off the side.
         feedKey: null,
+        // Cleared for the same reason: a variant's own steps are not variants.
+        variant: false,
         // Each step gets its share of the column, so a chain of three names is
         // fitted against a third of the width rather than against all of it.
         //
@@ -2917,6 +3205,7 @@ function place(
       ...context,
       parentKey: strand.key,
       feedKey: null,
+      variant: false,
     });
   }
 }
@@ -3052,6 +3341,7 @@ function placeFeeds(
         ...context,
         parentKey: strand.key,
         feedKey: `${strand.key}~${feed.id ?? index}`,
+        variant: false,
         // Floored at the ingredient's own demand, same reason as a chain's steps.
         columnFit: Math.max(
           size.feeds[index]!.hFit,
@@ -3196,8 +3486,30 @@ export function layoutConvergeForMethod(options: {
   // index — and `addressRoot` is the same call. Deriving it here rather than
   // having `planMethodFan` stamp a flag keeps the fan builder ignorant of who is
   // asking, which is what lets the map and this page share it.
+  //
+  // A **variant** is not a top-level lane since the fan grouped (W13): its
+  // page's subject is the nested strand under its parent, at the position
+  // `variantPosition` numbers — the same writer `planForMethod` used to mint
+  // the address, so the two cannot disagree about where the five refinement
+  // methods live.
   const fan = methodFanOf(graph, slot);
-  const at = fan ? fan.lanes.findIndex((lane) => lane.method.id === method.id) : -1;
+  let subjectAddress: string | null = null;
+  if (fan) {
+    const at = fan.lanes.findIndex((lane) => lane.method.id === method.id);
+    if (at !== -1) {
+      subjectAddress = addressRoot(slot.id, 0, at);
+    } else {
+      const parentAt = fan.lanes.findIndex((lane) =>
+        lane.variants.some((variant) => variant.id === method.id),
+      );
+      if (parentAt !== -1) {
+        const parent = fan.lanes[parentAt]!;
+        const route = routeOf(graph, vocabulary, parent.method);
+        const index = parent.variants.findIndex((variant) => variant.id === method.id);
+        subjectAddress = `${addressRoot(slot.id, 0, parentAt)}.${variantPosition(route, index)}`;
+      }
+    }
+  }
   return layoutFigure({
     graph,
     vocabulary,
@@ -3207,7 +3519,7 @@ export function layoutConvergeForMethod(options: {
     focusParam: options.focusParam === undefined ? slot.id : options.focusParam,
     at: options.at,
     plan: "fan",
-    subjectAddress: at === -1 ? null : addressRoot(slot.id, 0, at),
+    subjectAddress,
   });
 }
 
@@ -3475,6 +3787,7 @@ function layoutFigure(options: {
         columnFit: columns[index]!.fit,
         parentKey: null,
         feedKey: null,
+        variant: false,
         cardBase,
       });
     }

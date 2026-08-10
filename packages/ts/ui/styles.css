@@ -11541,6 +11541,53 @@ div.mj-rail-row:hover {
 }
 .mj-converge-canvas a:hover .mj-converge-spine--bone { opacity: 0.85; }
 
+/* The **exoskeleton** (W13): the shell around an opened chain's band, and that
+   chain's collapse target. A chain cannot wear the bone treatment — its steps
+   are drawn on its own spine, so a thick dotted stroke there would run under
+   the very shapes it was opened to reveal (the bone rule above says so) — so
+   the same dotted "you opened this" language moves to the boundary of the band
+   the layout reserves. Same dash as the bone, thinner: it is an outline around
+   content, not a line carrying it. The width is a literal for the bone's
+   reason: the layout has committed the band in px. */
+.mj-converge-frame {
+  stroke: currentColor;
+  stroke-width: 2;
+  stroke-dasharray: 2 5;
+  fill: none;
+  opacity: 0.4;
+}
+/* The shell's own hit ring. A stroke, never a fill — a filled shell would
+   cover every step inside it and eat their clicks, which is the exact failure
+   the hit-target block below records. 18 rather than 24: the ring's inner
+   side faces the chain's own steps, and a 24px ring reaches 12px inward —
+   into the band the outermost step's name sits in. It rides in the same
+   anchor as the line's own hit, so hovering either lights both. */
+.mj-converge-frame-hit {
+  stroke: currentColor;
+  stroke-width: 18;
+  fill: none;
+  opacity: 0;
+  pointer-events: stroke;
+}
+.mj-converge-canvas a:hover .mj-converge-frame-hit { opacity: 0.07; }
+.mj-converge-lane:has(> a:hover > .mj-converge-frame-hit) > .mj-converge-frame,
+.mj-converge-lane:has(> a:focus-visible > .mj-converge-frame-hit) > .mj-converge-frame {
+  opacity: 0.8;
+}
+
+/* The **bracket** (W13): wraps the refinements nested under a line. Inert and
+   quiet — it is a claim ("these are narrower versions of the line above"), not
+   a control, and the variants inside it carry their own clicks. A longer dash
+   than the opened marks so the two languages cannot be confused. */
+.mj-converge-variant-bracket {
+  stroke: currentColor;
+  stroke-width: 1.5;
+  stroke-dasharray: 6 4;
+  fill: none;
+  opacity: 0.3;
+  pointer-events: none;
+}
+
 /* The plate that makes a name readable where a line runs through it.
 
    **Every name wears one** (owner, session 107: *"plate every name, but opened
@@ -11857,7 +11904,14 @@ div.mj-rail-row:hover {
    Held under a third of a second, same budget as the navigation transition: this
    is a reading surface, and a move long enough to watch is long enough to wait
    for. */
-.mj-converge-canvas :where(.mj-converge-strand-body, .mj-converge-spine, .mj-converge-strand-hit) {
+.mj-converge-canvas :where(
+    .mj-converge-strand-body,
+    .mj-converge-spine,
+    .mj-converge-strand-hit,
+    .mj-converge-frame,
+    .mj-converge-frame-hit,
+    .mj-converge-variant-bracket
+  ) {
   transition: d var(--dur-converge) var(--ease-converge);
 }
 .mj-converge-canvas .mj-converge-dot,
@@ -11916,6 +11970,9 @@ div.mj-rail-row:hover {
       .mj-converge-strand-body,
       .mj-converge-spine,
       .mj-converge-strand-hit,
+      .mj-converge-frame,
+      .mj-converge-frame-hit,
+      .mj-converge-variant-bracket,
       .mj-converge-dot,
       .mj-converge-hit,
       .mj-converge-lane-name,
