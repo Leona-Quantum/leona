@@ -1894,6 +1894,48 @@ test("an ingredient is drawn only inside an opened strand, and always as an addr
   assert.ok(drawn > 0, "no ingredient was drawn on any opening — the feature is inert");
 });
 
+test("an open ingredient is named once, not once as a stub and again on its fan", () => {
+  // The owner, session 118: *"still seeing things like … strange repeats within
+  // larger processes. These kinds of things need to be eliminated."*
+  //
+  // An open ingredient was two shapes carrying one string. `placeFeeds` pushes
+  // the stub, then calls `place` on the same strand, which pushes a lane at the
+  // **identical address** — and both drew the name. Measured before the fix: 94
+  // of 94 open ingredients, e.g. `quantum-linear-solve` opened three deep drew
+  // *"Prepare an input state ×O(κ)"* at two heights with nothing saying they are
+  // one thing.
+  //
+  // Asserted against the **drawn** string rather than against the plan, because
+  // that is what the reader sees, and pinned with a floor so the sweep cannot
+  // pass by finding no open ingredients at all.
+  let pairs = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of openings(focus.id)) {
+        const diagram = openDiagram(focus.id, open, locale);
+        const byKey = new Map(diagram.feeds.map((feed) => [feed.key, feed]));
+        for (const lane of diagram.lanes) {
+          if (lane.feedKey === null) continue;
+          const stub = byKey.get(lane.feedKey);
+          if (stub === undefined) continue;
+          pairs += 1;
+          assert.equal(
+            lane.label,
+            "",
+            `${lane.key} draws "${lane.label}" and the stub above it draws "${stub.label}"`,
+          );
+          // …and the name did not simply vanish with the second copy.
+          assert.ok(
+            stub.label.length > 0,
+            `${stub.key}: the ingredient is now named nowhere at all`,
+          );
+        }
+      }
+    }
+  }
+  assert.ok(pairs > 50, `only ${pairs} opened ingredients were examined`);
+});
+
 test("a chain's column is wide enough for its widest step, taken once per step", () => {
   // The rule `place` depends on: a chain of k steps divides the column into k
   // equal shares, so the column must hold `k × widest`. The authored graph has
@@ -1986,6 +2028,23 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
         for (const lane of diagram.lanes) {
           if (lane.repeatMark === null) continue;
           marked += 1;
+          // **A nameless lane draws no label, so the mark rides on the shape that
+          // does.** Since session 118 the base an open ingredient's fan hangs
+          // from is `nameless` — the stub one shape above it carries the name,
+          // and drawing both was the repeat the owner reported. The count must
+          // still reach the reader, so this arm follows it to the stub rather
+          // than excusing the lane: an exemption that only skipped would let the
+          // mark vanish from the figure entirely and pass.
+          if (lane.nameless) {
+            assert.equal(lane.label, "", `${lane.key} is nameless and draws "${lane.label}"`);
+            assert.ok(
+              diagram.feeds.some(
+                (feed) => feed.key === lane.feedKey && feed.repeatMark === lane.repeatMark,
+              ),
+              `${lane.key} carries ${lane.repeatMark}, draws nothing, and no stub above it draws it either`,
+            );
+            continue;
+          }
           // The mark is at the end of what is drawn, whether or not the name in
           // front of it was cut. This is the invariant the whole placement is
           // for: a name is legible from the figure's other lanes, and the count
@@ -2497,7 +2556,14 @@ test("a name past the cap is cut, and the full text survives in the title", () =
       ...lanesOn(slot.id, new Set()),
       ...lanesOn(slot.id, new Set(openableAddresses(slot.id, graph))),
     ])
-    .filter((lane) => lane.fullLabel === long);
+    // **`!nameless`, because the subject is the cut and a nameless lane makes no
+    // cut.** Since session 118 the base an open ingredient's fan hangs from draws
+    // no label — the stub above it carries the name — so it reaches here with
+    // `fullLabel` set and `label` empty, and asking whether *that* was truncated
+    // is asking about a string nobody drew. The stub itself is checked by
+    // `an ingredient's name stays on the canvas`; the floor below is what keeps
+    // this filter from quietly emptying the subject.
+    .filter((lane) => lane.fullLabel === long && !lane.nameless);
   assert.ok(drawn.length > 0, "the fixture's long name is drawn on no figure at all");
   for (const lane of drawn) {
     assert.equal(lane.labelTruncated, true, "a 1272px name was not cut by a 300px cap");

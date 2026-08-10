@@ -1430,9 +1430,12 @@ interface PlanStrand {
    * already on the page once."* They suppress the same drawing for opposite
    * reasons, and a future session that lifts one must not lift the other.
    *
-   * True on exactly one kind of strand today: the remainder hop, the part of a
-   * route the method performs itself. Its name is the method's, and the method's
-   * name is now written on the bone or the exoskeleton above it.
+   * True on **two** kinds of strand. The remainder hop, the part of a route the
+   * method performs itself: its name is the method's, and the method's name is
+   * written on the bone or the exoskeleton above it. And, since session 118, the
+   * base an open ingredient's fan hangs from: its name is the stub's, drawn one
+   * shape above it, and drawing it twice is what the owner was reading as a
+   * repeat. See `placeFeeds`.
    */
   nameless: boolean;
   /**
@@ -3008,7 +3011,30 @@ function placeFeeds(
     const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: fanY };
     place(
       fanBase,
-      feed,
+      // **`nameless`, because the stub above already carries this name.** The
+      // owner, session 118: *"still seeing things like … strange repeats within
+      // larger processes. These kinds of things need to be eliminated."*
+      //
+      // An open ingredient was drawn twice, in the same words, one shape apart:
+      // once as the stub's own name and once again on the strand its fan hangs
+      // from, which `place` pushes into `out.lanes` at the identical address.
+      // Measured, **94 of 94 open ingredients** across the nineteen saturated
+      // figures. On `quantum-linear-solve` opened three deep the page drew
+      // *"Prepare an input state ×O(κ)"* at two heights and the reader has no way
+      // to know they are one thing.
+      //
+      // This is the second kind of strand `PlanStrand.nameless`'s own doc
+      // comment said would arrive — *"the day a second kind of strand borrows a
+      // name already drawn"* — and it is exactly that claim: the name is
+      // correct and is already on the page once. Nothing else is lost. The stub
+      // keeps the name, the `<title>`, the card and the click; only the second
+      // copy of the string goes.
+      //
+      // Set here rather than in `measure`, deliberately: the column still
+      // reserves the width this name would have taken, so no figure changes size
+      // and no label that fits today starts being cut. Reclaiming that width is a
+      // separate change with its own measurements.
+      { ...feed, nameless: true },
       size.feeds[index]!,
       0,
       // The stub's own fan is one strand on a level base, so its row is a row of
