@@ -984,13 +984,35 @@ test("the hollow twins are counted, and the count may only fall", () => {
       })
       .join("|");
   };
+  // **And the ingredients, because a stub is drawn.** `routeOf` splits a method's
+  // recorded interior two ways: hops that advance the chain become segments, and
+  // steps that do not fit between the contract's two ends become **feeds**, drawn
+  // as stubs off the belly. Keying on segments alone therefore calls two methods
+  // twins whose figures do not look alike.
+  //
+  // Measured, not argued. `layoutConvergeForMethod` gives `backward-euler` six
+  // lanes and one stub labelled `Quantum linear solve` — carrying `×T/h` since
+  // session 116 — and gives `forward-euler` five lanes and no stub at all. Those
+  // are different pictures, and the owner's complaint is about what he *sees*:
+  // *"different labels on top but the same internals"*. A method whose internals
+  // are an ingredient has internals.
+  const drawnBy = (method: LayerMethod): string => {
+    const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
+    // `via` again, for the same reason it is read on a segment: a stub draws the
+    // method a route pins through the slot, where one is pinned.
+    const feeds = [...route.feeds]
+      .map((slot) => String(method.via?.[slot] ?? slot))
+      .sort()
+      .join("+");
+    return `${chainOf(method)}##${feeds}`;
+  };
 
   const groups = new Map<string, LayerMethod[]>();
   for (const method of methods) {
     // Keyed by slot as well as chain. Cross-slot recurrence is a different fact — two ways of
     // reaching two different goals that happen to have no recorded interior — and measured
     // today there is none of it anyway.
-    const key = `${method.realizes}::${chainOf(method)}`;
+    const key = `${method.realizes}::${drawnBy(method)}`;
     groups.set(key, [...(groups.get(key) ?? []), method]);
   }
 
@@ -1016,20 +1038,40 @@ test("the hollow twins are counted, and the count may only fall", () => {
     console.log(`  ${row.ids.length}  ${row.slot}: ${row.ids.join(", ")}`);
   }
 
-  // **A ceiling, not a pin, and the direction is the whole point.** 46 of 63 today, in 17
+  // **A ceiling, not a pin, and the direction is the whole point.** 36 of 63 today, in 14
   // groups. Every group is a corpus job — decompose the method, narrow the state, or say why
   // three ways to one place have no recorded interior — and each one lands makes this fall.
   // Going *up* means a method was authored with nothing inside it beside siblings that already
   // had nothing, which is the thing he asked to have eliminated.
+  //
+  // **It was 46, and the ten that left did not leave because corpus work landed.**
+  // They left because this was keyed on the spine and the figure draws stubs too;
+  // see `drawnBy`. Recording that here rather than only in a commit message,
+  // because a ceiling that falls is exactly what a gate being quietly relaxed
+  // looks like, and the two are told apart by the reason and by nothing else.
+  // The ten are real: `backward-euler` and `trapezoidal-rule` hang a
+  // `quantum-linear-solve` stub the other three time-discretisations do not, and
+  // the same is true in `quantum-linear-solve`, `matrix-function`,
+  // `hamiltonian-simulation`, `state-preparation` and `qubit-routing`.
+  //
+  // **The job is unchanged in kind.** 36 methods in 14 groups still draw a
+  // sibling's picture with nothing declaring why, and the largest is still the
+  // embedding group he named. What changed is that the number now counts the
+  // thing he was looking at.
   assert.ok(
-    counted <= 46,
-    `${counted} methods draw a sibling's chain with nothing declaring why — was 46. ` +
+    counted <= 36,
+    `${counted} methods draw a sibling's picture with nothing declaring why — was 36. ` +
       `A new one means a method was authored with no recorded interior beside siblings that ` +
       `already had none. See plans/atlas-revamp/W10-hollow-twins.md`,
   );
   // And the groups he named by sight are the big ones, pinned so that "the owner's examples"
   // stays a checkable claim rather than a recollection.
-  const bySlot = (slot: string) => rows.find((row) => row.slot === slot)?.ids.length ?? 0;
+  //
+  // Summed, not `find`. One slot can now hold **two** groups — `time-discretization`
+  // holds a three and a two — and `find` would answer with whichever came first,
+  // which is a number that depends on corpus order.
+  const bySlot = (slot: string) =>
+    rows.filter((row) => row.slot === slot).reduce((total, row) => total + row.ids.length, 0);
   assert.ok(bySlot("time-discretization") >= 2, "the time-discretisation group stopped colliding");
   assert.ok(
     bySlot("nonlinear-linear-embedding") >= 2,
