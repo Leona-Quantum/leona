@@ -72,6 +72,18 @@ VQE numerical failure. It was a control-plane truth mismatch.
     provider. Assertions prove that provider selection does not alter the
     portable scientific specification. Production resolution remains
     fail-closed for a provider mismatch.
+12. External attempt `31355325308` passed the corrected provider-bound E2E,
+    but artifact audit found that schema 1.1 hashed internal raw response
+    objects which the uploaded artifact did not contain. The digest therefore
+    could not be independently recomputed from the artifact, and the artifact
+    exposed too little numerical evidence for a useful scientific audit. Schema
+    1.2 now exports only a strict allowlist of scientific results, runtime and
+    protocol identities, and comparison invariants. It excludes parameter
+    values, trajectories, supplementary payloads, request data, and
+    credentials. The artifact digest is computed over the complete redacted
+    payload before the digest field is attached, so an auditor can remove that
+    one field and reproduce the SHA-256 exactly. Attempt `31355325308` remains
+    diagnostic evidence rather than final release evidence.
 
 ## S0–S12 completion contract
 
@@ -146,8 +158,8 @@ normal user validation refusal is not an invariant alert.
 - Empty database upgrade → downgrade → upgrade succeeded.
 - Downgrade with launch-decision evidence was correctly refused.
 - Live PostgreSQL delayed-heartbeat and append-only tests: **2 passed**.
-- Full repository Python regression suite after the external-run corrections:
-  **2935 passed, 431 skipped**; the only warning is an existing Alembic
+- Full repository Python regression suite after the self-verifiable evidence
+  correction: **2937 passed, 431 skipped**; the only warning is an existing Alembic
   `path_separator` deprecation.
 - Next.js production build after integration with `dev`: **passed**, including
   **596** generated static pages and the VQE proxy/Studio/Atlas application
@@ -171,6 +183,11 @@ normal user validation refusal is not an invariant alert.
 - External attempt `31354805410` reached the first real Qiskit result and then
   exposed the stale cross-provider E2E workflow assumption described above.
   It is diagnostic evidence, not release evidence.
+- External attempt `31355325308` passed the provider-corrected production E2E,
+  while ordinary CI attempt `31355325315` passed all TypeScript, UI,
+  PostgreSQL, and Python jobs at the same fixed commit. The schema 1.1 artifact
+  was then rejected as final evidence because its digest was not self-contained;
+  that is an audit-quality failure, not a runtime failure.
 
 This local evidence does not close S9. The release decision remains
 `NO-GO — pending exact-commit Linux/x86_64 fixed-digest E2E` until the pushed

@@ -253,6 +253,196 @@ async def _execute_and_finish(
     return final
 
 
+def _redacted_execution_summary(execution: dict) -> dict[str, object]:
+    """Keep auditable scientific/runtime fields without serializing raw payloads."""
+
+    assert execution["status"] == "succeeded"
+    assert len(execution["observations"]) == 1
+    observation = execution["observations"][0]
+    result = observation["result_contract_json"]
+    common_basis = next(
+        item for item in result["resources"] if item["stage"] == "common_basis_compiled"
+    )
+    return {
+        "execution_id": execution["id"],
+        "experiment_id": execution["experiment_id"],
+        "framework": execution["framework"],
+        "runtime_profile_id": execution["runtime_profile_id"],
+        "runtime_image_digest": execution["runtime_image_digest"],
+        "adapter_release_id": execution["adapter_release_id"],
+        "execution_identity_sha256": execution["execution_identity_sha256"],
+        "result_contract_sha256": observation["result_contract_sha256"],
+        "result_schema_version": result["schema_version"],
+        "result_kind": result["result_kind"],
+        "capability": result["capability"],
+        "scientific_spec_sha256": result["scientific_spec_sha256"],
+        "registry_resolution_sha256": result["registry_resolution_sha256"],
+        "provider_versions": result["provider_versions"],
+        "hamiltonian_exact_digest": result["hamiltonian_exact_digest"],
+        "seed": result["seed"],
+        "ansatz_semantic_digest": result["ansatz_semantic_digest"],
+        "canonical_circuit_sha256": result["canonical_circuit_sha256"],
+        "compilation_protocol_sha256": result["compilation_protocol_sha256"],
+        "best_energy_ha": result["best_energy_ha"],
+        "exact_energy_ha": result["exact_energy_ha"],
+        "absolute_error_ha": result["absolute_error_ha"],
+        "final_state_fidelity": result["final_state_fidelity"],
+        "converged": result["converged"],
+        "iterations": result["iterations"],
+        "optimizer_work": result["optimizer_work"],
+        "parameter_count": result["parameter_count"],
+        "initial_parameters_sha256": result["initial_parameters_sha256"],
+        "final_parameters_sha256": result["final_parameters_sha256"],
+        "common_basis_resources": {
+            "metric_protocol_sha256": common_basis["metric_protocol_sha256"],
+            "qubits": common_basis["qubits"],
+            "depth": common_basis["depth"],
+            "gate_count": common_basis["gate_count"],
+            "two_qubit_gate_count": common_basis["two_qubit_gate_count"],
+            "parameter_count": common_basis["parameter_count"],
+            "basis_gates": common_basis["basis_gates"],
+            "metric_scope": common_basis["metric_scope"],
+            "reference_state_included": common_basis["reference_state_included"],
+            "measurement_included": common_basis["measurement_included"],
+            "hardware_optimization_or_routing_included": common_basis[
+                "hardware_optimization_or_routing_included"
+            ],
+        },
+        "production_runtime_status": execution["production_runtime_status"],
+        "public_execution": execution["public_execution"],
+        "review_state": execution["review_state"],
+        "execution_policy": execution["execution_policy"],
+        "runtime_qualification": execution["runtime_qualification"],
+        "scientific_review": execution["scientific_review"],
+        "publication": execution["publication"],
+    }
+
+
+def _canonical_json_sha256(value: object) -> str:
+    encoded = json.dumps(
+        value,
+        allow_nan=False,
+        sort_keys=True,
+        separators=(",", ":"),
+    ).encode("utf-8")
+    return hashlib.sha256(encoded).hexdigest()
+
+
+def _attach_self_verifiable_digest(evidence: dict[str, object]) -> dict[str, object]:
+    """Hash exactly the redacted artifact payload, excluding its digest field."""
+
+    assert "evidence_digest_sha256" not in evidence
+    bundled = dict(evidence)
+    bundled["evidence_digest_sha256"] = _canonical_json_sha256(evidence)
+    return bundled
+
+
+def test_redacted_execution_summary_is_a_strict_allowlist() -> None:
+    result = {
+        "schema_version": "0.2.0",
+        "result_kind": "vqe_optimization_success",
+        "capability": "h2_sto3g_actual_vqe_v1",
+        "scientific_spec_sha256": "a" * 64,
+        "registry_resolution_sha256": "b" * 64,
+        "provider_versions": {"qiskit": "1.4.6"},
+        "hamiltonian_exact_digest": "c" * 64,
+        "seed": 0,
+        "ansatz_semantic_digest": "d" * 64,
+        "canonical_circuit_sha256": "e" * 64,
+        "compilation_protocol_sha256": "f" * 64,
+        "best_energy_ha": -1.137,
+        "exact_energy_ha": -1.137,
+        "absolute_error_ha": 0.0,
+        "final_state_fidelity": 1.0,
+        "converged": True,
+        "iterations": 2,
+        "optimizer_work": {
+            "iterations": 2,
+            "energy_evaluations": 5,
+            "gradient_evaluations": 0,
+            "hessian_evaluations": 0,
+        },
+        "parameter_count": 1,
+        "initial_parameters_sha256": "1" * 64,
+        "final_parameters_sha256": "2" * 64,
+        "initial_parameters": [{"slot_id": "theta", "float64_hex": "secret-initial"}],
+        "final_parameters": [{"slot_id": "theta", "float64_hex": "secret-final"}],
+        "energy_trajectory": [-1.0, -1.137],
+        "resources": [
+            {
+                "stage": "common_basis_compiled",
+                "metric_protocol_sha256": "f" * 64,
+                "qubits": 4,
+                "depth": 83,
+                "gate_count": 100,
+                "two_qubit_gate_count": 48,
+                "parameter_count": 1,
+                "basis_gates": ["rz", "sx", "x", "cx"],
+                "metric_scope": "ansatz_only",
+                "reference_state_included": False,
+                "measurement_included": False,
+                "hardware_optimization_or_routing_included": False,
+            }
+        ],
+        "supplementary_evidence": {"credential_like_value": "must-not-leak"},
+    }
+    execution = {
+        "id": "execution-id",
+        "experiment_id": "experiment-id",
+        "framework": "qiskit",
+        "runtime_profile_id": "runtime-profile",
+        "runtime_image_digest": f"sha256:{'3' * 64}",
+        "adapter_release_id": "adapter-release",
+        "execution_identity_sha256": "4" * 64,
+        "status": "succeeded",
+        "production_runtime_status": "qualified",
+        "public_execution": "blocked",
+        "review_state": "unreviewed",
+        "execution_policy": "owner_waived_private",
+        "runtime_qualification": "qualified_private",
+        "scientific_review": "unreviewed",
+        "publication": "blocked",
+        "observations": [
+            {
+                "result_contract_json": result,
+                "result_contract_sha256": "5" * 64,
+            }
+        ],
+    }
+
+    summary = _redacted_execution_summary(execution)
+    serialized = json.dumps(summary, sort_keys=True)
+
+    assert summary["best_energy_ha"] == -1.137
+    assert summary["common_basis_resources"]["two_qubit_gate_count"] == 48
+    for forbidden_key in (
+        "initial_parameters",
+        "final_parameters",
+        "energy_trajectory",
+        "supplementary_evidence",
+    ):
+        assert forbidden_key not in summary
+    for forbidden_value in (
+        "secret-initial",
+        "secret-final",
+        "must-not-leak",
+    ):
+        assert forbidden_value not in serialized
+
+
+def test_evidence_digest_is_recomputable_from_the_artifact_payload() -> None:
+    evidence = _attach_self_verifiable_digest(
+        {
+            "schema_version": "1.2.0",
+            "kind": "private_component_first_mvp_ci_e2e",
+            "execution_summaries": {"qiskit": {"absolute_error_ha": 0.0}},
+        }
+    )
+    digest = evidence.pop("evidence_digest_sha256")
+
+    assert digest == _canonical_json_sha256(evidence)
+
+
 @requires_production_e2e
 async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypatch):
     # GitHub Actions sets CI=true for every step.  The production executor must
@@ -673,104 +863,150 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                 assert execution_response.status_code == 200
                 assert execution_response.json()["status"] == "succeeded"
 
-        evidence = {
-            "schema_version": "1.1.0",
-            "kind": "private_component_first_mvp_ci_e2e",
-            "source_commit": os.environ.get("GITHUB_SHA"),
-            "authentication_evidence": "synthetic_contract",
-            "database": "disposable_postgresql_17",
-            "runtime_host": "github_actions_dedicated_docker",
-            "baseline_workflow_artifact_version_ids": {
-                framework: optimizer_workflows["slsqp"][framework]["workflow_artifact_version_id"]
-                for framework in ("qiskit", "pennylane")
+        execution_summaries = {
+            **{
+                name: _redacted_execution_summary(execution)
+                for name, execution in executions.items()
             },
-            "candidate_workflow_artifact_version_ids": {
-                framework: optimizer_workflows["cobyla"][framework]["workflow_artifact_version_id"]
-                for framework in ("qiskit", "pennylane")
+            **{
+                f"uccsd_{framework}": _redacted_execution_summary(execution)
+                for framework, execution in uccsd_executions.items()
             },
-            "baseline_optimizer": "optimizer.slsqp.v1",
-            "candidate_optimizer": "optimizer.cobyla.v1",
-            "changed_roles": ["parameter_optimizer"],
-            "golden_journeys": {
-                "primary_fixed_excitation_slsqp": "passed",
-                "controlled_slsqp_to_cobyla": "passed",
-                "same_subject_session_reopen": "passed",
-                "live_workos_same_account_reopen": "not_run",
+            **{
+                f"hardware_efficient_{framework}": _redacted_execution_summary(execution)
+                for framework, execution in hardware_efficient_executions.items()
             },
-            "execution_ids": {name: item["id"] for name, item in executions.items()},
-            "comparison_spec_ids": {
-                framework: comparison["id"] for framework, comparison in comparisons.items()
-            },
-            "comparison_run_ids": {name: item["id"] for name, item in comparison_runs.items()},
-            "materialized_artifact_ids": {
-                name: item["artifact_version_id"] for name, item in artifacts.items()
-            },
-            "uccsd_migration": {
-                "comparison_class": "controlled_capability_migration_not_one_component_swap",
-                "primary_changed_role": "ansatz",
-                "dependent_changed_roles": ["compilation_backend"],
-                "required_to_not_applicable_roles": [
-                    "growth_batching",
-                    "operator_pool",
-                    "search_selection",
-                ],
-                "workflow_artifact_version_ids": {
-                    framework: migration["workflow_artifact_version_id"]
-                    for framework, migration in migrations.items()
-                },
-                "experiment_ids": {
-                    framework: experiment["id"]
-                    for framework, experiment in uccsd_experiments.items()
-                },
-                "execution_ids": {name: item["id"] for name, item in uccsd_executions.items()},
-                "materialized_artifact_ids": {
-                    name: item["artifact_version_id"] for name, item in uccsd_artifacts.items()
-                },
-            },
-            "hardware_efficient_migration": {
-                "comparison_class": "controlled_capability_migration_not_one_component_swap",
-                "primary_changed_role": "ansatz",
-                "dependent_changed_roles": ["compilation_backend"],
-                "workflow_artifact_version_ids": {
-                    framework: migration["workflow_artifact_version_id"]
-                    for framework, migration in hardware_efficient_migrations.items()
-                },
-                "experiment_ids": {
-                    framework: experiment["id"]
-                    for framework, experiment in hardware_efficient_experiments.items()
-                },
-                "execution_ids": {
-                    name: item["id"] for name, item in hardware_efficient_executions.items()
-                },
-                "materialized_artifact_ids": {
-                    name: item["artifact_version_id"]
-                    for name, item in hardware_efficient_artifacts.items()
-                },
-                "public_execution": False,
-                "performance_claim": False,
-            },
-            "session_reopen": "passed",
-            "failure_path": "passed",
-            "public_execution": False,
-            "publication": False,
-            "evidence_digest_sha256": hashlib.sha256(
-                json.dumps(
-                    {
-                        "executions": executions,
-                        "optimizer_workflows": optimizer_workflows,
-                        "comparison_runs": comparison_runs,
-                        "comparisons": comparisons,
-                        "artifacts": artifacts,
-                        "uccsd_executions": uccsd_executions,
-                        "uccsd_artifacts": uccsd_artifacts,
-                        "hardware_efficient_executions": hardware_efficient_executions,
-                        "hardware_efficient_artifacts": hardware_efficient_artifacts,
-                    },
-                    sort_keys=True,
-                    separators=(",", ":"),
-                ).encode()
-            ).hexdigest(),
         }
+        comparison_summaries = {
+            framework: {
+                "comparison_spec_id": comparisons[framework]["id"],
+                "comparison_spec_sha256": comparisons[framework]["spec_sha256"],
+                "comparison_run_id": comparison_runs[framework]["id"],
+                "comparison_run_sha256": comparison_runs[framework]["run_sha256"],
+                "status": comparison_runs[framework]["status"],
+                "invariant_audit": comparison_runs[framework]["run_json"]["invariant_audit"],
+                "changed_role": comparisons[framework]["changed_role"],
+                "scientific_review": comparisons[framework]["scientific_review"],
+                "execution_policy": comparisons[framework]["execution_policy"],
+                "visibility": comparisons[framework]["visibility"],
+                "publication": comparisons[framework]["publication"],
+            }
+            for framework in ("qiskit", "pennylane")
+        }
+        portable_scientific_spec_digests = {
+            "fixed_excitation": {
+                optimizer_name: {
+                    framework: optimizer_experiments[optimizer_name][framework][
+                        "scientific_spec_sha256"
+                    ]
+                    for framework in ("qiskit", "pennylane")
+                }
+                for optimizer_name in ("slsqp", "cobyla")
+            },
+            "uccsd_slsqp": {
+                framework: uccsd_experiments[framework]["scientific_spec_sha256"]
+                for framework in ("qiskit", "pennylane")
+            },
+            "hardware_efficient_slsqp": {
+                framework: hardware_efficient_experiments[framework]["scientific_spec_sha256"]
+                for framework in ("qiskit", "pennylane")
+            },
+        }
+        for provider_digests in portable_scientific_spec_digests["fixed_excitation"].values():
+            assert len(set(provider_digests.values())) == 1
+        assert len(set(portable_scientific_spec_digests["uccsd_slsqp"].values())) == 1
+        assert len(set(portable_scientific_spec_digests["hardware_efficient_slsqp"].values())) == 1
+
+        evidence = _attach_self_verifiable_digest(
+            {
+                "schema_version": "1.2.0",
+                "kind": "private_component_first_mvp_ci_e2e",
+                "source_commit": os.environ.get("GITHUB_SHA"),
+                "authentication_evidence": "synthetic_contract",
+                "database": "disposable_postgresql_17",
+                "runtime_host": "github_actions_dedicated_docker",
+                "baseline_workflow_artifact_version_ids": {
+                    framework: optimizer_workflows["slsqp"][framework][
+                        "workflow_artifact_version_id"
+                    ]
+                    for framework in ("qiskit", "pennylane")
+                },
+                "candidate_workflow_artifact_version_ids": {
+                    framework: optimizer_workflows["cobyla"][framework][
+                        "workflow_artifact_version_id"
+                    ]
+                    for framework in ("qiskit", "pennylane")
+                },
+                "baseline_optimizer": "optimizer.slsqp.v1",
+                "candidate_optimizer": "optimizer.cobyla.v1",
+                "changed_roles": ["parameter_optimizer"],
+                "golden_journeys": {
+                    "primary_fixed_excitation_slsqp": "passed",
+                    "controlled_slsqp_to_cobyla": "passed",
+                    "same_subject_session_reopen": "passed",
+                    "live_workos_same_account_reopen": "not_run",
+                },
+                "execution_ids": {name: item["id"] for name, item in executions.items()},
+                "execution_summaries": execution_summaries,
+                "portable_scientific_spec_digests": portable_scientific_spec_digests,
+                "comparison_spec_ids": {
+                    framework: comparison["id"] for framework, comparison in comparisons.items()
+                },
+                "comparison_run_ids": {name: item["id"] for name, item in comparison_runs.items()},
+                "comparison_summaries": comparison_summaries,
+                "materialized_artifact_ids": {
+                    name: item["artifact_version_id"] for name, item in artifacts.items()
+                },
+                "uccsd_migration": {
+                    "comparison_class": "controlled_capability_migration_not_one_component_swap",
+                    "primary_changed_role": "ansatz",
+                    "dependent_changed_roles": ["compilation_backend"],
+                    "required_to_not_applicable_roles": [
+                        "growth_batching",
+                        "operator_pool",
+                        "search_selection",
+                    ],
+                    "workflow_artifact_version_ids": {
+                        framework: migration["workflow_artifact_version_id"]
+                        for framework, migration in migrations.items()
+                    },
+                    "experiment_ids": {
+                        framework: experiment["id"]
+                        for framework, experiment in uccsd_experiments.items()
+                    },
+                    "execution_ids": {name: item["id"] for name, item in uccsd_executions.items()},
+                    "materialized_artifact_ids": {
+                        name: item["artifact_version_id"] for name, item in uccsd_artifacts.items()
+                    },
+                },
+                "hardware_efficient_migration": {
+                    "comparison_class": "controlled_capability_migration_not_one_component_swap",
+                    "primary_changed_role": "ansatz",
+                    "dependent_changed_roles": ["compilation_backend"],
+                    "workflow_artifact_version_ids": {
+                        framework: migration["workflow_artifact_version_id"]
+                        for framework, migration in hardware_efficient_migrations.items()
+                    },
+                    "experiment_ids": {
+                        framework: experiment["id"]
+                        for framework, experiment in hardware_efficient_experiments.items()
+                    },
+                    "execution_ids": {
+                        name: item["id"] for name, item in hardware_efficient_executions.items()
+                    },
+                    "materialized_artifact_ids": {
+                        name: item["artifact_version_id"]
+                        for name, item in hardware_efficient_artifacts.items()
+                    },
+                    "public_execution": False,
+                    "performance_claim": False,
+                },
+                "session_reopen": "passed",
+                "failure_path": "passed",
+                "public_execution": False,
+                "publication": False,
+            }
+        )
         evidence_path = os.environ.get("MAJORANA_VQE_E2E_EVIDENCE_PATH")
         if evidence_path:
             with open(evidence_path, "w", encoding="utf-8") as handle:
