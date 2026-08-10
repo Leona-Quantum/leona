@@ -637,6 +637,36 @@ export const LAYER_GRAPH: LayerGraph = {
     conditionsJa: "陽的であるため条件付き安定です。剛性の強い生成子では刻み幅 h を小さくせざるをえず、ステップ数が増えて組み立てた線形系の次元が膨らみます。一次精度であることが、周囲のアルゴリズムの精度依存性を log(1/ε) ではなく 1/ε にとどめます。精度 ε に達するのに必要なステップ数が、局所打ち切り誤差の次数で決まるからです。Liu らは Carleman 化と前進 Euler で得られる線形系の条件数を評価していますが、その定数は論文にあり、ここでは引用しません。",
     steps: [],
     atomic: true,
+    // **The first hop note, and like the first `example` it is a transcription.**
+    // The owner moved approximations and assumptions inside the mathematics as
+    // marks (`theory-marks.ts`), and a marked path with no instance anywhere has
+    // never been drawn — so one hop is authored here from sentences already on
+    // this record, and nothing is worked out:
+    //
+    // - the recurrence and the assembly are `summary`, verbatim;
+    // - the approximation is `conditions` — *"First-order local accuracy is what
+    //   leaves the surrounding algorithm with 1/ε rather than log(1/ε) precision
+    //   dependence"*;
+    // - the assumption is `conditions` — *"Explicit, and therefore conditionally
+    //   stable: a stiff generator forces a small step h and hence many steps,
+    //   inflating the dimension of the assembled system."*
+    //
+    // The key is this method's own id because the route is one segment no slot
+    // covers — `steps` is empty. **These sentences and this note move together**;
+    // a note keeping a claim the record has dropped is the drift a second copy
+    // always has, and this comment is where an editor finds out there is one.
+    hops: {
+      "forward-euler": {
+        theory:
+          "The steps are u_{k+1} = (I + hA)u_k + h b_k, assembled into a banded all-at-once linear system. " +
+          "[[approximation: First-order local accuracy, which is what leaves the surrounding algorithm with 1/ε rather than log(1/ε) precision dependence.]] " +
+          "[[assumption: Explicit, and therefore conditionally stable — a stiff generator forces a small step h and hence many steps, inflating the dimension of the assembled system.]]",
+        theoryJa:
+          "各ステップは u_{k+1} = (I + hA)u_k + h b_k で、これを帯行列の一括線形系にまとめます。" +
+          "[[approximation: 一次精度であることが、周囲のアルゴリズムの精度依存性を log(1/ε) ではなく 1/ε にとどめます。]] " +
+          "[[assumption: 陽的であるため条件付き安定です。剛性の強い生成子では刻み幅 h を小さくせざるをえず、ステップ数が増えて組み立てた線形系の次元が膨らみます。]]",
+      },
+    },
     citations: [
       { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Jin-Peng Liu, Herman Øie Kolden, Hari K. Krovi, Nuno F. Loureiro, Konstantina Trivisa, Andrew M. Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
     ],
@@ -685,6 +715,25 @@ export const LAYER_GRAPH: LayerGraph = {
         "",
         "return u_{T/h}",
       ].join("\n"),
+    },
+    // **A second hop note, and it marks one kind and not two.** Its approximation
+    // is `summary` and `conditions` — *"First-order implicit stepping"*, *"Still
+    // first order, so the precision dependence stays polynomial in 1/ε"*. There
+    // is deliberately no `[[assumption: …]]`: nothing on this record states a
+    // condition this hop needs. A-stability is a *property* of the scheme rather
+    // than something it assumes, and marking it as one to make the pair look
+    // complete would be the invented claim the gap rule exists to prevent. A hop
+    // that marks one thing is the ordinary case, and this is the record that
+    // proves the legend draws one entry rather than always two.
+    hops: {
+      "backward-euler": {
+        theory:
+          "Each step solves (I − hA)u_{k+1} = u_k + h b_{k+1}, once per time step — T/h of them to reach time T. " +
+          "[[approximation: First-order implicit stepping, so the precision dependence stays polynomial in 1/ε.]]",
+        theoryJa:
+          "各ステップは (I − hA)u_{k+1} = u_k + h b_{k+1} を解きます。各時間ステップにつき 1 回、時刻 T に達するまでに T/h 回です。" +
+          "[[approximation: 一次精度の陰的な時間刻みですので、精度依存性は 1/ε の多項式のままです。]]",
+      },
     },
     repeats: {
       "quantum-linear-solve": {

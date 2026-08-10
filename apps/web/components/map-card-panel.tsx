@@ -42,13 +42,13 @@ import type {
   CardHop,
   CardLink,
   CardValue,
-  HopSlotId,
   ImplementationSectionId,
   MethodCard,
   OwnStepCard,
   ProcessCard,
 } from "../lib/repository/card-content";
-import { cardSections, HOP_SLOTS } from "../lib/repository/card-content";
+import { cardSections } from "../lib/repository/card-content";
+import { THEORY_MARKS, type TheoryMark, type TheorySpan } from "../lib/repository/theory-marks";
 import { ownStepName } from "../lib/repository/converge-layout";
 import type { PublicLocale } from "../lib/public-locale";
 
@@ -76,8 +76,14 @@ interface Copy {
   /** The worklist line on the own-step card. See the `no-slot` arm of `Body`. */
   noSlotHere: string;
   sections: Record<CardSectionId, string>;
-  /** The three slots inside a hop of Theory. See `CardHop` in `card-content.ts`. */
-  hopSlots: Record<HopSlotId, string>;
+  /**
+   * The two things marked inside a hop's mathematics, named for the legend and
+   * for a screen reader. See `theory-marks.ts` — they were two headings until
+   * the owner moved them into the prose.
+   */
+  marks: Record<TheoryMark, string>;
+  /** The way out of an opened hop, as an action rather than the step's name again. */
+  openStep: string;
   /** The owner's five, inside one implementation. */
   implementationSections: Record<ImplementationSectionId, string>;
   /**
@@ -158,11 +164,14 @@ const COPY: Record<Lang, Copy> = {
       "bypassed-by": "Routes that make it unnecessary",
       "classical-equivalents": "Classical equivalents",
     },
-    hopSlots: {
-      theory: "The mathematics",
-      approximations: "Approximations made here",
-      assumptions: "Assumptions needed here",
+    // Singular. Each names one marked clause, so the legend reads as a key to
+    // what is highlighted rather than as a heading over a list — which is the
+    // whole difference between this and the two sections it replaced.
+    marks: {
+      approximation: "approximation",
+      assumption: "assumption",
     },
+    openStep: "Open this step",
     implementationSections: {
       about: "About",
       methods: "Methods",
@@ -229,11 +238,11 @@ const COPY: Record<Lang, Copy> = {
       "bypassed-by": "これを不要にする経路",
       "classical-equivalents": "古典的な対応物",
     },
-    hopSlots: {
-      theory: "数理",
-      approximations: "ここで用いた近似",
-      assumptions: "ここで必要な仮定",
+    marks: {
+      approximation: "近似",
+      assumption: "仮定",
     },
+    openStep: "この工程を開く",
     implementationSections: {
       about: "概要",
       methods: "手順",
@@ -385,31 +394,94 @@ function Theory({ hops, copy }: { hops: readonly CardHop[]; copy: Copy }): React
               {hop.narrowed ? <span className="mj-card-trace-tag">{copy.narrowed}</span> : null}
             </summary>
             <div className="mj-card-hop-body">
-              {/* The link out of the hop, inside the disclosure rather than on
-                  the summary. A `<summary>` that contains an anchor swallows the
-                  click on some engines and toggles instead of following it, so a
-                  reader hunting the slot's own page gets the wrong destination —
-                  and this summary's job is to toggle. */}
+              {/* **The mathematics first, and no heading over it.** Opening a hop
+                  used to print the slot's name again — the same string the
+                  summary one line above already carries — and then three
+                  headings over three gaps. The owner's answer was both halves at
+                  once: *"remove the duplicate title after opening the hops"*,
+                  and the two other headings gone because their content belongs
+                  inside this prose as marks. What is left is what a reader
+                  opened the hop for. */}
+              {hop.theory.held ? (
+                <TheoryProse spans={hop.theory.value} copy={copy} />
+              ) : (
+                <Gap gap={hop.theory.gap} copy={copy} />
+              )}
+              {/* The way onward, now **below** the mathematics and labelled as an
+                  action rather than repeating the step's name. It stays inside
+                  the disclosure rather than on the summary because a `<summary>`
+                  containing an anchor swallows the click on some engines and
+                  toggles instead of following it — so a reader hunting the
+                  slot's own page would get the wrong destination, and this
+                  summary's job is to toggle. */}
               {hop.via ? (
                 <p className="mj-card-hop-onward">
-                  <a href={hop.via.href}>{hop.via.label}</a>
+                  <a href={hop.via.href}>{copy.openStep}</a>
                 </p>
               ) : null}
-              {HOP_SLOTS.map((slot) => (
-                <div key={slot} className="mj-card-hop-slot" data-hop-slot={slot}>
-                  <p className="mj-card-hop-slot-name">{copy.hopSlots[slot]}</p>
-                  {hop[slot].held ? (
-                    <p>{hop[slot].value}</p>
-                  ) : (
-                    <Gap gap={hop[slot].gap} copy={copy} />
-                  )}
-                </div>
-              ))}
             </div>
           </details>
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * The mathematics of one hop, with what it approximates and what it assumes
+ * marked where they occur.
+ *
+ * **The owner asked for exactly this and the argument for it is in
+ * `theory-marks.ts`**: *"assumptions and approximations will be colored/bolded
+ * highlighted/commented within the mathematics, so no need for the sections."*
+ *
+ * Three things make a coloured span say what it means rather than only that it
+ * is special. It carries a name no reader has to guess — the legend below, drawn
+ * only when this hop actually marks something, because a legend for marks that
+ * are not on the page is furniture. It is distinguishable without colour, by the
+ * underline, since a reader who cannot separate the two hues would otherwise be
+ * told a clause is *notable* and never which kind. And it says its kind to a
+ * screen reader in words, because a colour is not read aloud at all.
+ */
+function TheoryProse({
+  spans,
+  copy,
+}: {
+  spans: readonly TheorySpan[];
+  copy: Copy;
+}): React.ReactElement {
+  const marked = THEORY_MARKS.filter((mark) => spans.some((span) => span.mark === mark));
+  return (
+    <>
+      <p className="mj-card-hop-math">
+        {spans.map((span, index) =>
+          span.mark === null ? (
+            <span key={index}>{span.text}</span>
+          ) : (
+            <span
+              key={index}
+              className={`mj-card-hop-mark mj-card-hop-mark--${span.mark}`}
+              data-mark={span.mark}
+            >
+              <span className="sr-only">{copy.marks[span.mark]}: </span>
+              {span.text}
+            </span>
+          ),
+        )}
+      </p>
+      {marked.length > 0 ? (
+        <p className="mj-card-hop-key">
+          {/* No separator between them: the row is a flex with a gap, and a
+              space written inside a marked span is a space wearing that mark's
+              underline. */}
+          {marked.map((mark) => (
+            <span key={mark} className={`mj-card-hop-mark mj-card-hop-mark--${mark}`}>
+              {copy.marks[mark]}
+            </span>
+          ))}
+        </p>
+      ) : null}
+    </>
   );
 }
 

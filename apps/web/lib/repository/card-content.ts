@@ -46,6 +46,7 @@ import {
 } from "./layers.ts";
 import type { PaperRegister } from "./papers.ts";
 import type { StateVocabulary } from "./states.ts";
+import { parseTheory, type TheoryMark, type TheorySpan } from "./theory-marks.ts";
 
 /** Why a section is empty. See the block above — the two are not one fact. */
 export type CardGap = "none-recorded" | "no-field-yet";
@@ -122,18 +123,18 @@ export interface CardHop {
   readonly via: CardLink | null;
   /** True when the state after this hop came from `through`, not the slot's contract. */
   readonly narrowed: boolean;
-  /** The mathematics of this hop, as a source states it. */
-  readonly theory: CardValue<string>;
-  /** What is approximated *at this hop*, not somewhere in the method. */
-  readonly approximations: CardValue<string>;
-  /** What this hop assumes, likewise. */
-  readonly assumptions: CardValue<string>;
+  /**
+   * The mathematics of this hop, split into runs, with the approximations and
+   * assumptions marked inside it.
+   *
+   * **One value where session 114 had three**, and the parse happens here rather
+   * than in the component for the reason this whole module exists: a distinction
+   * drawn inside JSX is one the census cannot count. The component receives runs
+   * and paints them; whether a hop marks an approximation is a question this
+   * file can answer.
+   */
+  readonly theory: CardValue<readonly TheorySpan[]>;
 }
-
-/** The three things a source can add to a hop. Ordered as the card draws them. */
-export const HOP_SLOTS = ["theory", "approximations", "assumptions"] as const;
-
-export type HopSlotId = (typeof HOP_SLOTS)[number];
 
 export interface CardContract {
   readonly from: string;
@@ -483,19 +484,21 @@ function implementationLeadsOf(
   });
 }
 
-/** The three slots on one hop, read off `LayerMethod.hops` under `hopKey`. */
+/** The mathematics of one hop, read off `LayerMethod.hops` under `hopKey`. */
 function hopNoteOf(
   method: LayerMethod,
   capabilityId: string | null,
   ja: boolean,
-): Pick<CardHop, "theory" | "approximations" | "assumptions"> {
+): Pick<CardHop, "theory"> {
   const note = method.hops?.[hopKey(method, capabilityId)];
+  const source = note === undefined ? undefined : ja ? note.theoryJa : note.theory;
+  const prose = stated(source);
+  // `stated` decides held-ness off the string, and the parse follows it rather
+  // than deciding it again. A note of pure whitespace is not held, and a parse
+  // of it would return no spans — two ways to answer one question, which is the
+  // shape this module keeps eliminating.
   return {
-    theory: stated(note === undefined ? undefined : ja ? note.theoryJa : note.theory),
-    approximations: stated(
-      note === undefined ? undefined : ja ? note.approximationsJa : note.approximations,
-    ),
-    assumptions: stated(note === undefined ? undefined : ja ? note.assumptionsJa : note.assumptions),
+    theory: prose.held ? held(parseTheory(prose.value)) : missing(prose.gap),
   };
 }
 
@@ -797,24 +800,32 @@ export function cardSections(card: Card): readonly CardSection[] {
 }
 
 /**
- * The three slots inside every hop of Theory, swept flat.
+ * Every hop of Theory, swept flat, with what its mathematics holds.
  *
  * A second census, deliberately not folded into `cardSections`. The question
- * *"how much of this card is empty"* now has two honest answers at two levels:
- * Theory is **held** on all 63 methods because the chain is, and every hop
- * inside it is empty because no field holds a hop's mathematics yet. One number
+ * *"how much of this card is empty"* has two honest answers at two levels:
+ * Theory is **held** on all 63 methods because the chain is, and a hop inside it
+ * is empty because no source has been read for its mathematics. One number
  * covering both would report a card as fuller than it reads — the top level
  * would say "Theory: held" and the reader would open it and find nothing.
+ *
+ * **It used to sweep three slots per hop and now sweeps one**, because the two
+ * others became marks inside the mathematics on the owner's re-decision. `marks`
+ * is what replaced them in the census: an authored hop that marks nothing and an
+ * authored hop that marks an approximation are different facts, and after the
+ * change there is no other level at which the difference is countable.
  */
-export function cardHopSlots(
+export function cardHopNotes(
   card: Card,
-): Array<{ hop: string; id: HopSlotId; state: "held" | CardGap }> {
+): Array<{ hop: string; state: "held" | CardGap; marks: readonly TheoryMark[] }> {
   if (card.kind !== "method" || !card.trace.held) return [];
-  return card.trace.value.flatMap((hop, index) =>
-    HOP_SLOTS.map((id) => ({
-      hop: `${index}:${hop.from}>${hop.to}`,
-      id,
-      state: sectionState({ value: hop[id] }),
-    })),
-  );
+  return card.trace.value.map((hop, index) => ({
+    hop: `${index}:${hop.from}>${hop.to}`,
+    state: sectionState({ value: hop.theory }),
+    marks: hop.theory.held
+      ? hop.theory.value
+          .map((span) => span.mark)
+          .filter((mark): mark is TheoryMark => mark !== null)
+      : [],
+  }));
 }

@@ -12862,8 +12862,62 @@ div.mj-rail-row:hover {
   padding: var(--sp-2) 0 var(--sp-3) var(--sp-3);
   border-left: var(--border-hairline) solid var(--border-0);
 }
+/* The way onward, now below the mathematics rather than above it and no longer
+   a second printing of the step's name. Quiet, because the hop was opened to
+   read what is inside it and not to leave. */
 .mj-card-hop-onward {
-  margin: 0 0 var(--sp-3);
+  margin: var(--sp-3) 0 0;
+  font-size: var(--fs-12);
+}
+/* **The mathematics of a hop, with its approximations and assumptions marked
+   inside it.** The owner's re-decision, replacing three stacked headings:
+   *"assumptions and approximations will be colored/bolded highlighted/commented
+   within the mathematics, so no need for the sections."* */
+.mj-card-hop-math {
+  margin: 0;
+}
+/* **A tint behind the words, not coloured words.** Written as coloured text
+   first and rejected on the rendered page: every link inside this card is
+   coloured text, `--accent` is the link colour on every surface of this site,
+   and an underlined accent-coloured clause that goes nowhere is a broken link as
+   far as a reader is concerned. A background tint cannot be read that way — and
+   it is the closer reading of what was asked for, which was *highlighted*.
+
+   The text goes **up** to `--text-0` from the `--text-1` the prose around it
+   sits at, which is the "bolded" half without touching weight: a run of
+   semibold inside a sentence changes the line's rhythm, and these clauses can
+   be most of a sentence.
+
+   Hue **and** underline style, never hue alone. A reader who cannot separate
+   amber from green would otherwise be told a clause is notable and never which
+   kind, and the two kinds are the whole point of marking them. The
+   screen-reader name is in the component; this is the half a sighted reader
+   gets. */
+.mj-card-hop-mark {
+  color: var(--text-0);
+  border-radius: 2px;
+  padding: 0 0.15em;
+  text-underline-offset: 3px;
+}
+.mj-card-hop-mark--approximation {
+  background: color-mix(in srgb, var(--warn) 16%, transparent);
+  text-decoration: underline solid var(--warn);
+}
+.mj-card-hop-mark--assumption {
+  background: color-mix(in srgb, var(--ok) 16%, transparent);
+  text-decoration: underline dotted var(--ok);
+}
+/* The key to the marks, drawn only on hops that actually carry one. A legend
+   naming marks that are not on the page is furniture, and a coloured span with
+   no key says *this is special* without saying what is different — which is the
+   failure this repository has already written down once, about a lane on the
+   map with a changed stroke and nothing explaining it. */
+.mj-card-hop-key {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-3);
+  margin: var(--sp-2) 0 0;
+  font-size: var(--fs-12);
 }
 .mj-card-hop-slot + .mj-card-hop-slot {
   margin-top: var(--sp-3);
