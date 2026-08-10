@@ -742,8 +742,8 @@ export interface ConvergeLane {
    *
    * Emitted rather than re-derived: the renderer's only handle would be
    * `nodeId`, and the mark is a fact about *this occurrence* of that node, not
-   * about the node. A lookup keyed on the id would put backward Euler's `×T/h`
-   * on the Taylor lane drawing the same slot.
+   * about the node. A lookup keyed on the id would put HHL's `×O(κ)` on the
+   * QSVT lane drawing the same `state-preparation` slot.
    */
   repeatMark: string | null;
   /**
@@ -1338,9 +1338,10 @@ interface PlanStrand {
    *
    * ## It belongs to the edge, not to the node, and that is why it is here
    *
-   * `quantum-linear-solve` is walked once by `taylor-all-at-once` and T/h times
-   * by `backward-euler`, and it is one node drawn on both lanes. A lookup keyed
-   * on `id` at the shape would put backward Euler's count on the Taylor lane —
+   * `state-preparation` is walked an uncounted once by `qsvt-matrix-inversion`
+   * and O(κ) times by `hhl-qpe-inversion`, and it is one node drawn on both
+   * lanes. A lookup keyed on `id` at the shape would put HHL's count on the QSVT
+   * lane —
    * the mark is a fact about *this occurrence*, so it is set where the occurrence
    * is planned and carried down with it, exactly as `shortLabel` is.
    *
@@ -2194,11 +2195,15 @@ export function ownStepName(locale: PublicLocale): string {
  * `chainInside` and the ingredients of `planForMethod` — rather than inside
  * `planForSlot`, because `planForSlot` does not know which route is asking. A
  * slot is one node drawn on many lanes and the count is a property of the
- * occurrence: `quantum-linear-solve` is walked once by `taylor-all-at-once` and
- * T/h times by `backward-euler`.
+ * occurrence: `state-preparation` is walked an uncounted once by
+ * `qsvt-matrix-inversion` and O(κ) times by `hhl-qpe-inversion`.
  *
- * Returns the strand untouched when nothing is recorded, which is 1,904 of the
- * 1,914 named lanes.
+ * Returns the strand untouched when nothing is recorded, which is the
+ * overwhelming majority: **265 of the 279 named lanes** the nineteen figures draw
+ * when every one of them is opened as far as it goes. (1,904 of 1,914 until
+ * session 118, over a wider population — every partial opening rather than the
+ * saturated one. The population is stated here because the two numbers are not
+ * comparable and the smaller one is not a regression.)
  */
 /**
  * Fit a lane's drawn name to its budget — and **spend the budget on the mark

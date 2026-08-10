@@ -335,10 +335,10 @@ export interface LayerMethod extends LayerNodeBase {
    * `steps` is a **set**, and validation rejects a repeat inside it, so the only
    * thing the structure could ever say was *whether* a route meets a slot — never
    * how often. Two methods that look identical on the map are then charged
-   * wildly different amounts: `taylor-all-at-once` assembles the whole trajectory
-   * into one system and calls `quantum-linear-solve` **once**; `backward-euler`
-   * solves *(I − hA)u_{k+1} = u_k + h·b_{k+1}* and calls the same slot **once per
-   * time step**. Both drew one line to one circle.
+   * wildly different amounts: `qsvt-matrix-inversion` prepares its right-hand
+   * side **once**; `direct-sampling-readout` prepares the same state
+   * **O(1/ε²) times**, and `hhl-qpe-inversion` **O(κ) times**. All three drew one
+   * line to one circle.
    *
    * That difference is not a constant factor and it is not decoration: it is the
    * reason the published encodings fold. `time-marching-usva`'s own recorded
@@ -349,8 +349,8 @@ export interface LayerMethod extends LayerNodeBase {
    * ## Why it is an edge annotation and not a field on the method
    *
    * A method does not "iterate" — it iterates *something*. `direct-sampling-readout`
-   * repeats `state-preparation` and nothing else; `backward-euler` repeats
-   * `quantum-linear-solve` and not the discretisation that produced it. A boolean
+   * repeats `state-preparation` and nothing else; `time-marching-usva` repeats
+   * `time-discretization` and not the solve it explicitly bypasses. A boolean
    * on the node would say a route loops and leave a reader to guess which of its
    * steps is inside the loop, which on a three-step method is a three-way guess
    * about where the whole cost lives. Same shape and same argument as `through`
@@ -694,10 +694,10 @@ export function repeatedSteps(
  * This is the comparison the owner asked the map to be able to draw, and it is
  * only answerable across a whole slot: "folded" is not a property of
  * `taylor-all-at-once`, it is what `taylor-all-at-once` is *relative to*
- * `backward-euler`. A reader standing on `quantum-linear-solve` should be able to
- * see that one route pays it once per time step and another assembles the whole
- * trajectory and pays once, because that is the single largest cost difference on
- * the layer.
+ * `time-marching-usva`. A reader standing on `time-discretization` should be able
+ * to see that one route pays it once per time step and another assembles the
+ * whole trajectory and pays once, because that is the single largest cost
+ * difference on the layer.
  *
  * **`unpinned` is not "folded", and the name is deliberate.** A route with no
  * `repeats` entry has recorded no multiplicity; it has not claimed to meet the
@@ -2063,7 +2063,8 @@ export function validateLayerGraph(
   // The rule that matters most is the last one: **a route may not both skip a
   // layer and run it many times.** That is not a typo-catcher. Skipping and
   // repeating are the two opposite answers to the same question — LCHS removes
-  // the linear-solve span, backward Euler pays it once per step — and a node
+  // the linear-solve span, `time-marching-usva` pays its discretization once per
+  // step and bypasses the solve outright — and a node
   // asserting both would render as a route that avoids the cost it is charged
   // for, on the one surface whose whole claim is that the costs are honest.
   for (const node of graph.nodes) {

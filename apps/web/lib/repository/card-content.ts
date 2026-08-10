@@ -171,15 +171,20 @@ export interface CardRepetition {
  * One thing a method needs that does not move its route along — and how many
  * times it needs it.
  *
- * **`repeats` keys a step, and 7 of its 10 records key a `feeds` step rather
- * than a hop.** Measured this session against `routeOf`: only `time-marching-usva`,
+ * **`repeats` keys a step, and 5 of its 8 records key a `feeds` step rather
+ * than a hop.** Measured against `routeOf`: only `time-marching-usva`,
  * `qsvt-matrix-inversion` and `qsvt-transform` repeat something that is drawn as
- * a hop. Backward Euler's `quantum-linear-solve`, HHL's `state-preparation` and
- * `hamiltonian-simulation`, and all three readouts' `state-preparation` are
+ * a hop. HHL's `state-preparation` and `hamiltonian-simulation`, and all three
+ * readouts' `state-preparation`, are
  * ingredients. `W12` proposed drawing the count "beside the lane's name" on the
  * assumption it sat on the chain; putting it only there would have reached 3 of
- * the 10 records and left the six most expensive loops on this map — every
+ * the records and left the five most expensive loops on this map — every
  * readout's ε^-2, HHL's two κ's — exactly as invisible as before.
+ *
+ * (7 of 10 until session 118: `backward-euler`'s and the trapezoidal rule's
+ * `quantum-linear-solve` were two of the seven, and the owner ruled that
+ * ingredient off the map. The argument is unchanged — the majority still key a
+ * feed — and the two counts survive as prose on those records' `conditions`.)
  *
  * So *Requires* is a list of pairs rather than a list of links.
  */

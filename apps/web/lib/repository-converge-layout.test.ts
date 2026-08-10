@@ -1389,9 +1389,16 @@ test("a line that opens into something says so, and a line that does not is not 
   // under it. `openable` again did not move: these counts are taken on the
   // **shut** figures, where every lane is a top-level filler of the focused
   // slot, and pinning changes what is drawn one level *inside* an opened method.
+  // 24/35 until session 118, when the owner ruled that an iterator must not draw
+  // a solver as an ingredient — *"Crank-nicholson needing quantum linear solve as
+  // an ingredient doesn't make sense at all"*. `backward-euler` and
+  // `trapezoidal-rule` were openable only because of that one feed, so both moved
+  // from `openable` to `leaves` and the total is unchanged. **The drop is a
+  // picture removed, not affordance quietly lost**, and this note is here because
+  // those two are indistinguishable from the number alone.
   assert.equal(openable + leaves + 1, 60, "the nineteen figures draw 60 lines between them");
-  assert.equal(openable, 24, "24 of them open into something recorded");
-  assert.equal(leaves, 35, "35 are leaves — nothing finer is recorded for them");
+  assert.equal(openable, 22, "22 of them open into something recorded");
+  assert.equal(leaves, 37, "37 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -2567,10 +2574,9 @@ test("a name past the cap is cut, and the full text survives in the title", () =
   assert.ok(drawn.length > 0, "the fixture's long name is drawn on no figure at all");
   for (const lane of drawn) {
     assert.equal(lane.labelTruncated, true, "a 1272px name was not cut by a 300px cap");
-    // **The ellipsis ends the name, and the mark comes after it.** The fixture
-    // renames `quantum-linear-solve`, which is the step `backward-euler` and the
-    // trapezoidal rule declare they walk T/h times — so on those two lanes the
-    // drawn string is `AAA… ×T/h`. That is the invariant the mark exists for: a
+    // **The ellipsis ends the name, and the mark comes after it.** Where the
+    // renamed slot is one a route declares a count on, the drawn string is
+    // `AAA… ×N`. That is the invariant the mark exists for: a
     // count is the one thing on a lane the reader cannot learn anywhere else on
     // the canvas, so the *name* gives way to it and never the other way round.
     const mark = lane.repeatMark === null ? "" : ` ${lane.repeatMark}`;
@@ -3518,13 +3524,12 @@ test("a route that pins its step draws the algorithm's name there, not the slot'
  * pictures are one, and it is checked structurally below.
  */
 const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why: string }> = [
-  {
-    slot: "time-discretization",
-    methods: ["backward-euler", "trapezoidal-rule"],
-    why:
-      "Two quadratures that each call one linear solve and nothing else. What differs is the "
-      + "discretization itself, which IS this slot, so there is no lower hop to pin them apart with.",
-  },
+  // The `time-discretization` row — `backward-euler` with `trapezoidal-rule` —
+  // was deleted in session 118. Both drew one interior only because both hung the
+  // same `quantum-linear-solve` stub, and that step is gone by the owner's
+  // ruling. They are now leaves, and two leaves draw no interior at all, so there
+  // is nothing here to exempt. They are still same-slot twins on the *hollow*
+  // scoreboard, which is a different measurement and a corpus job.
   {
     slot: "quantum-linear-solve",
     methods: ["discrete-adiabatic-inversion", "eigenstate-filtering-inversion"],

@@ -476,8 +476,9 @@ for (const story of withPlates) {
 // `converge-stories.tsx` walked `diagram.lanes` only, while its own comment claimed it walked
 // what the layout test walks — which has included `diagram.feeds` since #328. So every
 // occurrence of this class in the built stories was in the inlined stylesheet, and ask D's
-// whole render-level surface was uncovered while documented as covered. 20 figures and 188
-// opened stubs now, and the counts below are what stop that recurring.
+// whole render-level surface was uncovered while documented as covered. 20 figures and 136
+// opened stubs now (188 before session 118 took the two iterators' solver off the map), and
+// the counts below are what stop that recurring.
 const FEED_OPEN_IN_MARKUP = `class="mj-converge-feed mj-converge-feed--open"`;
 const withOpenFeeds = manifest.filter((story) => source(story).includes(FEED_OPEN_IN_MARKUP));
 
@@ -491,7 +492,17 @@ test("an opened ingredient is actually rendered somewhere, or the check below is
     "no rendered figure opens an ingredient — `saturate` has stopped walking `diagram.feeds`, " +
       "which is how this went uncovered for a whole feature once already",
   ).toBeGreaterThanOrEqual(18);
-  expect(stubs, "too few opened stubs to be checking anything").toBeGreaterThanOrEqual(160);
+  // **160 until session 118, and the floor falls because two stubs stopped being
+  // drawn on purpose.** The owner ruled that an iterator must not hang its solver
+  // as an ingredient — *"Crank-nicholson needing quantum linear solve as an
+  // ingredient doesn't make sense at all"* — so `backward-euler` and
+  // `trapezoidal-rule` lost the only step either of them had, and every figure
+  // they appear on lost a stub in both locales. 188 -> 136.
+  //
+  // Written down here rather than only in the commit, because a floor lowered to
+  // fit a run is indistinguishable from one lowered because the thing it counts
+  // got smaller, and only the reason tells them apart.
+  expect(stubs, "too few opened stubs to be checking anything").toBeGreaterThanOrEqual(130);
 });
 
 for (const story of withOpenFeeds) {

@@ -403,12 +403,13 @@ test("every recorded multiplicity reaches the card, and the card is where most o
   // **Both places must have an instance, and this is the correction to the plan.** `W12`
   // proposed drawing the count *"beside the lane's name"* on the assumption these sat on the
   // chain. They mostly do not: only `time-marching-usva`, `qsvt-matrix-inversion` and
-  // `qsvt-transform` repeat a hop. Backward Euler's and the trapezoidal rule's linear solve,
-  // HHL's preparation and Hamiltonian simulation, and all three readouts' preparation are
-  // `feeds` — so a count drawn on the chain alone would have reached 3 of the 10 records and
-  // left the six most expensive loops on this map exactly as invisible as they were.
+  // `qsvt-transform` repeat a hop. HHL's preparation and Hamiltonian simulation, and all three
+  // readouts' preparation, are
+  // `feeds` — so a count drawn on the chain alone would have reached 3 of the 8 records and
+  // left the five most expensive loops on this map exactly as invisible as they were. (10 and
+  // six until session 118 took the two iterators' linear solve off the map.)
   //
-  // Asserted as "neither is zero" rather than as 3 and 7, because both are corpus counts that
+  // Asserted as "neither is zero" rather than as 3 and 5, because both are corpus counts that
   // should be free to move; what must not happen is a rendering path with no instance, which
   // is a path nobody has ever seen drawn.
   assert.ok(places.hop >= 1, "no multiplicity lands on a hop — that rendering path draws nowhere");
@@ -444,7 +445,14 @@ test("a multiplicity is drawn in the reader's language, and its closure is not",
       compared += 1;
     }
   }
-  assert.ok(compared >= 10, `only ${compared} multiplicities were comparable across locales`);
+  // 10 until session 118. `backward-euler` and `trapezoidal-rule` each recorded a
+  // `×T/h` on the `quantum-linear-solve` step they hung as an ingredient, and the
+  // owner ruled that step out — *"this is not how i want an iterator to be
+  // visualized"* — so both records went with it. The two counts survive as prose
+  // in each method's `conditions`. **The floor falls for a reason, and the reason
+  // is written here**, because a floor lowered to fit is indistinguishable from
+  // one lowered because the thing it measured got smaller.
+  assert.ok(compared >= 8, `only ${compared} multiplicities were comparable across locales`);
 });
 
 test("the card reads the map node, which is the populated side of the join", () => {
@@ -572,16 +580,22 @@ test("the first pseudocode is on the map, and it is the sentences its own record
   const { pseudocode, text } = card.example.value;
   assert.ok(pseudocode !== null && pseudocode.includes("\n"), "the pseudocode is not a block");
   // **Every line of it restates a sentence already on the record.** The recurrence is the
-  // summary's, verbatim; the loop bound is `repeats.count`. Checked against the record
+  // summary's, verbatim; the loop bound is `conditions`'. Checked against the record
   // rather than against a copy of the string, so the day somebody edits the summary's
   // recurrence and leaves the listing behind, this fails instead of the reader finding it.
+  //
+  // The loop bound was `repeats["quantum-linear-solve"].count` until session 118 removed
+  // that step as an ingredient. **This assertion moved with the sentence rather than being
+  // deleted** — the listing's `for k = 0 … T/h − 1` still needs a source on the record, and
+  // a guard whose subject is gone is a guard that has stopped guarding.
   const node = layerNode(LAYER_GRAPH, "backward-euler")!;
   assert.ok(isMethod(node));
   assert.ok(
     node.summary.includes("(I - hA)u_{k+1} = u_k + h b_{k+1}"),
     "the summary no longer states the recurrence the pseudocode transcribes",
   );
-  assert.ok(node.repeats?.["quantum-linear-solve"]?.count.includes("T/h"), "the loop bound moved");
+  assert.equal(node.repeats, undefined, "the step this loop bound was keyed to is back");
+  assert.ok(node.conditions?.includes("T/h"), "the loop bound moved");
   // Prose is absent and that is deliberate — nobody has written up a run. The owner's
   // "populate on demand" only works if the easy half can ship without the hard half.
   assert.equal(text, null);

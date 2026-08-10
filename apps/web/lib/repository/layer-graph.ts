@@ -771,9 +771,33 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "First-order implicit stepping: each step solves (I - hA)u_{k+1} = u_k + h b_{k+1}. A-stability is the classical reason to prefer it for stiff generators, since it removes the explicit method's step-size restriction.",
     summaryJa: "一次精度の陰的な時間刻みで、各ステップは (I - hA)u_{k+1} = u_k + h b_{k+1} を解きます。剛性の強い生成子に対して古典的にこれが選ばれるのは A 安定だからで、陽的手法の刻み幅の制約がなくなります。",
     realizes: "time-discretization",
-    conditions: "On a quantum computer the trade differs from the classical one: each implicit step is itself a linear solve, so implicit stepping does not remove the quantum-linear-solve layer — it invokes it repeatedly or folds it into a larger block system. Still first order, so the precision dependence stays polynomial in 1/ε. The nearest published quantum treatment, by Dong, Li and Xue, encodes diagonal Padé approximations of the matrix exponential into a large, block-sparse linear system solved via a quantum linear system algorithm; backward Euler is the subdiagonal (0,1) approximant and is not among the schemes they analyse. No primary quantum source verified here gives an end-to-end complexity or conditioning bound for a pure backward-Euler encoding.",
-    conditionsJa: "量子計算機上でのトレードオフは古典の場合と異なります。各陰的ステップ自体が線形ソルバーの呼び出しであるため、陰的な時間刻みは量子線形ソルバーの層を取り除きません。繰り返し呼び出すか、より大きなブロック系に畳み込むかのどちらかになります。依然として一次精度ですので、精度依存性は 1/ε の多項式のままです。最も近い公表された量子的な扱いは Dong・Li・Xue によるもので、行列指数の対角 Padé 近似を大きなブロック疎線形系に符号化し、量子線形システムアルゴリズムで解きます。ただし後退 Euler 法は劣対角の (0,1) 近似であり、そこで解析されている手法には含まれません。後退 Euler 法のみを用いた符号化について、端から端までの計算量や条件数の評価を与える一次資料は、今回の確認では見つかっていません。",
-    steps: ["quantum-linear-solve"],
+    conditions: "On a quantum computer the trade differs from the classical one: each implicit step is itself a linear solve, so implicit stepping does not remove the quantum-linear-solve layer below — it invokes it repeatedly, or folds the whole trajectory into one larger block system and hands that over instead. Written out step by step it is one solve per time step, T/h of them to reach time T, and each step's solve consumes the previous step's output as its right-hand side, so the chain is a quantum state passed forward and never a number read out. That is what makes the repetition expensive rather than merely long: a quantum linear solve succeeds only on a flagged branch, and the flags multiply down the chain, so the amplification bill compounds with the number of steps. Folding the trajectory into one banded system — which is what the all-at-once encodings do, and what the deliverable of this layer is — is how the published treatments spend that once instead of T/h times. Still first order, so the precision dependence stays polynomial in 1/ε. The nearest published quantum treatment, by Dong, Li and Xue, encodes diagonal Padé approximations of the matrix exponential into a large, block-sparse linear system solved via a quantum linear system algorithm; backward Euler is the subdiagonal (0,1) approximant and is not among the schemes they analyse. No primary quantum source verified here gives an end-to-end complexity or conditioning bound for a pure backward-Euler encoding.",
+    conditionsJa: "量子計算機上でのトレードオフは古典の場合と異なります。各陰的ステップ自体が線形ソルバーの呼び出しであるため、陰的な時間刻みは下層の量子線形ソルバーを取り除きません。繰り返し呼び出すか、軌道全体をより大きなブロック系に畳み込んで、それを下層に渡すかのどちらかになります。ステップごとに書き下せば各時間ステップにつき線形ソルバーを 1 回、時刻 T に達するまでに T/h 回です。各ステップの線形ソルバーは前のステップの出力をそのまま右辺として受け取りますので、この連鎖は量子状態を送り続けるものであり、途中で数値を読み出すわけではありません。反復が単に長いだけでなく高価になるのはこのためです。量子線形ソルバーはフラグの立った枝でのみ成功しますので、そのフラグがステップ数だけ掛け合わされ、増幅の代価が累積します。軌道全体をひとつの帯行列系に畳み込む一括符号化は、この代価を T/h 回ではなく 1 回で済ませるための手立てであり、この層が引き渡すのはまさにその系です。依然として一次精度ですので、精度依存性は 1/ε の多項式のままです。最も近い公表された量子的な扱いは Dong・Li・Xue によるもので、行列指数の対角 Padé 近似を大きなブロック疎線形系に符号化し、量子線形システムアルゴリズムで解きます。ただし後退 Euler 法は劣対角の (0,1) 近似であり、そこで解析されている手法には含まれません。後退 Euler 法のみを用いた符号化について、端から端までの計算量や条件数の評価を与える一次資料は、今回の確認では見つかっていません。",
+    steps: [],
+    // **Atomic, and the removal of the step is the owner's ruling.** Session 118,
+    // verbatim: *"Things like Crank-nicholson needing quantum linear solve as an
+    // ingredient doesn't make sense at all — this is not how i want an iterator
+    // to be visualized."* Measured before it was removed: `time-discretization`
+    // is the **only** capability that produces `linear-system` and
+    // `quantum-linear-solve` is the **only** one that consumes it, and four
+    // parent routes already walk the two as consecutive stages. So the step drew
+    // the same edge twice — once forwards along the spine, once sideways as a
+    // stub — and `routeOf` filed it as a *feed* only because this method is still
+    // holding `linear-ivp` when the walk reaches it. A feed is defined as
+    // something that does not change what the route carries; this one changes it
+    // into the exit state one layer up, which is the definition of the next
+    // stage. The slot's own contract settles it: `linear-ivp -> linear-system`,
+    // returning "the discrete object, its truncation-error bound, and its
+    // conditioning bound". Solving that system is out of scope by the contract,
+    // and a sibling in this slot already says so in prose —
+    // `truncated-dyson-series`: *"solving the system those rows make up is the
+    // layer below."*
+    //
+    // `atomic` rather than left undecomposed, on `forward-euler`'s precedent
+    // (identical structure, same recurrence, same deliverable): without it this
+    // record joins the "not yet decomposed" queue, which would read as a corpus
+    // gap where there is none.
+    atomic: true,
     // **The first `example`, and it is a transcription rather than a new claim.**
     // The owner asked for an Example section on all 63 methods and, pushed back
     // on the size of that, added: *"pseudo code could definitely be easy enough
@@ -782,11 +806,16 @@ export const LAYER_GRAPH: LayerGraph = {
     //
     // - the recurrence is `summary`, verbatim — *"each step solves
     //   (I - hA)u_{k+1} = u_k + h b_{k+1}"*;
-    // - the loop bound is `repeats.count` — *"once per time step — T/h of them
+    // - the loop bound is `conditions` — *"one solve per time step, T/h of them
     //   to reach time T"*;
-    // - the note on the solve is `repeats.note` — *"each step's solve consumes
+    // - the note on the solve is `conditions` too — *"each step's solve consumes
     //   the previous step's output as its right-hand side, so the chain is a
     //   quantum state passed forward and never a number read out."*
+    //
+    // Both of those sentences were `repeats.count` and `repeats.note` until
+    // session 118 removed the step they were keyed to; they moved into
+    // `conditions` in the same commit rather than being dropped, which is why
+    // this listing still has a source for every line.
     //
     // Nothing here was worked out. **Those three sentences and this block move
     // together**: a listing that keeps a recurrence the summary has stopped
@@ -827,17 +856,6 @@ export const LAYER_GRAPH: LayerGraph = {
           "[[approximation: 一次精度の陰的な時間刻みですので、精度依存性は 1/ε の多項式のままです。]]",
       },
     },
-    repeats: {
-      "quantum-linear-solve": {
-        count: "once per time step — T/h of them to reach time T",
-        countJa: "各時間ステップにつき 1 回。時刻 T に達するまでに T/h 回。",
-        mark: "×T/h",
-        markJa: "×T/h",
-        closure: "coherent",
-        note: "Each step's solve consumes the previous step's output as its right-hand side, so the chain is a quantum state passed forward and never a number read out. That is what makes the repetition expensive rather than merely long: a quantum linear solve succeeds only on a flagged branch, and the flags multiply down the chain, so the amplification bill compounds with the number of steps. Folding the whole trajectory into one banded system — which is what the all-at-once encodings do — is how the published treatments spend that once instead of T/h times.",
-        noteJa: "各ステップの線形ソルバーは、前のステップの出力をそのまま右辺として受け取ります。したがってこの連鎖は量子状態を送り続けるものであり、途中で数値を読み出すわけではありません。反復が単に長いだけでなく高価になるのはこのためです。量子線形ソルバーはフラグの立った枝でのみ成功しますので、そのフラグがステップ数だけ掛け合わされ、増幅の代価が累積します。軌道全体をひとつの帯行列系に畳み込む一括符号化は、この代価を T/h 回ではなく 1 回で済ませるための手立てです。",
-      },
-    },
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
@@ -850,20 +868,12 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Second-order implicit stepping that averages the generator at the two ends of each step, and is A-stable. As a rational approximation of e^{hA} it is the (1,1) diagonal Padé approximant.",
     summaryJa: "各ステップの両端で生成子を平均する二次精度の陰的な時間刻みで、A 安定です。e^{hA} の有理近似として見ると、(1,1) 型の対角 Padé 近似にあたります。",
     realizes: "time-discretization",
-    conditions: "Second order at the same stability class as backward Euler, so it is more accurate at equal step size, but the implicit solve does not disappear on a quantum computer. Second order still leaves a polynomial dependence on 1/ε; only propagator-series or spectral discretizations reach log(1/ε). Dong, Li and Xue encode diagonal Padé approximations of the matrix exponential into a large, block-sparse linear system solved via a quantum linear system algorithm, but state no complexity for the (1,1) case specifically.",
-    conditionsJa: "後退 Euler 法と同じ安定性クラスで二次精度ですので、同じ刻み幅ならより正確です。ただし量子計算機上でも陰的な線形ソルバーの呼び出しは消えません。二次精度でも 1/ε への多項式依存は残り、log(1/ε) に達するのは伝播子の級数近似かスペクトル法だけです。Dong・Li・Xue は行列指数の対角 Padé 近似を大きなブロック疎線形系に符号化し、量子線形システムアルゴリズムで解いていますが、(1,1) の場合に限った計算量は示していません。",
-    steps: ["quantum-linear-solve"],
-    repeats: {
-      "quantum-linear-solve": {
-        count: "once per time step — T/h of them to reach time T",
-        countJa: "各時間ステップにつき 1 回。時刻 T に達するまでに T/h 回。",
-        mark: "×T/h",
-        markJa: "×T/h",
-        closure: "coherent",
-        note: "Second order buys a larger h at the same accuracy, so the loop turns fewer times than backward Euler's — but it is the same loop, and it is still one linear solve per turn with the previous turn's state as its right-hand side. Being A-stable removes the step-size restriction; it does not remove the repetition.",
-        noteJa: "二次精度であるぶん、同じ精度なら h を大きく取れますので、後退 Euler 法より反復回数は少なくなります。しかし反復そのものは同じで、依然として 1 ステップにつき線形ソルバーを 1 回、前のステップの状態を右辺として呼びます。A 安定であることは刻み幅の制約を取り除きますが、反復を取り除くわけではありません。",
-      },
-    },
+    conditions: "Second order at the same stability class as backward Euler, so it is more accurate at equal step size, but the implicit solve does not disappear on a quantum computer — it is the layer below, and what this one hands down to it is the assembled system. Second order buys a larger h at the same accuracy, so written out step by step the loop turns fewer times than backward Euler's; it is the same loop, one linear solve per turn with the previous turn's state as its right-hand side. Being A-stable removes the step-size restriction, not the repetition. Second order still leaves a polynomial dependence on 1/ε; only propagator-series or spectral discretizations reach log(1/ε). Dong, Li and Xue encode diagonal Padé approximations of the matrix exponential into a large, block-sparse linear system solved via a quantum linear system algorithm, but state no complexity for the (1,1) case specifically.",
+    conditionsJa: "後退 Euler 法と同じ安定性クラスで二次精度ですので、同じ刻み幅ならより正確です。ただし量子計算機上でも陰的な線形ソルバーの呼び出しは消えません。それは下層にあたり、この層が引き渡すのは組み上げた系そのものです。二次精度であるぶん同じ精度なら h を大きく取れますので、ステップごとに書き下せば反復回数は後退 Euler 法より少なくなります。しかし反復そのものは同じで、1 ステップにつき線形ソルバーを 1 回、前のステップの状態を右辺として呼びます。A 安定であることは刻み幅の制約を取り除きますが、反復を取り除くわけではありません。二次精度でも 1/ε への多項式依存は残り、log(1/ε) に達するのは伝播子の級数近似かスペクトル法だけです。Dong・Li・Xue は行列指数の対角 Padé 近似を大きなブロック疎線形系に符号化し、量子線形システムアルゴリズムで解いていますが、(1,1) の場合に限った計算量は示していません。",
+    // Atomic for the same reason and by the same ruling as `backward-euler`;
+    // the long comment on that record's `steps` is the one place it is argued.
+    steps: [],
+    atomic: true,
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
