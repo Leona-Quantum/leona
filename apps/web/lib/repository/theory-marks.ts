@@ -64,11 +64,21 @@ function isMark(value: string): value is TheoryMark {
 /**
  * The prose, split into runs.
  *
- * Never throws and never drops text: an input that `validateTheory` would reject
- * still comes back as spans, with the malformed part left as the plain prose it
- * looks like. Parsing and validation are separate on purpose — the gate belongs
- * at the build, and a renderer that throws on bad data takes a page down over a
- * typo somebody could have seen.
+ * **Never throws, and reproduces its input exactly.** Concatenating the spans
+ * gives the source back character for character wherever a mark is *not*
+ * well-formed, and that is the contract the whole arrangement rests on: parsing
+ * and validation are separate so the gate can sit at the build rather than at
+ * the draw, and a renderer that throws on bad data takes a page down over a
+ * typo. If this could silently eat a fragment, a malformed note would reach a
+ * reader shorter than it was written — which is worse than reaching them with
+ * visible brackets in it, because nobody can see what is missing.
+ *
+ * So a match becomes a marked span only when it is a mark in every respect:
+ * known kind, nothing nested inside it, non-empty. Anything else stays the plain
+ * prose it looks like, and `validateTheory` is what tells the author. That
+ * function scans the source itself rather than reading these spans, precisely
+ * because a validator reading the parser's output cannot report what the parser
+ * has already normalised away.
  */
 export function parseTheory(source: string): readonly TheorySpan[] {
   const spans: TheorySpan[] = [];
@@ -76,19 +86,30 @@ export function parseTheory(source: string): readonly TheorySpan[] {
   for (const match of source.matchAll(MARK_PATTERN)) {
     const [whole, kind = "", body = ""] = match;
     const start = match.index;
+    // Already inside text a previous match consumed. Reachable only after a
+    // skipped mark, whose `]]` a later match can otherwise claim twice.
+    if (start < cursor) continue;
     if (!isMark(kind)) continue;
+    // **Nested, and this is why the test is here and not only in the validator.**
+    // `[[a: [[b: x]] ]]` matches non-greedily through the *inner* `]]`, so taking
+    // it would swallow `[[a: ` and render neither the text nor any sign that it
+    // was there. Left whole, it is visibly wrong — which is the failure mode this
+    // parser is supposed to have.
+    if (body.includes("[[")) continue;
+    const text = body.trim();
+    // An empty mark marks nothing, and dropping it would delete
+    // `[[approximation: ]]` from the drawing. Prose, and reported by the
+    // validator, which finds it without help from here.
+    if (text === "") continue;
     if (start > cursor) spans.push({ mark: null, text: source.slice(cursor, start) });
-    spans.push({ mark: kind, text: body.trim() });
+    spans.push({ mark: kind, text });
     cursor = start + whole.length;
   }
   if (cursor < source.length) spans.push({ mark: null, text: source.slice(cursor) });
   // Empty *plain* runs go — a mark at either end of the prose otherwise leaves a
   // zero-length span beside it, which draws an empty element nobody can see and
-  // nobody reports. An empty *marked* run stays, because `validateTheory` below
-  // is the only thing that can tell an author about `[[approximation: ]]` and it
-  // reads this list to do it. So the rule is not "drop what is empty", it is
-  // "drop what says nothing and is not a defect".
-  return spans.filter((span) => span.text !== "" || span.mark !== null);
+  // nobody reports.
+  return spans.filter((span) => span.text !== "");
 }
 
 /** The kinds this note marks, in the order it marks them. */
@@ -101,9 +122,10 @@ export function marksOf(source: string): readonly TheoryMark[] {
 /**
  * What is wrong with one locale's mathematics, as sentences an author can act on.
  *
- * Empty means well-formed. The three failures are the three ways `[[` and `]]`
- * can be written by hand and be wrong, and each is reported with the offending
- * text so a 400-word note does not have to be re-read to find it.
+ * Empty means well-formed. **It reads the source, not `parseTheory`'s output**,
+ * and that is the point: the parser leaves every malformed mark as prose, so a
+ * validator reading its spans would find nothing wrong with any of them. The two
+ * agree on what a mark is and disagree on what to do about one that is not.
  */
 export function validateTheory(owner: string, source: string): string[] {
   const errors: string[] = [];
@@ -118,22 +140,44 @@ export function validateTheory(owner: string, source: string): string[] {
       );
     }
   }
-  // Counting delimiters catches both an unclosed mark and a stray closer. The
-  // regex above is non-greedy and simply skips an unterminated `[[`, so without
-  // this the text after it renders unmarked and nothing says why.
-  const opens = (source.match(/\[\[/g) ?? []).length;
-  const closes = (source.match(/\]\]/g) ?? []).length;
-  if (opens !== closes) {
-    errors.push(`${owner}: ${opens} '[[' and ${closes} ']]' — a mark is unclosed`);
+  // **A left-to-right walk with a depth, not two counts.** Counting `[[` against
+  // `]]` says `x ]] [[approximation: y` is balanced: one of each, and both of
+  // them wrong. Order is the fact, so order is what is checked — and one walk
+  // reports a stray closer, a nested mark and an unclosed one, which two counts
+  // and a lookahead regex managed between them only by accident.
+  let depth = 0;
+  let nested = false;
+  let stray = false;
+  for (const match of source.matchAll(/\[\[|\]\]/g)) {
+    if (match[0] === "[[") {
+      if (depth > 0) nested = true;
+      depth += 1;
+      continue;
+    }
+    if (depth === 0) {
+      stray = true;
+      continue;
+    }
+    depth -= 1;
+  }
+  if (stray) {
+    errors.push(`${owner}: a ']]' closes a mark that was never opened`);
   }
   // Nesting has no meaning: a clause is one kind or the other, and a renderer
   // asked to draw an approximation inside an assumption has to pick one anyway.
-  if (/\[\[[^\]]*\[\[/.test(source)) {
+  if (nested) {
     errors.push(`${owner}: marks are nested — a clause is one kind or the other`);
   }
-  for (const span of parseTheory(source)) {
-    if (span.mark !== null && span.text === "") {
-      errors.push(`${owner}: an empty [[${span.mark}: …]] marks nothing`);
+  if (depth > 0) {
+    errors.push(`${owner}: ${depth} '[[' left open — a mark is unclosed`);
+  }
+  // Empty marks, found in the source for the reason in the doc comment above:
+  // the parser renders one as prose, so its spans no longer carry it.
+  for (const match of source.matchAll(MARK_PATTERN)) {
+    const kind = match[1] ?? "";
+    const body = match[2] ?? "";
+    if (isMark(kind) && !body.includes("[[") && body.trim() === "") {
+      errors.push(`${owner}: an empty [[${kind}: …]] marks nothing`);
     }
   }
   return errors;

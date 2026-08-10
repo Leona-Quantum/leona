@@ -70,28 +70,47 @@ test("a multi-line mark is one clause, because prose in this corpus wraps", () =
   assert.deepEqual(spans[1], { mark: "assumption", text: "the generator\nis time independent" });
 });
 
-test("the parser never throws and never drops text on malformed input", () => {
-  // The contract that lets the validator be the only gate. Each of these is
-  // rejected by `validateTheory` below; none of them may lose a word here,
-  // because the card renders whatever survives and a silently shortened sentence
-  // is worse than a visible pair of brackets.
+test("the parser reproduces malformed input exactly, character for character", () => {
+  // **The contract that lets the validator be the only gate**, and it is equality
+  // rather than "did not lose the prose". Each of these is rejected by
+  // `validateTheory` below and none of them may lose a *character* here, because
+  // the card renders whatever survives and a silently shortened sentence is worse
+  // than a visible pair of brackets — nobody can see what is missing.
+  //
+  // Written first as `rendered.includes("x")`, which passed while the nested case
+  // was quietly eating `[[approximation: `. A weaker assertion than the claim
+  // above it is a test that agrees with whatever the code does.
   const bad = [
     "x [[approximation: unclosed",
     "x ]] stray closer",
+    "x ]] [[approximation: y",
     "x [[approximaton: typo]] y",
     "x [[approximation: [[assumption: nested]] ]] y",
     "x [[approximation: ]] y",
   ];
   for (const source of bad) {
-    const rendered = parseTheory(source)
-      .map((span) => span.text)
-      .join("");
-    assert.ok(rendered.length > 0, `${source}: parsed to nothing`);
+    const spans = parseTheory(source);
+    const rendered = spans.map((span) => span.text).join("");
+    assert.equal(rendered, source, `parsing changed the text of: ${source}`);
+    // Nothing malformed was dressed up as a mark along the way, either. A
+    // reproduced string that marked the wrong run would pass the line above.
     assert.ok(
-      rendered.includes("x"),
-      `${source}: lost the prose around the malformed mark — rendered "${rendered}"`,
+      spans.every((span) => span.mark === null),
+      `${source}: marked something malformed`,
     );
   }
+
+  // **A bad mark beside a good one keeps both.** The good one is marked and its
+  // delimiters go, as they should; the bad one survives in full, delimiters and
+  // all. This is the case a per-string "reproduces its input" claim cannot state,
+  // and it is the realistic one — a note with a typo in it usually has a working
+  // mark somewhere else.
+  const mixed = parseTheory("x [[approximation: ]] and [[assumption: a real one]] z");
+  assert.deepEqual(mixed, [
+    { mark: null, text: "x [[approximation: ]] and " },
+    { mark: "assumption", text: "a real one" },
+    { mark: null, text: " z" },
+  ]);
 });
 
 test("every way to write a mark wrongly is reported, with the offending text in it", () => {
@@ -105,10 +124,18 @@ test("every way to write a mark wrongly is reported, with the offending text in 
   for (const mark of THEORY_MARKS) assert.match(unknown[0]!, new RegExp(mark));
 
   assert.deepEqual(validateTheory("hop", "x [[assumption: y"), [
-    "hop: 1 '[[' and 0 ']]' — a mark is unclosed",
+    "hop: 1 '[[' left open — a mark is unclosed",
   ]);
   assert.deepEqual(validateTheory("hop", "x ]] y"), [
-    "hop: 0 '[[' and 1 ']]' — a mark is unclosed",
+    "hop: a ']]' closes a mark that was never opened",
+  ]);
+  // **Order is the fact, not the tally.** One `[[` and one `]]` in the wrong
+  // order is balanced by count and wrong in both directions — a stray closer and
+  // an unclosed mark — so counting delimiters called this well-formed. Reported
+  // by a left-to-right walk with a depth, which is what replaced the counts.
+  assert.deepEqual(validateTheory("hop", "x ]] [[approximation: y"), [
+    "hop: a ']]' closes a mark that was never opened",
+    "hop: 1 '[[' left open — a mark is unclosed",
   ]);
   assert.ok(
     validateTheory("hop", "x [[approximation: [[assumption: y]] ]]").some((error) =>
@@ -119,6 +146,13 @@ test("every way to write a mark wrongly is reported, with the offending text in 
     validateTheory("hop", "x [[approximation:  ]] y").some((error) =>
       error.includes("marks nothing"),
     ),
+  );
+  // The validator reads the source, so an empty mark is still reported even
+  // though the parser has turned it into ordinary prose by the time anything
+  // renders. A validator reading the parser's spans would find nothing wrong.
+  assert.deepEqual(
+    parseTheory("x [[approximation:  ]] y").map((span) => span.mark),
+    [null],
   );
 });
 

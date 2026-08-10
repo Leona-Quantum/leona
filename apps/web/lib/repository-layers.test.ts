@@ -1072,7 +1072,7 @@ test("a hop note is filed against a hop the reader can actually see", () => {
     ],
   );
   assert.deepEqual(errors({ "step-a": { theory: "x [[assumption: y", theoryJa: "x" } }), [
-    "route: hops[step-a].theory: 1 '[[' and 0 ']]' — a mark is unclosed",
+    "route: hops[step-a].theory: 1 '[[' left open — a mark is unclosed",
   ]);
   // **The two locales must mark the same clauses.** A translation that drops the highlight
   // is not a styling difference between two translations; it is half the readers never being
