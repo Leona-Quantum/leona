@@ -51,7 +51,7 @@ import {
 } from "./repository/layers.ts";
 import { cardFor, ownCardId } from "./repository/card-content.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
-import type { StateVocabulary } from "./repository/states.ts";
+import { stateSatisfies, type StateVocabulary } from "./repository/states.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 import { PAPER_REGISTER } from "./repository/paper-register.ts";
 import type { PublicLocale } from "./public-locale.ts";
@@ -144,7 +144,13 @@ test("the shared circle is the one everything converges on, and it says so", () 
   const shared = diagram.states.find((state) => state.stateId === "linear-ivp");
   assert.ok(shared);
   assert.equal(shared.terminal, false);
-  assert.ok(shared.arriving >= 2, `only ${shared.arriving} lanes arrive`);
+  // ONE arriving lane since session 119, and that is the dedup rather than a
+  // loss: the second was the Koopman-von Neumann narrowing drawn beside the
+  // embedding lane whose fan already contains it — the same route listed
+  // twice. At slot grain one embedding arrives; the several ways in are its
+  // fillers, which is what `crossingsAt` counts at the grain where "several"
+  // is true.
+  assert.equal(shared.arriving, 1, `${shared.arriving} lanes arrive`);
   assert.ok(shared.leaving >= 2, `only ${shared.leaving} lanes leave`);
 });
 
@@ -831,14 +837,17 @@ test("every capability draws a figure — not just the two that converge", () =>
     }
   }
 
-  // The split is measured, not assumed: 2 slots have interior states and the
-  // other 17 are method fans. If a future edit gives a method its own contract
-  // this number moves, and moving it should be a deliberate edit here.
+  // The split is measured, not assumed: 1 slot has an interior chain every
+  // filler walks and the other 18 are method fans. If a future edit gives a
+  // method its own contract this number moves, and moving it should be a
+  // deliberate edit here.
   // 16 → 17 in session 106: `hamiltonian-recasting`'s two methods are both
   // atomic, so it fans them rather than drawing a chain.
+  // 17 → 18 in session 119: `linear-ode-solve`'s chain was refuted by three
+  // of its own methods' `bypasses`, so it fans (`drawsAsStateChain`).
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
-  assert.equal(byGrain.filter((grain) => grain === "states").length, 2);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 17);
+  assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 18);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -854,9 +863,10 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
   assert.equal(offered.length, 19);
 
   // And it is still a strict superset of the convergence claim, which is a
-  // different and narrower statement.
+  // different and narrower statement — narrower by one since session 119,
+  // when `linear-ode-solve` stopped qualifying (`drawsAsStateChain`).
   const converging = convergingSlots(LAYER_GRAPH, STATE_VOCABULARY).map((slot) => slot.id);
-  assert.equal(converging.length, 2);
+  assert.equal(converging.length, 1);
   for (const id of converging) assert.ok(offered.includes(id));
 
   // The filled/unfilled branch has to be REACHED to be tested. Every slot on the
@@ -1125,15 +1135,14 @@ test("the owner's own research direction is on the page", () => {
   assert.ok(found, "Carleman → Schrödingerisation is not listed as unpublished");
 });
 
-test("the narrowed lane is named after its filler, not after the slot four routes share", () => {
-  const diagram = diagramFor("nonlinear-ode-solve");
-  const kvn = diagram.lanes.find((lane) => lane.href.includes("koopman-von-neumann-lift"));
-  assert.ok(kvn, "the Koopman-von Neumann landing has its own lane");
-  assert.ok(
-    !kvn.fullLabel.startsWith("Embed a nonlinear system"),
-    "naming it after the slot would say four routes take it when one does",
-  );
-});
+// The narrowed-lane NAMING test that stood here retired with its subject in
+// session 119: the single-edge narrowed lane it read was the duplicate the
+// dedup in `expansionOf` removes, so on this corpus the naming branch of
+// `laneName` has no drawn instance left ("a narrowing is not a second lane
+// beside the slot whose fan already contains it", below, is what replaced the
+// drawing). The branch itself stays — a narrowing with NO plain sibling still
+// draws, named after its filler — and wants a fixture-graph witness, which is
+// recorded in NEXT.md rather than pretended to here.
 
 // --- opening a line, in place -----------------------------------------------
 //
@@ -1272,11 +1281,14 @@ test("the cap is above what a reader can reach by clicking", () => {
   // Not vacuous. If the saturation walk ever returns nothing, every assertion
   // below passes while measuring an empty map — which is exactly how a cap test
   // goes green over a cap that is too small.
+  //
+  // The widest figure is no longer on the overview: since session 119 it is
+  // `linear-ode-solve`'s fan, and that slot is a step inside the nonlinear
+  // routes rather than a root. So there is no ordering to assert between the
+  // two — each is checked against the cap on its own, below, which is the
+  // property the old ordering was standing in for.
   assert.ok(widest.addresses.length >= 20, `the widest figure reaches only ${widest.addresses.length} addresses`);
-  assert.ok(
-    overview.length >= widest.addresses.length,
-    "the overview draws the widest figure, so it cannot reach fewer addresses than it does",
-  );
+  assert.ok(overview.length >= 20, `the overview reaches only ${overview.length} addresses`);
 
   // The reader's own path, through the real parser, on the hardest case there
   // is. This is what fails when the cap falls behind the graph: at 64 the
@@ -1401,9 +1413,14 @@ test("a line that opens into something says so, and a line that does not is not 
   // from `openable` to `leaves` and the total is unchanged. **The drop is a
   // picture removed, not affordance quietly lost**, and this note is here because
   // those two are indistinguishable from the number alone.
-  assert.equal(openable + leaves + 1, 60, "the nineteen figures draw 60 lines between them");
-  assert.equal(openable, 22, "22 of them open into something recorded");
-  assert.equal(leaves, 37, "37 are leaves — nothing finer is recorded for them");
+  // 60 until session 119, and the +4 is two decisions in one session:
+  // `linear-ode-solve`'s refuted chain became the fan of its seven methods
+  // (−2 slot lanes, +7 method lanes, all seven openable into their routes),
+  // and the Koopman-von Neumann narrowing stopped being drawn beside the
+  // embedding lane whose fan contains it (−1 leaf).
+  assert.equal(openable + leaves + 1, 64, "the nineteen figures draw 64 lines between them");
+  assert.equal(openable, 27, "27 of them open into something recorded");
+  assert.equal(leaves, 36, "36 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -3134,15 +3151,23 @@ const SIZE_CEILING = {
    */
   saturatedWidth: 12_000,
   /**
-   * Tallest, same sweep. Today **15,900** — `time-discretization` in `en`, and
-   * this is the tight one: 100px of headroom.
+   * Tallest, same sweep. Today **22,982** — `linear-ode-solve` in `en`, and it
+   * is new: that slot drew a two-lane state chain until session 119, when its
+   * own methods' `bypasses` refuted the chain and the figure became the fan
+   * of all seven routes (`drawsAsStateChain`).
    *
-   * It got there in session 111, pushing a stub's fan out to clear `innerReach`;
-   * 16,836 was the first attempt and it went *over*. The run has no term in the
-   * height, so session 112's tendon work left this untouched to the pixel —
-   * which the sweep is what confirms, rather than the argument.
+   * **The trip was taken as the decision the note below demands, and this is
+   * the decision.** The height is not a regression in the drawing — it is the
+   * honest figure, inflated by a defect this file already has on the books: a
+   * shared sub-method is drawn once per branch, so the saturated fan draws
+   * `time-discretization`'s five methods once under Taylor, again under
+   * Krovi, again under Dyson (the 130-group census, NEXT.md §3). The real fix
+   * is that dedup, and this ceiling comes back down with it; a shape that
+   * merely hid the seven routes was not a smaller figure, it was a false one.
+   * Before the fan: 15,900 — `time-discretization` (en), 100px of headroom,
+   * which is why the old number sat at 16,000.
    */
-  saturatedHeight: 16_000,
+  saturatedHeight: 24_000,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
    * arrival. Today **1,045** against a 1,204px canvas, so this one is nearly
@@ -4274,4 +4299,98 @@ test("every opened line's shut control is reachable where its own children do no
   // came from, so it is the one that must stay swept.
   assert.ok(opened > 200, `only ${opened} opened lanes were checked`);
   assert.ok(chains > 80, `only ${chains} of them are chains — the exoskeleton population is missing`);
+});
+
+test("a slot drawn as a state chain is walked by every method that fills it", () => {
+  // **The gate `linear-ode-solve` never had.** A chain figure claims every way
+  // across passes through its circles. The edge walk cannot check that claim
+  // against the routes — a method's own closing work is not an edge — so for
+  // two sessions the slot's figure drew "discretise, then solve" while three
+  // of its seven methods carried `bypasses` over exactly those slots, and no
+  // gate could see it. Now the claim is checked where it is made: a chain
+  // every filler walks, or the fan — and a fan must draw every method of the
+  // slot, which is the other half of what the owner reported ("the figure
+  // draws none of the slot's seven methods").
+  let chains = 0;
+  let fans = 0;
+  for (const focus of LAYER_GRAPH.nodes.filter(isCapability)) {
+    const diagram = diagramFor(focus.id);
+    if (diagram.empty) continue;
+    const methods = methodsRealizing(LAYER_GRAPH, focus.id);
+    if (diagram.grain === "states") {
+      chains += 1;
+      const expansion = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, focus);
+      for (const method of methods) {
+        const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
+        for (const state of expansion.chain.slice(1, -1)) {
+          assert.ok(
+            route.states.some((held) => stateSatisfies(STATE_VOCABULARY, held, state)),
+            `${focus.id} draws a chain through ${state}, and ${method.id} never holds anything satisfying it`,
+          );
+        }
+      }
+    } else {
+      fans += 1;
+      const drawn = new Set(diagram.lanes.map((lane) => lane.draws));
+      for (const method of methods) {
+        assert.ok(
+          drawn.has(method.id),
+          `${focus.id} draws the fan and ${method.id} is not on it`,
+        );
+      }
+    }
+  }
+  // Both arms exercised, denominators printed: a sweep that saw no chains
+  // would pass the chain assertions over nothing.
+  console.log(`[chain honesty] ${chains} chain figures, ${fans} fan figures`);
+  assert.ok(chains >= 1, `no chain figure was drawn at all (${chains})`);
+  assert.ok(fans >= 15, `only ${fans} fan figures — the sweep is short`);
+});
+
+test("the slot whose own methods refuted its chain draws all seven of them", () => {
+  // The concrete case, pinned by name so the general gate above cannot rot
+  // into a sweep that measures nothing: `linear-ode-solve` must fan, and every
+  // one of its seven methods — including the three whose `bypasses` refuted
+  // the old chain — must be on its own slot's figure.
+  const diagram = diagramFor("linear-ode-solve");
+  assert.equal(diagram.grain, "methods", "linear-ode-solve is drawing the refuted chain again");
+  const drawn = new Set(diagram.lanes.map((lane) => lane.draws));
+  for (const id of [
+    "taylor-all-at-once",
+    "krovi-linear-ode",
+    "dyson-all-at-once",
+    "time-marching-usva",
+    "lchs-route",
+    "lchs-improved-kernel",
+    "schrodingerisation",
+  ]) {
+    assert.ok(drawn.has(id), `linear-ode-solve's own figure does not draw ${id}`);
+  }
+});
+
+test("a narrowing is not a second lane beside the slot whose fan already contains it", () => {
+  // Session 118's fourth repeat mechanism, the one that lives in the walk: a
+  // single-edge `through` lane drew the Koopman-von Neumann lift as its own
+  // way across while the plain embedding lane's fan contained the same
+  // method one click down — the same route, listed twice, with nothing
+  // opened. The narrowing edge itself must survive (the multi-edge lanes
+  // that continue from the narrower state are real and different routes);
+  // only the single-edge duplicate goes.
+  for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const diagram = diagramFor(focus.id);
+    const single = diagram.lanes.filter((lane) => lane.depth === 0 && lane.slots.length === 1);
+    for (const lane of single) {
+      const twins = single.filter((other) => other.slots[0] === lane.slots[0]);
+      assert.equal(
+        twins.length,
+        1,
+        `${focus.id}: ${lane.slots[0]} is drawn as ${twins.length} sibling lanes`,
+      );
+    }
+  }
+  // And the pinned instance: the lift appears exactly once on the shut
+  // embedding figure's slot — inside the fan once opened, never beside it.
+  const shut = diagramFor("nonlinear-ode-solve");
+  const liftLanes = shut.lanes.filter((lane) => lane.draws === "koopman-von-neumann-lift");
+  assert.equal(liftLanes.length, 0, "the lift is drawn beside the lane whose fan contains it");
 });

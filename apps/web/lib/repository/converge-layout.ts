@@ -106,6 +106,7 @@ import {
   type Ribbon,
 } from "./strand-geometry.ts";
 import {
+  drawsAsStateChain,
   expansionOf,
   laneFillers,
   methodFanOf,
@@ -3656,11 +3657,17 @@ function layoutFigure(options: {
   const expansion: Expansion = expansionOf(graph, vocabulary, focus);
   const caption = labelOf(focus, locale);
 
-  // Which picture this is. The state chain is asked for first and the method fan
-  // is the answer only when there is no chain — never both, and the answer is
-  // recorded on the diagram rather than inferred downstream from `lanes.length`.
+  // Which picture this is. The state chain is asked for first and the method
+  // fan is the answer when there is no chain — or when the chain's own claim
+  // does not hold: a chain figure says every way across passes through its
+  // circles, and `drawsAsStateChain` checks that against the routes of the
+  // methods actually filling this slot. `linear-ode-solve` is why the check
+  // exists — its edge walk admits only discretise-then-solve, while three of
+  // its seven methods record `bypasses` over exactly those slots, so the
+  // chain drew a claim the corpus itself refutes and none of the seven
+  // methods appeared on their own slot's figure.
   const plan =
-    options.plan === "fan" || expansion.atomicAtThisLevel || expansion.bundles.length === 0
+    options.plan === "fan" || !drawsAsStateChain(graph, vocabulary, focus, expansion)
       ? planMethodFan(graph, vocabulary, focus, locale, open)
       : planStateChain(graph, vocabulary, expansion, locale, open, focus.id);
 
@@ -4115,7 +4122,11 @@ export function crossingsAt(
 export function convergingSlots(graph: LayerGraph, vocabulary: StateVocabulary): LayerCapability[] {
   return graph.nodes.filter((node): node is LayerCapability => {
     if (!isCapability(node)) return false;
-    return !expansionOf(graph, vocabulary, node).atomicAtThisLevel;
+    // The same predicate the figure is chosen by — one writer, so this census
+    // cannot list a slot whose page draws the fan. `linear-ode-solve` left
+    // this list the day the check landed: its chain was refuted by its own
+    // methods' `bypasses`, which is exactly what this census must not count.
+    return drawsAsStateChain(graph, vocabulary, node, expansionOf(graph, vocabulary, node));
   });
 }
 

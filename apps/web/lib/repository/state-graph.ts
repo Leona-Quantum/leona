@@ -324,7 +324,25 @@ export function expansionOf(
       if (lanes.some((lane) => lane.key === key)) continue;
       lanes.push({ key, edges: slice, interior: path.states.slice(startAt + 1, endAt) });
     }
-    bundles.push({ from: start, to: end, lanes });
+    // **A narrowing is not a second way across.** A `through` edge exists so
+    // the walk can leave from the narrower state a particular filler lands on
+    // — and the multi-edge lanes that continue from there keep it. But as a
+    // single-edge lane of this bundle it draws the same slot beside itself:
+    // the plain lane's fan already contains the narrowing method, so the
+    // reader sees the Koopman-von Neumann lift once as a lane and again
+    // inside the lane next to it — the one repeat mechanism (of session
+    // 118's four) that lives in the walk rather than the renderer. Exactly
+    // one edge in today's corpus does this, and `crossingsAt` has deduped the
+    // same pair by method since it was written.
+    const deduped = lanes.filter((lane) => {
+      if (lane.edges.length !== 1) return true;
+      const edge = lane.edges[0]!;
+      if (!edge.narrowedBy) return true;
+      return !lanes.some(
+        (other) => other !== lane && other.edges.length === 1 && other.edges[0]!.key === edge.slot,
+      );
+    });
+    bundles.push({ from: start, to: end, lanes: deduped });
   }
 
   return {
@@ -334,6 +352,60 @@ export function expansionOf(
     truncated: search.truncated,
     chainConsistent: consistent,
   };
+}
+
+/**
+ * Whether the state chain a slot's expansion found is walked by EVERY method
+ * that fills the slot — the claim a chain figure makes, checked against the
+ * routes rather than assumed from the walk.
+ *
+ * `expansionOf` finds the dominators of the paths the EDGE graph admits, and
+ * on most slots that is the whole story. It is not on `linear-ode-solve`: the
+ * edge walk admits exactly one full path — discretise, then solve — because
+ * the Hamiltonian branch's closing stretch is each method's own work and own
+ * work is not an edge (see `walkedEdgeKeys`). So the figure drew
+ * `linear-system` as a state every way across passes through, while three of
+ * the slot's seven methods carry `bypasses: ["quantum-linear-solve",
+ * "time-discretization"]` — the corpus itself recording that the claim is
+ * false. A chain no recorded filler is allowed to skip is a chain; anything
+ * less draws the fan, whose only claim is "here are the recorded ways".
+ *
+ * Satisfaction, not identity, on both sides — `solution-state` witnesses
+ * `solution-answer`, a Hermitian generator witnesses `linear-ivp` — the same
+ * asymmetry `denominatorChain` is built on.
+ */
+export function chainWalkedByEveryMethod(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  capability: LayerCapability,
+  expansion: Expansion,
+): boolean {
+  const interior = expansion.chain.slice(1, -1);
+  if (interior.length === 0) return true;
+  return methodsRealizing(graph, capability.id).every((method) => {
+    const route = routeOf(graph, vocabulary, method);
+    return interior.every((state) =>
+      route.states.some((held) => stateSatisfies(vocabulary, held, state)),
+    );
+  });
+}
+
+/**
+ * Whether this slot's figure is the state chain at all.
+ *
+ * One writer for a decision two surfaces make: `layoutFigure` picks the
+ * picture, and `convergingSlots` is the census of slots whose circles mean
+ * "every way across passes through this". The two disagreeing is a legend
+ * describing a drawing nothing draws.
+ */
+export function drawsAsStateChain(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  capability: LayerCapability,
+  expansion: Expansion,
+): boolean {
+  if (expansion.atomicAtThisLevel || expansion.bundles.length === 0) return false;
+  return chainWalkedByEveryMethod(graph, vocabulary, capability, expansion);
 }
 
 /** One way of filling a slot, drawn as its own line between the slot's two states. */
