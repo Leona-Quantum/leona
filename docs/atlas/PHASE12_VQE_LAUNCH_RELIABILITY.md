@@ -39,6 +39,17 @@ VQE numerical failure. It was a control-plane truth mismatch.
    non-actionable. The authenticated layout now explicitly opts out, while the
    public Atlas retains the transition; a source-level regression test guards
    that boundary.
+8. The first external Linux run exposed two test/integration seams hidden by
+   local execution. Six production-launcher tests cleared Cloud Run markers but
+   not GitHub Actions' `CI=true`; the production executor correctly failed
+   closed. A shared dedicated-host fixture now clears every managed/CI marker,
+   while a separate test proves that restoring `CI=true` is rejected.
+9. The frozen Phase 5A Registry workflow and its Phase 7.6 optimizer swaps use
+   a deliberate legacy-key/standard-optimizer identity. Registry resolution
+   validated that exact 14-role identity, but the later capability gate listed
+   only the all-standard identity. The capability allowlist now names the
+   complete legacy baseline, legacy-plus-SLSQP, and legacy-plus-COBYLA maps.
+   Any partial mixture or unknown key still fails closed.
 
 ## S0–S12 completion contract
 
@@ -105,7 +116,7 @@ normal user validation refusal is not an invariant alert.
 - `pytest` targeted API/worker/domain launch suite: **43 passed** after the
   final invariant test was added; the broader Phase 12 targeted suite had
   **72 passed**.
-- Deterministic VQE offline gate: **63 Python scientific/API contract tests**
+- Deterministic VQE offline gate: **66 Python scientific/API contract tests**
   and **29 web parser tests passed**.
 - Web unit suite after integration with the final `dev` cutoff: **959 passed**.
 - Authenticated VQE Playwright suite: **6 passed**.
@@ -113,8 +124,8 @@ normal user validation refusal is not an invariant alert.
 - Empty database upgrade → downgrade → upgrade succeeded.
 - Downgrade with launch-decision evidence was correctly refused.
 - Live PostgreSQL delayed-heartbeat and append-only tests: **2 passed**.
-- Full repository Python regression suite after the final `dev` sync:
-  **2926 passed, 431 skipped**; the only warning is an existing Alembic
+- Full repository Python regression suite after the external-run corrections:
+  **2935 passed, 431 skipped**; the only warning is an existing Alembic
   `path_separator` deprecation.
 - Next.js production build after integration with `dev`: **passed**, including
   **596** generated static pages and the VQE proxy/Studio/Atlas application
@@ -129,6 +140,12 @@ normal user validation refusal is not an invariant alert.
   and the production build passed.
 - Production E2E source was upgraded to require a fresh launch projection and
   worker-authored readiness for the six exact OCI profiles.
+- External attempt `31353920594` proved the ordinary CI failure was confined to
+  the six non-hermetic production-host simulations; TypeScript, UI visual, and
+  PostgreSQL jobs passed. External attempt `31353920608` passed settings,
+  PostgreSQL migration, frozen workflow provisioning, and all six exact OCI
+  pulls before exposing the cross-layer capability-identity omission. These
+  failed attempts are diagnostic evidence, not release evidence.
 
 This local evidence does not close S9. The release decision remains
 `NO-GO — pending exact-commit Linux/x86_64 fixed-digest E2E` until the pushed

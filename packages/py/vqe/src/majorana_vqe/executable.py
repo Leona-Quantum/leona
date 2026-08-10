@@ -533,10 +533,30 @@ H2_COBYLA_SEMANTIC_KEYS: dict[ComponentType, str] = {
     **H2_BASELINE_SEMANTIC_KEYS,
     ComponentType.PARAMETER_OPTIMIZER: "optimizer.cobyla.v1",
 }
+# The frozen Phase 5A registry candidate predates the standard component
+# catalog.  Its component payload digests are still validated independently,
+# but its semantic keys use the legacy namespace.  Phase 7.6 intentionally
+# creates optimizer-swap drafts by retaining every baseline binding and
+# replacing exactly one optimizer binding with a standard component.  List
+# those complete identities explicitly: partial mixtures remain unsupported.
+H2_REVIEW_CANDIDATE_BASELINE_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    role: f"h2.sto3g.actual_vqe.v0_2.{role.value}" for role in PORTABLE_SCIENTIFIC_ROLES
+}
+H2_REVIEW_CANDIDATE_SLSQP_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    **H2_REVIEW_CANDIDATE_BASELINE_SEMANTIC_KEYS,
+    ComponentType.PARAMETER_OPTIMIZER: "optimizer.slsqp.v1",
+}
+H2_REVIEW_CANDIDATE_COBYLA_SEMANTIC_KEYS: dict[ComponentType, str] = {
+    **H2_REVIEW_CANDIDATE_BASELINE_SEMANTIC_KEYS,
+    ComponentType.PARAMETER_OPTIMIZER: "optimizer.cobyla.v1",
+}
 H2_SUPPORTED_SEMANTIC_KEY_SETS = (
     H2_BASELINE_SEMANTIC_KEYS,
     H2_SLSQP_SEMANTIC_KEYS,
     H2_COBYLA_SEMANTIC_KEYS,
+    H2_REVIEW_CANDIDATE_BASELINE_SEMANTIC_KEYS,
+    H2_REVIEW_CANDIDATE_SLSQP_SEMANTIC_KEYS,
+    H2_REVIEW_CANDIDATE_COBYLA_SEMANTIC_KEYS,
 )
 
 

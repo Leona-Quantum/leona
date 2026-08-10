@@ -9,6 +9,9 @@ from pydantic import ValidationError
 from majorana_vqe.executable import (
     AnsatzDefinitionSpec,
     ExecutableCompositionError,
+    H2_REVIEW_CANDIDATE_BASELINE_SEMANTIC_KEYS,
+    H2_REVIEW_CANDIDATE_COBYLA_SEMANTIC_KEYS,
+    H2_REVIEW_CANDIDATE_SLSQP_SEMANTIC_KEYS,
     H2SemanticSelection,
     build_h2_scientific_identity,
     executable_component_scientific_payload,
@@ -18,6 +21,7 @@ from majorana_vqe.executable import (
     validate_h2_executable_composition,
 )
 from majorana_vqe.models import ComponentType
+from majorana_vqe.portable import PORTABLE_SCIENTIFIC_ROLES
 from majorana_vqe.standard_catalog import workflow_by_key
 
 ROOT = Path(__file__).resolve().parents[4]
@@ -107,6 +111,70 @@ def test_catalog_seed_resolves_to_one_typed_scientific_identity():
     assert identity.hamiltonian_digest_sha256.startswith("d9dd24eb")
     assert len(identity.portable_spec.component_bindings) == 14
     assert len(executable_h2_scientific_identity_digest(identity)) == 64
+
+
+@pytest.mark.parametrize(
+    "semantic_keys",
+    [
+        H2_REVIEW_CANDIDATE_BASELINE_SEMANTIC_KEYS,
+        H2_REVIEW_CANDIDATE_SLSQP_SEMANTIC_KEYS,
+        H2_REVIEW_CANDIDATE_COBYLA_SEMANTIC_KEYS,
+    ],
+)
+def test_frozen_review_candidate_identities_are_admitted_as_complete_sets(semantic_keys):
+    specs = _fixture()
+    optimizer_key = semantic_keys[ComponentType.PARAMETER_OPTIMIZER]
+    if optimizer_key == "optimizer.slsqp.v1":
+        specs[ComponentType.PARAMETER_OPTIMIZER] = {
+            **specs[ComponentType.PARAMETER_OPTIMIZER],
+            "algorithm": "scipy_slsqp",
+        }
+    elif optimizer_key == "optimizer.cobyla.v1":
+        specs[ComponentType.PARAMETER_OPTIMIZER] = {
+            **specs[ComponentType.PARAMETER_OPTIMIZER],
+            "algorithm": "scipy_cobyla",
+            "initial_trust_region_radius_float64_hex": "3ff0000000000000",
+            "final_trust_region_radius_float64_hex": "3e45798ee2308c3a",
+            "constraint_tolerance_float64_hex": "3d719799812dea11",
+        }
+
+    identity = build_h2_scientific_identity(
+        selections=[
+            H2SemanticSelection(role=role, component_semantic_key=semantic_keys[role])
+            for role in PORTABLE_SCIENTIFIC_ROLES
+        ],
+        specs=specs,
+        hamiltonian_digest_sha256=(
+            "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79"
+        ),
+    )
+
+    assert {
+        binding.role: binding.component_semantic_key
+        for binding in identity.portable_spec.component_bindings
+    } == semantic_keys
+
+
+def test_partial_review_candidate_identity_remains_fail_closed():
+    semantic_keys = dict(H2_REVIEW_CANDIDATE_SLSQP_SEMANTIC_KEYS)
+    semantic_keys[ComponentType.ANSATZ] = "ansatz.h2.fixed_excitation.v1"
+    specs = _fixture()
+    specs[ComponentType.PARAMETER_OPTIMIZER] = {
+        **specs[ComponentType.PARAMETER_OPTIMIZER],
+        "algorithm": "scipy_slsqp",
+    }
+
+    with pytest.raises(ExecutableCompositionError, match="mismatched"):
+        build_h2_scientific_identity(
+            selections=[
+                H2SemanticSelection(role=role, component_semantic_key=semantic_keys[role])
+                for role in PORTABLE_SCIENTIFIC_ROLES
+            ],
+            specs=specs,
+            hamiltonian_digest_sha256=(
+                "d9dd24eb30011e8ea091759e6f0e25d76d0ccc0661e47748afb85e5f13654d79"
+            ),
+        )
 
 
 def test_identity_digest_is_order_independent_and_semantic_changes_are_visible():

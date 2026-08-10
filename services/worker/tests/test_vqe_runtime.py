@@ -33,6 +33,15 @@ def _enable_local_candidate(monkeypatch):
         monkeypatch.delenv(name, raising=False)
 
 
+def _enable_dedicated_production(monkeypatch):
+    """Model the only host class admitted by the production executor."""
+
+    monkeypatch.setenv("MAJORANA_ENV", "production")
+    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
+    for name in _CLOUD_MARKERS:
+        monkeypatch.delenv(name, raising=False)
+
+
 def test_current_production_profile_is_versioned_without_orphaning_v1_bindings():
     current = production_runtime_profile(Framework.QISKIT)
     assert current.binding.runtime_profile_id.endswith("-production-v2")
@@ -434,6 +443,16 @@ async def test_candidate_transport_rejects_cloud_markers(monkeypatch):
         await run_candidate_container(candidate_runtime_profile(Framework.QISKIT).binding)
 
 
+async def test_production_transport_rejects_ci_marker(monkeypatch):
+    _enable_dedicated_production(monkeypatch)
+    monkeypatch.setenv("CI", "true")
+
+    with pytest.raises(VqeRuntimeError, match="managed or CI"):
+        await OciDockerVqeRuntimeExecutor().run(
+            production_runtime_profile(Framework.QISKIT).binding
+        )
+
+
 async def test_production_launcher_requires_preprovisioned_exact_digest(monkeypatch):
     profile = production_runtime_profile(Framework.QISKIT)
     report = (RAW / "qiskit_vqe_v0.2.json").read_bytes()
@@ -445,11 +464,8 @@ async def test_production_launcher_requires_preprovisioned_exact_digest(monkeypa
             return _InspectProcess(json.dumps([profile.image_reference]).encode())
         return _SuccessfulProcess(report)
 
-    monkeypatch.setenv("MAJORANA_ENV", "production")
-    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
+    _enable_dedicated_production(monkeypatch)
     monkeypatch.setenv("DATABASE_URL", "must-not-reach-child")
-    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
-        monkeypatch.delenv(name, raising=False)
     monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
     monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
 
@@ -511,10 +527,7 @@ async def test_uccsd_production_launcher_uses_frozen_entrypoint_without_cli_over
             return _InspectProcess(json.dumps([profile.image_reference]).encode())
         return _SuccessfulProcess(report)
 
-    monkeypatch.setenv("MAJORANA_ENV", "production")
-    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
-    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
-        monkeypatch.delenv(name, raising=False)
+    _enable_dedicated_production(monkeypatch)
     monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
     monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
 
@@ -531,10 +544,7 @@ async def test_uccsd_production_launcher_uses_frozen_entrypoint_without_cli_over
 
 async def test_uccsd_production_launcher_rejects_optimizer_drift(monkeypatch):
     profile = uccsd_production_runtime_profile(Framework.PENNYLANE)
-    monkeypatch.setenv("MAJORANA_ENV", "production")
-    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
-    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
-        monkeypatch.delenv(name, raising=False)
+    _enable_dedicated_production(monkeypatch)
 
     with pytest.raises(VqeRuntimeError, match="requires the frozen SLSQP"):
         await OciDockerVqeRuntimeExecutor().run(
@@ -556,10 +566,7 @@ async def test_hardware_efficient_production_launcher_uses_frozen_entrypoint(
             return _InspectProcess(json.dumps([profile.image_reference]).encode())
         return _SuccessfulProcess(report)
 
-    monkeypatch.setenv("MAJORANA_ENV", "production")
-    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
-    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
-        monkeypatch.delenv(name, raising=False)
+    _enable_dedicated_production(monkeypatch)
     monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
     monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
 
@@ -578,10 +585,7 @@ async def test_hardware_efficient_production_launcher_rejects_optimizer_drift(
     monkeypatch,
 ):
     profile = hardware_efficient_production_runtime_profile(Framework.PENNYLANE)
-    monkeypatch.setenv("MAJORANA_ENV", "production")
-    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
-    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
-        monkeypatch.delenv(name, raising=False)
+    _enable_dedicated_production(monkeypatch)
 
     with pytest.raises(VqeRuntimeError, match="requires the frozen SLSQP"):
         await OciDockerVqeRuntimeExecutor().run(
@@ -596,10 +600,7 @@ async def test_production_launcher_refuses_missing_exact_digest(monkeypatch):
     async def create(*_command, **_kwargs):
         return _InspectProcess(b"[]")
 
-    monkeypatch.setenv("MAJORANA_ENV", "production")
-    monkeypatch.setenv("MAJORANA_VQE_RUNTIME_HOST", "dedicated")
-    for name in ("K_SERVICE", "K_REVISION", "K_CONFIGURATION"):
-        monkeypatch.delenv(name, raising=False)
+    _enable_dedicated_production(monkeypatch)
     monkeypatch.setattr("majorana_worker.vqe_runtime._docker_binary", lambda: "/docker")
     monkeypatch.setattr("majorana_worker.vqe_runtime.asyncio.create_subprocess_exec", create)
 

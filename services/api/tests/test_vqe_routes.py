@@ -15,7 +15,13 @@ from unittest.mock import AsyncMock
 
 import pytest
 from fastapi import HTTPException
-from majorana_vqe.portable import ComponentRoleBindingV03, workflow_semantic_digest_v03
+from majorana_vqe.models import ComponentType
+from majorana_vqe.portable import (
+    ComponentRoleBindingV03,
+    ComponentSemanticBinding,
+    workflow_semantic_digest,
+    workflow_semantic_digest_v03,
+)
 
 from majorana_api.repos import vqe as vqe_repo
 from majorana_api.routes import vqe as vqe_routes
@@ -351,6 +357,59 @@ def test_create_experiment_requires_a_request_idempotency_key_with_no_default():
 
     sig = inspect.signature(vqe_routes.create_experiment)
     assert sig.parameters["request_idempotency_key"].default is inspect.Parameter.empty
+
+
+@pytest.mark.parametrize(
+    "optimizer_key",
+    [
+        "h2.sto3g.actual_vqe.v0_2.parameter_optimizer",
+        "optimizer.slsqp.v1",
+        "optimizer.cobyla.v1",
+    ],
+)
+def test_actual_vqe_capability_accepts_only_complete_frozen_candidate_identities(
+    optimizer_key,
+):
+    identity = json.loads(
+        (
+            ROOT
+            / "docs"
+            / "atlas"
+            / "evidence"
+            / "phase76"
+            / "h2_baseline_scientific_identity_v0.1.json"
+        ).read_text()
+    )["identity"]["portable_spec"]
+    migrated = json.loads(json.dumps(identity))
+    for binding in migrated["component_bindings"]:
+        role = ComponentType(binding["role"])
+        binding["component_semantic_key"] = (
+            optimizer_key
+            if role is ComponentType.PARAMETER_OPTIMIZER
+            else f"h2.sto3g.actual_vqe.v0_2.{role.value}"
+        )
+    migrated["workflow_semantic_digest"] = workflow_semantic_digest(
+        [
+            ComponentSemanticBinding.model_validate(binding)
+            for binding in migrated["component_bindings"]
+        ]
+    )
+
+    assert (
+        vqe_routes._capability_for_scientific_spec(migrated)
+        is vqe_routes.Capability.H2_STO3G_ACTUAL_VQE
+    )
+
+    drifted = json.loads(json.dumps(migrated))
+    ansatz = next(item for item in drifted["component_bindings"] if item["role"] == "ansatz")
+    ansatz["component_semantic_key"] = "ansatz.h2.fixed_excitation.v1"
+    drifted["workflow_semantic_digest"] = workflow_semantic_digest(
+        [
+            ComponentSemanticBinding.model_validate(binding)
+            for binding in drifted["component_bindings"]
+        ]
+    )
+    assert vqe_routes._capability_for_scientific_spec(drifted) is None
 
 
 def test_uccsd_execution_identity_requires_the_exact_component_set():

@@ -33,12 +33,12 @@
   "evidence": {
     "offline_gate": {
       "status": "passed",
-      "python_contract_tests": 63,
+      "python_contract_tests": 66,
       "web_contract_tests": 29
     },
     "python_repository_suite": {
       "status": "passed",
-      "passed": 2926,
+      "passed": 2935,
       "skipped": 431,
       "warnings": 1,
       "warning_boundary": "existing Alembic path_separator deprecation"
@@ -77,7 +77,19 @@
     },
     "digest_pinned_linux_amd64_e2e": {
       "status": "not_run_for_exact_remote_commit",
-      "counts_as_release_evidence": false
+      "counts_as_release_evidence": false,
+      "diagnostic_attempts": [
+        {
+          "run_id": 31353920594,
+          "result": "failed_nonhermetic_production_host_test_fixture",
+          "release_evidence": false
+        },
+        {
+          "run_id": 31353920608,
+          "result": "failed_capability_identity_allowlist_omission_after_six_exact_oci_pulls",
+          "release_evidence": false
+        }
+      ]
     }
   }
 }
