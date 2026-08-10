@@ -70,9 +70,9 @@ const GRAPH: LayerGraph = {
 // --- edges ------------------------------------------------------------------
 
 test("every slot contributes one edge", () => {
-  assert.equal(stateEdges(GRAPH).length, 3);
+  assert.equal(stateEdges(GRAPH, VOCAB).length, 3);
   assert.deepEqual(
-    stateEdges(GRAPH).map((edge) => edge.key),
+    stateEdges(GRAPH, VOCAB).map((edge) => edge.key),
     ["big", "p", "q"],
   );
 });
@@ -106,7 +106,7 @@ test("a route's `through` narrowing becomes its own edge, attributed", () => {
       },
     ],
   };
-  const narrowed = stateEdges(graph).find((edge) => edge.key === "p@filler");
+  const narrowed = stateEdges(graph, VOCAB).find((edge) => edge.key === "p@filler");
   assert.ok(narrowed, "the narrowed landing is an edge of its own");
   assert.equal(narrowed.to, "mn");
   assert.equal(narrowed.narrowedBy, "filler");
@@ -115,7 +115,7 @@ test("a route's `through` narrowing becomes its own edge, attributed", () => {
 // --- paths ------------------------------------------------------------------
 
 test("excluding the slot being expanded is what makes a finer path visible", () => {
-  const edges = stateEdges(GRAPH);
+  const edges = stateEdges(GRAPH, VOCAB);
   // Without the exclusion the coarse a->z edge is itself a one-hop path.
   const withCoarse = statePathsBetween(edges, VOCAB, "a", "z");
   assert.ok(withCoarse.paths.some((path) => path.edges.length === 1));
@@ -127,7 +127,7 @@ test("excluding the slot being expanded is what makes a finer path visible", () 
 
 test("a narrower state satisfies a broader requirement, so the walk continues through it", () => {
   const graph: LayerGraph = { nodes: [slot("p", "a", "mn"), slot("q", "m", "z")] };
-  const found = statePathsBetween(stateEdges(graph), VOCAB, "a", "z");
+  const found = statePathsBetween(stateEdges(graph, VOCAB), VOCAB, "a", "z");
   assert.equal(found.paths.length, 1, "mn is an m, so q is takeable from it");
   assert.deepEqual(found.paths[0]!.states, ["a", "mn", "z"]);
 });
@@ -137,7 +137,7 @@ test("the walk is bounded and says so rather than truncating quietly", () => {
   const many = Array.from({ length: PATH_LIMITS.maxPaths + 20 }, (_unused, index) =>
     slot(`e${index}`, "a", "z"),
   );
-  const found = statePathsBetween(stateEdges({ nodes: many }), VOCAB, "a", "z");
+  const found = statePathsBetween(stateEdges({ nodes: many }, VOCAB), VOCAB, "a", "z");
   assert.equal(found.truncated, true);
   assert.ok(found.paths.length <= PATH_LIMITS.maxPaths);
 });
@@ -148,7 +148,7 @@ test("a state on every path is a denominator; one on only some is not", () => {
   const graph: LayerGraph = {
     nodes: [slot("big", "a", "z"), slot("p", "a", "m"), slot("q", "m", "z"), slot("r", "a", "z")],
   };
-  const found = statePathsBetween(stateEdges(graph), VOCAB, "a", "z", "big");
+  const found = statePathsBetween(stateEdges(graph, VOCAB), VOCAB, "a", "z", "big");
   const { chain } = denominatorChain(found, VOCAB);
   assert.ok(!chain.includes("m"), "`r` skips m, so m dominates nothing");
 });
@@ -157,7 +157,7 @@ test("a narrowed landing still witnesses the state it specialises", () => {
   const graph: LayerGraph = {
     nodes: [slot("big", "a", "z"), slot("p", "a", "m"), slot("pn", "a", "mn"), slot("q", "m", "z")],
   };
-  const found = statePathsBetween(stateEdges(graph), VOCAB, "a", "z", "big");
+  const found = statePathsBetween(stateEdges(graph, VOCAB), VOCAB, "a", "z", "big");
   const { chain } = denominatorChain(found, VOCAB);
   assert.ok(
     chain.includes("m"),
@@ -284,7 +284,7 @@ test("the Koopman-von Neumann narrowing is witnessed only by its own route", () 
   // method), so no figure draws it — but the edge stays in the walkable
   // graph, the multi-edge continuations from the narrower landing depend on
   // it, and its witnessing rule is what this test pins.
-  const edge = stateEdges(LAYER_GRAPH).find(
+  const edge = stateEdges(LAYER_GRAPH, STATE_VOCABULARY).find(
     (candidate) => candidate.narrowedBy === "koopman-von-neumann-lift",
   );
   assert.ok(edge, "the narrowing edge left the walkable graph entirely");

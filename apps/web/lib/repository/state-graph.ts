@@ -92,6 +92,16 @@ import { stateSatisfies, type StateVocabulary } from "./states.ts";
  * only promises a linear one. That is a real arrival and a real departure point,
  * and a walk that ignores it cannot leave `hermitian-generator` at all, which is
  * how the simulation continuation goes missing.
+ *
+ * A narrowing's `from` is **the state its witnessing route held entering the
+ * hop**, not the slot's declared entry. The two coincided on every narrowing
+ * until session 120, so the distinction cost nothing to ignore; the KvN
+ * simulation narrowing (`hamiltonian-simulation` → `runnable-evolution`) is the
+ * first whose slot admits several entry states on one figure, and with the
+ * declared entry the walk composed it after `hamiltonian-recasting` — drawing
+ * recast-then-estimate ways across that no source records (a surrogate needs
+ * its recovery map before any readout). The edge is exactly as strong as its
+ * witness, so its entry is the witness's entry.
  */
 export interface StateEdge {
   /** Stable per edge. `slot` for a contract edge, `slot@method` for a narrowing. */
@@ -104,7 +114,7 @@ export interface StateEdge {
 }
 
 /** Every move the authored graph permits, contract edges first. */
-export function stateEdges(graph: LayerGraph): StateEdge[] {
+export function stateEdges(graph: LayerGraph, vocabulary: StateVocabulary): StateEdge[] {
   const edges: StateEdge[] = [];
   for (const node of graph.nodes) {
     if (!isCapability(node)) continue;
@@ -117,13 +127,24 @@ export function stateEdges(graph: LayerGraph): StateEdge[] {
   }
   for (const node of graph.nodes) {
     if (!isMethod(node)) continue;
-    for (const [stepId, landing] of Object.entries(node.through ?? {})) {
+    const narrowings = Object.entries(node.through ?? {});
+    if (narrowings.length === 0) continue;
+    // The witnessing route, once per method: `routeOf` is the one place that
+    // knows what the route is holding entering each hop, and duplicating that
+    // walk here would be the tally-in-five-places defect.
+    const route = routeOf(graph, vocabulary, node);
+    for (const [stepId, landing] of narrowings) {
       const step = layerNode(graph, stepId);
       if (!step || !isCapability(step)) continue;
+      // A step the route files as a feed witnesses no edge at all — the same
+      // invariant `repository-state-graph.test.ts` asserts from the other side.
+      const index = route.segments.findIndex((segment) => segment.capabilityId === stepId);
+      if (index === -1) continue;
       const filler = node.via?.[stepId] ?? node.id;
       const key = `${stepId}@${filler}`;
       if (edges.some((edge) => edge.key === key)) continue;
-      edges.push({ key, slot: stepId, from: step.contract.from, to: landing, narrowedBy: filler });
+      // `states[index]` is what the route holds entering `segments[index]`.
+      edges.push({ key, slot: stepId, from: route.states[index]!, to: landing, narrowedBy: filler });
     }
   }
   return edges;
@@ -285,7 +306,7 @@ export function expansionOf(
   vocabulary: StateVocabulary,
   capability: LayerCapability,
 ): Expansion {
-  const edges = stateEdges(graph);
+  const edges = stateEdges(graph, vocabulary);
   const { from, to } = capability.contract;
   const search = statePathsBetween(edges, vocabulary, from, to, capability.id);
   const { chain, consistent } = denominatorChain(search, vocabulary);
