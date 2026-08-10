@@ -11577,14 +11577,18 @@ div.mj-rail-row:hover {
 
 /* The **bracket** (W13): wraps the refinements nested under a line. Inert and
    quiet — it is a claim ("these are narrower versions of the line above"), not
-   a control, and the variants inside it carry their own clicks. A longer dash
-   than the opened marks so the two languages cannot be confused. */
+   a control, and the variants inside it carry their own clicks.
+
+   A faint FILL, deliberately not a dashed outline (owner, session 119: the
+   stacked dotted lines read as *"sometimes they can be clicked sometimes
+   not"*). On this canvas the working grammar is now: a stroke is something
+   you can click — a body, a bone, a shell — and a soft filled region is a
+   grouping. 4% is enough to read as one band behind the nested rows and
+   hides nothing at any theme. */
 .mj-converge-variant-bracket {
-  stroke: currentColor;
-  stroke-width: 1.5;
-  stroke-dasharray: 6 4;
-  fill: none;
-  opacity: 0.3;
+  fill: currentColor;
+  opacity: 0.04;
+  stroke: none;
   pointer-events: none;
 }
 

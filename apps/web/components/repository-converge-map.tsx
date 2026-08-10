@@ -376,7 +376,12 @@ function NamePlate({ lane }: { lane: ConvergeLane }): React.ReactElement | null 
   if (lane.label === "") return null;
   return (
     <rect
-      className={`mj-converge-name-plate${lane.bone || lane.frame !== null ? " mj-converge-name-plate--open" : ""}`}
+      className={`mj-converge-name-plate${
+        // The lozenge-on-the-line treatment: names that sit ON a stroke — a
+        // bone's, a shell's, or a leaf's own body (`labelInside`) — let the
+        // line show through rather than cutting a hole in the canvas.
+        lane.bone || lane.frame !== null || lane.labelInside ? " mj-converge-name-plate--open" : ""
+      }`}
       data-name={lane.key}
       x={n(lane.labelX - lane.labelWidth / 2 - 5)}
       /* `-12.5` / 17, not `-12` / 16. The 16px height was measured against

@@ -737,6 +737,10 @@ test("no lane label sits on a lane", () => {
           y1: lane.labelY,
         };
         for (const other of diagram.lanes) {
+          // A leaf's name sits IN its own line by design (owner, session 119)
+          // — the lozenge plate is what keeps it readable there, exactly as on
+          // a bone. Every OTHER lane's curve must still stay out of it.
+          if (lane.labelInside && other.key === lane.key) continue;
           // Sampled off the PARSED path. A parallel formula here is what let the
           // 4/3 drift hide: the check ran against a curve 3/4 as tall as the one
           // a reader sees, so it had 25% more clearance than the page does.
@@ -2441,12 +2445,26 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     const open = new Set(openableAddresses(focus.id));
     const diagram = openDiagram(focus.id, open);
+    const byKey = new Map(diagram.lanes.map((each) => [each.key, each]));
     for (const lane of diagram.lanes) {
       if (lane.label === "") continue;
       const box = nameBox(lane);
       // Everything drawn on the figure except this lane's own centre line, which
-      // its name is deliberately placed clear of and above.
-      const hit = diagram.lanes.some((other) => other.key !== lane.key && laneEnters(other, box));
+      // its name is deliberately placed clear of — or, for a name written IN
+      // the line (`labelInside`, session 119), except the lane's own ancestors
+      // too: a step sits ON its parent's line by construction (`a step drawn
+      // inside a lane sits ON that lane` is the invariant), so the ancestor's
+      // faint spine under an in-line name is the design, covered by the step's
+      // own body and plate. Any OTHER lane through the name is still a defect.
+      const skip = new Set<string>([lane.key]);
+      if (lane.labelInside) {
+        let up = lane.parentKey;
+        while (up !== null) {
+          skip.add(up);
+          up = byKey.get(up)?.parentKey ?? null;
+        }
+      }
+      const hit = diagram.lanes.some((other) => !skip.has(other.key) && laneEnters(other, box));
       if (lane.open) {
         openedNamed += 1;
         if (hit) openedHit += 1;
@@ -4174,8 +4192,26 @@ test("every opened line's shut control is reachable where its own children do no
 
   let opened = 0;
   let chains = 0;
-  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    const diagram = openDiagram(focus.id, openableAddresses(focus.id));
+  // Both surfaces that draw this canvas, not just the map. A method's own
+  // page fans a slot the map may keep as a state chain — `linear-ode-solve`'s
+  // seven methods are drawn ONLY there — so a sweep over `drawableSlots`
+  // alone measures a population that excludes whole figures. That is how the
+  // shell's name landed on a step's name on `taylor-all-at-once`'s page while
+  // every map sweep stayed green.
+  const figures: ConvergeDiagram[] = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map((focus) =>
+    openDiagram(focus.id, openableAddresses(focus.id)),
+  );
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node)) continue;
+    const diagram = layoutConvergeForMethod({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      method: node,
+      locale: "en",
+    });
+    if (!diagram.empty) figures.push(diagram);
+  }
+  for (const diagram of figures) {
     const targets = targetsOf(diagram);
     const topmostIsOwn = (address: string, x: number, y: number): boolean => {
       let best: Target | null = null;
@@ -4212,7 +4248,7 @@ test("every opened line's shut control is reachable where its own children do no
       }
       assert.ok(
         reachable > 0,
-        `${focus.id}: opened ${lane.address} ("${lane.fullLabel}", into ${lane.opensInto}) has no reachable pixel that collapses it`,
+        `${diagram.caption}: opened ${lane.address} ("${lane.fullLabel}", into ${lane.opensInto}) has no reachable pixel that collapses it`,
       );
     }
   }

@@ -831,6 +831,18 @@ export interface ConvergeLane {
    * the row as the aside it is.
    */
   variant: boolean;
+  /**
+   * The name is written INSIDE the line, on its belly, and the whole shape is
+   * one destination — the owner's session-119 rule for a process that cannot
+   * be expanded any further: *"the label can be inside the process line and
+   * it is all one clickable to open the card."*
+   *
+   * True exactly on a drawn-named lane with nothing inside it. It also
+   * retires a measured defect class: a leaf's name used to hang below its
+   * band and poke ~3.6px past the room its parent reserved, which is where
+   * both of this session's name-graze collisions came from.
+   */
+  labelInside: boolean;
   /** Where the label sits — clear of the strand's own edge. */
   labelX: number;
   labelY: number;
@@ -2904,21 +2916,35 @@ function place(
           };
           return { offsets, run, d: ribbonOutline(bracket, (hi - lo) / 2) };
         })();
+  // Which edge of the shell carries the name. Two text populations approach
+  // the shell and they sit on fixed GLOBAL sides, not on the lane's own
+  // outward: a step's name always hangs below its spine (a step is at bow 0,
+  // so its outward is always +1), and an ingredient's fan hangs on the lane's
+  // outward side. So the upper edge is clear unless the lane bows up AND has
+  // feeds — and in exactly that case the lower edge is the inward one, clear
+  // of the step names' known ~3.6px slop by the whole of `feedReach` (≥ a
+  // tendon run). Measured both ways before this rule existed: the outward
+  // edge was grazed by fan names at 14.8px on three map figures, and the
+  // inward edge by step names at ~7px on `taylor-all-at-once`'s own page —
+  // a fan the map sweeps never draw, which is why the second one was found
+  // in a browser and not by a test.
+  const nameEdge: 1 | -1 = outward === -1 && strand.feeds.length > 0 ? 1 : -1;
+  // A lane with nothing inside wears its name IN the line (owner, session
+  // 119) — one shape, one destination. Everything still expandable keeps the
+  // two-target split: the line opens, the name reads.
+  const labelInside =
+    strand.inside === 0 && !strand.composite && !strand.nameless && !strand.openable;
   const labelY = onBone
     ? peak.y - M.spineStroke / 2 - M.labelLift
     : framed
-      ? // On the shell's **inward** edge — the side away from the ingredients.
-        // Feeds and their fans hang on the outward side only, and the
-        // outermost fan name pokes its known ~3.6px past the band it sits in,
-        // so a name on the outward line is grazed by them at a deterministic
-        // 14.8px — measured five times across three figures before this
-        // moved. The inward line faces nothing but step bands, which carry
-        // their names on their own outward sides. Baseline-dropped so the
-        // name sits ON the line, the treatment the bone gives its own.
-        peak.y - outward * frameHalf + M.laneFont * 0.35
-      : outward > 0
-        ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
-        : peak.y - bandHalf - M.labelLift;
+      ? // ON the chosen edge, baseline-dropped so the name sits on the line —
+        // the treatment the bone gives its own name, one band out.
+        peak.y + nameEdge * frameHalf + M.laneFont * 0.35
+      : labelInside
+        ? peak.y + M.laneFont * 0.35
+        : outward > 0
+          ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
+          : peak.y - bandHalf - M.labelLift;
 
   // Two lanes keep drawing nothing, for two different reasons.
   //
@@ -2955,8 +2981,16 @@ function place(
   // (ja). The left end of the flat part faces no stub and no step name at
   // shell height. `min(…, peak.x)` so a name wider than the belly stays
   // centred rather than hanging off the left tendon.
+  // Past the variant row's tendon zone as well as the pad: a variant converges
+  // at the belly's two ends, so its tendon rises THROUGH the shell's edge
+  // within the row's run of the left end — measured crossing the shell name at
+  // exactly that x on `nonlinear-ode-solve` saturated. Beyond the run the
+  // variants are level at their own bows, clear of the edge.
   const labelX = framed
-    ? Math.min(belly.x0 + M.labelPad + fittedWidth / 2, peak.x)
+    ? Math.min(
+        belly.x0 + (variantRow === null ? 0 : variantRow.run) + M.labelPad + fittedWidth / 2,
+        peak.x,
+      )
     : peak.x;
   if (strand.standing === "unpublished") out.unpublished += 1;
   // **A partition of the old single count, on `openable`.** Both arms need
@@ -3036,6 +3070,7 @@ function place(
     frame,
     variantBracket: variantRow === null ? null : variantRow.d,
     variant: context.variant,
+    labelInside,
     labelX,
     labelY,
     labelWidth: fittedWidth,
