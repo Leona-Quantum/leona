@@ -950,20 +950,21 @@ export const LAYER_GRAPH: LayerGraph = {
     // its absence was the whole of the reason `dyson-all-at-once` drew the same
     // picture as `krovi-linear-ode`.
     //
-    // **Only what `dyson-all-at-once` already states is repeated here.** Neither
-    // `cost` nor `conditions` is authored, and that is a decision rather than an
-    // omission to fill in later: Berry and Costa's complexity is a statement
-    // about the whole algorithm, and this node is the discretization alone. An
-    // absent field renders as "nobody stated one", which is true; a plausible
-    // number in the hole would be this map asserting a bound no paper carries,
-    // on the one surface whose whole claim is that the costs are honest. The
-    // Taylor sibling *does* carry a `cost` and says in the field itself that it
-    // is the full algorithm's — that wording is available if a session ever
-    // wants to do the same here from the paper rather than from memory.
+    // **Only what `dyson-all-at-once` already states is repeated here.**
+    // `cost` and `conditions` are authored (session 120) the way the old
+    // comment here said they could be: from the paper open on the desk — Berry
+    // and Costa's Theorem 4.1, its own hypotheses and oracle-call counts — and
+    // the cost says in its own words, exactly as the Taylor sibling does, that
+    // it is the full algorithm's complexity and not a standalone cost for the
+    // discretization. Nothing in either field is a bound no paper carries.
     label: "Truncated Dyson series of the propagator",
     labelJa: "伝播子の Dyson 級数打ち切り",
     summary: "Truncate the Dyson series — the expansion that stands in for the propagator once the generator varies with time — and encode its terms as rows of a system of linear equations. This is what extends the all-at-once approach to genuinely time-dependent generators; solving the system those rows make up is the layer below.",
     summaryJa: "生成子が時間に依存する場合に伝播子の役割を担うのが Dyson 級数です。これを打ち切り、その各項を連立一次方程式の行として符号化します。一括符号化の手法が真に時間依存な生成子にまで拡張されるのは、この置き換えによるものです。組み上がった系を解くのは一つ下の層です。",
+    conditions: "Theorem 4.1 is stated for $\\dot{x}(t) = A(t)x(t) + b(t)$ with $A(t)$ of non-positive logarithmic norm, the equation's parameters provided through unitaries $U_A$, $U_b$, $U_x$ with known normalisations $\\lambda_A$, $\\lambda_b$, $\\lambda_x$. No smoothness condition is required: the oracle counts are independent of derivatives of the parameters.",
+    conditionsJa: "定理 4.1 は、対数ノルムが非正の $A(t)$ をもつ $\\dot{x}(t) = A(t)x(t) + b(t)$ について述べられており、方程式のパラメータは既知の正規化定数 $\\lambda_A$, $\\lambda_b$, $\\lambda_x$ をもつユニタリ $U_A$, $U_b$, $U_x$ を通じて与えられます。滑らかさの条件は要求されず、オラクル呼び出し回数はパラメータの微分に依存しません。",
+    cost: "Berry and Costa's Theorem 4.1 gives, for $\\dot{x}(t) = A(t)x(t) + b(t)$ with $A(t)$ of non-positive logarithmic norm, an average of $O(R \\lambda_A T \\log(1/\\varepsilon))$ calls to the state-preparation oracles and $O(R \\lambda_A T \\log(1/\\varepsilon) \\log(\\lambda_{Ax} T/\\varepsilon))$ calls to the matrix oracle — $T$ the evolution time, $\\varepsilon$ the allowed error, $\\lambda_A$ the matrix oracle's normalisation, $\\lambda_{Ax} = \\max(\\lambda_A, b_{max}/x_{max})$, and $R$ a rescaling constant the theorem bounds explicitly, growing when the solution decays. Gate counts depend on the parameters' first derivatives only through a logarithm, and on no higher derivative. That is a statement about the full algorithm, not a standalone cost for the discretization.",
+    costJa: "Berry と Costa の定理 4.1 は、対数ノルムが非正の $A(t)$ をもつ $\\dot{x}(t) = A(t)x(t) + b(t)$ について、状態準備オラクルへの呼び出しを平均 $O(R \\lambda_A T \\log(1/\\varepsilon))$ 回、行列オラクルへの呼び出しを $O(R \\lambda_A T \\log(1/\\varepsilon) \\log(\\lambda_{Ax} T/\\varepsilon))$ 回と与えます。$T$ は発展時間、$\\varepsilon$ は許容誤差、$\\lambda_A$ は行列オラクルの正規化定数、$\\lambda_{Ax} = \\max(\\lambda_A, b_{max}/x_{max})$ であり、$R$ は定理が明示的に抑える再スケーリング定数で、解が減衰するほど大きくなります。ゲート数がパラメータの微分に依存するのは一階微分の対数を通じてのみで、高階微分には依存しません。これはアルゴリズム全体についての記述であり、離散化単体の費用ではありません。",
     realizes: "time-discretization",
     steps: [],
     atomic: true,
