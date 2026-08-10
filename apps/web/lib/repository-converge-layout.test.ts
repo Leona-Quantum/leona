@@ -620,21 +620,55 @@ test("a fan reserves the band its own branches reach, not half of a summed row",
 
 // --- text, which is where the old canvas's collisions actually lived ---------
 
+/**
+ * Every shut figure the canvas draws, for the two name sweeps below: the map's
+ * slot figures and every method's own page (the D119.1 population — a method's
+ * page fans a slot the map may keep as a state chain, so the pages are whole
+ * figures no slot sweep contains).
+ *
+ * `drawableSlots`, not `convergingSlots`: the sweeps read the latter for years,
+ * and it holds exactly ONE capability — so the slot half of each "sweep" was a
+ * single figure per locale. Per-source floors rather than one total, so a
+ * refactor of either list cannot quietly empty it while the other keeps the
+ * count respectable. Measured: 19 slot figures, 63 method pages, none empty.
+ */
+function shutFigures(locale: PublicLocale): [string, ConvergeDiagram][] {
+  const slots: [string, ConvergeDiagram][] = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map(
+    (focus) => [focus.id, diagramFor(focus.id, locale)],
+  );
+  const pages: [string, ConvergeDiagram][] = [];
+  for (const id of METHOD_IDS) {
+    const diagram = pageFigure(id, locale);
+    if (!diagram.empty) pages.push([`${id} (page)`, diagram]);
+  }
+  assert.ok(slots.length >= 15, `only ${slots.length} slot figures swept`);
+  assert.ok(pages.length >= 60, `only ${pages.length} method pages swept`);
+  return [...slots, ...pages];
+}
+
 test("every lane label stays inside the canvas", () => {
   // Three of the four collisions the old canvas shipped were <text> against
-  // <text>, and every invariant it had was about lines and circles.
+  // <text>, and every invariant it had was about lines and circles. Nameless
+  // lanes are excluded for the same reason the overlap sweep excludes them:
+  // the subject is a drawn name, and a nameless lane draws none.
   for (const locale of ["en", "ja"] as const) {
-    for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-      const diagram = diagramFor(focus.id, locale);
+    for (const [name, diagram] of shutFigures(locale)) {
       for (const lane of diagram.lanes) {
+        if (lane.label === "") continue;
         const half = estimateTextWidth(lane.label, M.laneFont) / 2;
-        assert.ok(lane.labelX - half >= 0, `${locale}/${lane.key} label off the left edge`);
+        assert.ok(lane.labelX - half >= 0, `${locale}/${name}/${lane.key} label off the left edge`);
         assert.ok(
           lane.labelX + half <= diagram.width,
-          `${locale}/${lane.key} label off the right edge`,
+          `${locale}/${name}/${lane.key} label off the right edge`,
         );
-        assert.ok(lane.labelY - M.laneFont >= 0, `${locale}/${lane.key} label above the canvas`);
-        assert.ok(lane.labelY <= diagram.height, `${locale}/${lane.key} label below the canvas`);
+        assert.ok(
+          lane.labelY - M.laneFont >= 0,
+          `${locale}/${name}/${lane.key} label above the canvas`,
+        );
+        assert.ok(
+          lane.labelY <= diagram.height,
+          `${locale}/${name}/${lane.key} label below the canvas`,
+        );
       }
     }
   }
@@ -642,21 +676,9 @@ test("every lane label stays inside the canvas", () => {
 
 test("two lane labels never overlap", () => {
   for (const locale of ["en", "ja"] as const) {
-    // Both surfaces that draw this canvas, not just the map. A method's own
-    // page fans a slot the map may keep as a state chain, so a sweep over map
-    // figures alone measures a population that excludes whole figures — the
-    // shell-name collision session 119 found lived only on method pages, and
-    // every map sweep stayed green over it (D119.1). Same population as the
-    // reachability bar below.
-    const figures: [string, ConvergeDiagram][] = convergingSlots(
-      LAYER_GRAPH,
-      STATE_VOCABULARY,
-    ).map((focus) => [focus.id, diagramFor(focus.id, locale)]);
-    for (const id of METHOD_IDS) {
-      const diagram = pageFigure(id, locale);
-      if (!diagram.empty) figures.push([`${id} (page)`, diagram]);
-    }
-    for (const [name, diagram] of figures) {
+    // Both surfaces that draw this canvas, not just the map — see `shutFigures`
+    // for the population and D119.1 for why the method pages are load-bearing.
+    for (const [name, diagram] of shutFigures(locale)) {
       // `label !== ""` is the subject, not a soft spot: a nameless lane draws
       // no name to collide, and its box would be a point that could sit inside
       // a real name's box and report a collision no reader can see. Same rule
