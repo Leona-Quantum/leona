@@ -9,7 +9,7 @@ const NIELSEN_CHUANG = {
   title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
   authors: "Michael A. Nielsen and Isaac L. Chuang",
   year: "2010",
-  url: "https://www.cambridge.org/highereducation/books/quantum-computation-and-quantum-information/01E10196D0A682A6AEFFEA52D53BE9AE",
+  url: "https://doi.org/10.1017/cbo9780511976667",
   relevance: "Standard reference for single- and multi-qubit gate matrices, Euler-angle decomposition, and universal gate sets.",
   relevanceJa: "単一・複数量子ビットゲートの行列、オイラー角分解、万能ゲート集合に関する標準的な参考文献です。",
 };
@@ -26,7 +26,7 @@ const BARENCO_1995 = {
 
 const OPENQASM3_PAPER = {
   title: "OpenQASM 3: A broader and deeper quantum assembly language",
-  authors: "Andrew W. Cross, Ali Javadi-Abhari, Thomas Alexander, et al.",
+  authors: "Andrew W. Cross, Ali Javadi-Abhari, Thomas Alexander, Niel de Beaudrap, Lev S. Bishop, Steven Heidel, Colm A. Ryan, Prasahnt Sivarajah, John Smolin, Jay M. Gambetta, Blake R. Johnson",
   year: "2021",
   url: "https://arxiv.org/abs/2104.14722",
   relevance: "Defines the standard gate library (rx, ry, rz, p, u3-equivalent U, sx) used natively by the code snippets on this record.",
@@ -34,9 +34,9 @@ const OPENQASM3_PAPER = {
 };
 
 const MCKAY_2017 = {
-  title: "Efficient Z gates for quantum computing",
+  title: "Efficient Z-Gates for Quantum Computing",
   authors: "David C. McKay, Christopher J. Wood, Sarah Sheldon, Jerry M. Chow, Jay M. Gambetta",
-  year: "2017",
+  year: "2016",
   url: "https://arxiv.org/abs/1612.00858",
   relevance: "Shows how a fixed physical X_{π/2} pulse (the SX gate) combined with zero-duration virtual Z rotations synthesizes any single-qubit unitary on superconducting hardware.",
   relevanceJa: "固定の物理的X_{π/2}パルス（SXゲート）と、実行時間ゼロの仮想Z回転を組み合わせることで、超伝導ハードウェア上で任意の単一量子ビットユニタリを合成できることを示します。",
@@ -46,7 +46,7 @@ const SMOLIN_DIVINCENZO_1996 = {
   title: "Five two-bit quantum gates are sufficient to implement the quantum Fredkin gate",
   authors: "John A. Smolin, David P. DiVincenzo",
   year: "1996",
-  url: "https://link.aps.org/doi/10.1103/PhysRevA.53.2855",
+  url: "https://doi.org/10.1103/physreva.53.2855",
   relevance: "Gives a five two-qubit-gate construction of the Fredkin (CSWAP) gate, improving on the naive CNOT–Toffoli–CNOT sandwich.",
   relevanceJa: "素朴なCNOT–Toffoli–CNOTの構成を改善する、5個の2量子ビットゲートによるFredkin（CSWAP）ゲートの構成を示します。",
 };
@@ -54,7 +54,7 @@ const SMOLIN_DIVINCENZO_1996 = {
 const SCHUCH_SIEWERT_2003 = {
   title: "Natural two-qubit gate for quantum computation using the XY interaction",
   authors: "Norbert Schuch, Jens Siewert",
-  year: "2003",
+  year: "2002",
   url: "https://arxiv.org/abs/quant-ph/0209035",
   relevance: "Analyzes the iSWAP-family gate that arises naturally from an XY-type two-qubit interaction, the physical basis gate on several superconducting platforms.",
   relevanceJa: "XY型の2量子ビット相互作用から自然に生じるiSWAP系ゲートを解析します。これは複数の超伝導プラットフォームで物理的な基本ゲートです。",

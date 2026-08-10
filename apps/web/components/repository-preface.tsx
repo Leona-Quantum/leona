@@ -20,12 +20,140 @@
 // it does — least of all in a paragraph whose whole purpose is to be believed
 // before anything else on the page.
 //
-// And it states what the catalogue is **not**. 163 of the records pin no gate
-// sequence; a preface that described a database of runnable circuits would be
-// selling the 120 and quietly including the other 163 in the count.
+// ## Why the counted paragraphs are gone (session 110)
+//
+// > *"I don't like all the numbers in the atlas description, information card,
+// > papers, etc. No need to mention entries, the atlas description can be 1-2
+// > short sentences. The map can be 1 sentence. The papers can be 1 sentence.
+// > Atlas page title card something like 'The Quantum Atlas'."* — owner
+//
+// The rule above is not repealed and must not be: any number that *does* appear
+// on this page still has to be counted rather than typed. What changed is that
+// the owner does not want the numbers on the front door at all, and a rule about
+// how to write a number is silent on whether to write one.
+//
+// So three paragraphs went, and each for a reason worth recording so a later
+// session does not restore them as an improvement:
+//
+// - **the counted lead and the runnable/literature split** — the owner's ask,
+//   directly. The split is still stated where a reader can act on it: every card
+//   in the browser says which of the two it is, which is where the claim was
+//   always doing its work.
+// - **the composition paragraph** — it was a second copy. The same claim is made
+//   at `components/repository-interface.tsx:73`, on the panel that actually shows
+//   two things meeting, in the one place a reader is about to draw the wrong
+//   conclusion from. Here it argued about a page where nothing is composing.
+//
+// **The counts still run**; they just decide rather than print. `counts` below
+// is what drops a kind with no records instead of linking to an empty section.
+// A count used as a predicate is not a claim a reader has to believe.
 import type { PublicLocale } from "../lib/public-locale";
 import type { PublicRepositoryListEntry } from "../lib/repository/types";
 import { PUBLIC_REPOSITORY_CATEGORY_IDS, type PublicRepositoryCategory } from "../lib/repository/types";
+
+/**
+ * "About the Atlas" — the box above everything else on `/repository`.
+ *
+ * > *"The atlas page on the website has link to 'about the atlas', and it opens
+ * > up a page that BRIEFLY explains the atlas repository surface and then the map
+ * > surface. these are not technical, they are hype, revolutionary, and simply
+ * > understandable. It also has a brief sentence about the map, hypes it up, and
+ * > a link to the 'interactive quantum map'. Those two sentences are in the same
+ * > collapsible box. Then the search bar and rest of the atlas repository below."*
+ * > — owner, session-109 inbox
+ *
+ * ## Why this is quieter than "hype" sounds
+ *
+ * `docs/ui/copy.md` binds the whole product: *"Tone: technical, calm. Zero
+ * exclamation marks, no emoji."* The owner asked for the opposite register on
+ * this one box, and the two are reconcilable exactly once — by putting the
+ * confidence in the **claim** rather than in the punctuation. "The first drawing
+ * of quantum algorithms as one connected structure rather than a bibliography"
+ * is a large thing to say; it does not need a mark after it to be large.
+ *
+ * Relayed to the owner in `memory/OWNER_TODO.md` §4 rather than decided quietly:
+ * if this should be louder than the tone rule allows, the tone rule is what has
+ * to change, and that is the owner's call.
+ *
+ * ## Why `<details>` and not the map's `?about=` box
+ *
+ * The owner said *"collapsible box"*, and this one has nothing to address: it is
+ * three short lines with no sections, so a URL parameter would name a state
+ * nobody would ever link to. `<details>` needs no JavaScript, and a reader who
+ * never opens it still gets the search bar immediately below — which is the
+ * ordering the owner specified.
+ *
+ * ## Why it is now open by default, having been shut
+ *
+ * It was shut because it was long: two dense paragraphs above a search bar is a
+ * wall, and *"a returning reader came here to search"*. Session 110 cut it to
+ * three sentences at the owner's instruction, and that justification went with
+ * the length — three lines are not a wall. What replaced it matters more: the
+ * counted preface that used to sit under this box and carry the description is
+ * gone too, so shut-by-default would now leave a first-time reader with a title,
+ * a search bar, and no sentence anywhere saying what the thing is.
+ *
+ * The `open` attribute is markup, not script: `curl` gets it, a reader with
+ * JavaScript off can still collapse it, and nothing about the address changes.
+ */
+const ABOUT_COPY: Record<
+  PublicLocale,
+  { summary: string; repository: string; map: string; mapLink: string; papers: string; papersLink: string }
+> = {
+  en: {
+    summary: "About the Atlas",
+    repository:
+      "Every quantum algorithm worth knowing about, written down the same way: what it takes, what it returns, what it costs, and who proved it. Where the sources disagree, we say so.",
+    map: "The map draws the same corpus as one connected structure — every method is a route, and the routes share their steps.",
+    mapLink: "Open the interactive map",
+    papers: "Every source behind both surfaces, and what each one actually reports.",
+    papersLink: "See the papers",
+  },
+  ja: {
+    summary: "Atlas について",
+    repository:
+      "知る価値のある量子アルゴリズムを、何を取り、何を返し、どれだけかかり、誰が証明したのか、すべて同じ形式で記述しています。出典どうしが食い違うところは、そのまま記録します。",
+    map: "地図は同じ収録内容を、工程を共有しあう経路のつながりとしてひとつの構造に描いた図です。",
+    mapLink: "対話型の地図を開く",
+    papers: "どちらの画面も依拠している出典と、それぞれが実際に報告している内容です。",
+    papersLink: "論文を見る",
+  },
+};
+
+/**
+ * Server component, no state, no client JavaScript. Rendered above
+ * `RepositoryPreface` so the order on the page is: what this is → which kinds of
+ * record there are → the controls.
+ *
+ * Three surfaces, one sentence each, and the two that are not this page carry
+ * their link inline rather than in a list. The links are the load-bearing part:
+ * `/repository/layers` and `/repository/papers` used to be reachable from the
+ * counted preface below, and that preface's paragraphs are gone — so if these
+ * two anchors went with them, the map and the paper register would be reachable
+ * only from a detail page, which is the exact failure the gates section spent
+ * two sessions in.
+ */
+export function AboutTheAtlas({ locale }: { locale: PublicLocale }) {
+  const copy = ABOUT_COPY[locale === "ja" ? "ja" : "en"];
+  return (
+    <details className="mj-repo-section" open>
+      <summary>{copy.summary}</summary>
+      {/* `mj-repo-section-body` and not a new rule: the inset that lines the
+          prose up under the summary already exists on this pattern, and a
+          second class doing the same job is how one disclosure ends up
+          looking different from every other one on the site. */}
+      <div className="mj-repo-section-body">
+        <p>{copy.repository}</p>
+        <p>
+          {copy.map} <a href="/repository/layers">{copy.mapLink}</a>
+        </p>
+        <p>
+          {copy.papers} <a href="/repository/papers">{copy.papersLink}</a>
+        </p>
+      </div>
+    </details>
+  );
+}
 
 /** Section copy per category. The label is the browse control's own wording. */
 const KIND_COPY: Record<
@@ -68,42 +196,26 @@ const KIND_COPY: Record<
 
 const COPY = {
   en: {
-    heading: "What is in the Atlas",
-    lead: (total: number) =>
-      `${total} published records of quantum circuits, algorithms, operators and states. Each one carries where it came from, how far it has been checked, and what it does not say — and those three are the point: this is a catalogue of evidence about circuits, not a library of code.`,
-    structure: (withCircuit: number, total: number) =>
-      `${withCircuit} of the ${total} pin an actual gate sequence, which is what can be simulated, costed and exported. The other ${total - withCircuit} are literature and operator records: they name a method and cite the work it comes from, and there is nothing to run. The catalogue says which is which on every card rather than averaging the two.`,
-    compose:
-      "Records also declare what they take and return, so you can see which ones meet. A shape match is not a proof that two things compose — a basis convention or an unstated assumption can still break it — so the site distinguishes “these fit” from “these could fit and nothing has established it”, and never rounds the second up to the first.",
     kinds: "The four kinds",
-    entriesLabel: (n: number) => `${n} ${n === 1 ? "record" : "records"}`,
-    layersLead:
-      "A record says what one circuit is. It does not say what a piece is made of, or what else could fill its place — for that there is a second surface:",
-    layersLink: "Layers — the slots a pipeline is made of, and what fills each",
   },
   ja: {
-    heading: "Atlasに収録しているもの",
-    lead: (total: number) =>
-      `量子回路・アルゴリズム・演算子・状態に関する公開レコード${total}件です。各レコードは、出典、どこまで検証されているか、そして何を述べていないかを併記しています。この三つこそが要点です。これはコードのライブラリではなく、回路に関する根拠のカタログです。`,
-    structure: (withCircuit: number, total: number) =>
-      `${total}件のうち${withCircuit}件は実際のゲート列を持ち、シミュレーション・コスト算出・エクスポートの対象になります。残る${total - withCircuit}件は文献・演算子のレコードで、手法を示し出典を引用しますが、実行できるものはありません。カタログは両者を平均せず、各カードでどちらであるかを明示します。`,
-    compose:
-      "各レコードは入力と出力も宣言しているため、どれとどれが接続しうるかを見ることができます。形状の一致は合成可能であることの証明ではありません——基底の取り方や明示されていない前提によって成り立たなくなることがあります。そのため本サイトは「接続できる」と「接続しうるが未確認である」を区別し、後者を前者に切り上げることはしません。",
     kinds: "四つの種別",
-    entriesLabel: (n: number) => `${n}件`,
-    layersLead:
-      "各項目は、ひとつの回路が何であるかを述べます。ある部品が何から成り立っているか、その場所を他に何が埋めうるかは述べません。そのための画面が別にあります。",
-    layersLink: "階層 — パイプラインを構成する枠と、それを埋めるもの",
   },
 } as const;
 
 /**
- * The preface, and the four kinds as links into their sections.
+ * The four kinds, as links into their sections.
  *
- * A server component taking the already-fetched listing: it adds no request, no
- * client JavaScript and no second source for any number on it. Each kind links
- * to `?category=` — the address §0.5.1's "separate gate section" ask turned out
- * to be missing, and the reason a section is a section rather than a tab.
+ * A server component taking the already-fetched listing: it adds no request and
+ * no client JavaScript. Each kind links to `?category=` — the address §0.5.1's
+ * "separate gate section" ask turned out to be missing, and the reason a section
+ * is a section rather than a tab.
+ *
+ * **`entries` is still the argument even though no number is printed**, and that
+ * is the point of keeping it: the listing decides which kinds appear. A kind the
+ * corpus has no record of is dropped rather than linked to an empty section, and
+ * the only way to know that is to count. What the owner asked to lose was the
+ * numbers a reader is shown, not the ones the page thinks with.
  */
 export function RepositoryPreface({
   entries,
@@ -114,32 +226,14 @@ export function RepositoryPreface({
 }) {
   const copy = COPY[locale === "ja" ? "ja" : "en"];
   const isJapanese = locale === "ja";
-  const total = entries.length;
-  // `portableCircuit` rather than `visualization`: every record has a diagram,
-  // and only some have a gate sequence a machine can act on. Counting the
-  // diagrams would make the sentence below false in the flattering direction.
-  const withCircuit = entries.filter((entry) => entry.portableCircuit).length;
   const counts = new Map<string, number>();
   for (const entry of entries) counts.set(entry.category, (counts.get(entry.category) ?? 0) + 1);
 
   return (
     <section className="mj-repo-preface" aria-labelledby="repository-preface-heading">
-      <h2 id="repository-preface-heading">{copy.heading}</h2>
-      <p>{copy.lead(total)}</p>
-      <p>{copy.structure(withCircuit, total)}</p>
-      <p>{copy.compose}</p>
-
-      {/* Above the four kinds, not below them. The kinds list answers "which of
-          these records do I want"; this answers "is a record even the thing I
-          am looking for", and a reader who scrolls past the whole preface has
-          at least been told the second surface exists. It is a plain link with
-          an address — the gates section spent two sessions unreachable because
-          the only route to it was a control with no href. */}
-      <p className="mj-repo-preface-layers">
-        {copy.layersLead} <a href="/repository/layers">{copy.layersLink}</a>
-      </p>
-
-      <h3 className="mj-repo-preface-kinds">{copy.kinds}</h3>
+      <h2 id="repository-preface-heading" className="mj-repo-preface-kinds">
+        {copy.kinds}
+      </h2>
       <ul className="mj-repo-preface-list">
         {/* Ordered by the vocabulary, not by size: sorting by count would put
             `algorithms` first every time and read as a ranking of importance. A
@@ -151,8 +245,7 @@ export function RepositoryPreface({
             <li key={kind}>
               <a href={`/repository?category=${kind}`}>
                 {isJapanese ? kindCopy.labelJa : kindCopy.label}
-              </a>{" "}
-              <span className="mj-repo-preface-count">{copy.entriesLabel(counts.get(kind) ?? 0)}</span>
+              </a>
               <p>{isJapanese ? kindCopy.blurbJa : kindCopy.blurb}</p>
             </li>
           );

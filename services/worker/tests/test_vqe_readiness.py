@@ -71,9 +71,7 @@ async def test_readiness_probe_failure_is_isolated_and_persisted_fail_closed(mon
     assert "do-not-log-this-secret" not in repr(records)
 
 
-async def test_readiness_loop_does_not_stop_and_does_not_log_exception_values(
-    monkeypatch, caplog
-):
+async def test_readiness_loop_does_not_stop_and_does_not_log_exception_values(monkeypatch, caplog):
     publish = AsyncMock(side_effect=RuntimeError("do-not-log-this-secret"))
     monkeypatch.setattr(worker_main, "_publish_vqe_runtime_readiness", publish)
     monkeypatch.setattr(worker_main, "VQE_READINESS_INTERVAL_S", 0.001)
@@ -81,9 +79,7 @@ async def test_readiness_loop_does_not_stop_and_does_not_log_exception_values(
 
     with caplog.at_level(logging.ERROR):
         task = asyncio.create_task(
-            worker_main._run_vqe_readiness_loop(
-                object(), worker_id="worker-test", stop=stop
-            )
+            worker_main._run_vqe_readiness_loop(object(), worker_id="worker-test", stop=stop)
         )
         for _ in range(100):
             if publish.await_count >= 2:

@@ -160,16 +160,12 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    decision_count = op.get_bind().execute(
-        sa.text("select count(*) from vqe_launch_decisions")
-    ).scalar_one()
+    decision_count = (
+        op.get_bind().execute(sa.text("select count(*) from vqe_launch_decisions")).scalar_one()
+    )
     if decision_count:
         raise RuntimeError("cannot downgrade 0057 while VQE launch decision evidence exists")
-    op.execute(
-        sa.text(
-            f"drop trigger if exists {_DECISION_TRIGGER} on vqe_launch_decisions"
-        )
-    )
+    op.execute(sa.text(f"drop trigger if exists {_DECISION_TRIGGER} on vqe_launch_decisions"))
     op.execute(sa.text(f"drop function if exists {_DECISION_FUNCTION}()"))
     op.drop_index("ix_vqe_launch_decisions_request_id", table_name="vqe_launch_decisions")
     op.drop_index(

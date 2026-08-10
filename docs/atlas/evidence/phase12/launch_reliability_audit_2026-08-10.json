@@ -1,0 +1,83 @@
+{
+  "schema_version": 1,
+  "recorded_at": "2026-08-10T12:47:34+09:00",
+  "branch": "feature/vqe",
+  "phase12_source_parent": "7783eb150f770895f1ab47621d082c4fcda600a3",
+  "dev_sync_cutoff": "d2f4c8e7c4f602de1da5ebfe98fdd6cf12c53a03",
+  "exact_remote_candidate": null,
+  "exact_remote_candidate_source": "git_and_external_workflow_github_sha",
+  "scope": "private_component_first_vqe_launch_reliability",
+  "release_decision": "no_go_pending_exact_commit_linux_amd64_e2e",
+  "claim_boundary": {
+    "private_execution_only": true,
+    "publication_blocked": true,
+    "human_scientific_review": "unreviewed_owner_waiver_only",
+    "performance_claim_allowed": false,
+    "external_repository_execution": "blocked"
+  },
+  "steps": {
+    "S0": "verified_local",
+    "S1": "verified_local",
+    "S2": "verified_local",
+    "S3": "verified_postgresql_17",
+    "S4": "verified_local",
+    "S5": "verified_local",
+    "S6": "verified_local",
+    "S7": "verified_postgresql_17",
+    "S8": "verified_local",
+    "S9": "implemented_external_execution_not_run_for_exact_remote_commit",
+    "S10": "verified_local",
+    "S11": "verified_local",
+    "S12": "local_gate_passed_remote_release_gate_open"
+  },
+  "evidence": {
+    "offline_gate": {
+      "status": "passed",
+      "python_contract_tests": 63,
+      "web_contract_tests": 29
+    },
+    "python_repository_suite": {
+      "status": "passed",
+      "passed": 2926,
+      "skipped": 431,
+      "warnings": 1,
+      "warning_boundary": "existing Alembic path_separator deprecation"
+    },
+    "web_unit_suite": {
+      "status": "passed",
+      "passed": 959
+    },
+    "web_typecheck": "passed",
+    "web_lint": "passed_with_12_known_source_title_drift_records_requiring_separate_reattestation",
+    "web_production_build": {
+      "status": "passed",
+      "generated_static_pages": 596,
+      "required_vqe_routes_present": true
+    },
+    "authenticated_vqe_playwright": {
+      "status": "passed",
+      "journeys": 6,
+      "evidence_class": "mock_control_plane_regression_only"
+    },
+    "postgresql_17": {
+      "migration_head": "vqe_launch_0057",
+      "empty_upgrade_downgrade_upgrade": "passed",
+      "evidence_preserving_downgrade_refusal": "passed",
+      "live_readiness_and_ledger_tests": 2
+    },
+    "format_and_static_analysis": {
+      "ruff_check": "passed",
+      "ruff_format_check": "passed_548_files",
+      "formatted_phase12_python_ast_preserved": true
+    },
+    "client_bundle_secret_scan": {
+      "status": "passed",
+      "browser_served_files_scanned": 381,
+      "secret_shaped_strings_detected": 0
+    },
+    "digest_pinned_linux_amd64_e2e": {
+      "status": "not_run_for_exact_remote_commit",
+      "counts_as_release_evidence": false
+    }
+  }
+}

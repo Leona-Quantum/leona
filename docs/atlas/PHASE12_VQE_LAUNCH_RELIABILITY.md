@@ -1,9 +1,14 @@
 # Phase 12 — VQE Launch Reliability, Observability, and Scientific Truth
 
 **Branch:** `feature/vqe`  
-**Phase 12 checkpoint:** `8a7aad0f`  
-**Integrated dev baseline:** `a8a0750379f48630944367e730791b6867150307`  
+**Phase 12 source parent:** `7783eb150f770895f1ab47621d082c4fcda600a3`  
+**Final dev-sync cutoff:** `d2f4c8e7c4f602de1da5ebfe98fdd6cf12c53a03`  
 **Scope:** private component-first VQE MVP; no public or performance claim
+
+The exact release-candidate commit is recorded by Git and by the external
+workflow's `GITHUB_SHA`, rather than embedded in a file that would change that
+same commit. Ordinary `dev` movement after the cutoff is not merged into this
+candidate unless it is a release-blocking security or migration correction.
 
 ## Outcome
 
@@ -28,6 +33,12 @@ VQE numerical failure. It was a control-plane truth mismatch.
    exact OCI image check.
 6. Earlier evidence used `owner_waived` as if it were a review state, obscuring
    the difference between permission to execute and independent review.
+7. The final `dev` sync introduced a document-wide Atlas View Transition into
+   authenticated Workspace routes. Next.js streamed navigation could abort the
+   transition while replacing hydrated controls, leaving VQE launch actions
+   non-actionable. The authenticated layout now explicitly opts out, while the
+   public Atlas retains the transition; a source-level regression test guards
+   that boundary.
 
 ## S0–S12 completion contract
 
@@ -41,7 +52,7 @@ VQE numerical failure. It was a control-plane truth mismatch.
 | S5 | Typed RFC 9457 refusals and safe UI messages | API and web tests |
 | S6 | Separate validated-draft, create, and start transactions | route transaction tests |
 | S7 | Fence delayed heartbeats; reject ledger mutation | live PostgreSQL tests |
-| S8 | Unit, web, and browser regression gates | 767 web tests; 6 Playwright VQE journeys |
+| S8 | Unit, web, and browser regression gates | 959 web tests; 6 Playwright VQE journeys |
 | S9 | PostgreSQL + API + worker + real OCI E2E | production E2E workflow and evidence artifact |
 | S10 | Metrics, structured logs, alert condition, runbook | metric names + debugging runbook |
 | S11 | ADR and scientific claim boundary | ADR-0035 + this record |
@@ -89,23 +100,28 @@ The release alert is: any increase of
 apply when an admitted framework has no `ready` lease for two TTL periods. A
 normal user validation refusal is not an invariant alert.
 
-## Verification recorded on 2026-08-07
+## Final dev-sync verification recorded on 2026-08-10
 
 - `pytest` targeted API/worker/domain launch suite: **43 passed** after the
   final invariant test was added; the broader Phase 12 targeted suite had
   **72 passed**.
-- Web unit suite after integration with `dev`: **767 passed**.
+- Deterministic VQE offline gate: **63 Python scientific/API contract tests**
+  and **29 web parser tests passed**.
+- Web unit suite after integration with the final `dev` cutoff: **959 passed**.
 - Authenticated VQE Playwright suite: **6 passed**.
 - PostgreSQL 17 migration upgraded to `vqe_launch_0057`.
 - Empty database upgrade → downgrade → upgrade succeeded.
 - Downgrade with launch-decision evidence was correctly refused.
 - Live PostgreSQL delayed-heartbeat and append-only tests: **2 passed**.
-- Full repository Python regression suite after readiness-loop isolation:
-  **2911 passed, 431 skipped**; the only warning is an existing Alembic
+- Full repository Python regression suite after the final `dev` sync:
+  **2926 passed, 431 skipped**; the only warning is an existing Alembic
   `path_separator` deprecation.
 - Next.js production build after integration with `dev`: **passed**, including
-  **415** generated static pages and the VQE proxy/Studio/Atlas application
+  **596** generated static pages and the VQE proxy/Studio/Atlas application
   routes.
+- TypeScript typecheck, web lint, Ruff check, Ruff format check, and the
+  client-bundle secret scan all passed. The bundle scan inspected **381**
+  browser-served files and found no secret-shaped strings.
 - The post-merge type regression in `AtlasContentSwitch` was detected before
   the merge commit: the wrapper did not forward the new browse query, ordering,
   circuit-only, and row-cap inputs added on `dev`. Forwarding and typed bounds
@@ -114,9 +130,14 @@ normal user validation refusal is not an invariant alert.
 - Production E2E source was upgraded to require a fresh launch projection and
   worker-authored readiness for the six exact OCI profiles.
 
+This local evidence does not close S9. The release decision remains
+`NO-GO — pending exact-commit Linux/x86_64 fixed-digest E2E` until the pushed
+commit passes ordinary CI and `.github/workflows/vqe-production-e2e.yml`, and
+the uploaded redacted evidence is audited.
+
 ## Local OCI qualification constraint
 
-The development Mac had only 6.6 GiB free while the six qualified linux/amd64
+The development Mac had only 4.5 GiB free at the final sync while the six qualified linux/amd64
 runtime images were not present. A controlled pull was stopped when free space
 fell to 1.2 GiB; only the newly pulled qualified images and temporary Docker
 credentials were then removed, restoring 6.3 GiB without deleting pre-existing

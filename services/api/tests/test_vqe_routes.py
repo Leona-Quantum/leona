@@ -44,9 +44,7 @@ def test_standard_seed_does_not_claim_an_implementation_resolution():
         semantic_key="workflow.h2.uccsd.v1",
         spec_json={},
     )
-    profile = vqe_routes.uccsd_production_runtime_profile(
-        vqe_routes.Framework.QISKIT
-    )
+    profile = vqe_routes.uccsd_production_runtime_profile(vqe_routes.Framework.QISKIT)
 
     state = vqe_routes._implementation_resolution_for_profile(
         row=row,
@@ -60,9 +58,7 @@ def test_standard_seed_does_not_claim_an_implementation_resolution():
 
 
 def test_framework_specific_migration_requires_exact_runtime_binding_metadata():
-    profile = vqe_routes.uccsd_production_runtime_profile(
-        vqe_routes.Framework.QISKIT
-    )
+    profile = vqe_routes.uccsd_production_runtime_profile(vqe_routes.Framework.QISKIT)
     row = SimpleNamespace(
         semantic_key="workflow.instance.digest",
         spec_json={
@@ -82,31 +78,37 @@ def test_framework_specific_migration_requires_exact_runtime_binding_metadata():
         for role in ("ansatz", "compilation_backend")
     ]
 
-    assert vqe_routes._implementation_resolution_for_profile(
-        row=row,
-        links=links,
-        profile=profile,
-        composition_state=vqe_routes.CompositionState.MACHINE_VALIDATED,
-        settings=SimpleNamespace(
-            vqe_candidate_execution=False,
-            vqe_production_execution=True,
-        ),
-    ) is vqe_routes.ImplementationResolutionState.RESOLVED
+    assert (
+        vqe_routes._implementation_resolution_for_profile(
+            row=row,
+            links=links,
+            profile=profile,
+            composition_state=vqe_routes.CompositionState.MACHINE_VALIDATED,
+            settings=SimpleNamespace(
+                vqe_candidate_execution=False,
+                vqe_production_execution=True,
+            ),
+        )
+        is vqe_routes.ImplementationResolutionState.RESOLVED
+    )
 
     links[0] = SimpleNamespace(
         component_role="ansatz",
         binding_metadata={**metadata, "runtime_profile_id": "different-runtime"},
     )
-    assert vqe_routes._implementation_resolution_for_profile(
-        row=row,
-        links=links,
-        profile=profile,
-        composition_state=vqe_routes.CompositionState.MACHINE_VALIDATED,
-        settings=SimpleNamespace(
-            vqe_candidate_execution=False,
-            vqe_production_execution=True,
-        ),
-    ) is vqe_routes.ImplementationResolutionState.UNRESOLVED
+    assert (
+        vqe_routes._implementation_resolution_for_profile(
+            row=row,
+            links=links,
+            profile=profile,
+            composition_state=vqe_routes.CompositionState.MACHINE_VALIDATED,
+            settings=SimpleNamespace(
+                vqe_candidate_execution=False,
+                vqe_production_execution=True,
+            ),
+        )
+        is vqe_routes.ImplementationResolutionState.UNRESOLVED
+    )
 
 
 def test_framework_specific_migration_exposes_only_the_bound_framework():
@@ -789,9 +791,7 @@ async def test_eligible_projection_scientific_mismatch_is_an_invariant_failure(
         )
 
     assert excinfo.value.status_code == 422
-    assert excinfo.value.detail["reason_code"] == (
-        "vqe_eligible_create_scientific_mismatch"
-    )
+    assert excinfo.value.detail["reason_code"] == ("vqe_eligible_create_scientific_mismatch")
     assert observed[-1]["decision"] == "invariant_rejected"
     assert observed[-1]["invariant_failure"] is True
     session.rollback.assert_awaited_once()

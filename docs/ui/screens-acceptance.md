@@ -78,6 +78,7 @@ back to the OS preference.)*
   | No invisible hit targets | `scripts/check-invisible-hit-targets.mjs` | live |
   | Test-file list stays complete | `scripts/check-test-list.mjs` | live |
   | Zero WCAG A/AA violations per story | `packages/ts/ui-visual` (axe + Playwright), CI job `ui-visual` | live |
+  | An opened Atlas line's name is occluded rather than overdrawn | `packages/ts/ui-visual/tests/converge-plate.spec.ts`, same CI job | live for presence, opacity, fill, paint order, the baseline band and width against the click target. **Ink coverage is measured and printed, not gated** — the app's font arrives through `next/font/google` at build time and is Latin-only, so Japanese names already fall back in production to the reader's own face. Which face draws them is not a property of this repository. |
   | Screenshot visual diff ≤ 0.1% | — | **not built** |
   | Perf / LCP / CLS / JS budgets | — | **not measured.** `bench/lighthouse/` holds only a `.gitkeep` and no workflow runs Lighthouse. These are targets, not gates. |
 

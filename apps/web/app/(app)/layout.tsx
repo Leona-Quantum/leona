@@ -39,10 +39,24 @@ export default async function AppLayout({ children, modal }: { children: ReactNo
 
   const scopeId = storageScopeId(auth.user.id, workspace);
   return (
-    // The tier is resolved here rather than in the Shell because the developer
-    // allowlist lives in a server-only environment variable: reading it in a
-    // client component would silently resolve every account to "free".
-    <StorageScope scopeId={scopeId} mayAdoptLegacyData={scopeMayAdoptLegacyData(workspace)}>
+    <>
+      {/*
+        The Atlas opts into cross-document View Transitions from the shared UI
+        stylesheet. That at-rule is document-wide and cannot be scoped with a
+        selector, so authenticated workspace navigations would otherwise enter
+        the same lifecycle. Besides adding motion that was never approved for
+        the workspace, a streamed Next.js navigation can abort that transition
+        while hydration is replacing controls, leaving actions temporarily
+        non-actionable. The arriving and departing app documents both carry this
+        later override; the public Atlas keeps its own opt-in unchanged.
+      */}
+      <style>{"@view-transition { navigation: none; }"}</style>
+      {/*
+        The tier is resolved here rather than in the Shell because the developer
+        allowlist lives in a server-only environment variable: reading it in a
+        client component would silently resolve every account to "free".
+      */}
+      <StorageScope scopeId={scopeId} mayAdoptLegacyData={scopeMayAdoptLegacyData(workspace)}>
       {/*
         Keyed by the scope so a change of account OR of workspace remounts rather
         than reuses. Shell's workspace load effect depends on demoMode and a
@@ -77,7 +91,8 @@ export default async function AppLayout({ children, modal }: { children: ReactNo
         */}
         {modal}
       </Shell>
-    </StorageScope>
+      </StorageScope>
+    </>
   );
 }
 

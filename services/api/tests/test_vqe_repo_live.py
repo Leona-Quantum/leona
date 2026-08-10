@@ -450,9 +450,7 @@ async def test_observation_rows_reject_update_and_delete(db):
         await session.rollback()
 
         with pytest.raises(DBAPIError, match="append-only"):
-            await session.execute(
-                delete(VqeObservation).where(VqeObservation.id == observation_id)
-            )
+            await session.execute(delete(VqeObservation).where(VqeObservation.id == observation_id))
             await session.commit()
 
 

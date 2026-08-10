@@ -10,7 +10,11 @@ import json
 
 import pytest
 
-from majorana_api.catalog_admin import _bootstrap_plan
+from majorana_api.catalog_admin import (
+    _bootstrap_plan,
+    parse_re_attest,
+    plan_re_attestation,
+)
 from majorana_api.catalog_attestation import (
     AttestationPolicy,
     AttestationPolicyError,
@@ -197,3 +201,154 @@ def test_committed_policy_excludes_every_non_first_party_record():
 def test_committed_policy_file_is_loadable_from_its_default_path():
     assert default_policy_path().is_file()
     assert AttestationPolicy.load().policy_version == 1
+
+
+# --- deliberate re-attestation (`--re-attest`) -------------------------------
+#
+# The refusal above was a dead end for the whole life of the feature: the
+# message said "re-attest them deliberately" and the complete flag surface was
+# --attested-by / --attested-by-email, neither of which reaches the claim-hash
+# comparison. A production sync-bootstrap imported 283 records, refused 9, and
+# could only ever refuse the same 9 again — publish never ran.
+#
+# No database here for the same reason pick_live_reviewer has none: the rule is
+# the part that decides whether a human's signature is required, and a test that
+# needs Postgres is a test the unit suite does not run.
+
+RE_ATTEST_CORPUS = {
+    "carried": {"kind": "curated_reference", "license": "x"},
+    "fresh": {"kind": "curated_reference", "license": "x"},
+    "moved": {"kind": "curated_reference", "license": "x"},
+    "moved-too": {"kind": "curated_reference", "license": "x"},
+}
+
+
+def _re_attest_records():
+    """Four records, one per disposition the planner can reach."""
+    return _policy(excluded_identities={}).plan(RE_ATTEST_CORPUS).included
+
+
+def _previous_claims(records):
+    """`carried` unchanged, `fresh` never signed, the two `moved*` re-originated."""
+    claims = {r.upstream_identity: r.claim_hash for r in records}
+    claims["fresh"] = None
+    claims["moved"] = "a" * 64
+    claims["moved-too"] = "b" * 64
+    return claims
+
+
+def test_without_the_flag_a_changed_claim_still_refuses_and_nothing_is_re_signed():
+    """The production run's behaviour, pinned. Adding an escape hatch must not
+    open one for a run that did not ask for it — `--re-attest` absent has to stay
+    byte-identical to the fail-closed path that existed before it."""
+    records = _re_attest_records()
+    plan = plan_re_attestation(records, _previous_claims(records), None)
+    assert plan.needs_signature == ("moved", "moved-too")
+    assert plan.re_signed == ()
+    assert plan.carried_forward == ("carried",)
+    assert plan.first_signature == ("fresh",)
+
+
+def test_naming_exactly_the_refused_set_re_signs_exactly_that_set():
+    """The happy path, and the assertion that matters is the *exactly*: the two
+    records whose claim did not move stay where they were, so an operator cannot
+    launder a carry-forward or a first signature through this flag."""
+    records = _re_attest_records()
+    plan = plan_re_attestation(
+        records, _previous_claims(records), frozenset({"moved", "moved-too"})
+    )
+    assert plan.re_signed == ("moved", "moved-too")
+    assert plan.needs_signature == ()
+    assert plan.carried_forward == ("carried",)
+    assert plan.first_signature == ("fresh",)
+
+
+def test_a_name_that_was_not_refused_refuses_the_whole_run():
+    """A stale list. The operator looked at *something*, but not at what this run
+    is doing — and a flag that silently ignored the surplus name would report
+    success against a decision made about a different corpus."""
+    records = _re_attest_records()
+    with pytest.raises(SystemExit) as excinfo:
+        plan_re_attestation(
+            records,
+            _previous_claims(records),
+            frozenset({"moved", "moved-too", "carried"}),
+        )
+    message = str(excinfo.value)
+    assert "named but not refused" in message
+    assert "carried" in message
+
+
+def test_a_refusal_nobody_named_refuses_the_whole_run():
+    """The direction a `--force` cannot express, and the one that protects the
+    corpus: a refusal that appeared after the list was written would otherwise be
+    attested on the strength of a human decision about other records."""
+    records = _re_attest_records()
+    with pytest.raises(SystemExit) as excinfo:
+        plan_re_attestation(records, _previous_claims(records), frozenset({"moved"}))
+    message = str(excinfo.value)
+    assert "refused but not named" in message
+    assert "moved-too" in message
+
+
+def test_an_identity_that_is_not_in_the_corpus_is_reported_as_its_own_case():
+    """A typo and a stale list are both "named but not refused" and the operator's
+    fix differs — retype versus re-read the diff. Told apart so the message says
+    which."""
+    records = _re_attest_records()
+    with pytest.raises(SystemExit) as excinfo:
+        plan_re_attestation(
+            records,
+            _previous_claims(records),
+            frozenset({"moved", "moved-too", "vqe-adpat"}),
+        )
+    message = str(excinfo.value)
+    assert "not in the corpus" in message
+    assert "vqe-adpat" in message
+
+
+def test_both_directions_are_reported_in_one_refusal():
+    """Two runs to learn two things about one list is two chances to give up and
+    reach for a blunter tool."""
+    records = _re_attest_records()
+    with pytest.raises(SystemExit) as excinfo:
+        plan_re_attestation(records, _previous_claims(records), frozenset({"carried"}))
+    message = str(excinfo.value)
+    assert "named but not refused" in message
+    assert "refused but not named" in message
+    assert "moved" in message and "moved-too" in message
+
+
+def test_an_all_carried_corpus_accepts_no_re_attest_list_at_all():
+    """Nothing refused means nothing to re-sign, so any list is stale — including
+    a list of records that were genuinely refused by an *earlier* run and have
+    since been attested. Re-running the same command must not re-sign twice."""
+    records = _re_attest_records()
+    claims = {r.upstream_identity: r.claim_hash for r in records}
+    with pytest.raises(SystemExit, match="named but not refused"):
+        plan_re_attestation(records, claims, frozenset({"moved"}))
+    assert plan_re_attestation(records, claims, None).needs_signature == ()
+
+
+def test_no_flag_and_an_empty_flag_are_different_answers():
+    """`--re-attest ""` is an operator who believes they authorised something and
+    did not; treating it as "no flag" would print `re_signed=0` under a command
+    line that says otherwise."""
+    assert parse_re_attest(None) is None
+    with pytest.raises(SystemExit, match="no identities"):
+        parse_re_attest("")
+    with pytest.raises(SystemExit, match="no identities"):
+        parse_re_attest("  ")
+
+
+def test_the_list_is_whitespace_tolerant_but_refuses_a_hole():
+    assert parse_re_attest(" moved , moved-too ") == frozenset({"moved", "moved-too"})
+    with pytest.raises(SystemExit, match="empty identity"):
+        parse_re_attest("moved,,moved-too")
+
+
+def test_a_repeated_identity_refuses_rather_than_being_deduplicated():
+    """A repeat is the signature of a list assembled from two sources, and the
+    second source is exactly the stale list the reconciliation exists to catch."""
+    with pytest.raises(SystemExit, match="more than once"):
+        parse_re_attest("moved,moved-too,moved")

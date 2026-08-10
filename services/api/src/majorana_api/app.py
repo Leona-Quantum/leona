@@ -128,11 +128,7 @@ def _safe_validation_errors(exc: RequestValidationError) -> list[dict[str, objec
     """
 
     return [
-        {
-            key: error[key]
-            for key in ("type", "loc", "msg")
-            if key in error
-        }
+        {key: error[key] for key in ("type", "loc", "msg") if key in error}
         for error in exc.errors()
     ]
 
@@ -289,7 +285,12 @@ def create_app(settings: Settings | None = None) -> FastAPI:
             return _problem(
                 exc.status_code,
                 str(detail.get("message") or detail.get("error") or "request refused"),
-                str(detail.get("reason_code") or detail.get("reason") or detail.get("code") or "http_error"),
+                str(
+                    detail.get("reason_code")
+                    or detail.get("reason")
+                    or detail.get("code")
+                    or "http_error"
+                ),
                 headers=exc.headers,
                 extra={k: v for k, v in detail.items() if k not in {"error", "message"}},
                 request=request,

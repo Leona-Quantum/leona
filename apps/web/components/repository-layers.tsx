@@ -27,7 +27,6 @@
 // panel reads as "there is nothing to say" — the same reason `knownGaps` prints
 // a sentence on the 282 records nobody has reviewed.
 import type { PublicLocale } from "../lib/public-locale";
-import { viewSwitchLabels } from "./repository-strand-view";
 import {
   alternativesTo,
   bypassersOf,
@@ -35,6 +34,7 @@ import {
   containersOf,
   contractFor,
   entriesFor,
+  foldedAgainst,
   isCapability,
   isMethod,
   layerCensus,
@@ -43,13 +43,37 @@ import {
   methodsRealizing,
   realizedBy,
   refinementsOf,
-  rootCapabilities,
+  repetitionOf,
+  stateTraffic,
   stepsOutlook,
   type LayerCorpusEntry,
   type LayerGraph,
   type LayerMethod,
   type LayerNode,
 } from "../lib/repository/layers";
+import {
+  CONVERGE_OPEN_MAX,
+  figureHref,
+  layoutConverge,
+  layoutConvergeForMethod,
+} from "../lib/repository/converge-layout";
+import { convergeNotes } from "../lib/repository/converge-notes";
+import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
+import { PAPER_REGISTER } from "../lib/repository/paper-register";
+import { paperTraces } from "../lib/repository/paper-traces";
+import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
+import { SOURCE_COVERAGE_AXES } from "../lib/repository/types";
+import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
+import {
+  kindsOf,
+  layerState,
+  specializationsOf,
+  type LayerState,
+  type StateVocabulary,
+} from "../lib/repository/states";
+import { ConvergeCanvas } from "./repository-converge-map";
+import { CanvasContinuity } from "./canvas-continuity";
+import { InfiniteCanvas } from "./infinite-canvas";
 
 const COPY = {
   en: {
@@ -120,6 +144,26 @@ const COPY = {
       "Nobody has taken this apart yet. That is a gap in this graph, not a claim that the method has no parts.",
     needsWays: (n: number) =>
       n === 0 ? "no method recorded" : n === 1 ? "1 method" : `${n} methods`,
+    // The badge says the multiplicity; the closure says what one turn costs.
+    // They are two sentences because they are two facts, and a reader deciding
+    // between shot-based and coherent readout is deciding on the second one.
+    repeatsBadge: (count: string) => `runs ${count}`,
+    // NOT "so nothing is prepared again" — that was wrong, and wrong against two
+    // of this graph's own records: HHL prepares |b⟩ afresh in every one of its
+    // O(κ) amplification rounds, and amplitude estimation runs the preparation
+    // forwards and backwards on every iteration. What a coherent loop never pays
+    // is a readout.
+    repeatsCoherent:
+      "The loop stays coherent: nothing is measured between turns. The preparation may still be reapplied every turn — what the loop never pays is a readout and a restart from classical data. The price is depth, and a success probability that multiplies down the chain.",
+    repeatsMeasured:
+      "The loop closes through a measurement: every turn ends in a readout and starts from a fresh preparation. The price is a count of runs, not a depth.",
+    repeatsHeading: "Steps it runs more than once",
+    loopHeading: "Routes that run this slot many times",
+    loopLead:
+      "For these routes this slot is inside a loop, so its cost is multiplied rather than paid once. That multiplier is usually the largest single term in what the route costs.",
+    loopUnpinnedLabel: "No multiplicity recorded",
+    loopUnpinnedLead:
+      "These routes take this step and no source we have read says how often. That is an absence, not a claim that they take it once.",
     makesUnnecessaryHeading: "Slots it makes unnecessary",
     siblingsHeading: "Other ways to fill the same slot",
     siblingsNone: "Nothing else in this graph fills this slot.",
@@ -127,14 +171,75 @@ const COPY = {
     refinementsLabel: "Narrower versions of this one",
     variantOf: (label: string) => `a narrower version of ${label}`,
     atlasHeading: "In the Atlas",
+    // "283 records" was typed here, not counted, and this component never sees
+    // the corpus — so the number could only ever be a copy of one kept somewhere
+    // else. The sentence's work is the *kind* of thing the catalogue holds, and
+    // that is what tells a reader why this gap exists; the size of it never did.
     atlasNone:
-      "No record in the Atlas covers this yet. The catalogue is 283 records of circuits and primitives; this part of the literature is not in it.",
+      "No record in the Atlas covers this yet. The catalogue is circuits and primitives; this part of the literature is not in it.",
     citationsHeading: "Sources",
+    papersLead: (cited: number, total: number) =>
+      `Every claim here rests on a source. This graph cites ${cited} papers; they and the ${total - cited} the Atlas cites alone are registered in one place, with what each reports and everywhere it is cited from.`,
+    papersLink: "Papers",
+    sourceOutLabel: "open the paper itself",
+    // Printed on every citation, including the ones nobody has read for this.
+    // The owner's theory-vs-experimentation question is answered here, on the
+    // map, rather than one navigation away.
+    reportsAxis: { theory: "theory", simulation: "simulation", hardware: "hardware" },
+    reportsStatus: { reported: "yes", absent: "no", unknown: "?" },
+    reportsUnread: "nobody has read this paper for what it reports",
     backToLayers: "← Layers",
     backToAtlas: "Atlas",
     layersLink: "Layers — how the pieces fit together",
     onLayers: "Where this sits",
     onLayersLead: "This record is named by the layer graph at:",
+    kindState: "State",
+    stateLede:
+      "A state is an object you can be holding, named once so that two routes reaching the same thing are drawn as reaching the same thing. It says nothing about how you got here or where you can go next — that is entirely in the processes below.",
+    stateKindsHeading: "This is a kind of",
+    stateKindsNone:
+      "This state is not recorded as a kind of anything else. It stands on its own in the vocabulary.",
+    stateKindsLead:
+      "Anything that asks for one of these will accept this, because it is narrower. The reverse does not hold.",
+    stateNarrowerHeading: "Narrower kinds of this",
+    stateNarrowerNone: "No state in the vocabulary is recorded as a narrower kind of this one.",
+    stateArrivingHeading: "Work that arrives here",
+    stateArrivingNone:
+      "No recorded process returns this. Either it is where a reader starts — a problem, a matrix, a machine — or it is an object this graph names and no route yet reaches.",
+    stateArrivingOnlyNarrowed:
+      "No contract in this graph returns this. It is reached only by narrowing, below — which is a real arrival, and the reason the state is named at all.",
+    stateLeavingHeading: "Work that starts here",
+    stateLeavingNone: "No recorded process takes this as its input. Nothing in this graph leaves from here.",
+    stateLeavingOnlyAccepted:
+      "No process asks for this by name. The ones below ask for something broader, and this is a kind of it — so they take it as it stands.",
+    stateAcceptedHeading: "Also accepted where something broader is wanted",
+    stateAcceptedLead:
+      "These ask for an object this one is a kind of. Narrowing composes in that direction and only that direction: handing on something broader than a process asks for would be a skipped conversion.",
+    stateNarrowedHeading: "Routes that reach it by narrowing",
+    stateNarrowedLead:
+      "These do not declare it in a contract. They record that one of their steps lands on something narrower than the slot promises, and this is that narrower thing.",
+    stateOnMap: "See it on the map",
+    zoomHeading: "This one, drawn",
+    zoomFrom: "From",
+    zoomTo: "to",
+    zoomReadingSlot:
+      "A circle is an object you are holding. Each line between the two ends is one recorded way through this slot; where a way is built from smaller slots, those are its own lines.",
+    // Rewritten in session 110, because it was false on all 63 method pages.
+    // It described a *chain* — "each line along the row is one step of this
+    // method" — and a method's page has never drawn one. It draws the fan of
+    // ways through the slot this method fills, so the lines beside it are its
+    // alternatives, not its steps. Its steps are what is drawn *inside* it.
+    zoomReadingMethod:
+      "A circle is an object you are holding. This method is drawn heavier, opened into its own steps; the other lines between the same two ends are the alternatives recorded for the same slot.",
+    zoomUnfilled:
+      "The line is drawn broken because no method is recorded for this slot. The two ends are still what it would take and return.",
+    zoomDeeper: (n: number) =>
+      `${n} ${n === 1 ? "line here has ways" : "lines here have ways"} through that this figure does not open. The map opens them in place.`,
+    zoomAllShallow: "Nothing drawn here has a recorded way through it that this figure leaves shut.",
+    zoomNames: "Circles are named on hover, and each one is a link.",
+    zoomLabel: "Size",
+    zoomFit: "Fit",
+    zoomPercent: (n: number) => `${n}%`,
   },
   ja: {
     indexHeading: "階層",
@@ -189,6 +294,18 @@ const COPY = {
     needsUndecomposed:
       "まだ分解されていません。これはこのグラフ側の欠落であって、この手法に部品がないという主張ではありません。",
     needsWays: (n: number) => (n === 0 ? "手法の記録なし" : `手法${n}件`),
+    repeatsBadge: (count: string) => `実行回数：${count}`,
+    repeatsCoherent:
+      "反復はコヒーレントに閉じます。回と回の間で測定は行われません。準備ユニタリ自体は毎回適用され直すことがありますが、読み出しと、古典的なデータからの再出発は生じません。代価は深さと、連鎖のあいだ掛け合わされていく成功確率です。",
+    repeatsMeasured:
+      "反復は測定を挟んで閉じます。1 回ごとに読み出しで終わり、次は新たな準備から始まります。代価は深さではなく実行回数です。",
+    repeatsHeading: "複数回実行する手順",
+    loopHeading: "この枠を何度も実行する経路",
+    loopLead:
+      "これらの経路では、この枠は反復の内側にあります。したがってその費用は 1 回分ではなく、回数分だけ掛かります。多くの場合、この倍率が経路全体の費用のなかで最大の項になります。",
+    loopUnpinnedLabel: "回数の記録なし",
+    loopUnpinnedLead:
+      "これらの経路はこの手順を踏みますが、回数を述べた出典は確認できていません。これは記録の欠落であって、1 回だけ踏むという主張ではありません。",
     makesUnnecessaryHeading: "不要にする枠",
     siblingsHeading: "同じ枠を埋める他のやり方",
     siblingsNone: "このグラフでこの枠を埋めるものは他にありません。",
@@ -197,13 +314,61 @@ const COPY = {
     variantOf: (label: string) => `${label}をより狭めた版`,
     atlasHeading: "Atlas 内の項目",
     atlasNone:
-      "これに対応する項目は Atlas にまだありません。カタログは回路と基本要素の283件で構成されており、この領域の文献は含まれていません。",
+      "これに対応する項目は Atlas にまだありません。カタログは回路と基本要素で構成されており、この領域の文献は含まれていません。",
     citationsHeading: "出典",
+    papersLead: (cited: number, total: number) =>
+      `ここでの主張はすべて出典に基づいています。この図が引用しているのは ${cited} 件で、それらとアトラスのみが引用する ${total - cited} 件は、一箇所に登録されています。各論文が何を報告しているか、どこから引用されているかも併せて記録しています。`,
+    papersLink: "論文",
+    sourceOutLabel: "論文そのものを開く",
+    reportsAxis: { theory: "理論", simulation: "数値計算", hardware: "実機" },
+    reportsStatus: { reported: "あり", absent: "なし", unknown: "未確定" },
+    reportsUnread: "この論文が何を報告しているかは、まだ誰も読んでいません",
     backToLayers: "← 階層",
     backToAtlas: "Atlas",
     layersLink: "階層 — 部品どうしの組み合わさり方",
     onLayers: "この項目の位置",
     onLayersLead: "この項目は階層グラフの次の箇所から参照されています：",
+    kindState: "対象",
+    stateLede:
+      "対象とは、手にしている当のものです。名前をひとつに定めてあるため、同じものに到達する二つの経路は、同じものに到達しているものとして描かれます。どうやってここへ来たか、ここからどこへ行けるかについては何も述べません。それはすべて下に並ぶ処理の側にあります。",
+    stateKindsHeading: "これが属する種類",
+    stateKindsNone: "この対象は、他の何かの一種としては記録されていません。語彙のなかで単独に立っています。",
+    stateKindsLead:
+      "これらのいずれかを要求する処理は、この対象を受け取れます。より狭いからです。逆は成り立ちません。",
+    stateNarrowerHeading: "これをより狭めた種類",
+    stateNarrowerNone: "これをより狭めた種類として記録されている対象はありません。",
+    stateArrivingHeading: "ここへ到達する処理",
+    stateArrivingNone:
+      "これを返す処理は記録されていません。読み手が最初から手にしている対象——問題、行列、装置——であるか、あるいはこのグラフが名前を与えたもののどの経路もまだ到達していない対象です。",
+    stateArrivingOnlyNarrowed:
+      "このグラフの契約でこれを返すものはありません。到達は下の「狭めること」によってのみ起こります。それも実際の到達であり、この対象に名前がある理由そのものです。",
+    stateLeavingNone: "これを入力として受け取る処理は記録されていません。ここから出発するものはこのグラフにありません。",
+    stateLeavingOnlyAccepted:
+      "この対象を名指しで要求する処理はありません。下に挙げるものはより広い対象を要求しており、これはその一種です。したがって、そのまま受け取られます。",
+    stateAcceptedHeading: "より広い対象を要求する箇所でも受け取られる",
+    stateAcceptedLead:
+      "これらは、この対象が属する種類を要求します。狭めることはその向きにのみ合成でき、逆向きには合成できません。要求より広い対象を渡すことは、変換をひとつ飛ばしていることになります。",
+    stateLeavingHeading: "ここから出発する処理",
+    stateNarrowedHeading: "狭めることで到達する経路",
+    stateNarrowedLead:
+      "これらは契約でこの対象を宣言しているわけではありません。ステップのひとつが枠の約束よりも狭い対象に着地することを記録しており、その狭い対象がこれです。",
+    stateOnMap: "地図上で見る",
+    zoomHeading: "この処理の図",
+    zoomFrom: "入力：",
+    zoomTo: "→",
+    zoomReadingSlot:
+      "円は、手にしている対象です。両端のあいだに引かれた各線が、この枠を通る記録済みの一つのやり方です。より小さな枠から組み立てられているやり方では、その枠が線として並びます。",
+    zoomReadingMethod:
+      "円は、手にしている対象です。この手法は太く描かれ、その内側に自身の各段階が開かれています。同じ両端のあいだに並ぶほかの線は、同じ枠に記録されている別のやり方です。",
+    zoomUnfilled:
+      "この枠に手法が記録されていないため、線は破線で描かれています。両端は、それでもこの枠が受け取り返すはずの対象です。",
+    zoomDeeper: (n: number) =>
+      `この図が開いていない通り道をもつ線が ${n} 本あります。地図ではその場で開けます。`,
+    zoomAllShallow: "この図が閉じたままにしている通り道は、ここにはありません。",
+    zoomNames: "円の名前はホバーで表示され、それぞれがリンクです。",
+    zoomLabel: "表示倍率",
+    zoomFit: "全体表示",
+    zoomPercent: (n: number) => `${n}%`,
   },
 } as const;
 
@@ -263,6 +428,193 @@ function ContractPiece({
   );
 }
 
+/**
+ * The zoomed figure: this process, its two states, and the first level of it.
+ *
+ * The owner asked for this in session 92 and got half of it in 93 — a name on the
+ * map became a link to a page, and the page was the text write-up it had always
+ * been. *"Clicking on the label of a process zooms in with the first level of the
+ * process expanded with connection to the two states before and after, with the
+ * original process label in the top right like the strand visualization."*
+ *
+ * It is the index's own engine (`layoutConverge`), so there is one
+ * geometry for one picture. What the page adds around it is the thing a drawing
+ * cannot carry: the two states **written out**. Their names are in `<title>` on
+ * the canvas, which is a hover — and there is no hover on a phone. Naming them
+ * here in prose, as links, is the same fact in a form every reader gets.
+ */
+/** One frozen empty set rather than a fresh `new Set()` per render. */
+const EMPTY_OPEN: ReadonlySet<string> = new Set<string>();
+
+function ProcessZoom({
+  graph,
+  node,
+  locale,
+  copy,
+  viewport,
+  open,
+  droppedOpen,
+  at,
+}: {
+  graph: LayerGraph;
+  node: LayerNode;
+  locale: PublicLocale;
+  copy: LayersCopy;
+  viewport: Viewport;
+  open: ReadonlySet<string>;
+  /** How many of the reader's `?open=` values `CONVERGE_OPEN_MAX` refused. */
+  droppedOpen: number;
+  at: string | null;
+}) {
+  const notes = convergeNotes(locale);
+  const resolved = contractFor(graph, node);
+  // **The same drawing as the index, of the same subject.** That is what makes
+  // arriving here read as a zoom rather than as a different screen: the strand a
+  // reader clicked on the index carries `view-transition-name: mj-fig-<id>`, and
+  // so does this figure, so the browser morphs one into the other.
+  //
+  // It used to be `layoutProcessZoom` — the retired map's engine — and the two
+  // pictures did not match, so the pairing animated a shape into a drawing that
+  // did not look like it. There is one canvas now, everywhere.
+  //
+  // A **method** is drawn as the slot it fills, with itself open. A method is
+  // not a place you can stand: it is one way through a slot, so its own figure
+  // is that slot, opened at it.
+  //
+  // ## Why a method goes through a different entry point (session 110)
+  //
+  // That paragraph was the intent and the code did not achieve it. Passing the
+  // slot to `layoutConverge` and adding the method to `open` works only when the
+  // slot's plan happens to be a fan. `linear-ode-solve` and `nonlinear-ode-solve`
+  // are not atomic, so their plan is a **state chain** whose lanes are slots —
+  // and the method's id then matched no lane at all.
+  //
+  // Measured on `dev` immediately before this changed: **45 of 63** method pages
+  // drew a figure with their own method nowhere on it, **43 of 63** drew a figure
+  // byte-identical to another method's page, and **not one** of the corpus's ten
+  // `via` pins was drawn on the page of the method that authored it. For four of
+  // `linear-ode-solve`'s seven the figure was not merely generic but false —
+  // `lchs-route`'s page drew `time-discretization → quantum-linear-solve`, and
+  // `lchs-route` does not go that way.
+  //
+  // `layoutConvergeForMethod` asks the other question: not "what does every route
+  // through this slot pass through" but "which of the ways through it is this
+  // one". The answer to that is always the fan.
+  const diagram = isMethod(node)
+    ? layoutConvergeForMethod({
+        graph,
+        vocabulary: STATE_VOCABULARY,
+        method: node,
+        locale,
+        // Everything else the reader had expanded on the way here survives the
+        // click, instead of the figure resetting to the one line the URL names.
+        // The method's own id is added by the entry point — it is not optional,
+        // so it is not the caller's to forget.
+        open: new Set(open),
+        at,
+      })
+    : layoutConverge({
+        graph,
+        vocabulary: STATE_VOCABULARY,
+        focus: node,
+        locale,
+        open: new Set(open),
+        at,
+      });
+  // An unresolvable contract or an empty layout means the graph does not have
+  // the two ends this figure is *about*. Drawing a picture of that would be
+  // inventing one; the sections below still say everything they always said.
+  if (!resolved || !diagram || diagram.empty) return null;
+  const from = layerState(STATE_VOCABULARY, resolved.contract.from);
+  const to = layerState(STATE_VOCABULARY, resolved.contract.to);
+  const unfilled = isCapability(node) && capabilityOutlook(graph, node.id) === "open";
+  const mapId = isCapability(node) ? node.id : node.realizes;
+
+  return (
+    <figure className="mj-layers-zoom" aria-labelledby={`zoom-${node.id}`}>
+      {/* The label the card used to wear as a heading, kept as a heading because
+          it is the accessible name of this figure, and taken out of the visual
+          flow because *"clicking on labels shouldn't feel like it shows a
+          completely different screen"* — and a strapline over a framed panel is
+          exactly how a screen announces itself. The reader arrived here by
+          clicking this thing's name; being told "this one, drawn" is a caption
+          for a picture they are already looking at. Screen readers still get it,
+          which is the whole reason it is `sr-only` rather than deleted. */}
+      <h2 className="mj-layers-zoom-heading sr-only" id={`zoom-${node.id}`}>
+        {copy.zoomHeading}
+      </h2>
+      {/* The reader's own size, and their own position. A figure can be wider
+          than the column — *"they can zoom in and out of the page on their
+          own"*, owner, session 92 — and it is now a viewport they can move
+          rather than a set of sizes they can pick, with `?at=` carrying where
+          they are so the page can be shared from there. */}
+      {/* `CanvasContinuity` was on the index and not here, so one gesture had
+          two behaviours: opening a line on `/repository/layers` bent the curves
+          in place, and the identical click on this page replaced the document.
+          Nothing chose that — the index grew the wrapper and this figure did not
+          — and it is the kind of split a reader reads as the second one being
+          broken. Same wrapper, same `?at=`, same behaviour. */}
+      <CanvasContinuity renderedAt={at}>
+        <InfiniteCanvas
+          initial={viewport}
+          label={copy.zoomHeading}
+          locale={locale === "ja" ? "ja" : "en"}
+        >
+          <ConvergeCanvas
+            diagram={diagram}
+            locale={locale}
+            title={label(node, locale)}
+            // What the reader clicked to get here. The index draws this same
+            // subject under this same name, which is the pairing.
+            subjectId={node.id}
+          />
+        </InfiniteCanvas>
+      </CanvasContinuity>
+      <figcaption className="mj-layers-zoom-caption">
+        {from && to ? (
+          <p className="mj-layers-zoom-ends">
+            {copy.zoomFrom} <a href={href(from.id)}>{stateLabel(from, locale)}</a> {copy.zoomTo}{" "}
+            <a href={href(to.id)}>{stateLabel(to, locale)}</a>
+          </p>
+        ) : null}
+        <p>
+          {/* Chosen from what was **drawn**, not from the node's kind. Those two
+              agree today — a method always gets a fan and a slot's picture is
+              whichever its expansion asks for — and they agreed before too,
+              wrongly: the sentence for a method described a chain and a method
+              page has never drawn one. Reading `diagram.grain` is how the
+              caption stays true if either rule moves, and it is what
+              `repository-converge-view.tsx` already does. */}
+          {unfilled
+            ? copy.zoomUnfilled
+            : diagram.grain === "states"
+              ? copy.zoomReadingSlot
+              : isCapability(node)
+                ? copy.zoomReadingSlot
+                : copy.zoomReadingMethod}{" "}
+          {copy.zoomNames}
+        </p>
+        <p>
+          {diagram.collapsedCount > 0 ? copy.zoomDeeper(diagram.collapsedCount) : copy.zoomAllShallow}{" "}
+          {/* No open set, and that is right rather than an omission: a write-up
+              page is not a reading position on the figure, so there is nothing
+              to carry. Every link that *is* on the figure passes one. */}
+          <a href={figureHref(mapId, [])}>{copy.stateOnMap}</a>
+        </p>
+        {/* The two limits this figure can hit, said out loud — and until now
+            said on the index only. The page resolved `?open=` against the very
+            same cap and dropped the count on the floor, and never read
+            `depthCapped` at all, so one URL was honest on one surface and
+            silent on the other. Same engine, same two caps, same sentences:
+            they come from `converge-notes.ts` rather than from either
+            component's own copy table. */}
+        {droppedOpen > 0 ? <p>{notes.droppedOpen(droppedOpen, CONVERGE_OPEN_MAX)}</p> : null}
+        {diagram.cappedCount > 0 ? <p>{notes.cappedInside(diagram.cappedCount)}</p> : null}
+      </figcaption>
+    </figure>
+  );
+}
+
 function NodeLink({
   graph,
   node,
@@ -306,23 +658,71 @@ function EmptyNote({ children }: { children: string }) {
   return <p className="mj-layers-empty">{children}</p>;
 }
 
-function Citations({ node, copy }: { node: LayerNode; copy: LayersCopy }) {
+/**
+ * The sources behind a node — each now an address on this site as well as a
+ * link off it.
+ *
+ * Two links per citation, deliberately. The title goes to `/repository/papers/…`
+ * because that page is the only place that says what the paper reports and
+ * everywhere else it is cited from; the arrow goes to the paper itself, because
+ * a reader who wants the PDF should not have to make two hops for it. Both are
+ * `<a href>`, so `curl` sees the same surface a browser does.
+ *
+ * The theory/simulation/hardware line is printed **here**, on the map, rather
+ * than only on the paper page. That distinction was the owner's ask, and a fact
+ * a reader has to navigate away to see is a fact the map does not have.
+ * `unread` is printed rather than omitted — an absence that renders as silence
+ * reads as "nothing to say", which is the one thing it does not mean.
+ */
+function Citations({ node, copy, locale }: { node: LayerNode; copy: LayersCopy; locale: PublicLocale }) {
   const citations = node.citations ?? [];
   if (citations.length === 0) return null;
+  const register = indexPapers(PAPER_REGISTER);
   return (
     <section className="mj-layers-section" aria-labelledby={`sources-${node.id}`}>
       <h2 id={`sources-${node.id}`}>{copy.citationsHeading}</h2>
       <ul className="mj-layers-sources">
-        {citations.map((citation) => (
-          <li key={citation.url}>
-            <a href={citation.url} rel="noreferrer noopener" target="_blank">
-              {citation.title}
-            </a>
-            <span className="mj-layers-source-meta">
-              {citation.authors} · {citation.year}
-            </span>
-          </li>
-        ))}
+        {citations.map((citation) => {
+          // A citation whose url the register cannot key on already fails
+          // `check-paper-register.mjs`, so this branch is unreachable on a
+          // green tree. It renders the plain external link rather than a dead
+          // internal one, because a broken tree is exactly when a page must
+          // still render.
+          const paperId = paperIdFromUrl(citation.url);
+          const paper = paperId ? register.get(paperId) : undefined;
+          return (
+            <li key={citation.url}>
+              {paper ? (
+                <a href={`/repository/papers/${paperSlug(paper.id)}`}>{citation.title}</a>
+              ) : (
+                <a href={citation.url} rel="noreferrer noopener" target="_blank">
+                  {citation.title}
+                </a>
+              )}
+              {paper ? (
+                <a
+                  className="mj-layers-source-out"
+                  href={citation.url}
+                  rel="noreferrer noopener"
+                  target="_blank"
+                  aria-label={`${citation.title} — ${copy.sourceOutLabel}`}
+                >
+                  ↗
+                </a>
+              ) : null}
+              <span className="mj-layers-source-meta">
+                {citation.authors} · {citation.year}
+              </span>
+              <span className="mj-layers-source-meta">
+                {paper?.reports
+                  ? SOURCE_COVERAGE_AXES.map(
+                      (axis) => `${copy.reportsAxis[axis]} ${copy.reportsStatus[paper.reports![axis]]}`,
+                    ).join(" · ")
+                  : copy.reportsUnread}
+              </span>
+            </li>
+          );
+        })}
       </ul>
     </section>
   );
@@ -347,12 +747,22 @@ function AtlasRecords({
       {slugs.length === 0 ? (
         <EmptyNote>{copy.atlasNone}</EmptyNote>
       ) : (
+        /* A title and a sentence, not a bare link.
+           *"when people see specific algorithms on the map, they see the content
+           of the atlas repository entry and can click around in there and export
+           etc etc."* — owner, session 94. This is the first half: enough of the
+           record to know what is behind the link before following it. The second
+           half is the record's own page, which is where the code, the
+           verification and the export live and where they stay — a copy of them
+           here would be a second thing to keep in step with the first. */
         <ul className="mj-layers-records">
           {slugs.map((slug) => {
             const entry = bySlug.get(slug)!;
+            const blurb = locale === "ja" ? entry.descriptionJa : entry.description;
             return (
               <li key={slug}>
                 <a href={`/repository/${slug}`}>{locale === "ja" ? entry.titleJa : entry.title}</a>
+                {blurb ? <p className="mj-layers-record-blurb">{blurb}</p> : null}
               </li>
             );
           })}
@@ -435,9 +845,73 @@ function CapabilityView({
         )}
       </section>
 
+      {/* How often the routes above pay for this slot — the comparison that
+          motivated the whole annotation, and it is only answerable here rather
+          than on any one method page: paying once per time step is not a
+          property of backward Euler, it is what backward Euler is relative to an
+          all-at-once encoding.
+
+          Drawn only where some route repeats it. The second list is headed "no
+          multiplicity recorded" and never "runs it once", because that is what
+          the graph says about those routes — nothing. */}
+      <LoopComparison graph={graph} node={node} locale={locale} copy={copy} />
+
       <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} />
-      <Citations node={node} copy={copy} />
+      <Citations node={node} copy={copy} locale={locale} />
     </>
+  );
+}
+
+/**
+ * "Some routes run this slot many times; these others record nothing about how
+ * often." Renders nothing at all when no route repeats the slot.
+ */
+function LoopComparison({
+  graph,
+  node,
+  locale,
+  copy,
+}: {
+  graph: LayerGraph;
+  node: Extract<LayerNode, { kind: "capability" }>;
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const { unpinned, repeated } = foldedAgainst(graph, node.id);
+  if (repeated.length === 0) return null;
+  const isJa = locale === "ja";
+  return (
+    <section className="mj-layers-section" aria-labelledby={`loop-${node.id}`}>
+      <h2 id={`loop-${node.id}`}>{copy.loopHeading}</h2>
+      <p>{copy.loopLead}</p>
+      <ul className="mj-layers-list">
+        {repeated.map(({ method, repetition }) => (
+          <li key={method.id} className="mj-layers-loop-row">
+            <a href={href(method.id)}>{label(method, locale)}</a>{" "}
+            <span
+              className={`mj-layers-repeat mj-layers-repeat--${repetition.closure}`}
+              data-closure={repetition.closure}
+            >
+              {copy.repeatsBadge(isJa ? repetition.countJa : repetition.count)}
+            </span>
+            <p>
+              {repetition.closure === "measured" ? copy.repeatsMeasured : copy.repeatsCoherent}
+            </p>
+          </li>
+        ))}
+      </ul>
+      {unpinned.length > 0 ? (
+        <>
+          <h3>{copy.loopUnpinnedLabel}</h3>
+          <p>{copy.loopUnpinnedLead}</p>
+          <ul className="mj-layers-list">
+            {unpinned.map((method) => (
+              <NodeLink key={method.id} graph={graph} node={method} locale={locale} copy={copy} />
+            ))}
+          </ul>
+        </>
+      ) : null}
+    </section>
   );
 }
 
@@ -512,11 +986,31 @@ function MethodView({
               // The count is the branching factor, and printing it here is what
               // makes descending feel like a choice rather than a corridor.
               const ways = methodsRealizing(graph, stepId).length;
+              // How often this route takes this hop, where a source says. Absent
+              // prints nothing at all — never "once". A route that has not been
+              // measured must not be made to look like one that folds.
+              const repetition = repetitionOf(node, stepId);
               return (
                 <li key={stepId}>
                   <a href={href(stepId)}>{label(step, locale)}</a>{" "}
                   <span className="mj-layers-item-kind">{copy.needsWays(ways)}</span>
+                  {repetition ? (
+                    <span
+                      className={`mj-layers-repeat mj-layers-repeat--${repetition.closure}`}
+                      data-closure={repetition.closure}
+                    >
+                      {copy.repeatsBadge(isJa ? repetition.countJa : repetition.count)}
+                    </span>
+                  ) : null}
                   <p>{summary(step, locale)}</p>
+                  {repetition ? (
+                    <p className="mj-layers-repeat-note">
+                      {repetition.closure === "measured"
+                        ? copy.repeatsMeasured
+                        : copy.repeatsCoherent}{" "}
+                      {isJa ? repetition.noteJa : repetition.note}
+                    </p>
+                  ) : null}
                 </li>
               );
             })}
@@ -571,7 +1065,7 @@ function MethodView({
       </section>
 
       <AtlasRecords node={node} corpus={corpus} locale={locale} copy={copy} />
-      <Citations node={node} copy={copy} />
+      <Citations node={node} copy={copy} locale={locale} />
     </>
   );
 }
@@ -581,11 +1075,26 @@ export function LayerNodeView({
   node,
   corpus,
   locale,
+  viewport = IDENTITY,
+  open,
+  droppedOpen = 0,
+  at = null,
 }: {
   graph: LayerGraph;
   node: LayerNode;
   corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
+  viewport?: Viewport;
+  /** The reader's own `?open=`, carried in from the page they came from. */
+  open?: ReadonlySet<string>;
+  /**
+   * And how many of it the cap refused. Not derivable from `open` — the values
+   * are gone by the time they arrive here — so the count travels with them or
+   * the figure cannot say what it left out.
+   */
+  droppedOpen?: number;
+  /** The reader's own `?at=`, raw, so every address this page emits keeps it. */
+  at?: string | null;
 }) {
   const copy = copyFor(locale);
   const depth = layerDepths(graph).get(isCapability(node) ? node.id : node.realizes);
@@ -606,6 +1115,19 @@ export function LayerNodeView({
         <p className="mj-layers-lede">{summary(node, locale)}</p>
         <ContractPiece graph={graph} node={node} locale={locale} copy={copy} />
       </header>
+      {/* Before the prose, not after it. A reader who clicked a name on the map
+          came here to see this one thing drawn; the write-up is what they read
+          once they have found it. */}
+      <ProcessZoom
+        graph={graph}
+        node={node}
+        locale={locale}
+        copy={copy}
+        viewport={viewport}
+        open={open ?? EMPTY_OPEN}
+        droppedOpen={droppedOpen}
+        at={at}
+      />
       {isCapability(node) ? (
         <CapabilityView graph={graph} node={node} corpus={corpus} locale={locale} copy={copy} />
       ) : (
@@ -615,136 +1137,209 @@ export function LayerNodeView({
   );
 }
 
+function stateLabel(state: LayerState, locale: PublicLocale): string {
+  return locale === "ja" ? state.labelJa : state.label;
+}
+
+function stateSummary(state: LayerState, locale: PublicLocale): string {
+  return locale === "ja" ? state.summaryJa : state.summary;
+}
+
+function StateList({
+  states,
+  locale,
+  empty,
+  lead,
+}: {
+  states: readonly LayerState[];
+  locale: PublicLocale;
+  empty: string;
+  lead?: string;
+}) {
+  if (states.length === 0) return <EmptyNote>{empty}</EmptyNote>;
+  return (
+    <>
+      {lead ? <p>{lead}</p> : null}
+      <ul className="mj-layers-list">
+        {states.map((state) => (
+          <li className="mj-layers-item" key={state.id}>
+            <a href={href(state.id)}>{stateLabel(state, locale)}</a>
+            <p>{stateSummary(state, locale)}</p>
+          </li>
+        ))}
+      </ul>
+    </>
+  );
+}
+
 /**
- * The index: the model, the counted census, and every root opened one level.
+ * A state's own page — the thing a circle on the map is a link to.
  *
- * One level rather than the whole tree on purpose. The tree is the product and
- * it is also unreadable at a glance; what a reader needs on arrival is the shape
- * — a problem, the handful of routes that answer it, and the visible fact that
- * each route names further slots. The `<details>` per root is addressable and
- * needs no JavaScript.
+ * It exists because the map draws every state as an `<a href>` and until now
+ * every one of those was a 404: `layers/[id]` only ever resolved node ids, and
+ * `validateLayerGraph` guarantees a state id is never a node id, so the two
+ * facts together made every circle on the surface a dead end.
+ *
+ * What it says is deliberately narrow. A state is not a step, so this page never
+ * describes a journey: it names the object, says what it is a kind of and what
+ * kinds it has, and then lists the processes that touch it at either end — which
+ * is the Markov framing the vocabulary is built on, rendered rather than
+ * asserted.
  */
-export function LayerIndexView({
+export function LayerStateView({
+  graph,
+  vocabulary,
+  state,
+  locale,
+}: {
+  graph: LayerGraph;
+  vocabulary: StateVocabulary;
+  state: LayerState;
+  locale: PublicLocale;
+}) {
+  const copy = copyFor(locale);
+  const index = new Map(vocabulary.states.map((entry) => [entry.id, entry]));
+  // `kindsOf` includes the state itself — it answers "what does this satisfy?",
+  // and a state satisfies itself. On this page the reader is being told what
+  // *else* it is, so the state itself comes out.
+  const broader = [...kindsOf(vocabulary, state.id)]
+    .filter((id) => id !== state.id)
+    .map((id) => index.get(id))
+    .filter((entry): entry is LayerState => entry !== undefined);
+  const narrower = specializationsOf(vocabulary, state.id);
+  const traffic = stateTraffic(graph, vocabulary, state.id);
+  return (
+    <article className="mj-layers-node">
+      <nav className="mj-layers-crumbs" aria-label={copy.indexHeading}>
+        <a href="/repository/layers">{copy.backToLayers}</a>
+        <a href={figureHref(null, [])}>{copy.stateOnMap}</a>
+        <a href="/repository">{copy.backToAtlas}</a>
+      </nav>
+      <header className="mj-layers-node-head">
+        <p className="mj-layers-kicker">
+          <span className="mj-layers-kind">{copy.kindState}</span>
+        </p>
+        <h1>{stateLabel(state, locale)}</h1>
+        <p className="mj-layers-lede">{stateSummary(state, locale)}</p>
+        <p className="mj-layers-piece-note">{copy.stateLede}</p>
+      </header>
+      <section className="mj-layers-section" aria-labelledby={`kinds-${state.id}`}>
+        <h2 id={`kinds-${state.id}`}>{copy.stateKindsHeading}</h2>
+        <StateList
+          states={broader}
+          locale={locale}
+          empty={copy.stateKindsNone}
+          lead={broader.length > 0 ? copy.stateKindsLead : undefined}
+        />
+      </section>
+      <section className="mj-layers-section" aria-labelledby={`narrower-${state.id}`}>
+        <h2 id={`narrower-${state.id}`}>{copy.stateNarrowerHeading}</h2>
+        <StateList states={narrower} locale={locale} empty={copy.stateNarrowerNone} />
+      </section>
+      <section className="mj-layers-section" aria-labelledby={`arriving-${state.id}`}>
+        <h2 id={`arriving-${state.id}`}>{copy.stateArrivingHeading}</h2>
+        {traffic.arriving.length === 0 ? (
+          <EmptyNote>
+            {traffic.narrowedInto.length > 0
+              ? copy.stateArrivingOnlyNarrowed
+              : copy.stateArrivingNone}
+          </EmptyNote>
+        ) : (
+          <ul className="mj-layers-list">
+            {traffic.arriving.map((node) => (
+              <NodeLink graph={graph} node={node} locale={locale} copy={copy} key={node.id} />
+            ))}
+          </ul>
+        )}
+      </section>
+      {traffic.narrowedInto.length === 0 ? null : (
+        <section className="mj-layers-section" aria-labelledby={`narrowed-${state.id}`}>
+          <h2 id={`narrowed-${state.id}`}>{copy.stateNarrowedHeading}</h2>
+          <p>{copy.stateNarrowedLead}</p>
+          <ul className="mj-layers-list">
+            {traffic.narrowedInto.map((node) => (
+              <NodeLink graph={graph} node={node} locale={locale} copy={copy} key={node.id} />
+            ))}
+          </ul>
+        </section>
+      )}
+      <section className="mj-layers-section" aria-labelledby={`leaving-${state.id}`}>
+        <h2 id={`leaving-${state.id}`}>{copy.stateLeavingHeading}</h2>
+        {traffic.leaving.length === 0 ? (
+          <EmptyNote>
+            {traffic.acceptedBy.length > 0 ? copy.stateLeavingOnlyAccepted : copy.stateLeavingNone}
+          </EmptyNote>
+        ) : (
+          <ul className="mj-layers-list">
+            {traffic.leaving.map((node) => (
+              <NodeLink graph={graph} node={node} locale={locale} copy={copy} key={node.id} />
+            ))}
+          </ul>
+        )}
+      </section>
+      {traffic.acceptedBy.length === 0 ? null : (
+        <section className="mj-layers-section" aria-labelledby={`accepted-${state.id}`}>
+          <h2 id={`accepted-${state.id}`}>{copy.stateAcceptedHeading}</h2>
+          <p>{copy.stateAcceptedLead}</p>
+          <ul className="mj-layers-list">
+            {traffic.acceptedBy.map((node) => (
+              <NodeLink graph={graph} node={node} locale={locale} copy={copy} key={node.id} />
+            ))}
+          </ul>
+        </section>
+      )}
+    </article>
+  );
+}
+
+/**
+ * What is here, counted — the only place on this site the graph's own census is
+ * printed.
+ *
+ * Converge is the only surface now, but this stayed its own function rather
+ * than being inlined into `ConvergeView` when the other three views were
+ * retired: it used to be reachable from two views — the default and
+ * `LayerIndexView`'s `?view=list` — and the census restated on both was the
+ * same failure `ViewSwitch` existed to prevent for links, one layer down, with
+ * numbers instead. One function, called once now, is what one function called
+ * twice was already supposed to buy.
+ *
+ * Counted from the graph and the corpus in hand — not one of these figures is
+ * written into a sentence.
+ */
+export function LayerCensusPanel({
   graph,
   corpus,
   locale,
-  openRoot,
 }: {
   graph: LayerGraph;
   corpus: readonly LayerCorpusEntry[];
   locale: PublicLocale;
-  openRoot: string | null;
 }) {
   const copy = copyFor(locale);
-  const census = layerCensus(
-    graph,
-    new Set(corpus.map((entry) => entry.slug)),
-  );
-  const roots = rootCapabilities(graph);
+  const census = layerCensus(graph, new Set(corpus.map((entry) => entry.slug)), STATE_VOCABULARY);
   return (
-    <section className="mj-layers-index" aria-labelledby="layers-heading">
-      <nav className="mj-layers-crumbs" aria-label={copy.backToAtlas}>
-        <a href="/repository">← {copy.backToAtlas}</a>
-      </nav>
-      {/* The other drawing of this same graph. Both views have an address, and
-          neither is reachable only from the other — a reader who lands on
-          `?view=list` from a bookmark can still get to the canvas.
-
-          The three words come from `viewSwitchLabels` rather than from inline
-          conditions here: two copies of a translated label is the shape that
-          drifts, and this control is rendered from both sides. */}
-      <div className="mj-strand-switch" role="group" aria-label={viewSwitchLabels(locale).view}>
-        <span className="mj-strand-switch-label">{viewSwitchLabels(locale).view}</span>
-        <a href="/repository/layers?view=strands">{viewSwitchLabels(locale).strands}</a>
-        <span className="mj-strand-switch-on">{viewSwitchLabels(locale).list}</span>
-      </div>
-      <h1 id="layers-heading">{copy.indexHeading}</h1>
-      <p className="mj-layers-lede">{copy.indexLead}</p>
-
-      <section className="mj-layers-model">
-        <h2>{copy.modelHeading}</h2>
-        <ul>
-          <li>{copy.modelSlot}</li>
-          <li>{copy.modelMethod}</li>
-          <li>{copy.modelStep}</li>
-          <li>{copy.modelBypass}</li>
-        </ul>
-      </section>
-
-      {/* Counted from the graph and the corpus in hand — not one of these
-          numbers is written into the sentence. Same rule as the Atlas preface,
-          and it matters more here: the honest reading of this surface today is
-          that most of it has no record behind it, and a hard-coded number would
-          stop saying so the moment the graph grew. */}
-      <section className="mj-layers-census">
-        <h2>{copy.censusHeading}</h2>
-        <p>{copy.census(census.nodes, census.capabilities, census.methods)}</p>
-        <p>{copy.censusAnchored(census.anchored, census.nodes, census.distinctEntries)}</p>
-        <p>{copy.censusOpen(census.openCapabilities, census.undecomposedMethods)}</p>
-        {/* Absent on a healthy catalogue, and that absence is correct: this is
-            not a status field, it is the sentence that stops the number above
-            from going quietly wrong when the catalogue serves less than the
-            repo does. `check-layer-graph.mjs` proves the links resolve at build
-            time; nothing proves it at read time. */}
-        {census.unresolvedEntries > 0 ? (
-          <p className="mj-layers-census-warn">{copy.censusUnresolved(census.unresolvedEntries)}</p>
-        ) : null}
-      </section>
-
-      <h2 className="mj-layers-start">{copy.startHeading}</h2>
-      <div className="mj-layers-roots">
-        {roots.map((root) => {
-          const methods = methodsRealizing(graph, root.id);
-          return (
-            <details
-              key={root.id}
-              className="mj-layers-root"
-              open={openRoot === null ? roots[0]?.id === root.id : openRoot === root.id}
-            >
-              <summary>
-                <span className="mj-layers-root-title">{label(root, locale)}</span>
-                <span className="mj-layers-item-kind">
-                  {capabilityOutlook(graph, root.id) === "open"
-                    ? copy.needsWays(0)
-                    : copy.waysCount(methods.length)}
-                </span>
-              </summary>
-              <div className="mj-layers-root-body">
-                <p>{summary(root, locale)}</p>
-                <p className="mj-layers-root-link">
-                  <a href={href(root.id)}>{label(root, locale)} →</a>
-                </p>
-                {methods.length === 0 ? (
-                  <EmptyNote>{copy.waysNone}</EmptyNote>
-                ) : (
-                  <ul className="mj-layers-list">
-                    {methods.map((method) => {
-                      const steps = method.steps
-                        .map((id) => layerNode(graph, id))
-                        .filter((step): step is LayerNode => step !== null);
-                      return (
-                        <li key={method.id} className="mj-layers-item">
-                          <a href={href(method.id)}>{label(method, locale)}</a>
-                          <p>{summary(method, locale)}</p>
-                          {steps.length > 0 ? (
-                            <ul className="mj-layers-substeps">
-                              {steps.map((step) => (
-                                <li key={step.id}>
-                                  <a href={href(step.id)}>{label(step, locale)}</a>
-                                </li>
-                              ))}
-                            </ul>
-                          ) : null}
-                        </li>
-                      );
-                    })}
-                  </ul>
-                )}
-              </div>
-            </details>
-          );
-        })}
-      </div>
+    <section className="mj-layers-census">
+      <h2>{copy.censusHeading}</h2>
+      <p>{copy.census(census.nodes, census.capabilities, census.methods)}</p>
+      <p>{copy.censusAnchored(census.anchored, census.nodes, census.distinctEntries)}</p>
+      <p>{copy.censusOpen(census.openCapabilities, census.undecomposedMethods)}</p>
+      {/* Absent on a healthy catalogue, and that absence is correct: this is
+          not a status field, it is the sentence that stops the number above
+          from going quietly wrong when the catalogue serves less than the
+          repo does. `check-layer-graph.mjs` proves the links resolve at build
+          time; nothing proves it at read time. */}
+      {census.unresolvedEntries > 0 ? (
+        <p className="mj-layers-census-warn">{copy.censusUnresolved(census.unresolvedEntries)}</p>
+      ) : null}
+      {/* Counted here rather than written, and linked, because the sentence
+          above is about what this graph documents and this one is about what
+          it documents it *from*. A reader who wants the second is otherwise
+          stuck opening node pages one at a time. */}
+      <p>
+        {copy.papersLead(paperTraces(graph).length, PAPER_REGISTER.papers.length)}{" "}
+        <a href="/repository/papers">{copy.papersLink}</a>
+      </p>
     </section>
   );
 }

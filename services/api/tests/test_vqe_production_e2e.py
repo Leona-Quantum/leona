@@ -141,9 +141,7 @@ async def _execute_and_finish(
     )
     experiment_response = await client.get(f"/v1/vqe/experiments/{experiment_id}")
     assert experiment_response.status_code == 200, experiment_response.text
-    workflow_artifact_version_id = experiment_response.json()[
-        "workflow_artifact_version_id"
-    ]
+    workflow_artifact_version_id = experiment_response.json()["workflow_artifact_version_id"]
     projection = await _launch_projection(client, workflow_artifact_version_id)
     framework_projection = next(
         item for item in projection["frameworks"] if item["framework"] == framework

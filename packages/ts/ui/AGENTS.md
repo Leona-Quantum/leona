@@ -16,8 +16,18 @@ Invariants:
   (Instrument Serif) has one weight: render at 400, never 500/600.
 - No external component libraries — components are owned code (Radix primitives are the
   only permitted dependency, added only when a component genuinely needs one).
-- Only permitted animations: rail state transitions (150 ms ease-out), the running-dot
-  pulse (spec §2), skeleton shimmer, toast enter/exit. `prefers-reduced-motion` must be honored.
+- **Animations: the closed list lives in `docs/ui/components.md` § Permitted animations, and
+  nowhere else.** It is not restated here, and it is not restated in `styles.css`. It used to
+  be all three, and all three disagreed — this file named five, the spec named five *different*
+  ones, `styles.css` named four, and the code was running eleven `@keyframes` of which four
+  appeared on no list at all. `scripts/check-permitted-animations.mjs` (CI: `lint`) now
+  reconciles the table against the CSS in both directions, so adding a `@keyframes` without a
+  row fails, and a row naming a keyframe nobody runs fails too. `prefers-reduced-motion` must
+  be honored, and the check enforces that as well.
+  **`@view-transition` takes no selector**, so a navigation transition is enabled
+  document-wide and must be scoped by turning `::view-transition-*` off by default —
+  including the browser's own default root crossfade — and back on under the surface that
+  asked for it.
 - Components are pure renderers of typed data (no fetching, no run state) so the replay
   rule (`docs/ui/screens-acceptance.md` §4) holds and fixtures can drive every state.
 - Copy: verdicts/exports/buttons per `docs/ui/copy.md`. No exclamation marks, no emoji.

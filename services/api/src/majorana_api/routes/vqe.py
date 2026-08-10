@@ -218,9 +218,7 @@ def _semantic_keys_for_scientific_spec(
 
     try:
         if scientific_spec_json.get("schema_version") == "0.2.0":
-            scientific_spec = PortableScientificExperimentSpec.model_validate(
-                scientific_spec_json
-            )
+            scientific_spec = PortableScientificExperimentSpec.model_validate(scientific_spec_json)
             return {
                 binding.role: binding.component_semantic_key
                 for binding in scientific_spec.component_bindings
@@ -231,8 +229,7 @@ def _semantic_keys_for_scientific_spec(
         return {
             binding.role: binding.component_semantic_key
             for binding in scientific_spec_v03.component_bindings
-            if binding.applicability == "required"
-            and binding.component_semantic_key is not None
+            if binding.applicability == "required" and binding.component_semantic_key is not None
         }
     except (TypeError, ValueError):
         return None
@@ -864,18 +861,19 @@ def _implementation_resolution_for_profile(
         return ImplementationResolutionState.UNRESOLVED
 
     migration = row.spec_json.get("migration")
-    if migration in {
-        "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
-        "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
-    } and not settings.vqe_production_execution:
-        return ImplementationResolutionState.UNRESOLVED
     if (
-        migration not in {
+        migration
+        in {
             "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
             "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
         }
-        and not (settings.vqe_candidate_execution or settings.vqe_production_execution)
+        and not settings.vqe_production_execution
     ):
+        return ImplementationResolutionState.UNRESOLVED
+    if migration not in {
+        "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+        "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
+    } and not (settings.vqe_candidate_execution or settings.vqe_production_execution):
         return ImplementationResolutionState.UNRESOLVED
 
     # The frozen H2 candidate and its server-validated optimizer swap are the
@@ -1530,8 +1528,7 @@ async def create_validated_workflow_draft(
             decision=decision,
             primary_reason_code=reason_code,
             blockers_json=[
-                item.model_dump(mode="json")
-                for item in projection.experiment_creation.blockers
+                item.model_dump(mode="json") for item in projection.experiment_creation.blockers
             ],
             projection_sha256=projection.projection_sha256,
             registry_snapshot_sha256=projection.registry_snapshot_sha256,
@@ -1584,8 +1581,7 @@ async def create_validated_workflow_draft(
                 "message": "this workflow is not an admitted standard seed",
                 "retryable": False,
                 "blockers": [
-                    item.model_dump(mode="json")
-                    for item in projection.experiment_creation.blockers
+                    item.model_dump(mode="json") for item in projection.experiment_creation.blockers
                 ],
             },
         )
@@ -1682,9 +1678,7 @@ async def create_validated_workflow_draft(
         ) from None
 
     await _file_private_artifact(scope, session, identity, settings, saved.artifact.id)
-    await record_draft_decision(
-        decision="accepted", reason_code=None, derived_id=saved.version.id
-    )
+    await record_draft_decision(decision="accepted", reason_code=None, derived_id=saved.version.id)
     return WorkflowSwapResource(
         artifact_id=saved.artifact.id,
         workflow_artifact_version_id=saved.version.id,
@@ -2043,7 +2037,9 @@ async def create_experiment(
             experiment_id=experiment_id,
             decision=decision,
             primary_reason_code=recorded_reason,
-            blockers_json=[item.model_dump(mode="json") for item in projection.experiment_creation.blockers],
+            blockers_json=[
+                item.model_dump(mode="json") for item in projection.experiment_creation.blockers
+            ],
             projection_sha256=projection.projection_sha256,
             registry_snapshot_sha256=projection.registry_snapshot_sha256,
             readiness_snapshot_json=readiness_snapshot,
@@ -2094,8 +2090,7 @@ async def create_experiment(
                 "message": "workflow is not eligible for direct experiment creation",
                 "retryable": False,
                 "blockers": [
-                    item.model_dump(mode="json")
-                    for item in projection.experiment_creation.blockers
+                    item.model_dump(mode="json") for item in projection.experiment_creation.blockers
                 ],
             },
         )

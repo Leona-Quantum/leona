@@ -24,6 +24,14 @@ export interface Story {
   /** Human label for the test report. */
   title: string;
   node: ReactNode;
+  /**
+   * `lang` on `<html>`. `styles.css` carries `:lang(ja)` rules that reach the
+   * whole document, so a Japanese story rendered as `en` is drawn with the wrong
+   * font stack and any width measured off it is a width the app never draws.
+   */
+  lang?: "en" | "ja";
+  /** Drop the 720px reading column. For whole surfaces, not components. */
+  wide?: boolean;
 }
 
 const MID_RUN: RailStage[] = [

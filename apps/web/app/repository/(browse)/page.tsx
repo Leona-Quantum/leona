@@ -10,14 +10,32 @@ import {
 import { getStandardVqeCatalog } from "../../../lib/atlas-vqe/standard-source";
 import { getPrivateMvpCapabilityManifest } from "../../../lib/atlas-vqe/private-mvp-source";
 import { VerificationLegend } from "../../../components/repository-verification";
-import { RepositoryPreface } from "../../../components/repository-preface";
+import { AboutTheAtlas, RepositoryPreface } from "../../../components/repository-preface";
 import { resolveBrowseParams } from "../../../lib/repository/browse-params";
 import { AtlasContentSwitch } from "../atlas-content-switch";
 
-export const metadata: Metadata = {
-  title: "Atlas",
-  description: "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
-};
+/**
+ * Localised, for the reason `layers/page.tsx:12-19` already states: a static
+ * English export here gives a Japanese reader an English title on the index and
+ * a Japanese one on every entry page, and the inconsistency is the tell. This
+ * was the last public Atlas route still breaking that rule — its two siblings
+ * (`layers/page.tsx`, `layers/[id]/page.tsx`) had both been converted. The page
+ * reads the locale cookie anyway, so it costs nothing.
+ */
+export async function generateMetadata(): Promise<Metadata> {
+  const locale = await getPublicLocale();
+  return locale === "ja"
+    ? {
+        title: "量子アトラス",
+        description:
+          "回路とアルゴリズムの公開研究データベース。各項目について、出典、どこまで検証されているか、そしてエクスポートの境界を明示しています。",
+      }
+    : {
+        title: "The Quantum Atlas",
+        description:
+          "A public Leona Quantum research database for circuits and algorithms with evidence, sources, and export boundaries visible.",
+      };
+}
 
 /**
  * The Atlas browse page: a preface, then the controls over the corpus.
@@ -84,17 +102,26 @@ export default async function RepositoryPage({
   return (
     <PublicSite activePath="/repository" className="mj-repository-site" locale={locale} showLanguageToggle>
       <section className="mj-repository-index-hero" aria-labelledby="repository-heading">
-        <h1 id="repository-heading">{isJapanese ? "公開研究データベース" : "Public research database"}</h1>
-        <p>
-          {isJapanese
-            ? "回路とアルゴリズムを検索し、仕組み、シミュレーション結果、コード、出典、ライセンス、どこまで検証済みかを確認できます。"
-            : "Search circuits and algorithms, then inspect how they work, what simulation shows, which code is available, and where source, license, and verification boundaries begin."}
-        </p>
-        {/* Between the one-line hero and the controls, and it is deliberately
-            above them: a reader who scrolls past it has still been told what
-            these records are, and a reader who starts filtering does not need
-            it. Rendered from `entries`, which is already in hand, so every
-            number on it is counted rather than typed. */}
+        {/* > *"Atlas page title card something like 'The Quantum Atlas'."*
+            > — owner, session 110
+            >
+            > *"the atlas description can be 1-2 short sentences."*
+
+            The descriptive sentence that used to sit here is gone rather than
+            shortened, and the box below is open rather than shut: two
+            descriptions on one page is one that will drift, and the box is the
+            one the owner specified the length of. `generateMetadata`'s
+            description is unaffected — that is a different reader (a search
+            result) and it is not on the page. */}
+        <h1 id="repository-heading">{isJapanese ? "量子アトラス" : "The Quantum Atlas"}</h1>
+        {/* Above the kinds and therefore above the search bar, which is the
+            order the owner specified: what this is, then which kinds of record
+            there are, then the controls. */}
+        <AboutTheAtlas locale={locale} />
+        {/* The four kinds, as links into their `?category=` sections. Its
+            counted paragraphs went in session 110; what remains is navigation,
+            and it still takes `entries` because the corpus is what decides
+            which kinds exist. */}
         <RepositoryPreface entries={entries} locale={locale} />
         <AtlasContentSwitch
           entries={entries}

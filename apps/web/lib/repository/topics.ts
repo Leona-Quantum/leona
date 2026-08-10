@@ -67,6 +67,15 @@
 // Same shape as `deriveVerificationMethods` in ../public-repository.ts, which
 // has classified the verification tier this way since session 60.
 
+// The only import in this file, and it is one predicate. `families.ts` imports
+// nothing at all, so this cannot become a cycle; and the alternative — a second
+// copy of the `-Nq` pattern here — is the drift this directory has already paid
+// for twice (see `PUBLIC_REPOSITORY_CATEGORY_IDS`).
+// The `.ts` is load-bearing: `node --test` resolves specifiers literally, and an
+// extensionless one here takes every test that imports this module down with a
+// module-not-found — which is how the extension got left off once already.
+import { parseWidthSlug } from "./families.ts";
+
 export type TopicFacet = "role" | "method" | "domain";
 
 export interface Topic {
@@ -537,6 +546,31 @@ export function deriveTopics(evidence: TopicEvidence): TopicId[] {
   for (const rule of [...FAMILY_RULES, ...REFINEMENT_RULES]) {
     if (!matches(rule, evidence)) continue;
     for (const topic of rule.topics) found.add(topic);
+  }
+  // A width-family member is a benchmark circuit whatever its family says.
+  //
+  // `FAMILY_RULES` is exhaustive over families and every rule assigns exactly one
+  // role, so the one thing it cannot express is a family whose members do not
+  // all share a role — and there is exactly one such family. **"Quantum machine
+  // learning" holds nine records: `quantum-kernel-svm`, which is an algorithm
+  // reference, and `benchmark-phase-feature-map-{2,3,4,5,6,8,12,16}q`, which are
+  // one circuit at eight widths.** All nine were labelled `algorithm-reference`,
+  // so the browse chip said "Algorithm" on eight yardsticks, `?topic=` returned
+  // them, and the layer surface counted them as records a map node could anchor.
+  //
+  // The correction is not a per-slug override, because that is eight hand-written
+  // labels a repopulation would discard. `parseWidthSlug` is the same predicate
+  // `families.ts` folds the browse list with, and it is the definition of the
+  // thing: a `-16q` sibling of a `-2q` is published to be measured against.
+  // Measured before adding this — every one of the 120 width-suffixed slugs is a
+  // family member and no family member lacks the suffix — so this reclassifies
+  // exactly the eight and touches nothing else.
+  //
+  // It REPLACES rather than adds, unlike `REFINEMENT_RULES`, because a role is
+  // exactly-one and two roles is the same failure as none.
+  if (parseWidthSlug(evidence.slug) !== null) {
+    for (const role of ROLE_IDS) found.delete(role as TopicId);
+    found.add("benchmark-circuit");
   }
   return PUBLIC_REPOSITORY_TOPICS.filter((topic) => found.has(topic.id)).map((topic) => topic.id);
 }

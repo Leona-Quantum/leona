@@ -7,10 +7,46 @@ one. Components are pure renderers of typed data — no fetching, no run state �
 stored-run replay renders identically and fixtures drive every state.
 All states visible at `/dev/ui` (route fixtures; dev/CI only).
 
-**Permitted animations, and nothing else.** The agent-activity running-ring fade
-(border-color `--accent`↔transparent @ 1.2 s), stage-rail state transitions
-(150 ms ease-out on opacity/color — `--dur-hover` + `--ease-out-ui`), skeleton shimmer,
-toast enter/exit, and the owner-requested live prose reveal on `/run` (2026-07-13).
+## Permitted animations
+
+**This section is the closed list, and it is the only copy of it.** It used to be three:
+this file, `packages/ts/ui/AGENTS.md`, and the header comment of `packages/ts/ui/styles.css`
+— five items, five *different* items, and four items respectively. Meanwhile the stylesheet
+was running eleven `@keyframes`, four of which appeared on no list at all. The other two
+copies now point here. `scripts/check-permitted-animations.mjs` runs in `lint` and
+reconciles this table against the CSS **in both directions**: a `@keyframes` with no row
+fails, and a row naming a keyframe nobody runs fails. A list nobody checks is not a rule,
+it is a comment about one.
+
+<!-- permitted-animations:start -->
+
+| keyframes | where it runs | duration | under `prefers-reduced-motion: reduce` |
+|---|---|---|---|
+| `mj-skeleton-shimmer` | `.mj-skeleton` | 1.5 s | off |
+| `mj-archive-notice-in` | `.mj-archive-notice` | 160 ms | off |
+| `mj-agent-activity-pulse` | `.mj-agent-activity-live-dot` | 1.2 s | off |
+| `mj-agent-text-shimmer` | agent-activity head, while busy | 2.4 s | off |
+| `mj-chat-caret-blink` | `.mj-chat-caret` | 900 ms | off |
+| `mj-chat-loading` | `.mj-chat-loading-dot` | 1.1 s | off |
+| `mj-ring-fade` | activity meta ring, running rail dot | 1.2 s | off |
+| `mj-surface-in` | Atlas arriving document | 260 ms | replaced by `mj-surface-fade-in` |
+| `mj-surface-out` | Atlas leaving document | 180 ms | replaced by `mj-surface-fade-out` |
+| `mj-surface-fade-in` | Atlas arriving, reduced motion | 120 ms | is the replacement |
+| `mj-surface-fade-out` | Atlas leaving, reduced motion | 120 ms | is the replacement |
+| `mj-converge-grow` | a converge lane/stub that was not there before | 260 ms | off |
+
+<!-- permitted-animations:end -->
+
+**Transitions are permitted where they carry continuity, not decoration.** Stage-rail state
+(150 ms ease-out on opacity/color — `--dur-hover` + `--ease-out-ui`), toast enter/exit, and
+— added 2026-08-09, owner-requested — the Atlas converge canvas, where the geometry itself
+transitions: `d`, `cx`, `cy`, `r`, `transform` and `opacity` on the drawn shapes, ≤320 ms,
+so that opening a line moves the circles apart instead of cutting to a new picture. That one
+is a transition and not a view transition **because it cannot be one**: `view-transition-name`
+on an element *inside* an `<svg>` is never captured by the browser (measured — the computed
+style keeps the name and no group is ever built, so it fails silently), and the only shape on
+this canvas that can carry a view-transition name is the root `<svg>` itself.
+
 **No parallax. No springs.** The prose reveal is opt-in (`RunView` receives `animateText`),
 presentation-only, and `prefers-reduced-motion` shows the complete text immediately.
 Static fixtures keep it off so screenshot and a11y stories remain deterministic.
