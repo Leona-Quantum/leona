@@ -7,7 +7,7 @@ import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { resolveOpenIds } from "../../../lib/repository/converge-layout";
 import { parseViewport } from "../../../lib/repository/canvas-viewport";
 import { cardExists } from "../../../lib/repository/card-content";
-import { parseCardId } from "../../../lib/repository/map-card";
+import { parseCardId, SECTION_PARAM } from "../../../lib/repository/map-card";
 import { parseAboutSection } from "../../../lib/repository/map-about";
 import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
 import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
@@ -201,6 +201,11 @@ export default async function RepositoryLayersPage({
         // disagreement that shows up as a wrong number rather than as a broken
         // page.
         card={parseCardId(params.card, (id) => cardExists(cardInput, id))}
+        // Which of that card's sections is showing. Passed raw and resolved in
+        // `ConvergeView`, which is the only component that knows what sections
+        // this card has — validating it here would mean assembling the card
+        // twice, and two answers to "is this a section of it" that can disagree.
+        cardSection={one(params, SECTION_PARAM)}
         droppedOpen={openSet.dropped}
         // Resolved on the server so the figure arrives already panned and
         // scaled: a shared link lands where its sender was standing even with
