@@ -93,6 +93,7 @@
 // the same estimator the other canvases use, so nothing here needs a DOM. What a
 // reader has opened is in the URL (`?open=`), never in component state — a
 // control that only works after hydration has no address (D88.2).
+import { ownCardId } from "./card-content.ts";
 import { withCard } from "./map-card.ts";
 import { estimateTextWidth, fitLabel, LANE_FONT_PX, stateHref } from "./process-layout.ts";
 import {
@@ -714,6 +715,17 @@ export interface ConvergeLane {
    */
   nameless: boolean;
   /**
+   * The method whose own stretch this is, or null. See `PlanStrand.own`.
+   *
+   * Carried to the renderer so the phrase this lane draws can be styled as the
+   * note it is rather than as a name — the same footnote treatment session 112
+   * gave an opened stub's label, and for the same reason: it sits beside real
+   * names and must not compete with them.
+   */
+  own: string | null;
+  /** The node this lane draws, open or not. See `PlanStrand.draws`. */
+  draws: string | null;
+  /**
    * This is a **bone**: a line the reader opened *across* into branches, which
    * keeps a clear middle, wears its own name there, and is drawn thick and
    * dotted so it can be found and clicked to collapse.
@@ -1321,6 +1333,35 @@ interface PlanStrand {
    * name is now written on the bone or the exoskeleton above it.
    */
   nameless: boolean;
+  /**
+   * The node this lane **draws**, whether or not it can be opened.
+   *
+   * **Not `id`, and the difference is 34 of the 63 methods.** `id` answers *what
+   * does `?open=` name here*, and `planForMethod` sets it to null on a leaf —
+   * a method with nothing recorded inside has no open control, so there is
+   * nothing for `?open=` to name. But the lane still carries that method's name,
+   * still links to its page, and a reader clicking it is asking about the
+   * method. Reading `id` for the card therefore left every leaf's name pointed
+   * off the map, silently, while the branches beside it opened cards.
+   *
+   * Null on exactly two shapes, both of which draw nobody's name: the run of
+   * named hops, and the stretch a method performs itself — and the second one
+   * has `own` instead.
+   */
+  draws: string | null;
+  /**
+   * The method whose **own** stretch this is, or null on every other strand.
+   *
+   * A separate field from `nameless`, and the third time this file has had to
+   * split one flag that was doing two jobs. `nameless` says *"do not draw
+   * `label`, something else on the canvas already does"*; this says *"this hop is
+   * a method doing its own work and no slot covers it"*. They coincide on
+   * today's graph and they are not the same claim: the day a second kind of
+   * strand borrows a name already drawn, `nameless` will be true on something
+   * that is nobody's own stretch, and the label and the card would both follow it
+   * there.
+   */
+  own: string | null;
   opensInto: OpensInto | null;
   slots: readonly string[];
   interior: readonly string[];
@@ -1529,6 +1570,8 @@ function chainInside(
       openable: false,
       composite: false,
       nameless: true,
+      draws: null,
+      own: method.id,
       opensInto: null,
       slots: [],
       interior: [],
@@ -1596,6 +1639,8 @@ function planForSlot(
     openable: canOpen,
     composite: false,
     nameless: false,
+    draws: node === null ? null : slotId,
+    own: null,
     opensInto: methods.length > 0 ? "ways" : null,
     slots: [slotId],
     interior: [],
@@ -1686,6 +1731,9 @@ function planForMethod(
     openable: canOpen && holds,
     composite: false,
     nameless: false,
+    // The method, always — `id` above goes null on a leaf and the name does not.
+    draws: method.id,
+    own: null,
     opensInto: holds ? "steps" : null,
     slots: [],
     interior: [],
@@ -1775,6 +1823,8 @@ function planForLane(
     openable: false,
     composite: true,
     nameless: false,
+    draws: null,
+    own: null,
     opensInto: "steps",
     slots: named.slots,
     interior: lane.interior,
@@ -1967,6 +2017,24 @@ function feedSpread(
   if (feeds.length === 0) return 0;
   const widest = Math.max(...feeds.map(feedWidth));
   return Math.max(0, (feeds.length + 1) * (widest + 4) - already);
+}
+
+/**
+ * What the map writes on the stretch a method performs itself.
+ *
+ * **Not a name and deliberately not one.** The two failures this string sits
+ * between are one name printed twice (session 104) and no name at all (session
+ * 113, the owner: *"I am seeing some blank processes — i would like them
+ * labeled"*). A phrase describing the *kind* of hop escapes both: it repeats
+ * nothing, and it is not blank.
+ *
+ * **The same words the card already uses**, `map-card-panel.tsx`'s `itself`, so a
+ * reader who clicks it reads back what they clicked. One string in two places is
+ * the duplication rule's exception it names itself: they are one fact, and the
+ * test below asserts they stay equal rather than trusting this comment.
+ */
+export function ownStepName(locale: PublicLocale): string {
+  return locale === "ja" ? "手法そのもの" : "the method itself";
 }
 
 function measure(strand: PlanStrand, depth: number): Measure {
@@ -2281,10 +2349,28 @@ function place(
       ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
       : peak.y - bandHalf - M.labelLift;
 
-  // A run of named hops is the one lane that keeps drawing nothing, and for a
-  // different reason from the one this commit removed: its label is `A → B`, and
-  // that string on the canvas is the coined composite the owner refused. It is
-  // drawn as its hops, and the hops carry the names.
+  // Two lanes keep drawing nothing, for two different reasons.
+  //
+  // A **run of named hops**: its label is `A → B`, which on the canvas is the
+  // coined composite the owner refused. It is drawn as its hops and the hops
+  // carry the names.
+  //
+  // A **method's own stretch**: its label is the method's name, already drawn on
+  // the line above it. The owner asked for this one to be labelled in session
+  // 113 — *"I am seeing some blank processes — i would like them labeled"* — and
+  // a standing phrase was built for it (`ownStepName`, the wording the card has
+  // used since W5 slice one, which is not a name and so cannot be the duplicate
+  // session 104 removed). **It is not drawn yet, and the reason is measured:**
+  // writing it here puts 4 opened-against-shut name overlaps back on the canvas,
+  // at 10px and at 12px alike, so the collision is where the phrase sits rather
+  // than how wide it is. `no two names overlap on an opened figure either` pins
+  // all three kinds at 0 and that test's own comment records these same 4 as
+  // what session 104 removed by silencing this hop.
+  //
+  // So the label waits for a placement rule, and the hop is named on hover, in
+  // its `<title>`, to a screen reader and on its own card meanwhile — see
+  // `cardHref` below, which is what makes it separately clickable from its
+  // parent, the other half of what he asked for.
   const fitted =
     strand.composite || strand.nameless
       ? { text: "", truncated: false }
@@ -2341,16 +2427,26 @@ function place(
     fullLabel: strand.label,
     shortLabel: strand.shortLabel,
     labelTruncated: fitted.truncated,
-    // `strand.id`, not the lane's node-page href: the card is addressed by node
-    // id, and a lane that is nobody's node — the stretch a method performs
-    // itself — has none. Those fall back to `href` and keep going to the
-    // method's page, unchanged.
+    // Two addresses, because there are two kinds of thing here.
+    //
+    // A lane that **is** a node opens that node's card. A lane that is a
+    // method's own stretch is nobody's node — that is why `strand.id` is null on
+    // it — and opens `own:<methodId>`, which is a card about the stretch rather
+    // than about the method. Pointing it at the method's own card would answer a
+    // question the reader did not ask: they clicked the piece *inside* the line,
+    // and the line is already one click away.
     cardHref:
-      context.cardBase !== null && strand.id !== null
-        ? withCard(context.cardBase, strand.id)
-        : null,
+      context.cardBase === null
+        ? null
+        : strand.own !== null
+          ? withCard(context.cardBase, ownCardId(strand.own))
+          : strand.draws !== null
+            ? withCard(context.cardBase, strand.draws)
+            : null,
     composite: strand.composite,
     nameless: strand.nameless,
+    own: strand.own,
+    draws: strand.draws,
     bone: onBone,
     labelX: peak.x,
     labelY,
