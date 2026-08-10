@@ -563,7 +563,18 @@ function Lines({
     diagram.feeds.filter((feed) => feed.parentKey === lane.key);
   return (
     <ol className="mj-converge-lanes">
-      {diagram.lanes.map((lane) => (
+      {/* **A lane whose name is already on the page is not read out a second
+          time.** `nameless` means exactly that — the canvas suppresses the
+          drawing for it — and this list was restating it anyway: 117 own-stretch
+          lanes said their method's name straight after the method said it, and
+          since session 118 an open ingredient's fan base would have said the
+          stub's. A reader who cannot see the picture got the repeat the owner
+          reported, twice over, with no shape beside it to explain why.
+
+          Skipping costs no destination: an own stretch links to its method's
+          page, which is the row above it, and a fan base links to its slot,
+          which is the stub listed under its own parent. */}
+      {diagram.lanes.filter((lane) => !lane.nameless).map((lane) => (
         <li
           key={lane.key}
           className={`mj-converge-lane-row--${lane.standing}`}
