@@ -3110,14 +3110,25 @@ def _render(system: str, user: str) -> RenderedPrompt:
     return RenderedPrompt(system=system, user=user)
 
 
-def render_intent_prompt(task_prompt: str) -> RenderedPrompt:
+def render_intent_prompt(task_prompt: str, *, has_source_code: bool = False) -> RenderedPrompt:
     """Classify one message as a task to execute or a message to answer.
 
-    Only the current message is shown, deliberately. Conversation history makes
-    the classifier sticky: after one execute turn every follow-up ("thanks",
-    "why did that work?") reads as part of the task and routes to execute.
+    Only the current message and bounded attachment metadata are shown,
+    deliberately. Conversation history makes the classifier sticky: after one
+    execute turn every follow-up ("thanks", "why did that work?") reads as part
+    of the task and routes to execute.
     """
-    return _render(INTENT_ROUTER_SYSTEM_PROMPT, f"User message:\n{task_prompt}")
+    source_context = (
+        "Submission context: selected-framework source code is attached. Treat the "
+        "attachment as authoritative input when the user refers to this code or circuit, "
+        "but do not turn an explanation question into an execution request.\n"
+        if has_source_code
+        else ""
+    )
+    return _render(
+        INTENT_ROUTER_SYSTEM_PROMPT,
+        f"{source_context}User message:\n{task_prompt}",
+    )
 
 
 def render_conversation_title_prompt(
