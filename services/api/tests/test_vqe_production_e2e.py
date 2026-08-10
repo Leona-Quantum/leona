@@ -310,131 +310,119 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                 for item in components_response.json()["components"]
                 if item["semantic_key"] == "optimizer.slsqp.v1"
             )
-            slsqp_response = await client.post(
-                "/v1/atlas/workflows/swaps",
-                headers={"Idempotency-Key": "private-mvp-slsqp-swap"},
-                json={
-                    "baseline_workflow_artifact_version_id": os.environ[
-                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
-                    ],
-                    "baseline_template_key": "workflow.h2.fixed_excitation.v1",
-                    "changed_role": "parameter_optimizer",
-                    "candidate_component_semantic_key": "optimizer.slsqp.v1",
-                    "candidate_component_spec_sha256": slsqp["normalized_spec_sha256"],
-                    "configuration": {},
-                    "evaluator_provider": "qiskit",
-                },
-            )
-            assert slsqp_response.status_code == 201, slsqp_response.text
-            slsqp_workflow = slsqp_response.json()
-            assert slsqp_workflow["execution_status"] == "private_qualification_candidate"
-            assert slsqp_workflow["visibility"] == "private"
-
-            slsqp_experiment_response = await _create_experiment(
-                client=client,
-                workflow_artifact_version_id=slsqp_workflow["workflow_artifact_version_id"],
-                idempotency_key="private-mvp-slsqp-experiment",
-            )
-            assert slsqp_experiment_response.status_code == 201, slsqp_experiment_response.text
-            slsqp_experiment = slsqp_experiment_response.json()
-            slsqp_optimizer = next(
-                item
-                for item in slsqp_experiment["scientific_spec_json"]["component_bindings"]
-                if item["role"] == "parameter_optimizer"
-            )
-            assert slsqp_optimizer["component_semantic_key"] == "optimizer.slsqp.v1"
-
-            cobyla_response = await client.post(
-                "/v1/atlas/workflows/swaps",
-                headers={"Idempotency-Key": "private-mvp-cobyla-swap"},
-                json={
-                    "baseline_workflow_artifact_version_id": os.environ[
-                        "MAJORANA_VQE_E2E_WORKFLOW_ID"
-                    ],
-                    "baseline_template_key": "workflow.h2.fixed_excitation.v1",
-                    "changed_role": "parameter_optimizer",
-                    "candidate_component_semantic_key": "optimizer.cobyla.v1",
-                    "candidate_component_spec_sha256": cobyla["normalized_spec_sha256"],
-                    "configuration": {},
-                    "evaluator_provider": "qiskit",
-                },
-            )
-            assert cobyla_response.status_code == 201, cobyla_response.text
-            cobyla_workflow = cobyla_response.json()
-            assert cobyla_workflow["execution_status"] == "private_qualification_candidate"
-            assert cobyla_workflow["visibility"] == "private"
-
-            cobyla_experiment_response = await _create_experiment(
-                client=client,
-                workflow_artifact_version_id=cobyla_workflow["workflow_artifact_version_id"],
-                idempotency_key="private-mvp-cobyla-experiment",
-            )
-            assert cobyla_experiment_response.status_code == 201, cobyla_experiment_response.text
-            cobyla_experiment = cobyla_experiment_response.json()
-            cobyla_optimizer = next(
-                item
-                for item in cobyla_experiment["scientific_spec_json"]["component_bindings"]
-                if item["role"] == "parameter_optimizer"
-            )
-            assert cobyla_optimizer["component_semantic_key"] == "optimizer.cobyla.v1"
-
+            optimizer_components = {"slsqp": slsqp, "cobyla": cobyla}
+            optimizer_workflows: dict[str, dict[str, dict]] = {
+                "slsqp": {},
+                "cobyla": {},
+            }
+            optimizer_experiments: dict[str, dict[str, dict]] = {
+                "slsqp": {},
+                "cobyla": {},
+            }
             executions: dict[str, dict] = {}
             for framework in ("qiskit", "pennylane"):
-                executions[f"slsqp_{framework}"] = await _execute_and_finish(
-                    client=client,
-                    factory=factory,
-                    experiment_id=slsqp_experiment["id"],
-                    framework=framework,
-                    label="slsqp",
+                for optimizer_name, component in optimizer_components.items():
+                    workflow_response = await client.post(
+                        "/v1/atlas/workflows/swaps",
+                        headers={
+                            "Idempotency-Key": (f"private-mvp-{optimizer_name}-swap-{framework}")
+                        },
+                        json={
+                            "baseline_workflow_artifact_version_id": os.environ[
+                                "MAJORANA_VQE_E2E_WORKFLOW_ID"
+                            ],
+                            "baseline_template_key": "workflow.h2.fixed_excitation.v1",
+                            "changed_role": "parameter_optimizer",
+                            "candidate_component_semantic_key": (f"optimizer.{optimizer_name}.v1"),
+                            "candidate_component_spec_sha256": component["normalized_spec_sha256"],
+                            "configuration": {},
+                            "evaluator_provider": framework,
+                        },
+                    )
+                    assert workflow_response.status_code == 201, workflow_response.text
+                    workflow = workflow_response.json()
+                    assert workflow["execution_status"] == ("private_qualification_candidate")
+                    assert workflow["visibility"] == "private"
+                    optimizer_workflows[optimizer_name][framework] = workflow
+
+                    experiment_response = await _create_experiment(
+                        client=client,
+                        workflow_artifact_version_id=workflow["workflow_artifact_version_id"],
+                        idempotency_key=(f"private-mvp-{optimizer_name}-experiment-{framework}"),
+                    )
+                    assert experiment_response.status_code == 201, experiment_response.text
+                    experiment = experiment_response.json()
+                    optimizer = next(
+                        item
+                        for item in experiment["scientific_spec_json"]["component_bindings"]
+                        if item["role"] == "parameter_optimizer"
+                    )
+                    assert optimizer["component_semantic_key"] == (f"optimizer.{optimizer_name}.v1")
+                    optimizer_experiments[optimizer_name][framework] = experiment
+
+                    executions[f"{optimizer_name}_{framework}"] = await _execute_and_finish(
+                        client=client,
+                        factory=factory,
+                        experiment_id=experiment["id"],
+                        framework=framework,
+                        label=optimizer_name,
+                    )
+
+            # Provider selection is execution metadata. It must not alter the
+            # portable scientific specification being compared.
+            for optimizer_name in optimizer_components:
+                assert (
+                    optimizer_experiments[optimizer_name]["qiskit"]["scientific_spec_json"]
+                    == optimizer_experiments[optimizer_name]["pennylane"]["scientific_spec_json"]
                 )
-                executions[f"cobyla_{framework}"] = await _execute_and_finish(
-                    client=client,
-                    factory=factory,
-                    experiment_id=cobyla_experiment["id"],
-                    framework=framework,
-                    label="cobyla",
-                )
 
-            migration_response = await client.post(
-                "/v1/atlas/workflows/ansatz-migrations",
-                headers={"Idempotency-Key": "phase78-uccsd-migration"},
-                json={
-                    "baseline_workflow_artifact_version_id": slsqp_workflow[
-                        "workflow_artifact_version_id"
-                    ],
-                    "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
-                    "evaluator_provider": "qiskit",
-                },
-            )
-            assert migration_response.status_code == 201, migration_response.text
-            migration = migration_response.json()
-            assert migration["execution_status"] == "private_qualification_candidate"
-            assert migration["visibility"] == "private"
-
-            uccsd_experiment_response = await _create_experiment(
-                client=client,
-                workflow_artifact_version_id=migration["workflow_artifact_version_id"],
-                idempotency_key="phase78-uccsd-experiment",
-            )
-            assert uccsd_experiment_response.status_code == 201, uccsd_experiment_response.text
-            uccsd_experiment = uccsd_experiment_response.json()
-            uccsd_bindings = {
-                item["role"]: item
-                for item in uccsd_experiment["scientific_spec_json"]["component_bindings"]
-            }
-            assert uccsd_bindings["ansatz"]["component_semantic_key"] == "ansatz.uccsd.v1"
-            assert (
-                uccsd_bindings["compilation_backend"]["component_semantic_key"]
-                == "compilation.h2.uccsd.canonical_logical.v1"
-            )
-            assert {
-                uccsd_bindings[role]["applicability"]
-                for role in ("operator_pool", "search_selection", "growth_batching")
-            } == {"not_applicable"}
-
+            migrations: dict[str, dict] = {}
+            uccsd_experiments: dict[str, dict] = {}
             uccsd_executions: dict[str, dict] = {}
             uccsd_artifacts: dict[str, dict] = {}
             for framework in ("qiskit", "pennylane"):
+                migration_response = await client.post(
+                    "/v1/atlas/workflows/ansatz-migrations",
+                    headers={"Idempotency-Key": f"phase78-uccsd-migration-{framework}"},
+                    json={
+                        "baseline_workflow_artifact_version_id": (
+                            optimizer_workflows["slsqp"][framework]["workflow_artifact_version_id"]
+                        ),
+                        "migration": "h2_fixed_excitation_slsqp_to_uccsd_slsqp",
+                        "evaluator_provider": framework,
+                    },
+                )
+                assert migration_response.status_code == 201, migration_response.text
+                migration = migration_response.json()
+                assert migration["execution_status"] == ("private_qualification_candidate")
+                assert migration["visibility"] == "private"
+                migrations[framework] = migration
+
+                uccsd_experiment_response = await _create_experiment(
+                    client=client,
+                    workflow_artifact_version_id=migration["workflow_artifact_version_id"],
+                    idempotency_key=f"phase78-uccsd-experiment-{framework}",
+                )
+                assert uccsd_experiment_response.status_code == 201, uccsd_experiment_response.text
+                uccsd_experiment = uccsd_experiment_response.json()
+                uccsd_experiments[framework] = uccsd_experiment
+                uccsd_bindings = {
+                    item["role"]: item
+                    for item in uccsd_experiment["scientific_spec_json"]["component_bindings"]
+                }
+                assert uccsd_bindings["ansatz"]["component_semantic_key"] == ("ansatz.uccsd.v1")
+                assert (
+                    uccsd_bindings["compilation_backend"]["component_semantic_key"]
+                    == "compilation.h2.uccsd.canonical_logical.v1"
+                )
+                assert {
+                    uccsd_bindings[role]["applicability"]
+                    for role in (
+                        "operator_pool",
+                        "search_selection",
+                        "growth_batching",
+                    )
+                } == {"not_applicable"}
                 uccsd_executions[framework] = await _execute_and_finish(
                     client=client,
                     factory=factory,
@@ -454,60 +442,73 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                 assert uccsd_artifacts[framework]["visibility"] == "private"
                 assert uccsd_artifacts[framework]["publication"] == "blocked"
 
-            hardware_efficient_migration_response = await client.post(
-                "/v1/atlas/workflows/ansatz-migrations",
-                headers={"Idempotency-Key": "phase79-hardware-efficient-migration"},
-                json={
-                    "baseline_workflow_artifact_version_id": migration[
-                        "workflow_artifact_version_id"
-                    ],
-                    "migration": "h2_uccsd_slsqp_to_hardware_efficient_slsqp",
-                    "evaluator_provider": "qiskit",
-                },
-            )
-            assert hardware_efficient_migration_response.status_code == 201, (
-                hardware_efficient_migration_response.text
-            )
-            hardware_efficient_migration = hardware_efficient_migration_response.json()
             assert (
-                hardware_efficient_migration["execution_status"]
-                == "private_qualification_candidate"
+                uccsd_experiments["qiskit"]["scientific_spec_json"]
+                == uccsd_experiments["pennylane"]["scientific_spec_json"]
             )
-            assert hardware_efficient_migration["visibility"] == "private"
 
-            hardware_efficient_experiment_response = await _create_experiment(
-                client=client,
-                workflow_artifact_version_id=hardware_efficient_migration[
-                    "workflow_artifact_version_id"
-                ],
-                idempotency_key="phase79-hardware-efficient-experiment",
-            )
-            assert hardware_efficient_experiment_response.status_code == 201, (
-                hardware_efficient_experiment_response.text
-            )
-            hardware_efficient_experiment = hardware_efficient_experiment_response.json()
-            hardware_efficient_bindings = {
-                item["role"]: item
-                for item in hardware_efficient_experiment["scientific_spec_json"][
-                    "component_bindings"
-                ]
-            }
-            assert (
-                hardware_efficient_bindings["ansatz"]["component_semantic_key"]
-                == "ansatz.hardware_efficient_ry_cx.v1"
-            )
-            assert (
-                hardware_efficient_bindings["compilation_backend"]["component_semantic_key"]
-                == "compilation.h2.hardware_efficient_ry_cx.canonical_logical.v1"
-            )
-            assert {
-                hardware_efficient_bindings[role]["applicability"]
-                for role in ("operator_pool", "search_selection", "growth_batching")
-            } == {"not_applicable"}
-
+            hardware_efficient_migrations: dict[str, dict] = {}
+            hardware_efficient_experiments: dict[str, dict] = {}
             hardware_efficient_executions: dict[str, dict] = {}
             hardware_efficient_artifacts: dict[str, dict] = {}
             for framework in ("qiskit", "pennylane"):
+                hardware_efficient_migration_response = await client.post(
+                    "/v1/atlas/workflows/ansatz-migrations",
+                    headers={
+                        "Idempotency-Key": (f"phase79-hardware-efficient-migration-{framework}")
+                    },
+                    json={
+                        "baseline_workflow_artifact_version_id": migrations[framework][
+                            "workflow_artifact_version_id"
+                        ],
+                        "migration": ("h2_uccsd_slsqp_to_hardware_efficient_slsqp"),
+                        "evaluator_provider": framework,
+                    },
+                )
+                assert hardware_efficient_migration_response.status_code == 201, (
+                    hardware_efficient_migration_response.text
+                )
+                hardware_efficient_migration = hardware_efficient_migration_response.json()
+                assert hardware_efficient_migration["execution_status"] == (
+                    "private_qualification_candidate"
+                )
+                assert hardware_efficient_migration["visibility"] == "private"
+                hardware_efficient_migrations[framework] = hardware_efficient_migration
+
+                hardware_efficient_experiment_response = await _create_experiment(
+                    client=client,
+                    workflow_artifact_version_id=hardware_efficient_migration[
+                        "workflow_artifact_version_id"
+                    ],
+                    idempotency_key=(f"phase79-hardware-efficient-experiment-{framework}"),
+                )
+                assert hardware_efficient_experiment_response.status_code == 201, (
+                    hardware_efficient_experiment_response.text
+                )
+                hardware_efficient_experiment = hardware_efficient_experiment_response.json()
+                hardware_efficient_experiments[framework] = hardware_efficient_experiment
+                hardware_efficient_bindings = {
+                    item["role"]: item
+                    for item in hardware_efficient_experiment["scientific_spec_json"][
+                        "component_bindings"
+                    ]
+                }
+                assert (
+                    hardware_efficient_bindings["ansatz"]["component_semantic_key"]
+                    == "ansatz.hardware_efficient_ry_cx.v1"
+                )
+                assert (
+                    hardware_efficient_bindings["compilation_backend"]["component_semantic_key"]
+                    == "compilation.h2.hardware_efficient_ry_cx.canonical_logical.v1"
+                )
+                assert {
+                    hardware_efficient_bindings[role]["applicability"]
+                    for role in (
+                        "operator_pool",
+                        "search_selection",
+                        "growth_batching",
+                    )
+                } == {"not_applicable"}
                 hardware_efficient_executions[framework] = await _execute_and_finish(
                     client=client,
                     factory=factory,
@@ -528,34 +529,45 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                 assert hardware_efficient_artifacts[framework]["visibility"] == "private"
                 assert hardware_efficient_artifacts[framework]["publication"] == "blocked"
 
-            fixed_component_digests = {
-                item["role"]: item["component_spec_sha256"]
-                for item in slsqp_experiment["scientific_spec_json"]["component_bindings"]
-                if item["role"] != "parameter_optimizer"
-            }
-            comparison_response = await client.post(
-                "/v1/vqe/controlled-comparisons",
-                headers={"Idempotency-Key": "private-mvp-slsqp-cobyla-comparison"},
-                json={
-                    "baseline_workflow_artifact_version_id": slsqp_workflow[
-                        "workflow_artifact_version_id"
-                    ],
-                    "candidate_workflow_artifact_version_id": cobyla_workflow[
-                        "workflow_artifact_version_id"
-                    ],
-                    "changed_role": "parameter_optimizer",
-                    "fixed_component_digests": fixed_component_digests,
-                    "baseline_configuration": {"algorithm": "scipy_slsqp"},
-                    "candidate_configuration": {"algorithm": "scipy_cobyla"},
-                    "metric_protocol_sha256": fixed_component_digests["evaluation_protocol"],
-                    "budget_protocol_sha256": fixed_component_digests["stopping_protocol"],
-                },
+            assert (
+                hardware_efficient_experiments["qiskit"]["scientific_spec_json"]
+                == hardware_efficient_experiments["pennylane"]["scientific_spec_json"]
             )
-            assert comparison_response.status_code == 201, comparison_response.text
-            comparison = comparison_response.json()
+
+            comparisons: dict[str, dict] = {}
             comparison_runs: dict[str, dict] = {}
             artifacts: dict[str, dict] = {}
             for framework in ("qiskit", "pennylane"):
+                fixed_component_digests = {
+                    item["role"]: item["component_spec_sha256"]
+                    for item in optimizer_experiments["slsqp"][framework]["scientific_spec_json"][
+                        "component_bindings"
+                    ]
+                    if item["role"] != "parameter_optimizer"
+                }
+                comparison_response = await client.post(
+                    "/v1/vqe/controlled-comparisons",
+                    headers={
+                        "Idempotency-Key": (f"private-mvp-slsqp-cobyla-comparison-{framework}")
+                    },
+                    json={
+                        "baseline_workflow_artifact_version_id": (
+                            optimizer_workflows["slsqp"][framework]["workflow_artifact_version_id"]
+                        ),
+                        "candidate_workflow_artifact_version_id": (
+                            optimizer_workflows["cobyla"][framework]["workflow_artifact_version_id"]
+                        ),
+                        "changed_role": "parameter_optimizer",
+                        "fixed_component_digests": fixed_component_digests,
+                        "baseline_configuration": {"algorithm": "scipy_slsqp"},
+                        "candidate_configuration": {"algorithm": "scipy_cobyla"},
+                        "metric_protocol_sha256": fixed_component_digests["evaluation_protocol"],
+                        "budget_protocol_sha256": fixed_component_digests["stopping_protocol"],
+                    },
+                )
+                assert comparison_response.status_code == 201, comparison_response.text
+                comparison = comparison_response.json()
+                comparisons[framework] = comparison
                 run_response = await client.post(
                     f"/v1/vqe/controlled-comparisons/{comparison['id']}/runs",
                     json={
@@ -606,14 +618,15 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
         ) as reopened_client:
             reopened_me = await reopened_client.get("/v1/me")
             assert reopened_me.status_code == 200, reopened_me.text
-            reopened_comparison_response = await reopened_client.get(
-                f"/v1/vqe/controlled-comparisons/{comparison['id']}"
-            )
-            assert reopened_comparison_response.status_code == 200
-            reopened_comparison = reopened_comparison_response.json()
-            assert {item["id"] for item in reopened_comparison["runs"]} == {
-                item["id"] for item in comparison_runs.values()
-            }
+            for framework, comparison in comparisons.items():
+                reopened_comparison_response = await reopened_client.get(
+                    f"/v1/vqe/controlled-comparisons/{comparison['id']}"
+                )
+                assert reopened_comparison_response.status_code == 200
+                reopened_comparison = reopened_comparison_response.json()
+                assert {item["id"] for item in reopened_comparison["runs"]} == {
+                    comparison_runs[framework]["id"]
+                }
             for execution_key, artifact in artifacts.items():
                 artifact_response = await reopened_client.get(
                     f"/v1/artifacts/{artifact['artifact_id']}"
@@ -661,16 +674,20 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                 assert execution_response.json()["status"] == "succeeded"
 
         evidence = {
-            "schema_version": "1.0.0",
+            "schema_version": "1.1.0",
             "kind": "private_component_first_mvp_ci_e2e",
             "source_commit": os.environ.get("GITHUB_SHA"),
             "authentication_evidence": "synthetic_contract",
             "database": "disposable_postgresql_17",
             "runtime_host": "github_actions_dedicated_docker",
-            "baseline_workflow_artifact_version_id": slsqp_workflow["workflow_artifact_version_id"],
-            "candidate_workflow_artifact_version_id": cobyla_workflow[
-                "workflow_artifact_version_id"
-            ],
+            "baseline_workflow_artifact_version_ids": {
+                framework: optimizer_workflows["slsqp"][framework]["workflow_artifact_version_id"]
+                for framework in ("qiskit", "pennylane")
+            },
+            "candidate_workflow_artifact_version_ids": {
+                framework: optimizer_workflows["cobyla"][framework]["workflow_artifact_version_id"]
+                for framework in ("qiskit", "pennylane")
+            },
             "baseline_optimizer": "optimizer.slsqp.v1",
             "candidate_optimizer": "optimizer.cobyla.v1",
             "changed_roles": ["parameter_optimizer"],
@@ -681,7 +698,9 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                 "live_workos_same_account_reopen": "not_run",
             },
             "execution_ids": {name: item["id"] for name, item in executions.items()},
-            "comparison_spec_id": comparison["id"],
+            "comparison_spec_ids": {
+                framework: comparison["id"] for framework, comparison in comparisons.items()
+            },
             "comparison_run_ids": {name: item["id"] for name, item in comparison_runs.items()},
             "materialized_artifact_ids": {
                 name: item["artifact_version_id"] for name, item in artifacts.items()
@@ -695,8 +714,14 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                     "operator_pool",
                     "search_selection",
                 ],
-                "workflow_artifact_version_id": migration["workflow_artifact_version_id"],
-                "experiment_id": uccsd_experiment["id"],
+                "workflow_artifact_version_ids": {
+                    framework: migration["workflow_artifact_version_id"]
+                    for framework, migration in migrations.items()
+                },
+                "experiment_ids": {
+                    framework: experiment["id"]
+                    for framework, experiment in uccsd_experiments.items()
+                },
                 "execution_ids": {name: item["id"] for name, item in uccsd_executions.items()},
                 "materialized_artifact_ids": {
                     name: item["artifact_version_id"] for name, item in uccsd_artifacts.items()
@@ -706,10 +731,14 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                 "comparison_class": "controlled_capability_migration_not_one_component_swap",
                 "primary_changed_role": "ansatz",
                 "dependent_changed_roles": ["compilation_backend"],
-                "workflow_artifact_version_id": hardware_efficient_migration[
-                    "workflow_artifact_version_id"
-                ],
-                "experiment_id": hardware_efficient_experiment["id"],
+                "workflow_artifact_version_ids": {
+                    framework: migration["workflow_artifact_version_id"]
+                    for framework, migration in hardware_efficient_migrations.items()
+                },
+                "experiment_ids": {
+                    framework: experiment["id"]
+                    for framework, experiment in hardware_efficient_experiments.items()
+                },
                 "execution_ids": {
                     name: item["id"] for name, item in hardware_efficient_executions.items()
                 },
@@ -728,7 +757,9 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypa
                 json.dumps(
                     {
                         "executions": executions,
+                        "optimizer_workflows": optimizer_workflows,
                         "comparison_runs": comparison_runs,
+                        "comparisons": comparisons,
                         "artifacts": artifacts,
                         "uccsd_executions": uccsd_executions,
                         "uccsd_artifacts": uccsd_artifacts,

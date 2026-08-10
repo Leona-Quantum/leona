@@ -60,6 +60,18 @@ VQE numerical failure. It was a control-plane truth mismatch.
     only the server-generated bounded failure code/detail in the test assertion,
     so future external failures are diagnosable without dumping request data,
     credentials, or the worker environment.
+11. External attempt `31354805410` then completed provisioning, exact OCI
+    pulls, and the first Qiskit execution before the test tried to launch a
+    PennyLane execution from a workflow explicitly authored with
+    `evaluator_provider=qiskit`. The implementation resolver correctly refused
+    that cross-provider launch. The stale E2E had treated one provider-bound
+    workflow as if it were two executable implementations. It now authors
+    separate Qiskit and PennyLane workflow versions from the same portable
+    scientific specification, executes each only against its exact runtime
+    binding, and constructs the SLSQP/COBYLA comparison separately within each
+    provider. Assertions prove that provider selection does not alter the
+    portable scientific specification. Production resolution remains
+    fail-closed for a provider mismatch.
 
 ## S0–S12 completion contract
 
@@ -156,6 +168,9 @@ normal user validation refusal is not an invariant alert.
   PostgreSQL migration, frozen workflow provisioning, and all six exact OCI
   pulls before exposing the cross-layer capability-identity omission. These
   failed attempts are diagnostic evidence, not release evidence.
+- External attempt `31354805410` reached the first real Qiskit result and then
+  exposed the stale cross-provider E2E workflow assumption described above.
+  It is diagnostic evidence, not release evidence.
 
 This local evidence does not close S9. The release decision remains
 `NO-GO — pending exact-commit Linux/x86_64 fixed-digest E2E` until the pushed
