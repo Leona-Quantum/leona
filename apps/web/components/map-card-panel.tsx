@@ -937,7 +937,11 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
         </ol>
       ) : null;
     case "why-a-layer":
-      return card.kind === "process" && card.whyALayer.held ? <p>{card.whyALayer.value}</p> : null;
+      return card.kind === "process" && card.whyALayer.held ? (
+        <p>
+          <MathText source={card.whyALayer.value} />
+        </p>
+      ) : null;
     case "filled-by":
       return card.kind === "process" && card.filledBy.held ? <LinkList items={card.filledBy.value} /> : null;
     case "bypassed-by":
