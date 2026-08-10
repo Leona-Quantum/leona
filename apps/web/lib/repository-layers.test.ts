@@ -1031,15 +1031,15 @@ test("a hop note is filed against a hop the reader can actually see", () => {
     "route: hops names other, which is neither one of its steps nor the method itself",
   ]);
 
-  // A pair or neither, on every one of the three. One locale alone renders as a hole for
-  // half the readers, which is the rule every prose field on this type already holds to —
-  // and it is easier to break one level down, because nothing about a nested object makes
-  // a missing twin visible.
-  assert.deepEqual(errors({ "step-a": { approximations: "a" } }), [
-    "route: hops[step-a].approximations is present in one locale only",
-  ]);
-  assert.deepEqual(errors({ "step-a": { assumptionsJa: "a" } }), [
-    "route: hops[step-a].assumptions is present in one locale only",
+  // A pair or neither. One locale alone renders as a hole for half the readers, which is
+  // the rule every prose field on this type already holds to — and it is easier to break
+  // one level down, because nothing about a nested object makes a missing twin visible.
+  //
+  // `approximations` and `assumptions` were two more fields checked here until session 115.
+  // The owner moved both inside the mathematics as marks, so what used to be a missing twin
+  // is now a missing highlight — checked below, against the pair, rather than here.
+  assert.deepEqual(errors({ "step-a": { theoryJa: "t" } }), [
+    "route: hops[step-a].theory is present in one locale only",
   ]);
   assert.deepEqual(errors({ "step-a": { theory: "", theoryJa: "t" } }), [
     "route: hops[step-a].theory is present but empty — omit it instead",
@@ -1049,6 +1049,42 @@ test("a hop note is filed against a hop the reader can actually see", () => {
   assert.deepEqual(errors({ "step-a": {} }), [
     "route: hops[step-a] records nothing — omit it instead",
   ]);
+
+  // **A well-formed pair of marks passes**, so the checks below are failing on the defect
+  // and not on the syntax itself.
+  assert.deepEqual(
+    errors({
+      "step-a": {
+        theory: "It solves [[approximation: a first-order step]] each time.",
+        theoryJa: "毎回 [[approximation: 一次精度の刻み]] を解きます。",
+      },
+    }),
+    [],
+  );
+  // A malformed mark reaches a reader as literal brackets in the prose, which reads as a
+  // rendering bug and is a data one. The parser skips it silently by design — a renderer
+  // that threw would take a page down over a typo — so this is where it has to be caught.
+  assert.deepEqual(
+    errors({ "step-a": { theory: "x [[approximaton: y]]", theoryJa: "x [[approximaton: y]]" } }),
+    [
+      "route: hops[step-a].theory: [[approximaton: …]] is not a mark — the kinds are approximation, assumption",
+      "route: hops[step-a].theoryJa: [[approximaton: …]] is not a mark — the kinds are approximation, assumption",
+    ],
+  );
+  assert.deepEqual(errors({ "step-a": { theory: "x [[assumption: y", theoryJa: "x" } }), [
+    "route: hops[step-a].theory: 1 '[[' left open — a mark is unclosed",
+  ]);
+  // **The two locales must mark the same clauses.** A translation that drops the highlight
+  // is not a styling difference between two translations; it is half the readers never being
+  // told the step makes an approximation. Nothing else in the graph would catch it: both
+  // strings are present, both are non-empty, and both render.
+  assert.deepEqual(
+    errors({ "step-a": { theory: "x [[assumption: y]]", theoryJa: "エックス" } }),
+    [
+      "route: hops[step-a]: the two locales mark different things — en marks [assumption] and " +
+        "ja marks []. A highlight in one language only is a fact half the readers are not shown.",
+    ],
+  );
 });
 
 test("an example holds prose, pseudocode or both — never a name with neither", () => {

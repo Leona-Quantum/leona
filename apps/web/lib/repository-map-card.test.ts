@@ -19,7 +19,7 @@ import { parseCardId, withCard } from "./repository/map-card.ts";
 import {
   cardExists,
   cardFor,
-  cardHopSlots,
+  cardHopNotes,
   cardSections,
   ownCardId,
   sectionState,
@@ -237,37 +237,52 @@ test("the two gaps stay different facts — the undesigned sections never say 'n
   assert.ok(counted >= 19, `only ${counted} undesigned sections swept`);
 });
 
-test("Theory is held on every method, and every hop inside it is empty for the right reason", () => {
+test("Theory is held on every method, and each hop inside it is empty or filled for the right reason", () => {
   // **Two levels, two honest answers, and one number could not carry both.** Theory is held
   // on all 63 methods because the chain is structural and `routeOf` computes it — that is
   // exactly why the owner chose the chain as its spine, so the section is honest on day one
-  // and fills in hop by hop. But a reader who opens it finds nothing yet, and a census
-  // reporting only "Theory: held" would describe a card fuller than it reads.
+  // and fills in hop by hop. But a reader who opens all but one of them finds nothing yet,
+  // and a census reporting only "Theory: held" would describe a card fuller than it reads.
+  //
+  // **One census where session 114 had three slots per hop.** The owner moved approximations
+  // and assumptions inside the mathematics as marks, so the countable facts changed with the
+  // model: a hop is empty or authored, and an authored one marks nothing or marks something.
   const methods = cards().filter((card) => card.kind === "method");
-  let slots = 0;
   let hops = 0;
+  let authored = 0;
+  let marks = 0;
   for (const card of methods) {
     const theory = cardSections(card).find((section) => section.id === "theory")!;
     assert.equal(sectionState(theory), "held", `${card.id}: Theory is not held`);
-    const swept = cardHopSlots(card);
-    hops += new Set(swept.map((slot) => slot.hop)).size;
-    for (const slot of swept) {
-      slots += 1;
+    const swept = cardHopNotes(card);
+    hops += swept.length;
+    // One note per hop, keyed by the hop's own position and states. Two hops of one method
+    // reporting the same key would make every count below a count of something else.
+    assert.equal(
+      new Set(swept.map((note) => note.hop)).size,
+      swept.length,
+      `${card.id}: two hops share a census key`,
+    );
+    for (const note of swept) {
       // **`none-recorded` since session 114, and never `no-field-yet` again.**
-      // `LayerMethod.hops` exists now, so an empty slot is a source nobody has read rather
+      // `LayerMethod.hops` exists now, so an empty hop is a source nobody has read rather
       // than a field nobody has built. If one of these ever reports `no-field-yet` again,
       // the field has been taken away and the card is telling a reader the model is still
       // being designed when it is not.
       assert.ok(
-        slot.state === "none-recorded" || slot.state === "held",
-        `${card.id} hop ${slot.hop}/${slot.id} reported "${slot.state}"`,
+        note.state === "none-recorded" || note.state === "held",
+        `${card.id} hop ${note.hop} reported "${note.state}"`,
       );
+      // A mark is a clause *of* the mathematics, so it cannot exist where there is no
+      // mathematics. If this ever fires, the parse and the held-ness have stopped being
+      // decided by the same string.
+      if (note.state !== "held") {
+        assert.equal(note.marks.length, 0, `${card.id} hop ${note.hop} marks an empty note`);
+      }
+      if (note.state === "held") authored += 1;
+      marks += note.marks.length;
     }
   }
-  // Three slots per hop, on every hop of every method. Pinned so that giving one of them a
-  // real field is a visible change to this file rather than a silent flip in the copy a
-  // reader sees.
-  assert.equal(slots, hops * 3, `${slots} slots over ${hops} hops`);
   // **91, measured, not a floor.** 43 methods draw a single hop — the stretch they close
   // themselves, with no named step at all — 12 draw two and 8 draw three. It is pinned
   // exactly because the next corpus change that touches it is a known one: authoring the
@@ -275,7 +290,17 @@ test("Theory is held on every method, and every hop inside it is empty for the r
   // methods' own stretches and would move this number. That should arrive as a failing
   // assertion somebody updates deliberately, not as a quiet drift.
   assert.equal(hops, 91, `${hops} hops, not 91`);
-  console.log(`[theory census] ${methods.length} methods, ${hops} hops, ${slots} empty slots`);
+  // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
+  // re-decision, and a rendering path with no instance anywhere has never been drawn. One
+  // authored hop is what proves the parse, the spans, the legend and both locales against
+  // real data rather than only against a fixture. Raising this number is corpus work and
+  // the point of the field.
+  assert.ok(authored >= 1, `${authored} hops carry mathematics — the marked path draws nowhere`);
+  assert.ok(marks >= 1, `${marks} marks across ${authored} authored hops`);
+  console.log(
+    `[theory census] ${methods.length} methods, ${hops} hops, ` +
+      `${authored} with mathematics, ${marks} marked clauses`,
+  );
 });
 
 test("the card reads the map node, which is the populated side of the join", () => {

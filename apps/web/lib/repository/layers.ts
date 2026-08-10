@@ -55,6 +55,7 @@
 //    not a plausible sentence. Same rule §3.6 applies to a gap in a record.
 import { estimateTextWidth, LANE_FONT_PX } from "./process-layout.ts";
 import { stateSatisfies, validateStateVocabulary, type StateVocabulary } from "./states.ts";
+import { validatePairedTheory, validateTheory } from "./theory-marks.ts";
 import type { PublicRepositoryCategory } from "./types";
 
 /** A node is one of exactly two things, and the distinction is load-bearing. */
@@ -428,17 +429,29 @@ export interface LayerMethod extends LayerNodeBase {
  * a key with no fact behind it, and `validateLayerGraph` rejects it. Each is a
  * pair or neither, like every other prose field on this type: one locale alone
  * renders as a hole for half the readers.
+ *
+ * **It was three fields and is now one, on the owner's re-decision.** Session
+ * 114 carried `approximations` and `assumptions` beside `theory` and the card
+ * drew them as three stacked headings inside every opened hop. He read it and
+ * answered: *"assumptions and approximations will be colored/bolded
+ * highlighted/commented within the mathematics, so no need for the sections.
+ * this is probably going to be bulky, so too many sections here can make it hard
+ * to follow."*
+ *
+ * So the two live inside the mathematics as marks — `[[approximation: …]]` and
+ * `[[assumption: …]]` — and `theory-marks.ts` states the argument for why that
+ * is a better content model and not only a smaller drawing. Nothing was lost in
+ * the change: all 91 hops were unauthored, so no note anywhere held either
+ * field.
  */
 export interface HopNote {
-  /** The mathematics of the hop, as the source states it. */
+  /**
+   * The mathematics of the hop, as the source states it, with the approximations
+   * it makes and the assumptions it needs marked where they occur. See
+   * `theory-marks.ts` for the syntax and the three ways it can be malformed.
+   */
   theory?: string;
   theoryJa?: string;
-  /** What is approximated **here**, and what that costs. */
-  approximations?: string;
-  approximationsJa?: string;
-  /** What this hop needs to be true, beyond the method's own conditions. */
-  assumptions?: string;
-  assumptionsJa?: string;
 }
 
 /** A worked example, its pseudocode, or both. See `LayerMethod.example`. */
@@ -1878,11 +1891,28 @@ export function validateLayerGraph(
           `${node.id}: hops names ${key}, which is neither one of its steps nor the method itself`,
         );
       }
-      pairs(`hops[${key}]`, [
-        ["theory", note.theory, note.theoryJa],
-        ["approximations", note.approximations, note.approximationsJa],
-        ["assumptions", note.assumptions, note.assumptionsJa],
-      ]);
+      pairs(`hops[${key}]`, [["theory", note.theory, note.theoryJa]]);
+      // The marks inside the mathematics, checked here rather than trusted to a
+      // renderer. A malformed one does not fail loudly at draw time — the
+      // parser skips it and the clause renders as prose with literal brackets
+      // in it, which reads as a rendering bug and is a data one. `[[` is not a
+      // sequence prose reaches for by accident, so this cannot fire on an
+      // honest sentence.
+      if (note.theory !== undefined) {
+        errors.push(...validateTheory(`${node.id}: hops[${key}].theory`, note.theory));
+      }
+      if (note.theoryJa !== undefined) {
+        errors.push(...validateTheory(`${node.id}: hops[${key}].theoryJa`, note.theoryJa));
+      }
+      // And that the two locales mark the same clauses. A Japanese note that
+      // drops the approximation is not a styling difference between two
+      // translations; it is half the readers never being told the step makes
+      // one.
+      if (note.theory !== undefined && note.theoryJa !== undefined) {
+        errors.push(
+          ...validatePairedTheory(`${node.id}: hops[${key}]`, note.theory, note.theoryJa),
+        );
+      }
       // A key with no fact behind it. `repeats` rejects the same shape, and for
       // the same reason: it draws a disclosure a reader opens onto nothing.
       //
