@@ -3447,3 +3447,125 @@ test("the map never marks a subject lane", () => {
   console.log(`map figures swept for subject marks: ${sweptFigures}, lanes: ${sweptLanes}`);
   assert.ok(sweptLanes >= 200, `only ${sweptLanes} lanes swept — the sweep has gone quiet`);
 });
+
+// --- the card layer, and which surface is allowed to offer it ----------------
+//
+// W5 slice two. A name on the map opens the node's card in place instead of
+// leaving the map for its page. The three things that can go wrong are all
+// surface-shaped rather than geometric, so they are asserted here rather than
+// looked at once in a browser:
+//
+//  1. offering a card where no panel is mounted — the dead control this canvas
+//     has already produced twice;
+//  2. offering a card whose href has a different pathname from the page drawing
+//     it, which `canvas-continuity` will not intercept, so the click leaves the
+//     map altogether;
+//  3. a card link that quietly drops the reader's focus, open set or viewport,
+//     which is the bug `at` was threaded through this whole file to prevent.
+
+test("a card link is offered only where a card layer exists, and never otherwise", () => {
+  let withCards = 0;
+  let withoutCards = 0;
+  for (const capability of LAYER_GRAPH.nodes.filter(isCapability)) {
+    for (const open of [new Set<string>(), new Set(openableAddresses(capability.id))]) {
+      const on = layoutConverge({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        focus: capability,
+        locale: "en",
+        open,
+        cards: true,
+      });
+      // The node page's picture. `cards` is absent, not false, because absent is
+      // what the other caller actually passes and a default is only real if the
+      // test takes the same path the caller does.
+      const off = layoutConverge({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        focus: capability,
+        locale: "en",
+        open,
+      });
+
+      const offered = [...off.lanes, ...off.feeds].filter((mark) => mark.cardHref !== null);
+      assert.deepEqual(
+        offered.map((mark) => mark.address),
+        [],
+        `${capability.id}: a figure with no card layer offered ${offered.length} card links`,
+      );
+      // A circle is not offered one either, and for a different reason: `?card=`
+      // resolves against the layer graph and a state is not a node in it. When
+      // the state card lands this assertion is the one that has to change, which
+      // is the point of writing it down.
+      assert.deepEqual(
+        on.states.filter((state) => state.cardHref !== null).map((state) => state.stateId),
+        [],
+        `${capability.id}: a state circle offered a card that ?card= cannot resolve`,
+      );
+
+      for (const mark of [...on.lanes, ...on.feeds]) {
+        const isLane = "nodeId" in mark && !("vHalf" in mark);
+        const id = isLane ? (mark as ConvergeLane).nodeId : (mark as { nodeId: string }).nodeId;
+        if (mark.cardHref === null) {
+          // Only a mark that is nobody's node may go without one — the stretch a
+          // method performs itself. Anything else missing a card link is a name
+          // that silently kept leaving the map.
+          assert.ok(
+            id === null || id === "",
+            `${capability.id}: ${mark.address} names ${id} and was offered no card`,
+          );
+          continue;
+        }
+        withCards += 1;
+        assert.ok(
+          layerNode(LAYER_GRAPH, id!) !== null,
+          `${capability.id}: ${mark.address} offers a card for ${id}, which the graph does not hold`,
+        );
+        const url = new URL(mark.cardHref, "https://leonaqt.com");
+        // The pathname is the whole of the interception rule. Anything else here
+        // is a full document navigation off the map.
+        assert.equal(
+          url.pathname,
+          "/repository/layers",
+          `${capability.id}: ${mark.address}'s card href leaves the map`,
+        );
+        assert.equal(url.searchParams.get("card"), id);
+        // Everything the reader was already holding, still held.
+        assert.equal(url.searchParams.get("focus"), capability.id);
+        assert.deepEqual(
+          url.searchParams.getAll("open").sort(),
+          [...open].sort(),
+          `${capability.id}: ${mark.address}'s card href dropped part of the open set`,
+        );
+      }
+      withoutCards += offered.length;
+    }
+  }
+  console.log(`card links offered on the map: ${withCards}; on a node page: ${withoutCards}`);
+  assert.equal(withoutCards, 0);
+  assert.ok(withCards >= 200, `only ${withCards} card links — the sweep has gone quiet`);
+});
+
+test("a card link carries the reader's viewport, exactly as every other address does", () => {
+  const focus = layerNode(LAYER_GRAPH, "linear-ode-solve");
+  assert.ok(focus && isCapability(focus));
+  const at = "120.5,-40,1.75";
+  const diagram = layoutConverge({
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    focus,
+    locale: "en",
+    at,
+    cards: true,
+  });
+  const named = diagram.lanes.filter((lane) => lane.cardHref !== null);
+  assert.ok(named.length > 0, "no lane on linear-ode-solve offered a card");
+  for (const lane of named) {
+    const url = new URL(lane.cardHref!, "https://leonaqt.com");
+    assert.equal(
+      url.searchParams.get("at"),
+      at,
+      `${lane.address}: opening a card would put the reader back at the origin`,
+    );
+  }
+});
