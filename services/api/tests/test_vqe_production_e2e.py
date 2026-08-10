@@ -224,7 +224,18 @@ async def _execute_and_finish(
     final_response = await client.get(f"/v1/vqe/executions/{execution['id']}")
     assert final_response.status_code == 200, final_response.text
     final = final_response.json()
-    assert final["status"] == "succeeded"
+    failure_diagnostic = [
+        {
+            "failure_code": observation["result_contract_json"].get("failure_code"),
+            "failure_detail": observation["result_contract_json"].get("failure_detail"),
+        }
+        for observation in final.get("observations", [])
+        if observation.get("status") == "failed"
+    ]
+    assert final["status"] == "succeeded", {
+        "status": final["status"],
+        "failure_observations": failure_diagnostic,
+    }
     assert final["production_runtime_status"] == "qualified"
     assert len(final["observations"]) == 1
     result = final["observations"][0]["result_contract_json"]
@@ -243,7 +254,15 @@ async def _execute_and_finish(
 
 
 @requires_production_e2e
-async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
+async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end(monkeypatch):
+    # GitHub Actions sets CI=true for every step.  The production executor must
+    # continue to reject that marker in application code, so the dedicated-host
+    # simulation removes it only inside this explicit, opt-in E2E test.  This
+    # does not add a production bypass: the worker unit suite separately proves
+    # that CI=true is rejected when presented to the executor.
+    if os.environ.get("GITHUB_ACTIONS") == "true":
+        assert os.environ.get("CI") == "true"
+        monkeypatch.delenv("CI")
     server, thread, private_key = _start_jwks_server()
     issuer = f"http://127.0.0.1:{server.server_port}"
     auth_jwt._jwk_client.cache_clear()

@@ -50,6 +50,16 @@ VQE numerical failure. It was a control-plane truth mismatch.
    only the all-standard identity. The capability allowlist now names the
    complete legacy baseline, legacy-plus-SLSQP, and legacy-plus-COBYLA maps.
    Any partial mixture or unknown key still fails closed.
+10. The next external run reached real execution but failed before starting the
+    OCI payload because GitHub Actions supplies `CI=true` while the production
+    executor deliberately rejects managed/CI processes. Readiness did not catch
+    this because it probes exact image presence rather than host admission. The
+    opt-in E2E now removes the CI marker only in test scope after confirming the
+    GitHub Actions context. Production code still rejects `CI=true`, and its
+    dedicated negative test remains mandatory. Failed executions now expose
+    only the server-generated bounded failure code/detail in the test assertion,
+    so future external failures are diagnosable without dumping request data,
+    credentials, or the worker environment.
 
 ## S0–S12 completion contract
 
