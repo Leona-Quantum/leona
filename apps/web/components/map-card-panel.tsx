@@ -472,7 +472,11 @@ function LinkList({ items }: { items: readonly CardLink[] }): React.ReactElement
       {items.map((item) => (
         <li key={item.id}>
           <a href={item.href}>{item.label}</a>
-          {item.summary ? <p className="mj-card-list-blurb">{item.summary}</p> : null}
+          {item.summary ? (
+            <p className="mj-card-list-blurb">
+              <MathText source={item.summary} />
+            </p>
+          ) : null}
         </li>
       ))}
     </ul>
@@ -510,7 +514,11 @@ function IngredientList({
               step" is what a reader without the margin gets. */}
           <a href={link.href}>{link.label}</a>{" "}
           {repetition ? <RepeatBadge repetition={repetition} copy={copy} /> : null}
-          {link.summary ? <p className="mj-card-list-blurb">{link.summary}</p> : null}
+          {link.summary ? (
+            <p className="mj-card-list-blurb">
+              <MathText source={link.summary} />
+            </p>
+          ) : null}
           {repetition ? <RepeatNote repetition={repetition} copy={copy} /> : null}
         </li>
       ))}
@@ -1058,7 +1066,9 @@ export function MapCardPanel({
           <>
             <p className="mj-card-eyebrow">{copy.eyebrow[card.kind]}</p>
             <h2 id={titleId}>{card.label}</h2>
-            <p className="mj-card-lede">{card.summary}</p>
+            <p className="mj-card-lede">
+              <MathText source={card.summary} />
+            </p>
             {card.kind === "method" ? <Refinement card={card} copy={copy} /> : null}
             {/* **First, and not last.** The card is a preview; the record is the
                 page. A panel that buries the way onward is the "replacement for
