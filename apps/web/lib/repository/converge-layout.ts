@@ -125,6 +125,7 @@ import {
   isMethod,
   layerNode,
   methodsRealizing,
+  repetitionOf,
   routeOf,
   type LayerCapability,
   type LayerGraph,
@@ -736,6 +737,15 @@ export interface ConvergeLane {
    * allow the first while still catching a short form written into `fullLabel`.
    */
   shortLabel: string | null;
+  /**
+   * The count drawn at the end of `label`, or null — see `PlanStrand.repeatMark`.
+   *
+   * Emitted rather than re-derived: the renderer's only handle would be
+   * `nodeId`, and the mark is a fact about *this occurrence* of that node, not
+   * about the node. A lookup keyed on the id would put backward Euler's `×T/h`
+   * on the Taylor lane drawing the same slot.
+   */
+  repeatMark: string | null;
   labelTruncated: boolean;
   /**
    * A run of named hops, drawn as its hops and never under a name of its own.
@@ -901,6 +911,8 @@ export interface ConvergeFeed {
   fullLabel: string;
   /** The authored short name if this stub drew one. See `ConvergeLane.shortLabel`. */
   shortLabel: string | null;
+  /** The count drawn at the end of `label`. See `ConvergeLane.repeatMark`. */
+  repeatMark: string | null;
   labelTruncated: boolean;
   href: string;
   /** As `ConvergeLane.cardHref`: the card for this ingredient, or null. */
@@ -1309,6 +1321,32 @@ interface PlanStrand {
    * precisely the deepest, widest ones. Null means "draw `label`".
    */
   shortLabel: string | null;
+  /**
+   * How many times **the route above this lane** walks it — `×T/h`, `×O(κ)`.
+   *
+   * ## It belongs to the edge, not to the node, and that is why it is here
+   *
+   * `quantum-linear-solve` is walked once by `taylor-all-at-once` and T/h times
+   * by `backward-euler`, and it is one node drawn on both lanes. A lookup keyed
+   * on `id` at the shape would put backward Euler's count on the Taylor lane —
+   * the mark is a fact about *this occurrence*, so it is set where the occurrence
+   * is planned and carried down with it, exactly as `shortLabel` is.
+   *
+   * ## Where it comes from
+   *
+   * `planForMethod` sets it on the two kinds of child it plans from a route:
+   * the hops of the chain, and the ingredients. Measured, 7 of the corpus's 10
+   * records are ingredients — the three readouts' ε^-2 and HHL's two κ's are
+   * facts about a **stub**, not about the spine — so a mark drawn on the chain
+   * alone would have reached 3 of them.
+   *
+   * ## Null is the common and correct case
+   *
+   * 10 records over 1,914 named lanes. Null means no source we read said this
+   * lane is walked more than once, which is not the same as once — the same
+   * reading `LayerMethod.repeats` states, and nothing here derives a count.
+   */
+  repeatMark: string | null;
   href: string;
   standing: LaneStanding;
   open: boolean;
@@ -1535,34 +1573,48 @@ function chainInside(
       const pinned = method.via?.[segment.capabilityId];
       const filler = pinned === undefined ? null : layerNode(graph, pinned);
       if (filler && isMethod(filler) && filler.realizes === segment.capabilityId) {
-        return planForMethod(
-          graph,
-          vocabulary,
-          filler,
-          locale,
-          open,
-          depth,
+        // The mark is keyed on the **slot**, not on the filler, because that is
+        // what `repeats` is keyed on: the route says it walks *this step* T/h
+        // times, and which algorithm fills the step is a separate record. A pin
+        // must not lose the count.
+        return withRepeatMark(
+          planForMethod(
+            graph,
+            vocabulary,
+            filler,
+            locale,
+            open,
+            depth,
           // The **slot** joins `seen`, not just the filler. `planForMethod` cuts
           // the recursion on the method's own id; the slot is what a route below
           // could delegate back to, and pinning must not open a door the
           // unpinned hop had shut. Every pin in the corpus today names an
           // atomic filler, so this cannot bite yet — which is exactly when a
           // cycle guard is cheap to get right.
-          new Set([...seen, segment.capabilityId]),
-          `${parentKey}/${index}/`,
-          `${parentAddress}.${index}`,
+            new Set([...seen, segment.capabilityId]),
+            `${parentKey}/${index}/`,
+            `${parentAddress}.${index}`,
+          ),
+          method,
+          segment.capabilityId,
+          locale,
         );
       }
-      return planForSlot(
-        graph,
-        vocabulary,
+      return withRepeatMark(
+        planForSlot(
+          graph,
+          vocabulary,
+          segment.capabilityId,
+          locale,
+          open,
+          depth,
+          seen,
+          `${parentKey}/${index}/`,
+          `${parentAddress}.${index}`,
+        ),
+        method,
         segment.capabilityId,
         locale,
-        open,
-        depth,
-        seen,
-        `${parentKey}/${index}/`,
-        `${parentAddress}.${index}`,
       );
     }
     // The part of the route the method performs itself — 23 of the 29 decomposed
@@ -1595,6 +1647,9 @@ function chainInside(
       id: null,
       label: labelOf(method, locale),
       shortLabel: shortLabelOf(method, locale),
+      // The stretch a method closes itself is not one of its steps, so nothing
+      // can have recorded a multiplicity for it. See `repeatMark`.
+      repeatMark: null,
       href: `/repository/layers/${method.id}`,
       standing: "recorded" as LaneStanding,
       open: false,
@@ -1664,6 +1719,9 @@ function planForSlot(
     id: methods.length > 0 ? slotId : null,
     label,
     shortLabel: node ? shortLabelOf(node, locale) : null,
+    // Set by whoever plans this occurrence, not here: a slot is one node on
+    // many lanes and the count belongs to the route above it. See `repeatMark`.
+    repeatMark: null,
     href: `/repository/layers/${slotId}`,
     standing: "recorded",
     open: isOpen && inside !== null,
@@ -1732,16 +1790,25 @@ function planForMethod(
   const childCount = inside?.children.length ?? 0;
   const feeds = isOpen
     ? route.feeds.map((id, index) =>
-        planForSlot(
-          graph,
-          vocabulary,
+        // **Where most of the repeat marks land.** Measured against `routeOf`:
+        // 7 of the corpus's 10 records key a `feeds` step rather than a hop —
+        // the three readouts' ε^-2 and HHL's two κ's are facts about a stub —
+        // so a mark written only onto the chain would reach 3 of them.
+        withRepeatMark(
+          planForSlot(
+            graph,
+            vocabulary,
+            id,
+            locale,
+            open,
+            depth + 1,
+            new Set([...seen, method.id]),
+            `${key}~`,
+            `${address}.${childCount + index}`,
+          ),
+          method,
           id,
           locale,
-          open,
-          depth + 1,
-          new Set([...seen, method.id]),
-          `${key}~`,
-          `${address}.${childCount + index}`,
         ),
       )
     : [];
@@ -1751,6 +1818,9 @@ function planForMethod(
     id: holds ? method.id : null,
     label: labelOf(method, locale),
     shortLabel: shortLabelOf(method, locale),
+    // A method is not a step of itself. Its *steps* carry the marks, and
+    // `planForMethod` writes them onto the children it plans below.
+    repeatMark: null,
     href: `/repository/layers/${method.id}`,
     standing: "recorded",
     // Open even when there is no chain to draw: the ingredients are the whole
@@ -1846,6 +1916,9 @@ function planForLane(
     // from. It is never drawn anyway — `composite` below — so this is null for
     // the same reason the label is not drawn: the hops carry the names.
     shortLabel: null,
+    // Null for the same reason, and it costs nothing: a composite draws no name
+    // at all, so a mark on it would be measured into a width nothing uses.
+    repeatMark: null,
     href: named.href,
     standing,
     open: true,
@@ -2072,6 +2145,103 @@ export function ownStepName(locale: PublicLocale): string {
   return locale === "ja" ? "手法そのもの" : "the method itself";
 }
 
+/**
+ * Put the route's count on the lane it walks many times, where a source states
+ * one.
+ *
+ * Applied at the two places a route's steps become lanes — the hops of
+ * `chainInside` and the ingredients of `planForMethod` — rather than inside
+ * `planForSlot`, because `planForSlot` does not know which route is asking. A
+ * slot is one node drawn on many lanes and the count is a property of the
+ * occurrence: `quantum-linear-solve` is walked once by `taylor-all-at-once` and
+ * T/h times by `backward-euler`.
+ *
+ * Returns the strand untouched when nothing is recorded, which is 1,904 of the
+ * 1,914 named lanes.
+ */
+/**
+ * Fit a lane's drawn name to its budget — and **spend the budget on the mark
+ * first.**
+ *
+ * `fitLabel` cuts from the right, and the mark is on the right, so fitting
+ * `Simulate Hamiltonian evolution ×O(κ)` in one call would drop the `×O(κ)`
+ * before it dropped a single letter of a name the reader can already read from
+ * the figure's other lanes. The count is the thing this lane says that nothing
+ * else on the canvas does, so it is the thing that must survive: the name is cut
+ * to `budget − mark`, and the mark is appended whole.
+ *
+ * `truncated` still describes the **name**, which is what it has always meant —
+ * it is what `a truncated label is strictly shorter than the whole one and says
+ * so` reads, and what the `<title>` on the shape is for. A mark is never
+ * truncated, so it can never be the reason that flag is set.
+ */
+function fitMarkedName(
+  strand: { label: string; shortLabel: string | null; repeatMark: string | null },
+  font: number,
+  budget: number,
+): { text: string; truncated: boolean } {
+  return fitLabel(
+    strand.shortLabel ?? strand.label,
+    font,
+    budget,
+    strand.repeatMark === null ? "" : ` ${strand.repeatMark}`,
+  );
+}
+
+function withRepeatMark(
+  strand: PlanStrand,
+  method: LayerMethod,
+  stepId: string,
+  locale: PublicLocale,
+): PlanStrand {
+  const repetition = repetitionOf(method, stepId);
+  if (repetition === null) return strand;
+  return { ...strand, repeatMark: locale === "ja" ? repetition.markJa : repetition.mark };
+}
+
+/**
+ * The string a lane actually draws: its name, and the count if it is a loop.
+ *
+ * **One writer, because three places have to agree.** The column's demand
+ * (`measure`), the budget the name is cut to (`place`) and the width the
+ * renderer is handed (`labelWidth`) are three readings of one string, and the
+ * comment on `hFit` records two sessions lost to deriving that budget a second
+ * way. A mark added to the drawn name in one of the three and not the others
+ * would either overflow the column or be sized into a column nothing uses.
+ *
+ * The mark is **appended**, not substituted: `Quantum linear solve ×T/h` is the
+ * name plus the fact. See `repeatMark` for why the name gives way to it rather
+ * than the other way round.
+ */
+/**
+ * The name a **non-visual** surface reads out: the full name, and the count.
+ *
+ * The drawn label may be cut to a column; `fullLabel` never is, which is why the
+ * `<title>`, the `aria-label` and the accessible list beside the figure all read
+ * it instead. The mark has to ride along with them or the count becomes a fact
+ * only a sighted reader gets — and it is a *quantitative* fact about cost, which
+ * is the last thing that should be available by eye alone.
+ *
+ * Separate from `drawnName` because the two answer different questions:
+ * `drawnName` is what the column is sized for and may be shortened, this is what
+ * is spoken and never is.
+ */
+export function spokenName(lane: {
+  fullLabel: string;
+  repeatMark: string | null;
+}): string {
+  return lane.repeatMark === null ? lane.fullLabel : `${lane.fullLabel} ${lane.repeatMark}`;
+}
+
+export function drawnName(strand: {
+  label: string;
+  shortLabel: string | null;
+  repeatMark: string | null;
+}): string {
+  const name = strand.shortLabel ?? strand.label;
+  return strand.repeatMark === null ? name : `${name} ${strand.repeatMark}`;
+}
+
 function measure(strand: PlanStrand, depth: number): Measure {
   const M = CONVERGE_METRICS;
   // The **drawn** name, which is the short form when one is authored. Sizing a
@@ -2083,10 +2253,7 @@ function measure(strand: PlanStrand, depth: number): Measure {
   // records two sessions lost to deriving that budget a second way; capping the
   // demand keeps one number flowing through `need` → `span` → `fit` →
   // `columnFit` → `fitLabel`, so the column and the cut agree by construction.
-  const own = Math.min(
-    M.labelCap,
-    estimateTextWidth(strand.shortLabel ?? strand.label, M.laneFont),
-  );
+  const own = Math.min(M.labelCap, estimateTextWidth(drawnName(strand), M.laneFont));
   const feeds = strand.feeds.map((feed) => measure(feed, depth + 1));
   // **The horizontal demand a stub's own fan makes.** `placeFeeds` gives stub `i`
   // a `1/(n+1)` slice of the belly to draw its fan in, so a run spent inside one
@@ -2409,7 +2576,7 @@ function place(
   const fitted =
     strand.composite || strand.nameless
       ? { text: "", truncated: false }
-      : fitLabel(strand.shortLabel ?? strand.label, M.laneFont, nameBudget(context.columnFit));
+      : fitMarkedName(strand, M.laneFont, nameBudget(context.columnFit));
   if (strand.standing === "unpublished") out.unpublished += 1;
   // **A partition of the old single count, on `openable`.** Both arms need
   // `!open` and neither can drop it: a run of named hops is drawn open from the
@@ -2461,6 +2628,7 @@ function place(
     // leaking into this field.
     fullLabel: strand.label,
     shortLabel: strand.shortLabel,
+    repeatMark: strand.repeatMark,
     labelTruncated: fitted.truncated,
     // Two addresses, because there are two kinds of thing here.
     //
@@ -2660,7 +2828,7 @@ function placeFeeds(
   for (const [index, feed] of strand.feeds.entries()) {
     const t = (index + 1) / (strand.feeds.length + 1);
     const at = { x: belly.x0 + (belly.x1 - belly.x0) * t, y: belly.y };
-    const fitted = fitLabel(feed.shortLabel ?? feed.label, M.laneFont, nameBudget(context.columnFit));
+    const fitted = fitMarkedName(feed, M.laneFont, nameBudget(context.columnFit));
     const y0 = at.y + outward * inner;
     const y1 = at.y + outward * (inner + M.feedRun);
     context.out.rightmost = Math.max(
@@ -2674,6 +2842,7 @@ function placeFeeds(
       label: fitted.text,
       fullLabel: feed.label,
       shortLabel: feed.shortLabel,
+      repeatMark: feed.repeatMark,
       labelTruncated: fitted.truncated,
       href: feed.href,
       cardHref:

@@ -278,6 +278,8 @@ const LOOP_FIXTURE: LayerGraph = {
           closure: "coherent",
           note: "n",
           noteJa: "n",
+          mark: "×steps",
+          markJa: "×steps",
         },
       },
     }),
@@ -344,8 +346,8 @@ test("repeatedSteps follows the order a reader meets the steps in, not object or
     // Written second-then-first on purpose: `Object.entries` would hand these
     // back in insertion order and the page numbers its steps from `steps`.
     repeats: {
-      second: { count: "n", countJa: "n", closure: "measured", note: "n", noteJa: "n" },
-      encode: { count: "m", countJa: "m", closure: "coherent", note: "n", noteJa: "n" },
+      second: { count: "n", countJa: "n", closure: "measured", note: "n", noteJa: "n", mark: "×n", markJa: "×n" },
+      encode: { count: "m", countJa: "m", closure: "coherent", note: "n", noteJa: "n", mark: "×m", markJa: "×m" },
     },
   });
   assert.deepEqual(
@@ -379,6 +381,8 @@ test("validation rejects a repetition the route cannot honestly be making", () =
     count: "once per step",
     countJa: "各ステップにつき 1 回",
     closure: "coherent",
+    mark: "×steps",
+    markJa: "×steps",
     note: "n",
     noteJa: "n",
     ...over,

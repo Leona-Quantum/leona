@@ -80,6 +80,7 @@ import {
   figureHref,
   layoutConverge,
   legendMark,
+  spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
 } from "../lib/repository/converge-layout";
@@ -555,7 +556,9 @@ function Lines({
           className={`mj-converge-lane-row--${lane.standing}`}
           data-depth={lane.depth}
         >
-          <a href={lane.href}>{lane.fullLabel}</a>
+          {/* The count rides with the name here too — this list is the whole of
+              the figure for a reader who is not looking at it. */}
+          <a href={lane.href}>{spokenName(lane)}</a>
           {lane.standing === "recorded" ? null : (
             <span className="mj-converge-lane-standing">
               {" — "}
@@ -582,7 +585,7 @@ function Lines({
                 <li key={feed.key}>
                   {copy.needs}
                   {": "}
-                  <a href={feed.href}>{feed.fullLabel}</a>
+                  <a href={feed.href}>{spokenName(feed)}</a>
                 </li>
               ))}
             </ul>

@@ -553,7 +553,44 @@ export interface StepRepetition {
   /** What the turn costs and why it turns that many times, read off the source. */
   note: string;
   noteJa: string;
+  /**
+   * The count as a **mark on the drawing**: `×T/h`, `×O(κ)`, `×m`.
+   *
+   * ## Why this is a field and not `count` shortened by code
+   *
+   * `count` is a sentence — *"once per time step — T/h of them to reach time
+   * T"* — and a lane's name on the canvas has a pixel budget of 300. Something
+   * has to choose which part of that sentence is the number, and only a person
+   * reading the source can: the symbol in `count` is sometimes at the front
+   * (`m = O(…)`), sometimes at the back (`M = O(1/ε)`), and once nowhere at all
+   * (`time-marching-usva` says *per step* and names no letter). A regex over the
+   * prose would produce a different answer for each of those and be wrong
+   * silently, on the canvas, where nothing checks it.
+   *
+   * So it is authored beside the sentence it abbreviates, and validation keeps
+   * it a mark rather than a second description: at most `REPEAT_MARK_MAX`
+   * characters, which is the width the layout reserves for it.
+   *
+   * ## Both locales, and usually identical
+   *
+   * `×T/h` is `×T/h` in Japanese — mathematics is not translated, and the two
+   * fields exist for the one case that needs a word (*per step*), not because
+   * the symbol changes. Same reason `MethodExample.pseudocode` is not localised.
+   */
+  mark: string;
+  markJa: string;
 }
+
+/**
+ * How long a repeat mark may be, in characters.
+ *
+ * A budget rather than a taste: the mark is appended to a lane's name on the
+ * canvas and the name's own budget shrinks by exactly the mark's width, so a
+ * long mark is paid for by truncating the name it annotates. Twelve characters
+ * is the widest authored mark (`×O(1/ε²)` is eight) plus room, and it is small
+ * enough that a sentence cannot be written here by accident.
+ */
+export const REPEAT_MARK_MAX = 12;
 
 export type LayerNode = LayerCapability | LayerMethod;
 
@@ -2013,9 +2050,25 @@ export function validateLayerGraph(
         ["countJa", repetition.countJa],
         ["note", repetition.note],
         ["noteJa", repetition.noteJa],
+        ["mark", repetition.mark],
+        ["markJa", repetition.markJa],
       ] as const) {
         if (typeof value !== "string" || value.trim() === "") {
           errors.push(`${node.id}: repeats[${stepId}].${field} is empty`);
+        }
+      }
+      // **The mark is a budget, not a preference.** It is appended to a lane's
+      // name on the canvas and the name's own budget shrinks by exactly its
+      // width, so a mark written as a sentence is paid for by truncating the
+      // name it annotates — on the drawing, where nothing would report it.
+      for (const [field, value] of [
+        ["mark", repetition.mark],
+        ["markJa", repetition.markJa],
+      ] as const) {
+        if (typeof value === "string" && [...value.trim()].length > REPEAT_MARK_MAX) {
+          errors.push(
+            `${node.id}: repeats[${stepId}].${field} is ${[...value.trim()].length} characters — a mark on the canvas may be at most ${REPEAT_MARK_MAX}`,
+          );
         }
       }
       // A loop that turns once is not a loop. Recording it as one would put the

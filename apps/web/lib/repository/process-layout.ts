@@ -57,18 +57,36 @@ export function estimateTextWidth(text: string, fontSize: number): number {
   return ems * fontSize;
 }
 
-/** Shorten to fit, and say so. The full text always rides in a `<title>`. */
+/**
+ * Shorten to fit, and say so. The full text always rides in a `<title>`.
+ *
+ * `suffix` is text that must survive the cut — the repeat mark, `×T/h`, which is
+ * appended to a lane's name and is the one thing on that lane the reader cannot
+ * learn anywhere else on the canvas. It is **measured with** the kept text rather
+ * than subtracted from `maxWidth` first, and that is not a style choice: the
+ * caller's budget was measured off the whole string, and
+ * `width(name) + width(suffix)` is not `width(name + suffix)` in floating point.
+ * The first version subtracted, and `Block-encode a matrix ×m` was cut by one
+ * character at a budget exactly equal to its own demand — a wrong-reason
+ * truncation of the same family as the 0.05px one `columnFit` already carries a
+ * comment about. One measurement, one derivation.
+ *
+ * `truncated` describes the **text**, never the suffix, which is never cut.
+ */
 export function fitLabel(
   text: string,
   fontSize: number,
   maxWidth: number,
+  suffix = "",
 ): { text: string; truncated: boolean } {
-  if (estimateTextWidth(text, fontSize) <= maxWidth) return { text, truncated: false };
+  if (estimateTextWidth(text + suffix, fontSize) <= maxWidth) {
+    return { text: text + suffix, truncated: false };
+  }
   const characters = [...text];
   let kept = "";
   for (let index = 0; index < characters.length; index += 1) {
     const next = kept + characters[index];
-    if (estimateTextWidth(next + "…", fontSize) > maxWidth) break;
+    if (estimateTextWidth(next + "…" + suffix, fontSize) > maxWidth) break;
     kept = next;
   }
   // A cut that saves nothing is not a cut.
@@ -87,7 +105,7 @@ export function fitLabel(
   // the ellipsis mean something again.
   let cut = [...kept.trimEnd()];
   while (cut.length > 0 && cut.length + 1 >= characters.length) cut = cut.slice(0, -1);
-  return { text: cut.join("") + "…", truncated: true };
+  return { text: cut.join("") + "…" + suffix, truncated: true };
 }
 
 /**
