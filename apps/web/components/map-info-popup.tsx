@@ -123,6 +123,12 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
       // source's own symbol. A mark with no key says *special* without saying
       // what, which is the failure this repository has already written down once.
       "A count after a step's name — ×T/h, ×O(κ) — means the route walks that step that many times rather than once. It is the source's own symbol, and the card says what it stands for and what one turn costs. A step with no count is a step no source we read said is repeated, which is not the same as one taken once.",
+      // **The second mark, and the one that needed a key more.** A count is
+      // self-describing — `×T/h` reads as a multiplier to anyone. `⊂` does not:
+      // it is borrowed from set inclusion to mean the relation the corpus calls
+      // `refines`, and a symbol nobody has been told the meaning of is exactly
+      // the mark that says *special* without saying what. Five methods carry it.
+      "A name followed by ⊂ and a second name — LightSABRE ⊂ SABRE — means this method is a narrower version of that one: the same construction, re-analysed or re-tuned, filling the same step. It is why two lanes can draw the identical interior and still be two entries. Methods with no such mark are alternatives to their neighbours, not versions of them.",
       "The map does not hide the gaps. An empty step is drawn as an empty step.",
     ],
     gaps: [
@@ -167,6 +173,7 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
     claims: [
       "実線は、その二つの工程を結びつけた論文があり、その出典を保持していることを意味します。長い破線は、経路は記録されているものの、その工程を満たす手法が名指しされていないことを意味します。短い破線は、公開された文献がそこを満たしていないことを意味します。工程は実在し、通る方法がまだ書かれていません。",
       "工程の名前のうしろに付く回数 — ×T/h、×O(κ) — は、その経路がその工程を 1 回ではなく、その回数だけ実行することを表します。出典が用いている記号そのままであり、その記号が何を指すのか、また 1 回あたり何が費やされるのかはカードに記してあります。回数の付かない工程は、繰り返すと述べた出典を確認できていない工程であって、1 回だけ実行するという意味ではありません。",
+      "名前のうしろに ⊂ と別の名前が続く場合 — LightSABRE ⊂ SABRE — は、その手法がもう一方をより狭めた版であることを表します。構成は同じで、それを再解析または再調整したものであり、埋める工程も同じです。二つの線が同一の内部を描きながらなお別の項目である理由がこれです。この印の付かない手法は、隣接するものの版ではなく、それに代わる選択肢です。",
       "この地図は欠落を隠しません。空の工程は空の工程として描かれます。",
     ],
     gaps: [

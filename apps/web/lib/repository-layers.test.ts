@@ -146,7 +146,12 @@ const FIXTURE: LayerGraph = {
       steps: ["encode"],
       atomic: undefined,
     }),
-    method("fast", "solve", { contract: contract("alpha", "gamma"), refines: "direct" }),
+    method("fast", "solve", {
+      contract: contract("alpha", "gamma"),
+      refines: "direct",
+      refinesMark: "direct",
+      refinesMarkJa: "direct",
+    }),
     method("other", "solve", { contract: contract("alpha", "gamma"), bypasses: ["encode"] }),
     method("encode-a", "encode", { entries: ["real-slug"] }),
   ],
@@ -462,6 +467,48 @@ test("validation rejects the edges that would make a reading dishonest", () => {
   assert.ok(
     bad([capability("a"), capability("b"), method("m", "a"), method("n", "b", { refines: "m" })]).some(
       (e) => e.includes("fills a different slot"),
+    ),
+  );
+  // **The refinement mark is a hand-copied name, so it is gated against the
+  // name it copies.** The canvas draws `LightSABRE ⊂ SABRE`; the corpus holds
+  // only `SABRE`, and the one way that string goes wrong is the parent being
+  // renamed underneath it — which is silent, on the drawing, and looks perfectly
+  // deliberate. Requiring it to occur inside the parent's own name means it can
+  // be shorter than that name and can never be a different one.
+  assert.ok(
+    bad([
+      capability("a"),
+      method("m", "a"),
+      method("n", "a", { refines: "m", refinesMark: "m", refinesMarkJa: "m" }),
+    ]).length === 0,
+    "a mark that is the parent's own name was rejected",
+  );
+  assert.ok(
+    bad([capability("a"), method("m", "a"), method("n", "a", { refines: "m" })]).some((e) =>
+      e.includes("refinesMark is empty"),
+    ),
+  );
+  assert.ok(
+    bad([
+      capability("a"),
+      method("m", "a"),
+      method("n", "a", { refines: "m", refinesMark: "elsewhere", refinesMarkJa: "m" }),
+    ]).some((e) => e.includes("does not occur in m's own name")),
+  );
+  assert.ok(
+    bad([
+      capability("a"),
+      method("m", "a"),
+      method("n", "a", {
+        refines: "m",
+        refinesMark: "mmmmmmmmmmmm",
+        refinesMarkJa: "m",
+      }),
+    ]).some((e) => e.includes("a refinement mark may be at most")),
+  );
+  assert.ok(
+    bad([capability("a"), method("m", "a", { refinesMark: "x", refinesMarkJa: "x" })]).some((e) =>
+      e.includes("refinesMark is set and refines is not"),
     ),
   );
   assert.ok(

@@ -746,6 +746,16 @@ export interface ConvergeLane {
    * on the Taylor lane drawing the same slot.
    */
   repeatMark: string | null;
+  /**
+   * What this lane narrows, drawn and spoken — see `StrandRefinement`.
+   *
+   * Emitted rather than looked up from `nodeId` for the reason `repeatMark` is,
+   * with one addition: the spoken form names the parent in full, and the parent
+   * is a *second* node. A renderer holding one node id cannot reach it, and a
+   * renderer that could would be a second reader of a relation the layout has
+   * already read.
+   */
+  refinement: StrandRefinement | null;
   labelTruncated: boolean;
   /**
    * A run of named hops, drawn as its hops and never under a name of its own.
@@ -913,6 +923,8 @@ export interface ConvergeFeed {
   shortLabel: string | null;
   /** The count drawn at the end of `label`. See `ConvergeLane.repeatMark`. */
   repeatMark: string | null;
+  /** What this stub narrows. See `ConvergeLane.refinement`. */
+  refinement: StrandRefinement | null;
   labelTruncated: boolean;
   href: string;
   /** As `ConvergeLane.cardHref`: the card for this ingredient, or null. */
@@ -1347,6 +1359,23 @@ interface PlanStrand {
    * reading `LayerMethod.repeats` states, and nothing here derives a count.
    */
   repeatMark: string | null;
+  /**
+   * That this lane is a **narrower version** of another method — see
+   * `StrandRefinement`.
+   *
+   * ## The opposite of `repeatMark` in exactly one way
+   *
+   * A count belongs to the occurrence; a refinement belongs to the *node*.
+   * `lightsabre-routing` is a narrower SABRE on every lane that ever draws it,
+   * on every figure, so this is set once where the method's own strand is
+   * planned and never varies by route. That is why it is set in `planForMethod`
+   * from the method itself rather than passed in by whoever planned the hop.
+   *
+   * Null on 58 of the 63 methods and on every capability. Null means no source
+   * declared this a narrowing of a sibling — the reading `LayerMethod.refines`
+   * states, and nothing here infers one from a shared chain.
+   */
+  refinement: StrandRefinement | null;
   href: string;
   standing: LaneStanding;
   open: boolean;
@@ -1650,6 +1679,8 @@ function chainInside(
       // The stretch a method closes itself is not one of its steps, so nothing
       // can have recorded a multiplicity for it. See `repeatMark`.
       repeatMark: null,
+      // Nor a refinement: this is a *step*, and only a method narrows a method.
+      refinement: null,
       href: `/repository/layers/${method.id}`,
       standing: "recorded" as LaneStanding,
       open: false,
@@ -1722,6 +1753,9 @@ function planForSlot(
     // Set by whoever plans this occurrence, not here: a slot is one node on
     // many lanes and the count belongs to the route above it. See `repeatMark`.
     repeatMark: null,
+    // A slot is a capability. `refines` is a relation between two methods, so a
+    // slot's own lane never carries one — the methods inside its fan do.
+    refinement: null,
     href: `/repository/layers/${slotId}`,
     standing: "recorded",
     open: isOpen && inside !== null,
@@ -1821,6 +1855,9 @@ function planForMethod(
     // A method is not a step of itself. Its *steps* carry the marks, and
     // `planForMethod` writes them onto the children it plans below.
     repeatMark: null,
+    // The refinement, by contrast, is the method's own and is set right here:
+    // it is true of this node wherever it is drawn, not of one route through it.
+    refinement: refinementOf(graph, method, locale),
     href: `/repository/layers/${method.id}`,
     standing: "recorded",
     // Open even when there is no chain to draw: the ingredients are the whole
@@ -1919,6 +1956,7 @@ function planForLane(
     // Null for the same reason, and it costs nothing: a composite draws no name
     // at all, so a mark on it would be measured into a width nothing uses.
     repeatMark: null,
+    refinement: null,
     href: named.href,
     standing,
     open: true,
@@ -2176,16 +2214,93 @@ export function ownStepName(locale: PublicLocale): string {
  * truncated, so it can never be the reason that flag is set.
  */
 function fitMarkedName(
-  strand: { label: string; shortLabel: string | null; repeatMark: string | null },
+  strand: MarkedStrand,
   font: number,
   budget: number,
 ): { text: string; truncated: boolean } {
-  return fitLabel(
-    strand.shortLabel ?? strand.label,
-    font,
-    budget,
-    strand.repeatMark === null ? "" : ` ${strand.repeatMark}`,
-  );
+  return fitLabel(strand.shortLabel ?? strand.label, font, budget, markSuffix(strand));
+}
+
+/**
+ * What this lane is a narrower version of, in the two forms the two audiences
+ * need.
+ *
+ * `mark` is the name alone (`SABRE`); the canvas draws `⊂ ` in front of it and
+ * that symbol has exactly one writer, `markSuffix`. `spoken` is the sentence —
+ * *"a narrower version of SABRE (SWAP-based bidirectional heuristic search)"* —
+ * and it names the parent in **full**, because the two audiences want opposite
+ * things from the same fact: the drawing has a 300px budget and the reader
+ * beside it has the parent's other lane in view, while a `<title>` or a screen
+ * reader has neither and `⊂` read aloud is not a word.
+ *
+ * Composed here, once, rather than at the two shapes and the accessible list —
+ * three writers of one sentence is the shape that drifts, and `refines` is
+ * already stated in words on two card surfaces, which is two too many places
+ * for a fourth to disagree with.
+ */
+export interface StrandRefinement {
+  mark: string;
+  spoken: string;
+}
+
+type MarkedStrand = {
+  label: string;
+  shortLabel: string | null;
+  repeatMark: string | null;
+  refinement: StrandRefinement | null;
+};
+
+/**
+ * Everything appended to a drawn name, in one string and one order.
+ *
+ * **One writer, because the budget is one number.** `fitLabel` measures the
+ * kept name and this suffix together in a single `estimateTextWidth` call — the
+ * standing lesson from the `repeats` mark, where subtracting the mark's width
+ * from the budget first cut a name at a budget equal to its own demand. A
+ * second suffix makes that arithmetic worse, not better, so there is no second
+ * one: both marks live here.
+ *
+ * **The order is the reading order and it is not arbitrary.** The refinement
+ * qualifies the *name* — it says which of two same-shaped lanes this is — so it
+ * sits against the name. The count qualifies the *lane* and belongs at the end,
+ * where `spokenName` also puts it. `LCHS with the improved kernel ⊂ LCHS ×T/h`
+ * reads as one phrase; the other order reads as two.
+ */
+function markSuffix(strand: {
+  repeatMark: string | null;
+  refinement: StrandRefinement | null;
+}): string {
+  const refines = strand.refinement === null ? "" : ` ⊂ ${strand.refinement.mark}`;
+  const repeats = strand.repeatMark === null ? "" : ` ${strand.repeatMark}`;
+  return `${refines}${repeats}`;
+}
+
+/**
+ * The refinement a method declares, in the locale being drawn — or null.
+ *
+ * Reads `refines` and the authored mark beside it and goes no further: a method
+ * that draws the same chain as a sibling without declaring `refines` gets null,
+ * because the drawing must not assert a relation the corpus did not record.
+ * That is the whole of the difference between this mark and the census in
+ * `repository-map-card.test.ts`, which counts the ones nothing has declared.
+ */
+function refinementOf(
+  graph: LayerGraph,
+  method: LayerMethod,
+  locale: PublicLocale,
+): StrandRefinement | null {
+  if (method.refines === undefined) return null;
+  const mark = locale === "ja" ? method.refinesMarkJa : method.refinesMark;
+  const parent = layerNode(graph, method.refines);
+  if (mark === undefined || mark.trim() === "" || !parent) return null;
+  const name = labelOf(parent, locale);
+  return {
+    mark: mark.trim(),
+    // The node page's and the card's own words for this edge
+    // (`repository-layers.tsx`'s `variantOf`, `map-card-panel.tsx`'s `refines`).
+    // One fact should read as one fact wherever it is drawn or spoken.
+    spoken: locale === "ja" ? `${name}をより狭めた版` : `a narrower version of ${name}`,
+  };
 }
 
 function withRepeatMark(
@@ -2229,17 +2344,19 @@ function withRepeatMark(
 export function spokenName(lane: {
   fullLabel: string;
   repeatMark: string | null;
+  refinement: StrandRefinement | null;
 }): string {
-  return lane.repeatMark === null ? lane.fullLabel : `${lane.fullLabel} ${lane.repeatMark}`;
+  // The **words**, not `markSuffix`'s symbol. `⊂` in an `aria-label` is a
+  // character a screen reader either skips or names as "subset of", and neither
+  // is the relation the corpus recorded. Same fact, said the way this surface
+  // says things — which is the rule `spokenName` exists to keep.
+  const refines = lane.refinement === null ? "" : `, ${lane.refinement.spoken}`;
+  const repeats = lane.repeatMark === null ? "" : ` ${lane.repeatMark}`;
+  return `${lane.fullLabel}${refines}${repeats}`;
 }
 
-export function drawnName(strand: {
-  label: string;
-  shortLabel: string | null;
-  repeatMark: string | null;
-}): string {
-  const name = strand.shortLabel ?? strand.label;
-  return strand.repeatMark === null ? name : `${name} ${strand.repeatMark}`;
+export function drawnName(strand: MarkedStrand): string {
+  return `${strand.shortLabel ?? strand.label}${markSuffix(strand)}`;
 }
 
 function measure(strand: PlanStrand, depth: number): Measure {
@@ -2629,6 +2746,7 @@ function place(
     fullLabel: strand.label,
     shortLabel: strand.shortLabel,
     repeatMark: strand.repeatMark,
+    refinement: strand.refinement,
     labelTruncated: fitted.truncated,
     // Two addresses, because there are two kinds of thing here.
     //
@@ -2843,6 +2961,7 @@ function placeFeeds(
       fullLabel: feed.label,
       shortLabel: feed.shortLabel,
       repeatMark: feed.repeatMark,
+      refinement: feed.refinement,
       labelTruncated: fitted.truncated,
       href: feed.href,
       cardHref:

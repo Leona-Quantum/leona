@@ -205,6 +205,8 @@ export const LAYER_GRAPH: LayerGraph = {
     // now cites: the map cannot check a `refines` assertion against a source, so
     // the source has to be named in prose beside it.
     refines: "koopman-linearization",
+    refinesMark: "Koopman",
+    refinesMarkJa: "Koopman",
     conditions: "Stated for du/dt = F_2 u^{⊗2} + F_1 u + F_0(t) with F_1 diagonalizable and eigenvalues ordered Re(λ_n) ≤ … ≤ Re(λ_1) < 0, that is, a strictly dissipative linear part. Liu et al. give a convergence theorem for R < 1, where R = (1/|Re(λ_1)|)(||u_in|| ||F_2|| + ||F_0||/||u_in||). It does not apply when the linear part has an eigenvalue with non-negative real part.",
     conditionsJa: "du/dt = F_2 u^{⊗2} + F_1 u + F_0(t) の形で述べられており、F_1 は対角化可能で、固有値が Re(λ_n) ≤ … ≤ Re(λ_1) < 0 の順に並ぶこと、すなわち線形部が厳密に散逸的であることを要求します。Liu らは R = (1/|Re(λ_1)|)(||u_in|| ||F_2|| + ||F_0||/||u_in||) として R < 1 の場合に収束定理を与えています。線形部が実部非負の固有値をもつ場合には適用できません。",
     contested: "Liu et al. also prove that the general quadratic ODE problem is intractable for R ≥ √2, so the band 1 ≤ R < √2 is open and R < 1 must not be described as necessary. Wu, Wang and Li subsequently prove linear convergence with respect to the truncation level N under a resonance condition instead of a dissipative one, with numerical experiments on Burgers' equation, Fermi-Pasta-Ulam chains and the Korteweg-de Vries equation; that enlarges the set of systems for which the embedding is known to converge and does not overturn the R ≥ √2 result.",
@@ -245,6 +247,8 @@ export const LAYER_GRAPH: LayerGraph = {
     summaryJa: "再スケーリングした常微分方程式 dx/dt = F_0 + F_1 e^{ix}（もとの問題は du/dt = G_0 + G_1 e^{iu} であり、F_0 = G_0、F_1 = νG_1 と再スケーリングしたもの）を、単項式の塔ではなく e^{ix}, (e^{ix})^{⊗2}, … という Fourier の塔に持ち上げ、水準 N で打ち切ります。Katz・Muraleedharan・Alase はこの選択の理由を述べています。同じ方程式を単項式で展開すると係数行列は疎になりませんが、Fourier 基底では、著者らの一変数の例において係数行列の各行がもつ非零成分は二つです。",
     realizes: "nonlinear-linear-embedding",
     refines: "koopman-linearization",
+    refinesMark: "Koopman",
+    refinesMarkJa: "Koopman",
     conditions: "Stated for the rescaled ODE dx/dt = F_0 + F_1 e^{ix} with time-independent coefficient matrices. Katz et al. give two truncation regimes. The dissipative one requires µ̃_0 := min_j Im{(F_0)_j} ≥ 0 and R_p := ||F_1||_row,q ||Ψ_1(0)||_p / µ̃_0 < 1, under which the k-th truncation error component is bounded by (||Ψ_1(0)||_p)^{N+1} (||F_1||_row,q / µ̃_0)^{N+1−k}. The second drops dissipativity and holds only on a finite interval [0, T_max] with T_max = min{T_r, ln r / (||F_0||_∞ + ||F_1||_row,q)}, where r is the rescaling parameter and T_r is the horizon their Lemma 4.3 supplies. Chen, Motee and Sun state the linearization for periodic vector fields with several fundamental frequencies and prove exponential convergence in the truncation length, achieved across the whole time horizon only for particular classes of system.",
     conditionsJa: "係数行列が時間に依存しない、再スケーリング後の dx/dt = F_0 + F_1 e^{ix} について述べられています。Katz らは打ち切りに関して二つの領域を与えています。散逸的な領域では µ̃_0 := min_j Im{(F_0)_j} ≥ 0 かつ R_p := ||F_1||_row,q ||Ψ_1(0)||_p / µ̃_0 < 1 を要求し、このとき打ち切り誤差の第 k 成分は (||Ψ_1(0)||_p)^{N+1} (||F_1||_row,q / µ̃_0)^{N+1−k} で抑えられます。もう一方は散逸性の仮定を外す代わりに、有限区間 [0, T_max] でのみ成り立ち、T_max = min{T_r, ln r / (||F_0||_∞ + ||F_1||_row,q)} で与えられます。ここで r は再スケーリングのパラメータ、T_r は補題 4.3 が与える時間の上限です。Chen・Motee・Sun は、複数の基本周波数をもつ周期的なベクトル場に対してこの線形化を述べ、打ち切り長に関する指数的収束を証明しています。時間区間全体にわたって指数的収束が得られるのは、特定の系のクラスに限られます。",
     // No `cost`: every complexity in arXiv:2512.06488 is the end-to-end query
@@ -382,6 +386,15 @@ export const LAYER_GRAPH: LayerGraph = {
     id: "krovi-linear-ode",
     label: "Krovi's reanalysis of the all-at-once encoding",
     labelJa: "Krovi による一括符号化の再解析",
+    // The only name in the corpus the refinement mark pushed over the column,
+    // and it was the widest label on `nonlinear-ode-solve` before the mark
+    // existed — the full form spends 26 of its 45 characters restating the
+    // encoding that `⊂ Taylor` now names outright, one lane away from the lane
+    // that draws it. Authored rather than machine-cut, which is the whole
+    // difference `shortLabel` records: the full name still reaches the `<title>`,
+    // the card and the accessible list.
+    shortLabel: "Krovi's reanalysis",
+    shortLabelJa: "Krovi の再解析",
     summary: "Reanalyses the all-at-once propagator encoding and shows that the norm of the matrix exponential, rather than the eigenvector condition number, characterizes the run time. It still forms a global linear system and still calls a quantum linear solver.",
     summaryJa: "一括符号化を再解析し、実行時間を特徴づけるのは固有ベクトル行列の条件数ではなく行列指数のノルムであることを示します。それでもなお大域的な線形系を組み立て、量子線形ソルバーを呼ぶ点は変わりません。",
     realizes: "linear-ode-solve",
@@ -410,6 +423,8 @@ export const LAYER_GRAPH: LayerGraph = {
     // and Wang already chose. A pin here would put a name on a hop that no
     // source puts there.
     refines: "taylor-all-at-once",
+    refinesMark: "Taylor",
+    refinesMarkJa: "Taylor",
     conditions: "Extends to many classes of non-diagonalizable matrices, which the Berry-Childs-Ostrander-Wang analysis required to be diagonalizable, and is exponentially faster than those bounds for certain classes of diagonalizable matrices. Applied back to nonlinear ODEs through Carleman linearization, it handles any sparse, invertible matrix modelling dissipation that has a negative log-norm, where Liu et al. and Xue et al. additionally require normality. It improves the constant of the bottleneck; it does not remove the quantum-linear-solve layer.",
     conditionsJa: "Berry・Childs・Ostrander・Wang の解析が対角化可能性を要求していたのに対し、非対角化可能な行列の多くのクラスにも適用でき、ある種の対角化可能な行列については従来の評価より指数的に高速です。Carleman 線形化を通じて非線形常微分方程式に適用する場合、対数ノルムが負であれば疎で正則な任意の散逸行列を扱えます。Liu らと Xue らはこれに加えて正規性を要求していました。この手法はボトルネックの定数を改善するものであり、量子線形ソルバーの層を取り除くものではありません。",
     cost: "The paper's own framing: the norm of the matrix exponential characterizes the run time of quantum algorithms for linear ODEs. The precise bound is not reproduced here.",
@@ -535,6 +550,8 @@ export const LAYER_GRAPH: LayerGraph = {
     summaryJa: "非ユニタリな発展をユニタリな発展の線形結合として表す恒等式の族で、カーネル f(z) = 1/(C_β e^{(1+iz)^β})（β ∈ (0,1)、C_β = 2π e^{-2^β}）に基づきます。カーネル自体が e^{-c|k|^β} というほぼ指数的な速さで減衰するため、元の Cauchy カーネルの二次的な減衰を置き換え、精度を指数的に高めます。",
     realizes: "linear-ode-solve",
     refines: "lchs-route",
+    refinesMark: "LCHS",
+    refinesMarkJa: "LCHS",
     conditions: "Carries the same requirement as the original LCHS: the Hermitian part L(t) = (A(t)+A(t)^†)/2 must be positive semi-definite throughout the interval. The authors describe this as the first approach enabling quantum algorithms to solve linear differential equations with both optimal state preparation cost and near-optimal scaling in matrix queries on all parameters, which is why it is the current reference point for this layer.",
     conditionsJa: "元の LCHS と同じ条件を引き継ぎます。すなわち、エルミート部 L(t) = (A(t)+A(t)^†)/2 が区間全体で半正定値でなければなりません。著者らはこれを、状態準備の最適な費用と、すべてのパラメータに関する行列クエリのほぼ最適なスケーリングを同時に達成した最初の手法と位置づけています。この層の現在の基準点とされるのはそのためです。",
     cost: "Õ( ((||u_0|| + ||b||_{L^1})/||u(T)||) α_A T (log(1/ε))^{1+1/β} ) matrix queries, with α_A ≥ max_t ||A(t)||, T the evolution time and β ∈ (0,1); this improves to (log(1/ε))^{1/β} for time-independent A. State preparation costs O( (||u_0|| + ||b||_{L^1})/||u(T)|| ) queries, independent of both T and ε.",
@@ -1792,6 +1809,8 @@ export const LAYER_GRAPH: LayerGraph = {
     summaryJa: "SABRE を作り直した実装（Qiskit の製品実装で、大部分が Rust で書き直されています）で、アルゴリズム上の変更により大きな回路での実行時間と経路付けの品質をともに改善します。あわせて備えるリリースバルブ機構は、比較対象である Qiskit 0.20.1 の時点で既に導入されていたものです。",
     realizes: "qubit-routing",
     refines: "sabre-routing",
+    refinesMark: "SABRE",
+    refinesMarkJa: "SABRE",
     conditions: "Same applicability as SABRE. The claims are benchmark-relative, measured against named Qiskit versions and the benchmark set of Li et al.; they are not worst-case guarantees.",
     conditionsJa: "適用範囲は SABRE と同じです。主張はいずれもベンチマーク相対で、指定された Qiskit の版と Li らのベンチマーク回路に対して測ったものであり、最悪ケースの保証ではありません。",
     cost: "Benchmark-relative rather than a bound: the Qiskit 1.2.0 implementation is approximately 200 times faster than the implementation in Qiskit 0.20.1, and gives an average 18.9% decrease in SWAP gate count against the SABRE algorithm of Li et al. across the same benchmark circuits.",

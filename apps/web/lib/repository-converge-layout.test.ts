@@ -42,6 +42,7 @@ import {
   isMethod,
   layerNode,
   methodsRealizing,
+  REFINES_MARK_MAX,
   REPEAT_MARK_MAX,
   rootCapabilities,
   routeOf,
@@ -968,7 +969,22 @@ test("no figure clips a label the column was sized to hold", () => {
           assert.equal(lane.label, "", `${lane.key} drew the composite name "${lane.label}"`);
           continue;
         }
-        assert.equal(lane.label, lane.shortLabel ?? lane.fullLabel);
+        // Not truncated means the whole drawn string reached the canvas — the
+        // name **and** whatever is marked on it. Re-derived here rather than
+        // read from `drawnName`, which is the function this is checking: a
+        // shared helper would agree with itself no matter what it composed.
+        //
+        // A refinement mark is the first one that shows up in this loop at all.
+        // These are shut figures, and a count is set on the steps *inside* an
+        // opened method, so `repeatMark` is null on every lane here; a
+        // refinement belongs to the method itself and is drawn the moment its
+        // slot's fan is.
+        assert.equal(
+          lane.label,
+          `${lane.shortLabel ?? lane.fullLabel}${
+            lane.refinement === null ? "" : ` ⊂ ${lane.refinement.mark}`
+          }${lane.repeatMark === null ? "" : ` ${lane.repeatMark}`}`,
+        );
       }
     }
   }
@@ -2012,6 +2028,115 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
   console.log(`[map repeat census] ${expected.size} records, ${marked} marked lanes drawn across every figure and opening`);
 });
 
+test("every declared refinement is drawn on the lane of the method that declares it", () => {
+  // **The map's other silent relation, and the one the owner asked for by
+  // name.** `refines` is the graph already saying why two methods draw one
+  // picture — the LCHS pair is the case W10 exempts from the twin census for
+  // exactly that reason — and until now it said it on two card surfaces and
+  // nowhere on the canvas. A reader looking at `nonlinear-linear-embedding` saw
+  // Carleman and Koopman as flat peers, which is the one thing they are not.
+  //
+  // The subject is the opposite of the repeat mark's. A count belongs to an
+  // occurrence, so that test's expected set is keyed per (method, step) and
+  // asks which *lane* carries it. A narrowing belongs to the node, so this one
+  // is keyed per method and asks whether it reached a drawing **at all** — a
+  // record no figure draws is the failure this shape allows, and it is not
+  // hypothetical: two of these five are never in a shut figure's fan, because
+  // `linear-ode-solve` draws its own steps when it is the focus and its methods
+  // only when something above it opens the slot.
+  const expected = new Map<string, string>();
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node) || node.refines === undefined) continue;
+    assert.ok(node.refinesMark !== undefined, `${node.id}: refines with no mark reached the layout`);
+    expected.set(node.id, node.refinesMark);
+  }
+  assert.ok(expected.size > 0, "no refinement is recorded at all — this test measures nothing");
+  const drawn = new Set<string>();
+  let marks = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of openings(focus.id)) {
+        const diagram = openDiagram(focus.id, open, locale);
+        for (const shape of [...diagram.lanes, ...diagram.feeds]) {
+          if (shape.refinement === null) continue;
+          marks += 1;
+          assert.ok(
+            [...shape.refinement.mark].length <= REFINES_MARK_MAX,
+            `${shape.fullLabel}: ${shape.refinement.mark} is longer than a refinement mark may be`,
+          );
+          // The symbol has one writer and this is where that is checked: a
+          // second place composing `⊂` is how the two would drift apart.
+          assert.ok(
+            shape.label.includes(` ⊂ ${shape.refinement.mark}`),
+            `${shape.fullLabel} narrows ${shape.refinement.mark} and draws "${shape.label}"`,
+          );
+          // And the name comes first. `markSuffix` puts the narrowing against
+          // the name and the count after it, so a lane carrying both reads as
+          // one phrase; asserted here because the order is a claim about
+          // reading, not an implementation detail.
+          if (shape.repeatMark !== null) {
+            assert.ok(
+              shape.label.indexOf(" ⊂ ") < shape.label.lastIndexOf(shape.repeatMark),
+              `${shape.fullLabel}: the count came before the narrowing`,
+            );
+          }
+        }
+        for (const lane of diagram.lanes) {
+          if (lane.refinement !== null && expected.has(lane.fullLabel)) drawn.add(lane.fullLabel);
+        }
+      }
+    }
+  }
+  // Reached-a-drawing, resolved by id rather than by label: a lane's key carries
+  // the method id and its `fullLabel` does not.
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const open of openings(focus.id)) {
+      const diagram = openDiagram(focus.id, open);
+      for (const [methodId, mark] of expected) {
+        const onLane = diagram.lanes.some(
+          (lane) => lane.refinement?.mark === mark && lane.key.includes(methodId),
+        );
+        const onFeed = diagram.feeds.some(
+          (feed) => feed.refinement?.mark === mark && feed.parentKey.includes(methodId),
+        );
+        if (onLane || onFeed) drawn.add(methodId);
+      }
+    }
+  }
+  assert.deepEqual(
+    [...expected.keys()].filter((id) => !drawn.has(id)),
+    [],
+    "a declared refinement reaches no figure at all",
+  );
+  console.log(
+    `[map refinement census] ${expected.size} records, ${marks} marked shapes drawn across every figure and opening`,
+  );
+});
+
+test("nothing on the canvas is marked a narrowing that the corpus did not declare", () => {
+  // The other direction, and the one that matters more. 46 of 63 methods draw a
+  // chain a sibling already drew (`W10-hollow-twins.md`), and `refines` is the
+  // only thing that distinguishes a *declared* narrowing from a group nobody has
+  // written the interior of yet. A mark inferred from a shared chain would put
+  // that distinction on the drawing without a source behind it — and would do it
+  // most confidently on exactly the 17 groups that have said nothing.
+  const declared = new Set(
+    LAYER_GRAPH.nodes.filter((node) => isMethod(node) && node.refines !== undefined).map((n) => n.id),
+  );
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const open of openings(focus.id)) {
+      const diagram = openDiagram(focus.id, open);
+      for (const lane of diagram.lanes) {
+        if (lane.refinement === null) continue;
+        assert.ok(
+          [...declared].some((id) => lane.key.includes(id)),
+          `${lane.key} draws a narrowing no method on it declares`,
+        );
+      }
+    }
+  }
+});
+
 test("the count reaches a reader who is not looking at the picture", () => {
   // **The drawn label can be cut; the spoken one cannot.** The `<title>`, the
   // `aria-label` and the accessible list beside every figure all read the full
@@ -2021,31 +2146,47 @@ test("the count reaches a reader who is not looking at the picture", () => {
   //
   // Asserted through `spokenName`, the one function those three surfaces call,
   // so a surface that started building the string itself is what fails here.
+  //
+  // Both marks, because both are drawn and neither is a word. The refinement's
+  // `⊂` is the sharper case: read aloud it is either skipped or called "subset
+  // of", and the relation the corpus recorded is *"a narrower version of"* —
+  // so the spoken form carries the sentence and the symbol must never appear
+  // in it, which is asserted below rather than assumed from the composition.
+  const expected = (lane: {
+    fullLabel: string;
+    repeatMark: string | null;
+    refinement: { spoken: string } | null;
+  }): string =>
+    `${lane.fullLabel}${lane.refinement === null ? "" : `, ${lane.refinement.spoken}`}${
+      lane.repeatMark === null ? "" : ` ${lane.repeatMark}`
+    }`;
   let checked = 0;
+  let narrowed = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       const diagram = openDiagram(focus.id, open);
-      for (const lane of diagram.lanes) {
+      for (const shape of [...diagram.lanes, ...diagram.feeds]) {
         assert.equal(
-          spokenName(lane),
-          lane.repeatMark === null ? lane.fullLabel : `${lane.fullLabel} ${lane.repeatMark}`,
-          `${lane.key}: the spoken name is not the full name plus its count`,
+          spokenName(shape),
+          expected(shape),
+          `the spoken name is not the full name plus what is marked on it`,
         );
-        if (lane.repeatMark !== null) {
+        assert.ok(
+          !spokenName(shape).includes("⊂"),
+          `${shape.fullLabel}: the drawn symbol reached a name that is read aloud`,
+        );
+        if (shape.repeatMark !== null || shape.refinement !== null) {
           // The full name is never shortened, so the spoken string carries every
           // character of it — including on the lanes whose drawn label was cut.
-          assert.ok(spokenName(lane).startsWith(lane.fullLabel));
+          assert.ok(spokenName(shape).startsWith(shape.fullLabel));
           checked += 1;
         }
-      }
-      for (const feed of diagram.feeds) {
-        if (feed.repeatMark === null) continue;
-        assert.equal(spokenName(feed), `${feed.fullLabel} ${feed.repeatMark}`);
-        checked += 1;
+        if (shape.refinement !== null) narrowed += 1;
       }
     }
   }
   assert.ok(checked > 0, "no marked lane was checked — this test measures nothing");
+  assert.ok(narrowed > 0, "no refinement was checked — this test measures half of what it says");
 });
 
 test("an ingredient's name stays on the canvas", () => {
