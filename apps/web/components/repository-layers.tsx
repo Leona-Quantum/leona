@@ -650,7 +650,9 @@ function NodeLink({
           <span className="mj-layers-item-kind">{note}</span>
         </>
       ) : null}
-      <p>{summary(node, locale)}</p>
+      <p>
+        <MathText source={summary(node, locale)} />
+      </p>
     </li>
   );
 }
@@ -1011,7 +1013,9 @@ function MethodView({
                       {copy.repeatsBadge(isJa ? repetition.countJa : repetition.count)}
                     </span>
                   ) : null}
-                  <p>{summary(step, locale)}</p>
+                  <p>
+                    <MathText source={summary(step, locale)} />
+                  </p>
                   {repetition ? (
                     <p className="mj-layers-repeat-note">
                       {repetition.closure === "measured"
@@ -1121,7 +1125,9 @@ export function LayerNodeView({
           {depth === undefined ? null : <span>{copy.depth(depth)}</span>}
         </p>
         <h1>{label(node, locale)}</h1>
-        <p className="mj-layers-lede">{summary(node, locale)}</p>
+        <p className="mj-layers-lede">
+          <MathText source={summary(node, locale)} />
+        </p>
         <ContractPiece graph={graph} node={node} locale={locale} copy={copy} />
       </header>
       {/* Before the prose, not after it. A reader who clicked a name on the map
