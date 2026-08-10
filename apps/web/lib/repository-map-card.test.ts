@@ -15,7 +15,13 @@
 import assert from "node:assert/strict";
 import test from "node:test";
 
-import { parseCardId, withCard } from "./repository/map-card.ts";
+import {
+  parseCardId,
+  parseCardSection,
+  SECTION_PARAM,
+  withCard,
+  withCardSection,
+} from "./repository/map-card.ts";
 import {
   cardExists,
   cardFor,
@@ -89,6 +95,52 @@ test("opening a card costs the reader nothing they were already holding", () => 
   // outlives everyone who remembers which one won.
   assert.equal(new URLSearchParams(withCard(`${base}&about=what-this-is`, "hhl-qpe-inversion")).get("about"), null);
   assert.equal(withCard("/repository/layers", null), "/repository/layers");
+});
+
+test("which section is showing is an address, and a stale one never blanks the card", () => {
+  // The owner's *"card sections horizontally clickable, not a scroll"*, one level down from
+  // the drawing: once only one section is drawn, *which one* is part of what the page is
+  // showing, so it lives where everything else about this page lives. It also makes "the
+  // Theory of backward Euler" a link somebody can send, on a repository whose purpose is
+  // being cited.
+  const method = cards().find((card) => card.kind === "method")!;
+  const ids = cardSections(method).map((section) => section.id);
+  assert.ok(ids.length >= 10, `only ${ids.length} sections to choose between`);
+
+  // Absent, empty and unrecognised all mean "the card's own first" — never "no card".
+  // `?card=` cannot do this because there is no sensible default node; a section list is
+  // small, fixed and supplied by the card, so every possible value lands somewhere.
+  assert.equal(parseCardSection(undefined, ids), null);
+  assert.equal(parseCardSection("", ids), null);
+  assert.equal(parseCardSection("no-such-section", ids), null);
+  assert.equal(parseCardSection("theory", ids), "theory");
+  // Only the first, like `?card=`: two sections showing at once is a card the page cannot
+  // draw, and a URL should not claim it.
+  assert.equal(parseCardSection(["theory", "input"], ids), "theory");
+  // A section of a *different* kind of card is not a section of this one. `filled-by` is a
+  // process card's, and a reader who opened a method from one must not land on it.
+  assert.equal(parseCardSection("filled-by", ids), null);
+
+  const base = "/repository/layers?focus=quantum-linear-solve&open=a&at=1.5.2.3&card=hhl-qpe-inversion";
+  const showing = withCardSection(base, "theory");
+  const params = new URLSearchParams(showing.slice(showing.indexOf("?") + 1));
+  // Everything the reader was holding survives, exactly as opening the card does.
+  assert.equal(params.get("focus"), "quantum-linear-solve");
+  assert.deepEqual(params.getAll("open"), ["a"]);
+  assert.equal(params.get("at"), "1.5.2.3");
+  assert.equal(params.get("card"), "hhl-qpe-inversion");
+  assert.equal(params.get(SECTION_PARAM), "theory");
+  // One section at a time in the URL as well as on the page: switching replaces rather
+  // than appends, so an address cannot accumulate a history of what was read.
+  assert.deepEqual(
+    new URLSearchParams(withCardSection(showing, "output").split("?")[1]!).getAll(SECTION_PARAM),
+    ["output"],
+  );
+  // **A new card starts at its own first section.** Carrying `?sec=` across would leave the
+  // URL naming a section the page is not showing — it falls back, but by accident rather
+  // than by intent, and the address goes on making a claim that is not true.
+  assert.equal(new URLSearchParams(withCard(showing, "backward-euler").split("?")[1]!).get(SECTION_PARAM), null);
+  assert.equal(new URLSearchParams(withCard(showing, null).split("?")[1]!).get(SECTION_PARAM), null);
 });
 
 test("every node in the graph draws a card, and every card keeps the way onward", () => {

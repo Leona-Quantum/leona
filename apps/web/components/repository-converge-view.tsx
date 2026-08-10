@@ -64,8 +64,13 @@ import {
   withAbout,
   type MapAboutSection,
 } from "../lib/repository/map-about";
-import { withCard, type CardSelection } from "../lib/repository/map-card";
-import { cardFor } from "../lib/repository/card-content";
+import {
+  parseCardSection,
+  withCard,
+  withCardSection,
+  type CardSelection,
+} from "../lib/repository/map-card";
+import { cardFor, cardSections } from "../lib/repository/card-content";
 import { MapCardPanel } from "./map-card-panel";
 import {
   CONVERGE_OPEN_MAX,
@@ -596,6 +601,7 @@ export function ConvergeView({
   open,
   about = null,
   card = { id: null, dropped: 0 },
+  cardSection = null,
   droppedOpen = 0,
   viewport = IDENTITY,
 }: {
@@ -622,6 +628,15 @@ export function ConvergeView({
    * the graph, the vocabulary and the corpus, and a card is a join of all three.
    */
   card?: CardSelection;
+  /**
+   * Which of the open card's sections is showing, from `?sec=`.
+   *
+   * Resolved here rather than on the page for one reason: the list of sections
+   * depends on the card, and this is where the card is assembled. The page can
+   * say whether an id names a node; it cannot say whether a string names a
+   * section of the card that id opens without building the card twice.
+   */
+  cardSection?: string | null;
   /** How many ids the URL asked for over the cap. Reported, never dropped silently. */
   droppedOpen?: number;
   /** Where the reader has panned and how far in, from `?at=`. */
@@ -748,6 +763,11 @@ export function ConvergeView({
   // overlays on one map is a URL claiming a state the page cannot draw.
   const openCard = card.id === null ? null : cardFor({ graph, vocabulary: STATE_VOCABULARY, corpus, locale: lang, register: PAPER_REGISTER }, card.id);
   const cardCloseHref = withCard(base, null);
+  // The address the open card is already at. Every section link is built on it,
+  // so switching section keeps the reader's focus, their whole open set and
+  // where they had panned — and `withCard` has already stripped any stale
+  // `?sec=` a previous card left behind.
+  const cardBase = card.id === null ? base : withCard(base, card.id);
   const cardHrefFor = (id: string) => withCard(base, id);
   // One control, two states. A separate close button in the overlay would be a
   // third thing in a corner the owner asked to hold exactly two.
@@ -847,7 +867,32 @@ export function ConvergeView({
           is a parameter, so its markup is server-rendered and its dismissal is a
           link. A card that only mounted after a click would be a control with no
           address, which is the thing `?card=` exists to avoid. */}
-      <MapCardPanel card={openCard} closeHref={cardCloseHref} locale={locale} />
+      <MapCardPanel
+        card={openCard}
+        closeHref={cardCloseHref}
+        // Resolved against the sections this card actually has. A `?sec=` naming
+        // something else is a stale link, and the panel falls back to the first
+        // section rather than blanking a card that opened perfectly well.
+        section={
+          openCard === null
+            ? null
+            : parseCardSection(cardSection ?? undefined, cardSections(openCard).map((s) => s.id))
+        }
+        // A map rather than a function: `MapCardPanel` is a client component
+        // and a function prop cannot cross that boundary. Built on the address
+        // the card is already at, so switching section keeps the reader's
+        // focus, their whole open set and where they had panned — the same rule
+        // every other link on this card follows, and the same shape
+        // `MapInfoPopup` takes its five section addresses in.
+        sectionHrefs={
+          openCard === null
+            ? {}
+            : Object.fromEntries(
+                cardSections(openCard).map((s) => [s.id, withCardSection(cardBase, s.id)]),
+              )
+        }
+        locale={locale}
+      />
 
       {/* The figure in words, clipped rather than deleted.
 

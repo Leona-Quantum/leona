@@ -12758,28 +12758,59 @@ div.mj-rail-row:hover {
    control stays pinned while a long card moves under it — which makes it a
    scrollable region a keyboard reader has to be able to reach, hence the
    `tabIndex` and the name on it in the component. */
+/* **The row of section names.** *"card sections horizontally clickable, not a
+   scroll."* — the owner, reading ten stacked disclosures in one scrolling
+   column.
+
+   It **wraps**, and that is the design rather than a fallback. Ten names in
+   English measure about 950px against roughly 656px of card, so they do not fit
+   on one line at any plausible padding — and a strip that scrolls sideways to
+   reach the tenth name is a scroll, which is the thing being removed. Two rows
+   a reader can see all of is the honest answer to a list this long. */
+.mj-card-nav {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-2);
+  padding: var(--sp-3) 0;
+  border-top: var(--border-hairline) solid var(--border-0);
+}
+.mj-card-nav-item {
+  padding: 2px var(--sp-2);
+  border: var(--border-hairline) solid transparent;
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-13);
+  text-decoration: none;
+}
+.mj-card-nav-item:hover {
+  border-color: var(--border-0);
+  color: var(--text-0);
+}
+.mj-card-nav-item.is-showing {
+  border-color: var(--border-0);
+  background: var(--bg-2);
+  color: var(--text-0);
+  font-weight: 500;
+}
+/* **An empty section still has its name, and still reads as empty.** The owner's
+   rule is that gaps are "loud and clear, but terse" — so the name is never
+   removed (a section nobody wrote and a section with nothing in it are
+   indistinguishable once the name is gone), and it sits quieter. This is worth
+   more here than it was on the collapsed headings: a reader now sees all ten
+   states at once instead of scrolling to find out which are gaps. */
+.mj-card-nav-item--empty {
+  color: var(--text-2);
+}
 .mj-card-body {
   min-height: 0;
   overflow-y: auto;
   border-top: var(--border-hairline) solid var(--border-0);
 }
 .mj-card-section {
-  border-bottom: var(--border-hairline) solid var(--border-0);
-}
-.mj-card-section > summary {
-  padding: var(--sp-3) 0;
-  cursor: pointer;
-  font-size: var(--fs-14);
-  font-weight: 500;
-}
-/* **An empty section still has its heading, and still reads as empty.** The
-   owner's rule is that gaps are "loud and clear, but terse" — so the section is
-   never removed (a heading nobody wrote and a heading with nothing under it are
-   indistinguishable once the heading is gone), and it arrives collapsed and
-   quieter so a card of eleven sections does not open as a wall of absences. */
-.mj-card-section--empty > summary {
-  color: var(--text-2);
-  font-weight: 400;
+  /* No heading and no rule: the name is the tab above, and one section is drawn
+     at a time. A heading here would be the same word twice, one line apart —
+     the duplicate the owner had just asked to be rid of inside a hop. */
+  padding-top: var(--sp-3);
 }
 .mj-card-section-body {
   padding: 0 0 var(--sp-3);

@@ -77,10 +77,74 @@ export function withCard(base: string, id: string | null): string {
   const path = cut === -1 ? base : base.slice(0, cut);
   const params = new URLSearchParams(cut === -1 ? "" : base.slice(cut + 1));
   params.delete("card");
+  // A new card starts at its own first section. Carrying `?sec=` across would
+  // land a reader who opened a method from a process card on a section id the
+  // method does not have — which resolves to the first one anyway, but by
+  // falling back rather than by intent, and the URL would go on naming a section
+  // the page is not showing.
+  params.delete(SECTION_PARAM);
   if (id !== null) {
     params.delete("about");
     params.set("card", id);
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
+}
+
+/**
+ * `?sec=` — which of the open card's sections is showing.
+ *
+ * ## Why the section is a parameter and not a `useState`
+ *
+ * The owner asked for the card's sections to be *"horizontally clickable, not a
+ * scroll"*. Ten stacked disclosures in one scrolling column became a row of
+ * names with one section under it — and the moment only one section is drawn,
+ * *which one* is a piece of what the page is showing, so it belongs where
+ * everything else about this page already lives.
+ *
+ * This file's opening paragraph is the argument, and it applies unchanged: a
+ * card that only exists after hydration has no address, no crawler sees it, and
+ * a reader with JavaScript off cannot reach it. A section behind `useState`
+ * would be exactly that one level down. It also makes *"the Theory of backward
+ * Euler"* a link somebody can send, on a repository whose whole purpose is being
+ * cited.
+ *
+ * **And the markup keeps all ten sections regardless.** The panel renders every
+ * section and hides the nine that are not showing, the way `map-info-popup.tsx`
+ * does with its five: `curl` and a crawler get every word whatever `?sec=` says,
+ * and switching section is a paint rather than a fetch for a reader who already
+ * has the page.
+ *
+ * ## Unlike `?card=`, an unrecognised value is not "shut"
+ *
+ * `?card=` names a node and there is no sensible default node, so a bad id means
+ * no card. A section is one of a *fixed, small list* the card itself supplies,
+ * so every possible value has somewhere sensible to land: the first section. A
+ * bad `?sec=` on a good `?card=` must not blank the card.
+ */
+export const SECTION_PARAM = "sec";
+
+/**
+ * Which section `?sec=` names, or `null` for "the card's own first".
+ *
+ * `sections` is passed in rather than derived here for the reason `exists` is on
+ * `parseCardId`: the list depends on the card's kind, and a URL contract that
+ * imports the card model cannot be tested without one.
+ */
+export function parseCardSection<T extends string>(
+  raw: string | string[] | undefined,
+  sections: readonly T[],
+): T | null {
+  const first = Array.isArray(raw) ? raw[0] : raw;
+  if (typeof first !== "string" || first === "") return null;
+  return sections.find((section) => section === first) ?? null;
+}
+
+/** The same address showing `section` of the card that is already open. */
+export function withCardSection(base: string, section: string): string {
+  const cut = base.indexOf("?");
+  const path = cut === -1 ? base : base.slice(0, cut);
+  const params = new URLSearchParams(cut === -1 ? "" : base.slice(cut + 1));
+  params.set(SECTION_PARAM, section);
+  return `${path}?${params.toString()}`;
 }

@@ -76,6 +76,8 @@ interface Copy {
   /** The worklist line on the own-step card. See the `no-slot` arm of `Body`. */
   noSlotHere: string;
   sections: Record<CardSectionId, string>;
+  /** The accessible name of the row of section names. */
+  sectionsLabel: string;
   /**
    * The two things marked inside a hop's mathematics, named for the legend and
    * for a screen reader. See `theory-marks.ts` — they were two headings until
@@ -145,6 +147,7 @@ const COPY: Record<Lang, Copy> = {
      * is read. *Theory* is new as a heading and old as content — it is the
      * chain, which was called "State to state".
      */
+    sectionsLabel: "Sections of this card",
     sections: {
       "when-it-applies": "When it applies",
       input: "Input",
@@ -219,6 +222,7 @@ const COPY: Record<Lang, Copy> = {
     noField: "これを保持する項目はまだありません。設計中です。",
     noSlotHere:
       "この区間は手法が自ら閉じており、まだ名前のある工程が当てられていません。ここに名前のある工程を見つける価値があります。",
+    sectionsLabel: "このカードの項目",
     sections: {
       "when-it-applies": "適用条件",
       input: "入力",
@@ -286,17 +290,32 @@ function Gap({ gap, copy, note }: { gap: CardGap; copy: Copy; note?: string }): 
 }
 
 /**
- * One section — the first of the nesting levels.
+ * One section — the first of the nesting levels, and no longer a disclosure.
  *
- * `open` defaults to whether the section holds anything, so a card opens showing
- * what it has and folded over what it does not. The gap note is *inside* the
- * collapsed section rather than replacing it, because a section that disappears
- * when empty is indistinguishable from a section nobody wrote.
+ * > *"card sections horizontally clickable, not a scroll."* — the owner
+ *
+ * Ten `<details>` in one scrolling column is the thing he was reading when he
+ * wrote that: every section is a heading you scroll past to reach the next, and
+ * a card with a long Theory buries the eight below it. So the sections became a
+ * row of names with **one** section under them.
+ *
+ * **Every section still renders, and nine of them are `hidden`.** That is the
+ * call `map-info-popup.tsx` already made for its five, for the same three
+ * reasons: `curl` and a crawler get the whole card whatever `?sec=` says, a
+ * reader with JavaScript off can reach any of it, and switching section is a
+ * paint rather than a fetch for anyone who has the page. It costs a few
+ * kilobytes and buys the card its address back.
+ *
+ * The gap note stays *inside* an empty section rather than replacing it, for the
+ * reason it always did: a section that disappears when empty is
+ * indistinguishable from a section nobody wrote.
  */
 function Section({
   id,
   copy,
   value,
+  showing,
+  labelledBy,
   note,
   whenEmpty,
   children,
@@ -304,6 +323,8 @@ function Section({
   id: CardSectionId;
   copy: Copy;
   value: CardValue<unknown>;
+  showing: boolean;
+  labelledBy: string;
   note?: string;
   /**
    * Drawn **after** the gap note when the section is empty.
@@ -323,12 +344,17 @@ function Section({
   children?: React.ReactNode;
 }): React.ReactElement {
   return (
-    <details
+    <section
       className={`mj-card-section${value.held ? "" : " mj-card-section--empty"}`}
       data-section={id}
-      open={value.held}
+      // The name is on the tab in the row above, not repeated here. A heading
+      // over a single visible section, one line under the same word in the nav,
+      // is the duplicate title the owner had just asked to be rid of one level
+      // down — so the section is *named* to a screen reader by the control that
+      // selected it and drawn without a heading.
+      aria-labelledby={labelledBy}
+      hidden={!showing}
     >
-      <summary>{copy.sections[id]}</summary>
       <div className="mj-card-section-body">
         {value.held ? (
           children
@@ -339,7 +365,80 @@ function Section({
           </>
         )}
       </div>
-    </details>
+    </section>
+  );
+}
+
+/**
+ * The id of one name in the row.
+ *
+ * It is what names the section below to a screen reader, so the section can be
+ * drawn without a heading over it. Only one card is ever open — `?card=` is
+ * single-valued by design — so a fixed prefix cannot collide with a second card,
+ * and the section ids are unique within a card by construction.
+ */
+function navItemId(id: CardSectionId): string {
+  return `mj-card-nav-${id}`;
+}
+
+/**
+ * The row of section names — the owner's *"horizontally clickable, not a
+ * scroll"*.
+ *
+ * **Links, not buttons, and not `PanelTabs`.** Studio's tab bar is a real ARIA
+ * tab widget over client state; this is a set of addresses, and a row of things
+ * that change the URL is a `<nav>` rather than a `tablist` — `aria-current` is
+ * the word for "the one you are on" when the control is a link. Reusing
+ * `PanelTabs` would have meant turning its buttons into anchors, which is a
+ * change to Studio's widget and to what it announces.
+ *
+ * **It wraps rather than scrolling sideways.** Ten names in English measure
+ * about 950px against roughly 656px of card, so they do not fit on one line at
+ * any plausible padding — and a strip that scrolls horizontally to reach the
+ * tenth name is a scroll, which is the thing being removed. Two rows of names a
+ * reader can see all of is the honest answer to a list this long.
+ *
+ * **An empty section keeps its name and looks empty.** That was true of the
+ * collapsed headings and is worth more here: a reader now sees all ten states at
+ * once instead of scrolling to find out which are gaps.
+ */
+function SectionNav({
+  sections,
+  showing,
+  hrefFor,
+  copy,
+}: {
+  sections: readonly { id: CardSectionId; value: CardValue<unknown> }[];
+  showing: CardSectionId | undefined;
+  hrefFor: (id: string) => string | undefined;
+  copy: Copy;
+}): React.ReactElement {
+  return (
+    <nav className="mj-card-nav" aria-label={copy.sectionsLabel}>
+      {sections.map((section) => {
+        const className = `mj-card-nav-item${section.value.held ? "" : " mj-card-nav-item--empty"}`;
+        const href = hrefFor(section.id);
+        // A name with no address is drawn as a name. The addresses are built
+        // from this same list, so a missing one cannot happen — and if it ever
+        // does, an unclickable word is the truthful drawing of it. The wrong
+        // answer here is a fallback href, which would silently send a reader
+        // somewhere they did not ask to go.
+        return section.id === showing || href === undefined ? (
+          <span
+            key={section.id}
+            className={section.id === showing ? `${className} is-showing` : className}
+            id={navItemId(section.id)}
+            aria-current={section.id === showing ? "true" : undefined}
+          >
+            {copy.sections[section.id]}
+          </span>
+        ) : (
+          <a key={section.id} className={className} id={navItemId(section.id)} href={href}>
+            {copy.sections[section.id]}
+          </a>
+        );
+      })}
+    </nav>
   );
 }
 
@@ -737,10 +836,22 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
 export function MapCardPanel({
   card,
   closeHref,
+  section,
+  sectionHrefs,
   locale,
 }: {
   card: Card | null;
   closeHref: string;
+  /**
+   * Which section `?sec=` named, or null for the card's own first.
+   *
+   * Resolved on the server, against the list this card actually has — see
+   * `parseCardSection` in `lib/repository/map-card.ts` for why it is a parameter
+   * at all and why a value naming nothing falls back rather than blanking.
+   */
+  section: CardSectionId | null;
+  /** One address per section of this card, built by the component that has the card. */
+  sectionHrefs: Record<string, string>;
   locale: PublicLocale;
 }): React.ReactElement {
   const lang: Lang = locale === "ja" ? "ja" : "en";
@@ -773,6 +884,13 @@ export function MapCardPanel({
   }, [open]);
 
   const titleId = "mj-card-title";
+  // **Read once.** The row of names and the sections under it are two drawings
+  // of one list, and session 114's defect was exactly two lists of the same
+  // sections that nothing compared. `showing` falls back to the first section
+  // rather than to nothing: `?sec=` naming something this card does not have is
+  // a stale link, and a stale link must not blank a card that opened fine.
+  const sections = card === null ? [] : cardSections(card);
+  const showing = sections.find((entry) => entry.id === section) ?? sections[0];
   return (
     <div
       className="mj-card-backdrop"
@@ -814,19 +932,29 @@ export function MapCardPanel({
               ) : null}
             </p>
 
+            {/* **The order is read, not written here.** `cardSections` is the
+                one list, and until session 114 this file held a second one in a
+                different order that nothing compared against it — so a section
+                could have left the drawing while the census went on counting it.
+                The owner's §2 answer is an order, which is exactly the thing
+                that had no single writer. It is read once, here, and both the
+                row of names and the sections under it are built from it. */}
+            <SectionNav
+              sections={sections}
+              showing={showing?.id}
+              hrefFor={(id) => sectionHrefs[id]}
+              copy={copy}
+            />
+
             <div className="mj-card-body" role="region" aria-labelledby={titleId} tabIndex={0}>
-              {/* **The order is read, not written here.** `cardSections` is the
-                  one list, and until session 114 this file held a second one in
-                  a different order that nothing compared against it — so a
-                  section could have left the drawing while the census went on
-                  counting it. The owner's §2 answer is an order, which is
-                  exactly the thing that had no single writer. */}
-              {cardSections(card).map((section) => (
+              {sections.map((section) => (
                 <Section
                   key={section.id}
                   id={section.id}
                   copy={copy}
                   value={section.value}
+                  showing={section.id === showing?.id}
+                  labelledBy={navItemId(section.id)}
                   note={section.id === "no-slot" ? copy.noSlotHere : undefined}
                   // **The worklist behind the gap.** An empty Implementations
                   // section says "none found yet", which a reader takes for a
