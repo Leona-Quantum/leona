@@ -549,7 +549,7 @@ for (const story of withOpenFeeds) {
     // own FAN BASE regaining a name — that lane's key ends `~slot:<id>` with nothing after
     // (`placeFeeds` re-places the feed strand itself as the fan's base, `nameless`). A lane
     // elsewhere on the figure that happens to carry the same words is a different,
-    // documented thing: the shared-sub-method repeat (130 groups, NEXT.md §1), where one
+    // documented thing: the shared-sub-method repeat (W15 draws a shared interior once per figure; the census test prints the live count), where one
     // node is genuinely drawn in two branches. `linear-ode-solve`'s fan drew "Matrix
     // function" as a stub in one route and as a sibling route's chain step two bands away,
     // and the string-global match filed that as a stub echo. A base is nameless by
