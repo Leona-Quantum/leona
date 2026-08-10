@@ -37,6 +37,7 @@ import {
 import type { LayerGraph } from "./repository/layers.ts";
 import { PATH_LIMITS, expansionOf, methodFanOf } from "./repository/state-graph.ts";
 import { estimateTextWidth } from "./repository/process-layout.ts";
+import { ribbonY } from "./repository/strand-geometry.ts";
 import {
   isCapability,
   isMethod,
@@ -736,6 +737,10 @@ test("no lane label sits on a lane", () => {
           y1: lane.labelY,
         };
         for (const other of diagram.lanes) {
+          // A leaf's name sits IN its own line by design (owner, session 119)
+          // — the lozenge plate is what keeps it readable there, exactly as on
+          // a bone. Every OTHER lane's curve must still stay out of it.
+          if (lane.labelInside && other.key === lane.key) continue;
           // Sampled off the PARSED path. A parallel formula here is what let the
           // 4/3 drift hide: the check ran against a curve 3/4 as tall as the one
           // a reader sees, so it had 25% more clearance than the page does.
@@ -974,16 +979,16 @@ test("no figure clips a label the column was sized to hold", () => {
         // read from `drawnName`, which is the function this is checking: a
         // shared helper would agree with itself no matter what it composed.
         //
-        // A refinement mark is the first one that shows up in this loop at all.
-        // These are shut figures, and a count is set on the steps *inside* an
-        // opened method, so `repeatMark` is null on every lane here; a
-        // refinement belongs to the method itself and is drawn the moment its
-        // slot's fan is.
+        // The `⊂ <mark>` suffix is deliberately absent from this derivation
+        // (W13): a refinement is drawn by *nesting* now — under its parent,
+        // inside the bracket — and its drawn name is just its name. The
+        // relation still reaches a reader through `spokenName`, which the
+        // refinement census asserts.
         assert.equal(
           lane.label,
           `${lane.shortLabel ?? lane.fullLabel}${
-            lane.refinement === null ? "" : ` ⊂ ${lane.refinement.mark}`
-          }${lane.repeatMark === null ? "" : ` ${lane.repeatMark}`}`,
+            lane.repeatMark === null ? "" : ` ${lane.repeatMark}`
+          }`,
         );
       }
     }
@@ -2185,18 +2190,22 @@ test("every declared refinement is drawn on the lane of the method that declares
   // `linear-ode-solve` draws its own steps when it is the focus and its methods
   // only when something above it opens the slot.
   const expected = new Map<string, string>();
+  const parentOf = new Map<string, string>();
   for (const node of LAYER_GRAPH.nodes) {
     if (!isMethod(node) || node.refines === undefined) continue;
     assert.ok(node.refinesMark !== undefined, `${node.id}: refines with no mark reached the layout`);
     expected.set(node.id, node.refinesMark);
+    parentOf.set(node.id, node.refines);
   }
   assert.ok(expected.size > 0, "no refinement is recorded at all — this test measures nothing");
   const drawn = new Set<string>();
   let marks = 0;
+  let nested = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const locale of ["en", "ja"] as const) {
       for (const open of openings(focus.id)) {
         const diagram = openDiagram(focus.id, open, locale);
+        const byKey = new Map(diagram.lanes.map((lane) => [lane.key, lane]));
         for (const shape of [...diagram.lanes, ...diagram.feeds]) {
           if (shape.refinement === null) continue;
           marks += 1;
@@ -2204,26 +2213,63 @@ test("every declared refinement is drawn on the lane of the method that declares
             [...shape.refinement.mark].length <= REFINES_MARK_MAX,
             `${shape.fullLabel}: ${shape.refinement.mark} is longer than a refinement mark may be`,
           );
-          // The symbol has one writer and this is where that is checked: a
-          // second place composing `⊂` is how the two would drift apart.
+          // **The relation is drawn by nesting now (W13), never as a suffix.**
+          // The `⊂` shipped in session 117 and the owner rejected it in 118 —
+          // the parent's name repeated on the child's lane, because graph
+          // order interleaved the group. The fan is grouped, so the drawn name
+          // is just the name, and a `⊂` reappearing here would be the suffix
+          // coming back.
           assert.ok(
-            shape.label.includes(` ⊂ ${shape.refinement.mark}`),
-            `${shape.fullLabel} narrows ${shape.refinement.mark} and draws "${shape.label}"`,
+            !shape.label.includes("⊂"),
+            `${shape.fullLabel} draws "${shape.label}" — the ⊂ suffix is back`,
           );
-          // And the name comes first. `markSuffix` puts the narrowing against
-          // the name and the count after it, so a lane carrying both reads as
-          // one phrase; asserted here because the order is a claim about
-          // reading, not an implementation detail.
-          if (shape.repeatMark !== null) {
-            assert.ok(
-              shape.label.indexOf(" ⊂ ") < shape.label.lastIndexOf(shape.repeatMark),
-              `${shape.fullLabel}: the count came before the narrowing`,
-            );
+          // The sentence still reaches a reader who cannot see the nesting:
+          // `spokenName` carries the full relation for the `<title>`, the
+          // aria-label and the accessible list.
+          assert.ok(
+            spokenName(shape).includes(shape.refinement.spoken),
+            `${shape.fullLabel}: the spoken name lost the refinement sentence`,
+          );
+        }
+        // And the nesting itself: every lane that IS a variant sits under the
+        // lane of the very method its `refines` names — the geometry saying
+        // what the suffix used to.
+        for (const lane of diagram.lanes) {
+          if (!lane.variant) continue;
+          nested += 1;
+          assert.ok(lane.parentKey !== null, `${lane.key} is a variant with no parent`);
+          const parent = byKey.get(lane.parentKey!);
+          assert.ok(parent, `${lane.key} nests under ${lane.parentKey}, which is not drawn`);
+          // An ANCESTOR along the `refines` chain, not necessarily the direct
+          // target: `methodFanGroups` collapses a chain to its top-level
+          // ancestor (A refines B refines C nests A under C), so demanding the
+          // direct parent here would contradict the grouping's own rule the
+          // day the corpus authors a chain. Today every chain has length one,
+          // so the two readings coincide — this encodes the rule, not the
+          // coincidence.
+          assert.ok(lane.draws !== null, `${lane.key} is a variant that draws no method`);
+          let ancestor = parentOf.get(lane.draws!);
+          let reached = false;
+          while (ancestor !== undefined) {
+            if (ancestor === parent!.draws) {
+              reached = true;
+              break;
+            }
+            ancestor = parentOf.get(ancestor);
           }
+          assert.ok(
+            reached,
+            `${lane.fullLabel} nests under ${parent!.fullLabel}, which is not on its refines chain`,
+          );
+          assert.ok(
+            parent!.variantBracket !== null,
+            `${parent!.fullLabel} nests ${lane.fullLabel} and draws no bracket`,
+          );
         }
       }
     }
   }
+  assert.ok(nested > 0, "no variant lane was drawn at all — the nesting is untested");
   // Reached-a-drawing, resolved by **exact** id. A lane carries its method in
   // `draws`, which `planForMethod` sets unconditionally — `nodeId` goes null on
   // a leaf and a leaf is most of this corpus. A stub has no such field, so its
@@ -2416,12 +2462,26 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     const open = new Set(openableAddresses(focus.id));
     const diagram = openDiagram(focus.id, open);
+    const byKey = new Map(diagram.lanes.map((each) => [each.key, each]));
     for (const lane of diagram.lanes) {
       if (lane.label === "") continue;
       const box = nameBox(lane);
       // Everything drawn on the figure except this lane's own centre line, which
-      // its name is deliberately placed clear of and above.
-      const hit = diagram.lanes.some((other) => other.key !== lane.key && laneEnters(other, box));
+      // its name is deliberately placed clear of — or, for a name written IN
+      // the line (`labelInside`, session 119), except the lane's own ancestors
+      // too: a step sits ON its parent's line by construction (`a step drawn
+      // inside a lane sits ON that lane` is the invariant), so the ancestor's
+      // faint spine under an in-line name is the design, covered by the step's
+      // own body and plate. Any OTHER lane through the name is still a defect.
+      const skip = new Set<string>([lane.key]);
+      if (lane.labelInside) {
+        let up = lane.parentKey;
+        while (up !== null) {
+          skip.add(up);
+          up = byKey.get(up)?.parentKey ?? null;
+        }
+      }
+      const hit = diagram.lanes.some((other) => !skip.has(other.key) && laneEnters(other, box));
       if (lane.open) {
         openedNamed += 1;
         if (hit) openedHit += 1;
@@ -3480,8 +3540,13 @@ function drawnInterior(diagram: ConvergeDiagram, lane: ConvergeLane): string | n
   // depth cap to let the ingredient open at all. `hhl-qpe-inversion` read as
   // `«own»` at depth 3 and as `«own» ▸ Prepare an input state ▸ …` at depth ≤ 2 —
   // the "2 different interiors" this gate reported about one unchanged method.
+  // **And not a nested refinement (W13).** A variant carries `parentKey` like
+  // a step does — it is drawn within the parent's band — but it is a peer of
+  // the route, not a hop of it, and counting it here made `taylor-all-at-once`
+  // read as `Krovi's reanalysis ▸ Truncated Taylor series ▸ …`, a route that
+  // begins with a different method.
   const hops = diagram.lanes
-    .filter((child) => child.parentKey === lane.key && child.feedKey === null)
+    .filter((child) => child.parentKey === lane.key && child.feedKey === null && !child.variant)
     .sort((a, b) => a.x0 - b.x0)
     .map((child) => (child.nameless ? "«own»" : child.fullLabel));
   // **`parentKey`, not a key prefix.** A nested stub's key is built from its
@@ -4035,4 +4100,178 @@ test("a card link carries the reader's viewport, exactly as every other address 
       `${lane.address}: opening a card would put the reader back at the origin`,
     );
   }
+});
+
+test("every opened line's shut control is reachable where its own children do not cover it", () => {
+  // **The owner's tendon complaint, session 118 — and session 104 before it.**
+  // *"clicking on the process line still gets you to the card, i had to click
+  // on the tendon to collapse it."* Measured then with this same hit model:
+  // **85 of 275 opened lanes had zero collapsible pixels on their belly** —
+  // every one `opensInto: "steps"`, because a chain's steps partition the
+  // belly end to end and each step rightly takes its own click. The
+  // exoskeleton is the fix: the shell around the band is the lane's own
+  // collapse target, and this test is what keeps it one.
+  //
+  // The model emulates the canvas's paint order — lanes' anchors in document
+  // order, then feeds', then names' — and asks, at sampled points along a
+  // lane's spine AND its shell, whether the TOPMOST target under the cursor is
+  // this lane's own toggle. That is a click, not a geometry heuristic: the
+  // renderer's z-order is the occlusion rule on this canvas and there is no
+  // other lever.
+  const STRAND_HIT = 24; // .mj-converge-strand-hit stroke-width
+  const FRAME_HIT = 18; // .mj-converge-frame-hit stroke-width
+  const FEED_HIT = 14; // .mj-converge-feed-hit stroke-width
+
+  interface Target {
+    order: number;
+    owner: string | null; // the lane address this toggle collapses, or null
+    test: (x: number, y: number) => boolean;
+  }
+
+  const distToRibbon = (
+    r: { x0: number; x1: number; y: number; bow: number; run: number },
+    x: number,
+    y: number,
+  ): number => {
+    if (x < r.x0 || x > r.x1) {
+      const ex = x < r.x0 ? r.x0 : r.x1;
+      return Math.hypot(x - ex, y - r.y);
+    }
+    let best = Infinity;
+    for (let t = -14; t <= 14; t += 0.5) {
+      const sx = Math.min(Math.max(x + t, r.x0), r.x1);
+      best = Math.min(best, Math.hypot(x - sx, y - ribbonY(r, sx)));
+    }
+    return best;
+  };
+
+  const targetsOf = (diagram: ConvergeDiagram): Target[] => {
+    const out: Target[] = [];
+    let order = 0;
+    for (const lane of diagram.lanes) {
+      const ribbon = { x0: lane.x0, x1: lane.x1, y: lane.yc, bow: lane.bow, run: lane.run };
+      const shell = lane.frame;
+      if (lane.openHref !== null) {
+        out.push({
+          order: order++,
+          owner: lane.address,
+          test: (x, y) =>
+            distToRibbon(ribbon, x, y) <= STRAND_HIT / 2 ||
+            (shell !== null &&
+              Math.min(
+                distToRibbon({ ...ribbon, bow: lane.bow - shell.half }, x, y),
+                distToRibbon({ ...ribbon, bow: lane.bow + shell.half }, x, y),
+              ) <= FRAME_HIT / 2),
+        });
+      } else if (lane.cardHref !== null) {
+        // The leaf/own-stretch card anchor — same strand-hit stroke, so it
+        // competes for the same pixels (that is the point of modelling it).
+        out.push({
+          order: order++,
+          owner: null,
+          test: (x, y) => distToRibbon(ribbon, x, y) <= STRAND_HIT / 2,
+        });
+      }
+    }
+    for (const feed of diagram.feeds) {
+      if (feed.openHref === null) continue;
+      out.push({
+        order: order++,
+        owner: null,
+        test: (x, y) =>
+          Math.abs(x - feed.x) <= FEED_HIT / 2 &&
+          y >= Math.min(feed.y0, feed.y1) - FEED_HIT / 2 &&
+          y <= Math.max(feed.y0, feed.y1) + FEED_HIT / 2,
+      });
+    }
+    for (const lane of diagram.lanes) {
+      if (lane.label === "") continue;
+      const x0 = lane.labelX - lane.labelWidth / 2 - 4;
+      const y0 = lane.labelY - 12;
+      const x1 = lane.labelX + lane.labelWidth / 2 + 4;
+      const y1 = lane.labelY + 3;
+      out.push({
+        order: order++,
+        owner: null,
+        test: (x, y) => x >= x0 && x <= x1 && y >= y0 && y <= y1,
+      });
+    }
+    for (const state of diagram.states) {
+      const r = Math.max(state.r + 6, 13);
+      out.push({
+        order: order++,
+        owner: null,
+        test: (x, y) => Math.hypot(x - state.cx, y - state.cy) <= r,
+      });
+    }
+    return out;
+  };
+
+  let opened = 0;
+  let chains = 0;
+  // Both surfaces that draw this canvas, not just the map. A method's own
+  // page fans a slot the map may keep as a state chain — `linear-ode-solve`'s
+  // seven methods are drawn ONLY there — so a sweep over `drawableSlots`
+  // alone measures a population that excludes whole figures. That is how the
+  // shell's name landed on a step's name on `taylor-all-at-once`'s page while
+  // every map sweep stayed green.
+  const figures: ConvergeDiagram[] = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map((focus) =>
+    openDiagram(focus.id, openableAddresses(focus.id)),
+  );
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node)) continue;
+    const diagram = layoutConvergeForMethod({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      method: node,
+      locale: "en",
+    });
+    if (!diagram.empty) figures.push(diagram);
+  }
+  for (const diagram of figures) {
+    const targets = targetsOf(diagram);
+    const topmostIsOwn = (address: string, x: number, y: number): boolean => {
+      let best: Target | null = null;
+      for (const target of targets) {
+        if (target.test(x, y) && (best === null || target.order > best.order)) best = target;
+      }
+      return best !== null && best.owner === address;
+    };
+    for (const lane of diagram.lanes) {
+      if (!lane.open || lane.openHref === null) continue;
+      opened += 1;
+      if (lane.opensInto === "steps") chains += 1;
+      const ribbon = { x0: lane.x0, x1: lane.x1, y: lane.yc, bow: lane.bow, run: lane.run };
+      let reachable = 0;
+      const N = 160;
+      // **The belly, not the whole spine.** The tendons at the two ends were
+      // always technically clickable, and that is the complaint, not the fix —
+      // *"i had to click on the tendon to collapse it"*. A control a reader
+      // can only hit in the last 16px before a circle is the defect this test
+      // pins at zero, so the sweep starts where the flat part does.
+      for (let i = 0; i <= N && reachable === 0; i += 1) {
+        const x = lane.bellyX0 + ((lane.bellyX1 - lane.bellyX0) * i) / N;
+        if (topmostIsOwn(lane.address, x, ribbonY(ribbon, x))) reachable += 1;
+      }
+      if (lane.frame !== null) {
+        for (const edge of [lane.bow - lane.frame.half, lane.bow + lane.frame.half]) {
+          for (let i = 0; i <= N && reachable === 0; i += 1) {
+            const x = lane.bellyX0 + ((lane.bellyX1 - lane.bellyX0) * i) / N;
+            if (topmostIsOwn(lane.address, x, ribbonY({ ...ribbon, bow: edge }, x))) {
+              reachable += 1;
+            }
+          }
+        }
+      }
+      assert.ok(
+        reachable > 0,
+        `${diagram.caption}: opened ${lane.address} ("${lane.fullLabel}", into ${lane.opensInto}) has no reachable pixel that collapses it`,
+      );
+    }
+  }
+  // The denominators, so a saturation walk that returns nothing cannot pass
+  // this test over an empty map — and the chain count is the population the 85
+  // came from, so it is the one that must stay swept.
+  assert.ok(opened > 200, `only ${opened} opened lanes were checked`);
+  assert.ok(chains > 80, `only ${chains} of them are chains — the exoskeleton population is missing`);
 });
