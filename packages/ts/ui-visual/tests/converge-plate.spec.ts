@@ -526,7 +526,10 @@ for (const story of withOpenFeeds) {
       const lanes = [...document.querySelectorAll("text.mj-converge-lane-name")];
       return {
         opened: opened.map(read),
-        laneNames: lanes.map((lane) => lane.textContent ?? ""),
+        laneNames: lanes.map((lane) => ({
+          text: lane.textContent ?? "",
+          key: lane.getAttribute("data-name") ?? "",
+        })),
         smallestLane: lanes.length === 0 ? null : Math.min(...lanes.map(px)),
         largestShutStub: shut.length === 0 ? null : Math.max(...shut.map(px)),
         laneFill: lanes.length === 0 ? null : getComputedStyle(lanes[0]!).fill,
@@ -541,7 +544,21 @@ for (const story of withOpenFeeds) {
     // removed at the source, so the assertion inverts: no opened stub's name may appear on a
     // lane of the same figure. Asserted here rather than only in the layout test because the
     // layout test measures strings the layout computed, and this measures the rendered page.
-    const repeated = report.opened.filter((stub) => report.laneNames.includes(stub.text));
+    //
+    // **By identity, since session 119, not by string.** The defect this pins is the stub's
+    // own FAN BASE regaining a name — that lane's key ends `~slot:<id>` with nothing after
+    // (`placeFeeds` re-places the feed strand itself as the fan's base, `nameless`). A lane
+    // elsewhere on the figure that happens to carry the same words is a different,
+    // documented thing: the shared-sub-method repeat (130 groups, NEXT.md §1), where one
+    // node is genuinely drawn in two branches. `linear-ode-solve`'s fan drew "Matrix
+    // function" as a stub in one route and as a sibling route's chain step two bands away,
+    // and the string-global match filed that as a stub echo. A base is nameless by
+    // construction, so the bar is zero: any base drawing any text is the regression.
+    // Total, not tied to the stub's exact string: a name element only exists
+    // when a lane draws text, so a base that regains ANY name — the full label,
+    // a short form, anything — is the regression, whatever it says.
+    const isFanBase = (key: string) => /~slot:[^/~]+$/.test(key);
+    const repeated = report.laneNames.filter((lane) => isFanBase(lane.key));
     // **A ceiling, and the number it fell from is the point.** Before session 118 an opened
     // ingredient's name was drawn twice by construction — the stub, and again on the fan base
     // hanging off it — so this was 100%: 31 of 31 on `quantum-linear-solve`, 10 of 10 on
@@ -563,10 +580,10 @@ for (const story of withOpenFeeds) {
     );
     expect(
       repeated.length,
-      `${story.name}: ${repeated.length} opened ingredients have their name echoed by a lane ` +
-        `(${repeated.map((stub) => stub.text).join(", ")}) — the stub and its own fan are drawing ` +
-        `the same string again`,
-    ).toBeLessThanOrEqual(1);
+      `${story.name}: ${repeated.length} fan bases draw a name ` +
+        `(${repeated.map((lane) => lane.text).join(", ")}) — the stub and its own fan are ` +
+        `drawing the same string again`,
+    ).toBeLessThanOrEqual(0);
 
     for (const stub of report.opened) {
       const where = `${story.name}: opened stub "${stub.text}"`;
