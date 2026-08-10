@@ -39,6 +39,38 @@ requires_production_e2e = pytest.mark.skipif(
 
 CLIENT_ID = "client_vqe_production_e2e"
 SUBJECT = "vqe-production-e2e"
+# This is an intentionally public, CI-only key for the disposable test ledger.
+# It must never be reused by a deployed service. Keeping it explicit here makes
+# the production Settings contract testable without weakening the requirement
+# for a separately provisioned secret in a real environment.
+DECISION_HMAC_KEY = "phase12-private-e2e-decision-ledger-key"
+
+
+def _production_e2e_settings(*, issuer: str) -> Settings:
+    return Settings(
+        workos_client_id=CLIENT_ID,
+        workos_jwt_issuer=issuer,
+        workos_jwks_url=f"{issuer}/jwks",
+        web_origin="http://test",
+        environment="production",
+        vqe_production_execution=True,
+        vqe_decision_hmac_key=DECISION_HMAC_KEY,
+        # This identity exists only inside the disposable CI database. The
+        # E2E deliberately saves more than the free tier's ten artifacts while
+        # proving Qiskit/PennyLane and controlled-swap persistence. Classify
+        # that synthetic operator explicitly instead of weakening the
+        # production artifact cap or making scientific results unkept.
+        developer_emails=frozenset({"vqe-production-e2e@majorana.test"}),
+    )
+
+
+def test_production_e2e_settings_contract_is_valid_without_runtime() -> None:
+    """Fail cheaply before PostgreSQL setup and six OCI image pulls."""
+
+    settings = _production_e2e_settings(issuer="https://issuer.invalid")
+    assert settings.environment == "production"
+    assert settings.vqe_production_execution is True
+    assert len(settings.vqe_decision_hmac_key) >= 32
 
 
 class _JwksHandler(BaseHTTPRequestHandler):
@@ -217,20 +249,7 @@ async def test_workos_contract_postgres_and_real_oci_runtime_end_to_end():
     auth_jwt._jwk_client.cache_clear()
     engine = engine_from_env()
     factory = session_factory(engine)
-    settings = Settings(
-        workos_client_id=CLIENT_ID,
-        workos_jwt_issuer=issuer,
-        workos_jwks_url=f"{issuer}/jwks",
-        web_origin="http://test",
-        environment="production",
-        vqe_production_execution=True,
-        # This identity exists only inside the disposable CI database. The
-        # E2E deliberately saves more than the free tier's ten artifacts while
-        # proving Qiskit/PennyLane and controlled-swap persistence. Classify
-        # that synthetic operator explicitly instead of weakening the
-        # production artifact cap or making scientific results unkept.
-        developer_emails=frozenset({"vqe-production-e2e@majorana.test"}),
-    )
+    settings = _production_e2e_settings(issuer=issuer)
     app = create_app(settings)
     app.state.engine = engine
     app.state.session_factory = factory

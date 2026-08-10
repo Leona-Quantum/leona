@@ -55,6 +55,10 @@ jobs:
         with:
           python-version: "3.12"
       - run: uv sync --all-packages --frozen
+      - name: validate production E2E settings contract before heavy setup
+        run: >-
+          uv run pytest -q services/api/tests/test_vqe_production_e2e.py
+          -k production_e2e_settings_contract_is_valid_without_runtime
       - name: migrate isolated PostgreSQL 17 database
         env:
           DATABASE_URL_DIRECT: postgresql://pg:pg@localhost:5432/majorana_vqe_e2e
