@@ -607,21 +607,54 @@ test("a fan reserves the band its own branches reach, not half of a summed row",
 
 // --- text, which is where the old canvas's collisions actually lived ---------
 
+/**
+ * Every figure the canvas draws, for the name sweeps below: the map's slot
+ * figures AND every method's own page. The reachability bar swept both since
+ * D119.1 — the shell's name landed on a step's name on `taylor-all-at-once`'s
+ * page while every map sweep stayed green, because a method's page fans a slot
+ * the map may keep as a state chain, so the pages are whole figures no slot
+ * sweep contains. NEXT §4 asked the name sweeps' populations to follow.
+ */
+function sweptFigures(locale: PublicLocale): { name: string; diagram: ConvergeDiagram }[] {
+  // `drawableSlots`, not `convergingSlots`: the sweeps read the latter for
+  // years, and it holds exactly ONE capability — so each of these "sweeps" was
+  // a single figure per locale until now. The reachability bar's population
+  // (drawable slots + method pages) is the model.
+  const slots = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map((focus) => ({
+    name: `${focus.id}`,
+    diagram: diagramFor(focus.id, locale),
+  }));
+  const pages: { name: string; diagram: ConvergeDiagram }[] = [];
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node)) continue;
+    const diagram = pageFigure(node.id, locale);
+    if (!diagram.empty) pages.push({ name: `${node.id} (page)`, diagram });
+  }
+  // Per-source denominators, so a refactor of either list cannot quietly empty
+  // it while the other keeps the total respectable — the failure that made
+  // D119.1 possible. Measured: 19 slot figures, 63 method pages, none empty.
+  assert.ok(slots.length >= 15, `only ${slots.length} slot figures swept`);
+  assert.ok(pages.length >= 60, `only ${pages.length} method pages swept`);
+  return [...slots, ...pages];
+}
+
 test("every lane label stays inside the canvas", () => {
   // Three of the four collisions the old canvas shipped were <text> against
   // <text>, and every invariant it had was about lines and circles.
   for (const locale of ["en", "ja"] as const) {
-    for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-      const diagram = diagramFor(focus.id, locale);
+    for (const { name, diagram } of sweptFigures(locale)) {
       for (const lane of diagram.lanes) {
         const half = estimateTextWidth(lane.label, M.laneFont) / 2;
-        assert.ok(lane.labelX - half >= 0, `${locale}/${lane.key} label off the left edge`);
+        assert.ok(lane.labelX - half >= 0, `${locale}/${name}/${lane.key} label off the left edge`);
         assert.ok(
           lane.labelX + half <= diagram.width,
-          `${locale}/${lane.key} label off the right edge`,
+          `${locale}/${name}/${lane.key} label off the right edge`,
         );
-        assert.ok(lane.labelY - M.laneFont >= 0, `${locale}/${lane.key} label above the canvas`);
-        assert.ok(lane.labelY <= diagram.height, `${locale}/${lane.key} label below the canvas`);
+        assert.ok(
+          lane.labelY - M.laneFont >= 0,
+          `${locale}/${name}/${lane.key} label above the canvas`,
+        );
+        assert.ok(lane.labelY <= diagram.height, `${locale}/${name}/${lane.key} label below the canvas`);
       }
     }
   }
@@ -629,8 +662,7 @@ test("every lane label stays inside the canvas", () => {
 
 test("two lane labels never overlap", () => {
   for (const locale of ["en", "ja"] as const) {
-    for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-      const diagram = diagramFor(focus.id, locale);
+    for (const { name, diagram } of sweptFigures(locale)) {
       const boxes = diagram.lanes.map((lane) => ({
         key: lane.key,
         x0: lane.labelX - estimateTextWidth(lane.label, M.laneFont) / 2,
@@ -643,7 +675,7 @@ test("two lane labels never overlap", () => {
           const a = boxes[i]!;
           const b = boxes[j]!;
           const hit = a.x0 < b.x1 - EPS && b.x0 < a.x1 - EPS && a.y0 < b.y1 - EPS && b.y0 < a.y1 - EPS;
-          assert.ok(!hit, `${locale}: labels of ${a.key} and ${b.key} overlap`);
+          assert.ok(!hit, `${locale}/${name}: labels of ${a.key} and ${b.key} overlap`);
         }
       }
     }
