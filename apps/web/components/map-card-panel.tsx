@@ -289,12 +289,28 @@ function Section({
   copy,
   value,
   note,
+  whenEmpty,
   children,
 }: {
   id: CardSectionId;
   copy: Copy;
   value: CardValue<unknown>;
   note?: string;
+  /**
+   * Drawn **after** the gap note when the section is empty.
+   *
+   * One caller: the worklist under an empty Implementations section. It needs
+   * its own slot because `children` is discarded when a value is not held — and
+   * that is right, since a body written for held content would otherwise render
+   * against a value that is not there.
+   *
+   * Worth recording how this was found. The worklist was written, computed
+   * correctly, covered by a passing test, and **drawn nowhere**, because the
+   * test measured `card-content.ts` and the discard is in this file. Reading the
+   * served page is what caught it: a value present in the layout is not a value
+   * visible to a reader.
+   */
+  whenEmpty?: React.ReactNode;
   children?: React.ReactNode;
 }): React.ReactElement {
   return (
@@ -305,7 +321,14 @@ function Section({
     >
       <summary>{copy.sections[id]}</summary>
       <div className="mj-card-section-body">
-        {value.held ? children : <Gap gap={value.gap} copy={copy} note={note} />}
+        {value.held ? (
+          children
+        ) : (
+          <>
+            <Gap gap={value.gap} copy={copy} note={note} />
+            {whenEmpty}
+          </>
+        )}
       </div>
     </details>
   );
@@ -502,17 +525,14 @@ function Leads({
 }: {
   leads: CardValue<{ simulation: number; hardware: number }>;
   copy: Copy;
-}): React.ReactElement {
-  return (
-    <>
-      <Gap gap="none-recorded" copy={copy} />
-      {leads.held && (leads.value.simulation > 0 || leads.value.hardware > 0) ? (
-        <p className="mj-card-leads">
-          {copy.leads(leads.value.simulation, leads.value.hardware)}
-        </p>
-      ) : null}
-    </>
-  );
+}): React.ReactElement | null {
+  if (!leads.held) return null;
+  const { simulation, hardware } = leads.value;
+  // Nothing to say when the read papers report neither. The gap note above has
+  // already said the section is empty, and "0 of them report numerics" adds a
+  // number where the honest answer is silence.
+  if (simulation === 0 && hardware === 0) return null;
+  return <p className="mj-card-leads">{copy.leads(simulation, hardware)}</p>;
 }
 
 /** The contract, drawn as one half of itself. See the `input`/`output` note below. */
@@ -625,16 +645,9 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
         </>
       ) : null;
     case "implementations":
-      return card.kind !== "method" ? null : card.implementations.held ? (
+      return card.kind === "method" && card.implementations.held ? (
         <Implementations entries={card.implementations.value} copy={copy} />
-      ) : (
-        // **The worklist behind the gap.** An empty section says "none found
-        // yet", which a reader takes for a verdict on the literature. This says
-        // what the register already knows — how many of the papers cited here
-        // report numerics or a hardware run — so the emptiness reads as work
-        // nobody has done rather than as an absence of work to do.
-        <Leads leads={card.implementationLeads} copy={copy} />
-      );
+      ) : null;
     // The last one holding nothing anywhere: the classical column the owner
     // asked for beside `bypasses`, which still has no field. It draws its gap
     // note and no body, and the note is `no-field-yet` — an unbuilt field, never
@@ -743,6 +756,17 @@ export function MapCardPanel({
                   copy={copy}
                   value={section.value}
                   note={section.id === "no-slot" ? copy.noSlotHere : undefined}
+                  // **The worklist behind the gap.** An empty Implementations
+                  // section says "none found yet", which a reader takes for a
+                  // verdict on the literature. This says what the register
+                  // already knows — how many of the papers cited here report
+                  // numerics or a hardware run — so the emptiness reads as work
+                  // nobody has done rather than as an absence of work to do.
+                  whenEmpty={
+                    section.id === "implementations" && card.kind === "method" ? (
+                      <Leads leads={card.implementationLeads} copy={copy} />
+                    ) : undefined
+                  }
                 >
                   <Body card={card} id={section.id} copy={copy} />
                 </Section>
