@@ -44,6 +44,7 @@ import {
   type LayerMethod,
   type LayerNode,
 } from "./layers.ts";
+import type { PaperRegister } from "./papers.ts";
 import type { StateVocabulary } from "./states.ts";
 
 /** Why a section is empty. See the block above — the two are not one fact. */
@@ -207,19 +208,62 @@ export interface MethodCard extends CardCommon {
   /** *Requires*: what it needs that does not move the route along. */
   readonly ingredients: CardValue<readonly CardLink[]>;
   /**
-   * The two the owner asked for that nothing can hold yet.
+   * **Both now read a field, and the copy a reader sees changed with them.**
    *
-   * Kept as fields rather than left out so the card *says* they are coming: an
-   * absent section is indistinguishable from a section nobody thought of, and
-   * `W5-card-spec.md` is explicit that these are wanted and undesigned.
-   *
-   * `theoryTrace`, `approximations` and `assumptions` used to be here beside
-   * them and are **gone from this level on purpose** — the first is now the
-   * `trace` above (Theory *is* the chain), and the other two are annotations on
-   * a hop. All three were the owner's own re-decision; see `CardHop`.
+   * Until session 114 these were `CardValue<never>` — permanently `no-field-yet`,
+   * because nothing anywhere could hold them. The owner signed both models off
+   * in §2 (*"Say yes and I build it."* — *"yes."*), so the fields exist, and an
+   * empty one now honestly reports `none-recorded`: we built the place to put
+   * it and nobody has written one yet. That is a different sentence from *we
+   * have not built the place*, and the whole point of keeping two gap words is
+   * that the reader can tell them apart.
    */
-  readonly example: CardValue<never>;
-  readonly implementations: CardValue<never>;
+  readonly example: CardValue<CardExample>;
+  readonly implementations: CardValue<readonly CardImplementation[]>;
+  /**
+   * How many of this method's cited papers report numerics or a hardware run.
+   *
+   * **The worklist behind an empty Implementations section**, and derived rather
+   * than authored — the paper register already carries `reports` per paper, read
+   * from its abstract and recorded with the basis beside it. 25 of the 63
+   * methods cite a paper reporting simulation; 3 cite one reporting hardware.
+   *
+   * Without this, an empty section says "none found yet" and a reader takes it
+   * for a verdict on the literature. With it, the section says nobody has
+   * written the entries *and* that there is something to write, which is what
+   * `W5-card-spec.md` means by the empty card being a worklist rather than a
+   * gap report. Absent when no cited paper has been read for it — never zero,
+   * because zero is a count and this would be an absence of one.
+   */
+  readonly implementationLeads: CardValue<CardImplementationLeads>;
+}
+
+/** A worked example, its pseudocode, or both. */
+export interface CardExample {
+  readonly text: string | null;
+  readonly pseudocode: string | null;
+}
+
+/** One implementation, with the owner's five sub-sections. */
+export interface CardImplementation {
+  readonly id: string;
+  readonly label: string;
+  readonly papers: readonly LayerCitation[];
+  /** The five, in his order, each held or absent. Ordered so the card cannot reorder them. */
+  readonly sections: ReadonlyArray<{
+    readonly id: ImplementationSectionId;
+    readonly value: CardValue<string>;
+  }>;
+}
+
+export const IMPLEMENTATION_SECTIONS = ["about", "methods", "data", "code", "results"] as const;
+
+export type ImplementationSectionId = (typeof IMPLEMENTATION_SECTIONS)[number];
+
+/** What the register says the cited papers report. See `implementationLeads`. */
+export interface CardImplementationLeads {
+  readonly simulation: number;
+  readonly hardware: number;
 }
 
 /**
@@ -335,6 +379,17 @@ interface CardInput {
   readonly vocabulary: StateVocabulary;
   readonly corpus: readonly LayerCorpusEntry[];
   readonly locale: "en" | "ja";
+  /**
+   * The paper register, for the worklist behind an empty Implementations
+   * section. See `MethodCard.implementationLeads`.
+   *
+   * **Required, not optional with a fallback.** An optional register would
+   * default every card to "no leads" wherever a caller forgot it, and that is
+   * indistinguishable from a method whose papers genuinely report nothing —
+   * a correct-looking fallback hiding a path that never runs. Required makes a
+   * caller that has not been updated a compile error instead.
+   */
+  readonly register: PaperRegister;
 }
 
 /** The layer-graph page for a node. The card never replaces this — it links to it. */
@@ -390,6 +445,93 @@ function listOrGap(items: readonly CardLink[]): CardValue<readonly CardLink[]> {
   return items.length === 0 ? missing("none-recorded") : held(items);
 }
 
+/**
+ * The key a hop's note is filed under.
+ *
+ * A capability id where a named slot covers the hop, and the **method's own id**
+ * for the stretch it closes itself — which is unambiguous because node ids are
+ * unique across the whole graph, so a method id can never also be a capability
+ * id. See `LayerMethod.hops`.
+ */
+function hopKey(method: LayerMethod, capabilityId: string | null): string {
+  return capabilityId ?? method.id;
+}
+
+/**
+ * What the register says this method's cited papers report.
+ *
+ * Read off `reports`, which is authored per paper from its abstract with the
+ * basis recorded beside it — never derived from the prose here. Only
+ * `"reported"` counts: `"unknown"` on the simulation axis is the register's own
+ * way of saying the abstract did not mention numerics, which is not evidence of
+ * either answer, and counting it would turn a recorded uncertainty into a lead.
+ */
+function implementationLeadsOf(
+  method: LayerMethod,
+  register: PaperRegister,
+): CardValue<CardImplementationLeads> {
+  const byUrl = new Map(register.papers.map((paper) => [paper.url, paper]));
+  const read = (method.citations ?? [])
+    .map((citation) => byUrl.get(citation.url))
+    .filter((paper) => paper?.reports !== undefined);
+  // Absent, not zero. No cited paper has been read for this, so there is no
+  // count to report — and "0 papers report numerics" would claim a search.
+  if (read.length === 0) return missing("none-recorded");
+  return held({
+    simulation: read.filter((paper) => paper!.reports!.simulation === "reported").length,
+    hardware: read.filter((paper) => paper!.reports!.hardware === "reported").length,
+  });
+}
+
+/** The three slots on one hop, read off `LayerMethod.hops` under `hopKey`. */
+function hopNoteOf(
+  method: LayerMethod,
+  capabilityId: string | null,
+  ja: boolean,
+): Pick<CardHop, "theory" | "approximations" | "assumptions"> {
+  const note = method.hops?.[hopKey(method, capabilityId)];
+  return {
+    theory: stated(note === undefined ? undefined : ja ? note.theoryJa : note.theory),
+    approximations: stated(
+      note === undefined ? undefined : ja ? note.approximationsJa : note.approximations,
+    ),
+    assumptions: stated(note === undefined ? undefined : ja ? note.assumptionsJa : note.assumptions),
+  };
+}
+
+function exampleOf(method: LayerMethod, ja: boolean): CardValue<CardExample> {
+  const example = method.example;
+  if (example === undefined) return missing("none-recorded");
+  const text = ja ? example.textJa : example.text;
+  // Pseudocode is not localised — see `MethodExample.pseudocode`. It is the same
+  // block in both locales on purpose, because its identifiers are the record's
+  // own symbols and a translated listing is a second one that drifts.
+  return held({ text: text ?? null, pseudocode: example.pseudocode ?? null });
+}
+
+function implementationsOf(
+  method: LayerMethod,
+  ja: boolean,
+): CardValue<readonly CardImplementation[]> {
+  const entries = method.implementations ?? [];
+  if (entries.length === 0) return missing("none-recorded");
+  return held(
+    entries.map((entry) => ({
+      id: entry.id,
+      label: ja ? entry.labelJa : entry.label,
+      papers: entry.papers ?? [],
+      // The five in his order, resolved here rather than in the component, for
+      // the reason the whole module exists: a sub-section written as
+      // `{x ? <p/> : null}` inside JSX is one the census cannot count, and the
+      // gaps inside an implementation are the interesting part of it.
+      sections: IMPLEMENTATION_SECTIONS.map((id) => ({
+        id,
+        value: stated(ja ? entry[`${id}Ja` as const] : entry[id]),
+      })),
+    })),
+  );
+}
+
 function methodCard(input: CardInput, method: LayerMethod): MethodCard {
   const { graph, vocabulary, corpus } = input;
   const ja = input.locale === "ja";
@@ -404,14 +546,11 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
     to: route.states[index + 1] ?? "",
     via: segment.capabilityId === null ? null : linkFor(graph, segment.capabilityId, ja),
     narrowed: segment.narrowed,
-    // **`no-field-yet`, per hop, and the word matters.** Nothing on `LayerMethod`
-    // holds a hop's mathematics, its approximations or its assumptions — the
-    // owner asked for all three and confirmed they belong *on the hop*, and the
-    // field is the next piece of work rather than a search that came back empty.
-    // The card must not say "none found yet" about a place nobody has built.
-    theory: missing("no-field-yet"),
-    approximations: missing("no-field-yet"),
-    assumptions: missing("no-field-yet"),
+    // `none-recorded` now, not `no-field-yet`: `LayerMethod.hops` exists, so an
+    // empty slot is a source nobody has read rather than a field nobody has
+    // built. The two sentences differ and the reader can only tell them apart
+    // because the card keeps them apart.
+    ...hopNoteOf(method, segment.capabilityId, ja),
   }));
   const ingredients = route.feeds
     .map((id) => linkFor(graph, id, ja))
@@ -443,8 +582,9 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
         ? missing("none-recorded")
         : held(method.citations),
     records: recordsOf(method, corpus, ja),
-    example: missing("no-field-yet"),
-    implementations: missing("no-field-yet"),
+    example: exampleOf(method, ja),
+    implementations: implementationsOf(method, ja),
+    implementationLeads: implementationLeadsOf(method, input.register),
   };
 }
 

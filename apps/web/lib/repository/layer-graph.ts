@@ -652,6 +652,40 @@ export const LAYER_GRAPH: LayerGraph = {
     conditions: "On a quantum computer the trade differs from the classical one: each implicit step is itself a linear solve, so implicit stepping does not remove the quantum-linear-solve layer — it invokes it repeatedly or folds it into a larger block system. Still first order, so the precision dependence stays polynomial in 1/ε. The nearest published quantum treatment, by Dong, Li and Xue, encodes diagonal Padé approximations of the matrix exponential into a large, block-sparse linear system solved via a quantum linear system algorithm; backward Euler is the subdiagonal (0,1) approximant and is not among the schemes they analyse. No primary quantum source verified here gives an end-to-end complexity or conditioning bound for a pure backward-Euler encoding.",
     conditionsJa: "量子計算機上でのトレードオフは古典の場合と異なります。各陰的ステップ自体が線形ソルバーの呼び出しであるため、陰的な時間刻みは量子線形ソルバーの層を取り除きません。繰り返し呼び出すか、より大きなブロック系に畳み込むかのどちらかになります。依然として一次精度ですので、精度依存性は 1/ε の多項式のままです。最も近い公表された量子的な扱いは Dong・Li・Xue によるもので、行列指数の対角 Padé 近似を大きなブロック疎線形系に符号化し、量子線形システムアルゴリズムで解きます。ただし後退 Euler 法は劣対角の (0,1) 近似であり、そこで解析されている手法には含まれません。後退 Euler 法のみを用いた符号化について、端から端までの計算量や条件数の評価を与える一次資料は、今回の確認では見つかっていません。",
     steps: ["quantum-linear-solve"],
+    // **The first `example`, and it is a transcription rather than a new claim.**
+    // The owner asked for an Example section on all 63 methods and, pushed back
+    // on the size of that, added: *"pseudo code could definitely be easy enough
+    // as a first pass."* This is that first pass, and every line of it restates
+    // a sentence already on this record:
+    //
+    // - the recurrence is `summary`, verbatim — *"each step solves
+    //   (I - hA)u_{k+1} = u_k + h b_{k+1}"*;
+    // - the loop bound is `repeats.count` — *"once per time step — T/h of them
+    //   to reach time T"*;
+    // - the note on the solve is `repeats.note` — *"each step's solve consumes
+    //   the previous step's output as its right-hand side, so the chain is a
+    //   quantum state passed forward and never a number read out."*
+    //
+    // Nothing here was worked out. **Those three sentences and this block move
+    // together**: a listing that keeps a recurrence the summary has stopped
+    // claiming is the drift a second copy always has, and this comment is where
+    // an editor finds out that there is a second copy.
+    //
+    // `text` is deliberately absent. Prose describing a run somebody actually
+    // did is not something this record has, and inventing one to fill the
+    // section would be the exact failure the gap rule exists to prevent.
+    example: {
+      pseudocode: [
+        "given  A, b, u_0, step size h, horizon T",
+        "",
+        "for k = 0 \u2026 T/h \u2212 1:",
+        "    # one quantum linear solve; being implicit does not remove the layer",
+        "    solve (I \u2212 hA) u_{k+1} = u_k + h b_{k+1}",
+        "    # u_{k+1} is a quantum state handed to the next step, never read out",
+        "",
+        "return u_{T/h}",
+      ].join("\n"),
+    },
     repeats: {
       "quantum-linear-solve": {
         count: "once per time step — T/h of them to reach time T",

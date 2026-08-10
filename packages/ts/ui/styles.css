@@ -12875,6 +12875,42 @@ div.mj-rail-row:hover {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+/* Pseudocode. Whitespace is the only structure it has, so it keeps it — and it
+   scrolls inside its own box rather than widening the card, because a listing
+   with a long line must not make the whole panel scroll sideways. */
+.mj-card-pseudocode {
+  margin: 0;
+  padding: var(--sp-3);
+  overflow-x: auto;
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-control);
+  background: var(--bg-2);
+  font-family: var(--font-mono);
+  font-size: var(--fs-12);
+  line-height: 1.6;
+}
+/* One implementation — the third level, and the only other place the card goes
+   there. Shut by default: a method with four of these should read as four names
+   until a reader picks one. */
+.mj-card-implementations > li {
+  margin-bottom: var(--sp-2);
+}
+.mj-card-implementation > summary {
+  cursor: pointer;
+  font-weight: 500;
+}
+.mj-card-implementation-body {
+  padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
+  border-left: var(--border-hairline) solid var(--border-0);
+}
+/* The worklist line under an empty Implementations section: what the register
+   already knows about the papers cited here. Quieter than the gap note above it,
+   because it is a lead rather than a finding. */
+.mj-card-leads {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
 /* **The reference list, below the sections rather than among them.** The owner
    confirmed papers are not an eighth section — they are 63/63 on a method and a
    collapsible heading over a list that is always full is a control with one

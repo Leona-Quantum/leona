@@ -11,6 +11,7 @@ import { parseCardId } from "../../../lib/repository/map-card";
 import { parseAboutSection } from "../../../lib/repository/map-about";
 import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
 import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
+import { PAPER_REGISTER } from "../../../lib/repository/paper-register";
 
 /**
  * Localised, because the node route beside it already is.
@@ -139,6 +140,7 @@ export default async function RepositoryLayersPage({
   const cardInput = {
     graph: LAYER_GRAPH,
     vocabulary: STATE_VOCABULARY,
+    register: PAPER_REGISTER,
     corpus,
     locale,
   } as const;

@@ -894,6 +894,136 @@ test("a coined composite is refused in the short form too, where it is likeliest
   );
 });
 
+// --- the three the card had nowhere to put ----------------------------------
+//
+// `OWNER_TODO` §2, answered in full in session 114: the mathematics of a hop with what
+// it approximates and assumes beside it, a worked example with pseudocode, and the
+// implementations tree. All three were `no-field-yet` on every card in the graph until
+// these fields existed. What follows pins the rules that keep a populated one honest,
+// because the failure mode of a brand-new optional field is that nothing ever checks it
+// and the first record to use it wrongly is the one a reader sees.
+
+test("a hop note is filed against a hop the reader can actually see", () => {
+  const errors = (hops: Record<string, unknown>): string[] =>
+    validateLayerGraph(
+      {
+        nodes: [
+          capability("slot"),
+          capability("step-a"),
+          method("route", "slot", { steps: ["step-a"], atomic: undefined, hops: hops as never }),
+          method("other", "slot"),
+        ],
+      },
+      new Set<string>(),
+      FIXTURE_STATES,
+      NO_DISPOSITIONS,
+    ).filter((error) => error.startsWith("route:"));
+
+  // A step of this route: fine.
+  assert.deepEqual(errors({ "step-a": { theory: "t", theoryJa: "t" } }), []);
+  // The method's own id: also fine, and it is the key for the stretch a method closes
+  // itself — 57 of the 63 methods carry one, and it is the hop the owner was looking at
+  // when he asked about the blanks after Hamiltonian simulation.
+  assert.deepEqual(errors({ route: { theory: "t", theoryJa: "t" } }), []);
+  // **Anything else annotates a hop nothing draws.** A note filed against a capability
+  // this route does not walk is a note that can never be wrong, because it is never read
+  // — which is the same shape as a test that scans nothing.
+  assert.deepEqual(errors({ "step-b": { theory: "t", theoryJa: "t" } }), [
+    "route: hops names step-b, which is neither one of its steps nor the method itself",
+  ]);
+  assert.deepEqual(errors({ other: { theory: "t", theoryJa: "t" } }), [
+    "route: hops names other, which is neither one of its steps nor the method itself",
+  ]);
+
+  // A pair or neither, on every one of the three. One locale alone renders as a hole for
+  // half the readers, which is the rule every prose field on this type already holds to —
+  // and it is easier to break one level down, because nothing about a nested object makes
+  // a missing twin visible.
+  assert.deepEqual(errors({ "step-a": { approximations: "a" } }), [
+    "route: hops[step-a].approximations is present in one locale only",
+  ]);
+  assert.deepEqual(errors({ "step-a": { assumptionsJa: "a" } }), [
+    "route: hops[step-a].assumptions is present in one locale only",
+  ]);
+  assert.deepEqual(errors({ "step-a": { theory: "", theoryJa: "t" } }), [
+    "route: hops[step-a].theory is present but empty — omit it instead",
+  ]);
+  // A key with no fact behind it draws a disclosure a reader opens onto nothing.
+  // `repeats` rejects the same shape for the same reason.
+  assert.deepEqual(errors({ "step-a": {} }), [
+    "route: hops[step-a] records nothing — omit it instead",
+  ]);
+});
+
+test("an example holds prose, pseudocode or both — never a name with neither", () => {
+  const errors = (example: unknown): string[] =>
+    validateLayerGraph(
+      { nodes: [capability("slot"), method("route", "slot", { example: example as never }), method("b", "slot")] },
+      new Set<string>(),
+      FIXTURE_STATES,
+      NO_DISPOSITIONS,
+    ).filter((error) => error.startsWith("route:"));
+
+  // The owner's "first pass": pseudocode alone, with no prose describing a run somebody
+  // did. That has to be legal or the easy half is unshippable until the hard half exists.
+  assert.deepEqual(errors({ pseudocode: "for k …" }), []);
+  assert.deepEqual(errors({ text: "t", textJa: "t" }), []);
+  assert.deepEqual(errors({ text: "t", textJa: "t", pseudocode: "for k …" }), []);
+  assert.deepEqual(errors({ text: "t" }), ["route: example.text is present in one locale only"]);
+  assert.deepEqual(errors({ pseudocode: "  " }), [
+    "route: example.pseudocode is present but empty — omit it instead",
+  ]);
+  assert.deepEqual(errors({}), ["route: example records nothing — omit it instead"]);
+});
+
+test("an implementation is named, uniquely, and its papers look like papers", () => {
+  const errors = (implementations: unknown): string[] =>
+    validateLayerGraph(
+      {
+        nodes: [
+          capability("slot"),
+          method("route", "slot", { implementations: implementations as never }),
+          method("b", "slot"),
+        ],
+      },
+      new Set<string>(),
+      FIXTURE_STATES,
+      NO_DISPOSITIONS,
+    ).filter((error) => error.startsWith("route:"));
+
+  const entry = { id: "qiskit-run", label: "A", labelJa: "A" };
+  // A name and nothing else is a real entry: it says an implementation exists and nobody
+  // has written it up, which is a different fact from silence.
+  assert.deepEqual(errors([entry]), []);
+  // **Zero papers is a real value**, not an omission — the owner's "other implementations
+  // that aren't papers but proven to be run". Nothing here may require one.
+  assert.deepEqual(errors([{ ...entry, papers: [] }]), []);
+  assert.deepEqual(errors([{ ...entry, about: "a", aboutJa: "a" }]), []);
+
+  assert.deepEqual(errors([{ ...entry, id: "Qiskit Run" }]), [
+    "route: implementation id is not kebab-case — Qiskit Run",
+  ]);
+  // Unique within the method, not globally: two methods may honestly both have a "qiskit"
+  // one, and forcing global uniqueness would push the method's name into every id.
+  assert.deepEqual(errors([entry, { ...entry, label: "B", labelJa: "B" }]), [
+    "route: two implementations share the id qiskit-run",
+  ]);
+  assert.deepEqual(errors([{ ...entry, label: " " }]), [
+    "route: implementation qiskit-run has an empty name",
+  ]);
+  assert.deepEqual(errors([{ ...entry, results: "r" }]), [
+    "route: implementations[qiskit-run].results is present in one locale only",
+  ]);
+  assert.deepEqual(
+    errors([{ ...entry, papers: [{ title: "T", authors: "A", year: "2024", url: "http://x.test" }] }]),
+    ["route: implementation qiskit-run cites a non-https url — http://x.test"],
+  );
+  assert.deepEqual(
+    errors([{ ...entry, papers: [{ title: "T", authors: "A", year: "24", url: "https://x.test" }] }]),
+    ["route: implementation qiskit-run cites a paper with a year of 24"],
+  );
+});
+
 test("a short form must be shorter, in both locales, and measured in pixels", () => {
   const withShort = (fields: Record<string, unknown>): string[] => {
     const base = composite("Lift then solve");

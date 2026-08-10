@@ -94,6 +94,7 @@ import {
   type LayerGraph,
 } from "../lib/repository/layers";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
+import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { layerState, specializationsOf } from "../lib/repository/states";
 import type { PublicLocale } from "../lib/public-locale";
 
@@ -745,7 +746,7 @@ export function ConvergeView({
   // three things this component already holds and no other component holds
   // together. `?about=` is cleared by `withCard` when a card opens, because two
   // overlays on one map is a URL claiming a state the page cannot draw.
-  const openCard = card.id === null ? null : cardFor({ graph, vocabulary: STATE_VOCABULARY, corpus, locale: lang }, card.id);
+  const openCard = card.id === null ? null : cardFor({ graph, vocabulary: STATE_VOCABULARY, corpus, locale: lang, register: PAPER_REGISTER }, card.id);
   const cardCloseHref = withCard(base, null);
   const cardHrefFor = (id: string) => withCard(base, id);
   // One control, two states. A separate close button in the overlay would be a

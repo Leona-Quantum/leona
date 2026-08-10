@@ -16,12 +16,19 @@
  * is the first link inside it — so the card is a preview that hands you onward
  * rather than a replacement that swallows the page.
  *
- * **Two levels of nesting, and that is a ceiling rather than a coincidence.**
+ * **Three levels of nesting, and that is his ceiling rather than a coincidence.**
  * The owner bounded this explicitly: *"don't go more than like 2-3 layers deep
  * though, that would be an unnecessary replacement for the user actually
  * navigating the map itself."* A section is level one, an item inside it is
- * level two, and an item's own children are a link to the map rather than a
- * third `<details>`. A card that can traverse the graph has taken the map's job.
+ * level two, and level three is reached in exactly two places — a hop of Theory,
+ * and one implementation — because he specified both as having contents of their
+ * own and signed off on the second by name. Past that, an item's children are a
+ * link to the map: a card that can traverse the graph has taken the map's job.
+ *
+ * This comment used to say **two**, which was a tightening nobody asked for. It
+ * was written before he answered §2, and it would have ruled out the shape he
+ * then approved — worth recording, because a self-imposed limit that outlives
+ * its reason reads exactly like a requirement.
  */
 import { useEffect, useRef } from "react";
 import { useRouter } from "next/navigation";
@@ -29,12 +36,14 @@ import { useRouter } from "next/navigation";
 import type {
   Card,
   CardGap,
+  CardImplementation,
   CardSectionId,
   CoverageAnswer,
   CardHop,
   CardLink,
   CardValue,
   HopSlotId,
+  ImplementationSectionId,
   MethodCard,
   OwnStepCard,
   ProcessCard,
@@ -69,6 +78,16 @@ interface Copy {
   sections: Record<CardSectionId, string>;
   /** The three slots inside a hop of Theory. See `CardHop` in `card-content.ts`. */
   hopSlots: Record<HopSlotId, string>;
+  /** The owner's five, inside one implementation. */
+  implementationSections: Record<ImplementationSectionId, string>;
+  /**
+   * The worklist line under an empty Implementations section.
+   *
+   * A function rather than a template string, because the two counts pluralise
+   * independently and one of them is routinely zero — a single format string
+   * would have to say "1 papers" in one locale to stay one string.
+   */
+  leads: (simulation: number, hardware: number) => string;
   takes: string;
   returns: string;
   /** The paper list, below the sections rather than among them — the owner's §2 Q4. */
@@ -144,6 +163,19 @@ const COPY: Record<Lang, Copy> = {
       approximations: "Approximations made here",
       assumptions: "Assumptions needed here",
     },
+    implementationSections: {
+      about: "About",
+      methods: "Methods",
+      data: "Data",
+      code: "Code",
+      results: "Results",
+    },
+    leads: (simulation, hardware) => {
+      const parts: string[] = [];
+      if (simulation > 0) parts.push(`${simulation} report${simulation === 1 ? "s" : ""} numerics`);
+      if (hardware > 0) parts.push(`${hardware} report${hardware === 1 ? "s" : ""} a hardware run`);
+      return `Of the papers cited here, ${parts.join(" and ")} — nobody has written those up yet.`;
+    },
     takes: "Takes",
     returns: "Returns",
     references: "References",
@@ -201,6 +233,19 @@ const COPY: Record<Lang, Copy> = {
       theory: "数理",
       approximations: "ここで用いた近似",
       assumptions: "ここで必要な仮定",
+    },
+    implementationSections: {
+      about: "概要",
+      methods: "手順",
+      data: "データ",
+      code: "コード",
+      results: "結果",
+    },
+    leads: (simulation, hardware) => {
+      const parts: string[] = [];
+      if (simulation > 0) parts.push(`${simulation} 件が数値実験を報告`);
+      if (hardware > 0) parts.push(`${hardware} 件が実機での実行を報告`);
+      return `ここで引用している文献のうち、${parts.join("、")}しています。まだ記述されていません。`;
     },
     takes: "入力",
     returns: "出力",
@@ -369,6 +414,107 @@ function Refinement({ card, copy }: { card: MethodCard; copy: Copy }): React.Rea
   );
 }
 
+/**
+ * The implementations tree — the shape the owner approved, and the one place
+ * this card goes three levels deep.
+ *
+ * *"Say yes and I build it."* — *"yes."* Section, then one entry per
+ * implementation, then his five sub-sections: About, Methods, Data, Code,
+ * Results. The paper is an **attribute** of the entry rather than the root of
+ * the tree, because one paper can hold two implementations and one
+ * implementation can be described by two papers — a tree rooted at papers
+ * cannot express either case without duplicating a node.
+ *
+ * **Three levels is his ceiling, not a breach of it.** The bound he set was
+ * *"don't go more than like 2-3 layers deep though, that would be an
+ * unnecessary replacement for the user actually navigating the map itself"* —
+ * and this file previously wrote that down as two, which was a tightening
+ * nobody asked for. Three is what he bounded and what he signed off. The
+ * sub-sections are plain blocks rather than a third `<details>`: a reader who
+ * has opened an implementation wants to read it, not to open five more things.
+ */
+function Implementations({
+  entries,
+  copy,
+}: {
+  entries: readonly CardImplementation[];
+  copy: Copy;
+}): React.ReactElement {
+  return (
+    <ul className="mj-card-list mj-card-implementations">
+      {entries.map((entry) => (
+        <li key={entry.id}>
+          <details className="mj-card-implementation" data-implementation={entry.id}>
+            <summary>{entry.label}</summary>
+            <div className="mj-card-implementation-body">
+              {/* Zero papers is a real value — his "implementations that aren't
+                  papers but proven to be run" — so this draws nothing rather
+                  than a gap note when there are none. */}
+              {entry.papers.length > 0 ? (
+                <ul className="mj-card-list">
+                  {entry.papers.map((paper) => (
+                    <li key={paper.url}>
+                      <a href={paper.url} rel="noreferrer">
+                        {paper.title}
+                      </a>
+                      <p className="mj-card-list-blurb">
+                        {paper.authors} · {paper.year}
+                      </p>
+                    </li>
+                  ))}
+                </ul>
+              ) : null}
+              {entry.sections.map((section) => (
+                <div key={section.id} className="mj-card-hop-slot" data-implementation-section={section.id}>
+                  <p className="mj-card-hop-slot-name">{copy.implementationSections[section.id]}</p>
+                  {section.value.held ? (
+                    <p>{section.value.value}</p>
+                  ) : (
+                    <Gap gap={section.value.gap} copy={copy} />
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * What the register says the cited papers report, printed under an empty
+ * Implementations section.
+ *
+ * `W5-card-spec.md`'s rule for an empty card is that it is a **worklist**, not a
+ * gap report — the owner's *"while populating 'what would have to exist to
+ * connect them', we may come across papers that provide the connections"*. This
+ * is that rule applied to this section: the gap note stays, and beside it goes
+ * the one fact that makes the gap actionable.
+ *
+ * Draws nothing when no cited paper has been read for it, because a count of
+ * zero and an absence of counting are different facts and only one of them is
+ * a lead.
+ */
+function Leads({
+  leads,
+  copy,
+}: {
+  leads: CardValue<{ simulation: number; hardware: number }>;
+  copy: Copy;
+}): React.ReactElement {
+  return (
+    <>
+      <Gap gap="none-recorded" copy={copy} />
+      {leads.held && (leads.value.simulation > 0 || leads.value.hardware > 0) ? (
+        <p className="mj-card-leads">
+          {copy.leads(leads.value.simulation, leads.value.hardware)}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
 /** The contract, drawn as one half of itself. See the `input`/`output` note below. */
 function ContractHalf({
   contract,
@@ -463,11 +609,36 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
       return card.kind === "process" && card.bypassedBy.held ? (
         <LinkList items={card.bypassedBy.value} />
       ) : null;
-    // The four that hold nothing anywhere yet. They draw their gap note and no
-    // body, and the note is `no-field-yet` — an unbuilt field, never a thin
-    // literature.
     case "example":
+      return card.kind === "method" && card.example.held ? (
+        <>
+          {card.example.value.text ? <p>{card.example.value.text}</p> : null}
+          {/* Not localised, and the card says why by not offering a second one:
+              the identifiers are the record's own symbols. `<pre>` rather than a
+              prose block because whitespace is the only structure pseudocode
+              has. */}
+          {card.example.value.pseudocode ? (
+            <pre className="mj-card-pseudocode">
+              <code>{card.example.value.pseudocode}</code>
+            </pre>
+          ) : null}
+        </>
+      ) : null;
     case "implementations":
+      return card.kind !== "method" ? null : card.implementations.held ? (
+        <Implementations entries={card.implementations.value} copy={copy} />
+      ) : (
+        // **The worklist behind the gap.** An empty section says "none found
+        // yet", which a reader takes for a verdict on the literature. This says
+        // what the register already knows — how many of the papers cited here
+        // report numerics or a hardware run — so the emptiness reads as work
+        // nobody has done rather than as an absence of work to do.
+        <Leads leads={card.implementationLeads} copy={copy} />
+      );
+    // The last one holding nothing anywhere: the classical column the owner
+    // asked for beside `bypasses`, which still has no field. It draws its gap
+    // note and no body, and the note is `no-field-yet` — an unbuilt field, never
+    // a thin literature.
     case "classical-equivalents":
     case "no-slot":
       return null;
