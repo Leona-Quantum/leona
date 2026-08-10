@@ -87,7 +87,33 @@ export interface CardRecord {
   readonly href: string;
 }
 
-/** One hop of the state-to-state chain a method walks. */
+/**
+ * One hop of the state-to-state chain a method walks — **and the unit Theory
+ * fills in.**
+ *
+ * The owner gave seven card sections and was asked whether the chain is the
+ * spine of *Theory* or a section beside it. He took the recommendation: *"Theory
+ * renders the chain as its spine, each hop collapsible and empty until the
+ * mathematics is written."* The argument he was given, and agreed to, is that
+ * this is the only way Theory is honest on day one — the alternative ships one
+ * section reading "pending" for as long as it takes to write 63 methods' worth
+ * of mathematics, and a section that says "pending" about everything says
+ * nothing about anything.
+ *
+ * The chain is the one structural field at **63/63**. So Theory is *held* from
+ * the first day — it holds the states and the slots — and the three things a
+ * source would add to a hop are addressed per hop, where they can arrive one at
+ * a time.
+ *
+ * **Approximations and assumptions are here, and not on the method, because he
+ * chose the harder of two models.** Session 109 had them as two fields beside
+ * cost; session 113 asked for them *"highlighted along the way"* inside the
+ * theory. Those are different data models — prose about the method, versus an
+ * annotation on a step of the trace — and he confirmed the second. It is the
+ * same argument `layers.ts` makes for `through`, `via` and `repeats`: a method
+ * does not approximate, it approximates *something*, and a field on the node
+ * leaves the reader guessing which of three hops the approximation was made at.
+ */
 export interface CardHop {
   readonly from: string;
   readonly to: string;
@@ -95,7 +121,18 @@ export interface CardHop {
   readonly via: CardLink | null;
   /** True when the state after this hop came from `through`, not the slot's contract. */
   readonly narrowed: boolean;
+  /** The mathematics of this hop, as a source states it. */
+  readonly theory: CardValue<string>;
+  /** What is approximated *at this hop*, not somewhere in the method. */
+  readonly approximations: CardValue<string>;
+  /** What this hop assumes, likewise. */
+  readonly assumptions: CardValue<string>;
 }
+
+/** The three things a source can add to a hop. Ordered as the card draws them. */
+export const HOP_SLOTS = ["theory", "approximations", "assumptions"] as const;
+
+export type HopSlotId = (typeof HOP_SLOTS)[number];
 
 export interface CardContract {
   readonly from: string;
@@ -156,22 +193,32 @@ export interface MethodCard extends CardCommon {
   /** Narrower versions of this one. Empty is the common case and draws nothing. */
   readonly refinedBy: readonly CardLink[];
   readonly whenItApplies: CardValue<string>;
+  /** *Performance*, on the card. `cost` is what the graph calls the field it reads. */
   readonly cost: CardValue<string>;
   readonly contested: CardValue<string>;
-  /** The chain the method walks, structurally. Populated — `routeOf` computes it. */
+  /**
+   * **Theory**: the chain the method walks, and the place its mathematics lands.
+   *
+   * Structural and therefore populated — `routeOf` computes it, 63/63. See
+   * `CardHop` for why the mathematics, the approximations and the assumptions
+   * are addressed per hop rather than per method.
+   */
   readonly trace: CardValue<readonly CardHop[]>;
-  /** What it needs that does not move the route along. */
+  /** *Requires*: what it needs that does not move the route along. */
   readonly ingredients: CardValue<readonly CardLink[]>;
   /**
-   * The three the owner asked for that nothing can hold yet.
+   * The two the owner asked for that nothing can hold yet.
    *
    * Kept as fields rather than left out so the card *says* they are coming: an
    * absent section is indistinguishable from a section nobody thought of, and
    * `W5-card-spec.md` is explicit that these are wanted and undesigned.
+   *
+   * `theoryTrace`, `approximations` and `assumptions` used to be here beside
+   * them and are **gone from this level on purpose** — the first is now the
+   * `trace` above (Theory *is* the chain), and the other two are annotations on
+   * a hop. All three were the owner's own re-decision; see `CardHop`.
    */
-  readonly theoryTrace: CardValue<never>;
-  readonly approximations: CardValue<never>;
-  readonly assumptions: CardValue<never>;
+  readonly example: CardValue<never>;
   readonly implementations: CardValue<never>;
 }
 
@@ -357,6 +404,14 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
     to: route.states[index + 1] ?? "",
     via: segment.capabilityId === null ? null : linkFor(graph, segment.capabilityId, ja),
     narrowed: segment.narrowed,
+    // **`no-field-yet`, per hop, and the word matters.** Nothing on `LayerMethod`
+    // holds a hop's mathematics, its approximations or its assumptions — the
+    // owner asked for all three and confirmed they belong *on the hop*, and the
+    // field is the next piece of work rather than a search that came back empty.
+    // The card must not say "none found yet" about a place nobody has built.
+    theory: missing("no-field-yet"),
+    approximations: missing("no-field-yet"),
+    assumptions: missing("no-field-yet"),
   }));
   const ingredients = route.feeds
     .map((id) => linkFor(graph, id, ja))
@@ -388,9 +443,7 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
         ? missing("none-recorded")
         : held(method.citations),
     records: recordsOf(method, corpus, ja),
-    theoryTrace: missing("no-field-yet"),
-    approximations: missing("no-field-yet"),
-    assumptions: missing("no-field-yet"),
+    example: missing("no-field-yet"),
     implementations: missing("no-field-yet"),
   };
 }
@@ -491,49 +544,137 @@ export function cardExists(input: CardInput, id: string): boolean {
 }
 
 /**
- * Every section on a card, with what it holds — the sweep the gap rule needs.
+ * Every section a card can draw. Written out so a heading is a **type error**
+ * rather than an `undefined` on the map, in both locales at once.
  *
- * A card is only honest if "how much of this is empty" is answerable without
- * reading JSX. This is what the tests count, and what stops a section quietly
- * disappearing: a section removed from the card is a section removed from here,
- * and the census is pinned.
+ * Ten of these are the owner's own section list from `OWNER_TODO` §2, answered
+ * in full during session 114. The rest — `contract`, `between`, `no-slot`,
+ * `why-a-layer`, `filled-by`, `bypassed-by`, `classical-equivalents` — belong to
+ * the other two card kinds, which he did not respecify.
  */
-export function cardSections(card: Card): Array<{ id: string; state: "held" | CardGap }> {
-  const of = (id: string, value: CardValue<unknown>) => ({
-    id,
-    state: (value.held ? "held" : value.gap) as "held" | CardGap,
-  });
-  // The own-step card holds one section and holds it always — the two states it
-  // runs between, which are structural and cannot be absent. It is listed rather
-  // than special-cased away so the census still answers "how much of this card is
-  // empty" for every card the surface can draw, which is the whole point of this
-  // function.
+export type CardSectionId =
+  | "when-it-applies"
+  | "input"
+  | "theory"
+  | "output"
+  | "requires"
+  | "example"
+  | "performance"
+  | "contested"
+  | "implementations"
+  | "records"
+  | "contract"
+  | "between"
+  | "no-slot"
+  | "why-a-layer"
+  | "filled-by"
+  | "bypassed-by"
+  | "classical-equivalents";
+
+/** One section: what it is, and what it holds. */
+export interface CardSection {
+  readonly id: CardSectionId;
+  readonly value: CardValue<unknown>;
+}
+
+/** What a section resolved to — held, or which of the two gaps. */
+export function sectionState(section: { value: CardValue<unknown> }): "held" | CardGap {
+  return section.value.held ? "held" : section.value.gap;
+}
+
+/**
+ * Every section on a card, **in the order the card draws them.**
+ *
+ * ## This list is the order, and it was not before
+ *
+ * Until session 114 this function and `map-card-panel.tsx` were two independent
+ * lists of the same sections in two different orders, and the panel did not
+ * import this one. The census the tests read said `contract, papers, records,
+ * when-it-applies, trace, …`; the reader saw `contract, when-it-applies, trace,
+ * …` with papers and records last. Neither was wrong, because nothing claimed
+ * they were the same list — which means a section could have been dropped from
+ * the drawing entirely and the census would have gone on counting it.
+ *
+ * That mattered the moment the owner answered §2, because **his answer is an
+ * order**. So the panel now renders *from* this array. There is one list, the
+ * order is a fact a test can read, and a section that leaves the card leaves
+ * here.
+ *
+ * ## The order is his, and the two additions are his too
+ *
+ * His seven were Input, Theory, Output, Requires, Example, Performance,
+ * Implementations. *When it applies* is first because he made it its own
+ * section — *"okay, it's own section. can be expanded upon in requires
+ * section"* — and it is what tells a reader whether to keep reading. *Where the
+ * claim is contested* sits after Performance because he kept it out of it:
+ * a disputed complexity belongs in Performance, a disputed condition does not,
+ * and he called this section *"the best thing on the surface"*.
+ *
+ * **Papers are deliberately not here.** He was asked whether a reference list
+ * should be an eighth section and said *"confirm, it isn't needed for papers to
+ * be their own section"*, so the card carries them as a plain list below the
+ * sections — chrome, like the way onward. They are 63/63 and cannot be a gap.
+ */
+export function cardSections(card: Card): readonly CardSection[] {
+  const of = (id: CardSectionId, value: CardValue<unknown>): CardSection => ({ id, value });
+  // The own-step card is short on purpose and says so: which two states, the
+  // method's own contract, and that no slot covers the stretch. `no-slot` is
+  // listed here rather than hardcoded in the panel — it was the one section the
+  // census could not see, which is precisely the shape of the bug above.
   if (card.kind === "own-step") {
-    return [of("contract", card.contract), { id: "between", state: "held" as const }];
+    return [
+      { id: "between", value: held(`${card.from} → ${card.to}`) },
+      of("contract", card.contract),
+      of("no-slot", missing("none-recorded")),
+    ];
   }
-  const common = [
-    of("contract", card.contract),
-    of("papers", card.papers),
+  if (card.kind === "process") {
+    return [
+      of("contract", card.contract),
+      of("why-a-layer", card.whyALayer),
+      of("filled-by", card.filledBy),
+      of("bypassed-by", card.bypassedBy),
+      of("classical-equivalents", card.classicalEquivalents),
+      of("records", card.records),
+    ];
+  }
+  // **Input and Output are one field read twice, not two fields.** A contract is
+  // `takes`/`returns` on one record; splitting it into two sections is a change
+  // to how it is *drawn*, and giving each half its own `CardValue` would be two
+  // answers to "is the contract recorded" that could disagree.
+  return [
+    of("when-it-applies", card.whenItApplies),
+    of("input", card.contract),
+    of("theory", card.trace),
+    of("output", card.contract),
+    of("requires", card.ingredients),
+    of("example", card.example),
+    of("performance", card.cost),
+    of("contested", card.contested),
+    of("implementations", card.implementations),
     of("records", card.records),
   ];
-  return card.kind === "method"
-    ? [
-        ...common,
-        of("when-it-applies", card.whenItApplies),
-        of("trace", card.trace),
-        of("cost", card.cost),
-        of("contested", card.contested),
-        of("ingredients", card.ingredients),
-        of("theory-trace", card.theoryTrace),
-        of("approximations", card.approximations),
-        of("assumptions", card.assumptions),
-        of("implementations", card.implementations),
-      ]
-    : [
-        ...common,
-        of("why-a-layer", card.whyALayer),
-        of("filled-by", card.filledBy),
-        of("bypassed-by", card.bypassedBy),
-        of("classical-equivalents", card.classicalEquivalents),
-      ];
+}
+
+/**
+ * The three slots inside every hop of Theory, swept flat.
+ *
+ * A second census, deliberately not folded into `cardSections`. The question
+ * *"how much of this card is empty"* now has two honest answers at two levels:
+ * Theory is **held** on all 63 methods because the chain is, and every hop
+ * inside it is empty because no field holds a hop's mathematics yet. One number
+ * covering both would report a card as fuller than it reads — the top level
+ * would say "Theory: held" and the reader would open it and find nothing.
+ */
+export function cardHopSlots(
+  card: Card,
+): Array<{ hop: string; id: HopSlotId; state: "held" | CardGap }> {
+  if (card.kind !== "method" || !card.trace.held) return [];
+  return card.trace.value.flatMap((hop, index) =>
+    HOP_SLOTS.map((id) => ({
+      hop: `${index}:${hop.from}>${hop.to}`,
+      id,
+      state: sectionState({ value: hop[id] }),
+    })),
+  );
 }
