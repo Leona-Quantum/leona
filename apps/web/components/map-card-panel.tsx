@@ -40,7 +40,9 @@ import type {
   CardSectionId,
   CoverageAnswer,
   CardHop,
+  CardIngredient,
   CardLink,
+  CardRepetition,
   CardValue,
   ImplementationSectionId,
   MethodCard,
@@ -48,6 +50,7 @@ import type {
   ProcessCard,
 } from "../lib/repository/card-content";
 import { cardSections } from "../lib/repository/card-content";
+import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
 import { THEORY_MARKS, type TheoryMark, type TheorySpan } from "../lib/repository/theory-marks";
 import { ownStepName } from "../lib/repository/converge-layout";
 import type { PublicLocale } from "../lib/public-locale";
@@ -101,6 +104,19 @@ interface Copy {
   /** The paper list, below the sections rather than among them — the owner's §2 Q4. */
   references: string;
   narrowed: string;
+  /**
+   * The three words a multiplicity needs, and they are the node page's words.
+   *
+   * `repeatsBadge` is the count, `repeatsCoherent`/`repeatsMeasured` say what one
+   * turn costs — two sentences because they are two facts, and a reader choosing
+   * between a shot-based readout and a coherent one is choosing on the second.
+   * Copied in substance rather than paraphrased: `repository-layers.tsx` already
+   * says exactly this about exactly these records, and one fact should read as
+   * one fact wherever it is drawn.
+   */
+  repeatsBadge: (count: string) => string;
+  repeatsCoherent: string;
+  repeatsMeasured: string;
   coverage: Record<CoverageAnswer, string>;
 }
 
@@ -192,6 +208,9 @@ const COPY: Record<Lang, Copy> = {
     returns: "Returns",
     references: "References",
     narrowed: "narrowed",
+    repeatsBadge: LOOP_CLOSURE_COPY.en.badge,
+    repeatsCoherent: LOOP_CLOSURE_COPY.en.closure.coherent,
+    repeatsMeasured: LOOP_CLOSURE_COPY.en.closure.measured,
     coverage: {
       covered: "Covered in the repository.",
       /**
@@ -264,6 +283,9 @@ const COPY: Record<Lang, Copy> = {
     returns: "出力",
     references: "文献",
     narrowed: "限定",
+    repeatsBadge: LOOP_CLOSURE_COPY.ja.badge,
+    repeatsCoherent: LOOP_CLOSURE_COPY.ja.closure.coherent,
+    repeatsMeasured: LOOP_CLOSURE_COPY.ja.closure.measured,
     coverage: {
       covered: "リポジトリに記録があります。",
       "not-yet":
@@ -457,6 +479,86 @@ function LinkList({ items }: { items: readonly CardLink[] }): React.ReactElement
 }
 
 /**
+ * *Requires* — the same list, plus the count for the seven ingredients a source
+ * says are needed more than once.
+ *
+ * **This is where most of `repeats` lives**, which was the surprise: 7 of the 10
+ * records key a `feeds` step rather than a hop, so the three readouts' ε^-2 and
+ * HHL's two κ's are facts about an *ingredient*. A count drawn only on the chain
+ * would have left every one of them exactly where it was — nowhere.
+ *
+ * The badge is a `<span>` beside the name rather than a line under it because
+ * the multiplicity is part of what the ingredient *is* here: a state preparation
+ * run once and a state preparation run O(1/ε²) times are the same node and not
+ * the same cost, and the reader is scanning the list for exactly that.
+ */
+function IngredientList({
+  items,
+  copy,
+}: {
+  items: readonly CardIngredient[];
+  copy: Copy;
+}): React.ReactElement {
+  return (
+    <ul className="mj-card-list">
+      {items.map(({ link, repetition }) => (
+        <li key={link.id}>
+          {/* The space is deliberate and the node page has the same one: an
+              `inline-block` badge is not guaranteed to be announced apart from
+              the name before it, and "Quantum linear solveruns once per time
+              step" is what a reader without the margin gets. */}
+          <a href={link.href}>{link.label}</a>{" "}
+          {repetition ? <RepeatBadge repetition={repetition} copy={copy} /> : null}
+          {link.summary ? <p className="mj-card-list-blurb">{link.summary}</p> : null}
+          {repetition ? <RepeatNote repetition={repetition} copy={copy} /> : null}
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+/**
+ * How many times, in the source's own phrase.
+ *
+ * `data-closure` is on the element rather than only in the class because the
+ * closure is the fact a sweep wants to count — a measured loop and a coherent
+ * one at the same count are different prices — and a class name is a styling
+ * hook that a restyle is free to rename.
+ */
+function RepeatBadge({
+  repetition,
+  copy,
+}: {
+  repetition: CardRepetition;
+  copy: Copy;
+}): React.ReactElement {
+  return (
+    <span
+      className={`mj-card-repeat mj-card-repeat--${repetition.closure}`}
+      data-closure={repetition.closure}
+    >
+      {copy.repeatsBadge(repetition.count)}
+    </span>
+  );
+}
+
+/** What one turn costs, then why it turns that many times. Two facts, in order. */
+function RepeatNote({
+  repetition,
+  copy,
+}: {
+  repetition: CardRepetition;
+  copy: Copy;
+}): React.ReactElement {
+  return (
+    <p className="mj-card-repeat-note">
+      {repetition.closure === "measured" ? copy.repeatsMeasured : copy.repeatsCoherent}{" "}
+      {repetition.note}
+    </p>
+  );
+}
+
+/**
  * **Theory**, which is the chain with the mathematics inside it.
  *
  * The owner's §2 answer, in his own words on the question of whether the chain
@@ -491,6 +593,12 @@ function Theory({ hops, copy }: { hops: readonly CardHop[]; copy: Copy }): React
                 <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
               )}
               {hop.narrowed ? <span className="mj-card-trace-tag">{copy.narrowed}</span> : null}
+              {/* On the summary, so a shut chain already says which of its hops
+                  is inside a loop — that is the one thing about this chain a
+                  reader would otherwise have to open every hop to learn. The
+                  space is the same one the ingredient list carries: a margin is
+                  not a word separator to a screen reader. */}{" "}
+              {hop.repetition ? <RepeatBadge repetition={hop.repetition} copy={copy} /> : null}
             </summary>
             <div className="mj-card-hop-body">
               {/* **The mathematics first, and no heading over it.** Opening a hop
@@ -506,6 +614,11 @@ function Theory({ hops, copy }: { hops: readonly CardHop[]; copy: Copy }): React
               ) : (
                 <Gap gap={hop.theory.gap} copy={copy} />
               )}
+              {/* Below the mathematics, because it is a fact about running the
+                  hop rather than about what the hop is. The badge above already
+                  gave the count; this is what one turn costs and why it turns
+                  that many times. */}
+              {hop.repetition ? <RepeatNote repetition={hop.repetition} copy={copy} /> : null}
               {/* The way onward, now **below** the mathematics and labelled as an
                   action rather than repeating the step's name. It stays inside
                   the disclosure rather than on the summary because a `<summary>`
@@ -751,7 +864,7 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
       ) : null;
     case "requires":
       return card.kind === "method" && card.ingredients.held ? (
-        <LinkList items={card.ingredients.value} />
+        <IngredientList items={card.ingredients.value} copy={copy} />
       ) : null;
     case "performance":
       return card.kind === "method" && card.cost.held ? <p>{card.cost.value}</p> : null;

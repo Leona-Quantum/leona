@@ -58,6 +58,7 @@ import {
   layoutConvergeForMethod,
 } from "../lib/repository/converge-layout";
 import { convergeNotes } from "../lib/repository/converge-notes";
+import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { paperTraces } from "../lib/repository/paper-traces";
@@ -147,16 +148,13 @@ const COPY = {
     // The badge says the multiplicity; the closure says what one turn costs.
     // They are two sentences because they are two facts, and a reader deciding
     // between shot-based and coherent readout is deciding on the second one.
-    repeatsBadge: (count: string) => `runs ${count}`,
-    // NOT "so nothing is prepared again" — that was wrong, and wrong against two
-    // of this graph's own records: HHL prepares |b⟩ afresh in every one of its
-    // O(κ) amplification rounds, and amplitude estimation runs the preparation
-    // forwards and backwards on every iteration. What a coherent loop never pays
-    // is a readout.
-    repeatsCoherent:
-      "The loop stays coherent: nothing is measured between turns. The preparation may still be reapplied every turn — what the loop never pays is a readout and a restart from classical data. The price is depth, and a success probability that multiplies down the chain.",
-    repeatsMeasured:
-      "The loop closes through a measurement: every turn ends in a readout and starts from a fresh preparation. The price is a count of runs, not a depth.",
+    //
+    // **Read from `loop-closure-copy.ts` rather than written here**, since the
+    // map card began drawing the same records: two copies of one claim drift the
+    // first time either is edited, and these two pages are one click apart.
+    repeatsBadge: LOOP_CLOSURE_COPY.en.badge,
+    repeatsCoherent: LOOP_CLOSURE_COPY.en.closure.coherent,
+    repeatsMeasured: LOOP_CLOSURE_COPY.en.closure.measured,
     repeatsHeading: "Steps it runs more than once",
     loopHeading: "Routes that run this slot many times",
     loopLead:
@@ -294,11 +292,9 @@ const COPY = {
     needsUndecomposed:
       "まだ分解されていません。これはこのグラフ側の欠落であって、この手法に部品がないという主張ではありません。",
     needsWays: (n: number) => (n === 0 ? "手法の記録なし" : `手法${n}件`),
-    repeatsBadge: (count: string) => `実行回数：${count}`,
-    repeatsCoherent:
-      "反復はコヒーレントに閉じます。回と回の間で測定は行われません。準備ユニタリ自体は毎回適用され直すことがありますが、読み出しと、古典的なデータからの再出発は生じません。代価は深さと、連鎖のあいだ掛け合わされていく成功確率です。",
-    repeatsMeasured:
-      "反復は測定を挟んで閉じます。1 回ごとに読み出しで終わり、次は新たな準備から始まります。代価は深さではなく実行回数です。",
+    repeatsBadge: LOOP_CLOSURE_COPY.ja.badge,
+    repeatsCoherent: LOOP_CLOSURE_COPY.ja.closure.coherent,
+    repeatsMeasured: LOOP_CLOSURE_COPY.ja.closure.measured,
     repeatsHeading: "複数回実行する手順",
     loopHeading: "この枠を何度も実行する経路",
     loopLead:

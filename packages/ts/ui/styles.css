@@ -12988,6 +12988,54 @@ div.mj-rail-row:hover {
   padding: var(--sp-2) 0 var(--sp-2) var(--sp-3);
   border-left: var(--border-hairline) solid var(--border-0);
 }
+/* **How many times a step is walked** — on a hop's summary and beside an
+   ingredient, which are the two places a step is drawn on this card.
+
+   The node page badges the same records with `.mj-layers-repeat`, and that one
+   colours the *text* by closure. It cannot be copied here: every link inside
+   this card is coloured text, `--accent` is the link colour on every surface of
+   this site, and an accent-coloured chip that goes nowhere reads as a broken
+   link — the same finding that turned the theory marks from coloured words into
+   a tint behind them. So the closure is carried by the border and a tint, and
+   the words stay `--text-1`.
+
+   Colour is never the only carrier: the note below the badge names the closure
+   in a full sentence, in both locales, wherever the badge is drawn. */
+.mj-card-repeat {
+  display: inline-block;
+  margin-left: var(--sp-2);
+  padding: 0 var(--sp-2);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-control);
+  color: var(--text-1);
+  font-size: var(--fs-12);
+  font-variant-numeric: tabular-nums;
+  /* The count carries ε, κ, †, ‖ and superscripts, and this card is narrow.
+     `nowrap` would turn a long one into silent horizontal overflow. */
+  white-space: normal;
+}
+/* The mix partner is `--border-0`, the hairline **colour**. `--border-hairline`
+   is a *width* (`1px`) and the three chips already in this file mix against it,
+   which makes the whole declaration invalid at computed-value time — measured on
+   the rendered page: `.mj-layers-repeat` computes `border-width: 0px`. Repeating
+   that here would have shipped a chip whose border a reader never sees. */
+.mj-card-repeat--coherent {
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-0));
+  background: color-mix(in srgb, var(--accent) 10%, transparent);
+}
+.mj-card-repeat--measured {
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border-0));
+  background: color-mix(in srgb, var(--warn) 12%, transparent);
+}
+/* What one turn costs, then why it turns that many times. Set like the other
+   secondary prose on this card so a hop that carries both mathematics and a
+   count does not read as two competing paragraphs. */
+.mj-card-repeat-note {
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  line-height: 1.55;
+}
 /* The worklist line under an empty Implementations section: what the register
    already knows about the papers cited here. Quieter than the gap note above it,
    because it is a lead rather than a finding. */

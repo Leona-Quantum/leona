@@ -40,9 +40,11 @@ import {
   type LayerCitation,
   type LayerContract,
   type LayerCorpusEntry,
+  repetitionOf,
   type LayerGraph,
   type LayerMethod,
   type LayerNode,
+  type LoopClosure,
 } from "./layers.ts";
 import type { PaperRegister } from "./papers.ts";
 import type { StateVocabulary } from "./states.ts";
@@ -134,6 +136,56 @@ export interface CardHop {
    * file can answer.
    */
   readonly theory: CardValue<readonly TheorySpan[]>;
+  /**
+   * How many times this hop is walked, where a source says — and `null` where
+   * none does.
+   *
+   * **Chrome, like `narrowed`, and for the same reason.** It is not a
+   * `CardValue`: `repeats` is written only where a source states a multiplicity,
+   * and `layers.ts` is explicit that absent means *no source we read said this
+   * step runs more than once* and never *it runs once*. A section reading "none
+   * found yet" under every unrepeated hop would print that non-claim 85 times
+   * and turn an absence into a search nobody ran.
+   */
+  readonly repetition: CardRepetition | null;
+}
+
+/**
+ * A step's multiplicity, as the source states it, resolved to one locale.
+ *
+ * The same record `repository-layers.tsx` badges on the node page — the count,
+ * the closure, and why it turns that many times — carried here because until now
+ * **the card was the one surface that said nothing about it at all**, measured
+ * across canvas, card and node page in `W12-what-the-map-cannot-say.md`. It is on
+ * 9 methods, nearly twice as many as `refines`, and a reader deciding between two
+ * ways of filling a slot is usually deciding on exactly this number.
+ */
+export interface CardRepetition {
+  readonly count: string;
+  /** `coherent` or `measured`. What one turn costs, which is the other fact. */
+  readonly closure: LoopClosure;
+  readonly note: string;
+}
+
+/**
+ * One thing a method needs that does not move its route along — and how many
+ * times it needs it.
+ *
+ * **`repeats` keys a step, and 7 of its 10 records key a `feeds` step rather
+ * than a hop.** Measured this session against `routeOf`: only `time-marching-usva`,
+ * `qsvt-matrix-inversion` and `qsvt-transform` repeat something that is drawn as
+ * a hop. Backward Euler's `quantum-linear-solve`, HHL's `state-preparation` and
+ * `hamiltonian-simulation`, and all three readouts' `state-preparation` are
+ * ingredients. `W12` proposed drawing the count "beside the lane's name" on the
+ * assumption it sat on the chain; putting it only there would have reached 3 of
+ * the 10 records and left the six most expensive loops on this map — every
+ * readout's ε^-2, HHL's two κ's — exactly as invisible as before.
+ *
+ * So *Requires* is a list of pairs rather than a list of links.
+ */
+export interface CardIngredient {
+  readonly link: CardLink;
+  readonly repetition: CardRepetition | null;
 }
 
 export interface CardContract {
@@ -207,7 +259,7 @@ export interface MethodCard extends CardCommon {
    */
   readonly trace: CardValue<readonly CardHop[]>;
   /** *Requires*: what it needs that does not move the route along. */
-  readonly ingredients: CardValue<readonly CardLink[]>;
+  readonly ingredients: CardValue<readonly CardIngredient[]>;
   /**
    * **Both now read a field, and the copy a reader sees changed with them.**
    *
@@ -442,8 +494,31 @@ function recordsOf(
   );
 }
 
-function listOrGap(items: readonly CardLink[]): CardValue<readonly CardLink[]> {
+function listOrGap<T>(items: readonly T[]): CardValue<readonly T[]> {
   return items.length === 0 ? missing("none-recorded") : held(items);
+}
+
+/**
+ * The multiplicity recorded for one step of a method, resolved to one locale.
+ *
+ * One reader for both places a step is drawn — the hop and the ingredient — so
+ * the two cannot disagree about what the record says, and a step that moves from
+ * `steps`-as-hop to `steps`-as-feed keeps its count without anything being
+ * edited here.
+ */
+function repetitionFor(
+  method: LayerMethod,
+  stepId: string | null,
+  ja: boolean,
+): CardRepetition | null {
+  if (stepId === null) return null;
+  const repetition = repetitionOf(method, stepId);
+  if (repetition === null) return null;
+  return {
+    count: ja ? repetition.countJa : repetition.count,
+    closure: repetition.closure,
+    note: ja ? repetition.noteJa : repetition.note,
+  };
 }
 
 /**
@@ -554,10 +629,17 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
     // built. The two sentences differ and the reader can only tell them apart
     // because the card keeps them apart.
     ...hopNoteOf(method, segment.capabilityId, ja),
+    // Keyed by the same id the hop is filed under, so a hop the method closes
+    // itself carries no count — `repeats` names a *step*, and the stretch a
+    // method walks alone is not one of its steps.
+    repetition: repetitionFor(method, segment.capabilityId, ja),
   }));
   const ingredients = route.feeds
-    .map((id) => linkFor(graph, id, ja))
-    .filter((link): link is CardLink => link !== null);
+    .map((id) => {
+      const link = linkFor(graph, id, ja);
+      return link === null ? null : { link, repetition: repetitionFor(method, id, ja) };
+    })
+    .filter((item): item is CardIngredient => item !== null);
 
   return {
     kind: "method",
@@ -828,4 +910,54 @@ export function cardHopNotes(
           .filter((mark): mark is TheoryMark => mark !== null)
       : [],
   }));
+}
+
+/**
+ * Every multiplicity this card draws, and **where on it** the reader finds one.
+ *
+ * A third census, and it exists because the interesting failure here is not an
+ * empty section — it is a record the card silently never reaches. `repeats` is
+ * keyed by a step, a step is either a hop of the chain or an ingredient, and
+ * those are drawn by two different pieces of the panel. A count keyed to a step
+ * that is neither would render nowhere at all and no section would report a gap,
+ * because no section is missing: `Requires` would be held, `Theory` would be
+ * held, and the fact would simply be gone.
+ *
+ * So the test reads this against the graph's own records rather than against a
+ * number typed into it. `place` is carried because it is the part the plan got
+ * wrong: `W12` assumed these sat on the chain, and 7 of the 10 are ingredients.
+ */
+export function cardRepetitions(
+  card: Card,
+): Array<{ place: "hop" | "ingredient"; step: string; count: string; closure: LoopClosure }> {
+  if (card.kind !== "method") return [];
+  const found: Array<{
+    place: "hop" | "ingredient";
+    step: string;
+    count: string;
+    closure: LoopClosure;
+  }> = [];
+  if (card.trace.held) {
+    for (const hop of card.trace.value) {
+      if (hop.repetition === null) continue;
+      found.push({
+        place: "hop",
+        step: hop.via?.id ?? "",
+        count: hop.repetition.count,
+        closure: hop.repetition.closure,
+      });
+    }
+  }
+  if (card.ingredients.held) {
+    for (const ingredient of card.ingredients.value) {
+      if (ingredient.repetition === null) continue;
+      found.push({
+        place: "ingredient",
+        step: ingredient.link.id,
+        count: ingredient.repetition.count,
+        closure: ingredient.repetition.closure,
+      });
+    }
+  }
+  return found;
 }
