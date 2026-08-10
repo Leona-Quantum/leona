@@ -117,13 +117,37 @@ def _recorded_llm_usage(events) -> tuple[int, int, int]:
     return calls, input_tokens, output_tokens
 
 
-async def _latest_trusted_execution(store: RepoAgentStore, run_id: UUID):
-    """Load the latest Candidate and its fingerprint-bound execution once."""
+async def _latest_trusted_execution(
+    store: RepoAgentStore,
+    run_id: UUID,
+    *,
+    finalized_source: str | None = None,
+    finalized_revision: int | None = None,
+):
+    """Load the delivered Candidate and its fingerprint-bound execution once.
+
+    A budget-exhausted pipeline may intentionally finalize an earlier, stronger
+    candidate after a later repair candidate failed before execution. In that case
+    the newest candidate row is not the saved artifact. ``code.finalized`` records
+    the delivered source and revision, so eval scoring must follow that durable
+    projection instead of silently grading the unfinished tail of the repair loop.
+    """
 
     candidates = await store.list_candidates(run_id)
     if not candidates:
         return None, None
-    candidate = candidates[-1]
+    if finalized_source is None:
+        candidate = candidates[-1]
+    else:
+        matches = [
+            candidate
+            for candidate in candidates
+            if candidate.source == finalized_source
+            and (finalized_revision is None or candidate.revision == finalized_revision)
+        ]
+        if len(matches) != 1:
+            raise ValueError("finalized source/revision does not identify exactly one candidate")
+        candidate = matches[0]
     execution = await store.execution_for(run_id, candidate.candidate_id)
     if execution is not None and (
         execution.candidate_id != candidate.candidate_id
@@ -134,14 +158,23 @@ async def _latest_trusted_execution(store: RepoAgentStore, run_id: UUID):
 
 
 async def _latest_trusted_result(
-    store: RepoAgentStore, run_id: UUID
+    store: RepoAgentStore,
+    run_id: UUID,
+    *,
+    finalized_source: str | None = None,
+    finalized_revision: int | None = None,
 ) -> tuple[dict[str, Any] | None, str | None, str | None]:
     """Load RESULT from the latest Candidate's fingerprint-bound execution.
 
     The repository is the authority. A missing execution is an honest absence; a
     stale/mismatched execution is an integrity error and must not be scored.
     """
-    candidate, execution = await _latest_trusted_execution(store, run_id)
+    candidate, execution = await _latest_trusted_execution(
+        store,
+        run_id,
+        finalized_source=finalized_source,
+        finalized_revision=finalized_revision,
+    )
     if candidate is None:
         return None, None, None
     if execution is None:
@@ -458,7 +491,15 @@ def _score_terminal_expectations(
     reasons: list[str] = []
     if run_status != expect.run_status.value:
         reasons.append(f"run_status {run_status!r} != expected {expect.run_status.value!r}")
-    if expect.terminal_reason is not None and terminal_reason != expect.terminal_reason:
+    stronger_reference_alignment = (
+        expect.terminal_reason == "ai_review_aligned"
+        and terminal_reason == "ai_review_aligned_with_reference_check"
+    )
+    if (
+        expect.terminal_reason is not None
+        and terminal_reason != expect.terminal_reason
+        and not stronger_reference_alignment
+    ):
         reasons.append(
             f"terminal_reason {terminal_reason!r} != expected {expect.terminal_reason!r}"
         )
@@ -520,10 +561,26 @@ async def run_case(
     async with factory() as session:
         run = await runs_repo.get_run(scope, session, run_id)
         events = await runs_repo.list_run_events(scope, session, run_id)
+        export_event = _latest_export_event(events)
+        finalized_source = (
+            export_event.payload.get("code")
+            if export_event is not None and export_event.type == "code.finalized"
+            else None
+        )
+        finalized_revision = (
+            export_event.payload.get("revision")
+            if export_event is not None and export_event.type == "code.finalized"
+            else None
+        )
         store = RepoAgentStore(scope, session)
         candidates_considered = len(await store.list_candidates(run_id))
         try:
-            bound_candidate, bound_execution = await _latest_trusted_execution(store, run_id)
+            bound_candidate, bound_execution = await _latest_trusted_execution(
+                store,
+                run_id,
+                finalized_source=finalized_source,
+                finalized_revision=finalized_revision,
+            )
             if bound_candidate is not None:
                 candidate_id = str(bound_candidate.candidate_id)
             if bound_execution is not None:
@@ -541,7 +598,6 @@ async def run_case(
     terminal_reason = (
         terminal_event.payload.get("reason_code") if terminal_event is not None else None
     )
-    export_event = _latest_export_event(events)
     error_event = next((e for e in events if e.type == "run.error"), None)
     # A repair loop can emit several sandbox results. Score the terminal/latest
     # attempt; the first attempt may have failed before the repaired program printed

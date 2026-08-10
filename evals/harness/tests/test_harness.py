@@ -405,6 +405,48 @@ async def test_latest_trusted_result_requires_candidate_fingerprint_binding():
         await _latest_trusted_result(Store(), uuid.uuid4())
 
 
+async def test_trusted_result_follows_finalized_fallback_not_unexecuted_latest_candidate():
+    delivered_id = uuid.uuid4()
+    unfinished_id = uuid.uuid4()
+    execution_id = uuid.uuid4()
+    delivered = SimpleNamespace(
+        candidate_id=delivered_id,
+        revision=1,
+        source="FINAL_CIRCUIT = good",
+        source_fingerprint="a" * 64,
+    )
+    unfinished = SimpleNamespace(
+        candidate_id=unfinished_id,
+        revision=2,
+        source="FINAL_CIRCUIT = unfinished",
+        source_fingerprint="b" * 64,
+    )
+    execution = SimpleNamespace(
+        candidate_id=delivered_id,
+        execution_id=execution_id,
+        source_fingerprint="a" * 64,
+        result={"dominant_integer": 3},
+    )
+
+    class Store:
+        async def list_candidates(self, _run_id):
+            return [delivered, unfinished]
+
+        async def execution_for(self, _run_id, candidate_id):
+            return execution if candidate_id == delivered_id else None
+
+    result, got_candidate_id, got_execution_id = await _latest_trusted_result(
+        Store(),
+        uuid.uuid4(),
+        finalized_source=delivered.source,
+        finalized_revision=delivered.revision,
+    )
+
+    assert result == {"dominant_integer": 3}
+    assert got_candidate_id == str(delivered_id)
+    assert got_execution_id == str(execution_id)
+
+
 def test_value_check_catches_endianness_bit_reversal():
     # The Grover-1100 failure mode: circuit is well-formed and the verifier passes it,
     # but the recovered top state is the bit-reversal 0011. The value-level check must
@@ -674,6 +716,15 @@ def test_simple_terminal_scoring_requires_alignment_without_strict_verdict():
             expect,
             run_status="succeeded",
             terminal_reason="ai_review_aligned",
+            verifier_decision=None,
+        )
+        == []
+    )
+    assert (
+        _score_terminal_expectations(
+            expect,
+            run_status="succeeded",
+            terminal_reason="ai_review_aligned_with_reference_check",
             verifier_decision=None,
         )
         == []
