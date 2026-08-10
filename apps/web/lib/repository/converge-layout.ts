@@ -329,9 +329,44 @@ export const CONVERGE_METRICS = {
    *
    * So this is not a cap. It is the slope a tendon takes while it can afford to,
    * and past `maxTendonRun` the tendon simply gets steeper rather than the column
-   * getting wider. 62° rather than 45° because the trade only pays if it does:
-   * at 45° the run would be `1.5·|bow|`, which is not far off the old law's
-   * `4·|bow|` and would keep the figure enormous.
+   * getting wider. Past 45° because the trade only pays if it does: at 45° the
+   * run would be `1.5·|bow|`, which is not far off the old law's `4·|bow|` and
+   * would keep the figure enormous.
+   *
+   * ## **76°, and this is the dial the horizontal distance between states turns
+   * on.** Raised from 62° in session 115, on the owner's ask
+   *
+   * > *"reduce horizontal distances between states — the tendons are helping and
+   * > now processes are getting much longer than their labels."*
+   *
+   * He is describing a measured fact and this is where it comes from. A column's
+   * width is `need + 2·labelPad + 2·run`, and on a shut figure `run` is set by
+   * the **bow** — the vertical spread of the lanes in that bundle — divided by
+   * `tan` of this angle. So the gap between two circles is the *vertical* spread
+   * of what runs between them, converted into horizontal distance at this rate.
+   * That is exactly the x-against-y trade he was reaching for with *"shifting
+   * muscle groups along the x-axis … while compressing y-axis"*, and it is one
+   * number rather than a rearrangement.
+   *
+   * Measured over all 19 figures in both locales, shut: the widest column falls
+   * **494.5px → 403px**, the median gap **314.7 → 292.4**, and the summed width
+   * of every figure **17,132px → 15,778px (−7.9%)**. On `time-discretization` —
+   * the figure whose five identical lanes he was looking at — the column goes
+   * **379.1px → 287.7px** against a 170.9px label, so a lane stops being 2.2× its
+   * own name.
+   *
+   * **It costs no label a character**, and that is why it is safe rather than a
+   * trade. The belly is `bare` — `need` plus the padding — and this angle does
+   * not appear in it: raising the angle takes width off the *tendons* and leaves
+   * the room a label is fitted into exactly where it was. Measured: **0 of 120
+   * lanes truncated at 62°, 72°, 76° and 80° alike.**
+   *
+   * 76 and not more because the curve flattens there — 80° buys a further 1.3% of
+   * summed width and 0.1px of median gap, because past this the bow stops being
+   * what binds and `firstOrderTendonShare` takes over. Not less because 72° gives
+   * up a third of the gain. The steepest tendon *actually drawn* at 76° is 69.5°,
+   * which still reads as a taper rather than as a corner — checked on the served
+   * page against 62° side by side, not asserted.
    *
    * **`maxLaneAngleDeg` is gone, and it has no subject left.** Every strand on
    * this canvas is now a tendon, a level belly and a tendon; a *branch* at a
@@ -340,7 +375,7 @@ export const CONVERGE_METRICS = {
    * above — plus the invariant that every belly is level, which is the property
    * the old cap was reaching for by limiting how far from level a line could get.
    */
-  tendonAngleDeg: 62,
+  tendonAngleDeg: 76,
 } as const;
 
 /**

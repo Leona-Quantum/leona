@@ -2643,9 +2643,14 @@ test("firstOrderRun is a share of the line, floored by the bow and ceilinged", (
  */
 const SIZE_CEILING = {
   /**
-   * Widest figure, fully opened, either locale. Today **10,867** —
-   * `linear-ode-solve` in `ja`, up from 9,571 when first-order lines started
-   * taking a share of themselves as tendon (`firstOrderRun`, session 112).
+   * Widest figure, fully opened, either locale. Today **10,573** —
+   * `linear-ode-solve` in `ja`. It was 9,571 before first-order lines started
+   * taking a share of themselves as tendon (`firstOrderRun`, session 112), then
+   * 10,867, and session 115 took 294px back off it by steepening
+   * `tendonAngleDeg` to 76° on the owner's ask to shorten the distance between
+   * states. Saturated is where that change buys least — the 340px ceiling is
+   * already what binds here — and the shut figures a reader actually arrives on
+   * is where it buys most.
    */
   saturatedWidth: 12_000,
   /**
@@ -2662,6 +2667,14 @@ const SIZE_CEILING = {
    * Widest figure with **nothing** open, which is what a reader is handed on
    * arrival. Today **1,045** against a 1,204px canvas, so this one is nearly
    * tight on purpose: past 1,204 every figure arrives scaled down to fit.
+   *
+   * **Session 115 shortened the columns and did not move this number**, which is
+   * worth writing down rather than reading as a null result. `nonlinear-ode-solve`
+   * is wide because of how many circles it has and how long their labels are, not
+   * because of its bows — so the tendon angle has nothing to take off it. What
+   * did move is the *median* gap between two circles, 314.7 → 292.4 across all 38
+   * figure-locales, and the widest single column, 494.5 → 403. A reader sees
+   * those; this number is the one figure that happens not to be made of them.
    *
    * 1,026 before session 112, and holding this number down is why the
    * first-order tendon is a *share* of the line rather than a longer flat run:
