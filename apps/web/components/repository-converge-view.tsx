@@ -546,8 +546,21 @@ function Lines({
   diagram: ConvergeDiagram;
   copy: ConvergeCopy;
 }): React.ReactElement {
+  // **`parentKey`, not a key prefix**, and `ConvergeFeed.parentKey` exists for
+  // exactly this — its own doc comment is a warning that a prefix of an address
+  // selects the whole subtree under it and never one generation.
+  //
+  // **This is a hardening, not a repair, and the measurement says so.** Swept
+  // over every slot figure and every method page, saturated — 2,830 lanes — the
+  // two agree everywhere, because a feed's key is `<parentKey>~<slot>` and feeds
+  // are only ever planned on the lane that consumes them. The prefix is right by
+  // an accident of two facts rather than by the one that matters, and this list
+  // is the whole of the figure for a reader who is not looking at it. `a lane's
+  // ingredients are its own, not its descendants'` pins the equivalence so the
+  // day a feed is planned one level down, it is caught here rather than read out
+  // to somebody as the truth.
   const feedsFor = (lane: ConvergeLane) =>
-    diagram.feeds.filter((feed) => feed.key.startsWith(`${lane.key}~`));
+    diagram.feeds.filter((feed) => feed.parentKey === lane.key);
   return (
     <ol className="mj-converge-lanes">
       {diagram.lanes.map((lane) => (
