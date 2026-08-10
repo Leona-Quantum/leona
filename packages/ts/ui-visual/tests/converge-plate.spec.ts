@@ -452,17 +452,25 @@ for (const story of withPlates) {
 }
 
 // ---------------------------------------------------------------------------------------
-// **An opened ingredient's name is drawn twice, and the second copy is a footnote.**
+// **An opened ingredient's name is drawn once, and it is drawn as a footnote to its fan.**
 //
 // Since #328 a stub can be opened in place, and the fan of methods that opens beneath it is
-// a strand like any other — so `place` draws its name on its own spine. The stub it hangs
-// from still draws that same name, ~75px away. Two copies of one string.
+// a strand like any other — so `place` drew its name on its own spine while the stub it hangs
+// from drew that same name ~75px away. Two copies of one string, 94 of 94 open ingredients.
 //
-// The obvious fix is to drop the stub's copy when open, and it is the wrong one: the stub's
-// name is the **only link from the map to that ingredient's own page** (the line is the
-// open/shut target, the name is the destination), so tidying the repetition that way removes
-// a way through the site. It is demoted instead — smaller, quieter, italic — and this is what
-// says so on the rendered page rather than in the stylesheet.
+// This file used to be about **demoting** the second copy rather than removing it, and the
+// reasoning it recorded was right about the constraint and wrong about which copy to drop:
+// *"the obvious fix is to drop the stub's copy when open, and it is the wrong one: the stub's
+// name is the only link from the map to that ingredient's own page."* True — so session 118
+// dropped **the other one**, the fan base's, which is a link to nothing the stub does not
+// already reach. The owner had reported the duplicate directly: *"strange repeats within
+// larger processes. These kinds of things need to be eliminated."*
+//
+// The demotion stays and is still asserted below, because it was never only about the
+// duplicate: an opened stub's name is the ingredient, and the lane names under it are the
+// methods that fill it, and the smaller italic says which is which. What flips is the premise
+// — this file now asserts that **no** opened stub's name is repeated by a lane, where it used
+// to require that at least one was.
 //
 // **`.mj-converge-feed--open` had never been rendered here.** `saturate` in
 // `converge-stories.tsx` walked `diagram.lanes` only, while its own comment claimed it walked
@@ -516,15 +524,18 @@ for (const story of withOpenFeeds) {
 
     expect(report.opened.length, `${story.name} draws no opened stub`).toBeGreaterThan(0);
 
-    // The repetition this is about is real and is *not* being asserted away: at least one
-    // opened stub on this figure draws a string that a lane on the same figure also draws.
-    // If that stopped being true the demotion would be quieting a name nothing repeats.
+    // **The duplicate is gone, and this is the render-level proof of it.** Until session 118
+    // this expectation ran the other way — it required at least one opened stub to be echoed
+    // by a lane, because the treatment below existed to quiet that echo. The echo is now
+    // removed at the source, so the assertion inverts: no opened stub's name may appear on a
+    // lane of the same figure. Asserted here rather than only in the layout test because the
+    // layout test measures strings the layout computed, and this measures the rendered page.
     const repeated = report.opened.filter((stub) => report.laneNames.includes(stub.text));
     expect(
-      repeated.length,
-      `${story.name}: no opened stub's name is repeated by a lane, so there is no duplicate ` +
-        `for this treatment to be a footnote to`,
-    ).toBeGreaterThan(0);
+      repeated.map((stub) => stub.text),
+      `${story.name}: an opened ingredient's name is drawn twice — once on its stub and again ` +
+        `on the fan hanging off it, which is the repeat the owner asked to have eliminated`,
+    ).toEqual([]);
 
     for (const stub of report.opened) {
       const where = `${story.name}: opened stub "${stub.text}"`;
