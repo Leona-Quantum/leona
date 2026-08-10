@@ -8096,7 +8096,7 @@ div.mj-rail-row:hover {
 .mj-repo-comparison-table td {
   padding: var(--sp-2) var(--sp-3);
   text-align: left;
-  border-bottom: 1px solid var(--border-hairline);
+  border-bottom: var(--border-hairline) solid var(--border-0);
   vertical-align: top;
 }
 .mj-repo-comparison-table thead th {
@@ -8445,7 +8445,7 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   font-weight: 400;
 }
-.mj-repo-group[open] > summary { border-bottom: 1px solid var(--border-hairline); }
+.mj-repo-group[open] > summary { border-bottom: var(--border-hairline) solid var(--border-0); }
 .mj-repo-group .mj-repo-list { padding: var(--sp-3); }
 
 /* Variant folding (Owner Inbox 2026-07-19): curated qubit-count / form variants
@@ -9253,7 +9253,7 @@ div.mj-rail-row:hover {
 }
 .mj-share-warning {
   padding: var(--sp-3);
-  border: 1px solid var(--border-hairline);
+  border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-control);
   background: var(--bg-2);
   font-size: var(--fs-13);
@@ -9312,7 +9312,7 @@ div.mj-rail-row:hover {
   align-items: center;
   gap: var(--sp-2);
   padding: var(--sp-2);
-  border: 1px solid var(--border-hairline);
+  border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-control);
 }
 .mj-share-person {
@@ -9420,7 +9420,7 @@ div.mj-rail-row:hover {
 }
 .mj-shared-circuit {
   padding: var(--sp-3);
-  border: 1px solid var(--border-hairline);
+  border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-card);
 }
 .mj-shared-circuit-row {
@@ -10195,7 +10195,7 @@ div.mj-rail-row:hover {
 .mj-layers-census {
   margin: 0 0 var(--sp-6);
   padding: var(--sp-5);
-  border: 1px solid var(--border-hairline);
+  border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-card);
   background: var(--bg-1);
 }
@@ -10232,7 +10232,7 @@ div.mj-rail-row:hover {
   gap: var(--sp-4);
   margin: var(--sp-5) 0 0;
   padding: var(--sp-4) 0;
-  border-block: 1px solid var(--border-hairline);
+  border-block: var(--border-hairline) solid var(--border-0);
 }
 .mj-layers-edge { min-width: 0; }
 .mj-layers-edge--out { text-align: right; }
@@ -10254,14 +10254,14 @@ div.mj-rail-row:hover {
   grid-column: 1 / -1;
   margin: 0;
   padding-top: var(--sp-3);
-  border-top: 1px solid var(--border-hairline);
+  border-top: var(--border-hairline) solid var(--border-0);
   color: var(--text-2);
   font-size: var(--fs-12);
 }
 .mj-layers-section {
   margin: 0 0 var(--sp-6);
   padding-top: var(--sp-5);
-  border-top: 1px solid var(--border-hairline);
+  border-top: var(--border-hairline) solid var(--border-0);
 }
 .mj-layers-section h3 {
   margin: var(--sp-4) 0 var(--sp-2);
@@ -10370,7 +10370,7 @@ div.mj-rail-row:hover {
 .mj-layers-steps li,
 .mj-layers-list li {
   padding: var(--sp-3) 0;
-  border-bottom: 1px solid var(--border-hairline);
+  border-bottom: var(--border-hairline) solid var(--border-0);
 }
 .mj-layers-list li:last-child,
 .mj-layers-steps li:last-child { border-bottom: none; }
@@ -10409,7 +10409,7 @@ div.mj-rail-row:hover {
   display: inline-block;
   margin-left: var(--sp-2);
   padding: 1px var(--sp-2);
-  border: 1px solid var(--border-hairline);
+  border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-control);
   color: var(--text-1);
   font-size: var(--fs-12);
@@ -10419,11 +10419,11 @@ div.mj-rail-row:hover {
   white-space: normal;
 }
 .mj-layers-repeat--coherent {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-hairline));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-0));
   color: var(--accent);
 }
 .mj-layers-repeat--measured {
-  border-color: color-mix(in srgb, var(--warn) 45%, var(--border-hairline));
+  border-color: color-mix(in srgb, var(--warn) 45%, var(--border-0));
   color: var(--warn);
 }
 .mj-layers-repeat-note {
@@ -10447,7 +10447,7 @@ div.mj-rail-row:hover {
 }
 .mj-layers-substeps li {
   padding: 2px var(--sp-2);
-  border: 1px solid var(--border-hairline);
+  border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-control);
 }
 .mj-layers-substeps li a {
@@ -10501,7 +10501,7 @@ div.mj-rail-row:hover {
 .mj-papers-list { margin: 0; padding: 0; list-style: none; }
 .mj-papers-list > li {
   padding: var(--sp-4) 0;
-  border-bottom: 1px solid var(--border-hairline);
+  border-bottom: var(--border-hairline) solid var(--border-0);
 }
 .mj-papers-list > li:last-child { border-bottom: none; }
 .mj-papers-list-title {
@@ -10529,14 +10529,14 @@ div.mj-rail-row:hover {
    would read as a warning about the paper rather than about our reading of it. */
 .mj-papers-chip {
   padding: 1px var(--sp-2);
-  border: 1px solid var(--border-hairline);
+  border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-control);
   color: var(--text-1);
   font-size: var(--fs-12);
   white-space: normal;
 }
 .mj-papers-chip[data-status="reported"] {
-  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-hairline));
+  border-color: color-mix(in srgb, var(--accent) 45%, var(--border-0));
   color: var(--text-0);
 }
 .mj-papers-chip[data-status="unknown"] {
@@ -10590,7 +10590,7 @@ div.mj-rail-row:hover {
 }
 .mj-layers-root-body {
   padding: 0 var(--sp-5) var(--sp-5);
-  border-top: 1px solid var(--border-hairline);
+  border-top: var(--border-hairline) solid var(--border-0);
 }
 .mj-layers-root-body > p {
   margin: var(--sp-4) 0 var(--sp-3);
@@ -10609,7 +10609,7 @@ div.mj-rail-row:hover {
 .mj-layers-entry-strip {
   margin: var(--sp-6) 0 0;
   padding: var(--sp-5);
-  border: 1px solid var(--border-hairline);
+  border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-card);
   background: var(--bg-1);
 }
@@ -10686,7 +10686,7 @@ div.mj-rail-row:hover {
 .mj-strand-key {
   margin-top: var(--sp-6);
   padding-top: var(--sp-5);
-  border-top: 1px solid var(--border-hairline);
+  border-top: var(--border-hairline) solid var(--border-0);
 }
 .mj-strand-key .mj-strand-lede { margin-bottom: var(--sp-4); }
 .mj-strand-lede {
@@ -10931,7 +10931,7 @@ div.mj-rail-row:hover {
 .mj-strand-rail {
   min-width: 0;
   padding: 0 0 0 var(--sp-4);
-  border-left: 1px solid var(--border-hairline);
+  border-left: var(--border-hairline) solid var(--border-0);
   font-size: var(--fs-13);
 }
 .mj-strand-rail > summary {

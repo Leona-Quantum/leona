@@ -33,6 +33,40 @@ const REFERENCE_RE = /var\(\s*(--[\w-]+)\s*\)/g;
 // `--name:` in a declaration, or "--name": in a JS/TSX style object.
 const DEFINITION_RE = /(?:^|[;{\s"'])(--[\w-]+)\s*"?\s*:/gm;
 
+// ---------------------------------------------------------------------------
+// The second half of this gate: a token that **resolves** but is the wrong kind
+// of value for the slot it is used in.
+//
+// `--border-hairline` is `1px`. `--border-0` is the hairline *colour*. Twenty-one
+// declarations in `styles.css` read `border: 1px solid var(--border-hairline)`,
+// which puts a length where a colour goes — and CSS treats that exactly like an
+// undefined property: the whole declaration is invalid at computed-value time and
+// the browser drops it. Measured on the rendered page before this gate existed,
+// `.mj-layers-repeat` computed `border-width: 0px`, so a badge written as a chip
+// had been drawing as bare text for as long as it had existed. Eighteen selectors
+// across the repository, papers, share and strand surfaces were in the same state.
+//
+// The first half of this file catches a name that does not resolve. This half
+// catches a name that resolves to the wrong *type*, which renders identically —
+// nothing — and is invisible in a diff because the line reads perfectly.
+//
+// Deliberately narrow. Only two positions are checked, and both are unambiguous:
+// anywhere inside `color-mix()`, whose arguments are all colours, and the term
+// after a border/outline style keyword, where only a colour may appear.
+const LENGTH_VALUE_RE = /^-?(?:\d+\.?\d*|\.\d+)(?:px|rem|em|ch|vh|vw|%)$/;
+// A colour slot: the term after a border/outline style keyword, and **every**
+// argument of a `color-mix()`.
+//
+// The mix is matched as a whole call and then swept for references, rather than
+// with one expression that reaches from `color-mix(` to a `var(`. That first
+// version passed this file's own fixture: a lazy match stops at the *first*
+// `var()` inside the call, so `color-mix(in srgb, var(--accent) 45%, var(--sp-2))`
+// was checked on `--accent` and the second argument — the one that was wrong
+// three times in this repository — was never looked at.
+const STYLE_KEYWORD_RE =
+  /(?:solid|dashed|dotted|double|groove|ridge|inset|outset)\s+var\(\s*(--[\w-]+)\s*\)/g;
+const COLOUR_MIX_RE = /color-mix\([^;{}]*\)/g;
+
 const files = [];
 for (const root of SCAN_ROOTS) {
   // Fail closed: a missing scan root must not pass as "nothing to scan".
@@ -66,6 +100,19 @@ for (const file of files) {
   for (const [, name] of text.matchAll(DEFINITION_RE)) defined.add(name);
 }
 
+// Which tokens hold a bare length. Read off the declarations themselves rather
+// than off a hand-kept list, so a token added as `--sp-9: 40px` is covered the
+// day it is written — a list somebody has to remember to extend is silent
+// exactly when it is wrong. A token whose value is itself a `var()` or a
+// calculation is left unclassified: this gate only reports what it can prove.
+const LENGTH_TOKENS = new Set();
+for (const text of sources.values()) {
+  for (const [, name, value] of text.matchAll(/(--[\w-]+)\s*:\s*([^;{}]+);/g)) {
+    const trimmed = value.split("/*")[0].trim();
+    if (LENGTH_VALUE_RE.test(trimmed)) LENGTH_TOKENS.add(name);
+  }
+}
+
 const failures = [];
 for (const [file, text] of sources) {
   const rel = relative(repoRoot, file).replaceAll("\\", "/");
@@ -83,4 +130,31 @@ if (failures.length > 0) {
   for (const failure of failures) console.error(`  ${failure}`);
   process.exit(1);
 }
-console.log(`check-token-vars: OK (${defined.size} tokens defined, all references resolve)`);
+
+const miscast = [];
+for (const [file, text] of sources) {
+  const rel = relative(repoRoot, file).replaceAll("\\", "/");
+  for (const [lineNo, line] of text.split("\n").entries()) {
+    const named = [];
+    for (const [, name] of line.matchAll(STYLE_KEYWORD_RE)) named.push(name);
+    for (const [mix] of line.matchAll(COLOUR_MIX_RE)) {
+      for (const [, name] of mix.matchAll(REFERENCE_RE)) named.push(name);
+    }
+    for (const name of named) {
+      if (LENGTH_TOKENS.has(name)) miscast.push(`${rel}:${lineNo + 1}: ${name} is a length`);
+    }
+  }
+}
+
+if (miscast.length > 0) {
+  console.error(
+    "A length token is being used where a colour must go. CSS drops the whole\n" +
+      "declaration, so the border or the mix silently does not draw at all:",
+  );
+  for (const failure of miscast) console.error(`  ${failure}`);
+  process.exit(1);
+}
+console.log(
+  `check-token-vars: OK (${defined.size} tokens defined, all references resolve; ` +
+    `${LENGTH_TOKENS.size} length tokens, none in a colour slot)`,
+);
