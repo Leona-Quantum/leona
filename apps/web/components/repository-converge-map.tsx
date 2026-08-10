@@ -99,6 +99,16 @@ interface ConvergeCopy {
   needs: string;
   inAtlas: string;
   handsOn: string;
+  /**
+   * What the bracket around a group of nested lanes says (W13).
+   *
+   * One static sentence rather than one naming the parent: the parent's own
+   * line is the shape directly above the bracket, so the geometry already
+   * points at it, and each nested lane's `spokenName` still carries the full
+   * "a narrower version of X" sentence for a reader who cannot see the
+   * nesting.
+   */
+  variantsNested: string;
 }
 
 const COPY: Record<"en" | "ja", ConvergeCopy> = {
@@ -121,6 +131,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     needs: "needs",
     inAtlas: "the Atlas has a full record of this",
     handsOn: "what one part hands to the next",
+    variantsNested: "narrower versions, nested under the line they refine",
   },
   ja: {
     lang: "ja",
@@ -141,6 +152,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     needs: "必要なもの",
     inAtlas: "アトラスに完全な記録があります",
     handsOn: "ある工程が次の工程へ渡す対象",
+    variantsNested: "その上の線をより狭めた版が、入れ子で示されています",
   },
 };
 
@@ -329,6 +341,11 @@ function laneClass(lane: ConvergeLane, documented: boolean): string {
     // treatment so the phrase on it does not read as a name competing with the
     // names beside it.
     lane.own !== null ? " mj-converge-lane--own" : ""
+  }${
+    // A nested refinement (W13) — the same kind-not-standing call as `own`:
+    // the row is a real method with its own name and clicks, drawn as the
+    // aside its bracket says it is.
+    lane.variant ? " mj-converge-lane--variant" : ""
   }`;
 }
 
@@ -359,7 +376,12 @@ function NamePlate({ lane }: { lane: ConvergeLane }): React.ReactElement | null 
   if (lane.label === "") return null;
   return (
     <rect
-      className={`mj-converge-name-plate${lane.bone ? " mj-converge-name-plate--open" : ""}`}
+      className={`mj-converge-name-plate${
+        // The lozenge-on-the-line treatment: names that sit ON a stroke — a
+        // bone's, a shell's, or a leaf's own body (`labelInside`) — let the
+        // line show through rather than cutting a hole in the canvas.
+        lane.bone || lane.frame !== null || lane.labelInside ? " mj-converge-name-plate--open" : ""
+      }`}
       data-name={lane.key}
       x={n(lane.labelX - lane.labelWidth / 2 - 5)}
       /* `-12.5` / 17, not `-12` / 16. The 16px height was measured against
@@ -533,7 +555,31 @@ function Lane({
         </path>
       )}
 
-      {/* Target one: the line. Opens or shuts it, here. */}
+      {/* The **exoskeleton** (W13): the shell around an opened chain's band.
+          The chain's steps partition its belly end to end, so this outline is
+          where the lane's own identity lives — thick-dotted like a bone, one
+          band further out — and it is the collapse target the spine can no
+          longer be. Visual shape out here (inert, like the plates); its hit
+          path rides in the anchor below so the whole shell collapses. */}
+      {lane.frame === null ? null : (
+        <path className="mj-converge-frame" d={lane.frame.d}>
+          <title>{title}</title>
+        </path>
+      )}
+
+      {/* The **bracket** (W13): wraps this lane's nested refinements. Inert —
+          the variants carry their own names and clicks — so it is a claim
+          drawn, not a control: adjacency says what the `⊂` suffix used to. */}
+      {lane.variantBracket === null ? null : (
+        <path className="mj-converge-variant-bracket" d={lane.variantBracket}>
+          <title>{copy.variantsNested}</title>
+        </path>
+      )}
+
+      {/* Target one: the line. Opens or shuts it, here. The exoskeleton's hit
+          shell shares the anchor: on an opened chain the spine is covered by
+          its own steps, and the shell is the part of the lane a reader can
+          still reach. */}
       {lane.openHref === null ? null : (
         <a
           href={lane.openHref}
@@ -541,6 +587,9 @@ function Lane({
         >
           <title>{`${title} — ${lane.open ? copy.closeHere : copy.openHere}`}</title>
           <path className="mj-converge-strand-hit" d={lane.d} />
+          {lane.frame === null ? null : (
+            <path className="mj-converge-frame-hit" d={lane.frame.d} />
+          )}
         </a>
       )}
 

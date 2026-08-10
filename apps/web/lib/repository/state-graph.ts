@@ -73,6 +73,7 @@ import {
   isCapability,
   isMethod,
   layerNode,
+  methodFanGroups,
   methodsRealizing,
   routeOf,
   type LayerCapability,
@@ -339,6 +340,16 @@ export function expansionOf(
 export interface MethodLane {
   key: string;
   method: LayerMethod;
+  /**
+   * Narrower versions of `method` from the same fan, nested under it (W13).
+   *
+   * A refinement is not another way across the slot — it is one of the ways,
+   * re-analysed — so it is not a lane of its own. Drawn indented under its
+   * parent inside a bracket, during the same expansion, which is what replaces
+   * the `⊂ Koopman` suffix: adjacency plus the bracket say the relation
+   * without repeating the parent's name.
+   */
+  variants: readonly LayerMethod[];
 }
 
 /**
@@ -380,12 +391,22 @@ export interface MethodFan {
  * guard against a future edit, not a case the page renders.
  */
 export function methodFanOf(graph: LayerGraph, capability: LayerCapability): MethodFan | null {
-  const methods = methodsRealizing(graph, capability.id);
-  if (methods.length === 0) return null;
+  // Grouped, not flat (W13): a refinement rides inside its parent's lane
+  // rather than taking one of its own. `methodFanGroups` is the one writer of
+  // that grouping, and every reader of a fan — this function, `fanInside`, and
+  // the subject match on a method's own page — goes through it, because three
+  // readings of one grouping is how a method's own page and the map would come
+  // to disagree about where the five refinement methods are drawn.
+  const groups = methodFanGroups(graph, capability.id);
+  if (groups.length === 0) return null;
   return {
     from: capability.contract.from,
     to: capability.contract.to,
-    lanes: methods.map((method) => ({ key: `m:${method.id}`, method })),
+    lanes: groups.map((group) => ({
+      key: `m:${group.method.id}`,
+      method: group.method,
+      variants: group.variants,
+    })),
   };
 }
 
