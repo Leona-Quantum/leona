@@ -19,7 +19,7 @@ from sqlalchemy import update
 
 from majorana_api.db import engine_from_env, session_factory
 from majorana_api.jobs import RUN_EXECUTE_JOB_KIND
-from majorana_api.orm import Job
+from majorana_api.orm import Job, Run
 from majorana_api.repos import runs, system
 from majorana_worker.handlers import close_orphaned_run
 
@@ -106,6 +106,33 @@ async def _orphan(
         return run.id
 
 
+async def _jobless_run(
+    factory,
+    scope,
+    *,
+    age_s: float,
+    run_status: RunStatus = RunStatus.RUNNING,
+) -> uuid.UUID:
+    """A direct-handler style active run with deliberately no durable job."""
+    async with factory() as session:
+        run = await runs.create_run(
+            scope,
+            session,
+            task_prompt="direct orphan reconciliation",
+            mode=RunMode.EXECUTE,
+            framework=Framework.QISKIT,
+        )
+        if run_status is not RunStatus.QUEUED:
+            await runs.update_run_status(scope, session, run.id, run_status)
+        await session.execute(
+            update(Run)
+            .where(Run.id == run.id)
+            .values(updated_at=dt.datetime.now(dt.UTC) - dt.timedelta(seconds=age_s))
+        )
+        await session.commit()
+        return run.id
+
+
 def _ids(orphans) -> set[uuid.UUID]:
     return {orphan.run_id for orphan in orphans}
 
@@ -132,6 +159,36 @@ async def test_a_queued_run_whose_job_is_dead_is_also_listed(env):
 
     async with factory() as session:
         assert run_id in _ids(await system.list_orphaned_runs(session))
+
+
+@requires_db
+async def test_an_old_direct_run_with_no_job_is_listed(env):
+    factory, scope = env
+    run_id = await _jobless_run(
+        factory,
+        scope,
+        age_s=system.ORPHANED_DIRECT_RUN_GRACE_S + 60,
+    )
+
+    async with factory() as session:
+        listed = [
+            orphan
+            for orphan in await system.list_orphaned_runs(session, limit=1_000)
+            if orphan.run_id == run_id
+        ]
+
+    assert len(listed) == 1
+    assert listed[0].job_id is None
+    assert listed[0].delivery_error is None
+
+
+@requires_db
+async def test_a_fresh_direct_run_with_no_job_is_never_reaped(env):
+    factory, scope = env
+    run_id = await _jobless_run(factory, scope, age_s=30)
+
+    async with factory() as session:
+        assert run_id not in _ids(await system.list_orphaned_runs(session))
 
 
 @requires_db
@@ -199,7 +256,9 @@ async def test_reaping_closes_the_run_and_writes_the_terminal_sequence(env):
     run_id = await _orphan(factory, scope, delivery_error="callback raised 5 times")
 
     async with factory() as session:
-        orphan = next(o for o in await system.list_orphaned_runs(session) if o.run_id == run_id)
+        orphan = next(
+            o for o in await system.list_orphaned_runs(session, limit=1_000) if o.run_id == run_id
+        )
     async with factory() as session:
         assert await close_orphaned_run(session, orphan) is True
 
@@ -214,6 +273,30 @@ async def test_reaping_closes_the_run_and_writes_the_terminal_sequence(env):
     # The run is terminal, so it drops out of the candidate set — no re-reaping.
     async with factory() as session:
         assert run_id not in _ids(await system.list_orphaned_runs(session))
+
+
+@requires_db
+async def test_reaping_an_old_direct_run_records_the_no_job_reason(env):
+    factory, scope = env
+    run_id = await _jobless_run(
+        factory,
+        scope,
+        age_s=system.ORPHANED_DIRECT_RUN_GRACE_S + 60,
+    )
+
+    async with factory() as session:
+        orphan = next(
+            o for o in await system.list_orphaned_runs(session, limit=1_000) if o.run_id == run_id
+        )
+    async with factory() as session:
+        assert await close_orphaned_run(session, orphan) is True
+
+    async with factory() as session:
+        run = await runs.get_run(scope, session, run_id)
+        events = await runs.list_run_events(scope, session, run_id)
+    assert RunStatus(run.status) is RunStatus.FAILED
+    assert [event.type for event in events] == ["run.error", "run.finished"]
+    assert "no execution job" in events[0].payload["message"]
 
 
 @requires_db

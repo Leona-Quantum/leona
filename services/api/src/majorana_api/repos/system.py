@@ -63,6 +63,10 @@ DEFAULT_DEAD_LETTER_MAX_ATTEMPTS = 5
 # Comfortably past the dead-letter retry budget (5 attempts ~30s apart) so the
 # reaper only ever sees runs delivery has genuinely finished with.
 ORPHANED_RUN_GRACE_S = 900.0
+# Direct-handler and evaluation runs intentionally have no durable Job row. Their
+# normal execution budget is bounded well below an hour, so an active row older
+# than this with no job at all is abandoned rather than merely slow.
+ORPHANED_DIRECT_RUN_GRACE_S = 3600.0
 
 
 class JobLeaseLostError(RuntimeError):
@@ -77,12 +81,12 @@ class StaleJobRecovery:
 
 @dataclass(frozen=True)
 class OrphanedRun:
-    """An active run whose execution job is terminal and past dead-letter delivery."""
+    """An active run whose execution path can no longer finish it."""
 
     run_id: uuid.UUID
     workspace_id: uuid.UUID
     user_id: uuid.UUID
-    job_id: uuid.UUID
+    job_id: uuid.UUID | None
     delivery_error: str | None
 
 
@@ -993,9 +997,10 @@ async def list_orphaned_runs(
     session: AsyncSession,
     *,
     grace_seconds: float = ORPHANED_RUN_GRACE_S,
+    direct_grace_seconds: float = ORPHANED_DIRECT_RUN_GRACE_S,
     limit: int = 10,
 ) -> tuple[OrphanedRun, ...]:
-    """Runs still active whose execution job is terminal and past all delivery.
+    """Runs still active after their execution path can no longer finish them.
 
     Dead-letter delivery is the only thing that closes a run whose job died, and
     it is not guaranteed to succeed: `mark_job_dead_lettered` sets
@@ -1010,9 +1015,18 @@ async def list_orphaned_runs(
     is set), the grace period must have cleared the delivery retry budget (5
     attempts ~30s apart), and — belt and braces against a future second
     run-bearing job kind — the run must have no other job still working.
+
+    The direct API/evaluation path intentionally creates no Job. Its only
+    recoverable liveness signal is ``runs.updated_at``, so a separate and much
+    longer grace selects active no-job rows. Requiring that *no* Job exists keeps
+    this fallback disjoint from durable execution and its delivery machinery.
     """
     if grace_seconds < 0:
         raise ValueError("grace_seconds must not be negative")
+    if direct_grace_seconds < 0:
+        raise ValueError("direct_grace_seconds must not be negative")
+    if limit < 1:
+        return ()
     # Deliberately not _lease_delta: that enforces a lease bound of (0, 3600],
     # which is a different quantity with different valid values. Reusing it
     # made grace_seconds=0 ("no grace") and any grace over an hour fail this
@@ -1037,7 +1051,24 @@ async def list_orphaned_runs(
         .order_by(Job.dead_lettered_at)
         .limit(limit)
     )
-    rows = (await session.execute(stmt)).all()
+    rows = list((await session.execute(stmt)).all())
+    remaining = limit - len(rows)
+    if remaining > 0:
+        direct_grace = dt.timedelta(seconds=direct_grace_seconds)
+        any_job = Job.__table__.alias("any_job")
+        direct_stmt = (
+            select(Run.id, Run.workspace_id, Run.user_id)
+            .where(
+                Run.status.in_((RunStatus.QUEUED.value, RunStatus.RUNNING.value)),
+                Run.updated_at <= func.now() - direct_grace,
+                ~select(any_job.c.id).where(any_job.c.run_id == Run.id).exists(),
+            )
+            .order_by(Run.updated_at)
+            .limit(remaining)
+        )
+        direct_rows = (await session.execute(direct_stmt)).all()
+        rows.extend((*row, None, None) for row in direct_rows)
+
     return tuple(
         OrphanedRun(
             run_id=run_id,
