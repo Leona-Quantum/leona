@@ -1195,6 +1195,18 @@ function openDiagram(id: string, open: Iterable<string>, locale: PublicLocale = 
   });
 }
 
+/**
+ * The id-shaped tokens in a strand key, for matching a node id **whole**.
+ *
+ * A key is `run:…/0/slot:x/method:y~` and a node id is kebab-case, so splitting
+ * on everything an id cannot contain leaves exactly the ids. `key.includes(id)`
+ * is the tempting version and it is wrong on this corpus rather than in theory:
+ * `lightsabre-routing` ends with the whole of `sabre-routing`.
+ */
+function keyNames(key: string): Set<string> {
+  return new Set(key.split(/[^a-z0-9-]+/u).filter((token) => token !== ""));
+}
+
 /** Every way a figure can be opened that is worth checking: each id alone, then all of them. */
 function openings(id: string): Set<string>[] {
   const ids = openableAddresses(id);
@@ -2009,11 +2021,14 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
         const diagram = openDiagram(focus.id, open);
         for (const [stepId] of Object.entries(method.repeats)) {
           const key = `${method.id}|${stepId}`;
+          // Whole-id, not substring — the same correction the refinement census
+          // needed, applied here because it is the same idiom and the same
+          // corpus: `lightsabre-routing` ends with the whole of `sabre-routing`.
           const onLane = diagram.lanes.some(
-            (lane) => lane.repeatMark === expected.get(key) && lane.key.includes(method.id),
+            (lane) => lane.repeatMark === expected.get(key) && keyNames(lane.key).has(method.id),
           );
           const onFeed = diagram.feeds.some(
-            (feed) => feed.repeatMark === expected.get(key) && feed.parentKey.includes(method.id),
+            (feed) => feed.repeatMark === expected.get(key) && keyNames(feed.parentKey).has(method.id),
           );
           if (onLane || onFeed) drawn.add(key);
         }
@@ -2081,23 +2096,24 @@ test("every declared refinement is drawn on the lane of the method that declares
             );
           }
         }
-        for (const lane of diagram.lanes) {
-          if (lane.refinement !== null && expected.has(lane.fullLabel)) drawn.add(lane.fullLabel);
-        }
       }
     }
   }
-  // Reached-a-drawing, resolved by id rather than by label: a lane's key carries
-  // the method id and its `fullLabel` does not.
+  // Reached-a-drawing, resolved by **exact** id. A lane carries its method in
+  // `draws`, which `planForMethod` sets unconditionally — `nodeId` goes null on
+  // a leaf and a leaf is most of this corpus. A stub has no such field, so its
+  // parent key is split into id-shaped tokens and matched whole: `includes` is
+  // wrong here and not hypothetically so, since `lightsabre-routing` ends with
+  // the whole of `sabre-routing`.
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       const diagram = openDiagram(focus.id, open);
       for (const [methodId, mark] of expected) {
         const onLane = diagram.lanes.some(
-          (lane) => lane.refinement?.mark === mark && lane.key.includes(methodId),
+          (lane) => lane.refinement?.mark === mark && lane.draws === methodId,
         );
         const onFeed = diagram.feeds.some(
-          (feed) => feed.refinement?.mark === mark && feed.parentKey.includes(methodId),
+          (feed) => feed.refinement?.mark === mark && keyNames(feed.parentKey).has(methodId),
         );
         if (onLane || onFeed) drawn.add(methodId);
       }
@@ -2129,7 +2145,7 @@ test("nothing on the canvas is marked a narrowing that the corpus did not declar
       for (const lane of diagram.lanes) {
         if (lane.refinement === null) continue;
         assert.ok(
-          [...declared].some((id) => lane.key.includes(id)),
+          lane.draws !== null && declared.has(lane.draws),
           `${lane.key} draws a narrowing no method on it declares`,
         );
       }
