@@ -12815,6 +12815,36 @@ div.mj-rail-row:hover {
 .mj-card-realizes {
   color: var(--text-2);
 }
+/* The truncated map inside the card (W9). The width step is the whole of the
+   owner's "expand the screen of this now truncated map" for now — one class the
+   server sets from `?inner=`, no size parameter until he asks for one. 64rem
+   against the card's 44rem: wide enough that a saturated figure scrolls inside
+   `.mj-card-figure` rather than squeezing, and still narrower than the map it
+   sits over, because a panel as wide as the page has stopped being a card. */
+.mj-card--inner {
+  width: min(100%, 64rem);
+}
+.mj-card-inner {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.mj-card-inner-back {
+  margin: 0 0 var(--sp-2);
+  font-size: var(--fs-14);
+}
+/* The figure scrolls inside its own box — never the panel sideways. The SVG
+   arrives at its laid-out size and must not be squeezed: a scaled-down figure
+   re-fits no label, so shrinking it clips exactly the widest names. */
+.mj-card-figure {
+  min-height: 0;
+  overflow: auto;
+  padding-top: var(--sp-3);
+  border-top: var(--border-hairline) solid var(--border-0);
+}
+.mj-card-figure svg {
+  display: block;
+}
 /* The scroll container is this inner element rather than the shell, so the close
    control stays pinned while a long card moves under it — which makes it a
    scrollable region a keyboard reader has to be able to reach, hence the
@@ -12861,6 +12891,20 @@ div.mj-rail-row:hover {
    states at once instead of scrolling to find out which are gaps. */
 .mj-card-nav-item--empty {
   color: var(--text-2);
+}
+/* The nav and the body, as one flex column so `.mj-card-body`'s scroll keeps
+   working now that a wrapper sits between it and the card: a default
+   `min-height: auto` flex child would grow past the card instead of letting
+   the body scroll. The `[hidden]` rule is load-bearing, not belt-and-braces —
+   an author `display: flex` beats the UA sheet's `[hidden] { display: none }`,
+   so without it the sections would draw straight through the truncated map. */
+.mj-card-sections {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+}
+.mj-card-sections[hidden] {
+  display: none;
 }
 .mj-card-body {
   min-height: 0;

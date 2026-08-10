@@ -83,10 +83,110 @@ export function withCard(base: string, id: string | null): string {
   // falling back rather than by intent, and the URL would go on naming a section
   // the page is not showing.
   params.delete(SECTION_PARAM);
+  // **This clause IS the owner's reset rule**, in his own words: *"i don't want
+  // the issues of having to track process within process within process
+  // visualization and take memory, hence the reset with every card."* A label
+  // clicked inside the truncated map is a `withCard` link, so the new card
+  // arrives with `inner` and `iopen` gone — step (4) of his walk falls out of
+  // this deletion rather than being enforced anywhere. It also runs on close
+  // (`id === null`), because *"go to the actual map itself"* is the address
+  // minus `card`, `inner` and `iopen` — which is the `closeHref` the panel
+  // already renders.
+  params.delete(INNER_PARAM);
+  params.delete(IOPEN_PARAM);
   if (id !== null) {
     params.delete("about");
     params.set("card", id);
   }
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+/**
+ * `?inner=` — the truncated map inside the open card, and `?iopen=` — what the
+ * reader has opened inside *it*.
+ *
+ * The owner's ask, session 113: *"Opening processes further when within their
+ * card should be possible. it stays in the card, but disconnects from the rest
+ * of the graph, so the user can click around in there."* This file's opening
+ * paragraph is the argument for both being parameters and it applies unchanged:
+ * a truncated map that only exists after hydration has no address, no crawler
+ * sees it, and a reader with JavaScript off cannot reach it. It also makes step
+ * (3) of his walk — the deepest state in the product — a link somebody can send.
+ *
+ * `?inner=` is single-valued **by the same argument `?card=` is single-valued**:
+ * two nested truncated maps is the process-within-process tracking the owner
+ * ruled out. `?iopen=` is a set with `?open=`'s exact grammar (addresses, plus
+ * bare node ids for old links) under a different key, because the two sets
+ * describe two different figures and one key would open lanes on both at once.
+ */
+export const INNER_PARAM = "inner";
+export const IOPEN_PARAM = "iopen";
+
+/**
+ * What `?inner=` says, against the slots the layout can actually draw.
+ *
+ * The same resolution as `parseCardId`, deliberately down to the returned shape:
+ * only the first value is honoured, an id naming nothing means **shut**, and
+ * every discarded value is counted rather than swallowed. What differs is only
+ * the predicate — `drawable` is `drawableSlots` membership, not `cardExists`,
+ * because the value names a figure to draw and not a card to open. A card id
+ * that draws no figure (`own:<methodId>`, a method id) must resolve to shut
+ * here, or the URL claims a truncated map the page cannot lay out.
+ */
+export function parseInnerId(
+  raw: string | string[] | undefined,
+  drawable: (id: string) => boolean,
+): CardSelection {
+  return parseCardId(raw, drawable);
+}
+
+/**
+ * The same address with the truncated map of `id` open inside the card, or shut
+ * when it is null.
+ *
+ * `?iopen=` is cleared in **both** directions, which is where this differs from
+ * a naive sibling of `withCard`. Opening a different `inner` with the old map's
+ * expansions still in the address would claim lanes open on a figure that never
+ * drew them; closing the truncated map with them left behind would make
+ * reopening it resume a session the reader deliberately left. The set means
+ * nothing except against the one figure `?inner=` names, so it lives and dies
+ * with it.
+ *
+ * `?card=` is kept, and must be: the truncated map is *inside* the card, not a
+ * neighbour of it. `?sec=` is kept too — the reader who expands the map from
+ * the Theory section and comes back should land on Theory, not on the first
+ * section — and `withCard` still strips both the moment a different card opens.
+ */
+export function withInner(base: string, id: string | null): string {
+  const cut = base.indexOf("?");
+  const path = cut === -1 ? base : base.slice(0, cut);
+  const params = new URLSearchParams(cut === -1 ? "" : base.slice(cut + 1));
+  params.delete(INNER_PARAM);
+  params.delete(IOPEN_PARAM);
+  if (id !== null) params.set(INNER_PARAM, id);
+  const query = params.toString();
+  return query ? `${path}?${query}` : path;
+}
+
+/**
+ * The same address with exactly `open` expanded inside the truncated map.
+ *
+ * The serializer for `?iopen=` — the whole set, replaced, never appended to —
+ * so one address cannot accumulate two generations of expansions. It writes
+ * onto the *outer* address rather than minting a fresh one the way `figureHref`
+ * does, because every link inside the panel has to keep the reader's `?focus=`,
+ * their whole outer `?open=` set, their `?at=` viewport, the `?card=` they are
+ * inside and the `?inner=` they are looking at. A toggle that rebuilt the
+ * address from the truncated figure's own parameters would cost the reader all
+ * five at once, silently, on the first click.
+ */
+export function withIopen(base: string, open: Iterable<string>): string {
+  const cut = base.indexOf("?");
+  const path = cut === -1 ? base : base.slice(0, cut);
+  const params = new URLSearchParams(cut === -1 ? "" : base.slice(cut + 1));
+  params.delete(IOPEN_PARAM);
+  for (const value of open) params.append(IOPEN_PARAM, value);
   const query = params.toString();
   return query ? `${path}?${query}` : path;
 }
