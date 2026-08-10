@@ -403,7 +403,8 @@ test("validation rejects a repetition the route cannot honestly be making", () =
 
   // The rule that is not a typo-catcher: skipping a layer and running it once per
   // turn are the two opposite answers to one question. LCHS removes the
-  // linear-solve span; backward Euler pays it every step. A node asserting both
+  // linear-solve span; `time-marching-usva` pays its discretization every step
+  // and bypasses the solve outright. A node asserting both
   // renders as a route that avoids the cost it is charged for.
   assert.match(
     bad({ steps: ["encode"], bypasses: ["encode"], repeats: { encode: rep() } }).join("\n"),
@@ -990,10 +991,11 @@ test("the hollow twins are counted, and the count may only fall", () => {
   // as stubs off the belly. Keying on segments alone therefore calls two methods
   // twins whose figures do not look alike.
   //
-  // Measured, not argued. `layoutConvergeForMethod` gives `backward-euler` six
-  // lanes and one stub labelled `Quantum linear solve` — carrying `×T/h` since
-  // session 116 — and gives `forward-euler` five lanes and no stub at all. Those
-  // are different pictures, and the owner's complaint is about what he *sees*:
+  // Measured, not argued. `layoutConvergeForMethod` gives `hhl-qpe-inversion`
+  // three stubs — `state-preparation` carrying `×O(κ)`, `hamiltonian-simulation`
+  // and `success-amplification` — where `discrete-adiabatic-inversion` hangs one.
+  // Those are different pictures, and the owner's complaint is about what he
+  // *sees*:
   // *"different labels on top but the same internals"*. A method whose internals
   // are an ingredient has internals.
   const drawnBy = (method: LayerMethod): string => {
@@ -1038,7 +1040,7 @@ test("the hollow twins are counted, and the count may only fall", () => {
     console.log(`  ${row.ids.length}  ${row.slot}: ${row.ids.join(", ")}`);
   }
 
-  // **A ceiling, not a pin, and the direction is the whole point.** 36 of 63 today, in 14
+  // **A ceiling, not a pin, and the direction is the whole point.** 36 of 63 today, in 13
   // groups. Every group is a corpus job — decompose the method, narrow the state, or say why
   // three ways to one place have no recorded interior — and each one lands makes this fall.
   // Going *up* means a method was authored with nothing inside it beside siblings that already
@@ -1049,15 +1051,23 @@ test("the hollow twins are counted, and the count may only fall", () => {
   // see `drawnBy`. Recording that here rather than only in a commit message,
   // because a ceiling that falls is exactly what a gate being quietly relaxed
   // looks like, and the two are told apart by the reason and by nothing else.
-  // The ten are real: `backward-euler` and `trapezoidal-rule` hang a
-  // `quantum-linear-solve` stub the other three time-discretisations do not, and
-  // the same is true in `quantum-linear-solve`, `matrix-function`,
-  // `hamiltonian-simulation`, `state-preparation` and `qubit-routing`.
+  // The ten were real: a stub is a drawn difference, and it was one in
+  // `quantum-linear-solve`, `matrix-function`, `hamiltonian-simulation`,
+  // `state-preparation` and `qubit-routing`.
   //
-  // **The job is unchanged in kind.** 36 methods in 14 groups still draw a
+  // **14 groups until session 118, and the group that went is a picture the map
+  // stopped telling.** `backward-euler` and `trapezoidal-rule` were a group of
+  // their own because they hung a `quantum-linear-solve` stub the other three
+  // time-discretisations did not — and the owner ruled that stub off the map
+  // (*"this is not how i want an iterator to be visualized"*). All five now draw
+  // the same one hop, so the slot holds **one group of five** instead of a three
+  // and a two. **`counted` did not move**, which is the point worth noticing: the
+  // corpus gap is exactly the size it was, and the scoreboard has stopped
+  // splitting it into two rows one of which was an artefact of the drawing.
+  //
+  // **The job is unchanged in kind.** 36 methods in 13 groups still draw a
   // sibling's picture with nothing declaring why, and the largest is still the
-  // embedding group he named. What changed is that the number now counts the
-  // thing he was looking at.
+  // embedding group he named.
   assert.ok(
     counted <= 36,
     `${counted} methods draw a sibling's picture with nothing declaring why — was 36. ` +
@@ -1067,9 +1077,11 @@ test("the hollow twins are counted, and the count may only fall", () => {
   // And the groups he named by sight are the big ones, pinned so that "the owner's examples"
   // stays a checkable claim rather than a recollection.
   //
-  // Summed, not `find`. One slot can now hold **two** groups — `time-discretization`
-  // holds a three and a two — and `find` would answer with whichever came first,
-  // which is a number that depends on corpus order.
+  // Summed, not `find`. One slot **may** hold more than one group — and `find`
+  // would answer with whichever came first, which is a number that depends on
+  // corpus order. `time-discretization` held a three and a two until session 118
+  // and holds a five now; the sum is what this asks about either way, which is
+  // why the consolidation did not have to be edited in here.
   const bySlot = (slot: string) =>
     rows.filter((row) => row.slot === slot).reduce((total, row) => total + row.ids.length, 0);
   assert.ok(bySlot("time-discretization") >= 2, "the time-discretisation group stopped colliding");

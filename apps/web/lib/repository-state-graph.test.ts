@@ -24,7 +24,14 @@ import {
   statePathsBetween,
   type Crossing,
 } from "./repository/state-graph.ts";
-import { isCapability, layerNode, type LayerCapability, type LayerGraph } from "./repository/layers.ts";
+import {
+  isCapability,
+  isMethod,
+  layerNode,
+  routeOf,
+  type LayerCapability,
+  type LayerGraph,
+} from "./repository/layers.ts";
 import type { StateVocabulary } from "./repository/states.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
@@ -288,20 +295,53 @@ test("the Koopman-von Neumann narrowing is witnessed only by its own route", () 
 });
 
 test("a step that is a feed does not witness the edge it names", () => {
-  // `backward-euler` lists `quantum-linear-solve` among its steps, but `routeOf`
-  // classifies it as an ingredient rather than a hop. Reading `steps` credited
-  // backward Euler with walking that edge; reading the route does not.
-  assert.ok(nonlinear && isCapability(nonlinear));
-  const solve = layerNode(LAYER_GRAPH, "linear-ode-solve");
-  assert.ok(solve && isCapability(solve));
-  const expansion = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, solve);
-  const qls = expansion.bundles
-    .flatMap((bundle) => bundle.lanes)
-    .find((lane) => lane.edges.length === 1 && lane.edges[0]!.slot === "quantum-linear-solve");
-  assert.ok(qls);
-  const witnesses = pathWitnesses(LAYER_GRAPH, STATE_VOCABULARY, qls).map((method) => method.id);
-  assert.ok(!witnesses.includes("backward-euler"));
-  assert.ok(!witnesses.includes("trapezoidal-rule"));
+  // A method may *list* a slot among its steps and never walk it: `routeOf`
+  // files a step whose contract the route cannot yet satisfy as an **ingredient**
+  // rather than a hop. Reading `steps` would credit that method with walking the
+  // edge; reading the route must not.
+  //
+  // **Written as a sweep over every lane rather than against one named pair, and
+  // that is the repair of a guard that had stopped guarding.** Until session 118
+  // this test's only witness was `backward-euler`/`quantum-linear-solve` — and
+  // when the owner ruled that ingredient off the map, the assertion went on
+  // passing while measuring nothing at all, because the method it named no longer
+  // lists the step. The subject is now the whole graph, and the denominator is
+  // printed below so an empty sweep cannot read as a clean one.
+  let checked = 0;
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isCapability(node)) continue;
+    let expansion;
+    try {
+      expansion = expansionOf(LAYER_GRAPH, STATE_VOCABULARY, node);
+    } catch {
+      continue;
+    }
+    for (const bundle of expansion.bundles) {
+      for (const lane of bundle.lanes) {
+        for (const witness of pathWitnesses(LAYER_GRAPH, STATE_VOCABULARY, lane)) {
+          const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, witness);
+          for (const edge of lane.edges) {
+            checked += 1;
+            assert.ok(
+              !route.feeds.includes(edge.slot),
+              `${node.id}: ${witness.id} witnesses ${edge.slot}, which its route only feeds`,
+            );
+          }
+        }
+      }
+    }
+  }
+  assert.ok(checked >= 20, `only ${checked} witness/edge pairs were examined`);
+
+  // And the sweep above is only worth running while the corpus still contains
+  // steps that *are* feeds — otherwise every pair passes for want of a subject.
+  let feedSteps = 0;
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node)) continue;
+    const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, node);
+    for (const feed of route.feeds) if (node.steps.includes(feed)) feedSteps += 1;
+  }
+  assert.ok(feedSteps > 0, "no step is filed as a feed anywhere, so this test has no subject");
 });
 
 test("the owner's own research direction is unpublished, and Liu et al.'s is recorded", () => {

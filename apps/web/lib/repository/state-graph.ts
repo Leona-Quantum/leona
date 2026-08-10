@@ -417,10 +417,13 @@ export function pathWitnesses(
  * The edge keys a method actually advances along, in order.
  *
  * Read off `routeOf` rather than off `steps`, and the difference is not
- * cosmetic. `backward-euler` lists `quantum-linear-solve` as a step, but
+ * cosmetic. `hhl-qpe-inversion` lists `state-preparation` as a step, but
  * `routeOf` classifies it as a **feed** — an ingredient the method consumes, not
- * a hop it travels — so reading `steps` credits backward Euler with walking the
- * quantum-linear-solve edge, which it does not. The same read also picks up
+ * a hop it travels — so reading `steps` credits HHL with walking the
+ * state-preparation edge, which it does not. (`backward-euler` was the example
+ * here until session 118 removed the step it named; 22 step records are still
+ * filed as feeds, and `a step that is a feed does not witness the edge it names`
+ * now sweeps all of them rather than naming one.) The same read also picks up
  * `through`, so the Koopman-von Neumann lift witnesses its **narrowed** edge and
  * not the broader one every other embedding takes.
  *
