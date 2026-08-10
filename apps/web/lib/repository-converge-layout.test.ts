@@ -1141,8 +1141,123 @@ test("the owner's own research direction is on the page", () => {
 // `laneName` has no drawn instance left ("a narrowing is not a second lane
 // beside the slot whose fan already contains it", below, is what replaced the
 // drawing). The branch itself stays — a narrowing with NO plain sibling still
-// draws, named after its filler — and wants a fixture-graph witness, which is
-// recorded in NEXT.md rather than pretended to here.
+// draws, named after its filler — and the fixture below is its witness, since
+// the corpus no longer supplies one.
+
+test("a narrowing with no plain sibling draws, named after its filler", () => {
+  // The one shape that still reaches `laneName`'s narrowed branch: the slot's
+  // own landing completes no path — `fx-generic` leads nowhere — while the
+  // narrowed landing does, so the bundle holds the narrowing as its only
+  // single-edge lane and the dedup above has no plain sibling to fold it into.
+  // The drawn line must then wear the *filler's* name: naming it after the slot
+  // would say every filler takes it when exactly one does, which is the claim
+  // D119.7 retired the corpus witness of.
+  const vocabulary: StateVocabulary = {
+    states: [
+      { id: "fx-in", label: "An input", labelJa: "入力", summary: "The object before the crossing.", summaryJa: "渡る前の対象。" },
+      {
+        id: "fx-generic",
+        label: "A generic landing",
+        labelJa: "一般の着地",
+        summary: "The landing the slot promises.",
+        summaryJa: "枠が約束する着地。",
+      },
+      {
+        id: "fx-narrow",
+        label: "A narrow landing",
+        labelJa: "狭い着地",
+        summary: "The narrower landing one filler reaches.",
+        summaryJa: "特定の手法だけが到達する、より狭い着地。",
+        specializes: ["fx-generic"],
+      },
+      { id: "fx-out", label: "An answer", labelJa: "答え", summary: "The object after the crossing.", summaryJa: "渡った後の対象。" },
+    ],
+  };
+  const contract = (from: string, to: string) => ({
+    from,
+    to,
+    takes: "The fixture's input object.",
+    takesJa: "この模型の入力。",
+    returns: "The fixture's output object.",
+    returnsJa: "この模型の出力。",
+  });
+  const graph: LayerGraph = {
+    nodes: [
+      {
+        kind: "capability",
+        id: "fx-solve",
+        label: "Cross the fixture",
+        labelJa: "模型を渡る",
+        summary: "The focus slot.",
+        summaryJa: "焦点となる枠。",
+        whyALayer: "It is the figure under test.",
+        whyALayerJa: "検証対象の図です。",
+        contract: contract("fx-in", "fx-out"),
+      },
+      {
+        kind: "capability",
+        id: "fx-lift",
+        label: "Lift the object",
+        labelJa: "対象を持ち上げる",
+        summary: "The slot the route narrows.",
+        summaryJa: "経路が狭める枠。",
+        whyALayer: "Its promised landing completes no path.",
+        whyALayerJa: "約束された着地からは先へ進めません。",
+        contract: contract("fx-in", "fx-generic"),
+      },
+      {
+        kind: "capability",
+        id: "fx-finish",
+        label: "Finish from the narrow landing",
+        labelJa: "狭い着地から仕上げる",
+        summary: "Continues only from the narrow landing.",
+        summaryJa: "狭い着地からのみ続けられます。",
+        whyALayer: "It is reachable only through the narrowing.",
+        whyALayerJa: "狭めを経てのみ到達できます。",
+        contract: contract("fx-narrow", "fx-out"),
+      },
+      {
+        kind: "method",
+        id: "fx-way",
+        label: "The narrowing way",
+        labelJa: "狭める経路",
+        summary: "The one route across, landing narrow.",
+        summaryJa: "狭い着地に至る唯一の経路。",
+        realizes: "fx-solve",
+        steps: ["fx-lift", "fx-finish"],
+        through: { "fx-lift": "fx-narrow" },
+      },
+    ],
+  };
+  const focus = layerNode(graph, "fx-solve");
+  assert.ok(focus && isCapability(focus));
+  const filler = layerNode(graph, "fx-way");
+  const slot = layerNode(graph, "fx-lift");
+  assert.ok(filler && slot);
+  // Both locales, because the name comes from `labelOf` and a branch verified
+  // in `en` alone has been this project's standard half-fix.
+  for (const locale of ["en", "ja"] as const) {
+    const diagram = layoutConverge({ graph, vocabulary, focus, locale, open: new Set() });
+    const wanted: string = locale === "ja" ? filler.labelJa : filler.label;
+    const named: ConvergeLane[] = diagram.lanes.filter((lane) => lane.fullLabel === wanted);
+    assert.equal(
+      named.length,
+      1,
+      `${locale}: the narrowed lane is not drawn exactly once under its filler's name`,
+    );
+    assert.ok(
+      named[0]!.href.endsWith("/fx-way"),
+      `${locale}: the narrowed lane's link goes to ${named[0]!.href}, not to its filler`,
+    );
+    // And never under the slot's own name — that is the lie the branch exists
+    // to prevent, not merely a missing nicety.
+    const slotName = locale === "ja" ? slot.labelJa : slot.label;
+    assert.ok(
+      diagram.lanes.every((lane) => lane.fullLabel !== slotName),
+      `${locale}: a lane wears the slot's name — the narrowing was named after the slot`,
+    );
+  }
+});
 
 // --- opening a line, in place -----------------------------------------------
 //
