@@ -72,6 +72,7 @@ import {
   type LayerState,
   type StateVocabulary,
 } from "../lib/repository/states";
+import { MathText } from "./math-text";
 import { ConvergeCanvas } from "./repository-converge-map";
 import { CanvasContinuity } from "./canvas-continuity";
 import { InfiniteCanvas } from "./infinite-canvas";
@@ -406,11 +407,15 @@ function ContractPiece({
     <div className="mj-layers-piece">
       <div className="mj-layers-edge mj-layers-edge--in">
         <span className="mj-layers-edge-label">{copy.takes}</span>
-        <p>{isJa ? contract.takesJa : contract.takes}</p>
+        <p>
+          <MathText source={isJa ? contract.takesJa : contract.takes} />
+        </p>
       </div>
       <div className="mj-layers-edge mj-layers-edge--out">
         <span className="mj-layers-edge-label">{copy.returns}</span>
-        <p>{isJa ? contract.returnsJa : contract.returns}</p>
+        <p>
+          <MathText source={isJa ? contract.returnsJa : contract.returns} />
+        </p>
       </div>
       {/* Said on every method, both ways round. A method that narrows the slot's
           contract is making a claim the slot does not make, and a reader
@@ -789,7 +794,9 @@ function CapabilityView({
     <>
       <section className="mj-layers-section">
         <h2>{copy.whyALayer}</h2>
-        <p>{locale === "ja" ? node.whyALayerJa : node.whyALayer}</p>
+        <p>
+          <MathText source={locale === "ja" ? node.whyALayerJa : node.whyALayer} />
+        </p>
       </section>
 
       <section className="mj-layers-section" aria-labelledby={`ways-${node.id}`}>
@@ -954,7 +961,7 @@ function MethodView({
       <section className="mj-layers-section">
         <h2>{copy.conditionsHeading}</h2>
         {node.conditions ? (
-          <p>{isJa ? node.conditionsJa : node.conditions}</p>
+          <p><MathText source={(isJa ? node.conditionsJa : node.conditions) ?? ""} /></p>
         ) : (
           <EmptyNote>{copy.conditionsNone}</EmptyNote>
         )}
@@ -962,13 +969,19 @@ function MethodView({
 
       <section className="mj-layers-section">
         <h2>{copy.costHeading}</h2>
-        {node.cost ? <p>{isJa ? node.costJa : node.cost}</p> : <EmptyNote>{copy.costNone}</EmptyNote>}
+        {node.cost ? (
+          <p>
+            <MathText source={(isJa ? node.costJa : node.cost) ?? ""} />
+          </p>
+        ) : (
+          <EmptyNote>{copy.costNone}</EmptyNote>
+        )}
       </section>
 
       {node.contested ? (
         <section className="mj-layers-section mj-layers-section--contested">
           <h2>{copy.contestedHeading}</h2>
-          <p>{isJa ? node.contestedJa : node.contested}</p>
+          <p><MathText source={(isJa ? node.contestedJa : node.contested) ?? ""} /></p>
         </section>
       ) : null}
 
@@ -1004,7 +1017,7 @@ function MethodView({
                       {repetition.closure === "measured"
                         ? copy.repeatsMeasured
                         : copy.repeatsCoherent}{" "}
-                      {isJa ? repetition.noteJa : repetition.note}
+                      <MathText source={isJa ? repetition.noteJa : repetition.note} />
                     </p>
                   ) : null}
                 </li>

@@ -12907,6 +12907,21 @@ div.mj-rail-row:hover {
 .mj-card-hop-math {
   margin: 0;
 }
+/* **Typeset mathematics, sized to the sentence it sits in.**
+
+   KaTeX ships its own `font-size: 1.21em` on `.katex`, which is right for a
+   display equation on its own line and wrong for `$\kappa$` in the middle of a
+   clause: at 1.21 the symbol sits visibly taller than the words either side and
+   drags the line's leading with it. Every surface using `MathText` draws inside
+   running prose, so the size comes from the prose.
+
+   `1em` rather than a token, deliberately: these fields are drawn at `--fs-12`
+   on the card, at the body size on the node page and inside a `<dd>` in the
+   contract table, and a token here would pin all three to whichever one it
+   named. */
+.mj-math .katex {
+  font-size: 1em;
+}
 /* **A tint behind the words, not coloured words.** Written as coloured text
    first and rejected on the rendered page: every link inside this card is
    coloured text, `--accent` is the link colour on every surface of this site,

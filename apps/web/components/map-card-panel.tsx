@@ -54,6 +54,7 @@ import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
 import { THEORY_MARKS, type TheoryMark, type TheorySpan } from "../lib/repository/theory-marks";
 import { ownStepName } from "../lib/repository/converge-layout";
 import type { PublicLocale } from "../lib/public-locale";
+import { MathText } from "./math-text";
 
 type Lang = "en" | "ja";
 
@@ -668,7 +669,9 @@ function TheoryProse({
       <p className="mj-card-hop-math">
         {spans.map((span, index) =>
           span.mark === null ? (
-            <span key={index}>{span.text}</span>
+            <span key={index}>
+              <MathText source={span.text} />
+            </span>
           ) : (
             <span
               key={index}
@@ -676,7 +679,7 @@ function TheoryProse({
               data-mark={span.mark}
             >
               <span className="sr-only">{copy.marks[span.mark]}: </span>
-              {span.text}
+              <MathText source={span.text} />
             </span>
           ),
         )}
@@ -775,7 +778,9 @@ function Implementations({
                 <div key={section.id} className="mj-card-hop-slot" data-implementation-section={section.id}>
                   <p className="mj-card-hop-slot-name">{copy.implementationSections[section.id]}</p>
                   {section.value.held ? (
-                    <p>{section.value.value}</p>
+                    <p>
+                      <MathText source={section.value.value} />
+                    </p>
                   ) : (
                     <Gap gap={section.value.gap} copy={copy} />
                   )}
@@ -831,7 +836,9 @@ function ContractHalf({
 }): React.ReactElement | null {
   if (!contract.held) return null;
   return (
-    <p>{half === "takes" ? contract.value.takes : contract.value.returns}</p>
+    <p>
+      <MathText source={half === "takes" ? contract.value.takes : contract.value.returns} />
+    </p>
   );
 }
 
@@ -847,7 +854,11 @@ function ContractHalf({
 function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy }): React.ReactNode {
   switch (id) {
     case "when-it-applies":
-      return card.kind === "method" && card.whenItApplies.held ? <p>{card.whenItApplies.value}</p> : null;
+      return card.kind === "method" && card.whenItApplies.held ? (
+        <p>
+          <MathText source={card.whenItApplies.value} />
+        </p>
+      ) : null;
     // **One contract, drawn twice.** The owner asked for Input and Output as two
     // of his seven; the graph holds one `contract` record with `takes` and
     // `returns` on it. Splitting the *drawing* is his ask. Splitting the *value*
@@ -867,9 +878,17 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
         <IngredientList items={card.ingredients.value} copy={copy} />
       ) : null;
     case "performance":
-      return card.kind === "method" && card.cost.held ? <p>{card.cost.value}</p> : null;
+      return card.kind === "method" && card.cost.held ? (
+        <p>
+          <MathText source={card.cost.value} />
+        </p>
+      ) : null;
     case "contested":
-      return card.kind === "method" && card.contested.held ? <p>{card.contested.value}</p> : null;
+      return card.kind === "method" && card.contested.held ? (
+        <p>
+          <MathText source={card.contested.value} />
+        </p>
+      ) : null;
     case "records":
       return card.kind !== "own-step" && card.records.held ? (
         <ul className="mj-card-list">
@@ -886,11 +905,15 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
         <dl className="mj-card-dl">
           <div>
             <dt>{copy.takes}</dt>
-            <dd>{card.contract.value.takes}</dd>
+            <dd>
+              <MathText source={card.contract.value.takes} />
+            </dd>
           </div>
           <div>
             <dt>{copy.returns}</dt>
-            <dd>{card.contract.value.returns}</dd>
+            <dd>
+              <MathText source={card.contract.value.returns} />
+            </dd>
           </div>
         </dl>
       ) : null;
@@ -916,7 +939,11 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
     case "example":
       return card.kind === "method" && card.example.held ? (
         <>
-          {card.example.value.text ? <p>{card.example.value.text}</p> : null}
+          {card.example.value.text ? (
+            <p>
+              <MathText source={card.example.value.text} />
+            </p>
+          ) : null}
           {/* Not localised, and the card says why by not offering a second one:
               the identifiers are the record's own symbols. `<pre>` rather than a
               prose block because whitespace is the only structure pseudocode
