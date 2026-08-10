@@ -16,10 +16,10 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseCardId, withCard } from "./repository/map-card.ts";
-import { cardFor, cardSections, type Card } from "./repository/card-content.ts";
+import { cardExists, cardFor, cardSections, ownCardId, type Card } from "./repository/card-content.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
-import { isMethod, layerNode, type LayerCorpusEntry } from "./repository/layers.ts";
+import { isMethod, layerNode, routeOf, type LayerCorpusEntry, type LayerMethod } from "./repository/layers.ts";
 
 const exists = (id: string) => layerNode(LAYER_GRAPH, id) !== null;
 
@@ -232,4 +232,102 @@ test("a card is drawn in the reader's language, all the way down", () => {
     }
   }
   assert.ok(compared > 40, `only ${compared} names were comparable across locales`);
+});
+
+// --- the stretch a method performs itself -----------------------------------
+//
+// Session 113, the owner: *"I am seeing some blank processes — i would like them
+// labeled. I am also confused why there are blank processes in some spots, like
+// after hamiltonian simulation… Blank processes should be separately clickable
+// than the parent process."*
+//
+// What he is seeing is `routeOf`'s trailing segment. These pin the inventory he
+// asked for, so the next session argues with a number rather than with a
+// recollection, and pin that the thing now has an address of its own.
+
+test("the unnamed stretch is 57 of 63 methods, one each, and 14 of them follow a named step", () => {
+  const methods: LayerMethod[] = LAYER_GRAPH.nodes.filter(isMethod);
+  const withOwn: string[] = [];
+  const trailing: Array<{ method: string; after: string; from: string; to: string }> = [];
+  for (const method of methods) {
+    const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
+    const at = route.segments
+      .map((segment, index) => (segment.capabilityId === null ? index : -1))
+      .filter((index) => index >= 0);
+    // **At most one, and the `own:<methodId>` address depends on it.** A method
+    // with two would give two hops the same card, and the card would describe
+    // whichever `findIndex` reached first — a wrong answer that looks like a
+    // right one. If this ever fires, the address needs the segment index in it.
+    assert.ok(at.length <= 1, `${method.id} has ${at.length} unnamed stretches, not at most one`);
+    if (at.length === 0) continue;
+    withOwn.push(method.id);
+    const index = at[0]!;
+    if (index === 0) continue;
+    trailing.push({
+      method: method.id,
+      after: route.segments[index - 1]!.capabilityId!,
+      from: route.states[index]!,
+      to: route.states[index + 1]!,
+    });
+  }
+  console.log(
+    `[unnamed stretches] ${withOwn.length}/${methods.length} methods, ${trailing.length} after a named step`,
+  );
+  assert.equal(withOwn.length, 57);
+  assert.equal(trailing.length, 14);
+
+  // The four the owner named. Pinned by their states as well as their ids: the
+  // complaint was about a specific place on the drawing, and "after
+  // hamiltonian-simulation" is only the same place while the hop is still
+  // `evolution-circuit -> solution-answer`.
+  const afterSimulation = trailing
+    .filter((row) => row.after === "hamiltonian-simulation")
+    .map((row) => `${row.method}: ${row.from} -> ${row.to}`)
+    .sort();
+  assert.deepEqual(afterSimulation, [
+    "kvn-simulation-route: evolution-circuit -> solution-answer",
+    "lchs-improved-kernel: evolution-circuit -> solution-answer",
+    "lchs-route: evolution-circuit -> solution-answer",
+    "schrodingerisation: evolution-circuit -> solution-answer",
+  ]);
+});
+
+test("the unnamed stretch has a card of its own, and it is not the method's card", () => {
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en" } as const;
+  const card = cardFor(input, ownCardId("lchs-route"));
+  assert.ok(card !== null && card.kind === "own-step", "no own-step card for lchs-route");
+  assert.equal(card.from, "evolution-circuit");
+  assert.equal(card.to, "solution-answer");
+  assert.equal(card.method.id, "lchs-route");
+  // The two are different cards at different addresses, which is the whole
+  // point of the prefix — the owner asked for the blank to be *separately*
+  // clickable from its parent.
+  const method = cardFor(input, "lchs-route");
+  assert.ok(method !== null && method.kind === "method");
+  assert.notEqual(card.id, method.id);
+  // And the way onward is still there, as on every other card.
+  assert.equal(card.pageHref, "/repository/layers/lchs-route");
+});
+
+test("an own: card exists for exactly the methods that have the stretch, and no others", () => {
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en" } as const;
+  let built = 0;
+  for (const method of LAYER_GRAPH.nodes.filter(isMethod) as LayerMethod[]) {
+    const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
+    const has = route.segments.some((segment) => segment.capabilityId === null);
+    const card = cardFor(input, ownCardId(method.id));
+    assert.equal(
+      card !== null,
+      has,
+      `${method.id}: own card ${card === null ? "missing" : "built"} but the route ${has ? "has" : "has no"} unnamed stretch`,
+    );
+    assert.equal(cardExists(input, ownCardId(method.id)), has);
+    if (card !== null) built += 1;
+  }
+  assert.equal(built, 57);
+  // A prefix on nothing, and a prefix on a capability, both resolve to shut
+  // rather than to something. `?card=` is user-supplied.
+  assert.equal(cardExists(input, ownCardId("not-a-method")), false);
+  assert.equal(cardExists(input, ownCardId("linear-ode-solve")), false);
+  assert.equal(cardExists(input, "own:"), false);
 });

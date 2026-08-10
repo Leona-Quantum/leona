@@ -164,7 +164,87 @@ export interface ProcessCard extends CardCommon {
   readonly classicalEquivalents: CardValue<never>;
 }
 
-export type Card = MethodCard | ProcessCard;
+/**
+ * The card for the stretch of a route **no named slot covers**.
+ *
+ * The owner, session 113: *"I am seeing some blank processes — i would like them
+ * labeled… Blank processes should be separately clickable than the parent
+ * process."*
+ *
+ * What he is seeing is `routeOf`'s trailing segment: the part of a route the
+ * method performs itself, which has been drawn with no name since session 104
+ * and, until now, with no click target of any kind. **57 of the 63 methods carry
+ * exactly one** (none carries two); 14 of those are drawn *after* a named step,
+ * which is when it reads as a hole rather than as the body of the line it is on,
+ * and **4 of the 14 sit immediately after `hamiltonian-simulation`** — which is
+ * the spot he named.
+ *
+ * It is not a hole. `layers.ts:911` is explicit: *"a real process with a page,
+ * not a hole."* But it is also not nothing to do — a hop with no slot is a hop
+ * the vocabulary has no word for, and `W5-card-spec.md` says the empty card is a
+ * **worklist** rather than a gap report:
+ *
+ * > *"While populating 'what would have to exist to connect them', we may come
+ * > across papers that provide the connections and fill it into another one of
+ * > the cards!"*
+ *
+ * So this card says the three things a reader needs and nothing else: which two
+ * states it runs between, which method is doing the work, and that no slot
+ * covers it yet. `?card=` addresses it as `own:<methodId>` — see `ownCardId`.
+ */
+export interface OwnStepCard {
+  readonly kind: "own-step";
+  readonly id: string;
+  readonly label: string;
+  readonly summary: string;
+  /** The method's page — the same "always present" promise the other cards make. */
+  readonly pageHref: string;
+  /** The method performing this stretch. Never null: the id is built from it. */
+  readonly method: CardLink;
+  /** The slot the method fills, so the reader can climb back out. */
+  readonly realizes: CardLink | null;
+  /** The state it starts from and the state it must reach. */
+  readonly from: string;
+  readonly to: string;
+  /** The method's own contract, which is the closest thing to a contract this has. */
+  readonly contract: CardValue<CardContract>;
+  /**
+   * What a named slot here would have to promise — the worklist entry.
+   *
+   * Derived, not authored: it is exactly the two states above, and writing it as
+   * a field would be a second copy of them that goes stale the first time a
+   * contract is edited. The component composes the sentence from `from`/`to`.
+   */
+  readonly slotWanted: true;
+}
+
+export type Card = MethodCard | ProcessCard | OwnStepCard;
+
+/**
+ * `?card=` for the stretch a method performs itself.
+ *
+ * **Prefixed rather than the method's own id**, because the two are different
+ * things at the same address otherwise: `?card=lchs-route` is the method, and
+ * the hop inside it that `lchs-route` does personally is not the method. This is
+ * the same distinction `converge-layout.ts` records when it refuses the segment a
+ * node id — *"its id would be the method's, so `?open=` could not tell 'open the
+ * method' from 'open the piece of the method that is the method'"*.
+ *
+ * A **method id, not an address**, and that is a measurement rather than a
+ * preference: no method has two of these segments, so the method names it
+ * uniquely, and a method id survives the figure being opened differently while a
+ * dotted address does not.
+ */
+const OWN_CARD_PREFIX = "own:";
+
+export function ownCardId(methodId: string): string {
+  return `${OWN_CARD_PREFIX}${methodId}`;
+}
+
+/** The method an `own:` card names, or null when the id is not one. */
+export function methodOfOwnCard(id: string): string | null {
+  return id.startsWith(OWN_CARD_PREFIX) ? id.slice(OWN_CARD_PREFIX.length) : null;
+}
 
 interface CardInput {
   readonly graph: LayerGraph;
@@ -307,11 +387,62 @@ function processCard(input: CardInput, capability: LayerNode): ProcessCard {
   };
 }
 
+function ownStepCard(input: CardInput, method: LayerMethod): OwnStepCard | null {
+  const { graph, vocabulary } = input;
+  const ja = input.locale === "ja";
+  const route = routeOf(graph, vocabulary, method);
+  // Located rather than assumed. A method with no own segment has no such card,
+  // and saying so here — instead of building an empty one — is what keeps
+  // `?card=own:<id>` from resolving for the six methods that delegate the whole
+  // way across.
+  const index = route.segments.findIndex((segment) => segment.capabilityId === null);
+  if (index === -1) return null;
+  const from = route.states[index];
+  const to = route.states[index + 1];
+  if (from === undefined || to === undefined) return null;
+  const link = linkFor(graph, method.id, ja);
+  if (link === null) return null;
+  return {
+    kind: "own-step",
+    id: ownCardId(method.id),
+    label: ja ? method.labelJa : method.label,
+    summary: ja ? method.summaryJa : method.summary,
+    pageHref: nodePageHref(method.id),
+    method: link,
+    realizes: linkFor(graph, method.realizes, ja),
+    from,
+    to,
+    contract: contractOf(graph, method, ja),
+    slotWanted: true,
+  };
+}
+
 /** The card for a node, or null when the id names nothing the graph holds. */
 export function cardFor(input: CardInput, id: string): Card | null {
+  // The `own:` form first: it is a prefix on a method id, so asking the graph
+  // about the raw string would miss it, and stripping the prefix unconditionally
+  // would let `?card=own:` resolve to whatever a bare id resolves to.
+  const ownOf = methodOfOwnCard(id);
+  if (ownOf !== null) {
+    const method = layerNode(input.graph, ownOf);
+    return method !== null && isMethod(method) ? ownStepCard(input, method) : null;
+  }
   const node = layerNode(input.graph, id);
   if (node === null) return null;
   return isMethod(node) ? methodCard(input, node) : processCard(input, node);
+}
+
+/**
+ * Whether `?card=` can open this id — the predicate the route hands `parseCardId`.
+ *
+ * Exported so the route does not have to know that a card id is *sometimes* a
+ * node id and sometimes a prefixed one. Before this, the route's predicate was
+ * `layerNode(graph, id) !== null` written out at the call site, which is a
+ * second, simpler model of what a card id is — and the simpler one would have
+ * counted every `own:` link as dropped while the panel below it opened fine.
+ */
+export function cardExists(input: CardInput, id: string): boolean {
+  return cardFor(input, id) !== null;
 }
 
 /**
@@ -327,6 +458,14 @@ export function cardSections(card: Card): Array<{ id: string; state: "held" | Ca
     id,
     state: (value.held ? "held" : value.gap) as "held" | CardGap,
   });
+  // The own-step card holds one section and holds it always — the two states it
+  // runs between, which are structural and cannot be absent. It is listed rather
+  // than special-cased away so the census still answers "how much of this card is
+  // empty" for every card the surface can draw, which is the whole point of this
+  // function.
+  if (card.kind === "own-step") {
+    return [of("contract", card.contract), { id: "between", state: "held" as const }];
+  }
   const common = [
     of("contract", card.contract),
     of("papers", card.papers),

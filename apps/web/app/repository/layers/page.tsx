@@ -6,9 +6,11 @@ import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { resolveOpenIds } from "../../../lib/repository/converge-layout";
 import { parseViewport } from "../../../lib/repository/canvas-viewport";
+import { cardExists } from "../../../lib/repository/card-content";
 import { parseCardId } from "../../../lib/repository/map-card";
 import { parseAboutSection } from "../../../lib/repository/map-about";
 import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
+import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
 
 /**
  * Localised, because the node route beside it already is.
@@ -129,6 +131,17 @@ export default async function RepositoryLayersPage({
     description: entry.description,
     descriptionJa: entry.descriptionJa,
   }));
+  // **The same input the panel is built from**, so the question "can this id be
+  // opened" and the answer "here is what opens" cannot disagree. `ConvergeView`
+  // builds its own from the same four values; they are one object's worth of
+  // arguments and building it twice is cheaper than threading it, but they must
+  // be built from the same four.
+  const cardInput = {
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    corpus,
+    locale,
+  } as const;
 
   return (
     <PublicSite
@@ -172,11 +185,20 @@ export default async function RepositoryLayersPage({
         // the box works with JavaScript off and so a link to one section of it
         // is a link somebody can send. See `lib/repository/map-about.ts`.
         about={parseAboutSection(params.about)}
-        // Which node's card is open, resolved on the server for the same reason
-        // and by the same shape. `parseCardId` validates against the graph: an
-        // id that names nothing means *shut*, because there is no sensible
-        // default node to fall back to. See `lib/repository/map-card.ts`.
-        card={parseCardId(params.card, (id) => layerNode(LAYER_GRAPH, id) !== null)}
+        // Which card is open, resolved on the server for the same reason and by
+        // the same shape. `parseCardId` validates: an id naming nothing means
+        // *shut*, because there is no sensible default node to fall back to.
+        // See `lib/repository/map-card.ts`.
+        //
+        // **The predicate is `cardExists`, not `layerNode(...) !== null`.** Not
+        // every card id is a node id: `own:<methodId>` addresses the stretch a
+        // method performs itself, which is a piece of a route and nobody's node.
+        // Written out here, the predicate would be a second and simpler model of
+        // what a card id is — and the simpler one counts every `own:` link as
+        // dropped while the panel beneath it opens perfectly well, which is a
+        // disagreement that shows up as a wrong number rather than as a broken
+        // page.
+        card={parseCardId(params.card, (id) => cardExists(cardInput, id))}
         droppedOpen={openSet.dropped}
         // Resolved on the server so the figure arrives already panned and
         // scaled: a shared link lands where its sender was standing even with

@@ -34,25 +34,36 @@ import type {
   CardLink,
   CardValue,
   MethodCard,
+  OwnStepCard,
   ProcessCard,
 } from "../lib/repository/card-content";
+import { ownStepName } from "../lib/repository/converge-layout";
 import type { PublicLocale } from "../lib/public-locale";
 
 type Lang = "en" | "ja";
 
 /** A card's own words, in one shape both locales must fill. */
 interface Copy {
+  /**
+   * The locale these words are in.
+   *
+   * Carried so a component holding `copy` can reach the strings this file does
+   * *not* own — `ownStepName`, whose single writer is the layout, because the
+   * canvas prints the same phrase on the same hop and one fact wants one string.
+   */
+  lang: Lang;
   close: string;
-  eyebrow: Record<"method" | "process", string>;
+  eyebrow: Record<"method" | "process" | "own-step", string>;
   openPage: string;
   realizes: string;
   noneFound: string;
   noField: string;
+  /** The worklist line on the own-step card. See `OwnStepSections`. */
+  noSlotHere: string;
   sections: Record<CardSectionId, string>;
   takes: string;
   returns: string;
   narrowed: string;
-  itself: string;
   coverage: Record<CoverageAnswer, string>;
 }
 
@@ -76,6 +87,8 @@ type CardSectionId =
   | "implementations"
   | "papers"
   | "records"
+  | "between"
+  | "no-slot"
   | "why-a-layer"
   | "filled-by"
   | "bypassed-by"
@@ -83,8 +96,9 @@ type CardSectionId =
 
 const COPY: Record<Lang, Copy> = {
   en: {
+    lang: "en",
     close: "Close",
-    eyebrow: { method: "Method", process: "Process" },
+    eyebrow: { method: "Method", process: "Process", "own-step": "Unnamed step" },
     openPage: "Open the full record",
     realizes: "Fills the slot",
     /**
@@ -99,6 +113,8 @@ const COPY: Record<Lang, Copy> = {
      */
     noneFound: "None found yet.",
     noField: "No field holds this yet — the model is still being designed.",
+    noSlotHere:
+      "The method closes this stretch itself, and the vocabulary has no name for it yet. A named step here would be one worth finding.",
     sections: {
       contract: "What it takes and returns",
       trace: "State to state",
@@ -112,6 +128,8 @@ const COPY: Record<Lang, Copy> = {
       implementations: "Implementations",
       papers: "Papers",
       records: "In the repository",
+      between: "Between these two states",
+      "no-slot": "No named step covers this",
       "why-a-layer": "Why it is a layer at all",
       "filled-by": "Methods that fill it",
       "bypassed-by": "Routes that make it unnecessary",
@@ -120,7 +138,6 @@ const COPY: Record<Lang, Copy> = {
     takes: "Takes",
     returns: "Returns",
     narrowed: "narrowed",
-    itself: "the method itself",
     coverage: {
       covered: "Covered in the repository.",
       /**
@@ -137,12 +154,15 @@ const COPY: Record<Lang, Copy> = {
     },
   },
   ja: {
+    lang: "ja",
     close: "閉じる",
-    eyebrow: { method: "手法", process: "工程" },
+    eyebrow: { method: "手法", process: "工程", "own-step": "名前のない工程" },
     openPage: "詳細ページを開く",
     realizes: "満たすスロット",
     noneFound: "まだ見つかっていません。",
     noField: "これを保持する項目はまだありません。設計中です。",
+    noSlotHere:
+      "この区間は手法が自ら閉じており、まだ名前のある工程が当てられていません。ここに名前のある工程を見つける価値があります。",
     sections: {
       contract: "入力と出力",
       trace: "状態から状態へ",
@@ -156,6 +176,8 @@ const COPY: Record<Lang, Copy> = {
       implementations: "実装",
       papers: "文献",
       records: "リポジトリ内",
+      between: "この二つの状態のあいだ",
+      "no-slot": "名前のある工程がまだありません",
       "why-a-layer": "なぜ層として立てるのか",
       "filled-by": "これを満たす手法",
       "bypassed-by": "これを不要にする経路",
@@ -164,7 +186,6 @@ const COPY: Record<Lang, Copy> = {
     takes: "入力",
     returns: "出力",
     narrowed: "限定",
-    itself: "手法そのもの",
     coverage: {
       covered: "リポジトリに記録があります。",
       "not-yet":
@@ -241,12 +262,69 @@ function Trace({ hops, copy }: { hops: readonly CardHop[]; copy: Copy }): React.
           {hop.via ? (
             <a href={hop.via.href}>{hop.via.label}</a>
           ) : (
-            <span className="mj-card-trace-own">{copy.itself}</span>
+            <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
           )}
           {hop.narrowed ? <span className="mj-card-trace-tag">{copy.narrowed}</span> : null}
         </li>
       ))}
     </ol>
+  );
+}
+
+/**
+ * The card for the stretch a method performs itself.
+ *
+ * **Short on purpose.** It answers the three questions the drawing raises and
+ * stops: which two states, which method, and why there is no name on it. The
+ * temptation is to pad it out with the method's cost and papers so it looks like
+ * the others — those belong to the method, which is one click away and named
+ * here, and copying them onto a piece of it is the duplication rule's exact
+ * shape.
+ *
+ * The last line is the **worklist** `W5-card-spec.md` asks for: the owner's
+ * *"while populating 'what would have to exist to connect them', we may come
+ * across papers that provide the connections"*. It says a named step is wanted
+ * here rather than that something is broken here.
+ */
+function OwnStepSections({ card, copy }: { card: OwnStepCard; copy: Copy }): React.ReactElement {
+  return (
+    <>
+      <details className="mj-card-section" data-section="between" open>
+        <summary>{copy.sections.between}</summary>
+        <div className="mj-card-section-body">
+          <ol className="mj-card-trace">
+            <li>
+              <code>{card.from}</code>
+              <span aria-hidden="true"> ⟶ </span>
+              <code>{card.to}</code>
+              <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
+            </li>
+          </ol>
+        </div>
+      </details>
+      <Section id="contract" copy={copy} value={card.contract}>
+        {card.contract.held ? (
+          <dl className="mj-card-dl">
+            <div>
+              <dt>{copy.takes}</dt>
+              <dd>{card.contract.value.takes}</dd>
+            </div>
+            <div>
+              <dt>{copy.returns}</dt>
+              <dd>{card.contract.value.returns}</dd>
+            </div>
+          </dl>
+        ) : null}
+      </Section>
+      <details className="mj-card-section mj-card-section--empty" data-section="no-slot" open>
+        <summary>{copy.sections["no-slot"]}</summary>
+        <div className="mj-card-section-body">
+          <p className="mj-card-gap mj-card-gap--none-recorded" data-gap="none-recorded">
+            {copy.noSlotHere}
+          </p>
+        </div>
+      </details>
+    </>
   );
 }
 
@@ -401,13 +479,21 @@ export function MapCardPanel({
             </p>
 
             <div className="mj-card-body" role="region" aria-labelledby={titleId} tabIndex={0}>
-              {card.kind === "method" ? (
+              {card.kind === "own-step" ? (
+                <OwnStepSections card={card} copy={copy} />
+              ) : card.kind === "method" ? (
                 <MethodSections card={card} copy={copy} />
               ) : (
                 <ProcessSections card={card} copy={copy} />
               )}
 
-              <Section id="papers" copy={copy} value={card.papers}>
+              {/* Papers and records belong to a node. The own stretch is not one
+                  — it is a piece of a route — so it carries neither, and the
+                  honest thing is to draw no section rather than one saying "none
+                  found yet", which would claim a search that has no subject. */}
+              {card.kind === "own-step" ? null : (
+                <>
+                  <Section id="papers" copy={copy} value={card.papers}>
                 {card.papers.held ? (
                   <ul className="mj-card-list">
                     {card.papers.value.map((paper) => (
@@ -438,6 +524,8 @@ export function MapCardPanel({
                   </ul>
                 ) : null}
               </Section>
+                </>
+              )}
               {card.kind === "process" ? (
                 <p className="mj-card-coverage" data-coverage={card.coverage}>
                   {copy.coverage[card.coverage]}

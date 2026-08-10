@@ -45,6 +45,7 @@ import {
   routeOf,
   type LayerCapability,
 } from "./repository/layers.ts";
+import { cardFor, ownCardId } from "./repository/card-content.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import type { StateVocabulary } from "./repository/states.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
@@ -3448,6 +3449,21 @@ test("the map never marks a subject lane", () => {
   assert.ok(sweptLanes >= 200, `only ${sweptLanes} lanes swept — the sweep has gone quiet`);
 });
 
+/**
+ * Everything `cardFor` needs, with an empty corpus.
+ *
+ * Empty because these tests ask whether a card *can be built*, never what its
+ * repository join holds — and a corpus loaded here would make the answer depend
+ * on the catalog, which is exactly the coupling `card-content.ts` takes a
+ * projection to avoid.
+ */
+const CARD_INPUT = {
+  graph: LAYER_GRAPH,
+  vocabulary: STATE_VOCABULARY,
+  corpus: [],
+  locale: "en",
+} as const;
+
 // --- the card layer, and which surface is allowed to offer it ----------------
 //
 // W5 slice two. A name on the map opens the node's card in place instead of
@@ -3504,22 +3520,31 @@ test("a card link is offered only where a card layer exists, and never otherwise
       );
 
       for (const mark of [...on.lanes, ...on.feeds]) {
-        const isLane = "nodeId" in mark && !("vHalf" in mark);
-        const id = isLane ? (mark as ConvergeLane).nodeId : (mark as { nodeId: string }).nodeId;
+        const own = "own" in mark ? (mark as ConvergeLane).own : null;
+        const draws = "draws" in mark ? (mark as ConvergeLane).draws : mark.nodeId;
+        const id = own !== null ? ownCardId(own) : draws;
         if (mark.cardHref === null) {
-          // Only a mark that is nobody's node may go without one — the stretch a
-          // method performs itself. Anything else missing a card link is a name
-          // that silently kept leaving the map.
+          // **One shape may go without a card, and only one.** The stretch a
+          // method performs itself used to be the exception here and is not any
+          // more — it is addressed as `own:<methodId>`. What is left is the run
+          // of *named hops*: a union whose name is `A → B` and which is drawn as
+          // its hops, so the hops carry the cards and a card about their union
+          // would be a card about the coined composite the owner refused.
+          //
+          // Named by the field rather than allowed as "anything with no node id",
+          // which is what this clause said before and is how the own stretch sat
+          // uncovered: `composite` and `own` are both null-id lanes and only one
+          // of them is meant to be cardless.
           assert.ok(
-            id === null || id === "",
-            `${capability.id}: ${mark.address} names ${id} and was offered no card`,
+            "composite" in mark && (mark as ConvergeLane).composite,
+            `${capability.id}: ${mark.address} (draws=${draws}, own=${own}) was offered no card`,
           );
           continue;
         }
         withCards += 1;
         assert.ok(
-          layerNode(LAYER_GRAPH, id!) !== null,
-          `${capability.id}: ${mark.address} offers a card for ${id}, which the graph does not hold`,
+          cardFor(CARD_INPUT, id!) !== null,
+          `${capability.id}: ${mark.address} offers a card for ${id}, which nothing can build`,
         );
         const url = new URL(mark.cardHref, "https://leonaqt.com");
         // The pathname is the whole of the interception rule. Anything else here

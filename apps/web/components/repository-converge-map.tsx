@@ -43,15 +43,24 @@
 // second click read as *zooming into the thing* rather than as loading a
 // different screen: the destination page draws the same subject under the same
 // name, so the browser morphs one into the other.
-import type {
-  ConvergeDiagram,
-  ConvergeFeed,
-  ConvergeLane,
-  ConvergeState,
+import {
+  ownStepName,
+  type ConvergeDiagram,
+  type ConvergeFeed,
+  type ConvergeLane,
+  type ConvergeState,
 } from "../lib/repository/converge-layout";
 import type { PublicLocale } from "../lib/public-locale";
 
 interface ConvergeCopy {
+  /**
+   * The locale these words are in.
+   *
+   * Carried so a component holding `copy` can reach the one phrase this file
+   * does not own: `ownStepName`, whose single writer is the layout, because the
+   * card prints the same words on the same hop and one fact wants one string.
+   */
+  lang: "en" | "ja";
   start: string;
   end: string;
   meets: (arriving: number, leaving: number) => string;
@@ -80,6 +89,7 @@ interface ConvergeCopy {
 
 const COPY: Record<"en" | "ja", ConvergeCopy> = {
   en: {
+    lang: "en",
     start: "you start here",
     end: "you finish here",
     meets: (arriving: number, leaving: number) =>
@@ -98,6 +108,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     handsOn: "what one part hands to the next",
   },
   ja: {
+    lang: "ja",
     start: "ここから始まります",
     end: "ここで終わります",
     meets: (arriving: number, leaving: number) =>
@@ -245,9 +256,21 @@ function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React
       )}
 
       {/* Target two: the name. The ingredient's card where there is one, and its
-          own page where there is not — same rule as a lane's name. */}
-      <a href={feed.cardHref ?? feed.href} aria-label={title}>
-        <title>{title}</title>
+          own page where there is not — same rule as a lane's name, **including
+          saying which**. This label read as the bare ingredient name until the
+          card href landed under it, at which point the accessible name stopped
+          describing the click: a reader on assistive technology was told
+          "needs: Prepare a state" for a control that opens a panel in place.
+          `LaneName` has carried its action since it was written; this is the
+          same two strings for the same reason. Caught in review on PR 332.
+          (Written without the hash: `check-raw-hex` reads a three-digit PR
+          reference as a colour. Session 112's standing note, hit twice here —
+          once writing it and once writing the note explaining it.) */}
+      <a
+        href={feed.cardHref ?? feed.href}
+        aria-label={`${title} — ${feed.cardHref === null ? copy.readAbout : copy.readHere}`}
+      >
+        <title>{`${title} — ${feed.cardHref === null ? copy.readAbout : copy.readHere}`}</title>
         <text
           className="mj-converge-feed-name"
           x={n(feed.x + 4)}
@@ -282,6 +305,14 @@ function laneClass(lane: ConvergeLane, documented: boolean): string {
     // thing that tells two sibling leaves' pages apart — their fans are the same
     // drawing otherwise, which is how 43 of 63 method pages came to share one.
     lane.subject ? " mj-converge-lane--subject" : ""
+  }${
+    // The stretch a method performs itself. A category rather than a standing,
+    // for the same reason `subject` is one: the standings say what the
+    // literature records about a line, and this says what *kind* of line it is —
+    // a piece of a route that no named slot covers. It carries the footnote
+    // treatment so the phrase on it does not read as a name competing with the
+    // names beside it.
+    lane.own !== null ? " mj-converge-lane--own" : ""
   }`;
 }
 
@@ -494,6 +525,30 @@ function Lane({
           <path className="mj-converge-strand-hit" d={lane.d} />
         </a>
       )}
+
+      {/* The stretch a method performs itself takes its **own** click, and this
+          is the owner's *"blank processes should be separately clickable than
+          the parent process"*. Until now it had no control of any kind: it draws
+          no name, so `LaneName` returns null for it, and it has nothing inside,
+          so `openHref` is null. Its only `href` went to the parent method's
+          page — the exact collision he reported.
+
+          On the line rather than on a name, because it has no name to put one
+          on. That does not break R12.2's rule that a line expands rather than
+          navigates: this href opens a card **in place**, so clicking a line
+          still means "something opens here", which is the rule the reader has
+          already learned from every other line.
+
+          Mutually exclusive with the control above by construction, not by
+          coincidence — `own` implies `openable: false`, so `openHref` is null on
+          exactly the lanes this draws for. Asserted, because "by construction"
+          is what the last two dead controls on this canvas were also called. */}
+      {lane.own !== null && lane.cardHref !== null ? (
+        <a href={lane.cardHref} aria-label={`${lane.fullLabel} — ${ownStepName(copy.lang)}`}>
+          <title>{`${ownStepName(copy.lang)} — ${copy.readHere}`}</title>
+          <path className="mj-converge-strand-hit" d={lane.d} />
+        </a>
+      ) : null}
 
       {/* Target two — the name — is **not here**. It is drawn by `LaneName` in a
           later pass over the same lanes, with `NamePlate` in the pass before

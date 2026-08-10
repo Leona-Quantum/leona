@@ -11663,6 +11663,20 @@ div.mj-rail-row:hover {
 .mj-converge-lane--subject .mj-converge-lane-name {
   font-weight: 600;
 }
+/* The stretch a method performs itself — the owner's *"blank processes"*.
+
+   **It carries no declaration yet, and the class is here anyway.** The phrase
+   that would go on it (`ownStepName`) is written and measured and not drawn:
+   placing it in the row of names puts 4 opened-against-shut overlaps back on the
+   canvas, which `no two names overlap on an opened figure either` pins at 0.
+   When a placement rule exists, the treatment is already decided — 10px,
+   `--text-2`, italic, the footnote rule an opened stub's name got in session 112,
+   because this string is a note about what the stretch is rather than a name,
+   and at 12px `--text-1` it would sit in a row of real names claiming to be one.
+
+   The class marks the kind in the DOM meanwhile, which is what the hop's own
+   click target is selected against and what a visual check can count. A hook
+   with no paint is not dead styling; a paint with no hook would be. */
 
 /* --- the shared circles -------------------------------------------------- */
 .mj-converge-dot {
