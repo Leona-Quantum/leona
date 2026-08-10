@@ -91,11 +91,21 @@ function siblingsOf(diagram: ConvergeDiagram): ConvergeLane[][] {
   return [...buckets.values()];
 }
 
-/** Lanes grouped by the pair of circles they run between. */
+/**
+ * Lanes grouped by the pair of circles they run between.
+ *
+ * Keyed by parent **and** span, not span alone. The span was only ever a proxy
+ * for "between the same two circles", and W14 broke the proxy: the nonlinear
+ * figure now holds two parallel runs of hops between the same outer circles
+ * (simulate → estimate beside discretize → linear-solve), whose interior lanes
+ * share an x-range while living inside different ways across. `parentKey` is
+ * carried on the lane for exactly this — grouping by recovered structure is the
+ * mistake this file has already paid for once.
+ */
 function bundlesOf(diagram: ConvergeDiagram): ConvergeLane[][] {
   const bySpan = new Map<string, ConvergeLane[]>();
   for (const lane of diagram.lanes) {
-    const key = `${lane.x0}>${lane.x1}`;
+    const key = `${lane.parentKey ?? "figure"}#${lane.x0}>${lane.x1}`;
     const list = bySpan.get(key) ?? [];
     list.push(lane);
     bySpan.set(key, list);
@@ -126,13 +136,16 @@ test("a state on several routes is ONE circle, not one per route", () => {
     "three circles, one per state in the denominator chain",
   );
   assert.equal(new Set(outer).size, outer.length, "no state is drawn twice");
-  // And the deeper one that does appear is the object inside the run of two
-  // hops, which this figure draws as a chain because it is one.
+  // And the deeper ones that do appear are the objects inside the runs of two
+  // hops, which this figure draws as chains because they are chains. Two since
+  // W14: discretize → linear-solve hands on `linear-system`, and the KvN
+  // wiring's simulate → estimate hands on `runnable-evolution` — each drawn
+  // once, which is the same claim the depth-0 assertion makes one level up.
   const inner = diagram.states.filter((state) => state.depth > 0);
   assert.deepEqual(
     inner.map((state) => state.stateId),
-    ["linear-system"],
-    "the run of two hops names the object it hands on halfway",
+    ["linear-system", "runnable-evolution"],
+    "each run of two hops names the object it hands on halfway",
   );
   for (const state of inner) {
     assert.ok(state.r < CONVERGE_METRICS.stateRadius, "an inner object is drawn smaller");
@@ -1418,8 +1431,12 @@ test("a line that opens into something says so, and a line that does not is not 
   // (−2 slot lanes, +7 method lanes, all seven openable into their routes),
   // and the Koopman-von Neumann narrowing stopped being drawn beside the
   // embedding lane whose fan contains it (−1 leaf).
-  assert.equal(openable + leaves + 1, 64, "the nineteen figures draw 64 lines between them");
-  assert.equal(openable, 27, "27 of them open into something recorded");
+  // 64 until session 120. The W14 wiring gave the KvN route its readout, so the
+  // shut nonlinear figure's walk gained the simulate → estimate run: two slot
+  // lanes between the linear-ivp and solution-answer circles that no way across
+  // drew before, both real, both sourced (Joseph §V C).
+  assert.equal(openable + leaves + 1, 66, "the nineteen figures draw 66 lines between them");
+  assert.equal(openable, 29, "29 of them open into something recorded");
   assert.equal(leaves, 36, "36 are leaves — nothing finer is recorded for them");
 });
 
@@ -2157,6 +2174,24 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
       }
     }
   }
+  // The same two invariants on every method's own page — the surface the slot
+  // sweep above cannot see (the D119.1 lesson, applied here in session 120 when
+  // the KvN ×4K mark's only drawing surface turned out to be the method page:
+  // no map figure draws that route's interior, by the bundle dedup's design).
+  for (const method of LAYER_GRAPH.nodes) {
+    if (!isMethod(method) || method.repeats === undefined) continue;
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = pageFigure(method.id, locale);
+      for (const lane of diagram.lanes) {
+        if (lane.repeatMark === null || lane.nameless) continue;
+        marked += 1;
+        assert.ok(
+          lane.label.endsWith(` ${lane.repeatMark}`),
+          `${method.id} page: ${lane.key} carries ${lane.repeatMark} and draws "${lane.label}"`,
+        );
+      }
+    }
+  }
   // Which pairs actually reached a drawing, checked against the graph. A record
   // that reaches no figure is the failure this shape allows: nothing renders, no
   // gate fires, and the map goes on being silent about the most expensive lane
@@ -2180,6 +2215,23 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
           if (onLane || onFeed) drawn.add(key);
         }
       }
+    }
+  }
+  // A method's own page reaches its record too — for the KvN wiring it is the
+  // only surface that does, and "drawn somewhere a reader lands" is the claim.
+  for (const method of LAYER_GRAPH.nodes) {
+    if (!isMethod(method) || method.repeats === undefined) continue;
+    const diagram = pageFigure(method.id);
+    for (const [stepId] of Object.entries(method.repeats)) {
+      const key = `${method.id}|${stepId}`;
+      if (drawn.has(key)) continue;
+      const onLane = diagram.lanes.some(
+        (lane) => lane.repeatMark === expected.get(key) && keyNames(lane.key).has(method.id),
+      );
+      const onFeed = diagram.feeds.some(
+        (feed) => feed.repeatMark === expected.get(key) && keyNames(feed.parentKey).has(method.id),
+      );
+      if (onLane || onFeed) drawn.add(key);
     }
   }
   assert.deepEqual(
