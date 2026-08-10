@@ -3496,7 +3496,17 @@ function layoutFigure(options: {
       // different line.
       subject: subjectAddress !== null && lane.address === subjectAddress,
     })),
-    feeds: out.feeds.map((feed) => carryViewport(feed, options.at, open)),
+    // `openHref` explicitly, exactly as the lanes above — `carryViewport`
+    // rewrites `href` and nothing else. Measured on `linear-ode-solve` saturated
+    // with a viewport: 53 of 53 lanes carried it and **0 of 12 feeds did**, so
+    // opening or shutting an ingredient dropped the reader back at the origin at
+    // 100%, which reads as the map jumping rather than as a control working. The
+    // test that enumerates every address on a figure listed `lane.href`,
+    // `lane.openHref`, `state.href` and `feed.href`, and omitted this one.
+    feeds: out.feeds.map((feed) => ({
+      ...carryViewport(feed, options.at, open),
+      openHref: withViewport(feed.openHref, options.at),
+    })),
     caption,
     empty: false,
     unpublishedCount: out.unpublished,

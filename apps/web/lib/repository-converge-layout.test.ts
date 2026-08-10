@@ -1943,6 +1943,65 @@ test("an open ingredient is named once, not once as a stub and again on its fan"
   assert.ok(pairs > 50, `only ${pairs} opened ingredients were examined`);
 });
 
+test("a lane's ingredients are its own, not its descendants'", () => {
+  // The accessible list beside the figure — which **is** the figure for a reader
+  // who is not looking at it — groups ingredients under the lane that needs them,
+  // and it selected them by key prefix until session 118. `ConvergeFeed.parentKey`
+  // exists because a prefix of an address selects the whole subtree under it and
+  // never one generation, and that warning is written on the field itself.
+  //
+  // **The two are not interchangeable, and this counts by how much.** A feed's
+  // key is `<parentKey>~<slot>`, so a lane that opens into methods which
+  // themselves hang ingredients matches every one of them by prefix — the extras
+  // belonging to whatever is two levels down.
+  //
+  // **The count is printed rather than described**, and that is deliberate: the
+  // worked example this comment used to carry named a lane that session 118's own
+  // corpus change then turned into a leaf, so the prose went stale the same
+  // afternoon it was written. A number the run prints cannot. It is asserted
+  // non-zero rather than pinned, because it is the *reason* the field exists — if
+  // it ever reaches zero, that is not a fix, it is a graph that stopped nesting,
+  // and the equivalence would then look safe to anyone who came back to simplify
+  // this.
+  let lanes = 0;
+  let owned = 0;
+  let overReported = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const open of openings(focus.id)) {
+      const diagram = openDiagram(focus.id, open);
+      const keys = new Set(diagram.lanes.map((lane) => lane.key));
+      // Exactly one lane owns each ingredient, and it is a lane that is drawn.
+      for (const feed of diagram.feeds) {
+        assert.ok(
+          keys.has(feed.parentKey),
+          `${feed.key}: parentKey ${feed.parentKey} is not a lane on this figure`,
+        );
+      }
+      for (const lane of diagram.lanes) {
+        lanes += 1;
+        const byParent = diagram.feeds.filter((feed) => feed.parentKey === lane.key);
+        const byPrefix = diagram.feeds.filter((feed) => feed.key.startsWith(`${lane.key}~`));
+        if (byParent.length > 0) owned += 1;
+        assert.ok(
+          byPrefix.length >= byParent.length,
+          `${lane.key}: parentKey names an ingredient the prefix does not`,
+        );
+        if (byPrefix.length > byParent.length) overReported += 1;
+      }
+    }
+  }
+  assert.ok(lanes > 100, `only ${lanes} lanes examined`);
+  assert.ok(owned > 0, "no lane owns an ingredient, so this compares two empty lists");
+  console.log(
+    `[ingredient ownership] ${lanes} lanes, ${owned} own one, ${overReported} would be over-reported by a key prefix`,
+  );
+  assert.ok(
+    overReported > 0,
+    "a key prefix and `parentKey` now agree everywhere — the trap this guards against has no " +
+      "witness, so re-read `ConvergeFeed.parentKey` before trusting either",
+  );
+});
+
 test("a chain's column is wide enough for its widest step, taken once per step", () => {
   // The rule `place` depends on: a chain of k steps divides the column into k
   // equal shares, so the column must hold `k × widest`. The authored graph has
@@ -3145,10 +3204,18 @@ test("every address a figure emits keeps the reader where they were standing", (
         open,
         at: AT,
       });
+      // **`feed.openHref` is in this list, and it was the one address that was
+      // not.** `layoutFigure` patched the lanes' open links explicitly and handed
+      // the feeds only `carryViewport`, which rewrites `href` and nothing else —
+      // so on `linear-ode-solve` saturated, 53 of 53 lanes carried the viewport
+      // and **0 of 12 feeds did**. Opening or shutting an ingredient threw the
+      // reader back to the origin at 100%, which does not read as a control
+      // working; it reads as the map jumping. This enumeration is the guard, and
+      // it had the hole: it listed four of the five addresses a figure emits.
       const addresses = [
         ...carried.lanes.flatMap((lane) => [lane.href, lane.openHref]),
         ...carried.states.map((state) => state.href),
-        ...carried.feeds.map((feed) => feed.href),
+        ...carried.feeds.flatMap((feed) => [feed.href, feed.openHref]),
       ].filter((href): href is string => typeof href === "string");
       assert.ok(addresses.length > 0, `${focus.id} emitted no addresses`);
       for (const href of addresses) {

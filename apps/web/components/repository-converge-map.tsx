@@ -35,9 +35,11 @@
 // So the **body** of a strand opens it here, in place, with everything else
 // still in view; and the **name** goes there, to the thing's own page. Two
 // shapes, two destinations, and the `<title>` on each says which. A strand with
-// nothing recorded inside has no body target at all rather than a body that
-// navigates — a line that goes somewhere when a reader expected it to expand
-// teaches the wrong rule about every other line on the canvas.
+// nothing recorded inside opens its **card**, in place, rather than navigating —
+// a line that goes somewhere when a reader expected it to expand teaches the
+// wrong rule about every other line on the canvas, and a line that does nothing
+// at all reads as a broken one. (It had no body target until session 118; the
+// owner's report is what changed it. See the leaf anchor in `Lane`.)
 //
 // The name carries the figure's `view-transition-name`, which is what makes the
 // second click read as *zooming into the thing* rather than as loading a
@@ -80,6 +82,17 @@ interface ConvergeCopy {
    * for on the line.
    */
   readHere: string;
+  /**
+   * What a **line** does when there is nothing inside it to open.
+   *
+   * A third string for the same reason `readHere` is a second one. This one is
+   * spoken by a line, not by a name, and the two are different controls in
+   * different places: a reader told "click the name" while their pointer is on
+   * a line three hundred pixels long has been told to go somewhere else. The
+   * whole `readAbout`/`readHere` split exists because a label that lies about
+   * its own click is the failure mode this contract is shaped against.
+   */
+  lineReadHere: string;
   openHere: string;
   closeHere: string;
   inside: string;
@@ -101,6 +114,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     unpinned: "recorded, but no source names which method",
     readAbout: "click the name to read about it",
     readHere: "click the name to read about it here",
+    lineReadHere: "click the line to read about it here",
     openHere: "click the line to open it here",
     closeHere: "click the line to close it",
     inside: "open",
@@ -120,6 +134,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     unpinned: "記録はありますが、どの手法かを述べた出典はありません",
     readAbout: "名前をクリックすると解説を開きます",
     readHere: "名前をクリックするとこの場で解説を開きます",
+    lineReadHere: "線をクリックするとこの場で解説を開きます",
     openHere: "線をクリックするとこの場で展開します",
     closeHere: "線をクリックすると畳みます",
     inside: "展開中",
@@ -529,26 +544,50 @@ function Lane({
         </a>
       )}
 
-      {/* The stretch a method performs itself takes its **own** click, and this
-          is the owner's *"blank processes should be separately clickable than
-          the parent process"*. Until now it had no control of any kind: it draws
-          no name, so `LaneName` returns null for it, and it has nothing inside,
-          so `openHref` is null. Its only `href` went to the parent method's
-          page — the exact collision he reported.
+      {/* **A line with nothing inside still answers for itself.**
 
-          On the line rather than on a name, because it has no name to put one
-          on. That does not break R12.2's rule that a line expands rather than
-          navigates: this href opens a card **in place**, so clicking a line
-          still means "something opens here", which is the rule the reader has
-          already learned from every other line.
+          Two lanes reach this: the stretch a method performs itself — the
+          owner's *"blank processes should be separately clickable than the
+          parent process"* — and, since session 118, any **leaf**: a step with
+          nothing recorded under it, so `openable` is false and `openHref` is
+          null.
+
+          The leaf half is his session-118 report, about
+          `truncated-taylor-propagator` drawn as the first step of the
+          all-at-once encoding: *"i can't click on it specifically but it only
+          clicks on the full thing."* He is describing paint order. A chain's
+          steps are drawn **on** their parent's spine, so a step that emits no
+          anchor of its own leaves the enclosing lane's 24px toggle as the
+          topmost thing there — measured, 39 of 41 sampled points on that line
+          toggled the encoding above it. A leaf now paints its own hit stroke
+          after its parent's, so the click lands on the step the reader aimed at.
+
+          On the line rather than on a name, because the own stretch has no name
+          to put one on and a leaf's name is a few hundred square pixels beside a
+          line hundreds of pixels long. That does not break R12.2's rule that a
+          line expands rather than navigates: this href opens a card **in
+          place**, so clicking a line still means "something opens here", which
+          is the rule the reader has already learned from every other line.
 
           Mutually exclusive with the control above by construction, not by
-          coincidence — `own` implies `openable: false`, so `openHref` is null on
-          exactly the lanes this draws for. Asserted, because "by construction"
-          is what the last two dead controls on this canvas were also called. */}
-      {lane.own !== null && lane.cardHref !== null ? (
-        <a href={lane.cardHref} aria-label={`${lane.fullLabel} — ${ownStepName(copy.lang)}`}>
-          <title>{`${ownStepName(copy.lang)} — ${copy.readHere}`}</title>
+          coincidence — the guard is `openHref === null`, which is the exact
+          negation of the condition that draws it. Asserted, because "by
+          construction" is what the last two dead controls on this canvas were
+          also called. */}
+      {lane.openHref === null && lane.cardHref !== null ? (
+        <a
+          href={lane.cardHref}
+          aria-label={
+            lane.own !== null
+              ? `${lane.fullLabel} — ${ownStepName(copy.lang)}`
+              : `${spokenName(lane)} — ${copy.lineReadHere}`
+          }
+        >
+          <title>
+            {lane.own !== null
+              ? `${ownStepName(copy.lang)} — ${copy.readHere}`
+              : `${title} — ${copy.lineReadHere}`}
+          </title>
           <path className="mj-converge-strand-hit" d={lane.d} />
         </a>
       ) : null}
