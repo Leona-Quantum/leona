@@ -29,6 +29,7 @@ import {
   indexLayerGraph,
   isCapability,
   isMethod,
+  routeOf,
   methodsRealizing,
   layerCensus,
   layerDepths,
@@ -891,6 +892,101 @@ test("a coined composite is refused in the short form too, where it is likeliest
     conjoinedCompositeNames(withShort("Short name", "Lift + solve"), CHAIN)
       .flatMap((e) => e.locales),
     ["ja"],
+  );
+});
+
+// --- the hollow twins -------------------------------------------------------
+//
+// The owner, mid-session 114: *"still seeing things like LCHS identity and Koopman-von-newman
+// lift and discretize time or the propagator that have strange repeats within larger
+// processes… Feels like there are hollow ones that have different labels on top but the same
+// internals — which doesn't structurally make sense since different labels should mean their
+// internals are actually different. so i am worried it's a structural issue that these things
+// are allowed."*
+//
+// **He is right, and it is allowed.** `scripts/check-layer-graph.mjs`'s R13 gate fails two
+// routes that *decompose* identically — but a leaf method does not decompose at all, so the
+// gate has never had an opinion about them, and 34 of the 63 methods are leaves. A leaf draws
+// exactly one segment and that segment is its slot's own contract, so every leaf under a slot
+// necessarily draws the same picture. The labels differ because the methods differ; the
+// interiors match because nothing inside has been written down.
+//
+// This is the scoreboard for fixing that, and it exists before any of the corpus work so the
+// work is measurable. See `plans/atlas-revamp/W10-hollow-twins.md` for the three shapes of fix
+// and which group wants which.
+
+test("the hollow twins are counted, and the count may only fall", () => {
+  const methods = LAYER_GRAPH.nodes.filter(isMethod);
+  const chainOf = (method: LayerMethod): string => {
+    const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
+    return route.segments
+      .map((segment, index) => {
+        // Read what the lane *draws*, which is `via` where a route pins one and the slot
+        // otherwise — not the step list. Two routes that pin different methods through one slot
+        // draw different pictures and are not twins, and grouping on `steps` would call them
+        // twins anyway.
+        const via =
+          segment.capabilityId === null
+            ? "«own»"
+            : (method.via?.[segment.capabilityId] ?? segment.capabilityId);
+        return `${route.states[index]}>${via}>${route.states[index + 1]}`;
+      })
+      .join("|");
+  };
+
+  const groups = new Map<string, LayerMethod[]>();
+  for (const method of methods) {
+    // Keyed by slot as well as chain. Cross-slot recurrence is a different fact — two ways of
+    // reaching two different goals that happen to have no recorded interior — and measured
+    // today there is none of it anyway.
+    const key = `${method.realizes}::${chainOf(method)}`;
+    groups.set(key, [...(groups.get(key) ?? []), method]);
+  }
+
+  const rows: Array<{ slot: string; ids: string[] }> = [];
+  for (const members of groups.values()) {
+    if (members.length < 2) continue;
+    const ids = new Set(members.map((member) => member.id));
+    // **A declared refinement is not a hollow twin.** `lchs-improved-kernel` draws
+    // `lchs-route`'s chain on purpose — what changed is the kernel inside the identity, a
+    // parameter rather than a construction — and since session 114 the card says so under the
+    // lede. Dropping the members that declare `refines` at another member of the same group is
+    // what leaves the residual that has explained nothing.
+    const residual = members.filter(
+      (member) => !(member.refines !== undefined && ids.has(member.refines)),
+    );
+    if (residual.length < 2) continue;
+    rows.push({ slot: members[0]!.realizes, ids: residual.map((member) => member.id) });
+  }
+  const counted = rows.reduce((total, row) => total + row.ids.length, 0);
+
+  console.log(`[hollow twins] ${counted}/${methods.length} methods in ${rows.length} groups`);
+  for (const row of [...rows].sort((a, b) => b.ids.length - a.ids.length)) {
+    console.log(`  ${row.ids.length}  ${row.slot}: ${row.ids.join(", ")}`);
+  }
+
+  // **A ceiling, not a pin, and the direction is the whole point.** 46 of 63 today, in 17
+  // groups. Every group is a corpus job — decompose the method, narrow the state, or say why
+  // three ways to one place have no recorded interior — and each one lands makes this fall.
+  // Going *up* means a method was authored with nothing inside it beside siblings that already
+  // had nothing, which is the thing he asked to have eliminated.
+  assert.ok(
+    counted <= 46,
+    `${counted} methods draw a sibling's chain with nothing declaring why — was 46. ` +
+      `A new one means a method was authored with no recorded interior beside siblings that ` +
+      `already had none. See plans/atlas-revamp/W10-hollow-twins.md`,
+  );
+  // And the groups he named by sight are the big ones, pinned so that "the owner's examples"
+  // stays a checkable claim rather than a recollection.
+  const bySlot = (slot: string) => rows.find((row) => row.slot === slot)?.ids.length ?? 0;
+  assert.ok(bySlot("time-discretization") >= 2, "the time-discretisation group stopped colliding");
+  assert.ok(
+    bySlot("nonlinear-linear-embedding") >= 2,
+    "the embedding group — his Koopman-von Neumann lift — stopped colliding",
+  );
+  assert.ok(
+    bySlot("hamiltonian-recasting") >= 2,
+    "the recasting group — his LCHS identity — stopped colliding",
   );
 });
 
