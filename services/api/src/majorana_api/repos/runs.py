@@ -183,7 +183,13 @@ class RunAllowanceReached(Exception):
 async def reserve_execute_run_slot(
     scope: Scope, session: AsyncSession, since: dt.datetime, limit: int | None
 ) -> None:
-    """Take the account's lock and refuse if the weekly allowance is spent.
+    """Reserve execution allowance before admission or AUTO resolution.
+
+    The caller must keep this transaction open through the operation that makes
+    the reservation visible: inserting an explicit EXECUTE run or rewriting an
+    AUTO run to EXECUTE. The Worker uses the same function when intent resolves
+    to execution, so both entry points serialize against the same account row
+    and count the same in-flight AUTO/EXECUTE rows.
 
     ## Why a lock, and why on the user's row
 
@@ -195,12 +201,13 @@ async def reserve_execute_run_slot(
     sandbox time, so a burst of concurrent submissions at the boundary is a
     multiple of the plan's spend, once a week, for as long as nobody notices.
 
-    **Nothing downstream catches it.** The worker has a second allowance gate,
-    but `_assert_execute_allowance` runs only when it RESOLVES an AUTO run to
-    EXECUTE — an explicit `mode=execute` submission takes `resolve_mode`'s
-    passthrough branch, `decision.changed` is False, and the worker returns
-    before the check. So for the mode that says outright what it is, this route
-    is the only gate there is.
+    **Nothing downstream catches it for explicit execution.** The Worker has a
+    second gate, but `_assert_execute_allowance` runs only when it RESOLVES an
+    AUTO run to EXECUTE — an explicit `mode=execute` submission takes
+    `resolve_mode`'s passthrough branch, `decision.changed` is False, and the
+    Worker returns before that check. So for the mode that says outright what it
+    is, this route is the only gate there is; AUTO resolution reuses this
+    reservation after admission.
 
     The allowance belongs to the ACCOUNT, not the tenant (see
     `count_execute_runs_since`), so the row two concurrent submissions share is

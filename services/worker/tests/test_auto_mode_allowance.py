@@ -67,13 +67,16 @@ class _User:
 
 
 class _Session:
-    def __init__(self, user):
+    def __init__(self, user, trace=None):
         self._user = user
+        self._trace = trace
 
     async def get(self, _model, _pk):
         return self._user
 
     async def commit(self):
+        if self._trace is not None:
+            self._trace.append("commit")
         return None
 
 
@@ -142,8 +145,10 @@ async def test_the_run_being_resolved_is_reserved_once_before_mode_change(monkey
     """The AUTO row is charged once before it becomes EXECUTE."""
 
     called = {}
+    trace = []
 
     async def reserve_execute_run_slot(scope, session, since, limit):
+        trace.append("reserve")
         called.update(scope=scope, session=session, since=since, limit=limit)
 
     monkeypatch.setattr(handlers.runs_repo, "reserve_execute_run_slot", reserve_execute_run_slot)
@@ -151,16 +156,18 @@ async def test_the_run_being_resolved_is_reserved_once_before_mode_change(monkey
     recorded = {}
 
     async def set_run_mode(_scope, _session, run_id, mode):
+        trace.append("set_mode")
         recorded["mode"] = mode
 
     monkeypatch.setattr(handlers.runs_repo, "set_run_mode", set_run_mode)
 
     sink = _RecordingSink()
+    session = _Session(_User("someone@example.com"), trace)
     result = await handlers._resolve_mode(
         _ctx(sink),
         _FakeStore(),
         scope=_Scope(),
-        session=_Session(_User("someone@example.com")),
+        session=session,
         llm=_ExecuteLLM(),
         has_source_code=False,
     )
@@ -170,6 +177,39 @@ async def test_the_run_being_resolved_is_reserved_once_before_mode_change(monkey
     assert called["scope"].user_id == _Scope.user_id
     assert called["session"].__class__ is _Session
     assert called["limit"] == FREE_TOKENS
+    assert trace == ["reserve", "set_mode", "commit"]
+
+
+async def test_auto_chat_does_not_reserve_execute_allowance(monkeypatch):
+    """Conversation traffic remains unmetered when AUTO resolves to CHAT."""
+
+    async def unexpected_reservation(*_args, **_kwargs):
+        raise AssertionError("CHAT resolution must not reserve execute allowance")
+
+    monkeypatch.setattr(handlers.runs_repo, "reserve_execute_run_slot", unexpected_reservation)
+    monkeypatch.setattr(handlers.runs_repo, "set_run_mode", _noop_set_mode)
+
+    class _ChatLLM:
+        async def complete(self, request, *, on_delta=None):
+            from majorana_llm import LLMResponse
+
+            return LLMResponse(
+                text='{"intent": "chat", "reason": "conversation"}',
+                model="test",
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+    result = await handlers._resolve_mode(
+        _ctx(_RecordingSink()),
+        _FakeStore(),
+        scope=_Scope(),
+        session=_Session(_User("someone@example.com")),
+        llm=_ChatLLM(),
+        has_source_code=False,
+    )
+
+    assert result.mode is RunMode.CHAT
 
 
 async def test_the_operator_is_not_metered_without_any_configuration(monkeypatch):
