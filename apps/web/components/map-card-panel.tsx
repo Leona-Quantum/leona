@@ -56,6 +56,9 @@ interface Copy {
   eyebrow: Record<"method" | "process" | "own-step", string>;
   openPage: string;
   realizes: string;
+  /** The two directions of `refines`. See `Refinement` below for why they are chrome. */
+  refines: string;
+  refinedBy: string;
   noneFound: string;
   noField: string;
   /** The worklist line on the own-step card. See `OwnStepSections`. */
@@ -101,6 +104,10 @@ const COPY: Record<Lang, Copy> = {
     eyebrow: { method: "Method", process: "Process", "own-step": "Unnamed step" },
     openPage: "Open the full record",
     realizes: "Fills the slot",
+    // The node page's own words for the same edge (`repository-layers.tsx`,
+    // `refinesLabel`). One fact should read as one fact wherever it is drawn.
+    refines: "A narrower version of",
+    refinedBy: "Narrower versions",
     /**
      * The two gaps, and they say different things on purpose.
      *
@@ -159,6 +166,11 @@ const COPY: Record<Lang, Copy> = {
     eyebrow: { method: "手法", process: "工程", "own-step": "名前のない工程" },
     openPage: "詳細ページを開く",
     realizes: "満たすスロット",
+    // The two directions must not read the same. The node page's string names the
+    // *broader* method, so it stays as it is; the back-link says whose narrower
+    // version the listed methods are, which is the opposite claim.
+    refines: "より狭めた版",
+    refinedBy: "これをより狭めた版",
     noneFound: "まだ見つかっていません。",
     noField: "これを保持する項目はまだありません。設計中です。",
     noSlotHere:
@@ -328,6 +340,52 @@ function OwnStepSections({ card, copy }: { card: OwnStepCard; copy: Copy }): Rea
   );
 }
 
+/**
+ * Where a method sits among the ones it is a narrower version of, or that are
+ * narrower versions of it.
+ *
+ * **Drawn under the lede, and drawn only when there is one.** The owner asked for
+ * the LCHS pair — two lanes that draw an identical chain — to say what is
+ * different *"in clear way without cluttering"*. Under the lede is where the
+ * question is asked: a reader who has just read "built on the kernel
+ * f(z) = 1/(C_β e^{(1+iz)^β})… replacing the original Cauchy kernel's quadratic
+ * decay" is one line away from the method that has the original kernel.
+ *
+ * The difference itself is not restated here. It is the first sentence of the
+ * narrower method's own lede, and a copy of it on the broader method's card
+ * would be the same claim in two places — which drifts, and always in the
+ * direction of the copy nobody edits. The link is what was missing, not the
+ * words.
+ *
+ * Returns `null` on the 54 methods with neither edge rather than an empty line,
+ * because absence here is not a gap: `refinementsOf` is the graph's own complete
+ * answer, not a search that came back empty, and the card's "none found yet"
+ * means the second thing.
+ */
+function Refinement({ card, copy }: { card: MethodCard; copy: Copy }): React.ReactElement | null {
+  if (card.refines === null && card.refinedBy.length === 0) return null;
+  return (
+    <p className="mj-card-refinement">
+      {card.refines ? (
+        <span className="mj-card-refines">
+          {copy.refines}: <a href={card.refines.href}>{card.refines.label}</a>
+        </span>
+      ) : null}
+      {card.refinedBy.length > 0 ? (
+        <span className="mj-card-refined-by">
+          {copy.refinedBy}:{" "}
+          {card.refinedBy.map((child, index) => (
+            <span key={child.id}>
+              {index > 0 ? ", " : null}
+              <a href={child.href}>{child.label}</a>
+            </span>
+          ))}
+        </span>
+      ) : null}
+    </p>
+  );
+}
+
 function MethodSections({ card, copy }: { card: MethodCard; copy: Copy }): React.ReactElement {
   return (
     <>
@@ -466,6 +524,7 @@ export function MapCardPanel({
             <p className="mj-card-eyebrow">{copy.eyebrow[card.kind]}</p>
             <h2 id={titleId}>{card.label}</h2>
             <p className="mj-card-lede">{card.summary}</p>
+            {card.kind === "method" ? <Refinement card={card} copy={copy} /> : null}
             {/* **First, and not last.** The card is a preview; the record is the
                 page. A panel that buries the way onward is the "replacement for
                 navigating the map" the owner ruled out. */}

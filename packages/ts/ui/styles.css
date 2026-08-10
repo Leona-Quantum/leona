@@ -12727,6 +12727,20 @@ div.mj-rail-row:hover {
   margin: var(--sp-2) 0 0;
   color: var(--text-1);
 }
+/* Where this method sits among its narrower and broader versions.
+   Between the lede and the way onward, because it answers a question the lede
+   has just raised — two lanes that draw an identical chain, and the reader
+   wanting to know which is which. Quiet by default: it is a relation, not a
+   claim, and it draws on 9 of 63 method cards, so it must not read as a banner
+   on the ones that have it. */
+.mj-card-refinement {
+  display: flex;
+  flex-wrap: wrap;
+  gap: var(--sp-1) var(--sp-4);
+  margin: var(--sp-2) 0 0;
+  color: var(--text-2);
+  font-size: var(--fs-13);
+}
 /* The way onward, directly under the name and above every section — the card is
    a preview and the record is the page, so the link out is not something a
    reader has to scroll a stack of gaps to find. */

@@ -234,6 +234,99 @@ test("a card is drawn in the reader's language, all the way down", () => {
   assert.ok(compared > 40, `only ${compared} names were comparable across locales`);
 });
 
+// --- what a method is a narrower version of ---------------------------------
+//
+// Session 113, the owner: *"why do LCHS and LCHS improve kernel break down to the same
+// thing, they clearly have different implementation so something at least has to change
+// right?"*, and on the write-up: *"just make it clear what the difference is, and it should
+// show up in UI in clear way without cluttering."*
+//
+// The chain being identical is correct — the improved-kernel paper changes the kernel
+// *inside* `lchs-kernel-identity`, a parameter rather than a construction, which is why the
+// duplicate-path gate exempts a declared refinement. What was wrong is that nothing on the
+// drawing said the two lanes were related. These pin both halves of "without cluttering":
+// the edge is drawn where it exists, and nothing is drawn where it does not.
+
+test("a method's card says what it is a narrower version of, and what narrows it", () => {
+  const methods = cards().filter((card): card is Extract<Card, { kind: "method" }> => card.kind === "method");
+  const byId = new Map(methods.map((card) => [card.id, card]));
+  const declared = LAYER_GRAPH.nodes.filter(
+    (node): node is LayerMethod => isMethod(node) && node.refines !== undefined,
+  );
+  // Five, and the count is pinned because it is the denominator of every claim below —
+  // a partition read off a set that silently grew is not the partition that was checked.
+  assert.equal(declared.length, 5, `${declared.length} methods declare refines, not 5`);
+
+  for (const node of declared) {
+    const card = byId.get(node.id);
+    assert.ok(card, `${node.id} draws no method card`);
+    assert.equal(card.refines?.id, node.refines, `${node.id}: the card names the wrong parent`);
+    // **The round trip, and it is the half that rots.** `refines` is authored on the child
+    // and the back-link is a scan, so the two can only disagree if the scan stops matching
+    // the field — which is exactly what happens when somebody adds a second way to declare
+    // a refinement and updates one reader.
+    const parent = byId.get(node.refines!);
+    assert.ok(parent, `${node.id} refines ${node.refines}, which draws no card`);
+    assert.ok(
+      parent.refinedBy.some((child) => child.id === node.id),
+      `${node.refines} does not list ${node.id} among its narrower versions`,
+    );
+  }
+
+  // And nothing anywhere else. A back-link that appeared on a method nothing refines would
+  // be a relation invented by the reader rather than declared by the graph.
+  const parents = new Set(declared.map((node) => node.refines!));
+  for (const card of methods) {
+    if (!parents.has(card.id)) {
+      assert.equal(card.refinedBy.length, 0, `${card.id} lists narrower versions but nothing refines it`);
+    }
+  }
+
+  // The "without cluttering" claim, as a number rather than as an intention: this draws on
+  // nine cards and is absent — not "none found yet" — on the other fifty-four. If it ever
+  // becomes most of them, it is a section and wants a heading, not a line under the lede.
+  const drawn = methods.filter((card) => card.refines !== null || card.refinedBy.length > 0);
+  assert.equal(
+    drawn.length,
+    9,
+    `the refinement line draws on ${drawn.length} of ${methods.length} cards: ${drawn.map((c) => c.id).sort().join(", ")}`,
+  );
+});
+
+test("the owner's LCHS pair: the identical chain now says which is the narrower one", () => {
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en" } as const;
+  const improved = cardFor(input, "lchs-improved-kernel");
+  const original = cardFor(input, "lchs-route");
+  assert.ok(improved?.kind === "method" && original?.kind === "method");
+
+  assert.equal(improved.refines?.id, "lchs-route");
+  assert.deepEqual(original.refinedBy.map((child) => child.id), ["lchs-improved-kernel"]);
+  // The two draw the same chain, and that is the fact the reader was tripping over. Pinned
+  // here rather than assumed: if the chains ever diverge, this line is the one that says the
+  // refinement edge is no longer the *only* thing distinguishing them, and the copy under
+  // the lede can stop carrying that weight alone.
+  const chain = (card: typeof improved) =>
+    card.trace.held ? card.trace.value.map((hop) => `${hop.from}>${hop.to}:${hop.via?.id ?? "own"}`) : [];
+  assert.deepEqual(chain(improved), chain(original), "the LCHS pair no longer draws one chain");
+
+  // **What is different is not restated on the card, and that is deliberate.** It is the
+  // first sentence of the narrower method's own lede, one click away. A copy here would be
+  // the same claim in two places, and the copy is the one that goes stale.
+  assert.match(improved.summary, /kernel/i);
+
+  // Both directions localise, all the way to the label a reader actually reads.
+  const ja = { ...input, locale: "ja" } as const;
+  const improvedJa = cardFor(ja, "lchs-improved-kernel");
+  const originalJa = cardFor(ja, "lchs-route");
+  assert.ok(improvedJa?.kind === "method" && originalJa?.kind === "method");
+  assert.notEqual(improvedJa.refines?.label, improved.refines?.label, "the parent's name did not change locale");
+  assert.notEqual(
+    originalJa.refinedBy[0]?.label,
+    original.refinedBy[0]?.label,
+    "the narrower version's name did not change locale",
+  );
+});
+
 // --- the stretch a method performs itself -----------------------------------
 //
 // Session 113, the owner: *"I am seeing some blank processes — i would like them

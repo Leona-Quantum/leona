@@ -35,6 +35,7 @@ import {
   isMethod,
   layerNode,
   methodsRealizing,
+  refinementsOf,
   routeOf,
   type LayerCitation,
   type LayerContract,
@@ -118,6 +119,42 @@ interface CardCommon {
 export interface MethodCard extends CardCommon {
   readonly kind: "method";
   readonly realizes: CardLink | null;
+  /**
+   * The two halves of `refines`, and why neither is a `CardValue`.
+   *
+   * The owner, session 113: *"why do LCHS and LCHS improve kernel break down to
+   * the same thing, they clearly have different implementation so something at
+   * least has to change right?"* — and his answer to the write-up: *"just make it
+   * clear what the difference is, and it should show up in UI in clear way
+   * without cluttering."*
+   *
+   * The chain is identical **on purpose**: what the improved-kernel paper changes
+   * is the kernel inside `lchs-kernel-identity`, a parameter of the construction
+   * rather than a different construction, which is why the duplicate-path gate
+   * exempts a declared refinement. So the data is right and the *drawing* was
+   * silent — the reader saw two identical lanes and nothing said they were
+   * related, let alone how.
+   *
+   * **Chrome, not a section, and that is the "without cluttering" half.** Every
+   * other thing on this card is a `CardValue` because it is *content the corpus
+   * might hold and might not have found yet* — "none found yet" is a claim about
+   * a search. A refinement edge is not that. It is a structural relation the
+   * graph is the whole authority on, `refinementsOf`/`alternativesTo` are already
+   * a partition of the siblings, and a card printing "none found yet" under
+   * *Narrower versions* on all 58 methods that have none would be 58 statements
+   * about a search nobody ran. So it draws where it exists and nothing where it
+   * does not — the same call `repository-layers.tsx` already made for `refines`
+   * on the node page.
+   *
+   * **What is different is answered by following the link, not by a second copy
+   * of the answer.** `lchs-improved-kernel`'s own lede already opens with the
+   * kernel, its decay rate and what it replaces. A `differsBy` field here would
+   * restate that one click away from the sentence it was copied from, and the two
+   * would drift the first time either was edited.
+   */
+  readonly refines: CardLink | null;
+  /** Narrower versions of this one. Empty is the common case and draws nothing. */
+  readonly refinedBy: readonly CardLink[];
   readonly whenItApplies: CardValue<string>;
   readonly cost: CardValue<string>;
   readonly contested: CardValue<string>;
@@ -332,6 +369,14 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
     summary: ja ? method.summaryJa : method.summary,
     pageHref: nodePageHref(method.id),
     realizes: linkFor(graph, method.realizes, ja),
+    // Read off the graph in both directions rather than off a field on this node.
+    // `refines` is written on the *narrower* method, so "what narrows me" is a
+    // scan — `refinementsOf` — and there is no second place the back-link could
+    // drift from. It is the same argument `bypassedBy` makes on the process card.
+    refines: method.refines === undefined ? null : linkFor(graph, method.refines, ja),
+    refinedBy: refinementsOf(graph, method)
+      .map((child) => linkFor(graph, child.id, ja))
+      .filter((link): link is CardLink => link !== null),
     contract: contractOf(graph, method, ja),
     whenItApplies: stated(ja ? method.conditionsJa : method.conditions),
     cost: stated(ja ? method.costJa : method.cost),
