@@ -26,6 +26,7 @@ import {
   cardExists,
   cardFor,
   cardHopNotes,
+  cardRepetitions,
   cardSections,
   ownCardId,
   sectionState,
@@ -355,6 +356,97 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   );
 });
 
+// --- how many times a step is walked ----------------------------------------
+
+test("every recorded multiplicity reaches the card, and the card is where most of them are ingredients", () => {
+  // **The card was the one surface that said nothing about `repeats` at all.** Measured in
+  // `W12-what-the-map-cannot-say.md` across canvas, card and node page: it is on 9 methods —
+  // nearly twice as many as `refines` — and only the node page drew it. Two methods filling
+  // one slot, one of them walking it T/h times, read as the same card.
+  //
+  // **The subject here is a record that reaches nowhere**, which is the failure this data
+  // shape allows and no section census can see. `repeats` keys a *step*; a step is either a
+  // hop of the chain or an ingredient; those are two different pieces of the panel. A count
+  // keyed to something that is neither would render on no surface and no section would report
+  // a gap — Theory held, Requires held, and the fact simply gone. So the expected set is read
+  // off the graph rather than typed here: authoring a tenth record fails this test until the
+  // card draws it.
+  const expected = new Map<string, { step: string; count: string; closure: string }[]>();
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node) || node.repeats === undefined) continue;
+    expected.set(
+      node.id,
+      Object.entries(node.repeats).map(([step, repetition]) => ({
+        step,
+        count: repetition.count,
+        closure: repetition.closure,
+      })),
+    );
+  }
+  const places = { hop: 0, ingredient: 0 };
+  let drawn = 0;
+  for (const card of cards()) {
+    const swept = cardRepetitions(card);
+    const want = expected.get(card.id) ?? [];
+    assert.deepEqual(
+      [...swept].map((one) => ({ step: one.step, count: one.count, closure: one.closure })).sort((a, b) => a.step.localeCompare(b.step)),
+      [...want].sort((a, b) => a.step.localeCompare(b.step)),
+      `${card.id}: the card draws a different set of multiplicities than the graph records`,
+    );
+    for (const one of swept) {
+      places[one.place] += 1;
+      drawn += 1;
+    }
+  }
+  const recorded = [...expected.values()].reduce((sum, list) => sum + list.length, 0);
+  assert.equal(drawn, recorded, `${drawn} multiplicities drawn against ${recorded} recorded`);
+  // **Both places must have an instance, and this is the correction to the plan.** `W12`
+  // proposed drawing the count *"beside the lane's name"* on the assumption these sat on the
+  // chain. They mostly do not: only `time-marching-usva`, `qsvt-matrix-inversion` and
+  // `qsvt-transform` repeat a hop. Backward Euler's and the trapezoidal rule's linear solve,
+  // HHL's preparation and Hamiltonian simulation, and all three readouts' preparation are
+  // `feeds` — so a count drawn on the chain alone would have reached 3 of the 10 records and
+  // left the six most expensive loops on this map exactly as invisible as they were.
+  //
+  // Asserted as "neither is zero" rather than as 3 and 7, because both are corpus counts that
+  // should be free to move; what must not happen is a rendering path with no instance, which
+  // is a path nobody has ever seen drawn.
+  assert.ok(places.hop >= 1, "no multiplicity lands on a hop — that rendering path draws nowhere");
+  assert.ok(
+    places.ingredient >= 1,
+    "no multiplicity lands on an ingredient — that rendering path draws nowhere",
+  );
+  console.log(
+    `[repeat census] ${recorded} records on ${expected.size} methods, ` +
+      `${places.hop} on a hop, ${places.ingredient} on an ingredient`,
+  );
+});
+
+test("a multiplicity is drawn in the reader's language, and its closure is not", () => {
+  // The count and the note are authored twice and must both change; the closure is an enum
+  // and must not, because a `measured` loop is `measured` in both locales and the class name,
+  // the `data-closure` attribute and every sweep over them are keyed on it.
+  let compared = 0;
+  for (const node of LAYER_GRAPH.nodes) {
+    if (!isMethod(node) || node.repeats === undefined) continue;
+    const en = cardRepetitions(
+      cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER }, node.id)!,
+    );
+    const ja = cardRepetitions(
+      cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "ja", register: PAPER_REGISTER }, node.id)!,
+    );
+    assert.equal(ja.length, en.length, `${node.id}: the two locales drew different counts`);
+    for (const [index, one] of en.entries()) {
+      const other = ja[index]!;
+      assert.equal(other.step, one.step, `${node.id}: the locales ordered multiplicities differently`);
+      assert.equal(other.closure, one.closure, `${node.id}: the closure changed with the locale`);
+      assert.notEqual(other.count, one.count, `${node.id}: ${one.step}'s count did not change locale`);
+      compared += 1;
+    }
+  }
+  assert.ok(compared >= 10, `only ${compared} multiplicities were comparable across locales`);
+});
+
 test("the card reads the map node, which is the populated side of the join", () => {
   // The §2 decision, measured. The recommendation the owner was given — *"the method card
   // reads the map node, the repository entry keeps its own record, and the two are joined
@@ -438,8 +530,8 @@ test("a card is drawn in the reader's language, all the way down", () => {
       const jaIngredients = ja.ingredients.value;
       for (const [index, item] of en.ingredients.value.entries()) {
         assert.equal(
-          jaIngredients[index]?.id,
-          item.id,
+          jaIngredients[index]?.link.id,
+          item.link.id,
           "the two locales listed ingredients in different orders",
         );
       }
