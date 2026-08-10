@@ -60,6 +60,16 @@ interface ConvergeCopy {
   unpublished: string;
   unpinned: string;
   readAbout: string;
+  /**
+   * What a name does on a surface that has a card.
+   *
+   * A second string rather than a reworded `readAbout`, because the two
+   * surfaces genuinely differ and the node page still uses the first. A name
+   * that says "opens its card here" on a page with no card layer would be the
+   * label lying about the click, which is the failure `openHere` was split out
+   * for on the line.
+   */
+  readHere: string;
   openHere: string;
   closeHere: string;
   inside: string;
@@ -79,6 +89,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     unpublished: "no recorded source takes this path",
     unpinned: "recorded, but no source names which method",
     readAbout: "click the name to read about it",
+    readHere: "click the name to read about it here",
     openHere: "click the line to open it here",
     closeHere: "click the line to close it",
     inside: "open",
@@ -96,6 +107,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     unpublished: "この経路をたどる記録された出典はありません",
     unpinned: "記録はありますが、どの手法かを述べた出典はありません",
     readAbout: "名前をクリックすると解説を開きます",
+    readHere: "名前をクリックするとこの場で解説を開きます",
     openHere: "線をクリックするとこの場で展開します",
     closeHere: "線をクリックすると畳みます",
     inside: "展開中",
@@ -232,8 +244,9 @@ function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React
         </a>
       )}
 
-      {/* Target two: the name. Goes to the ingredient's own page. */}
-      <a href={feed.href} aria-label={title}>
+      {/* Target two: the name. The ingredient's card where there is one, and its
+          own page where there is not — same rule as a lane's name. */}
+      <a href={feed.cardHref ?? feed.href} aria-label={title}>
         <title>{title}</title>
         <text
           className="mj-converge-feed-name"
@@ -331,10 +344,17 @@ function LaneName({
   title: string;
 }): React.ReactElement | null {
   if (lane.label === "") return null;
+  // The card when this surface has one, the node's own page when it does not.
+  // **One expression, not two branches**, because the anchor around it is
+  // twenty lines of hit-target geometry and duplicating it to change one
+  // attribute is how the two copies come apart. The full page is not lost: it
+  // is the card's first link.
+  const nameHref = lane.cardHref ?? lane.href;
+  const nameAction = lane.cardHref === null ? copy.readAbout : copy.readHere;
   return (
     <g className={laneClass(lane, isDocumented(lane, atlas))} data-depth={lane.depth}>
-      <a href={lane.href} aria-label={`${lane.fullLabel} — ${copy.readAbout}`}>
-        <title>{`${title} — ${copy.readAbout}`}</title>
+      <a href={nameHref} aria-label={`${lane.fullLabel} — ${nameAction}`}>
+        <title>{`${title} — ${nameAction}`}</title>
         {/* Sized to the name, not to a constant. It was a fixed 120x15 under
             text whose median drawn width is 235px, so **96% of English names
             and 80% of Japanese ones were wider than their own click target** —

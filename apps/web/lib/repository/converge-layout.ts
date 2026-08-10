@@ -93,6 +93,7 @@
 // the same estimator the other canvases use, so nothing here needs a DOM. What a
 // reader has opened is in the URL (`?open=`), never in component state — a
 // control that only works after hydration has no address (D88.2).
+import { withCard } from "./map-card.ts";
 import { estimateTextWidth, fitLabel, LANE_FONT_PX, stateHref } from "./process-layout.ts";
 import {
   bellyOf,
@@ -581,6 +582,16 @@ export interface ConvergeState {
   cy: number;
   r: number;
   href: string;
+  /**
+   * Where clicking the circle goes **when this surface has a card layer**: this
+   * same figure, with the state's card open over it. Null everywhere else, and
+   * then `href` is the only destination.
+   *
+   * See `layoutFigure`'s `cards` option for why this is a field rather than
+   * something the renderer derives — the answer is a property of the *surface*,
+   * and the renderer for the two surfaces is one component.
+   */
+  cardHref: string | null;
   /** True at the two ends of the whole figure. */
   terminal: boolean;
   /** How many lanes arrive here and how many leave — the convergence, as a number. */
@@ -751,6 +762,19 @@ export interface ConvergeLane {
   openHref: string | null;
   /** Where clicking the **name** goes: the thing's own page. */
   href: string;
+  /**
+   * Where clicking the **name** goes instead, on a surface that has a card.
+   *
+   * Null on the node page and null on any lane with no node id — a lane that is
+   * nobody's node has no card to open, and the fallback is `href`.
+   *
+   * The full page is never lost: `MapCardPanel` draws `card.pageHref` as the
+   * card's first link, so repointing a name costs the reader one click rather
+   * than a destination. That is the one thing about this change a reader could
+   * object to, and it is why the link is at the top of the card rather than the
+   * bottom.
+   */
+  cardHref: string | null;
   open: boolean;
   /** What is inside, whether or not it is open — so a shut line can say so. */
   inside: number;
@@ -832,6 +856,8 @@ export interface ConvergeFeed {
   shortLabel: string | null;
   labelTruncated: boolean;
   href: string;
+  /** As `ConvergeLane.cardHref`: the card for this ingredient, or null. */
+  cardHref: string | null;
   /** The stub: from a point beside the strand, outward. */
   x: number;
   y0: number;
@@ -2168,6 +2194,11 @@ function place(
     parentKey: string | null;
     /** The stub this strand hangs off. See `ConvergeLane.feedKey`. */
     feedKey: string | null;
+    /**
+     * This figure's own address, for hanging a `?card=` off. Null on a surface
+     * with no card layer — see `layoutFigure`'s `cards` option.
+     */
+    cardBase: string | null;
   },
 ): void {
   const M = CONVERGE_METRICS;
@@ -2310,6 +2341,14 @@ function place(
     fullLabel: strand.label,
     shortLabel: strand.shortLabel,
     labelTruncated: fitted.truncated,
+    // `strand.id`, not the lane's node-page href: the card is addressed by node
+    // id, and a lane that is nobody's node — the stretch a method performs
+    // itself — has none. Those fall back to `href` and keep going to the
+    // method's page, unchanged.
+    cardHref:
+      context.cardBase !== null && strand.id !== null
+        ? withCard(context.cardBase, strand.id)
+        : null,
     composite: strand.composite,
     nameless: strand.nameless,
     bone: onBone,
@@ -2415,6 +2454,14 @@ function place(
         cy: round(at.y),
         r: M.innerStateRadius,
         href: stateHref(stateId),
+        // **Null, deliberately, and not because the surface has no card layer.**
+        // `?card=` resolves against `layerNode`, and a state is not a layer-graph
+        // node — it lives in `state-vocabulary`. So a card href on a circle would
+        // resolve to nothing, `parseCardId` would count it dropped, and the
+        // circle would be a control that does nothing: the dead control this
+        // canvas has produced twice already. The state card is W5 slice three,
+        // and this field is where it lands when `cardFor` can build one.
+        cardHref: null,
         terminal: false,
         arriving: 1,
         leaving: 1,
@@ -2498,6 +2545,10 @@ function placeFeeds(
       shortLabel: feed.shortLabel,
       labelTruncated: fitted.truncated,
       href: feed.href,
+      cardHref:
+        context.cardBase !== null && feed.id !== null
+          ? withCard(context.cardBase, feed.id)
+          : null,
       x: round(at.x),
       y0: round(y0),
       y1: round(y1),
@@ -2740,6 +2791,25 @@ export function layoutConverge(options: {
    * continuous surface" turned out to be.
    */
   at?: string | null;
+  /**
+   * This surface has a card layer, so a **name** opens a card in place.
+   *
+   * Off by default, and the default is the safe one. `figureHref` hardcodes
+   * `/repository/layers`, so a `?card=` href emitted on `/repository/layers/<id>`
+   * carries a *different* pathname from the page drawing it, and
+   * `canvas-continuity` intercepts by pathname equality
+   * (`canvas-continuity.tsx:128`). It would therefore not intercept: the click
+   * would leave the node page altogether and land on the overview — the one
+   * destination the reader did not ask for. Three handoffs running said the risk
+   * here was the view-transition pairing; measured this session, it is this
+   * instead, and it is worse than what they warned about.
+   *
+   * `MapCardPanel` is mounted on exactly one surface
+   * (`repository-converge-view.tsx`), which is the same surface that passes this
+   * flag. A card href with no panel to open is the dead control this canvas has
+   * already produced twice.
+   */
+  cards?: boolean;
 }): ConvergeDiagram {
   return layoutFigure(options);
 }
@@ -2773,11 +2843,18 @@ function layoutFigure(options: {
    * so a nested child of the same method is never mistaken for it.
    */
   subjectAddress?: string | null;
+  cards?: boolean;
 }): ConvergeDiagram {
   const { graph, vocabulary, focus, locale } = options;
   const focusParam = options.focusParam === undefined ? focus.id : options.focusParam;
   const open = options.open ?? new Set<string>();
   const subjectAddress = options.subjectAddress ?? null;
+  // The address a `?card=` hangs off: **this figure, exactly as the reader has
+  // it**. Built once here from the same three parameters every other address on
+  // the figure is built from, rather than per-anchor, so a card link cannot
+  // carry a different focus, a different open set or a different viewport from
+  // the line beside it. Null when the surface has no card layer — see `cards`.
+  const cardBase = options.cards === true ? figureHref(focusParam, open, options.at) : null;
   const M = CONVERGE_METRICS;
   const expansion: Expansion = expansionOf(graph, vocabulary, focus);
   const caption = labelOf(focus, locale);
@@ -2907,6 +2984,8 @@ function layoutFigure(options: {
       cy: yc,
       r: M.stateRadius,
       href: stateHref(stateId),
+      /** Null for the same reason as the interior circles above. */
+      cardHref: null,
       terminal: index === 0 || index === plan.chain.length - 1,
       arriving: arriving.get(stateId) ?? 0,
       leaving: leaving.get(stateId) ?? 0,
@@ -2946,6 +3025,7 @@ function layoutFigure(options: {
         columnFit: columns[index]!.fit,
         parentKey: null,
         feedKey: null,
+        cardBase,
       });
     }
   }

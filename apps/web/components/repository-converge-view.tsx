@@ -674,6 +674,12 @@ export function ConvergeView({
       // `?at=`, and a link that carries the malformed original would keep it
       // alive across every click.
       at: atParam,
+      // **This surface, and only this surface, has a card to open.** It is the
+      // one place `MapCardPanel` is mounted (below), and `?card=` is read by
+      // exactly one route (`app/repository/layers/page.tsx`). The node page
+      // passes nothing and its names keep going to node pages — see the `cards`
+      // option for what would otherwise happen there.
+      cards: true,
     }),
   }));
   const drawn = figures.filter((figure) => !figure.diagram.empty);
