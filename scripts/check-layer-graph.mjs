@@ -274,9 +274,10 @@ const chainOf = (method) => {
 // **Only the methods a reader can actually open**, which is `planForMethod`'s
 // own `holds`: two hops or at least one ingredient. The predecessor of this test
 // skipped `steps.length === 0` for the same purpose and got it slightly wrong in
-// both directions — `backward-euler` names one step that is an ingredient rather
-// than a stage and was compared as though it drew a chain, while a method whose
-// every step is an ingredient (`hhl-qpe-inversion`, three of them) is genuinely
+// both directions — `backward-euler` named one step that was an ingredient rather
+// than a stage and was compared as though it drew a chain (session 118 removed
+// that step; `hhl-qpe-inversion`, with three of them, is the live witness now),
+// while a method whose every step is an ingredient is genuinely
 // openable and was too. What a leaf draws inside is nothing, and two nothings are
 // not a duplicate picture; that is why the four atomic phase-factor methods do
 // not show up here as one group of four.
@@ -320,11 +321,6 @@ const refinementChain = (ids) => {
 // row nothing exercises, and that error is the reason this list is worth having
 // — a stale exemption is where the next real collision hides.
 const KNOWN_TWINS = [
-  {
-    slot: "time-discretization",
-    methods: ["backward-euler", "trapezoidal-rule"],
-    why: "Two quadratures reaching the same solver. What differs is the discretization itself, which IS this slot, so there is no lower step to pin them apart with.",
-  },
   {
     slot: "quantum-linear-solve",
     methods: ["discrete-adiabatic-inversion", "eigenstate-filtering-inversion"],
