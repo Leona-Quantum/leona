@@ -2240,9 +2240,26 @@ test("every declared refinement is drawn on the lane of the method that declares
           assert.ok(lane.parentKey !== null, `${lane.key} is a variant with no parent`);
           const parent = byKey.get(lane.parentKey!);
           assert.ok(parent, `${lane.key} nests under ${lane.parentKey}, which is not drawn`);
+          // An ANCESTOR along the `refines` chain, not necessarily the direct
+          // target: `methodFanGroups` collapses a chain to its top-level
+          // ancestor (A refines B refines C nests A under C), so demanding the
+          // direct parent here would contradict the grouping's own rule the
+          // day the corpus authors a chain. Today every chain has length one,
+          // so the two readings coincide — this encodes the rule, not the
+          // coincidence.
+          assert.ok(lane.draws !== null, `${lane.key} is a variant that draws no method`);
+          let ancestor = parentOf.get(lane.draws!);
+          let reached = false;
+          while (ancestor !== undefined) {
+            if (ancestor === parent!.draws) {
+              reached = true;
+              break;
+            }
+            ancestor = parentOf.get(ancestor);
+          }
           assert.ok(
-            lane.draws !== null && parentOf.get(lane.draws) === parent!.draws,
-            `${lane.fullLabel} nests under ${parent!.fullLabel}, which is not the method it refines`,
+            reached,
+            `${lane.fullLabel} nests under ${parent!.fullLabel}, which is not on its refines chain`,
           );
           assert.ok(
             parent!.variantBracket !== null,

@@ -128,7 +128,7 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
       // that repeated the parent's name because graph order used to interleave
       // the group. The fan is grouped now: the relation is the nesting itself,
       // and the key explains the bracket a reader will actually see.
-      "A line drawn nested under another, inside a dashed bracket, is a narrower version of the line above it: the same construction, re-analysed or re-tuned, filling the same step. It is why two lines can draw the identical interior and still be two entries. Lines outside the bracket are alternatives to their neighbours, not versions of them.",
+      "A line drawn nested under another, on the soft shaded band behind it, is a narrower version of the line above it: the same construction, re-analysed or re-tuned, filling the same step. It is why two lines can draw the identical interior and still be two entries. Lines outside the band are alternatives to their neighbours, not versions of them.",
       "The map does not hide the gaps. An empty step is drawn as an empty step.",
     ],
     gaps: [
@@ -173,7 +173,7 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
     claims: [
       "実線は、その二つの工程を結びつけた論文があり、その出典を保持していることを意味します。長い破線は、経路は記録されているものの、その工程を満たす手法が名指しされていないことを意味します。短い破線は、公開された文献がそこを満たしていないことを意味します。工程は実在し、通る方法がまだ書かれていません。",
       "工程の名前のうしろに付く回数 — ×T/h、×O(κ) — は、その経路がその工程を 1 回ではなく、その回数だけ実行することを表します。出典が用いている記号そのままであり、その記号が何を指すのか、また 1 回あたり何が費やされるのかはカードに記してあります。回数の付かない工程は、繰り返すと述べた出典を確認できていない工程であって、1 回だけ実行するという意味ではありません。",
-      "破線の括弧の中で、別の線の下に入れ子で描かれている線は、その上の線をより狭めた版です。構成は同じで、それを再解析または再調整したものであり、埋める工程も同じです。二つの線が同一の内部を描きながらなお別の項目である理由がこれです。括弧の外にある線は、隣接するものの版ではなく、それに代わる選択肢です。",
+      "淡い帯の上で、別の線の下に入れ子で描かれている線は、その上の線をより狭めた版です。構成は同じで、それを再解析または再調整したものであり、埋める工程も同じです。二つの線が同一の内部を描きながらなお別の項目である理由がこれです。帯の外にある線は、隣接するものの版ではなく、それに代わる選択肢です。",
       "この地図は欠落を隠しません。空の工程は空の工程として描かれます。",
     ],
     gaps: [
