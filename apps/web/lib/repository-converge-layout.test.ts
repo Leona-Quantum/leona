@@ -49,6 +49,7 @@ import { cardFor, ownCardId } from "./repository/card-content.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import type { StateVocabulary } from "./repository/states.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
+import { PAPER_REGISTER } from "./repository/paper-register.ts";
 import type { PublicLocale } from "./public-locale.ts";
 
 const M = CONVERGE_METRICS;
@@ -3462,6 +3463,7 @@ const CARD_INPUT = {
   vocabulary: STATE_VOCABULARY,
   corpus: [],
   locale: "en",
+  register: PAPER_REGISTER,
 } as const;
 
 // --- the card layer, and which surface is allowed to offer it ----------------

@@ -27,6 +27,7 @@ import {
 } from "./repository/card-content.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
+import { PAPER_REGISTER } from "./repository/paper-register.ts";
 import { isMethod, layerNode, routeOf, type LayerCorpusEntry, type LayerMethod } from "./repository/layers.ts";
 
 const exists = (id: string) => layerNode(LAYER_GRAPH, id) !== null;
@@ -54,7 +55,7 @@ const CORPUS: LayerCorpusEntry[] = [
 
 const cards = (locale: "en" | "ja" = "en"): Card[] =>
   LAYER_GRAPH.nodes
-    .map((node) => cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale }, node.id))
+    .map((node) => cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale, register: PAPER_REGISTER }, node.id))
     .filter((card): card is Card => card !== null);
 
 test("?card= names a node, and an id that names nothing means shut", () => {
@@ -150,7 +151,7 @@ test("the card draws the sections the owner asked for, in the order he asked for
   // The own stretch, which is short on purpose. `no-slot` is in this list rather than
   // hardcoded in the panel — it was the one section the census could not see, which is
   // exactly the shape of the bug this test exists to prevent.
-  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en" } as const;
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER } as const;
   const own = cardFor(input, ownCardId("lchs-route"))!;
   assert.deepEqual(cardSections(own).map((section) => section.id), ["between", "contract", "no-slot"]);
 
@@ -203,7 +204,15 @@ test("the two gaps stay different facts — the undesigned sections never say 'n
   // from this level entirely: Theory *is* the chain now, and the other two are annotations
   // on a hop. Both were the owner's own re-decisions in §2. The hop-level sweep below is
   // where they are checked instead.
-  const undesigned = new Set(["example", "implementations", "classical-equivalents"]);
+  // **Two left this set in session 114, and that is the change.** `example` and
+  // `implementations` now read real fields on `LayerMethod`, so an empty one honestly
+  // reports `none-recorded`: we built the place to put it and nobody has written one yet.
+  // The sentence a reader sees changed from "we have not built this" to "we looked and
+  // found nothing", which is exactly the deliberate act the comment above demands.
+  //
+  // `classical-equivalents` is the last one standing — the classical column the owner asked
+  // for beside `bypasses`, which still has no field anywhere.
+  const undesigned = new Set(["classical-equivalents"]);
   let counted = 0;
   for (const card of cards()) {
     for (const section of cardSections(card)) {
@@ -225,7 +234,7 @@ test("the two gaps stay different facts — the undesigned sections never say 'n
       }
     }
   }
-  assert.ok(counted > 140, `only ${counted} undesigned sections swept`);
+  assert.ok(counted >= 19, `only ${counted} undesigned sections swept`);
 });
 
 test("Theory is held on every method, and every hop inside it is empty for the right reason", () => {
@@ -244,13 +253,13 @@ test("Theory is held on every method, and every hop inside it is empty for the r
     hops += new Set(swept.map((slot) => slot.hop)).size;
     for (const slot of swept) {
       slots += 1;
-      // `no-field-yet`, never `none-recorded`. Nothing on `LayerMethod` holds a hop's
-      // mathematics, its approximations or its assumptions. Saying "none found yet" would
-      // report a thin literature when the truth is a field nobody has built — the lie that
-      // survives, because a reader cannot tell the two apart.
-      assert.equal(
-        slot.state,
-        "no-field-yet",
+      // **`none-recorded` since session 114, and never `no-field-yet` again.**
+      // `LayerMethod.hops` exists now, so an empty slot is a source nobody has read rather
+      // than a field nobody has built. If one of these ever reports `no-field-yet` again,
+      // the field has been taken away and the card is telling a reader the model is still
+      // being designed when it is not.
+      assert.ok(
+        slot.state === "none-recorded" || slot.state === "held",
         `${card.id} hop ${slot.hop}/${slot.id} reported "${slot.state}"`,
       );
     }
@@ -336,7 +345,7 @@ test("a card is drawn in the reader's language, all the way down", () => {
   // are two levels down. A card that localised its headings and not its contents would look
   // translated and read as English.
   const pick = (locale: "en" | "ja", id: string) =>
-    cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale }, id)!;
+    cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale, register: PAPER_REGISTER }, id)!;
   let compared = 0;
   for (const node of LAYER_GRAPH.nodes) {
     const en = pick("en", node.id);
@@ -360,6 +369,183 @@ test("a card is drawn in the reader's language, all the way down", () => {
     }
   }
   assert.ok(compared > 40, `only ${compared} names were comparable across locales`);
+});
+
+// --- the three the card had nowhere to put ----------------------------------
+
+test("Example and Implementations stopped saying the model is still being designed", () => {
+  // **The flip, pinned from the card's side.** Both sections were `no-field-yet` on all
+  // 63 methods until session 114 — nothing anywhere could hold them. The owner signed
+  // both models off, the fields exist, and an empty one now says "none found yet": we
+  // built the place to put it and nobody has written one. The two sentences are different
+  // claims and the card exists to keep them apart, so this is the assertion that catches
+  // the field being quietly removed again.
+  for (const card of cards().filter((c) => c.kind === "method")) {
+    for (const id of ["example", "implementations"] as const) {
+      const section = cardSections(card).find((s) => s.id === id)!;
+      assert.notEqual(
+        sectionState(section),
+        "no-field-yet",
+        `${card.id}/${id} still reports an unbuilt field`,
+      );
+    }
+  }
+});
+
+test("the first pseudocode is on the map, and it is the sentences its own record already carries", () => {
+  // `backward-euler` is the one populated `example` in the graph. It is here rather than
+  // only in a fixture because a model with no instance anywhere has never been rendered in
+  // its held state, and "the layout has a value" is not "a reader can see one".
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER } as const;
+  const card = cardFor(input, "backward-euler");
+  assert.ok(card?.kind === "method");
+  assert.ok(card.example.held, "backward-euler draws no example");
+  const { pseudocode, text } = card.example.value;
+  assert.ok(pseudocode !== null && pseudocode.includes("\n"), "the pseudocode is not a block");
+  // **Every line of it restates a sentence already on the record.** The recurrence is the
+  // summary's, verbatim; the loop bound is `repeats.count`. Checked against the record
+  // rather than against a copy of the string, so the day somebody edits the summary's
+  // recurrence and leaves the listing behind, this fails instead of the reader finding it.
+  const node = layerNode(LAYER_GRAPH, "backward-euler")!;
+  assert.ok(isMethod(node));
+  assert.ok(
+    node.summary.includes("(I - hA)u_{k+1} = u_k + h b_{k+1}"),
+    "the summary no longer states the recurrence the pseudocode transcribes",
+  );
+  assert.ok(node.repeats?.["quantum-linear-solve"]?.count.includes("T/h"), "the loop bound moved");
+  // Prose is absent and that is deliberate — nobody has written up a run. The owner's
+  // "populate on demand" only works if the easy half can ship without the hard half.
+  assert.equal(text, null);
+  // Pseudocode is not localised: its identifiers are the record's own symbols, and a
+  // translated listing is a second one that drifts from the first.
+  const ja = cardFor({ ...input, locale: "ja" }, "backward-euler");
+  assert.ok(ja?.kind === "method" && ja.example.held);
+  assert.equal(ja.example.value.pseudocode, pseudocode);
+});
+
+test("an empty Implementations section carries a worklist, and never a count of zero", () => {
+  // `W5-card-spec.md`'s rule for an empty card is that it is a **worklist**, not a gap
+  // report. The register already records, per paper and from its abstract, whether it
+  // reports numerics or a hardware run — so an empty section can say what there is to
+  // write instead of only that nothing is written.
+  const methods = cards().filter((card) => card.kind === "method");
+  let withLeads = 0;
+  let simulation = 0;
+  let hardware = 0;
+  for (const card of methods) {
+    assert.ok(card.kind === "method");
+    if (!card.implementationLeads.held) continue;
+    withLeads += 1;
+    const leads = card.implementationLeads.value;
+    if (leads.simulation > 0) simulation += 1;
+    if (leads.hardware > 0) hardware += 1;
+    // A lead is a count of papers actually cited here — it cannot exceed them.
+    assert.ok(
+      leads.simulation <= (card.papers.held ? card.papers.value.length : 0),
+      `${card.id}: more simulation leads than papers`,
+    );
+  }
+  // Measured, not guessed: 25 methods cite a paper the register says reports numerics and
+  // 3 cite one reporting hardware. Pinned as floors — the register only grows by somebody
+  // reading another abstract, and this going up is the corpus working.
+  assert.ok(simulation >= 25, `${simulation} methods have a simulation lead, not 25+`);
+  assert.ok(hardware >= 3, `${hardware} methods have a hardware lead, not 3+`);
+  console.log(
+    `[implementation leads] ${withLeads}/${methods.length} methods have a read paper; ` +
+      `${simulation} with numerics, ${hardware} with hardware`,
+  );
+  // **All 63, and that is a fact about the corpus rather than about the code.** Every
+  // method cites at least one paper somebody has read for `reports`, so the absent branch
+  // below does not fire anywhere in the graph today. Recorded rather than asserted as a
+  // floor, because it going *down* is the interesting direction: a method authored with a
+  // single unread citation would land there.
+  assert.equal(withLeads, methods.length, `${withLeads}/${methods.length} methods have a read paper`);
+});
+
+test("a method whose papers nobody has read reports no leads, rather than none", () => {
+  // **Absent, never zero.** A method whose cited papers have no `reports` row has no count
+  // to report, and "0 papers report numerics" would claim a search that was never run —
+  // the same lie `no-field-yet` exists to keep out of the sections above.
+  //
+  // Proved against a fixture because the branch is unreachable in the authored graph: all
+  // 63 methods cite at least one read paper. An unreachable branch nothing exercises is a
+  // branch that is wrong the first time it runs, and 61 of the register's 145 rows carry
+  // no `reports` — so the case is one authored citation away, not hypothetical.
+  const graph: typeof LAYER_GRAPH = {
+    nodes: LAYER_GRAPH.nodes.map((node) =>
+      node.id === "backward-euler"
+        ? {
+            ...node,
+            citations: [
+              { title: "Unread", authors: "Nobody", year: "2024", url: "https://example.test/unread" },
+            ],
+          }
+        : node,
+    ),
+  };
+  const card = cardFor(
+    { graph, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER },
+    "backward-euler",
+  );
+  assert.ok(card?.kind === "method");
+  assert.equal(card.implementationLeads.held, false);
+  assert.equal(card.implementationLeads.held === false && card.implementationLeads.gap, "none-recorded");
+});
+
+test("a populated implementation draws the owner's five sub-sections, in his order", () => {
+  // **Exercised against a fixture rather than the corpus, on purpose.** Writing
+  // implementation entries means reading papers for what was run, on what hardware, with
+  // what data — corpus work with its own sourcing discipline, and not something to invent
+  // in order to prove a renderer. What has to be true *of the code* is that a populated
+  // entry resolves every sub-section and keeps them in his order, and a fixture says that
+  // without putting a sentence nobody sourced onto the map.
+  const graph: typeof LAYER_GRAPH = {
+    nodes: LAYER_GRAPH.nodes.map((node) =>
+      node.id === "backward-euler"
+        ? {
+            ...node,
+            implementations: [
+              {
+                id: "a-run",
+                label: "A run",
+                labelJa: "ある実行",
+                papers: [{ title: "T", authors: "A", year: "2024", url: "https://example.test/x" }],
+                about: "about-en",
+                aboutJa: "about-ja",
+                results: "results-en",
+                resultsJa: "results-ja",
+              },
+            ],
+          }
+        : node,
+    ),
+  };
+  const card = cardFor(
+    { graph, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER },
+    "backward-euler",
+  );
+  assert.ok(card?.kind === "method" && card.implementations.held);
+  const [entry] = card.implementations.value;
+  assert.equal(entry?.label, "A run");
+  assert.equal(entry?.papers.length, 1);
+  // His five, in his order, every time — resolved here rather than in JSX so that the
+  // gaps *inside* an implementation are countable, which is the whole reason this module
+  // exists one level up.
+  assert.deepEqual(entry?.sections.map((s) => s.id), ["about", "methods", "data", "code", "results"]);
+  assert.deepEqual(
+    entry?.sections.map((s) => sectionState(s)),
+    ["held", "none-recorded", "none-recorded", "none-recorded", "held"],
+  );
+  // And it localises all the way into the sub-section, which is two levels below the
+  // heading a translation pass would notice.
+  const ja = cardFor(
+    { graph, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "ja", register: PAPER_REGISTER },
+    "backward-euler",
+  );
+  assert.ok(ja?.kind === "method" && ja.implementations.held);
+  assert.equal(ja.implementations.value[0]?.label, "ある実行");
+  const about = ja.implementations.value[0]?.sections.find((s) => s.id === "about");
+  assert.ok(about?.value.held && about.value.value === "about-ja");
 });
 
 // --- what a method is a narrower version of ---------------------------------
@@ -422,7 +608,7 @@ test("a method's card says what it is a narrower version of, and what narrows it
 });
 
 test("the owner's LCHS pair: the identical chain now says which is the narrower one", () => {
-  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en" } as const;
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en", register: PAPER_REGISTER } as const;
   const improved = cardFor(input, "lchs-improved-kernel");
   const original = cardFor(input, "lchs-route");
   assert.ok(improved?.kind === "method" && original?.kind === "method");
@@ -514,7 +700,7 @@ test("the unnamed stretch is 57 of 63 methods, one each, and 14 of them follow a
 });
 
 test("the unnamed stretch has a card of its own, and it is not the method's card", () => {
-  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en" } as const;
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en", register: PAPER_REGISTER } as const;
   const card = cardFor(input, ownCardId("lchs-route"));
   assert.ok(card !== null && card.kind === "own-step", "no own-step card for lchs-route");
   assert.equal(card.from, "evolution-circuit");
@@ -531,7 +717,7 @@ test("the unnamed stretch has a card of its own, and it is not the method's card
 });
 
 test("an own: card exists for exactly the methods that have the stretch, and no others", () => {
-  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en" } as const;
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en", register: PAPER_REGISTER } as const;
   let built = 0;
   for (const method of LAYER_GRAPH.nodes.filter(isMethod) as LayerMethod[]) {
     const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);

@@ -334,6 +334,162 @@ export interface LayerMethod extends LayerNodeBase {
    * of sentence §3.6 forbids inventing.
    */
   repeats?: Readonly<Record<string, StepRepetition>>;
+  /**
+   * Hop → the mathematics of that hop, and what it approximates and assumes.
+   *
+   * ## Why the hop and not the method
+   *
+   * The owner asked for the theory *"highlighted along the way"* and, on the
+   * two candidate models for approximations and assumptions — prose on the
+   * method, or an annotation on a step of the trace — chose the second:
+   * *"confirm the second."*
+   *
+   * That is the same argument `through`, `via` and `repeats` already make, and
+   * it is not a stylistic one. **A method does not approximate; it approximates
+   * something.** `schrodingerisation` makes its approximation in the warped
+   * phase transformation and none in the Hamiltonian simulation that follows;
+   * a field on the node would say the route approximates and leave a reader to
+   * guess which of three hops paid for it — a three-way guess about where the
+   * error lives, on the field whose whole purpose is to say where the error
+   * lives.
+   *
+   * ## The key
+   *
+   * A **capability id** for a hop a named slot covers, exactly as `repeats` and
+   * `via` are keyed. For the stretch a method closes itself — `routeOf`'s
+   * trailing segment, which 57 of the 63 methods carry — the key is the
+   * **method's own id**. That is unambiguous rather than a convention: node ids
+   * are unique across the whole graph, so a method id can never also be a
+   * capability id, and validation checks that a key is one or the other.
+   *
+   * A sentinel like `"self"` was the alternative and is worse for the reason
+   * every sentinel is: it means something only where something scopes it, and
+   * nothing here would stop a capability being authored with that id.
+   *
+   * ## Only where a source states it
+   *
+   * Absent is the common and correct case, and absent means *no source we read
+   * stated one* — never *there is no approximation here*. Nothing is derived: an
+   * approximation a reader would plausibly expect at a hop is exactly the kind
+   * of sentence the map is forbidden to invent.
+   */
+  hops?: Readonly<Record<string, HopNote>>;
+  /**
+   * A worked example of running this method, and the pseudocode for it.
+   *
+   * The owner's seventh section, and the one he was pushed back on: across 63
+   * methods it is the largest content commitment on his list. His answer took
+   * the recommendation — *"build the field for all, populate on demand, and let
+   * the card say 'none written yet' for the rest rather than pretend"* — and
+   * added the part that makes it tractable: *"although i will say pseudo code
+   * could definitely be easy enough as a first pass."*
+   *
+   * So `pseudocode` is here beside the prose rather than inside it, because it
+   * is the half that can be written from the method's own recorded contract and
+   * step list, while `text` needs a run somebody actually did. A card can hold
+   * one without the other, and conflating them into one prose field would make
+   * "we have the easy half" unsayable.
+   */
+  example?: MethodExample;
+  /**
+   * Every implementation of this method, with the paper as an attribute of the
+   * entry rather than the other way round.
+   *
+   * ## The two sketches were different trees, and this is the one he chose
+   *
+   * Session 109 was *per paper*, with independently-derived and non-paper runs
+   * as siblings. Session 113 was *per implementation*, each with sub-sections.
+   * They are not the same shape: **one paper can hold two implementations and
+   * one implementation can be described by two papers**, so a tree rooted at
+   * papers cannot express either case without duplicating a node.
+   *
+   * Rooted at the implementation, `papers` becomes an ordinary field with zero,
+   * one or many values — and the three branches he first wrote out ("per
+   * paper", "independently derived from what a paper described", "not from a
+   * paper but proven to be run") stop being three branches and become three
+   * values of one field. He was shown that tree and said *"yes."*
+   *
+   * ## Absent is not zero
+   *
+   * Absent means nobody has written this method's implementations down. It does
+   * **not** mean none exist, and the card must not say so — the paper register
+   * already records, per paper and from its abstract, whether it reports
+   * numerics or a hardware run, and 25 of the 63 methods cite a paper that
+   * reports simulation. So an empty section here has a worklist behind it, not
+   * a verdict.
+   */
+  implementations?: readonly MethodImplementation[];
+}
+
+/**
+ * What a source says about one hop of a route.
+ *
+ * Every field optional, and at least one required — a note that says nothing is
+ * a key with no fact behind it, and `validateLayerGraph` rejects it. Each is a
+ * pair or neither, like every other prose field on this type: one locale alone
+ * renders as a hole for half the readers.
+ */
+export interface HopNote {
+  /** The mathematics of the hop, as the source states it. */
+  theory?: string;
+  theoryJa?: string;
+  /** What is approximated **here**, and what that costs. */
+  approximations?: string;
+  approximationsJa?: string;
+  /** What this hop needs to be true, beyond the method's own conditions. */
+  assumptions?: string;
+  assumptionsJa?: string;
+}
+
+/** A worked example, its pseudocode, or both. See `LayerMethod.example`. */
+export interface MethodExample {
+  /** Prose: an example of running it. Absent when nobody has written one. */
+  text?: string;
+  textJa?: string;
+  /**
+   * Pseudocode, as a plain block. **Not localised, and that is deliberate.**
+   * The identifiers are the record's own symbols and the keywords are the
+   * language's; translating either would produce a second listing that has to
+   * be kept in step with the first and would drift. Comments inside it are the
+   * part a reader needs in their own language, and those belong in `text`.
+   */
+  pseudocode?: string;
+}
+
+/**
+ * One implementation of a method. See `LayerMethod.implementations`.
+ *
+ * The five sub-sections are the owner's, verbatim from the tree he approved:
+ * About (where it came from and the problem statement), Methods (what was
+ * actually done), Data (inputs and their provenance), Code (the artefact) and
+ * Results (what came out, with the hardware or simulator named).
+ *
+ * `id` and the two labels are required; everything else is absent until
+ * somebody reads the source. An entry with a name and nothing else is still
+ * worth having — it says an implementation exists and nobody has written it up,
+ * which is a different fact from silence.
+ */
+export interface MethodImplementation {
+  /** Unique within this method. Kebab-case, like every other id here. */
+  id: string;
+  label: string;
+  labelJa: string;
+  /**
+   * The papers describing it: **zero, one or many.** Zero is a real value — his
+   * *"other implementations that aren't papers but proven to be run"*. Every
+   * url here must resolve in the paper register, like any other citation.
+   */
+  papers?: readonly LayerCitation[];
+  about?: string;
+  aboutJa?: string;
+  methods?: string;
+  methodsJa?: string;
+  data?: string;
+  dataJa?: string;
+  code?: string;
+  codeJa?: string;
+  results?: string;
+  resultsJa?: string;
 }
 
 /**
@@ -1688,6 +1844,107 @@ export function validateLayerGraph(
     }
     if (node.atomic && node.steps.length > 0) {
       errors.push(`${node.id}: atomic is set beside a non-empty steps list`);
+    }
+
+    // --- the three the card had nowhere to put ------------------------------
+    //
+    // Same two rules every prose field on this type holds to — never `""`, and
+    // a pair or neither — applied one level down, where they are easier to
+    // break because nothing about a nested object makes a missing twin obvious.
+    const pairs = (
+      owner: string,
+      fields: ReadonlyArray<readonly [string, string | undefined, string | undefined]>,
+    ) => {
+      for (const [name, en, ja] of fields) {
+        if (en !== undefined && en.trim() === "") {
+          errors.push(`${node.id}: ${owner}.${name} is present but empty — omit it instead`);
+        }
+        if (ja !== undefined && ja.trim() === "") {
+          errors.push(`${node.id}: ${owner}.${name}Ja is present but empty — omit it instead`);
+        }
+        if ((en === undefined) !== (ja === undefined)) {
+          errors.push(`${node.id}: ${owner}.${name} is present in one locale only`);
+        }
+      }
+    };
+
+    for (const [key, note] of Object.entries(node.hops ?? {})) {
+      // The key is a step of this route, or this method itself — the stretch it
+      // closes with no named slot. Anything else annotates a hop the reader
+      // never sees, which is a note that can never be wrong because it is never
+      // read.
+      if (key !== node.id && !node.steps.includes(key)) {
+        errors.push(
+          `${node.id}: hops names ${key}, which is neither one of its steps nor the method itself`,
+        );
+      }
+      pairs(`hops[${key}]`, [
+        ["theory", note.theory, note.theoryJa],
+        ["approximations", note.approximations, note.approximationsJa],
+        ["assumptions", note.assumptions, note.assumptionsJa],
+      ]);
+      // A key with no fact behind it. `repeats` rejects the same shape, and for
+      // the same reason: it draws a disclosure a reader opens onto nothing.
+      //
+      // **Every locale counts, not just `en`.** A note carrying only Japanese is
+      // malformed — the pair rule above says so — but it is not *empty*, and
+      // reporting both errors would tell an author to delete a sentence when
+      // what they need to do is write its twin. One defect, one diagnosis.
+      if (Object.values(note).every((value) => value === undefined)) {
+        errors.push(`${node.id}: hops[${key}] records nothing — omit it instead`);
+      }
+    }
+
+    if (node.example !== undefined) {
+      pairs("example", [["text", node.example.text, node.example.textJa]]);
+      if (node.example.pseudocode !== undefined && node.example.pseudocode.trim() === "") {
+        errors.push(`${node.id}: example.pseudocode is present but empty — omit it instead`);
+      }
+      if (node.example.text === undefined && node.example.pseudocode === undefined) {
+        errors.push(`${node.id}: example records nothing — omit it instead`);
+      }
+    }
+
+    const implIds = new Set<string>();
+    for (const implementation of node.implementations ?? []) {
+      if (!/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(implementation.id)) {
+        errors.push(`${node.id}: implementation id is not kebab-case — ${implementation.id}`);
+      }
+      // Unique within the method, not globally: an implementation is addressed
+      // through its method, and two methods may honestly both have a "qiskit"
+      // one.
+      if (implIds.has(implementation.id)) {
+        errors.push(`${node.id}: two implementations share the id ${implementation.id}`);
+      }
+      implIds.add(implementation.id);
+      if (implementation.label.trim() === "" || implementation.labelJa.trim() === "") {
+        errors.push(`${node.id}: implementation ${implementation.id} has an empty name`);
+      }
+      pairs(`implementations[${implementation.id}]`, [
+        ["about", implementation.about, implementation.aboutJa],
+        ["methods", implementation.methods, implementation.methodsJa],
+        ["data", implementation.data, implementation.dataJa],
+        ["code", implementation.code, implementation.codeJa],
+        ["results", implementation.results, implementation.resultsJa],
+      ]);
+      // Zero papers is a real value — his "implementations that aren't papers
+      // but proven to be run" — so this checks the ones that are there, and
+      // never that there are any.
+      for (const citation of implementation.papers ?? []) {
+        if (!citation.url.startsWith("https://")) {
+          errors.push(
+            `${node.id}: implementation ${implementation.id} cites a non-https url — ${citation.url}`,
+          );
+        }
+        if (citation.title.trim() === "") {
+          errors.push(`${node.id}: implementation ${implementation.id} cites a paper with no title`);
+        }
+        if (!/^\d{4}$/.test(citation.year)) {
+          errors.push(
+            `${node.id}: implementation ${implementation.id} cites a paper with a year of ${citation.year}`,
+          );
+        }
+      }
     }
   }
 
