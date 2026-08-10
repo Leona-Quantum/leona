@@ -16,7 +16,15 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import { parseCardId, withCard } from "./repository/map-card.ts";
-import { cardExists, cardFor, cardSections, ownCardId, type Card } from "./repository/card-content.ts";
+import {
+  cardExists,
+  cardFor,
+  cardHopSlots,
+  cardSections,
+  ownCardId,
+  sectionState,
+  type Card,
+} from "./repository/card-content.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 import { isMethod, layerNode, routeOf, type LayerCorpusEntry, type LayerMethod } from "./repository/layers.ts";
@@ -93,65 +101,172 @@ test("every node in the graph draws a card, and every card keeps the way onward"
   }
 });
 
+test("the card draws the sections the owner asked for, in the order he asked for them", () => {
+  // **This is the test that had no subject before session 114.** `cardSections` and the
+  // panel were two lists of the same sections in two different orders, and the panel did
+  // not import this one — so the order a reader saw was pinned nowhere, and a section could
+  // have left the drawing entirely while this census went on counting it. The panel now
+  // renders from `cardSections`, which makes the order a fact rather than an intention.
+  //
+  // The order is `OWNER_TODO` §2, answered in full. His seven were Input, Theory, Output,
+  // Requires, Example, Performance, Implementations; *When it applies* is first because he
+  // made it its own section (*"okay, it's own section"*), and *Where the claim is contested*
+  // sits after Performance because he kept it out of it.
+  const method = cards().find((card) => card.kind === "method")!;
+  assert.deepEqual(
+    cardSections(method).map((section) => section.id),
+    [
+      "when-it-applies",
+      "input",
+      "theory",
+      "output",
+      "requires",
+      "example",
+      "performance",
+      "contested",
+      "implementations",
+      "records",
+    ],
+  );
+  // And it is the same order on every method, not just the first one sampled.
+  for (const card of cards().filter((c) => c.kind === "method")) {
+    assert.deepEqual(
+      cardSections(card).map((s) => s.id),
+      cardSections(method).map((s) => s.id),
+      `${card.id} draws its sections in a different order`,
+    );
+  }
+
+  const process = cards().find((card) => card.kind === "process")!;
+  assert.deepEqual(cardSections(process).map((section) => section.id), [
+    "contract",
+    "why-a-layer",
+    "filled-by",
+    "bypassed-by",
+    "classical-equivalents",
+    "records",
+  ]);
+
+  // The own stretch, which is short on purpose. `no-slot` is in this list rather than
+  // hardcoded in the panel — it was the one section the census could not see, which is
+  // exactly the shape of the bug this test exists to prevent.
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en" } as const;
+  const own = cardFor(input, ownCardId("lchs-route"))!;
+  assert.deepEqual(cardSections(own).map((section) => section.id), ["between", "contract", "no-slot"]);
+
+  // **Papers are deliberately not a section.** He was asked whether a reference list should
+  // be an eighth one and said *"confirm, it isn't needed for papers to be their own
+  // section"*. They are 63/63 and cannot be a gap, so they are chrome below the sections.
+  //
+  // Not asserted here, and that is not an omission: `"papers"` is no longer a member of
+  // `CardSectionId`, so `section.id === "papers"` does not compile. The type is the gate,
+  // and a runtime check beside it would be a test that can never fail — which reads like
+  // coverage and is the absence of it.
+  //
+  // What a test *can* still hold is that every card carries them somewhere, which the
+  // census below does off `card.papers` directly.
+});
+
 test("a section is never empty and silent — every one resolves to held, or to which gap", () => {
   const seen = new Set<string>();
   for (const card of cards()) {
     const sections = cardSections(card);
-    // Twelve on a method, seven on a process — the two card kinds are different
-    // shapes, and a floor that only fitted the fatter one would pass a process card
-    // that had lost half its sections.
-    const floor = card.kind === "method" ? 12 : 7;
+    // Ten on a method, six on a process — the two card kinds are different shapes, and a
+    // count that only fitted the fatter one would pass a process card that had lost half
+    // its sections.
+    const expected = card.kind === "method" ? 10 : 6;
     assert.equal(
       sections.length,
-      floor,
-      `${card.id} (${card.kind}) draws ${sections.length} sections, not ${floor}`,
+      expected,
+      `${card.id} (${card.kind}) draws ${sections.length} sections, not ${expected}`,
     );
     for (const section of sections) {
       seen.add(`${card.kind}:${section.id}`);
       assert.ok(
-        ["held", "none-recorded", "no-field-yet"].includes(section.state),
-        `${card.id}/${section.id} resolved to ${section.state}`,
+        ["held", "none-recorded", "no-field-yet"].includes(sectionState(section)),
+        `${card.id}/${section.id} resolved to ${sectionState(section)}`,
       );
     }
   }
   // Pinned so a section cannot quietly leave the card. Removing one is a change to this
   // number, which is a change somebody has to justify in a diff.
-  assert.equal(seen.size, 19, `${seen.size} distinct sections: ${[...seen].sort().join(", ")}`);
+  assert.equal(seen.size, 16, `${seen.size} distinct sections: ${[...seen].sort().join(", ")}`);
 });
 
 test("the two gaps stay different facts — the undesigned sections never say 'none found yet'", () => {
-  // The four sections with no field anywhere. If one of these ever reports `none-recorded`,
+  // The sections with no field anywhere. If one of these ever reports `none-recorded`,
   // somebody has given it a field and forgotten to say so — which is fine, and has to be
   // deliberate, because the copy a reader sees changes from "we have not built this" to "we
   // looked and found nothing".
-  const undesigned = new Set([
-    "theory-trace",
-    "approximations",
-    "assumptions",
-    "implementations",
-    "classical-equivalents",
-  ]);
+  //
+  // `theory-trace`, `approximations` and `assumptions` used to be on this list and are gone
+  // from this level entirely: Theory *is* the chain now, and the other two are annotations
+  // on a hop. Both were the owner's own re-decisions in §2. The hop-level sweep below is
+  // where they are checked instead.
+  const undesigned = new Set(["example", "implementations", "classical-equivalents"]);
   let counted = 0;
   for (const card of cards()) {
     for (const section of cardSections(card)) {
+      const state = sectionState(section);
       if (undesigned.has(section.id)) {
         counted += 1;
         assert.equal(
-          section.state,
+          state,
           "no-field-yet",
-          `${card.id}/${section.id} reported "${section.state}" — a section with no field ` +
+          `${card.id}/${section.id} reported "${state}" — a section with no field ` +
             `behind it must not tell a reader the search came back empty`,
         );
       } else {
         assert.notEqual(
-          section.state,
+          state,
           "no-field-yet",
           `${card.id}/${section.id} says no field holds it, but one does`,
         );
       }
     }
   }
-  assert.ok(counted > 200, `only ${counted} undesigned sections swept`);
+  assert.ok(counted > 140, `only ${counted} undesigned sections swept`);
+});
+
+test("Theory is held on every method, and every hop inside it is empty for the right reason", () => {
+  // **Two levels, two honest answers, and one number could not carry both.** Theory is held
+  // on all 63 methods because the chain is structural and `routeOf` computes it — that is
+  // exactly why the owner chose the chain as its spine, so the section is honest on day one
+  // and fills in hop by hop. But a reader who opens it finds nothing yet, and a census
+  // reporting only "Theory: held" would describe a card fuller than it reads.
+  const methods = cards().filter((card) => card.kind === "method");
+  let slots = 0;
+  let hops = 0;
+  for (const card of methods) {
+    const theory = cardSections(card).find((section) => section.id === "theory")!;
+    assert.equal(sectionState(theory), "held", `${card.id}: Theory is not held`);
+    const swept = cardHopSlots(card);
+    hops += new Set(swept.map((slot) => slot.hop)).size;
+    for (const slot of swept) {
+      slots += 1;
+      // `no-field-yet`, never `none-recorded`. Nothing on `LayerMethod` holds a hop's
+      // mathematics, its approximations or its assumptions. Saying "none found yet" would
+      // report a thin literature when the truth is a field nobody has built — the lie that
+      // survives, because a reader cannot tell the two apart.
+      assert.equal(
+        slot.state,
+        "no-field-yet",
+        `${card.id} hop ${slot.hop}/${slot.id} reported "${slot.state}"`,
+      );
+    }
+  }
+  // Three slots per hop, on every hop of every method. Pinned so that giving one of them a
+  // real field is a visible change to this file rather than a silent flip in the copy a
+  // reader sees.
+  assert.equal(slots, hops * 3, `${slots} slots over ${hops} hops`);
+  // **91, measured, not a floor.** 43 methods draw a single hop — the stretch they close
+  // themselves, with no named step at all — 12 draw two and 8 draw three. It is pinned
+  // exactly because the next corpus change that touches it is a known one: authoring the
+  // readout slot for `evolution-circuit → solution-answer` (`OWNER_TODO` §1) closes four
+  // methods' own stretches and would move this number. That should arrive as a failing
+  // assertion somebody updates deliberately, not as a quiet drift.
+  assert.equal(hops, 91, `${hops} hops, not 91`);
+  console.log(`[theory census] ${methods.length} methods, ${hops} hops, ${slots} empty slots`);
 });
 
 test("the card reads the map node, which is the populated side of the join", () => {
@@ -162,13 +277,26 @@ test("the card reads the map node, which is the populated side of the join", () 
   const methods = cards().filter((card) => card.kind === "method");
   assert.equal(methods.length, LAYER_GRAPH.nodes.filter(isMethod).length);
   const held = (id: string) =>
-    methods.filter((card) => cardSections(card).find((s) => s.id === id)?.state === "held").length;
-  assert.ok(held("contract") === methods.length, `contract held on ${held("contract")}/${methods.length}`);
-  assert.ok(held("trace") === methods.length, `trace held on ${held("trace")}/${methods.length}`);
-  assert.ok(held("papers") === methods.length, `papers held on ${held("papers")}/${methods.length}`);
+    methods.filter((card) => {
+      const section = cardSections(card).find((s) => s.id === id);
+      return section !== undefined && sectionState(section) === "held";
+    }).length;
+  // Input and Output are one contract read twice, so they are the same number by
+  // construction — asserted rather than assumed, because the day they differ is the day
+  // somebody gave one half its own value and the two can disagree about whether a contract
+  // was recorded at all.
+  assert.equal(held("input"), methods.length, `input held on ${held("input")}/${methods.length}`);
+  assert.equal(held("output"), held("input"), "Input and Output disagree about one contract");
+  assert.equal(held("theory"), methods.length, `theory held on ${held("theory")}/${methods.length}`);
   assert.ok(held("when-it-applies") >= 61, `when-it-applies held on ${held("when-it-applies")}`);
-  assert.ok(held("cost") >= 42, `cost held on ${held("cost")}`);
+  assert.ok(held("performance") >= 42, `performance held on ${held("performance")}`);
   assert.ok(held("contested") >= 22, `contested held on ${held("contested")}`);
+  assert.ok(held("requires") >= 1, `requires held on ${held("requires")}`);
+  // Papers left the section list and became chrome, so they are counted off the card
+  // directly. Still 63/63, and still the thing that makes every other gap on the card
+  // legible: a method with no paper would be a claim with no source.
+  const withPapers = methods.filter((card) => card.papers.held).length;
+  assert.equal(withPapers, methods.length, `papers held on ${withPapers}/${methods.length}`);
   // And the record side, which is the half the decision was about: thin, and said so.
   // A *ceiling*, not a floor — this is the number that makes "join rather than merge" the
   // right call, and it going up is the thing that would make the call worth revisiting.
@@ -179,9 +307,9 @@ test("the card reads the map node, which is the populated side of the join", () 
       `no longer thin, so "the card reads the node because the record is empty" wants re-deciding`,
   );
   console.log(
-    `[card census] ${methods.length} methods: contract ${held("contract")}, trace ${held("trace")}, ` +
-      `papers ${held("papers")}, conditions ${held("when-it-applies")}, cost ${held("cost")}, ` +
-      `contested ${held("contested")}, records ${withRecord}`,
+    `[card census] ${methods.length} methods: input/output ${held("input")}, theory ${held("theory")}, ` +
+      `papers ${withPapers}, conditions ${held("when-it-applies")}, performance ${held("performance")}, ` +
+      `contested ${held("contested")}, requires ${held("requires")}, records ${withRecord}`,
   );
 });
 

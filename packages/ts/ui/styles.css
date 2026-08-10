@@ -12836,6 +12836,63 @@ div.mj-rail-row:hover {
   color: var(--text-2);
   font-size: var(--fs-12);
 }
+/* **A hop of Theory — the second nesting level, and the one the owner asked
+   for.** *"Theory renders the chain as its spine, each hop collapsible and empty
+   until the mathematics is written."* Shut by default, so the section reads at
+   the density the flat list used to and opens into what a source would add.
+   The marker is suppressed and the summary carries the states itself: the row is
+   already two lines of monospace and a name, and a disclosure triangle in front
+   of it pushes the chain out of alignment with the hops that have no slot. */
+.mj-card-hop > summary {
+  cursor: pointer;
+  list-style: none;
+}
+.mj-card-hop > summary::-webkit-details-marker {
+  display: none;
+}
+/* The affordance the marker would have carried, moved onto the name so the
+   states stay flush left. `currentColor` rather than a border token: it must
+   follow the name it underlines through both themes. */
+.mj-card-hop > summary .mj-card-hop-via,
+.mj-card-hop > summary .mj-card-trace-own {
+  text-decoration: underline dotted from-font;
+  text-underline-offset: 2px;
+}
+.mj-card-hop-body {
+  padding: var(--sp-2) 0 var(--sp-3) var(--sp-3);
+  border-left: var(--border-hairline) solid var(--border-0);
+}
+.mj-card-hop-onward {
+  margin: 0 0 var(--sp-3);
+}
+.mj-card-hop-slot + .mj-card-hop-slot {
+  margin-top: var(--sp-3);
+}
+.mj-card-hop-slot-name {
+  margin: 0 0 var(--sp-1);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+/* **The reference list, below the sections rather than among them.** The owner
+   confirmed papers are not an eighth section — they are 63/63 on a method and a
+   collapsible heading over a list that is always full is a control with one
+   state. It sits at the foot, ruled off, as chrome. */
+.mj-card-references {
+  padding: var(--sp-4) 0 var(--sp-2);
+}
+.mj-card-references > h3 {
+  margin: 0 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+  font-weight: 500;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+}
+.mj-card-references .mj-card-list {
+  font-size: var(--fs-14);
+}
 .mj-card-dl {
   margin: 0;
   display: grid;

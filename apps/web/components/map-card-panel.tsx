@@ -29,14 +29,17 @@ import { useRouter } from "next/navigation";
 import type {
   Card,
   CardGap,
+  CardSectionId,
   CoverageAnswer,
   CardHop,
   CardLink,
   CardValue,
+  HopSlotId,
   MethodCard,
   OwnStepCard,
   ProcessCard,
 } from "../lib/repository/card-content";
+import { cardSections, HOP_SLOTS } from "../lib/repository/card-content";
 import { ownStepName } from "../lib/repository/converge-layout";
 import type { PublicLocale } from "../lib/public-locale";
 
@@ -61,42 +64,28 @@ interface Copy {
   refinedBy: string;
   noneFound: string;
   noField: string;
-  /** The worklist line on the own-step card. See `OwnStepSections`. */
+  /** The worklist line on the own-step card. See the `no-slot` arm of `Body`. */
   noSlotHere: string;
   sections: Record<CardSectionId, string>;
+  /** The three slots inside a hop of Theory. See `CardHop` in `card-content.ts`. */
+  hopSlots: Record<HopSlotId, string>;
   takes: string;
   returns: string;
+  /** The paper list, below the sections rather than among them — the owner's §2 Q4. */
+  references: string;
   narrowed: string;
   coverage: Record<CoverageAnswer, string>;
 }
 
 /**
- * Every section id a card can draw, and the reason it is written out here.
- *
- * `cardSections` in `card-content.ts` produces exactly these, and a `Record` of
- * them means a section added there without a title here is a **type error** in
- * both locales rather than a heading that renders as `undefined` on the map.
+ * The section ids live in `card-content.ts` now, beside the list that orders
+ * them, and this file imports the type. It used to be declared here — which was
+ * half of the reason the panel and the census could disagree about what a card
+ * draws. A `Record<CardSectionId, string>` still means a section added there
+ * without a title here is a **type error** in both locales rather than a heading
+ * that renders as `undefined` on the map; what is new is that the *order* has
+ * one writer as well as the membership.
  */
-type CardSectionId =
-  | "contract"
-  | "trace"
-  | "when-it-applies"
-  | "cost"
-  | "approximations"
-  | "assumptions"
-  | "contested"
-  | "ingredients"
-  | "theory-trace"
-  | "implementations"
-  | "papers"
-  | "records"
-  | "between"
-  | "no-slot"
-  | "why-a-layer"
-  | "filled-by"
-  | "bypassed-by"
-  | "classical-equivalents";
-
 const COPY: Record<Lang, Copy> = {
   en: {
     lang: "en",
@@ -122,19 +111,27 @@ const COPY: Record<Lang, Copy> = {
     noField: "No field holds this yet — the model is still being designed.",
     noSlotHere:
       "The method closes this stretch itself, and the vocabulary has no name for it yet. A named step here would be one worth finding.",
+    /**
+     * The owner's own section names, from `OWNER_TODO` §2.
+     *
+     * Kept as close to his words as a heading can be. *Requires* was "What it
+     * needs" and *Performance* was "Cost, as the sources state it"; both are
+     * renames of a section already at 63/63 and 42/63, and neither changes what
+     * is read. *Theory* is new as a heading and old as content — it is the
+     * chain, which was called "State to state".
+     */
     sections: {
-      contract: "What it takes and returns",
-      trace: "State to state",
       "when-it-applies": "When it applies",
-      cost: "Cost, as the sources state it",
-      approximations: "Approximations made",
-      assumptions: "Assumptions needed",
+      input: "Input",
+      theory: "Theory",
+      output: "Output",
+      requires: "Requires",
+      example: "Example",
+      performance: "Performance",
       contested: "Where the claim is contested",
-      ingredients: "What it needs",
-      "theory-trace": "The theory, state to state",
       implementations: "Implementations",
-      papers: "Papers",
       records: "In the repository",
+      contract: "What it takes and returns",
       between: "Between these two states",
       "no-slot": "No named step covers this",
       "why-a-layer": "Why it is a layer at all",
@@ -142,8 +139,14 @@ const COPY: Record<Lang, Copy> = {
       "bypassed-by": "Routes that make it unnecessary",
       "classical-equivalents": "Classical equivalents",
     },
+    hopSlots: {
+      theory: "The mathematics",
+      approximations: "Approximations made here",
+      assumptions: "Assumptions needed here",
+    },
     takes: "Takes",
     returns: "Returns",
+    references: "References",
     narrowed: "narrowed",
     coverage: {
       covered: "Covered in the repository.",
@@ -176,18 +179,17 @@ const COPY: Record<Lang, Copy> = {
     noSlotHere:
       "この区間は手法が自ら閉じており、まだ名前のある工程が当てられていません。ここに名前のある工程を見つける価値があります。",
     sections: {
-      contract: "入力と出力",
-      trace: "状態から状態へ",
       "when-it-applies": "適用条件",
-      cost: "文献が述べる計算量",
-      approximations: "用いた近似",
-      assumptions: "必要な仮定",
+      input: "入力",
+      theory: "理論",
+      output: "出力",
+      requires: "必要なもの",
+      example: "例",
+      performance: "性能",
       contested: "主張が争われている点",
-      ingredients: "必要なもの",
-      "theory-trace": "状態間の理論",
       implementations: "実装",
-      papers: "文献",
       records: "リポジトリ内",
+      contract: "入力と出力",
       between: "この二つの状態のあいだ",
       "no-slot": "名前のある工程がまだありません",
       "why-a-layer": "なぜ層として立てるのか",
@@ -195,8 +197,14 @@ const COPY: Record<Lang, Copy> = {
       "bypassed-by": "これを不要にする経路",
       "classical-equivalents": "古典的な対応物",
     },
+    hopSlots: {
+      theory: "数理",
+      approximations: "ここで用いた近似",
+      assumptions: "ここで必要な仮定",
+    },
     takes: "入力",
     returns: "出力",
+    references: "文献",
     narrowed: "限定",
     coverage: {
       covered: "リポジトリに記録があります。",
@@ -207,17 +215,24 @@ const COPY: Record<Lang, Copy> = {
   },
 };
 
-/** The gap note. Terse, loud, and never the same words for the two gaps. */
-function Gap({ gap, copy }: { gap: CardGap; copy: Copy }): React.ReactElement {
+/**
+ * The gap note. Terse, loud, and never the same words for the two gaps.
+ *
+ * `note` overrides the sentence for the one section that has a better one to
+ * say: the own-step card's *no named step covers this*, which is a worklist
+ * entry rather than a failed search. The `data-gap` attribute is unchanged, so
+ * a sweep still counts it as the gap it is.
+ */
+function Gap({ gap, copy, note }: { gap: CardGap; copy: Copy; note?: string }): React.ReactElement {
   return (
     <p className={`mj-card-gap mj-card-gap--${gap}`} data-gap={gap}>
-      {gap === "none-recorded" ? copy.noneFound : copy.noField}
+      {note ?? (gap === "none-recorded" ? copy.noneFound : copy.noField)}
     </p>
   );
 }
 
 /**
- * One section — the first of the two nesting levels.
+ * One section — the first of the nesting levels.
  *
  * `open` defaults to whether the section holds anything, so a card opens showing
  * what it has and folded over what it does not. The gap note is *inside* the
@@ -228,11 +243,13 @@ function Section({
   id,
   copy,
   value,
+  note,
   children,
 }: {
   id: CardSectionId;
   copy: Copy;
   value: CardValue<unknown>;
+  note?: string;
   children?: React.ReactNode;
 }): React.ReactElement {
   return (
@@ -243,7 +260,7 @@ function Section({
     >
       <summary>{copy.sections[id]}</summary>
       <div className="mj-card-section-body">
-        {value.held ? children : <Gap gap={value.gap} copy={copy} />}
+        {value.held ? children : <Gap gap={value.gap} copy={copy} note={note} />}
       </div>
     </details>
   );
@@ -263,105 +280,71 @@ function LinkList({ items }: { items: readonly CardLink[] }): React.ReactElement
   );
 }
 
-function Trace({ hops, copy }: { hops: readonly CardHop[]; copy: Copy }): React.ReactElement {
+/**
+ * **Theory**, which is the chain with the mathematics inside it.
+ *
+ * The owner's §2 answer, in his own words on the question of whether the chain
+ * is Theory's spine or a section beside it: *"go with your preference"* — and
+ * the preference he was shown is this one, *"Theory renders the chain as its
+ * spine, each hop collapsible and empty until the mathematics is written."*
+ *
+ * So the hop, not the method, is the unit. Each is shut by default and its
+ * summary carries the part that is known — the two states and the slot — which
+ * means this reads at exactly the density the flat `<ol>` used to, and opens
+ * into the three things a source would add. **Every one of those is empty
+ * today**, and each says *no field holds this yet* rather than *none found yet*,
+ * because the field is the next piece of work rather than a thin literature.
+ *
+ * That is the whole argument for doing it this way: Theory is honest on day one
+ * and fills in hop by hop, instead of shipping as one section reading "pending"
+ * until 63 methods' worth of mathematics is written.
+ */
+function Theory({ hops, copy }: { hops: readonly CardHop[]; copy: Copy }): React.ReactElement {
   return (
     <ol className="mj-card-trace">
       {hops.map((hop, index) => (
         <li key={`${hop.from}>${hop.to}#${index}`}>
-          <span className="mj-card-trace-states">
-            {hop.from} → {hop.to}
-          </span>
-          {hop.via ? (
-            <a href={hop.via.href}>{hop.via.label}</a>
-          ) : (
-            <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
-          )}
-          {hop.narrowed ? <span className="mj-card-trace-tag">{copy.narrowed}</span> : null}
+          <details className="mj-card-hop" data-hop={`${hop.from}>${hop.to}`}>
+            <summary>
+              <span className="mj-card-trace-states">
+                {hop.from} → {hop.to}
+              </span>
+              {hop.via ? (
+                <span className="mj-card-hop-via">{hop.via.label}</span>
+              ) : (
+                <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
+              )}
+              {hop.narrowed ? <span className="mj-card-trace-tag">{copy.narrowed}</span> : null}
+            </summary>
+            <div className="mj-card-hop-body">
+              {/* The link out of the hop, inside the disclosure rather than on
+                  the summary. A `<summary>` that contains an anchor swallows the
+                  click on some engines and toggles instead of following it, so a
+                  reader hunting the slot's own page gets the wrong destination —
+                  and this summary's job is to toggle. */}
+              {hop.via ? (
+                <p className="mj-card-hop-onward">
+                  <a href={hop.via.href}>{hop.via.label}</a>
+                </p>
+              ) : null}
+              {HOP_SLOTS.map((slot) => (
+                <div key={slot} className="mj-card-hop-slot" data-hop-slot={slot}>
+                  <p className="mj-card-hop-slot-name">{copy.hopSlots[slot]}</p>
+                  {hop[slot].held ? (
+                    <p>{hop[slot].value}</p>
+                  ) : (
+                    <Gap gap={hop[slot].gap} copy={copy} />
+                  )}
+                </div>
+              ))}
+            </div>
+          </details>
         </li>
       ))}
     </ol>
   );
 }
 
-/**
- * The card for the stretch a method performs itself.
- *
- * **Short on purpose.** It answers the three questions the drawing raises and
- * stops: which two states, which method, and why there is no name on it. The
- * temptation is to pad it out with the method's cost and papers so it looks like
- * the others — those belong to the method, which is one click away and named
- * here, and copying them onto a piece of it is the duplication rule's exact
- * shape.
- *
- * The last line is the **worklist** `W5-card-spec.md` asks for: the owner's
- * *"while populating 'what would have to exist to connect them', we may come
- * across papers that provide the connections"*. It says a named step is wanted
- * here rather than that something is broken here.
- */
-function OwnStepSections({ card, copy }: { card: OwnStepCard; copy: Copy }): React.ReactElement {
-  return (
-    <>
-      <details className="mj-card-section" data-section="between" open>
-        <summary>{copy.sections.between}</summary>
-        <div className="mj-card-section-body">
-          <ol className="mj-card-trace">
-            <li>
-              <code>{card.from}</code>
-              <span aria-hidden="true"> ⟶ </span>
-              <code>{card.to}</code>
-              <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
-            </li>
-          </ol>
-        </div>
-      </details>
-      <Section id="contract" copy={copy} value={card.contract}>
-        {card.contract.held ? (
-          <dl className="mj-card-dl">
-            <div>
-              <dt>{copy.takes}</dt>
-              <dd>{card.contract.value.takes}</dd>
-            </div>
-            <div>
-              <dt>{copy.returns}</dt>
-              <dd>{card.contract.value.returns}</dd>
-            </div>
-          </dl>
-        ) : null}
-      </Section>
-      <details className="mj-card-section mj-card-section--empty" data-section="no-slot" open>
-        <summary>{copy.sections["no-slot"]}</summary>
-        <div className="mj-card-section-body">
-          <p className="mj-card-gap mj-card-gap--none-recorded" data-gap="none-recorded">
-            {copy.noSlotHere}
-          </p>
-        </div>
-      </details>
-    </>
-  );
-}
-
-/**
- * Where a method sits among the ones it is a narrower version of, or that are
- * narrower versions of it.
- *
- * **Drawn under the lede, and drawn only when there is one.** The owner asked for
- * the LCHS pair — two lanes that draw an identical chain — to say what is
- * different *"in clear way without cluttering"*. Under the lede is where the
- * question is asked: a reader who has just read "built on the kernel
- * f(z) = 1/(C_β e^{(1+iz)^β})… replacing the original Cauchy kernel's quadratic
- * decay" is one line away from the method that has the original kernel.
- *
- * The difference itself is not restated here. It is the first sentence of the
- * narrower method's own lede, and a copy of it on the broader method's card
- * would be the same claim in two places — which drifts, and always in the
- * direction of the copy nobody edits. The link is what was missing, not the
- * words.
- *
- * Returns `null` on the 54 methods with neither edge rather than an empty line,
- * because absence here is not a gap: `refinementsOf` is the graph's own complete
- * answer, not a search that came back empty, and the card's "none found yet"
- * means the second thing.
- */
 function Refinement({ card, copy }: { card: MethodCard; copy: Copy }): React.ReactElement | null {
   if (card.refines === null && card.refinedBy.length === 0) return null;
   return (
@@ -386,75 +369,113 @@ function Refinement({ card, copy }: { card: MethodCard; copy: Copy }): React.Rea
   );
 }
 
-function MethodSections({ card, copy }: { card: MethodCard; copy: Copy }): React.ReactElement {
+/** The contract, drawn as one half of itself. See the `input`/`output` note below. */
+function ContractHalf({
+  contract,
+  half,
+  copy,
+}: {
+  contract: CardValue<{ takes: string; returns: string }>;
+  half: "takes" | "returns";
+  copy: Copy;
+}): React.ReactElement | null {
+  if (!contract.held) return null;
   return (
-    <>
-      <Section id="contract" copy={copy} value={card.contract}>
-        {card.contract.held ? (
-          <dl className="mj-card-dl">
-            <div>
-              <dt>{copy.takes}</dt>
-              <dd>{card.contract.value.takes}</dd>
-            </div>
-            <div>
-              <dt>{copy.returns}</dt>
-              <dd>{card.contract.value.returns}</dd>
-            </div>
-          </dl>
-        ) : null}
-      </Section>
-      <Section id="when-it-applies" copy={copy} value={card.whenItApplies}>
-        {card.whenItApplies.held ? <p>{card.whenItApplies.value}</p> : null}
-      </Section>
-      <Section id="trace" copy={copy} value={card.trace}>
-        {card.trace.held ? <Trace hops={card.trace.value} copy={copy} /> : null}
-      </Section>
-      <Section id="theory-trace" copy={copy} value={card.theoryTrace} />
-      <Section id="cost" copy={copy} value={card.cost}>
-        {card.cost.held ? <p>{card.cost.value}</p> : null}
-      </Section>
-      <Section id="approximations" copy={copy} value={card.approximations} />
-      <Section id="assumptions" copy={copy} value={card.assumptions} />
-      <Section id="contested" copy={copy} value={card.contested}>
-        {card.contested.held ? <p>{card.contested.value}</p> : null}
-      </Section>
-      <Section id="ingredients" copy={copy} value={card.ingredients}>
-        {card.ingredients.held ? <LinkList items={card.ingredients.value} /> : null}
-      </Section>
-      <Section id="implementations" copy={copy} value={card.implementations} />
-    </>
+    <p>{half === "takes" ? contract.value.takes : contract.value.returns}</p>
   );
 }
 
-function ProcessSections({ card, copy }: { card: ProcessCard; copy: Copy }): React.ReactElement {
-  return (
-    <>
-      <Section id="contract" copy={copy} value={card.contract}>
-        {card.contract.held ? (
-          <dl className="mj-card-dl">
-            <div>
-              <dt>{copy.takes}</dt>
-              <dd>{card.contract.value.takes}</dd>
-            </div>
-            <div>
-              <dt>{copy.returns}</dt>
-              <dd>{card.contract.value.returns}</dd>
-            </div>
-          </dl>
-        ) : null}
-      </Section>
-      <Section id="why-a-layer" copy={copy} value={card.whyALayer}>
-        {card.whyALayer.held ? <p>{card.whyALayer.value}</p> : null}
-      </Section>
-      <Section id="filled-by" copy={copy} value={card.filledBy}>
-        {card.filledBy.held ? <LinkList items={card.filledBy.value} /> : null}
-      </Section>
-      <Section id="bypassed-by" copy={copy} value={card.bypassedBy}>
-        {card.bypassedBy.held ? <LinkList items={card.bypassedBy.value} /> : null}
-      </Section>
-      <Section id="classical-equivalents" copy={copy} value={card.classicalEquivalents} />
-    </>
-  );
+/**
+ * What goes inside a section, given its id.
+ *
+ * **A `switch` over the id union, and that is the point of the shape.** The
+ * order and the membership come from `cardSections`; this decides only what the
+ * body draws. A section added there with no arm here is a TypeScript error at
+ * the `never` below — so the failure mode is a build that stops, rather than a
+ * heading that opens onto nothing.
+ */
+function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy }): React.ReactNode {
+  switch (id) {
+    case "when-it-applies":
+      return card.kind === "method" && card.whenItApplies.held ? <p>{card.whenItApplies.value}</p> : null;
+    // **One contract, drawn twice.** The owner asked for Input and Output as two
+    // of his seven; the graph holds one `contract` record with `takes` and
+    // `returns` on it. Splitting the *drawing* is his ask. Splitting the *value*
+    // would be two answers to "is the contract recorded" that could disagree.
+    case "input":
+      return card.kind === "own-step" || card.kind === "method" || card.kind === "process" ? (
+        <ContractHalf contract={card.contract} half="takes" copy={copy} />
+      ) : null;
+    case "output":
+      return <ContractHalf contract={card.contract} half="returns" copy={copy} />;
+    case "theory":
+      return card.kind === "method" && card.trace.held ? (
+        <Theory hops={card.trace.value} copy={copy} />
+      ) : null;
+    case "requires":
+      return card.kind === "method" && card.ingredients.held ? (
+        <LinkList items={card.ingredients.value} />
+      ) : null;
+    case "performance":
+      return card.kind === "method" && card.cost.held ? <p>{card.cost.value}</p> : null;
+    case "contested":
+      return card.kind === "method" && card.contested.held ? <p>{card.contested.value}</p> : null;
+    case "records":
+      return card.kind !== "own-step" && card.records.held ? (
+        <ul className="mj-card-list">
+          {card.records.value.map((record) => (
+            <li key={record.slug}>
+              <a href={record.href}>{record.title}</a>
+              {record.description ? <p className="mj-card-list-blurb">{record.description}</p> : null}
+            </li>
+          ))}
+        </ul>
+      ) : null;
+    case "contract":
+      return card.contract.held ? (
+        <dl className="mj-card-dl">
+          <div>
+            <dt>{copy.takes}</dt>
+            <dd>{card.contract.value.takes}</dd>
+          </div>
+          <div>
+            <dt>{copy.returns}</dt>
+            <dd>{card.contract.value.returns}</dd>
+          </div>
+        </dl>
+      ) : null;
+    case "between":
+      return card.kind === "own-step" ? (
+        <ol className="mj-card-trace">
+          <li>
+            <code>{card.from}</code>
+            <span aria-hidden="true"> ⟶ </span>
+            <code>{card.to}</code>
+            <span className="mj-card-trace-own">{ownStepName(copy.lang)}</span>
+          </li>
+        </ol>
+      ) : null;
+    case "why-a-layer":
+      return card.kind === "process" && card.whyALayer.held ? <p>{card.whyALayer.value}</p> : null;
+    case "filled-by":
+      return card.kind === "process" && card.filledBy.held ? <LinkList items={card.filledBy.value} /> : null;
+    case "bypassed-by":
+      return card.kind === "process" && card.bypassedBy.held ? (
+        <LinkList items={card.bypassedBy.value} />
+      ) : null;
+    // The four that hold nothing anywhere yet. They draw their gap note and no
+    // body, and the note is `no-field-yet` — an unbuilt field, never a thin
+    // literature.
+    case "example":
+    case "implementations":
+    case "classical-equivalents":
+    case "no-slot":
+      return null;
+    default: {
+      const unreachable: never = id;
+      return unreachable;
+    }
+  }
 }
 
 export function MapCardPanel({
@@ -538,22 +559,37 @@ export function MapCardPanel({
             </p>
 
             <div className="mj-card-body" role="region" aria-labelledby={titleId} tabIndex={0}>
-              {card.kind === "own-step" ? (
-                <OwnStepSections card={card} copy={copy} />
-              ) : card.kind === "method" ? (
-                <MethodSections card={card} copy={copy} />
-              ) : (
-                <ProcessSections card={card} copy={copy} />
-              )}
+              {/* **The order is read, not written here.** `cardSections` is the
+                  one list, and until session 114 this file held a second one in
+                  a different order that nothing compared against it — so a
+                  section could have left the drawing while the census went on
+                  counting it. The owner's §2 answer is an order, which is
+                  exactly the thing that had no single writer. */}
+              {cardSections(card).map((section) => (
+                <Section
+                  key={section.id}
+                  id={section.id}
+                  copy={copy}
+                  value={section.value}
+                  note={section.id === "no-slot" ? copy.noSlotHere : undefined}
+                >
+                  <Body card={card} id={section.id} copy={copy} />
+                </Section>
+              ))}
 
-              {/* Papers and records belong to a node. The own stretch is not one
-                  — it is a piece of a route — so it carries neither, and the
-                  honest thing is to draw no section rather than one saying "none
-                  found yet", which would claim a search that has no subject. */}
-              {card.kind === "own-step" ? null : (
-                <>
-                  <Section id="papers" copy={copy} value={card.papers}>
-                {card.papers.held ? (
+              {/* **References, below the sections and not among them.** The owner
+                  was asked whether a reference list should be an eighth section
+                  and said *"confirm, it isn't needed for papers to be their own
+                  section"*. They are 63/63 on methods, so they are never a gap,
+                  and a collapsible heading over a list that is always full is a
+                  control with one state.
+
+                  The own stretch carries none: it is a piece of a route rather
+                  than a node, so a paper list there would claim a search that has
+                  no subject. */}
+              {card.kind !== "own-step" && card.papers.held ? (
+                <section className="mj-card-references">
+                  <h3>{copy.references}</h3>
                   <ul className="mj-card-list">
                     {card.papers.value.map((paper) => (
                       <li key={paper.url}>
@@ -566,25 +602,8 @@ export function MapCardPanel({
                       </li>
                     ))}
                   </ul>
-                ) : null}
-              </Section>
-
-              <Section id="records" copy={copy} value={card.records}>
-                {card.records.held ? (
-                  <ul className="mj-card-list">
-                    {card.records.value.map((record) => (
-                      <li key={record.slug}>
-                        <a href={record.href}>{record.title}</a>
-                        {record.description ? (
-                          <p className="mj-card-list-blurb">{record.description}</p>
-                        ) : null}
-                      </li>
-                    ))}
-                  </ul>
-                ) : null}
-              </Section>
-                </>
-              )}
+                </section>
+              ) : null}
               {card.kind === "process" ? (
                 <p className="mj-card-coverage" data-coverage={card.coverage}>
                   {copy.coverage[card.coverage]}
