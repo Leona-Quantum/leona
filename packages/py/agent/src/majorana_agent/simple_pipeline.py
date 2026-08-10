@@ -322,7 +322,7 @@ class SimpleCircuitPipeline:
         generation_feedback: SimpleRepairFeedback | None = None
         consecutive_code_repairs = 0
         soundest: ReviewedCandidate | None = None
-        soundest_score: tuple[int, int, int, int, int] | None = None
+        soundest_score: tuple[int, int, int, int, int, int] | None = None
         attempts: list[dict[str, Any]] = []
         # What forced the pending replan. A replan that then fails must not be
         # allowed to erase it — see _with_originating_cause.
@@ -668,21 +668,18 @@ class SimpleCircuitPipeline:
                     warnings=warnings,
                 )
 
-            if artifact_only or review.has_recorded_checks():
-                # Keep the strongest reviewed candidate as a fallback. This used to
-                # require `evidence_is_complete()`, so a run that spent its entire
-                # budget on a candidate with ONE failed check delivered nothing at
-                # all — not a labelled failure a person could read and repair,
-                # nothing, after every expensive stage had been paid for. A failed
-                # check is a record of what was examined; it is held now, and
-                # `simple_pipeline_verification_summary` labels it FAIL off that
-                # same evidence.
+            if artifact_only or self._fallback_evidence_is_noncontradictory(review):
+                # Keep the strongest reviewed candidate as a fallback. An advisory
+                # major/blocking opinion still cannot destroy otherwise sound work.
+                # A deterministic FAIL/ERROR is different: it is a concrete
+                # contradiction, and must never become the fallback artifact after
+                # the repair budget expires.
                 #
                 # What is still refused is a review with no recorded check at all:
                 # that is not a permissive record but an unlabelled one. Completeness
-                # moved into the ranking below, where it leads the tuple — a sound
-                # candidate still outranks an unsound one, and the unsound one wins
-                # only when it is the only candidate there is.
+                # moved into the ranking below, where it leads the tuple. SKIPPED,
+                # UNAVAILABLE and n/a checks remain honest evidence gaps and may still
+                # be delivered with that weaker classification recorded.
                 #
                 # Executed, contract-satisfying evidence still outranks static-only
                 # evidence, which prevents a later repair outage from erasing the
@@ -1955,6 +1952,18 @@ class SimpleCircuitPipeline:
         if failure_signature:
             entry["failure_signature"] = failure_signature
         attempts.append(entry)
+
+    @staticmethod
+    def _fallback_evidence_is_noncontradictory(review: SemanticReviewEvidence) -> bool:
+        """Allow gaps and advisory rejection in a fallback, never a factual failure."""
+
+        checks = review.feedback.get("basic_checks")
+        if not isinstance(checks, list) or not checks:
+            return False
+        return all(
+            isinstance(check, dict) and check.get("result") not in {"fail", "error"}
+            for check in checks
+        )
 
     @staticmethod
     def _sound_candidate_score(

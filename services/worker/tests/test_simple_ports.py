@@ -999,7 +999,7 @@ async def test_lindblad_reference_requires_independent_semantic_consensus(monkey
     verification = planned.value.plan.verification_plan
     assert verification is not None
     assert verification.exact_lindblad_reference is not None
-    assert verification.reference_method == "independent_dual_model_lindblad_consensus"
+    assert verification.reference_method == "dual_model_lindblad_extraction_consensus"
     assert planned.value.plan.success_criteria.additional_notes is None
     assert [request.schema_name for request in llm.requests] == [
         "request_plan",
@@ -1061,7 +1061,7 @@ async def test_omitted_lindblad_reference_stays_weaker_when_models_disagree():
     )
 
 
-async def test_lindblad_reference_disagreement_requests_replan():
+async def test_lindblad_reference_disagreement_drops_optional_exact_enrichment():
     ports, llm, *_ = _ports()
     llm.texts = [
         json.dumps(_lindblad_reference_plan_payload()),
@@ -1071,13 +1071,14 @@ async def test_lindblad_reference_disagreement_requests_replan():
 
     planned = await ports.plan(uuid4(), None, None)
 
-    assert planned.failure is not None
-    assert planned.failure.code == "lindblad_reference_consensus_failed"
-    assert planned.failure.retry_target is SimpleRetryTarget.PLANNING
-    assert planned.failure.details["comparison"]["reason"] == "lindblad_generator_mismatch"
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is None or (
+        verification.exact_lindblad_reference is None and verification.reference_method is None
+    )
 
 
-async def test_unsupported_independent_extraction_rejects_a_declared_lindblad_reference():
+async def test_unsupported_independent_extraction_drops_a_declared_lindblad_reference():
     ports, llm, *_ = _ports()
     llm.texts = [
         json.dumps(_lindblad_reference_plan_payload()),
@@ -1092,10 +1093,36 @@ async def test_unsupported_independent_extraction_rejects_a_declared_lindblad_re
 
     planned = await ports.plan(uuid4(), None, None)
 
-    assert planned.failure is not None
-    assert planned.failure.code == "lindblad_reference_consensus_failed"
-    assert planned.failure.retry_target is SimpleRetryTarget.PLANNING
-    assert planned.failure.details["comparison"]["reason"] == ("independent_extraction_unsupported")
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is None or (
+        verification.exact_lindblad_reference is None and verification.reference_method is None
+    )
+
+
+async def test_lindblad_audit_abstention_keeps_request_scoped_exact_reference():
+    ports, llm, *_ = _ports()
+    payload = _lindblad_reference_plan_payload()
+    payload["verification_plan"].pop("exact_lindblad_reference")
+    llm.texts = [
+        json.dumps(payload),
+        json.dumps(_lindblad_extraction_payload()),
+        json.dumps(
+            {
+                "supported": False,
+                "reason": "audit model abstained",
+                "reference": None,
+            }
+        ),
+    ]
+
+    planned = await ports.plan(uuid4(), None, None)
+
+    assert planned.value is not None
+    verification = planned.value.plan.verification_plan
+    assert verification is not None
+    assert verification.exact_lindblad_reference is not None
+    assert verification.reference_method == "independent_lindblad_extraction"
 
 
 def _dynamics_reference_plan_payload() -> dict:
@@ -2561,6 +2588,261 @@ _H2_HAMILTONIAN = [
     {"coefficient": -0.0112801, "pauli": "ZZ"},
     {"coefficient": 0.18093119, "pauli": "XX"},
 ]
+
+
+def test_native_result_mismatch_is_deterministic_code_repair_evidence():
+    payload = _plan_payload()
+    payload.update(
+        {
+            "qubits_estimate": 1,
+            "expected_output_keys": [
+                "bloch_x",
+                "bloch_y",
+                "bloch_z",
+                "probability_one",
+            ],
+            "success_criteria": {"primary_metric": "bloch_y"},
+        }
+    )
+    plan = Plan.model_validate(payload)
+    theta = 0.83
+    phi = -0.41
+    alpha = math.cos(theta / 2)
+    beta = complex(math.cos(phi), math.sin(phi)) * math.sin(theta / 2)
+    honest_y = math.sin(theta) * math.sin(phi)
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={
+            "bloch_x": math.sin(theta) * math.cos(phi),
+            "bloch_y": -honest_y,
+            "bloch_z": math.cos(theta),
+            "probability_one": math.sin(theta / 2) ** 2,
+        },
+        observation={
+            "native_statevector": {
+                "amplitudes": [alpha, 0.0, beta.real, beta.imag],
+                "qubits": 1,
+                "endianness": "q0_msb",
+                "clbits": 0,
+                "measurement_map": {},
+            }
+        },
+    )
+
+    check = simple_ports_module._native_result_consistency_check(plan, execution)
+
+    assert check is not None
+    assert check["result"] == "fail"
+    assert check["details"]["protocol"]["name"] == "native_result_consistency"
+    assert "bloch_y" in check["details"]["disagreements"][0]
+    assert _reference_check_routing([check], check) == (
+        SemanticReviewDecision.CODE_REPAIR,
+        "reference_check_failed",
+    )
+
+
+def test_fully_specified_amplitude_damping_has_an_independent_scalar_oracle():
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={
+            "excited_population": 0.3235651509294639,
+            "coherence_0_1_real": -0.21506089129658668,
+            "coherence_0_1_imag": -0.27788592036491516,
+            "state_purity": 0.8092020553377622,
+        },
+        observation={},
+    )
+    task = (
+        "Implement amplitude damping with gamma=0.435869 on "
+        "cos(0.60508)|0> + exp(i*2.22943)*sin(0.60508)|1>."
+    )
+
+    check = simple_ports_module._amplitude_damping_reference_check(task, execution)
+
+    assert check is not None and check["result"] == "fail"
+    assert check["details"]["protocol"]["name"] == ("exact_coherent_amplitude_damping")
+    assert {item.split(":", 1)[0] for item in check["details"]["disagreements"]} == {
+        "excited_population",
+        "state_purity",
+    }
+    assert _reference_check_routing([check], check) == (
+        SemanticReviewDecision.CODE_REPAIR,
+        "reference_check_failed",
+    )
+
+
+def test_fully_specified_qulacs_rotation_catches_a_self_consistent_sign_error():
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={
+            "bloch_x": -0.06767224723457253,
+            "bloch_y": -0.6526619429810655,
+            "bloch_z": 0.7546210009921558,
+            "probability_one": 0.12268949950392205,
+        },
+        observation={},
+    )
+    task = (
+        "In Qulacs, implement the common mathematical rotations "
+        "R_axis(angle)=exp(-i*angle*Pauli/2) and prepare one qubit from |0> by "
+        "applying RY(0.71572) and then RZ(-1.467479) in that order."
+    )
+
+    check = simple_ports_module._one_qubit_rotation_reference_check(task, execution)
+
+    assert check is not None and check["result"] == "fail"
+    assert check["details"]["protocol"]["name"] == "exact_one_qubit_ry_rz_request"
+    assert check["details"]["disagreements"] == [
+        "bloch_x: reported -0.0676722472346 differs from the request-derived value 0.0676722472346"
+    ]
+
+
+def test_fully_specified_finite_qpe_has_a_displayed_order_distribution_oracle():
+    execution = ExecutionEvidence(
+        execution_id=uuid4(),
+        candidate_id=uuid4(),
+        source_fingerprint="a" * 64,
+        environment_fingerprint="e" * 64,
+        sandbox_provider="test",
+        exit_code=0,
+        duration_ms=1,
+        result={
+            "dominant_integer": 0,
+            "finite_phase_estimate": 0.0,
+            "dominant_probability": 1.0,
+            "phase_probabilities": [1.0] + [0.0] * 15,
+        },
+        observation={},
+    )
+    task = (
+        "Implement noiseless Qiskit phase estimation for a diagonal 1-qubit target "
+        "unitary. The prepared basis state has eigenvalue "
+        "exp(2*pi*i*0.854455167). Use 4 counting qubits, controlled powers, and an "
+        "inverse QFT."
+    )
+
+    check = simple_ports_module._finite_qpe_reference_check(task, execution)
+
+    assert check is not None and check["result"] == "fail"
+    assert check["details"]["protocol"]["name"] == "exact_finite_qpe_request"
+    scores = check["details"]["scores"]
+    assert scores["dominant_integer"]["exact"] == 14.0
+    assert scores["finite_phase_estimate"]["exact"] == 0.875
+    assert scores["dominant_probability"]["exact"] == pytest.approx(0.6923484843945318)
+    assert scores["phase_probabilities"]["maximum_absolute_error"] > 0.6
+
+
+def test_high_risk_generation_uses_the_substantive_model(monkeypatch):
+    monkeypatch.setenv("MAJORANA_MODEL_PLAN", "substantive-test-model")
+    monkeypatch.setenv("MAJORANA_MODEL_GENERATE", "fast-test-model")
+    ordinary = Plan.model_validate(_plan_payload())
+    amplitude_payload = _plan_payload()
+    amplitude_payload.update(
+        {
+            "domain": "open quantum systems",
+            "algorithm": "Simulation",
+            "problem_summary": "Implement coherent amplitude damping exactly",
+        }
+    )
+    amplitude = Plan.model_validate(amplitude_payload)
+    qpe_payload = _plan_payload()
+    qpe_payload.update(
+        {
+            "algorithm": "QPE",
+            "problem_summary": "Run finite-register quantum phase estimation",
+        }
+    )
+    qpe = Plan.model_validate(qpe_payload)
+
+    assert simple_ports_module._generation_model_for_plan(ordinary) == "fast-test-model"
+    assert simple_ports_module._generation_model_for_plan(amplitude) == ("substantive-test-model")
+    assert simple_ports_module._generation_model_for_plan(qpe) == "substantive-test-model"
+
+
+def test_repetition_qec_contract_discards_invented_outputs_and_pins_exact_oracle():
+    payload = _plan_payload()
+    payload.update(
+        {
+            "expected_output_keys": [
+                "worst_case_fidelity",
+                "fidelity_no_error",
+                "fidelity_error_q0",
+            ],
+            "success_criteria": {
+                "primary_metric": "worst_case_fidelity",
+                "expected_range": {"min": 0.0, "max": 1.0},
+                "additional_notes": ["A guessed target."],
+            },
+            "artifact_contract": {
+                "artifact_type": "QuantumCircuit",
+                "measurement_policy": "specified",
+                "top_level_execution": "required",
+            },
+        }
+    )
+    plan = Plan.model_validate(payload)
+
+    reconciled = simple_ports_module._reconcile_repetition_qec_contract(
+        plan,
+        "Build a coherent three-qubit bit-flip repetition code and report "
+        "worst_case_fidelity after correcting every possible single-qubit error.",
+    )
+
+    assert reconciled.expected_output_keys == ["worst_case_fidelity"]
+    assert reconciled.success_criteria.expected_range == {
+        "min": 1.0 - 1e-9,
+        "max": 1.0 + 1e-9,
+    }
+    assert reconciled.success_criteria.additional_notes is None
+    assert reconciled.artifact_contract.measurement_policy == "none"
+
+
+def test_lindblad_stinespring_contract_pins_same_channel_fidelity():
+    payload = _plan_payload()
+    payload.update(
+        {
+            "expected_output_keys": [
+                "excited_population",
+                "stinespring_density_fidelity",
+            ],
+            "success_criteria": {
+                "primary_metric": "excited_population",
+                "additional_notes": ["A broad planner guess."],
+            },
+        }
+    )
+    plan = Plan.model_validate(payload)
+
+    reconciled = simple_ports_module._reconcile_lindblad_stinespring_contract(
+        plan,
+        "Bind a Stinespring circuit whose reduced state implements the same "
+        "finite-time channel and return stinespring_density_fidelity.",
+    )
+
+    assert reconciled.success_criteria.primary_metric == "stinespring_density_fidelity"
+    assert reconciled.success_criteria.expected_range == {
+        "min": 1.0 - 1e-8,
+        "max": 1.0 + 1e-8,
+    }
+    assert reconciled.success_criteria.additional_notes is None
 
 
 def _vqe_plan(reported: float, *, hamiltonian=None, tolerance=None) -> tuple[Plan, object]:

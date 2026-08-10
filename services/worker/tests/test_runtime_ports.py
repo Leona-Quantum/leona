@@ -96,6 +96,36 @@ async def test_executor_runs_once_and_returns_protected_result():
     assert "resource_metrics" in sandbox.last_spec.trusted_observer
 
 
+async def test_executor_collects_native_evidence_for_supported_result_profiles():
+    payload = _plan().model_dump(mode="json")
+    payload.update(
+        {
+            "qubits_estimate": 1,
+            "success_criteria": {"primary_metric": "probability_one"},
+            "expected_output_keys": [
+                "bloch_x",
+                "bloch_y",
+                "bloch_z",
+                "probability_one",
+            ],
+        }
+    )
+    plan = Plan.model_validate(payload)
+    source = (
+        "from qiskit import QuantumCircuit\n"
+        "FINAL_CIRCUIT = QuantumCircuit(1)\n"
+        "RESULT = {'bloch_x': 0.0, 'bloch_y': 0.0, 'bloch_z': 1.0, "
+        "'probability_one': 0.0}\n"
+    )
+    sandbox = RecordingSandbox(result={"probability_one": 0.0})
+
+    await SandboxCandidateExecutor(sandbox).run_candidate(_candidate(source), plan)
+
+    assert "_majorana_native_evidence" in sandbox.last_spec.trusted_setup
+    assert "_majorana_native_evidence" in sandbox.last_spec.trusted_observer
+    assert sandbox.last_spec.timeout_s == 61
+
+
 def test_sigxcpu_is_a_timeout_not_a_code_regeneration_signal():
     assert (
         SandboxCandidateExecutor._classify_failure(-signal.SIGXCPU, "")

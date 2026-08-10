@@ -926,15 +926,8 @@ async def test_a_blocking_defect_is_delivered_and_not_disguised():
     assert outcome.review.decision is not SemanticReviewDecision.READY
 
 
-async def test_a_failed_deterministic_check_is_delivered_and_labelled():
-    """The case the owner asked about by name, including a Plan-declared reference
-    the reported number contradicted.
-
-    A failed check is EVIDENCE, not an absence of it: the record says what was
-    examined and what came back wrong, which is precisely what a development
-    workspace should hold. What used to happen is that the run failed at the save
-    step and the person got nothing to repair.
-    """
+async def test_a_failed_deterministic_check_is_never_rescued_as_an_artifact():
+    """A concrete reference contradiction cannot become a fallback success."""
 
     ports = FakePorts(
         reviews=[SemanticReviewDecision.CODE_REPAIR],
@@ -949,10 +942,10 @@ async def test_a_failed_deterministic_check_is_delivered_and_labelled():
 
     outcome = await SimpleCircuitPipeline(ports=ports).run(uuid4())
 
-    assert outcome.status is SimplePipelineStatus.SUCCEEDED
-    assert "save" in ports.calls
-    assert outcome.review is not None
-    assert not outcome.review.evidence_is_complete()
+    assert outcome.status is SimplePipelineStatus.FAILED
+    assert outcome.failure is not None
+    assert outcome.failure.code == "candidate_budget_exhausted"
+    assert "save" not in ports.calls
 
 
 async def test_a_review_with_no_recorded_check_is_still_never_delivered():

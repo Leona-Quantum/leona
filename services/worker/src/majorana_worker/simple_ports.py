@@ -7,6 +7,7 @@ import hashlib
 import json
 import logging
 import math
+import re
 from dataclasses import asdict
 from typing import Any, Awaitable, Callable, Literal, Mapping, Protocol, Sequence
 from uuid import UUID, uuid5
@@ -41,6 +42,7 @@ from majorana_contracts.enums import (
     ArtifactType,
     ExportStatus,
     Framework,
+    MeasurementPolicy,
     RetryTarget,
     SemanticReviewDecision,
     VerificationFailureClass,
@@ -79,6 +81,7 @@ from majorana_verification import (
     exact_phase_estimation_comparison,
     lindblad_references_equivalent,
     linear_system_references_equivalent,
+    native_result_consistency,
     optimal_objective,
     reference_problems_equivalent,
     verify_brute_force,
@@ -1539,6 +1542,337 @@ def _plan_fingerprint(plan: Plan) -> str:
     return hashlib.sha256(payload.encode()).hexdigest()
 
 
+def _reconcile_repetition_qec_contract(plan: Plan, task_prompt: str) -> Plan:
+    """Pin the exact contract for the bounded coherent repetition-code family.
+
+    The request itself supplies the oracle: correct all three possible single Pauli
+    errors plus the no-error case, so the noiseless worst-case fidelity is one.
+    """
+
+    normalized = " ".join(task_prompt.casefold().replace("-", " ").split())
+    if not all(
+        marker in normalized
+        for marker in (
+            "coherent three qubit",
+            "repetition code",
+            "worst_case_fidelity",
+            "every possible single qubit",
+        )
+    ):
+        return plan
+    if not any(marker in normalized for marker in ("bit flip", "phase flip")):
+        return plan
+    criteria = plan.success_criteria.model_copy(
+        update={
+            "primary_metric": "worst_case_fidelity",
+            "expected_range": {"min": 1.0 - 1e-9, "max": 1.0 + 1e-9},
+            "additional_notes": None,
+        }
+    )
+    updates: dict[str, Any] = {
+        "success_criteria": criteria,
+        "expected_output_keys": ["worst_case_fidelity"],
+    }
+    if plan.artifact_contract is not None:
+        updates["artifact_contract"] = plan.artifact_contract.model_copy(
+            update={"measurement_policy": MeasurementPolicy.NONE}
+        )
+    return plan.model_copy(update=updates)
+
+
+def _reconcile_lindblad_stinespring_contract(plan: Plan, task_prompt: str) -> Plan:
+    """Pin fidelity for a circuit required to implement the same finite-time channel."""
+
+    fidelity_key = "stinespring_density_fidelity"
+    normalized = " ".join(task_prompt.casefold().replace("-", " ").split())
+    if (
+        fidelity_key not in plan.expected_output_keys
+        or "stinespring" not in normalized
+        or not any(
+            marker in normalized
+            for marker in ("same finite time channel", "implements the same", "same channel")
+        )
+    ):
+        return plan
+    return plan.model_copy(
+        update={
+            "success_criteria": plan.success_criteria.model_copy(
+                update={
+                    "primary_metric": fidelity_key,
+                    "expected_range": {"min": 1.0 - 1e-8, "max": 1.0 + 1e-8},
+                    "additional_notes": None,
+                }
+            )
+        }
+    )
+
+
+_FINITE_NUMBER_PATTERN = r"[+-]?(?:\d+(?:\.\d*)?|\.\d+)(?:[eE][+-]?\d+)?"
+_AMPLITUDE_DAMPING_REQUEST = re.compile(
+    rf"amplitude\s+damping\s+with\s+gamma\s*=\s*({_FINITE_NUMBER_PATTERN}).*?"
+    rf"cos\(\s*({_FINITE_NUMBER_PATTERN})\s*\).*?"
+    rf"exp\(\s*i\s*\*\s*({_FINITE_NUMBER_PATTERN})\s*\)\s*\*\s*"
+    rf"sin\(\s*\2\s*\)",
+    re.IGNORECASE | re.DOTALL,
+)
+_ONE_QUBIT_RY_RZ_REQUEST = re.compile(
+    rf"\b(qibo|qulacs)\b.*?RY\(\s*({_FINITE_NUMBER_PATTERN})\s*\).*?"
+    rf"RZ\(\s*({_FINITE_NUMBER_PATTERN})\s*\).*?in\s+that\s+order",
+    re.IGNORECASE | re.DOTALL,
+)
+_FINITE_QPE_REQUEST = re.compile(
+    rf"phase\s+estimation.*?eigenvalue\s+exp\(\s*2\s*\*\s*pi\s*\*\s*i\s*\*\s*"
+    rf"({_FINITE_NUMBER_PATTERN})\s*\).*?use\s+(\d+)\s+counting\s+qubits",
+    re.IGNORECASE | re.DOTALL,
+)
+
+
+def _amplitude_damping_request_values(task_prompt: str) -> dict[str, float] | None:
+    """Exact scalar oracle for the fully specified coherent one-qubit family."""
+
+    match = _AMPLITUDE_DAMPING_REQUEST.search(task_prompt)
+    if match is None:
+        return None
+    gamma, theta, phase = (float(value) for value in match.groups())
+    if not 0.0 <= gamma <= 1.0:
+        return None
+    cosine = math.cos(theta)
+    sine = math.sin(theta)
+    excited = (1.0 - gamma) * sine**2
+    coherence = math.sqrt(1.0 - gamma) * cosine * sine * complex(math.cos(-phase), math.sin(-phase))
+    rho00 = cosine**2 + gamma * sine**2
+    return {
+        "excited_population": excited,
+        "coherence_0_1_real": float(coherence.real),
+        "coherence_0_1_imag": float(coherence.imag),
+        "state_purity": rho00**2 + excited**2 + 2.0 * abs(coherence) ** 2,
+    }
+
+
+def _amplitude_damping_reference_check(
+    task_prompt: str,
+    execution: ExecutionEvidence,
+) -> dict[str, Any] | None:
+    expected = _amplitude_damping_request_values(task_prompt)
+    if expected is None:
+        return None
+    tolerance = 1e-8
+    scores: dict[str, Any] = {}
+    disagreements: list[str] = []
+    for key, exact in expected.items():
+        observed = execution.result.get(key)
+        if (
+            isinstance(observed, bool)
+            or not isinstance(observed, int | float)
+            or not math.isfinite(float(observed))
+        ):
+            scores[key] = {"exact": exact, "reported": observed}
+            disagreements.append(f"{key}: missing or non-finite numeric RESULT value")
+            continue
+        error = abs(float(observed) - exact)
+        scores[key] = {
+            "exact": exact,
+            "reported": float(observed),
+            "absolute_error": error,
+            "tolerance": tolerance,
+        }
+        if error > tolerance:
+            disagreements.append(
+                f"{key}: reported {float(observed):.12g} differs from the exact "
+                f"amplitude-damping channel value {exact:.12g}"
+            )
+    details: dict[str, Any] = {
+        "protocol": {
+            "name": "exact_coherent_amplitude_damping",
+            "tolerance": tolerance,
+            "source": "fully_specified_user_request",
+        },
+        "scores": scores,
+        "reason": (
+            "RESULT matches the exact amplitude-damping channel"
+            if not disagreements
+            else "RESULT disagrees with the exact amplitude-damping channel"
+        ),
+    }
+    if disagreements:
+        details["disagreements"] = disagreements
+    return {
+        "method": "success_criteria",
+        "result": "fail" if disagreements else "pass",
+        "details": details,
+    }
+
+
+def _request_numeric_reference_check(
+    execution: ExecutionEvidence,
+    *,
+    protocol: str,
+    expected: Mapping[str, float | list[float]],
+    tolerance: float = 1e-8,
+) -> dict[str, Any]:
+    """Compare protected RESULT with a bounded oracle derived from the request."""
+
+    scores: dict[str, Any] = {}
+    disagreements: list[str] = []
+    for key, exact in expected.items():
+        observed = execution.result.get(key)
+        if isinstance(exact, list):
+            if not isinstance(observed, list) or len(observed) != len(exact):
+                scores[key] = {"expected_length": len(exact), "reported": observed}
+                disagreements.append(f"{key}: missing numeric list of length {len(exact)}")
+                continue
+            numeric = all(
+                isinstance(value, int | float)
+                and not isinstance(value, bool)
+                and math.isfinite(float(value))
+                for value in observed
+            )
+            if not numeric:
+                scores[key] = {"expected_length": len(exact), "reported": observed}
+                disagreements.append(f"{key}: contains a non-finite or non-numeric value")
+                continue
+            errors = [
+                abs(float(reported) - expected_value)
+                for reported, expected_value in zip(observed, exact, strict=True)
+            ]
+            maximum_error = max(errors, default=0.0)
+            scores[key] = {
+                "maximum_absolute_error": maximum_error,
+                "tolerance": tolerance,
+            }
+            if maximum_error > tolerance:
+                disagreements.append(
+                    f"{key}: maximum absolute error {maximum_error:.12g} exceeds "
+                    f"the request-derived tolerance {tolerance:.12g}"
+                )
+            continue
+        if (
+            isinstance(observed, bool)
+            or not isinstance(observed, int | float)
+            or not math.isfinite(float(observed))
+        ):
+            scores[key] = {"exact": exact, "reported": observed}
+            disagreements.append(f"{key}: missing or non-finite numeric RESULT value")
+            continue
+        error = abs(float(observed) - exact)
+        scores[key] = {
+            "exact": exact,
+            "reported": float(observed),
+            "absolute_error": error,
+            "tolerance": tolerance,
+        }
+        if error > tolerance:
+            disagreements.append(
+                f"{key}: reported {float(observed):.12g} differs from the "
+                f"request-derived value {exact:.12g}"
+            )
+    details: dict[str, Any] = {
+        "protocol": {
+            "name": protocol,
+            "tolerance": tolerance,
+            "source": "fully_specified_user_request",
+        },
+        "scores": scores,
+        "reason": (
+            "RESULT matches the fully specified request"
+            if not disagreements
+            else "RESULT disagrees with the fully specified request"
+        ),
+    }
+    if disagreements:
+        details["disagreements"] = disagreements
+    return {
+        "method": "success_criteria",
+        "result": "fail" if disagreements else "pass",
+        "details": details,
+    }
+
+
+def _one_qubit_rotation_reference_check(
+    task_prompt: str,
+    execution: ExecutionEvidence,
+) -> dict[str, Any] | None:
+    """Exact Bloch oracle for fully specified Qibo/Qulacs RY-then-RZ tasks."""
+
+    match = _ONE_QUBIT_RY_RZ_REQUEST.search(task_prompt)
+    if match is None:
+        return None
+    theta, phi = (float(value) for value in match.groups()[1:])
+    return _request_numeric_reference_check(
+        execution,
+        protocol="exact_one_qubit_ry_rz_request",
+        expected={
+            "bloch_x": math.sin(theta) * math.cos(phi),
+            "bloch_y": math.sin(theta) * math.sin(phi),
+            "bloch_z": math.cos(theta),
+            "probability_one": math.sin(theta / 2.0) ** 2,
+        },
+        tolerance=1e-9,
+    )
+
+
+def _finite_qpe_reference_check(
+    task_prompt: str,
+    execution: ExecutionEvidence,
+) -> dict[str, Any] | None:
+    """Exact displayed-order distribution for a fully specified finite QPE task."""
+
+    match = _FINITE_QPE_REQUEST.search(task_prompt)
+    if match is None:
+        return None
+    phase = float(match.group(1)) % 1.0
+    counting_qubits = int(match.group(2))
+    if not 1 <= counting_qubits <= 12:
+        return None
+    dimension = 1 << counting_qubits
+    probabilities: list[float] = []
+    for integer in range(dimension):
+        delta = phase - integer / dimension
+        amplitude = (
+            sum(
+                complex(
+                    math.cos(2.0 * math.pi * step * delta),
+                    math.sin(2.0 * math.pi * step * delta),
+                )
+                for step in range(dimension)
+            )
+            / dimension
+        )
+        probabilities.append(float(abs(amplitude) ** 2))
+    dominant = max(range(dimension), key=probabilities.__getitem__)
+    return _request_numeric_reference_check(
+        execution,
+        protocol="exact_finite_qpe_request",
+        expected={
+            "dominant_integer": float(dominant),
+            "finite_phase_estimate": dominant / dimension,
+            "dominant_probability": probabilities[dominant],
+            "phase_probabilities": probabilities,
+        },
+        tolerance=1e-8,
+    )
+
+
+def _generation_model_for_plan(plan: Plan) -> str:
+    """Use the substantive model for families with expensive precision failures."""
+
+    context = f"{plan.domain} {plan.algorithm.value} {plan.problem_summary}".casefold()
+    high_risk = plan.framework in {Framework.QIBO, Framework.QULACS} or any(
+        marker in context
+        for marker in (
+            "amplitude damping",
+            "lindblad",
+            "master equation",
+            "repetition code",
+            "error correction",
+            "trotter",
+            "phase estimation",
+            "qpe",
+        )
+    )
+    return model_for("plan" if high_risk else "generate")
+
+
 def _reference_problem_requires_audit(plan: Plan) -> bool:
     """Every model-authored combinatorial reference needs independent consensus.
 
@@ -1721,6 +2055,19 @@ def _lindblad_reference_spec(reference: ExactLindbladReference) -> LindbladSpeci
         "evolution_time": reference.evolution_time,
         "results": results,
     }
+
+
+def _without_lindblad_reference(plan: Plan) -> Plan:
+    verification = plan.verification_plan
+    if verification is None or verification.exact_lindblad_reference is None:
+        return plan
+    return plan.model_copy(
+        update={
+            "verification_plan": verification.model_copy(
+                update={"exact_lindblad_reference": None, "reference_method": None}
+            )
+        }
+    )
 
 
 def _should_attempt_lindblad_reference(plan: Plan, task_prompt: str) -> bool:
@@ -2445,6 +2792,60 @@ def _reference_checks(
     ]
 
 
+def _native_result_consistency_check(
+    plan: Plan,
+    execution: ExecutionEvidence,
+) -> dict[str, Any] | None:
+    """Compare supported RESULT profiles with the bound circuit's native state.
+
+    The trusted observer executes FINAL_CIRCUIT outside model-authored result assembly.
+    Keeping this as a review-time deterministic check lets the ordinary repair loop
+    fix sign/register mistakes while unsupported output names remain an honest gap.
+    """
+
+    payload = execution.observation.get("native_statevector")
+    if payload is None:
+        return None
+    try:
+        report = native_result_consistency(
+            payload,
+            execution.result,
+            plan.expected_output_keys,
+        )
+    except ValueError as exc:
+        return {
+            "method": "success_criteria",
+            "result": "error",
+            "details": {
+                "protocol": {"name": "native_result_consistency"},
+                "reason": "native RESULT consistency evidence is unusable",
+                "error": str(exc),
+                "fault": "verifier_evidence",
+            },
+        }
+    if report is None:
+        return None
+    scores = dict(report.scores)
+    disagreements = scores.pop("disagreements", [])
+    details: dict[str, Any] = {
+        "protocol": report.protocol,
+        "fingerprint_hash": report.fingerprint_hash,
+        "scores": scores,
+        "reason": (
+            "RESULT scalars agree with FINAL_CIRCUIT native evidence"
+            if report.passed
+            else "RESULT scalars disagree with FINAL_CIRCUIT native evidence"
+        ),
+    }
+    if disagreements:
+        details["disagreements"] = disagreements
+    return {
+        "method": "success_criteria",
+        "result": "pass" if report.passed else "fail",
+        "details": details,
+    }
+
+
 _REFERENCE_METHODS = frozenset(
     {VerificationMethod.EXACT, VerificationMethod.EXACT_DIAG, VerificationMethod.BRUTE_FORCE}
 )
@@ -2454,6 +2855,9 @@ _EXACT_SUCCESS_PROTOCOLS = frozenset(
         "exact_lindblad_evolution",
         "exact_dyadic_phase_estimation",
         "exact_dense_linear_system",
+        "exact_coherent_amplitude_damping",
+        "exact_one_qubit_ry_rz_request",
+        "exact_finite_qpe_request",
     }
 )
 
@@ -2616,6 +3020,34 @@ def _reference_routing_critic(
             "((basis_index >> a) & 1), or use subsystem APIs, rather than treating "
             "reshape axis a as qubit a. Do not replace circuit amplitudes with the "
             "classical baseline values."
+        )
+    if "native_result_consistency" in protocols:
+        instructions.append(
+            "Recompute every reported scalar from the same FINAL_CIRCUIT state used by "
+            "the trusted observer. Use canonical q0 ordering, Bloch Y = "
+            "2*Im(conj(alpha)*beta), rho[0,1]=alpha*conj(beta), and keep finite-QPE "
+            "probabilities in displayed integer order instead of reversing tensor axes."
+        )
+    if "exact_coherent_amplitude_damping" in protocols:
+        instructions.append(
+            "Implement the full amplitude-damping isometry: after the system-controlled "
+            "environment RY, apply CNOT from the environment to the system so |1,0> "
+            "maps to sqrt(1-gamma)|1,0> + sqrt(gamma)|0,1>."
+        )
+    if "exact_one_qubit_ry_rz_request" in protocols:
+        instructions.append(
+            "Rebuild the requested RY(theta)-then-RZ(phi) state using the mathematical "
+            "rotation convention from the request. Qulacs RX/RY/RZ native angle signs "
+            "are opposite to exp(-i*angle*Pauli/2), so negate each requested native "
+            "rotation angle exactly once. Derive Bloch X/Y from conj(alpha)*beta."
+        )
+    if "exact_finite_qpe_request" in protocols:
+        instructions.append(
+            "Rebuild finite-register QPE from the requested eigenphase and counting "
+            "width. Keep q0 as the low-order counting qubit when mapping Statevector "
+            "basis indices, apply controlled powers 2**j, and use the complete inverse "
+            "QFT. Report the actual displayed-order distribution, never a continuous "
+            "phase or a distribution from the wrong subsystem."
         )
     if "brute_force_enumeration" in protocols:
         if any("SUBOPTIMAL" in disagreement for disagreement in disagreements):
@@ -3275,8 +3707,6 @@ class ProductionSimplePipelinePorts:
         )
 
     async def _reconcile_lindblad_reference(self, plan: Plan) -> SimplePortResult[Plan]:
-        verification = plan.verification_plan
-        declared_reference = verification.exact_lindblad_reference if verification else None
         if not _should_attempt_lindblad_reference(plan, self._task_prompt):
             return SimplePortResult.success(plan)
         request_payload = json.dumps(
@@ -3313,50 +3743,24 @@ class ProductionSimplePipelinePorts:
                 extract_json(response.text)
             )
         except (StageOutputError, ValidationError) as exc:
-            if declared_reference is None:
-                log.warning(
-                    "skipping optional Lindblad enrichment after invalid extraction: %s",
-                    type(exc).__name__,
-                )
-                return SimplePortResult.success(plan)
-            return _failure(
-                kind=SimpleFailureKind.MODEL_OUTPUT,
-                stage=SimplePipelineStage.PLANNING,
-                code="lindblad_reference_extraction_invalid",
-                message="independent Lindblad extraction returned invalid structured data",
-                retryable=True,
-                retry_target=SimpleRetryTarget.PLANNING,
-                exception=exc,
-                details=_model_output_details(exc),
+            log.warning(
+                "continuing without exact Lindblad enrichment after invalid extraction: %s",
+                type(exc).__name__,
             )
+            return SimplePortResult.success(_without_lindblad_reference(plan))
         except Exception as exc:
-            if declared_reference is None:
-                log.warning(
-                    "skipping optional Lindblad enrichment after provider failure: %s",
-                    type(exc).__name__,
-                )
-                return SimplePortResult.success(plan)
-            return _provider_failure(
-                stage=SimplePipelineStage.PLANNING,
-                role="plan",
-                exception=exc,
+            log.warning(
+                "continuing without exact Lindblad enrichment after provider failure: %s",
+                type(exc).__name__,
             )
+            return SimplePortResult.success(_without_lindblad_reference(plan))
         if not extraction.supported or extraction.reference is None:
-            if declared_reference is None:
-                return SimplePortResult.success(plan)
-            return _failure(
-                kind=SimpleFailureKind.PLAN,
-                stage=SimplePipelineStage.PLANNING,
-                code="lindblad_reference_consensus_failed",
-                message="independent extraction does not support the declared Lindblad reference",
-                retryable=True,
-                retry_target=SimpleRetryTarget.PLANNING,
-                details={"comparison": {"reason": "independent_extraction_unsupported"}},
-            )
+            return SimplePortResult.success(_without_lindblad_reference(plan))
 
         # The broad planner and the Pro extractor are correlated model evidence.
         # Require a second model role even when the Plan already supplied a reference;
         # exact execution is enabled only when all available typed meanings agree.
+        audit_extraction: _LindbladReferenceExtraction | None = None
         try:
             audit_response = await self._llm.complete(
                 LLMRequest(
@@ -3379,65 +3783,44 @@ class ProductionSimplePipelinePorts:
                 extract_json(audit_response.text)
             )
         except (StageOutputError, ValidationError) as exc:
-            if declared_reference is None:
-                log.warning(
-                    "skipping optional Lindblad enrichment without dual-model consensus: %s",
-                    type(exc).__name__,
-                )
-                return SimplePortResult.success(plan)
-            return _failure(
-                kind=SimpleFailureKind.MODEL_OUTPUT,
-                stage=SimplePipelineStage.PLANNING,
-                code="lindblad_reference_audit_extraction_invalid",
-                message="audit-role Lindblad extraction returned invalid structured data",
-                retryable=True,
-                retry_target=SimpleRetryTarget.PLANNING,
-                exception=exc,
-                details=_model_output_details(exc),
+            log.warning(
+                "continuing with substantive Lindblad extraction after invalid audit: %s",
+                type(exc).__name__,
             )
         except Exception as exc:
-            if declared_reference is None:
-                log.warning(
-                    "skipping optional Lindblad enrichment after audit provider failure: %s",
-                    type(exc).__name__,
-                )
-                return SimplePortResult.success(plan)
-            return _provider_failure(
-                stage=SimplePipelineStage.PLANNING,
-                role="audit",
-                exception=exc,
+            log.warning(
+                "continuing with substantive Lindblad extraction after audit failure: %s",
+                type(exc).__name__,
             )
-        if not audit_extraction.supported or audit_extraction.reference is None:
-            if declared_reference is None:
-                return SimplePortResult.success(plan)
-            return _failure(
-                kind=SimpleFailureKind.PLAN,
-                stage=SimplePipelineStage.PLANNING,
-                code="lindblad_reference_consensus_failed",
-                message="audit extraction does not support the declared Lindblad reference",
-                retryable=True,
-                retry_target=SimpleRetryTarget.PLANNING,
-                details={"comparison": {"reason": "audit_extraction_unsupported"}},
-            )
+        if audit_extraction is not None and (
+            not audit_extraction.supported or audit_extraction.reference is None
+        ):
+            log.info("Lindblad audit extractor abstained: %s", audit_extraction.reason)
+            audit_extraction = None
 
-        if declared_reference is None:
-            reference = extraction.reference
-            comparison_references = [("audit_extraction", audit_extraction.reference)]
-            reference_method = "dual_model_lindblad_extraction_consensus"
-        else:
-            reference = declared_reference
-            comparison_references = [
-                ("plan_extraction", extraction.reference),
-                ("audit_extraction", audit_extraction.reference),
-            ]
-            reference_method = "independent_dual_model_lindblad_consensus"
+        # The dedicated substantive extractor is the request-scoped reference.
+        # The broad planner's deeply nested copy is ignored; it was the source of
+        # repeated schema failures and is correlated with generation planning.
+        reference = extraction.reference
+        comparison_references = (
+            [("audit_extraction", audit_extraction.reference)]
+            if audit_extraction is not None
+            else []
+        )
+        reference_method = (
+            "dual_model_lindblad_extraction_consensus"
+            if comparison_references
+            else "independent_lindblad_extraction"
+        )
 
         assert reference is not None
         planner_spec = _lindblad_reference_spec(reference)
         try:
             comparison: dict[str, Any] = {"reason": "all_lindblad_references_equivalent"}
             mismatch_source: str | None = None
+            equivalent = True
             for source, comparison_reference in comparison_references:
+                assert comparison_reference is not None
                 equivalent, comparison = lindblad_references_equivalent(
                     planner_spec,
                     _lindblad_reference_spec(comparison_reference),
@@ -3447,56 +3830,21 @@ class ProductionSimplePipelinePorts:
                     break
             exact_values = exact_lindblad_values(**planner_spec)
         except LindbladReferenceError as exc:
-            if declared_reference is None:
-                log.warning("skipping unusable optional Lindblad enrichment: %s", exc)
-                return SimplePortResult.success(plan)
-            return _failure(
-                kind=SimpleFailureKind.PLAN,
-                stage=SimplePipelineStage.PLANNING,
-                code="lindblad_reference_unusable",
-                message="typed Lindblad reference cannot be evaluated as declared",
-                retryable=True,
-                retry_target=SimpleRetryTarget.PLANNING,
-                exception=exc,
-                details={"reference_errors": [str(exc)[:1_000]]},
-            )
+            log.warning("skipping unusable optional Lindblad enrichment: %s", exc)
+            return SimplePortResult.success(_without_lindblad_reference(plan))
         if not equivalent:
             comparison = comparison | {"source": mismatch_source}
-            if declared_reference is None:
-                log.info(
-                    "skipping optional Lindblad enrichment without semantic consensus: %s",
-                    comparison.get("reason", "unknown_mismatch"),
-                )
-                return SimplePortResult.success(plan)
-            return _failure(
-                kind=SimpleFailureKind.PLAN,
-                stage=SimplePipelineStage.PLANNING,
-                code="lindblad_reference_consensus_failed",
-                message="planner and independent Lindblad extraction disagree",
-                retryable=True,
-                retry_target=SimpleRetryTarget.PLANNING,
-                details={"comparison": comparison},
+            log.info(
+                "skipping optional Lindblad enrichment without audit consensus: %s",
+                comparison.get("reason", "unknown_mismatch"),
             )
+            return SimplePortResult.success(_without_lindblad_reference(plan))
 
         primary = plan.success_criteria.primary_metric
         declared_keys = {result.result_key for result in reference.results}
         if primary not in declared_keys or not declared_keys.issubset(plan.expected_output_keys):
-            if declared_reference is None:
-                log.info("skipping optional Lindblad enrichment with unbound result keys")
-                return SimplePortResult.success(plan)
-            return _failure(
-                kind=SimpleFailureKind.PLAN,
-                stage=SimplePipelineStage.PLANNING,
-                code="lindblad_reference_result_binding_failed",
-                message="typed Lindblad results are not bound to the Plan output contract",
-                retryable=True,
-                retry_target=SimpleRetryTarget.PLANNING,
-                details={
-                    "primary_metric": primary,
-                    "reference_result_keys": sorted(declared_keys),
-                    "expected_output_keys": sorted(plan.expected_output_keys),
-                },
-            )
+            log.info("skipping optional Lindblad enrichment with unbound result keys")
+            return SimplePortResult.success(_without_lindblad_reference(plan))
         exact_primary = exact_values[primary]
         expected_range = plan.success_criteria.expected_range or {}
         lower = expected_range.get("min")
@@ -3827,7 +4175,7 @@ class ProductionSimplePipelinePorts:
                 )
             )
             raw_plan_output = response.text
-            draft = parse_simple_plan(response.text)
+            draft = parse_simple_plan(response.text, omit_broad_lindblad_reference=True)
             plan = _apply_trusted_task_reference(
                 draft.to_durable_plan(
                     selected_framework=self._framework,
@@ -3862,7 +4210,8 @@ class ProductionSimplePipelinePorts:
         if aligned.failure is not None:
             return SimplePortResult.failed(aligned.failure)
         assert aligned.value is not None
-        plan = aligned.value
+        plan = _reconcile_repetition_qec_contract(aligned.value, self._task_prompt)
+        plan = _reconcile_lindblad_stinespring_contract(plan, self._task_prompt)
 
         reconciled = _reconcile_exact_diag_success_criteria(plan)
         if reconciled.failure is not None:
@@ -4029,7 +4378,7 @@ class ProductionSimplePipelinePorts:
             try:
                 response = await self._llm.complete(
                     LLMRequest(
-                        model=model_for("generate"),
+                        model=_generation_model_for_plan(plan.plan),
                         system=with_execution_conversation_context(
                             simple_generation_system_prompt(
                                 framework=plan.plan.framework.value,
@@ -4438,6 +4787,33 @@ class ProductionSimplePipelinePorts:
             ]
             reference_checks = _reference_checks(plan.plan, execution)
             fast_checks.extend(reference_checks)
+            native_consistency = _native_result_consistency_check(plan.plan, execution)
+            if native_consistency is not None:
+                fast_checks.append(native_consistency)
+                # This check compares protected values with trusted execution of
+                # FINAL_CIRCUIT, so an advisory review cannot waive a mismatch.
+                reference_checks.append(native_consistency)
+            amplitude_damping_check = _amplitude_damping_reference_check(
+                self._task_prompt,
+                execution,
+            )
+            if amplitude_damping_check is not None:
+                fast_checks.append(amplitude_damping_check)
+                reference_checks.append(amplitude_damping_check)
+            one_qubit_rotation_check = _one_qubit_rotation_reference_check(
+                self._task_prompt,
+                execution,
+            )
+            if one_qubit_rotation_check is not None:
+                fast_checks.append(one_qubit_rotation_check)
+                reference_checks.append(one_qubit_rotation_check)
+            finite_qpe_check = _finite_qpe_reference_check(
+                self._task_prompt,
+                execution,
+            )
+            if finite_qpe_check is not None:
+                fast_checks.append(finite_qpe_check)
+                reference_checks.append(finite_qpe_check)
         if (
             not artifact_only
             and plan.plan.verification_plan is not None
