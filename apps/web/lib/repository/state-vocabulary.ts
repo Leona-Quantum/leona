@@ -263,6 +263,30 @@ export const STATE_VOCABULARY: StateVocabulary = {
       specializes: ["abstract-circuit"],
     },
     {
+      id: "runnable-evolution",
+      label: "Evolution circuit, input in hand",
+      labelJa: "入力を手にした発展回路",
+      summary:
+        "An evolution circuit together with the preparation routine for the input it acts on. The pair is still a circuit — its error and its count are unchanged — and it is also the routine that makes the evolved state: run it and the state is in hand, control and invert it and an estimation readout can call the whole simulation as a subroutine.",
+      summaryJa:
+        "作用させる入力の準備手続きを伴った発展回路。この組はやはり回路であり、誤差も回数の勘定も変わりません。同時に、発展後の状態を作る手続きでもあります。実行すれば状態が手に入り、制御し逆転すれば、推定型の読み出しがシミュレーション全体をサブルーチンとして呼び出せます。",
+      // The second state authored with a route rather than lifted from a
+      // contract (`hamiltonian-surrogate` was the first — the growth path the
+      // owner set in session 106, recorded in `plans/leona-map-scaling-rules.md`
+      // §R15). Both parents are true of the object, not a modelling convenience:
+      // Joseph writes "The KvN simulation computes the state |ψ⟩" — the hop
+      // lands holding a runnable computation of the evolved state, which is
+      // `prepared-state`'s own definition ("not the state itself but the routine
+      // that makes it"), and his readout uses both parents at once — it runs the
+      // simulation forward and backward (the routine) while counting its
+      // invocations as circuit evaluations (the circuit). Owner ruling,
+      // session 120: when the map cannot hold something the literature truly
+      // has, the map restructures; this state is that restructuring, and it is
+      // what lets a `through` narrowing record the landing without widening
+      // `observable-estimation.from` for the three readouts that rely on it.
+      specializes: ["evolution-circuit", "prepared-state"],
+    },
+    {
       id: "routed-circuit",
       label: "Routed circuit",
       labelJa: "ルーティング済み回路",
