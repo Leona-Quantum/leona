@@ -211,6 +211,33 @@ export interface LayerMethod extends LayerNodeBase {
    */
   refines?: string;
   /**
+   * The refined method's name **as it is drawn on the canvas**, without the
+   * symbol — `Koopman`, `Taylor`, `LCHS`, `SABRE`.
+   *
+   * ## Why the name is authored and the symbol is not
+   *
+   * The canvas draws `LightSABRE ⊂ SABRE`. The `⊂` has exactly one writer,
+   * `drawnName`, because it means the same thing on all five lanes. The *name*
+   * cannot be derived the same way: the parent's drawn name is written for a
+   * lane of its own, where it has to be told apart from its siblings, and as a
+   * suffix it does not — `taylor-all-at-once` is `Taylor, all-at-once` on its
+   * own lane precisely because `truncated-taylor` sits five lanes away, and on
+   * Krovi's lane that lane is adjacent and supplies the disambiguation itself.
+   * Taking the first word instead is a regex over a name, which is the failure
+   * `StepRepetition.mark` documents: right for four of these and wrong for the
+   * one with a comma in it, silently, on the drawing.
+   *
+   * ## So it is authored, and gated against the thing it names
+   *
+   * Validation requires this string to occur in the parent's own `label` or
+   * `shortLabel` for the same locale. That is what keeps a hand-copied name
+   * from outliving a rename: the mark may be shorter than the parent's name,
+   * never a different name. Required in both locales whenever `refines` is set,
+   * absent whenever it is not.
+   */
+  refinesMark?: string;
+  refinesMarkJa?: string;
+  /**
    * When it applies and when it does not.
    *
    * **Absent means no source we read stated one.** Never `""` — an empty string
@@ -591,6 +618,18 @@ export interface StepRepetition {
  * enough that a sentence cannot be written here by accident.
  */
 export const REPEAT_MARK_MAX = 12;
+
+/**
+ * How long a refinement mark may be, in characters — the name only, before the
+ * `⊂ ` the renderer adds.
+ *
+ * Same budget argument as `REPEAT_MARK_MAX` and a tighter number, because this
+ * mark is on the lane of the *narrower* method, whose name is the longer of the
+ * two by construction (`LCHS with the improved kernel ⊂ LCHS`). Ten characters
+ * fits every parent's drawn short name in both locales with room, and refuses
+ * a mark that would restate the parent's whole title on somebody else's lane.
+ */
+export const REFINES_MARK_MAX = 10;
 
 export type LayerNode = LayerCapability | LayerMethod;
 
@@ -2199,6 +2238,40 @@ export function validateLayerGraph(
         );
       }
       if (node.refines === node.id) errors.push(`${node.id}: refines itself`);
+      // **The mark names the parent, and validation is what keeps it naming
+      // the parent.** It is a hand-copied name, which is the shape that
+      // eventually points at something else; requiring it to occur inside the
+      // parent's own drawn name means a rename can shorten this mark's meaning
+      // but can never leave it pointing at a method that no longer exists under
+      // that name. Checked per locale, because the two names differ.
+      for (const [field, mark, whole, short] of [
+        ["refinesMark", node.refinesMark, parent?.label, parent?.shortLabel],
+        ["refinesMarkJa", node.refinesMarkJa, parent?.labelJa, parent?.shortLabelJa],
+      ] as const) {
+        if (typeof mark !== "string" || mark.trim() === "") {
+          errors.push(
+            `${node.id}: refines ${node.refines} and ${field} is empty — the canvas draws the relation as a mark and needs the name it points at, in both locales`,
+          );
+          continue;
+        }
+        if ([...mark.trim()].length > REFINES_MARK_MAX) {
+          errors.push(
+            `${node.id}: ${field} is ${[...mark.trim()].length} characters — a refinement mark may be at most ${REFINES_MARK_MAX}`,
+          );
+        }
+        const names = [whole, short].filter((name): name is string => typeof name === "string");
+        if (names.length > 0 && !names.some((name) => name.includes(mark.trim()))) {
+          errors.push(
+            `${node.id}: ${field} is "${mark.trim()}", which does not occur in ${node.refines}'s own name (${names.join(" / ")}) — a mark may shorten the name it points at, never replace it`,
+          );
+        }
+      }
+    } else {
+      for (const field of ["refinesMark", "refinesMarkJa"] as const) {
+        if (node[field] !== undefined) {
+          errors.push(`${node.id}: ${field} is set and refines is not`);
+        }
+      }
     }
   }
 
