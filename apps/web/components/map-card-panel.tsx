@@ -529,7 +529,7 @@ function IngredientList({
 }): React.ReactElement {
   return (
     <ul className="mj-card-list">
-      {items.map(({ link, repetition }) => (
+      {items.map(({ link, repetition, theory }) => (
         <li key={link.id}>
           {/* The space is deliberate and the node page has the same one: an
               `inline-block` badge is not guaranteed to be announced apart from
@@ -543,6 +543,20 @@ function IngredientList({
             </p>
           ) : null}
           {repetition ? <RepeatNote repetition={repetition} copy={copy} /> : null}
+          {/* The mathematics of this ingredient in this route, where a source
+              states one. **Drawn only when held**, which is what keeps the list
+              a list: an ingredient with no note renders exactly as before, and
+              the owner's *"this is probably going to be bulky"* applies here
+              more than anywhere — the chain can afford a disclosure per hop and
+              a flat list cannot.
+
+              Placed under the repeat note rather than over it because the two
+              answer questions in that order: how many times, then what happens
+              each time. No `Gap` beside it, deliberately — the Requires list is
+              a list of what the route needs, and printing "no source states the
+              mathematics here" against every ingredient in the graph would bury
+              the seven that have one. The chain still reports its gaps. */}
+          {theory.held ? <TheoryProse spans={theory.value} copy={copy} /> : null}
         </li>
       ))}
     </ul>

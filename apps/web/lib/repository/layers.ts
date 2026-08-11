@@ -1756,6 +1756,14 @@ export function regionClosure(
   // route or feeds it, since both are drawn and both are keyable — plus its own
   // stretch **only where it has one**.
   //
+  // The feed arm of that sentence was **not** true when this function was
+  // written and was made true afterwards: the card read a note off the chain
+  // only, so a note keyed to an ingredient rendered nowhere, and this gauge was
+  // counting a stretch no reader could reach. `CardIngredient.theory` closed it,
+  // and `repository-map-card.test.ts` now fails if any authored key renders on
+  // no surface — which is the guard that keeps this denominator honest rather
+  // than this comment.
+  //
   // The "only where it has one" is the whole reason this walks `routeOf` instead
   // of taking `[...steps, id]` from the schema's key rule. `validateLayerGraph`
   // accepts a method's own id as a key on *any* method, but a route whose
