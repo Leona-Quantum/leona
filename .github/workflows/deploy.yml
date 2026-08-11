@@ -567,78 +567,14 @@ jobs:
       # exists to end.
       - name: sync the published catalog
         if: steps.creds.outputs.have == 'true' && vars.CATALOG_SYNC_ENABLED == 'true'
-        env:
-          # The admin commands go through the catalog scope checks, which open
-          # with `if not authority.enabled`. With the flag off they fail as
-          # `AuthzError: invalid catalog importer scope`, which reads like a
-          # permissions problem and is not one. This is THIS process's shell
-          # only — no deployed service reads a runner's environment.
-          SYSTEM_CATALOG_ENABLED: "true"
-          # Names the connection in pg_stat_activity. A one-shot admin process
-          # holding connections on the production instance should be
-          # attributable to what it is rather than borrowing the api's name.
-          MAJORANA_SERVICE: catalog-sync
-          # The sessions here are sequential, one at a time. Pinned rather than
-          # left to the default so this run is a term the connection budget in
-          # docs/runbooks/database.md can actually account for.
-          DB_POOL_SIZE: "2"
-          DB_MAX_OVERFLOW: "0"
         run: |
           set -euo pipefail
-
-          # The proxy has been running since before `build image`, which is
-          # several minutes of build and rollout ago. Checked again here so a
-          # proxy that died in between reports itself, instead of surfacing as a
-          # connection error that reads like a broken database.
-          if ! curl -fsS http://127.0.0.1:9090/startup >/dev/null 2>&1; then
-            echo "::error::the Cloud SQL Auth Proxy is no longer answering, so the"
-            echo "::error::catalog sync cannot reach the database. The code rollout"
-            echo "::error::above SUCCEEDED — only the catalog is unsynced."
-            exit 1
-          fi
-
-          # The three authority ids are configuration of the deployed service and
-          # exist nowhere else: not in this workflow, not in the repo, not in
-          # Secret Manager. Reading them back off the service is what makes the
-          # sync provably target the same workspace the API serves from, and adds
-          # no second place for a production identity to be stated and go stale.
-          read_service_env() {
-            gcloud run services describe majorana-api \
-              --project "$GCP_PROJECT" --region "$GCP_REGION" \
-              --format="value(spec.template.spec.containers[0].env.filter(\"name:$1\").extract(value))" \
-              | tr -d "[]' "
-          }
-          uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
-          for var in SYSTEM_CATALOG_WORKSPACE_ID SYSTEM_CATALOG_IMPORTER_USER_ID \
-                     SYSTEM_CATALOG_PUBLIC_READER_USER_ID; do
-            value=$(read_service_env "$var")
-            # Validated, not just read. gcloud's projection returns a list, so a
-            # name that matched two env vars would come back joined rather than
-            # empty — and an id that is silently wrong is the one failure this
-            # step must not have. The regex is what turns a format change into a
-            # loud stop instead of an import against a workspace nobody meant.
-            if ! [[ "$value" =~ $uuid_re ]]; then
-              echo "::error::$var did not read back as a UUID from majorana-api."
-              echo "::error::Either the service no longer carries the catalog authority"
-              echo "::error::ids as plain env values, or the projection shape changed."
-              echo "::error::The code rollout above SUCCEEDED — only the catalog is unsynced."
-              exit 1
-            fi
-            export "$var=$value"
-          done
-
-          # Same Secret Manager entry the migrate step reads: since the Cloud SQL
-          # move it holds a 127.0.0.1:5432 URL that resolves through the proxy.
-          # Exported into THIS shell rather than written to $GITHUB_ENV, so a
-          # production connection string does not outlive the step that needs it.
-          if ! db_url=$(gcloud secrets versions access latest \
-            --secret=DATABASE_URL_SECRET --project "$GCP_PROJECT" 2>/tmp/catalog_secret.err); then
-            echo "::error::could not read DATABASE_URL_SECRET: $(cat /tmp/catalog_secret.err)"
-            exit 1
-          fi
-          test -n "$db_url" || { echo "::error::DATABASE_URL_SECRET is empty"; exit 1; }
-          echo "::add-mask::$db_url"
-          export DATABASE_URL="$db_url"
+          # `|| exit 1` rather than relying on `set -e`: bash disables errexit
+          # inside the left operand of `||`, which is exactly how the parked
+          # step below invokes this — so a failed preamble would otherwise fall
+          # through and run the command without a DATABASE_URL. Caught by
+          # running it: the guarded form printed past its own guard.
+          . scripts/catalog-admin-env.sh || exit 1
 
           # No manifest freshness check here on purpose. Verifying it against the
           # TypeScript corpus means bundling apps/web with esbuild, which would
@@ -662,6 +598,15 @@ jobs:
       # A skipped step is silent, and silence about a stale catalog is the exact
       # failure this feature was built to end — so the off state announces
       # itself every time rather than only in the file that turned it off.
+      #
+      # It also ANSWERS the question that parked it. The refusal that stopped the
+      # sync hands its reader two bare UUIDs, and the evidence separating them
+      # lives in the database that same reader is told not to reach from a laptop
+      # — so "decide which of these is the real reviewer" was an owner action
+      # with no supported way to gather the facts. `catalog_admin reviewers` is
+      # read-only: it writes nothing and attests nothing, and the whole block is
+      # guarded so a failure inside it can never redden a deploy the way the
+      # sync's first run did.
       - name: the catalog sync is parked
         if: steps.creds.outputs.have == 'true' && vars.CATALOG_SYNC_ENABLED != 'true'
         run: |
@@ -673,3 +618,10 @@ jobs:
           echo "::warning::which is the real reviewer, revoke the other, then:"
           echo "::warning::  gh variable set CATALOG_SYNC_ENABLED --body true"
           echo "::warning::See docs/runbooks/system-catalog.md and OWNER_TODO."
+          echo "--- who holds the grant (read-only; never fails this deploy) ---"
+          (
+            set -euo pipefail
+            . scripts/catalog-admin-env.sh || exit 1
+            uv run --package majorana-api python -m majorana_api.catalog_admin reviewers
+          ) || echo "::warning::could not read the reviewer grants; the warning above stands."
+          exit 0
