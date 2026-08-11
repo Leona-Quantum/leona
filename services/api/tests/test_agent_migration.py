@@ -253,6 +253,47 @@ def test_additional_frameworks_migration_is_additive_and_fails_closed(monkeypatc
     assert "DELETE FROM" not in statements[-1]
 
 
+def test_remaining_framework_constraints_are_completed_and_fail_closed(monkeypatch):
+    module = _load_migration("0049_complete_framework_constraints.py")
+    created = []
+    statements = []
+
+    monkeypatch.setattr(module.op, "drop_constraint", lambda *_args, **_kwargs: None)
+    monkeypatch.setattr(
+        module.op,
+        "create_check_constraint",
+        lambda name, table, expression: created.append((name, table, expression)),
+    )
+    monkeypatch.setattr(module.op, "execute", statements.append)
+
+    module.upgrade()
+    assert set(module._FRAMEWORKS_NEW) == {framework.value for framework in Framework}
+    assert {(name, table) for name, table, _expression in created} == {
+        ("ck_framework_enum", "runs"),
+        ("ck_framework_enum", "artifacts"),
+        (
+            "ck_artifact_versions_authoritative_framework_enum",
+            "artifact_versions",
+        ),
+    }
+    assert all(
+        framework in expression
+        for _name, _table, expression in created
+        for framework in module._FRAMEWORKS_ADDED
+    )
+    version_expression = next(
+        expression for _name, table, expression in created if table == "artifact_versions"
+    )
+    assert "authoritative_framework is null" in version_expression
+
+    module.downgrade()
+    assert "cannot downgrade 0049" in statements[-1]
+    assert "FROM runs" in statements[-1]
+    assert "FROM artifacts" in statements[-1]
+    assert "FROM artifact_versions" in statements[-1]
+    assert "DELETE FROM" not in statements[-1]
+
+
 def test_verification_audit_event_migration_is_additive_and_fails_closed(monkeypatch):
     module = _load_migration("0030_verification_audit_events.py")
     created = []
