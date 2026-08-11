@@ -282,6 +282,14 @@ export default async function RepositoryLayersPage({
                 folded: paperReveal.folded,
                 elsewhereCount: paperReveal.elsewhere.length,
                 undrawnCount: paperReveal.undrawn.length,
+                // W22 / RULING 06de05. Carried whenever `?paper=` resolves, NOT
+                // only on the landing, and that is deliberate: unfolding changes
+                // which lanes exist, so every address below the unfolded one
+                // shifts with it. Dropping the unfold the moment the reader adds
+                // their own `?open=` would leave their addresses pointing at
+                // different lanes than the ones they clicked — D-W20.2 hands the
+                // OPEN SET back to the reader, not the figure's shape.
+                unfold: paperReveal.unfold,
               }
             : null
         }

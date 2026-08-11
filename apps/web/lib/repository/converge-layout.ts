@@ -2229,6 +2229,58 @@ function planForMethod(
           ),
         ],
   );
+  // W22 / OWNER RULING 06de05 — "not duplicate paths unless the paper has
+  // several different pipelines."
+  //
+  // Unfolding is ADDITIVE: `methodFanGroups` moves the folded refinement into
+  // `variants` and leaves this host's own interior exactly as it was. For the
+  // one record whose refinement genuinely draws the parent's chain
+  // (`lchs-improved-kernel`), that means this figure would draw one pipeline
+  // TWICE — measured: `lchs-kernel-identity` at both `linear-ode-solve:0.3.0`
+  // (here) and `:0.3.3.0` (inside the variant).
+  //
+  // So when the unfolded variant's drawing IS this method's own drawing, this
+  // method stops drawing it and the variant draws it once. The lane keeps its
+  // name, its address, its open control and its place in `drawnMethods` — only
+  // the duplicated chain goes — which is why the counting invariant
+  // `drawnMethodCount + foldedCount === methodsRealizing(...)` is untouched.
+  //
+  // Scoped to the UNFOLDED variant by id on purpose: W13 puts every ordinary
+  // refinement in `variants` too, and those are not duplicates of their parent
+  // — only a `sameInternalsAsParent` fold can be. The other two folded records
+  // draw something DIFFERENT from their host (`krovi-linear-ode`'s parent pins
+  // a `via` it does not) and must keep both, so this is measured per pair, not
+  // asserted from the flag.
+  //
+  // Compared on the sequence of drawn step ids, NOT on `corpusShape`, and the
+  // reason is measured: the two differ in ways that are not the duplication.
+  // (1) Each carries a self-strand ("the method itself", `draws: null`) whose
+  // `own` is its OWN id — `lchs-route` here, `lchs-improved-kernel` there — so
+  // any signature including `own` never matches. (2) W15 has already demoted
+  // part of the variant's interior: its `hamiltonian-simulation` draws shut
+  // with `⤴` pointing at the host's copy, so the nested shapes differ while
+  // the path is the same. What survives both is the step sequence, which is
+  // what "the same path drawn twice" means here.
+  //
+  // Weaker than a deep comparison on purpose, and safe because the fold flag it
+  // rides on is itself validated to have identical `steps` and `bypasses`
+  // (`layers.ts:2404-2427`) — this only decides which of those three validated
+  // pairs actually draws the same lane.
+  const ownChildren = inside?.children ?? [];
+  const stepIds = (strands: readonly PlanStrand[]): string =>
+    strands
+      .filter((strand) => strand.draws !== null)
+      .map((strand) => strand.draws)
+      .join(">");
+  const unfoldedTwin =
+    unfold === undefined
+      ? undefined
+      : variants.find((variant) => variant.draws === unfold);
+  const drawsItsHostsChain =
+    unfoldedTwin !== undefined &&
+    stepIds(ownChildren).length > 0 &&
+    stepIds(ownChildren) === stepIds(unfoldedTwin.children);
+
   return {
     key,
     address,
@@ -2248,7 +2300,9 @@ function planForMethod(
     // of what a single-segment method has recorded, and they are worth drawing.
     open: isOpen && holds,
     layout: inside?.layout ?? null,
-    children: inside?.children ?? [],
+    // Emptied only when the unfolded variant draws this same chain — see
+    // `drawsItsHostsChain` above.
+    children: drawsItsHostsChain ? [] : ownChildren,
     boundaries: inside?.boundaries ?? [],
     // `route.feeds`, not the planned `feeds`: a shut method has no planned
     // feeds and still has to say how many things are inside it, or its own
@@ -4072,6 +4126,22 @@ export function layoutConverge(options: {
    * figure inside the card has exactly one right base and it is this one.
    */
   innerBase?: string | null;
+  /**
+   * The one W17-folded refinement this figure must draw as its own strand
+   * anyway (`?unfold=`, W22 — OWNER RULING 06de05: a paper landing may
+   * re-expand a fold so its cited path draws its own lanes).
+   *
+   * Before W22 this option existed on `layoutFigure` but **not here**, so a
+   * caller who passed it to the map got silence: `compile-to-device` and
+   * `nonlinear-ode-solve` returned byte-identical figures (78 lanes) with and
+   * without it, and the folded target never appeared. It was reachable only
+   * through `layoutConvergeForMethod`, i.e. on the folded method's own page.
+   * Promoting it here is what makes `?unfold=` a thing the map can do at all.
+   *
+   * An id, not a flag, for the reason `layers.ts:825` gives: a page can never
+   * accidentally unfold a sibling. Single-valued deliberately — see D-W22.3.
+   */
+  unfold?: string;
 }): ConvergeDiagram {
   return layoutFigure(options);
 }

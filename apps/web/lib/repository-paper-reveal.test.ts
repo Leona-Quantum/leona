@@ -18,7 +18,15 @@ import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 
 const traces = paperTraces(LAYER_GRAPH);
 
-function drawnAddresses(focusId: string, open: readonly string[]): Set<string> {
+function drawnAddresses(
+  focusId: string,
+  open: readonly string[],
+  // W22: a reveal that re-expands a W17 fold names addresses that exist ONLY
+  // under that unfold, so the re-draw has to be given it. Passed from
+  // `reveal.unfold`, exactly as the surface passes it — a checker that redrew
+  // without it would be measuring a different figure from the one shipped.
+  unfold?: string,
+): Set<string> {
   const focus = layerNode(LAYER_GRAPH, focusId);
   assert.ok(focus && isCapability(focus), `${focusId} is a drawable capability`);
   const diagram = layoutConverge({
@@ -27,6 +35,7 @@ function drawnAddresses(focusId: string, open: readonly string[]): Set<string> {
     focus,
     locale: "en",
     open: new Set(open),
+    unfold,
   });
   const addresses = new Set<string>();
   for (const lane of diagram.lanes) addresses.add(lane.address);
@@ -107,7 +116,7 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
     // The claim, checked by re-drawing with ONLY the reveal set: every
     // occurrence the reveal names must actually draw under it — a folded
     // node's HOST occurrence exactly as a drawn node's own.
-    const addresses = drawnAddresses(reveal.focusId, reveal.open);
+    const addresses = drawnAddresses(reveal.focusId, reveal.open, reveal.unfold ?? undefined);
     for (const node of reveal.drawn) {
       assert.ok(
         addresses.has(node.address),
@@ -226,7 +235,7 @@ test("the reveal is minimal: removing any single address hides a claimed occurre
     for (const removed of reveal.open) {
       removals += 1;
       const smaller = reveal.open.filter((address) => address !== removed);
-      const addresses = drawnAddresses(reveal.focusId, smaller);
+      const addresses = drawnAddresses(reveal.focusId, smaller, reveal.unfold ?? undefined);
       // Fold-host occurrences are reveal targets exactly as drawn ones (v2):
       // an address whose only job is drawing a host is load-bearing, not dead.
       const stillAllDrawn =
@@ -253,4 +262,107 @@ test("the reveal is deterministic: two calls agree byte for byte", () => {
   const a = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(first.paper));
   const b = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(first.paper));
   assert.deepEqual(a, b);
+});
+
+/**
+ * `?unfold=` — OWNER RULING 06de05, W22: *"yes, but not duplicate paths unless
+ * the paper has several different pipelines."*
+ *
+ * The ruling's own words are the assertion: **no folded-method lane drawn
+ * beside its host**. It is deliberately NOT written as "no node id at two
+ * addresses" — the map already draws 14 nodes at more than one address across
+ * 3 of its 22 saturated figures, correctly, because one method is genuinely
+ * used by two pipelines. Read that way the ruling would condemn the map as it
+ * stands. So the measurement is a DELTA: unfolding must introduce no duplicate
+ * that the same figure did not already have.
+ *
+ * This check earns its keep by having failed: before the suppression in
+ * `planForMethod`, `lchs-improved-kernel` drew `lchs-kernel-identity` at both
+ * `linear-ode-solve:0.3.0` (the host's own segment) and `:0.3.3.0` (inside the
+ * variant) — one new duplicate, exactly what the ruling forbids.
+ */
+test("unfolding a paper's fold draws its lane and adds no duplicate path (RULING 06de05)", () => {
+  /** Lanes that genuinely DRAW: not a shut W15 pointer, not a nameless twin. */
+  const drawnTwice = (focusId: string, unfold?: string): Map<string, string[]> => {
+    const focus = layerNode(LAYER_GRAPH, focusId);
+    assert.ok(focus && isCapability(focus));
+    const open = new Set<string>();
+    let diagram = layoutConverge({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      focus,
+      locale: "en",
+      unfold,
+    });
+    for (let round = 0; round < 16; round++) {
+      let grew = false;
+      for (const lane of diagram.lanes) {
+        if (lane.openHref === null || open.has(lane.address)) continue;
+        open.add(lane.address);
+        grew = true;
+      }
+      if (!grew) break;
+      diagram = layoutConverge({
+        graph: LAYER_GRAPH,
+        vocabulary: STATE_VOCABULARY,
+        focus,
+        locale: "en",
+        open,
+        unfold,
+      });
+    }
+    const byNode = new Map<string, string[]>();
+    for (const lane of diagram.lanes) {
+      if (lane.draws === null || lane.sharedWith !== null || lane.nameless) continue;
+      byNode.set(lane.draws, [...(byNode.get(lane.draws) ?? []), lane.address]);
+    }
+    return new Map([...byNode].filter(([, at]) => at.length > 1));
+  };
+
+  let unfolding = 0;
+  let bothKept = 0;
+  for (const trace of traces) {
+    const reveal = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(trace.paper));
+    if (reveal === null || reveal.unfold === null) continue;
+    unfolding += 1;
+
+    // 1. The unfold is not decorative: the folded method draws its OWN lane.
+    //    Without this the duplicate check below could pass by drawing nothing.
+    assert.ok(
+      reveal.drawn.some((node) => node.nodeId === reveal.unfold),
+      `${trace.paper}: unfold=${reveal.unfold} is claimed but the method draws no lane of its own`,
+    );
+
+    // 2. And it is no longer described as folded — the bucket it came from.
+    assert.ok(
+      !reveal.folded.some((fold) => fold.nodeId === reveal.unfold),
+      `${trace.paper}: ${reveal.unfold} is drawn AND still reported folded — the panel would say both`,
+    );
+
+    // 3. The ruling itself, as a delta against the same figure unfolded away.
+    const before = drawnTwice(reveal.focusId);
+    const after = drawnTwice(reveal.focusId, reveal.unfold);
+    for (const [nodeId, at] of after) {
+      const had = before.get(nodeId)?.length ?? 0;
+      assert.ok(
+        at.length <= had,
+        `${trace.paper}: unfolding ${reveal.unfold} draws ${nodeId} ${at.length}x (was ${had}x) at ${at.join(" | ")} — a duplicate path the ruling forbids`,
+      );
+    }
+
+    // 4. Control arm — "several lanes ONLY when the paper genuinely has
+    //    several different pipelines". A host whose drawing DIFFERS from its
+    //    refinement's must still be drawn: a suppression that fired on every
+    //    pair would pass check 3 by deleting the map.
+    const host = reveal.folded.find((fold) => fold.nodeId === reveal.unfold)?.hostId;
+    assert.equal(host, undefined, "unfolded node must have left the folded bucket");
+    const hostDrawn = reveal.drawn.filter((node) => node.nodeId !== reveal.unfold);
+    if (hostDrawn.length > 0) bothKept += 1;
+  }
+
+  // The denominator, printed rather than implied — a sweep that silently went
+  // to zero would otherwise read exactly like a sweep that passed.
+  console.log(`unfold: ${unfolding} papers re-expand a fold; ${bothKept} keep other lanes beside it`);
+  assert.ok(unfolding >= 4, `only ${unfolding} papers unfold — the fold population has gone quiet`);
+  assert.ok(bothKept >= 3, `only ${bothKept} unfolding papers still draw another lane — suppression may be over-firing`);
 });
