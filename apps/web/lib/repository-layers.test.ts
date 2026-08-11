@@ -1193,7 +1193,11 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // has recorded yet.
   ["qsp-phase-factors", 4],
   ["state-preparation", 3],
-  ["observable-estimation", 3],
+  // 4 since B5 unit 3: `measurement-grouped-readout` is a fourth readout consuming a
+  // prepared state and nothing else. The chain is one hop long, so there is no second hop
+  // to tell any of them apart by — what this one changes is which TERMS share one set of
+  // shots, and a term grouping is not a step.
+  ["observable-estimation", 4],
   ["error-mitigation", 3],
   ["quantum-linear-solve", 2],
   ["polynomial-approximation", 2],
@@ -1221,6 +1225,12 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // becomes 5 — at which point this test fails until someone edits it, which is the
   // census working rather than breaking.
   ["excited-state-energy", 6],
+  // 2 since B5 unit 3, and this slot is new to the census rather than newly rotten:
+  // `variance-objective` joins `cvar-objective` as a second objective filling the slot in
+  // one hop, with no second hop to separate them. What separates them is the objective
+  // itself, which is not a step this graph draws — the same shape as the readout row
+  // above, and the same fix (an objective needs a state before a `via` can pin it).
+  ["parameter-optimization", 2],
 ]);
 
 /**
