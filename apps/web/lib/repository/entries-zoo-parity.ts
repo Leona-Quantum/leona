@@ -864,6 +864,302 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
       "hamiltonian-simulation-ising",
     ],
   },
+  {
+    slug: "matrix-commutativity-testing",
+    title: "Commutativity testing of a matrix set by quantum walk",
+    titleJa: "量子ウォークによる行列集合の可換性判定",
+    family: "Quantum query algorithm",
+    zooName: "Matrix Commutativity",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given oracle access to k matrices of size n × n, where a query names a matrix index x together with a pair of indices i, j and returns the ij entry of the x-th matrix, decide whether all k of the matrices commute with one another.",
+    problemJa:
+      "n × n の行列 k 個へオラクル経由でアクセスでき、行列の番号 x と添字の組 i, j を指定するとその行列の ij 成分が返されるとき、k 個の行列がすべて互いに可換であるかどうかを判定する問題です。",
+    idea:
+      "The paper uses a theorem of Mario Szegedy that relates the hitting time of a classical random walk to that of a quantum walk, and it also takes a look at Ambainis's method of quantum walk, applying both walks to the triangle finding problem and to the matrix verification problem in order to compare the powers of the two different walks. The abstract reports that Szegedy's algorithm turns out to be generalizable to similar problems and that Szegedy's theorem is therefore the one the paper uses to analyze matrix set commutativity, and it states that the technique behind the upper bound is generalized to a broader range of similar problems. The paper also presents Ambainis's method of lower bounding technique in order to obtain a lower bound for this problem. The abstract records that this is probably the first problem to be studied on the quantum query complexity using quantum walks that involves more than one parameter, here k and n.",
+    ideaJa:
+      "論文は、古典ランダムウォークのヒッティング時間を量子ウォークのそれと関係づける Mario Szegedy の定理を用い、あわせて Ambainis による量子ウォークの手法も取り上げて、両者を三角形発見問題と行列検証問題に適用することで2つのウォークの能力を比較しています。要旨は、Szegedy のアルゴリズムが類似の問題へ一般化できることが分かったため、行列集合の可換性の解析には Szegedy の定理を用いると述べており、さらに上界を導く際の技法をより広い範囲の類似問題へ一般化したとしています。論文はまた、この問題の下界を得るために Ambainis の下界導出の技法を提示しています。要旨は、量子ウォークを用いて量子クエリ計算量が調べられた問題のうち、k と n という2つのパラメータを含むものはおそらくこれが最初であると述べています。",
+    complexity:
+      "O(k^(4/5) n^(9/5)) oracle queries to decide whether all k of the n × n matrices commute; the Zoo states that classically the task requires Ω(k n²) queries. The abstract separately states a lower bound of Ω(k^(1/2) n) for the problem, obtained with Ambainis's lower-bounding technique, so the two bounds the abstract gives do not meet.",
+    complexityBasis:
+      'abstract of arXiv:quant-ph/0509206: "We give an O(k^{4/5}n^{9/5}) algorithm as well as a lower bound of Omega(k^{1/2}n)", with the technique named earlier in the same abstract, "We also present Ambainis\'s method of lower bounding technique (quant-ph/0002066) to obtain a lower bound for this problem"; Quantum Algorithm Zoo entry "Matrix Commutativity" (LaTeX rendered into Unicode): "this can be achieved on a quantum computer using O(k^(4/5)n^(9/5)) queries, whereas classically this requires Ω( k n² ) queries."',
+    caveat:
+      "This is a literature record: no oracle was instantiated, no circuit was built, compiled, simulated or run, and no set of matrices was tested for commutativity. All three figures above count oracle queries in the black-box model, so gate count, circuit depth, the memory the walk needs in order to hold matrix entries and the constant factors hidden by O(·) and Ω(·) are all outside this record. The paper's upper and lower bounds do not meet — O(k^(4/5) n^(9/5)) against Ω(k^(1/2) n) — so nothing here establishes that the algorithm is optimal, and because both expressions carry two free parameters, which term dominates depends on how k and n are related. The Zoo's Ω(k n²) is the Zoo's own statement about the classical query cost and is a different claim from the paper's Ω(k^(1/2) n); the quoted clause of the abstract does not name the model its lower bound is stated for, attributing only the technique to Ambainis. The generalization the abstract claims to \"a broader range of similar problems\" is not delimited here, and the comparison of Szegedy's walk with Ambainis's on triangle finding and matrix verification is reported, not reproduced.",
+    caveatJa:
+      "本項目は文献に基づく記録です。オラクルを具体化したことも、回路を構成・コンパイル・シミュレーション・実行したこともなく、実際に行列集合の可換性を判定したわけでもありません。上記の3つの数値はいずれもブラックボックスモデルにおけるオラクルへのクエリ数であり、ゲート数、回路深さ、ウォークが行列成分を保持するために必要な記憶量、O(·) や Ω(·) に隠れた定数因子は、いずれも本項目の対象外です。論文の上界 O(k^(4/5) n^(9/5)) と下界 Ω(k^(1/2) n) は一致しておらず、このアルゴリズムが最適であることは本項目からは言えません。また双方の式が k と n という2つのパラメータを含むため、どちらの項が支配的になるかは両者の関係に依存します。Zoo が挙げる Ω(k n²) は古典クエリ数についての Zoo 自身の記述であり、論文の Ω(k^(1/2) n) とは別の主張です。ここで引用した要旨の一節は、下界がどのモデルに対するものかを明示しておらず、技法が Ambainis によるものであることを述べるにとどまります。要旨のいう「より広い範囲の類似問題」への一般化についても、その範囲は本項目では特定しておらず、三角形発見問題と行列検証問題における2つのウォークの比較も、報告を記録したものであって追試ではありません。",
+    tags: ["matrix commutativity", "quantum walk", "query complexity", "oracle", "szegedy quantization"],
+    source: {
+      id: "arxiv:quant-ph/0509206",
+      title: "Quantum Algorithm for Commutativity Testing of a Matrix Set",
+      authors: "Yuki Kelly Itakura",
+      year: "2005",
+      url: "https://arxiv.org/abs/quant-ph/0509206",
+    },
+    literature: [
+      {
+        title: "Quantum Algorithm for Commutativity Testing of a Matrix Set",
+        authors: "Yuki Kelly Itakura",
+        year: "2005",
+        url: "https://arxiv.org/abs/quant-ph/0509206",
+        relevance:
+          "Primary source: it applies Szegedy's theorem relating the hitting time of a classical random walk to that of a quantum walk to the commutativity of a matrix set, states the O(k^(4/5) n^(9/5)) algorithm quoted in the complexity field together with a lower bound of Ω(k^(1/2) n), and compares Szegedy's walk against Ambainis's on the triangle finding and matrix verification problems. Consult it for the walk the upper bound is built on and for which similar problems the generalized technique is claimed to cover.",
+        relevanceJa:
+          "一次資料です。古典ランダムウォークのヒッティング時間を量子ウォークのそれと結びつける Szegedy の定理を行列集合の可換性判定に適用し、計算量欄に引いた O(k^(4/5) n^(9/5)) のアルゴリズムと下界 Ω(k^(1/2) n) を示すとともに、三角形発見問題と行列検証問題において Szegedy のウォークと Ambainis のウォークを比較しています。上界の基礎となるウォークの構成や、一般化された技法が対象とする類似問題の範囲は原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: [
+      "matrix-product-verification",
+      "element-distinctness",
+      "quantum-walk-line",
+      "graph-properties-adjacency-matrix",
+    ],
+  },
+  {
+    slug: "group-commutativity-testing",
+    title: "Testing commutativity of a black-box group",
+    titleJa: "ブラックボックス群の可換性判定",
+    family: "Quantum query algorithm",
+    zooName: "Group Commutativity",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given a list of k generators for a group G together with black-box access to group multiplication, decide whether G is commutative using as few queries to that black box as possible.",
+    problemJa:
+      "群 G の生成元 k 個の一覧と、群の乗法を実行するブラックボックスへのアクセスが与えられたとき、そのブラックボックスへのクエリ数をできるだけ少なくして、G が可換であるかどうかを判定する問題です。",
+    idea:
+      "The paper considers the commutativity of a black-box group specified by its k generators, a problem whose complexity in terms of k was first considered by Pak, whose randomized algorithm involves O(k) group operations. Magniez and Nayak construct a quantum algorithm for this problem whose complexity is in O(k^(2/3)), and the paper states that the algorithm uses and highlights the power of the quantization method of Szegedy. For the lower bound of Ω(k^(2/3)) the paper gives a reduction from a special case of Element Distinctness to the commutativity problem, and it describes its own construction, in the abstract's own wording, as a quite optimal one. The authors also report that along the way they prove the optimality of Pak's algorithm for the randomized model, while the Zoo describes Pak's O(k) algorithm as the best known classical one.",
+    ideaJa:
+      "論文が扱うのは、k 個の生成元で指定されるブラックボックス群の可換性であり、k に関するこの問題の計算量を最初に検討したのは Pak で、その乱択アルゴリズムは O(k) 回の群演算を要します。Magniez と Nayak は、計算量が O(k^(2/3)) に収まる量子アルゴリズムを構成しており、論文はこのアルゴリズムが Szegedy の量子化手法の威力を活用し、かつそれを際立たせるものであると述べています。下界 Ω(k^(2/3)) については、要素相異性問題の特別な場合から可換性判定問題への帰着が与えられており、論文は自らの構成を、要旨自身の表現によれば「ほぼ最適」なものと述べています。著者らはさらに、その過程で Pak のアルゴリズムが乱択モデルにおいて最適であることを証明したと報告しており、Zoo は Pak の O(k) のアルゴリズムを既知の古典アルゴリズムのうち最良のものとしています。",
+    complexity:
+      "O(k^(2/3)) for a black-box group given by k generators, with a lower bound of Ω(k^(2/3)) obtained by reduction from a special case of Element Distinctness; the Zoo records the resulting quantum query complexity as Θ̃(k^(2/3)). The classical baseline is Pak's randomized algorithm involving O(k) group operations, which the same paper states it proves optimal for the randomized model.",
+    complexityBasis:
+      'abstract of arXiv:quant-ph/0506265, quoted as it is written there: "We construct a quite optimal quantum algorithm for this problem whose complexity is in O (k^{2/3})", "For the lower bound of Omega(k^{2/3}), we give a reduction from a special case of Element Distinctness to our problem", and, for the classical side, "who gave a randomized algorithm involving O(k) group operations" together with "we prove the optimality of the algorithm of Pak for the randomized model"; Quantum Algorithm Zoo entry "Group Commutativity" (LaTeX rendered into Unicode): "Magniez and Nayak have shown that the quantum query complexity of this task is Θ̃(k^(2/3))". The Zoo\'s tilde absorbs logarithmic factors that the abstract\'s "O (k^{2/3})" does not display.',
+    caveat:
+      "This is a literature record: no group was represented, no multiplication black box was implemented, and no circuit was built, compiled, simulated or run. The counts are queries to that black box — group operations — so they bound neither gate count nor circuit depth, and the cost of realizing group multiplication for a concrete G on hardware is outside this record. The two sources state the bound in two notations that are not identical: the Zoo writes Θ̃(k^(2/3)), whose tilde absorbs logarithmic factors, while the abstract's clause carries no tilde and calls the algorithm quite optimal rather than optimal; this record does not resolve the gap those two hedges leave. Everything above is measured in k, the number of generators supplied, and not in the order of G or the length of its element encodings, so nothing here bounds cost as a function of group size. The Ω(k^(2/3)) lower bound is recorded as the paper's, by reduction from a special case of Element Distinctness that is not characterized here, and the proof of optimality for Pak's randomized algorithm is likewise reported rather than re-derived.",
+    caveatJa:
+      "本項目は文献に基づく記録です。群を具体的に表現したことも、乗法のブラックボックスを実装したことも、回路を構成・コンパイル・シミュレーション・実行したこともありません。数えているのはそのブラックボックスへのクエリ数、すなわち群演算の回数であり、ゲート数も回路深さも押さえるものではなく、具体的な G について群の乗法を実機で実現するコストも本項目の対象外です。2つの出典が示す評価の表記は同一ではありません。Zoo は対数因子を吸収するチルダを付して Θ̃(k^(2/3)) と書くのに対し、要旨の該当箇所にはチルダがなく、アルゴリズムを「最適」ではなく「ほぼ最適」と表現しています。この2つの留保が残す差を本項目で埋めてはいません。上記の量はいずれも与えられる生成元の個数 k で測られており、G の位数や元の符号化長で測られてはいないため、群の大きさに対するコストについては何も述べていません。下界 Ω(k^(2/3)) は論文の主張として記録したものであり、帰着に用いられる要素相異性問題の特別な場合の内容は本項目では特定していません。Pak の乱択アルゴリズムの最適性の証明も同様に、報告を記録したものであって再導出ではありません。",
+    tags: ["group commutativity", "black-box group", "element distinctness", "query complexity", "szegedy quantization"],
+    source: {
+      id: "arxiv:quant-ph/0506265",
+      title: "Quantum Complexity of Testing Group Commutativity",
+      authors: "Frederic Magniez, Ashwin Nayak",
+      year: "2005",
+      url: "https://arxiv.org/abs/quant-ph/0506265",
+    },
+    literature: [
+      {
+        title: "Quantum Complexity of Testing Group Commutativity",
+        authors: "Frederic Magniez, Ashwin Nayak",
+        year: "2005",
+        url: "https://arxiv.org/abs/quant-ph/0506265",
+        relevance:
+          "Primary source: it constructs the quantum algorithm whose complexity is in O(k^(2/3)) for a black-box group given by k generators, credits the construction to the quantization method of Szegedy, derives the Ω(k^(2/3)) lower bound by reduction from a special case of Element Distinctness, and reports a proof that Pak's O(k) randomized algorithm is optimal for the randomized model. Consult it for the black-box group model it assumes and for the special case of Element Distinctness the reduction uses.",
+        relevanceJa:
+          "一次資料です。k 個の生成元で与えられるブラックボックス群に対し計算量が O(k^(2/3)) に収まる量子アルゴリズムを構成し、その構成を Szegedy の量子化手法によるものとしたうえで、要素相異性問題の特別な場合からの帰着により下界 Ω(k^(2/3)) を導き、さらに Pak の O(k) の乱択アルゴリズムが乱択モデルで最適であることの証明を報告しています。前提となるブラックボックス群のモデルや、帰着に用いる要素相異性問題の特別な場合は原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["element-distinctness", "quantum-walk-line", "quantum-simulated-annealing"],
+  },
+  {
+    slug: "hidden-nonlinear-structures",
+    title: "Hidden nonlinear structures over finite fields",
+    titleJa: "有限体上の隠れた非線形構造",
+    family: "Quantum query algorithm",
+    zooName: "Hidden Nonlinear Structures",
+    zooSection: "Oracular Algorithms",
+    speedup: "Superpolynomial",
+    problem:
+      "Given oracle access to a hidden subset over a finite field that is not a lattice, that is, a hidden nonlinear structure, identify that subset.",
+    problemJa:
+      "有限体上の、格子ではない隠れた部分集合、すなわち隠れた非線形構造が与えられ、それにオラクル経由でアクセスできるとき、その部分集合を同定する問題です。",
+    idea:
+      "The Zoo pictures an Abelian group as a lattice, a subgroup as a sublattice and the cosets of that subgroup as the shifts of the sublattice, and records that the Abelian hidden subgroup problem is then normally solved by obtaining a superposition over a random coset of the hidden subgroup and taking the Fourier transform, so as to sample from the dual lattice. Rather than generalizing that picture to non-Abelian groups, Childs, Schulman and Vazirani suggest an alternative generalization, to hidden subsets that are not lattices at all, which the paper calls hidden nonlinear structures over finite fields. The paper gives examples of two such problems that it states can be solved efficiently by a quantum computer but not by a classical computer, and it also gives some positive results on the quantum query complexity of finding hidden nonlinear structures. The Zoo records that, as shown by Childs et al., this problem is efficiently solvable on quantum computers for certain subsets defined by polynomials, such as spheres, and that Decker et al. showed how to efficiently solve some related problems.",
+    ideaJa:
+      "Zoo は可換群を格子として、部分群をその部分格子として、部分群の剰余類を部分格子の平行移動として描き、可換な隠れ部分群問題は通常、隠れ部分群のランダムな剰余類上の重ね合わせを得たうえで Fourier 変換を施し、双対格子からサンプリングすることで解かれると記しています。Childs、Schulman、Vazirani は、この描像を非可換群へ一般化するのではなく、そもそも格子ではない隠れた部分集合へ一般化する方向を代替案として提案しており、これを有限体上の隠れた非線形構造と呼んでいます。論文は、量子計算機では効率的に解けるが古典計算機では解けないと述べる例を 2 つ挙げ、さらに隠れた非線形構造を見つける問題の量子クエリ計算量について肯定的な結果を与えています。Zoo は、Childs らが示したとおり、この問題が球面のような多項式で定義される特定の部分集合については量子計算機で効率的に解けること、および Decker らが関連するいくつかの問題を効率的に解く方法を示したことを記しています。",
+    complexity: "",
+    complexityBasis:
+      'Two sources were read and neither states a bound. The Quantum Algorithm Zoo entry "Hidden Nonlinear Structures" says only that "this problem is efficiently solvable on quantum computers for certain subsets defined by polynomials, such as spheres", with no query count and no running time. The abstract of arXiv:0705.2784 likewise quotes no figure: "We give examples of two such problems that can be solved efficiently by a quantum computer, but not by a classical computer. We also give some positive results on the quantum query complexity of finding hidden nonlinear structures." Since neither source states an exponent, a constant, a query count or a gate count, the complexity field is left empty rather than filled from elsewhere.',
+    caveat:
+      "This is a literature record: nothing was constructed, compiled, simulated or run here, and no hidden subset was identified. Neither source states a query count, a running time, a gate count or a qubit count, so the record fixes no cost for any instance and supports no claim about problem sizes or hardware feasibility; the word efficiently is doing all the work in both sources and is left unquantified in each. Efficient solution is stated for two example problems and, in the Zoo, for certain subsets defined by polynomials such as spheres, not for hidden nonlinear structures in general. The separation from classical computation is the paper's own claim as reported here, not a bound re-derived in this record, and the positive results on quantum query complexity that the abstract mentions are not itemized by either source. The related problems the Zoo attributes to Decker et al. rest on papers outside this record, as does the cost of building the oracle for any concrete polynomial subset.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、ここで回路の構成、コンパイル、シミュレーション、実行を行ったことはなく、隠れた部分集合を実際に同定したわけでもありません。いずれの資料もクエリ数、実行時間、ゲート数、量子ビット数を示していないため、具体的な問題例に対するコストは確定しておらず、扱える問題規模やハードウェア上の実現可能性についても何も言えません。両資料とも「効率的」という語が主張の中心にありますが、その定量的な内容は示されていません。効率的に解けるとされているのは 2 つの例題、および Zoo の記述では球面のような多項式で定義される特定の部分集合についてであって、隠れた非線形構造一般についてではありません。古典計算との差は論文自身の主張をそのまま記録したものであり、本記録で導出し直したものではありません。要旨が言及する量子クエリ計算量に関する肯定的な結果も、いずれの資料にも個別の内容は示されていません。Zoo が Decker らに帰する関連問題は本記録の対象外の論文に基づいており、具体的な多項式部分集合に対するオラクルの実装コストも同様です。",
+    tags: ["hidden nonlinear structures", "oracle", "finite fields", "query complexity", "hidden subgroup"],
+    source: {
+      id: "arxiv:0705.2784",
+      title: "Quantum algorithms for hidden nonlinear structures",
+      authors: "Andrew M. Childs, Leonard J. Schulman, Umesh V. Vazirani",
+      year: "2007",
+      url: "https://arxiv.org/abs/0705.2784",
+    },
+    literature: [
+      {
+        title: "Quantum algorithms for hidden nonlinear structures",
+        authors: "Andrew M. Childs, Leonard J. Schulman, Umesh V. Vazirani",
+        year: "2007",
+        url: "https://arxiv.org/abs/0705.2784",
+        relevance:
+          "Primary source: it proposes finding hidden nonlinear structures over finite fields as an alternative to the nonabelian hidden subgroup problem, gives two such problems it states are solvable efficiently by a quantum computer but not classically, and reports positive results on the quantum query complexity of the task. Consult it for the two example problems and for the query complexity results themselves, since the abstract names neither.",
+        relevanceJa:
+          "一次資料です。非可換な隠れ部分群問題に代わる方向として、有限体上の隠れた非線形構造を見つける問題を提案し、量子計算機では効率的に解けるが古典計算機では解けないとする問題を 2 つ示したうえで、その量子クエリ計算量について肯定的な結果を報告しています。2 つの例題の内容も、量子クエリ計算量の結果そのものも要旨には示されていないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["hidden-shift-problem", "quantum-fourier-transform", "discrete-logarithm", "shor-period-finding"],
+  },
+  {
+    slug: "matrix-rank-span-program",
+    title: "Matrix rank by a span program",
+    titleJa: "spanプログラムによる行列の階数問題",
+    family: "Quantum query algorithm",
+    zooName: "Matrix Rank",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given oracle access to the integer entries of an n×m matrix A, determine the rank of A.",
+    problemJa:
+      "n×m の整数行列 A の各成分へオラクル経由でアクセスできるとき、その行列の階数を求める問題です。",
+    idea:
+      "Belovs' paper opens from the statement that span programs have recently been shown to be equivalent to quantum query algorithms, calls it an open problem whether that equivalence can be used to come up with new quantum algorithms, and addresses that problem by providing span programs for some linear algebra problems. It develops a notion of a high level span program, which abstracts away the loading of input vectors into a span program, and gives such a high level span program for the rank problem. Its closing section reduces a high level span program to an ordinary span program, which known quantum query algorithms can then evaluate. The Zoo describes the result as an algorithm that can use fewer queries than the classical order-nm cost given a promise that the rank of the matrix is at least r, with the count depending on the r largest singular values of A and on how sparse A is.",
+    ideaJa:
+      "Belovs の論文は、spanプログラムと量子クエリアルゴリズムが等価であることが近年示されたという記述から出発し、この等価性を新しい量子アルゴリズムの構成に活用できるかは未解決の問題であるとしたうえで、いくつかの線形代数の問題に対するspanプログラムを与えることでこの問題に取り組んでいます。論文は、入力ベクトルをspanプログラムへ読み込む部分を抽象化した高水準spanプログラムという概念を導入し、階数問題に対する高水準spanプログラムを与えています。最後の節では、高水準spanプログラムを通常のspanプログラムへ還元しており、こちらは既知の量子クエリアルゴリズムで評価できます。Zoo は、こうして得られる結果を、階数が r 以上であるという約束のもとで古典側の nm のオーダーより少ないクエリ数で済むアルゴリズムとして紹介しており、そのクエリ数は A の大きいほうから r 個の特異値と A の疎性に依存します。",
+    complexity:
+      "O(√(r(n-r+1)) L T) queries to the entries of an n×m integer matrix A under a promise that the rank of A is at least r, where L is the root-mean-square of the reciprocals of the r largest singular values of A and T is a factor set by the sparsity of A: T = O(√(nm)) for general A, and T = O(k log(n+m)) when A has at most k nonzero entries in any row or column. The Zoo gives the classical cost as order nm queries. Every figure here is the Zoo's; the paper's own abstract states no query count.",
+    complexityBasis:
+      'Quantum Algorithm Zoo entry "Matrix Rank" (LaTeX rendered into Unicode): "Belovs\' algorithm uses O(√(r(n-r+1))LT) queries, where L is the root-mean-square of the reciprocals of the r largest singular values of A and T is a factor that depends on the sparsity of the matrix. For general A , T = O(√(nm)) . If A has at most k nonzero entries in any row or column then T = O(k log(n+m))"; the classical side and the problem statement are from the same entry: "Suppose we are given oracle access to the (integer) entries of an n × m matrix A . We wish to determine the rank of the matrix. Classically this requires order nm queries." The abstract of arXiv:1103.0842 quotes no query count, gate count or runtime anywhere; it describes the construction only, closing "The last section of the paper deals with reducing a high level span program to an ordinary span program that can be solved using known quantum query algorithms." The bound above therefore rests on the Zoo entry alone, not on the primary paper\'s abstract.',
+    caveat:
+      "This is a literature record: no circuit was constructed, compiled, simulated or run, and no matrix instance was solved. The query count above is the Zoo's summary of Belovs' result, and the paper's abstract states no bound at all, so nothing here was checked against the paper's own analysis. The count is stated under a promise that the rank is at least r, and it carries two instance-dependent factors that are not known in advance: L is the root-mean-square of the reciprocals of the r largest singular values of A, so on that definition a matrix whose r largest singular values are small gives a larger L and a larger count, and T is set by the sparsity of A. The Zoo is explicit that the k-sparse figure T = O(k log(n+m)) requires a stronger oracle than the entry access in which the problem is posed, one that takes a column index as input and returns a list of the nonzero elements of that column. Everything is counted in queries, so gate counts, circuit depth, the arithmetic on the integer entries and the cost of realising either oracle are outside this record. For the special case of deciding whether a square matrix is singular, the determinant problem, the Zoo reports on a paper outside this record that for general A the quantum query complexity is no lower than the classical one, while noting that this does not rule out a speedup under a promise such as sparseness or the absence of small singular values.",
+    caveatJa:
+      "本項目は文献に基づく記録です。回路の構成、コンパイル、シミュレーション、実行はいずれも行っておらず、具体的な行列を解いたわけでもありません。上記のクエリ数は Zoo が Belovs の結果をまとめたものであり、論文の要旨自体は計算量を一切述べていないため、論文の解析と突き合わせた確認はここでは行っていません。この評価は階数が r 以上であるという約束のもとで述べられており、さらに事前には分からない二つの量に依存します。L は A の大きいほうから r 個の特異値の逆数の二乗平均平方根であり、この定義に従えば、大きいほうから r 個の特異値が小さい行列ほど L は大きくなり、クエリ数も増えます。T は A の疎性で決まります。また Zoo は、k 疎の場合の T = O(k log(n+m)) を得るには、問題設定にある成分アクセスのオラクルより強いオラクル、すなわち列の添字を入力として受け取り、その列の非零成分の一覧を返すオラクルが必要だと明記しています。数えているのはクエリ数のみであり、ゲート数、回路深さ、整数成分に対する算術、いずれのオラクルを実装するコストも対象外です。正方行列が特異かどうかを判定する特別な場合、すなわち行列式の問題については、一般の A に対する量子クエリ計算量は古典のそれを下回らないと Zoo が本記録の対象外の論文を引いて報告しており、同時に、疎であることや小さい特異値を持たないことといった約束のもとでの高速化までは否定されていないと述べています。",
+    tags: ["matrix rank", "span program", "query complexity", "oracle", "linear algebra"],
+    source: {
+      id: "arxiv:1103.0842",
+      title: "Span-program-based quantum algorithm for the rank problem",
+      authors: "Aleksandrs Belovs",
+      year: "2011",
+      url: "https://arxiv.org/abs/1103.0842",
+    },
+    literature: [
+      {
+        title: "Span-program-based quantum algorithm for the rank problem",
+        authors: "Aleksandrs Belovs",
+        year: "2011",
+        url: "https://arxiv.org/abs/1103.0842",
+        relevance:
+          "Primary source. It provides span programs for some linear algebra problems, develops the notion of a high level span program that abstracts from loading input vectors into a span program, gives a high level span program for the rank problem, and reduces it to an ordinary span program solvable by known quantum query algorithms. The abstract states no query count, so the cost claim recorded here comes from the Zoo entry rather than from this paper; consult the paper itself for the analysis behind it.",
+        relevanceJa:
+          "一次資料です。いくつかの線形代数の問題に対するspanプログラムを与え、入力ベクトルの読み込みを抽象化した高水準spanプログラムという概念を導入し、階数問題に対する高水準spanプログラムを示したうえで、既知の量子クエリアルゴリズムで解ける通常のspanプログラムへ還元しています。要旨に計算量の記載はないため、計算量欄の主張は本論文ではなく Zoo の項目に由来します。その根拠となる解析は原論文で確認してください。",
+      },
+      {
+        title:
+          "Span programs and quantum query complexity: The general adversary bound is nearly tight for every boolean function",
+        authors: "Ben W. Reichardt",
+        year: "2009",
+        url: "https://arxiv.org/abs/0904.2759",
+        relevance:
+          "Companion source for the equivalence the primary paper opens from. Belovs' abstract states that span programs have recently been shown to be equivalent to quantum query algorithms without naming a source for it, and this paper states that equivalence as a result of its own. It turns the general adversary bound, a semi-definite program that lower-bounds quantum query complexity, into an upper bound: one SDP outputs for any boolean function a span program of optimal witness size, that optimal witness size is shown to coincide with the general adversary bound, and a quantum algorithm evaluates span programs with only a logarithmic query overhead on the witness size. The paper states the resulting universality in both directions, that a good quantum query algorithm for a problem implies a good span program and vice versa, and it reports a corollary of an optimal quantum algorithm for evaluating balanced formulas over any finite boolean gate set.",
+        relevanceJa:
+          "一次資料が出発点とする等価性に対応する関連資料です。Belovs の要旨は、spanプログラムと量子クエリアルゴリズムが等価であることが近年示されたと述べるだけで出典を挙げていませんが、本論文はこの等価性を自らの結果として述べています。量子クエリ計算量の下界を与える半正定値計画である一般敵対者限界を上界へ転じており、まず一つの半正定値計画が任意のブール関数に対して最適な証拠サイズを持つspanプログラムを出力し、その最適な証拠サイズが一般敵対者限界と一致することを示したうえで、証拠サイズに対して対数のクエリオーバーヘッドだけでspanプログラムを評価する量子アルゴリズムを与えています。論文はこの結果を双方向の普遍性として述べており、ある問題に対する良い量子クエリアルゴリズムは良いspanプログラムを含意し、その逆も成り立つとしています。また系として、任意の有限ブールゲート集合上の均衡な式を評価する最適な量子アルゴリズムが得られると報告しています。",
+      },
+    ],
+    relatedSlugs: ["matrix-product-verification", "nand-tree-evaluation", "graph-properties-adjacency-matrix"],
+  },
+  {
+    slug: "search-with-wildcards",
+    title: "Search with wildcards",
+    titleJa: "ワイルドカード付き探索",
+    family: "Quantum query algorithm",
+    zooName: "Search with Wildcards",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Identify a hidden n-bit string x using an oracle that, for a chosen subset S of the n positions and a string y of length |S|, returns one when the substring of x specified by S equals y and zero otherwise.",
+    problemJa:
+      "隠された n ビット文字列 x を、n 個の位置のうち選んだ部分集合 S と長さ |S| の文字列 y に対して、S が指定する x の部分文字列が y と一致するとき 1 を、そうでないとき 0 を返すオラクルへの問い合わせだけから同定する問題です。",
+    idea:
+      "Each query tests a partial guess: the chosen positions S carry the guessed bits y, the positions left out of S are left unconstrained, and the query is answered yes only when the guess is right on every position it commits to. Ambainis and Montanaro describe an algorithm for recovering x that rests neither on amplitude amplification nor on a quantum walk, but ultimately on the solution to a state discrimination problem; the Zoo names the measurement it uses as the Pretty Good Measurement. The same paper gives a separate and, in its own description, simple quantum algorithm for combinatorial group testing, the task of identifying at most k special items among n when each query asks whether a chosen subset contains any special item.",
+    ideaJa:
+      "各クエリは部分的な推測を検査するものです。選んだ位置の集合 S に推測したビット列 y を置き、S に含めなかった位置には何も課さないため、1 回のクエリに肯定が返るのは、確定させた位置すべてで推測が正しい場合に限られます。Ambainis と Montanaro は、x を復元するアルゴリズムを与えていますが、それは振幅増幅にも量子ウォークにも依拠せず、最終的には状態識別問題の解に基づいています。Zoo は、そこで用いられる測定を Pretty Good Measurement と呼んでいます。同じ論文は、組合せ的グループテスト、すなわち各クエリで選んだ部分集合が特別な要素を含むかどうかを尋ねながら、n 個の中から高々 k 個の特別な要素を同定する課題に対しても、著者ら自身が単純と述べる別の量子アルゴリズムを与えています。",
+    complexity:
+      "O(√n log n) quantum queries to recover the hidden n-bit string, against the classical lower bound of Ω(n) queries. The Zoo states the problem's quantum query complexity as Θ(√n) and its classical query complexity as Θ(n); the paper's abstract claims only the upper bound and calls its algorithm nearly optimal, so the Zoo's Θ(√n) is the stronger of the two statements and both are recorded rather than reconciled. For combinatorial group testing, the second problem in the same paper, O(k log k) queries against the classical lower bound of Ω(k log(n/k)) queries, where n counts the items in the set and k bounds the special items among them rather than the bits of the hidden string above.",
+    complexityBasis:
+      'abstract of arXiv:1210.1148: "We give a nearly optimal O(sqrt(n) log n) quantum query algorithm for search with wildcards, beating the classical lower bound of Omega(n) queries", and, for the second problem, "We give a simple quantum algorithm which uses O(k log k) queries to solve this problem, as compared with the classical lower bound of Omega(k log(n/k)) queries". The tight figures are from the Quantum Algorithm Zoo entry "Search with Wildcards" (LaTeX rendered into Unicode, spacing inside the reference bracket normalized): "Classically, this problem has query complexity Θ(n). As shown in [167], the quantum query complexity of this problem is Θ(√n)." The Zoo asserts a tight Θ(√n) where the abstract quoted above states only the upper bound O(sqrt(n) log n); this record carries both and settles neither.',
+    caveat:
+      "This is a literature record: no circuit was constructed, compiled, simulated or run, and no hidden string was recovered here. The two sources do not agree on the tightness of the quantum bound, the abstract giving O(√n log n) as nearly optimal and the Zoo giving Θ(√n), and this record reports the disagreement rather than resolving it. Everything above is a query count in the oracle model, so gate counts, circuit depth, the number of bits a query carries and the cost of realising the wildcard oracle on hardware are outside it, as are the constant factors hidden by O(·). The attribution of the measurement to the Pretty Good Measurement is the Zoo's wording; the abstract says only that the algorithm is ultimately based on the solution to a state discrimination problem. The classical Ω(n) is quoted from the abstract as a lower bound, which is a stronger kind of claim than a comparison against the best algorithm currently known, but this record re-derives neither it nor the quantum bounds. The group-testing result is the paper's second problem and is not the subject of this Zoo entry; the Zoo places it, together with later and faster quantum algorithms for group testing that rest on papers outside this record, under its Junta Testing and Group Testing entry.",
+    caveatJa:
+      "本項目は文献に基づく記録です。回路の構成、コンパイル、シミュレーション、実行はいずれも行っておらず、ここで隠された文字列を復元したわけでもありません。量子側の評価が緊密かどうかについて二つの資料は一致しておらず、要旨は O(√n log n) をほぼ最適と述べ、Zoo は Θ(√n) としています。本記録はこの相違を解消せず、そのまま記載しています。上記はいずれもオラクルモデルにおけるクエリ数であり、ゲート数、回路深さ、1 回のクエリが運ぶビット数、ワイルドカード付きのオラクルを実機で実現するコスト、および O(·) に隠れた定数因子は対象外です。測定を Pretty Good Measurement とする言い方は Zoo によるものであり、要旨は、アルゴリズムが最終的に状態識別問題の解に基づくとしか述べていません。古典側の Ω(n) は要旨から引いた下界であり、現在知られている最良のアルゴリズムとの比較よりも強い種類の主張ですが、本記録ではこれも量子側の評価も導出し直してはいません。グループテストの結果は同じ論文の二つ目の問題であって、この Zoo 項目の主題ではありません。Zoo はこれを、本記録の対象外の論文による後年のより高速な量子アルゴリズムとあわせて、Junta Testing and Group Testing の項目に置いています。",
+    tags: ["search with wildcards", "query complexity", "oracle", "state discrimination", "group testing"],
+    source: {
+      id: "arxiv:1210.1148",
+      title: "Quantum algorithms for search with wildcards and combinatorial group testing",
+      authors: "Andris Ambainis, Ashley Montanaro",
+      year: "2012",
+      url: "https://arxiv.org/abs/1210.1148",
+    },
+    literature: [
+      {
+        title: "Quantum algorithms for search with wildcards and combinatorial group testing",
+        authors: "Andris Ambainis, Ashley Montanaro",
+        year: "2012",
+        url: "https://arxiv.org/abs/1210.1148",
+        relevance:
+          "Primary source and the origin of the upper bounds in the cost claim: the O(√n log n) query algorithm for search with wildcards, described as nearly optimal and as beating the classical lower bound of Ω(n) queries, and the O(k log k) query algorithm for combinatorial group testing against the classical lower bound of Ω(k log(n/k)) queries. The abstract also records what the algorithm is not built from, stating that rather than using amplitude amplification or a quantum walk it is ultimately based on the solution to a state discrimination problem.",
+        relevanceJa:
+          "一次資料であり、計算量欄の上界はここに由来します。ワイルドカード付き探索に対する O(√n log n) クエリのアルゴリズムはほぼ最適であり、古典側の下界 Ω(n) クエリを下回ると述べられています。組合せ的グループテストについては、古典側の下界 Ω(k log(n/k)) クエリに対し O(k log k) クエリのアルゴリズムが示されています。要旨は、このアルゴリズムが何に基づいていないかも記しており、振幅増幅や量子ウォークではなく、最終的には状態識別問題の解に基づくと述べています。",
+      },
+    ],
+    relatedSlugs: [
+      "bernstein-vazirani-qiskit",
+      "grover-unstructured-search",
+      "string-pattern-matching",
+      "counterfeit-coin-problem",
+    ],
+  },
+  {
+    slug: "hypercube-dynamic-programming",
+    title: "Quantum dynamic programming for path in the hypercube",
+    titleJa: "超立方体上の路問題に対する量子動的計画法",
+    family: "Quantum query algorithm",
+    zooName: "Quantum Dynamic Programming for path-in-the-hypercube",
+    zooSection: "Optimization, Numerics, and Machine Learning",
+    speedup: "Polynomial",
+    problem:
+      "Given a subgraph of the Boolean hypercube on bit strings of length n, whose edges all run from smaller to larger Hamming weight, decide whether it contains a path from the all-zeros vertex 0^n to the all-ones vertex 1^n.",
+    problemJa:
+      "長さ n のビット列を頂点とするブール超立方体の部分グラフで、辺がすべて Hamming 重みの小さい側から大きい側へ向いているものが与えられたとき、全 0 の頂点 0^n から全 1 の頂点 1^n への路が存在するかどうかを判定する問題です。",
+    idea:
+      "Ambainis, Balodis, Iraids, Kokainis, Prūsis and Vihrovs introduce the path in the hypercube problem, which the paper states models many of the NP-complete problems whose best classical algorithm is an exponential-time application of dynamic programming, and the Zoo likewise records that many such problems can be modelled as instances of it. The technique the paper describes combines Grover's search with computing a partial dynamic programming table, and the bound it reports for that technique, O*(1.817^n), has a smaller base than the O*(2^n) the Zoo gives for the fastest known classical algorithm. The same approach is then applied to a variety of vertex ordering problems on graphs and to graph bandwidth, and similar ideas to the travelling salesman problem and minimum set cover. The Zoo adds the reading of the graph itself, that the vertices of the hypercube graph correspond to bit strings of length n and that the graph joins vertices of Hamming distance one, and it lists feedback arc set alongside the travelling salesman problem among the problems this primitive is applied to.",
+    ideaJa:
+      "Ambainis、Balodis、Iraids、Kokainis、Prūsis、Vihrovs は超立方体上の路問題を導入しており、論文はこの問題が、最良の古典アルゴリズムが指数時間の動的計画法となる NP 完全問題の多くをモデル化すると述べています。Zoo も同様に、そうした問題の多くがこの問題の事例としてモデル化できると記しています。論文が述べる手法は Grover 探索と動的計画法の部分表の計算を組み合わせたものであり、報告されている評価 O*(1.817^n) の底は、Zoo が最速の既知の古典アルゴリズムとして挙げる O*(2^n) の底を下回ります。同じ手法はグラフ上の各種の頂点順序付け問題とグラフ帯域幅に適用され、同様の考え方が巡回セールスマン問題と最小集合被覆にも適用されています。Zoo はさらにグラフ自体の読み方として、超立方体グラフの頂点が長さ n のビット列に対応し、Hamming 距離 1 の頂点どうしが結ばれることを述べ、この基本手法の適用先として巡回セールスマン問題と並べてフィードバック辺集合問題も挙げています。",
+    complexity:
+      "O*(1.817^n) for path in the hypercube on bit strings of length n, where O* omits polynomial factors, against O*(2^n) for the fastest known classical algorithm; the abstract reports the same approach for vertex ordering problems in O*(1.817^n), which the Zoo sets against O*(2^n) classically, and for graph bandwidth in O*(2.946^n), set against O*(4.383^n) classically, and reports similar ideas for the travelling salesman problem and minimum set cover in O*(1.728^n), with minimum set cover stated by the Zoo as O(poly(m,n) 1.728^n) against O(nm2^n) classically. The two sources differ on one figure: where the abstract writes 1.728^n for the travelling salesman problem and minimum set cover together, the Zoo writes 1.729^n for traveling salesman and feedback arc set against O*(2^n) classically and gives minimum set cover a figure of its own.",
+    complexityBasis:
+      'Abstract of arXiv:1807.05209 (TeX math delimiters removed, exponents left in caret form): "We give a quantum algorithm that solves path in the hypercube in time O^*(1.817^n). The technique combines Grover\'s search with computing a partial dynamic programming table. We use this approach to solve a variety of vertex ordering problems on graphs in the same time O^*(1.817^n), and graph bandwidth in time O^*(2.946^n). Then we use similar ideas to solve the travelling salesman problem and minimum set cover in time O^*(1.728^n)." The classical baselines and the per-problem contrasts are from the Quantum Algorithm Zoo entry "Quantum Dynamic Programming for path-in-the-hypercube" (LaTeX rendered into Unicode: math delimiters removed, the mathrm markup around poly dropped, spacing inside the math closed up): "a quantum algorithm can solve path-in-the-hypercube in time O^*(1.817^n), where the notation O^* indicates that polynomial factors are being omitted. The fastest known classical algorithm for this problem runs in time O^*(2^n)", and "vertex ordering problems in O^*(1.817^n) vs. O^*(2^n) classically, graph bandwidth in O^*(2.946^n) vs. O^*(4.383^n) classically, traveling salesman and feedback arc set in O^*(1.729^n) vs. O^*(2^n) classically, and minimum set cover in O(poly(m,n) 1.728^n) vs. O(nm2^n) classically." The 1.728 / 1.729 difference is recorded as both sources read: the abstract pairs 1.728^n with the travelling salesman problem and minimum set cover together, while the Zoo gives 1.728^n to minimum set cover alone and 1.729^n to traveling salesman and feedback arc set. Neither reading was reconciled here.',
+    caveat:
+      "This is a literature record: no circuit was constructed, compiled, simulated or run, and no instance of path in the hypercube was decided here. Every figure above is an asymptotic running time as the two sources state it, with O* omitting polynomial factors, so none of it fixes a gate count, a circuit depth, a qubit count, a constant factor or an error-correction budget, and none of it says which n is reachable on a device. The comparison is against the fastest classical algorithm currently known, which the Zoo gives as O*(2^n) for this problem, rather than against a proved classical lower bound, and both sides remain exponential in n. The Zoo classes the speedup as polynomial; neither source gives a reason for that classification and none is supplied here. The two sources also attach the 1.728^n figure to different problems, as noted above, and give the travelling salesman problem different bases, 1.728 in the abstract against 1.729 in the Zoo; nothing here resolves either difference. How the partial dynamic programming table is held and addressed on a quantum device, and the cost of the Grover subroutine's oracle for a concrete graph, are outside this record, as are the NP-complete problems the Zoo says can be modelled as instances of path-in-the-hypercube beyond the ones named.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、回路の構成、コンパイル、シミュレーション、実行は行っておらず、超立方体上の路問題の具体例を判定したこともありません。上記の値はいずれも 2 つの資料が示すとおりの漸近的な実行時間であり、O* は多項式因子を省略した記法です。したがってゲート数、回路深さ、量子ビット数、定数因子、誤り訂正の見積もりはいずれも確定しておらず、実機でどの程度の n まで扱えるかについても何も言えません。比較対象は現在知られている最速の古典アルゴリズム、この問題については Zoo が挙げる O*(2^n) であって、証明された古典側の下界ではありません。量子側も古典側も n について指数時間のままです。Zoo は高速化を多項式的と分類していますが、その理由はいずれの資料にも示されておらず、ここでも補っていません。1.728^n という値がどの問題に対応するかは 2 つの資料で異なり、巡回セールスマン問題の底も要旨では 1.728、Zoo では 1.729 と食い違っています。上記のとおり記録するにとどめ、どちらが正しいかはここでは判断していません。動的計画法の部分表を量子デバイス上でどのように保持し参照するか、また具体的なグラフに対する Grover 探索のオラクルの実装コストは本記録の対象外です。Zoo が超立方体上の路問題としてモデル化できるとする NP 完全問題のうち、名前の挙がっていないものも同様です。",
+    tags: ["dynamic programming", "grover search", "hypercube", "np-complete", "exponential time"],
+    source: {
+      id: "arxiv:1807.05209",
+      title: "Quantum Speedups for Exponential-Time Dynamic Programming Algorithms",
+      authors: "Andris Ambainis, Kaspars Balodis, Jānis Iraids, Martins Kokainis, Krišjānis Prūsis, Jevgēnijs Vihrovs",
+      year: "2018",
+      url: "https://arxiv.org/abs/1807.05209",
+    },
+    literature: [
+      {
+        title: "Quantum Speedups for Exponential-Time Dynamic Programming Algorithms",
+        authors: "Andris Ambainis, Kaspars Balodis, Jānis Iraids, Martins Kokainis, Krišjānis Prūsis, Jevgēnijs Vihrovs",
+        year: "2018",
+        url: "https://arxiv.org/abs/1807.05209",
+        relevance:
+          "Primary source: it introduces path in the hypercube as a model for NP-complete problems whose best classical algorithm is an exponential-time dynamic program, states the O*(1.817^n) algorithm built from Grover's search plus a partial dynamic programming table, and carries the technique to vertex ordering problems, graph bandwidth, the travelling salesman problem and minimum set cover. Consult it for what the partial table costs and for the assumptions behind each derived bound, none of which the abstract states.",
+        relevanceJa:
+          "一次資料です。最良の古典アルゴリズムが指数時間の動的計画法となる NP 完全問題のモデルとして超立方体上の路問題を導入し、Grover 探索と動的計画法の部分表を組み合わせた O*(1.817^n) のアルゴリズムを示したうえで、その手法を頂点順序付け問題、グラフ帯域幅、巡回セールスマン問題、最小集合被覆へ広げています。部分表の計算コストや各評価が前提とする条件は要旨に記載がないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["grover-unstructured-search", "amplitude-amplification", "qaoa-maxcut-ring"],
+  },
 ];
 
 /** The Zoo entry each record covers — read by scripts/check-zoo-parity.mjs. */
