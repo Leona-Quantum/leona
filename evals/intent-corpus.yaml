@@ -138,6 +138,32 @@
   cohort: capability
   expected_mode: chat
   prompt: Use QuTiP to simulate this Lindblad master equation.
+# Attached source is authoritative task input, but attachment presence alone
+# must not turn a question about the circuit into an execution request.
+- id: calibration-attachment-execute-en
+  split: calibration
+  cohort: attachment
+  expected_mode: execute
+  has_source_code: true
+  prompt: Run and verify this attached Qiskit circuit.
+- id: calibration-attachment-chat-ja
+  split: calibration
+  cohort: attachment
+  expected_mode: chat
+  has_source_code: true
+  prompt: 添付した回路で補助量子ビットが必要な理由を説明して。
+- id: holdout-attachment-execute-ja
+  split: holdout
+  cohort: attachment
+  expected_mode: execute
+  has_source_code: true
+  prompt: 添付した回路を実行して検証して。
+- id: holdout-attachment-chat-en
+  split: holdout
+  cohort: attachment
+  expected_mode: chat
+  has_source_code: true
+  prompt: Why does this attached circuit need an ancilla?
 # Follow-up routing. These are the cases conversation history exists for, and
 # the cases it can break: a referential message must inherit the earlier task,
 # and an unrelated one must not become another execute run.

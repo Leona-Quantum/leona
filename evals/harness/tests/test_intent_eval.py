@@ -106,6 +106,23 @@ async def test_a_standalone_case_still_reaches_the_router_with_no_history():
     assert llm.request.user == "User message:\nCreate and measure a Bell state."
 
 
+async def test_an_attached_source_case_reaches_the_auto_router_as_ready_input():
+    case = IntentCase(
+        id="attached-source",
+        split="holdout",
+        cohort="attachment",
+        prompt="Run and verify this attached circuit.",
+        expected_mode="execute",
+        has_source_code=True,
+    )
+    llm = _ScriptedLLM(['{"intent":"execute","reason":"attached code is runnable"}'])
+
+    report = await run_intent_corpus([case], llm=llm)
+
+    assert report.correct == 1
+    assert "source code is attached" in llm.request.user
+
+
 def test_intent_corpus_split_is_a_real_holdout_boundary(tmp_path: Path):
     corpus = tmp_path / "intent.yaml"
     corpus.write_text(
@@ -155,9 +172,10 @@ def test_checked_in_corpus_is_balanced_across_splits_and_outcomes():
     assert {case.split for case in corpus} == {"calibration", "holdout"}
     for split in ("calibration", "holdout"):
         selected = [case for case in corpus if case.split == split]
-        assert sum(case.expected_mode == "execute" for case in selected) == 9
-        assert sum(case.expected_mode == "chat" for case in selected) == 9
+        assert sum(case.expected_mode == "execute" for case in selected) == 10
+        assert sum(case.expected_mode == "chat" for case in selected) == 10
         assert {case.cohort for case in selected} >= {
+            "attachment",
             "basic",
             "intermediate",
             "research",
@@ -239,10 +257,10 @@ def test_intent_loader_merges_static_holdout_and_procedural_cases():
         procedural_cases_per_family=2,
     )
 
-    assert len(cases) == 34
-    assert len({case.id for case in cases}) == 34
-    assert sum(case.expected_mode == "execute" for case in cases) == 21
-    assert sum(case.expected_mode == "chat" for case in cases) == 13
+    assert len(cases) == 36
+    assert len({case.id for case in cases}) == 36
+    assert sum(case.expected_mode == "execute" for case in cases) == 22
+    assert sum(case.expected_mode == "chat" for case in cases) == 14
 
 
 @pytest.mark.parametrize("seed", [-1, 2**63])

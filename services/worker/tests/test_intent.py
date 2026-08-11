@@ -27,6 +27,14 @@ class _FakeStore:
         return self.status
 
 
+class _FakeSession:
+    def __init__(self):
+        self.commits = 0
+
+    async def commit(self):
+        self.commits += 1
+
+
 class _ScriptedLLM:
     """Returns a fixed body; records whether it was consulted at all."""
 
@@ -152,6 +160,89 @@ async def test_studio_runs_carrying_source_code_are_never_reclassified():
     assert decision.resolved is RunMode.EXECUTE
     assert decision.source == "passthrough"
     assert llm.calls == 0
+
+
+async def test_auto_with_attached_source_is_resolved_instead_of_silently_becoming_chat():
+    llm = _ScriptedLLM('{"intent": "execute", "reason": "runs the attached circuit"}')
+
+    decision = await resolve_mode(
+        "Run and verify this attached circuit",
+        RunMode.AUTO,
+        llm,
+        has_source_code=True,
+    )
+
+    assert decision.resolved is RunMode.EXECUTE
+    assert decision.source == "classifier"
+    assert llm.calls == 1
+    assert "source code is attached" in llm.request.user
+    assert "Run and verify this attached circuit" in llm.request.user
+
+
+async def test_auto_attachment_can_still_route_an_explanation_question_to_chat():
+    llm = _ScriptedLLM('{"intent": "chat", "reason": "asks for an explanation of attached code"}')
+
+    decision = await resolve_mode(
+        "Why does this circuit need an ancilla?",
+        RunMode.AUTO,
+        llm,
+        has_source_code=True,
+    )
+
+    assert decision.resolved is RunMode.CHAT
+    assert decision.source == "classifier"
+    assert llm.calls == 1
+
+
+async def test_worker_persists_auto_attachment_as_execute_before_dispatch(monkeypatch):
+    sink = _RecordingSink()
+    store = _FakeStore()
+    session = _FakeSession()
+    llm = _ScriptedLLM('{"intent": "execute", "reason": "runs the attached circuit"}')
+    persisted = []
+
+    async def allow_execute(scope, db_session):
+        return None
+
+    async def persist_mode(scope, db_session, run_id, mode):
+        persisted.append((run_id, mode))
+
+    monkeypatch.setattr(handlers, "_assert_execute_allowance", allow_execute)
+    monkeypatch.setattr(handlers.runs_repo, "set_run_mode", persist_mode)
+    ctx = RunContext(
+        run_id="auto-source-run",
+        task_prompt="Run and verify this attached circuit",
+        mode=RunMode.AUTO,
+        framework=Framework.QISKIT,
+        seed=None,
+        shots=None,
+        timeout_s=None,
+        sink=sink,
+    )
+
+    result = await handlers._resolve_mode(
+        ctx,
+        store,
+        scope=None,
+        session=session,
+        llm=llm,
+        has_source_code=True,
+    )
+
+    assert result.mode is RunMode.EXECUTE
+    assert persisted == [("auto-source-run", RunMode.EXECUTE)]
+    assert session.commits == 1
+    assert sink.events == [
+        (
+            "run.mode_resolved",
+            {
+                "requested": "auto",
+                "resolved": "execute",
+                "source": "classifier",
+                "reason": "runs the attached circuit",
+            },
+        )
+    ]
 
 
 @pytest.mark.parametrize("mode", [RunMode.CHAT, RunMode.EXECUTE, RunMode.IDEATE, RunMode.EXPLAIN])

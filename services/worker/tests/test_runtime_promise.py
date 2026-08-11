@@ -1160,6 +1160,7 @@ def test_phase_flip_basis_rule_recovers_every_single_data_qubit_z_error() -> Non
         state = Statevector.from_instruction(recovered(error_qubit))
         fidelities.append(float(state_fidelity(partial_trace(state, [3, 4]), ideal)))
 
-    assert "apply CNOT q0->q1" in prompt
-    assert "q0->q2 FIRST" in prompt
+    assert "circuit.cx(0, 1)" in prompt
+    assert "conjugate the physical Z error to X" in prompt
+    assert "circuit.cx(0, 2)" in prompt
     assert fidelities == pytest.approx([1.0, 1.0, 1.0], abs=1e-12)
