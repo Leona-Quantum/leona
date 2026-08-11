@@ -137,6 +137,20 @@ const COPY = {
     refinesLabel: "A narrower version of",
     conditionsHeading: "When it applies",
     conditionsNone: "No source we have read states a condition on this. That is an absence, not a green light.",
+    // The owner's fifth section, and the empty note is his instruction rather
+    // than a default: *"build the field for all, populate on demand, and let the
+    // card say 'none written yet' for the rest rather than pretend"*. So this
+    // section draws on every method page, and on most of them it draws the note.
+    //
+    // Authored here rather than read from a shared module, unlike
+    // `LOOP_CLOSURE_COPY` above. That one was extracted because it is a *claim*
+    // — two sentences about what a loop costs, which would say different things
+    // about one record on two pages if either copy were edited. A heading is not
+    // a claim, and this page and the card already head the same sections
+    // differently on purpose (the card's own comment records the divergence).
+    exampleHeading: "Example",
+    exampleNone:
+      "Nobody has written one yet. The field exists for every method — this is a worklist entry, not a claim that the method is too simple to need one.",
     costHeading: "Cost, as the source states it",
     costNone: "No complexity is recorded here.",
     contestedHeading: "Where the claim is contested",
@@ -285,6 +299,9 @@ const COPY = {
     refinesLabel: "より狭めた版：",
     conditionsHeading: "適用条件",
     conditionsNone: "参照した文献に条件の記載はありません。これは記載がないという事実であって、無条件という意味ではありません。",
+    exampleHeading: "例",
+    exampleNone:
+      "まだ誰も書いていません。この欄はすべての手法に用意してあります。これは作業待ちの項目であって、例を要しないほど単純だという主張ではありません。",
     costHeading: "計算量（出典の記述のまま）",
     costNone: "計算量は記録されていません。",
     contestedHeading: "主張が争われている点",
@@ -968,6 +985,43 @@ function MethodView({
           <EmptyNote>{copy.conditionsNone}</EmptyNote>
         )}
       </section>
+
+      {/* **Before Cost, because the owner's order puts Example before
+          Performance** — his seven were Input, Theory, Output, Requires,
+          Example, Performance, Implementations (`card-content.ts`). This page's
+          order is not the card's and never was, but where his order says
+          something about two sections this page draws, it is followed.
+
+          Methods only. A capability is a slot rather than a procedure, so there
+          is nothing to work an example of, and `LayerMethod.example` is typed
+          on the method for that reason. */}
+      {isMethod(node) ? (
+        <section className="mj-layers-section">
+          <h2>{copy.exampleHeading}</h2>
+          {node.example?.text || node.example?.pseudocode ? (
+            <>
+              {node.example.text ? (
+                <p>
+                  <MathText source={(isJa ? node.example.textJa : node.example.text) ?? ""} />
+                </p>
+              ) : null}
+              {/* Not localised, and this page says why by not offering a second
+                  one: the identifiers are the record's own symbols. Same class
+                  as the card's listing, because it is the same listing and the
+                  rule it needs is the same one — keep the whitespace, and scroll
+                  a long line inside its own box rather than widening the page.
+                  Nothing reads this class as a marker; it is presentation. */}
+              {node.example.pseudocode ? (
+                <pre className="mj-card-pseudocode">
+                  <code>{node.example.pseudocode}</code>
+                </pre>
+              ) : null}
+            </>
+          ) : (
+            <EmptyNote>{copy.exampleNone}</EmptyNote>
+          )}
+        </section>
+      ) : null}
 
       <section className="mj-layers-section">
         <h2>{copy.costHeading}</h2>
