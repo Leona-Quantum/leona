@@ -511,3 +511,130 @@ jobs:
           echo "::error::gcloud run services update-traffic majorana-api --to-revisions <previous>=100"
           gcloud run revisions list --service majorana-api \
             --project "$GCP_PROJECT" --region "$GCP_REGION" --limit 5 || true
+
+      # The catalog is DATA, and this workflow until now deployed only CODE. A
+      # merge that changes corpus content therefore reached the deploy and not
+      # the visitor: production serves /repository from GET /v1/catalog/entries,
+      # whose rows live in Postgres, and nothing moved them. Closing that gap
+      # meant a human creating a throwaway Cloud Run job against the production
+      # database — so it was skipped, and two corrected author names sat
+      # un-imported for eight days while the map showed them and the catalog did
+      # not.
+      #
+      # Runs on EVERY deploy, not only when manifest.json changed. Convergent
+      # rather than event-driven: a sync gated on "did this push touch the
+      # manifest" is stale forever the first time an event is missed — a dropped
+      # dispatch, a re-run of an older ref, a workflow_dispatch — and nothing
+      # downstream would ever say so. Re-running when nothing changed is cheap by
+      # construction: the importer compares hashes and writes nothing when
+      # content has not moved, attestation only fills gaps, and publishing an
+      # already-public record is a documented no-op.
+      #
+      # Placed after `rollback api on failure` deliberately, and last overall.
+      # That step is advisory and fires on ANY earlier failure; a catalog
+      # refusal is not a reason to tell an operator to consider rolling back a
+      # healthy API, and putting this after it means that by the time this can
+      # fail, that step has already been evaluated and skipped.
+      #
+      # WHAT THIS DOES NOT CHANGE — ADR-0019's gate is intact. Alembic and
+      # application startup still never insert or publish catalog data. What is
+      # imported is still a pinned manifest release, because CI's drift guard
+      # refuses any corpus edit whose regenerated manifest is not committed in
+      # the same PR. The attestation is still a human's: --attested-by-standing
+      # can only continue a grant a person already made by hand, refuses when
+      # nobody holds it, and — via plan_re_attestation — still refuses outright
+      # when a record's provenance claim has moved. See
+      # docs/runbooks/system-catalog.md § Updating the published corpus.
+      - name: sync the published catalog
+        if: steps.creds.outputs.have == 'true'
+        env:
+          # The admin commands go through the catalog scope checks, which open
+          # with `if not authority.enabled`. With the flag off they fail as
+          # `AuthzError: invalid catalog importer scope`, which reads like a
+          # permissions problem and is not one. This is THIS process's shell
+          # only — no deployed service reads a runner's environment.
+          SYSTEM_CATALOG_ENABLED: "true"
+          # Names the connection in pg_stat_activity. A one-shot admin process
+          # holding connections on the production instance should be
+          # attributable to what it is rather than borrowing the api's name.
+          MAJORANA_SERVICE: catalog-sync
+          # The sessions here are sequential, one at a time. Pinned rather than
+          # left to the default so this run is a term the connection budget in
+          # docs/runbooks/database.md can actually account for.
+          DB_POOL_SIZE: "2"
+          DB_MAX_OVERFLOW: "0"
+        run: |
+          set -euo pipefail
+
+          # The proxy has been running since before `build image`, which is
+          # several minutes of build and rollout ago. Checked again here so a
+          # proxy that died in between reports itself, instead of surfacing as a
+          # connection error that reads like a broken database.
+          if ! curl -fsS http://127.0.0.1:9090/startup >/dev/null 2>&1; then
+            echo "::error::the Cloud SQL Auth Proxy is no longer answering, so the"
+            echo "::error::catalog sync cannot reach the database. The code rollout"
+            echo "::error::above SUCCEEDED — only the catalog is unsynced."
+            exit 1
+          fi
+
+          # The three authority ids are configuration of the deployed service and
+          # exist nowhere else: not in this workflow, not in the repo, not in
+          # Secret Manager. Reading them back off the service is what makes the
+          # sync provably target the same workspace the API serves from, and adds
+          # no second place for a production identity to be stated and go stale.
+          read_service_env() {
+            gcloud run services describe majorana-api \
+              --project "$GCP_PROJECT" --region "$GCP_REGION" \
+              --format="value(spec.template.spec.containers[0].env.filter(\"name:$1\").extract(value))" \
+              | tr -d "[]' "
+          }
+          uuid_re='^[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}$'
+          for var in SYSTEM_CATALOG_WORKSPACE_ID SYSTEM_CATALOG_IMPORTER_USER_ID \
+                     SYSTEM_CATALOG_PUBLIC_READER_USER_ID; do
+            value=$(read_service_env "$var")
+            # Validated, not just read. gcloud's projection returns a list, so a
+            # name that matched two env vars would come back joined rather than
+            # empty — and an id that is silently wrong is the one failure this
+            # step must not have. The regex is what turns a format change into a
+            # loud stop instead of an import against a workspace nobody meant.
+            if ! [[ "$value" =~ $uuid_re ]]; then
+              echo "::error::$var did not read back as a UUID from majorana-api."
+              echo "::error::Either the service no longer carries the catalog authority"
+              echo "::error::ids as plain env values, or the projection shape changed."
+              echo "::error::The code rollout above SUCCEEDED — only the catalog is unsynced."
+              exit 1
+            fi
+            export "$var=$value"
+          done
+
+          # Same Secret Manager entry the migrate step reads: since the Cloud SQL
+          # move it holds a 127.0.0.1:5432 URL that resolves through the proxy.
+          # Exported into THIS shell rather than written to $GITHUB_ENV, so a
+          # production connection string does not outlive the step that needs it.
+          if ! db_url=$(gcloud secrets versions access latest \
+            --secret=DATABASE_URL_SECRET --project "$GCP_PROJECT" 2>/tmp/catalog_secret.err); then
+            echo "::error::could not read DATABASE_URL_SECRET: $(cat /tmp/catalog_secret.err)"
+            exit 1
+          fi
+          test -n "$db_url" || { echo "::error::DATABASE_URL_SECRET is empty"; exit 1; }
+          echo "::add-mask::$db_url"
+          export DATABASE_URL="$db_url"
+
+          # No manifest freshness check here on purpose. Verifying it against the
+          # TypeScript corpus means bundling apps/web with esbuild, which would
+          # pull the whole JS toolchain — and a second install — into the
+          # production deploy path. CI already refuses any PR whose regenerated
+          # manifest is not committed, and the manifest's OWN integrity is
+          # re-verified at import: BootstrapManifestSource recomputes the
+          # whole-manifest checksum and every per-item sha256 before staging.
+          if ! uv run --package majorana-api python -m majorana_api.catalog_admin \
+            sync-bootstrap --attested-by-standing; then
+            echo "::error::the catalog sync refused. THE CODE ROLLOUT ABOVE SUCCEEDED and"
+            echo "::error::production is serving the new revision — what did not happen is"
+            echo "::error::the corpus content reaching /repository. Nothing was partially"
+            echo "::error::published: a refusal leaves every record on its previous version."
+            echo "::error::The usual cause is a record whose provenance claim moved, which"
+            echo "::error::needs a person: docs/runbooks/system-catalog.md § When"
+            echo "::error::attest-bootstrap refuses."
+            exit 1
+          fi
