@@ -648,8 +648,14 @@ for (const story of withOpenFeeds) {
 // That is proved upstream in `repository-converge-layout.test.ts` over every figure,
 // opening and locale — a population this harness's story list does not cover — and a
 // weaker second copy here would only invite someone to fix the wrong one.
-const CAPTION_PLATE = 'class="mj-converge-caption-plate';
-const withCaptions = manifest.filter((story) => source(story).includes(CAPTION_PLATE));
+// Token-exact, not a prefix. `PLATE_IN_MARKUP` above is deliberately a prefix because a
+// name plate wears modifiers (`--open`, `--selected`) and all of them are still plates.
+// A prefix here matches `mj-converge-caption-plate-renamed` too, which is not a modifier
+// but a different class — so a rename would leave this filter full and the floor below
+// green. The alternation keeps genuine modifiers matching (the token followed by a space)
+// while a longer name does not.
+const CAPTION_PLATE = /class="(?:[^"]*\s)?mj-converge-caption-plate(?:\s[^"]*)?"/;
+const withCaptions = manifest.filter((story) => CAPTION_PLATE.test(source(story)));
 
 test("the convergence caption is drawn on a plate at all", () => {
   // The floor. Without it, renaming the class in the component turns every assertion
