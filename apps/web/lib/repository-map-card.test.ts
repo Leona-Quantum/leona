@@ -400,7 +400,8 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // `ground-state-energy` ingredient it hangs, and the subspace-expansion and
   // equation-of-motion routes draw their own stretch beside two ingredients each.
   // 124 since B5 unit 3: the two new leaves draw one hop each.
-  assert.equal(hops, 124, `${hops} hops, not 124`);
+  // 126 since B5 unit 4: the two new leaves draw one hop each.
+  assert.equal(hops, 126, `${hops} hops, not 126`);
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
   // authored hop is what proves the parse, the spans, the legend and both locales against
@@ -1111,7 +1112,7 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // their own work with it — while the other five excited-state routes end on
   // `observable-estimation` and so have no own stretch, exactly as VQE does not.
   // 70 since B5 unit 3: the two new leaves each close their own stretch.
-  assert.equal(withOwn.length, 70);
+  assert.equal(withOwn.length, 72);
   assert.equal(trailing.length, 14);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1167,7 +1168,7 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 66 since W21: the ten methods of the variational region each have one, for the reason
   // recorded on the stretch census above.
   // 68 since W21-E, for the two routes named on the stretch census above.
-  assert.equal(built, 70);
+  assert.equal(built, 72);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);
