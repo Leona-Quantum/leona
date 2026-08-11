@@ -123,3 +123,33 @@ export function carrySelection(current: URLSearchParams, next: URLSearchParams):
   if (removed) return;
   next.set(SEL_PARAM, sel);
 }
+
+/**
+ * Write the next URL's `paper` — the W20 paper surface's identity, carried the
+ * way `sel` is, and for the same reason: the map's own links cannot name it
+ * (`figureHref` builds them without one), so without this rule the paper's
+ * highlight and panel would vanish on the reader's first click, exactly the
+ * exploration the owner asked the surface to survive ("person can isolate the
+ * path and explore it deeper").
+ *
+ * Two rules, in order:
+ *
+ * 1. **An href that mentions `paper` at all is a statement about it.** A
+ *    non-empty value opens that paper's surface; the EMPTY value is the close
+ *    control's tombstone — the server reads it as "no paper", and writing it
+ *    (rather than omitting the key) is the only way a close can survive this
+ *    very rule. Either way the href's word stands.
+ * 2. **Silence carries.** No `paper` key in the href and a non-empty one live
+ *    means the click was about something else; the surface rides along.
+ *
+ * No-JS keeps the degraded contract every enhancement here has: a full
+ * navigation lands on the href as written — opens persist (they are concrete
+ * values in every link), the highlight and panel end.
+ */
+export const PAPER_PARAM = "paper";
+
+export function carryPaper(current: URLSearchParams, next: URLSearchParams): void {
+  if (next.has(PAPER_PARAM)) return;
+  const live = current.get(PAPER_PARAM);
+  if (live !== null && live !== "") next.set(PAPER_PARAM, live);
+}
