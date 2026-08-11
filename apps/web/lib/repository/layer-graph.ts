@@ -1351,6 +1351,8 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "qsp-phase-factors",
     conditions: "Reported numerically stable in double precision arithmetic, with experiments on Hamiltonian simulation, eigenstate filtering, matrix inversion and evaluation of the Fermi-Dirac operator.",
     conditionsJa: "倍精度演算で数値的に安定であると報告されており、ハミルトニアンシミュレーション、固有状態フィルタリング、行列の反転、フェルミ・ディラック演算子の評価で実験されています。",
+    cost: "The same $O(d^2)$ computational cost as the optimization-based method of Dong, Meng, Whaley and Lin at comparable accuracy ($\\sim 10^{-12}$) — the paper's own comparison, with the coefficient-recovery loop costed at $O(d^2 \\log d)$ via the FFT and sequences beyond 50,000 phase factors demonstrated. $d$ is the polynomial degree, and the cost is classical preprocessing. Stated in the full text; the abstract carries no bound.",
+    costJa: "Dong・Meng・Whaley・Lin の最適化に基づく手法と同じ $O(d^2)$ の計算コストで、同等の精度（$\\sim 10^{-12}$）に達するというのが論文自身の比較です。係数を求めるループは FFT を用いて $O(d^2 \\log d)$ と見積もられており、50,000 個を超える位相因子の列まで実験されています。$d$ は多項式の次数であり、これは古典的な前処理のコストです。要旨ではなく本文に述べられています。",
     contested: "The paper's claim is stability in double precision, not an improved asymptotic, and no sharp worst-case complexity separating it from the root-finding family is given. Ni and Ying add that the stability of the layer-stripping process most direct methods rely on — this one included — remains an open question.",
     contestedJa: "論文が主張しているのは倍精度での安定性であって漸近計算量の改善ではなく、求根系と分ける鋭い最悪計算量は与えられていません。さらに Ni と Ying は、この手法を含め多くの直接法が依拠する層剥がしの安定性は未解決の問題のままだと指摘しています。",
     steps: [],
@@ -1408,6 +1410,8 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "polynomial-approximation",
     conditions: "Remez is a classical approximation-theory algorithm, not a quantum one. The citation here is the QSP paper that employs it, alongside a Fourier-Chebyshev expansion, and should not be read as its origin. In that use the coefficients are solved from a reference set of degree-plus-two sampled points, which is then adjusted.",
     conditionsJa: "Remez 法は古典的な近似理論のアルゴリズムであり、量子由来ではありません。ここでの引用は、この手法をフーリエ・チェビシェフ展開と並べて用いている QSP の論文であって、手法そのものの出典ではない点にご注意ください。その用法では、次数に 2 を加えた個数の標本点からなる参照集合について係数を解き、その参照集合を調整していきます。",
+    cost: "Dong, Meng, Whaley and Lin state no complexity for the Remez exchange itself. Their stated benefit is comparative: for approximating $1/x$, the minimax polynomial reaches the same accuracy at a degree smaller by a factor of 2–3 than the Fourier–Chebyshev truncation — their Table III has degrees 303–1519 (odd parity) and 280–1400 (even) against 759–4035 for the truncation, at $\\varepsilon_0 = 10^{-14}$ over $\\kappa = 10$–$50$. Stated in the full text; the abstract carries no formula.",
+    costJa: "Remez 交換法そのものの計算量を Dong・Meng・Whaley・Lin は述べていません。論文が述べているのは比較の形の利点です。$1/x$ の近似では、ミニマックス多項式は Fourier–Chebyshev 展開の打ち切りに比べ、同じ精度を 2〜3 分の 1 の次数で達成します。論文の表 III では、$\\varepsilon_0 = 10^{-14}$、$\\kappa = 10$〜$50$ の範囲で、打ち切りの次数 759〜4035 に対し、奇関数の場合 303〜1519、偶関数の場合 280〜1400 です。要旨ではなく本文に述べられています。",
     steps: [],
     atomic: true,
     citations: [
