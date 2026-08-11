@@ -70,12 +70,22 @@ What the workflow does, in order: **apply migrations to the production database*
 the API dark under `--tag verify` → smoke-test that tag URL (`/health` is 200,
 unauthenticated `/v1/me` is still 401, the catalog is non-empty) → shift traffic →
 deploy the worker with `--command majorana-worker` → **read the worker's error log
-for 45s and fail the deploy if anything appears**. That last step is the one that
+for 45s and fail the deploy if anything appears** → run a real job end-to-end on the
+deployed stack → **sync the published catalog**. The worker-log step is the one that
 would have caught all three incidents; Cloud Run itself reports a crash-looping
 worker as healthy.
 
 It does not roll back automatically. On failure it prints the recent revisions and
 the `update-traffic --to-revisions` command to run.
+
+**`sync the published catalog` is last, and after the rollback advice, on purpose.**
+It imports, attests and publishes the pinned catalog manifest so a merged corpus
+content change reaches `/repository` (see `system-catalog.md § Updating the published
+corpus`). Because it runs after the stack is verified live, **a failure there means the
+rollout succeeded and only the catalog did not move** — it is not a reason to roll back
+traffic, and no record is left partially published. It also runs on every deploy rather
+than only when the manifest changed, so a missed trigger cannot leave the catalog stale
+forever; a no-change run writes nothing.
 
 ## Manual deploy (fallback)
 
