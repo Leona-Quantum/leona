@@ -19,6 +19,7 @@ from majorana_contracts import IllegalTransition, assert_transition, is_terminal
 from majorana_contracts import Run as RunResource
 from majorana_contracts.enums import ExportStatus, Framework, RunMode, RunStatus
 from pydantic import ConfigDict, Field
+from opentelemetry import metrics
 
 from ..auth.deps import CurrentIdentity, CurrentScope, DbSession, get_settings
 from ..request_models import RequestModel
@@ -34,6 +35,21 @@ from ..tiers import limits_for, tier_of
 from ..verification_summary import parse_verification_summary
 
 router = APIRouter()
+
+_meter = metrics.get_meter("majorana.api.sse")
+_sse_active_streams = _meter.create_up_down_counter(
+    "majorana.sse.active_streams",
+    unit="{stream}",
+    description="Currently active server-sent event streams",
+)
+_sse_polls = _meter.create_counter(
+    "majorana.sse.polls",
+    description="SSE event polling iterations",
+)
+_sse_disconnects = _meter.create_counter(
+    "majorana.sse.disconnects",
+    description="SSE streams observed after a client disconnect",
+)
 
 SSE_POLL_INTERVAL_S = 1.0
 SSE_HEARTBEAT_EVERY_POLLS = 15
@@ -562,40 +578,46 @@ async def stream_run_events(
     factory = request.app.state.session_factory
 
     async def gen():
-        seq = start_seq
-        idle_polls = 0
-        deadline = asyncio.get_running_loop().time() + SSE_MAX_DURATION_S
-        while True:
-            if await request.is_disconnected():
-                return
-            if asyncio.get_running_loop().time() >= deadline:
-                # Said on the wire rather than dropped silently: a client that
-                # is told why can reconnect from its Last-Event-ID, and one that
-                # simply loses the socket cannot tell this from a network fault.
-                yield ": stream duration limit reached; reconnect with Last-Event-ID\n\n"
-                return
-            async with factory() as s:
-                events = await runs_repo.list_run_events(scope, s, run_id, after_seq=seq)
-            if events:
-                idle_polls = 0
-                for ev in events:
-                    seq = ev.seq
-                    data = json.dumps(_event_json(ev))
-                    yield f"id: {ev.seq}\nevent: {ev.type}\ndata: {data}\n\n"
-                    if ev.type == "run.finished":
-                        return
-            else:
-                idle_polls += 1
-                if idle_polls % SSE_HEARTBEAT_EVERY_POLLS == 0:
-                    yield ": keep-alive\n\n"
-                # A run that reached terminal status without a run.finished event
-                # (e.g. job died) must not hold the connection open forever.
+        _sse_active_streams.add(1)
+        try:
+            seq = start_seq
+            idle_polls = 0
+            deadline = asyncio.get_running_loop().time() + SSE_MAX_DURATION_S
+            while True:
+                if await request.is_disconnected():
+                    _sse_disconnects.add(1)
+                    return
+                if asyncio.get_running_loop().time() >= deadline:
+                    # Said on the wire rather than dropped silently: a client that
+                    # is told why can reconnect from its Last-Event-ID, and one that
+                    # simply loses the socket cannot tell this from a network fault.
+                    yield ": stream duration limit reached; reconnect with Last-Event-ID\n\n"
+                    return
+                _sse_polls.add(1)
                 async with factory() as s:
-                    row = await runs_repo.get_run(scope, s, run_id)
-                    if is_terminal(RunStatus(row.status)):
-                        yield ": run terminal without run.finished; closing\n\n"
-                        return
-            await asyncio.sleep(SSE_POLL_INTERVAL_S)
+                    events = await runs_repo.list_run_events(scope, s, run_id, after_seq=seq)
+                if events:
+                    idle_polls = 0
+                    for ev in events:
+                        seq = ev.seq
+                        data = json.dumps(_event_json(ev))
+                        yield f"id: {ev.seq}\nevent: {ev.type}\ndata: {data}\n\n"
+                        if ev.type == "run.finished":
+                            return
+                else:
+                    idle_polls += 1
+                    if idle_polls % SSE_HEARTBEAT_EVERY_POLLS == 0:
+                        yield ": keep-alive\n\n"
+                    # A run that reached terminal status without a run.finished event
+                    # (e.g. job died) must not hold the connection open forever.
+                    async with factory() as s:
+                        row = await runs_repo.get_run(scope, s, run_id)
+                        if is_terminal(RunStatus(row.status)):
+                            yield ": run terminal without run.finished; closing\n\n"
+                            return
+                await asyncio.sleep(SSE_POLL_INTERVAL_S)
+        finally:
+            _sse_active_streams.add(-1)
 
     return StreamingResponse(
         gen(),

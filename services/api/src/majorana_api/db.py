@@ -24,10 +24,12 @@ import os
 import pathlib
 import time
 from dataclasses import dataclass
+from typing import Any
 
 from opentelemetry import metrics
 from sqlalchemy import event
 from sqlalchemy.engine import make_url
+from sqlalchemy.exc import TimeoutError as SQLAlchemyTimeoutError
 from sqlalchemy.ext.asyncio import (
     AsyncEngine,
     AsyncSession,
@@ -41,6 +43,15 @@ _connections = _meter.create_counter(
 )
 _checkouts = _meter.create_counter(
     "majorana.db.pool.checkouts", description="Database pool checkouts"
+)
+_checkout_wait = _meter.create_histogram(
+    "majorana.db.pool.checkout.wait",
+    unit="s",
+    description=("Time spent acquiring a database pool connection, including connection creation"),
+)
+_checkout_timeouts = _meter.create_counter(
+    "majorana.db.pool.checkout.timeouts",
+    description="Database pool checkout timeouts",
 )
 _query_duration = _meter.create_histogram(
     "majorana.db.query.duration", unit="s", description="Database statement duration"
@@ -198,6 +209,36 @@ def _clear_query_timer(conn) -> float | None:
     return timers.pop()
 
 
+def _instrument_pool(pool: Any) -> None:
+    """Measure the public pool acquisition call without adding request labels.
+
+    SQLAlchemy exposes ``checkout``/``checkin`` events, but no public
+    ``before_checkout`` event. Wrapping ``Pool.connect`` is the narrowest
+    supported boundary available to the current async engine: it covers queue
+    wait and physical connection creation, records SQLAlchemy pool timeouts,
+    and leaves the exception and connection lifecycle untouched. The metric is
+    therefore deliberately named and documented as acquisition time rather
+    than pretending it is queue wait alone.
+    """
+    original_connect = pool.connect
+
+    @functools.wraps(original_connect)
+    def _connect():
+        started = time.monotonic()
+        try:
+            return original_connect()
+        except SQLAlchemyTimeoutError:
+            _checkout_timeouts.add(1)
+            raise
+        finally:
+            _checkout_wait.record(max(0.0, time.monotonic() - started))
+
+    # Pool.connect is a zero-argument bound method. Assigning this wrapper to
+    # the pool instance preserves that call shape while avoiding a private
+    # QueuePool subclass that would be coupled to SQLAlchemy's async internals.
+    setattr(pool, "connect", _connect)
+
+
 def _instrument_engine(engine: AsyncEngine) -> None:
     @event.listens_for(engine.sync_engine, "connect")
     def _connect(dbapi_connection, connection_record) -> None:
@@ -257,6 +298,7 @@ def engine_from_env() -> AsyncEngine:
         # attributable to a service.
         connect_args={"application_name": _application_name()},
     )
+    _instrument_pool(engine.sync_engine.pool)
     _instrument_engine(engine)
     return engine
 
