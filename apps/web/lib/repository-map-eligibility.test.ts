@@ -10,11 +10,13 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  DECLARED_SHARED_SOURCES,
   MAP_CITABLE_SOURCE_KINDS,
   MAP_ELIGIBLE_ROLES,
   auditAnchors,
   isMapCitableSourceKind,
   isMapEligibleRole,
+  undeclaredSharedSources,
   type EligibilityRecord,
 } from "./repository/map-eligibility.ts";
 
@@ -227,4 +229,47 @@ test("the citable-source list is a vocabulary too, and unknown is not on it", ()
   assert.ok(!isMapCitableSourceKind(null));
   assert.ok(!isMapCitableSourceKind(undefined));
   assert.ok(!isMapCitableSourceKind(""));
+});
+
+test("a shared source is a refusal unless somebody wrote down who may share it", () => {
+  // The shape the corpus was in before W21-B: one survey behind a crowd, because
+  // a factory supplied it. Nothing about the records says so, which is why the
+  // check is on the share and not on any one record.
+  const undeclared = undeclaredSharedSources([
+    { url: "https://example.org/survey", slugs: ["a", "b", "c"] },
+  ]);
+  assert.equal(undeclared.length, 1);
+  assert.equal(undeclared[0]?.declared, null);
+  assert.deepEqual(undeclared[0]?.slugs, ["a", "b", "c"]);
+});
+
+test("a declared share passes, and slug ORDER is not part of the declaration", () => {
+  const url = "https://arxiv.org/abs/1810.02327";
+  const declared = DECLARED_SHARED_SOURCES[url];
+  assert.ok(declared, "the Lee et al. share must stay declared for this test to mean anything");
+  // Reversed on purpose: `auditAnchors` sorts its groups, but a future caller
+  // that does not must not turn a declared share into an error.
+  assert.deepEqual(undeclaredSharedSources([{ url, slugs: [...declared].reverse() }]), []);
+});
+
+test("the declaration is exact in BOTH directions — a record that gains its own paper must leave the list", () => {
+  const url = "https://arxiv.org/abs/2103.08505";
+  const declared = DECLARED_SHARED_SOURCES[url];
+  assert.ok(declared && declared.length > 1);
+  // One of the residue records gets sourced, so it stops citing the survey. The
+  // remaining share is a SUBSET of the declaration — permissive-by-default would
+  // pass this, and the allowance would then outlive the reason it was granted.
+  const shrunk = declared.slice(1);
+  const [row] = undeclaredSharedSources([{ url, slugs: [...shrunk] }]);
+  assert.ok(row, "a shrunken share must still be reported so the list gets updated");
+  assert.deepEqual(row.declared, declared);
+});
+
+test("every declared share names at least two records, or it is not a share", () => {
+  // A one-slug declaration would be a permanent exemption for a record that is
+  // not actually sharing anything — the tag-shaped answer this file avoids.
+  for (const [url, slugs] of Object.entries(DECLARED_SHARED_SOURCES)) {
+    assert.ok(slugs.length > 1, `${url} declares ${slugs.length} slug(s)`);
+    assert.deepEqual([...new Set(slugs)], [...slugs], `${url} lists a slug twice`);
+  }
 });

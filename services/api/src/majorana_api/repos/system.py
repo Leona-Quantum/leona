@@ -1097,6 +1097,24 @@ async def list_orphaned_runs(
     )
 
 
+async def count_runnable_jobs(session: AsyncSession) -> int:
+    """Return the ready-to-claim job count for worker capacity metrics.
+
+    This is intentionally a count-only, workspace-neutral query. It exposes no
+    job payload, run ID, error text, or tenant data to the metric path, and it
+    uses the exact readiness predicates from ``claim_job`` so the signal means
+    "work a worker could claim now" rather than all queued rows.
+    """
+    result = await session.execute(
+        select(func.count(Job.id)).where(
+            Job.status == "queued",
+            Job.run_after <= func.now(),
+            Job.attempts < Job.max_attempts,
+        )
+    )
+    return int(result.scalar_one())
+
+
 async def claim_job(
     session: AsyncSession, *, worker_id: str, lease_seconds: float = 120.0
 ) -> Job | None:
