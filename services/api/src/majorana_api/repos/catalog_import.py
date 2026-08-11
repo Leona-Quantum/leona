@@ -455,6 +455,31 @@ async def process_import_batch(
         # expires every ORM object in the session, and touching an expired
         # attribute outside an awaited call isn't legal on an async session.
         item = await session.get(ImportItem, item_id)
+        # **Re-check the state the SELECT above chose this item on.**
+        #
+        # `item_ids` was taken once, before the loop, filtered to QUEUED. By the
+        # time this row is fetched, another pass over the SAME job may already
+        # have advanced it — `_bootstrap_import` drains a job in up to ten
+        # passes, and two deploys (or a retried one) can be inside the same job
+        # at once. Nothing serialises them.
+        #
+        # Without this guard the already-terminal row is handed to
+        # `_advance_item`, whose first act is to read `item.state` into `reached`
+        # and assert a transition out of it. STAGED has no legal successors, so
+        # it raises `IllegalImportItemTransition(staged -> fetching)`; that
+        # exception is tagged `reached_state = STAGED` and caught by the
+        # transient handler below, which asserts STAGED -> RETRY_WAIT and raises
+        # a *second*, more confusing lifecycle error that takes down the whole
+        # batch. **That is the production failure of 2026-08-12** — the reported
+        # message named the transition nobody attempted, and the one that
+        # actually failed was the one it replaced.
+        #
+        # This is the guarantee the docstring above already claims ("items
+        # already at a terminal state (staged/rejected/dead) are left
+        # untouched"), which held only because nothing had raced a batch before:
+        # the import ran once, on an empty catalog, in July.
+        if ImportItemState(item.state) in TERMINAL_ITEM_STATES:
+            continue
         try:
             await _advance_item(
                 scope,

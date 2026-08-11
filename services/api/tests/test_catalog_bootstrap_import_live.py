@@ -200,3 +200,83 @@ async def test_bootstrap_create_is_idempotent_on_checksum_key(env):
     assert first.id == second.id
     manifest_count = json.loads(default_manifest_path().read_text(encoding="utf-8"))["item_count"]
     assert first.item_count == second.item_count == manifest_count
+
+
+@requires_db
+async def test_an_item_staged_by_a_concurrent_pass_is_skipped_not_re_advanced(env):
+    """The 2026-08-12 deploy failure, reproduced deterministically.
+
+    `process_import_batch` takes its work list once, filtered to QUEUED, and then
+    fetches each row inside the loop. Between those two moments another pass over
+    the *same job* can stage the row — `_bootstrap_import` drains a job in up to
+    ten passes and two deploys can be inside one job at once, with nothing
+    serialising them.
+
+    Before the guard, the already-STAGED row was handed to `_advance_item`, whose
+    first act is to assert a transition out of `item.state`. STAGED has no legal
+    successors, so it raised `IllegalImportItemTransition(staged -> fetching)`;
+    that exception carried `reached_state = STAGED` into the transient handler,
+    which asserted STAGED -> RETRY_WAIT and raised a *second* lifecycle error —
+    the one production actually reported, naming a transition nobody attempted
+    and hiding the one that failed.
+
+    The race is simulated rather than run: `session.get` is wrapped so that the
+    first row the loop fetches is staged, by a separate committed session, in the
+    instant before it is returned. That is exactly the interleaving above, made
+    deterministic — a timing-based version of this test would pass by luck.
+    """
+    authority, factory = env
+    scope = authority.importer_scope()
+    source = BootstrapManifestSource()
+
+    async with factory() as session:
+        job = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            source=source,
+            idempotency_key=f"race-{uuid.uuid4()}",
+        )
+        await session.commit()
+        job_id = job.id
+
+    # Race the FIRST pass, while every item is still QUEUED. An earlier draft
+    # ran one pass and then looked for a leftover QUEUED row; the batch drains
+    # in a single pass, so there was never one and the test SKIPPED — passing
+    # for the one reason a regression test must never pass.
+    async with factory() as session:
+        victim_id = (
+            await session.execute(
+                select(ImportItem.id).where(
+                    ImportItem.import_job_id == job_id,
+                    ImportItem.state == ImportItemState.QUEUED,
+                )
+            )
+        ).scalars().first()
+    assert victim_id is not None, "the fixture job produced no QUEUED items to race"
+
+    async with factory() as session:
+        original_get = session.get
+        raced = {"done": False}
+
+        async def get_racing_the_select(entity, ident, *args, **kwargs):
+            row = await original_get(entity, ident, *args, **kwargs)
+            if not raced["done"] and entity is ImportItem and ident == victim_id:
+                raced["done"] = True
+                # A concurrent pass finishes this item and commits, after our
+                # SELECT chose it and before this fetch hands it to the loop.
+                async with factory() as other:
+                    staged = await other.get(ImportItem, victim_id)
+                    staged.state = ImportItemState.STAGED
+                    await other.commit()
+                await session.refresh(row)
+            return row
+
+        session.get = get_racing_the_select  # type: ignore[method-assign]
+        # Before the guard this raised IllegalImportItemTransition(staged -> retry_wait).
+        await catalog_import.process_import_batch(
+            scope, session, job_id, authority=authority, source=source
+        )
+
+    async with factory() as session:
+        assert (await session.get(ImportItem, victim_id)).state == ImportItemState.STAGED
