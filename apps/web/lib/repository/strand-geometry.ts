@@ -277,3 +277,40 @@ export function levelSlices(level: Level, count: number): Level[] {
     y: level.y,
   }));
 }
+
+/**
+ * The same cut, but each piece as long as what it has to hold.
+ *
+ * `levelSlices` divides equally, which is only the right division when the
+ * steps make equal demands. They rarely do: a chain of two where one step is a
+ * shut leaf with a 129px name and the other opens onto a whole fan gave the
+ * leaf half of a 5,552px belly on `nonlinear-ode-solve`, and the leaf's own
+ * demand was 197px. Equal shares are therefore what makes a figure long — the
+ * widest step is paid for `k` times whether or not `k−1` of those payments buy
+ * anything.
+ *
+ * Weights are the steps' own demands, so a piece is never shorter than what it
+ * holds **provided the level is at least the summed demand** — which is exactly
+ * what the caller sized it to be. Non-positive weights are floored at zero and
+ * an all-zero row falls back to the equal cut rather than dividing by nothing.
+ *
+ * The last piece closes on `level.x1` by construction rather than by
+ * accumulated float: the boundary circles between steps are drawn at these
+ * seams, and a chain whose last step stops 0.02px short of its own end circle
+ * is a gap a reader can see at zoom.
+ */
+export function levelShares(level: Level, weights: readonly number[]): Level[] {
+  if (weights.length <= 1) return [level];
+  const safe = weights.map((weight) => (Number.isFinite(weight) ? Math.max(0, weight) : 0));
+  const total = safe.reduce((sum, weight) => sum + weight, 0);
+  if (total <= 0) return levelSlices(level, weights.length);
+  const length = level.x1 - level.x0;
+  const pieces: Level[] = [];
+  let x = level.x0;
+  for (const [index, weight] of safe.entries()) {
+    const x1 = index === safe.length - 1 ? level.x1 : x + (length * weight) / total;
+    pieces.push({ x0: x, x1, y: level.y });
+    x = x1;
+  }
+  return pieces;
+}
