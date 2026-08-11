@@ -95,7 +95,13 @@ for (const match of html.matchAll(/<b>Algorithm:<\/b>(.*?)(?=<b>Algorithm:<\/b>|
     section: section?.title ?? null,
     sectionId: section?.id ?? null,
     speedup,
-    refs: refKeys.slice(0, 8).map((key) => ({ key, ...(references.get(key) ?? {}) })),
+    // `citation`, not `key`: gitleaks' generic-api-key rule fires on a quoted
+    // value sitting next to an identifier containing "key", and these values
+    // ("Biasse_Song16", "Reichardt2010") are shaped exactly like a token. The
+    // repo's .gitleaks.toml explains why suppressing a false positive there is a
+    // last resort — renaming a field in data this script owns is the cheaper fix,
+    // and it reads better anyway.
+    refs: refKeys.slice(0, 8).map((key) => ({ citation: key, ...(references.get(key) ?? {}) })),
   });
 }
 
