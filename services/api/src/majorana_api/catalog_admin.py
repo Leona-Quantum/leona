@@ -590,6 +590,7 @@ def pick_standing_reviewer(
     rows: Sequence[tuple[uuid.UUID, Role, str]],
     *,
     service_ids: frozenset[uuid.UUID],
+    signed: Mapping[uuid.UUID, int] | None = None,
 ) -> uuid.UUID:
     """Which account already holds the catalog reviewer grant.
 
@@ -640,13 +641,36 @@ def pick_standing_reviewer(
             "there is no standing attestation to continue. Run the first attestation "
             "explicitly — `--attested-by-email <you>` — and this flag works from then on."
         )
-    if len(candidates) > 1:
-        raise SystemExit(
-            f"{len(candidates)} accounts hold the catalog reviewer grant "
-            f"({', '.join(str(user_id) for user_id in candidates)}) — an unattended run "
-            "will not choose between them. Pass --attested-by explicitly."
-        )
-    return candidates[0]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # More than one grant. Before refusing, ask the stronger question: not who
+    # *may* review, but who actually *has*.
+    #
+    # **This is not a tiebreak invented to get past a refusal — it narrows the
+    # candidate set, it never widens it.** A membership says an account holds the
+    # permission; `license_assertions.reviewer_user_id` says an account used it.
+    # The flag is called `--attested-by-standing` because it continues a standing
+    # attestation, and an attestation lives on those rows, not on a membership
+    # nobody ever exercised. An ADMIN grant with no signatures is a permission
+    # somebody was given and never used, and continuing it would be starting a
+    # new line of attestation rather than continuing an existing one.
+    #
+    # Found in production on this rule's first run: two live accounts held ADMIN
+    # on the catalog workspace, neither marked retired, so the duplicate-row
+    # exclusion above could not resolve it and the sync parked. If exactly one of
+    # them signed the corpus, that account is the answer and always was.
+    signatures = signed or {}
+    signatories = [user_id for user_id in candidates if signatures.get(user_id, 0) > 0]
+    if len(signatories) == 1:
+        return signatories[0]
+
+    detail = ", ".join(f"{user_id} ({signatures.get(user_id, 0)} signed)" for user_id in candidates)
+    raise SystemExit(
+        f"{len(candidates)} accounts hold the catalog reviewer grant ({detail}) and "
+        f"{len(signatories)} of them have signed — an unattended run will not choose "
+        "between them. Pass --attested-by explicitly."
+    )
 
 
 async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
@@ -665,6 +689,11 @@ async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
             rows = await system.list_catalog_reviewer_grants(
                 session, workspace_id=authority.workspace_id
             )
+            # Read in the same session as the grants, so the two answers are
+            # about one state of the database rather than two.
+            signed = await system.count_catalog_assertions_by_reviewer(
+                session, workspace_id=authority.workspace_id
+            )
     finally:
         await engine.dispose()
 
@@ -673,7 +702,7 @@ async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
         for user_id in (authority.importer_user_id, authority.public_reader_user_id)
         if user_id is not None
     )
-    reviewer = pick_standing_reviewer(rows, service_ids=service_ids)
+    reviewer = pick_standing_reviewer(rows, service_ids=service_ids, signed=signed)
     print(f"reviewer: {reviewer} (standing catalog grant, --attested-by-standing)")
     return reviewer
 
