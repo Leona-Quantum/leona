@@ -19,6 +19,8 @@ import { parseAboutSection } from "../../../lib/repository/map-about";
 import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
 import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
 import { PAPER_REGISTER } from "../../../lib/repository/paper-register";
+import { PAPER_PARAM, paperRevealFor } from "../../../lib/repository/paper-reveal";
+import { paperSlug } from "../../../lib/repository/papers";
 
 /**
  * Localised, because the node route beside it already is.
@@ -136,6 +138,23 @@ export default async function RepositoryLayersPage({
     getRepositoryListEntries(),
   ]);
   const openSet = resolveOpenSet(params);
+  // `?paper=` — the paper surface (W20). Its whole meaning is an ARRIVAL open
+  // set — the owner's "expands only branches needed … other branches that
+  // remain open that aren't relevant are closed" — so it is resolved before
+  // the open set is chosen: a paper link carries no `open` values and lands on
+  // the reveal; the moment the URL carries explicit `open` values the reader
+  // owns them and the paper contributes highlight + panel only (D-W20.2). An
+  // unresolvable value means no surface and says so, the `?card=` rule.
+  const paperParam = one(params, PAPER_PARAM);
+  const paperReveal =
+    paperParam !== null && paperParam !== ""
+      ? paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperParam)
+      : null;
+  const paperRow =
+    paperReveal === null ? null : (PAPER_REGISTER.papers.find((row) => row.id === paperReveal.paperId) ?? null);
+  const rawOpen = params["open"];
+  const hasExplicitOpen = Array.isArray(rawOpen) ? rawOpen.length > 0 : typeof rawOpen === "string";
+  const landing = paperReveal !== null && !hasExplicitOpen;
   // `?inner=` — the truncated map inside the open card (W9). Resolved on the
   // server like everything else on this page, and validated against
   // `drawableSlots` — the predicate the navigation list and the renderer
@@ -210,8 +229,8 @@ export default async function RepositoryLayersPage({
         graph={LAYER_GRAPH}
         corpus={corpus}
         locale={locale}
-        focusId={resolveFocus(params)}
-        open={openSet.open}
+        focusId={resolveFocus(params) ?? (paperReveal ? paperReveal.focusId : null)}
+        open={landing ? new Set(paperReveal!.open) : openSet.open}
         // Which page of the information box is open, resolved on the server so
         // the box works with JavaScript off and so a link to one section of it
         // is a link somebody can send. See `lib/repository/map-about.ts`.
@@ -250,7 +269,21 @@ export default async function RepositoryLayersPage({
         // and resolved in `ConvergeView` against what actually drew, the same
         // division of labour as `cardSection`: the page can say an id names a
         // node; only the layout knows whether anything on the figure draws it.
-        sel={one(params, SEL_PARAM)}
+        sel={one(params, SEL_PARAM) ?? (landing ? paperReveal!.sel : null)}
+        paper={
+          paperReveal !== null && paperRow !== null
+            ? {
+                slug: paperSlug(paperReveal.paperId),
+                title: paperRow.title,
+                authors: paperRow.authors,
+                year: paperRow.year,
+                cited: new Set(paperReveal.cited),
+                drawnCount: paperReveal.drawn.length,
+                elsewhereCount: paperReveal.elsewhere.length,
+              }
+            : null
+        }
+        paperDropped={paperParam !== null && paperParam !== "" && paperReveal === null}
       />
     </PublicSite>
   );

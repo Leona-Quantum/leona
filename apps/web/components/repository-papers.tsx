@@ -29,6 +29,9 @@
 // weakest axis ride on the strongest, which is the failure the field exists to
 // avoid.
 import type { PublicLocale } from "../lib/public-locale";
+import { paperRevealFor } from "../lib/repository/paper-reveal";
+import { LAYER_GRAPH } from "../lib/repository/layer-graph";
+import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
 import type { PaperIndexCensus, PaperPage } from "../lib/repository/paper-pages";
 import type { TraceShape } from "../lib/repository/paper-traces";
 import type { SourceCoverageAxis, SourceCoverageStatus } from "../lib/repository/types";
@@ -64,6 +67,7 @@ const COPY = {
     inAtlasHeading: "Where the Atlas cites it",
     inAtlasNone: "No record in the Atlas cites this paper.",
     shapeHeading: "As a line on the map",
+    seeOnMap: "See its pipeline on the map — the branches it crosses open, its steps marked",
     // The four shapes, each said as the fact it is. `point` is by far the
     // commonest and must not read as a failure: one node citing a paper is a
     // normal, complete state of affairs.
@@ -120,6 +124,7 @@ const COPY = {
     inAtlasHeading: "アトラスのどこが引用しているか",
     inAtlasNone: "アトラスのどの記録もこの論文を引用していません。",
     shapeHeading: "地図の上の線として",
+    seeOnMap: "この論文のパイプラインをマップで見る — 通る枝が開き、各工程に印が付きます",
     shape: {
       point:
         "引用しているノードはひとつです。描くべき線はありません。軌跡とは経路であり、ひとつの引用は地点だからです。",
@@ -262,6 +267,15 @@ export function PaperView({ page, locale }: { page: PaperPage; locale: PublicLoc
           <p className="mj-papers-shape" data-shape={trace.shape}>
             {copy.shape[trace.shape]}
           </p>
+          {/* The reveal is derived from citations at request time (W20), so
+              the link only exists when the map genuinely draws something of
+              this paper — the one register paper whose cited nodes are all
+              folded out of the drawing gets no link rather than a dead one. */}
+          {paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, page.slug) !== null ? (
+            <p className="mj-papers-see-map">
+              <a href={`/repository/layers?paper=${page.slug}`}>{copy.seeOnMap}</a>
+            </p>
+          ) : null}
           {page.bridge.length > 0 ? (
             <>
               <p className="mj-layers-count">{copy.bridgeLabel}</p>
