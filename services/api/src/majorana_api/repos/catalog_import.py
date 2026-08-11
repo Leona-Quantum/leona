@@ -455,6 +455,25 @@ async def process_import_batch(
         # expires every ORM object in the session, and touching an expired
         # attribute outside an awaited call isn't legal on an async session.
         item = await session.get(ImportItem, item_id)
+        # The QUEUED filter above is a SNAPSHOT, and this loop is not the only
+        # processor of this batch. `catalog_admin bootstrap-import` creates the
+        # job — which enqueues a durable `catalog.import` job the deployed
+        # worker also handles (`handlers.py`) — and then drains the batch itself,
+        # so the worker can take an item between that SELECT and this line.
+        #
+        # Production, 2026-08-12: the sync died nine seconds in with
+        # `illegal import item transition staged -> fetching`, because an item
+        # selected here as QUEUED was already STAGED by the worker when it was
+        # re-fetched. The docstring above promises that items "already at a
+        # terminal state are left untouched" — that promise is real, but it was
+        # enforced at SELECT time, which is the one moment it cannot be true.
+        # Checked here instead, where it is.
+        #
+        # Skipping is the right outcome, not a retry: whoever staged it did the
+        # work, and the job's own accounting (_finalize_import_job) reads the
+        # items' committed states rather than what this pass touched.
+        if item is None or ImportItemState(item.state) is not ImportItemState.QUEUED:
+            continue
         try:
             await _advance_item(
                 scope,
