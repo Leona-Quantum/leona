@@ -10,23 +10,82 @@ import assert from "node:assert/strict";
 import test from "node:test";
 
 import {
+  MAP_CITABLE_SOURCE_KINDS,
   MAP_ELIGIBLE_ROLES,
   auditAnchors,
+  isMapCitableSourceKind,
   isMapEligibleRole,
   type EligibilityRecord,
 } from "./repository/map-eligibility.ts";
 
+// Every record here carries provenance, so the role tests below exercise the
+// role rule and only the role rule. The provenance rule has its own fixture.
 const CORPUS: readonly EligibilityRecord[] = [
-  { slug: "hhl-linear-systems", role: "algorithm-reference" },
-  { slug: "amplitude-estimation", role: "algorithm-reference" },
-  { slug: "quantum-phase-estimation", role: "algorithm-reference" },
-  { slug: "benchmark-ghz-chain-4q", role: "benchmark-circuit" },
-  { slug: "hadamard-gate", role: "gate-primitive" },
-  { slug: "operator-pauli-string", role: "operator" },
-  { slug: "bell-state-qiskit", role: "state" },
+  { slug: "hhl-linear-systems", role: "algorithm-reference", sourceKind: "curated_reference" },
+  { slug: "amplitude-estimation", role: "algorithm-reference", sourceKind: "curated_reference" },
+  {
+    slug: "quantum-phase-estimation",
+    role: "algorithm-reference",
+    sourceKind: "curated_reference",
+  },
+  { slug: "benchmark-ghz-chain-4q", role: "benchmark-circuit", sourceKind: "curated_reference" },
+  { slug: "hadamard-gate", role: "gate-primitive", sourceKind: "curated_reference" },
+  { slug: "operator-pauli-string", role: "operator", sourceKind: "curated_reference" },
+  { slug: "bell-state-qiskit", role: "state", sourceKind: "curated_reference" },
   // A record no rule claimed. `check-repository-data.mjs` already refuses this,
   // but the audit must not treat "no role" as "eligible" if it ever gets here.
-  { slug: "unclassified", role: null },
+  { slug: "unclassified", role: null, sourceKind: "curated_reference" },
+];
+
+// The provenance fixture, shaped like the case that motivated the rule: every
+// record is eligible BY ROLE, so nothing here can pass or fail for the other
+// reason. `our-own-run` is `qaoa-maxcut-ring` in miniature.
+const SOURCED: readonly EligibilityRecord[] = [
+  {
+    slug: "hhl-linear-systems",
+    role: "algorithm-reference",
+    sourceKind: "curated_reference",
+    sourceUrl: "https://arxiv.org/abs/0811.3171",
+  },
+  {
+    slug: "our-own-run",
+    role: "algorithm-reference",
+    sourceKind: "verified_run",
+    sourceUrl: "https://github.com/EshMis/majorana",
+  },
+  // Nobody said where this one comes from. Not the same state as "our own run",
+  // and the rule must treat them the same.
+  { slug: "unrecorded-provenance", role: "algorithm-reference", sourceUrl: "https://example.test/a" },
+  {
+    slug: "survey-a",
+    role: "algorithm-reference",
+    sourceKind: "curated_reference",
+    sourceUrl: "https://arxiv.org/abs/2103.08505",
+  },
+  {
+    slug: "survey-b",
+    role: "algorithm-reference",
+    sourceKind: "curated_reference",
+    sourceUrl: "https://arxiv.org/abs/2103.08505",
+  },
+  {
+    slug: "survey-c",
+    role: "algorithm-reference",
+    sourceKind: "curated_reference",
+    sourceUrl: "https://arxiv.org/abs/2103.08505",
+  },
+  {
+    slug: "taylor-series-simulation",
+    role: "algorithm-reference",
+    sourceKind: "curated_reference",
+    sourceUrl: "https://arxiv.org/abs/1304.3061",
+  },
+  {
+    slug: "truncated-taylor-sparse",
+    role: "algorithm-reference",
+    sourceKind: "curated_reference",
+    sourceUrl: "https://arxiv.org/abs/1304.3061",
+  },
 ];
 
 test("only the listed roles may be anchored, and every other role is an error", () => {
@@ -89,4 +148,83 @@ test("the eligible-role list is a vocabulary, not a predicate written twice", ()
   assert.ok(!isMapEligibleRole("benchmark-circuit"));
   assert.ok(!isMapEligibleRole(null));
   assert.ok(!isMapEligibleRole(undefined));
+});
+
+test("a record the map may not cite is an error even when its role is eligible", () => {
+  // The pair that separates the two rules: same role, same node, opposite
+  // verdicts — and the eligible-role error must stay empty, or the reader is
+  // sent to the topic vocabulary to fix a provenance problem.
+  const audit = auditAnchors(
+    [
+      { nodeId: "quantum-linear-solve", slug: "hhl-linear-systems" },
+      { nodeId: "ground-state-energy", slug: "our-own-run" },
+      { nodeId: "ground-state-energy", slug: "unrecorded-provenance" },
+    ],
+    SOURCED,
+  );
+  assert.deepEqual(audit.ineligible, []);
+  assert.deepEqual(
+    audit.uncitable.map((row) => [row.nodeId, row.slug, row.sourceKind]),
+    [
+      ["ground-state-energy", "our-own-run", "verified_run"],
+      // Absent provenance reports as `null`, not as the string "undefined": the
+      // message says "unrecorded" and the caller must be able to tell the two
+      // states apart without parsing prose.
+      ["ground-state-energy", "unrecorded-provenance", null],
+    ],
+  );
+  // Still anchored. A provenance error is a claim about the citation, not a
+  // retraction of the cross-link, and `anchored` is a coverage number two other
+  // files quote.
+  assert.equal(audit.anchored, 3);
+});
+
+test("the reading list says which of its records cannot be anchored as they stand", () => {
+  const audit = auditAnchors([{ nodeId: "quantum-linear-solve", slug: "hhl-linear-systems" }], SOURCED);
+  // The caveat does not shorten the list: 7 unanchored, of which 2 are blocked
+  // on provenance. A session working the list top to bottom sees both numbers.
+  assert.equal(audit.unanchored.length, 7);
+  assert.deepEqual(audit.unanchorableProvenance, ["our-own-run", "unrecorded-provenance"]);
+  for (const slug of audit.unanchorableProvenance) assert.ok(audit.unanchored.includes(slug));
+});
+
+test("shared provenance is counted, commonest first, and a source of one is not shared", () => {
+  // 25 of the real 53 cite one VQE survey because a factory defaulted them
+  // there. Three-and-two here for the same shape: the point is the grouping and
+  // the ordering, and that a record cited once never appears.
+  const audit = auditAnchors([], SOURCED);
+  assert.deepEqual(
+    audit.sharedSources.map(({ url, slugs }) => [url, slugs]),
+    [
+      ["https://arxiv.org/abs/2103.08505", ["survey-a", "survey-b", "survey-c"]],
+      ["https://arxiv.org/abs/1304.3061", ["taylor-series-simulation", "truncated-taylor-sparse"]],
+    ],
+  );
+  // An anchored record leaves the reading list, so it leaves this census too —
+  // otherwise the count says how much sourcing work there is including the work
+  // already done.
+  const afterAnchoring = auditAnchors([{ nodeId: "n", slug: "survey-a" }], SOURCED);
+  assert.deepEqual(
+    afterAnchoring.sharedSources.find((row) => row.url.endsWith("2103.08505"))?.slugs,
+    ["survey-b", "survey-c"],
+  );
+  // ...and with the two groups now tied at 2, the url breaks the tie, so the
+  // output is the same on every run. Sorting by count alone would leave the
+  // order to Map insertion and make a diff of two runs unreadable.
+  assert.deepEqual(
+    afterAnchoring.sharedSources.map((row) => row.url),
+    ["https://arxiv.org/abs/1304.3061", "https://arxiv.org/abs/2103.08505"],
+  );
+});
+
+test("the citable-source list is a vocabulary too, and unknown is not on it", () => {
+  assert.deepEqual([...MAP_CITABLE_SOURCE_KINDS], ["curated_reference"]);
+  assert.ok(isMapCitableSourceKind("curated_reference"));
+  assert.ok(!isMapCitableSourceKind("verified_run"));
+  assert.ok(!isMapCitableSourceKind("community_submission"));
+  // The fail-closed half of the rule. A consumer that forgets the field must not
+  // get a pass out of it.
+  assert.ok(!isMapCitableSourceKind(null));
+  assert.ok(!isMapCitableSourceKind(undefined));
+  assert.ok(!isMapCitableSourceKind(""));
 });
