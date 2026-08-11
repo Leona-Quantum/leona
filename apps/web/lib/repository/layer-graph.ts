@@ -402,11 +402,12 @@ export const LAYER_GRAPH: LayerGraph = {
     // Pinning is not collapsing. The three all-at-once methods stay three
     // methods, because they are three papers with three sets of conditions.
     // What stops being identical is the *picture*: this hop now names the
-    // Taylor propagator, `dyson-all-at-once`'s names the Dyson series, and
-    // `krovi-linear-ode`'s still names the slot, which is right — Krovi's paper
-    // re-analyses the construction rather than changing it, and inventing a
-    // discretization for it to point at would be the map asserting something no
-    // source does.
+    // Taylor propagator and `dyson-all-at-once`'s names the Dyson series.
+    // (`krovi-linear-ode` drew the slot-labelled pair here until s121 — it is
+    // folded now, W17: a reanalysis with no walk of its own lives in this
+    // card's Refinements section rather than as a third lane, and inventing a
+    // discretization for it to point at would still be the map asserting
+    // something no source does.)
     //
     // **What this comment used to say was false, and the way it was false is
     // worth keeping.** Until session 107 it claimed the pin had already stopped
@@ -440,33 +441,31 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Reanalyses the all-at-once propagator encoding and shows that the norm of the matrix exponential, rather than the eigenvector condition number, characterizes the run time. It still forms a global linear system and still calls a quantum linear solver.",
     summaryJa: "一括符号化を再解析し、実行時間を特徴づけるのは固有ベクトル行列の条件数ではなく行列指数のノルムであることを示します。それでもなお大域的な線形系を組み立て、量子線形ソルバーを呼ぶ点は変わりません。",
     realizes: "linear-ode-solve",
-    // **Recorded and, on the canvas, still unread.** `refines` is what tells a
-    // reader that this is the same construction re-analysed rather than a fifth
-    // way of solving a linear ODE, and it is honoured in two places: the method
-    // page's siblings split (`alternativesTo` / `refinementsOf`), and the
-    // duplicate gates in `scripts/check-layer-graph.mjs` and
-    // `repository-converge-layout.test.ts`, both of which let a refinement chain
-    // through without an exemption row. The **map** draws nothing for it —
-    // measured by grep over `converge-layout.ts`, `repository-converge-map.tsx`
-    // and `repository-converge-view.tsx`: zero reads. Krovi is drawn as a flat
-    // peer of the Taylor route it refines.
+    // **Folded (s121, W17): same walk, better analysis — no lane of its own.**
+    // This relation has now lived three lives: session 107 recorded `refines`
+    // and the canvas ignored it (Krovi drew as a flat peer); W13 nested it as
+    // a bracketed variant lane; the owner's s121 ruling folded it into the
+    // parent's card — *"until there is actually a difference that we can
+    // represent in the map itself for the user, the refinement can exist
+    // within the broader card with a short explanation."* This paper is that
+    // case exactly: it re-analyses the construction rather than changing it,
+    // so a lane of its own has nothing to draw that the parent's does not.
+    // The node stays — page, URL, mathematics, citations — only the lane goes;
+    // the parent card's Refinements section is where a reader meets it now.
     //
-    // Left that way on purpose in session 107. Nesting a refinement under what
-    // it refines is a change to how a fan allocates bows and reserves bands —
-    // the one property this whole figure rests on is that siblings never cross,
-    // and it is asserted over sampled points on every lane of every figure. That
-    // is not a change to make in passing while the subject is labelling. It is
-    // owner-facing work with a real decision in it (does a refinement nest, or
-    // wear a mark and stay a peer?), and it is written here rather than only in
-    // a session note so the next reader of this node finds it.
-    //
-    // Do **not** resolve it by inventing a `via` pin for this method. The paper
-    // chooses no discretization; it re-analyses the one Berry, Childs, Ostrander
-    // and Wang already chose. A pin here would put a name on a hop that no
-    // source puts there.
+    // Do **not** resolve the fold by inventing a `via` pin for this method.
+    // The paper chooses no discretization; it re-analyses the one Berry,
+    // Childs, Ostrander and Wang already chose. A pin here would put a name on
+    // a hop no source puts there — and it would be a drawable difference,
+    // which validation would then use to refuse the fold flag.
     refines: "taylor-all-at-once",
     refinesMark: "Taylor",
     refinesMarkJa: "Taylor",
+    sameInternalsAsParent: true,
+    potentialPath:
+      "The paper's contribution is analytic — the norm of the matrix exponential, not the eigenvector condition number, characterizes the run time — and it chooses no step of its own. Nothing in the walk differs, so a drawn path would need the map to represent analysis-level distinctions (which bound governs a lane), which it does not draw today.",
+    potentialPathJa:
+      "この論文の貢献は解析的なものです。実行時間を特徴づけるのは固有ベクトル行列の条件数ではなく行列指数のノルムである、という点であり、独自の工程は選ばれていません。歩みには何の違いもないため、独自の経路として描くには、どの評価が経路を支配するかという解析水準の区別を地図が表現できる必要がありますが、現在の地図はそれを描きません。",
     conditions: "Extends to many classes of non-diagonalizable matrices, which the Berry-Childs-Ostrander-Wang analysis required to be diagonalizable, and is exponentially faster than those bounds for certain classes of diagonalizable matrices. Applied back to nonlinear ODEs through Carleman linearization, it handles any sparse, invertible matrix modelling dissipation that has a negative log-norm, where Liu et al. and Xue et al. additionally require normality. It improves the constant of the bottleneck; it does not remove the quantum-linear-solve layer.",
     conditionsJa: "Berry・Childs・Ostrander・Wang の解析が対角化可能性を要求していたのに対し、非対角化可能な行列の多くのクラスにも適用でき、ある種の対角化可能な行列については従来の評価より指数的に高速です。Carleman 線形化を通じて非線形常微分方程式に適用する場合、対数ノルムが負であれば疎で正則な任意の散逸行列を扱えます。Liu らと Xue らはこれに加えて正規性を要求していました。この手法はボトルネックの定数を改善するものであり、量子線形ソルバーの層を取り除くものではありません。",
     cost: "The paper's own framing: the norm of the matrix exponential characterizes the run time of quantum algorithms for linear ODEs. The precise bound is not reproduced here.",
@@ -596,6 +595,17 @@ export const LAYER_GRAPH: LayerGraph = {
     refines: "lchs-route",
     refinesMark: "LCHS",
     refinesMarkJa: "LCHS",
+    // **Folded (s121, W17) — the owner's model case, in his own words:** *"it
+    // just doesn't make sense to put LCHS with improved kernel as a separate
+    // process when we haven't researched the internals enough to put things
+    // down that differentiate it from normal LCHS."* The pair draws ONE lane;
+    // this node lives in the LCHS card's Refinements section, and everything
+    // on it — page, URL, cost, hop note — survives untouched.
+    sameInternalsAsParent: true,
+    potentialPath:
+      "The change lives upstream of any drawn hop — in the kernel, the quadrature feeding it, and the inner propagator per simulated evolution (this node's own hop note quotes the paper on exactly that). A granular decomposition of the recast and simulate steps would give those choices drawable homes; until that mapping is researched, this stays a section entry and a potential path.",
+    potentialPathJa:
+      "変更は描かれるどのホップよりも上流にあります。カーネル、それに与える求積、そして各時間発展の内部伝播子です（本ノードのホップ注記が論文自身の言葉を引用しています）。再定式化とシミュレーションの二工程を細分化して写像すれば、これらの選択に描ける置き場が生まれます。その研究が済むまでは、この項目は親カードの節にとどまり、潜在的な経路として記録されます。",
     conditions: "Carries the same requirement as the original LCHS: the Hermitian part $L(t) = (A(t)+A(t)^†)/2$ must be positive semi-definite throughout the interval. The authors describe this as the first approach enabling quantum algorithms to solve linear differential equations with both optimal state preparation cost and near-optimal scaling in matrix queries on all parameters, which is why it is the current reference point for this layer.",
     conditionsJa: "元の LCHS と同じ条件を引き継ぎます。すなわち、エルミート部 $L(t) = (A(t)+A(t)^†)/2$ が区間全体で半正定値でなければなりません。著者らはこれを、状態準備の最適な費用と、すべてのパラメータに関する行列クエリのほぼ最適なスケーリングを同時に達成した最初の手法と位置づけています。この層の現在の基準点とされるのはそのためです。",
     cost: "$\\tilde{O}( ((||u_0|| + ||b||_{L^1})/||u(T)||) \\alpha_A T (\\log(1/\\varepsilon))^{1+1/\\beta} )$ matrix queries, with $\\alpha_A \\geq \\max_t ||A(t)||$, $T$ the evolution time and $\\beta ∈ (0,1)$; this improves to $(\\log(1/\\varepsilon))^{1/\\beta}$ for time-independent $A$. State preparation costs $O( (||u_0|| + ||b||_{L^1})/||u(T)|| )$ queries, independent of both $T$ and $\\varepsilon$.",
@@ -603,9 +613,9 @@ export const LAYER_GRAPH: LayerGraph = {
     // Same chain as `lchs-route`, and that is correct rather than a duplicate:
     // what this paper changes is the kernel inside the identity, which is a
     // parameter of `lchs-kernel-identity` and not a different construction.
-    // `refines: lchs-route` is what declares it, and as of session 106 the R13
-    // checker reads that declaration instead of only naming it in an error
-    // message it never acted on.
+    // `refines: lchs-route` declares it, the R13 checker reads the declaration
+    // (session 106), and since s121 the fold flag above is what the owner's
+    // ruling looks like in data: one drawn lane for the pair.
     steps: ["hamiltonian-recasting", "hamiltonian-simulation"],
     // **The same ending as LCHS, and its own paper says so.** Lemma 24 here is
     // structurally Lemma 6 there. Written out rather than left to the `refines`
@@ -1878,6 +1888,13 @@ export const LAYER_GRAPH: LayerGraph = {
     refines: "sabre-routing",
     refinesMark: "SABRE",
     refinesMarkJa: "SABRE",
+    // Folded (s121, W17) by the same ruling as the LCHS pair: a re-engineered
+    // implementation of the same routine is not a second process on the map.
+    sameInternalsAsParent: true,
+    potentialPath:
+      "Every recorded difference is implementation engineering, measured as benchmark constants on the same routine. The map draws constructions, not implementation pipelines; a surface for implementations — build, data structures, release policy — is what would give this a path of its own.",
+    potentialPathJa:
+      "記録されている違いはすべて、同じ手順に対する実装工学であり、ベンチマーク定数として測られたものです。地図が描くのは構成であって実装パイプラインではありません。ビルド、データ構造、リリース方針といった実装のための地図面ができたとき、はじめてこれは独自の経路になり得ます。",
     conditions: "Same applicability as SABRE. The claims are benchmark-relative, measured against named Qiskit versions and the benchmark set of Li et al.; they are not worst-case guarantees.",
     conditionsJa: "適用範囲は SABRE と同じです。主張はいずれもベンチマーク相対で、指定された Qiskit の版と Li らのベンチマーク回路に対して測ったものであり、最悪ケースの保証ではありません。",
     cost: "Benchmark-relative rather than a bound: the Qiskit 1.2.0 implementation is approximately 200 times faster than the implementation in Qiskit 0.20.1, and gives an average 18.9% decrease in SWAP gate count against the SABRE algorithm of Li et al. across the same benchmark circuits.",

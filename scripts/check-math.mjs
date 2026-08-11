@@ -80,6 +80,8 @@ const PAIRS = [
   ["contested", "contestedJa"],
   ["whyALayer", "whyALayerJa"],
   ["summary", "summaryJa"],
+  // s121 (W17): a folded refinement's note on what would earn it a drawn path.
+  ["potentialPath", "potentialPathJa"],
 ];
 
 const failures = [];

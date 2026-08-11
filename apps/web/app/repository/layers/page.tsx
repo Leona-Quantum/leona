@@ -4,10 +4,17 @@ import { ConvergeView } from "../../../components/repository-converge-view";
 import { getPublicLocale } from "../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
-import { resolveOpenIds } from "../../../lib/repository/converge-layout";
+import { drawableSlots, resolveOpenIds } from "../../../lib/repository/converge-layout";
 import { parseViewport } from "../../../lib/repository/canvas-viewport";
+import { SEL_PARAM } from "../../../lib/repository/canvas-selection";
 import { cardExists } from "../../../lib/repository/card-content";
-import { parseCardId, SECTION_PARAM } from "../../../lib/repository/map-card";
+import {
+  INNER_PARAM,
+  IOPEN_PARAM,
+  parseCardId,
+  parseInnerId,
+  SECTION_PARAM,
+} from "../../../lib/repository/map-card";
 import { parseAboutSection } from "../../../lib/repository/map-about";
 import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
 import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
@@ -75,11 +82,19 @@ export async function generateMetadata(): Promise<Metadata> {
  * started honouring addresses while the overview went on validating against the
  * graph and dropping every one of them.
  */
-function resolveOpenSet(params: Record<string, string | string[] | undefined>): {
+function resolveOpenSet(
+  params: Record<string, string | string[] | undefined>,
+  // `?open=` for the map, `?iopen=` for the truncated map inside the card. One
+  // parser under two keys, never two parsers: the grammar is identical by
+  // design (`lib/repository/map-card.ts`, the `?inner=` block), and the whole
+  // history of this function is what happens when one parameter grows a second
+  // reader.
+  key: "open" | typeof IOPEN_PARAM = "open",
+): {
   open: ReadonlySet<string>;
   dropped: number;
 } {
-  const raw = params.open;
+  const raw = params[key];
   const values = Array.isArray(raw) ? raw : typeof raw === "string" ? [raw] : [];
   return resolveOpenIds(values, (id) => layerNode(LAYER_GRAPH, id) !== null);
 }
@@ -121,6 +136,20 @@ export default async function RepositoryLayersPage({
     getRepositoryListEntries(),
   ]);
   const openSet = resolveOpenSet(params);
+  // `?inner=` — the truncated map inside the open card (W9). Resolved on the
+  // server like everything else on this page, and validated against
+  // `drawableSlots` — the predicate the navigation list and the renderer
+  // already share — rather than against `cardExists`: the value names a figure
+  // to draw, not a card to open, and an `own:<methodId>` or a method id must
+  // mean **shut** here or the URL claims a truncated map the layout cannot
+  // produce. See `lib/repository/map-card.ts`.
+  const drawable = new Set(drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map((slot) => slot.id));
+  const inner = parseInnerId(params[INNER_PARAM], (id) => drawable.has(id));
+  // `?iopen=` is parsed only when `?inner=` resolved: the set means nothing
+  // except against the one figure `?inner=` names, so against no figure it is
+  // not honoured — the same reason `withInner` and `withCard` both delete it.
+  const iopenSet =
+    inner.id === null ? null : resolveOpenSet(params, IOPEN_PARAM);
   // The narrow projection the graph needs. Passing the whole listing would let a
   // later change to this surface start reading fields the graph has no business
   // depending on.
@@ -201,6 +230,11 @@ export default async function RepositoryLayersPage({
         // disagreement that shows up as a wrong number rather than as a broken
         // page.
         card={parseCardId(params.card, (id) => cardExists(cardInput, id))}
+        // The truncated map inside that card, and what is open inside it —
+        // resolved above. The empty set when `?inner=` did not resolve, so the
+        // view never has to ask whether a set it was handed has a figure.
+        inner={inner}
+        iopen={iopenSet?.open ?? new Set()}
         // Which of that card's sections is showing. Passed raw and resolved in
         // `ConvergeView`, which is the only component that knows what sections
         // this card has — validating it here would mean assembling the card
@@ -212,6 +246,11 @@ export default async function RepositoryLayersPage({
         // JavaScript off, which is the whole reason the viewport is a parameter
         // rather than component state.
         viewport={parseViewport(params.at)}
+        // Which drawn thing the reader is on (W16, the Prezi move). Passed raw
+        // and resolved in `ConvergeView` against what actually drew, the same
+        // division of labour as `cardSection`: the page can say an id names a
+        // node; only the layout knows whether anything on the figure draws it.
+        sel={one(params, SEL_PARAM)}
       />
     </PublicSite>
   );

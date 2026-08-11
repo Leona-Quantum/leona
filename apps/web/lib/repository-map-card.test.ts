@@ -18,10 +18,21 @@ import test from "node:test";
 import {
   parseCardId,
   parseCardSection,
+  parseInnerId,
   SECTION_PARAM,
   withCard,
   withCardSection,
+  withInner,
+  withIopen,
 } from "./repository/map-card.ts";
+import {
+  drawableSlots,
+  figureHref,
+  innerToggleHref,
+  layoutConverge,
+  methodHasInterior,
+  resolveOpenIds,
+} from "./repository/converge-layout.ts";
 import {
   cardExists,
   cardFor,
@@ -177,6 +188,11 @@ test("the card draws the sections the owner asked for, in the order he asked for
       "requires",
       "example",
       "performance",
+      // s121 (W17): folded refinements, after Performance — "same walk,
+      // better analysis" is a performance-adjacent sentence, and like
+      // Contested it is commentary on the method's standing rather than part
+      // of the recipe above it.
+      "refinements",
       "contested",
       "implementations",
       "records",
@@ -225,10 +241,11 @@ test("a section is never empty and silent — every one resolves to held, or to 
   const seen = new Set<string>();
   for (const card of cards()) {
     const sections = cardSections(card);
-    // Ten on a method, six on a process — the two card kinds are different shapes, and a
+    // Eleven on a method (ten until s121 — `refinements` is W17's addition),
+    // six on a process — the two card kinds are different shapes, and a
     // count that only fitted the fatter one would pass a process card that had lost half
     // its sections.
-    const expected = card.kind === "method" ? 10 : 6;
+    const expected = card.kind === "method" ? 11 : 6;
     assert.equal(
       sections.length,
       expected,
@@ -243,8 +260,9 @@ test("a section is never empty and silent — every one resolves to held, or to 
     }
   }
   // Pinned so a section cannot quietly leave the card. Removing one is a change to this
-  // number, which is a change somebody has to justify in a diff.
-  assert.equal(seen.size, 16, `${seen.size} distinct sections: ${[...seen].sort().join(", ")}`);
+  // number, which is a change somebody has to justify in a diff. 16 until s121
+  // (`method:refinements` is W17's addition).
+  assert.equal(seen.size, 17, `${seen.size} distinct sections: ${[...seen].sort().join(", ")}`);
 });
 
 test("the two gaps stay different facts — the undesigned sections never say 'none found yet'", () => {
@@ -761,13 +779,32 @@ test("a method's card says what it is a narrower version of, and what narrows it
     // **The round trip, and it is the half that rots.** `refines` is authored on the child
     // and the back-link is a scan, so the two can only disagree if the scan stops matching
     // the field — which is exactly what happens when somebody adds a second way to declare
-    // a refinement and updates one reader.
+    // a refinement and updates one reader. Since s121 (W17) the scan has two
+    // homes and each child has exactly one: a FOLDED child
+    // (`sameInternalsAsParent`) is a full entry in the parent's `refinements`
+    // section, a drawn child is a chrome link in `refinedBy` — never both.
     const parent = byId.get(node.refines!);
     assert.ok(parent, `${node.id} refines ${node.refines}, which draws no card`);
-    assert.ok(
-      parent.refinedBy.some((child) => child.id === node.id),
-      `${node.refines} does not list ${node.id} among its narrower versions`,
-    );
+    if (node.sameInternalsAsParent === true) {
+      assert.ok(
+        parent.refinements.held &&
+          parent.refinements.value.some((entry) => entry.link.id === node.id),
+        `${node.refines} does not carry folded ${node.id} in its refinements section`,
+      );
+      assert.ok(
+        !parent.refinedBy.some((child) => child.id === node.id),
+        `${node.refines} lists folded ${node.id} in chrome too — one child, one home`,
+      );
+    } else {
+      assert.ok(
+        parent.refinedBy.some((child) => child.id === node.id),
+        `${node.refines} does not list ${node.id} among its narrower versions`,
+      );
+      assert.ok(
+        !(parent.refinements.held && parent.refinements.value.some((entry) => entry.link.id === node.id)),
+        `${node.refines} carries drawn ${node.id} in its refinements section too`,
+      );
+    }
   }
 
   // And nothing anywhere else. A back-link that appeared on a method nothing refines would
@@ -776,52 +813,81 @@ test("a method's card says what it is a narrower version of, and what narrows it
   for (const card of methods) {
     if (!parents.has(card.id)) {
       assert.equal(card.refinedBy.length, 0, `${card.id} lists narrower versions but nothing refines it`);
+      assert.ok(
+        !card.refinements.held,
+        `${card.id} holds a refinements section but nothing refines it`,
+      );
     }
   }
 
-  // The "without cluttering" claim, as a number rather than as an intention: this draws on
-  // nine cards and is absent — not "none found yet" — on the other fifty-four. If it ever
-  // becomes most of them, it is a section and wants a heading, not a line under the lede.
+  // The "without cluttering" claim, as a number rather than as an intention. Nine cards
+  // until s121: the fold moved three children out of chrome-on-parent into the parents'
+  // sections, so the chrome now draws on six cards (five children's own back-links +
+  // koopman-linearization's two drawn narrower versions) and the section holds on three
+  // (taylor-all-at-once, lchs-route, sabre-routing). If chrome ever becomes most of the
+  // sixty-three, it is a section and wants a heading, not a line under the lede.
   const drawn = methods.filter((card) => card.refines !== null || card.refinedBy.length > 0);
   assert.equal(
     drawn.length,
-    9,
+    6,
     `the refinement line draws on ${drawn.length} of ${methods.length} cards: ${drawn.map((c) => c.id).sort().join(", ")}`,
+  );
+  const sectioned = methods.filter((card) => card.refinements.held);
+  assert.deepEqual(
+    sectioned.map((c) => c.id).sort(),
+    ["lchs-route", "sabre-routing", "taylor-all-at-once"],
+    "the refinements section holds on exactly the three folded parents",
   );
 });
 
-test("the owner's LCHS pair: the identical chain now says which is the narrower one", () => {
+test("the owner's LCHS pair: the fold puts the narrower one inside the broader card", () => {
+  // Session 113 asked the pair to say which is narrower; s121 went further, in
+  // the owner's own words: *"it just doesn't make sense to put LCHS with
+  // improved kernel as a separate process when we haven't researched the
+  // internals enough … the refinement can exist within the LCHS card within
+  // its own section."* So the improved kernel is FOLDED (W17): no lane of its
+  // own, a full entry in the LCHS card's Refinements section, its node and
+  // page untouched.
   const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en", register: PAPER_REGISTER } as const;
   const improved = cardFor(input, "lchs-improved-kernel");
   const original = cardFor(input, "lchs-route");
   assert.ok(improved?.kind === "method" && original?.kind === "method");
 
+  // The child's own back-link survives the fold; the parent's chrome does not
+  // carry it — the section is its one home on the parent.
   assert.equal(improved.refines?.id, "lchs-route");
-  assert.deepEqual(original.refinedBy.map((child) => child.id), ["lchs-improved-kernel"]);
-  // The two draw the same chain, and that is the fact the reader was tripping over. Pinned
-  // here rather than assumed: if the chains ever diverge, this line is the one that says the
-  // refinement edge is no longer the *only* thing distinguishing them, and the copy under
-  // the lede can stop carrying that weight alone.
+  assert.deepEqual(original.refinedBy, []);
+  assert.ok(original.refinements.held, "the LCHS card holds no refinements section");
+  const entry = original.refinements.value.find((e) => e.link.id === "lchs-improved-kernel");
+  assert.ok(entry, "the improved kernel is not in the LCHS card's refinements section");
+
+  // The two still record the same chain — the fold is a consequence of that
+  // fact, and validation refuses the flag the day the chains diverge, so this
+  // pin is what says "the fold is still earned" rather than inherited.
   const chain = (card: typeof improved) =>
     card.trace.held ? card.trace.value.map((hop) => `${hop.from}>${hop.to}:${hop.via?.id ?? "own"}`) : [];
-  assert.deepEqual(chain(improved), chain(original), "the LCHS pair no longer draws one chain");
+  assert.deepEqual(chain(improved), chain(original), "the LCHS pair no longer records one chain");
 
-  // **What is different is not restated on the card, and that is deliberate.** It is the
-  // first sentence of the narrower method's own lede, one click away. A copy here would be
-  // the same claim in two places, and the copy is the one that goes stale.
+  // **What is different is still the child's own words, read in place, not
+  // copied.** The entry's lede is the child's `summary` (the kernel, its decay
+  // rate, what it replaces) and the potential-path note is the child's own
+  // `potentialPath` — the owner's "recorded as potential for new paths".
+  assert.match(entry!.summary, /kernel/i);
   assert.match(improved.summary, /kernel/i);
+  assert.equal(entry!.summary, improved.summary, "the entry restates instead of reading the lede");
+  assert.ok(entry!.potentialPath.length > 0, "the fold carries no potential-path note");
 
-  // Both directions localise, all the way to the label a reader actually reads.
+  // Both directions localise, all the way to the strings a reader actually reads.
   const ja = { ...input, locale: "ja" } as const;
   const improvedJa = cardFor(ja, "lchs-improved-kernel");
   const originalJa = cardFor(ja, "lchs-route");
   assert.ok(improvedJa?.kind === "method" && originalJa?.kind === "method");
   assert.notEqual(improvedJa.refines?.label, improved.refines?.label, "the parent's name did not change locale");
-  assert.notEqual(
-    originalJa.refinedBy[0]?.label,
-    original.refinedBy[0]?.label,
-    "the narrower version's name did not change locale",
-  );
+  assert.ok(originalJa.refinements.held, "the ja card lost the section");
+  const entryJa = originalJa.refinements.value.find((e) => e.link.id === "lchs-improved-kernel");
+  assert.ok(entryJa, "the ja section lost the improved kernel");
+  assert.notEqual(entryJa!.summary, entry!.summary, "the entry's lede did not change locale");
+  assert.notEqual(entryJa!.potentialPath, entry!.potentialPath, "the potential-path note did not change locale");
 });
 
 // --- the stretch a method performs itself -----------------------------------
@@ -926,4 +992,193 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);
   assert.equal(cardExists(input, ownCardId("linear-ode-solve")), false);
   assert.equal(cardExists(input, "own:"), false);
+});
+
+// --- the truncated map inside the card (W9) ---------------------------------
+//
+// Session 113, the owner: *"Opening processes further when within their card
+// should be possible. it stays in the card, but disconnects from the rest of
+// the graph, so the user can click around in there… Clicking to another card
+// while in here will reset this… i don't want the issues of having to track
+// process within process within process visualization and take memory, hence
+// the reset with every card."*
+//
+// The reset is a **deletion in `withCard`**, not history code, so these are
+// URL-transition tests: the rule lives in the pure functions and this is where
+// it is asserted. Every address below is built through the same serializers
+// the page uses (`figureHref`/`withCard`/`withInner`), never written by hand,
+// because `URLSearchParams` percent-encodes an address's `:` and a hand-typed
+// URL would fail byte-identity for the wrong reason.
+
+const DRAWABLE = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY);
+const drawable = (id: string) => DRAWABLE.some((slot) => slot.id === id);
+
+test("?inner= names a drawable slot, one only, and an id that names nothing means shut", () => {
+  assert.deepEqual(parseInnerId(undefined, drawable), { id: null, dropped: 0 });
+  assert.deepEqual(parseInnerId("", drawable), { id: null, dropped: 0 });
+  assert.deepEqual(parseInnerId("no-such-slot", drawable), { id: null, dropped: 1 });
+  // The predicate is drawability, not `cardExists` — a value that opens a
+  // perfectly good card can still name no figure. Both live cases: the own
+  // stretch has a card and is nobody's slot, and a method is opened *inside* a
+  // figure, never drawn as one.
+  const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER } as const;
+  assert.equal(cardExists(input, ownCardId("lchs-route")), true);
+  assert.deepEqual(parseInnerId(ownCardId("lchs-route"), drawable), { id: null, dropped: 1 });
+  assert.ok(isMethod(layerNode(LAYER_GRAPH, "hhl-qpe-inversion")!));
+  assert.deepEqual(parseInnerId("hhl-qpe-inversion", drawable), { id: null, dropped: 1 });
+  const slot = DRAWABLE[0]!.id;
+  assert.deepEqual(parseInnerId(slot, drawable), { id: slot, dropped: 0 });
+  // Single-valued by the same argument `?card=` is: a second truncated map is
+  // the process-within-process tracking the owner ruled out.
+  assert.deepEqual(parseInnerId([slot, DRAWABLE[1]!.id], drawable), { id: slot, dropped: 1 });
+});
+
+test("opening the truncated map costs nothing, and leaving it forgets what was open inside", () => {
+  assert.ok(drawable("quantum-linear-solve"), "the fixture slot stopped being drawable");
+  const map = figureHref("quantum-linear-solve", ["quantum-linear-solve:0.0"], "1.5.2.3");
+  const card = withCardSection(withCard(map, "quantum-linear-solve"), "filled-by");
+  const opened = withInner(card, "quantum-linear-solve");
+  const params = new URLSearchParams(opened.slice(opened.indexOf("?") + 1));
+  // Everything the reader was holding survives — focus, the whole outer open
+  // set, the viewport, the card and even the section they were reading.
+  assert.equal(params.get("focus"), "quantum-linear-solve");
+  assert.deepEqual(params.getAll("open"), ["quantum-linear-solve:0.0"]);
+  assert.equal(params.get("at"), "1.5.2.3");
+  assert.equal(params.get("card"), "quantum-linear-solve");
+  assert.equal(params.get(SECTION_PARAM), "filled-by");
+  assert.equal(params.get("inner"), "quantum-linear-solve");
+  // `?iopen=` dies with the figure it describes, in both directions: a new
+  // inner must not inherit the old map's expansions, and closing must not
+  // leave a set behind for the next open to resume.
+  const expanded = withIopen(opened, ["quantum-linear-solve:0.0", "quantum-linear-solve:0.1"]);
+  assert.deepEqual(
+    new URLSearchParams(expanded.slice(expanded.indexOf("?") + 1)).getAll("iopen"),
+    ["quantum-linear-solve:0.0", "quantum-linear-solve:0.1"],
+  );
+  assert.deepEqual(
+    new URLSearchParams(withInner(expanded, DRAWABLE[0]!.id).split("?")[1]!).getAll("iopen"),
+    [],
+  );
+  // Shutting it returns the card it opened from, byte for byte — same section.
+  assert.equal(withInner(expanded, null), card);
+});
+
+test("the owner's four-step walk is distinct URLs, and the reset makes back from (4) land on (1)", () => {
+  const P = "quantum-linear-solve";
+  assert.ok(drawable(P), "the fixture slot stopped being drawable");
+  // (1) the whole map, some branches open.
+  const step1 = figureHref(null, [`${P}:0.0`], "1.5.2.3");
+  // (2) click a label → its process card.
+  const step2 = withCard(step1, P);
+  // (3) click the process to expand it further → the truncated map…
+  const step3 = withInner(step2, P);
+  // …and click around in there: the toggle writes `?iopen=`, never `?open=`.
+  const step3b = innerToggleHref(step3, new Set(), `${P}:0.0`, null);
+  assert.equal(new Set([step1, step2, step3, step3b]).size, 4, "two steps share one address");
+  const q3b = new URLSearchParams(step3b.slice(step3b.indexOf("?") + 1));
+  assert.deepEqual(q3b.getAll("open"), [`${P}:0.0`], "a click inside the panel touched the outer set");
+  assert.deepEqual(q3b.getAll("iopen"), [`${P}:0.0`]);
+  assert.equal(q3b.get("card"), P);
+  assert.equal(q3b.get("inner"), P);
+  assert.equal(q3b.get("at"), "1.5.2.3");
+  // The iopen grammar is the open grammar — one parser, both keys, exactly as
+  // the page resolves them. An address needs no graph lookup to be honoured.
+  const parsed = resolveOpenIds(q3b.getAll("iopen"), () => false);
+  assert.deepEqual([...parsed.open], [`${P}:0.0`]);
+  assert.equal(parsed.dropped, 0);
+  // Toggling the same lane shuts it: back to step (3), byte for byte.
+  assert.equal(innerToggleHref(step3, new Set([`${P}:0.0`]), `${P}:0.0`, null), step3);
+  // An inherited node id holds a lane open inside the panel exactly as it does
+  // outside — shutting removes both forms, or the control does nothing.
+  assert.equal(innerToggleHref(step3, new Set(["some-node", `${P}:0.0`]), `${P}:0.0`, "some-node"), step3);
+  // (4) click another label → the new label's card. `inner` and `iopen` are
+  // gone the moment `card=<new>` arrives — the reset, as a deletion.
+  const step4 = withCard(step3b, "hhl-qpe-inversion");
+  const q4 = new URLSearchParams(step4.slice(step4.indexOf("?") + 1));
+  assert.equal(q4.get("card"), "hhl-qpe-inversion");
+  assert.equal(q4.get("inner"), null);
+  assert.deepEqual(q4.getAll("iopen"), []);
+  assert.deepEqual(q4.getAll("open"), [`${P}:0.0`], "the reset must not touch the outer map");
+  // *"back now goes to (1), not (3)"* — the new card's close link is the whole
+  // map the walk started on, because `withCard` dropped `inner` and `iopen`
+  // when the card opened, not because anything remembered a history.
+  assert.equal(withCard(step4, null), step1);
+  // And *"go to the actual map itself"* from step (3) is the same address: the
+  // close control needs no second rule for the deeper state.
+  assert.equal(withCard(step3b, null), step1);
+});
+
+test("inside the card, every control the figure emits stays on the outer address", () => {
+  // Swept over every drawable slot rather than one chosen to match: the
+  // truncated map can be opened on any of them, and a figure whose toggles
+  // leak `?open=` or whose names forget the reset would be wrong on exactly
+  // the slots nobody sampled.
+  let toggles = 0;
+  let names = 0;
+  for (const slot of DRAWABLE) {
+    const base = withInner(withCard(figureHref("quantum-linear-solve", ["keep-me"], "1.5.2.3"), slot.id), slot.id);
+    const diagram = layoutConverge({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      focus: slot,
+      locale: "en",
+      open: new Set(),
+      innerBase: base,
+    });
+    if (diagram.empty) continue;
+    for (const shape of [...diagram.lanes, ...diagram.feeds]) {
+      if (shape.openHref !== null) {
+        toggles += 1;
+        const q = new URLSearchParams(shape.openHref.slice(shape.openHref.indexOf("?") + 1));
+        // The outer address survives whole: focus, open set, viewport, card,
+        // inner. A toggle that rebuilt any of these from the figure's own
+        // parameters would silently swap the reader's map for the panel's.
+        assert.equal(q.get("focus"), "quantum-linear-solve", `${slot.id}: toggle lost the focus`);
+        assert.deepEqual(q.getAll("open"), ["keep-me"], `${slot.id}: toggle touched the outer set`);
+        assert.equal(q.get("at"), "1.5.2.3", `${slot.id}: toggle lost the viewport`);
+        assert.equal(q.get("card"), slot.id, `${slot.id}: toggle lost the card`);
+        assert.equal(q.get("inner"), slot.id, `${slot.id}: toggle lost the inner figure`);
+        assert.deepEqual(q.getAll("iopen"), [shape.address], `${slot.id}: toggle wrote the wrong key`);
+      }
+      if (shape.cardHref !== null) {
+        names += 1;
+        const q = new URLSearchParams(shape.cardHref.slice(shape.cardHref.indexOf("?") + 1));
+        // A name is the reset: `card=<new>` on the outer address, with `inner`
+        // and `iopen` already gone — step (4) of the walk, minted by the layout.
+        assert.notEqual(q.get("card"), null, `${slot.id}: a name opens no card`);
+        assert.equal(q.get("inner"), null, `${slot.id}: a name kept the truncated map`);
+        assert.deepEqual(q.getAll("iopen"), [], `${slot.id}: a name kept the inner expansions`);
+        assert.deepEqual(q.getAll("open"), ["keep-me"], `${slot.id}: a name touched the outer set`);
+      }
+    }
+  }
+  // Both paths must have an instance somewhere on the real graph, or one of
+  // the two behaviours this test is about has never been drawn.
+  assert.ok(toggles >= 1, "no lane inside any truncated map is openable — the iopen path draws nowhere");
+  assert.ok(names >= 1, "no name inside any truncated map opens a card — the reset path draws nowhere");
+  console.log(`[inner figure census] ${DRAWABLE.length} drawable slots, ${toggles} toggles, ${names} card links`);
+});
+
+test("a method's interior is the lane's own notion of it — ingredients count", () => {
+  // The card's expand control and the lane's open control must answer "does
+  // this method have an interior" identically, and `methodHasInterior` is the
+  // one writer both read. The case that catches a narrower re-derivation is
+  // `hhl-qpe-inversion`: every step it names is an ingredient, so a predicate
+  // over route *segments* alone calls it empty — which is exactly the method
+  // the layout's own comment records going inert once already.
+  const hhl = layerNode(LAYER_GRAPH, "hhl-qpe-inversion")!;
+  assert.ok(isMethod(hhl));
+  const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, hhl);
+  assert.ok(route.segments.length < 2, "hhl grew named segments — pick a new fixture for this case");
+  assert.ok(route.feeds.length > 0, "hhl lost its ingredients — pick a new fixture for this case");
+  assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, hhl), true);
+  // And a method with neither has none — the control would expand into nothing.
+  const empty = LAYER_GRAPH.nodes.filter(isMethod).filter((method) => {
+    const r = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
+    return r.segments.length < 2 && r.feeds.length === 0;
+  });
+  assert.ok(empty.length >= 1, "no leaf method left to pin the negative case on");
+  for (const method of empty) {
+    assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, method), false, method.id);
+  }
 });

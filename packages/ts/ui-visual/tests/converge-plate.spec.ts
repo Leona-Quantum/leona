@@ -114,7 +114,11 @@ test("every rendered figure wears its names on plates, and there are as many as 
   expect(withPlates.length, "a rendered figure draws no name plate at all").toBeGreaterThanOrEqual(
     36,
   );
-  expect(plateCount, "too few name plates to be checking anything").toBeGreaterThanOrEqual(540);
+  // 540 until s121 (W17): the refinement fold took three variant lanes off the
+  // shut figures (krovi, the improved kernel, LightSABRE) — ×2 locales = 6
+  // plates fewer, a picture removed on purpose. Measured 534 on that change;
+  // the floor moves with it so the next silent drop still trips.
+  expect(plateCount, "too few name plates to be checking anything").toBeGreaterThanOrEqual(534);
 });
 
 /** Every `data-name` on an element with this class, in the order they are drawn. */
@@ -502,7 +506,16 @@ test("an opened ingredient is actually rendered somewhere, or the check below is
   // Written down here rather than only in the commit, because a floor lowered to
   // fit a run is indistinguishable from one lowered because the thing it counts
   // got smaller, and only the reason tells them apart.
-  expect(stubs, "too few opened stubs to be checking anything").toBeGreaterThanOrEqual(130);
+  //
+  // **136 until W15, and the floor falls because duplicate interiors stopped
+  // being drawn on purpose.** A shared interior draws once per figure and every
+  // other occurrence demotes to a jump (`dedupSharedInteriors`), so the stubs
+  // that used to re-open inside each copy of the same fan now open exactly
+  // once — measured 48 on the dedup's landing. The stubs that remain are every
+  // opened ingredient a reader can actually see, and the census test in
+  // `repository-converge-layout.test.ts` guards the demotions themselves (80
+  // at saturation, printed every run).
+  expect(stubs, "too few opened stubs to be checking anything").toBeGreaterThanOrEqual(44);
 });
 
 for (const story of withOpenFeeds) {
@@ -549,7 +562,7 @@ for (const story of withOpenFeeds) {
     // own FAN BASE regaining a name — that lane's key ends `~slot:<id>` with nothing after
     // (`placeFeeds` re-places the feed strand itself as the fan's base, `nameless`). A lane
     // elsewhere on the figure that happens to carry the same words is a different,
-    // documented thing: the shared-sub-method repeat (130 groups, NEXT.md §1), where one
+    // documented thing: the shared-sub-method repeat (W15 draws a shared interior once per figure; the census test prints the live count), where one
     // node is genuinely drawn in two branches. `linear-ode-solve`'s fan drew "Matrix
     // function" as a stub in one route and as a sibling route's chain step two bands away,
     // and the string-global match filed that as a stub echo. A base is nameless by
