@@ -502,7 +502,30 @@ export interface HopNote {
 
 /** A worked example, its pseudocode, or both. See `LayerMethod.example`. */
 export interface MethodExample {
-  /** Prose: an example of running it. Absent when nobody has written one. */
+  /**
+   * Prose: an example of running it. Absent when nobody has written one.
+   *
+   * ## A filled field may carry a negative result, and `cost` is the precedent
+   *
+   * The first seven of these were authored 2026-08-12 and three of the seven say
+   * *there is no run*. That is deliberate and it is not a loophole: `cost` has
+   * done exactly this since session 122 — `backward-euler`'s reads *"No verified
+   * source states an end-to-end cost for a pure backward-Euler encoding, and the
+   * field says so"*, and then names the nearest treatment and why it does not
+   * apply. It is a filled field whose content is an absence with its evidence.
+   *
+   * The alternative is worse for the reader in a way that is easy to miss. A
+   * card saying "none written yet" sends someone to the paper to look for a run
+   * that is not there; a paragraph saying *the only numerics measure the
+   * condition number of the assembled system, at dimensions 15 to 100, and fix
+   * no discretisation at all* saves the trip and is itself the finding. Both are
+   * honest; only one is useful.
+   *
+   * **The rule that keeps it from becoming a loophole:** a negative account must
+   * name what the source *does* contain and why that is not a run of this
+   * method. "No example yet" as a sentence is not a filled field — it is the
+   * absent field with extra words, and it should simply be absent.
+   */
   text?: string;
   textJa?: string;
   /**
@@ -1488,7 +1511,18 @@ export interface LayerCensus {
    * denominator that was never the method count.
    */
   withPseudocode: number;
-  /** Methods carrying `example.text` — a run somebody actually did. */
+  /**
+   * Methods carrying `example.text`.
+   *
+   * **Not "a run somebody actually did", which is what this said until
+   * 2026-08-12**, because three of the first seven filled fields are negative
+   * accounts — see `MethodExample.text`. What this counts is methods where the
+   * question *what does running this look like* has been answered from a source,
+   * and "the source reports no run, and here is the numerical work it does have"
+   * is an answer. The count that separates the two is not here: it is
+   * `regionClosure`'s `runEvidence`, which asks the register whether a cited
+   * paper reports a run at all.
+   */
   withExampleText: number;
   /** Methods carrying at least one written-up implementation. */
   withImplementations: number;

@@ -111,9 +111,25 @@ function check(where, value) {
     // still reads. This is the one strict warning that is a content loss rather
     // than a typographic one, so it fails rather than joining the worklist. The
     // fix is to leave the sign outside the mathematics: `$p_th = 0.57$%`.
-    if (body.includes("%")) {
+    // **`\%` is not a comment and must not be reported as one.** The rule was
+    // `body.includes("%")`, which is right about the failure and wrong about the
+    // escape: `\%` is TeX's literal percent sign, KaTeX renders it, and nothing
+    // is deleted. That over-reach was invisible while this sweep looked only at
+    // the top-level prose fields — the corpus happened to carry no escaped
+    // percent there — and fired the moment the sweep reached `implementations`,
+    // on `surface-code`'s correctly-escaped `$0.143\%$`. A gate that fails on
+    // correct work teaches its next reader to delete the gate.
+    //
+    // Odd number of preceding backslashes = escaped. `\\%` is a line break
+    // followed by a comment and is still the failure.
+    const commented = [...body.matchAll(/%/g)].some((match) => {
+      let slashes = 0;
+      for (let at = match.index - 1; at >= 0 && body[at] === "\\"; at -= 1) slashes += 1;
+      return slashes % 2 === 0;
+    });
+    if (commented) {
       failures.push(
-        `${where}: a % inside $…$ is a TeX comment — it deletes the rest of the formula, including the closing $`,
+        `${where}: a % inside $…$ is a TeX comment — it deletes the rest of the formula, including the closing $. Write \\% for a literal percent sign.`,
       );
       continue;
     }
@@ -174,6 +190,46 @@ for (const node of LAYER_GRAPH.nodes) {
           } and left as plain text in the other — the two say the same thing and must say it the same way`,
         );
       }
+    }
+  }
+  // `example.text` and every implementation sub-section, for the reason the hop
+  // block below states and this one proves twice over: **a field-name sweep
+  // stops at the top level of a node**, and both of these are a level down.
+  //
+  // Neither was scanned until 2026-08-12, which was invisible while both were
+  // empty across all 63 methods — the first `example.text` and the first
+  // `implementations` entry in the graph were authored in the same commit as
+  // this sweep, and they carry KaTeX densely. A worked run naming a matrix
+  // family, a step size and an error budget is as full of `$…$` as any hop, and
+  // an unbalanced one there renders exactly as badly.
+  const nested = [];
+  const example = node.example ?? {};
+  nested.push([`example`, ["text", example.text], ["textJa", example.textJa]]);
+  for (const implementation of node.implementations ?? []) {
+    for (const field of ["about", "methods", "data", "code", "results"]) {
+      nested.push([
+        `implementations[${implementation.id}]`,
+        [field, implementation[field]],
+        [`${field}Ja`, implementation[`${field}Ja`]],
+      ]);
+    }
+  }
+  for (const [owner, [en, enValue], [ja, jaValue]] of nested) {
+    const values = [
+      [en, enValue],
+      [ja, jaValue],
+    ].filter(([, value]) => typeof value === "string" && value.trim() !== "");
+    for (const [field, value] of values) {
+      note(`${owner.replace(/\[.*\]/, "")}.${field}`, value);
+      check(`${node.id}.${owner}.${field}`, value);
+    }
+    // The same locale rule the top-level pairs get: one locale typesetting a
+    // formula and the other printing it as text is two different pages, not a
+    // styling difference.
+    if (values.length === 2 && values[0][1].includes("$") !== values[1][1].includes("$")) {
+      failures.push(
+        `${node.id}.${owner}.${en}: mathematics was written as mathematics in one locale and left as plain text in the other`,
+      );
     }
   }
   // Hops carry the densest mathematics in the corpus and are nested a level
