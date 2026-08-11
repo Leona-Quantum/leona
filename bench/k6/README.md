@@ -53,3 +53,71 @@ Give it a control. A refusal test alone passes just as well against a service th
 everything, and this repository has shipped that class of mistake twice — a limiter whose
 first shape exempted any caller sending an `Authorization` header, and a "1 MiB limit" a
 chunked body walked straight through.
+
+## Capacity profiles
+
+`capacity.js` is the bounded launch-capacity harness for the approximately 100-user target.
+It runs one iteration per VU by default, so 100 VUs create one simultaneous burst rather than
+silently generating an unbounded number of requests or runs.
+
+| profile | workload | default result requirement |
+|---|---|---|
+| `read_100` | 100 public catalog reads | 100 HTTP 200 responses, no unexpected response or 5xx |
+| `sse_100` | 100 authenticated SSE connections to one queued/running run | 100 handled streams, no protocol error or unexpected response |
+| `submit_100` | 100 authenticated `POST /v1/runs` requests | 100 HTTP 201 responses, no unexpected response or 5xx |
+| `mixed_100` | 70 reads, 20 SSE connections, 10 run submissions | every operation meets its corresponding requirement |
+
+Run one profile through the wrapper:
+
+```bash
+bench/k6/run-capacity.sh read_100
+```
+
+The default target is `http://127.0.0.1:8000`. The wrapper performs a health preflight and
+writes `config.json`, the raw k6 summary, `k6.log`, and a combined `result.json` under
+`bench/k6/out/capacity/`. The combined report records the commit, target, workload, thresholds,
+and k6 exit code without recording the bearer token.
+
+Authenticated profiles need `API_TOKEN`. `sse_100` also needs `CAPACITY_SSE_RUN_ID` pointing to
+a queued or running test run; if it is omitted, the profile creates a chat seed run only after
+the explicit write approval below. `submit_100` and `mixed_100` always create chat-mode test
+runs and therefore require:
+
+```bash
+export API_TOKEN='test-token-from-the-isolated-environment'
+export CAPACITY_ALLOW_WRITES=1
+export CAPACITY_WRITE_APPROVAL=I_UNDERSTAND_THIS_CREATES_TEST_RUNS
+bench/k6/run-capacity.sh submit_100
+```
+
+`mode=chat` avoids the execute allowance and provider execution path, but a running Worker may
+still process the queued jobs. Use an isolated environment and clean up its test data afterward.
+The suite does not start a Worker or make external-provider calls itself.
+
+Non-local targets are rejected by both the shell wrapper and `capacity.js`. To use an approved
+isolated staging target, set both values explicitly for that invocation:
+
+```bash
+CAPACITY_ALLOW_NONLOCAL_TARGET=1 \
+CAPACITY_NONLOCAL_TARGET_APPROVAL=I_UNDERSTAND_THIS_IS_NOT_PRODUCTION \
+BASE_URL='https://staging.example.invalid' \
+bench/k6/run-capacity.sh read_100
+```
+
+Production-like hostnames require an additional explicit approval and should not be used for a
+capacity run unless the owner has approved the impact. The wrapper has `--validate-only` for
+checking scenario, target, credential, and write-scope configuration without contacting the API:
+
+```bash
+bench/k6/run-capacity.sh --validate-only read_100
+```
+
+The SSE profile uses a bounded client timeout. A timeout is counted as a handled held stream so
+the run can exercise long-lived connections without hanging indefinitely; inspect
+`capacity_sse_timeouts` in `result.json`. This is a connection-pressure test, not proof that
+every stream delivered a terminal event. For replay-only testing, provide a terminal run and set
+`CAPACITY_ALLOW_TERMINAL_SSE=1` explicitly.
+
+The default p95 thresholds are 10,000 ms for catalog reads and submissions. They are collapse
+guards, not a production SLO. Override them per test with `CAPACITY_READ_P95_MS` and
+`CAPACITY_SUBMIT_P95_MS`, and record the resulting JSON report with the workload definition.
