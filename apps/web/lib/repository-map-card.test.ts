@@ -109,6 +109,28 @@ test("opening a card costs the reader nothing they were already holding", () => 
   assert.equal(withCard("/repository/layers", null), "/repository/layers");
 });
 
+test("a card href can say WHERE the click happened, and the occurrence is the link's own, never inherited", () => {
+  const base = "/repository/layers?focus=linear-ode-solve&open=a";
+  const query = (href: string) => new URLSearchParams(href.slice(href.indexOf("?") + 1));
+
+  const placed = withCard(base, "quantum-linear-solve", "linear-ode-solve:1.0.3");
+  assert.equal(query(placed).get("card"), "quantum-linear-solve");
+  assert.equal(query(placed).get("sel"), "linear-ode-solve:1.0.3");
+
+  // A `sel` riding in from the base names whatever was selected when the base
+  // was built — the OLD place. A link that inherits it claims the reader's next
+  // click happened where their last one did.
+  assert.equal(query(withCard(placed, "backward-euler")).get("sel"), null);
+  assert.equal(
+    query(withCard(placed, "backward-euler", "linear-ode-solve:1.1")).get("sel"),
+    "linear-ode-solve:1.1",
+  );
+
+  // Closing keeps it: the reader finished reading, they did not leave the thing
+  // — the same rule the client interceptor applies, now true with JS off too.
+  assert.equal(query(withCard(placed, null)).get("sel"), "linear-ode-solve:1.0.3");
+});
+
 test("which section is showing is an address, and a stale one never blanks the card", () => {
   // The owner's *"card sections horizontally clickable, not a scroll"*, one level down from
   // the drawing: once only one section is drawn, *which one* is part of what the page is
