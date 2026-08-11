@@ -451,6 +451,111 @@ export const LAYER_GRAPH: LayerGraph = {
     // one, went green, and the claim above survived twenty-odd merges. A pin is
     // only a fix once something reads it.
     via: { "time-discretization": "truncated-taylor-propagator" },
+
+    // **The listing, and it is a transcription** — the standard `forward-euler`
+    // set above it. Its parameters, its assembly and its extraction are this
+    // record's own `summary`, `conditions`, `cost`, `steps`, `via` and the two
+    // hop notes below; the rest is Berry, Childs, Ostrander and Wang's own
+    // statement of the algorithm (arXiv:1701.03684 §7, "Statement of the
+    // Algorithm"), read from the full PDF.
+    //
+    // **The shape is the argument.** The amplification loop is drawn AROUND the
+    // solve rather than after it, because that is where §7 puts it and it is
+    // what distinguishes this route from an implicit stepper: the whole horizon
+    // is one system solved once per amplification round, not one solve per time
+    // step. A reader comparing this listing with `backward-euler`'s sees the
+    // difference the map draws as `repeats` on one route and nothing on this
+    // one.
+    //
+    // `text` is deliberately absent: the paper reports no run, so prose
+    // describing one would be invented. The register row for arxiv:1701.03684
+    // says `simulation: "unknown"` on an abstract basis, and `--closure` reports
+    // this method as `unread` rather than as having nothing to write up.
+    example: {
+      pseudocode: [
+        "given  A (constant coefficients, diagonalizable A = V D V^-1, Re(lambda_i) <= 0),",
+        "       b, x_in with known norms ||x_in||, ||b||, horizon T, error budget e <= 1/2,",
+        "       oracles O_A for the entries of A, and controlled O_x, O_b",
+        "",
+        "set    h     = T / ceil(T ||A||)",
+        "       m = p = T/h = ceil(T ||A||)",
+        "       g     = max_{t in [0,T]} ||x(t)|| / ||x(T)||",
+        "       delta = e / (25 sqrt(m) g)                   # the solver's error budget",
+        "       Omega = 70 g kappa_V m^{3/2} (||x_in|| + T ||b||) / (e ||x(T)||)",
+        "       k     = ceil( 2 log(Omega) / log log(Omega) )   # ensures (k+1)! >= Omega",
+        "",
+        "# --- time-discretization, via truncated-taylor-propagator -------------------",
+        "assemble  C_{m,k,p}(Ah) x = |0>|x_in> + h sum_{i=0..m-1} |i(k+1)+1>|b>",
+        "    Taylor-term rows :  x_{i,j} = (Ah/j) x_{i,j-1},   2 <= j <= k",
+        "                        x_{i,1} = Ah x_{i,0} + h b",
+        "    step-closing row :  x_{i,0} = sum_{j=0..k} x_{i-1,j}",
+        "    padding rows     :  x_{m,j} = x_{m,j-1},          1 <= j <= p",
+        "    # sparse and well-conditioned: O(ks) nonzeros per row or column, and",
+        "    # condition number O(kappa_V k m) by Theorem 5.  Unlike with finite",
+        "    # difference methods, no additional hypothesis is needed to ensure",
+        "    # numerical stability.",
+        "",
+        "repeat O(g) times, coherently -- the amplitude amplification rounds:",
+        "",
+        "    # --- own work: prepare the right-hand side ---",
+        "    prepare |0>|x_in> + h sum_{i=0..m-1} |i(k+1)+1>|b>",
+        "        # a constant number of calls to O_x and O_b, poly(log(mk)) gates",
+        "",
+        "    # --- quantum-linear-solve ---",
+        "    solve C_{m,k,p}(Ah) x = (that state) with a QLSA, to within delta of the",
+        "        normalised solution",
+        "        # this route reduces to a quantum linear solve; it does not remove",
+        "        # that layer",
+        "",
+        "    # --- own work: extract the answer ---",
+        "    measure the first register in the standard basis",
+        "    accept iff the outcome lies in S = {m(k+1), ..., m(k+1)+p}",
+        "        # the last p+1 blocks all hold x_{m,0}, the state at time T",
+        "        # one round accepts with probability at least 1/78 g^2  (p = m)",
+        "",
+        "return the second register -- a state e-close to x(T)/||x(T)||, with a flag",
+        "       indicating success",
+      ].join("\n"),
+    },
+    hops: {
+      // **The two delegated hops of this route, and the first pair authored by
+      // the B4 closure pass** (2026-08-12). Both transcribe Berry, Childs,
+      // Ostrander and Wang, arXiv:1701.03684, read as a full PDF rather than an
+      // abstract or an ar5iv render: the replacement and the row recurrences are
+      // §2 Eqs. (2)-(5) and (12)-(14), the two lemma bounds are Appendix A
+      // Lemmas 10 and 12, the hypotheses and the accumulated bound are Theorem 6,
+      // and the conditioning of the assembled system is Theorem 5, Eq. (70).
+      //
+      // **Two things a second reader changed, and they are why the pass had a
+      // second reader.** The first draft's approximation mark said the lemmas
+      // "bound each replacement by 1/(k+1)!" — the paper bounds the *unscaled*
+      // pair, so the b-term carries an extra factor h, and the draft's own
+      // quoted Eq. (77) contradicted its gloss of it. The first draft's
+      // assumption mark listed only the step size and k >= 5, (k+1)! >= 2m;
+      // Theorem 6 is stated for a **diagonalizable** A with Re(lambda_i) <= 0,
+      // without which Lemma 10 does not apply at all, and its bound carries
+      // kappa_V. Both marks now say what the paper says.
+      //
+      // **A third note was authored for this method's own stretch and is
+      // deliberately not here.** `taylor-all-at-once` delegates both hops and
+      // its second one already lands on the slot's exit state, so `routeOf`
+      // gives it no own segment: a note keyed `"taylor-all-at-once"` would pass
+      // `validateLayerGraph` and render nowhere. Same for `krovi-linear-ode` and
+      // `dyson-all-at-once` below. `--closure` counts drawn stretches for
+      // exactly this reason.
+      "time-discretization": {
+        theory:
+          "Over one step of length $h$ the exact solution $\\vec{x}(h) = e^{Ah}\\vec{x}(0) + (e^{Ah} - I)A^{-1}\\vec{b}$ is replaced by $T_k(Ah)\\vec{x}(0) + S_k(Ah)h\\vec{b}$, where $T_k(z) = \\sum_{j=0}^{k} z^j/j!$ and $S_k(z) = \\sum_{j=1}^{k} z^{j-1}/j!$. [[approximation: $T_k(Ah)$ stands in for $e^{Ah}$ and $S_k(Ah)h$ for $(e^{Ah}-I)A^{-1}$. Lemmas 10 and 12 bound the two replacements in their unscaled form, $\\lvert T_k(z) - e^{z}\\rvert \\le 1/(k+1)!$ and $\\lvert S_k(z) - (e^{z}-1)z^{-1}\\rvert \\le 1/(k+1)!$, so the $\\vec{b}$ term picks up a factor $h$ when the bound is carried to the step above.]] Each Taylor term becomes one row of $C_{m,k,p}(Ah)$ built from the row before it, $x_{i,j} = (Ah/j)\\,x_{i,j-1}$ for $2 \\le j \\le k$ with $x_{i,1} = Ah\\,x_{i,0} + h\\,b$, and the row that closes a step sums them, $x_{i,0} = \\sum_{j=0}^{k} x_{i-1,j}$. [[assumption: The step is short — $h \\le 1/\\lVert A\\rVert$, so $\\lVert Ah\\rVert \\le 1$ — and the lemmas hold only for $\\lvert z\\rvert \\le 1$ with $\\operatorname{Re}(z) \\le 0$, which is why Theorem 6 is stated for a diagonalizable $A = VDV^{-1}$ whose every eigenvalue satisfies $\\operatorname{Re}(\\lambda_i) \\le 0$, with $k \\ge 5$ and $(k+1)! \\ge 2m$; its accumulated bound carries $\\kappa_V = \\lVert V\\rVert\\,\\lVert V^{-1}\\rVert$.]]",
+        theoryJa:
+          "長さ $h$ の 1 ステップについて、厳密解 $\\vec{x}(h) = e^{Ah}\\vec{x}(0) + (e^{Ah} - I)A^{-1}\\vec{b}$ を $T_k(Ah)\\vec{x}(0) + S_k(Ah)h\\vec{b}$ で置き換えます。ここで $T_k(z) = \\sum_{j=0}^{k} z^j/j!$、$S_k(z) = \\sum_{j=1}^{k} z^{j-1}/j!$ です。[[approximation: $e^{Ah}$ を $T_k(Ah)$ が、$(e^{Ah}-I)A^{-1}$ を $S_k(Ah)h$ が肩代わりします。補題 10 と補題 12 が評価するのは尺度をかけない形の $\\lvert T_k(z) - e^{z}\\rvert \\le 1/(k+1)!$ と $\\lvert S_k(z) - (e^{z}-1)z^{-1}\\rvert \\le 1/(k+1)!$ ですので、上のステップへ持ち上げると $\\vec{b}$ の項には $h$ の因子が付きます。]] Taylor 級数の各項は $C_{m,k,p}(Ah)$ の 1 行となり、直前の行から $x_{i,j} = (Ah/j)\\,x_{i,j-1}$（$2 \\le j \\le k$、ただし $x_{i,1} = Ah\\,x_{i,0} + h\\,b$）として作られ、ステップを閉じる行がそれらを足し合わせて $x_{i,0} = \\sum_{j=0}^{k} x_{i-1,j}$ とします。[[assumption: 刻み幅が短いこと、すなわち $h \\le 1/\\lVert A\\rVert$ より $\\lVert Ah\\rVert \\le 1$ であることを前提とします。上の補題が成り立つのは $\\lvert z\\rvert \\le 1$ かつ $\\operatorname{Re}(z) \\le 0$ の場合だけですので、定理 6 は $A = VDV^{-1}$ と対角化でき、すべての固有値が $\\operatorname{Re}(\\lambda_i) \\le 0$ を満たす行列について述べられており、さらに $k \\ge 5$ かつ $(k+1)! \\ge 2m$ を要求します。積み上げた評価には対角化行列の条件数 $\\kappa_V = \\lVert V\\rVert\\,\\lVert V^{-1}\\rVert$ が現れます。]]",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The system handed down is $C_{m,k,p}(Ah)\\,x = \\lvert 0\\rangle\\lvert x_{\\mathrm{in}}\\rangle + h\\sum_{i=0}^{m-1} \\lvert i(k+1)+1\\rangle\\lvert b\\rangle$, a $(d+1)N \\times (d+1)N$ matrix with $d = m(k+1)+p$ and, for $A$ of sparsity $s$, $O(ks)$ nonzero entries in any row or column; it is nonsingular because it is lower triangular with nonzero diagonal entries. Theorem 5 bounds its condition number by $\\kappa_C \\le 6\\kappa_V k(m+p)$, which at the algorithm's parameter choice $m = p = \\lceil T\\lVert A\\rVert\\rceil$ is $O(\\kappa_V k m)$. [[assumption: $A = VDV^{-1}$ is diagonalizable with $\\lVert A\\rVert \\le 1$ and $\\operatorname{Re}(\\lambda_i) \\le 0$ for every eigenvalue, and $k \\ge 5$ with $(k+1)! \\ge 2m$; the bound is in terms of $\\kappa_V = \\lVert V\\rVert\\,\\lVert V^{-1}\\rVert$, the condition number of the diagonalizing $V$.]] [[approximation: The solver returns a state only $\\delta$-close to the normalised solution, with $\\delta = \\varepsilon/(25\\sqrt{m}\\,g)$ chosen so that the extracted state is $\\varepsilon$-close.]]",
+        theoryJa:
+          "下層に渡される系は $C_{m,k,p}(Ah)\\,x = \\lvert 0\\rangle\\lvert x_{\\mathrm{in}}\\rangle + h\\sum_{i=0}^{m-1} \\lvert i(k+1)+1\\rangle\\lvert b\\rangle$ です。これは $d = m(k+1)+p$ とする $(d+1)N \\times (d+1)N$ 行列で、$A$ の疎性を $s$ とすると任意の行・列の非零成分は $O(ks)$ 個であり、対角成分が非零の下三角行列ですので正則です。定理 5 はその条件数を $\\kappa_C \\le 6\\kappa_V k(m+p)$ と抑えており、アルゴリズムのパラメータ選択 $m = p = \\lceil T\\lVert A\\rVert\\rceil$ のもとでは $O(\\kappa_V k m)$ となります。[[assumption: $A = VDV^{-1}$ と対角化でき、$\\lVert A\\rVert \\le 1$ かつすべての固有値が $\\operatorname{Re}(\\lambda_i) \\le 0$ を満たすこと、および $k \\ge 5$ かつ $(k+1)! \\ge 2m$ であることを前提とします。評価は対角化行列 $V$ の条件数 $\\kappa_V = \\lVert V\\rVert\\,\\lVert V^{-1}\\rVert$ を用いて述べられています。]] [[approximation: ソルバーが返すのは正規化された解に $\\delta$ まで近い状態にすぎません。$\\delta = \\varepsilon/(25\\sqrt{m}\\,g)$ は、取り出される状態が $\\varepsilon$ まで近くなるように選ばれています。]]",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
@@ -502,6 +607,74 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "The paper's own framing: the norm of the matrix exponential characterizes the run time of quantum algorithms for linear ODEs. The precise bound is not reproduced here.",
     costJa: "論文自身の言い方では、線形常微分方程式に対する量子アルゴリズムの実行時間を特徴づけるのは行列指数のノルムです。厳密な評価式はここでは再掲しません。",
     steps: ["time-discretization", "quantum-linear-solve"],
+
+    // A transcription, from Krovi arXiv:2202.01054 §4-§5.4 plus this record's own
+    // fields. It is deliberately NOT the parent's listing with names changed:
+    // what differs is the operator the steps are packed into (L = I - N) and the
+    // quantity the conditioning is charged against, and those are the lines a
+    // reader is here for. `text` absent for the same reason as the parent's.
+    example: {
+      pseudocode: [
+        "given  sparse A, b, x_0 through the oracles O_A, O_b, O_x;  horizon T;  error e",
+        "",
+        "choose the parameters (Theorem 7):",
+        "    h = T / ceil(T ||A||),   m = p = T/h = ceil(T ||A||),   delta <= e/2",
+        "    Omega = e^3 T ||A|| (1 + T e^2 ||b|| / ||x_T||)",
+        "    k = ceil( 2 log Omega / log log Omega )        # this choice makes (k+1)! > Omega",
+        "",
+        "# the discretization is the parent's truncated Taylor recurrence:",
+        "#     y_{i+1} = T_k(Ah) y_i + S_k(Ah) h b        over the m steps",
+        "# what is different here is the operator it is packed into",
+        "",
+        "build  L = I - N  from block encodings:",
+        "    M_1 = sum_{j=0..k-1}  |j+1><j|  (x)  Ah/(j+1)",
+        "    M_2 = sum_{j=0..k}    |0><j|    (x)  I",
+        "    N   = sum_{i=0..m}       |i+1><i| (x) M_2 (I - M_1)^{-1}",
+        "        + sum_{i=m+1..m+p-1} |i+1><i| (x) I          # the p padding steps, the \"ramp\"",
+        "",
+        "prepare  |psi_in> = |0,0,x_0> + h sum_{i=0..m-1} |i,1,b>",
+        "    # one call each to O_x and O_b, plus polylog(m) elementary gates",
+        "",
+        "solve  L |y> = |psi_in>  with the QLSA               # the layer below",
+        "    # kappa_L <= (m+p) C(A) (1+delta) e (1+e),  C(A) = sup_{t in [0,T]} ||exp(At)||",
+        "    # this is the whole point of the reanalysis: the kappa charged here is bounded",
+        "    # through the norm of the matrix exponential, not through kappa_V",
+        "",
+        "measure the time-step register; keep the outcomes m, ..., m+p-1",
+        "    # succeeds with probability >= 1/(18 g^2),  g = max_t ||x(t)|| / ||x(T)||",
+        "    # amplitude amplification to constant success multiplies the cost by g",
+        "",
+        "return the collapsed state  y_m / ||y_m||            # within 2*delta <= e of x_T/||x_T||",
+      ].join("\n"),
+    },
+    hops: {
+      // Krovi, arXiv:2202.01054, full text. The point of both notes is what this
+      // FOLDED refinement re-analyses rather than what it re-builds: the step is
+      // the parent's truncated-Taylor recurrence (§4), and what changes is the
+      // operator it is packed into, L = I - N, and the conditioning bound that
+      // travels with it — Theorem 4's kappa_L through C(A) = sup ||exp(At)||,
+      // where the parent's Theorem 5 gave kappa_C through kappa_V. That
+      // substitution is the paper's contribution and it is why the two notes
+      // quote different theorems from the parent's two.
+      //
+      // The assumption mark on the solve hop is Krovi's own caveat, not ours:
+      // C(A) has to be finite and checkable, and he answers the objection by
+      // observing that bounding a condition number is no easier. Recorded
+      // because a refinement whose whole claim is "a better quantity" must say
+      // what the better quantity costs to know.
+      "time-discretization": {
+        theory:
+          "The step itself is the parent's truncated-Taylor recurrence, $y_{i+1} = T_k(Ah)y_i + S_k(Ah)hb$ over $m = \\lceil T/h \\rceil$ steps; what Krovi changes is the operator it is packed into — $L = I - N$, with $N$ built from $M_2(I-M_1)^{-1}$ — picked, in his own words, because it is easier to analyze (§4). [[approximation: The propagator $e^{Ah}$ is replaced by its $k$-term Taylor sum $T_k(Ah)$, whose remainder obeys $||R_k(Ah)|| \\le e/(k+1)!$ (Lemma 12); Theorem 3 then fixes $k$ by $(k+1)! \\ge (me^3/\\delta)(1 + Te^2||b||/||x_T||)$, and Remark 6 records that this $k$ \"does not depend on the condition number of the matrix $A$ or its diagonalizing matrix\".]] [[assumption: $||Ah|| \\le 1$, and $me^2/(k+1)! \\le 1$.]] The conditioning bound that goes down with the system is Theorem 4's $\\kappa_L \\le (m+p)C(A)(1+\\delta)e(1+e)$, with $C(A) = \\sup_{t \\in [0,T]} ||e^{At}||$ — where the parent's Theorem 5 gave $\\kappa_C \\le 6\\kappa_V k(m+p)$.",
+        theoryJa:
+          "工程そのものは親と同じ Taylor 打ち切りの漸化式で、$y_{i+1} = T_k(Ah)y_i + S_k(Ah)hb$ を $m = \\lceil T/h \\rceil$ ステップ繰り返します。Krovi が変えるのはそれを収める作用素で、$M_2(I-M_1)^{-1}$ から組み立てた $N$ による $L = I - N$ です。本人の言葉では「解析しやすい」ことが選択の理由です（第 4 節）。[[approximation: 伝播子 $e^{Ah}$ を $k$ 項の Taylor 和 $T_k(Ah)$ で置き換えます。剰余は補題 12 により $||R_k(Ah)|| \\le e/(k+1)!$ で抑えられ、定理 3 は $(k+1)! \\ge (me^3/\\delta)(1 + Te^2||b||/||x_T||)$ によって $k$ を定めます。注意 6 は、この $k$ が「行列 $A$ の条件数にも、その対角化行列の条件数にも依存しない」ことを記しています。]] [[assumption: $||Ah|| \\le 1$ かつ $me^2/(k+1)! \\le 1$ であること。]] 系とともに下層へ渡される条件数の評価は、定理 4 の $\\kappa_L \\le (m+p)C(A)(1+\\delta)e(1+e)$ です。ここで $C(A) = \\sup_{t \\in [0,T]} ||e^{At}||$ であり、親の定理 5 が与えていた $\\kappa_C \\le 6\\kappa_V k(m+p)$ に代わるものです。",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The assembled system $L|y\\rangle = |\\psi_{in}\\rangle$ is handed to a QLSA costing $O(\\kappa \\log(1/\\varepsilon))$ oracle calls, and this is the hop the re-analysis is aimed at: the $\\kappa$ charged here is $\\kappa_L$, bounded through $C(A) = \\sup_{t \\in [0,T]}||e^{At}||$ rather than through the eigenvector condition number $\\kappa_V$, and Theorem 6 puts the query complexity at $O(sk\\kappa_L\\,\\mathrm{polylog}(k,m,d,\\kappa_L,1/\\varepsilon))$. [[assumption: The substituted quantity has to be finite and checkable — \"to verify that $C(A)$ is bounded is not always an easy task\", which Krovi answers by observing that bounding a condition number, or checking diagonalizability, is no easier.]] [[approximation: $L$ is never held exactly: $I-M_1$ is block-encoded from the sparse-access oracles, inverted by Lemma 2 and multiplied by $M_2$, each factor only an $(\\alpha,a,\\epsilon)$ block encoding, so the per-factor error must be driven to $\\epsilon_1 \\le O(\\varepsilon/(\\kappa_L k \\log(1/\\varepsilon)))$ for the total to stay $\\varepsilon$.]]",
+        theoryJa:
+          "組み上げた系 $L|y\\rangle = |\\psi_{in}\\rangle$ は、オラクル呼び出し $O(\\kappa \\log(1/\\varepsilon))$ 回の QLSA に渡されます。再解析が狙うのはまさにこの工程です。ここで課される $\\kappa$ は $\\kappa_L$ であり、固有ベクトル行列の条件数 $\\kappa_V$ ではなく $C(A) = \\sup_{t \\in [0,T]}||e^{At}||$ を通して評価されます。定理 6 はクエリ計算量を $O(sk\\kappa_L\\,\\mathrm{polylog}(k,m,d,\\kappa_L,1/\\varepsilon))$ としています。[[assumption: 置き換えた量は有限であり、かつ確かめられる必要があります。「$C(A)$ が有界であることを確かめるのは、必ずしも容易な作業ではない」と述べられており、Krovi は条件数の評価や対角化可能性の確認も同程度に難しいと答えています。]] [[approximation: $L$ を厳密に保持することはありません。$I-M_1$ を疎アクセスのオラクルからブロック符号化し、補題 2 で逆行列を作り、$M_2$ を掛けます。各因子は $(\\alpha,a,\\epsilon)$ ブロック符号化にすぎませんので、全体の誤差を $\\varepsilon$ に収めるには、因子ごとの誤差を $\\epsilon_1 \\le O(\\varepsilon/(\\kappa_L k \\log(1/\\varepsilon)))$ まで下げる必要があります。]]",
+      },
+    },
     citations: [
       { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
@@ -532,6 +705,73 @@ export const LAYER_GRAPH: LayerGraph = {
     // quantum linear equation solver"* and names none of the five recorded ways
     // through `quantum-linear-solve`, so a pin there would be a guess.
     via: { "time-discretization": "truncated-dyson-series" },
+
+    // A transcription, from Berry and Costa arXiv:2212.03544 §2.1 and §4.1 plus
+    // this record's own fields. The held rows after step r are in the listing
+    // because they are what makes R = 2r and therefore what the conditioning
+    // bound handed down depends on — omitting them would leave the kappa in the
+    // hop note below unexplained.
+    example: {
+      pseudocode: [
+        "given  A(t) with non-positive logarithmic norm, b(t), x_0, horizon T, budget e",
+        "       the parameters provided through the unitaries U_A, U_b, U_x",
+        "       with known normalisations lambda_A, lambda_b, lambda_x",
+        "       x_max >= max_t ||x(t)||",
+        "",
+        "split [0,T] into r steps of length dt = T / ceil(lambda_A T)",
+        "    # dt taken as large as lambda_A dt <= 1 allows, which is what makes r = lambda_A T",
+        "",
+        "# encode the Dyson series in a system of linear equations",
+        "for each step m = 1 ... r:",
+        "    V_m = W_K(m dt, (m-1) dt)    # the Dyson series for the propagator, truncated at K",
+        "    v_m = v_K(m dt, (m-1) dt)    # the same integrals with b(t_k) in place of A(t_k)",
+        "    # forming these two is this route's time discretization",
+        "",
+        "assemble the lower bidiagonal block system  AA X = B  over R = 2r rows:",
+        "    row 0       :  x~(0)                            = x_0     # the initial condition",
+        "    row m <= r  :  x~(m dt) - V_m x~((m-1) dt)      = v_m     # one row per time step",
+        "    row m > r   :  x~(m dt) -     x~((m-1) dt)      = 0       # solution held constant",
+        "    # the trailing rows do not evolve anything; they are there to boost the success",
+        "    # probability of the final amplitude amplification",
+        "    # AA is the paper's block matrix; kappa_AA = ||AA|| ||AA^-1|| = O(R) = O(lambda_A T)",
+        "",
+        "prepare B, and amplitude-amplify its state preparation to amplitude Theta(1)",
+        "    # B is prepared twice inside the solver's walk step; without this boost the",
+        "    # success amplitude would enter squared",
+        "",
+        "solve  AA X = B  with the optimal quantum linear equation solver",
+        "    # O(kappa_AA log(1/e)) calls to the block encodings of AA and B",
+        "",
+        "amplitude-amplify the component of X over rows r+1 ... R",
+        "    # O(x_max / ||x(T)||) steps on average",
+        "",
+        "return the state approximating |x(T)>",
+      ].join("\n"),
+    },
+    hops: {
+      // Berry and Costa, arXiv:2212.03544, full text (the accepted Quantum
+      // version). §2.1.1 Eqs. (19)-(26) for the bidiagonal block system,
+      // §2.1.2 for the truncated propagator blocks, §4.1 Theorem 4.1 and its
+      // proof for the conditioning and the solver count.
+      //
+      // Two assumption marks rather than one, because the paper needs two
+      // different things and they fail differently: a non-positive logarithmic
+      // norm is what bounds ||A^{-1}|| at all, and lambda_A * Delta t <= 1 is a
+      // parameter restriction imposed to keep the block encoding's lambda-value
+      // at O(1). Collapsing them would read as one hypothesis with two clauses.
+      "time-discretization": {
+        theory:
+          "The interval is cut into $r$ steps of length $\\Delta t = T/\\lceil \\lambda_A T \\rceil$ and the steps become rows of one lower bidiagonal block system $\\mathcal{A}\\mathcal{X} = \\mathcal{B}$, row $m$ reading $\\tilde{x}(m\\Delta t) = V_m x((m-1)\\Delta t) + v_m$ with $V_m = W_K(m\\Delta t,(m-1)\\Delta t)$ the truncated Dyson propagator over that step and $v_m = v_K(m\\Delta t,(m-1)\\Delta t)$ its driven counterpart. [[assumption: $A(t)$ has non-positive logarithmic norm, which gives $\\|W(t,t_0)\\| \\le 1$ and is what bounds $\\|\\mathcal{A}^{-1}\\| \\le R(1+\\varepsilon) = O(R)$, hence $\\kappa_{\\mathcal{A}} = O(R)$.]] [[assumption: $\\lambda_A \\Delta t \\le 1$, the restriction limiting how large $\\Delta t$ can be, imposed to keep the $\\lambda$-value of the block encoding of $\\mathcal{A}$ at $O(1)$; it is what fixes $r = \\lambda_A T$.]] Rows $r+1$ to $R$ hold the solution constant rather than evolving it, and with an equal number of held and evolving steps, $R = 2r$, the condition number handed down is $\\kappa_{\\mathcal{A}} = O(\\lambda_A T)$.",
+        theoryJa:
+          "区間を長さ $\\Delta t = T/\\lceil \\lambda_A T \\rceil$ の $r$ ステップに分割し、各ステップを一つの下二重対角ブロック系 $\\mathcal{A}\\mathcal{X} = \\mathcal{B}$ の行とします。第 $m$ 行は $\\tilde{x}(m\\Delta t) = V_m x((m-1)\\Delta t) + v_m$ で、$V_m = W_K(m\\Delta t,(m-1)\\Delta t)$ はそのステップ上の打ち切り Dyson 伝播子、$v_m = v_K(m\\Delta t,(m-1)\\Delta t)$ はこれに対応する駆動項です。[[assumption: $A(t)$ の対数ノルムが非正であること。これにより $\\|W(t,t_0)\\| \\le 1$ となり、$\\|\\mathcal{A}^{-1}\\| \\le R(1+\\varepsilon) = O(R)$ が抑えられて $\\kappa_{\\mathcal{A}} = O(R)$ が得られます。]] [[assumption: $\\lambda_A \\Delta t \\le 1$ であること。これが $\\Delta t$ の大きさを制限する条件であり、$\\mathcal{A}$ のブロック符号化の $\\lambda$ 値を $O(1)$ に保つために課されます。$r = \\lambda_A T$ を定めるのもこの条件です。]] 第 $r+1$ 行から第 $R$ 行までは発展させずに解を保持する行で、発展させる行と保持する行を同数、すなわち $R = 2r$ と取ると、下層に引き渡される条件数は $\\kappa_{\\mathcal{A}} = O(\\lambda_A T)$ となります。",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The assembled system is handed to the optimal quantum linear equation solver of Costa et al., whose complexity is $O(\\kappa_{\\mathcal{A}} \\log(1/\\varepsilon_{\\mathrm{QLSP}}))$ calls to the block encodings of $\\mathcal{A}$ and $\\mathcal{B}$, which here is $O(\\lambda_A T \\log(1/\\varepsilon))$. [[assumption: The solver's error $\\varepsilon_{\\mathrm{QLSP}}$ can be taken proportional to $\\varepsilon$ — that is what the bound $d_{BW} \\le \\varepsilon_{\\mathrm{QLSP}} x_{\\max}\\sqrt{R+1}/\\sqrt{r}$ needs, and it holds because $R = 2r$.]] $\\mathcal{B}$ is prepared twice inside that solver's walk step, which would square its success amplitude, so amplitude amplification boosts the preparation to $\\Theta(1)$ first, at $O((\\lambda_b/\\lambda_A)/(\\min_m \\|v(m\\Delta t,(m-1)\\Delta t)\\| - \\varepsilon x_{\\max}/(\\lambda_A T)))$ steps — the second factor of the constant $R$ in Theorem 4.1. An, Childs and Lin name this hop as what the route pays for: even with the optimal solver the state-preparation oracle for $y$ in $Mx = y$ is queried $O(\\kappa_M \\log(1/\\varepsilon))$ times, so the initial state is queried $\\tilde{O}((\\|u_0\\|/\\|u(T)\\|)\\alpha_A T \\log(1/\\varepsilon))$ times, linearly in $T$ and $\\|A(t)\\|$.",
+        theoryJa:
+          "組み上がった系は Costa らの最適な量子線形方程式ソルバーに渡されます。その計算量は $\\mathcal{A}$ と $\\mathcal{B}$ のブロック符号化への呼び出しで $O(\\kappa_{\\mathcal{A}} \\log(1/\\varepsilon_{\\mathrm{QLSP}}))$ 回、ここでは $O(\\lambda_A T \\log(1/\\varepsilon))$ 回です。[[assumption: ソルバーの誤差 $\\varepsilon_{\\mathrm{QLSP}}$ を $\\varepsilon$ に比例して取れること。評価式 $d_{BW} \\le \\varepsilon_{\\mathrm{QLSP}} x_{\\max}\\sqrt{R+1}/\\sqrt{r}$ が要求するのはこれであり、$R = 2r$ と取っているため成り立ちます。]] $\\mathcal{B}$ はソルバーのウォークステップ内で 2 回準備されますので、そのままでは成功振幅が二乗されます。これを避けるため、先に状態準備へ振幅増幅をかけて $\\Theta(1)$ まで引き上げます。その回数 $O((\\lambda_b/\\lambda_A)/(\\min_m \\|v(m\\Delta t,(m-1)\\Delta t)\\| - \\varepsilon x_{\\max}/(\\lambda_A T)))$ が、定理 4.1 の定数 $R$ の第二の因子です。An・Childs・Lin は、この経路が支払う代価としてまさにこの区間を挙げています。最適なソルバーを用いても $Mx = y$ の $y$ に対する状態準備オラクルへのクエリは $O(\\kappa_M \\log(1/\\varepsilon))$ 回必要であり、その結果、初期状態へのクエリは $\\tilde{O}((\\|u_0\\|/\\|u(T)\\|)\\alpha_A T \\log(1/\\varepsilon))$ 回、$T$ と $\\|A(t)\\|$ に線形に依存します。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -553,6 +793,13 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "計算量は、ユニタリな力学からのずれを定量化する増幅比に線形に依存します。この線形依存はクエリ計算量の下界を達成することが証明されており、最悪の場合にはこれ以上改善できません。",
     steps: ["time-discretization"],
     repeats: {
+      // Fang, Lin and Tong, arXiv:2208.06941, full text. These two notes are
+      // where this route's `repeats` field stops being a bare count: the short-
+      // time propagator is what the loop turns on, and the uniform singular
+      // value amplification is what each turn buys back. The exponential decay
+      // of the success probability in the number of steps — already quoted in
+      // `repeats.note` — is the reason the amplification is inside the loop
+      // rather than after it, and the notes say so at the hop where it happens.
       "time-discretization": {
         count: "once per time step, with an amplification at every one",
         countJa: "各時間ステップにつき 1 回、そのつど増幅を伴います。",
@@ -564,6 +811,55 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     bypasses: ["quantum-linear-solve"],
+
+    // A transcription, from Fang, Lin and Tong arXiv:2208.06941 §1.2, §3.1-3.2
+    // and Theorem 8, plus this record's own `repeats` — whose count *"once per
+    // time step, with an amplification at every one"* is the loop this listing
+    // draws. The two lines that say what does NOT happen (no assembled system,
+    // no linear solve) are `bypasses`, written where a reader of the listing
+    // meets them rather than only on the map.
+    example: {
+      pseudocode: [
+        "given  A(t) on [0,T] with alpha = sup_t ||A(t)||,  Uinit preparing |psi(0)>,  tolerance eps",
+        "",
+        "choose the mesh 0 = t_0 < ... < t_L = T  with  t_l - t_{l-1} <= 1/(2 alpha)",
+        "    # so L = Theta(alpha T) segments",
+        "",
+        "for l = 1 ... L:                    # once per time step",
+        "    # the time-discretization slot, invoked per segment, not once for the whole horizon",
+        "    U_l <- block encoding of  Xi_l = T-ordered exp( int_{t_{l-1}}^{t_l} A(t) dt )",
+        "           # truncated Dyson series (Sec 3.1), or the first-order Magnus step (Sec 5)",
+        "           # consistent to ||Xi_l - Xibar_l|| <= eps_l ||Xi_l||, with sum_l eps_l <= 1/2",
+        "",
+        "    # the amplification, at every turn: subnormalization alpha_l -> ||Xi_l||/(1-delta)",
+        "    Utilde_l <- uniform singular value amplification of U_l, delta = 1/L",
+        "                # oblivious to the state, so no earlier step is re-prepared",
+        "",
+        "# no all-at-once system is assembled and no quantum linear solve is called",
+        "",
+        "counter <- |L>  on ceil(log2 L) + 1 qubits",
+        "apply Utilde_1, ..., Utilde_L in order, each decrementing counter by controlled ADD-dagger",
+        "    # coherent: nothing is measured between turns",
+        "",
+        "post-select counter = |0>              # succeeds with probability Omega(Q^-2)",
+        "amplitude-amplify, O(Q) rounds        # Q = prod_l ||Xi_l|| / |||psi(T)>||",
+        "return the state on the flagged branch",
+      ].join("\n"),
+    },
+    hops: {
+      "time-discretization": {
+        theory:
+          "What this slot returns on this route is a product of step propagators rather than a global system: the mesh is chosen so that $t_l - t_{l-1} \\le (2\\alpha)^{-1}$ with $\\alpha = \\sup_t \\|A(t)\\|$, hence $L = \\Theta(\\alpha T)$ segments, and each segment contributes a block encoding of the short-time propagator $\\Xi_l = \\mathcal{T} e^{\\int_{t_{l-1}}^{t_l} A(t)\\,dt}$. [[approximation: The Dyson series is truncated at order $K$, with error at most $(\\int_a^b \\|A(s)\\|\\,ds)^K / K!$; the segment is cut short precisely so that $\\int_a^b \\|A(s)\\|\\,ds = O(1)$ and a few terms already give high accuracy.]] [[assumption: Each step's integrator $\\bar{\\Xi}_l$ must be consistent with $\\Xi_l$ to $\\|\\Xi_l - \\bar{\\Xi}_l\\| \\le \\varepsilon_l \\|\\Xi_l\\|$ — a precision relative to $\\|\\Xi_l\\|$ and not an absolute one — and the composition theorem additionally needs $\\sum_l \\varepsilon_l \\le 1/2$ across the whole mesh.]] Section 5 pairs the same marching with a first-order truncated Magnus step $\\bar{\\Xi} = e^{\\frac{b-a}{M}\\sum_{k=0}^{M-1} A(a + k(b-a)/M)}$ instead, which is equivalent to dropping the time-ordering operator and needs no time-clocking quantum control logic.",
+        theoryJa:
+          "この経路においてこの層が返すのは大域的な系ではなく、ステップ伝播子の積です。刻みは $t_l - t_{l-1} \\le (2\\alpha)^{-1}$（$\\alpha = \\sup_t \\|A(t)\\|$）を満たすように取りますので区間数は $L = \\Theta(\\alpha T)$ となり、各区間が短時間伝播子 $\\Xi_l = \\mathcal{T} e^{\\int_{t_{l-1}}^{t_l} A(t)\\,dt}$ のブロック符号化をひとつ与えます。[[approximation: Dyson 級数は $K$ 次で打ち切られ、誤差は高々 $(\\int_a^b \\|A(s)\\|\\,ds)^K / K!$ です。$\\int_a^b \\|A(s)\\|\\,ds = O(1)$ となるように区間を短く切っていますので、数項ですでに高い精度が得られます。]] [[assumption: 各ステップの積分子 $\\bar{\\Xi}_l$ は $\\|\\Xi_l - \\bar{\\Xi}_l\\| \\le \\varepsilon_l \\|\\Xi_l\\|$ の精度で $\\Xi_l$ と整合していなければなりません。これは絶対誤差ではなく $\\|\\Xi_l\\|$ に対する相対的な精度であり、さらに合成の定理は刻み全体にわたって $\\sum_l \\varepsilon_l \\le 1/2$ を要求します。]] 第 5 節では、同じ時間前進法を一次の打ち切り Magnus ステップ $\\bar{\\Xi} = e^{\\frac{b-a}{M}\\sum_{k=0}^{M-1} A(a + k(b-a)/M)}$ と組み合わせています。これは時間順序演算子を落とすことに等しく、時刻制御の量子制御論理を必要としません。",
+      },
+      "time-marching-usva": {
+        theory:
+          "Each step's block encoding $U_l$ carries a subnormalization $\\alpha_l \\ge \\|\\Xi_l\\|$, so post-selecting through all $L$ steps succeeds with probability $\\|\\Xi_L \\cdots \\Xi_1 |\\psi(0)\\rangle\\|^2 / (\\alpha_1 \\alpha_2 \\cdots \\alpha_L)^2$; for the Euler step $\\alpha_l = 1 + \\|A\\|T/L$, and that costs $e^{2\\|A\\|T} \\| |\\psi(0)\\rangle \\|^2 / \\| |\\psi(T)\\rangle \\|^2$ trials. Uniform singular value amplification rebuilds each $U_l$ as a $(\\|\\Xi_l\\|/(1-\\delta),\\, m_l+1,\\, \\varepsilon'\\|\\Xi_l\\|)$-block encoding at $O\\!\\left(\\frac{\\alpha_l}{\\delta\\|\\Xi_l\\|}\\log\\frac{\\alpha_l}{\\|\\Xi_l\\|\\varepsilon'}\\right)$ uses of $U_l$, and it is oblivious to the state it acts on, so no earlier step is ever re-prepared; with $\\delta = 1/L$ one has $(1-\\delta)^L = \\Omega(1)$, the denominator becomes $\\|\\Xi_L\\|^2 \\cdots \\|\\Xi_1\\|^2$, and the success probability is $\\Omega(Q^{-2})$ for $Q = \\prod_l \\|\\Xi_l\\| / \\| |\\psi(T)\\rangle \\|$. [[approximation: The amplifying odd polynomial only has to agree with $\\gamma' x$, $\\gamma' = \\alpha_l/\\|\\bar{\\Xi}_l\\|$, on $[-\\gamma'^{-1}, \\gamma'^{-1}]$; because the target is discontinuous there, the Gibbs phenomenon forces it to approximate $(1-\\delta)$ times that target in order to keep $|p(x)| \\le 1$ on $[-1,1]$, and the $1/(1-\\delta)$ left in the subnormalization is what that costs.]] A counter register of $\\lceil \\log_2 L \\rceil + 1$ qubits, started in $|L\\rangle$ and decremented by a controlled $\\mathrm{ADD}^{\\dagger}$ at each successful step, keeps the whole chain coherent, so amplitude amplification runs without duplicating the ancilla register and the $Q$ dependence drops from $O(Q^2)$ to $O(Q)$. [[assumption: Every one of the $L$ steps must have succeeded — the procedure post-selects on the counter register to ensure exactly that, and success is flagged by the measurement result of a single qubit.]]",
+        theoryJa:
+          "各ステップのブロック符号化 $U_l$ は部分正規化因子 $\\alpha_l \\ge \\|\\Xi_l\\|$ を伴いますので、$L$ ステップすべてを後選択して成功する確率は $\\|\\Xi_L \\cdots \\Xi_1 |\\psi(0)\\rangle\\|^2 / (\\alpha_1 \\alpha_2 \\cdots \\alpha_L)^2$ です。Euler ステップでは $\\alpha_l = 1 + \\|A\\|T/L$ となり、$e^{2\\|A\\|T} \\| |\\psi(0)\\rangle \\|^2 / \\| |\\psi(T)\\rangle \\|^2$ 回の試行を要します。一様特異値増幅は各 $U_l$ を $(\\|\\Xi_l\\|/(1-\\delta),\\, m_l+1,\\, \\varepsilon'\\|\\Xi_l\\|)$ ブロック符号化に作り直します。必要な $U_l$ の使用回数は $O\\!\\left(\\frac{\\alpha_l}{\\delta\\|\\Xi_l\\|}\\log\\frac{\\alpha_l}{\\|\\Xi_l\\|\\varepsilon'}\\right)$ であり、作用させる量子状態に依存しない操作ですので、前のステップの状態を作り直す必要はありません。$\\delta = 1/L$ と取れば $(1-\\delta)^L = \\Omega(1)$ となり、分母は $\\|\\Xi_L\\|^2 \\cdots \\|\\Xi_1\\|^2$ に変わって、$Q = \\prod_l \\|\\Xi_l\\| / \\| |\\psi(T)\\rangle \\|$ に対し成功確率は $\\Omega(Q^{-2})$ となります。[[approximation: 増幅に用いる奇多項式は、$\\gamma' = \\alpha_l/\\|\\bar{\\Xi}_l\\|$ として $[-\\gamma'^{-1}, \\gamma'^{-1}]$ の上で $\\gamma' x$ に一致すれば足ります。しかし目標関数はその端で不連続ですので Gibbs 現象が生じ、$[-1,1]$ 上で $|p(x)| \\le 1$ を保つには目標の $(1-\\delta)$ 倍を近似するほかありません。部分正規化因子に残る $1/(1-\\delta)$ がその代価です。]] $\\lceil \\log_2 L \\rceil + 1$ 量子ビットのカウンタレジスタを $|L\\rangle$ から始め、成功のたびに制御 $\\mathrm{ADD}^{\\dagger}$ で 1 ずつ減らすことで、連鎖全体がコヒーレントに保たれます。そのため補助レジスタを複製せずに振幅増幅を行うことができ、$Q$ 依存性は $O(Q^2)$ から $O(Q)$ に下がります。[[assumption: $L$ ステップのすべてが成功していなければなりません。手順はまさにそれを保証するためにカウンタレジスタを後選択し、成功は 1 量子ビットの測定結果によって示されます。]]",
+      },
+    },
     citations: [
       { title: "Time-marching based quantum solvers for time-dependent linear differential equations", authors: "Di Fang, Lin Lin, Yu Tong", year: "2022", url: "https://arxiv.org/abs/2208.06941" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -607,6 +903,48 @@ export const LAYER_GRAPH: LayerGraph = {
     // is that they do **not** end the same way — so the answer is four hop notes,
     // each quoting the paper that owns it, and not a twentieth slot. The whole
     // argument, with the quotes, is `plans/atlas-revamp/W11-readout-stretch.md`.
+
+    // A transcription, from An, Liu and Lin arXiv:2303.01029 — main text
+    // "Implementation" and Supplemental §II and §VI.2 — plus this record's own
+    // fields. Read from the full PDF including the Supplemental Materials, which
+    // the session-123 `cost` read above did not reach.
+    example: {
+      pseudocode: [
+        "given  A(t) = L(t) + iH(t)  with L(t) >= 0 on [0,T],  b(t),  u_0,  tolerance eps",
+        "       O_prep : |0> -> |u_0>",
+        "       O_L(s,tau) = e^{-iL(tau)s},  O_H(s,tau) = e^{-iH(tau)s}",
+        "       O_coef : |0> -> (1/sqrt(||c||_1)) sum_j sqrt(c_j) |j>",
+        "       O_b    : |j'>|0> -> |j'>|b(s_j')>",
+        "",
+        "# 1. truncate and discretize the k-integral of the LCHS identity",
+        "K   = c/eps                          # remainder pi - 2 arctan K = O(1/K) = O(eps)",
+        "k_j = -K + 2jK/M,   w_j = (2 - 1_{j=0,M}) K/M,   c_j = w_j / (pi (1 + k_j^2))",
+        "M   = O(||L|| T / eps^2)             # trapezoidal-rule error",
+        "",
+        "# 2. each surviving term is one Hamiltonian simulation problem",
+        "#      U_j(T) = T exp(-i int_0^T (H(s) + k_j L(s)) ds)",
+        "#    implemented by a p-th order product formula with the SAME step count r for all j",
+        "",
+        "# 3. homogeneous part, by LCU",
+        "apply O_coef (x) O_prep",
+        "for l' = 0 ... r-1:",
+        "    for l = 0 ... Xi_p - 1:",
+        "        apply SEL_L(alpha_l T/r, (l'+gamma_l) T/r)   # sum_j |j><j| (x) e^{-iL(tau) k_j s};",
+        "                                                     # O(log M) queries to O_L",
+        "        apply O_H(beta_l T/r, (l'+delta_l) T/r)",
+        "apply O_coef^dagger on the ancilla register",
+        "",
+        "# 4. inhomogeneous part: the same construction over a two-dimensional trapezoidal",
+        "#    rule in (k,s), with O_b loading |b(s_j')>",
+        "# 5. combine the two with one extra ancilla qubit and a single-qubit rotation",
+        "#    (an outer LCU)",
+        "",
+        "# 6. measure ALL the ancilla registers; if every outcome is 0 the state",
+        "#    approximately encodes u(T).  One shot succeeds with probability",
+        "#    (||T|psi>|| / ||alpha||_1)^2; amplitude amplification raises it to Omega(1)",
+        "#    at O(||alpha||_1 / ||T|psi>||) queries.",
+      ].join("\n"),
+    },
     hops: {
       "lchs-route": {
         theory:
@@ -619,6 +957,30 @@ export const LAYER_GRAPH: LayerGraph = {
           "[[assumption: 「最後に補助レジスタをすべて測定し、結果がすべて 0 であれば、得られる状態が ODE の解 $u(t)$ を近似的に符号化する」とされており、この結果が論文の各定理のいう成功フラグです。]] " +
           "一回の成功確率は (‖T|ψ⟩‖/‖α‖_1)^2 で、振幅増幅により O(‖α‖_1/‖T|ψ⟩‖) 回の問い合わせで $\\Omega(1)$ まで引き上げられます。" +
           "論文には地図が描いていないもう一つの終わり方もあります。ハイブリッド実装で、$⟨u_0|U\\dagger_k O U_k'|u_0⟩$ を Hadamard テストと振幅推定で見積もり、総和は古典的なモンテカルロ標本抽出で取ります。",
+      },
+      // The two delegated hops, authored 2026-08-12 from An, Liu and Lin,
+      // arXiv:2303.01029, read as a full PDF *including the Supplemental
+      // Materials* — which the session-123 `cost` read above explicitly did not
+      // reach. The kernel identity and the Hermiticity of H(s) + k_j L(s) are
+      // the main text's "Implementation" section; the truncation K = O(1/eps),
+      // the quadrature nodes and weights, and M = O(||L||T/eps^2) are
+      // Supplemental §II; the product-formula error and the step count r are
+      // Supplemental §VI.2.
+      //
+      // The second reader found one defect and it was in the evidence rather
+      // than the prose: the draft quoted (S18) without the factor 2 that sits
+      // outside the integral. The prose never used the mis-quoted form.
+      "hamiltonian-recasting": {
+        theory:
+          "The route hands the recasting slot the split $A(t) = L(t) + iH(t)$, with $L(t) = (A(t)+A(t)^\\dagger)/2$ and $H(t) = (A(t)-A(t)^\\dagger)/2i$, and receives back Theorem 1's identity $\\mathcal{T}e^{-\\int_0^t A(s)\\,ds} = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)}\\, \\mathcal{T}e^{-i\\int_0^t (H(s)+kL(s))\\,ds}\\,dk$ — an exact equality between the non-unitary propagator and a Cauchy-weighted integral of unitary ones. [[assumption: Theorem 1 assumes $L(t) \\succeq 0$ for all $t \\in I = [0,T]$; the paper adds that this \"can always be satisfied without loss of generality\" by the substitution $u(t) = e^{ct}v(t)$, which moves the generator to $L(t) + cI + iH(t)$ with $-c$ the minimum over $I$ of the smallest eigenvalues of $L(t)$.]] With a source term present the same kernel carries the inhomogeneous part: by Duhamel's principle the solution also picks up $\\int_0^t \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)}\\, \\mathcal{T}e^{-i\\int_s^t (H(s')+kL(s'))\\,ds'} b(s)\\,dk\\,ds$.",
+        theoryJa:
+          "この経路は書き換えの層に、分解 $A(t) = L(t) + iH(t)$（$L(t) = (A(t)+A(t)^\\dagger)/2$、$H(t) = (A(t)-A(t)^\\dagger)/2i$）を渡し、定理 1 の恒等式 $\\mathcal{T}e^{-\\int_0^t A(s)\\,ds} = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)}\\, \\mathcal{T}e^{-i\\int_0^t (H(s)+kL(s))\\,ds}\\,dk$ を受け取ります。これは非ユニタリな伝播子と、ユニタリな伝播子の Cauchy 重み付き積分との厳密な等式です。[[assumption: 定理 1 は区間 $I = [0,T]$ の全体で $L(t) \\succeq 0$ を仮定します。論文はこの条件が「一般性を失うことなく常に満たしうる」と述べており、$u(t) = e^{ct}v(t)$ と置き換えれば生成子は $L(t) + cI + iH(t)$ になります。ここで $-c$ は $I$ 上の $L(t)$ の最小固有値の最小値です。]] ソース項がある場合も同じカーネルが担います。Duhamel の原理により、解にはさらに $\\int_0^t \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)}\\, \\mathcal{T}e^{-i\\int_s^t (H(s')+kL(s'))\\,ds'} b(s)\\,dk\\,ds$ が加わります。",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "What reaches the simulation slot is one time-dependent Hamiltonian simulation problem per quadrature node: $U_j(T) = \\mathcal{T}e^{-i\\int_0^T (H(s)+k_j L(s))\\,ds}$, whose generator $H(s) + k_j L(s)$ is Hermitian for every real $k_j$. [[approximation: The $k$-integral is first truncated to $[-K,K]$, whose remainder is $\\pi - 2\\arctan K = O(K^{-1}) = O(\\varepsilon)$ so that $K = c/\\varepsilon$, then discretized by a trapezoidal rule at $M+1$ nodes $k_j = -K + 2jK/M$ with weights $w_j$ and coefficients $c_j = w_j/(\\pi(1+k_j^2))$, needing $M = O(\\|L\\|T/\\varepsilon^2)$ points.]] [[approximation: Each $U_j(T)$ is then replaced by a $p$-th order product formula with the same number of steps $r$ for all $j$, whose error is $O(\\Gamma_p^{p+1} K^{p+1} T^{p+1}/r^p)$ and which therefore fixes $r = O(\\Gamma_p^{1+1/p}\\|c\\|_1^{1/p} K^{1+1/p} T^{1+1/p}/\\varepsilon^{1/p})$.]] The family is indexed coherently rather than built one circuit at a time — the select oracle $\\mathrm{SEL}_L(s,\\tau) = \\sum_j |j\\rangle\\langle j| \\otimes e^{-iL(\\tau)k_j s}$ costs $O(\\log M)$ queries to $O_L(s,\\tau)$ — but the truncation is paid for in depth: \"the spectral radius of the Hermitian part $L$ needs to be multiplied by a factor up to the frequency cutoff $K$\", with $K = O(1/\\varepsilon)$ from the kernel's quadratic decay, which \"increases the maximal circuit depth by a factor $\\varepsilon^{-1}$\".",
+        theoryJa:
+          "シミュレーションの層に届くのは、求積の節点ごとにひとつの時間依存ハミルトニアンシミュレーション問題です。すなわち $U_j(T) = \\mathcal{T}e^{-i\\int_0^T (H(s)+k_j L(s))\\,ds}$ であり、その生成子 $H(s) + k_j L(s)$ はどの実数 $k_j$ についてもエルミートです。[[approximation: まず $k$ 積分を $[-K,K]$ に打ち切ります。剰余は $\\pi - 2\\arctan K = O(K^{-1}) = O(\\varepsilon)$ ですので $K = c/\\varepsilon$ と取ります。次に台形則で離散化し、節点 $k_j = -K + 2jK/M$、重み $w_j$、係数 $c_j = w_j/(\\pi(1+k_j^2))$ とします。必要な点数は $M = O(\\|L\\|T/\\varepsilon^2)$ です。]] [[approximation: 続いて各 $U_j(T)$ を、すべての $j$ に共通のステップ数 $r$ をもつ $p$ 次の積公式で置き換えます。その誤差は $O(\\Gamma_p^{p+1} K^{p+1} T^{p+1}/r^p)$ であり、これが $r = O(\\Gamma_p^{1+1/p}\\|c\\|_1^{1/p} K^{1+1/p} T^{1+1/p}/\\varepsilon^{1/p})$ を定めます。]] この族は回路を 1 本ずつ組むのではなくコヒーレントに添字づけられ、select オラクル $\\mathrm{SEL}_L(s,\\tau) = \\sum_j |j\\rangle\\langle j| \\otimes e^{-iL(\\tau)k_j s}$ は $O_L(s,\\tau)$ への $O(\\log M)$ 回の問い合わせで構成できます。しかし打ち切りの代価は深さで支払われます。「エルミート部 $L$ のスペクトル半径には周波数の打ち切り $K$ までの因子が掛かる」とされ、カーネルの二次的な減衰から $K = O(1/\\varepsilon)$ ですので、「回路の最大深さは $\\varepsilon^{-1}$ 倍になる」のです。",
       },
     },
     via: { "hamiltonian-recasting": "lchs-kernel-identity" },
@@ -667,6 +1029,44 @@ export const LAYER_GRAPH: LayerGraph = {
     // parent's — two papers each stating a fact is not the drift that rule
     // guards against. What the note does *not* restate is the difference; that
     // is this method's lede, one click away.
+
+    // A transcription, from An, Childs and Lin arXiv:2312.03916 §2.2 and §3.1
+    // plus this record's own fields. Only the lines that differ from the parent
+    // route's listing are here in substance — the kernel, the cutoff it allows
+    // and the composite quadrature — because this is a folded refinement and a
+    // second copy of the parent's construction is exactly what folding exists to
+    // avoid.
+    example: {
+      pseudocode: [
+        "given  A(t) = L(t) + iH(t) with L(t) positive semi-definite on [0,T],  u_0,  b(t),  target error eps",
+        "       beta in (0,1) fixed",
+        "       kernel  f(z) = 1 / ( C_beta * exp( (1+iz)^beta ) ),   C_beta = 2*pi*exp(-2^beta)",
+        "       g(k)   = f(k) / (1 - ik)",
+        "       U(T,k) = T exp( -i * int_0^T ( k L(s) + H(s) ) ds )",
+        "",
+        "# 1. recast: truncate and discretize the k-integral of the LCHS identity   [Sec. 3.1]",
+        "K  = O( (log(1/eps))^(1/beta) )                  # truncate to [-K,K]              [Lemma 10]",
+        "h1 = 1 / ( e * T * max_t ||L(t)|| )              # composite quadrature step size  [Lemma 11]",
+        "Q  = O( log(1/eps) )                             # Gauss nodes per subinterval     [Lemma 11]",
+        "M  = 2*K*Q/h1 = O( T * max_t ||L(t)|| * (log(1/eps))^(1+1/beta) )   # unitaries    [Lemma 11]",
+        "c_{q,m} = w_q * g(k_{q,m})  at the Gauss nodes k_{q,m};  sum_{q,m} |c_{q,m}| = O(1)  [Lemma 12]",
+        "",
+        "# 2. simulate: one Hamiltonian simulation problem per node                  [Sec. 4.2.1]",
+        "build HAM-T for k_j L + H from HAM-T_L, HAM-T_H by an inner LCU:",
+        "    O_k loads k_j, controlled rotation c-R, controlled HAM-T_L / HAM-T_H, then c-R^T",
+        "    a second rotation makes the block-encoding factor uniform at alpha_L*K + alpha_H",
+        "SEL = sum_j |j><j| (x) W_j,   W_j block-encodes V_j with ||V_j - U(T,k_j)|| <= eps_1",
+        "    implemented by the truncated Dyson series method",
+        "    cost: Otilde( alpha_A * K * T * log(1/eps_1) ) queries to HAM-T_L, HAM-T_H  [Thm. 15 proof]",
+        "",
+        "# 3. combine by LCU and post-select                                          [Sec. 4.2.1]",
+        "apply (O_{c,l}^dagger (x) I) SEL (O_{c,r} (x) I)  to  |0>|u_0>",
+        "    = |0> (1/||c||_1) ( sum_j c_j V_j ) |u_0>  +  |perp>",
+        "the inhomogeneous term is prepared the same way over nodes s_{j'} and combined with it  [Sec. 4.2.2]",
+        "measure the ancillas and keep the all-zeros branch",
+        "O(||c||_1) rounds of amplitude amplification for a constant-level success probability   [Lemma 24]",
+      ].join("\n"),
+    },
     hops: {
       "lchs-improved-kernel": {
         theory:
@@ -677,6 +1077,28 @@ export const LAYER_GRAPH: LayerGraph = {
           "終わり方は親と同じです。「補助レジスタを 0 で後選択すると目的の状態が得られる」「一定水準の成功確率を得るには O(‖c‖_1) 回の振幅増幅が必要である」と述べられています。" +
           "[[assumption: 残すのは補助レジスタが 0 を示した状態だけで、それ以外は捨てられます。反復回数はその代価です。]] " +
           "この論文が変えているのはここより上流、すなわちカーネルとそれに与える複合 Gauss 求積、そして各時間発展に用いる打ち切り Dyson 級数であって、この区間ではありません。",
+      },
+      // An, Childs and Lin, arXiv:2312.03916, full text. Like `krovi-linear-ode`
+      // this is a FOLDED refinement, so both notes state what the improved
+      // kernel *changes* at each hop and not what the parent identity is:
+      // f(z) = 1/(C_beta e^{(1+iz)^beta}) decays as e^{-cos(beta pi/2)|k|^beta}
+      // instead of the Cauchy kernel's quadratic decay (§2.2), which is what
+      // drops the cutoff from K = O(1/eps) to K = O((log(1/eps))^{1/beta})
+      // (Lemma 10) and the node count to O(T max||L|| (log 1/eps)^{1+1/beta})
+      // (§3.1). Proposition 8's near-optimality — any faster decay forces f == 0
+      // on the closed lower half plane — is the reason this is the end of that
+      // line rather than one more improvement, and it is in the note.
+      "hamiltonian-recasting": {
+        theory:
+          "This hop hands the recasting slot the parent's identity with a different kernel: $f(z) = 1/(C_\\beta e^{(1+iz)^\\beta})$, $\\beta \\in (0,1)$, $C_\\beta = 2\\pi e^{-2^\\beta}$, which on the real axis satisfies $|f(k)| \\le e^{-\\cos(\\beta\\pi/2)|k|^\\beta}$ where the Cauchy kernel decays only as $\\Theta(k^{-2})$. [[assumption: Theorem 6 admits a kernel only if $f$ is analytic on the lower half plane and continuous on its closure, obeys $|z|^\\alpha|f(z)| \\le \\tilde{C}$ there for some $\\alpha > 0$, and is normalized by $\\int_{\\mathbb{R}} f(k)/(1-ik)\\,dk = 1$; the quadrature bounds below additionally assume $T\\max_t||L(t)|| \\ge 32/e$.]] [[approximation: The $k$-integral is truncated to $[-K,K]$ and replaced by composite Gaussian quadrature with $Q$ nodes on each subinterval of width $h_1$ — the faster decay makes $K = O((\\log(1/\\varepsilon))^{1/\\beta})$ enough where the Cauchy kernel forced $K = O(1/\\varepsilon)$, so the family handed down has $M = 2KQ/h_1 = O(T\\max_t||L(t)||(\\log(1/\\varepsilon))^{1+1/\\beta})$ members, with $\\sum_{q,m}|c_{q,m}| = O(1)$.]] Proposition 8 closes the direction: a kernel meeting the analyticity and boundedness conditions that decayed as $e^{-c|k|}$ would be identically zero, so $\\beta \\to 1$ is asymptotically near-optimal within this framework.",
+        theoryJa:
+          "このホップが再定式化の枠に渡すのは親と同じ恒等式ですが、カーネルが異なります。$f(z) = 1/(C_\\beta e^{(1+iz)^\\beta})$、$\\beta \\in (0,1)$、$C_\\beta = 2\\pi e^{-2^\\beta}$ であり、Cauchy カーネルが $\\Theta(k^{-2})$ でしか減衰しないのに対し、実軸上で $|f(k)| \\le e^{-\\cos(\\beta\\pi/2)|k|^\\beta}$ を満たします。 [[assumption: 定理 6 がカーネルとして認めるのは、下半平面で解析的かつその閉包上で連続であり、そこである $\\alpha > 0$ について $|z|^\\alpha|f(z)| \\le \\tilde{C}$ を満たし、$\\int_{\\mathbb{R}} f(k)/(1-ik)\\,dk = 1$ と規格化された $f$ だけです。後述の求積の評価はさらに $T\\max_t||L(t)|| \\ge 32/e$ を仮定します。]] [[approximation: $k$ 積分は $[-K,K]$ に打ち切られ、幅 $h_1$ の各小区間で $Q$ 点を用いる複合 Gauss 求積に置き換えられます。減衰が速いため、Cauchy カーネルが $K = O(1/\\varepsilon)$ を強いたのに対し $K = O((\\log(1/\\varepsilon))^{1/\\beta})$ で足り、下層に渡される族の要素数は $M = 2KQ/h_1 = O(T\\max_t||L(t)||(\\log(1/\\varepsilon))^{1+1/\\beta})$、係数は $\\sum_{q,m}|c_{q,m}| = O(1)$ を満たします。]] 命題 8 がこの方向を閉じています。解析性と有界性の条件を満たしたうえで $e^{-c|k|}$ で減衰するカーネルは恒等的に零になりますので、この枠組みでは $\\beta \\to 1$ が漸近的にほぼ最適です。",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "Each quadrature node becomes one Hamiltonian simulation problem, $U(T,k_j) = \\mathcal{T}e^{-i\\int_0^T (k_j L(s)+H(s))\\,ds}$, and the whole family is implemented as a single $\\mathrm{SEL} = \\sum_j |j\\rangle\\langle j| \\otimes W_j$ by the truncated Dyson series method. [[assumption: The input model is HAM-T oracles for $L$ and $H$ with block-encoding factors $\\alpha_L \\ge \\max_t||L(t)||$ and $\\alpha_H \\ge \\max_t||H(t)||$; a HAM-T for $k_jL+H$ is assembled from them by an inner LCU, and a second controlled rotation pins its block-encoding factor at the worst case $\\alpha_L K + \\alpha_H$ so that one uniform factor serves every node.]] [[approximation: $W_j$ block-encodes not $U(T,k_j)$ but a $V_j$ with $||V_j - U(T,k_j)|| \\le \\varepsilon_1$, at $\\tilde{O}(\\alpha_A K T \\log(1/\\varepsilon_1))$ queries to those oracles.]] This is the stretch where the kernel is paid back: $||k L(t)+H(t)|| \\le K||L(t)||+||H(t)||$, so the smaller $K$ carries straight into the simulation, and Table 1's $\\alpha_A T/\\varepsilon$ for the original LCHS becomes $\\alpha_A T(\\log(1/\\varepsilon))^{1+1/\\beta}$ — one $\\log(1/\\varepsilon)$ from the Dyson truncation, $(\\log(1/\\varepsilon))^{1/\\beta}$ from $K$.",
+        theoryJa:
+          "求積の各節点がひとつのハミルトニアンシミュレーション問題 $U(T,k_j) = \\mathcal{T}e^{-i\\int_0^T (k_j L(s)+H(s))\\,ds}$ になり、族全体は打ち切り Dyson 級数法によって単一の $\\mathrm{SEL} = \\sum_j |j\\rangle\\langle j| \\otimes W_j$ として実装されます。 [[assumption: 入力モデルは $L$ と $H$ に対する HAM-T オラクルで、そのブロック符号化因子は $\\alpha_L \\ge \\max_t||L(t)||$、$\\alpha_H \\ge \\max_t||H(t)||$ です。$k_jL+H$ の HAM-T はそれらから内側の LCU で組み立てられ、二つめの制御回転がブロック符号化因子を最悪値 $\\alpha_L K + \\alpha_H$ に固定しますので、すべての節点を一つの因子で扱えます。]] [[approximation: $W_j$ がブロック符号化するのは $U(T,k_j)$ そのものではなく、$||V_j - U(T,k_j)|| \\le \\varepsilon_1$ を満たす $V_j$ であり、これらのオラクルへの $\\tilde{O}(\\alpha_A K T \\log(1/\\varepsilon_1))$ 回の問い合わせで実装されます。]] カーネルの改良が回収されるのはこの区間です。$||k L(t)+H(t)|| \\le K||L(t)||+||H(t)||$ ですので、$K$ が小さいことがそのままシミュレーションに効き、表 1 の元の LCHS の $\\alpha_A T/\\varepsilon$ は $\\alpha_A T(\\log(1/\\varepsilon))^{1+1/\\beta}$ になります。$\\log(1/\\varepsilon)$ の一つは Dyson 級数の打ち切りから、$(\\log(1/\\varepsilon))^{1/\\beta}$ は $K$ から来ます。",
       },
     },
     via: { "hamiltonian-recasting": "lchs-kernel-identity" },
@@ -719,6 +1141,37 @@ export const LAYER_GRAPH: LayerGraph = {
     // all, and the projector is a half-line rather than an all-zeros flag. Two
     // endings this different under one capability would be a claim the sources do
     // not make — `plans/atlas-revamp/W11-readout-stretch.md` has the comparison.
+
+    // A transcription, from Jin, Liu and Yu arXiv:2212.13969 and the long
+    // companion arXiv:2212.14703 (§2.1.1 and §3), plus this record's own fields.
+    example: {
+      pseudocode: [
+        "given  A from the spatial discretisation (in general non-Hermitian), u_0, evolution time t",
+        "#   du(t)/dt = -A u(t)",
+        "",
+        "split A into Hermitian parts:",
+        "    A = H + i H_bar,   H = (A + A^dag)/2,   H_bar = i(A^dag - A)/2",
+        "#   to ensure stability, H is assumed positive semi-definite",
+        "",
+        "# ---- hamiltonian-recasting, via the warped phase transformation ----",
+        "introduce p > 0 and set   v(t,p) = e^{-p} u(t)",
+        "extend the initial data:  v(0,p) = e^{-|p|} u(0)   on p in (-inf, inf)",
+        "#   v then satisfies  d_t v + H d_p v - i H_bar v = 0",
+        "Fourier transform in p:   i d_t v~ = (eta H + H_bar) v~",
+        "#   one Schrodinger equation for each eta, since eta H + H_bar is Hermitian",
+        "discretise eta:           i d/dt v~ = (H (x) D + H_bar (x) 1) v~ = H_total v~",
+        "",
+        "# ---- hamiltonian-simulation ----",
+        "simulate the Hermitian H_total under sparse access to it",
+        "#   no linear system is assembled, and no time discretisation is chosen",
+        "",
+        "# ---- this method's own stretch: read the answer back out of p ----",
+        "apply the inverse QFT F_p^{-1} on the p register to obtain |w(t)>",
+        "project onto p > 0:   1 (x) sum_{k=N/2}^{N} |k><k|",
+        "#   or pointwise instead: u(t,x) = e^{p*} w(t,x,p*) for a chosen p* > 0",
+        "amplitude-amplify with Q = -S_w S_p to recover |u(t)>",
+      ].join("\n"),
+    },
     hops: {
       schrodingerisation: {
         theory:
@@ -729,6 +1182,23 @@ export const LAYER_GRAPH: LayerGraph = {
           "「第二レジスタに対して p に関する逆量子 Fourier 変換 $F_p^{-1}$ を施すと $|w(t)\\rangle$ が得られる」とされ、解はそこから $p > 0$ に制限して復元されます。積分としては $u(t,x) = ∫_0^∞ w(t,x,p) dp$、状態としては $1 \\otimes \\Sigma_{k=N/2}^{N} |k⟩⟨k|$ への射影です。" +
           "[[assumption: u を担うのは $p > 0$ の半直線だけですので、残るのはその射影が残したものです。「単純な射影は確率 (‖u(t)‖‖exp(−p)‖/‖w(t)‖)^2 ∼ N(‖u(t)‖/‖w(t)‖)^2 で |u(t)⟩ を取り出す」とされています。]] " +
           "オラクル $Q = −S_w S_p$ による振幅増幅はこれを ∼√N‖u(t)‖/‖w(t)‖ まで引き上げ、Q への問い合わせは Õ(‖w(t)‖/(√N‖u(t)‖)) 回です。論文は各点での復元も認めています。任意の $p* > 0$ を選び $u(t,x) = e^{p*} w(t,x,p*)$ とするやり方です。",
+      },
+      // Jin, Liu and Yu — the short paper arXiv:2212.13969 and the long
+      // companion arXiv:2212.14703, both read in full. The split matters and is
+      // respected here as it is in `cost`: the short paper states the warped
+      // phase transformation and no complexity; the companion is where the
+      // gate-complexity theorems are.
+      "hamiltonian-recasting": {
+        theory:
+          "For the spatially discretised system $du(t)/dt = -Au(t)$ the generator \"is in general not Hermitian\", so $A$ is split into Hermitian parts, $A = H + i\\bar{H}$ with $H = (A+A^\\dagger)/2$ and $\\bar{H} = i(A^\\dagger - A)/2$. [[assumption: To ensure stability, $H$ is assumed positive semi-definite — a stability assumption, not something needed in order to form the Schrödinger system, which is the difference this record already records against LCHS.]] The warped phase transformation is then applied to $u(t)$ in the $p > 0$ region, $v(t,p) = e^{-p}u(t)$, the initial condition is extended to $p<0$ by $v(0,p) = e^{-|p|}u(0)$, and on $p \\in (-\\infty,\\infty)$ the new variable satisfies $\\partial_t v + H\\partial_p v - i\\bar{H}v = 0$; Fourier transforming in $p$ gives $i\\partial_t \\tilde{v} = (\\eta H + \\bar{H})\\tilde{v}$, \"which is still a system of Schrödinger equations, one for each $\\eta$, since $\\eta H + \\bar{H}$ is Hermitian\". [[approximation: That continuous family is discretised in $\\eta$ to a single Hermitian generator, $i\\,d\\tilde{v}/dt = (H \\otimes D + \\bar{H} \\otimes 1)\\tilde{v} = H^{total}\\tilde{v}$, with $D = \\mathrm{diag}(\\mu_1,\\dots,\\mu_N)$, $\\mu_j = \\pi(j - N/2)$.]] What goes down with it is the recovery map this slot's contract requires: $u(t) = \\int_{-\\infty}^{\\infty}\\chi(p)v(t,p)\\,dp$, with $\\chi$ the indicator of $p \\ge 0$.",
+        theoryJa:
+          "空間離散化した系 $du(t)/dt = -Au(t)$ の生成子は「一般にエルミートではない」ため、$A$ をエルミートな部分に分けて $A = H + i\\bar{H}$、$H = (A+A^\\dagger)/2$、$\\bar{H} = i(A^\\dagger - A)/2$ と書きます。[[assumption: 安定性を保証するために $H$ は半正定値と仮定されます。これは安定性についての仮定であって、Schrödinger 方程式系を作るために要るものではありません。LCHS との違いとしてこの記録がすでに述べているのはその点です。]] つぎに $p > 0$ の領域で $u(t)$ に warped phase 変換 $v(t,p) = e^{-p}u(t)$ を施し、初期条件を $v(0,p) = e^{-|p|}u(0)$ として $p<0$ へ拡張しますと、$p \\in (-\\infty,\\infty)$ 上で $v$ は $\\partial_t v + H\\partial_p v - i\\bar{H}v = 0$ を満たします。$p$ について Fourier 変換すると $i\\partial_t \\tilde{v} = (\\eta H + \\bar{H})\\tilde{v}$ となり、「$\\eta H + \\bar{H}$ はエルミートですので、これはやはり $\\eta$ ごとに一つの Schrödinger 方程式系です」。[[approximation: この連続な族を $\\eta$ について離散化し、単一のエルミート生成子 $i\\,d\\tilde{v}/dt = (H \\otimes D + \\bar{H} \\otimes 1)\\tilde{v} = H^{total}\\tilde{v}$ にします。ここで $D = \\mathrm{diag}(\\mu_1,\\dots,\\mu_N)$、$\\mu_j = \\pi(j - N/2)$ です。]] あわせて引き渡されるのが、この層の契約が求める復元写像です。$u(t) = \\int_{-\\infty}^{\\infty}\\chi(p)v(t,p)\\,dp$ で、$\\chi$ は $p \\ge 0$ の指示関数です。",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "What the recasting hands down is $H^{total}$, Hermitian, so this stretch is ordinary sparse-access Hamiltonian simulation: \"an $s$-sparse Hamiltonian $H$ acting on $m_H$ qubits can be simulated within error $\\varepsilon$ with $O(\\tau \\log(\\tau/\\varepsilon)/\\log\\log(\\tau/\\varepsilon))$ queries\" and $O(\\tau(m_H + \\log^{2.5}(\\tau/\\varepsilon))\\log(\\tau/\\varepsilon)/\\log\\log(\\tau/\\varepsilon))$ additional two-qubit gates, \"where $\\tau = s\\|H\\|_{max}t$ and $t$ is the evolution time\". [[assumption: Sparse access to the matrix — the black boxes $O_A$ and $O_F$ of Definition 3.1 — and a generator that does not move: \"in the sequel, we assume $A$ is independent of time\".]] The extra variable is what this stretch is charged for, through the norm parameter rather than through the dimension: the proof of Theorem 3.1 uses $\\|D_\\mu\\|_{max} \\lesssim 1/\\Delta p$, which is where its $\\tilde{O}(s(A)\\|A\\|_{max}/\\Delta p)$ comes from. [[approximation: In the special case where $H_1$ diagonalises in the momentum basis and $H_2$ is diagonal, the Hamiltonian system is not simulated by that route at all but solved by the first-order time splitting scheme, \"as in the proof of Theorem 2.1\".]]",
+        theoryJa:
+          "書き換えが引き渡すのはエルミートな $H^{total}$ ですので、この区間は通常のスパースアクセスによるハミルトニアンシミュレーションです。「$m_H$ 量子ビットに作用する $s$ 疎なハミルトニアン $H$ は、誤差 $\\varepsilon$ 以内で $O(\\tau \\log(\\tau/\\varepsilon)/\\log\\log(\\tau/\\varepsilon))$ 回の問い合わせ」と $O(\\tau(m_H + \\log^{2.5}(\\tau/\\varepsilon))\\log(\\tau/\\varepsilon)/\\log\\log(\\tau/\\varepsilon))$ 個の追加 2 量子ビットゲートでシミュレートできます。「ここで $\\tau = s\\|H\\|_{max}t$、$t$ は発展時間です」。[[assumption: 行列へのスパースアクセス、すなわち定義 3.1 の黒箱 $O_A$ と $O_F$ が必要で、さらに生成子が時間に依らないことも必要です。「以下では $A$ は時間に依存しないと仮定する」と述べられています。]] 追加した変数の代価は、次元ではなくノルムのパラメータを通してこの区間に課されます。定理 3.1 の証明は $\\|D_\\mu\\|_{max} \\lesssim 1/\\Delta p$ を用いており、$\\tilde{O}(s(A)\\|A\\|_{max}/\\Delta p)$ はそこから出てきます。[[approximation: $H_1$ が運動量基底で対角化でき $H_2$ が対角行列である特別な場合には、この経路でシミュレートするのではなく、一次の時間分割法で解きます。「定理 2.1 の証明と同様に」と述べられています。]]",
       },
     },
     via: { "hamiltonian-recasting": "warped-phase-transformation" },
@@ -784,6 +1254,58 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     entries: ["linear-combination-unitaries"],
+
+    // A transcription, from An, Liu and Lin arXiv:2303.01029 Theorem 1 and
+    // Eq. (4), plus this record's own `summary` and `conditions`. The shift
+    // branch is in the listing because `conditions` already states it as a real
+    // restriction: without it the identity simply does not apply where the
+    // Hermitian part has a negative eigenvalue, and a listing that skipped
+    // straight to the family would read as if it always does.
+    //
+    // Step 4 is marked as an equality rather than an approximation on purpose —
+    // the identity is exact, and everything lossy happens one layer down in the
+    // truncation and the quadrature. That is the same division the hop note
+    // below draws.
+    example: {
+      pseudocode: [
+        "given  A(t) on [0,T]",
+        "",
+        "# 1. split into Hermitian and anti-Hermitian parts",
+        "L(t) = (A(t) + A(t)^dagger) / 2",
+        "H(t) = (A(t) - A(t)^dagger) / (2i)",
+        "",
+        "# 2. the identity requires L(t) >= 0 on the whole interval",
+        "if L(t) is not positive semidefinite somewhere on [0,T]:",
+        "    c = - min_{t in [0,T]} lambda_min( L(t) )",
+        "    substitute u(t) = e^{ct} v(t)",
+        "    # v solves  d_t v = -( L(t) + cI + iH(t) ) v + e^{-ct} b(t),   and L(t) + cI >= 0",
+        "",
+        "# 3. every member of the one-parameter family is Hermitian by construction",
+        "#      for each k in R:   H(t) + k L(t)  is Hermitian",
+        "#      so  V(t; ik) = T exp( -i int_0^t ( H(s) + k L(s) ) ds )  is unitary",
+        "",
+        "# 4. the identity -- an equality, not an approximation",
+        "#      T exp( - int_0^t A(s) ds )  =  int_R  1/(pi (1 + k^2))  V(t; ik)  dk",
+        "",
+        "# 5. hand downstream: the family { H(t) + k L(t) }_k, and the kernel",
+        "#    1/(pi (1 + k^2)) whose decay rate fixes how many members survive",
+        "#    truncation and quadrature of the k-integral",
+        "return  { H(t) + k L(t) }_k,  kernel 1/(pi (1 + k^2))",
+      ].join("\n"),
+    },
+    hops: {
+      // The recasting itself, from An, Liu and Lin arXiv:2303.01029's Theorem 1
+      // and its Supplemental proof (Lemmas 4 and 5). This node is `atomic`, so
+      // its own id is its only stretch — the same shape as `forward-euler`
+      // above, and the same rule: the key is the method's own id because the
+      // route is one segment no slot covers.
+      "lchs-kernel-identity": {
+        theory:
+          "Split $A(t) = L(t) + iH(t)$ and every member of the one-parameter family $H(t) + kL(t)$, $k \\in \\mathbb{R}$, is Hermitian by construction, so $V(t;ik) = \\mathcal{T}e^{-i\\int_0^t (H(s)+kL(s))\\,ds}$ is unitary; Theorem 1 states that the non-unitary propagator is exactly their kernel-weighted integral, $\\mathcal{T}e^{-\\int_0^t A(s)\\,ds} = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)} V(t;ik)\\,dk$. The weight is the Fourier transform of $e^{-|x|}$, $\\hat f(k) = \\frac{1}{2\\pi}\\int_{\\mathbb{R}} e^{-|x|}e^{-ikx}\\,dx = \\frac{1}{\\pi(1+k^2)}$, which is nonnegative and integrates to $1$ — the Cauchy-Lorentz density — and Theorem 1 is that scalar representation generalized to time-dependent, non-Hermitian $A$. [[assumption: The proof — \"a special instance of the matrix version of the Cauchy integral theorem, which is a key for avoiding the spectral mapping argument\" — needs $L(t) \\succeq \\lambda_0 > 0$ on the interval, where Lemma 5 gives $P\\int_{\\mathbb{R}} \\frac{1}{1+ik} V(t;ik)\\,dk = 0$ and $W(t) = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)} V(t;ik)\\,dk$ is shown to satisfy $W'(t) = -(L(t)+iH(t))W(t)$, $W(0) = I$; the stated hypothesis $L(t) \\succeq 0$ follows by continuity of both sides in $L(t)$ as $\\lambda_0 \\to 0$.]] Nothing is approximated at this stretch: the identity is an equality, and the approximation appears only where the $k$-integral is truncated and discretized into $u(t) \\approx \\sum_j c_j U_j(t) u_0$ with $c_j = \\omega_j/(\\pi(1+k_j^2))$, which is the count this construction hands downstream.",
+        theoryJa:
+          "$A(t) = L(t) + iH(t)$ と分けると、1 パラメータ族 $H(t) + kL(t)$（$k \\in \\mathbb{R}$）の各要素は構成上エルミートですので、$V(t;ik) = \\mathcal{T}e^{-i\\int_0^t (H(s)+kL(s))\\,ds}$ はユニタリです。定理 1 は、非ユニタリな伝播子がこれらのカーネル重み付き積分にちょうど等しいこと、すなわち $\\mathcal{T}e^{-\\int_0^t A(s)\\,ds} = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)} V(t;ik)\\,dk$ を述べます。重みは $e^{-|x|}$ の Fourier 変換 $\\hat f(k) = \\frac{1}{2\\pi}\\int_{\\mathbb{R}} e^{-|x|}e^{-ikx}\\,dx = \\frac{1}{\\pi(1+k^2)}$ であり、非負で積分が $1$ になる Cauchy–Lorentz 分布の密度です。定理 1 は、このスカラーの表現を時間依存かつ非エルミートな $A$ へ一般化したものです。[[assumption: 証明は「スペクトル写像の議論を避ける鍵となる、行列版 Cauchy の積分定理の特別な場合」に依拠し、区間上で $L(t) \\succeq \\lambda_0 > 0$ を必要とします。補題 5 が $P\\int_{\\mathbb{R}} \\frac{1}{1+ik} V(t;ik)\\,dk = 0$ を与え、$W(t) = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)} V(t;ik)\\,dk$ が $W'(t) = -(L(t)+iH(t))W(t)$、$W(0) = I$ を満たすことが示されます。定理の仮定である $L(t) \\succeq 0$ は、両辺が $L(t)$ について連続であることから $\\lambda_0 \\to 0$ の極限として従います。]] この区間では何も近似されません。恒等式は等式であり、近似が現れるのは $k$ 積分を打ち切って離散化し $u(t) \\approx \\sum_j c_j U_j(t) u_0$（$c_j = \\omega_j/(\\pi(1+k_j^2))$）とするときだけです。その項数こそが、この構成が下流に渡すものです。",
+      },
+    },
     citations: [
       { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -803,6 +1325,47 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Jin・Liu・Yu は、統一されたひとつのクエリ計算量の定理ではなく、変換と適用例を示しています。熱方程式、移流方程式、Fokker-Planck 方程式、線形 Boltzmann 方程式、Black-Scholes 方程式であり、Vlasov-Fokker-Planck 方程式および非線形常微分方程式の Liouville 表現への拡張も含みます。したがって LCHS の数値と同一条件で比較した数値はここには示しません。この欠落は当方の手落ちではなく、原論文の形です。",
     steps: [],
     atomic: true,
+
+    // A transcription, from Jin, Liu and Yu arXiv:2212.14703 §2.1.1 plus this
+    // record's own `summary` and `conditions`. **Written on the heat equation,
+    // and the listing says so in a comment** rather than stating the
+    // transformation in a generality the source does not: §2.1.1 works the case
+    // out on that equation, and the symmetric extension and the "no boundary
+    // condition is needed at p = 0" argument are its sentences about it.
+    example: {
+      pseudocode: [
+        "given  the linear equation for u and its initial data u_0",
+        "#   worked here on the heat equation  d_t u - Laplacian u = 0",
+        "",
+        "introduce one auxiliary variable p > 0",
+        "set     w(t,x,p) = e^{-p} u(t,x)",
+        "#   then  d_t w + d_p Laplacian_x w = 0   for p > 0",
+        "",
+        "extend the initial data symmetrically to p < 0:  w(0,x,p) = e^{-|p|} u_0(x)",
+        "#   the wave moves from right to left, so no boundary condition is needed at p = 0,",
+        "#   and the extension does not impact the region p > 0",
+        "",
+        "truncate the p-line:  impose w(t,x,p=-L) = w(t,x,p=L) = 0 for L > 0 large enough",
+        "#   justified by the exponential decay of e^{-|p|}",
+        "discretise p with step Dp and Fourier transform in p",
+        "#   what comes out is a Hamiltonian system; simulating it is the layer below",
+        "",
+        "# recovery, afterwards:",
+        "#   u(t,x) = integral_0^inf w(t,x,p) dp",
+        "#   or     u(t,x) = e^{p*} w(t,x,p*) for any chosen p* > 0",
+      ].join("\n"),
+    },
+    hops: {
+      // The transformation itself, from Jin, Liu and Yu (arXiv:2212.13969, with
+      // the companion arXiv:2212.14703 for the statements the short paper does
+      // not carry). Atomic, so its own id is its only stretch.
+      "warped-phase-transformation": {
+        theory:
+          "One auxiliary variable $p > 0$ is introduced and the solution is multiplied into it, $w(t,x,p) = e^{-p}u(t,x)$; for the heat equation $\\partial_t u - \\Delta u = 0$, \"a simple calculation shows that $w$ solves $\\partial_t w + \\partial_p \\Delta_x w = 0$, $p > 0$\", and $u$ comes back either as $u(t,x) = \\int_0^\\infty w(t,x,p)\\,dp$ or, \"since $u(t,x) = e^p w(t,x,p)$ for all $p > 0$\", pointwise at any chosen $p_* > 0$ as $u(t,x) = e^{p_*}w(t,x,p_*)$. [[assumption: The half-line is enough because of which way the wave goes: in the Fourier variable \"the solution $\\hat{w}$ moves from the right to the left, so no boundary condition is needed at $p = 0$\", and \"if we extend $w$ to $p < 0$, then the solution does not impact the region $p > 0$\" — so the symmetric extension $w(0,x,p) = e^{-|p|}u_0(x)$ changes nothing where the answer is read.]] [[approximation: The $p$-line is then cut to a finite computational domain — \"due to the exponential decay of $e^{-|p|}$ one can (computationally) impose the periodic boundary condition $w(t,x,p=-L) = w(t,x,p=L)$ ($=0$) along the $p$-direction for some $L > 0$ sufficiently large\".]]",
+        theoryJa:
+          "補助変数 $p > 0$ をひとつ導入し、解に掛け合わせて $w(t,x,p) = e^{-p}u(t,x)$ とします。熱方程式 $\\partial_t u - \\Delta u = 0$ については「簡単な計算により、$w$ は $p > 0$ で $\\partial_t w + \\partial_p \\Delta_x w = 0$ を満たすことが分かります」。$u$ は $u(t,x) = \\int_0^\\infty w(t,x,p)\\,dp$ として戻すか、「すべての $p > 0$ について $u(t,x) = e^p w(t,x,p)$ が成り立つ」ため、任意に選んだ $p_* > 0$ で各点ごとに $u(t,x) = e^{p_*}w(t,x,p_*)$ として戻します。[[assumption: 半直線だけで足りるのは波の進む向きによります。Fourier 変数では「解 $\\hat{w}$ は右から左へ動くので、$p = 0$ に境界条件は不要」であり、「$w$ を $p < 0$ に拡張しても、その解は $p > 0$ の領域に影響しません」。したがって対称な拡張 $w(0,x,p) = e^{-|p|}u_0(x)$ は、答えを読み出す領域を何も変えません。]] [[approximation: そのうえで $p$ 軸は有限の計算領域に切り詰められます。「$e^{-|p|}$ の指数的な減衰により、十分大きな $L > 0$ をとって $p$ 方向に周期境界条件 $w(t,x,p=-L) = w(t,x,p=L)$（$=0$）を（計算上）課すことができます」。]]",
+      },
+    },
     citations: [
       { title: "Quantum simulation of partial differential equations via Schrodingerisation", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.13969" },
       { title: "Quantum simulation of partial differential equations via Schrodingerisation: technical details", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.14703" },
@@ -1051,6 +1614,22 @@ export const LAYER_GRAPH: LayerGraph = {
         "# A-stability removes the step-size restriction, not the repetition.",
       ].join("\n"),
     },
+    hops: {
+      // Dong, Li and Xue, arXiv:2504.06948, Definition 3.1. **The note states
+      // the scheme and quotes no complexity, on purpose** — `cost` and
+      // `conditions` above already record why: their theorems require diagonal
+      // Pade order k >= 3 and Crank-Nicolson is the (1,1) approximant, outside
+      // them. A hop note that borrowed a neighbouring theorem's bound would put
+      // the claim this record refuses one section further down the same card.
+      // The k >= 3 restriction was re-checked against the paper by a second
+      // reader during this pass and holds.
+      "trapezoidal-rule": {
+        theory:
+          "The step averages the generator at the two ends, $(I - \\frac{h}{2}A)u_{k+1} = (I + \\frac{h}{2}A)u_k + \\frac{h}{2}(b_k + b_{k+1})$, which as a rational approximation of $e^{hA}$ is the $(1,1)$ diagonal Padé approximant $R_{11}(Ah) = [D_{11}(Ah)]^{-1}N_{11}(Ah)$ of Dong, Li and Xue's Definition 3.1. [[approximation: The propagator $e^{hA}$ is replaced by a ratio of degree-one polynomials in $Ah$, whose denominator $D_{11}(Ah) = I - \\frac{h}{2}A$ is the matrix each implicit step solves against; second order, so the precision dependence stays polynomial in $1/\\varepsilon$.]] For the autonomous case they treat, a step of this form, $\\hat{x}(sh) = R(Ah)\\hat{x}((s-1)h) + (R(Ah) - I)A^{-1}b$, is encoded as block rows of one large block-sparse linear system, and that assembled system is what this layer hands down. [[assumption: The denominator must be non-singular, which the source assures only when $p$ and $q$ are large enough or when the eigenvalues of $A$ are all negative.]]",
+        theoryJa:
+          "各ステップは両端で生成子を平均し、$(I - \\frac{h}{2}A)u_{k+1} = (I + \\frac{h}{2}A)u_k + \\frac{h}{2}(b_k + b_{k+1})$ となります。これは $e^{hA}$ の有理近似として見ると、Dong・Li・Xue の Definition 3.1 にある $(1,1)$ 型の対角 Padé 近似 $R_{11}(Ah) = [D_{11}(Ah)]^{-1}N_{11}(Ah)$ にあたります。[[approximation: 伝播子 $e^{hA}$ を $Ah$ の一次多項式どうしの比で置き換えます。その分母 $D_{11}(Ah) = I - \\frac{h}{2}A$ が、各陰的ステップで解く相手の行列です。二次精度ですので、精度依存性は $1/\\varepsilon$ の多項式のままです。]] 彼らが扱う自励系の場合、この形のステップ $\\hat{x}(sh) = R(Ah)\\hat{x}((s-1)h) + (R(Ah) - I)A^{-1}b$ は、ひとつの大きなブロック疎線形系のブロック行として符号化され、この層が引き渡すのはその組み上げた系です。[[assumption: 分母は非特異でなければなりません。出典がそれを保証するのは、$p$ と $q$ が十分大きいときか、$A$ の固有値がすべて負のときに限られます。]]",
+      },
+    },
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
@@ -1095,6 +1674,22 @@ export const LAYER_GRAPH: LayerGraph = {
         "    # finite difference methods, no additional hypothesis is needed to ensure",
         "    # numerical stability",
       ].join("\n"),
+    },
+    hops: {
+      // Berry, Childs, Ostrander and Wang, arXiv:1701.03684: Eq. (3) for T_k,
+      // Appendix A Lemmas 10 and 12 for the two 1/(k+1)! bounds, Theorem 6 for
+      // what they accumulate to. Deliberately narrower than the `example`
+      // listing above it — the listing walks the assembly, and this carries the
+      // truncation-error bound that `time-discretization`'s contract says this
+      // layer must hand back. The *conditioning* bound the same contract names
+      // is on `taylor-all-at-once`'s solve hop instead, so Theorem 5 is
+      // transcribed once rather than twice.
+      "truncated-taylor-propagator": {
+        theory:
+          "The propagator over one step is replaced by $T_k(Ah) = \\sum_{j=0}^{k}(Ah)^j/j!$, whose terms become extra rows of the linear system. [[approximation: For $\\lvert z\\rvert \\le 1$ and $\\operatorname{Re}(z) \\le 0$, Lemma 10 gives $\\lvert T_k(z) - e^{z}\\rvert \\le 1/(k+1)!$ and Lemma 12 gives $\\lvert S_k(z) - (e^{z}-1)z^{-1}\\rvert \\le 1/(k+1)!$, and Theorem 6 accumulates these into $\\lVert x(jh) - x_{j,0}\\rVert \\le 2.8\\,\\kappa_V\\,j\\,(\\lVert x_{\\mathrm{in}}\\rVert + mh\\lVert b\\rVert)/(k+1)!$.]] Because the bound falls factorially in $k$, for the quantity $\\Omega$ of Eq. (114) the order $k = \\lceil 2\\log\\Omega/\\log\\log\\Omega\\rceil$ already gives $(k+1)! \\ge \\Omega$ — accuracy is bought by adding rows rather than by shrinking $h$ and lengthening the system. [[assumption: $A$ has constant coefficients and is diagonalizable as $A = VDV^{-1}$ with $\\operatorname{Re}(\\lambda_i) \\le 0$, the step satisfies $\\lVert Ah\\rVert \\le 1$, and $k \\ge 5$ with $(k+1)! \\ge 2m$.]]",
+        theoryJa:
+          "1 ステップの伝播子を $T_k(Ah) = \\sum_{j=0}^{k}(Ah)^j/j!$ で置き換え、その各項を線形系の追加行として符号化します。[[approximation: $\\lvert z\\rvert \\le 1$ かつ $\\operatorname{Re}(z) \\le 0$ のとき、補題 10 は $\\lvert T_k(z) - e^{z}\\rvert \\le 1/(k+1)!$ を、補題 12 は $\\lvert S_k(z) - (e^{z}-1)z^{-1}\\rvert \\le 1/(k+1)!$ を与え、定理 6 はこれらを積み上げて $\\lVert x(jh) - x_{j,0}\\rVert \\le 2.8\\,\\kappa_V\\,j\\,(\\lVert x_{\\mathrm{in}}\\rVert + mh\\lVert b\\rVert)/(k+1)!$ とします。]] 誤差が $k$ について階乗的に小さくなるため、式 (114) の量 $\\Omega$ に対して次数を $k = \\lceil 2\\log\\Omega/\\log\\log\\Omega\\rceil$ と選ぶだけで $(k+1)! \\ge \\Omega$ が満たされます。すなわち精度は、$h$ を縮めて系を長くするのではなく、行を足すことで得られます。[[assumption: $A$ は定数係数であり、$A = VDV^{-1}$ と対角化できて $\\operatorname{Re}(\\lambda_i) \\le 0$ を満たすこと、刻み幅が $\\lVert Ah\\rVert \\le 1$ を満たすこと、および $k \\ge 5$ かつ $(k+1)! \\ge 2m$ であることを前提とします。]]",
+      },
     },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
@@ -1160,6 +1755,21 @@ export const LAYER_GRAPH: LayerGraph = {
         "    # no smoothness condition is required: the oracle counts are independent",
         "    # of derivatives of the parameters",
       ].join("\n"),
+    },
+    hops: {
+      // Berry and Costa, arXiv:2212.03544 §1.1-1.2 and §4.1. Two approximation
+      // marks because the route makes two different replacements here and only
+      // one of them is the truncation: the series is cut at order K, and then
+      // each surviving time integral is replaced by an M-term sum. The second
+      // is the only place derivatives of A enter, and they enter the gate count
+      // alone — worth marking separately for the reason the field exists, that
+      // a reader must be able to see where each error is paid.
+      "truncated-dyson-series": {
+        theory:
+          "The propagator is the time-ordered Dyson series $W(t,t_0) = \\sum_{k \\ge 0} \\frac{1}{k!}\\int_{t_0}^{t}\\!dt_1 \\cdots \\int_{t_0}^{t}\\!dt_k\\, \\mathcal{T}A(t_1)\\cdots A(t_k)$, and the driven part is $v(t,t_0) = \\sum_{k \\ge 1}\\int_{t_0}^{t}\\!dt_1 \\cdots \\int_{t_0}^{t_{k-1}}\\!dt_k\\, A(t_1)\\cdots A(t_{k-1})b(t_k)$. [[approximation: Both sums are cut at order $K$, giving $x_K(t) = W_K(t,t_0)x(t_0) + v_K(t,t_0)$ with error $O((A_{\\max}\\Delta t)^{K+1}\\|x(t_0)\\|/(K+1)! + A_{\\max}^{K}\\Delta t^{K+1}b_{\\max}/(K+1)!)$, and $K = O(\\log(\\lambda_{Ax}T/\\varepsilon)/\\log\\log(\\lambda_{Ax}T/\\varepsilon))$ is the order that holds it to $\\varepsilon$.]] [[approximation: Each remaining time integral is then replaced by an $M$-term sum over $\\delta t = \\Delta t/M$, costing $O((T/r)^2\\max_t\\|A'(t)\\|/M)$ in $W_K$, with $M$ chosen so this stays below $\\varepsilon/r$ per segment — the one place derivatives of the parameters enter, and they enter only the gate count.]] [[assumption: $A_{\\max}\\Delta t = O(1)$, which is what the truncation bound is derived under.]] The surviving terms are the blocks $V_m$, $v_m$ of the system; solving it is the layer below.",
+        theoryJa:
+          "伝播子は時間順序付きの Dyson 級数 $W(t,t_0) = \\sum_{k \\ge 0} \\frac{1}{k!}\\int_{t_0}^{t}\\!dt_1 \\cdots \\int_{t_0}^{t}\\!dt_k\\, \\mathcal{T}A(t_1)\\cdots A(t_k)$ であり、駆動項に対応するのは $v(t,t_0) = \\sum_{k \\ge 1}\\int_{t_0}^{t}\\!dt_1 \\cdots \\int_{t_0}^{t_{k-1}}\\!dt_k\\, A(t_1)\\cdots A(t_{k-1})b(t_k)$ です。[[approximation: 両者を次数 $K$ で打ち切り、$x_K(t) = W_K(t,t_0)x(t_0) + v_K(t,t_0)$ とします。誤差は $O((A_{\\max}\\Delta t)^{K+1}\\|x(t_0)\\|/(K+1)! + A_{\\max}^{K}\\Delta t^{K+1}b_{\\max}/(K+1)!)$ であり、これを $\\varepsilon$ に収める次数が $K = O(\\log(\\lambda_{Ax}T/\\varepsilon)/\\log\\log(\\lambda_{Ax}T/\\varepsilon))$ です。]] [[approximation: 残る各時間積分を、さらに $\\delta t = \\Delta t/M$ 刻みの $M$ 項の和で置き換えます。$W_K$ における代価は $O((T/r)^2\\max_t\\|A'(t)\\|/M)$ で、$M$ は各区間でこれが $\\varepsilon/r$ 以下となるように選びます。パラメータの微分が入ってくるのはここだけであり、しかも入るのはゲート数だけです。]] [[assumption: $A_{\\max}\\Delta t = O(1)$ であること。上の打ち切り誤差の評価はこれを前提として導かれています。]] 残った項がこの系のブロック $V_m$, $v_m$ であり、その系を解くのは一つ下の層です。",
+      },
     },
     citations: [
       { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
