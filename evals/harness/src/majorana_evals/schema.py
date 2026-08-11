@@ -346,6 +346,9 @@ class IntentCase(BaseModel):
     cohort: str
     prompt: str
     expected_mode: Literal["chat", "execute"]
+    # Attachment presence changes whether a referential request is input-ready;
+    # the source itself is deliberately not sent to the routing model.
+    has_source_code: bool = False
     # Empty for a standalone prompt. A follow-up routes against what came
     # before it, and the failure mode this exists to catch is the sticky
     # classifier: history that turns "thanks" into another execute run.
