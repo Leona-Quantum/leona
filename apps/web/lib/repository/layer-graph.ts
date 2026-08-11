@@ -1846,6 +1846,19 @@ export const LAYER_GRAPH: LayerGraph = {
       ].join("\n"),
     },
     repeats: {
+      // Harrow, Hassidim and Lloyd, arXiv:0811.3171, read as a full PDF: §II
+      // "Algorithm" and "Run-time and error analysis" for the conditional
+      // evolution, the rotation and the post-selection, Appendix A §A1 for the
+      // amplification iterate and the state-preparation unitary B.
+      //
+      // **Two of these four notes are where this route's `repeats` field stops
+      // being a bare count.** `repeats` already records that state preparation
+      // and Hamiltonian simulation each run O(kappa) times; the notes say WHY —
+      // B and B-dagger sit inside the amplification iterate, so |b> is rebuilt
+      // in every round, and the whole phase estimation is rebuilt with it. That
+      // is the difference between this route and `qsvt-matrix-inversion`, which
+      // prepares its right-hand side once, and the map draws the two as the same
+      // shape until these notes are read.
       "state-preparation": {
         count: "O(κ) times — once per amplification round",
         countJa: "O(κ) 回。増幅の各ラウンドにつき 1 回。",
@@ -1867,6 +1880,32 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     bypasses: ["polynomial-approximation", "qsp-phase-factors"],
     entries: ["hhl-linear-systems"],
+    hops: {
+      "state-preparation": {
+        theory:
+          "$|b\\rangle = \\sum_j \\beta_j |u_j\\rangle$ is produced by an efficiently implementable unitary $B$ applied to $|\\mathrm{initial}\\rangle$, whose gate count is $T_B$. $B$ and $B^\\dagger$ sit inside the amplification iterate $U_{\\mathrm{invert}} B R_{\\mathrm{init}} B^\\dagger U_{\\mathrm{invert}}^\\dagger R_{\\mathrm{succ}}$, so $|b\\rangle$ is prepared afresh in each of the $O(\\kappa)$ rounds and appears in the run-time $\\tilde{O}(\\kappa T_B + \\kappa^2 s^2 \\log(N)/\\varepsilon)$ as the term $\\kappa T_B$. [[assumption: nothing beyond efficient implementability is assumed of $B$ — it may produce $|b\\rangle$ \"possibly along with garbage in an ancilla register\" — and the possibility that $B$ errs in producing $|b\\rangle$ is neglected, since without another way of producing or verifying $|b\\rangle$ there is no way to mitigate those errors, so any error there translates directly into error in the final $|x\\rangle$.]]",
+        theoryJa:
+          "$|b\\rangle = \\sum_j \\beta_j |u_j\\rangle$ は、効率的に実装できるユニタリ $B$ を $|\\mathrm{initial}\\rangle$ に作用させて用意します。そのゲート数を $T_B$ とします。$B$ と $B^\\dagger$ は増幅の反復 $U_{\\mathrm{invert}} B R_{\\mathrm{init}} B^\\dagger U_{\\mathrm{invert}}^\\dagger R_{\\mathrm{succ}}$ の内側にありますので、$|b\\rangle$ は $O(\\kappa)$ 回のラウンドごとに改めて用意され、実行時間 $\\tilde{O}(\\kappa T_B + \\kappa^2 s^2 \\log(N)/\\varepsilon)$ には $\\kappa T_B$ の項として現れます。[[assumption: $B$ に課される仮定は効率的に実装できることだけで、「補助レジスタにゴミを伴っていてもよい」とされます。また $B$ が $|b\\rangle$ の生成に失敗する可能性は無視されます。$|b\\rangle$ を生成あるいは検証する他の手段がない以上その誤差は補正しようがないためで、そこで生じた誤差はそのまま最終状態 $|x\\rangle$ の誤差になります。]]",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "The conditional Hamiltonian evolution $\\sum_{\\tau=0}^{T-1} |\\tau\\rangle\\langle\\tau| \\otimes e^{iA\\tau t_0/T}$ is applied to $|\\Psi_0\\rangle |b\\rangle$ and the first register is Fourier transformed, giving $\\sum_{j,k} \\alpha_{k|j}\\beta_j |k\\rangle |u_j\\rangle$, in which $|\\alpha_{k|j}|$ is large if and only if $\\lambda_j \\approx 2\\pi k/t_0 =: \\tilde{\\lambda}_k$. For $s$-sparse $A$ and $t \\le t_0$ this costs $T_H = \\tilde{O}(\\log(N)s^2 t_0)$ to error $\\varepsilon_H$, and with $t_0 = O(\\kappa/\\varepsilon)$ the amplification repeats the whole estimation $O(\\kappa)$ times. [[approximation: the eigenvalues are replaced by the phase estimates $\\tilde{\\lambda}_k = 2\\pi k/t_0$; phase estimation is \"the dominant source of error\", erring by $O(1/t_0)$ in estimating $\\lambda$, which translates into a relative error of $O(1/\\lambda t_0)$ in $\\lambda^{-1}$, so for $\\lambda \\ge 1/\\kappa$ taking $t_0 = O(\\kappa/\\varepsilon)$ induces a final error of $\\varepsilon$.]] [[assumption: $A$ is $s$-sparse and efficiently row computable — at most $s$ nonzero entries per row, computable in time $O(s)$ given a row index — and this is the only step of the algorithm where sparsity of $A$ is required.]]",
+        theoryJa:
+          "条件付きハミルトニアン発展 $\\sum_{\\tau=0}^{T-1} |\\tau\\rangle\\langle\\tau| \\otimes e^{iA\\tau t_0/T}$ を $|\\Psi_0\\rangle |b\\rangle$ に作用させ、第一レジスタを Fourier 変換すると $\\sum_{j,k} \\alpha_{k|j}\\beta_j |k\\rangle |u_j\\rangle$ が得られます。ここで $|\\alpha_{k|j}|$ が大きいのは $\\lambda_j \\approx 2\\pi k/t_0 =: \\tilde{\\lambda}_k$ のとき、かつそのときに限ります。$A$ が $s$ 疎で $t \\le t_0$ であれば、これは誤差 $\\varepsilon_H$ のもとで $T_H = \\tilde{O}(\\log(N)s^2 t_0)$ の時間を要し、$t_0 = O(\\kappa/\\varepsilon)$ としたうえで、増幅がこの推定全体を $O(\\kappa)$ 回繰り返します。[[approximation: 固有値は位相推定の値 $\\tilde{\\lambda}_k = 2\\pi k/t_0$ に置き換えられます。位相推定は「誤差の支配的な源」であり、$\\lambda$ の推定で $O(1/t_0)$ の誤差を生じ、それが $\\lambda^{-1}$ では $O(1/\\lambda t_0)$ の相対誤差になります。したがって $\\lambda \\ge 1/\\kappa$ のもとで $t_0 = O(\\kappa/\\varepsilon)$ と取ると、最終的な誤差は $\\varepsilon$ になります。]] [[assumption: $A$ は $s$ 疎で効率的に行が計算できること、すなわち各行の非ゼロ成分が高々 $s$ 個で、行の添字が与えられればそれらを $O(s)$ 時間で計算できることを仮定します。アルゴリズム中で $A$ の疎性を要求するのはこの段階だけです。]]",
+      },
+      "success-amplification": {
+        theory:
+          "Measuring the flag register $S$ after $U_{\\mathrm{invert}}$ and obtaining the outcome 'well' has approximately applied an operator proportional to $A^{-1}$, with success probability $\\tilde{p}$; rather than repeating $1/\\tilde{p}$ times, amplitude amplification obtains the same result in $O(1/\\sqrt{\\tilde{p}})$ repetitions of $U_{\\mathrm{invert}} B R_{\\mathrm{init}} B^\\dagger U_{\\mathrm{invert}}^\\dagger R_{\\mathrm{succ}}$ applied to $U_{\\mathrm{invert}} B |\\mathrm{initial}\\rangle$, where $R_{\\mathrm{succ}} = I^S - 2|\\mathrm{well}\\rangle\\langle\\mathrm{well}|^S$ and $R_{\\mathrm{init}} = I - 2|\\mathrm{initial}\\rangle\\langle\\mathrm{initial}|$. Since $C = O(1/\\kappa)$ and $\\lambda \\le 1$ the post-selection succeeds with probability at least $\\Omega(1/\\kappa^2)$, so the ideal repetition count $\\pi/4\\sqrt{\\tilde{p}}$ is $O(\\kappa)$. [[assumption: $\\tilde{p}$ is initially unknown, so the entire procedure is repeated with a geometrically increasing number of repetitions — $1, 2, 4, 8, \\ldots$ — until a power of two $\\ge \\kappa$ is reached, which yields a constant probability of success using $\\le 4\\kappa$ repetitions and therefore needs the cutoff $\\kappa$, which is an input to the algorithm.]]",
+        theoryJa:
+          "$U_{\\mathrm{invert}}$ ののちフラグレジスタ $S$ を測定して「well」が得られれば、$A^{-1}$ に比例する演算子をほぼ適用したことになります。その成功確率を $\\tilde{p}$ とすると、$1/\\tilde{p}$ 回繰り返す代わりに振幅増幅を用いて、$U_{\\mathrm{invert}} B |\\mathrm{initial}\\rangle$ に $U_{\\mathrm{invert}} B R_{\\mathrm{init}} B^\\dagger U_{\\mathrm{invert}}^\\dagger R_{\\mathrm{succ}}$ を $O(1/\\sqrt{\\tilde{p}})$ 回適用することで同じ結果が得られます。ここで $R_{\\mathrm{succ}} = I^S - 2|\\mathrm{well}\\rangle\\langle\\mathrm{well}|^S$、$R_{\\mathrm{init}} = I - 2|\\mathrm{initial}\\rangle\\langle\\mathrm{initial}|$ です。$C = O(1/\\kappa)$ かつ $\\lambda \\le 1$ ですので、事後選択の成功確率は少なくとも $\\Omega(1/\\kappa^2)$ であり、理想的な反復回数 $\\pi/4\\sqrt{\\tilde{p}}$ は $O(\\kappa)$ になります。[[assumption: $\\tilde{p}$ は最初は分かりませんので、反復回数を $1, 2, 4, 8, \\ldots$ と幾何級数的に増やしながら手続き全体を繰り返し、$\\kappa$ 以上の 2 のべきに達したところで止めます。これにより $4\\kappa$ 回以下の反復で定数の成功確率が得られますが、そのためには打ち切り値 $\\kappa$ が必要で、これはアルゴリズムへの入力です。]]",
+      },
+      "hhl-qpe-inversion": {
+        theory:
+          "The map wanted is the one taking $|\\lambda_j\\rangle$ to $C\\lambda_j^{-1}|\\lambda_j\\rangle$ for a normalising constant $C$; it is not unitary, so it has some probability of failing. It is realised by adjoining an ancilla qubit and rotating conditioned on $|\\tilde{\\lambda}_k\\rangle$, which yields the branch $\\sqrt{1 - C^2/\\tilde{\\lambda}_k^2}\\,|0\\rangle + (C/\\tilde{\\lambda}_k)|1\\rangle$ with $C = O(1/\\kappa)$; the phase estimation is then undone to uncompute the $\\tilde{\\lambda}_k$ and the last qubit is measured, and conditioned on seeing $1$ the state is proportional to $\\sum_j \\beta_j (C/\\lambda_j)|u_j\\rangle$, which is $|x\\rangle = \\sum_j \\beta_j\\lambda_j^{-1}|u_j\\rangle$ up to normalisation — the normalisation factor being determined from the probability of obtaining $1$. [[approximation: what is produced is not $\\sum_j \\lambda_j^{-1}\\beta_j|u_j\\rangle$ but a state close to $\\sum_{j,\\lambda_j \\ge 1/\\kappa} \\lambda_j^{-1}\\beta_j|u_j\\rangle|\\mathrm{well}\\rangle + \\sum_{j,\\lambda_j < 1/\\kappa} \\beta_j|u_j\\rangle|\\mathrm{ill}\\rangle$; only the well-conditioned part is inverted, eigenvectors with eigenvalue $\\le 1/\\kappa' = 1/2\\kappa$ are flagged as ill-conditioned without being inverted, and the two behaviours are interpolated for $1/\\kappa' < |\\lambda| < 1/\\kappa$, because no eigenvalue can be resolved exactly.]] [[assumption: $C = O(1/\\kappa)$ together with $\\lambda \\le 1$ is what leaves the post-selection a success probability of at least $\\Omega(1/\\kappa^2)$; correctness is guaranteed under $\\|A\\| \\le 1$ and $\\|A^{-1}\\| \\le \\kappa$, with $\\kappa$ supplied as a chosen cutoff.]]",
+        theoryJa:
+          "必要なのは $|\\lambda_j\\rangle$ を $C\\lambda_j^{-1}|\\lambda_j\\rangle$ に写す線形写像です（$C$ は規格化定数）。これはユニタリではありませんので、失敗する確率を持ちます。実装は補助量子ビットを一つ加え、$|\\tilde{\\lambda}_k\\rangle$ で条件付けて回転させることで行い、$C = O(1/\\kappa)$ のもとで $\\sqrt{1 - C^2/\\tilde{\\lambda}_k^2}\\,|0\\rangle + (C/\\tilde{\\lambda}_k)|1\\rangle$ という分岐が得られます。続いて位相推定を逆に実行して $\\tilde{\\lambda}_k$ を打ち消し、最後の量子ビットを測定します。結果が $1$ であれば、状態は $\\sum_j \\beta_j (C/\\lambda_j)|u_j\\rangle$ に比例し、規格化を除いて $|x\\rangle = \\sum_j \\beta_j\\lambda_j^{-1}|u_j\\rangle$ になります。規格化因子は $1$ が得られる確率から決まります。[[approximation: 実際に得られるのは $\\sum_j \\lambda_j^{-1}\\beta_j|u_j\\rangle$ ではなく、$\\sum_{j,\\lambda_j \\ge 1/\\kappa} \\lambda_j^{-1}\\beta_j|u_j\\rangle|\\mathrm{well}\\rangle + \\sum_{j,\\lambda_j < 1/\\kappa} \\beta_j|u_j\\rangle|\\mathrm{ill}\\rangle$ に近い状態です。逆数化されるのは条件の良い部分だけで、固有値が $1/\\kappa' = 1/2\\kappa$ 以下の固有ベクトルは逆数化されずに条件が悪いものとして印を付けられ、$1/\\kappa' < |\\lambda| < 1/\\kappa$ の範囲では両者が補間されます。固有値を厳密に分解することができないためです。]] [[assumption: 事後選択の成功確率が少なくとも $\\Omega(1/\\kappa^2)$ に保たれるのは、$C = O(1/\\kappa)$ と $\\lambda \\le 1$ が成り立つからです。正しさが保証されるのは $\\|A\\| \\le 1$ かつ $\\|A^{-1}\\| \\le \\kappa$ のもとであり、$\\kappa$ は選択された打ち切り値として与えられます。]]",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for solving linear systems of equations", authors: "Aram W. Harrow, Avinatan Hassidim, Seth Lloyd", year: "2008", url: "https://arxiv.org/abs/0811.3171" },
       { title: "Quantum tomography using state-preparation unitaries", authors: "Joran van Apeldoorn, Arjan Cornelissen, András Gilyén, Giacomo Nannicini", year: "2022", url: "https://arxiv.org/abs/2207.08800" },
@@ -1916,6 +1955,17 @@ export const LAYER_GRAPH: LayerGraph = {
       ].join("\n"),
     },
     repeats: {
+      // Gilyén, Su, Low and Wiebe arXiv:1806.01838 (Theorem 41 and §3.2) with
+      // Chakraborty, Gilyén and Jeffery arXiv:1804.01973 for the block-encoding
+      // access model, both read as full PDFs.
+      //
+      // **One claim was cut by a second reader and it is worth recording which:**
+      // the first draft said the singular-value framing means the matrix "need
+      // not be Hermitian or sparse". The Hermitian half is the paper's, stated
+      // just before Theorem 17. The sparsity half is not: sparse access is one
+      // input model for BUILDING a block encoding (Lemma 48), not a hypothesis
+      // this construction waives. It was a true-of-the-subject sentence that the
+      // cited paper does not make, which is the exact failure the gap rule names.
       "block-encode-matrix": {
         count: "m = O((1/δ) log(1/ε)) applications of U and U†",
         countJa: "U と U† を m = O((1/δ) log(1/ε)) 回。",
@@ -1924,6 +1974,38 @@ export const LAYER_GRAPH: LayerGraph = {
         closure: "coherent",
         note: "Gilyén, Su, Low and Wiebe's Theorem 41 count, and δ = 1/κ after normalisation — so this is the condition number, appearing as a number of turns rather than as a mysterious factor. The log(1/ε) is what an approximating polynomial of that degree costs, and it is why this route's precision dependence is logarithmic where phase-estimation inversion's is not.",
         noteJa: "Gilyén・Su・Low・Wiebe の Theorem 41 による回数で、正規化後は δ = 1/κ です。つまりこれは条件数が、正体不明の因子ではなく反復回数として現れたものです。log(1/ε) はその次数の近似多項式にかかる代価であり、この経路の精度依存性が対数的である一方、位相推定による反転がそうでない理由でもあります。",
+      },
+    },
+    hops: {
+      "block-encode-matrix": {
+        theory:
+          "The route touches $A$ only through a projected unitary encoding $A = \\tilde{\\Pi} U \\Pi$, of which a block-encoding — $A = \\alpha(\\langle 0|^{\\otimes a} \\otimes I) U (|0\\rangle^{\\otimes a} \\otimes I)$ — is the special case. The transformation queries it $m = O((1/\\delta)\\log(1/\\varepsilon))$ times as $U$ and $U^\\dagger$, coherently, with a single ancilla qubit carrying the phase shifts. [[assumption: Every non-zero singular value of $A = \\tilde{\\Pi} U \\Pi$ is at least $\\delta$, which is $\\delta = 1/\\kappa$ after normalisation.]] [[assumption: For the end-to-end form, Chakraborty, Gilyén and Jeffery need the encoding's own error to be $o(\\varepsilon/(\\kappa^2 \\log^3(\\kappa/\\varepsilon)))$, and its subnormalisation $\\alpha$ multiplies the query count.]]",
+        theoryJa:
+          "この経路が $A$ に触れるのは射影ユニタリ符号化 $A = \\tilde{\\Pi} U \\Pi$ を通してのみで、ブロック符号化 $A = \\alpha(\\langle 0|^{\\otimes a} \\otimes I) U (|0\\rangle^{\\otimes a} \\otimes I)$ はその特別な場合にあたります。変換はこれを $U$ と $U^\\dagger$ として $m = O((1/\\delta)\\log(1/\\varepsilon))$ 回、コヒーレントに問い合わせ、位相シフトは 1 つの補助量子ビットが担います。[[assumption: $A = \\tilde{\\Pi} U \\Pi$ の非零特異値がすべて $\\delta$ 以上であることが必要で、正規化後は $\\delta = 1/\\kappa$ です。]] [[assumption: 端から端までの形については、Chakraborty・Gilyén・Jeffery は符号化自身の誤差が $o(\\varepsilon/(\\kappa^2 \\log^3(\\kappa/\\varepsilon)))$ であることを要求し、その正規化因子 $\\alpha$ は問い合わせ回数に掛かります。]]",
+      },
+      "state-preparation": {
+        theory:
+          "The problem this hop feeds is stated with a procedure that computes $|b\\rangle$ in the image of $A$, the target being a state within $\\varepsilon$ of $A^{+}|b\\rangle / \\lVert A^{+}|b\\rangle \\rVert$. [[assumption: $|b\\rangle$ lies in the image of $A$ — in Chakraborty, Gilyén and Jeffery's Theorem 30 it is an input state spanned by the eigenvectors of $H$.]] Preparing it costs $T_b$, and that cost enters the end-to-end bill multiplied by the condition number, as the $\\kappa T_b \\log(1/\\varepsilon)$ term.",
+        theoryJa:
+          "このホップが供給する先の問題は、$A$ の像に入る $|b\\rangle$ を計算する手続きを前提として述べられており、目標は $A^{+}|b\\rangle / \\lVert A^{+}|b\\rangle \\rVert$ から $\\varepsilon$ 以内の状態です。[[assumption: $|b\\rangle$ が $A$ の像に入っていることが必要で、Chakraborty・Gilyén・Jeffery の定理 30 では $H$ の固有ベクトルで張られる入力状態とされています。]] その準備には $T_b$ がかかり、この費用は条件数倍されて全体の見積もりに入ります。すなわち $\\kappa T_b \\log(1/\\varepsilon)$ の項です。",
+      },
+      "matrix-function": {
+        theory:
+          "With every non-zero singular value at least $\\delta$, an odd real polynomial $P_<$ that $\\varepsilon$-approximates $\\delta/(2x)$ on $[-1,1] \\setminus (-\\delta,\\delta)$ gives $P_<^{(SV)}(A^\\dagger) = \\Pi U_\\Phi^\\dagger \\tilde{\\Pi}$, which $\\varepsilon$-approximates $(\\delta/2)A^{+}$. [[approximation: $1/x$ is replaced by $f(x) = (1-(1-x^2)^b)/x$ with $b = \\lceil \\kappa^2 \\log(\\kappa/\\varepsilon) \\rceil$, which is $\\varepsilon$-close to $1/x$ only on $[-1,1] \\setminus (-1/\\kappa, 1/\\kappa)$, and $f$ in turn by an odd Chebyshev expansion of degree $O(\\kappa \\log(\\kappa/\\varepsilon))$.]] [[assumption: Singular value transformation by real polynomials requires $P_<$ to have parity $n \\bmod 2$ and to satisfy $|P_<(x)| \\le 1$ for every $x \\in [-1,1]$; the construction secures the bound by taking $P_< = P \\cdot (1 - P')$ with $P'$ an even polynomial approximating a rectangle function.]]",
+        theoryJa:
+          "非零特異値がすべて $\\delta$ 以上であるとき、$[-1,1] \\setminus (-\\delta,\\delta)$ 上で $\\delta/(2x)$ を $\\varepsilon$ 近似する奇の実多項式 $P_<$ をとると、$P_<^{(SV)}(A^\\dagger) = \\Pi U_\\Phi^\\dagger \\tilde{\\Pi}$ が $(\\delta/2)A^{+}$ を $\\varepsilon$ 近似します。[[approximation: $1/x$ は、$b = \\lceil \\kappa^2 \\log(\\kappa/\\varepsilon) \\rceil$ とした $f(x) = (1-(1-x^2)^b)/x$ に置き換えられます。これが $1/x$ に $\\varepsilon$ 近いのは $[-1,1] \\setminus (-1/\\kappa, 1/\\kappa)$ 上に限られます。さらに $f$ は次数 $O(\\kappa \\log(\\kappa/\\varepsilon))$ の奇のチェビシェフ展開に置き換えられます。]] [[assumption: 実多項式による特異値変換は、$P_<$ が $n \\bmod 2$ のパリティを持ち、すべての $x \\in [-1,1]$ で $|P_<(x)| \\le 1$ を満たすことを要求します。構成では、矩形関数を近似する偶多項式 $P'$ を用いて $P_< = P \\cdot (1 - P')$ とすることで、この上界を確保しています。]]",
+      },
+      "success-amplification": {
+        theory:
+          "The flagged branch carries the subnormalisation: applying the $(2\\kappa,\\, a + O(\\log(\\kappa \\log(1/\\varepsilon))),\\, \\varepsilon)$-block-encoding of $A^{-1}$ to $|b\\rangle$ leaves $\\frac{1}{2\\kappa}|0\\rangle^{\\otimes a}(A^{-1}|b\\rangle) + |0^{\\perp}\\rangle$, so standard amplitude amplification needs a number of rounds linear in $\\kappa$ and the overall dependence on $\\kappa$ comes out quadratic. Chakraborty, Gilyén and Jeffery recover a linear $\\kappa$ by using variable-time amplitude amplification in its place. [[assumption: Variable-time amplitude amplification needs the solver recast as a variable-stopping-time algorithm — a sequence of $\\lceil \\log_2 \\kappa \\rceil + 1$ steps $A_1, A_2, \\ldots$, each with its own single-qubit clock register, where step $j$ runs gapped phase estimation on $e^{iA}$ at precision $2^{-j}$ and inverts only the branch that step flags.]]",
+        theoryJa:
+          "フラグの立つ枝は正規化因子を抱えたままです。$A^{-1}$ の $(2\\kappa,\\, a + O(\\log(\\kappa \\log(1/\\varepsilon))),\\, \\varepsilon)$ ブロック符号化を $|b\\rangle$ に適用すると $\\frac{1}{2\\kappa}|0\\rangle^{\\otimes a}(A^{-1}|b\\rangle) + |0^{\\perp}\\rangle$ が残りますので、通常の振幅増幅では $\\kappa$ に比例する回数のラウンドが必要になり、$\\kappa$ への依存は全体として二次になります。Chakraborty・Gilyén・Jeffery は、これを可変時間振幅増幅に置き換えることで $\\kappa$ について線形に戻しています。[[assumption: 可変時間振幅増幅は、ソルバーを可変停止時間アルゴリズムとして書き直すことを要求します。すなわち $\\lceil \\log_2 \\kappa \\rceil + 1$ 個の段 $A_1, A_2, \\ldots$ からなる列で、各段はそれぞれ 1 量子ビットの時計レジスタを持ち、第 $j$ 段は $e^{iA}$ に対して精度 $2^{-j}$ の gapped 位相推定を行い、そこでフラグの立った枝だけを反転します。]]",
+      },
+      "qsvt-matrix-inversion": {
+        theory:
+          "Assembled: for $0 < \\varepsilon \\le \\delta \\le 1/2$ there is an $m = O((1/\\delta)\\log(1/\\varepsilon))$ and an efficiently computable $\\Phi \\in \\mathbb{R}^m$ whose circuit $U_\\Phi$, restricted to the singular-value subspaces that are zero or at least $\\delta$, implements $(\\delta/2) \\cdot A^{+}$ to error $\\varepsilon$ — using a single ancilla qubit, $m$ uses of $U$ and $U^\\dagger$, $m$ uses of $C_\\Pi\\mathrm{NOT}$ and $C_{\\tilde{\\Pi}}\\mathrm{NOT}$, and $m$ single-qubit gates. Because the transform acts on singular values, it applies to an arbitrary matrix rather than only a Hermitian or normal one. [[assumption: $0 < \\varepsilon \\le \\delta \\le 1/2$; the authors call the $\\varepsilon \\le \\delta$ part quite natural but not necessary, removable through their Corollary 69.]]",
+        theoryJa:
+          "組み上げると、$0 < \\varepsilon \\le \\delta \\le 1/2$ に対して $m = O((1/\\delta)\\log(1/\\varepsilon))$ と、効率的に計算できる $\\Phi \\in \\mathbb{R}^m$ が存在します。その回路 $U_\\Phi$ は、特異値が $0$ または $\\delta$ 以上である部分空間に制限したとき、$(\\delta/2) \\cdot A^{+}$ を誤差 $\\varepsilon$ で実装します。要するのは補助量子ビット 1 つ、$U$ と $U^\\dagger$ の使用 $m$ 回、$C_\\Pi\\mathrm{NOT}$ と $C_{\\tilde{\\Pi}}\\mathrm{NOT}$ の使用 $m$ 回、そして 1 量子ビットゲート $m$ 個です。変換が特異値に作用するため、エルミート行列や正規行列に限らず任意の行列に適用できます。[[assumption: $0 < \\varepsilon \\le \\delta \\le 1/2$ が必要です。著者らは $\\varepsilon \\le \\delta$ の部分について、きわめて自然ではあるが必要ではなく、Corollary 69 によって外せると述べています。]]",
       },
     },
     citations: [
@@ -2033,6 +2115,42 @@ export const LAYER_GRAPH: LayerGraph = {
         "# Hamiltonians",
       ].join("\n"),
     },
+    hops: {
+      // Childs, Kothari and Somma, arXiv:1511.02306, full PDF: Problem 1 and §2.1
+      // for the access model and the LCU lemmas, §4.1-4.2 for the polynomial and
+      // its truncation, Theorem 4 for the query counts.
+      //
+      // The own-stretch note is where this route's `bypasses` of
+      // `hamiltonian-simulation` stops being an assertion: the Chebyshev
+      // polynomials are implemented by steps of the sparse-access quantum walk,
+      // so the entry oracle is used directly and neither $e^{-iAt}$ nor phase
+      // estimation appears anywhere in the construction. A bypass edge that the
+      // reader can only take on trust is the thing `W12` warned about.
+      "state-preparation": {
+        theory:
+          "This route consumes its right-hand side as a procedure $P_B$ with $P_B|0^s\\rangle=|b\\rangle$, where $|b\\rangle\\propto\\sum_i b_i|i\\rangle$, and Theorem 4 charges $O(\\kappa\\log(d\\kappa/\\varepsilon))$ uses of it. [[assumption: $P_B$ prepares $|b\\rangle$ in time $O(\\mathrm{poly}(\\log N))$ — part of Problem 1's definition of the QLSP, not something the algorithm establishes.]] [[assumption: Multiple copies of $|b\\rangle$ can be created, which is the authors' stated reason the construction needs no oblivious amplitude amplification — a tool that would not work anyway when $M$ is far from unitary.]]",
+        theoryJa:
+          "この経路は右辺を、$P_B|0^s\\rangle=|b\\rangle$ を行う手続き $P_B$ として受け取ります。ここで $|b\\rangle$ は $\\sum_i b_i|i\\rangle$ に比例し、定理 4 はその使用回数を $O(\\kappa\\log(d\\kappa/\\varepsilon))$ 回と見積もっています。[[assumption: $P_B$ は $|b\\rangle$ を $O(\\mathrm{poly}(\\log N))$ 時間で用意します。これは Problem 1 における QLSP の定義に含まれる前提であり、アルゴリズムが示すものではありません。]] [[assumption: 入力状態 $|b\\rangle$ の複製をいくつでも作れます。著者らはこれを、oblivious な振幅増幅を必要としない理由として挙げています。その手法は $M$ がユニタリから遠い場合にはそもそも働きません。]]",
+      },
+      "matrix-function": {
+        theory:
+          "The object to be applied is $H^{-1}$ for $H:=A/d$, and $1/x$ is first tamed to $f(x)=\\bigl(1-(1-x^2)^b\\bigr)/x$, which is bounded at the origin. [[approximation: $f$ is $\\varepsilon$-close to $1/x$ on $D_{\\kappa d}=[-1,-1/(\\kappa d)]\\cup[1/(\\kappa d),1]$ for any integer $b\\ge(\\kappa d)^2\\log(\\kappa d/\\varepsilon)$ (Lemma 17).]] Being a polynomial of degree $2b-1$, $f$ is then represented exactly by odd Chebyshev polynomials $T_{2j+1}$, $j\\le b-1$, with coefficients $4(-1)^j\\,2^{-2b}\\sum_{i=j+1}^{b}\\binom{2b}{b+i}$ (Lemma 18). [[approximation: The series is truncated at $j_0=\\sqrt{b\\log(4b/\\varepsilon)}$; each discarded bracket is the probability of more than $b+j$ heads in $2b$ fair flips and is bounded by $e^{-j^2/b}$, so the surviving degree is $O(j_0)=O(d\\kappa\\log(d\\kappa/\\varepsilon))$ (Lemma 19).]] Every surviving term is applied by powers of the quantum walk $W=S(2TT^\\dagger-1)$, for which $W^nT|\\psi\\rangle=T\\,T_n(H)|\\psi\\rangle+|\\perp_\\psi\\rangle$, at $O(n)$ queries to $P_A$. [[assumption: $\\|H\\|\\le1$ because $A$ is $d$-sparse with $\\|A\\|_{\\max}\\le1$, and the expansion need only be correct on $D_{\\kappa d}$ because the eigenvalues of $A$ are known to lie in $D_\\kappa$.]]",
+        theoryJa:
+          "適用すべき対象は $H:=A/d$ に対する $H^{-1}$ で、まず $1/x$ を、原点で有界な $f(x)=\\bigl(1-(1-x^2)^b\\bigr)/x$ へと馴らします。[[approximation: 整数 $b\\ge(\\kappa d)^2\\log(\\kappa d/\\varepsilon)$ であれば、$f$ は領域 $D_{\\kappa d}=[-1,-1/(\\kappa d)]\\cup[1/(\\kappa d),1]$ 上で $1/x$ に $\\varepsilon$ の精度で一致します（補題 17）。]] $f$ は次数 $2b-1$ の多項式ですので、奇数次のチェビシェフ多項式 $T_{2j+1}$（$j\\le b-1$）と係数 $4(-1)^j\\,2^{-2b}\\sum_{i=j+1}^{b}\\binom{2b}{b+i}$ によって厳密に表せます（補題 18）。[[approximation: この級数を $j_0=\\sqrt{b\\log(4b/\\varepsilon)}$ で打ち切ります。捨てられる括弧内の量は、公平なコインを $2b$ 回投げて表が $b+j$ 回を超える確率であり、$e^{-j^2/b}$ で抑えられます。残る次数は $O(j_0)=O(d\\kappa\\log(d\\kappa/\\varepsilon))$ です（補題 19）。]] 残った各項は、量子ウォーク $W=S(2TT^\\dagger-1)$ の冪として適用されます。$W^nT|\\psi\\rangle=T\\,T_n(H)|\\psi\\rangle+|\\perp_\\psi\\rangle$ が成り立ち、$P_A$ への問い合わせは $O(n)$ 回です。[[assumption: $A$ は $d$ 疎で $\\|A\\|_{\\max}\\le1$ ですので $\\|H\\|\\le1$ が従います。また $A$ の固有値が $D_\\kappa$ に入ることは既知ですので、展開は $D_{\\kappa d}$ 上で正しければ十分です。]]",
+      },
+      "success-amplification": {
+        theory:
+          "Measuring the flag register of $V^\\dagger U V\\,|0^r\\rangle|b\\rangle=\\frac{1}{\\alpha}|0^r\\rangle M|b\\rangle+|\\Xi^\\perp\\rangle$ returns $M|b\\rangle/\\|M|b\\rangle\\|$ only with probability $(\\|M|b\\rangle\\|/\\alpha)^2$, so the branch is amplified rather than merely retried. Amplitude amplification produces it after $O(\\alpha/\\|M|b\\rangle\\|)$ uses of $V^\\dagger U V$ and $P_B$ in expectation, which is $O(\\alpha)$ here because $|f(x)|\\ge1$ on $D_\\kappa$ forces $\\|f(A)|b\\rangle\\|\\ge1$; with $\\alpha\\le 4j_0/d$ that is $O(\\kappa\\log(d\\kappa/\\varepsilon))$ uses of $P_B$. [[assumption: A reflection about the starting state $|0^r\\rangle|b\\rangle$ is available; it is built as $P_B(1-2|0^{r+s}\\rangle\\langle0^{r+s}|)P_B^\\dagger$ from two uses of $P_B$, one performed in reverse.]] [[assumption: The expected cost needs no estimate of $\\|M|b\\rangle\\|$, but a worst-case guarantee needs an upper bound on the success probability — $\\alpha$ is known, so running ten times the expected running time gives the $O(\\alpha)$ worst case.]]",
+        theoryJa:
+          "$V^\\dagger U V\\,|0^r\\rangle|b\\rangle=\\frac{1}{\\alpha}|0^r\\rangle M|b\\rangle+|\\Xi^\\perp\\rangle$ のフラグ用レジスタを測定しても、$M|b\\rangle/\\|M|b\\rangle\\|$ が得られるのは確率 $(\\|M|b\\rangle\\|/\\alpha)^2$ に限られますので、この分岐は単にやり直すのではなく増幅します。振幅増幅は、期待値で $V^\\dagger U V$ と $P_B$ を $O(\\alpha/\\|M|b\\rangle\\|)$ 回使ってこれを与えます。$D_\\kappa$ 上で $|f(x)|\\ge1$ ですので $\\|f(A)|b\\rangle\\|\\ge1$ となり、この回数は $O(\\alpha)$ です。$\\alpha\\le 4j_0/d$ より、$P_B$ の使用回数は $O(\\kappa\\log(d\\kappa/\\varepsilon))$ 回になります。[[assumption: 出発状態 $|0^r\\rangle|b\\rangle$ に関する反射が使えることを要求します。これは $P_B$ を 2 回（うち 1 回は逆向きに）使って $P_B(1-2|0^{r+s}\\rangle\\langle0^{r+s}|)P_B^\\dagger$ として構成されます。]] [[assumption: 期待値としてのコストには $\\|M|b\\rangle\\|$ の見積もりは不要ですが、最悪ケースの保証には成功確率の上界が必要です。$\\alpha$ は既知ですので、期待実行時間の 10 倍だけ走らせることで $O(\\alpha)$ の最悪ケースが得られます。]]",
+      },
+      "chebyshev-lcu-inversion": {
+        theory:
+          "$A^{-1}$ is applied as a linear combination of unitaries: with $M=\\sum_i\\alpha_i T_i$ and $\\alpha_i>0$, $U=\\sum_i|i\\rangle\\langle i|\\otimes U_i$ and $V|0^m\\rangle=\\alpha^{-1/2}\\sum_i\\sqrt{\\alpha_i}\\,|i\\rangle$ with $\\alpha=\\sum_i\\alpha_i$, the operator $V^\\dagger U V$ sends $|0^r\\rangle|b\\rangle$ to $\\frac{1}{\\alpha}|0^r\\rangle M|b\\rangle+|\\Xi^\\perp\\rangle$, so the all-zeros branch carries $M|b\\rangle$. The building blocks $T_i$ are the Chebyshev polynomials $T_n(A/d)$, implemented by steps of the sparse-access quantum walk, so the entry oracle $P_A$ is used directly and neither $e^{-iAt}$ nor phase estimation appears anywhere in the construction. [[approximation: A combination that is $\\varepsilon$-close to $f$ on the spectrum yields a state $4\\varepsilon$-close to $f(A)|b\\rangle/\\|f(A)|b\\rangle\\|$, provided $|f(x)|\\ge1$ there — Corollary 10, applied to $f(x)=1/x$ on $D_\\kappa=[-1,-1/\\kappa]\\cup[1/\\kappa,1]$.]] [[assumption: $A$ is Hermitian and $d$-sparse with $\\|A\\|=1$ and known condition number $\\kappa$, reached through the entry oracle $P_A$ of Problem 1.]]",
+        theoryJa:
+          "$A^{-1}$ はユニタリの線形結合として適用されます。$M=\\sum_i\\alpha_i T_i$、$\\alpha_i>0$ とし、$U=\\sum_i|i\\rangle\\langle i|\\otimes U_i$、$V|0^m\\rangle=\\alpha^{-1/2}\\sum_i\\sqrt{\\alpha_i}\\,|i\\rangle$（$\\alpha=\\sum_i\\alpha_i$）とおくと、$V^\\dagger U V$ は $|0^r\\rangle|b\\rangle$ を $\\frac{1}{\\alpha}|0^r\\rangle M|b\\rangle+|\\Xi^\\perp\\rangle$ へ写しますので、全ゼロの分岐が $M|b\\rangle$ を担います。構成要素 $T_i$ はチェビシェフ多項式 $T_n(A/d)$ であり、疎行列アクセスの量子ウォークのステップとして実装されます。したがってエントリオラクル $P_A$ を直接使うことになり、$e^{-iAt}$ も位相推定も構成のどこにも現れません。[[approximation: スペクトル上で $f$ に $\\varepsilon$ の精度で一致する線形結合は、そこで $|f(x)|\\ge1$ である限り、$f(A)|b\\rangle/\\|f(A)|b\\rangle\\|$ に $4\\varepsilon$ まで近い状態を与えます。これは $D_\\kappa=[-1,-1/\\kappa]\\cup[1/\\kappa,1]$ 上の $f(x)=1/x$ に系 10 を適用したものです。]] [[assumption: $A$ はエルミートかつ $d$ 疎で、$\\|A\\|=1$、条件数 $\\kappa$ は既知であり、Problem 1 のエントリオラクル $P_A$ を通じてアクセスされます。]]",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],
@@ -2138,6 +2256,38 @@ export const LAYER_GRAPH: LayerGraph = {
         "# comparison.",
       ].join("\n"),
     },
+    hops: {
+      // Costa, An, Sanders, Su, Babbush and Berry, arXiv:2111.08152, full PDF,
+      // with arXiv:2312.07690 for the constant-factor follow-up. The own stretch
+      // is the discrete adiabatic walk itself — the schedule, the eigenpath and
+      // the discrete adiabatic theorem's bound — and it is the only one of these
+      // five routes whose optimal scaling comes from the walk rather than from a
+      // polynomial applied to a block encoding.
+      "block-encode-matrix": {
+        theory:
+          "The slot must encode not $A$ alone but the path Hamiltonian $H(s) = (1-f(s))H_0 + f(s)H_1$, assembled from a block encoding $U_A$ with $<0|U_A|0> = A$, the $|b>$ oracle inside $Q_b$, four ancilla qubits, and a one-qubit rotation $R(s)$ — the only operation through which the step index $s$ enters. A reflection on the control qubits then turns that encoding into the walk operator $W_T(s)$. [[assumption: the block encoding must be symmetric and its operator sequence self-inverse, which is what qubitisation requires, and $U_A$ must be applicable in a selected way — either $U_A$, $U_A^\\dagger$, or the identity.]] [[approximation: using $R(s)$ at the start and a Hadamard rather than $R(s)^\\dagger$ at the end block-encodes $A(f(s))/\\sqrt{2[(1-f(s))^2+f(s)^2]}$ in place of $A(f(s))$; that prefactor lies between $1/\\sqrt{2}$ and $1$, and reduces the gap.]]",
+        theoryJa:
+          "この層に求められるのは $A$ 単体ではなく、経路上のハミルトニアン $H(s) = (1-f(s))H_0 + f(s)H_1$ の符号化です。これは $<0|U_A|0> = A$ を満たすブロック符号化 $U_A$、$Q_b$ の内部で使う $|b>$ のオラクル、4 個の補助量子ビット、そして刻み $s$ が入る唯一の操作である 1 量子ビット回転 $R(s)$ から組み立てられます。制御量子ビットに対する反転を加えると、この符号化はウォーク演算子 $W_T(s)$ になります。[[assumption: キュービタイゼーションが要求するとおり、ブロック符号化は対称でなければならず、その操作列は自己逆でなければなりません。また $U_A$ は $U_A$、$U_A^\\dagger$、恒等演算のいずれかを選んで適用できる必要があります。]] [[approximation: 先頭に $R(s)$ を置き、末尾に $R(s)^\\dagger$ ではなく Hadamard を置く構成では、$A(f(s))$ ではなく $A(f(s))/\\sqrt{2[(1-f(s))^2+f(s)^2]}$ が符号化されます。この係数は $1/\\sqrt{2}$ と $1$ の間にあり、ギャップを小さくします。]]",
+      },
+      "state-preparation": {
+        theory:
+          "This route uses the $|b>$ oracle $U_b$, with $U_b|0> = |b>$, in two places: to prepare the initial state $|0,b>$, which is the eigenvalue-zero eigenstate of $H_0$ that the walk is to carry to $|0, A^{-1}b>$, and to build the projector $Q_b = I_N - |b><b|$ from $U_b$ and $U_b^\\dagger$, which sits inside every step's block encoding of $H(s)$. [[assumption: access to the oracles includes forward, reverse and controlled uses; only the reflection inside $Q_b$ has to be made controlled, not $U_b$ itself.]]",
+        theoryJa:
+          "この経路は $U_b|0> = |b>$ を満たす $|b>$ のオラクル $U_b$ を 2 か所で使います。ひとつは初期状態 $|0,b>$、すなわちウォークが $|0, A^{-1}b>$ まで運ぶことを目指す $H_0$ の固有値 0 の固有状態の準備であり、もうひとつは $U_b$ と $U_b^\\dagger$ から組み立てる射影子 $Q_b = I_N - |b><b|$ で、これは各ステップの $H(s)$ のブロック符号化の内部に置かれます。[[assumption: オラクルへのアクセスは順方向・逆方向・制御付きの利用を含む、という標準的な前提を置きます。制御化が必要なのは $Q_b$ の内部の反転だけで、$U_b$ そのものを制御化する必要はありません。]]",
+      },
+      "matrix-function": {
+        theory:
+          "What this slot supplies here is not an approximation of $1/x$ but a filter on the walk's eigenphases, applied as a linear combination of $\\ell$ walk steps with weights $w_j$ prepared symmetrically before and after, giving $\\tilde{w}(\\phi) = \\sum_j w_j e^{ij\\phi} / \\sum_j w_j$. [[approximation: the ideal filter is replaced by the Dolph–Chebyshev window $\\tilde{w}(\\phi) = T_\\ell(\\beta\\cos\\phi)$ with $\\beta = \\cosh(\\ell^{-1}\\cosh^{-1}(1/\\varepsilon))$, which minimises the largest leakage, and the error of the filtered state is bounded by $\\max_{k \\in \\perp} \\tilde{w}(\\phi_k)$ over the eigenphases outside the spectrum of interest.]] Setting the width of the peak equal to the gap $1/\\kappa$ gives $\\ell = \\cosh^{-1}(1/\\varepsilon)/\\cosh^{-1}(1/\\cos(1/\\kappa)) \\le \\kappa\\ln(2/\\varepsilon)$, so the cost is $\\ell$ calls to the block-encoded matrix rather than the $2\\ell$ of the singular-value-processing filter, at the price of one extra ancilla qubit. [[assumption: the initial probability of the state on the spectrum of interest is at least $1/2$ — which is what running the preceding walk to a fixed precision is for.]]",
+        theoryJa:
+          "この層がここで供給するのは $1/x$ の近似ではなく、ウォークの固有位相に対するフィルタです。重み $w_j$ を前後対称に用意したうえで $\\ell$ 回のウォークステップの線形結合として適用し、$\\tilde{w}(\\phi) = \\sum_j w_j e^{ij\\phi} / \\sum_j w_j$ を得ます。[[approximation: 理想的なフィルタは Dolph–Chebyshev 窓 $\\tilde{w}(\\phi) = T_\\ell(\\beta\\cos\\phi)$、$\\beta = \\cosh(\\ell^{-1}\\cosh^{-1}(1/\\varepsilon))$ に置き換えられます。これは漏れの最大値を最小にするもので、フィルタ後の状態の誤差は、関心のあるスペクトルの外にある固有位相についての $\\max_{k \\in \\perp} \\tilde{w}(\\phi_k)$ で上から抑えられます。]] ピークの幅をギャップ $1/\\kappa$ に等しく取ると $\\ell = \\cosh^{-1}(1/\\varepsilon)/\\cosh^{-1}(1/\\cos(1/\\kappa)) \\le \\kappa\\ln(2/\\varepsilon)$ となりますので、ブロック符号化された行列への呼び出しは、量子特異値処理によるフィルタの $2\\ell$ 回ではなく $\\ell$ 回で済み、その代わりに補助量子ビットが 1 つ多く必要になります。[[assumption: 初期状態が関心のあるスペクトル上に持つ確率が少なくとも $1/2$ であること。先行するウォークを一定精度まで走らせるのは、これを確保するためです。]]",
+      },
+      "discrete-adiabatic-inversion": {
+        theory:
+          "The eigenpath is $H(s) = (1-f(s))H_0 + f(s)H_1$, whose eigenvalue-zero eigenstate is carried from $|0,b>$ to $|0, A^{-1}b>$, and it is walked with $T$ qubitisation steps, $U_T(s) = \\prod_n W_T(n/T)$, rather than simulated as a continuous evolution. The schedule satisfies $\\dot{f}(s) = d_p \\Delta_0^p(s)$, slowing the walk where the gap is small. [[approximation: $\\Delta_0(s) = 1 - f(s) + f(s)/\\kappa$ stands in for the exact gap — it is a lower bound, written as an equality — and for a general $A$ the relation $\\sqrt{(1-f)^2 + (f/\\kappa)^2} \\ge (1 - f + f/\\kappa)/\\sqrt{2}$ is what lets the same schedule function be kept.]] The discrete adiabatic theorem then bounds the departure from the ideal path as $\\|U_T(s) - U_T^A(s)\\| \\le 5632\\,\\kappa/T + O(\\sqrt{\\kappa}/T)$ for positive-definite Hermitian $A$ and $15307\\,\\kappa/T + O(\\sqrt{\\kappa}/T)$ for general $A$, so a fixed error is reached in $T = O(\\kappa)$ steps. [[assumption: $\\|A\\| = 1$ with $\\|A^{-1}\\| = \\kappa$, and $T \\ge \\kappa$ steps of the walk under the $p = 3/2$ schedule.]]",
+        theoryJa:
+          "固有経路は $H(s) = (1-f(s))H_0 + f(s)H_1$ であり、その固有値 0 の固有状態が $|0,b>$ から $|0, A^{-1}b>$ へ運ばれます。これを連続時間の発展として模擬するのではなく、キュービタイゼーションのウォークを $T$ 歩、$U_T(s) = \\prod_n W_T(n/T)$ としてたどります。スケジュールは $\\dot{f}(s) = d_p \\Delta_0^p(s)$ を満たし、ギャップの小さいところでウォークの変化を遅くします。[[approximation: 厳密なギャップの代わりに $\\Delta_0(s) = 1 - f(s) + f(s)/\\kappa$ を用います。これは下界ですが等号として書かれています。一般の $A$ に対しては $\\sqrt{(1-f)^2 + (f/\\kappa)^2} \\ge (1 - f + f/\\kappa)/\\sqrt{2}$ という関係により、同じスケジュール関数をそのまま使えます。]] 離散断熱定理は理想的な経路からのずれを、正定値エルミートな $A$ では $\\|U_T(s) - U_T^A(s)\\| \\le 5632\\,\\kappa/T + O(\\sqrt{\\kappa}/T)$、一般の $A$ では $15307\\,\\kappa/T + O(\\sqrt{\\kappa}/T)$ と評価しますので、一定の誤差には $T = O(\\kappa)$ 歩で到達します。[[assumption: $\\|A\\| = 1$ かつ $\\|A^{-1}\\| = \\kappa$ であること、および $p = 3/2$ のスケジュールで $T \\ge \\kappa$ 歩のウォークを行うこと。]]",
+      },
+    },
     citations: [
       { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Pedro C. S. Costa, Dong An, Yuval R. Sanders, Yuan Su, Ryan Babbush, Dominic W. Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
       { title: "The discrete adiabatic quantum linear system solver has lower constant factors than the randomized adiabatic solver", authors: "Pedro C. S. Costa, Dong An, Ryan Babbush, Dominic Berry", year: "2023", url: "https://arxiv.org/abs/2312.07690" },
@@ -2232,6 +2382,38 @@ export const LAYER_GRAPH: LayerGraph = {
         "# is nonetheless described as being 1 at a target eigenvalue, and this",
         "# listing leaves that where the record leaves it",
       ].join("\n"),
+    },
+    hops: {
+      // Lin and Tong, arXiv:1910.14596, full PDF. The interesting fact is on the
+      // matrix-function hop and it is why this route carries a `bypasses` of
+      // `success-amplification`: the minimax filtering polynomial is what removes
+      // the need for amplitude amplification, so the skipped layer is a
+      // consequence of the polynomial rather than an independent choice. Stated
+      // at the hop where it happens, per the field's own rule.
+      "block-encode-matrix": {
+        theory:
+          "The sparse-access oracles $O_{A,1}$, $O_{A,2}$ give a $(d, n+2, 0)$-block-encoding of $A$, the oracle $O_B$ gives a $(1,1,0)$-block-encoding of $Q_b = I - |b><b|$, and applying $O_B$, $O_{A,1}$, $O_{A,2}$ twice gives a $(d, n+4, 0)$-block-encoding $U_{H_1}$ of $H_1 = |0><1| \\otimes AQ_b + |1><0| \\otimes Q_bA$. The subnormalisation this hop returns is $\\alpha = d$, and Theorem 3 counts the filter in $O((\\alpha/\\Delta)\\log(1/\\varepsilon))$ applications of the block-encoding — so this $\\alpha$ is where the $d$ in the route's $O(d\\kappa\\log(1/\\varepsilon))$ comes from. [[assumption: $A$ is $d$-sparse with singular values in $[1/\\kappa, 1]$, so $\\kappa$ is an upper bound on the condition number rather than the condition number itself.]] [[assumption: the block-encoding is taken to be exact — Theorem 1' is stated for an $(\\alpha, m, 0)$-block-encoding, and Lin and Tong assume exactness for simplicity.]]",
+        theoryJa:
+          "スパースアクセスのオラクル $O_{A,1}$, $O_{A,2}$ は $A$ の $(d, n+2, 0)$ ブロック符号化を与え、オラクル $O_B$ は $Q_b = I - |b><b|$ の $(1,1,0)$ ブロック符号化を与えます。$O_B$, $O_{A,1}$, $O_{A,2}$ を 2 度ずつ適用すると、$H_1 = |0><1| \\otimes AQ_b + |1><0| \\otimes Q_bA$ の $(d, n+4, 0)$ ブロック符号化 $U_{H_1}$ が得られます。この層が返す副正規化係数は $\\alpha = d$ であり、定理 3 はフィルタをブロック符号化の $O((\\alpha/\\Delta)\\log(1/\\varepsilon))$ 回の適用として数えますので、この経路の $O(d\\kappa\\log(1/\\varepsilon))$ に現れる $d$ はここから来ます。[[assumption: $A$ は $d$ 疎行列で、その特異値は $[1/\\kappa, 1]$ に含まれます。したがって $\\kappa$ は条件数そのものではなく、その上界です。]] [[assumption: ブロック符号化は厳密であるとみなされています。定理 1' は $(\\alpha, m, 0)$ ブロック符号化について述べられており、Lin と Tong は簡単のため厳密性を仮定しています。]]",
+      },
+      "state-preparation": {
+        theory:
+          "The filter is applied to a state $|\\psi> = \\gamma|\\psi_\\lambda> + |\\perp>$ with $<\\psi_\\lambda|\\perp> = 0$, supplied by an oracle $O_\\psi$; the block-encoding of $P_\\lambda$ succeeds with probability at least $\\gamma^2$, so oracle and filter are run on average $O(1/\\gamma^2)$ times, and amplitude amplification would only reduce that to $O(1/\\gamma)$. For the linear system the right-hand side enters through $O_B|0> = |b>$: the Zeno route starts from $|x(0)> = |b>$ itself, and the AQC route runs AQC(p) to constant precision to obtain $|\\tilde x_0> = \\gamma_0|0>|x> + \\gamma_1|1>|b> + |\\perp>$. [[assumption: the starting state has non-trivial overlap with the target eigenstate, $\\gamma > 0$ — and in the QLSP application $|\\gamma_0| = \\Omega(1)$ is guaranteed, which is what turns the $O(1/\\gamma^2)$ repetition into a constant and makes amplitude amplification unnecessary.]]",
+        theoryJa:
+          "フィルタが適用されるのは、オラクル $O_\\psi$ が用意する状態 $|\\psi> = \\gamma|\\psi_\\lambda> + |\\perp>$（$<\\psi_\\lambda|\\perp> = 0$）です。$P_\\lambda$ のブロック符号化が成功する確率は少なくとも $\\gamma^2$ ですので、オラクルとフィルタは平均して $O(1/\\gamma^2)$ 回実行することになり、振幅増幅を使ってもこれが $O(1/\\gamma)$ に下がるだけです。線形方程式では右辺は $O_B|0> = |b>$ から入ります。ゼノ効果による経路は $|x(0)> = |b>$ そのものから出発し、断熱計算による経路は AQC(p) を一定精度まで走らせて $|\\tilde x_0> = \\gamma_0|0>|x> + \\gamma_1|1>|b> + |\\perp>$ を得ます。[[assumption: 初期状態は目標固有状態と無視できない重なり $\\gamma > 0$ を持つ必要があります。QLSP への応用では $|\\gamma_0| = \\Omega(1)$ が保証されますので、$O(1/\\gamma^2)$ の繰り返しは定数となり、振幅増幅は不要になります。]]",
+      },
+      "matrix-function": {
+        theory:
+          "The filter is the degree-$2\\ell$ polynomial $R_\\ell(x;\\Delta) = T_\\ell(-1 + 2(x^2-\\Delta^2)/(1-\\Delta^2)) / T_\\ell(-1 + 2(-\\Delta^2)/(1-\\Delta^2))$, and Lemma 2(i) shows it solves the minimax problem $\\min_{p \\in P_{2\\ell}[x], p(0)=1} \\max_{x \\in D_\\Delta} |p(x)|$ on $D_\\Delta = [-1,-\\Delta] \\cup [\\Delta,1]$ — the best compression ratio of the unwanted components among all polynomials of degree up to $2\\ell$. [[approximation: the spectral projector $P_\\lambda$ is replaced by $R_\\ell$ applied to $\\tilde H = (H - \\lambda I)/(\\alpha+|\\lambda|)$, with $||R_\\ell(\\tilde H;\\tilde\\Delta) - P_\\lambda|| \\le 2e^{-\\sqrt{2}\\ell\\tilde\\Delta}$ by Lemma 2(ii).]] Because $R_\\ell$ is even and $|R_\\ell(x;\\tilde\\Delta)| \\le 1$ on $[-1,1]$, Theorem 1' implements it by quantum signal processing, and Theorem 3 gives a $(1, m+2, \\varepsilon)$-block-encoding of $P_\\lambda$ from $O((\\alpha/\\Delta)\\log(1/\\varepsilon))$ applications of controlled-$U_H$ and $U_H^\\dagger$. [[assumption: $\\lambda$ is known exactly and separated from the rest of the spectrum by a gap at least $\\Delta$, so that $0$ is separated from the rest of the spectrum of $\\tilde H$ by $\\tilde\\Delta = \\Delta/(\\alpha+|\\lambda|) \\ge \\Delta/(2\\alpha)$.]]",
+        theoryJa:
+          "フィルタは次数 $2\\ell$ の多項式 $R_\\ell(x;\\Delta) = T_\\ell(-1 + 2(x^2-\\Delta^2)/(1-\\Delta^2)) / T_\\ell(-1 + 2(-\\Delta^2)/(1-\\Delta^2))$ です。補題 2(i) によれば、これは $D_\\Delta = [-1,-\\Delta] \\cup [\\Delta,1]$ 上のミニマックス問題 $\\min_{p \\in P_{2\\ell}[x], p(0)=1} \\max_{x \\in D_\\Delta} |p(x)|$ を解きます。すなわち次数 $2\\ell$ 以下のすべての多項式のなかで、不要な成分を最もよく圧縮します。[[approximation: スペクトル射影子 $P_\\lambda$ は、$\\tilde H = (H - \\lambda I)/(\\alpha+|\\lambda|)$ に $R_\\ell$ を適用したもので置き換えられます。補題 2(ii) により、その誤差は $||R_\\ell(\\tilde H;\\tilde\\Delta) - P_\\lambda|| \\le 2e^{-\\sqrt{2}\\ell\\tilde\\Delta}$ です。]] $R_\\ell$ は偶関数で $[-1,1]$ 上 $|R_\\ell(x;\\tilde\\Delta)| \\le 1$ を満たしますので、定理 1' により量子信号処理で実装できます。定理 3 は、制御付き $U_H$ と $U_H^\\dagger$ の $O((\\alpha/\\Delta)\\log(1/\\varepsilon))$ 回の適用から $P_\\lambda$ の $(1, m+2, \\varepsilon)$ ブロック符号化を与えます。[[assumption: $\\lambda$ は厳密に既知であり、スペクトルの残りから少なくとも $\\Delta$ のギャップで隔てられている必要があります。これにより $\\tilde H$ のスペクトルにおいても $0$ は $\\tilde\\Delta = \\Delta/(\\alpha+|\\lambda|) \\ge \\Delta/(2\\alpha)$ だけ隔てられます。]]",
+      },
+      "eigenstate-filtering-inversion": {
+        theory:
+          "The linear system becomes an eigenvalue problem: the null space of $H_1 = |0><1| \\otimes AQ_b + |1><0| \\otimes Q_bA$, with $Q_b = I - |b><b|$, is spanned by $|0>|x>$ and $|1>|b>$, and the rest of the spectrum is separated from $0$ by a gap $1/\\kappa$. Along the path $H(f) = (1-f)H_0 + fH_1$ with $H_0 = \\sigma_x \\otimes Q_b$ that gap is bounded below by $\\Delta_*(f) = 1 - f + f/\\kappa$, so time-optimal AQC(p) supplies $|\\tilde x_0>$; one application of the filter removes $|\\perp>$, and measuring the first qubit and obtaining $0$ leaves $|0>|x> + O(\\varepsilon)$. [[approximation: AQC(p) is run only to constant precision, which is all $|\\gamma_0| = \\Omega(1)$ requires, so its $O(1/\\varepsilon)$ runtime never enters — and $\\gamma_1$ comes entirely from the error of the time-dependent Hamiltonian simulation, since AQC itself keeps the state orthogonal to $|1>|b>$.]] Because the filter approximates a projector, $||P|| = 1$ and its block-encoding needs subnormalisation only $O(1)$, so the success probability is already $\\Omega(1)$ — whereas a block-encoding of $A^{-1}$ requires subnormalisation at least $\\kappa$, hence worst-case success $\\Omega(\\kappa^{-2})$ and $O(\\kappa)$ rounds of amplitude amplification. [[assumption: a lower bound on the gap along the path, that is an upper bound on $\\kappa$, is known; $A$ is taken Hermitian positive definite here, the indefinite and non-Hermitian cases being handled by matrix dilation.]]",
+        theoryJa:
+          "線形方程式は固有値問題に置き換えられます。$Q_b = I - |b><b|$ とした $H_1 = |0><1| \\otimes AQ_b + |1><0| \\otimes Q_bA$ の零空間は $|0>|x>$ と $|1>|b>$ で張られ、スペクトルの残りは $0$ からギャップ $1/\\kappa$ で隔てられています。$H_0 = \\sigma_x \\otimes Q_b$ とした経路 $H(f) = (1-f)H_0 + fH_1$ に沿って、このギャップは $\\Delta_*(f) = 1 - f + f/\\kappa$ で下から抑えられますので、時間最適な AQC(p) が $|\\tilde x_0>$ を供給します。フィルタを 1 回かけると $|\\perp>$ が除かれ、第 1 量子ビットを測定して $0$ が得られれば $|0>|x> + O(\\varepsilon)$ が残ります。[[approximation: AQC(p) は一定精度までしか走らせません。$|\\gamma_0| = \\Omega(1)$ にはそれで十分ですので、AQC 自身の $O(1/\\varepsilon)$ の実行時間は表に出ません。また $\\gamma_1$ は時間依存ハミルトニアンシミュレーションの誤差のみに由来します。AQC 自体は状態を $|1>|b>$ と直交に保つからです。]] フィルタが近似するのは射影子ですので $||P|| = 1$ であり、そのブロック符号化に必要な副正規化係数は $O(1)$ にとどまります。したがって成功確率はそれだけで $\\Omega(1)$ です。これに対し $A^{-1}$ のブロック符号化は少なくとも $\\kappa$ の副正規化係数を要し、最悪の場合の成功確率は $\\Omega(\\kappa^{-2})$、振幅増幅は $O(\\kappa)$ 回必要になります。[[assumption: 経路に沿ったギャップの下界、すなわち $\\kappa$ の上界が既知である必要があります。ここでは $A$ をエルミートかつ正定値としており、不定値の場合や非エルミートの場合は行列の拡大によって扱われます。]]",
+      },
     },
     citations: [
       { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin Lin, Yu Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
