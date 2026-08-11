@@ -102,9 +102,7 @@ async def test_sse_metrics_track_client_disconnect_and_release_active_stream(mon
         return [], "running"
 
     monkeypatch.setattr(runs.runs_repo, "get_run", get_run)
-    monkeypatch.setattr(
-        runs.runs_repo, "list_run_events_with_status", list_run_events_with_status
-    )
+    monkeypatch.setattr(runs.runs_repo, "list_run_events_with_status", list_run_events_with_status)
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(session_factory=_SessionFactory())),
         is_disconnected=is_disconnected,
@@ -140,9 +138,7 @@ async def test_sse_active_metric_is_released_when_stream_is_cancelled(monkeypatc
         return False
 
     monkeypatch.setattr(runs.runs_repo, "get_run", get_run)
-    monkeypatch.setattr(
-        runs.runs_repo, "list_run_events_with_status", list_run_events_with_status
-    )
+    monkeypatch.setattr(runs.runs_repo, "list_run_events_with_status", list_run_events_with_status)
     request = SimpleNamespace(
         app=SimpleNamespace(state=SimpleNamespace(session_factory=_SessionFactory())),
         is_disconnected=is_disconnected,
