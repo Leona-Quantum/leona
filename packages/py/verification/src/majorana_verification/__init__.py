@@ -76,8 +76,10 @@ from majorana_verification.native import (
     NATIVE_STATEVECTOR_MAX_QUBITS,
     entangled_state_property,
     native_counts_vs_ideal,
+    native_result_consistency,
     sampled_counts_comparison,
     statevector_from_evidence,
+    supports_native_result_consistency,
 )
 from majorana_verification.policy import EvidenceSufficiency, assess_evidence_sufficiency
 from majorana_verification.statevector import (
@@ -125,6 +127,8 @@ __all__ = [
     "VerificationOutcome",
     "extract_counts",
     "native_counts_vs_ideal",
+    "native_result_consistency",
+    "supports_native_result_consistency",
     "entangled_state_property",
     "sampled_counts_comparison",
     "statevector_from_evidence",

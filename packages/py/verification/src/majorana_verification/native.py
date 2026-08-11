@@ -38,6 +38,7 @@ from __future__ import annotations
 import hashlib
 import json
 import math
+import re
 from typing import Any
 
 import numpy as np
@@ -60,6 +61,42 @@ NATIVE_STATEVECTOR_MAX_QUBITS = 12
 ENTANGLED_STATE_TOLERANCE = 1e-9
 
 _ENDIANNESS = ("q0_lsb", "q0_msb")
+
+_BLOCH_RESULT_KEYS = frozenset({"bloch_x", "bloch_y", "bloch_z", "probability_one"})
+_REDUCED_STATE_RESULT_KEYS = frozenset(
+    {
+        "excited_population",
+        "coherence_0_1_real",
+        "coherence_0_1_imag",
+        "state_purity",
+    }
+)
+_FINITE_QPE_RESULT_KEYS = frozenset(
+    {
+        "dominant_integer",
+        "finite_phase_estimate",
+        "dominant_probability",
+        "phase_probabilities",
+    }
+)
+_RESULT_CONSISTENCY_TOLERANCE = 1e-9
+
+
+def supports_native_result_consistency(expected_output_keys: list[str]) -> bool:
+    """Whether RESULT names a profile that needs trusted native state evidence."""
+
+    expected_keys = set(expected_output_keys)
+    if any(
+        profile.issubset(expected_keys)
+        for profile in (
+            _BLOCH_RESULT_KEYS,
+            _REDUCED_STATE_RESULT_KEYS,
+            _FINITE_QPE_RESULT_KEYS,
+        )
+    ):
+        return True
+    trotter_keys = [key for key in expected_keys if re.fullmatch(r"trotter_z[0-9]+", key)]
+    return len(trotter_keys) == 1 and "exact_trotter_fidelity" in expected_keys
 
 
 class NoNativeMeasurementEvidence(ValueError):
@@ -121,6 +158,221 @@ def statevector_from_evidence(payload: Any) -> tuple[Statevector, dict[int, int]
             raise ValueError(f"measurement_map entry {key!r}: {value!r} is out of range")
         mapping[clbit] = value
     return Statevector(vector), mapping, qubits, clbits
+
+
+def _finite_reported_number(result: dict[str, Any], key: str) -> float:
+    value = result.get(key)
+    if isinstance(value, bool) or not isinstance(value, int | float):
+        raise ValueError(f"{key}: finite numeric RESULT value is missing")
+    number = float(value)
+    if not math.isfinite(number):
+        raise ValueError(f"{key}: RESULT value is not finite")
+    return number
+
+
+def _q0_reduced_density(vector: np.ndarray) -> np.ndarray:
+    """Trace out every qubit except canonical q0 from a q0-LSB vector."""
+
+    q0_zero = vector[0::2]
+    q0_one = vector[1::2]
+    return np.asarray(
+        [
+            [np.vdot(q0_zero, q0_zero), np.vdot(q0_one, q0_zero)],
+            [np.vdot(q0_zero, q0_one), np.vdot(q0_one, q0_one)],
+        ],
+        dtype=np.complex128,
+    )
+
+
+def _compare_result_scalars(
+    result: dict[str, Any], expected: dict[str, float], *, tolerance: float
+) -> tuple[dict[str, dict[str, float]], list[str]]:
+    scores: dict[str, dict[str, float]] = {}
+    disagreements: list[str] = []
+    for key, exact in expected.items():
+        reported = _finite_reported_number(result, key)
+        error = abs(reported - exact)
+        allowance = tolerance * max(1.0, abs(exact))
+        scores[key] = {
+            "native": exact,
+            "reported": reported,
+            "absolute_error": error,
+            "tolerance": allowance,
+        }
+        if error > allowance:
+            disagreements.append(
+                f"{key}: reported {reported:.12g} differs from FINAL_CIRCUIT "
+                f"native evidence {exact:.12g} by {error:.6g}"
+            )
+    return scores, disagreements
+
+
+def native_result_consistency(
+    payload: Any,
+    result: dict[str, Any],
+    expected_output_keys: list[str],
+    *,
+    tolerance: float = _RESULT_CONSISTENCY_TOLERANCE,
+) -> EquivalenceReport | None:
+    """Cross-check conventional RESULT profiles against FINAL_CIRCUIT evidence.
+
+    This is deliberately a consistency check, not a request oracle: it proves that
+    scalars the program reports were actually derived using the same canonical qubit
+    and register ordering as the bound circuit. The profiles are exact, narrow names
+    used by the public generation contract; unrelated user-defined names are left
+    unsupported instead of guessed.
+    """
+
+    expected_keys = set(expected_output_keys)
+    profile: str | None = None
+    scores: dict[str, Any]
+    disagreements: list[str]
+    statevector, _mapping, qubits, _clbits = statevector_from_evidence(payload)
+    vector = np.asarray(statevector.data, dtype=np.complex128)
+
+    if _BLOCH_RESULT_KEYS.issubset(expected_keys):
+        if qubits != 1:
+            raise ValueError("the unindexed Bloch RESULT profile requires exactly one qubit")
+        density = _q0_reduced_density(vector)
+        coherence = density[0, 1]
+        expected = {
+            "bloch_x": float(2.0 * coherence.real),
+            "bloch_y": float(-2.0 * coherence.imag),
+            "bloch_z": float((density[0, 0] - density[1, 1]).real),
+            "probability_one": float(density[1, 1].real),
+        }
+        profile = "one_qubit_bloch"
+        scores, disagreements = _compare_result_scalars(result, expected, tolerance=tolerance)
+    elif _REDUCED_STATE_RESULT_KEYS.issubset(expected_keys):
+        density = _q0_reduced_density(vector)
+        coherence = density[0, 1]
+        expected = {
+            "excited_population": float(density[1, 1].real),
+            "coherence_0_1_real": float(coherence.real),
+            "coherence_0_1_imag": float(coherence.imag),
+            "state_purity": float(np.trace(density @ density).real),
+        }
+        profile = "q0_reduced_density"
+        scores, disagreements = _compare_result_scalars(result, expected, tolerance=tolerance)
+    elif _FINITE_QPE_RESULT_KEYS.issubset(expected_keys):
+        reported_distribution = result.get("phase_probabilities")
+        if (
+            not isinstance(reported_distribution, list)
+            or not reported_distribution
+            or any(
+                isinstance(value, bool)
+                or not isinstance(value, int | float)
+                or not math.isfinite(float(value))
+                for value in reported_distribution
+            )
+        ):
+            raise ValueError("phase_probabilities must be a non-empty finite numeric list")
+        register_size = len(reported_distribution)
+        if register_size & (register_size - 1):
+            raise ValueError("phase_probabilities length must be a power of two")
+        counting_qubits = register_size.bit_length() - 1
+        if not 1 <= counting_qubits < qubits:
+            raise ValueError(
+                "phase_probabilities width must leave at least one target qubit in FINAL_CIRCUIT"
+            )
+        probabilities = np.zeros(register_size, dtype=float)
+        mask = register_size - 1
+        for basis_index, probability in enumerate(np.abs(vector) ** 2):
+            probabilities[basis_index & mask] += float(probability)
+        probabilities /= float(np.sum(probabilities))
+        # With tied maxima every tied bin is an equally valid dominant outcome;
+        # holding the candidate to np.argmax's lowest-index preference would fail
+        # a correct RESULT forever on a coin flip. Accept the bin the candidate
+        # reports when it is tied for the maximum and require the phase estimate
+        # to match THAT bin; a reported bin that is not tied is scored against
+        # the canonical argmax so the disagreement names the true peak.
+        max_probability = float(np.max(probabilities))
+        tied_bins = {
+            index
+            for index, probability in enumerate(probabilities)
+            if max_probability - float(probability) <= tolerance
+        }
+        reported_dominant = result.get("dominant_integer")
+        chosen_bin = int(np.argmax(probabilities))
+        if (
+            not isinstance(reported_dominant, bool)
+            and isinstance(reported_dominant, int | float)
+            and math.isfinite(float(reported_dominant))
+            and float(reported_dominant).is_integer()
+            and int(reported_dominant) in tied_bins
+        ):
+            chosen_bin = int(reported_dominant)
+        scalar_scores, disagreements = _compare_result_scalars(
+            result,
+            {
+                "dominant_integer": float(chosen_bin),
+                "finite_phase_estimate": float(chosen_bin / register_size),
+                "dominant_probability": float(probabilities[chosen_bin]),
+            },
+            tolerance=tolerance,
+        )
+        distribution_errors = [
+            abs(float(reported) - float(native))
+            for reported, native in zip(reported_distribution, probabilities, strict=True)
+        ]
+        max_distribution_error = max(distribution_errors, default=0.0)
+        if max_distribution_error > tolerance:
+            worst = int(np.argmax(distribution_errors))
+            disagreements.append(
+                "phase_probabilities: displayed integer order disagrees with the "
+                f"low-order counting register at index {worst} "
+                f"({float(reported_distribution[worst]):.12g} vs {probabilities[worst]:.12g})"
+            )
+        scores = scalar_scores | {
+            "phase_probabilities": {
+                "max_absolute_error": max_distribution_error,
+                "tolerance": tolerance,
+                "entries": register_size,
+            }
+        }
+        profile = "finite_qpe_low_order_register"
+    else:
+        trotter_keys = sorted(key for key in expected_keys if re.fullmatch(r"trotter_z[0-9]+", key))
+        if len(trotter_keys) != 1 or "exact_trotter_fidelity" not in expected_keys:
+            return None
+        key = trotter_keys[0]
+        qubit = int(key.removeprefix("trotter_z"))
+        if qubit >= qubits:
+            raise ValueError(f"{key} names q{qubit}, outside the {qubits}-qubit circuit")
+        probabilities = np.abs(vector) ** 2
+        native_z = float(
+            sum(
+                probability if ((basis_index >> qubit) & 1) == 0 else -probability
+                for basis_index, probability in enumerate(probabilities)
+            )
+        )
+        profile = "trotter_final_state_observable"
+        scores, disagreements = _compare_result_scalars(
+            result, {key: native_z}, tolerance=tolerance
+        )
+
+    protocol = {
+        "name": "native_result_consistency",
+        "profile": profile,
+        "tolerance": tolerance,
+        "tolerance_source": "fixed_floating_point_policy",
+        "endianness": "normalized_q0_lsb",
+        "result_qubit_convention": "unindexed single-qubit scalars refer to q0",
+    }
+    fingerprint_payload = {
+        "protocol": protocol,
+        "statevector": [[float(value.real), float(value.imag)] for value in vector],
+        "reported": {key: result.get(key) for key in sorted(expected_keys)},
+    }
+    return EquivalenceReport(
+        fingerprint_type="exact_unitary",
+        protocol=protocol,
+        fingerprint_hash=hashlib.sha256(
+            json.dumps(fingerprint_payload, sort_keys=True).encode()
+        ).hexdigest(),
+        passed=not disagreements,
+        scores=scores | ({"disagreements": disagreements} if disagreements else {}),
+    )
 
 
 def entangled_state_property(
