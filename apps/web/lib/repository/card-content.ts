@@ -191,6 +191,26 @@ export interface CardRepetition {
 export interface CardIngredient {
   readonly link: CardLink;
   readonly repetition: CardRepetition | null;
+  /**
+   * The mathematics of this ingredient **in this route**, when a source states
+   * it — the same `hops` note a chain hop carries, read with the same key.
+   *
+   * **Added because the argument `IngredientList`'s doc comment already makes
+   * for `repeats` is the same argument, and it was only half applied.** That
+   * comment records the surprise: *"7 of the 10 records key a `feeds` step
+   * rather than a hop… A count drawn only on the chain would have left every one
+   * of them exactly where it was — nowhere."* `hops` is keyed exactly as
+   * `repeats` is, `validateLayerGraph` accepts a feed step as a key, and the
+   * chain was the only reader — so a note written about an ingredient rendered
+   * on no surface at all.
+   *
+   * It is not a hypothetical: `hhl-qpe-inversion` delegates all three of its
+   * steps as ingredients, so its route draws one segment and every sentence
+   * about preparing $|b\rangle$ $O(\kappa)$ times, and about the conditional
+   * evolution that is rebuilt with it, has nowhere else to go. That is the hop
+   * where the route's dominant cost lives.
+   */
+  readonly theory: CardValue<readonly TheorySpan[]>;
 }
 
 export interface CardContract {
@@ -772,7 +792,15 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
   const ingredients = route.feeds
     .map((id) => {
       const link = linkFor(graph, id, ja);
-      return link === null ? null : { link, repetition: repetitionFor(method, id, ja) };
+      return link === null
+        ? null
+        : {
+            link,
+            repetition: repetitionFor(method, id, ja),
+            // Same key, same reader as the chain's — see `CardIngredient.theory`
+            // for why a feed's note had no surface before this.
+            ...hopNoteOf(method, id, ja),
+          };
     })
     .filter((item): item is CardIngredient => item !== null);
 

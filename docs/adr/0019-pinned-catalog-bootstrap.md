@@ -32,6 +32,11 @@
 > written and each is marked inline with the current count.
 
 > **Amendment, 2026-08-12 — the sync is now run by the deploy pipeline, not by hand.**
+> *(Status, same day: the step is BUILT, reviewed and merged, and **parked** behind the
+> repository variable `CATALOG_SYNC_ENABLED` after its first production run refused — two live
+> accounts hold the catalog reviewer grant, which is a production data decision and owner-only.
+> The refusal is the guard working, not a defect: it named both candidates and wrote nothing.
+> Everything below describes the mechanism as merged; only its invocation waits.)*
 > This narrows one sentence in the status note above ("production publication is still an
 > owner-run, approval-gated CLI action") and nothing else. `deploy.yml`'s final step,
 > `sync the published catalog`, runs `catalog_admin sync-bootstrap --attested-by-standing`
