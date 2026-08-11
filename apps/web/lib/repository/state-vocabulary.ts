@@ -173,6 +173,30 @@ export const STATE_VOCABULARY: StateVocabulary = {
         "エルミート演算子であって、個別に指数化できる項の和、疎アクセスオラクル、あるいはブロックエンコーディングとして到達できるもの。シミュレーション計算量を表示する際の基準となるノルムパラメータも伴います。",
       specializes: ["matrix-access"],
     },
+    {
+      id: "ground-state-problem",
+      label: "Hamiltonian whose ground state is wanted",
+      labelJa: "基底状態を求めたいハミルトニアン",
+      summary:
+        "A Hamiltonian you can query, plus the declaration that the quantity being asked for is its lowest eigenvalue. The second half is not decoration: the same operator can be handed to a simulator to evolve a state under it, and evolving it and minimising it are different questions with different answers.",
+      summaryJa:
+        "問い合わせ可能なハミルトニアンに加えて、求められている量がその最小固有値であるという宣言。この後半は飾りではありません。同じ演算子はシミュレータに渡して状態をその下で発展させることもでき、発展させることと最小化することは、答えの異なる別々の問いだからです。",
+      // **Narrower than `hamiltonian-access` on purpose, and the reason is a bug this
+      // state exists to prevent rather than a distinction for its own sake.** With the
+      // variational region entered from `hamiltonian-access`, `statePathsBetween` found
+      // a route out of `nonlinear-ode-solve`: recast the problem to a Hamiltonian, then
+      // hand that Hamiltonian to the variational region and read an observable off it.
+      // Every hop type-checks and the whole path is nonsense — a variational eigensolver
+      // returns a lowest eigenvalue, not the solution of an initial-value problem at
+      // time T — so the figure for `nonlinear-ode-solve` grew a branch no literature
+      // contains and blew through its own size ceiling drawing it.
+      //
+      // The path-finder is not wrong to chain what fits; the vocabulary was wrong to say
+      // these two objects were the same one. This is the owner's session-96 point read in
+      // the other direction: the value of finding paths the literature has not taken
+      // depends entirely on the states being honest about what they are.
+      specializes: ["hamiltonian-access"],
+    },
 
     // --- polynomials and phases ---------------------------------------------
     {
@@ -251,6 +275,25 @@ export const STATE_VOCABULARY: StateVocabulary = {
         "Arbitrary rotation angles, arbitrary two-qubit gates, and any qubit able to talk to any other. No machine runs this. Everything between here and hardware is the business of closing that gap and counting what it costs.",
       summaryJa:
         "任意の回転角、任意の二量子ビットゲート、そして任意の量子ビット同士が相互作用できる前提の回路。これを実行できる実機はありません。ここからハードウェアまでの一切は、その隔たりを埋め、代償を数える作業です。",
+    },
+    {
+      id: "parameterized-circuit",
+      label: "Parameterised circuit family",
+      labelJa: "パラメータ付き回路族",
+      summary:
+        "Not one circuit but a family of them, indexed by free real parameters — a fixed gate structure with the angles left open. Nothing can be run and nothing can be costed until the angles are chosen, so this is deliberately a different object from the circuit it becomes: the structure decides which states are reachable at all, and the choice of angles only decides which of those you land on.",
+      summaryJa:
+        "ひとつの回路ではなく、自由な実パラメータで添字づけられた回路の族です。ゲートの構造は固定され、角度だけが未定のまま残されています。角度が決まるまでは実行も費用の見積もりもできないため、これは確定した回路とは意図的に別の対象として扱います。到達しうる状態の範囲を決めるのは構造であり、角度の選択はそのうちのどれに着地するかを決めるにすぎません。",
+      // Its own state rather than `abstract-circuit` reused, and the reason is
+      // the one the file's header rule protects: a family and a member are not
+      // the same object, and the whole variational region turns on the
+      // difference. `ansatz-construction` returns the family — nothing about it
+      // has a gate count yet, because the angles are open — and
+      // `parameter-optimization` is precisely the process that turns a family
+      // into a member. If both ends were `abstract-circuit` the optimisation
+      // hop would read as a process that changes nothing, which is the shape
+      // `validateLayerGraph` rejects outright on a capability contract.
+      specializes: ["abstract-circuit"],
     },
     {
       id: "evolution-circuit",

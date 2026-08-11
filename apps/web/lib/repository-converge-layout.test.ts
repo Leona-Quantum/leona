@@ -882,7 +882,10 @@ test("every shape is a link", () => {
 
 test("every capability draws a figure — not just the two that converge", () => {
   const capabilities = LAYER_GRAPH.nodes.filter(isCapability);
-  assert.equal(capabilities.length, 19, "the graph's slot count changed; update these figures");
+  // 22 since W21 — the variational region added `ground-state-energy`,
+  // `ansatz-construction` and `parameter-optimization`, and this assertion is
+  // exactly the tripwire that made their three new figures get looked at.
+  assert.equal(capabilities.length, 22, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -901,9 +904,14 @@ test("every capability draws a figure — not just the two that converge", () =>
   // atomic, so it fans them rather than drawing a chain.
   // 17 → 18 in session 119: `linear-ode-solve`'s chain was refuted by three
   // of its own methods' `bypasses`, so it fans (`drawsAsStateChain`).
+  // 18 → 21 in W21: the variational region's three slots all fan. Worth stating
+  // why none of them draws a chain, since `ground-state-energy` looks like it
+  // should — its three fillers walk different interiors (VQE has three hops,
+  // variational imaginary time has two, QITE is undecomposed), so there is no
+  // one chain every filler walks, which is exactly the condition for a fan.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 18);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 21);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -916,7 +924,10 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     .filter((focus) => !diagramFor(focus.id).empty)
     .map((focus) => focus.id);
   assert.deepEqual(offered, draws);
-  assert.equal(offered.length, 19);
+  // 22 since W21 — the same three new slots the figure test above pins, and the
+  // point of asserting the length beside the deepEqual is that two empty lists
+  // are also deep-equal.
+  assert.equal(offered.length, 22);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -941,7 +952,9 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     !strippedOffer.includes("time-discretization"),
     "a slot nothing fills is still being offered as a figure",
   );
-  assert.equal(strippedOffer.length, 18);
+  // 22 slots less the one this fixture empties. Written as the arithmetic it is,
+  // so the two numbers cannot drift apart the next time a region is added.
+  assert.equal(strippedOffer.length, offered.length - 1);
   // …and the two lists still agree on that graph, which is the actual contract.
   const strippedDraws = stripped.nodes
     .filter(isCapability)
@@ -1631,9 +1644,13 @@ test("a line that opens into something says so, and a line that does not is not 
   // card's Refinements section rather than as a lane. **The drop is three
   // pictures removed on purpose, not affordance quietly lost**: each of the
   // three still draws on its own page, where the planner unfolds its subject.
-  assert.equal(openable + leaves + 1, 63, "the nineteen figures draw 63 lines between them");
-  assert.equal(openable, 27, "27 of them open into something recorded");
-  assert.equal(leaves, 35, "35 are leaves — nothing finer is recorded for them");
+  // 63 until W21, across nineteen figures. The variational region's three slots
+  // draw eleven more lanes between them — six ansatz families, three ways to a
+  // ground-state energy, two ways through the optimisation slot — and every one
+  // is a method this PR authored from a paper it fetched.
+  assert.equal(openable + leaves + 1, 74, "the twenty-two figures draw 74 lines between them");
+  assert.equal(openable, 33, "33 of them open into something recorded");
+  assert.equal(leaves, 40, "40 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -3515,8 +3532,27 @@ test("a row's runs are order-preserving — the crossing-free precondition, hug 
         const runs = new Set(row.map((lane) => lane.run));
         if (runs.size > 1) hugged += 1;
         if (row.some((lane) => lane.open)) {
+          // **Zero-bow lanes are exempt here too, and until W21 nothing in the
+          // corpus made that visible.** This branch counted every run in the
+          // row while the branch below already skipped zero-bow lanes — so the
+          // relaxation's second boundary, stated in this test's own opening
+          // paragraph ("zero-bow lanes are free: a zero-bow lane IS its base
+          // whatever its run"), was implemented in one of the two branches and
+          // not the other. The hazard this branch guards is a SIBLING'S TENDON
+          // sweeping through an opened name that has left its own belly for the
+          // rim of its band. A zero-bow lane has no tendon: it is a straight
+          // line at its base, and its run cannot sweep through anything.
+          //
+          // The variational region is the first structure to build such a row —
+          // `adapt-ansatz` opened beside its own-stretch lane, bow 0.0, run 16
+          // against the bracket's 59.2 — so this was latent rather than wrong
+          // for the corpus it was written against. Narrowed to exactly the
+          // lanes the paragraph already exempts, and no further: an opened row
+          // with two DIFFERENT non-zero bows still fails, which is the case the
+          // 0-crossings bar caught.
+          const bowed = new Set(row.filter((lane) => lane.bow !== 0).map((lane) => lane.run));
           assert.equal(
-            runs.size,
+            bowed.size,
             1,
             `${focus.id} row ${key}: a row with an opened member must keep the shared run — ` +
               `an opened name sits at the rim of its band, outside what the bow-order argument protects`,
@@ -4314,6 +4350,18 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
       "Three readouts that each consume a prepared state and do their own work on it. The interior is "
       + "one hop long, so there is no second hop to tell them apart by; what tells them apart is their "
       + "own cost, which is on the method and not in the drawing.",
+  },
+  {
+    slot: "ansatz-construction",
+    methods: ["adapt-ansatz", "qubit-adapt-ansatz", "qcc-ansatz"],
+    why:
+      "The three adaptive constructions, and they draw one interior because they genuinely share it: "
+      + "each grows the ansatz by measuring how much a candidate operator would move the energy, so "
+      + "each hangs one `observable-estimation` stub and nothing else. What separates them is the POOL "
+      + "the candidates come from — fermionic excitations, qubit operators, entanglers ranked by energy "
+      + "response — and the vocabulary has no state for an operator pool, so there is nothing honest to "
+      + "pin a `via` to. Same row as `check-layer-graph.mjs`'s KNOWN_TWINS, and deliberately worded the "
+      + "same: two gates disagreeing about why one group survives is worse than either gate alone.",
   },
 ];
 
