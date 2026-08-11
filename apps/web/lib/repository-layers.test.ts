@@ -1251,16 +1251,12 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // family in one step, plus the adaptive pair that each hang one `observable-estimation`
   // stub. `qubit-adapt-ansatz` is dropped by the `refines` rule in the test, as designed —
   // a declared refinement is not a hollow twin.
-<<<<<<< HEAD
   // 6 since B5 unit 4: `symmetry-preserving-ansatz` is a fourth fixed family — it
   // constructs its circuit in one step like the other three and has no recorded interior
   // yet. Authored as a leaf ON PURPOSE rather than given a stub it does not have: a
   // method that hangs an ingredient it was not described as needing would be inventing
   // structure to escape this line.
   ["ansatz-construction", 6],
-=======
-  ["ansatz-construction", 5],
->>>>>>> origin/dev
   // **W21-E's region, and this line is the thing a global ceiling could not say.** Six of
   // the seven excited-state methods draw a sibling's picture, in two groups: four take
   // VQE's three hops and differ only in the objective handed to the optimiser, and two
@@ -1281,14 +1277,10 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // one hop, with no second hop to separate them. What separates them is the objective
   // itself, which is not a step this graph draws — the same shape as the readout row
   // above, and the same fix (an objective needs a state before a `via` can pin it).
-<<<<<<< HEAD
   // 3 since B5 unit 4: `natural-gradient-optimization` is a third one-hop filler.
   // The three differ in the objective (`cvar-objective`, `variance-objective`) or in the
   // metric the step is taken against (this one), and neither is a step this graph draws.
   ["parameter-optimization", 3],
-=======
-  ["parameter-optimization", 2],
->>>>>>> origin/dev
 ]);
 
 /**
