@@ -392,8 +392,28 @@ const KNOWN_TWINS = [
   },
   {
     slot: "observable-estimation",
-    methods: ["direct-sampling-readout", "amplitude-estimation-readout", "classical-shadow-readout"],
-    why: "Three readouts that each consume a prepared state and nothing else. The chain is one step long, so there is no second step to tell them apart by; what tells them apart is their own cost, which is on the method.",
+    methods: [
+      "direct-sampling-readout",
+      "amplitude-estimation-readout",
+      "classical-shadow-readout",
+      "measurement-grouped-readout",
+    ],
+    why: "Four readouts that each consume a prepared state and nothing else. The chain is one step long, so there is no second step to tell them apart by; what tells them apart is their own cost, which is on the method. `measurement-grouped-readout` joined them in B5 unit 3 and is the clearest case of the rule: what it changes is WHICH TERMS share one set of shots — a minimum clique cover over the Hamiltonian's qubit-wise commutativity graph — and a term grouping is not a step, so no chain this graph draws can show it.",
+  },
+  {
+    slot: "excited-state-energy",
+    methods: [
+      "subspace-search-excited-state",
+      "folded-spectrum-excited-state",
+      "penalty-excited-state",
+      "contracted-excited-state",
+    ],
+    why: "Four routes to a state above the ground state that each choose an ansatz, optimise its parameters and estimate an observable — the same three hops VQE takes, which is the point rather than an accident: all four reuse the ground-state machinery unchanged. What separates them is WHICH OBJECTIVE the optimiser is handed: a weighted sum over mutually orthogonal inputs (SSVQE), the variance around a chosen target energy (folded spectrum), the energy plus a term punishing the wrong symmetry sector (penalty), and a contracted multistate objective (MC-VQE). This graph records an objective as its own node only where a paper is devoted to one — `cvar-objective` is exactly that — so three of these four have nothing honest to pin a `via` to; their objective is part of the method's own definition and shares its single source. **The fourth now HAS somewhere to point, and pointing it is deliberately not done yet.** `variance-objective` and `measurement-grouped-readout` were authored in B5 unit 3, and `folded-spectrum-excited-state`'s own paper names both choices — it \"minimizes the energy variance\" and \"employ[s] a Pauli grouping procedure\" — so the `via` pins are written and sourced. They are held back because pinning them changes which interiors the W15 dedup draws, and measured on this graph that takes the excited-state figure from 5797px to 8887px, past its 8000px ceiling. **This row's exit is therefore blocked on figure compaction (lane B3), not on evidence**, and that is a better thing to have written down than a pin that would have to be reverted. Splitting the other three would mean authoring three objective nodes out of the same three papers already cited here, which draws one paper twice instead of recording a distinction the literature makes.",
+  },
+  {
+    slot: "excited-state-energy",
+    methods: ["subspace-expansion-excited-state", "equation-of-motion-excited-state"],
+    why: "Both take the ground state as given, measure a set of matrix elements, and hand a small generalised eigenvalue problem to a classical solver — so both draw one own-hop with the same two ingredients, and they draw it because they genuinely share it. What separates them is which operators the matrix elements run over: a linear expansion around the prepared state for the subspace expansion, excitation operators in the equation-of-motion formalism for qEOM. That is the same shape of gap as the ADAPT/QCC row below — this graph has no vocabulary for an operator set — and it splits the same way, by giving that set a state, which would also give the estimation slot something to narrow.",
   },
   {
     slot: "ansatz-construction",

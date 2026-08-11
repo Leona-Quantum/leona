@@ -44,6 +44,10 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "A normalized state ε-close to y(T)/||y(T)||, a history state over [0,T], or an estimate of an observable of the solution.",
       returnsJa: "y(T)/||y(T)|| に ε-近い正規化された状態、[0,T] 上のヒストリー状態、または解の観測量の推定値。",
     },
+    // Zoo-parity intake: the catalog's `nonlinear-differential-equations` record —
+    // the second of the two regions the map drew with no repository record
+    // pointing at it (see `linear-ode-solve` and scripts/check-zoo-parity.mjs).
+    entries: ["nonlinear-differential-equations"],
     whyALayer: "Every route must first commit to a representation of the nonlinearity, and the available representations — tensor powers, phase-space densities, level sets, homotopy series — differ in which nonlinearities they admit, in whether the truncation provably converges, and in how the answer is read back. This is also the layer at which the hard lower bounds bite, so it is where an advantage claim lives or dies.",
     whyALayerJa: "どの経路も、まず非線形性をどう表現するかを決めなければなりません。テンソル冪、位相空間の分布、レベルセット、ホモトピー級数といった表現は、扱える非線形性、打ち切りの収束が証明されているかどうか、答えをどう読み出すかの点で互いに異なります。厳しい下界が効いてくるのもこの層であり、優位性の主張が成り立つか崩れるかがここで決まります。",
   },
@@ -396,6 +400,12 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "A state proportional to u(T), or a history state, together with separately stated matrix-query and initial-state-query complexity.",
       returnsJa: "u(T) に比例する状態、またはヒストリー状態。あわせて行列クエリ数と初期状態クエリ数を別々に示します。",
     },
+    // Zoo-parity intake: the catalog's `linear-differential-equations` record.
+    // This capability has been drawn since W14 with nothing in the repository
+    // pointing at it, so a reader arriving from the catalog could not reach the
+    // region at all — the parity gap measured from the other side by
+    // `scripts/check-zoo-parity.mjs`.
+    entries: ["linear-differential-equations"],
     whyALayer: "This is the pivot of the cluster. Methods fulfilling it split into two structurally different families: those that assemble one large linear system and call a quantum linear solver, and those that never form a linear system at all, reducing instead to Hamiltonian simulation or to repeated singular value amplification. The two families differ in how many queries they make to the initial-state preparation oracle, and that difference is structural rather than a matter of constants — when the initial state is expensive to prepare, it dominates the end-to-end cost.",
     whyALayerJa: "この層が全体の分岐点です。ここを満たす手法は、構造的に二つの系統に分かれます。ひとつは大きな線形系をまとめて組み立てて量子線形ソルバーを呼ぶもの、もうひとつは線形系をそもそも作らず、ハミルトニアンシミュレーションや特異値増幅の反復に帰着させるものです。両者は初期状態準備オラクルへのクエリ数が定数倍ではなく構造的に異なり、初期状態の準備が高価な場合には、その差が全体の費用を支配します。",
   },
@@ -7073,7 +7083,16 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Fix the gate structure of a circuit family and leave its rotation angles open. What comes back is not a circuit but the set of states the later optimisation is allowed to search — which is why this is a slot of its own and not a paragraph in one method's write-up.",
     summaryJa: "回路族のゲート構造を定め、回転角は未定のまま残します。返るのは回路ではなく、後段の最適化が探索してよい状態の集合です。この工程が独立した層であって、ある方式の説明の一段落ではないのは、このためです。",
     contract: {
-      from: "ground-state-problem",
+      // **`eigenvalue-problem`, not `ground-state-problem`, since the excited-state
+      // region arrived.** The same ansatz families serve both questions — SSVQE and
+      // folded-spectrum reach for UCCSD and hardware-efficient circuits exactly as VQE
+      // does — so a slot reachable only from the ground-state root would have been
+      // unreachable from half of its own region. The alternative was to declare an
+      // excited-state problem a kind of ground-state problem so it inherited this slot,
+      // which is false in the one direction that matters (see `excited-state-problem`).
+      // Nothing widened: `eigenvalue-problem` is still narrower than `hamiltonian-access`,
+      // so the nonsense ODE route W21 §0.1 records is still shut out.
+      from: "eigenvalue-problem",
       to: "parameterized-circuit",
 
       takes: "The Hamiltonian whose ground state is wanted, together with whatever structure is to be respected — particle number, spin, point-group symmetry, a reference determinant — and the connectivity and native gate set of the device the family has to run on.",
@@ -7354,6 +7373,296 @@ export const LAYER_GRAPH: LayerGraph = {
     entries: ["vqe-gradient-based"],
     citations: [
       { title: "Evaluating analytic gradients on quantum hardware", authors: "Maria Schuld, Ville Bergholm, Christian Gogolin, Josh Izaac, Nathan Killoran", year: "2018", url: "https://arxiv.org/abs/1811.11184" },
+    ],
+  },
+
+  // --- the excited-state region (W21-E) -------------------------------------
+  //
+  // Seven records the corpus already held, each with its own primary paper, and
+  // no slot on the map that could reach any of them. W21 §0.2 named three of the
+  // seven and this block authors all seven, because a half-built slot is worse
+  // than an unbuilt one: a reader standing on it would see three ways to answer a
+  // question the literature answers in four distinct ways, with nothing saying
+  // the other four exist.
+  //
+  // ## Why this is not a fifth step of `variational-ground-state`
+  //
+  // It answers a different question. W21 §4 says so and the state vocabulary now
+  // enforces it: `excited-state-problem` is a SIBLING of `ground-state-problem`,
+  // not a kind of it, so a method realising `ground-state-energy` cannot be handed
+  // one of these problems and have the result called an answer. The two share
+  // `eigenvalue-problem` as a parent, which is what lets `ansatz-construction`
+  // serve both without either lying about what it is.
+  //
+  // ## What the region draws that the ground-state one does not
+  //
+  // **Most of these methods need the ground state before they can start**, and
+  // that dependency is drawn rather than described: `ground-state-energy` appears
+  // in their `steps`, does not fit between this slot's two ends, and so is drawn
+  // as an ingredient hanging off the belly (`routeOf`'s feeds). Four of the seven
+  // hang it; SSVQE, folded-spectrum and the penalty route do not, and that
+  // difference in the picture is the honest structural claim about them — SSVQE
+  // reaches the whole low-energy subspace in one optimisation, and the other two
+  // aim the same single search somewhere other than the bottom of the spectrum.
+  //
+  // ## No complexities, for the reason the region above states
+  //
+  // The 2026-07-19 ruling binds every `cost` here too, and every one is absent.
+  // Where a paper states a resource fact — VQD's "at most twice the circuit
+  // depth", folded-spectrum's squared Hamiltonian — it is quoted in `conditions`
+  // as the paper's own claim about its own construction, which is a different
+  // kind of statement from a complexity for solving the problem.
+  {
+    kind: "capability",
+    id: "excited-state-energy",
+    label: "Estimate an excited-state energy",
+    labelJa: "励起状態エネルギーを推定する",
+    shortLabel: "Estimate an excited state",
+    shortLabelJa: "励起状態を推定",
+    summary: "Given a Hamiltonian you can query and a statement of which state above the lowest one is wanted, return an estimate of that state's energy — or of its distance from the ground state, which is the quantity an experiment usually measures. Whether the answer comes back as an absolute energy or as an excitation energy is a property of the method, and the two are not interchangeable.",
+    summaryJa: "問い合わせ可能なハミルトニアンと、最下位より上のどの状態を求めるのかの明示が与えられたとき、その状態のエネルギー、あるいは基底状態からの隔たりを推定して返します。実験が実際に測るのは後者であることが多い量です。答えが絶対エネルギーとして返るのか励起エネルギーとして返るのかは各方式の性質であり、両者は互換ではありません。",
+    contract: {
+      from: "excited-state-problem",
+      to: "observable-value",
+
+      takes: "A Hermitian H reachable as a sum of terms that can be measured separately; a statement of which state is wanted — an index k, a symmetry sector, or a target energy to sit nearest; for most of the methods here, the ground state already solved, and for the deflation route every lower state as well; a target additive error and a shot budget.",
+      takesJa: "個別に測定できる項の和として到達できるエルミート演算子 H。どの状態を求めるのかの明示——添字 k、対称性セクター、あるいは最も近くにあってほしい目標エネルギー。ここに属する方式の多くについては、すでに求まった基底状態。デフレーション系の経路については、それより下のすべての状態。目標加法誤差とショット予算。",
+      returns: "A scalar estimate — of that eigenvalue, or of the gap between it and the ground state — together with the run budget it consumed. Some methods return a whole low-energy subspace at once and others return one state per run, and that difference is a cost, not a convenience.",
+      returnsJa: "スカラー推定値——当該固有値そのもの、あるいは基底状態との差——と、消費した実行回数。方式によっては低エネルギー部分空間をまとめて返し、別の方式は 1 回の実行につき 1 状態を返します。この違いは利便性ではなく代償の違いです。",
+    },
+    whyALayer: "Four families answer this and they do not pay in the same currency, which is why none of them has retired the others. Deflation reuses the ground-state machinery unchanged and adds a term that pushes the search away from the states already found — so it needs those states in hand, in order, and the k-th state costs k runs of the whole loop. Subspace search refuses that ordering: it sends several mutually orthogonal inputs through one circuit and lets unitarity keep the outputs orthogonal, buying the whole low-energy subspace in one optimisation and paying in a wider objective and in inputs that must be prepared orthogonal to begin with. Subspace expansion and the equation-of-motion route do not optimise a second time at all — they take the ground state as given, measure matrix elements between excitation operators, and hand a small generalised eigenvalue problem to a classical solver, which buys excitation energies directly as differences and pays in the number of matrix elements. Folded-spectrum aims the same single search at a chosen energy rather than at the bottom, which is the only way here to reach a state whose index you do not know, and pays in the squared Hamiltonian. Prior states, extra inputs, extra measurements, or a squared operator: a reader standing here is choosing which of those they can afford, and no theorem settles it for them.",
+    whyALayerJa: "この層には四つの系統が答えており、支払う通貨が異なるため、どれも他を退けていません。デフレーションは基底状態のための機構をそのまま再利用し、すでに求まった状態から探索を遠ざける項を加えます。したがってそれらの状態が順番に手元になければならず、第 k 状態にはループ全体の k 回の実行が必要です。部分空間探索はその順序性を拒みます。互いに直交する複数の入力を一つの回路に通し、出力の直交性はユニタリ性に保たせるので、低エネルギー部分空間全体を 1 回の最適化で得られる代わりに、目的関数が広がり、入力をあらかじめ直交させて準備する必要が生じます。部分空間展開と運動方程式による経路は、二度目の最適化をそもそも行いません。基底状態を所与とし、励起演算子のあいだの行列要素を測定して、小さな一般化固有値問題を古典ソルバーに渡します。これは励起エネルギーを差として直接得る代わりに、行列要素の個数を代償とします。折り畳みスペクトル法は、同じ一回の探索を最下部ではなく選んだエネルギーに向けます。添字の分からない状態に到達できるのはここではこの方式だけであり、その代償はハミルトニアンの二乗です。既知の下位状態、追加の入力、追加の測定、二乗した演算子——この層に立つ読者は、そのどれなら支払えるかを選んでいるのであって、定理が代わりに決めてくれるわけではありません。",
+  },
+  {
+    kind: "method",
+    id: "deflation-excited-state",
+    label: "Variational quantum deflation",
+    labelJa: "変分量子デフレーション",
+    shortLabel: "VQD",
+    shortLabelJa: "VQD",
+    summary: "Find the ground state first, then run the same variational search again with a term that punishes overlap with every state already found. Each state is reached by pushing the search off the ones below it, so they have to be found in order and each one costs another pass through the whole loop.",
+    summaryJa: "まず基底状態を求め、次に同じ変分探索を、すでに求まったすべての状態との重なりを罰する項を加えて再び走らせます。各状態は、その下にある状態から探索を押しのけることで到達されるため、下から順に求める必要があり、1 状態ごとにループ全体をもう一度通すことになります。",
+    realizes: "excited-state-energy",
+    conditions: "Higgott et al. put the mechanism in one sentence — \"overlap estimation can be used to deflate eigenstates once they are found, enabling the calculation of excited state energies and their degeneracies\" — and price it against the ground-state run it reuses: an implementation \"requires the same number of qubits as VQE and at most twice the circuit depth\". They also state what survives noise: the method \"is robust to control errors, is compatible with error-mitigation strategies and can be implemented on near-term quantum computers\". The ordering is the binding condition and it is structural rather than a limitation of any implementation: deflation is defined against the states already found, so the k-th needs all k below it, and an error in one of those is inherited by every state above it.",
+    conditionsJa: "Higgott らは仕組みを一文で述べています。「重なりの推定は、固有状態がいったん求まったのちにそれをデフレートするために用いることができ、これにより励起状態エネルギーとその縮退度の計算が可能になる」。そのうえで、再利用する基底状態計算との比較で代償を示しています。実装は「VQE と同じ量子ビット数で済み、回路深さは高々 2 倍である」。雑音のもとで何が保たれるかも述べられています。この方式は「制御誤差に対して頑健であり、誤り軽減の手法と両立し、近い将来の量子計算機上で実装できる」。束縛条件は順序性であり、これは実装上の制約ではなく構造的なものです。デフレーションはすでに求まった状態に対して定義されるので、第 k 状態にはその下の k 個すべてが必要であり、そのうちの一つの誤差はその上のすべての状態に引き継がれます。",
+    // `ground-state-energy` is listed first and is deliberately NOT a stage: it
+    // does not fit between this slot's two ends, so `routeOf` draws it as an
+    // ingredient. That is the correct picture — the ground-state solve is
+    // something this method consumes, not a leg of its own path — and it is the
+    // one visible difference between this route and SSVQE's, which is exactly the
+    // difference the two papers are arguing about.
+    //
+    // What the ingredient supplies is the ground-state SOLUTION, not only the
+    // number: deflation needs the preparation routine that achieved it, since the
+    // overlap term is evaluated against that state. The slot's own contract says
+    // the state "may or may not come back with the number", and the variational
+    // realisation of it does return the routine — `parameter-optimization`
+    // returns exactly that. A method that had only the eigenvalue could not do
+    // this, and saying so here is cheaper than a reader working it out.
+    steps: ["ground-state-energy", "ansatz-construction", "parameter-optimization", "observable-estimation"],
+    entries: ["vqe-vqd"],
+    citations: [
+      { title: "Variational Quantum Computation of Excited States", authors: "Oscar Higgott, Daochen Wang, Stephen Brierley", year: "2018", url: "https://arxiv.org/abs/1805.08138" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "subspace-search-excited-state",
+    // "variational eigensolver", not "variational quantum eigensolver", and the
+    // word dropped is load-bearing rather than stylistic. With the full phrase
+    // here, `variational-ground-state`'s own label — "Variational quantum
+    // eigensolver", which is what Peruzzo et al. called it — names THIS node as
+    // well as itself, and the composite-name rule fails the graph for it: a
+    // label that names another node's concept is ambiguous on a canvas where
+    // both are drawn. The base method keeps the literature's phrase; the
+    // specialisations here are named for what specialises them, which is also
+    // how the other three in this slot read.
+    label: "Subspace-search variational eigensolver",
+    labelJa: "部分空間探索変分量子固有値ソルバー",
+    shortLabel: "SSVQE",
+    shortLabelJa: "SSVQE",
+    summary: "Send several mutually orthogonal input states through one parameterised circuit and minimise their energies together. A unitary keeps orthogonal inputs orthogonal, so the whole low-energy subspace comes out of a single optimisation — no earlier state to deflate, and no ancilla to test overlaps with.",
+    summaryJa: "互いに直交する複数の入力状態を一つのパラメータ付き回路に通し、それらのエネルギーをまとめて最小化します。ユニタリは直交する入力を直交したまま保つので、低エネルギー部分空間全体が 1 回の最適化から得られます。デフレートすべき先行状態も、重なりを調べるための補助量子ビットも要りません。",
+    realizes: "excited-state-energy",
+    conditions: "Nakanishi et al. state the construction and what it buys: the algorithm \"searches a low energy subspace by supplying orthogonal input states to the variational ansatz and relies on the unitarity of transformations to ensure the orthogonality of output states\", and \"the k-th excited state is obtained as the highest energy state in the low energy subspace\". The saving they claim is against the other near-term proposals rather than against classical methods: it \"consists only of two parameter optimization procedures and does not employ any ancilla qubits. The disuse of the ancilla qubits is a great improvement from the existing proposals for excited states, which have utilized the swap test\". A generalisation obtains \"all excited states up to the k-th by only a single optimization procedure\". Evidence is numerical — \"from numerical simulations, we verify the proposed algorithms\" — with no hardware run reported.",
+    conditionsJa: "Nakanishi らは構成と、それによって得られるものを述べています。このアルゴリズムは「変分アンザッツに直交する入力状態を与えることで低エネルギー部分空間を探索し、出力状態の直交性は変換のユニタリ性によって保証される」ものであり、「第 k 励起状態は、その低エネルギー部分空間の中で最もエネルギーの高い状態として得られる」。主張されている節約は、古典手法に対してではなく他の近未来向け提案に対するものです。この方式は「二度のパラメータ最適化のみからなり、補助量子ビットを一切用いない。補助量子ビットを使わないことは、swap テストを利用してきた既存の励起状態向け提案に対する大きな改善である」。一般化した版は「ただ一度の最適化で第 k 励起状態までのすべての励起状態」を得ます。根拠は数値的であり——「数値シミュレーションにより、提案アルゴリズムを検証する」——ハードウェア実行の報告はありません。",
+    // No `ground-state-energy` ingredient, and its absence is the claim: this
+    // route does not need a state found before it starts. That is the whole
+    // argument of the paper against the deflation route, and here it is a
+    // difference a reader can see in the figure rather than one they have to read
+    // two cards to find.
+    steps: ["ansatz-construction", "parameter-optimization", "observable-estimation"],
+    repeats: {
+      "observable-estimation": {
+        count: "Once per input state in the subspace, per optimiser iteration. The paper's construction is a search over a subspace spanned by several orthogonal inputs, so the objective is a function of all of their energies and one evaluation of it is one energy estimate for each — the price of not needing the lower states in advance. The number of inputs is k+1 for the k-th excited state; nothing bounds the iteration count, for the same reason nothing bounds VQE's.",
+        countJa: "部分空間の入力状態ごとに一度、最適化器の反復ごとに。この論文の構成は、互いに直交する複数の入力が張る部分空間上の探索なので、目的関数はそれらすべてのエネルギーの関数であり、その 1 回の評価は入力ごとに 1 回のエネルギー推定を要します。これが、下位の状態を事前に必要としないことの代償です。入力の個数は第 k 励起状態について k+1 であり、反復回数に上界がないのは VQE と同じ理由によります。",
+        closure: "measured",
+        note: "Stated as what the construction forces rather than as a figure the abstract quotes: the abstract gives the orthogonal-inputs construction and the two-optimisation framing, and one estimate per input per iteration follows from it. Recorded here because it is the reason this route costs more per turn than the deflation route it competes with, which is otherwise invisible on a map that draws both as one loop.",
+        noteJa: "要旨が数値として挙げている量ではなく、構成から必然的に従う事柄として記しています。要旨が与えているのは直交入力による構成と「二度の最適化」という枠組みであり、反復あたり入力ごとに 1 回の推定という帰結はそこから導かれます。これを記録するのは、競合するデフレーション経路に比べて 1 周あたりの代償が大きい理由がまさにこれであり、両者を同じ一つのループとして描く地図の上では、そうしなければ見えないからです。",
+        mark: "×inputs",
+        markJa: "×入力数",
+      },
+    },
+    entries: ["vqe-ssvqe"],
+    citations: [
+      { title: "Subspace-search variational quantum eigensolver for excited states", authors: "Ken M Nakanishi, Kosuke Mitarai, Keisuke Fujii", year: "2018", url: "https://arxiv.org/abs/1810.09434" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "subspace-expansion-excited-state",
+    label: "Quantum subspace expansion",
+    labelJa: "量子部分空間展開",
+    shortLabel: "Subspace expansion",
+    shortLabelJa: "部分空間展開",
+    summary: "Stop optimising and start measuring: take the state the ground-state run already produced, measure matrix elements in a small space of operators applied to it, and let a classical solver diagonalise the little matrix that results. The extra accuracy is bought with classical work and more measurements, not with more coherence.",
+    summaryJa: "最適化をやめて測定に移ります。基底状態計算がすでに用意した状態を取り、それに演算子を作用させて張られる小さな空間の中で行列要素を測定し、得られた小さな行列の対角化は古典ソルバーに任せます。精度の向上は、コヒーレンスではなく古典計算と追加の測定によって購われます。",
+    realizes: "excited-state-energy",
+    conditions: "McClean et al. state the shape of the guarantee rather than a bound: variational approaches \"fit in a more general hierarchy of measurement and classical computation that allows one to obtain increasingly accurate solutions with additional classical resources\", and they \"demonstrate numerically on a sample electronic system that this method both allows for the accurate determination of excited electronic states as well as reduces the impact of decoherence, without using any additional quantum coherence time or formal error correction codes\". The decoherence claim is separate and is argued from an \"exactly solvable channel model of variational state preparation\". What the abstract does NOT give is the mechanism at the level a reader would need to implement it — which operators span the expansion, and which matrix elements have to be measured — and neither is invented here; both sit in the body of the paper, and the honest summary of the abstract is the trade it names, not a construction it does not state.",
+    conditionsJa: "McClean らは、限界の値ではなく保証の形を述べています。変分的な手法は「測定と古典計算からなるより一般的な階層構造の中に位置づけられ、古典計算資源を追加することで解の精度を漸進的に高めることができる」。そして「ある電子系を例として、この方法が励起電子状態を正確に決定できると同時に、追加の量子コヒーレンス時間も形式的な誤り訂正符号も用いずにデコヒーレンスの影響を低減することを、数値的に示す」。デコヒーレンスについての主張はこれとは別で、「変分的な状態準備の厳密に解ける通信路モデル」から論じられています。要旨が与えていないのは、実装に必要な水準での機構——展開を張る演算子はどれか、どの行列要素を測るのか——であり、ここではそれを補うことをしません。いずれも論文本体にあり、要旨について誠実に言えるのは、そこで名指しされている取引であって、そこに書かれていない構成ではありません。",
+    // Two ingredients and no stages: the ground-state solve and the estimation
+    // are both things this route consumes, and the hop from the problem to the
+    // answer is the method's own — building the subspace matrices and handing
+    // them to a classical eigensolver, which is not a slot anything else on this
+    // map fills. `routeOf` derives that from the steps rather than being told.
+    steps: ["ground-state-energy", "observable-estimation"],
+    entries: ["vqe-quantum-subspace-expansion"],
+    citations: [
+      { title: "Hybrid Quantum-Classical Hierarchy for Mitigation of Decoherence and Determination of Excited States", authors: "Jarrod R. McClean, Mollie E. Schwartz, Jonathan Carter, Wibe A. de Jong", year: "2016", url: "https://arxiv.org/abs/1603.05681" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "equation-of-motion-excited-state",
+    label: "Quantum equation of motion",
+    labelJa: "量子運動方程式法",
+    shortLabel: "qEOM",
+    shortLabelJa: "qEOM",
+    summary: "Ask for the gaps directly rather than for two energies to subtract. Measure the matrix elements the classical equation-of-motion formalism needs between excitation operators on the ground state, and solve its generalised eigenvalue problem classically; what comes back is an excitation energy, which is the quantity a spectrum is made of.",
+    summaryJa: "二つのエネルギーを求めて引き算するのではなく、差そのものを求めます。古典的な運動方程式の形式が必要とする、基底状態上の励起演算子のあいだの行列要素を測定し、その一般化固有値問題を古典的に解きます。返るのは励起エネルギーであり、スペクトルを構成しているのはまさにこの量です。",
+    realizes: "excited-state-energy",
+    conditions: "Ollitrault et al. name the gap they are filling — \"there is currently a lack of such algorithms for correlated molecular systems that is amenable to near-term, noisy hardware\" — and propose \"an extension of the well-established classical equation of motion approach to a quantum algorithm for the calculation of molecular excitation energies on noisy quantum computers\". This is the one route in this slot whose abstract reports a device run rather than a simulation: they \"demonstrate the efficiency of this approach in the calculation of the excitation energies of the LiH molecule on an IBM Quantum computer\". The abstract states no cost comparison against the other excited-state routes, and none is supplied here on its behalf.",
+    conditionsJa: "Ollitrault らは、埋めようとしている欠落を名指ししています。「相関のある分子系に対して、近未来の雑音の多いハードウェアで実行可能なそのようなアルゴリズムは、現時点で不足している」。そのうえで「確立された古典的な運動方程式の手法を、雑音のある量子計算機上で分子の励起エネルギーを計算する量子アルゴリズムへ拡張するもの」を提案しています。この層の中で、要旨がシミュレーションではなく実機での実行を報告しているのはこの経路だけです。彼らは「LiH 分子の励起エネルギーの計算において、この手法の有効性を IBM Quantum の計算機上で実証」しています。要旨は他の励起状態向け経路との計算量比較を述べておらず、ここでも代わりに補うことはしません。",
+    // The same two ingredients as the subspace expansion above, and the same
+    // absence of stages, because the two routes really do have the same shape:
+    // one ground-state solve, a set of matrix elements, a classical generalised
+    // eigenproblem. They are counted as twins by the hollow-twins census for
+    // exactly that reason, declared there rather than hidden — what separates
+    // them is which operators the matrix elements run over, and this graph has
+    // no vocabulary for that yet.
+    steps: ["ground-state-energy", "observable-estimation"],
+    entries: ["vqe-qeom"],
+    citations: [
+      { title: "Quantum equation of motion for computing molecular excitation energies on a noisy quantum processor", authors: "Pauline J Ollitrault, Abhinav Kandala, Chun-Fu Chen, Panagiotis Kl Barkoutsos, Antonio Mezzacapo, Marco Pistoia, Sarah Sheldon, Stefan Woerner, Jay Gambetta, Ivano Tavernelli", year: "2019", url: "https://arxiv.org/abs/1910.12890" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "folded-spectrum-excited-state",
+    label: "Folded-spectrum variational eigensolver",
+    labelJa: "折り畳みスペクトル変分固有値ソルバー",
+    shortLabel: "Folded spectrum",
+    shortLabelJa: "折り畳みスペクトル",
+    summary: "Point the same search somewhere other than the bottom. Minimising the variance around a chosen energy makes every eigenstate a minimum and the one nearest that energy the reachable one — so a state can be found without knowing its index, and the bill arrives as a squared Hamiltonian with far more terms to measure.",
+    summaryJa: "同じ探索を最下部ではない場所に向けます。選んだエネルギーのまわりで分散を最小化すると、どの固有状態も極小となり、そのエネルギーに最も近いものが到達先になります。したがって添字を知らなくても状態を求められますが、その請求書はハミルトニアンの二乗という形で、測るべき項の激増として届きます。",
+    realizes: "excited-state-energy",
+    conditions: "Cadi Tazi and Thom state what it buys and what it costs in the same breath: the method \"provides the possibility of directly computing excited states around a selected target energy, using the same ansatz as for the ground state calculation\", and, \"inspired by the variance-based methods from the Quantum Monte Carlo literature\", it \"minimizes the energy variance, thus requiring a computationally expensive squared Hamiltonian\". The squared operator is the binding cost and they treat it as one: \"we alleviate this potentially poor scaling by employing a Pauli grouping procedure, identifying sets of commuting Pauli strings that can be evaluated simultaneously\". The target energy is an input, not an output — a state is reached because it is near a number the user chose. Results are \"all electronic excited states with chemical accuracy on ideal quantum simulators\" for H2 and LiH; no device run is reported.",
+    conditionsJa: "Cadi Tazi と Thom は、得られるものと代償を一息で述べています。この方法は「基底状態計算と同じアンザッツを用いて、選ばれた目標エネルギーの近傍の励起状態を直接計算する可能性を与える」ものであり、「量子モンテカルロ文献の分散にもとづく手法に着想を得て」「エネルギー分散を最小化するため、計算量的に高価なハミルトニアンの二乗を必要とする」。この二乗した演算子こそ律速であり、彼ら自身それを律速として扱っています。「同時に評価できる可換な Pauli 文字列の集合を特定する Pauli グルーピングの手続きを用いることで、この悪化しうるスケーリングを緩和する」。目標エネルギーは出力ではなく入力です。ある状態に到達するのは、それが利用者の選んだ数値の近くにあるからです。結果は H2 と LiH について「理想的な量子シミュレータ上で、化学的精度ですべての電子励起状態」を得たというもので、実機での実行の報告はありません。",
+    steps: ["ansatz-construction", "parameter-optimization", "observable-estimation"],
+    // **Both pins are the paper's own words, not a guess at what it must have
+    // meant.** It "minimizes the energy variance", which is the objective
+    // `variance-objective` is; and it "alleviate[s] this potentially poor
+    // scaling by employing a Pauli grouping procedure, identifying sets of
+    // commuting Pauli strings that can be evaluated simultaneously", which is
+    // the readout `measurement-grouped-readout` is. Pinning them is also what
+    // takes this route out of the four-way twin group it was declared into when
+    // neither node existed — the exit condition written into that row, met.
+    entries: ["vqe-folded-spectrum"],
+    citations: [
+      { title: "Folded Spectrum VQE : A quantum computing method for the calculation of molecular excited states", authors: "Lila Cadi Tazi, Alex J.W. Thom", year: "2023", url: "https://arxiv.org/abs/2305.04783" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "penalty-excited-state",
+    label: "Penalty-constrained variational eigensolver",
+    labelJa: "ペナルティ拘束つき変分固有値ソルバー",
+    shortLabel: "Penalty terms",
+    shortLabelJa: "ペナルティ項",
+    summary: "Add a term to the objective that punishes the trial state for leaving the symmetry sector you asked for, and the ordinary ground-state search returns that sector's lowest state — an excited state of the whole Hamiltonian whenever the sector is not the one the ground state lives in. Which penalty is used matters: one common form is proved not to work.",
+    summaryJa: "求めた対称性セクターから試行状態が外れることを罰する項を目的関数に加えると、通常の基底状態探索がそのセクターの最低状態を返します。そのセクターが基底状態の属するものでない限り、それはハミルトニアン全体の励起状態です。どのペナルティを使うかは重要です。よく使われる形の一つは、機能しないことが証明されています。",
+    realizes: "excited-state-energy",
+    conditions: "Kuroiwa and Nakagawa analyse the two penalty forms already in use and separate them: one \"works properly in that eigenstates obtained by the VQE with the penalty term reside in the desired symmetry sector\", and they \"further give a convenient formula to determine the magnitude of the penalty term, which may lead to the faster convergence of the VQE\". The other is not a weaker option but a wrong one — they \"prove that the other type of penalty terms does not work for obtaining the target state with the desired symmetry in a rigorous sense and even gives completely wrong results in some cases\". Two conditions follow. The target symmetry sector has to be known in advance, since it is what the penalty is written against; and this route reaches a symmetry-resolved spectrum rather than the k-th state as such, so it answers \"the lowest state with these quantum numbers\" and not \"the third state overall\". Their own framing is that the work \"lay[s] the theoretical foundation for the use of the VQE with the penalty terms\", validated by numerical simulation.",
+    conditionsJa: "Kuroiwa と Nakagawa は、すでに使われている二種類のペナルティ項を分析し、両者を分けています。一方は「ペナルティ項つきの VQE によって得られる固有状態が、求める対称性セクターの中に収まるという意味で、正しく機能する」ものであり、さらに彼らは「ペナルティ項の大きさを決める簡便な公式を与えており、これは VQE のより速い収束につながりうる」としています。もう一方は、劣った選択肢なのではなく誤った選択肢です。彼らは「もう一方の型のペナルティ項が、厳密な意味において、求める対称性をもつ目標状態を得るために機能しないこと、さらには場合によっては完全に誤った結果を与えることを証明」しています。ここから二つの条件が従います。目標とする対称性セクターは事前に分かっていなければなりません。ペナルティはそれに対して書かれるからです。またこの経路が到達するのは対称性で分解されたスペクトルであって、第 k 状態そのものではありません。したがって答えるのは「これらの量子数をもつ最低状態」であって「全体で三番目の状態」ではありません。彼ら自身の位置づけでは、この仕事は「ペナルティ項つき VQE の利用に理論的基礎を与える」ものであり、数値シミュレーションによって検証されています。",
+    steps: ["ansatz-construction", "parameter-optimization", "observable-estimation"],
+    entries: ["vqe-penalty-excited-state"],
+    citations: [
+      { title: "Penalty methods for variational quantum eigensolver", authors: "Kohdai Kuroiwa, Yuya O. Nakagawa", year: "2020", url: "https://arxiv.org/abs/2010.13951" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "contracted-excited-state",
+    label: "Multistate contracted variational eigensolver",
+    labelJa: "多状態縮約変分固有値ソルバー",
+    shortLabel: "MC-VQE",
+    shortLabelJa: "MC-VQE",
+    summary: "Optimise one circuit for several states at once and read off the transitions between them — both the energy of each transition and the oscillator strength that says how strongly light drives it. The answer is a spectrum with intensities, which is what an absorption experiment actually produces.",
+    summaryJa: "一つの回路を複数の状態について同時に最適化し、それらのあいだの遷移を読み出します。各遷移のエネルギーと、光がその遷移をどれだけ強く駆動するかを表す振動子強度の双方が得られます。答えは強度を伴うスペクトルであり、吸収実験が実際に生み出すのはまさにそれです。",
+    realizes: "excited-state-energy",
+    conditions: "Parrish et al. describe the extension by what it returns: MC-VQE \"allows for the efficient computation of the transition energies between the ground state and several low-lying excited states of a molecule, as well as the oscillator strengths associated with these transitions\". The oscillator strengths are the part no other route in this slot claims, and they are what turns a list of energies into a spectrum that can be compared with an experiment. Evidence is a simulation at a size worth stating: they \"numerically simulate MC-VQE by computing the absorption spectrum of an ab initio exciton model of an 18-chromophore light-harvesting complex from purple photosynthetic bacteria\". The abstract quantifies no circuit count, measurement count or scaling, and \"efficient\" is its word for the approach rather than a bound anyone proved here.",
+    conditionsJa: "Parrish らは、この拡張を返す量によって説明しています。MC-VQE は「分子の基底状態と複数の低励起状態とのあいだの遷移エネルギー、およびそれらの遷移に伴う振動子強度を効率的に計算することを可能にする」。振動子強度はこの層の他のどの経路も主張していない部分であり、エネルギーの一覧を実験と比較できるスペクトルに変えるのはこの量です。根拠となるのはシミュレーションですが、その規模は述べる価値があります。彼らは「紅色光合成細菌の 18 個の発色団からなる集光複合体の第一原理励起子モデルについて、吸収スペクトルを計算することで MC-VQE を数値的にシミュレート」しています。要旨は回路数も測定回数もスケーリングも定量しておらず、「効率的」はこの手法についての彼らの言葉であって、ここで誰かが証明した限界ではありません。",
+    steps: ["ansatz-construction", "parameter-optimization", "observable-estimation"],
+    entries: ["vqe-mc-vqe"],
+    citations: [
+      { title: "Quantum Computation of Electronic Transitions using a Variational Quantum Eigensolver", authors: "Robert M. Parrish, Edward G. Hohenstein, Peter L. McMahon, Todd J. Martinez", year: "2019", url: "https://arxiv.org/abs/1901.01234" },
+    ],
+  },
+
+  // --- the optimiser, ansatz and readout records W21-B sourced (B5 unit 3) ---
+  //
+  // Six records that each had their own primary paper and an obvious slot, and
+  // no node. Authored from the abstracts, fetched this session. Every `cost` is
+  // absent for the reason the region's header gives.
+  //
+  // One of these discharges a worklist item rather than adding to it:
+  // `variance-objective` is the node `folded-spectrum-excited-state` was waiting
+  // for, so that route now pins `parameter-optimization` with `via` and leaves
+  // the four-way twin group it was declared into.
+  {
+    kind: "method",
+    id: "variance-objective",
+    label: "Minimise the energy variance",
+    labelJa: "エネルギー分散を最小化する",
+    shortLabel: "Variance objective",
+    shortLabelJa: "分散を最小化",
+    summary: "Minimise how much the energy fluctuates rather than the energy itself. Any eigenstate has zero variance, so the objective's own value tells you whether you have arrived — which the energy never does, since a low number is only low relative to a minimum nobody knows.",
+    summaryJa: "エネルギーそのものではなく、エネルギーのゆらぎの大きさを最小化します。どの固有状態でも分散はゼロなので、目的関数の値そのものが到達したかどうかを教えてくれます。エネルギーはそれを教えてくれません。低い値は、誰も知らない最小値に対して低いというだけだからです。",
+    realizes: "parameter-optimization",
+    conditions: "Zhang et al. name the property the objective is chosen for: variance-VQE \"can be viewed as an self-verifying eigensolver for arbitrary eigenstate by designing, since an eigenstate for a Hamiltonian should have zero energy variance\". Two consequences they state and this slot cares about. It is not selective — the variance is zero at EVERY eigenstate, so on its own it does not say which one was reached, and they find \"optimization of a combination of energy and variance may be more efficient to find low-energy excited states than those of minimizing energy or variance alone\". And it is expensive in the way any variance is, since it needs the square of the Hamiltonian; their answer is to stop evaluating all of it — \"the optimization can be boosted with stochastic gradient descent by Hamiltonian sampling, which uses only a few terms of the Hamiltonian and thus significantly reduces the quantum resource for evaluating variance and its gradients\".",
+    conditionsJa: "Zhang らは、この目的関数が選ばれる理由となる性質を名指ししています。分散 VQE は「設計上、任意の固有状態に対する自己検証型の固有値ソルバーと見なせる。ハミルトニアンの固有状態であれば、エネルギー分散はゼロになるはずだからである」。彼らが述べている帰結のうち、この層に関わるものが二つあります。第一に、この目的関数は選択的ではありません。分散はどの固有状態でもゼロなので、それだけではどの状態に到達したのかを言えません。実際、「エネルギーと分散を組み合わせて最適化するほうが、エネルギーだけ、あるいは分散だけを最小化するよりも、低エネルギーの励起状態を求めるうえで効率的でありうる」と報告されています。第二に、分散である以上ハミルトニアンの二乗を要し、その分だけ高価です。彼らの答えは、その全体を評価するのをやめることです。「ハミルトニアンのサンプリングによる確率的勾配降下法によって最適化を加速でき、これはハミルトニアンのごく少数の項しか使わないため、分散とその勾配の評価に要する量子資源を大幅に削減する」。",
+    steps: [],
+    entries: ["vqe-variance-objective"],
+    citations: [
+      { title: "Variational quantum eigensolvers by variance minimization", authors: "Dan-Bo Zhang, Zhan-Hao Yuan, Tao Yin", year: "2020", url: "https://arxiv.org/abs/2006.15781" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "measurement-grouped-readout",
+    label: "Measure commuting terms together",
+    labelJa: "可換な項をまとめて測定する",
+    shortLabel: "Grouped measurement",
+    shortLabelJa: "まとめて測定",
+    summary: "A Hamiltonian's terms are measured one group at a time rather than one term at a time. Terms that commute qubit-wise can share a single set of measurements, so the question becomes how few groups the terms can be covered by — a graph problem, and a hard one.",
+    summaryJa: "ハミルトニアンの項を 1 項ずつではなく、1 グループずつ測定します。量子ビットごとに可換な項は 1 組の測定を共有できるので、問いは「項をいくつのグループで覆えるか」に変わります。これはグラフの問題であり、しかも難しい問題です。",
+    realizes: "observable-estimation",
+    conditions: "Verteletskyi et al. state the constraint that creates the problem — \"current hardware can perform only projective single-qubit measurements\", while \"the number of terms in the Hamiltonian grows as $O(N^4)$ with the size of the system\" — and then name the problem exactly: \"qubit-wise commutativity between the Hamiltonian terms can be expressed as a graph and the problem of the optimal grouping is equivalent of finding a minimum clique cover (MCC) for the Hamiltonian graph\". Two honest limits come with it. The optimum is not available — \"the MCC problem is NP-hard but there exist several polynomial heuristic algorithms to solve it approximately\" — and the saving quoted is measured rather than proved: \"on average, grouping qubit-wise commuting terms reduced the number of operators to measure three times compared to the total number of terms in the considered Hamiltonians\", on a set of molecular electronic Hamiltonians.",
+    conditionsJa: "Verteletskyi らは、この問題を生む制約を述べています。「現行のハードウェアは射影的な単一量子ビット測定しか行えない」一方で、「ハミルトニアンの項数は系の大きさ $N$ に対して $O(N^4)$ で増える」。そのうえで問題を正確に同定します。「ハミルトニアンの項どうしの量子ビットごとの可換性はグラフとして表現でき、最適なグループ分けの問題は、そのハミルトニアングラフに対する最小クリーク被覆（MCC）を求める問題と等価である」。これには誠実な限界が二つ伴います。最適解は手に入りません。「MCC 問題は NP 困難であるが、それを近似的に解く多項式時間のヒューリスティックがいくつか存在する」。そして示された節約は証明ではなく実測です。「平均して、量子ビットごとに可換な項をまとめることで、測定すべき演算子の数は、対象としたハミルトニアンの全項数に比べて 3 分の 1 になった」。",
+    steps: ["state-preparation"],
+    entries: ["vqe-measurement-grouping"],
+    citations: [
+      { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
     ],
   },
   ],

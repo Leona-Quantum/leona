@@ -396,7 +396,12 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // added 14: `variational-ground-state` draws three, `variational-imaginary-time` two, and the
   // adaptive and gradient methods one apiece for the `observable-estimation` stub their sources
   // say they hang. Updated deliberately, which is what the paragraph above asks for.
-  assert.equal(hops, 105, `${hops} hops, not 105`);
+  // **122 since W21-E.** The excited-state region added 17: the four routes that reuse
+  // VQE's three hops draw three apiece, the deflation route draws those three plus the
+  // `ground-state-energy` ingredient it hangs, and the subspace-expansion and
+  // equation-of-motion routes draw their own stretch beside two ingredients each.
+  // 124 since B5 unit 3: the two new leaves draw one hop each.
+  assert.equal(hops, 124, `${hops} hops, not 124`);
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
   // authored hop is what proves the parse, the spans, the legend and both locales against
@@ -1203,7 +1208,12 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // is the honest starting state of a new region and not a defect in it. The trailing
   // count moved by one: `variational-ground-state` ends on `observable-estimation`, so
   // its blank follows a named step rather than standing alone.
-  assert.equal(withOwn.length, 66);
+  // 68 since W21-E: the subspace-expansion and equation-of-motion routes each close
+  // the whole stretch themselves — they take the ground state as an ingredient and do
+  // their own work with it — while the other five excited-state routes end on
+  // `observable-estimation` and so have no own stretch, exactly as VQE does not.
+  // 70 since B5 unit 3: the two new leaves each close their own stretch.
+  assert.equal(withOwn.length, 70);
   assert.equal(trailing.length, 14);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1258,7 +1268,8 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 57 until session 120 — the KvN route lost its stretch to the W14 wiring.
   // 66 since W21: the ten methods of the variational region each have one, for the reason
   // recorded on the stretch census above.
-  assert.equal(built, 66);
+  // 68 since W21-E, for the two routes named on the stretch census above.
+  assert.equal(built, 70);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);

@@ -12,6 +12,7 @@ import { ALGORITHM_ENTRIES } from "./repository/entries-algorithms";
 import { STATE_OPERATOR_ENTRIES } from "./repository/entries-states-operators";
 import { STATE_OPERATOR_ENTRIES_2 } from "./repository/entries-states-operators-2";
 import { LITERATURE_EXPANSION_ENTRIES } from "./repository/entries-literature-expansion";
+import { ZOO_PARITY_ENTRIES } from "./repository/entries-zoo-parity";
 import type {
   PublicRepositoryCodeVariant,
   PublicRepositoryEntry,
@@ -182,6 +183,7 @@ const ALL_RAW_ENTRIES: PublicRepositoryEntry[] = [
   ...STATE_OPERATOR_ENTRIES,
   ...STATE_OPERATOR_ENTRIES_2,
   ...LITERATURE_EXPANSION_ENTRIES,
+  ...ZOO_PARITY_ENTRIES,
 ];
 
 export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIES.map((raw) => {
