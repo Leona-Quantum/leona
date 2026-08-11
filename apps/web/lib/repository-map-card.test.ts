@@ -776,9 +776,24 @@ test("the first pseudocode is on the map, and it is the sentences its own record
   );
   assert.equal(node.repeats, undefined, "the step this loop bound was keyed to is back");
   assert.ok(node.conditions?.includes("T/h"), "the loop bound moved");
-  // Prose is absent and that is deliberate — nobody has written up a run. The owner's
-  // "populate on demand" only works if the easy half can ship without the hard half.
-  assert.equal(text, null);
+  // **The half-filled shape, and it MOVED rather than being deleted.** The point this
+  // assertion has always made is that a card can hold pseudocode with no prose — the
+  // owner's "populate on demand" only works if the easy half ships without the hard
+  // half. It was pinned here because `backward-euler` was the only populated `example`
+  // in the graph; as of 2026-08-12 this record carries prose too (a negative account:
+  // Dong, Li and Xue's numerics are diagonal Padé at order nine and this method is the
+  // $(0,1)$ approximant they set aside two sections earlier).
+  //
+  // So the subject moves to a record still in that shape rather than the guarantee being
+  // dropped — a guard whose subject is gone is a guard that has stopped guarding, which
+  // is the same rule the paragraph above applied when `repeats` was removed. If the day
+  // comes that NO method is half-filled, this fails and somebody decides deliberately
+  // whether that shape still needs proving.
+  assert.ok(text !== null && text.length > 0, "backward-euler's example prose went missing");
+  const halfFilled = cardFor(input, "chebyshev-lcu-inversion");
+  assert.ok(halfFilled?.kind === "method" && halfFilled.example.held);
+  assert.ok(halfFilled.example.value.pseudocode !== null, "the half-filled subject lost its listing");
+  assert.equal(halfFilled.example.value.text, null);
   // Pseudocode is not localised: its identifiers are the record's own symbols, and a
   // translated listing is a second one that drifts from the first.
   const ja = cardFor({ ...input, locale: "ja" }, "backward-euler");

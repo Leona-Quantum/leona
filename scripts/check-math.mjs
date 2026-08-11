@@ -133,6 +133,29 @@ function check(where, value) {
       );
       continue;
     }
+    // **`\\varepsilon` is not `\varepsilon`, and it COMPILES**, which is why this
+    // needs its own arm rather than being left to KaTeX. Inside `$…$`, `\\` is a
+    // line break: `$\\varepsilon$` renders a newline and then the letters
+    // "varepsilon" as upright text. It throws nothing, the page draws, and the
+    // formula is wrong.
+    //
+    // Found 2026-08-12 by an authoring pass whose source strings came back
+    // escaped for a TypeScript literal *and then* escaped again by the writer —
+    // 2,132 sites in one commit, of which KaTeX rejected exactly **one** (a
+    // `pmatrix` whose `\\begin` stopped being a command). The other 2,131 would
+    // have shipped.
+    //
+    // A line break inside inline mathematics is meaningless anyway, so this
+    // cannot fire on correct content: there is no reason to write `\\` before a
+    // letter in a `$…$`. Row separators inside a `pmatrix` are `\\` followed by
+    // a space or a brace and are left alone.
+    const overEscaped = body.match(/(?<!\\)\\\\(?!\\)[a-zA-Z]+/g);
+    if (overEscaped) {
+      failures.push(
+        `${where}: ${overEscaped[0]} — a doubled backslash before a command. Inside $…$ that is a line break and the command becomes upright text; it compiles and renders wrong. Write ${overEscaped[0].slice(1)}.`,
+      );
+      continue;
+    }
     try {
       katex.renderToString(body, { throwOnError: true, displayMode: false });
     } catch (error) {
