@@ -1094,7 +1094,14 @@ export function ConvergeView({
           // rearranges the figure re-frames the selected item at its new place
           // — "persist showing the highlighted item" is a statement about
           // every layout, not just the one it was selected on.
-          selKey={selection ? `${sel}|${[...open].sort().join(",")}` : null}
+          // **Two keys, not one, and the split is the owner's ask `e6585b`**
+          // ("do not zoom in when clicking to expand/contract. just recenter").
+          // The selection alone says *what the reader chose to look at*; the
+          // open set says *how the figure is arranged around it*. A toggle
+          // moves only the second, and the camera answers that one by
+          // recentering at the reader's own zoom instead of re-fitting.
+          selKey={selection ? sel : null}
+          layoutKey={selection ? [...open].sort().join(",") : null}
           // Still `fill`, and it has to be: `.mj-canvas-viewport--fill` is what
           // binds a plain two-finger wheel to panning and what contains the
           // overscroll that would otherwise navigate the page away mid-pan.
