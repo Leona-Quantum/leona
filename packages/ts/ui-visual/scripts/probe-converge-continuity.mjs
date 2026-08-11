@@ -6,7 +6,9 @@
 //   3. the CSS transitions therefore fire.
 //
 // Since W16 it also asks whether the click *selects*, and whether the camera
-// flies to what it selected — see the section at the foot of this file.
+// flies to what it selected — see the W16 section below. Since W20 it also
+// reads the paper surface back: one click on a paper page opens the paper's
+// pipeline on the map — the last section of this file.
 //
 // Playwright rather than the agent browser pane, for the same reason as the SVG
 // view-transition probe: an agent tab is hidden, and a hidden document behaves
@@ -737,6 +739,370 @@ const CARD = {};
   await cardPage.close();
 }
 out.cardClickOccurrence = CARD;
+
+// ---------------------------------------------------------------------------
+// W20, the paper surface: one click on a paper opens its pipeline on the map
+// ---------------------------------------------------------------------------
+//
+// The plan doc names this case (W20-paper-surface.md §Verification): from the
+// paper page, "see it on the map" is ONE navigation; the branches of the
+// paper's pathway are open in that single document with no `open=` values in
+// the URL (the reveal IS the open set, computed server-side); the cited
+// occurrences carry `--paper-cited`; the paper panel sits over the figure;
+// and the camera frames the entry node. What only a browser can see:
+//
+//   1. the link is a plain cross-document navigation — no interceptor — so
+//      "one navigation" is a claim about the LANDING, not a client trick;
+//   2. the landed URL carries `paper=` and ZERO `open=` params while the
+//      figure draws MORE lanes than the same subject drawn bare: that pair is
+//      the observable form of "the reveal opened branches server-side";
+//   3. JS off serves the same panel, highlight and selection (SSR honesty);
+//   4. the camera fly on arrival is the W16 machinery fed by the reveal's
+//      `sel` — measured on a FRESH page with `rafTicks` beside the verdict,
+//      because this case sits exactly on the visible-but-starved trap: it
+//      begins with the kind of cross-document click that killed rAF above.
+//
+// Discovery walks the papers index by cited-by count (each row prints its
+// number) rather than pinning a slug: which paper opens branches is the
+// corpus's business, and a pinned slug is a fixture drifting from the
+// register. A walk that found only branchless landings says so.
+
+const PAPER = {};
+{
+  const paperPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+
+  await paperPage.goto(`${BASE}/repository/papers`, { waitUntil: "networkidle" });
+  const candidates = await paperPage.evaluate(() => {
+    const rows = [...document.querySelectorAll(".mj-papers-list > li")];
+    return rows
+      .map((li) => {
+        const a = li.querySelector("a.mj-papers-list-title");
+        const count = li.querySelector(".mj-layers-count")?.textContent ?? "";
+        const digits = count.match(/\d+/);
+        return a ? { href: a.getAttribute("href"), citedBy: digits ? Number(digits[0]) : 0 } : null;
+      })
+      .filter(Boolean)
+      .sort((x, y) => y.citedBy - x.citedBy)
+      .map((entry) => entry.href);
+  });
+  PAPER.indexRows = candidates.length;
+
+  /**
+   * Per-canvas readings, scoped: the layers page draws MANY figures, so every
+   * count is taken inside ONE `svg.mj-converge-canvas`. The subject a canvas
+   * draws is read off its own `open=` anchors (every open value is prefixed
+   * with the figure's subject id) — the DOM's answer, deliberately not an
+   * import from `paper-reveal.ts`, which is the thing under test.
+   */
+  const canvasStats = (p) =>
+    p.evaluate(() =>
+      [...document.querySelectorAll("svg.mj-converge-canvas")].map((svg) => {
+        const anchor = svg.querySelector("a[href*='open=']");
+        const value = anchor
+          ? new URL(anchor.getAttribute("href"), location.href).searchParams.getAll("open").at(-1)
+          : null;
+        return {
+          subject: value ? value.split(":")[0] : null,
+          lanes: svg.querySelectorAll(".mj-converge-lane").length,
+          cited: svg.querySelectorAll(".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited")
+            .length,
+          selected: svg.querySelectorAll(
+            ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected",
+          ).length,
+        };
+      }),
+    );
+
+  // The walk: first paper whose page carries the link AND whose landing
+  // opened branches. Bounded, and the bound reports. A branchless landing is
+  // kept as a fallback so the panel/camera/SSR verdicts still run on a real
+  // landing even if no walked paper opens a branch.
+  let chosen = null;
+  let visited = 0;
+  for (const href of candidates.slice(0, 12)) {
+    visited += 1;
+    await paperPage.goto(`${BASE}${href}`, { waitUntil: "networkidle" });
+    const seeMap = await paperPage.evaluate(() => {
+      const a = document.querySelector(".mj-papers-see-map a");
+      return a
+        ? {
+            href: a.getAttribute("href"),
+            shape: document.querySelector(".mj-papers-shape")?.getAttribute("data-shape") ?? null,
+          }
+        : null;
+    });
+    if (!seeMap) continue;
+
+    // The click itself: tag the document, click, and expect it REPLACED —
+    // this link deliberately keeps the cross-document navigation.
+    await paperPage.evaluate(() => {
+      window.__stayed = true;
+    });
+    await paperPage.locator(".mj-papers-see-map a").click();
+    await paperPage.waitForLoadState("networkidle");
+
+    const url = new URL(paperPage.url());
+    const canvases = await canvasStats(paperPage);
+    const paperCanvas = canvases.find((c) => c.cited > 0) ?? null;
+    const landing = {
+      fromPaperPage: href,
+      traceShape: seeMap.shape,
+      url: paperPage.url(),
+      documentReplaced: await paperPage.evaluate(() => window.__stayed !== true),
+      paperParam: url.searchParams.get("paper"),
+      openParamsInUrl: url.searchParams.getAll("open").length,
+      panel: await paperPage.evaluate(() => {
+        const panel = document.querySelector(".mj-paper-panel");
+        return panel
+          ? {
+              present: true,
+              title: panel.querySelector(".mj-paper-panel-title")?.textContent?.trim() || null,
+              count: panel.querySelector(".mj-paper-panel-count")?.textContent?.trim() || null,
+            }
+          : { present: false };
+      }),
+      figure: paperCanvas,
+      figuresDrawn: canvases.length,
+    };
+
+    // The bare control for "the reveal opened branches": the same subject
+    // focused with NO paper. Strictly more lanes under the reveal is the
+    // observable meaning of "`?paper=` landed an open set" — and the bare
+    // figure carrying ZERO `--paper-cited` marks is what keeps the mark a
+    // statement about the paper rather than a decoration the figure always
+    // wears.
+    if (paperCanvas?.subject) {
+      await paperPage.goto(
+        `${BASE}/repository/layers?focus=${encodeURIComponent(paperCanvas.subject)}`,
+        { waitUntil: "networkidle" },
+      );
+      const bare = (await canvasStats(paperPage)).find((c) => c.subject === paperCanvas.subject) ?? null;
+      landing.bareLanes = bare?.lanes ?? null;
+      landing.bareCited = bare?.cited ?? null;
+      landing.branchesOpened = bare !== null && paperCanvas.lanes > bare.lanes;
+    } else {
+      landing.bareLanes = null;
+      landing.bareCited = null;
+      landing.branchesOpened = false;
+    }
+
+    if (chosen === null || (!chosen.branchesOpened && landing.branchesOpened)) chosen = landing;
+    if (landing.branchesOpened) break;
+  }
+  PAPER.paperPagesVisited = visited;
+  PAPER.landing = chosen;
+  PAPER.caseExisted = chosen !== null;
+  PAPER.branchCaseExisted = chosen?.branchesOpened === true;
+  await paperPage.close();
+
+  if (chosen) {
+    const landingUrl = chosen.url;
+
+    // Camera: a FRESH page (rAF alive), direct goto of the landing URL. The
+    // reveal's `sel` arrives as SSR state, so the fly is the mount effect —
+    // there is no click to time against, only the settle discipline.
+    const camPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    await camPage.goto(landingUrl, { waitUntil: "networkidle" });
+    const cam = {};
+    cam.rafTicks = await camPage.evaluate(
+      () =>
+        new Promise((resolve) => {
+          let n = 0;
+          const t0 = performance.now();
+          const step = () => {
+            n += 1;
+            if (performance.now() - t0 < 400) requestAnimationFrame(step);
+            else resolve(n);
+          };
+          requestAnimationFrame(step);
+          setTimeout(() => resolve(n), 1200);
+        }),
+    );
+    cam.cameraObservable = cam.rafTicks > 0;
+    const measure = () =>
+      camPage.evaluate(() => {
+        const root = document.querySelector(".mj-canvas-viewport");
+        const target = document.querySelector(
+          ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected",
+        );
+        if (!root || !target) return { root: root !== null, target: target !== null };
+        const box = root.getBoundingClientRect();
+        const rect = target.getBoundingClientRect();
+        return {
+          root: true,
+          target: true,
+          dx: rect.left + rect.width / 2 - (box.left + box.width / 2),
+          dy: rect.top + rect.height / 2 - (box.top + box.height / 2),
+        };
+      });
+    const first = await measure();
+    cam.selectedClassLanded = first?.target === true;
+    const started = Date.now();
+    let last = null;
+    let stable = 0;
+    let latest = null;
+    while (Date.now() - started < 9000) {
+      latest = await measure();
+      const key = latest && latest.target ? `${Math.round(latest.dx)},${Math.round(latest.dy)}` : null;
+      stable = key !== null && key === last ? stable + 1 : 0;
+      last = key;
+      if (stable >= 3 && Date.now() - started >= 1200) break;
+      await camPage.waitForTimeout(120);
+    }
+    cam.offsetAtLoad = first?.target ? Math.hypot(first.dx, first.dy) : null;
+    cam.offsetSettled = latest?.target ? Math.hypot(latest.dx, latest.dy) : null;
+    // Framed-at-load counts: the claim under test is the FRAME, not the
+    // journey — an SSR camera that lands already centred passes honestly.
+    cam.entryFramed = cam.offsetSettled !== null && cam.offsetSettled <= 2;
+    PAPER.camera = cam;
+    await camPage.close();
+
+    // SSR honesty: JS off serves panel + highlight + selection + open figure.
+    const noJsPaper = await browser.newContext({ javaScriptEnabled: false });
+    const plainPaper = await noJsPaper.newPage();
+    await plainPaper.goto(landingUrl, { waitUntil: "domcontentloaded" });
+    PAPER.withoutJavaScript = await plainPaper.evaluate(() => {
+      const panel = document.querySelector(".mj-paper-panel");
+      return {
+        panel: panel !== null,
+        panelTitle: panel?.querySelector(".mj-paper-panel-title")?.textContent?.trim() || null,
+        cited: document.querySelectorAll(
+          ".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited",
+        ).length,
+        selected: document.querySelectorAll(
+          ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected",
+        ).length,
+        lanes: document.querySelectorAll("svg.mj-converge-canvas .mj-converge-lane").length,
+      };
+    });
+    await noJsPaper.close();
+
+    // Junk slug: the figure survives, the panel says unknown (no title — the
+    // honest note, not silence), and nothing wears the mark.
+    const junkPage = await browser.newPage({ viewport: { width: 1400, height: 900 } });
+    await junkPage.goto(`${BASE}/repository/layers?paper=zzz-not-a-registered-paper`, {
+      waitUntil: "networkidle",
+    });
+    PAPER.junkSlug = await junkPage.evaluate(() => {
+      const panel = document.querySelector(".mj-paper-panel");
+      return {
+        panel: panel !== null,
+        titleAbsent: panel ? panel.querySelector(".mj-paper-panel-title") === null : null,
+        note: panel?.querySelector(".mj-paper-panel-count")?.textContent?.trim() || null,
+        cited: document.querySelectorAll(
+          ".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited",
+        ).length,
+        lanes: document.querySelectorAll("svg.mj-converge-canvas .mj-converge-lane").length,
+      };
+    });
+    await junkPage.close();
+
+    // The mode must not fight the reader (D-W20.2): from the landing, a
+    // lane's own open-toggle must add its branch AND keep the paper. The
+    // figure's hrefs cannot name the paper (`figureHref` builds them without
+    // one) — the carry is `carryPaper`'s rule 2 in the CLICK interceptor, so
+    // this case must CLICK, not follow the href; a first version of it
+    // followed the href, read the documented no-JS degradation, and reported
+    // the design as a defect. The href-as-written is measured too, below, as
+    // exactly what the contract says it is. A tall window, for the CARD
+    // case's reason: the toggle may sit deep in the revealed figure, and a
+    // click can only land inside the window.
+    const readerPage = await browser.newPage({ viewport: { width: 1400, height: 6000 } });
+    await readerPage.goto(landingUrl, { waitUntil: "networkidle" });
+    await readerPage.evaluate(() => {
+      window.__stayed = true;
+    });
+    // ANY in-window toggle in the cited figure, not the first in DOM order:
+    // the arrival camera centres the entry node, and the first version of
+    // this case aimed at the DOM's first anchor, got x = -207, and went
+    // vacuous. Which toggle carries the reader deeper is not this case's
+    // business — that the surface survives the toggle is.
+    const toggle = await readerPage.evaluate(() => {
+      const within = (p) =>
+        p.x >= 0 && p.x <= window.innerWidth && p.y >= 0 && p.y <= window.innerHeight;
+      for (const svg of document.querySelectorAll("svg.mj-converge-canvas")) {
+        if (!svg.querySelector(".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited"))
+          continue;
+        let sawAnchor = false;
+        for (const a of svg.querySelectorAll("a[href*='open=']")) {
+          const hit = a.querySelector(".mj-converge-strand-hit, .mj-converge-frame-hit");
+          if (!hit) continue;
+          sawAnchor = true;
+          const local = hit.getPointAtLength(hit.getTotalLength() / 2);
+          const ctm = hit.getScreenCTM();
+          if (!ctm) continue;
+          const p = new DOMPoint(local.x, local.y).matrixTransform(ctm);
+          if (within(p)) return { href: a.getAttribute("href"), x: p.x, y: p.y, offscreenOnly: false };
+        }
+        // The cited figure had toggles but the camera framed all of them out —
+        // report that shape rather than wandering into another figure.
+        return sawAnchor ? { href: null, x: null, y: null, offscreenOnly: true } : null;
+      }
+      return null;
+    });
+    PAPER.readerToggle = {
+      href: toggle?.href ?? null,
+      offscreenOnly: toggle?.offscreenOnly ?? null,
+      caseExisted: toggle?.href != null,
+    };
+    if (toggle?.href) {
+      // Expected FALSE, and that is the design, not the defect: the carry is
+      // the interceptor's. If this ever turns true the hrefs learned to name
+      // the paper and the degradation contract below has changed shape.
+      PAPER.readerToggle.hrefCarriesPaperItself = new URL(toggle.href, BASE).searchParams.has(
+        "paper",
+      );
+      const aim = { x: toggle.x, y: toggle.y };
+      PAPER.readerToggle.clickedAt = aim;
+      PAPER.readerToggle.topmostAtAim = await readerPage.evaluate(
+        ({ x, y }) => document.elementFromPoint(x, y)?.getAttribute("class") ?? null,
+        aim,
+      );
+      {
+        await readerPage.mouse.click(aim.x, aim.y);
+        PAPER.readerToggle.openArrived = await readerPage
+          .waitForFunction(() => window.location.search.includes("open="), null, { timeout: 5000 })
+          .then(() => true)
+          .catch(() => false);
+        const after = new URL(readerPage.url());
+        PAPER.readerToggle.after = {
+          stayed: await readerPage.evaluate(() => window.__stayed === true),
+          paperKept: after.searchParams.get("paper") === chosen.paperParam,
+          openParamsInUrl: after.searchParams.getAll("open").length,
+          panel: await readerPage.evaluate(() => document.querySelector(".mj-paper-panel") !== null),
+          cited: await readerPage.evaluate(
+            () =>
+              document.querySelectorAll(
+                ".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited",
+              ).length,
+          ),
+        };
+        PAPER.readerToggle.surfaceSurvivedTheClick =
+          PAPER.readerToggle.after.stayed &&
+          PAPER.readerToggle.after.paperKept &&
+          PAPER.readerToggle.after.openParamsInUrl > 0 &&
+          PAPER.readerToggle.after.panel &&
+          PAPER.readerToggle.after.cited > 0;
+      }
+
+      // The href as written, in the contract's own words: "a full navigation
+      // lands on the href as written — opens persist … the highlight and
+      // panel end." A panel that survived here would mean the contract's
+      // words no longer describe the code.
+      await readerPage.goto(`${BASE}${toggle.href}`, { waitUntil: "networkidle" });
+      PAPER.readerToggle.noJsDegradation = await readerPage.evaluate(() => ({
+        opensPersist: new URLSearchParams(location.search).getAll("open").length > 0,
+        panelEnds: document.querySelector(".mj-paper-panel") === null,
+        citedEnds:
+          document.querySelectorAll(
+            ".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited",
+          ).length === 0,
+      }));
+    }
+    await readerPage.close();
+  }
+}
+out.paperSurface = PAPER;
 
 console.log(JSON.stringify(out, null, 2));
 await browser.close();
