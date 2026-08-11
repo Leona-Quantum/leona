@@ -3271,16 +3271,20 @@ test("every belly is level, and every rise happens inside a tendon", () => {
   );
 });
 
-test("a row of siblings shares one run — the crossing-free precondition", () => {
-  // The whole geometry is `base + bow·φ(x)` for **one** φ per row, and φ is built
-  // from the run. Two siblings with different runs are not a one-parameter family
-  // and can cross between their bellies without touching a circle;
-  // `repository-strand-geometry.test.ts` drives exactly that case with two
-  // ribbons and shows the ordering break.
-  //
-  // So this is the layout-side half: the obvious implementation — each lane takes
-  // `tendonRunFor(its own bow)` — is what it forbids.
+test("a row's runs are order-preserving — the crossing-free precondition, hug form", () => {
+  // The geometry used to demand **one** φ per row: `base + bow·φ(x)`, one run.
+  // `hugRuns` (the owner's belly-compaction ask, s121) relaxes that with a
+  // proof: per-lane φ keeps siblings ordered as long as flatness order matches
+  // bow order — a longer run rises later, holds a SUBSET belly, falls earlier,
+  // so `run_i ≥ run_j` gives `φ_i ≤ φ_j` pointwise and `bow·φ` products never
+  // reorder within a sign. What this asserts is exactly that precondition on
+  // the drawing, plus the two boundaries of the relaxation: a row with any
+  // OPENED member does not hug at all (an opened name leaves its own belly for
+  // the rim of its band, where the bow-order argument cannot protect it — the
+  // 0-crossings bar caught precisely this), and zero-bow lanes are free (a
+  // zero-bow lane IS its base whatever its run).
   let rows = 0;
+  let hugged = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       const diagram = openDiagram(focus.id, open, "en");
@@ -3293,16 +3297,36 @@ test("a row of siblings shares one run — the crossing-free precondition", () =
         if (row.length < 2) continue;
         rows += 1;
         const runs = new Set(row.map((lane) => lane.run));
-        assert.equal(
-          runs.size,
-          1,
-          `${focus.id} row ${key}: ${[...runs].join(", ")} — siblings drew different runs, ` +
-            `so they are no longer offsets of one shape and may cross between their bellies`,
-        );
+        if (runs.size > 1) hugged += 1;
+        if (row.some((lane) => lane.open)) {
+          assert.equal(
+            runs.size,
+            1,
+            `${focus.id} row ${key}: a row with an opened member must keep the shared run — ` +
+              `an opened name sits at the rim of its band, outside what the bow-order argument protects`,
+          );
+          continue;
+        }
+        for (const sign of [1, -1]) {
+          const members = row
+            .filter((lane) => Math.sign(lane.bow) === sign)
+            .sort((a, b) => Math.abs(a.bow) - Math.abs(b.bow));
+          for (let i = 1; i < members.length; i++) {
+            assert.ok(
+              members[i]!.run <= members[i - 1]!.run + 1e-9,
+              `${focus.id} row ${key}: |bow| ${Math.abs(members[i]!.bow).toFixed(1)} drew run ` +
+                `${members[i]!.run.toFixed(1)} above its inner sibling's ${members[i - 1]!.run.toFixed(1)} — ` +
+                `flatness order no longer matches bow order, and the products can reorder`,
+            );
+          }
+        }
       }
     }
   }
   assert.ok(rows > 100, `only ${rows} sibling rows checked`);
+  // The relaxation must actually be exercised, or this test guards a feature
+  // that quietly stopped existing.
+  assert.ok(hugged > 10, `only ${hugged} rows drew per-lane runs — the hug is not running`);
 });
 
 test("a tendon's run is bounded, and every strand gets one", () => {
@@ -3336,22 +3360,28 @@ test("a tendon's run is bounded, and every strand gets one", () => {
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       for (const lane of openDiagram(focus.id, open, "en").lanes) {
+        // Two bounds now, because a run has two sources. The SHARED run — what
+        // sizes the column — keeps the per-depth ceilings: those exist to bound
+        // WIDTH, which is paid per level. A HUG run (`hugRuns`) spends width the
+        // column already bought, so its bound is the shape's own: half its span,
+        // past which a belly inverts. `min(row)` recovers the shared run because
+        // hugging only ever lengthens — the outermost lane keeps the floor.
         const ceiling = lane.depth === 0 ? M.maxFirstOrderTendonRun : M.maxTendonRun;
         assert.ok(
-          lane.run <= ceiling + 1e-9,
-          `${focus.id} ${lane.key} (depth ${lane.depth}): run ${lane.run} past the ${ceiling} ceiling`,
+          lane.run <= Math.max(ceiling, (lane.x1 - lane.x0) / 2) + 1e-9,
+          `${focus.id} ${lane.key} (depth ${lane.depth}): run ${lane.run} past both the ` +
+            `${ceiling} ceiling and half its own ${(lane.x1 - lane.x0).toFixed(0)} span`,
         );
         if (lane.depth === 0) firstOrder += 1;
-        else {
-          nested += 1;
-          assert.ok(
-            lane.run <= M.maxTendonRun + 1e-9,
-            `${focus.id} ${lane.key}: a nested lane at depth ${lane.depth} drew a run of ` +
-              `${lane.run}, so the first-order raise has leaked into the nesting it is ` +
-              `deliberately kept out of`,
-          );
-        }
+        else nested += 1;
       }
+      // No row-level floor assertion, and the absence is deliberate: once every
+      // member of an all-shut row hugs, the shared run the column was sized
+      // with is not recoverable from the drawn lanes (the first attempt here
+      // asserted `min(row) ≤ ceiling` and a fully-hugged nested row refuted
+      // it). The width bound the ceilings exist for cannot leak through a hug
+      // at all — `hugRuns` runs at placement, after every span is fixed — and
+      // the sizing tests above are what pin the widths themselves.
     }
   }
   assert.ok(firstOrder > 100 && nested > 100, `${firstOrder} first-order and ${nested} nested lanes`);
