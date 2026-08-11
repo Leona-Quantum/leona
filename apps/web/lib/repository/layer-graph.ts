@@ -3508,6 +3508,38 @@ export const LAYER_GRAPH: LayerGraph = {
         "#   specifically",
       ].join("\n"),
     },
+    // From a read of the abstract page. Written beside its two siblings on
+    // purpose: all three compute the same object, and what separates them in
+    // this section is what their papers actually measured.
+    //
+    // The scale figures are the abstract's own and are the point of the paper —
+    // it opens by saying "there is so far no classically stable algorithm" for
+    // this and that existing methods "require the usage of variable precision
+    // arithmetic and can only be applied to polynomials of relatively low
+    // degree", so degree and precision ARE the result. `data` and `code` are
+    // absent because the page mentions neither.
+    implementations: [
+      {
+        id: "double-precision-degree-10000",
+        label: "Phase factors past degree 10,000 in double precision",
+        labelJa: "倍精度演算で次数 10,000 超の位相因子を求める",
+        papers: [
+          { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
+        ],
+        about:
+          "The run that made this stage practical. The paper states the problem it is answering in its own words: \"there is so far no classically stable algorithm allowing computation of the phase factors that are needed to build QSP circuits\", and existing methods \"require the usage of variable precision arithmetic and can only be applied to polynomials of relatively low degree\". Published as Phys. Rev. A 103, 042419 (2021).",
+        aboutJa:
+          "この段階を実用的にした実行です。論文は答えるべき問題を自らの言葉でこう述べています。「QSP 回路を構成するために必要な位相因子を計算する、古典的に安定なアルゴリズムはこれまで存在しない」。また既存手法は「可変精度演算を要し、比較的低次の多項式にしか適用できない」とされています。Phys. Rev. A 103, 042419 (2021) として出版されています。",
+        methods:
+          "An optimization-based method computing the phase factors using standard double precision arithmetic operations, demonstrated on Hamiltonian simulation, eigenvalue filtering, and the quantum linear system problem.",
+        methodsJa:
+          "標準的な倍精度演算のみで位相因子を計算する、最適化に基づく手法です。Hamiltonian シミュレーション、固有値フィルタリング、量子線形系問題への適用で実証されています。",
+        results:
+          "Phase factors accurately approximating polynomials of degree larger than $10{,}000$, with error below $10^{-12}$.",
+        resultsJa:
+          "次数 $10{,}000$ を超える多項式を、誤差 $10^{-12}$ 未満で精度よく近似する位相因子が得られています。",
+      },
+    ],
     citations: [
       { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
       { title: "On the energy landscape of symmetric quantum signal processing", authors: "Jiasu Wang, Yulong Dong, Lin Lin", year: "2021", url: "https://arxiv.org/abs/2110.04993" },
@@ -3609,6 +3641,40 @@ export const LAYER_GRAPH: LayerGraph = {
         "#   across all regimes",
       ].join("\n"),
     },
+    // From a read of the abstract page. The numbers here are an iteration count
+    // against conditioning, not a degree — this record's claim is robustness "in
+    // all parameter regimes", so the measurement that supports it is what happens
+    // as the Jacobian goes ill-conditioned, and that is what the entry carries.
+    //
+    // `code` names QSPPACK because the abstract names it. It also says the page
+    // gives no link or availability statement, because it does not, and a
+    // software name without a location is a lead rather than an artefact.
+    implementations: [
+      {
+        id: "qsppack-newton-all-regimes",
+        label: "Newton's method through an ill-conditioned Jacobian",
+        labelJa: "悪条件な Jacobi 行列を通した Newton 法",
+        papers: [
+          { title: "Robust iterative method for symmetric quantum signal processing in all parameter regimes", authors: "Yulong Dong, Lin Lin, Hongkang Ni, Jiasu Wang", year: "2023", url: "https://arxiv.org/abs/2307.12468" },
+        ],
+        about:
+          "The measurement behind this record's \"all parameter regimes\" claim. The paper's stated target is the case its siblings struggle with — \"the challenging scenario with ill-conditioned Jacobian matrices\" — using standard double precision arithmetic.",
+        aboutJa:
+          "本レコードの「あらゆるパラメータ領域で」という主張を支える測定です。論文が狙いとして挙げるのは、姉妹手法が苦手とする場合、すなわち「Jacobi 行列が悪条件となる困難な状況」であり、標準的な倍精度演算のもとで扱われます。",
+        methods:
+          "A Newton's method for the nonlinear system that determines the phase factors, with the Jacobian computed at a cost comparable to a single function evaluation by using the matrix-product-state structure of symmetric QSP, plus a reformulation in real-number arithmetic.",
+        methodsJa:
+          "位相因子を定める非線形系に対する Newton 法です。対称 QSP の行列積状態としての構造を用いることで、Jacobi 行列の計算コストは関数評価 1 回分と同程度に抑えられます。あわせて実数演算による定式化も導入されています。",
+        results:
+          "For the highly oscillatory target $\\alpha \\cos(1000 x)$ at polynomial degree $\\approx 1433$: $6$ iterations to machine precision at $\\alpha = 0.9$, rising only to $18$ iterations at $\\alpha = 1 - 10^{-9}$, where the Jacobian is highly ill-conditioned. That near-flat iteration count across nine orders of conditioning is the robustness claim, stated as a measurement.",
+        resultsJa:
+          "強く振動する目標関数 $\\alpha \\cos(1000 x)$（多項式次数 $\\approx 1433$）に対し、$\\alpha = 0.9$ では $6$ 回の反復で機械精度に到達し、Jacobi 行列が極めて悪条件となる $\\alpha = 1 - 10^{-9}$ でも $18$ 回に増えるにとどまります。条件数が 9 桁変化してもほぼ一定であるこの反復回数が、測定として述べられた頑健性の主張です。",
+        code:
+          "Implemented in the QSPPACK software package. The abstract names the package but gives no link or availability statement, so this is a lead to follow rather than an artefact this record can point at.",
+        codeJa:
+          "QSPPACK ソフトウェアパッケージに実装されています。要旨はパッケージ名を挙げるのみで、リンクや入手方法は示していません。したがってこれは本レコードが指し示せる成果物ではなく、追跡すべき手がかりです。",
+      },
+    ],
     citations: [
       { title: "Robust iterative method for symmetric quantum signal processing in all parameter regimes", authors: "Yulong Dong, Lin Lin, Hongkang Ni, Jiasu Wang", year: "2023", url: "https://arxiv.org/abs/2307.12468" },
     ],
@@ -3721,6 +3787,49 @@ export const LAYER_GRAPH: LayerGraph = {
         "#   one included -- remains an open question",
       ].join("\n"),
     },
+    // From a read of the abstract page, and it is the short one of the three.
+    // The abstract reports that experiments were run for four applications and
+    // states no degree, no precision and no timing, so this entry names the four
+    // and stops. `data` and `code` are absent for the same reason.
+    //
+    // **The first draft of this entry said the paper reports no figures, and
+    // that was wrong on this card's own evidence.** `cost` one field up already
+    // carries $\sim 10^{-12}$ and sequences beyond 50,000 phase factors for this
+    // very paper — read from the full text by an earlier pass, which recorded in
+    // the same sentence that "the abstract carries no bound". A Results section
+    // saying "no precision stated" directly beneath a Cost section quoting a
+    // precision is a card that contradicts itself, and a reader would be right
+    // to trust neither half.
+    //
+    // So `results` now says what is true of the *source this entry was written
+    // from* and points at where the numbers already live, rather than implying
+    // the paper is silent. **The general form, for anyone filling a field from a
+    // narrower source than an earlier pass used: check what the record already
+    // says about your paper before reporting an absence.** An absence is a claim
+    // about the source, and the record may already hold a better source than
+    // yours.
+    implementations: [
+      {
+        id: "prony-factorization-experiments",
+        label: "The four reported applications",
+        labelJa: "報告されている四つの適用例",
+        papers: [
+          { title: "Stable factorization for phase factors of quantum signal processing", authors: "Lexing Ying", year: "2022", url: "https://arxiv.org/abs/2202.02671" },
+        ],
+        about:
+          "The experiments accompanying the factorization algorithm this record describes. Published as Quantum 6, 842 (2022).",
+        aboutJa:
+          "本レコードが述べる因数分解アルゴリズムに付随する実験です。Quantum 6, 842 (2022) として出版されています。",
+        methods:
+          "Experimental results are reported for Hamiltonian simulation, eigenstate filtering, matrix inversion, and the Fermi-Dirac operator, with the algorithm stated to be numerically stable in double precision arithmetic.",
+        methodsJa:
+          "Hamiltonian シミュレーション、固有状態フィルタリング、行列反転、Fermi-Dirac 演算子について実験結果が報告されており、アルゴリズムは倍精度演算のもとで数値的に安定であるとされています。",
+        results:
+          "The abstract states that these experiments were run and gives no degree, precision or timing — so nothing is transcribed here from it. The figures for this paper are already on this card, one field up: `cost` carries the $\\sim 10^{-12}$ accuracy and the sequences beyond 50,000 phase factors, read from the full text by an earlier pass that recorded, in the same breath, that \"the abstract carries no bound\". This entry does not restate them, because they are a comparison of cost rather than a report of this run, and duplicating them here would make the card look like two independent measurements of one experiment.",
+        resultsJa:
+          "要旨はこれらの実験を行ったことを述べるのみで、次数・精度・計算時間は示していません。したがって要旨からここへ転記するものはありません。この論文の数値はすでに同じカードの一段上、`cost` にあります。すなわち $\\sim 10^{-12}$ の精度と 50,000 個を超える位相因子の列であり、これらは以前の作業が全文から読み取り、同時に「要旨には評価が記されていない」と記録したものです。本項でそれらを再掲しないのは、それらがこの実行の報告ではなく計算コストの比較であり、ここに重ねると一つの実験を二度独立に測ったかのように見えてしまうからです。",
+      },
+    ],
     citations: [
       { title: "Stable factorization for phase factors of quantum signal processing", authors: "Lexing Ying", year: "2022", url: "https://arxiv.org/abs/2202.02671" },
       { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Hongkang Ni, Lexing Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
