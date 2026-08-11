@@ -249,6 +249,38 @@ test("the census counts what is there, including what is not", () => {
   assert.equal(census.unresolvedEntries, 0);
 });
 
+test("card depth is counted as three numbers, and a blank field is not one of them", () => {
+  // The three are kept apart because they are three different kinds of gap:
+  // pseudocode is transcribable from the record, `text` needs a run somebody
+  // did, and an implementation needs somebody to read a source. A single
+  // "cards filled" figure would let the first stand in for the other two.
+  //
+  // **The case this pins is the whitespace-only one.** `validateLayerGraph`
+  // already rejects a pseudocode field that trims to nothing ("present but
+  // empty — omit it instead"), so the census must agree with it: if the census
+  // counted a blank, a field authored and then emptied would report as depth
+  // the card cannot draw, and the two halves of the codebase would disagree
+  // about whether that method has pseudocode. Counted with `.trim()` on both
+  // sides so they cannot drift apart.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      method("written", "solve", { example: { pseudocode: "return u" } }),
+      method("blank", "solve", { example: { pseudocode: "   \n  " } }),
+      method("ran-it", "solve", { example: { text: "a run", textJa: "実行" } }),
+      method("built-it", "solve", {
+        implementations: [{ id: "impl", label: "One", labelJa: "ひとつ" }],
+      }),
+      method("nothing", "solve", {}),
+    ],
+  };
+  const census = layerCensus(graph, new Set<string>(), FIXTURE_STATES);
+  assert.equal(census.methods, 5);
+  assert.equal(census.withPseudocode, 1);
+  assert.equal(census.withExampleText, 1);
+  assert.equal(census.withImplementations, 1);
+});
+
 test("a corpus that does not carry a declared slug is counted, not silently absorbed", () => {
   // The lint script proves every cross-link resolves against the corpus in the
   // repo. Nothing proves it against the corpus the API serves at read time, and

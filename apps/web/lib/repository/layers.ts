@@ -1468,6 +1468,30 @@ export interface LayerCensus {
    * statement.
    */
   stepInstances: number;
+  /**
+   * Methods carrying pseudocode, a worked example in prose, and implementations.
+   *
+   * **Three numbers rather than one, because they are three different kinds of
+   * gap and only one of them is ours to close from the desk.** The schema on
+   * `MethodExample` already draws the line: `pseudocode` "can be written from
+   * the method's own recorded contract and step list", `text` "needs a run
+   * somebody actually did", and `implementations` needs somebody to read a
+   * source. Collapsing them into one "cards filled" figure would let the
+   * transcribable half stand in for the half that needs a paper, which is the
+   * substitution the honesty taxonomy exists to prevent.
+   *
+   * Counted for the reason `stepInstances` is counted: absent renders as
+   * "nothing written yet" on the card, and until something prints the fraction
+   * nobody can tell a corpus where one method in sixty-three carries pseudocode
+   * from one where most do. That was the state this census was added in — 1 of
+   * 63 — and `NEXT.md` had been describing it as "0 of 29 methods" against a
+   * denominator that was never the method count.
+   */
+  withPseudocode: number;
+  /** Methods carrying `example.text` — a run somebody actually did. */
+  withExampleText: number;
+  /** Methods carrying at least one written-up implementation. */
+  withImplementations: number;
 }
 
 export function layerCensus(
@@ -1531,6 +1555,13 @@ export function layerCensus(
     coherentLoops: repetitions.filter(({ repetition }) => repetition.closure === "coherent").length,
     contrastedSlots,
     stepInstances: methods.reduce((total, method) => total + method.steps.length, 0),
+    // Trimmed before counting for the same reason `validateLayerGraph` rejects
+    // an empty `pseudocode`: a whitespace-only field is authored-looking and
+    // says nothing, and a census that counted it would report progress that no
+    // reader can see on the card.
+    withPseudocode: methods.filter((node) => (node.example?.pseudocode ?? "").trim() !== "").length,
+    withExampleText: methods.filter((node) => (node.example?.text ?? "").trim() !== "").length,
+    withImplementations: methods.filter((node) => (node.implementations ?? []).length > 0).length,
   };
 }
 

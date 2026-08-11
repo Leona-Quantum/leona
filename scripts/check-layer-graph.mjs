@@ -17,7 +17,7 @@
 // graph, this pins the two that need the corpus, and **both call the same
 // `validateLayerGraph`** — the rules live in one place and cannot drift.
 //
-// Usage: node scripts/check-layer-graph.mjs [--quiet] [--unanchored]
+// Usage: node scripts/check-layer-graph.mjs [--quiet] [--unanchored] [--depth]
 //
 // `--unanchored` prints the reading list itself rather than its length. The
 // audit has always computed `unanchored` and `map-eligibility.ts` has always
@@ -39,6 +39,7 @@ const esbuild = require("esbuild");
 
 const QUIET = process.argv.includes("--quiet");
 const SHOW_UNANCHORED = process.argv.includes("--unanchored");
+const SHOW_DEPTH = process.argv.includes("--depth");
 
 async function bundle(relativePath, label) {
   const outDir = mkdtempSync(join(tmpdir(), "layer-graph-"));
@@ -537,6 +538,42 @@ if (!QUIET) {
   console.log(
     `  ${census.openCapabilities} capabilities nothing realises yet · ${census.undecomposedMethods} methods nobody has decomposed`,
   );
+  // How much of the card is actually written, as the three numbers the schema
+  // keeps apart rather than one "cards filled" figure. See `LayerCensus`: only
+  // pseudocode is transcribable from the record itself, so only pseudocode is a
+  // number this desk can move without reading a paper — and a combined figure
+  // would let it stand in for the other two.
+  console.log(
+    `  card depth: ${census.withPseudocode} of ${census.methods} methods carry pseudocode · ${census.withExampleText} a worked run · ${census.withImplementations} an implementation`,
+  );
+  if (SHOW_DEPTH) {
+    // The worklist, printed for exactly the reason `--unanchored` is: the count
+    // above has always been computable and nothing printed which methods it was
+    // counting, so the only way to work the list was to patch this file.
+    //
+    // Split by whether the record can supply the pseudocode. `steps.length > 0`
+    // means the graph has taken the method apart and the listing transcribes
+    // that decomposition; an atomic method has to be transcribed from `summary`
+    // and `conditions` instead, and where those state no procedure the honest
+    // answer is to leave it absent. So this prints two lists, not one ranked
+    // one — "needs a judgement call" is not the tail of "easy", it is a
+    // different job.
+    const methodsMissing = LAYER_GRAPH.nodes.filter(
+      (node) => node.kind === "method" && (node.example?.pseudocode ?? "").trim() === "",
+    );
+    const decomposed = methodsMissing.filter((node) => node.steps.length > 0);
+    const atomic = methodsMissing.filter((node) => node.steps.length === 0);
+    console.log(`    ${decomposed.length} lack pseudocode and carry a step list to transcribe:`);
+    for (const node of decomposed) {
+      console.log(`      ${node.id}\t${node.steps.length} steps`);
+    }
+    console.log(
+      `    ${atomic.length} lack pseudocode and are atomic — transcribable only where summary/conditions state a procedure:`,
+    );
+    for (const node of atomic) {
+      console.log(`      ${node.id}\t${node.label}`);
+    }
+  }
   console.log(
     `  depth histogram: ${[...byDepth.entries()]
       .sort((a, b) => a[0] - b[0])

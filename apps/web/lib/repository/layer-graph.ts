@@ -833,6 +833,37 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Euler ステップ単体のコストは述べられていません。Liu らの見積もりは Carleman 経路全体を端から端まで扱うものであり、その経路のカードに引用されています。離散化は、組み立てられた系の $m = T/h$ 個の時間ステップと、彼らが証明する条件数の上界として、その勘定に入ります。その定数をこの記録があえて転記していないことは conditions に述べたとおりです。",
     steps: [],
     atomic: true,
+    // **A transcription, like the first `example` on `backward-euler`.** The
+    // recurrence and the assembly are `summary` verbatim; the comment on the
+    // step count is `conditions` verbatim. Nothing here is worked out, and the
+    // condition-number constant this record deliberately leaves untranscribed
+    // stays untranscribed.
+    //
+    // **It is not backward Euler's listing with a sign changed**, and that is
+    // the point of writing it beside its partner: the implicit scheme's
+    // pseudocode is a loop with one quantum linear solve per turn, and this
+    // one has no loop at all. `summary` says the recurrence is "assembled into
+    // a banded all-at-once linear system", so the steps become rows and the
+    // whole horizon is handed down at once. A reader comparing the two cards
+    // sees the difference the map draws as `repeats` on one route and nothing
+    // on the other.
+    example: {
+      pseudocode: [
+        "given  A, b, u_0, step size h, horizon T,  m = T/h steps",
+        "",
+        "# explicit: each step's recurrence is evaluated, never solved",
+        "#     u_{k+1} = (I + hA) u_k + h b_k",
+        "",
+        "assemble the banded all-at-once system over all m steps:",
+        "    row 0    :  u_0                        = u_0        # the initial condition",
+        "    row k+1  :  u_{k+1} - (I + hA) u_k     = h b_k      # one row per step",
+        "",
+        "# conditionally stable: a stiff generator forces a small h and hence many",
+        "# steps, and m is the dimension the assembled system inherits",
+        "",
+        "hand the assembled system to the layer below",
+      ].join("\n"),
+    },
     // **The first hop note, and like the first `example` it is a transcription.**
     // The owner moved approximations and assumptions inside the mathematics as
     // marks (`theory-marks.ts`), and a marked path with no instance anywhere has
@@ -982,6 +1013,34 @@ export const LAYER_GRAPH: LayerGraph = {
     // the long comment on that record's `steps` is the one place it is argued.
     steps: [],
     atomic: true,
+    // **A transcription, and `conditions` on this record dictates its shape.**
+    // *"Written out step by step the loop turns fewer times than backward
+    // Euler's; it is the same loop, one linear solve per turn with the previous
+    // turn's state as its right-hand side."* That sentence names the listing:
+    // same loop as `backward-euler`'s, with the generator averaged at the two
+    // ends of the step per `summary`.
+    //
+    // No cost appears in it. `cost` on this record says Dong, Li and Xue's
+    // theorems require diagonal Pade order k >= 3 and Crank-Nicolson is the
+    // (1,1) approximant, so no verified source states its end-to-end cost — and
+    // a listing that implied one would be the invented claim the gap rule
+    // exists to prevent.
+    example: {
+      pseudocode: [
+        "given  A, b, u_0, step size h, horizon T",
+        "",
+        "for k = 0 ... T/h - 1:",
+        "    # the generator averaged at the two ends of the step",
+        "    # one linear solve per turn, the previous turn's state as its right-hand side",
+        "    solve (I - (h/2)A) u_{k+1} = (I + (h/2)A) u_k + (h/2)(b_k + b_{k+1})",
+        "",
+        "return u_{T/h}",
+        "",
+        "# second order at backward Euler's stability class, so a larger h at the same",
+        "# accuracy and fewer turns of this loop -- the same loop, not a shorter one.",
+        "# A-stability removes the step-size restriction, not the repetition.",
+      ].join("\n"),
+    },
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
@@ -1002,6 +1061,31 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "この符号化を用いたアルゴリズムの計算量は、誤差の逆数の対数について多項式であり、この問題に対する従来の量子アルゴリズムからの指数的な改善です。これはアルゴリズム全体についての記述であり、離散化単体の費用ではありません。",
     steps: [],
     atomic: true,
+    // A transcription of `summary` and `conditions`. The factorial decay, the
+    // "extra rows of a sparse linear system", and "accuracy is bought by adding
+    // rows rather than by shrinking h" are all `summary` verbatim; the closing
+    // comment is `conditions` verbatim, including the constant-coefficient
+    // restriction it states. The exponential-improvement figure in `cost` is
+    // about the full algorithm and is not restated here.
+    example: {
+      pseudocode: [
+        "given  A (constant coefficients), b, u_0, horizon T, error budget e",
+        "",
+        "choose k so that the truncation error of  sum_{j=0..k} (hA)^j / j!  is below e",
+        "    # the error falls factorially in k, so accuracy is bought by adding rows",
+        "    # rather than by shrinking h and lengthening the system",
+        "",
+        "assemble a sparse linear system whose extra rows carry the k Taylor terms:",
+        "    for j = 1 ... k:  the row for (hA)^j / j!  is built from the row for",
+        "                      (hA)^{j-1} / (j-1)!",
+        "    plus the rows tying the truncated propagator to the step's output state",
+        "",
+        "hand the system to the layer below",
+        "    # the source describes the result as sparse and well-conditioned: unlike",
+        "    # finite difference methods, no additional hypothesis is needed to ensure",
+        "    # numerical stability",
+      ].join("\n"),
+    },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
@@ -1041,6 +1125,32 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "time-discretization",
     steps: [],
     atomic: true,
+    // A transcription of `summary` and of the hypotheses `conditions` states
+    // for Theorem 4.1 — the non-positive logarithmic norm, the three oracle
+    // unitaries with their normalisations, and the absence of any smoothness
+    // condition. The theorem's query counts stay in `cost`, where the paper
+    // states them; a listing is not the place to restate a bound.
+    example: {
+      pseudocode: [
+        "given  A(t) with non-positive logarithmic norm, b(t), x_0, horizon T, budget e",
+        "       the parameters provided through the unitaries U_A, U_b, U_x",
+        "       with known normalisations lambda_A, lambda_b, lambda_x",
+        "",
+        "truncate the Dyson series for the propagator at order k:",
+        "    sum_{j=0..k}  int ... int  A(t_1) ... A(t_j)  dt_j ... dt_1",
+        "                  over  T >= t_1 >= ... >= t_j >= 0",
+        "    # the expansion that stands in for the propagator once the generator",
+        "    # varies with time",
+        "",
+        "encode the surviving terms as rows of one system of linear equations:",
+        "    for j = 1 ... k:  rows for the j-th time-ordered integral, discretized",
+        "    plus the rows tying the truncated propagator to the solution at T",
+        "",
+        "hand the system to the layer below",
+        "    # no smoothness condition is required: the oracle counts are independent",
+        "    # of derivatives of the parameters",
+      ].join("\n"),
+    },
     citations: [
       { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
     ],
@@ -1413,6 +1523,40 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "奇の実多項式の次数は $O(\\kappa \\log(\\kappa/\\varepsilon))$ で、再スケーリング前の区間上での大きさは $|P(x)| = O(\\kappa \\log(\\kappa/\\varepsilon))$ です。ハミルトニアンシミュレーションについては、Low と Chuang が $d$ 疎ハミルトニアン（この $d$ は疎性であり、上記の多項式の次数ではありません）に対する問い合わせ計算量を $O(t d ‖Ĥ‖_max + \\log(1/\\varepsilon)/\\log \\log(1/\\varepsilon))$ と与えており、これはすべてのパラメータで下界に一致します。",
     steps: [],
     atomic: true,
+    // A transcription of `summary` and `conditions`, and the one place a
+    // listing earns its keep on this record: the two targets are expanded
+    // differently and the card's prose has to say so in one sentence, where the
+    // listing can put them side by side. Both branches, the b that sets the
+    // odd function, the interval the accuracy is claimed on, and the mandatory
+    // rescaling are `conditions` verbatim.
+    //
+    // The degree bound in `cost` is not restated. The rescaling comment is,
+    // because `conditions` states it as the reason amplification is mandatory
+    // downstream — which is a fact about what this hop hands the next one, and
+    // that is what a listing is for.
+    example: {
+      pseudocode: [
+        "given  the target function and an error budget e",
+        "       for 1/x also the condition number k > 1,  with e in (0, 1/2)",
+        "",
+        "choose the function actually expanded:",
+        "    for 1/x       :  f(x) = (1 - (1 - x^2)^b) / x   with  b = ceil(k^2 log(k/e))",
+        "                     # odd, and accurate only on [-1,1] minus (-1/k, 1/k) --",
+        "                     # a gap of width 1/k around the origin, which is where",
+        "                     # the condition-number assumption enters",
+        "    for e^{-ixt}  :  the Jacobi-Anger identity, whose Bessel coefficients",
+        "                     decay super-exponentially once the order passes about t",
+        "",
+        "expand in Chebyshev polynomials and truncate:",
+        "    keep the terms whose coefficients have not yet fallen below e",
+        "",
+        "rescale so that |P(x)| <= 1 on the interval",
+        "    # QSVT will not accept the polynomial otherwise, and this rescaling is",
+        "    # what makes amplification mandatory downstream",
+        "",
+        "return the truncated, rescaled polynomial",
+      ].join("\n"),
+    },
     citations: [
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
