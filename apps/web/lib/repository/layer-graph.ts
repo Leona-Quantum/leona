@@ -44,6 +44,10 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "A normalized state ε-close to y(T)/||y(T)||, a history state over [0,T], or an estimate of an observable of the solution.",
       returnsJa: "y(T)/||y(T)|| に ε-近い正規化された状態、[0,T] 上のヒストリー状態、または解の観測量の推定値。",
     },
+    // Zoo-parity intake: the catalog's `nonlinear-differential-equations` record —
+    // the second of the two regions the map drew with no repository record
+    // pointing at it (see `linear-ode-solve` and scripts/check-zoo-parity.mjs).
+    entries: ["nonlinear-differential-equations"],
     whyALayer: "Every route must first commit to a representation of the nonlinearity, and the available representations — tensor powers, phase-space densities, level sets, homotopy series — differ in which nonlinearities they admit, in whether the truncation provably converges, and in how the answer is read back. This is also the layer at which the hard lower bounds bite, so it is where an advantage claim lives or dies.",
     whyALayerJa: "どの経路も、まず非線形性をどう表現するかを決めなければなりません。テンソル冪、位相空間の分布、レベルセット、ホモトピー級数といった表現は、扱える非線形性、打ち切りの収束が証明されているかどうか、答えをどう読み出すかの点で互いに異なります。厳しい下界が効いてくるのもこの層であり、優位性の主張が成り立つか崩れるかがここで決まります。",
   },
@@ -396,6 +400,12 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "A state proportional to u(T), or a history state, together with separately stated matrix-query and initial-state-query complexity.",
       returnsJa: "u(T) に比例する状態、またはヒストリー状態。あわせて行列クエリ数と初期状態クエリ数を別々に示します。",
     },
+    // Zoo-parity intake: the catalog's `linear-differential-equations` record.
+    // This capability has been drawn since W14 with nothing in the repository
+    // pointing at it, so a reader arriving from the catalog could not reach the
+    // region at all — the parity gap measured from the other side by
+    // `scripts/check-zoo-parity.mjs`.
+    entries: ["linear-differential-equations"],
     whyALayer: "This is the pivot of the cluster. Methods fulfilling it split into two structurally different families: those that assemble one large linear system and call a quantum linear solver, and those that never form a linear system at all, reducing instead to Hamiltonian simulation or to repeated singular value amplification. The two families differ in how many queries they make to the initial-state preparation oracle, and that difference is structural rather than a matter of constants — when the initial state is expensive to prepare, it dominates the end-to-end cost.",
     whyALayerJa: "この層が全体の分岐点です。ここを満たす手法は、構造的に二つの系統に分かれます。ひとつは大きな線形系をまとめて組み立てて量子線形ソルバーを呼ぶもの、もうひとつは線形系をそもそも作らず、ハミルトニアンシミュレーションや特異値増幅の反復に帰着させるものです。両者は初期状態準備オラクルへのクエリ数が定数倍ではなく構造的に異なり、初期状態の準備が高価な場合には、その差が全体の費用を支配します。",
   },

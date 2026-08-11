@@ -33,8 +33,13 @@
 //   * Every slug's declared width equals its own circuit's `qubitCount`, so the
 //     suffix the fold reads is not a naming convention drifting from the
 //     circuit it names.
-//   * 176 browse rows. The number the roadmap promises, computed the way the
-//     page computes it rather than typed in.
+//   * 188 browse rows. The number the roadmap promises, computed the way the
+//     page computes it rather than typed in. It was 176 when R2.6 sized it
+//     against 281 cards; the Zoo-parity intake published 12 unfolded records, so
+//     the number moved by exactly 12. Deliberately, which is what the error
+//     message below asks for: this figure exists to make an *accidental* change
+//     in the fold — a member's `status` drifting and eight cards reappearing —
+//     visible, and it can only do that if intake changes are entered by hand.
 
 import { createRequire } from "node:module";
 import { mkdtempSync, readFileSync, rmSync } from "node:fs";
@@ -203,10 +208,14 @@ for (const [index, slugs] of CURATED_GROUPS.entries()) {
 }
 
 const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
-if (rows.length !== 176) {
+// 176 at R2.6 (281 records), 188 after the Zoo-parity intake added 12 records that
+// belong to no width family and therefore fold to nothing. See the header.
+const EXPECTED_BROWSE_ROWS = 188;
+if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
-    `${records.length} records fold to ${rows.length} browse rows, expected 176. R2.6 promised ` +
-      "281 cards down to about 176; if the corpus changed, change this number deliberately.",
+    `${records.length} records fold to ${rows.length} browse rows, expected ${EXPECTED_BROWSE_ROWS}. `
+      + "R2.6 promised 281 cards down to about 176 and each later intake moves it by the number of "
+      + "unfolded records it published; if the corpus changed, change this number deliberately.",
   );
 }
 

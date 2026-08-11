@@ -166,7 +166,10 @@ test("the list guard accepts every real record after projection", () => {
 
   const parsed = parseCatalogListEntries(projected);
   assert.deepEqual(parsed.rejected, []);
-  assert.equal(parsed.entries.length, 283);
+  // Against the input, not against a literal: what this test is about is that
+  // nothing was dropped on the way through, and a constant says that only until
+  // the corpus next grows.
+  assert.equal(parsed.entries.length, projected.length);
 });
 
 test("the list guard rejects a corrupted closed-vocabulary field", () => {
@@ -182,7 +185,7 @@ test("the list guard rejects a corrupted closed-vocabulary field", () => {
 });
 
 test("the validator accepts every record in the pinned manifest", () => {
-  assert.equal(manifest.items.length, 283);
+  assert.equal(manifest.items.length, manifest.item_count);
   const rejected = manifest.items
     .filter((item) => parseCatalogRecord(JSON.parse(item.source_blob)) === null)
     .map((item) => item.upstream_identity);
@@ -196,7 +199,7 @@ test("parseCatalogEntries handles a full API-shaped payload", () => {
   }));
   const { entries, rejected } = parseCatalogEntries(payload);
   assert.deepEqual(rejected, []);
-  assert.equal(entries.length, 283);
+  assert.equal(entries.length, payload.length);
 });
 
 test("a null record is rejected rather than rendered", () => {

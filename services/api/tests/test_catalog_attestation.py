@@ -176,15 +176,21 @@ def test_audit_meta_carries_the_signed_sentence_and_checksum():
 
 
 def test_committed_policy_covers_the_real_corpus_exactly():
-    """The shipped policy must classify all 283 pinned records with nothing
-    left over. The two community submissions the grant could not reach were
-    removed from the corpus outright, so the policy now needs no exclusions —
-    and an empty exclusion list must still mean full coverage, not a gap."""
+    """The shipped policy must classify every pinned record with nothing left
+    over. The two community submissions the grant could not reach were removed
+    from the corpus outright, so the policy now needs no exclusions — and an
+    empty exclusion list must still mean full coverage, not a gap.
+
+    Counted against the manifest rather than against a literal: "all of them"
+    is the property, and a pinned corpus size states it only until the next
+    intake, at which point it fails for the one reason that is not a defect."""
     policy = AttestationPolicy.load()
-    plan = _bootstrap_plan(BootstrapManifestSource(), policy)
+    source = BootstrapManifestSource()
+    pinned = len(source.identities())
+    plan = _bootstrap_plan(source, policy)
     assert policy.spdx_id == "CC-BY-4.0"
-    assert len(plan.included) + len(plan.excluded) == 283
-    assert len(plan.included) == 283
+    assert len(plan.included) + len(plan.excluded) == pinned
+    assert len(plan.included) == pinned
     assert plan.excluded == ()
 
 
