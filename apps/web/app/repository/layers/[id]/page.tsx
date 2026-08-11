@@ -17,7 +17,7 @@ import { resolveOpenIds } from "../../../../lib/repository/converge-layout";
 import { getPublicLocale } from "../../../../lib/public-locale-server";
 import { getRepositoryListEntries } from "../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../lib/repository/layer-graph";
-import { isCapability, layerNode, type LayerCorpusEntry } from "../../../../lib/repository/layers";
+import { isCapability, layerCorpusEntry, layerNode, type LayerCorpusEntry } from "../../../../lib/repository/layers";
 import { STATE_VOCABULARY } from "../../../../lib/repository/state-vocabulary";
 import { layerState } from "../../../../lib/repository/states";
 
@@ -93,14 +93,7 @@ export default async function RepositoryLayerNodePage({
     getPublicLocale(),
     node ? getRepositoryListEntries() : Promise.resolve([]),
   ]);
-  const corpus: LayerCorpusEntry[] = entries.map((entry) => ({
-    slug: entry.slug,
-    title: entry.title,
-    titleJa: entry.titleJa,
-    category: entry.category,
-    description: entry.description,
-    descriptionJa: entry.descriptionJa,
-  }));
+  const corpus: LayerCorpusEntry[] = entries.map(layerCorpusEntry);
 
   // **Both halves of what the parser returns, because the count is the point.**
   // `resolveOpenIds` says of itself that "the count over the cap is reported
