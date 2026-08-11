@@ -1705,17 +1705,23 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
         if (lane.feedKey !== null) {
           const stub = stubs.get(lane.feedKey);
           assert.ok(stub, `${lane.key} hangs off a stub ${lane.feedKey} that is not drawn`);
-          // **Not `stub.y1`.** `feedReach`/`placeFeeds` push the fan's base
-          // out past the stub's own drawn end whenever the fan's half-band
-          // (`stub.vHalf`) exceeds `feedRun` — see the comment on `feedReach`
-          // — so a lane hanging off an *opened* stub sits on the fan's base,
-          // `y1 + outward · max(0, vHalf − feedRun)`, not on `y1` itself.
-          // Derived from `stub.vHalf`, which `placeFeeds` recorded from the
-          // same `Measure` this formula reads in production, rather than a
-          // constant copied in by hand — so a future change to the push
-          // amount fails this test by disagreeing with itself, not by
-          // silently drifting out of sync with a number pinned here.
-          const fanY = stub.y1 + stub.outward * Math.max(0, stub.vHalf - M.feedRun);
+          // **`stub.y1`, exactly — and the push term this used to carry is
+          // gone because the geometry it described is gone.**
+          //
+          // It read `y1 + outward · max(0, vHalf − feedRun)`, which was a
+          // faithful description of a real defect: the stub was DRAWN to
+          // `feedRun` while its fan was PLACED at `max(feedRun, vHalf)`, so a
+          // lane hanging off an opened stub sat somewhere the stub's own line
+          // did not reach — up to 516.8px past its end, with nothing drawn
+          // between. `placeFeeds` now draws the stub to the fan's base, which
+          // is the room `feedReach` had reserved all along, so the two numbers
+          // are one number and this expectation is the simpler statement:
+          // **a lane hanging off a stub sits on that stub's drawn end.**
+          //
+          // This is a stricter bar than the one it replaces, not a relaxed
+          // one: the old formula would still pass if the stub's line stopped
+          // short, and that was the bug.
+          const fanY = stub.y1;
           const ends = drawnEnds(lane.d);
           for (const [x, y] of [
             [ends.sx, ends.sy],
