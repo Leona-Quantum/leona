@@ -781,6 +781,9 @@ export function ConvergeCanvas({
    * against what a lane DRAWS (`draws`, falling back to `nodeId`: a leaf
    * method's lane has `id: null` and its subject in `draws`). Null when no
    * paper surface is open, which is a different statement from an empty set.
+   * Since v2 the set may also hold HOSTS of folded cited methods: a folded
+   * refinement's internals are the host lane's by the fold's own definition
+   * (`sameInternalsAsParent`), so the mark is the host's to wear.
    */
   cited?: ReadonlySet<string> | null;
   /**
