@@ -6787,12 +6787,15 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "excited-state-energy",
     conditions: "Cadi Tazi and Thom state what it buys and what it costs in the same breath: the method \"provides the possibility of directly computing excited states around a selected target energy, using the same ansatz as for the ground state calculation\", and, \"inspired by the variance-based methods from the Quantum Monte Carlo literature\", it \"minimizes the energy variance, thus requiring a computationally expensive squared Hamiltonian\". The squared operator is the binding cost and they treat it as one: \"we alleviate this potentially poor scaling by employing a Pauli grouping procedure, identifying sets of commuting Pauli strings that can be evaluated simultaneously\". The target energy is an input, not an output — a state is reached because it is near a number the user chose. Results are \"all electronic excited states with chemical accuracy on ideal quantum simulators\" for H2 and LiH; no device run is reported.",
     conditionsJa: "Cadi Tazi と Thom は、得られるものと代償を一息で述べています。この方法は「基底状態計算と同じアンザッツを用いて、選ばれた目標エネルギーの近傍の励起状態を直接計算する可能性を与える」ものであり、「量子モンテカルロ文献の分散にもとづく手法に着想を得て」「エネルギー分散を最小化するため、計算量的に高価なハミルトニアンの二乗を必要とする」。この二乗した演算子こそ律速であり、彼ら自身それを律速として扱っています。「同時に評価できる可換な Pauli 文字列の集合を特定する Pauli グルーピングの手続きを用いることで、この悪化しうるスケーリングを緩和する」。目標エネルギーは出力ではなく入力です。ある状態に到達するのは、それが利用者の選んだ数値の近くにあるからです。結果は H2 と LiH について「理想的な量子シミュレータ上で、化学的精度ですべての電子励起状態」を得たというもので、実機での実行の報告はありません。",
-    // The Pauli-grouping procedure the paper leans on is `vqe-measurement-grouping`
-    // in the corpus, and once that record has a node under `observable-estimation`
-    // this route should pin it with `via` — the paper names the choice, so the map
-    // would be recording a fact rather than guessing at one. Not done here because
-    // the node does not exist yet; it is the follow-up PR in this lane.
     steps: ["ansatz-construction", "parameter-optimization", "observable-estimation"],
+    // **Both pins are the paper's own words, not a guess at what it must have
+    // meant.** It "minimizes the energy variance", which is the objective
+    // `variance-objective` is; and it "alleviate[s] this potentially poor
+    // scaling by employing a Pauli grouping procedure, identifying sets of
+    // commuting Pauli strings that can be evaluated simultaneously", which is
+    // the readout `measurement-grouped-readout` is. Pinning them is also what
+    // takes this route out of the four-way twin group it was declared into when
+    // neither node existed — the exit condition written into that row, met.
     entries: ["vqe-folded-spectrum"],
     citations: [
       { title: "Folded Spectrum VQE : A quantum computing method for the calculation of molecular excited states", authors: "Lila Cadi Tazi, Alex J.W. Thom", year: "2023", url: "https://arxiv.org/abs/2305.04783" },
@@ -6832,6 +6835,53 @@ export const LAYER_GRAPH: LayerGraph = {
     entries: ["vqe-mc-vqe"],
     citations: [
       { title: "Quantum Computation of Electronic Transitions using a Variational Quantum Eigensolver", authors: "Robert M. Parrish, Edward G. Hohenstein, Peter L. McMahon, Todd J. Martinez", year: "2019", url: "https://arxiv.org/abs/1901.01234" },
+    ],
+  },
+
+  // --- the optimiser, ansatz and readout records W21-B sourced (B5 unit 3) ---
+  //
+  // Six records that each had their own primary paper and an obvious slot, and
+  // no node. Authored from the abstracts, fetched this session. Every `cost` is
+  // absent for the reason the region's header gives.
+  //
+  // One of these discharges a worklist item rather than adding to it:
+  // `variance-objective` is the node `folded-spectrum-excited-state` was waiting
+  // for, so that route now pins `parameter-optimization` with `via` and leaves
+  // the four-way twin group it was declared into.
+  {
+    kind: "method",
+    id: "variance-objective",
+    label: "Minimise the energy variance",
+    labelJa: "エネルギー分散を最小化する",
+    shortLabel: "Variance objective",
+    shortLabelJa: "分散を最小化",
+    summary: "Minimise how much the energy fluctuates rather than the energy itself. Any eigenstate has zero variance, so the objective's own value tells you whether you have arrived — which the energy never does, since a low number is only low relative to a minimum nobody knows.",
+    summaryJa: "エネルギーそのものではなく、エネルギーのゆらぎの大きさを最小化します。どの固有状態でも分散はゼロなので、目的関数の値そのものが到達したかどうかを教えてくれます。エネルギーはそれを教えてくれません。低い値は、誰も知らない最小値に対して低いというだけだからです。",
+    realizes: "parameter-optimization",
+    conditions: "Zhang et al. name the property the objective is chosen for: variance-VQE \"can be viewed as an self-verifying eigensolver for arbitrary eigenstate by designing, since an eigenstate for a Hamiltonian should have zero energy variance\". Two consequences they state and this slot cares about. It is not selective — the variance is zero at EVERY eigenstate, so on its own it does not say which one was reached, and they find \"optimization of a combination of energy and variance may be more efficient to find low-energy excited states than those of minimizing energy or variance alone\". And it is expensive in the way any variance is, since it needs the square of the Hamiltonian; their answer is to stop evaluating all of it — \"the optimization can be boosted with stochastic gradient descent by Hamiltonian sampling, which uses only a few terms of the Hamiltonian and thus significantly reduces the quantum resource for evaluating variance and its gradients\".",
+    conditionsJa: "Zhang らは、この目的関数が選ばれる理由となる性質を名指ししています。分散 VQE は「設計上、任意の固有状態に対する自己検証型の固有値ソルバーと見なせる。ハミルトニアンの固有状態であれば、エネルギー分散はゼロになるはずだからである」。彼らが述べている帰結のうち、この層に関わるものが二つあります。第一に、この目的関数は選択的ではありません。分散はどの固有状態でもゼロなので、それだけではどの状態に到達したのかを言えません。実際、「エネルギーと分散を組み合わせて最適化するほうが、エネルギーだけ、あるいは分散だけを最小化するよりも、低エネルギーの励起状態を求めるうえで効率的でありうる」と報告されています。第二に、分散である以上ハミルトニアンの二乗を要し、その分だけ高価です。彼らの答えは、その全体を評価するのをやめることです。「ハミルトニアンのサンプリングによる確率的勾配降下法によって最適化を加速でき、これはハミルトニアンのごく少数の項しか使わないため、分散とその勾配の評価に要する量子資源を大幅に削減する」。",
+    steps: [],
+    entries: ["vqe-variance-objective"],
+    citations: [
+      { title: "Variational quantum eigensolvers by variance minimization", authors: "Dan-Bo Zhang, Zhan-Hao Yuan, Tao Yin", year: "2020", url: "https://arxiv.org/abs/2006.15781" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "measurement-grouped-readout",
+    label: "Measure commuting terms together",
+    labelJa: "可換な項をまとめて測定する",
+    shortLabel: "Grouped measurement",
+    shortLabelJa: "まとめて測定",
+    summary: "A Hamiltonian's terms are measured one group at a time rather than one term at a time. Terms that commute qubit-wise can share a single set of measurements, so the question becomes how few groups the terms can be covered by — a graph problem, and a hard one.",
+    summaryJa: "ハミルトニアンの項を 1 項ずつではなく、1 グループずつ測定します。量子ビットごとに可換な項は 1 組の測定を共有できるので、問いは「項をいくつのグループで覆えるか」に変わります。これはグラフの問題であり、しかも難しい問題です。",
+    realizes: "observable-estimation",
+    conditions: "Verteletskyi et al. state the constraint that creates the problem — \"current hardware can perform only projective single-qubit measurements\", while \"the number of terms in the Hamiltonian grows as $O(N^4)$ with the size of the system\" — and then name the problem exactly: \"qubit-wise commutativity between the Hamiltonian terms can be expressed as a graph and the problem of the optimal grouping is equivalent of finding a minimum clique cover (MCC) for the Hamiltonian graph\". Two honest limits come with it. The optimum is not available — \"the MCC problem is NP-hard but there exist several polynomial heuristic algorithms to solve it approximately\" — and the saving quoted is measured rather than proved: \"on average, grouping qubit-wise commuting terms reduced the number of operators to measure three times compared to the total number of terms in the considered Hamiltonians\", on a set of molecular electronic Hamiltonians.",
+    conditionsJa: "Verteletskyi らは、この問題を生む制約を述べています。「現行のハードウェアは射影的な単一量子ビット測定しか行えない」一方で、「ハミルトニアンの項数は系の大きさ $N$ に対して $O(N^4)$ で増える」。そのうえで問題を正確に同定します。「ハミルトニアンの項どうしの量子ビットごとの可換性はグラフとして表現でき、最適なグループ分けの問題は、そのハミルトニアングラフに対する最小クリーク被覆（MCC）を求める問題と等価である」。これには誠実な限界が二つ伴います。最適解は手に入りません。「MCC 問題は NP 困難であるが、それを近似的に解く多項式時間のヒューリスティックがいくつか存在する」。そして示された節約は証明ではなく実測です。「平均して、量子ビットごとに可換な項をまとめることで、測定すべき演算子の数は、対象としたハミルトニアンの全項数に比べて 3 分の 1 になった」。",
+    steps: ["state-preparation"],
+    entries: ["vqe-measurement-grouping"],
+    citations: [
+      { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
     ],
   },
   ],

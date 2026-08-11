@@ -1661,9 +1661,10 @@ test("a line that opens into something says so, and a line that does not is not 
   // this PR authored from a paper it fetched: deflation, subspace search,
   // subspace expansion, the equation-of-motion route, folded spectrum, the
   // penalty route and the contracted multistate route.
-  assert.equal(openable + leaves + 1, 81, "the twenty-three figures draw 81 lines between them");
-  assert.equal(openable, 40, "40 of them open into something recorded");
-  assert.equal(leaves, 40, "40 are leaves — nothing finer is recorded for them");
+  // 83 since B5 unit 3: `variance-objective` and `measurement-grouped-readout`, one lane each.
+  assert.equal(openable + leaves + 1, 83, "the twenty-three figures draw 83 lines between them");
+  assert.equal(openable, 41, "41 of them open into something recorded");
+  assert.equal(leaves, 41, "41 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -4648,12 +4649,14 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
       "them is the OBJECTIVE handed to the optimiser: a weighted sum over orthogonal inputs, the " +
       "variance around a target energy, the energy plus a symmetry penalty, and a contracted multistate " +
       "objective. An objective earns its own node here only where a paper is devoted to one — " +
-      "`cvar-objective` is — so three of these have nothing honest to pin a `via` to. The fourth is a " +
-      "worklist item and not a permanent exemption: `vqe-variance-objective` (arXiv:2006.15781) is such " +
-      "a paper, and once it has a node under `parameter-optimization` the folded-spectrum route pins it " +
-      "and leaves this row. `deflation-excited-state` is NOT in this group and must not be added to it: " +
-      "it hangs a `ground-state-energy` ingredient the other four do not, because deflation is defined " +
-      "against the states already found — that stub is the difference, and it is drawn.",
+      "`cvar-objective` is — so three of these have nothing honest to pin a `via` to. **The fourth now " +
+      "has somewhere to point and is deliberately not pointed yet:** `variance-objective` and " +
+      "`measurement-grouped-readout` were authored in B5 unit 3 and folded-spectrum's own paper names " +
+      "both, but pinning them changes what the W15 dedup draws and takes this figure from 5797px to " +
+      "8887px, past its ceiling. Blocked on compaction, not on evidence. `deflation-excited-state` is NOT in this " +
+      "group and must not be added to it: it hangs a `ground-state-energy` ingredient the others do " +
+      "not, because deflation is defined against the states already found — that stub is the " +
+      "difference, and it is drawn.",
   },
   {
     slot: "excited-state-energy",
@@ -4676,7 +4679,12 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
   },
   {
     slot: "observable-estimation",
-    methods: ["direct-sampling-readout", "amplitude-estimation-readout", "classical-shadow-readout"],
+    methods: [
+      "direct-sampling-readout",
+      "amplitude-estimation-readout",
+      "classical-shadow-readout",
+      "measurement-grouped-readout",
+    ],
     why:
       "Three readouts that each consume a prepared state and do their own work on it. The interior is "
       + "one hop long, so there is no second hop to tell them apart by; what tells them apart is their "

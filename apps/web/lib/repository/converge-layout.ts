@@ -4624,8 +4624,14 @@ function repointBuriedHosts(
         twin.sharedWith = replacement.address;
         continue;
       }
+      // No live occurrence of the group survives, so there is nowhere to jump.
+      // Drop the dangling pointer and leave the lane exactly as the demotion
+      // made it — shut, with no interior and no control. Handing it back its
+      // open control would be the same defect wearing the other hat: a line
+      // named in `?open=`, drawn shut because its interior is gone, still
+      // offering a click. `a line that opens into something says so` catches
+      // that, and did.
       twin.sharedWith = undefined;
-      twin.openable = true;
     }
   }
 }
