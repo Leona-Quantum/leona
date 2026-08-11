@@ -846,7 +846,7 @@ test("the owner's LCHS pair: the identical chain now says which is the narrower 
 // asked for, so the next session argues with a number rather than with a
 // recollection, and pin that the thing now has an address of its own.
 
-test("the unnamed stretch is 57 of 63 methods, one each, and 14 of them follow a named step", () => {
+test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a named step", () => {
   const methods: LayerMethod[] = LAYER_GRAPH.nodes.filter(isMethod);
   const withOwn: string[] = [];
   const trailing: Array<{ method: string; after: string; from: string; to: string }> = [];
@@ -874,19 +874,24 @@ test("the unnamed stretch is 57 of 63 methods, one each, and 14 of them follow a
   console.log(
     `[unnamed stretches] ${withOwn.length}/${methods.length} methods, ${trailing.length} after a named step`,
   );
-  assert.equal(withOwn.length, 57);
-  assert.equal(trailing.length, 14);
+  // 57/14 until session 120: the W14 wiring closed the KvN route's blank —
+  // its readout is now the `observable-estimation` step (Joseph §V C, owner
+  // ruling), it lands on `observable-value`, which satisfies the slot's
+  // `solution-answer` exit, so the route has no own stretch any more.
+  assert.equal(withOwn.length, 56);
+  assert.equal(trailing.length, 13);
 
-  // The four the owner named. Pinned by their states as well as their ids: the
-  // complaint was about a specific place on the drawing, and "after
-  // hamiltonian-simulation" is only the same place while the hop is still
-  // `evolution-circuit -> solution-answer`.
+  // The three that remain of the four the owner named. Pinned by their states
+  // as well as their ids: the complaint was about a specific place on the
+  // drawing, and "after hamiltonian-simulation" is only the same place while
+  // the hop is still `evolution-circuit -> solution-answer`. These three keep
+  // their tails by W11's measurement — they recover a solution *state*, and
+  // the recovery is each method's own work.
   const afterSimulation = trailing
     .filter((row) => row.after === "hamiltonian-simulation")
     .map((row) => `${row.method}: ${row.from} -> ${row.to}`)
     .sort();
   assert.deepEqual(afterSimulation, [
-    "kvn-simulation-route: evolution-circuit -> solution-answer",
     "lchs-improved-kernel: evolution-circuit -> solution-answer",
     "lchs-route: evolution-circuit -> solution-answer",
     "schrodingerisation: evolution-circuit -> solution-answer",
@@ -925,7 +930,8 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
     assert.equal(cardExists(input, ownCardId(method.id)), has);
     if (card !== null) built += 1;
   }
-  assert.equal(built, 57);
+  // 57 until session 120 — the KvN route lost its stretch to the W14 wiring.
+  assert.equal(built, 56);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);

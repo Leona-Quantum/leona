@@ -749,6 +749,15 @@ export interface ConvergeLane {
    */
   repeatMark: string | null;
   /**
+   * The address of the earlier occurrence drawing this lane's interior, or null
+   * — see `dedupSharedInteriors` (W15).
+   *
+   * When set, the lane draws shut with `⤴` at its name, its `openHref` is the
+   * jump to that address (`?at=`, a same-pathname navigation `canvas-continuity`
+   * intercepts), and `spokenName` says the sentence the symbol abbreviates.
+   */
+  sharedWith: string | null;
+  /**
    * What this lane narrows, drawn and spoken — see `StrandRefinement`.
    *
    * Emitted rather than looked up from `nodeId` for the reason `repeatMark` is,
@@ -996,6 +1005,9 @@ export interface ConvergeFeed {
    * at all — the same rule R12.2 gives every line.
    */
   openHref: string | null;
+  /** The earlier occurrence drawing this stub's interior, or null — see
+   *  `ConvergeLane.sharedWith` (W15). The stub's `openHref` is then the jump. */
+  sharedWith: string | null;
   open: boolean;
   /** What is inside, whether or not it is open — so a shut stub can say so. */
   inside: number;
@@ -1610,6 +1622,15 @@ interface PlanStrand {
    * that is itself a variant plans none and the recursion grounds there.
    */
   variants: PlanStrand[];
+  /**
+   * The address of the earlier occurrence that draws this strand's interior,
+   * when `dedupSharedInteriors` demoted this one — absent everywhere else (W15).
+   *
+   * Optional rather than `| null` on every constructor, because exactly one
+   * writer exists (the dedup pass) and it runs after planning; a constructor
+   * that set it would be a second writer of a fact the pass derives.
+   */
+  sharedWith?: string;
 }
 
 /**
@@ -2487,11 +2508,30 @@ type MarkedStrand = {
  * thing without the repetition; `spokenName` keeps the full sentence, because
  * a screen reader gets no bracket.
  */
+/**
+ * The `⤴` rides **beyond** the label cap rather than eating the name (W15).
+ *
+ * The count keeps the budget-first rule — a count is quantitative and the name
+ * gives way to it — but the jump glyph is a constant-width affordance, and
+ * cutting characters off "打ち切り Taylor 級数の LCU によるシミュレーション" to
+ * make 14px of room for it inverts the value order. One writer, used by the
+ * demand (`measure`) and the cut (`place`, `placeFeeds`) alike, so the two
+ * cannot drift the way `hFit` did.
+ */
+const sharedAllowance = (strand: { sharedWith?: string | null }): number =>
+  strand.sharedWith == null ? 0 : estimateTextWidth(" ⤴", CONVERGE_METRICS.laneFont);
+
 function markSuffix(strand: {
   repeatMark: string | null;
   refinement: StrandRefinement | null;
+  sharedWith?: string | null;
 }): string {
-  return strand.repeatMark === null ? "" : ` ${strand.repeatMark}`;
+  // `⤴` before the count, never after: the multiplicity sweep pins the count
+  // as the label's LAST token, and a shared lane that also carries a count
+  // must keep that true — "name ⤴ ×4K", not "name ×4K ⤴".
+  const shared = strand.sharedWith == null ? "" : " ⤴";
+  const repeat = strand.repeatMark === null ? "" : ` ${strand.repeatMark}`;
+  return `${shared}${repeat}`;
 }
 
 /**
@@ -2564,14 +2604,18 @@ export function spokenName(lane: {
   fullLabel: string;
   repeatMark: string | null;
   refinement: StrandRefinement | null;
+  sharedWith?: string | null;
 }): string {
   // The **words**, not `markSuffix`'s symbol. `⊂` in an `aria-label` is a
   // character a screen reader either skips or names as "subset of", and neither
   // is the relation the corpus recorded. Same fact, said the way this surface
-  // says things — which is the rule `spokenName` exists to keep.
+  // says things — which is the rule `spokenName` exists to keep. `⤴` gets the
+  // same treatment: the words say what the jump does.
   const refines = lane.refinement === null ? "" : `, ${lane.refinement.spoken}`;
   const repeats = lane.repeatMark === null ? "" : ` ${lane.repeatMark}`;
-  return `${lane.fullLabel}${refines}${repeats}`;
+  const shared =
+    lane.sharedWith == null ? "" : " — its contents are drawn once earlier on this figure; this line goes there";
+  return `${lane.fullLabel}${refines}${repeats}${shared}`;
 }
 
 export function drawnName(strand: MarkedStrand): string {
@@ -2640,7 +2684,10 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
   // records two sessions lost to deriving that budget a second way; capping the
   // demand keeps one number flowing through `need` → `span` → `fit` →
   // `columnFit` → `fitLabel`, so the column and the cut agree by construction.
-  const own = Math.min(M.labelCap, estimateTextWidth(drawnName(strand), M.laneFont));
+  const own = Math.min(
+    M.labelCap + sharedAllowance(strand),
+    estimateTextWidth(drawnName(strand), M.laneFont),
+  );
   const feeds = strand.feeds.map((feed) => measure(feed, depth + 1));
   // **The horizontal demand a stub's own fan makes.** `placeFeeds` gives stub `i`
   // a `1/(n+1)` slice of the belly to draw its fan in, so a run spent inside one
@@ -3036,7 +3083,7 @@ function place(
   const fitted =
     strand.composite || strand.nameless
       ? { text: "", truncated: false }
-      : fitMarkedName(strand, M.laneFont, nameBudget(context.columnFit));
+      : fitMarkedName(strand, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(strand));
   const fittedWidth = fitted.text === "" ? 0 : estimateTextWidth(fitted.text, M.laneFont);
   // A framed name sits at the LEFT of the shell, not the centre — the owner's
   // own bracket sketch, and a measured constraint: `placeFeeds` puts a lone
@@ -3068,7 +3115,11 @@ function place(
   // this replaces tested. The two agree on today's graph and the field is the
   // honest question — *will this figure open it* — where the depth comparison
   // is one of the two reasons the answer can be no.
-  if (!strand.open && strand.inside > 0) {
+  // A shared lane (W15) is in neither arm: its interior is not hidden — it is
+  // drawn at `sharedWith`, on this same figure — so counting it as collapsed
+  // would tell the reader a click is owed, and as capped that the map is
+  // quietly missing something. Both would be false.
+  if (!strand.open && strand.inside > 0 && strand.sharedWith === undefined) {
     if (strand.openable) out.collapsed += 1;
     else out.capped += 1;
   }
@@ -3157,14 +3208,31 @@ function place(
     // address whether or not it has a node, the id clause would have stopped
     // cancelling and the run lane would have gained a shut control that shuts
     // nothing. Caught by the census, which counts the controls.
+    // A demoted shared lane's body control is the JUMP, not a toggle: its
+    // interior is drawn at `sharedWith`'s address and the control goes there.
+    // Built with its own `at=` so the viewport carry at the diagram's edge
+    // leaves it alone (`withViewport` lets a deliberate `at=` win).
+    // Composed at the W9×W15 merge: inside the truncated map (`innerBase` set)
+    // a demoted lane gets NO control rather than the jump — `figureHref` builds
+    // a whole outer address, so the jump from in here would silently exit the
+    // card, and the owner's rule is that the truncated map stays in the card.
+    // W15's own lesson applies (a control that cannot do its job is a dead
+    // control): the ⤴ mark and `spokenName` still say the interior is drawn
+    // elsewhere; if the owner wants in-card jumps, that is an inner `at=` to
+    // design, not this href to widen.
     openHref:
-      strand.openable &&
-      (isOpenedBy(context.open, strand.address, strand.id) ||
-        context.open.size < CONVERGE_OPEN_MAX)
+      strand.sharedWith !== undefined
         ? context.innerBase === null
-          ? toggleHref(context.focusId, context.open, strand.address, null, strand.id)
-          : innerToggleHref(context.innerBase, context.open, strand.address, strand.id)
-        : null,
+          ? figureHref(context.focusId, context.open, strand.sharedWith)
+          : null
+        : strand.openable &&
+            (isOpenedBy(context.open, strand.address, strand.id) ||
+              context.open.size < CONVERGE_OPEN_MAX)
+          ? context.innerBase === null
+            ? toggleHref(context.focusId, context.open, strand.address, null, strand.id)
+            : innerToggleHref(context.innerBase, context.open, strand.address, strand.id)
+          : null,
+    sharedWith: strand.sharedWith ?? null,
     href: strand.href,
     open: strand.open,
     inside: strand.inside,
@@ -3345,7 +3413,7 @@ function placeFeeds(
   for (const [index, feed] of strand.feeds.entries()) {
     const t = (index + 1) / (strand.feeds.length + 1);
     const at = { x: belly.x0 + (belly.x1 - belly.x0) * t, y: belly.y };
-    const fitted = fitMarkedName(feed, M.laneFont, nameBudget(context.columnFit));
+    const fitted = fitMarkedName(feed, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(feed));
     const y0 = at.y + outward * inner;
     const y1 = at.y + outward * (inner + M.feedRun);
     context.out.rightmost = Math.max(
@@ -3373,10 +3441,20 @@ function placeFeeds(
       outward,
       depth: depth + 1,
       // The control that opens the ingredient. Same two conditions as a lane's:
-      // something recorded inside, and room left under the cap.
+      // something recorded inside, and room left under the cap — unless W15
+      // demoted this occurrence, in which case the control is the jump, exactly
+      // as on a lane — and, exactly as on a lane, the jump only exists OUTSIDE
+      // the truncated map: `figureHref` is a whole outer address, and from
+      // inside the card it would silently exit it (the W9×W15 composition at
+      // the lane's `openHref` records the reasoning once).
+      sharedWith: feed.sharedWith ?? null,
       openHref:
-        feed.openable &&
-        (isOpenedBy(context.open, feed.address, feed.id) ||
+        feed.sharedWith !== undefined
+          ? context.innerBase === null
+            ? figureHref(context.focusId, context.open, feed.sharedWith)
+            : null
+          : feed.openable &&
+          (isOpenedBy(context.open, feed.address, feed.id) ||
           context.open.size < CONVERGE_OPEN_MAX)
           ? context.innerBase === null
             ? toggleHref(context.focusId, context.open, feed.address, null, feed.id)
@@ -3702,6 +3780,120 @@ export function layoutConverge(options: {
 }
 
 /**
+ * One fingerprint of what a strand **holds** — ids, layout and boundaries,
+ * recursively. Addresses are excluded because two occurrences of one node
+ * differ in address by construction; open flags and marks are excluded because
+ * they are facts about the *drawing* (the depth cap shuts what it cannot
+ * reach, a prior demotion rewrites a twin) and letting them into the key made
+ * the dedup order-dependent — two corpus-identical interiors read as different
+ * pictures because one sat a level deeper (W15).
+ */
+function corpusShape(strand: PlanStrand): string {
+  const part = (s: PlanStrand): string =>
+    `${s.draws ?? s.own ?? ""}:${s.layout ?? ""}` +
+    `[${s.children.map(part).join(",")}|${s.feeds.map(part).join(",")}|${s.variants.map(part).join(",")}]` +
+    `#${s.boundaries.join(">")}`;
+  return part(strand);
+}
+
+/**
+ * W15: a node's interior is drawn **once per figure**; every other occurrence
+ * keeps its lane and gets a jump to the one that draws it (NEXT.md §1
+ * option (b), `plans/atlas-revamp/W15-shared-submethod-dedup.md`).
+ *
+ * ## What counts as a duplicate
+ *
+ * Same drawn node AND identical corpus-level interior (`corpusShape`). A
+ * context that genuinely narrows what fills a slot produces a different shape
+ * and both occurrences draw. The saturated `linear-ode-solve` fan is the
+ * motivating case: `time-discretization`'s five methods drawn identically
+ * under Taylor, again under Krovi, again under Dyson — 7,000px of the size
+ * ceiling (D119.6).
+ *
+ * ## Who hosts
+ *
+ * The **shallowest open** occurrence, ties to draw order — not the first in
+ * draw order, which was the first design and picked exactly wrong once: the
+ * first-drawn `chebyshev-lcu-inversion` on the saturated nonlinear figure sits
+ * a level deeper than its twin, so the depth cap had already shut the feeds
+ * the shallower copy could draw. A group with no open member demotes nobody —
+ * every shut line keeps its own open control until a reader opens one, and
+ * from then on that copy hosts and its twins jump to it.
+ *
+ * ## Why a fixpoint, shallowest host first
+ *
+ * Demoting a subtree removes occurrences that lived inside it, so groups are
+ * recomputed over the live tree after every demotion; taking the shallowest
+ * host each round means no later demotion can bury an already-chosen host.
+ * Terminates because every round strictly shrinks the live interior. Runs
+ * before measurement, so a demoted strand sizes as the shut line it now is —
+ * that ordering is the whole height win. Planning itself stays a pure
+ * recursion; its `seen` set remains a cycle guard and nothing more.
+ *
+ * ## What demotion keeps and what it drops
+ *
+ * The lane stays — the branch genuinely contains the node, and hiding the lane
+ * would redraw the false picture the dedup exists to prevent. Its interior
+ * (children, feeds, variants, boundaries) drops, its open controls go, and
+ * `sharedWith` carries the host's address for the jump and the `⤴` mark. The
+ * figure's own subject (a method page's top lane) never demotes: its interior
+ * is the page's point.
+ */
+function dedupSharedInteriors(
+  bundles: readonly { readonly lanes: readonly PlanStrand[] }[],
+  subjectAddress: string | null,
+): void {
+  const depthOf = (address: string): number => address.split(".").length;
+  for (;;) {
+    // Occurrences with an interior, over the live (post-demotion) tree.
+    const groups = new Map<string, PlanStrand[]>();
+    const walk = (strand: PlanStrand): void => {
+      if (strand.sharedWith !== undefined) return;
+      if (
+        strand.draws !== null &&
+        strand.address !== subjectAddress &&
+        (strand.children.length > 0 || strand.feeds.length > 0)
+      ) {
+        const key = `${strand.draws}#${corpusShape(strand)}`;
+        groups.set(key, [...(groups.get(key) ?? []), strand]);
+      }
+      for (const child of strand.children) walk(child);
+      for (const feed of strand.feeds) walk(feed);
+      for (const variant of strand.variants) walk(variant);
+    };
+    for (const bundle of bundles) for (const lane of bundle.lanes) walk(lane);
+
+    // The qualifying group whose host is shallowest, or done.
+    let host: PlanStrand | null = null;
+    let twins: PlanStrand[] = [];
+    for (const members of groups.values()) {
+      if (members.length < 2) continue;
+      const open = members.filter((member) => member.open);
+      if (open.length === 0) continue;
+      const candidate = open.reduce((best, member) =>
+        depthOf(member.address) < depthOf(best.address) ? member : best,
+      );
+      if (host === null || depthOf(candidate.address) < depthOf(host.address)) {
+        host = candidate;
+        twins = members.filter((member) => member !== candidate);
+      }
+    }
+    if (host === null) return;
+    for (const twin of twins) {
+      twin.sharedWith = host.address;
+      twin.children = [];
+      twin.boundaries = [];
+      twin.feeds = [];
+      twin.variants = [];
+      twin.layout = null;
+      twin.open = false;
+      twin.openable = false;
+      twin.opensInto = null;
+    }
+  }
+}
+
+/**
  * The shared body. Both entry points above reach here; they differ in `plan`.
  *
  * `plan: "auto"` is the map's rule, unchanged and untouched — the state chain is
@@ -3791,6 +3983,10 @@ function layoutFigure(options: {
       cappedCount: 0,
     };
   }
+
+  // W15: one interior per (node, shape) per figure — before measurement, so a
+  // demoted strand sizes as the shut line it now is.
+  dedupSharedInteriors(plan.bundles, subjectAddress);
 
   // Measured before anything is placed, bottom-up: a bundle is as wide as its
   // widest strand wants and as tall as its strands' bands summed.

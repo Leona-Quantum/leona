@@ -91,11 +91,21 @@ function siblingsOf(diagram: ConvergeDiagram): ConvergeLane[][] {
   return [...buckets.values()];
 }
 
-/** Lanes grouped by the pair of circles they run between. */
+/**
+ * Lanes grouped by the pair of circles they run between.
+ *
+ * Keyed by parent **and** span, not span alone. The span was only ever a proxy
+ * for "between the same two circles", and W14 broke the proxy: the nonlinear
+ * figure now holds two parallel runs of hops between the same outer circles
+ * (simulate → estimate beside discretize → linear-solve), whose interior lanes
+ * share an x-range while living inside different ways across. `parentKey` is
+ * carried on the lane for exactly this — grouping by recovered structure is the
+ * mistake this file has already paid for once.
+ */
 function bundlesOf(diagram: ConvergeDiagram): ConvergeLane[][] {
   const bySpan = new Map<string, ConvergeLane[]>();
   for (const lane of diagram.lanes) {
-    const key = `${lane.x0}>${lane.x1}`;
+    const key = `${lane.parentKey ?? "figure"}#${lane.x0}>${lane.x1}`;
     const list = bySpan.get(key) ?? [];
     list.push(lane);
     bySpan.set(key, list);
@@ -126,13 +136,16 @@ test("a state on several routes is ONE circle, not one per route", () => {
     "three circles, one per state in the denominator chain",
   );
   assert.equal(new Set(outer).size, outer.length, "no state is drawn twice");
-  // And the deeper one that does appear is the object inside the run of two
-  // hops, which this figure draws as a chain because it is one.
+  // And the deeper ones that do appear are the objects inside the runs of two
+  // hops, which this figure draws as chains because they are chains. Two since
+  // W14: discretize → linear-solve hands on `linear-system`, and the KvN
+  // wiring's simulate → estimate hands on `runnable-evolution` — each drawn
+  // once, which is the same claim the depth-0 assertion makes one level up.
   const inner = diagram.states.filter((state) => state.depth > 0);
   assert.deepEqual(
     inner.map((state) => state.stateId),
-    ["linear-system"],
-    "the run of two hops names the object it hands on halfway",
+    ["linear-system", "runnable-evolution"],
+    "each run of two hops names the object it hands on halfway",
   );
   for (const state of inner) {
     assert.ok(state.r < CONVERGE_METRICS.stateRadius, "an inner object is drawn smaller");
@@ -607,21 +620,55 @@ test("a fan reserves the band its own branches reach, not half of a summed row",
 
 // --- text, which is where the old canvas's collisions actually lived ---------
 
+/**
+ * Every shut figure the canvas draws, for the two name sweeps below: the map's
+ * slot figures and every method's own page (the D119.1 population — a method's
+ * page fans a slot the map may keep as a state chain, so the pages are whole
+ * figures no slot sweep contains).
+ *
+ * `drawableSlots`, not `convergingSlots`: the sweeps read the latter for years,
+ * and it holds exactly ONE capability — so the slot half of each "sweep" was a
+ * single figure per locale. Per-source floors rather than one total, so a
+ * refactor of either list cannot quietly empty it while the other keeps the
+ * count respectable. Measured: 19 slot figures, 63 method pages, none empty.
+ */
+function shutFigures(locale: PublicLocale): [string, ConvergeDiagram][] {
+  const slots: [string, ConvergeDiagram][] = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map(
+    (focus) => [focus.id, diagramFor(focus.id, locale)],
+  );
+  const pages: [string, ConvergeDiagram][] = [];
+  for (const id of METHOD_IDS) {
+    const diagram = pageFigure(id, locale);
+    if (!diagram.empty) pages.push([`${id} (page)`, diagram]);
+  }
+  assert.ok(slots.length >= 15, `only ${slots.length} slot figures swept`);
+  assert.ok(pages.length >= 60, `only ${pages.length} method pages swept`);
+  return [...slots, ...pages];
+}
+
 test("every lane label stays inside the canvas", () => {
   // Three of the four collisions the old canvas shipped were <text> against
-  // <text>, and every invariant it had was about lines and circles.
+  // <text>, and every invariant it had was about lines and circles. Nameless
+  // lanes are excluded for the same reason the overlap sweep excludes them:
+  // the subject is a drawn name, and a nameless lane draws none.
   for (const locale of ["en", "ja"] as const) {
-    for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-      const diagram = diagramFor(focus.id, locale);
+    for (const [name, diagram] of shutFigures(locale)) {
       for (const lane of diagram.lanes) {
+        if (lane.label === "") continue;
         const half = estimateTextWidth(lane.label, M.laneFont) / 2;
-        assert.ok(lane.labelX - half >= 0, `${locale}/${lane.key} label off the left edge`);
+        assert.ok(lane.labelX - half >= 0, `${locale}/${name}/${lane.key} label off the left edge`);
         assert.ok(
           lane.labelX + half <= diagram.width,
-          `${locale}/${lane.key} label off the right edge`,
+          `${locale}/${name}/${lane.key} label off the right edge`,
         );
-        assert.ok(lane.labelY - M.laneFont >= 0, `${locale}/${lane.key} label above the canvas`);
-        assert.ok(lane.labelY <= diagram.height, `${locale}/${lane.key} label below the canvas`);
+        assert.ok(
+          lane.labelY - M.laneFont >= 0,
+          `${locale}/${name}/${lane.key} label above the canvas`,
+        );
+        assert.ok(
+          lane.labelY <= diagram.height,
+          `${locale}/${name}/${lane.key} label below the canvas`,
+        );
       }
     }
   }
@@ -629,21 +676,28 @@ test("every lane label stays inside the canvas", () => {
 
 test("two lane labels never overlap", () => {
   for (const locale of ["en", "ja"] as const) {
-    for (const focus of convergingSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-      const diagram = diagramFor(focus.id, locale);
-      const boxes = diagram.lanes.map((lane) => ({
-        key: lane.key,
-        x0: lane.labelX - estimateTextWidth(lane.label, M.laneFont) / 2,
-        x1: lane.labelX + estimateTextWidth(lane.label, M.laneFont) / 2,
-        y0: lane.labelY - M.laneFont,
-        y1: lane.labelY,
-      }));
+    // Both surfaces that draw this canvas, not just the map — see `shutFigures`
+    // for the population and D119.1 for why the method pages are load-bearing.
+    for (const [name, diagram] of shutFigures(locale)) {
+      // `label !== ""` is the subject, not a soft spot: a nameless lane draws
+      // no name to collide, and its box would be a point that could sit inside
+      // a real name's box and report a collision no reader can see. Same rule
+      // as `no two names overlap on an opened figure either`.
+      const boxes = diagram.lanes
+        .filter((lane) => lane.label !== "")
+        .map((lane) => ({
+          key: lane.key,
+          x0: lane.labelX - estimateTextWidth(lane.label, M.laneFont) / 2,
+          x1: lane.labelX + estimateTextWidth(lane.label, M.laneFont) / 2,
+          y0: lane.labelY - M.laneFont,
+          y1: lane.labelY,
+        }));
       for (let i = 0; i < boxes.length; i += 1) {
         for (let j = i + 1; j < boxes.length; j += 1) {
           const a = boxes[i]!;
           const b = boxes[j]!;
           const hit = a.x0 < b.x1 - EPS && b.x0 < a.x1 - EPS && a.y0 < b.y1 - EPS && b.y0 < a.y1 - EPS;
-          assert.ok(!hit, `${locale}: labels of ${a.key} and ${b.key} overlap`);
+          assert.ok(!hit, `${locale}: labels of ${a.key} and ${b.key} overlap on ${name}`);
         }
       }
     }
@@ -1141,8 +1195,154 @@ test("the owner's own research direction is on the page", () => {
 // `laneName` has no drawn instance left ("a narrowing is not a second lane
 // beside the slot whose fan already contains it", below, is what replaced the
 // drawing). The branch itself stays — a narrowing with NO plain sibling still
-// draws, named after its filler — and wants a fixture-graph witness, which is
-// recorded in NEXT.md rather than pretended to here.
+// draws, named after its filler — and the fixture below is its witness.
+
+test("a narrowing with no plain sibling still draws, named after its filler", () => {
+  // Built, because the corpus cannot reach the branch any more: every
+  // narrowing the authored graph records has a plain sibling, and the
+  // session-119 dedup removes exactly those. The branch survives for the
+  // other shape — a plain edge that completes no path while the narrowed
+  // landing does — so this graph is that shape. `fx-encode` promises the
+  // broad form and nothing departs from the broad form, so the plain edge is
+  // a dead end and never becomes a lane; the only way across is `fx-route`,
+  // whose `through` lands the encoding on the sharp form and whose `via` pins
+  // `fx-sharp-lift` as the filler that does it.
+  const vocabulary: StateVocabulary = {
+    states: [
+      { id: "fx-problem", label: "fx-problem", labelJa: "fx-problem", summary: "", summaryJa: "" },
+      {
+        id: "fx-broad-form",
+        label: "fx-broad-form",
+        labelJa: "fx-broad-form",
+        summary: "",
+        summaryJa: "",
+      },
+      {
+        id: "fx-sharp-form",
+        label: "fx-sharp-form",
+        labelJa: "fx-sharp-form",
+        summary: "",
+        summaryJa: "",
+        specializes: ["fx-broad-form"],
+      },
+      { id: "fx-answer", label: "fx-answer", labelJa: "fx-answer", summary: "", summaryJa: "" },
+    ],
+  };
+  const slot = (id: string, label: string, from: string, to: string): LayerCapability => ({
+    kind: "capability",
+    id,
+    label,
+    labelJa: `${label} (ja)`,
+    summary: "",
+    summaryJa: "",
+    whyALayer: "",
+    whyALayerJa: "",
+    contract: { from, to, takes: "", takesJa: "", returns: "", returnsJa: "" },
+  });
+  const routeBase = {
+    kind: "method",
+    id: "fx-route",
+    label: "The whole route",
+    labelJa: "The whole route (ja)",
+    summary: "",
+    summaryJa: "",
+    realizes: "fx-solve",
+    steps: ["fx-encode", "fx-finish"],
+    through: { "fx-encode": "fx-sharp-form" },
+  } as const;
+  const shared = [
+    slot("fx-solve", "Solve the fixture problem", "fx-problem", "fx-answer"),
+    slot("fx-encode", "Encode into the broad form", "fx-problem", "fx-broad-form"),
+    slot("fx-finish", "Finish from the sharp form", "fx-sharp-form", "fx-answer"),
+    {
+      kind: "method",
+      id: "fx-sharp-lift",
+      label: "The sharp lift",
+      labelJa: "The sharp lift (ja)",
+      summary: "",
+      summaryJa: "",
+      realizes: "fx-encode",
+      steps: [],
+      atomic: true,
+    },
+  ] as const;
+  const graph: LayerGraph = {
+    nodes: [...shared, { ...routeBase, via: { "fx-encode": "fx-sharp-lift" } }],
+  };
+  const focus = layerNode(graph, "fx-solve");
+  assert.ok(focus && isCapability(focus));
+
+  // The precondition, pinned so a later edit cannot quietly turn this into a
+  // slot-lane test: the walk admits exactly one way across the first bundle,
+  // it is a single-edge narrowing, and it SURVIVES the dedup because no plain
+  // sibling exists to absorb it.
+  const expansion = expansionOf(graph, vocabulary, focus);
+  assert.equal(expansion.atomicAtThisLevel, false);
+  assert.deepEqual(expansion.chain, ["fx-problem", "fx-sharp-form", "fx-answer"]);
+  const bundle = expansion.bundles[0]!;
+  assert.equal(bundle.lanes.length, 1, "the narrowing must be the bundle's only lane");
+  assert.equal(bundle.lanes[0]!.edges.length, 1, "the drawn lane must be a single edge");
+  assert.equal(bundle.lanes[0]!.edges[0]!.narrowedBy, "fx-sharp-lift");
+
+  // The behaviour the retired test pinned on the corpus, now pinned here: the
+  // lane is the filler's own line — its name, its page — and the slot's name
+  // is nowhere on the figure, because naming it after the slot would say the
+  // broad landing is on a path when no path takes it.
+  for (const locale of ["en", "ja"] as const) {
+    const diagram = layoutConverge({ graph, vocabulary, focus, locale });
+    assert.equal(diagram.grain, "states");
+    const wanted = locale === "en" ? "The sharp lift" : "The sharp lift (ja)";
+    const named = diagram.lanes.filter((lane) => lane.fullLabel === wanted);
+    assert.equal(
+      named.length,
+      1,
+      `${locale}: the filler's name is drawn ${named.length} times, expected exactly once`,
+    );
+    assert.ok(
+      named[0]!.href === "/repository/layers/fx-sharp-lift" ||
+        named[0]!.href.startsWith("/repository/layers/fx-sharp-lift?"),
+      `${locale}: the narrowed lane's name points at ${named[0]!.href}, not at its filler's page`,
+    );
+    assert.equal(named[0]!.draws, "fx-sharp-lift");
+    assert.deepEqual(
+      diagram.lanes
+        .filter((lane) => lane.fullLabel.startsWith("Encode into the broad form"))
+        .map((lane) => lane.fullLabel),
+      [],
+      `${locale}: a narrowing with no plain sibling must not be named after its slot`,
+    );
+  }
+
+  // And the branch's own string, through the one consumer that reads it
+  // verbatim rather than re-deriving it from the filler node: `crossingsAt`
+  // names a filler-less way by what `laneName` returned. A narrowing pinned by
+  // no `via` is that shape — `narrowedBy` falls back to the route that
+  // recorded it, which realizes the focus slot rather than the narrowed one,
+  // so `laneFillers` finds nothing and the census prints the branch's text.
+  // The alternative way out that no route walks is what makes the combination
+  // unpublished, which is what puts it in `examples`. Without this arm, a
+  // mutation of the branch's `text` alone survives every drawn-figure
+  // assertion above, because `planForNarrowed` re-derives the drawn name from
+  // the filler — measured while this test was built.
+  const unpinned: LayerGraph = {
+    nodes: [...shared, routeBase, slot("fx-alt-finish", "Finish another way", "fx-sharp-form", "fx-answer")],
+  };
+  const unpinnedFocus = layerNode(unpinned, "fx-solve");
+  assert.ok(unpinnedFocus && isCapability(unpinnedFocus));
+  const census = crossingsAt(
+    unpinned,
+    vocabulary,
+    expansionOf(unpinned, vocabulary, unpinnedFocus),
+    "fx-sharp-form",
+    "en",
+  );
+  assert.ok(census, "the sharp form must be a shared circle with ways in and out");
+  assert.equal(census.waysIn, 1, "the narrowing is still the only way in");
+  const discovery = census.examples.find((crossing) => crossing.outHref.endsWith("/fx-alt-finish"));
+  assert.ok(discovery, "the unwalked way out is listed as a discovery");
+  assert.equal(discovery.inLabel, "The whole route");
+  assert.equal(discovery.inHref, "/repository/layers/fx-route");
+});
 
 // --- opening a line, in place -----------------------------------------------
 //
@@ -1418,8 +1618,12 @@ test("a line that opens into something says so, and a line that does not is not 
   // (−2 slot lanes, +7 method lanes, all seven openable into their routes),
   // and the Koopman-von Neumann narrowing stopped being drawn beside the
   // embedding lane whose fan contains it (−1 leaf).
-  assert.equal(openable + leaves + 1, 64, "the nineteen figures draw 64 lines between them");
-  assert.equal(openable, 27, "27 of them open into something recorded");
+  // 64 until session 120. The W14 wiring gave the KvN route its readout, so the
+  // shut nonlinear figure's walk gained the simulate → estimate run: two slot
+  // lanes between the linear-ivp and solution-answer circles that no way across
+  // drew before, both real, both sourced (Joseph §V C).
+  assert.equal(openable + leaves + 1, 66, "the nineteen figures draw 66 lines between them");
+  assert.equal(openable, 29, "29 of them open into something recorded");
   assert.equal(leaves, 36, "36 are leaves — nothing finer is recorded for them");
 });
 
@@ -1672,7 +1876,13 @@ test("a shut line says what is inside it, and the figure counts them", () => {
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of [new Set<string>(), new Set(openableAddresses(focus.id))]) {
       const diagram = openDiagram(focus.id, open);
-      const shut = diagram.lanes.filter((lane) => !lane.open && lane.inside > 0);
+      // Shared lanes (W15) are outside the partition: their interior is not
+      // hidden — it is drawn at `sharedWith` on this same figure — so they are
+      // neither a click owed nor a thing the map is missing. Their control is
+      // the jump, asserted by its own test.
+      const shut = diagram.lanes.filter(
+        (lane) => !lane.open && lane.inside > 0 && lane.sharedWith === null,
+      );
       const clickable = shut.filter((lane) => lane.openHref !== null).length;
 
       // The count is the thing counted, and it is only the clickable half.
@@ -1962,7 +2172,10 @@ test("an open ingredient is named once, not once as a stub and again on its fan"
       }
     }
   }
-  assert.ok(pairs > 50, `only ${pairs} opened ingredients were examined`);
+  // 46 since W15: a duplicated ingredient's later occurrences demote to shared
+  // jumps and stop being *opened* ingredients — measured 46 on the dedup's
+  // landing, floor just below so the sweep cannot quietly become vacuous.
+  assert.ok(pairs > 40, `only ${pairs} opened ingredients were examined`);
 });
 
 test("a lane's ingredients are its own, not its descendants'", () => {
@@ -2157,6 +2370,24 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
       }
     }
   }
+  // The same two invariants on every method's own page — the surface the slot
+  // sweep above cannot see (the D119.1 lesson, applied here in session 120 when
+  // the KvN ×4K mark's only drawing surface turned out to be the method page:
+  // no map figure draws that route's interior, by the bundle dedup's design).
+  for (const method of LAYER_GRAPH.nodes) {
+    if (!isMethod(method) || method.repeats === undefined) continue;
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = pageFigure(method.id, locale);
+      for (const lane of diagram.lanes) {
+        if (lane.repeatMark === null || lane.nameless) continue;
+        marked += 1;
+        assert.ok(
+          lane.label.endsWith(` ${lane.repeatMark}`),
+          `${method.id} page: ${lane.key} carries ${lane.repeatMark} and draws "${lane.label}"`,
+        );
+      }
+    }
+  }
   // Which pairs actually reached a drawing, checked against the graph. A record
   // that reaches no figure is the failure this shape allows: nothing renders, no
   // gate fires, and the map goes on being silent about the most expensive lane
@@ -2180,6 +2411,23 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
           if (onLane || onFeed) drawn.add(key);
         }
       }
+    }
+  }
+  // A method's own page reaches its record too — for the KvN wiring it is the
+  // only surface that does, and "drawn somewhere a reader lands" is the claim.
+  for (const method of LAYER_GRAPH.nodes) {
+    if (!isMethod(method) || method.repeats === undefined) continue;
+    const diagram = pageFigure(method.id);
+    for (const [stepId] of Object.entries(method.repeats)) {
+      const key = `${method.id}|${stepId}`;
+      if (drawn.has(key)) continue;
+      const onLane = diagram.lanes.some(
+        (lane) => lane.repeatMark === expected.get(key) && keyNames(lane.key).has(method.id),
+      );
+      const onFeed = diagram.feeds.some(
+        (feed) => feed.repeatMark === expected.get(key) && keyNames(feed.parentKey).has(method.id),
+      );
+      if (onLane || onFeed) drawn.add(key);
     }
   }
   assert.deepEqual(
@@ -2360,9 +2608,17 @@ test("the count reaches a reader who is not looking at the picture", () => {
     fullLabel: string;
     repeatMark: string | null;
     refinement: { spoken: string } | null;
+    sharedWith?: string | null;
   }): string =>
     `${lane.fullLabel}${lane.refinement === null ? "" : `, ${lane.refinement.spoken}`}${
       lane.repeatMark === null ? "" : ` ${lane.repeatMark}`
+    }${
+      // The `⤴` is drawn and is not a word either (W15): the spoken form says
+      // what the jump does, asserted here so a screen reader never gets the
+      // bare symbol's silence where a sighted reader gets an affordance.
+      lane.sharedWith == null
+        ? ""
+        : " — its contents are drawn once earlier on this figure; this line goes there"
     }`;
   let checked = 0;
   let narrowed = 0;
@@ -2508,7 +2764,10 @@ test("an opened line draws its name, and the name is not worse placed than a shu
       }
     }
   }
-  assert.ok(openedNamed > 100, `only ${openedNamed} opened lanes drew a name`);
+  // 78 opened since W15 — every duplicate interior that used to inflate the
+  // opened-name population now draws once; the names the dedup removed were
+  // exactly the ones this sweep saw twice. Floors re-pinned just below.
+  assert.ok(openedNamed > 70, `only ${openedNamed} opened lanes drew a name`);
   assert.ok(shutNamed > 100, `only ${shutNamed} shut lanes drew a name`);
   const openedRate = openedHit / openedNamed;
   const shutRate = shutHit / shutNamed;
@@ -2656,7 +2915,10 @@ test("a name on the bone stays inside the band the layout reserved for it", () =
   // its methods. Pinned just under the measurement so the sweep cannot quietly
   // become vacuous, which is a failure this repository has shipped before: a
   // guard whose subject list empties passes for everything.
-  assert.ok(checked >= 40, `only ${checked} names on a bone checked`);
+  // 20 since W15: a demoted duplicate slot never opens into a bone, so the
+  // saturated population halved — the bones that remain are the ones a reader
+  // actually sees, floor re-pinned just below the new measurement.
+  assert.ok(checked >= 18, `only ${checked} names on a bone checked`);
 });
 
 test("a name past the cap is cut, and the full text survives in the title", () => {
@@ -2715,7 +2977,12 @@ test("a name past the cap is cut, and the full text survives in the title", () =
     // `AAA… ×N`. That is the invariant the mark exists for: a
     // count is the one thing on a lane the reader cannot learn anywhere else on
     // the canvas, so the *name* gives way to it and never the other way round.
-    const mark = lane.repeatMark === null ? "" : ` ${lane.repeatMark}`;
+    // Both marks survive the cut, in `markSuffix`'s one order: `⤴` (W15) then
+    // the count — each is a fact the reader can learn nowhere else on the
+    // canvas, so the name gives way to them and never the other way round.
+    const mark = `${lane.sharedWith === null ? "" : " ⤴"}${
+      lane.repeatMark === null ? "" : ` ${lane.repeatMark}`
+    }`;
     assert.ok(
       lane.label.endsWith(`…${mark}`),
       `cut name "${lane.label}" does not end in an ellipsis followed by its mark`,
@@ -2723,10 +2990,15 @@ test("a name past the cap is cut, and the full text survives in the title", () =
     // The cut respects the cap it was sized against, and the column did not grow
     // to fit the uncapped name — that second half is the part that would silently
     // stop being true if the cap were applied at `fitLabel` instead of at the
-    // demand `measure` reports.
+    // demand `measure` reports. A shared lane's cap is the cap plus the `⤴`'s
+    // own width (W15's `sharedAllowance`): the jump glyph rides beyond the cap
+    // rather than costing the name characters, on both the demand and the cut,
+    // which is exactly what this assertion re-derives.
+    const cap =
+      M.labelCap + (lane.sharedWith === null ? 0 : estimateTextWidth(" ⤴", M.laneFont));
     assert.ok(
-      estimateTextWidth(lane.label, M.laneFont) <= M.labelCap,
-      `cut name is ${estimateTextWidth(lane.label, M.laneFont)}px, past the ${M.labelCap}px cap`,
+      estimateTextWidth(lane.label, M.laneFont) <= cap,
+      `cut name is ${estimateTextWidth(lane.label, M.laneFont)}px, past the ${cap}px cap`,
     );
     // And the whole point: nothing was lost from the page. The `<title>` reads
     // `fullLabel`, so the reader still gets every character on hover.
@@ -2818,9 +3090,23 @@ test("no two names overlap on an opened figure either", () => {
   let openNames = 0;
   let shutNames = 0;
   const kinds = { shutShut: 0, openShut: 0, openOpen: 0 };
+  const hits: string[] = [];
   for (const locale of ["en", "ja"] as const) {
-    for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-      const diagram = openDiagram(focus.id, openableAddresses(focus.id), locale);
+    // Both surfaces that draw this canvas, not just the map — the same
+    // widening the reachability bar got in session 119, and for the same
+    // reason: the shell's name landed on a step's name on
+    // `taylor-all-at-once`'s page while every map sweep stayed green, because
+    // no map figure draws that fan (D119.1). A method page arrives already
+    // opened — its subject lane is fanned unconditionally — so it belongs in
+    // the opened-figure population as built, with no saturation walk.
+    const figures: ConvergeDiagram[] = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map((focus) =>
+      openDiagram(focus.id, openableAddresses(focus.id), locale),
+    );
+    for (const id of METHOD_IDS) {
+      const diagram = pageFigure(id, locale);
+      if (!diagram.empty) figures.push(diagram);
+    }
+    for (const diagram of figures) {
       const drawn = diagram.lanes.filter((lane) => lane.label !== "");
       for (const lane of drawn) if (lane.open) openNames += 1;
         else shutNames += 1;
@@ -2834,23 +3120,29 @@ test("no two names overlap on an opened figure either", () => {
           if (openCount === 2) kinds.openOpen += 1;
           else if (openCount === 1) kinds.openShut += 1;
           else kinds.shutShut += 1;
+          hits.push(
+            `${diagram.caption} (${locale}): "${drawn[i]!.label}" against "${drawn[j]!.label}"`,
+          );
         }
       }
     }
   }
-  // 254 opened / 264 shut since session 104. The shut side fell from over 300
-  // because the remainder hops are shut lanes that stopped drawing a duplicate
-  // name; the sweep still covers both sides heavily enough not to be vacuous.
+  // 254 opened / 264 shut since session 104 on the map alone; the method pages
+  // (PR 359) roughly double both. W15 then moves every demoted duplicate
+  // interior's names from the opened column to the shut one — the same names,
+  // drawn once, now on shut shared lanes. The floors exist to catch the sweep
+  // going quiet, not to pin the population's size.
   assert.ok(
-    openNames > 200 && shutNames > 250,
+    openNames > 140 && shutNames > 350,
     `${openNames} opened / ${shutNames} shut names drawn`,
   );
   assert.deepEqual(
     kinds,
     { shutShut: 0, openShut: 0, openOpen: 0 },
-    `names overlap on a fully opened figure: ${kinds.shutShut} shut-against-shut, ` +
+    `names overlap on an opened figure: ${kinds.shutShut} shut-against-shut, ` +
       `${kinds.openShut} opened-against-shut, ${kinds.openOpen} opened-against-opened. ` +
-      `All three were 0 once the fan allocator stopped centring a row containing the spine`,
+      `All three were 0 once the fan allocator stopped centring a row containing the spine. ` +
+      `Where: ${hits.slice(0, 8).join("; ")}`,
   );
 });
 
@@ -3140,34 +3432,34 @@ test("firstOrderRun is a share of the line, floored by the bow and ceilinged", (
  */
 const SIZE_CEILING = {
   /**
-   * Widest figure, fully opened, either locale. Today **10,573** —
-   * `linear-ode-solve` in `ja`. It was 9,571 before first-order lines started
-   * taking a share of themselves as tendon (`firstOrderRun`, session 112), then
-   * 10,867, and session 115 took 294px back off it by steepening
-   * `tendonAngleDeg` to 76° on the owner's ask to shorten the distance between
-   * states. Saturated is where that change buys least — the 340px ceiling is
-   * already what binds here — and the shut figures a reader actually arrives on
-   * is where it buys most.
+   * Widest figure, fully opened, either locale. Today **6,955** —
+   * `nonlinear-ode-solve` in `ja`, after W15's dedup took `linear-ode-solve`
+   * (10,573 before, the old holder) apart: a shared interior draws once per
+   * figure, and the width was mostly parallel copies of the same fans. The
+   * pre-W15 history: 9,571 before first-order lines started taking a share of
+   * themselves as tendon (`firstOrderRun`, session 112), then 10,867, then
+   * 294px back off via `tendonAngleDeg` 76° (session 115).
    */
-  saturatedWidth: 12_000,
+  saturatedWidth: 8_000,
   /**
-   * Tallest, same sweep. Today **22,982** — `linear-ode-solve` in `en`, and it
-   * is new: that slot drew a two-lane state chain until session 119, when its
-   * own methods' `bypasses` refuted the chain and the figure became the fan
-   * of all seven routes (`drawsAsStateChain`).
+   * Tallest, same sweep. Today **6,056** — `nonlinear-ode-solve` in `en`,
+   * re-measured at the merge after the branch took dev's 360–362 on board (the
+   * 6,395 recorded at authoring predated those; the PR body's 5,142 is
+   * `linear-ode-solve` en — the motivating figure's drop, never the max).
    *
-   * **The trip was taken as the decision the note below demands, and this is
-   * the decision.** The height is not a regression in the drawing — it is the
-   * honest figure, inflated by a defect this file already has on the books: a
-   * shared sub-method is drawn once per branch, so the saturated fan draws
-   * `time-discretization`'s five methods once under Taylor, again under
-   * Krovi, again under Dyson (the 130-group census, NEXT.md §3). The real fix
-   * is that dedup, and this ceiling comes back down with it; a shape that
-   * merely hid the seven routes was not a smaller figure, it was a false one.
-   * Before the fan: 15,900 — `time-discretization` (en), 100px of headroom,
-   * which is why the old number sat at 16,000.
+   * **This is the ceiling coming back down, as D119.6 promised it would.** The
+   * 22,982px `linear-ode-solve` fan that moved the ceiling 16,000 → 24,000 was
+   * the honest figure inflated by the shared-sub-method repeat —
+   * `time-discretization`'s five methods drawn once under Taylor, again under
+   * Krovi, again under Dyson. W15 draws a shared interior once per figure and
+   * later occurrences jump to it, so the debt the 24,000 carried is paid and
+   * the ceiling returns to the measurement-plus-headroom convention. (The
+   * repeat census that used to live here as a prose number — "130 groups" —
+   * drifted while nothing defended it; it is now the invariant test
+   * `a shared interior is drawn once per figure`, which prints its own
+   * denominator every run.)
    */
-  saturatedHeight: 24_000,
+  saturatedHeight: 8_000,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
    * arrival. Today **1,045** against a 1,204px canvas, so this one is nearly
@@ -3297,10 +3589,22 @@ test("every address a figure emits keeps the reader where they were standing", (
       // reader back to the origin at 100%, which does not read as a control
       // working; it reads as the map jumping. This enumeration is the guard, and
       // it had the hole: it listed four of the five addresses a figure emits.
+      // A shared lane's open control is the one address on a figure that MOVES
+      // the reader — that is its entire job (W15: the interior is drawn at
+      // `sharedWith` and the control goes there). Its `at=` is the target,
+      // deliberately, same as the size rungs the header measured. The lane's
+      // OTHER addresses still keep the reader standing, so only the jump is
+      // set aside — and asserted below for what it must carry instead.
       const addresses = [
-        ...carried.lanes.flatMap((lane) => [lane.href, lane.openHref]),
+        ...carried.lanes.flatMap((lane) => [
+          lane.href,
+          lane.sharedWith === null ? lane.openHref : null,
+        ]),
         ...carried.states.map((state) => state.href),
-        ...carried.feeds.flatMap((feed) => [feed.href, feed.openHref]),
+        ...carried.feeds.flatMap((feed) => [
+          feed.href,
+          feed.sharedWith === null ? feed.openHref : null,
+        ]),
       ].filter((href): href is string => typeof href === "string");
       assert.ok(addresses.length > 0, `${focus.id} emitted no addresses`);
       for (const href of addresses) {
@@ -3308,6 +3612,14 @@ test("every address a figure emits keeps the reader where they were standing", (
         assert.ok(
           href.includes(`at=${encodeURIComponent(AT)}`),
           `${focus.id}: ${href} dropped the viewport`,
+        );
+      }
+      for (const lane of carried.lanes) {
+        if (lane.sharedWith === null) continue;
+        assert.ok(
+          lane.openHref !== null &&
+            lane.openHref.includes(`at=${encodeURIComponent(lane.sharedWith)}`),
+          `${focus.id}: ${lane.key} is shared and its control does not go to the drawn occurrence`,
         );
       }
       // And what the reader had open, on the addresses that go to a node's own
@@ -3372,6 +3684,20 @@ test("a line never offers a click it will not honour", () => {
     for (const lane of diagram.lanes) {
       if (lane.openHref === null) continue;
       offered += 1;
+      // A shared lane is the third kind of honoured click (W15): it is named
+      // in `?open=`, drawn shut BECAUSE its interior is drawn at an earlier
+      // occurrence, and following its control moves the reader there — a real
+      // change, just not a toggle. Honoured iff the target address is a lane
+      // this same drawing holds open.
+      if (lane.sharedWith !== null) {
+        assert.ok(
+          diagram.lanes.some(
+            (other) => other.address === lane.sharedWith && other.open,
+          ),
+          `${focus.id}: ${lane.key} jumps to ${lane.sharedWith}, which is not an open lane on this figure`,
+        );
+        continue;
+      }
       // The link is honoured if following it changes the drawing: either it is
       // open now and the link shuts it, or it is shut and the link opens it.
       if (lane.open) continue;
@@ -3515,11 +3841,18 @@ test("a node id in ?open= still opens what it always opened", () => {
     }
   }
   assert.ok(found, "no node holds two shut openable positions — is the id path still distinct?");
-  const byId = openedBy(openDiagram(FOCUS, [...ancestors, found.id]));
-  const byAddress = openedBy(openDiagram(FOCUS, [...ancestors, found.address]));
+  // Open OR shared, since W15: the id form still touches every occurrence, but
+  // occurrences past the first draw as shared jumps rather than as second
+  // interiors — which is the dedup's whole point, not a loss of the id's
+  // meaning. Counting drawn-open alone would say the two forms "became one"
+  // precisely because the duplicate interiors stopped being drawn.
+  const touchedBy = (d: ConvergeDiagram) =>
+    d.lanes.filter((one) => one.open || one.sharedWith !== null).length;
+  const byId = touchedBy(openDiagram(FOCUS, [...ancestors, found.id]));
+  const byAddress = touchedBy(openDiagram(FOCUS, [...ancestors, found.address]));
   assert.ok(
     byId > byAddress,
-    `${found.id} opens ${byId} lanes and its address opens ${byAddress} — the two forms have become one`,
+    `${found.id} touches ${byId} lanes and its address touches ${byAddress} — the two forms have become one`,
   );
 });
 
@@ -3735,6 +4068,62 @@ const DRAWN_NOWHERE: readonly string[] = [
   "level-set-observable-route",
   "homotopy-perturbation-route",
 ];
+
+test("a shared interior is drawn once per figure, and the census prints the denominator", () => {
+  // W15's invariant, replacing the prose number that guarded this before. The
+  // "130 groups" written in NEXT.md and quoted in two test comments drifted —
+  // a fresh census on the session that built the dedup measured 60 groups (39
+  // intra-figure), with the worst offenders larger than the prose said
+  // ("Block-encode a matrix" ×18 where the note said ×14). A number that lives
+  // only in a document is a number nothing is defending, so the census is this
+  // sweep now, and the denominator prints every run.
+  //
+  // The subtree is re-derived here from `parentKey` links, independently of the
+  // layout's own `interiorShape` — a derived value cannot verify itself.
+  let sharedLanes = 0;
+  let openInteriors = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      const open = new Set(openableAddresses(focus.id));
+      const diagram = openDiagram(focus.id, open, locale);
+      const childrenOf = new Map<string, typeof diagram.lanes>();
+      for (const lane of diagram.lanes) {
+        if (lane.parentKey === null) continue;
+        childrenOf.set(lane.parentKey, [...(childrenOf.get(lane.parentKey) ?? []), lane]);
+      }
+      const subtree = (key: string): string =>
+        (childrenOf.get(key) ?? [])
+          .map((lane) => `${lane.draws ?? lane.own ?? ""}(${subtree(lane.key)})`)
+          .join(",");
+      const seen = new Map<string, string>();
+      for (const lane of diagram.lanes) {
+        if (lane.sharedWith !== null) {
+          sharedLanes += 1;
+          continue;
+        }
+        if (!lane.open || lane.draws === null) continue;
+        const interior = subtree(lane.key);
+        if (interior === "") continue;
+        openInteriors += 1;
+        const key = `${lane.draws}#${interior}`;
+        const first = seen.get(key);
+        assert.equal(
+          first,
+          undefined,
+          `${focus.id} (${locale}): ${lane.draws} draws the same interior twice — at ${first} and ${lane.address}`,
+        );
+        seen.set(key, lane.address);
+      }
+    }
+  }
+  console.log(
+    `shared-interior census: ${openInteriors} open interiors drawn, ${sharedLanes} occurrences demoted to jumps, over ${
+      drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).length
+    } saturated figures × 2 locales`,
+  );
+  assert.ok(openInteriors > 50, `only ${openInteriors} open interiors — the sweep has gone quiet`);
+  assert.ok(sharedLanes > 20, `only ${sharedLanes} shared lanes — is the dedup running at all?`);
+});
 
 test("no two routes through one slot draw the same interior unless something says why", () => {
   const drawn = drawnInteriors();
@@ -4297,8 +4686,11 @@ test("every opened line's shut control is reachable where its own children do no
   // The denominators, so a saturation walk that returns nothing cannot pass
   // this test over an empty map — and the chain count is the population the 85
   // came from, so it is the one that must stay swept.
-  assert.ok(opened > 200, `only ${opened} opened lanes were checked`);
-  assert.ok(chains > 80, `only ${chains} of them are chains — the exoskeleton population is missing`);
+  // 128 opened since W15: a saturated figure now opens each shared interior
+  // once, so the sweep's population is the set of interiors a reader can
+  // actually see — smaller, and every member still checked. Floors follow.
+  assert.ok(opened > 110, `only ${opened} opened lanes were checked`);
+  assert.ok(chains > 40, `only ${chains} of them are chains — the exoskeleton population is missing`);
 });
 
 test("a slot drawn as a state chain is walked by every method that fills it", () => {

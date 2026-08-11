@@ -92,15 +92,23 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Koopman-von Neumann ハミルトニアンが疎であれば、Liouville 方程式の決定論的なオイラー的（格子上の）離散化より指数的に効率的です。より正確には、位相空間の次元 $D$ については指数的、各方向にとる格子点数 $L$ については多項式的な高速化です。Joseph はまた、状態準備に量子ウォークの技法を、観測量の計算に振幅推定を用いた場合、古典的な確率的モンテカルロ法に対して、多重対数因子を除いて二次の改善が得られると報告しています。",
     contested: "Joseph limits both claims himself. On the exponential one: some important calculations can require a large number of time steps, potentially scaling as a power of $D$, which would reduce the expected savings to polynomial at best. On the quadratic one: because the Koopman-von Neumann lift doubles the phase-space dimension, if the gains over classical Monte Carlo are only quadratic then that doubling would effectively eliminate the advantage — so where the underlying system is Hamiltonian and simulating the quantized Hamiltonian system suffices for the intended calculation, he states that quantizing the Hamiltonian is the more efficient approach.",
     contestedJa: "Joseph は二つの主張のいずれにも自ら限界を付しています。指数的な主張については、重要な計算のなかには必要な時間ステップ数が $D$ の冪で増えうるものがあり、その場合、期待される節約はよくても多項式にとどまると述べています。二次の主張については、Koopman-von Neumann の持ち上げが位相空間の次元を倍にするため、古典モンテカルロに対する利得が二次にとどまるなら、この次元の倍加が優位性を実質的に打ち消すと述べています。したがって元の系がハミルトン系であり、量子化したハミルトニアンのシミュレーションで目的が果たせる場合には、そちらのほうが効率的な計算方法である、というのが著者の判断です。",
-    steps: ["nonlinear-linear-embedding", "hamiltonian-simulation"],
-    // **This route does not end in a state at all**, and that single fact is why
-    // the four routes with a blank stretch cannot share one slot. LCHS and
-    // Schrödingerisation recover a solution *state*; Joseph recovers an
-    // observable's expectation value and declines the state readout by name. A
-    // capability whose realizations disagree about what they return is not a
-    // capability. See `plans/atlas-revamp/W11-readout-stretch.md`.
+    steps: ["nonlinear-linear-embedding", "hamiltonian-simulation", "observable-estimation"],
+    // **This route ends in a number, not a state**, and that single fact is why
+    // the four routes with a blank stretch could not share one readout slot
+    // (`plans/atlas-revamp/W11-readout-stretch.md`). What W11 refused to invent,
+    // W14 wired from the source instead: Joseph's readout IS
+    // `observable-estimation` via amplitude estimation, and the contract meets it
+    // because his simulation hop lands holding a runnable computation of the
+    // evolved state — "The KvN simulation computes the state |ψ⟩" — which the
+    // `through` below records as `runnable-evolution`. LCHS and
+    // Schrödingerisation still recover a solution *state* and keep their
+    // own-work tails; this route closes at `observable-value`, which is the
+    // answer form its slot's contract promises ("or an estimate of an
+    // observable of the solution"). Owner ruling, session 120: the map
+    // restructures to hold what the literature has (`plans/atlas-revamp/
+    // W14-readout-wiring.md`).
     hops: {
-      "kvn-simulation-route": {
+      "observable-estimation": {
         theory:
           "No state is read out here: what is produced is ⟨O⟩ = Σ_x O(x) f(x), the expectation value of a phase-space observable. An ancilla is appended and R̂_φ built by a reversible computation of φ = O^{1/2}ψ — \"the reversible calculation requires two KvN simulations: one to compute φ … and one to uncompute φ, which requires running the KvN simulation backward in time\". Amplitude estimation of the ancilla's |1⟩ amplitude then gives the estimate. " +
           "[[approximation: Amplitude estimation returns an estimate rather than the value. \"Since each evaluation of R̂_φ and R̂†_φ uses two evaluations of |ψ⟩, the amplitude amplification algorithm requires four KvN simulations to be performed per step\", so accuracy ε costs 4K ∼ O(1/ε) simulations — the readout re-invokes the step above it rather than measuring its output.]] " +
@@ -115,12 +123,40 @@ export const LAYER_GRAPH: LayerGraph = {
     // whole reason a simulator can be handed it directly. The slot it descends
     // into promises a linear generator and no more, so without this the route
     // reads as skipping a conversion it does not skip.
-    through: { "nonlinear-linear-embedding": "hermitian-generator" },
-    // The pin the `through` above was already relying on. Only the Koopman-von
-    // Neumann lift returns a Hermitian generator, so the narrowing was an
-    // unstated claim about *which* method fills this step; now it is stated, and
-    // a reader sees the algorithm's own name on the hop rather than the slot's.
-    via: { "nonlinear-linear-embedding": "koopman-von-neumann-lift" },
+    //
+    // The simulation narrowing is the same shape one hop later: the slot
+    // promises a circuit and no more ("something still has to run it on a
+    // state"), but Joseph's construction has the input's preparation in hand
+    // and runs the pair — "The KvN simulation computes the state |ψ⟩" (§V C).
+    // So this route's landing is `runnable-evolution`, the circuit that is also
+    // the routine for the evolved state, and that is what lets the readout
+    // below follow as a real step instead of filing as a feed.
+    through: {
+      "nonlinear-linear-embedding": "hermitian-generator",
+      "hamiltonian-simulation": "runnable-evolution",
+    },
+    // The pins the `through` entries above were already relying on. Only the
+    // Koopman-von Neumann lift returns a Hermitian generator, so that narrowing
+    // was an unstated claim about *which* method fills the step; now it is
+    // stated, and a reader sees the algorithm's own name on the hop rather than
+    // the slot's. The readout pin is Joseph's own choice made explicit: he
+    // rules out sampling (1/ε²) and full-PDF readout by name, and builds
+    // amplitude estimation.
+    via: {
+      "nonlinear-linear-embedding": "koopman-von-neumann-lift",
+      "observable-estimation": "amplitude-estimation-readout",
+    },
+    repeats: {
+      "hamiltonian-simulation": {
+        count: "4K ∼ O(1/ε) KvN simulations — \"the KvN simulation must be repeated 4K ∼ O(1/ε) times\"",
+        countJa: "4K ∼ O(1/ε) 回の KvN シミュレーション。「KvN シミュレーションは 4K ∼ O(1/ε) 回繰り返されなければならない」",
+        mark: "×4K",
+        markJa: "×4K",
+        closure: "coherent",
+        note: "The loop is the readout's, and what it turns is the simulation below: each amplification step evaluates R̂_φ and R̂_φ† once each, and each evaluation runs the simulation twice — forward to compute φ = O^{1/2}ψ, backward to uncompute it — so one step is four KvN simulations and K ∼ O(1/ε) steps buy accuracy ε. Coherent invocations are the whole price difference: averaging repeated measurements instead would return to the classical 1/ε² law.",
+        noteJa: "この反復は読み出しのものであり、回しているのは下層のシミュレーションです。増幅の一段ごとに R̂_φ と R̂_φ† を一回ずつ評価し、各評価はシミュレーションを二回 — φ = O^{1/2}ψ を計算するために順方向へ、それを打ち消すために逆方向へ — 実行します。したがって一段が KvN シミュレーション四回にあたり、K ∼ O(1/ε) 段で精度 ε が得られます。コヒーレントな呼び出しであることが価格差のすべてです。測定を繰り返して平均すれば、古典的な 1/ε² の法則に戻ってしまいます。",
+      },
+    },
     bypasses: ["quantum-linear-solve", "time-discretization"],
     entries: ["amplitude-estimation"],
     citations: [
@@ -914,20 +950,21 @@ export const LAYER_GRAPH: LayerGraph = {
     // its absence was the whole of the reason `dyson-all-at-once` drew the same
     // picture as `krovi-linear-ode`.
     //
-    // **Only what `dyson-all-at-once` already states is repeated here.** Neither
-    // `cost` nor `conditions` is authored, and that is a decision rather than an
-    // omission to fill in later: Berry and Costa's complexity is a statement
-    // about the whole algorithm, and this node is the discretization alone. An
-    // absent field renders as "nobody stated one", which is true; a plausible
-    // number in the hole would be this map asserting a bound no paper carries,
-    // on the one surface whose whole claim is that the costs are honest. The
-    // Taylor sibling *does* carry a `cost` and says in the field itself that it
-    // is the full algorithm's — that wording is available if a session ever
-    // wants to do the same here from the paper rather than from memory.
+    // **Only what `dyson-all-at-once` already states is repeated here.**
+    // `cost` and `conditions` are authored (session 120) the way the old
+    // comment here said they could be: from the paper open on the desk — Berry
+    // and Costa's Theorem 4.1, its own hypotheses and oracle-call counts — and
+    // the cost says in its own words, exactly as the Taylor sibling does, that
+    // it is the full algorithm's complexity and not a standalone cost for the
+    // discretization. Nothing in either field is a bound no paper carries.
     label: "Truncated Dyson series of the propagator",
     labelJa: "伝播子の Dyson 級数打ち切り",
     summary: "Truncate the Dyson series — the expansion that stands in for the propagator once the generator varies with time — and encode its terms as rows of a system of linear equations. This is what extends the all-at-once approach to genuinely time-dependent generators; solving the system those rows make up is the layer below.",
     summaryJa: "生成子が時間に依存する場合に伝播子の役割を担うのが Dyson 級数です。これを打ち切り、その各項を連立一次方程式の行として符号化します。一括符号化の手法が真に時間依存な生成子にまで拡張されるのは、この置き換えによるものです。組み上がった系を解くのは一つ下の層です。",
+    conditions: "Theorem 4.1 is stated for $\\dot{x}(t) = A(t)x(t) + b(t)$ with $A(t)$ of non-positive logarithmic norm, the equation's parameters provided through unitaries $U_A$, $U_b$, $U_x$ with known normalisations $\\lambda_A$, $\\lambda_b$, $\\lambda_x$. No smoothness condition is required: the oracle counts are independent of derivatives of the parameters.",
+    conditionsJa: "定理 4.1 は、対数ノルムが非正の $A(t)$ をもつ $\\dot{x}(t) = A(t)x(t) + b(t)$ について述べられており、方程式のパラメータは既知の正規化定数 $\\lambda_A$, $\\lambda_b$, $\\lambda_x$ をもつユニタリ $U_A$, $U_b$, $U_x$ を通じて与えられます。滑らかさの条件は要求されず、オラクル呼び出し回数はパラメータの微分に依存しません。",
+    cost: "Berry and Costa's Theorem 4.1 gives, for $\\dot{x}(t) = A(t)x(t) + b(t)$ with $A(t)$ of non-positive logarithmic norm, an average of $O(R \\lambda_A T \\log(1/\\varepsilon))$ calls to the state-preparation oracles and $O(R \\lambda_A T \\log(1/\\varepsilon) \\log(\\lambda_{Ax} T/\\varepsilon))$ calls to the matrix oracle — $T$ the evolution time, $\\varepsilon$ the allowed error, $\\lambda_A$ the matrix oracle's normalisation, $\\lambda_{Ax} = \\max(\\lambda_A, b_{max}/x_{max})$, and $R$ a rescaling constant the theorem bounds explicitly, growing when the solution decays. Gate counts depend on the parameters' first derivatives only through a logarithm, and on no higher derivative. That is a statement about the full algorithm, not a standalone cost for the discretization.",
+    costJa: "Berry と Costa の定理 4.1 は、対数ノルムが非正の $A(t)$ をもつ $\\dot{x}(t) = A(t)x(t) + b(t)$ について、状態準備オラクルへの呼び出しを平均 $O(R \\lambda_A T \\log(1/\\varepsilon))$ 回、行列オラクルへの呼び出しを $O(R \\lambda_A T \\log(1/\\varepsilon) \\log(\\lambda_{Ax} T/\\varepsilon))$ 回と与えます。$T$ は発展時間、$\\varepsilon$ は許容誤差、$\\lambda_A$ は行列オラクルの正規化定数、$\\lambda_{Ax} = \\max(\\lambda_A, b_{max}/x_{max})$ であり、$R$ は定理が明示的に抑える再スケーリング定数で、解が減衰するほど大きくなります。ゲート数がパラメータの微分に依存するのは一階微分の対数を通じてのみで、高階微分には依存しません。これはアルゴリズム全体についての記述であり、離散化単体の費用ではありません。",
     realizes: "time-discretization",
     steps: [],
     atomic: true,
