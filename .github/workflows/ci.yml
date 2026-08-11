@@ -215,4 +215,5 @@ jobs:
             services/api/tests/test_usage_allowance_live.py \
             services/api/tests/test_usage_spend_live.py \
             services/api/tests/test_workspace_cap_race_live.py \
+            services/worker/tests/test_orphaned_runs_live.py \
             -q

@@ -98,8 +98,11 @@ async def test_the_grace_period_clears_the_dead_letter_retry_budget():
     """The reaper must never race a delivery that is still retrying."""
     budget_s = system.DEFAULT_DEAD_LETTER_MAX_ATTEMPTS * 30.0
     assert system.ORPHANED_RUN_GRACE_S > budget_s * 2
+    assert system.ORPHANED_DIRECT_RUN_GRACE_S > system.ORPHANED_RUN_GRACE_S
 
 
 async def test_a_negative_grace_period_is_rejected():
     with pytest.raises(ValueError, match="grace_seconds"):
         await system.list_orphaned_runs(_Session(), grace_seconds=-1)
+    with pytest.raises(ValueError, match="direct_grace_seconds"):
+        await system.list_orphaned_runs(_Session(), direct_grace_seconds=-1)
