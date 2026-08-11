@@ -885,7 +885,10 @@ test("every capability draws a figure — not just the two that converge", () =>
   // 22 since W21 — the variational region added `ground-state-energy`,
   // `ansatz-construction` and `parameter-optimization`, and this assertion is
   // exactly the tripwire that made their three new figures get looked at.
-  assert.equal(capabilities.length, 22, "the graph's slot count changed; update these figures");
+  // **23 since W21-E**, which added `excited-state-energy`, and the tripwire did
+  // its job a second time: its figure is the one that pushed the four-root
+  // overview past `CONVERGE_OPEN_MAX` (see that constant's own note).
+  assert.equal(capabilities.length, 23, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -909,9 +912,14 @@ test("every capability draws a figure — not just the two that converge", () =>
   // should — its three fillers walk different interiors (VQE has three hops,
   // variational imaginary time has two, QITE is undecomposed), so there is no
   // one chain every filler walks, which is exactly the condition for a fan.
+  // 21 → 22 in W21-E: `excited-state-energy` fans too, for the same reason its
+  // ground-state sibling does — its seven fillers walk different interiors (four
+  // take VQE's three hops, two close the whole stretch themselves off a
+  // ground-state ingredient, and the deflation route does both), so there is no
+  // one chain every filler walks.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 21);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 22);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -924,10 +932,10 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     .filter((focus) => !diagramFor(focus.id).empty)
     .map((focus) => focus.id);
   assert.deepEqual(offered, draws);
-  // 22 since W21 — the same three new slots the figure test above pins, and the
-  // point of asserting the length beside the deepEqual is that two empty lists
-  // are also deep-equal.
-  assert.equal(offered.length, 22);
+  // 22 since W21, 23 since W21-E — the same new slots the figure test above
+  // pins, and the point of asserting the length beside the deepEqual is that two
+  // empty lists are also deep-equal.
+  assert.equal(offered.length, 23);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -1648,9 +1656,15 @@ test("a line that opens into something says so, and a line that does not is not 
   // draw eleven more lanes between them — six ansatz families, three ways to a
   // ground-state energy, two ways through the optimisation slot — and every one
   // is a method this PR authored from a paper it fetched.
-  assert.equal(openable + leaves + 1, 74, "the twenty-two figures draw 74 lines between them");
-  assert.equal(openable, 33, "33 of them open into something recorded");
-  assert.equal(leaves, 40, "40 are leaves — nothing finer is recorded for them");
+  // 74 until W21-E, across twenty-two figures. `excited-state-energy` draws
+  // seven more lanes — one per method in the slot — and every one is a method
+  // this PR authored from a paper it fetched: deflation, subspace search,
+  // subspace expansion, the equation-of-motion route, folded spectrum, the
+  // penalty route and the contracted multistate route.
+  // 83 since B5 unit 3: `variance-objective` and `measurement-grouped-readout`, one lane each.
+  assert.equal(openable + leaves + 1, 83, "the twenty-three figures draw 83 lines between them");
+  assert.equal(openable, 41, "41 of them open into something recorded");
+  assert.equal(leaves, 41, "41 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -4628,6 +4642,40 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
   // is nothing here to exempt. They are still same-slot twins on the *hollow*
   // scoreboard, which is a different measurement and a corpus job.
   {
+    slot: "excited-state-energy",
+    methods: [
+      "subspace-search-excited-state",
+      "folded-spectrum-excited-state",
+      "penalty-excited-state",
+      "contracted-excited-state",
+    ],
+    why:
+      "Four ways to a state above the ground state that each choose an ansatz, optimise it and estimate " +
+      "an observable — VQE's three hops, reused deliberately rather than by accident. What separates " +
+      "them is the OBJECTIVE handed to the optimiser: a weighted sum over orthogonal inputs, the " +
+      "variance around a target energy, the energy plus a symmetry penalty, and a contracted multistate " +
+      "objective. An objective earns its own node here only where a paper is devoted to one — " +
+      "`cvar-objective` is — so three of these have nothing honest to pin a `via` to. **The fourth now " +
+      "has somewhere to point and is deliberately not pointed yet:** `variance-objective` and " +
+      "`measurement-grouped-readout` were authored in B5 unit 3 and folded-spectrum's own paper names " +
+      "both, but pinning them changes what the W15 dedup draws and takes this figure from 5797px to " +
+      "8887px, past its ceiling. Blocked on compaction, not on evidence. `deflation-excited-state` is NOT in this " +
+      "group and must not be added to it: it hangs a `ground-state-energy` ingredient the others do " +
+      "not, because deflation is defined against the states already found — that stub is the " +
+      "difference, and it is drawn.",
+  },
+  {
+    slot: "excited-state-energy",
+    methods: ["subspace-expansion-excited-state", "equation-of-motion-excited-state"],
+    why:
+      "Both take the ground state as an ingredient, measure a set of matrix elements, and close the " +
+      "stretch themselves by handing a small generalised eigenvalue problem to a classical solver. They " +
+      "draw one picture because they share one shape; what separates them is which operators the matrix " +
+      "elements run over — a linear expansion around the prepared state, against excitation operators in " +
+      "the equation-of-motion formalism — and this graph has no vocabulary for an operator set. Same gap " +
+      "as the ADAPT/QCC row, and it splits the same way: give the operator set a state.",
+  },
+  {
     slot: "quantum-linear-solve",
     methods: ["discrete-adiabatic-inversion", "eigenstate-filtering-inversion"],
     why:
@@ -4637,7 +4685,12 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
   },
   {
     slot: "observable-estimation",
-    methods: ["direct-sampling-readout", "amplitude-estimation-readout", "classical-shadow-readout"],
+    methods: [
+      "direct-sampling-readout",
+      "amplitude-estimation-readout",
+      "classical-shadow-readout",
+      "measurement-grouped-readout",
+    ],
     why:
       "Three readouts that each consume a prepared state and do their own work on it. The interior is "
       + "one hop long, so there is no second hop to tell them apart by; what tells them apart is their "
