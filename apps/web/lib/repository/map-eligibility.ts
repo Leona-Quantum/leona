@@ -247,13 +247,9 @@ export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>
   // one paper. Two records, one genuine origin — the case W21-B's check exists to
   // permit rather than to punish.
   "https://arxiv.org/abs/1810.02327": ["vqe-generalized-excitations", "vqe-k-upccgsd"],
-  // W21-B residue. These four kept the survey because a search for a specific
-  // primary paper came back empty, which is a different fact from "nobody looked"
-  // and is why they are named one by one:
-  //   vqe-batched-adapt   — no paper found for appending several high-gradient
-  //                         operators per ADAPT iteration. TETRIS-ADAPT is the
-  //                         near neighbour and is a *different record*, so citing
-  //                         it here would be the drift this file guards against.
+  // W21-B residue. These kept the survey because a search for a specific primary
+  // paper came back empty, which is a different fact from "nobody looked" and is
+  // why they are named one by one:
   //   vqe-spin-adapted    — searches returned 2026 papers on spin-adapted
   //                         variants, none of them the origin of the idea.
   //   vqe-active-space    — active-space selection is classical quantum chemistry
@@ -261,9 +257,20 @@ export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>
   //   vqe-warm-start      — the warm-start literature found is QAOA/optimization,
   //                         not the chemistry parameter-initialisation this
   //                         record describes.
+  //
+  // **`vqe-batched-adapt` was a fourth and is gone from this list, which is worth
+  // recording because it says something about the other three.** The empty result
+  // was not a real absence: the batching is introduced in Sapova and Fedorov's
+  // carbon-monoxide-oxidation paper (arXiv:2108.11167), whose abstract states it
+  // in as many words — *"the measurement overhead can be significantly reduced via
+  // adding multiple operators at each step while keeping the ansatz compact"*. It
+  // did not surface earlier because the paper is named for the chemistry it
+  // simulates rather than for the method it introduces, so a method-name search
+  // never reaches it. **A negative from a title-shaped search is weaker evidence
+  // than this list was treating it as** — the remaining three are worth re-running
+  // against what a paper DOES rather than what it is called.
   "https://arxiv.org/abs/2103.08505": [
     "vqe-active-space",
-    "vqe-batched-adapt",
     "vqe-spin-adapted",
     "vqe-warm-start",
   ],
