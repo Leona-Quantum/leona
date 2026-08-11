@@ -17,7 +17,15 @@
 // graph, this pins the two that need the corpus, and **both call the same
 // `validateLayerGraph`** — the rules live in one place and cannot drift.
 //
-// Usage: node scripts/check-layer-graph.mjs [--quiet]
+// Usage: node scripts/check-layer-graph.mjs [--quiet] [--unanchored]
+//
+// `--unanchored` prints the reading list itself rather than its length. The
+// audit has always computed `unanchored` and `map-eligibility.ts` has always
+// called it "the most concrete statement this repository can make about what
+// the map does not yet cover" — but nothing ever printed it, so the only way to
+// read it was to edit this file. A list you have to patch the checker to see is
+// one nobody consults, which is how its own doc comment came to be quoting
+// "61 of the 70" long after the real figure had moved to 53 of 62.
 
 import { createRequire } from "node:module";
 import { mkdtempSync, rmSync } from "node:fs";
@@ -30,6 +38,7 @@ const require = createRequire(join(root, "packages/ts/ui-visual/package.json"));
 const esbuild = require("esbuild");
 
 const QUIET = process.argv.includes("--quiet");
+const SHOW_UNANCHORED = process.argv.includes("--unanchored");
 
 async function bundle(relativePath, label) {
   const outDir = mkdtempSync(join(tmpdir(), "layer-graph-"));
@@ -75,6 +84,7 @@ const { PUBLIC_REPOSITORY_ENTRIES } = corpusMod;
 const { STATE_VOCABULARY } = statesMod;
 
 const corpus = new Set(PUBLIC_REPOSITORY_ENTRIES.map((entry) => entry.slug));
+const corpusTitles = new Map(PUBLIC_REPOSITORY_ENTRIES.map((entry) => [entry.slug, entry.title]));
 const errors = validateLayerGraph(
   LAYER_GRAPH,
   corpus,
@@ -105,7 +115,7 @@ for (const node of LAYER_GRAPH.nodes) {
 // the same reason the slug-resolution rule is: it needs the corpus, and the
 // corpus carries the `role` facet the rule reads.
 //
-// It has never fired — all 9 anchors are `algorithm-reference` — and that is
+// It has never fired — every anchor is an `algorithm-reference` — and that is
 // precisely why it exists. A convention nobody has broken yet is one helpful
 // cross-link away from being broken, and a gate record hanging off
 // `quantum-linear-solve` renders as "the Atlas documents this layer".
@@ -454,6 +464,29 @@ if (!QUIET) {
   console.log(
     `  ${anchorAudit.anchored} of ${anchorAudit.eligible} map-eligible records anchored — ${anchorAudit.unanchored.length} algorithm records no node reaches`,
   );
+  if (SHOW_UNANCHORED) {
+    // The role census, because `eligible` above is a denominator and a
+    // denominator with no breakdown cannot be checked. `map-eligibility.ts`
+    // carries this same table in prose and it had drifted by eight records
+    // before anything printed it.
+    const byRole = new Map();
+    for (const entry of PUBLIC_REPOSITORY_ENTRIES) {
+      const role = topicsMod.roleOf(entry.topics ?? []) ?? "(none)";
+      byRole.set(role, (byRole.get(role) ?? 0) + 1);
+    }
+    console.log(
+      `    roles: ${[...byRole.entries()]
+        .sort((a, b) => b[1] - a[1])
+        .map(([role, count]) => `${role} ${count}`)
+        .join(" · ")}`,
+    );
+    // Printed one per line with its title, because a bare slug does not tell you
+    // whether the record is a method the map is missing or a survey that no node
+    // could honestly anchor — and that judgement is the whole of the work.
+    for (const slug of anchorAudit.unanchored) {
+      console.log(`    ${slug}\t${corpusTitles.get(slug) ?? "(no title)"}`);
+    }
+  }
   console.log(
     `  ${census.openCapabilities} capabilities nothing realises yet · ${census.undecomposedMethods} methods nobody has decomposed`,
   );
