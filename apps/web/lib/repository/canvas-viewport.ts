@@ -681,6 +681,38 @@ export function centerOn(
   return { x: box.width / 2 - z * cx, y: box.height / 2 - z * cy, z };
 }
 
+/**
+ * Does the camera FRAME what it is flying to, or hold the zoom the reader chose?
+ *
+ * The whole of owner inbox `e6585b` — *"do not zoom in when clicking to
+ * expand/contract. just recenter."* — reduced to one predicate, kept here as a
+ * pure function rather than inline in the canvas so it can be checked without a
+ * browser and so the two things it compares cannot be renamed apart.
+ *
+ * **The rule is about the OPEN SET, and the first version got that wrong.** It
+ * asked whether the selection was unchanged, on the premise that an open href
+ * carries no `sel=`. `converge-layout.ts` writes none — but `toggleHref`
+ * composes one through `nextSel`, so opening a line also selects it, which is
+ * correct behaviour and is exactly what made the guard miss. Measured on
+ * production with `probe-camera-recenter.mjs` after that version shipped: the
+ * first toggle still took the camera **1 → 2.5**, `SELECTION_ZOOM_MAX`, which is
+ * the defect the owner named.
+ *
+ * So: if the reader expanded or contracted anything, hold their zoom, whatever
+ * the selection did alongside it. A pure selection change still frames — that is
+ * W16, and it is the half a "fix" could delete without anyone noticing.
+ *
+ * `mounted: false` is the first fly of a page and always frames: arriving on a
+ * `?sel=` link IS choosing a subject.
+ */
+export function cameraMode(previous: {
+  mounted: boolean;
+  layoutKey: string | null;
+}, next: { layoutKey: string | null }): "fit" | "keep" {
+  if (!previous.mounted) return "fit";
+  return next.layoutKey !== previous.layoutKey ? "keep" : "fit";
+}
+
 /** How long the camera takes to fly to a selection. Inside the ≤320ms bound
  * `docs/ui/components.md` sets for continuity transitions on this canvas. */
 export const FLY_DURATION_MS = 320;
