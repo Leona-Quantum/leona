@@ -8,26 +8,34 @@
 //
 // ## The rule was already being obeyed, by nobody
 //
-// Measured across the published corpus before this file existed: the layer graph
-// cross-links **9 records, and all 9 are `algorithm-reference`.** Not one
-// benchmark circuit, gate or operator has ever been anchored to a node. So the
-// rule below breaks nothing — which is exactly the problem it is here to fix. A
-// convention that holds because everyone happened to follow it is one PR away
-// from not holding, and the PR that breaks it looks like a helpful cross-link.
+// Measured across the published corpus before this file existed: every record
+// the layer graph cross-links is an `algorithm-reference`. Not one benchmark
+// circuit, gate or operator has ever been anchored to a node. So the rule below
+// breaks nothing — which is exactly the problem it is here to fix. A convention
+// that holds because everyone happened to follow it is one PR away from not
+// holding, and the PR that breaks it looks like a helpful cross-link.
 //
 // ## What the roles are, and why four of the five may not anchor
 //
 // `topics.ts` already carries an **exhaustive** `role` facet — every record has
 // exactly one, and a record that resolves to none fails the build. Counted over
-// the 283:
+// the 283, **measured 2026-08-11** and re-derivable with
+// `node scripts/check-layer-graph.mjs --unanchored`:
 //
 // | role | count | may anchor |
 // |---|---|---|
-// | `benchmark-circuit` | 112 | no |
-// | `algorithm-reference` | 70 | **yes** |
+// | `benchmark-circuit` | 120 | no |
+// | `algorithm-reference` | 62 | **yes** |
 // | `operator` | 62 | no |
 // | `gate-primitive` | 27 | no |
 // | `state` | 12 | no |
+//
+// This table read 112/70 when it was written and neither figure was ever
+// edited: eight records were later reclassified from `algorithm-reference` to
+// `benchmark-circuit`, which moves the eligible denominator — the one number
+// the paragraph below is an argument about — without touching a line of this
+// file. The total is the invariant, not the split. Hence the command: the
+// checker prints the census so the table can be checked instead of trusted.
 //
 // A layer node is a **slot** or a **way of filling one**. The four excluded
 // roles are none of those:
@@ -102,9 +110,19 @@ export interface AnchorAudit {
   /**
    * Eligible records nothing on the map anchors, by slug.
    *
-   * Not an error and never will be: it is the reading list. 61 of the 70
-   * algorithm records have no node, and that list is the most concrete statement
-   * this repository can make about what the map does not yet cover.
+   * Not an error and never will be: it is the reading list, and the most
+   * concrete statement this repository can make about what the map does not yet
+   * cover.
+   *
+   * **Read the number, do not read it here.** This comment said "61 of the 70
+   * algorithm records have no node" until 2026-08-11, by which point the real
+   * figure was 53 of 62 — the denominator had moved under a sentence nobody had
+   * a reason to re-run. A count written into prose is a measurement taken once
+   * and quoted forever. The live figure, with the list itself:
+   *
+   * ```
+   * node scripts/check-layer-graph.mjs --unanchored
+   * ```
    */
   unanchored: string[];
 }
