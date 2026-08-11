@@ -362,6 +362,12 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "nonlinear-linear-embedding",
     conditions: "Stated for $n$-dimensional nonlinear dissipative ODEs. Krovi describes Xue et al., alongside Liu et al., as additionally requiring normality of the matrix that models dissipation.",
     conditionsJa: "$n$ 次元の非線形散逸的常微分方程式について述べられています。Krovi は、Xue らの手法が Liu らの手法と同様に、散逸をモデル化する行列の正規性を追加で要求すると記述しています。",
+    // `cost` (session 123): quoted from the abstract of arxiv:2111.07486, which
+    // is the basis the register records for that paper (`reportsBasis:
+    // "abstract"`). Like the Carleman sibling, the bound is for the complete
+    // algorithm, and the field says so.
+    cost: "Xue, Wu and Guo state the algorithm's complexity as $O(g\\eta T\\,\\mathrm{poly}(\\log(nT/\\varepsilon)))$, where $T$ is the evolution time, $n$ the dimension, $\\varepsilon$ the allowed error, and $\\eta$ and $g$ are quantities measuring the decay of the solution; the returned state is $\\varepsilon$-close to the normalized exact solution with success probability $\\Omega(1)$. As with the Carleman route, this is a complexity for the complete algorithm — the embedding together with the quantum linear-ODE solver it feeds — not a standalone cost for the lift. The abstract claims exponential improvement over the best classical algorithms or previous quantum algorithms in $n$ or $\\varepsilon$; how the homotopy truncation order enters the bound is in the paper's full text and is not quoted here.",
+    costJa: "Xue・Wu・Guo はアルゴリズムの計算量を $O(g\\eta T\\,\\mathrm{poly}(\\log(nT/\\varepsilon)))$ と述べています。ここで $T$ は発展時間、$n$ は次元、$\\varepsilon$ は許容誤差であり、$\\eta$ と $g$ は解の減衰を測る量です。返される状態は正規化された厳密解に $\\varepsilon$-近く、成功確率は $\\Omega(1)$ です。Carleman の経路と同様、これは埋め込みとそれが渡す量子線形常微分方程式ソルバとを合わせたアルゴリズム全体の計算量であって、持ち上げ単体の費用ではありません。概要では、$n$ または $\\varepsilon$ に関して最良の古典アルゴリズムおよび既存の量子アルゴリズムに対する指数的な改善が主張されています。ホモトピー打ち切り次数が評価にどう入るかは論文の本文にあり、ここでは引用していません。",
     contested: "Xue and co-authors later report that applying quantum simulation to each step of the related homotopy analysis method makes complexity grow exponentially with the truncation order, and introduce a quantum-compatible linearization that maps the whole process into one system of linear PDEs so that complexity grows only polynomially with that order.",
     contestedJa: "その後 Xue らは、関連するホモトピー解析法の各段階に量子シミュレーションを直接適用すると、打ち切り次数に対して計算量が指数的に増大すると報告しています。そのうえで、過程全体を一つの線形偏微分方程式系に写す「量子計算と両立する線形化」を導入し、打ち切り次数に対する増大を多項式にとどめています。",
     steps: [],
@@ -1240,6 +1246,11 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "matrix-function",
     conditions: "Needs an explicit decomposition of the target into implementable unitaries with a known coefficient vector, and the ability to prepare a state from those coefficients. Childs, Kothari and Somma apply this route to a sparse $A$ through its associated quantum walk, so it runs from the entry oracle without Hamiltonian simulation as an intermediate. It costs more ancillas than the QSVT route, which carries the polynomial in one qubit's worth of phase shifts.",
     conditionsJa: "目標関数を実装可能なユニタリへ明示的に分解し、その係数ベクトルが既知であること、および係数から状態を用意できることを要求します。Childs・Kothari・Somma はこの経路を疎行列 $A$ に付随する量子ウォークへ適用しており、ハミルトニアンシミュレーションを経由せずエントリオラクルから直接動きます。多項式を補助量子ビット 1 つぶんの位相シフトで担う QSVT の経路に比べ、補助量子ビットは多く必要です。",
+    // `cost` (session 123): quoted from the abstract of arxiv:1511.02306
+    // (register `reportsBasis: "abstract"`). The abstract states the bound
+    // relative to HHL, not as a closed form, and the field keeps that shape.
+    cost: "Childs, Kothari and Somma state the improvement in their abstract's own comparative terms: for a sparse, well-conditioned $A$, the Harrow–Hassidim–Lloyd algorithm runs in time $\\mathrm{poly}(\\log N, 1/\\varepsilon)$, and theirs improves this to a running time polynomial in $\\log(1/\\varepsilon)$ — exponentially improving the dependence on precision \"while keeping essentially the same dependence on other parameters\". The claim is for the complete linear-systems algorithm this transform powers, not a standalone cost for the LCU step. The abstract states no closed-form bound; the exact statements, including the condition-number dependence, are in the paper's full text and are not quoted here.",
+    costJa: "Childs・Kothari・Somma は改善を概要の比較の形のまま述べています。疎で条件数の良い $A$ に対し、Harrow–Hassidim–Lloyd のアルゴリズムは時間 $\\mathrm{poly}(\\log N, 1/\\varepsilon)$ で動作しますが、彼らのアルゴリズムはこれを $\\log(1/\\varepsilon)$ の多項式時間に改善します。すなわち精度への依存を指数的に改善し、「他のパラメータへの依存は本質的に同じに保つ」ものです。この主張は、この変換が支える線形システムアルゴリズム全体についてのものであって、LCU の段階単体の費用ではありません。概要は閉じた形の評価を述べておらず、条件数への依存を含む正確な言明は論文の本文にあり、ここでは引用していません。",
     steps: ["block-encode-matrix", "polynomial-approximation"],
     bypasses: ["qsp-phase-factors"],
     entries: ["linear-combination-unitaries"],
@@ -1591,6 +1602,13 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "success-amplification",
     conditions: "Needs a reliable lower bound on the fraction $\\lambda$ of the initial state made up of target states, rather than $\\lambda$ itself. Grover's earlier $\\pi/3$ construction achieves fixed-point convergence but, as Yoder, Low and Chuang put it, such algorithms \"lose the very quadratic advantage that makes Grover's algorithm so appealing\". Their own construction is described by them as \"the first version of amplitude amplification that achieves fixed-point behavior without sacrificing the quantum speedup\", and it carries an adjustable bound on the failure probability.",
     conditionsJa: "必要なのは $\\lambda$ そのものではなく、初期状態のうち目標状態が占める割合 $\\lambda$ の信頼できる下界です。Grover による先行の $\\pi/3$ 構成は不動点的な収束を達成しますが、Yoder–Low–Chuang の表現を借りれば、この種のアルゴリズムは「Grover のアルゴリズムを魅力的にしているまさにその二次的な優位を失う」ものです。彼ら自身の構成については「量子的な高速化を犠牲にせずに不動点的な挙動を達成する、振幅増幅の最初の方式」と述べられており、失敗確率の上界を調整できる点も特徴です。",
+    // `cost` (session 123): from the abstract of arxiv:1409.3305 (register
+    // `reportsBasis: "abstract"`), which states no formula — the field carries
+    // the abstract's comparative and optimality claims and says exactly that.
+    // The "without sacrificing" quote lives in `conditions` above; this field
+    // deliberately does not repeat it.
+    cost: "The abstract states no query-count formula; its cost claims are comparative. The construction keeps the quadratic quantum speedup that fixed-point predecessors gave up, and the optimality named in the title is of exactly this shape: for a given number of oracle queries, the adjustable failure-probability bound is guaranteed, as Yoder, Low and Chuang put it, over \"the broadest possible range\" of the target fraction $\\lambda$. The explicit query count as a function of $\\lambda$'s lower bound and the failure tolerance is in the paper's full text and is not quoted here.",
+    costJa: "概要はクエリ数の式を述べておらず、費用に関する主張は比較の形をとります。この構成は、先行する不動点型の手法が手放していた二次的な量子高速化を保持します。表題にある「最適」もまさにこの形のものです。すなわち、オラクルへのクエリ数を固定したとき、調整可能な失敗確率の上界が、Yoder・Low・Chuang の言う「可能な限り広い範囲」の目標割合 $\\lambda$ にわたって保証されます。$\\lambda$ の下界と許容失敗確率の関数としての明示的なクエリ数は論文の本文にあり、ここでは引用していません。",
     steps: ["state-preparation"],
     citations: [
       { title: "Fixed-point quantum search with an optimal number of queries", authors: "Theodore J. Yoder, Guang Hao Low, Isaac L. Chuang", year: "2014", url: "https://arxiv.org/abs/1409.3305" },
