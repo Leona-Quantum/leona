@@ -69,6 +69,15 @@ const CORPUS: LayerCorpusEntry[] = [
   category: "algorithms" as LayerCorpusEntry["category"],
   description: "",
   descriptionJa: "",
+  // Exactly one runnable variant each, because in production **every** record
+  // has at least one — 283 of 283 carry `codeVariants`, measured. Before the
+  // record join this field did not exist and the fixture was representative
+  // without it; now a corpus without it would make the join untestable here and
+  // would understate what production feeds, which is the opposite of the
+  // upper-bound property this fixture exists to keep.
+  runnable: [{ framework: "Qiskit", status: "verified", filename: `${slug}.py` }],
+  verification: `${slug} checked`,
+  provenance: "Curated reference",
 }));
 
 const cards = (locale: "en" | "ja" = "en"): Card[] =>
@@ -583,59 +592,90 @@ test("the card reads the map node, which is the populated side of the join", () 
   // legible: a method with no paper would be a claim with no source.
   const withPapers = methods.filter((card) => card.papers.held).length;
   assert.equal(withPapers, methods.length, `papers held on ${withPapers}/${methods.length}`);
-  // And the record side, which is the half the decision was about: thin, and said so.
-  // A *ceiling*, not a floor — this is the number that makes "join rather than merge" the
-  // right call, and it going up is the thing that would make the call worth revisiting.
+  // **The record side — where the ceiling used to be, and why it is gone.**
+  //
+  // This was `withRecord <= 26`, a pin that moved 12 -> 22 -> 26 in one evening,
+  // each raise individually justified and the sequence with no terminating case.
+  // It was measuring a premise: *"the record side is thin, so the card reads the
+  // node because the record is empty."*
+  //
+  // **That premise is refuted, not strained.** The record side is 283 records and
+  // every one of them carries runnable code, while `implementations` was empty on
+  // all 74 methods — and in all 27 method->record pairs the card rendered
+  // "none-recorded" over a record that had code. The section was never
+  // un-researched; nothing had joined it. Owner ruling `27267f` merged them
+  // (`plans/atlas-revamp/W23-record-join.md`), so a count of how few methods name
+  // a record no longer measures anything anyone would act on.
+  //
+  // What replaces it is an invariant of the merged shape, which holds at ANY
+  // density — that is what makes it terminating where a ceiling was not. A count
+  // that may only go down is a gate that eventually blocks the work it protects.
   const withRecord = held("records");
-  assert.ok(
-    // **12 until W21, and this is the ceiling doing its job rather than failing.** The
-    // variational region anchored eleven records at once — the map went from 9 of 62
-    // map-eligible records to 20 — so the premise underneath "join rather than merge"
-    // ("the record side is thin, and says so") is measurably weaker than when it was
-    // decided. It is not yet false: 22 of 74 is still under a third, and the records
-    // being named are catalogue entries whose prose is about running a workflow rather
-    // than about the method's place in the literature, which is the distinction the join
-    // exists to keep. **Raised, not silenced — the re-decision is now genuinely owed and
-    // is filed for the owner** (see the W21 doc's open questions). If the remaining 42
-    // anchor too, this fires again at a number where the answer is probably different.
-    // **26 → 33 in W21-E, and this is the third raise, which is the point at which
-    // the sequence rather than the step is what needs answering.** Seven excited-state
-    // records anchored at once. It is still under the bar below — 33 of 81 is not a
-    // majority — so the raise is permitted by this file's own rule, and it is being
-    // taken with the terminating work already in flight rather than deferred again:
-    // the record-join re-decision (`OWNER_TODO 27267f`, owner-ruled that a method card
-    // and a repository record "may as well be the same thing") is a claimed lane
-    // tonight. **The next lane to anchor records should expect to be answering that
-    // design rather than editing this number.**
-    withRecord <= 35,
-    `${withRecord} of ${methods.length} methods now name a repository record — the join is ` +
-      `no longer thin, so "the card reads the node because the record is empty" wants re-deciding`,
+  const joined = methods.flatMap((card) =>
+    card.implementations.held ? card.implementations.value : [],
   );
-  // **A bar the ceiling above may not be raised past, because a ceiling raised
-  // every time it fires is a gate nobody is enforcing.**
-  //
-  // This pin moved twice in one evening — 12 → 22 when the variational region
-  // anchored eleven records, then → 26 when four more anchored into nodes that
-  // already existed. Each raise was individually justified, and the sequence has
-  // no terminating case: exactly the failure AGENTS.md records as *"unanimous
-  // correct deferral is still an unwritten brief"*, where every step is
-  // reasonable and nobody ever makes the decision.
-  //
-  // So the decision gets a deadline rather than a queue. *"The record side is
-  // thin"* cannot survive a majority: at half the methods naming a record the
-  // premise is refuted whatever a comment says. **Past this line the answer is
-  // not a bigger number** — it is either merging the record into the card, or
-  // writing down why a join still beats a merge at that density. Filed for the
-  // owner; this assertion is what stops it being filed forever.
-  assert.ok(
-    withRecord * 2 <= methods.length,
-    `${withRecord} of ${methods.length} methods name a record — past half, "the record side is ` +
-      `thin" is refuted rather than strained. Re-decide the join; do not raise the ceiling again.`,
+  const fromRecord = joined.filter((entry) => entry.origin.kind === "record");
+
+  // 1. Every pair composes. A method that names a record whose variants are
+  //    projected must render them — this is the exact bug the ruling fixed, so
+  //    it is the exact thing that must not come back.
+  for (const card of methods) {
+    const names = cardSections(card).find((s) => s.id === "records");
+    if (names === undefined || sectionState(names) !== "held") continue;
+    assert.ok(
+      card.implementations.held,
+      `${card.id} names a repository record and still reports no implementations — ` +
+        `the join regressed to reading the node alone`,
+    );
+    assert.ok(
+      (card.implementations.value as readonly { origin: { kind: string } }[]).some(
+        (entry) => entry.origin.kind === "record",
+      ),
+      `${card.id} names a record but every implementation it shows is authored`,
+    );
+  }
+
+  // 2. The stamp is never absent, and never wrong. Two branches of the W5 tree
+  //    now share one list, and unstamped they are indistinguishable — a corpus
+  //    scaffold reading as a paper reproduction is a provenance claim nobody made.
+  for (const entry of joined) {
+    assert.ok(
+      entry.origin.kind === "authored" || entry.origin.kind === "record",
+      `implementation ${entry.id} carries no classification stamp`,
+    );
+    if (entry.origin.kind === "record") {
+      assert.ok(entry.origin.slug.length > 0, `${entry.id} is stamped as a record with no slug`);
+      assert.equal(
+        entry.origin.href,
+        `/repository/${entry.origin.slug}`,
+        `${entry.id} links somewhere other than the record it is stamped with`,
+      );
+      // Branch three is "not from a paper". An entry claiming both is the one
+      // combination the tree cannot represent.
+      assert.equal(entry.papers.length, 0, `${entry.id} is stamped as a record and cites papers`);
+    }
+  }
+
+  // 3. The join reaches every record the graph names. Not a floor that can be
+  //    raised — a statement that the two sides agree about which pairs exist.
+  const slugsNamed = new Set(
+    methods.flatMap((card) => (card.records.held ? card.records.value.map((r) => r.slug) : [])),
   );
+  const slugsJoined = new Set(
+    fromRecord.map((entry) => (entry.origin.kind === "record" ? entry.origin.slug : "")),
+  );
+  for (const slug of slugsNamed) {
+    assert.ok(
+      slugsJoined.has(slug),
+      `record ${slug} is named by a method card and contributes no implementation`,
+    );
+  }
+
   console.log(
     `[card census] ${methods.length} methods: input/output ${held("input")}, theory ${held("theory")}, ` +
       `papers ${withPapers}, conditions ${held("when-it-applies")}, performance ${held("performance")}, ` +
-      `contested ${held("contested")}, requires ${held("requires")}, records ${withRecord}`,
+      `contested ${held("contested")}, requires ${held("requires")}, records ${withRecord}, ` +
+      `implementations ${joined.length} (${fromRecord.length} joined from records)`,
   );
 });
 
