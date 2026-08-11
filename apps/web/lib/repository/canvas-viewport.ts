@@ -650,13 +650,34 @@ export const SELECTION_FILL = 0.8;
  * Total: a degenerate measurement (a hidden element reports 0×0) is clamped to
  * one content pixel rather than dividing by zero into an `Infinity` zoom.
  */
-export function centerOn(view: Viewport, target: MeasuredRect, box: { width: number; height: number }): Viewport {
+export function centerOn(
+  view: Viewport,
+  target: MeasuredRect,
+  box: { width: number; height: number },
+  /**
+   * `"fit"` frames the target — the W16 move, for when the reader picked a new
+   * thing to look at. `"keep"` holds the reader's own zoom and moves only the
+   * camera's position.
+   *
+   * **The owner's ask, verbatim (`e6585b`): *"do not zoom in when clicking to
+   * expand/contract. just recenter."*** Opening a line is not choosing a new
+   * subject: the reader is already looking at this lane, at a magnification
+   * they chose, and re-fitting throws that away — the figure jumps to a new
+   * scale on every toggle, which is what he was reading as "zooming in".
+   *
+   * One function with a mode rather than two functions, because the centring
+   * arithmetic below is the part that must not be written twice: the two
+   * differ in `z` alone, and a second copy is how one of them ends up centring
+   * on a stale `view.z` after the other is fixed.
+   */
+  zoom: "fit" | "keep" = "fit",
+): Viewport {
   const cw = Math.max(1, target.width / view.z);
   const ch = Math.max(1, target.height / view.z);
   const cx = (target.left + target.width / 2 - view.x) / view.z;
   const cy = (target.top + target.height / 2 - view.y) / view.z;
   const fit = Math.min((SELECTION_FILL * box.width) / cw, (SELECTION_FILL * box.height) / ch);
-  const z = clampZoom(Math.min(SELECTION_ZOOM_MAX, fit));
+  const z = zoom === "keep" ? view.z : clampZoom(Math.min(SELECTION_ZOOM_MAX, fit));
   return { x: box.width / 2 - z * cx, y: box.height / 2 - z * cy, z };
 }
 
