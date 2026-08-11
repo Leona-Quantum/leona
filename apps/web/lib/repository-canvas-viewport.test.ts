@@ -414,6 +414,33 @@ test("centerOn puts the target's content centre at the box centre — verified i
   assert.ok(Math.abs(landed.y + landed.z * contentY - box.height / 2) < 1e-9);
 });
 
+test("a toggle recenters at the reader's own zoom, and a new selection still frames", () => {
+  // Owner `e6585b`, verbatim: **"do not zoom in when clicking to expand/contract.
+  // just recenter."** Opening a line is not choosing a new subject — the reader
+  // is already looking at that lane, at a magnification they picked — so the
+  // camera moves and the zoom does not.
+  const view = { x: 37, y: -12, z: 1.4 };
+  const target = { left: 400, top: 250, width: 140, height: 60 };
+  const box = { width: 1200, height: 800 };
+
+  const kept = centerOn(view, target, box, "keep");
+  assert.equal(kept.z, view.z, "a toggle changed the reader's zoom");
+  // …and it still centres, by the same independent derivation as the test above:
+  // recentering that does not recentre would satisfy the zoom assertion alone.
+  const contentX = (target.left + target.width / 2 - view.x) / view.z;
+  const contentY = (target.top + target.height / 2 - view.y) / view.z;
+  assert.ok(Math.abs(kept.x + kept.z * contentX - box.width / 2) < 1e-9);
+  assert.ok(Math.abs(kept.y + kept.z * contentY - box.height / 2) < 1e-9);
+
+  // **The control, and it is what keeps this from being a one-way ratchet.**
+  // W16's fly is still the answer when the reader picks something new, so the
+  // default mode must still change the zoom on this very target — otherwise
+  // "keeps the zoom" would pass by the feature being gone rather than scoped.
+  const fitted = centerOn(view, target, box);
+  assert.notEqual(fitted.z, view.z, "the selection fly stopped framing what it flies to");
+  assert.equal(fitted.z, SELECTION_ZOOM_MAX, "a small target should hit the cap");
+});
+
 test("centerOn does not depend on where the camera is standing", () => {
   // One content-space rectangle, measured under two different viewports: the
   // landing viewport must be identical, or a shared `?sel=` link would frame
