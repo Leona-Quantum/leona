@@ -2592,6 +2592,104 @@ function halfAt(depth: number): number {
 }
 
 /**
+ * Does this strand wear its name **in** its own line rather than beside it?
+ *
+ * Owner, session 119: a lane with nothing inside is one shape with one
+ * destination, so its name goes in the line; everything still expandable keeps
+ * the two-target split (the line opens, the name reads). The own stretch draws
+ * its standing phrase inside for the same reason — it is a leaf.
+ *
+ * **One writer, two readers, and the second reader is new.** `place` has always
+ * decided this to position the text; `measureCore` never asked, and reserved
+ * `labelBand` beside **every** lane whether or not anything was ever drawn
+ * there. See `insideNameHalf` for what that cost.
+ */
+function wearsNameInside(strand: {
+  inside: number;
+  composite: boolean;
+  nameless: boolean;
+  openable: boolean;
+  own: string | null;
+}): boolean {
+  return (
+    (strand.inside === 0 && !strand.composite && !strand.nameless && !strand.openable)
+    || strand.own !== null
+  );
+}
+
+/**
+ * Half the band a name drawn **inside** its own line actually occupies.
+ *
+ * The text box `place` collides against is `[labelY − laneFont, labelY]` and an
+ * inside name sits at `labelY = belly + laneFont·0.35`, so it reaches
+ * `0.65·laneFont` above the belly and `0.35·laneFont` below it. The band is
+ * symmetric, so the binding side is the upper one: **7.8px** at today's 12px
+ * lane font.
+ *
+ * ## Why this is a `max` with the strand's own thickness, and not `labelBand`
+ *
+ * `labelBand` is *"room beside a strand for its own name"* — room the layout
+ * reserved on **both** sides of every lane, including the lanes whose name is
+ * not beside them at all. Measured on `nonlinear-ode-solve` (en), saturated,
+ * before this: the drawn strands were **10.1% of the figure's 5,646px**, two
+ * adjacent shut leaves sat 36px apart edge to edge — `2·labelBand + laneGap` —
+ * and the name written in that 36px gap is 12px tall and was not in the gap at
+ * all. It was inside one of the two lines.
+ *
+ * So a lane that wears its name inside needs its band to cover the thicker of
+ * its own stroke and that text, and nothing more. A lane whose name really is
+ * beside it keeps `labelBand` untouched — this narrows the reservation to the
+ * lanes that were never using it, rather than trimming a number that other
+ * lanes depend on.
+ */
+function insideNameHalf(): number {
+  return CONVERGE_METRICS.laneFont * 0.65;
+}
+
+/**
+ * May this lane give up the band beside it — the `labelBand` it reserves for a
+ * name it does not write there?
+ *
+ * `wearsNameInside` is the whole of the *drawing* answer. This adds the one
+ * thing the drawing does not know: **at depth 0 that band is holding something
+ * else up.**
+ *
+ * A shared circle's caption (W19 PR-2 — the owner's *"each composite process
+ * has its own name"*) is drawn above or below a depth-0 circle, and the
+ * resolver drops it when neither side is clear. The side it uses is the room
+ * between the base and the nearest lane's name, and on the figure's own base
+ * that room was — accidentally — the leaf `labelBand`. Dropping it there cost
+ * **11 of the 75 drawn captions** (75 → 64 of 88 eligible, on
+ * `time-discretization`, `hamiltonian-recasting`, `qsp-phase-factors`,
+ * `polynomial-approximation` and `state-preparation`), and nothing failed: the
+ * resolver behaved exactly as documented while the feature quietly left the
+ * page. What noticed was the browser sweep's own subject count — 279 tests
+ * became 269, and both said `passed`.
+ *
+ * ## Why depth, and not a caption band at the base
+ *
+ * The obvious fix is to reserve that clearance by name, the way an opened
+ * lane's bone reserves `spineBand`. It was built and measured rather than
+ * argued about: it recovers every caption — **88 of 88, thirteen more than
+ * production draws** — and keeps the whole height cut. But
+ * `allocateBowsAroundSpine` keeps *every* member off the middle, and at depth 0
+ * the member on the middle is the figure's own through-line: a one-lane bundle
+ * stopped lying on its own axis, and the summed-band half-height stopped
+ * describing the row, which four containment tests said at once. That is a
+ * change to what the primary line MEANS, not to how much room it is given, so
+ * it is parked as **OWNER_TODO `03ea5b`** with its numbers rather than taken
+ * unasked.
+ *
+ * So: nested lanes give the band up, the figure's own row keeps it. The nested
+ * lanes are where the height is — 65 of the 100 lanes on the tallest figure —
+ * and the corpus keeps every caption it draws today, for 784px of the 17,396px
+ * this unit saves.
+ */
+function dropsNameBand(strand: Parameters<typeof wearsNameInside>[0], depth: number): boolean {
+  return depth > 0 && wearsNameInside(strand);
+}
+
+/**
  * How much of its parent's belly one step of a chain asks for: its own label
  * budget, whatever it spends inside itself, and the two tapers that pinch it to
  * a point at its boundary circles.
@@ -2610,6 +2708,16 @@ function stepDemand(step: Measure): number {
 interface Measure {
   /** Half the band this strand occupies, at the peak, in pixels. */
   vHalf: number;
+  /**
+   * How much of `vHalf` is room kept **beside** this strand for its own name.
+   *
+   * Zero where the name is not written beside it — inside its own line for a
+   * leaf, on the bone for an opened fan — and `labelBand` where it is. It is a
+   * field rather than a rule each reader re-derives because `coreBandHalf` has
+   * to be able to take it back off again, and a second derivation of a band is
+   * the `hFit` mistake in the other axis.
+   */
+  nameBand: number;
   /**
    * How much **label width** everything inside this strand needs, unpadded.
    *
@@ -3001,8 +3109,12 @@ const VARIANT_FRAME_PAD = 3;
  * both need it back from a `Measure` whose `vHalf` has since grown to include
  * the variants. A second derivation of a band is the `hFit` mistake again.
  */
-function coreBandHalf(size: { innerReach: number; feeds: readonly Measure[] }): number {
-  return size.innerReach + feedReach(size.feeds) + CONVERGE_METRICS.labelBand;
+function coreBandHalf(size: {
+  innerReach: number;
+  feeds: readonly Measure[];
+  nameBand: number;
+}): number {
+  return size.innerReach + feedReach(size.feeds) + size.nameBand;
 }
 
 /**
@@ -3091,12 +3203,25 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
   // stubs silently.
   if (!strand.open || (strand.children.length === 0 && feeds.length === 0)) {
     return {
-      vHalf: halfAt(depth) + M.labelBand,
+      // The band this lane keeps beside itself: `labelBand` when its name is
+      // written there, and only its own thickness against the text when the
+      // name is written **in** the line instead. See `insideNameHalf` for the
+      // measurement. A `max`, not a sum: an inside name is centred on the
+      // belly, so the band is the thicker of the stroke and the text.
+      vHalf: dropsNameBand(strand, depth)
+        ? Math.max(halfAt(depth), insideNameHalf())
+        : halfAt(depth) + M.labelBand,
+      nameBand: dropsNameBand(strand, depth) ? 0 : M.labelBand,
       hFit: own,
       hRun: 0,
       children: [],
       feeds: [],
-      innerReach: halfAt(depth),
+      // The text is centred on the belly, so an inside name widens the strand's
+      // own reach rather than sitting beyond it — `max`, and the same `max` the
+      // band above is built from.
+      innerReach: dropsNameBand(strand, depth)
+        ? Math.max(halfAt(depth), insideNameHalf())
+        : halfAt(depth),
     };
   }
   const children = strand.children.map((child) => measure(child, depth + 1));
@@ -3106,6 +3231,10 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
     const innerReach = halfAt(depth);
     return {
       vHalf: innerReach + feedReach(feeds) + M.labelBand,
+      // Kept: an opened strand with nothing but ingredients is neither on a
+      // bone nor framed, so `place` writes its name OUTSIDE this band, and the
+      // band is what keeps that name off the next sibling.
+      nameBand: M.labelBand,
       hFit: Math.max(own, feedFit),
       // Only the stubs' own runs and their spacing: this strand has no children,
       // so nothing else is drawn inside its belly.
@@ -3129,6 +3258,11 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       Math.max(...children.map((child) => child.vHalf)) + M.innerStateRadius;
     return {
       vHalf: innerReach + feedReach(feeds) + M.labelBand,
+      // Kept, and this is the arm that genuinely uses it: an opened chain wears
+      // its name ON the exoskeleton edge, at `frameHalf` — which is this band
+      // less exactly this number. Take it away and the name is drawn on the
+      // rim of a band that no longer has room for it.
+      nameBand: M.labelBand,
       // The feed clause used to be a bare label width, capped. It is now the
       // feed's own measured demand times `(n+1)` — which subsumes that label,
       // since a shut feed measures as a leaf whose `hFit` *is* its capped name.
@@ -3214,7 +3348,17 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
     ...children.map((child, index) => Math.abs(offsets[index]!) + child.vHalf),
   );
   return {
-    vHalf: reach + feedReach(feeds) + M.labelBand,
+    // **No name band.** An opened fan wears its name ON THE BONE — `onBone` in
+    // `place`, at `peak.y − spineStroke/2 − labelLift`, inside the `spineBand`
+    // that `allocateBowsAroundSpine` already reserves down the middle. The
+    // `labelBand` this used to add sat at the RIM of the band, as far from that
+    // name as the figure allows, and its own note called it what it was:
+    // *"breathing room between an opened group and the siblings it has just
+    // pushed apart"*. The owner's ask is that breathing room, by name — *"much
+    // less horizontal and vertical tolerance between things"* — and the
+    // siblings are still `laneGap` apart with their own bands intact.
+    vHalf: reach + feedReach(feeds),
+    nameBand: 0,
     hFit: Math.max(own, feedFit, ...children.map((child) => child.hFit)),
     // The two runs this fan spends getting its children off its own belly, plus
     // whatever the deepest thing inside it spends — a child, or a stub's own fan
@@ -3397,7 +3541,7 @@ function place(
   // composite run lane is drawn open by construction and has no click to
   // carry, so it gets no shell.
   const framed = strand.open && strand.opensInto === "steps" && !strand.composite;
-  const frameHalf = coreBandHalf(size) - M.labelBand;
+  const frameHalf = coreBandHalf(size) - size.nameBand;
   const frame = framed ? { d: ribbonOutline(ribbon, frameHalf), half: frameHalf } : null;
   // **The variant row (W13):** refinements nested under this lane's own line,
   // packed outward from the band the lane keeps for itself, wrapped in a
@@ -3443,14 +3587,19 @@ function place(
   // A lane with nothing inside wears its name IN the line (owner, session
   // 119) — one shape, one destination. Everything still expandable keeps the
   // two-target split: the line opens, the name reads.
-  const labelInside =
-    (strand.inside === 0 && !strand.composite && !strand.nameless && !strand.openable) ||
-    // The own stretch wears its phrase IN the line (W19): it is a leaf, and the
-    // owner's session-119 rule for leaves is the placement the session-113 ask
-    // was waiting for — in its own band, off the below-spine text population
-    // where the 4 recorded overlaps were measured. See the comment above
-    // `fitted` for the two failures the phrase sits between.
-    strand.own !== null;
+  //
+  // The own stretch wears its phrase IN the line (W19) for the same reason: it
+  // is a leaf, and the owner's session-119 rule for leaves is the placement the
+  // session-113 ask was waiting for — in its own band, off the below-spine text
+  // population where the 4 recorded overlaps were measured. See the comment
+  // above `fitted` for the two failures the phrase sits between.
+  //
+  // **`wearsNameInside`, not the predicate spelled out here.** `measureCore`
+  // now asks the same question to decide whether to reserve a band beside the
+  // lane at all, and two copies of this condition would let the reservation and
+  // the placement disagree — the exact shape of the `hFit` mistake, one axis
+  // over.
+  const labelInside = wearsNameInside(strand);
   const labelY = onBone
     ? peak.y - M.spineStroke / 2 - M.labelLift
     : framed
