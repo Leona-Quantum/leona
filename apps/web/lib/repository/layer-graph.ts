@@ -1191,6 +1191,40 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The headline exponential speedup is over a different deliverable. Learning the full solution vector rather than a functional of it takes $Θ̃(d/ε)$ applications of the preparation unitary and its inverse to obtain an $\\varepsilon$-l2 approximation of a $d$-dimensional pure state (here $d$ is the dimension, written $N$ above; elsewhere in this group $d$ denotes the sparsity) — a characterised complexity, not a loose upper bound — and that linear-in-dimension factor cancels the log-dimension advantage. The $\\kappa²$ is also superseded: later solvers reach $O(\\kappa \\log(1/\\varepsilon))$.",
     contestedJa: "見出しに掲げられる指数的な高速化は、別の成果物に対するものです。x の汎関数ではなく解ベクトル全体を得ようとすると、$d$ 次元の純粋状態（ここでの $d$ は次元であり、上の $N$ にあたります。本群の他の項目では $d$ は疎性を表します）を $\\varepsilon$ の l2 精度で近似するのに、状態を用意するユニタリとその逆を $Θ̃(d/ε)$ 回適用する必要があります。これは上界の緩い評価ではなく特徴付けられた計算量であり、次元に比例するこの因子は次元の対数ぶんの優位を打ち消します。$\\kappa²$ も置き換えられており、のちの解法は $O(\\kappa \\log(1/\\varepsilon))$ に到達しています。",
     steps: ["state-preparation", "hamiltonian-simulation", "success-amplification"],
+    // **The first listing on a decomposed route, and it exists to show the one
+    // thing the step list cannot.** `steps` is flat — state-preparation,
+    // hamiltonian-simulation, success-amplification — and the page draws it as
+    // an ordered list with a "runs O(κ) times" badge beside one entry. Which
+    // steps are INSIDE that loop is not a fact a flat list can carry, and here
+    // it is the whole cost story: `repeats` says |b⟩ is prepared afresh in every
+    // one of the O(κ) rounds, and that is one of the two κ factors.
+    //
+    // So the listing nests, and everything in it is transcribed: the sequence
+    // is `summary` verbatim, the loop and its note are `repeats`, and the
+    // hypotheses and the two closing remarks are `conditions`.
+    example: {
+      pseudocode: [
+        "given  A Hermitian (the general case reduced by dilation), s-sparse with",
+        "       efficient entry oracles, ||A|| ~ 1 with the relevant spectrum in",
+        "       [1/k, 1], k known or upper-bounded, and |b> preparable in poly(log N)",
+        "",
+        "repeat O(k) times, coherently -- the amplification rounds:",
+        "    prepare |b>                       # afresh inside every round",
+        "    run phase estimation against exp(-iAt), writing eigenvalue estimates",
+        "        into an ancilla register",
+        "    apply a controlled rotation with amplitude proportional to 1/lambda~",
+        "    uncompute the phase estimation",
+        "    post-select on the rotation ancilla",
+        "",
+        "# the success amplitude is about 1/k, which is why there are O(k) rounds --",
+        "# and preparing |b> inside each of them is one of the two k factors",
+        "",
+        "# only the well-conditioned part of |b> is inverted; the ill-conditioned",
+        "# part is flagged and discarded",
+        "# no polynomial approximation and no phase sequence is ever computed: the",
+        "# eigenvalue reciprocal is phase estimation plus a conditional rotation",
+      ].join("\n"),
+    },
     repeats: {
       "state-preparation": {
         count: "O(κ) times — once per amplification round",
@@ -1234,6 +1268,33 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The $O(\\kappa \\log(1/\\varepsilon))$ figure is a query count against the block-encoding, not a gate count, and it carries neither $\\alpha$ nor the amplification. Lin and Tong summarise the end-to-end QSP/QSVT query complexity as $O(\\kappa² \\mathrm{polylog}(\\kappa/\\varepsilon))$, reduced to $O(\\kappa \\mathrm{polylog}(\\kappa/\\varepsilon))$ only by variable-time amplitude amplification — and they state that the performance of that technique for this problem has not been quantitatively reported in the literature.",
     contestedJa: "$O(\\kappa \\log(1/\\varepsilon))$ という数字はブロック符号化への問い合わせ回数であってゲート数ではなく、$\\alpha$ も増幅ぶんも含んでいません。Lin と Tong は QSP/QSVT の全体としての問い合わせ計算量を $O(\\kappa² \\mathrm{polylog}(\\kappa/\\varepsilon))$ と整理し、$O(\\kappa \\mathrm{polylog}(\\kappa/\\varepsilon))$ まで下がるのは可変時間振幅増幅を用いた場合だけだとしています。さらに両氏は、この問題に対するその技法の性能は定量的に報告されていないと述べています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function", "success-amplification"],
+    // Transcribed from `summary`, `conditions` and the `repeats` note. The
+    // subnormalisation sentence is the reason this listing is worth having:
+    // `conditions` says what the transform produces is (δ/2)·A⁺ and therefore
+    // **not** the normalised solution state, so a reader who stops at the third
+    // step has the wrong object. Writing amplification as the step that
+    // converts it puts that where it is acted on.
+    example: {
+      pseudocode: [
+        "given  a projected unitary encoding of A whose non-zero singular values are",
+        "       all at least d  (d = 1/k after normalisation), with 0 < e <= d <= 1/2",
+        "",
+        "block-encode A",
+        "prepare |b>",
+        "apply the quantum singular value transformation with an odd polynomial",
+        "    approximating a scaled 1/x away from the origin",
+        "    # m = O((1/d) log(1/e)) applications of U and U^-1, coherently -- the",
+        "    # condition number appearing as a number of turns, not as a factor",
+        "",
+        "# what the transform produces is (d/2) A^+, the Moore-Penrose pseudoinverse",
+        "# carrying a subnormalisation. This is NOT yet the normalised solution state.",
+        "",
+        "amplify                               # which is what converts it",
+        "",
+        "# A need not be Hermitian or sparse -- only block-encodable, because the",
+        "# transform acts on singular values",
+      ].join("\n"),
+    },
     repeats: {
       "block-encode-matrix": {
         count: "m = O((1/δ) log(1/ε)) applications of U and U†",
@@ -1945,6 +2006,37 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Berry, Childs, Cleve, Kothari and Somma: the cost of the algorithm depends logarithmically on the inverse of the desired precision, which the authors state is optimal. Berry, Childs and Kothari, using a linear combination of quantum walk steps with coefficients given by Bessel functions, report a complexity in queries and 2-qubit gates that is \"logarithmic in the inverse error, and nearly linear in the product $\\tau$ of the evolution time, the sparsity, and the magnitude of the largest entry of the Hamiltonian\".",
     costJa: "Berry–Childs–Cleve–Kothari–Somma によれば、このアルゴリズムのコストは要求精度の逆数に対して対数的に依存し、著者らはこれが最適だと述べています。Berry–Childs–Kothari は、Bessel 関数を係数とする量子ウォークのステップの線形結合を用い、クエリ数および 2 量子ビットゲート数で測った計算量が「誤差の逆数に対して対数的であり、発展時間・スパース度・ハミルトニアンの最大成分の大きさの積 $\\tau$ に対してほぼ線形である」と報告しています。",
     steps: ["block-encode-matrix", "state-preparation", "success-amplification"],
+    // `summary` names the three sub-steps in order — "PREPARE loads the
+    // coefficients, SELECT applies the terms, PREPARE† unprepares" — which is
+    // already a listing in prose, so this transcribes it directly.
+    //
+    // Amplification is written inside the segment loop rather than after it
+    // because `conditions` insists on exactly that: the projection succeeds only
+    // on the all-zeros flag, so amplification "is part of the method rather than
+    // an afterthought". The 1-norm remark is the other half of the same field.
+    example: {
+      pseudocode: [
+        "given  H = sum_j c_j V_j  with each V_j efficiently implementable and a cheap",
+        "       PREPARE over the coefficients; evolution time t split into short",
+        "       segments",
+        "",
+        "for each segment:",
+        "    truncate the Taylor series of exp(-iH t_seg) and collect its terms as a",
+        "        linear combination of unitaries",
+        "",
+        "    PREPARE            # load the coefficients into the ancilla register",
+        "    SELECT             # apply the terms, controlled on that register",
+        "    PREPARE^-1         # unprepare",
+        "",
+        "    amplify the all-zeros ancilla flag",
+        "        # the projection onto the wanted block succeeds only on that flag,",
+        "        # so this is part of the method rather than an afterthought",
+        "",
+        "# the cost scales with the 1-norm of the coefficient vector rather than with",
+        "# ||H||: a decomposition with many comparable terms is expensive even for a",
+        "# benign H",
+      ].join("\n"),
+    },
     entries: ["linear-combination-unitaries"],
     citations: [
       { title: "Simulating Hamiltonian dynamics with a truncated Taylor series", authors: "Dominic W. Berry, Andrew M. Childs, Richard Cleve, Robin Kothari, Rolando D. Somma", year: "2014", url: "https://arxiv.org/abs/1412.4687" },
@@ -1965,6 +2057,35 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Low and Chuang state a query complexity $O(t + \\log(1/\\varepsilon))$ to both oracles \"that is optimal with respect to all parameters in both the asymptotic and non-asymptotic regime\", using at most two additional ancilla qubits. The approach subsumes prior sparse-Hamiltonian and linear-combination-of-unitaries approaches with significant improvements in space and gate complexity, such as a quadratic speed-up for precision simulations.",
     costJa: "Low と Chuang は、両方のオラクルに対するクエリ計算量 $O(t + \\log(1/\\varepsilon))$ が「漸近的な領域でも非漸近的な領域でも、すべてのパラメータに関して最適である」と述べ、追加のアンシラは高々 2 量子ビットであるとしています。この方法は従来のスパースハミルトニアン法およびユニタリの線形結合による方法を包含し、空間およびゲート計算量を大きく節約します。高精度のシミュレーションに対する二次的な高速化はその一例です。",
     steps: ["block-encode-matrix", "qsp-phase-factors"],
+    // A transcription of `summary`'s two sentences and `conditions`' three
+    // caveats. Short, because the method is short: two steps and the whole of
+    // the content is what W is and what is done to it.
+    //
+    // The provenance line in `conditions` — Low and Chuang build on Childs'
+    // extension of Szegedy's walk rather than introducing it — stays in the
+    // prose field. A listing is the procedure, not the attribution, and the
+    // card draws both.
+    example: {
+      pseudocode: [
+        "given  a block-encoding pair (U, |G>) with H = (<G| x I) U (|G> x I),",
+        "       H Hermitian, and the subnormalisation alpha inherited from whatever",
+        "       built that encoding",
+        "",
+        "build the walk operator W from (U, |G>)",
+        "    # W splits the space into invariant two-dimensional SU(2) subspaces, one",
+        "    # per eigenvalue of H, with eigenvalues exp(+- i arccos(H/alpha))",
+        "",
+        "apply the quantum signal processing phases to W",
+        "",
+        "return exp(-iHt)",
+        "",
+        "# consumes a block-encoding-like access model rather than raw data, so it",
+        "# does not solve the data-input problem by itself",
+        "# downstream cost is linear in alpha",
+        "# the arccos relation means eigenvalues near the edges of the spectrum are",
+        "# resolved differently from those near zero",
+      ].join("\n"),
+    },
     entries: ["quantum-signal-processing"],
     citations: [
       { title: "Hamiltonian Simulation by Qubitization", authors: "Guang Hao Low, Isaac L. Chuang", year: "2016", url: "https://arxiv.org/abs/1610.06546" },
@@ -2038,6 +2159,36 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Reaching additive error $\\varepsilon$ takes of order $1/\\varepsilon$ sequential applications of $Q$, and that is a depth as much as a count, so a device with a capped coherent depth cannot spend it. Giurgica-Tiron, Kerenidis, Labib, Prakash and Zeng give two algorithms — Power law AE and QoPrime AE — carrying a parameter $\\beta ∈ (0,1]$ with $N = \\tilde{O}(1/\\varepsilon^{1+\\beta})$ oracle calls and $D = O(1/\\varepsilon^{1−\\beta})$ sequential calls, so $N·D = \\tilde{O}(1/\\varepsilon²)$ throughout and $\\beta = 1$ recovers classical sampling. A quoted \"quadratic speedup\" that does not state the depth it assumes has not stated its cost.",
     contestedJa: "加法誤差 $\\varepsilon$ の達成に要する $Q$ の適用回数はおよそ $1/\\varepsilon$ ですが、これは回数であると同時に逐次深さでもあり、コヒーレント深さに上限のある装置はそれを使い切れません。Giurgica-Tiron–Kerenidis–Labib–Prakash–Zeng は Power law AE と QoPrime AE という二つのアルゴリズムを与えています。パラメータ $\\beta ∈ (0,1]$ に対しオラクル呼び出しは $N = \\tilde{O}(1/\\varepsilon^{1+\\beta})$、逐次呼び出しは $D = O(1/\\varepsilon^{1−\\beta})$ であり、全域で $N·D = \\tilde{O}(1/\\varepsilon²)$ が成り立ち、$\\beta = 1$ で古典的なサンプリングに戻ります。前提とする深さを述べずに「二次的な高速化」と書いた見積もりは、コストを述べたことになりません。",
     steps: ["state-preparation"],
+    // Transcribed from `summary`, `conditions` and the `repeats` note. Two
+    // details are in the listing because both are sign-and-convention facts a
+    // reader implementing this needs at the point of use rather than in a
+    // paragraph: the global minus in Q, which `conditions` says fixes the
+    // eigenphase convention the amplitude is read off from, and that each of
+    // the M iterations runs the preparation forwards AND backwards, which is
+    // what `repeats` records.
+    example: {
+      pseudocode: [
+        "given  coherent, controlled access to the state-preparation unitary A and to",
+        "       its inverse, and a bound on the observable's eigenvalues or on its",
+        "       tail distribution",
+        "",
+        "encode the expectation value into an amplitude",
+        "",
+        "form the Grover operator   Q = - A S_0 A^-1 S_chi",
+        "    # the global minus is Brassard, Hoyer, Mosca and Tapp's definition, and",
+        "    # it is what fixes the eigenphase convention the amplitude is read off",
+        "    # from",
+        "",
+        "run M = O(1/e) iterations, coherently -- phase estimation on Q, or one of",
+        "    the QPE-free variants",
+        "    # each iteration runs the preparation forwards and backwards once",
+        "",
+        "return the amplitude, hence the expectation value",
+        "",
+        "# a state that has been prepared and measured cannot be reused, so this is",
+        "# the fault-tolerant-regime readout and direct sampling is the near-term one",
+      ].join("\n"),
+    },
     repeats: {
       "state-preparation": {
         count: "M iterations, M = O(1/ε), each running the preparation forwards and backwards once",
