@@ -1,0 +1,1061 @@
+{
+ "source": "https://github.com/Classiq/classiq-library",
+ "commit": "ac61dccb99efcad1671dd33fc91f0b3415bc1974",
+ "commitDate": "2026-08-09T14:43:16Z",
+ "fetchedAt": "2026-08-11",
+ "countedTops": [
+  "algorithms",
+  "applications"
+ ],
+ "excludedTops": [
+  "tutorials",
+  "functions"
+ ],
+ "entryCount": 103,
+ "byCategory": {
+  "algorithms": 42,
+  "applications": 61
+ },
+ "entries": [
+  {
+   "path": "algorithms/amplitude_amplification_and_estimation/oblivious_amplitude_amplification",
+   "category": "algorithms",
+   "group": "amplitude_amplification_and_estimation/oblivious_amplitude_amplification",
+   "name": "oblivious_amplitude_amplification",
+   "files": [
+    "oblivious_amplitude_amplification.ipynb",
+    "oblivious_amplitude_amplification.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/amplitude_amplification_and_estimation/qmc_user_defined",
+   "category": "algorithms",
+   "group": "amplitude_amplification_and_estimation/qmc_user_defined",
+   "name": "qmc_user_defined",
+   "files": [
+    "qmc_user_defined.ipynb",
+    "qmc_user_defined.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/amplitude_amplification_and_estimation/qsvt_fixed_point_amplitude_amplification",
+   "category": "algorithms",
+   "group": "amplitude_amplification_and_estimation/qsvt_fixed_point_amplitude_amplification",
+   "name": "qsvt_fixed_point_amplitude_amplification",
+   "files": [
+    "qsvt_fixed_point_amplitude_amplification.ipynb",
+    "qsvt_fixed_point_amplitude_amplification.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/amplitude_amplification_and_estimation/quantum_counting",
+   "category": "algorithms",
+   "group": "amplitude_amplification_and_estimation/quantum_counting",
+   "name": "quantum_counting",
+   "files": [
+    "quantum_counting.ipynb",
+    "quantum_counting.qmod",
+    "quantum_counting_iqae.qmod",
+    "quantum_counting_qpe.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/foundational/bernstein_vazirani",
+   "category": "algorithms",
+   "group": "foundational/bernstein_vazirani",
+   "name": "bernstein_vazirani",
+   "files": [
+    "bernstein_vazirani.ipynb",
+    "bernstein_vazirani.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/foundational/deutsch_jozsa",
+   "category": "algorithms",
+   "group": "foundational/deutsch_jozsa",
+   "name": "deutsch_jozsa",
+   "files": [
+    "deutsch_jozsa.ipynb",
+    "deutsch_jozsa.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/foundational/quantum_teleportation",
+   "category": "algorithms",
+   "group": "foundational/quantum_teleportation",
+   "name": "quantum_teleportation",
+   "files": [
+    "quantum_teleportation.ipynb",
+    "quantum_teleportation.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/foundational/simon",
+   "category": "algorithms",
+   "group": "foundational/simon",
+   "name": "simon",
+   "files": [
+    "simon.ipynb",
+    "simon.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/hamiltonian_simulation/hamiltonian_simulation_guide",
+   "category": "algorithms",
+   "group": "hamiltonian_simulation/hamiltonian_simulation_guide",
+   "name": "hamiltonian_simulation_guide",
+   "files": [
+    "hamiltonian_simulation_guide.ipynb",
+    "hamiltonian_simulation_guide.qmod",
+    "hamiltonian_simulation_guide_qdrift.qmod",
+    "hamiltonian_simulation_guide_trotter.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/hamiltonian_simulation/hamiltonian_simulation_with_block_encoding",
+   "category": "algorithms",
+   "group": "hamiltonian_simulation/hamiltonian_simulation_with_block_encoding",
+   "name": "hamiltonian_simulation_with_block_encoding",
+   "files": [
+    "hamiltonian_simulation_gqsp.ipynb",
+    "hamiltonian_simulation_qsvt.ipynb",
+    "hamiltonian_simulation_qubitization.ipynb",
+    "jacobi_anger_expansion.ipynb"
+   ]
+  },
+  {
+   "path": "algorithms/metrology",
+   "category": "algorithms",
+   "group": "metrology",
+   "name": "metrology",
+   "files": [
+    "classical_shadow_tomography.ipynb",
+    "classical_shadow_tomography.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/number_theory_and_cryptography/discrete_log",
+   "category": "algorithms",
+   "group": "number_theory_and_cryptography/discrete_log",
+   "name": "discrete_log",
+   "files": [
+    "discrete_log.ipynb",
+    "discrete_log.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/number_theory_and_cryptography/elliptic_curves",
+   "category": "algorithms",
+   "group": "number_theory_and_cryptography/elliptic_curves",
+   "name": "elliptic_curves",
+   "files": [
+    "elliptic_curve_discrete_log.ipynb",
+    "elliptic_curve_discrete_log.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/number_theory_and_cryptography/hidden_shift",
+   "category": "algorithms",
+   "group": "number_theory_and_cryptography/hidden_shift",
+   "name": "hidden_shift",
+   "files": [
+    "hidden_shift.ipynb",
+    "hidden_shift.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/number_theory_and_cryptography/shor",
+   "category": "algorithms",
+   "group": "number_theory_and_cryptography/shor",
+   "name": "shor",
+   "files": [
+    "shor.ipynb",
+    "shor.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/QML/hybrid_qnn",
+   "category": "algorithms",
+   "group": "QML/hybrid_qnn",
+   "name": "hybrid_qnn",
+   "files": [
+    "hybrid_qnn_for_subset_majority.ipynb",
+    "hybrid_qnn_for_subset_majority.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/QML/qgan",
+   "category": "algorithms",
+   "group": "QML/qgan",
+   "name": "qgan",
+   "files": [
+    "qgan_bars_and_strips.ipynb",
+    "qgan_bars_and_strips.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/QML/qsvm",
+   "category": "algorithms",
+   "group": "QML/qsvm",
+   "name": "qsvm",
+   "files": [
+    "qsvm.ipynb",
+    "qsvm.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/QML/quantum_autoencoder",
+   "category": "algorithms",
+   "group": "QML/quantum_autoencoder",
+   "name": "quantum_autoencoder",
+   "files": [
+    "quantum_autoencoder.ipynb",
+    "quantum_autoencoder.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_differential_equations_solvers/discrete_poisson_solver",
+   "category": "algorithms",
+   "group": "quantum_differential_equations_solvers/discrete_poisson_solver",
+   "name": "discrete_poisson_solver",
+   "files": [
+    "discrete_poisson_solver.ipynb",
+    "discrete_poisson_solver.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_differential_equations_solvers/lchs",
+   "category": "algorithms",
+   "group": "quantum_differential_equations_solvers/lchs",
+   "name": "lchs",
+   "files": [
+    "lchs.ipynb"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_differential_equations_solvers/time_marching",
+   "category": "algorithms",
+   "group": "quantum_differential_equations_solvers/time_marching",
+   "name": "time_marching",
+   "files": [
+    "time_marching.ipynb",
+    "time_marching.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_linear_solvers/adiabatic_linear_solvers",
+   "category": "algorithms",
+   "group": "quantum_linear_solvers/adiabatic_linear_solvers",
+   "name": "adiabatic_linear_solvers",
+   "files": [
+    "solving_qlsp_with_aqc.ipynb",
+    "solving_qlsp_with_aqc.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_linear_solvers/hhl",
+   "category": "algorithms",
+   "group": "quantum_linear_solvers/hhl",
+   "name": "hhl",
+   "files": [
+    "hhl.ipynb",
+    "hhl.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_linear_solvers/qsvt_matrix_inversion",
+   "category": "algorithms",
+   "group": "quantum_linear_solvers/qsvt_matrix_inversion",
+   "name": "qsvt_matrix_inversion",
+   "files": [
+    "qsvt_matrix_inversion.ipynb",
+    "qsvt_matrix_inversion.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_linear_solvers/vqls",
+   "category": "algorithms",
+   "group": "quantum_linear_solvers/vqls",
+   "name": "vqls",
+   "files": [
+    "vqls_with_lcu.ipynb",
+    "vqls_with_lcu.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_phase_estimation/qpe_for_matrix",
+   "category": "algorithms",
+   "group": "quantum_phase_estimation/qpe_for_matrix",
+   "name": "qpe_for_matrix",
+   "files": [
+    "qpe_for_matrix.ipynb",
+    "qpe_for_matrix.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_phase_estimation/qpe_with_qubitization",
+   "category": "algorithms",
+   "group": "quantum_phase_estimation/qpe_with_qubitization",
+   "name": "qpe_with_qubitization",
+   "files": [
+    "qpe_for_molecule_with_qubitization.ipynb",
+    "qpe_for_molecule_with_qubitization.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_primitives/gqsp",
+   "category": "algorithms",
+   "group": "quantum_primitives/gqsp",
+   "name": "gqsp",
+   "files": [
+    "gqsp.ipynb",
+    "gqsp.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_primitives/gradient_estimation",
+   "category": "algorithms",
+   "group": "quantum_primitives/gradient_estimation",
+   "name": "gradient_estimation",
+   "files": [
+    "gradient_estimation.ipynb"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_primitives/hadamard_test",
+   "category": "algorithms",
+   "group": "quantum_primitives/hadamard_test",
+   "name": "hadamard_test",
+   "files": [
+    "hadamard_test.ipynb",
+    "hadamard_test.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_primitives/quantum_oracle_sketching_boolean",
+   "category": "algorithms",
+   "group": "quantum_primitives/quantum_oracle_sketching_boolean",
+   "name": "quantum_oracle_sketching_boolean",
+   "files": [
+    "quantum_oracle_sketching_boolean.ipynb"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_primitives/swap_test",
+   "category": "algorithms",
+   "group": "quantum_primitives/swap_test",
+   "name": "swap_test",
+   "files": [
+    "swap_test.ipynb",
+    "swap_test.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_state_preparation/adapt_vqe",
+   "category": "algorithms",
+   "group": "quantum_state_preparation/adapt_vqe",
+   "name": "adapt_vqe",
+   "files": [
+    "adapt_vqe.ipynb",
+    "adapt_vqe.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_state_preparation/fermionic_gaussian",
+   "category": "algorithms",
+   "group": "quantum_state_preparation/fermionic_gaussian",
+   "name": "fermionic_gaussian",
+   "files": [
+    "fermionic_gaussian.ipynb"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_state_preparation/gibbs",
+   "category": "algorithms",
+   "group": "quantum_state_preparation/gibbs",
+   "name": "gibbs",
+   "files": [
+    "quantum_thermal_state_preparation.ipynb",
+    "quantum_thermal_state_preparation.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/quantum_walks/glued_trees",
+   "category": "algorithms",
+   "group": "quantum_walks/glued_trees",
+   "name": "glued_trees",
+   "files": [
+    "glued_trees.ipynb"
+   ]
+  },
+  {
+   "path": "algorithms/search_and_optimization/dqi",
+   "category": "algorithms",
+   "group": "search_and_optimization/dqi",
+   "name": "dqi",
+   "files": [
+    "dqi_max_xorsat.ipynb",
+    "dqi_max_xorsat.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/search_and_optimization/grover",
+   "category": "algorithms",
+   "group": "search_and_optimization/grover",
+   "name": "grover",
+   "files": [
+    "3_sat_grover.qmod",
+    "grover.ipynb",
+    "grover.qmod",
+    "grover_max_cut.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/search_and_optimization/grover_mixer_qaoa",
+   "category": "algorithms",
+   "group": "search_and_optimization/grover_mixer_qaoa",
+   "name": "grover_mixer_qaoa",
+   "files": [
+    "gm_qaoa.ipynb",
+    "gm_qaoa.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/search_and_optimization/QAOA",
+   "category": "algorithms",
+   "group": "search_and_optimization/QAOA",
+   "name": "QAOA",
+   "files": [
+    "qaoa.ipynb",
+    "qaoa.qmod",
+    "qaoa_knapsack.qmod",
+    "qaoa_max_cut.qmod"
+   ]
+  },
+  {
+   "path": "algorithms/search_and_optimization/quantum_likelihood_estimation",
+   "category": "algorithms",
+   "group": "search_and_optimization/quantum_likelihood_estimation",
+   "name": "quantum_likelihood_estimation",
+   "files": [
+    "quantum_likelihood_estimation.ipynb"
+   ]
+  },
+  {
+   "path": "applications/automotive/cooling_systems_optimization",
+   "category": "applications",
+   "group": "automotive/cooling_systems_optimization",
+   "name": "cooling_systems_optimization",
+   "files": [
+    "cooling_systems_optimization.ipynb"
+   ]
+  },
+  {
+   "path": "applications/benchmarking/quantum_volume",
+   "category": "applications",
+   "group": "benchmarking/quantum_volume",
+   "name": "quantum_volume",
+   "files": [
+    "quantum_volume.ipynb",
+    "quantum_volume.qmod"
+   ]
+  },
+  {
+   "path": "applications/benchmarking/randomized_benchmarking",
+   "category": "applications",
+   "group": "benchmarking/randomized_benchmarking",
+   "name": "randomized_benchmarking",
+   "files": [
+    "randomized_benchmarking.ipynb",
+    "randomized_benchmarking.qmod"
+   ]
+  },
+  {
+   "path": "applications/CFD/double_slit_experiment",
+   "category": "applications",
+   "group": "CFD/double_slit_experiment",
+   "name": "double_slit_experiment",
+   "files": [
+    "quantum_double_slit_experiment.ipynb",
+    "quantum_double_slit_experiment.qmod"
+   ]
+  },
+  {
+   "path": "applications/CFD/heat_eq_qsvt",
+   "category": "applications",
+   "group": "CFD/heat_eq_qsvt",
+   "name": "heat_eq_qsvt",
+   "files": [
+    "heat_eq_qsvt.ipynb",
+    "heat_eq_qsvt.qmod"
+   ]
+  },
+  {
+   "path": "applications/CFD/qlbm",
+   "category": "applications",
+   "group": "CFD/qlbm",
+   "name": "qlbm",
+   "files": [
+    "qlbm.ipynb",
+    "qlbm.qmod"
+   ]
+  },
+  {
+   "path": "applications/CFD/QLS_for_hybrid_solvers",
+   "category": "applications",
+   "group": "CFD/QLS_for_hybrid_solvers",
+   "name": "QLS_for_hybrid_solvers",
+   "files": [
+    "chebyshev_approximation.ipynb",
+    "qls_chebyshev_lcu.ipynb",
+    "qls_qsvt.ipynb",
+    "verify_block_encoding.ipynb"
+   ]
+  },
+  {
+   "path": "applications/chemistry/classiq_chemistry_application",
+   "category": "applications",
+   "group": "chemistry/classiq_chemistry_application",
+   "name": "classiq_chemistry_application",
+   "files": [
+    "classiq_chemistry_application.ipynb"
+   ]
+  },
+  {
+   "path": "applications/chemistry/molecular_energy_curve",
+   "category": "applications",
+   "group": "chemistry/molecular_energy_curve",
+   "name": "molecular_energy_curve",
+   "files": [
+    "molecular_energy_curve.ipynb",
+    "molecular_energy_curve.qmod"
+   ]
+  },
+  {
+   "path": "applications/chemistry/molecule_eigensolver",
+   "category": "applications",
+   "group": "chemistry/molecule_eigensolver",
+   "name": "molecule_eigensolver",
+   "files": [
+    "molecule_eigensolver.ipynb",
+    "molecule_eigensolver.qmod"
+   ]
+  },
+  {
+   "path": "applications/chemistry/projection_based_embedding",
+   "category": "applications",
+   "group": "chemistry/projection_based_embedding",
+   "name": "projection_based_embedding",
+   "files": [
+    "projected_based_embedding_tutorial.ipynb"
+   ]
+  },
+  {
+   "path": "applications/chemistry/protein_folding/protein_folding_with_qaoa",
+   "category": "applications",
+   "group": "chemistry/protein_folding/protein_folding_with_qaoa",
+   "name": "protein_folding_with_qaoa",
+   "files": [
+    "protein_folding.ipynb",
+    "protein_folding.qmod"
+   ]
+  },
+  {
+   "path": "applications/chemistry/protein_folding/protein_folding_with_quantum_walk",
+   "category": "applications",
+   "group": "chemistry/protein_folding/protein_folding_with_quantum_walk",
+   "name": "protein_folding_with_quantum_walk",
+   "files": [
+    "qfold.ipynb",
+    "qfold.qmod"
+   ]
+  },
+  {
+   "path": "applications/chemistry/qpe_for_molecules",
+   "category": "applications",
+   "group": "chemistry/qpe_for_molecules",
+   "name": "qpe_for_molecules",
+   "files": [
+    "qpe_for_molecules.ipynb",
+    "qpe_for_molecules.qmod"
+   ]
+  },
+  {
+   "path": "applications/chemistry/quantum_drude_oscillator",
+   "category": "applications",
+   "group": "chemistry/quantum_drude_oscillator",
+   "name": "quantum_drude_oscillator",
+   "files": [
+    "quantum_drude_oscillator.ipynb",
+    "quantum_drude_oscillator.qmod"
+   ]
+  },
+  {
+   "path": "applications/chemistry/quantum_walk_fmo",
+   "category": "applications",
+   "group": "chemistry/quantum_walk_fmo",
+   "name": "quantum_walk_fmo",
+   "files": [
+    "quantum_walk_fmo.ipynb",
+    "quantum_walk_fmo.qmod"
+   ]
+  },
+  {
+   "path": "applications/chemistry/second_quantized_hamiltonian",
+   "category": "applications",
+   "group": "chemistry/second_quantized_hamiltonian",
+   "name": "second_quantized_hamiltonian",
+   "files": [
+    "second_quantized_hamiltonian.ipynb",
+    "second_quantized_hamiltonian.qmod"
+   ]
+  },
+  {
+   "path": "applications/chemistry/tensor_hypercontraction",
+   "category": "applications",
+   "group": "chemistry/tensor_hypercontraction",
+   "name": "tensor_hypercontraction",
+   "files": [
+    "tensor_hypercontraction.ipynb",
+    "tensor_hypercontraction.qmod"
+   ]
+  },
+  {
+   "path": "applications/cybersecurity/link_monitoring",
+   "category": "applications",
+   "group": "cybersecurity/link_monitoring",
+   "name": "link_monitoring",
+   "files": [
+    "link_monitoring.ipynb",
+    "link_monitoring.qmod"
+   ]
+  },
+  {
+   "path": "applications/cybersecurity/patching_management",
+   "category": "applications",
+   "group": "cybersecurity/patching_management",
+   "name": "patching_management",
+   "files": [
+    "patch_min_vertex_cover.ipynb",
+    "patch_min_vertex_cover.qmod"
+   ]
+  },
+  {
+   "path": "applications/cybersecurity/whitebox_fuzzing",
+   "category": "applications",
+   "group": "cybersecurity/whitebox_fuzzing",
+   "name": "whitebox_fuzzing",
+   "files": [
+    "whitebox_fuzzing.ipynb",
+    "whitebox_fuzzing.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/autocallable_options",
+   "category": "applications",
+   "group": "finance/autocallable_options",
+   "name": "autocallable_options",
+   "files": [
+    "partial_exponential_state_preparation.ipynb",
+    "partial_exponential_state_preparation.qmod",
+    "quantum_autocallable_option_pricing.ipynb",
+    "quantum_autocallable_option_pricing.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/brownian_chebyshev_polynomials",
+   "category": "applications",
+   "group": "finance/brownian_chebyshev_polynomials",
+   "name": "brownian_chebyshev_polynomials",
+   "files": [
+    "brownian_chebyshev_polynomials.ipynb",
+    "brownian_chebyshev_polynomials.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/credit_card_fraud",
+   "category": "applications",
+   "group": "finance/credit_card_fraud",
+   "name": "credit_card_fraud",
+   "files": [
+    "credit_card_fraud.ipynb",
+    "credit_card_fraud.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/hybrid_hhl_for_portfolio_optimization",
+   "category": "applications",
+   "group": "finance/hybrid_hhl_for_portfolio_optimization",
+   "name": "hybrid_hhl_for_portfolio_optimization",
+   "files": [
+    "portfolio_optimization_with_hhl.ipynb",
+    "portfolio_optimization_with_hhl.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/option_pricing",
+   "category": "applications",
+   "group": "finance/option_pricing",
+   "name": "option_pricing",
+   "files": [
+    "option_pricing.ipynb",
+    "option_pricing.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/portfolio_optimization",
+   "category": "applications",
+   "group": "finance/portfolio_optimization",
+   "name": "portfolio_optimization",
+   "files": [
+    "portfolio_optimization.ipynb",
+    "portfolio_optimization.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/portfolio_optimization_hhl",
+   "category": "applications",
+   "group": "finance/portfolio_optimization_hhl",
+   "name": "portfolio_optimization_hhl",
+   "files": [
+    "HHL_portfolio.ipynb",
+    "HHL_portfolio.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/rainbow_options",
+   "category": "applications",
+   "group": "finance/rainbow_options",
+   "name": "rainbow_options",
+   "files": [
+    "rainbow_options_bruteforce_method.ipynb",
+    "rainbow_options_bruteforce_method.qmod",
+    "rainbow_options_direct_method.ipynb",
+    "rainbow_options_direct_method.qmod",
+    "rainbow_options_integration_method.ipynb",
+    "rainbow_options_integration_method.qmod"
+   ]
+  },
+  {
+   "path": "applications/finance/value_at_risk",
+   "category": "applications",
+   "group": "finance/value_at_risk",
+   "name": "value_at_risk",
+   "files": [
+    "value_at_risk.ipynb",
+    "value_at_risk.qmod"
+   ]
+  },
+  {
+   "path": "applications/image_processing/quantum_hadamard_edge_detection",
+   "category": "applications",
+   "group": "image_processing/quantum_hadamard_edge_detection",
+   "name": "quantum_hadamard_edge_detection",
+   "files": [
+    "quantum_image_edge_detection.ipynb"
+   ]
+  },
+  {
+   "path": "applications/logistics/facility_location",
+   "category": "applications",
+   "group": "logistics/facility_location",
+   "name": "facility_location",
+   "files": [
+    "facility_location.ipynb",
+    "facility_location.qmod"
+   ]
+  },
+  {
+   "path": "applications/logistics/task_scheduling_problem",
+   "category": "applications",
+   "group": "logistics/task_scheduling_problem",
+   "name": "task_scheduling_problem",
+   "files": [
+    "task_scheduling_problem.ipynb",
+    "task_scheduling_problem.qmod"
+   ]
+  },
+  {
+   "path": "applications/logistics/traveling_salesman_problem",
+   "category": "applications",
+   "group": "logistics/traveling_salesman_problem",
+   "name": "traveling_salesman_problem",
+   "files": [
+    "traveling_salesman_problem.ipynb",
+    "traveling_salesman_problem.qmod"
+   ]
+  },
+  {
+   "path": "applications/logistics/vehicle_routing_problem",
+   "category": "applications",
+   "group": "logistics/vehicle_routing_problem",
+   "name": "vehicle_routing_problem",
+   "files": [
+    "vehicle_routing_problem.ipynb",
+    "vehicle_routing_problem.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/adapt_qaoa",
+   "category": "applications",
+   "group": "optimization/adapt_qaoa",
+   "name": "adapt_qaoa",
+   "files": [
+    "adapt_qaoa.ipynb",
+    "adapt_qaoa.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/electric_grid_optimization",
+   "category": "applications",
+   "group": "optimization/electric_grid_optimization",
+   "name": "electric_grid_optimization",
+   "files": [
+    "electric_grid_optimization.ipynb",
+    "electric_grid_optimization.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/integer_linear_programming",
+   "category": "applications",
+   "group": "optimization/integer_linear_programming",
+   "name": "integer_linear_programming",
+   "files": [
+    "integer_linear_programming.ipynb",
+    "integer_linear_programming.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/kidney_exchange",
+   "category": "applications",
+   "group": "optimization/kidney_exchange",
+   "name": "kidney_exchange",
+   "files": [
+    "kidney_exchange_problem.ipynb",
+    "kidney_exchange_problem.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/low_autocorrelation_binary_sequences_problem",
+   "category": "applications",
+   "group": "optimization/low_autocorrelation_binary_sequences_problem",
+   "name": "low_autocorrelation_binary_sequences_problem",
+   "files": [
+    "evidence_scaling_labs.ipynb",
+    "evidence_scaling_labs.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/max_clique",
+   "category": "applications",
+   "group": "optimization/max_clique",
+   "name": "max_clique",
+   "files": [
+    "max_clique.ipynb",
+    "max_clique.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/max_independent_set",
+   "category": "applications",
+   "group": "optimization/max_independent_set",
+   "name": "max_independent_set",
+   "files": [
+    "max_independent_set.ipynb",
+    "max_independent_set.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/max_induced_k_color_subgraph",
+   "category": "applications",
+   "group": "optimization/max_induced_k_color_subgraph",
+   "name": "max_induced_k_color_subgraph",
+   "files": [
+    "max_induced_k_color_subgraph.ipynb",
+    "max_induced_k_color_subgraph.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/max_k_vertex_cover",
+   "category": "applications",
+   "group": "optimization/max_k_vertex_cover",
+   "name": "max_k_vertex_cover",
+   "files": [
+    "max_k_vertex_cover.ipynb",
+    "max_k_vertex_cover.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/min_graph_coloring",
+   "category": "applications",
+   "group": "optimization/min_graph_coloring",
+   "name": "min_graph_coloring",
+   "files": [
+    "min_graph_coloring.ipynb",
+    "min_graph_coloring.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/minimum_dominating_set",
+   "category": "applications",
+   "group": "optimization/minimum_dominating_set",
+   "name": "minimum_dominating_set",
+   "files": [
+    "minimum_dominating_set.ipynb",
+    "minimum_dominating_set.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/qaoa_in_qaoa",
+   "category": "applications",
+   "group": "optimization/qaoa_in_qaoa",
+   "name": "qaoa_in_qaoa",
+   "files": [
+    "qaoa_in_qaoa.ipynb",
+    "qaoa_in_qaoa.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/rectangles_packing",
+   "category": "applications",
+   "group": "optimization/rectangles_packing",
+   "name": "rectangles_packing",
+   "files": [
+    "rectangles_packing_grid.ipynb",
+    "rectangles_packing_grid.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/robust_posture_optimization",
+   "category": "applications",
+   "group": "optimization/robust_posture_optimization",
+   "name": "robust_posture_optimization",
+   "files": [
+    "robust_posture_optimization.ipynb",
+    "robust_posture_optimization.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/set_cover",
+   "category": "applications",
+   "group": "optimization/set_cover",
+   "name": "set_cover",
+   "files": [
+    "set_cover.ipynb",
+    "set_cover.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/set_partition",
+   "category": "applications",
+   "group": "optimization/set_partition",
+   "name": "set_partition",
+   "files": [
+    "set_partition.ipynb",
+    "set_partition.qmod"
+   ]
+  },
+  {
+   "path": "applications/optimization/variational_quantum_imaginary_time_evolution",
+   "category": "applications",
+   "group": "optimization/variational_quantum_imaginary_time_evolution",
+   "name": "variational_quantum_imaginary_time_evolution",
+   "files": [
+    "variational_quantum_imaginary_time_evolution.ipynb",
+    "variational_quantum_imaginary_time_evolution.qmod"
+   ]
+  },
+  {
+   "path": "applications/physical_systems/fermi_hubbard_model_1D",
+   "category": "applications",
+   "group": "physical_systems/fermi_hubbard_model_1D",
+   "name": "fermi_hubbard_model_1D",
+   "files": [
+    "fermi_hubbard_1D.ipynb",
+    "fermi_hubbard_1D.qmod"
+   ]
+  },
+  {
+   "path": "applications/physical_systems/hhl_lanchester",
+   "category": "applications",
+   "group": "physical_systems/hhl_lanchester",
+   "name": "hhl_lanchester",
+   "files": [
+    "hhl_lanchester.ipynb",
+    "hhl_lanchester.qmod"
+   ]
+  },
+  {
+   "path": "applications/physical_systems/ising_model",
+   "category": "applications",
+   "group": "physical_systems/ising_model",
+   "name": "ising_model",
+   "files": [
+    "ising_model.ipynb",
+    "ising_model.qmod"
+   ]
+  },
+  {
+   "path": "applications/physical_systems/maxwell_equation",
+   "category": "applications",
+   "group": "physical_systems/maxwell_equation",
+   "name": "maxwell_equation",
+   "files": [
+    "maxwell_2d_simulation.ipynb"
+   ]
+  },
+  {
+   "path": "applications/physical_systems/quantum_chaos",
+   "category": "applications",
+   "group": "physical_systems/quantum_chaos",
+   "name": "quantum_chaos",
+   "files": [
+    "quantum_sawtooth_map.ipynb",
+    "quantum_sawtooth_map.qmod"
+   ]
+  },
+  {
+   "path": "applications/plasma/vlasov_ampere",
+   "category": "applications",
+   "group": "plasma/vlasov_ampere",
+   "name": "vlasov_ampere",
+   "files": [
+    "vlasov_ampere.ipynb",
+    "vlasov_ampere.qmod",
+    "vlasov_ampere_qiskit.ipynb"
+   ]
+  },
+  {
+   "path": "applications/telecom/network_traffic_optimization",
+   "category": "applications",
+   "group": "telecom/network_traffic_optimization",
+   "name": "network_traffic_optimization",
+   "files": [
+    "network_traffic_optimization.ipynb",
+    "network_traffic_optimization.qmod"
+   ]
+  },
+  {
+   "path": "applications/telecom/radio_access_network",
+   "category": "applications",
+   "group": "telecom/radio_access_network",
+   "name": "radio_access_network",
+   "files": [
+    "radio_access_network_positioning_antennas.ipynb",
+    "radio_access_network_positioning_antennas.qmod"
+   ]
+  },
+  {
+   "path": "applications/telecom/resiliency_planning",
+   "category": "applications",
+   "group": "telecom/resiliency_planning",
+   "name": "resiliency_planning",
+   "files": [
+    "resiliency_planning.ipynb",
+    "resiliency_planning.qmod",
+    "resiliency_planning_AMD.ipynb",
+    "resiliency_planning_AMD.qmod"
+   ]
+  }
+ ]
+}
