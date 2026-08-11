@@ -273,13 +273,34 @@ async function settle({ minMs = 1200, timeoutMs = 9000 } = {}) {
   return { ...latest, trace, elapsed: Date.now() - started };
 }
 
-/** Mark the hit stroke inside one anchor and return a point genuinely on it. */
+/**
+ * Does this `?at=` value look like a viewport rather than a W15 lane address?
+ *
+ * Restated here rather than imported, deliberately: `isViewportValue` is the
+ * thing under test, so importing it would let a broken predicate agree with
+ * itself. One copy in this file, though — the in-page check below runs inside
+ * `page.evaluate`, where this closure cannot reach, and is the only reason the
+ * rule appears twice at all.
+ */
+const looksLikeViewport = (v) => {
+  const parts = v.split(",");
+  return parts.length === 3 && parts.every((p) => p.trim() !== "" && Number.isFinite(Number(p)));
+};
+
+/**
+ * Mark the hit shape inside one anchor and return a point genuinely on it.
+ *
+ * Either hit shape: a lane's controls hang off `.mj-converge-strand-hit`, but a
+ * collapse shell's hang off `.mj-converge-frame-hit`, and looking only for the
+ * first would silently skip every frame-only anchor — reporting "no aim point"
+ * for a control that is perfectly clickable.
+ */
 async function aimInsideAnchor(anchorSelector, nth = 0) {
   const marked = await page.evaluate(
     ([sel, index]) => {
       document.querySelectorAll("[data-aim]").forEach((el) => el.removeAttribute("data-aim"));
       const a = document.querySelectorAll(sel)[index];
-      const hit = a?.querySelector(".mj-converge-strand-hit");
+      const hit = a?.querySelector(".mj-converge-strand-hit, .mj-converge-frame-hit");
       if (!hit) return null;
       hit.setAttribute("data-aim", "here");
       return a.getAttribute("href");
@@ -334,7 +355,10 @@ async function rafTicks() {
 // --- Case 1: opening a lane selects it, and the camera flies to it ----------
 await page.goto(`${BASE}/repository/layers?focus=nonlinear-ode-solve`, { waitUntil: "networkidle" });
 const selectable = await aimInsideAnchor("svg.mj-converge-canvas a[href*='open=']");
-W16.laneClick = { href: selectable.href, clickedAt: selectable.point };
+// `caseExisted` is set on BOTH branches. An unset field reads as "not measured"
+// exactly like a field nobody wrote, so a case that never ran has to say it did
+// not run rather than simply be missing from the output.
+W16.laneClick = { href: selectable.href, clickedAt: selectable.point, caseExisted: false };
 if (selectable.point) {
   W16.laneClick.topmostAtAim = await page.evaluate(
     ({ x, y }) => document.elementFromPoint(x, y)?.getAttribute("class") ?? null,
@@ -347,9 +371,13 @@ if (selectable.point) {
   W16.laneClick.addressTheAnchorOpens = addedAddress ?? null;
 
   await page.mouse.click(selectable.point.x, selectable.point.y);
-  await page
+  // Whether the wait completed is itself a result: a swallowed timeout and a
+  // prompt push produce the same `sel` read a line later, and only one of them
+  // means the interceptor worked.
+  W16.laneClick.selArrived = await page
     .waitForFunction(() => window.location.search.includes("sel="), null, { timeout: 5000 })
-    .catch(() => {});
+    .then(() => true)
+    .catch(() => false);
 
   const pushed = new URL(page.url());
   W16.laneClick.sel = pushed.searchParams.get("sel");
@@ -391,6 +419,7 @@ const jumpUrl = new URL(`${BASE}/repository/layers`);
 jumpUrl.searchParams.set("focus", "linear-ode-solve");
 let rounds = 0;
 let jumpHref = null;
+const appended = new Set();
 for (; rounds < 8; rounds++) {
   await page.goto(jumpUrl.toString(), { waitUntil: "networkidle" });
   // A jump anchor is one whose `at` is NOT a viewport — the demoted control
@@ -419,8 +448,17 @@ for (; rounds < 8; rounds++) {
     }
     return [...new Set(found)];
   });
-  if (grew.length === 0) break;
-  for (const value of grew) jumpUrl.searchParams.append("open", value);
+  // Only values this walk has never appended. Filtering on what the *page*
+  // reports as open is not enough: the server may drop an address (a depth cap
+  // does exactly that), and it then comes back as "new" every round, so the open
+  // set grows with duplicates and the walk can spend all 8 rounds re-adding one
+  // rejected value instead of reaching a demotion.
+  const fresh = grew.filter((value) => !appended.has(value));
+  if (fresh.length === 0) break;
+  for (const value of fresh) {
+    appended.add(value);
+    jumpUrl.searchParams.append("open", value);
+  }
 }
 W16.jump = { walkRounds: rounds, openSetSize: jumpUrl.searchParams.getAll("open").length, href: jumpHref };
 W16.jump.caseExisted = jumpHref !== null;
@@ -432,7 +470,14 @@ if (jumpHref) {
     const all = [...document.querySelectorAll("svg.mj-converge-canvas a[href*='at=']")];
     return all.findIndex((a) => a.getAttribute("href") === href);
   }, jumpHref);
-  const aimed = await aimInsideAnchor("svg.mj-converge-canvas a[href*='at=']", index);
+  // `findIndex` answers -1 when nothing matched. Passing that on would index
+  // with -1, come back `{point: null}`, and be indistinguishable from an anchor
+  // that was found but carried no hit shape — two different failures.
+  W16.jump.anchorIndex = index;
+  const aimed =
+    index < 0
+      ? { href: null, point: null }
+      : await aimInsideAnchor("svg.mj-converge-canvas a[href*='at=']", index);
   W16.jump.clickedAt = aimed.point;
   if (aimed.point) {
     W16.jump.topmostAtAim = await page.evaluate(
@@ -440,9 +485,10 @@ if (jumpHref) {
       aimed.point,
     );
     await page.mouse.click(aimed.point.x, aimed.point.y);
-    await page
+    W16.jump.selArrived = await page
       .waitForFunction(() => window.location.search.includes("sel="), null, { timeout: 5000 })
-      .catch(() => {});
+      .then(() => true)
+      .catch(() => false);
     const after = new URL(page.url());
     W16.jump.selAfter = after.searchParams.get("sel");
     W16.jump.atAfter = after.searchParams.get("at");
@@ -451,10 +497,7 @@ if (jumpHref) {
     // reached `parseViewport`, was rejected into IDENTITY, and the "jump"
     // shipped as a camera reset.
     W16.jump.addressMovedToSel = W16.jump.selAfter === hostAddress;
-    W16.jump.atIsAViewportAgain =
-      W16.jump.atAfter === null ||
-      (W16.jump.atAfter.split(",").length === 3 &&
-        W16.jump.atAfter.split(",").every((p) => p.trim() !== "" && Number.isFinite(Number(p))));
+    W16.jump.atIsAViewportAgain = W16.jump.atAfter === null || looksLikeViewport(W16.jump.atAfter);
 
     const beforeFly = await selectionOffset();
     W16.jump.rafTicks = await rafTicks();
@@ -491,6 +534,9 @@ if (jumpHref) {
 // And the SSR half, which is the reason `?sel=` is a URL parameter at all: a
 // shared link highlights with JavaScript off.
 const selShare = W16.laneClick.sel;
+if (!selShare) {
+  W16.sharedLinkWithoutJavaScript = { ran: false, why: "case 1 produced no selection to share" };
+}
 if (selShare) {
   const noJs3 = await browser.newContext({ javaScriptEnabled: false });
   const plain3 = await noJs3.newPage();
@@ -499,6 +545,7 @@ if (selShare) {
     { waitUntil: "domcontentloaded" },
   );
   W16.sharedLinkWithoutJavaScript = {
+    ran: true,
     selected: await plain3.locator(SELECTED).count(),
     lanes: await plain3.locator("svg.mj-converge-canvas .mj-converge-lane").count(),
   };
