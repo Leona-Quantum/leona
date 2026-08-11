@@ -545,8 +545,28 @@ jobs:
       # nobody holds it, and — via plan_re_attestation — still refuses outright
       # when a record's provenance claim has moved. See
       # docs/runbooks/system-catalog.md § Updating the published corpus.
+      # PARKED 2026-08-12, first run, and the reason is a finding rather than a bug.
+      # The step refused on its first production run with:
+      #
+      #   2 accounts hold the catalog reviewer grant
+      #   (019f5b84-d1ab-72a3-9c68-41416325b3f4, 019fb3ae-39f8-78b6-a04a-dfdfb847952f)
+      #
+      # Neither carries the `retired-workos-env:` marker, so this is not the
+      # env-switch duplicate the rule already resolves — two live accounts hold
+      # ADMIN on the catalog workspace, and choosing one silently is precisely
+      # what `pick_standing_reviewer` refuses to do. Deciding which is the real
+      # reviewer, and revoking the other's grant, is a production database
+      # decision and owner-only. See OWNER_TODO and
+      # `plans/catalog-sync-pipeline.md`.
+      #
+      # Behind a variable rather than deleted, because the code is reviewed and
+      # correct and the blocker is data: `gh variable set CATALOG_SYNC_ENABLED
+      # --body true` re-arms it in one command once the grant is unambiguous.
+      # The step below this one prints the parked state on EVERY deploy, so a
+      # disabled sync cannot become the silent staleness this whole feature
+      # exists to end.
       - name: sync the published catalog
-        if: steps.creds.outputs.have == 'true'
+        if: steps.creds.outputs.have == 'true' && vars.CATALOG_SYNC_ENABLED == 'true'
         env:
           # The admin commands go through the catalog scope checks, which open
           # with `if not authority.enabled`. With the flag off they fail as
@@ -638,3 +658,18 @@ jobs:
             echo "::error::attest-bootstrap refuses."
             exit 1
           fi
+
+      # A skipped step is silent, and silence about a stale catalog is the exact
+      # failure this feature was built to end — so the off state announces
+      # itself every time rather than only in the file that turned it off.
+      - name: the catalog sync is parked
+        if: steps.creds.outputs.have == 'true' && vars.CATALOG_SYNC_ENABLED != 'true'
+        run: |
+          echo "::warning::catalog sync is PARKED (CATALOG_SYNC_ENABLED is not 'true')."
+          echo "::warning::Corpus CONTENT changes in this deploy have NOT reached"
+          echo "::warning::/repository — the catalog DB is serving its previous rows."
+          echo "::warning::Blocked on: two live accounts hold the catalog reviewer"
+          echo "::warning::grant, so an unattended run refuses to pick one. Resolve"
+          echo "::warning::which is the real reviewer, revoke the other, then:"
+          echo "::warning::  gh variable set CATALOG_SYNC_ENABLED --body true"
+          echo "::warning::See docs/runbooks/system-catalog.md and OWNER_TODO."
