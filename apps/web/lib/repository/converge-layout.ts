@@ -433,14 +433,15 @@ export function tendonRunFor(bow: number): number {
 /**
  * The run a whole row of siblings shares, which is what keeps them from crossing.
  *
- * **One run for the row, not one per member.** The crossing-free argument is that
- * every line in a row is `base + bow·φ(x)` for one shared φ — see the ribbon
- * block in `strand-geometry.ts`. φ is built from the run, so siblings with
- * different runs are compared against different φ and the argument evaporates:
+ * **One SHARED FLOOR for the row, not an arbitrary run per member.** The
+ * crossing-free argument is that every line in a row is `base + bow·φ(x)` for
+ * one shared φ — see the ribbon block in `strand-geometry.ts` — and φ is built
+ * from the run, so siblings with *arbitrary* different runs lose the argument:
  * two lines could then cross between their bellies. Taking the max means the
  * row's anchors line up in two vertical columns, which is also what the owner
  * asked the shape to buy — *"so that things become standardized and easy to
- * read"*.
+ * read"*. `hugRuns` below is the one sanctioned relaxation: per-lane runs that
+ * are provably order-preserving, with this shared value as their floor.
  *
  * Clamped to half the range so a belly can never invert. That clamp should never
  * bite, because the column is sized with the run already in it; `every belly is
@@ -450,6 +451,66 @@ export function tendonRunFor(bow: number): number {
 export function runAcross(bows: readonly number[], length: number): number {
   const wanted = Math.max(0, ...bows.map((bow) => tendonRunFor(bow)));
   return Math.min(wanted, length / 2);
+}
+
+/**
+ * Per-lane runs that let each belly hug its own content — the owner's ask,
+ * verbatim (s121, live injection): *"muscle bellies are much and unnecessarily
+ * longer than the labels themselves, tendons are okay to lengthen but things
+ * can be more compact in general."*
+ *
+ * A row's column is sized by its widest member, and every sibling used to wear
+ * the whole column's `bare` as its belly — measured before this change: 28 of
+ * 62 first-order lanes ran past 1.5× their own label, the worst ("HHL", a 19px
+ * name) at 11.9×. The slack now goes into the lane's own tendons instead: each
+ * lane's desired run is `(span − its own bare) / 2`, floored at the row's
+ * shared run so no lane ever gets a shorter tendon than the shared rule
+ * already grants, and ceilinged at `span / 2` so a belly cannot invert.
+ *
+ * **Why differing runs do not revive the crossing problem.** With per-lane φ
+ * the sibling difference is `bow_i·φ_i − bow_j·φ_j`, and it keeps one sign
+ * whenever flatness order matches bow order: a longer run rises later on the
+ * left tendon, holds its belly on a SUBSET of a shorter run's belly, and falls
+ * earlier on the right — so `run_i ≥ run_j` gives `φ_i ≤ φ_j` at every x, and
+ * with `|bow_i| < |bow_j|` (same sign) the products stay strictly ordered.
+ * Opposite-sign lanes sit on opposite sides of the base and meet only where
+ * both φ are zero; a zero-bow lane IS its base whatever its run, so it is
+ * free. Enforcement: per sign group, walk lanes by ascending |bow| and cap
+ * each run at the smallest already granted — the inner lane's need binds the
+ * outer lane's hug, never the reverse, because the reverse would shrink a
+ * belly below its own name.
+ */
+export function hugRuns(
+  lanes: readonly { bow: number; bare: number; nameClear: number }[],
+  shared: number,
+  span: number,
+): number[] {
+  const runs = lanes.map((lane) => Math.min(span / 2, Math.max(shared, (span - lane.bare) / 2)));
+  for (const sign of [1, -1]) {
+    // A tendon rising to its bow passes through the y-territory of every lane
+    // it stacks outside of — including the zero-bow lanes ON the base, whose
+    // territory everyone's tendon starts in. `nameClear` is how far a tendon
+    // may reach before it enters that lane's own name; the caps accumulate
+    // inward-out so an outer lane stops short of every name it passes.
+    // Floored at `shared` like everything else here: the pre-hug geometry
+    // already drew under every name without incident, so the floor can never
+    // reintroduce what it never caused.
+    let clearCap = Math.min(
+      Number.POSITIVE_INFINITY,
+      ...lanes.filter((lane) => lane.bow === 0).map((lane) => lane.nameClear),
+    );
+    const members = lanes
+      .map((lane, index) => ({ index, size: Math.abs(lane.bow), sign: Math.sign(lane.bow) }))
+      .filter((member) => member.sign === sign && member.size > 0)
+      .sort((a, b) => a.size - b.size);
+    let runCap = Number.POSITIVE_INFINITY;
+    for (const member of members) {
+      runs[member.index] = Math.max(shared, Math.min(runs[member.index]!, runCap, clearCap));
+      runCap = runs[member.index]!;
+      clearCap = Math.min(clearCap, lanes[member.index]!.nameClear);
+    }
+  }
+  return runs.map((run) => Math.max(shared, Math.min(run, span / 2)));
 }
 
 /**
@@ -2692,6 +2753,21 @@ function measure(strand: PlanStrand, depth: number): Measure {
   };
 }
 
+/**
+ * The width this strand's own drawn name demands, capped at the label cap.
+ *
+ * Extracted from `measureCore` because the children-placement cap in
+ * `hugRuns`'s caller needs the same number for the same string: a bone wears
+ * its name on its own middle line, and a child's tendon that lingers under it
+ * (a hug run keeps a child near the spine longer) must stop short of the
+ * name's extent. One function, two readers — never two derivations of what a
+ * name demands (`hFit`'s comment records two sessions lost to exactly that).
+ */
+function ownNameDemand(strand: PlanStrand): number {
+  const M = CONVERGE_METRICS;
+  return Math.min(M.labelCap + sharedAllowance(strand), estimateTextWidth(drawnName(strand), M.laneFont));
+}
+
 function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants"> {
   const M = CONVERGE_METRICS;
   // The **drawn** name, which is the short form when one is authored. Sizing a
@@ -2703,10 +2779,7 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
   // records two sessions lost to deriving that budget a second way; capping the
   // demand keeps one number flowing through `need` → `span` → `fit` →
   // `columnFit` → `fitLabel`, so the column and the cut agree by construction.
-  const own = Math.min(
-    M.labelCap + sharedAllowance(strand),
-    estimateTextWidth(drawnName(strand), M.laneFont),
-  );
+  const own = ownNameDemand(strand);
   const feeds = strand.feeds.map((feed) => measure(feed, depth + 1));
   // **The horizontal demand a stub's own fan makes.** `placeFeeds` gives stub `i`
   // a `1/(n+1)` slice of the belly to draw its fan in, so a run spent inside one
@@ -3389,8 +3462,34 @@ function place(
   // that every line in a row is `belly + bow·φ` for one shared φ, and φ is built
   // from the run.
   const childRun = runAcross(bows, belly.x1 - belly.x0);
+  // Each child's belly hugs its own content, shared run as the floor — see
+  // `hugRuns` for the ask and the order-preservation argument. One extra cap
+  // this row needs and the first-order row does not: the parent wears its own
+  // name on the middle line these children fan around, and a hug run keeps a
+  // child's tendon near that spine for longer — long enough, on two figures,
+  // to put the line through the name. A tendon may not reach the name's
+  // extent: run ≤ (span − name)/2 − pad. One value for the whole row, applied
+  // after the order-preserving pass, so it cannot reorder what that pass
+  // ordered; floored at the shared run, which the pre-hug geometry already
+  // drew under every name without incident.
+  const nameClear = (belly.x1 - belly.x0 - ownNameDemand(strand)) / 2 - M.labelPad;
+  // Same all-shut gate as the first-order row, for the same measured reason.
+  const childrenShut = size.children.every(
+    (child) => child.children.length === 0 && child.feeds.length === 0,
+  );
+  const childRuns = childrenShut
+    ? hugRuns(
+        strand.children.map((child, index) => ({
+          bow: bows[index]!,
+          bare: size.children[index]!.hFit + size.children[index]!.hRun + M.labelPad * 2,
+          nameClear: (belly.x1 - belly.x0 - ownNameDemand(child)) / 2 - M.labelPad,
+        })),
+        childRun,
+        belly.x1 - belly.x0,
+      ).map((run) => Math.max(childRun, Math.min(run, nameClear)))
+    : strand.children.map(() => childRun);
   for (const [index, child] of strand.children.entries()) {
-    place(belly, child, size.children[index]!, bows[index]!, childRun, depth + 1, {
+    place(belly, child, size.children[index]!, bows[index]!, childRuns[index]!, depth + 1, {
       ...context,
       parentKey: strand.key,
       feedKey: null,
@@ -4148,8 +4247,36 @@ function layoutFigure(options: {
     // first-order run that depends on the line's length cannot survive that: the
     // two would disagree the moment the length entered only one of them.
     const run = columns[index]!.run;
+    // Each lane's belly hugs its own content, the column's run as the floor —
+    // see `hugRuns` for the ask and the order-preservation argument. `bare`
+    // per lane mirrors the column's own formula member-wise (fit + interior
+    // run + padding), so a lane whose demand IS the column's keeps exactly the
+    // shared geometry.
+    // **All-shut rows only.** An opened lane's name is displaced outward to the
+    // rim of the band its children fill (`size.vHalf` — the placement the owner
+    // chose in session 104), which puts it in the y-territory a SIBLING's
+    // tendon sweeps — and a hug run lengthens exactly that sweep. The bow-order
+    // argument in `hugRuns` cannot see a name that has left its own belly, and
+    // the 0-crossings bar measured it immediately: 2 opened names took a line
+    // through them. A row with any opened member therefore keeps the shared
+    // run — today's exact geometry — and every shut row hugs. The owner's
+    // named offenders (an 11.9× "HHL" belly among them) are all shut rows.
+    const allShut = measured[index]!.every(
+      (lane) => lane.children.length === 0 && lane.feeds.length === 0,
+    );
+    const runs = allShut
+      ? hugRuns(
+          bundle.lanes.map((lane, at) => ({
+            bow: bows[at]!,
+            bare: measured[index]![at]!.hFit + measured[index]![at]!.hRun + M.labelPad * 2,
+            nameClear: (base.x1 - base.x0 - ownNameDemand(lane)) / 2 - M.labelPad,
+          })),
+          run,
+          base.x1 - base.x0,
+        )
+      : bundle.lanes.map(() => run);
     for (const [at, lane] of bundle.lanes.entries()) {
-      place(base, lane, measured[index]![at]!, bows[at]!, run, 0, {
+      place(base, lane, measured[index]![at]!, bows[at]!, runs[at]!, 0, {
         vocabulary,
         locale,
         focusId: focusParam,
