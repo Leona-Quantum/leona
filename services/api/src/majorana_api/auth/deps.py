@@ -52,6 +52,15 @@ def get_settings(request: Request) -> Settings:
 
 
 async def get_session(request: Request):
+    """Yield one transaction-scoped session and release it before responses send.
+
+    A request-scoped yield dependency is kept alive until the response finishes.
+    That is correct for ordinary response serialization, but it is unsafe for
+    ``StreamingResponse``: an SSE client can keep the response open for an hour
+    while the session continues to reserve one pool connection.  Function scope
+    is declared at every dependency boundary below so the session is closed as
+    soon as the path operation returns, before a streaming body is consumed.
+    """
     async with request.app.state.session_factory() as session:
         yield session
         await session.commit()
@@ -122,7 +131,7 @@ async def get_verified_token(
 
 async def get_identity(
     token: Annotated[VerifiedToken, Depends(get_verified_token)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
 ) -> tuple[User, Workspace]:
     """User + personal workspace; provisions both on first login.
 
@@ -149,7 +158,7 @@ async def get_identity(
 
 async def get_scope(
     identity: Annotated[tuple[User, Workspace], Depends(get_identity)],
-    session: Annotated[AsyncSession, Depends(get_session)],
+    session: Annotated[AsyncSession, Depends(get_session, scope="function")],
 ) -> Scope:
     """Derive the scope for the authenticated user's active workspace.
 
@@ -174,7 +183,7 @@ async def get_scope(
     return Scope(user_id=user.id, workspace_id=active.workspace_id, role=active.role)
 
 
-CurrentScope = Annotated[Scope, Depends(get_scope)]
-CurrentIdentity = Annotated[tuple[User, Workspace], Depends(get_identity)]
-DbSession = Annotated[AsyncSession, Depends(get_session)]
+CurrentScope = Annotated[Scope, Depends(get_scope, scope="function")]
+CurrentIdentity = Annotated[tuple[User, Workspace], Depends(get_identity, scope="function")]
+DbSession = Annotated[AsyncSession, Depends(get_session, scope="function")]
 __all__ = ["CurrentIdentity", "CurrentScope", "DbSession"]

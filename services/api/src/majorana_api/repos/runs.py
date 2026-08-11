@@ -172,18 +172,46 @@ class IdempotencyKeyInFlight(Exception):
 
 
 class RunAllowanceReached(Exception):
-    """The account has spent its weekly execute allowance. Carries both numbers."""
+    """The account has spent its weekly execute allowance. Carries both numbers.
 
-    def __init__(self, used: int, limit: int) -> None:
-        super().__init__(f"{used}/{limit} weekly execute runs used")
+    ## And the two halves of `used`, separately
+
+    `used` is what the gate compared, and it is a SUM: recorded spend plus the
+    in-flight runs charged at `TOKENS_PER_RUN_EQUIVALENT` apiece (see
+    `reserve_execute_run_slot`). Reporting only the sum makes the one number a
+    refused user is invited to check un-checkable — `tier_allowance_refusal`
+    says the token figure "is there to be checked against the usage screen",
+    but the usage screen reports recorded spend, and no reservation appears on
+    it. An account that has truly spent 120,000 is told 150,000, and the 30,000
+    it cannot find is a reservation that will be replaced by real spend the
+    moment its run terminates.
+
+    So the halves travel too. `used` keeps its meaning, because it is the figure
+    the comparison actually refused on and changing it would move the gate.
+    """
+
+    def __init__(
+        self, used: int, limit: int, *, spent: int | None = None, reserved: int | None = None
+    ) -> None:
+        super().__init__(f"{used}/{limit} weekly execute tokens used")
         self.used = used
         self.limit = limit
+        #: Recorded token spend — the figure the usage screen shows.
+        self.spent = used if spent is None else spent
+        #: Held for admitted-but-unfinished runs; on no usage screen anywhere.
+        self.reserved = 0 if reserved is None else reserved
 
 
 async def reserve_execute_run_slot(
     scope: Scope, session: AsyncSession, since: dt.datetime, limit: int | None
 ) -> None:
-    """Take the account's lock and refuse if the weekly allowance is spent.
+    """Reserve execution allowance before admission or AUTO resolution.
+
+    The caller must keep this transaction open through the operation that makes
+    the reservation visible: inserting an explicit EXECUTE run or rewriting an
+    AUTO run to EXECUTE. The Worker uses the same function when intent resolves
+    to execution, so both entry points serialize against the same account row
+    and count the same in-flight AUTO/EXECUTE rows.
 
     ## Why a lock, and why on the user's row
 
@@ -195,12 +223,13 @@ async def reserve_execute_run_slot(
     sandbox time, so a burst of concurrent submissions at the boundary is a
     multiple of the plan's spend, once a week, for as long as nobody notices.
 
-    **Nothing downstream catches it.** The worker has a second allowance gate,
-    but `_assert_execute_allowance` runs only when it RESOLVES an AUTO run to
-    EXECUTE — an explicit `mode=execute` submission takes `resolve_mode`'s
-    passthrough branch, `decision.changed` is False, and the worker returns
-    before the check. So for the mode that says outright what it is, this route
-    is the only gate there is.
+    **Nothing downstream catches it for explicit execution.** The Worker has a
+    second gate, but `_assert_execute_allowance` runs only when it RESOLVES an
+    AUTO run to EXECUTE — an explicit `mode=execute` submission takes
+    `resolve_mode`'s passthrough branch, `decision.changed` is False, and the
+    Worker returns before that check. So for the mode that says outright what it
+    is, this route is the only gate there is; AUTO resolution reuses this
+    reservation after admission.
 
     The allowance belongs to the ACCOUNT, not the tenant (see
     `count_execute_runs_since`), so the row two concurrent submissions share is
@@ -236,9 +265,10 @@ async def reserve_execute_run_slot(
     await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
     spent = await usage_repo.account_tokens_since(scope, session, since)
     in_flight = await count_in_flight_execute_runs(scope, session)
-    used = spent + in_flight * TOKENS_PER_RUN_EQUIVALENT
+    reserved = in_flight * TOKENS_PER_RUN_EQUIVALENT
+    used = spent + reserved
     if used >= limit:
-        raise RunAllowanceReached(used, limit)
+        raise RunAllowanceReached(used, limit, spent=spent, reserved=reserved)
 
 
 async def count_in_flight_execute_runs(scope: Scope, session: AsyncSession) -> int:
