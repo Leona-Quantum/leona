@@ -346,6 +346,38 @@ async def test_runs_already_in_flight_are_charged_before_they_have_spent_anythin
     assert caught.value.detail["reason"] == "run_allowance_exhausted"
 
 
+async def test_the_refused_user_can_reconcile_the_number_against_the_usage_screen(
+    scope, monkeypatch
+):
+    """`used` is a sum, and only one of its halves is on any screen.
+
+    The refusal invites the reader to check its token figure against the usage
+    screen. That screen reports recorded spend; `used` is recorded spend plus a
+    reservation for runs still going. So the account below is told 150,000 while
+    having truly spent 120,000, and the missing 30,000 corresponds to nothing it
+    can see. Reporting the halves is what makes the sum checkable — and pinning
+    `spent` is the point of the test, because `spent` is the half that must stay
+    free of the reservation.
+    """
+    just_under = FREE_TOKENS - TOKENS_PER_RUN_EQUIVALENT
+    _spent(monkeypatch, just_under, in_flight=1)
+    with pytest.raises(HTTPException) as caught:
+        await runs._enforce_execute_backstop(
+            _request(), scope, LockOnlySession(), _identity("someone@example.com"), _settings()
+        )
+
+    detail = caught.value.detail
+    assert detail["used"] == FREE_TOKENS, "the gate still refuses on the sum it compared"
+    assert detail["spent"] == just_under, (
+        "`spent` must be the recorded figure the usage screen shows, with no "
+        "reservation folded into it — that conflation is the whole defect"
+    )
+    assert detail["reserved"] == TOKENS_PER_RUN_EQUIVALENT
+    assert detail["spent"] + detail["reserved"] == detail["used"], (
+        "the halves must account for the sum exactly, or the gap simply moves"
+    )
+
+
 async def test_the_refusal_names_runs_and_tokens_rather_than_150000_runs(scope, monkeypatch):
     """The enforced figure is not a sentence a user can read on its own."""
 

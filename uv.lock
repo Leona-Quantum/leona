@@ -1272,7 +1272,7 @@ dependencies = [
 requires-dist = [
     { name = "alembic", specifier = ">=1.16" },
     { name = "cryptography", specifier = ">=43" },
-    { name = "fastapi", specifier = ">=0.115" },
+    { name = "fastapi", specifier = ">=0.121" },
     { name = "majorana-contracts", editable = "packages/py/contracts" },
     { name = "majorana-estimation", editable = "packages/py/estimation" },
     { name = "majorana-openqasm", editable = "packages/py/openqasm" },

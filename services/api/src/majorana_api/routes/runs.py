@@ -260,7 +260,14 @@ def _backstop_refusal(reason: str, used: int, limit: int) -> HTTPException:
 TIER_WINDOW = _TIER_WINDOW
 
 
-def tier_allowance_refusal(used: int, limit: int, *, runs: int | None) -> HTTPException:
+def tier_allowance_refusal(
+    used: int,
+    limit: int,
+    *,
+    runs: int | None,
+    spent: int | None = None,
+    reserved: int | None = None,
+) -> HTTPException:
     """The refusal a metered account sees when its weekly allowance is spent.
 
     Worded like the BFF's `runAllowanceRefusal` rather than like the backstop:
@@ -273,6 +280,17 @@ def tier_allowance_refusal(used: int, limit: int, *, runs: int | None) -> HTTPEx
     per week". The run count is what the plan was sold as and what /pricing
     states, so it leads; the token figure is what the gate actually compared, so
     it is there to be checked against the usage screen.
+
+    **And `used` alone cannot be checked against that screen.** It is recorded
+    spend plus a reservation for in-flight runs (`reserve_execute_run_slot`),
+    and the usage screen shows only the first, so a user reconciling the two
+    finds a gap of one `TOKENS_PER_RUN_EQUIVALENT` per run still going — 30,000
+    each, a fifth of the free tier, with nothing on any screen to attribute it
+    to. `used` stays as it is, because it is the number the gate refused on and
+    a message that quoted anything else would not describe the refusal. The
+    halves ride alongside it so the gap has a name: `spent` is what the usage
+    screen shows, `reserved` is the difference and it disappears as those runs
+    finish and their real spend lands.
 
     `reason` stays `run_allowance_exhausted`. It is a wire value the web app and
     two test suites match on, and what the user ran out of has not changed —
@@ -293,6 +311,8 @@ def tier_allowance_refusal(used: int, limit: int, *, runs: int | None) -> HTTPEx
             "reason": "run_allowance_exhausted",
             "used": used,
             "limit": limit,
+            "spent": used if spent is None else spent,
+            "reserved": 0 if reserved is None else reserved,
         },
     )
 
@@ -339,7 +359,11 @@ async def _enforce_execute_backstop(
             )
         except runs_repo.RunAllowanceReached as reached:
             raise tier_allowance_refusal(
-                reached.used, reached.limit, runs=limits.agent_runs_per_week
+                reached.used,
+                reached.limit,
+                runs=limits.agent_runs_per_week,
+                spent=reached.spent,
+                reserved=reached.reserved,
             ) from reached
 
     if body.mode == RunMode.EXECUTE and executed >= EXECUTE_BACKSTOP_LIMIT:

@@ -67,13 +67,16 @@ class _User:
 
 
 class _Session:
-    def __init__(self, user):
+    def __init__(self, user, trace=None):
         self._user = user
+        self._trace = trace
 
     async def get(self, _model, _pk):
         return self._user
 
     async def commit(self):
+        if self._trace is not None:
+            self._trace.append("commit")
         return None
 
 
@@ -105,15 +108,21 @@ def _worker_production_environment(monkeypatch):
     for name in ("LEONA_DEVELOPER_EMAILS", "WORKOS_CLIENT_ID"):
         monkeypatch.delenv(name, raising=False)
 
+    async def reserve_execute_run_slot(_scope, _session, _since, _limit):
+        return None
+
+    # The repository's live race suite proves the real row lock. Unit tests for
+    # mode resolution replace it with the one outcome each test is about.
+    monkeypatch.setattr(handlers.runs_repo, "reserve_execute_run_slot", reserve_execute_run_slot)
+
 
 async def test_auto_cannot_be_used_to_spend_an_exhausted_allowance(monkeypatch):
     """The bypass this file exists to close."""
-    used = {"count": FREE_TOKENS}
 
-    async def account_tokens_since(_scope, _session, _since):
-        return used["count"]
+    async def reserve_execute_run_slot(_scope, _session, _since, _limit):
+        raise handlers.runs_repo.RunAllowanceReached(FREE_TOKENS, FREE_TOKENS)
 
-    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
+    monkeypatch.setattr(handlers.runs_repo, "reserve_execute_run_slot", reserve_execute_run_slot)
 
     sink = _RecordingSink()
     with pytest.raises(handlers._RunAllowanceExhausted) as caught:
@@ -132,47 +141,80 @@ async def test_auto_cannot_be_used_to_spend_an_exhausted_allowance(monkeypatch):
     assert f"about {FREE_RUNS} verified runs a week" in caught.value.allowance_phrase
 
 
-async def test_the_run_being_resolved_is_not_counted_against_itself(monkeypatch):
-    """One token under the limit: this run must still be allowed.
+async def test_the_run_being_resolved_is_reserved_once_before_mode_change(monkeypatch):
+    """The AUTO row is charged once before it becomes EXECUTE."""
 
-    The run has not spent its own tokens yet at this point, so it is outside
-    this sum — which is why `used >= limit` is the right comparison and
-    `used > limit` would silently grant everyone one more run.
-    """
+    called = {}
+    trace = []
 
-    async def account_tokens_since(_scope, _session, _since):
-        return FREE_TOKENS - 1
+    async def reserve_execute_run_slot(scope, session, since, limit):
+        trace.append("reserve")
+        called.update(scope=scope, session=session, since=since, limit=limit)
 
-    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
+    monkeypatch.setattr(handlers.runs_repo, "reserve_execute_run_slot", reserve_execute_run_slot)
 
     recorded = {}
 
     async def set_run_mode(_scope, _session, run_id, mode):
+        trace.append("set_mode")
         recorded["mode"] = mode
 
     monkeypatch.setattr(handlers.runs_repo, "set_run_mode", set_run_mode)
 
     sink = _RecordingSink()
+    session = _Session(_User("someone@example.com"), trace)
     result = await handlers._resolve_mode(
         _ctx(sink),
         _FakeStore(),
         scope=_Scope(),
-        session=_Session(_User("someone@example.com")),
+        session=session,
         llm=_ExecuteLLM(),
         has_source_code=False,
     )
 
     assert result.mode is RunMode.EXECUTE
     assert recorded["mode"] is RunMode.EXECUTE
+    assert called["scope"].user_id == _Scope.user_id
+    assert called["session"].__class__ is _Session
+    assert called["limit"] == FREE_TOKENS
+    assert trace == ["reserve", "set_mode", "commit"]
+
+
+async def test_auto_chat_does_not_reserve_execute_allowance(monkeypatch):
+    """Conversation traffic remains unmetered when AUTO resolves to CHAT."""
+
+    async def unexpected_reservation(*_args, **_kwargs):
+        raise AssertionError("CHAT resolution must not reserve execute allowance")
+
+    monkeypatch.setattr(handlers.runs_repo, "reserve_execute_run_slot", unexpected_reservation)
+    monkeypatch.setattr(handlers.runs_repo, "set_run_mode", _noop_set_mode)
+
+    class _ChatLLM:
+        async def complete(self, request, *, on_delta=None):
+            from majorana_llm import LLMResponse
+
+            return LLMResponse(
+                text='{"intent": "chat", "reason": "conversation"}',
+                model="test",
+                input_tokens=1,
+                output_tokens=1,
+            )
+
+    result = await handlers._resolve_mode(
+        _ctx(_RecordingSink()),
+        _FakeStore(),
+        scope=_Scope(),
+        session=_Session(_User("someone@example.com")),
+        llm=_ChatLLM(),
+        has_source_code=False,
+    )
+
+    assert result.mode is RunMode.CHAT
 
 
 async def test_the_operator_is_not_metered_without_any_configuration(monkeypatch):
     """A missing allowlist must not throttle an operator-owned synthetic identity."""
 
-    async def account_tokens_since(_scope, _session, _since):
-        return 10_000
-
-    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
     monkeypatch.setattr(handlers.runs_repo, "set_run_mode", _noop_set_mode)
 
     result = await handlers._resolve_mode(
@@ -187,10 +229,6 @@ async def test_the_operator_is_not_metered_without_any_configuration(monkeypatch
 
 
 async def test_a_developer_by_plan_column_is_not_metered(monkeypatch):
-    async def account_tokens_since(_scope, _session, _since):
-        return 10_000
-
-    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
     monkeypatch.setattr(handlers.runs_repo, "set_run_mode", _noop_set_mode)
 
     result = await handlers._resolve_mode(
@@ -247,11 +285,6 @@ async def test_the_check_survives_the_worker_environment_it_runs_in(monkeypatch)
     import os
 
     assert "WORKOS_CLIENT_ID" not in os.environ
-
-    async def account_tokens_since(_scope, _session, _since):
-        return 0
-
-    monkeypatch.setattr(handlers.usage_repo, "account_tokens_since", account_tokens_since)
 
     # No exception is the assertion.
     await handlers._assert_execute_allowance(_Scope(), _Session(_User("someone@example.com")))
