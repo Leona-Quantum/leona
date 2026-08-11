@@ -2216,5 +2216,305 @@ export const LAYER_GRAPH: LayerGraph = {
       { title: "High-threshold and low-overhead fault-tolerant quantum memory", authors: "Sergey Bravyi, Andrew W. Cross, Jay M. Gambetta, Dmitri Maslov, Patrick Rall, Theodore J. Yoder", year: "2023", url: "https://arxiv.org/abs/2308.07915" },
     ],
   },
+
+  // --- the variational region ----------------------------------------------
+  //
+  // W21 Gap A (`plans/atlas-revamp/W21-the-variational-region.md`). Until this
+  // block the graph was ONE pipeline — differential equations and Hamiltonian
+  // simulation — and 53 of the 62 map-eligible corpus records had no node that
+  // could reach them, 38 of those being `vqe-*`. They were not missing
+  // cross-links: there was no slot a variational method could fill, which is
+  // the owner's standing case for restructuring rather than working around:
+  //
+  // > *"in general, if the map can't hold something that literature truly has,
+  // > then the map needs restructuring not a workaround the literature."*
+  //
+  // ## Two things this region deliberately does NOT do
+  //
+  // 1. **It does not add an "expectation estimation" capability.** W21 §4
+  //    proposed one; `observable-estimation` already IS it — same contract
+  //    (`prepared-state → observable-value`), and its own `whyALayer` says "The
+  //    number of runs is decided here", which is exactly the VQE measurement
+  //    question. A second slot for it would be the duplication rule §2 breach
+  //    one click from the original. So `variational-ground-state` descends into
+  //    the existing readout layer, and the VQE estimation records anchor to the
+  //    methods already there.
+  // 2. **It quotes no complexity.** The 2026-07-19 ruling stands — VQE and QAOA
+  //    are heuristics without a proven worst-case speedup and a number here
+  //    would misrepresent the state of the art. Every `cost` in this region is
+  //    ABSENT, and absent means "no source we read stated one". A reviewer
+  //    asking why a whole region has no complexities should be answered with
+  //    this comment, not with a number derived to fill the slot.
+  {
+    kind: "capability",
+    id: "ground-state-energy",
+    label: "Estimate a Hamiltonian's ground-state energy",
+    labelJa: "ハミルトニアンの基底状態エネルギーを推定する",
+    shortLabel: "Estimate ground-state energy",
+    shortLabelJa: "基底状態エネルギーを推定",
+    summary: "Given a Hamiltonian you can query and some way of preparing trial states, return an estimate of its lowest eigenvalue to a stated additive error. The state achieving that energy may or may not come back with the number; almost every application wants the number.",
+    summaryJa: "問い合わせ可能なハミルトニアンと、試行状態を準備する何らかの手段が与えられたとき、その最小固有値の推定値を、明示された加法的誤差の範囲で返します。そのエネルギーを与える状態そのものが一緒に返るとは限りません。応用が必要とするのは、ほとんどの場合その数値のほうです。",
+    contract: {
+      from: "hamiltonian-access",
+      to: "observable-value",
+
+      takes: "A Hermitian H reachable as a sum of terms, as sparse-access oracles or as a block-encoding; a way to prepare trial states, and — for the methods that need it — a trial state whose overlap with the ground state is not negligible; a target additive error ε and a confidence 1−δ.",
+      takesJa: "エルミート演算子 H であって、項の和、疎アクセスオラクル、あるいはブロックエンコーディングとして到達できるもの。試行状態を準備する手段。それを要する方式については、基底状態との重なりが無視できない試行状態。目標加法誤差 ε と信頼度 1−δ。",
+      returns: "A scalar estimate of the lowest eigenvalue with a stated additive-error guarantee, plus the run or query budget it consumed. Whether that estimate is also a rigorous upper bound is a property of the method and is not promised by the slot.",
+      returnsJa: "最小固有値のスカラー推定値と、明示された加法的誤差の保証。あわせて、消費した実行回数または問い合わせ回数を返します。その推定値が厳密な上界にもなっているかどうかは各方式の性質であり、この層が約束するものではありません。",
+    },
+    whyALayer: "Four genuinely different families compete for this slot and none of them dominates, because they do not even promise the same kind of thing. A variational search returns a rigorous upper bound on the energy for any trial state it reaches — that much is the variational principle and needs no assumption — but nothing bounds how close to the true minimum it gets, or how many turns it takes to get there. Phase estimation returns an actual eigenvalue to a precision you can prove, and pays for it in coherent circuit depth far beyond what present hardware runs, plus a trial state whose overlap with the ground state is not negligible. Adiabatic preparation trades that depth for a runtime governed by the spectral gap, which is exactly the quantity nobody can bound in general. Imaginary-time methods converge without any optimiser at all, and pay in ancillas or in tomography of local domains. So the choice here is forced by which resource you are short of — depth, shots, coherence, or a proof — rather than settled by theory, and a reader standing on this slot is choosing between incomparable guarantees. That is the condition a layer has to meet.",
+    whyALayerJa: "この層には本質的に異なる四つの系統が競合しており、いずれも他を圧倒しません。そもそも約束している事柄の種類が違うからです。変分的な探索は、到達したどの試行状態についてもエネルギーの厳密な上界を返します。これは変分原理そのものであって仮定を要しません。しかし真の最小値にどれだけ近づけるか、そこに至るまで何回まわるかについては、何も保証がありません。位相推定は固有値そのものを証明可能な精度で返しますが、その代償として現在のハードウェアが実行できる範囲をはるかに超えるコヒーレントな回路深さと、基底状態との重なりが無視できない試行状態を要求します。断熱的な準備はその深さをスペクトルギャップに支配される実行時間と引き換えにしますが、そのギャップこそ一般には誰も評価できない量です。虚時間発展系の方式は最適化器を一切使わずに収束しますが、補助量子ビットや局所領域のトモグラフィという形で代償を払います。つまりここでの選択は、深さ、ショット数、コヒーレンス、証明のうち何が不足しているかによって決まるのであって、理論によって決着がついているわけではありません。この層に立つ読者は、互いに比較できない保証のあいだで選ぶことになります。層が層であるための条件は、まさにこれです。",
+  },
+  {
+    kind: "capability",
+    id: "ansatz-construction",
+    label: "Choose a parameterised trial state",
+    labelJa: "パラメータ付き試行状態を選ぶ",
+    shortLabel: "Choose an ansatz",
+    shortLabelJa: "アンザッツを選ぶ",
+    summary: "Fix the gate structure of a circuit family and leave its rotation angles open. What comes back is not a circuit but the set of states the later optimisation is allowed to search — which is why this is a slot of its own and not a paragraph in one method's write-up.",
+    summaryJa: "回路族のゲート構造を定め、回転角は未定のまま残します。返るのは回路ではなく、後段の最適化が探索してよい状態の集合です。この工程が独立した層であって、ある方式の説明の一段落ではないのは、このためです。",
+    contract: {
+      from: "hamiltonian-access",
+      to: "parameterized-circuit",
+
+      takes: "The Hamiltonian whose ground state is wanted, together with whatever structure is to be respected — particle number, spin, point-group symmetry, a reference determinant — and the connectivity and native gate set of the device the family has to run on.",
+      takesJa: "基底状態を求めたいハミルトニアン。あわせて、尊重すべき構造（粒子数、スピン、点群対称性、参照配置など）と、その回路族が実際に走る装置の結合構造およびネイティブゲート集合。",
+      returns: "A circuit family with a fixed structure and free real parameters, together with the number of those parameters — which is the size of the classical search problem handed to the next layer.",
+      returnsJa: "構造が固定され、自由な実パラメータをもつ回路族。あわせて、そのパラメータの個数を返します。これは次の層に渡される古典的な探索問題の規模そのものです。",
+    },
+    whyALayer: "The ansatz is the one choice that bounds everything after it, and the families answering it fail in different ways rather than in the same way by different amounts. A chemically motivated family is built from excitations out of a reference determinant, so the state you want is in it by construction and the circuit is deep. A hardware-native family is built from the gates the machine actually has, so it is shallow and there is no argument that the state you want is in it at all. An adaptive family refuses to fix the structure in advance and grows it operator by operator from measured gradients, which buys a compact circuit and pays for it in measurements before every step. Expressibility, depth, and measurement overhead are three different currencies, no family is cheap in all three, and which one binds depends on the machine rather than on the molecule — so a reader has a real choice to make here and the literature has not made it for them.",
+    whyALayerJa: "アンザッツは、それ以降のすべてを規定してしまう唯一の選択です。しかもこの層に答える各系統は、同じ失敗を程度の差で犯すのではなく、それぞれ別の仕方で失敗します。化学的な動機による系統は、参照配置からの励起によって構成されるため、求める状態が構成上その中に含まれる代わりに回路が深くなります。ハードウェア由来の系統は、装置が実際に備えるゲートから構成されるため浅く済みますが、求める状態がそもそもその中にあるという論拠がありません。適応的な系統は構造を事前に固定することを拒み、測定した勾配にもとづいて演算子を一つずつ足して育てます。これは回路の簡潔さを買う代わりに、各段の前に測定を要します。表現力、深さ、測定回数はそれぞれ別の通貨であり、三つすべてが安い系統は存在せず、どれが律速になるかは分子ではなく装置によって決まります。したがって読者にはここで実際の選択があり、文献はそれを代わりに決めてはくれません。",
+  },
+  {
+    kind: "capability",
+    id: "parameter-optimization",
+    label: "Minimise the objective over the parameters",
+    labelJa: "パラメータについて目的関数を最小化する",
+    shortLabel: "Minimise the objective",
+    shortLabelJa: "目的関数を最小化",
+    summary: "Search the parameters of a fixed circuit family for the ones that minimise a chosen objective, given that every evaluation of that objective is a noisy estimate someone paid shots for. The output is a routine that prepares one particular state — the family collapsed to a member.",
+    summaryJa: "固定された回路族のパラメータのうち、選ばれた目的関数を最小化するものを探索します。その目的関数の各評価は、ショットを費やして得られる雑音を含む推定値です。出力はある一つの状態を準備する手続き、すなわち族から一つの要素へと確定した回路です。",
+    contract: {
+      from: "parameterized-circuit",
+      to: "prepared-state",
+
+      takes: "A parameterised circuit family; an objective function of its parameters, evaluated only through estimates bought with a finite shot budget; a starting point; and a stopping rule — a tolerance, an iteration cap, or an exhausted budget.",
+      takesJa: "パラメータ付き回路族。そのパラメータの目的関数であって、有限のショット予算で購入される推定値を通じてのみ評価できるもの。初期点。そして停止規則（許容誤差、反復回数の上限、あるいは予算の枯渇）。",
+      returns: "A preparation routine for the state at the parameters the search stopped at, and the total number of objective evaluations it consumed. The routine is returned whether or not the search found a minimum; that it stopped is not evidence that it converged.",
+      returnsJa: "探索が停止した時点のパラメータにおける状態の準備手続きと、消費した目的関数の評価回数の合計。手続きは、探索が最小値を見つけたかどうかにかかわらず返されます。停止したことは収束したことの証拠ではありません。",
+    },
+    whyALayer: "Once the family is fixed, what is left is a non-convex minimisation in which every function evaluation is a noisy estimate bought with shots — so the classical optimiser is not an implementation detail, it is the thing that decides the total run count, and the run count is what the whole method is charged. Methods here differ in the currency they spend: a gradient-free search buys robustness to shot noise with many cheap evaluations, an analytic-gradient method buys direction with extra circuits per step, and a metric-aware method buys better steps with the cost of estimating the metric. The objective is a choice too, and a separate one: the plain energy expectation is not the only function whose minimiser is the answer, and changing it changes the landscape the optimiser is walking rather than the way it walks. Nothing about that is decided by the ansatz above or the readout below, which is what makes it a slot instead of a step in someone's write-up.",
+    whyALayerJa: "回路族が固定されたあとに残るのは、各評価がショットで購入される雑音つきの推定値であるような非凸最小化です。したがって古典最適化器は実装上の細部ではなく、総実行回数を決める当のものであり、その実行回数こそこの方式全体に課される代償です。この層の各方式は、費やす通貨が異なります。勾配を使わない探索は、安価な評価を多数行うことでショット雑音への頑健性を買います。解析的勾配を使う方式は、各段あたりの回路数を増やすことで進む方向を買います。計量を用いる方式は、その計量を推定する費用を払って、より良い一歩を買います。目的関数もまた選択であり、しかも別種の選択です。素朴なエネルギー期待値だけが最小化して答えになる関数ではなく、これを取り替えることは、最適化器の歩き方ではなく歩いている地形のほうを変えます。これらはいずれも上のアンザッツにも下の読み出しにも決められません。この工程が誰かの説明の一段落ではなく層である理由は、そこにあります。",
+  },
+  {
+    kind: "method",
+    id: "variational-ground-state",
+    label: "Variational quantum eigensolver",
+    labelJa: "変分量子固有値ソルバー",
+    shortLabel: "VQE",
+    shortLabelJa: "VQE",
+    summary: "Prepare a parameterised trial state on the quantum computer, measure the Hamiltonian's expectation value in it, and let a classical optimiser move the parameters. The quantum computer never runs a long coherent evolution; it runs a short one many times, and the loop closes through a classical number.",
+    summaryJa: "パラメータ付きの試行状態を量子計算機上で準備し、その状態におけるハミルトニアンの期待値を測定して、古典的な最適化器にパラメータを動かさせます。量子計算機が長いコヒーレントな発展を実行することはありません。短い発展を何度も実行し、ループは古典的な数値を介して閉じます。",
+    realizes: "ground-state-energy",
+    conditions: "The variational principle gives an upper bound on the ground-state energy for any normalised trial state, so the number returned is never below the true minimum — but nothing bounds how far above it lands. Accuracy is limited instead by whether the ansatz family contains a state close to the ground state and by whether the classical optimiser finds it, and neither is settled by a proof. The Hamiltonian must be reachable as a sum of terms that can be measured separately. Peruzzo et al. state the trade this buys in their own terms: quantum phase estimation \"can efficiently find the eigenvalue of a given eigenvector but requires fully coherent evolution\", and this approach \"greatly reduces the requirements for coherent evolution\" — a shorter circuit paid for with more repetitions.",
+    conditionsJa: "変分原理により、正規化された任意の試行状態についてエネルギーは基底状態エネルギーの上界となります。したがって返る数値が真の最小値を下回ることはありません。しかし、それがどれだけ上に来るかについては何の保証もありません。精度を制限するのは、アンザッツ族が基底状態に近い状態を含んでいるかどうかと、古典最適化器がそれを見つけられるかどうかであり、そのいずれも証明によって解決されてはいません。ハミルトニアンは、個別に測定できる項の和として到達可能でなければなりません。Peruzzo らはこの取引を自身の言葉で述べています。量子位相推定は「与えられた固有ベクトルの固有値を効率的に求められるが、完全にコヒーレントな発展を必要とする」のに対し、この手法は「コヒーレントな発展への要求を大幅に低減する」。すなわち、回路の短さを反復回数で購入しています。",
+    steps: ["ansatz-construction", "parameter-optimization", "observable-estimation"],
+    // No `cost`, and the absence is the claim. The 2026-07-19 ruling: VQE is a
+    // heuristic without a proven worst-case speedup, and a complexity here
+    // would misrepresent the state of the art. What CAN be said about its price
+    // is said structurally, by the repeat below, rather than as a number.
+    repeats: {
+      "observable-estimation": {
+        count: "Once per iteration of the classical optimiser, and nothing bounds the iteration count — it is measured on the instance, never proved. Each of those evaluations is itself a pass over the Hamiltonian's terms, every term estimated to additive error by repeated preparation and measurement, so the shot budget multiplies through two nested counts.",
+        countJa: "古典最適化器の反復ごとに一度。その反復回数を抑える保証はなく、個々の問題例について実測されるだけで、証明されることはありません。しかもその各評価自体がハミルトニアンの項を一巡する処理であり、各項は準備と測定の反復によって加法的誤差まで推定されます。したがってショット予算は入れ子になった二つの回数を通じて積み上がります。",
+        closure: "measured",
+        note: "The turn ends in a classical number and the next turn starts from a freshly prepared state — no coherence is carried across the loop, which is exactly why the circuit can be short. That is the trade the method exists to make, and it is why VQE's price is quoted as a count of runs rather than as a depth.",
+        noteJa: "一周は古典的な数値で終わり、次の周は新しく準備し直した状態から始まります。ループをまたいでコヒーレンスは持ち越されません。回路を短く保てるのはまさにこのためです。これがこの方式の存在理由である取引であり、VQE の代償が深さではなく実行回数として語られる理由でもあります。",
+        mark: "×iterations",
+        markJa: "×反復回数",
+      },
+    },
+    entries: ["vqe-ground-state-energy", "vqe-objective-loop"],
+    citations: [
+      { title: "A variational eigenvalue solver on a quantum processor", authors: "Alberto Peruzzo, Jarrod McClean, Peter Shadbolt, Man-Hong Yung, Xiao-Qi Zhou, Peter J. Love, Al\u00e1n Aspuru-Guzik, Jeremy L. O'Brien", year: "2013", url: "https://arxiv.org/abs/1304.3061" },
+      { title: "The theory of variational hybrid quantum-classical algorithms", authors: "Jarrod R. McClean, Jonathan Romero, Ryan Babbush, Al\u00e1n Aspuru-Guzik", year: "2015", url: "https://arxiv.org/abs/1509.04279" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "qite-ground-state",
+    label: "Quantum imaginary-time evolution",
+    labelJa: "量子虚時間発展",
+    shortLabel: "QITE",
+    shortLabelJa: "QITE",
+    summary: "Approximate evolution in imaginary time, which damps every excited state faster than the ground state, by a sequence of unitaries determined from measurements on a local domain. There is no variational ansatz and no classical optimiser: the method converges because imaginary time converges.",
+    summaryJa: "虚時間における発展は、どの励起状態も基底状態より速く減衰させます。これを、局所領域上の測定から決定されるユニタリの列によって近似します。変分的なアンザッツも古典最適化器も用いません。この方式が収束するのは、虚時間発展そのものが収束するからです。",
+    realizes: "ground-state-energy",
+    conditions: "Motta et al. position this against both of its neighbours by naming what each costs: phase estimation \"requires deep circuits with ancillae, that are hard to execute reliably without error correction\", while variational algorithms \"entail additional high-dimensional classical optimization\". Their algorithms \"can be implemented without deep circuits and ancillae, or high-dimensional optimization\", and the exponential saving they claim — \"exponentially less space and time per iteration\" — is stated against the classical analogues of these algorithms, not against the other quantum methods in this slot.",
+    conditionsJa: "Motta らは、隣接する二つの方式がそれぞれ何を代償とするかを名指しすることで、自らの手法を位置づけています。位相推定は「補助量子ビットを伴う深い回路を要し、誤り訂正なしに確実に実行することが難しい」一方、変分アルゴリズムは「高次元の古典最適化を付随して伴う」。彼らのアルゴリズムは「深い回路も補助量子ビットも、高次元の最適化も伴わずに実装できる」とされます。なお主張されている指数的な節約、すなわち「反復あたりの空間と時間が指数的に少ない」というのは、これらのアルゴリズムの古典版に対する比較であって、この層にある他の量子的手法に対する比較ではありません。",
+    // `steps` empty and `atomic` deliberately NOT set. The two mean different
+    // things (`stepsOutlook`): this route certainly has internal structure —
+    // the domain measurement and the classical solve that turns it into a
+    // unitary — and nobody has decomposed it into this graph's slots yet.
+    // Declaring it atomic would assert the opposite of what is true.
+    steps: [],
+    entries: ["qite-imaginary-time"],
+    citations: [
+      { title: "Determining eigenstates and thermal states on a quantum computer using quantum imaginary time evolution", authors: "Mario Motta, Chong Sun, Adrian Teck Keng Tan, Matthew J. O'Rourke, Erika Ye, Austin J. Minnich, Fernando G. S. L. Brandao, Garnet Kin-Lic Chan", year: "2019", url: "https://arxiv.org/abs/1901.07653" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "variational-imaginary-time",
+    label: "Variational imaginary-time evolution",
+    labelJa: "変分虚時間発展",
+    shortLabel: "Variational ITE",
+    shortLabelJa: "変分虚時間",
+    summary: "Keep the parameterised trial state, but stop treating the parameters as something to optimise: derive their equation of motion from a variational principle and integrate it in imaginary time. The parameters move because a differential equation says where they go, not because a search tried somewhere and liked the answer.",
+    summaryJa: "パラメータ付きの試行状態はそのままに、パラメータを最適化の対象として扱うのをやめます。変分原理からその運動方程式を導き、虚時間方向に積分します。パラメータが動くのは、探索がどこかを試して良い結果を得たからではなく、微分方程式が行き先を指定するからです。",
+    realizes: "ground-state-energy",
+    conditions: "Yuan et al. review the variational principles this rests on and name them — the Rayleigh-Ritz method for static problems, and \"the Dirac and Frenkel variational principle, the McLachlan's variational principle, and the time-dependent variational principle\" for dynamics — then \"discuss the connections of the three\". Which principle is used is a real choice with real consequences, not a formality, and the paper is a theory of the family rather than a benchmark of one instance.",
+    conditionsJa: "Yuan らは、この方式が依拠する変分原理を概観し、名指ししています。静的な問題については Rayleigh-Ritz 法、動力学については「Dirac-Frenkel の変分原理、McLachlan の変分原理、時間依存変分原理」であり、そのうえで「三者の関係を論じ」ています。どの原理を用いるかは形式上の問題ではなく、帰結を伴う実際の選択です。またこの論文は、ひとつの実装のベンチマークではなく、この系統についての理論です。",
+    // `parameter-optimization` is deliberately NOT a step: this route's
+    // parameters are integrated, not searched, and the whole point of the paper
+    // is that a variational principle supplies their equation of motion. Listing
+    // the optimisation slot here would draw a classical minimisation that this
+    // method exists to avoid.
+    steps: ["ansatz-construction", "observable-estimation"],
+    entries: ["vqe-imaginary-time"],
+    citations: [
+      { title: "Theory of variational quantum simulation", authors: "Xiao Yuan, Suguru Endo, Qi Zhao, Ying Li, Simon Benjamin", year: "2018", url: "https://arxiv.org/abs/1812.08767" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "uccsd-ansatz",
+    label: "Unitary coupled-cluster singles and doubles",
+    labelJa: "ユニタリ結合クラスター（一電子・二電子励起）",
+    shortLabel: "UCCSD",
+    shortLabelJa: "UCCSD",
+    summary: "Build the trial state from single and double excitations out of a reference determinant, exponentiated as a unitary. The family is chosen for chemistry rather than for the machine: the state you want is in it by construction, and the circuit that reaches it is deep.",
+    summaryJa: "参照配置からの一電子励起と二電子励起を指数化してユニタリとし、それによって試行状態を構成します。この族は装置ではなく化学に合わせて選ばれています。求める状態は構成上その中に含まれ、そこに到達する回路は深くなります。",
+    realizes: "ansatz-construction",
+    conditions: "O'Malley et al. report this as the first electronic structure calculation on a quantum computer \"without exponentially costly precompilation\", running UCC through VQE alongside the Trotterisation-and-phase-estimation route on the same device, and comparing them: they find \"clear evidence that the variational quantum eigensolver is robust to certain errors\". That comparison is the evidence for the whole variational branch, and it was made on molecular hydrogen.",
+    conditionsJa: "O'Malley らはこれを、量子計算機上で「指数的に高価なプリコンパイルを伴わずに」行われた最初の電子構造計算として報告しています。同一の装置上で、UCC を VQE によって実行する経路と、Trotter 分解＋位相推定という経路の双方を走らせて比較し、「変分量子固有値ソルバーが特定の誤差に対して頑健であることの明確な証拠」を得たと述べています。この比較こそ変分系統全体を支える証拠であり、それが行われたのは水素分子についてです。",
+    cost: "Circuit depth $\\mathcal{O}((N-\\eta)^2\\eta)$ in the number $N$ of spin orbitals and the number $\\eta$ of electrons — the figure Lee et al. quote for UCCSD when placing their own ansatz against it. It is a depth for the family, not a complexity for solving the problem: no worst-case speedup is claimed here or anywhere in this region.",
+    costJa: "スピン軌道数 $N$、電子数 $\\eta$ として、回路深さは $\\mathcal{O}((N-\\eta)^2\\eta)$ です。これは Lee らが自らのアンザッツを比較する際に UCCSD について挙げている数値です。これは族についての深さであって、問題を解くことの計算量ではありません。ここでも、この領域のどこでも、最悪計算量における高速化は主張されていません。",
+    steps: [],
+    entries: ["vqe-uccsd-ansatz"],
+    citations: [
+      { title: "Scalable Quantum Simulation of Molecular Energies", authors: "P. J. J. O'Malley, R. Babbush, I. D. Kivlichan, J. Romero, J. R. McClean, R. Barends, J. Kelly, P. Roushan, A. Tranter, N. Ding, B. Campbell, Y. Chen, Z. Chen, B. Chiaro, A. Dunsworth, A. G. Fowler, E. Jeffrey, A. Megrant, J. Y. Mutus, C. Neill, C. Quintana, D. Sank, A. Vainsencher, J. Wenner, T. C. White, P. V. Coveney, P. J. Love, H. Neven, A. Aspuru-Guzik, J. M. Martinis", year: "2015", url: "https://arxiv.org/abs/1512.06860" },
+      { title: "Generalized Unitary Coupled Cluster Wavefunctions for Quantum Computation", authors: "Joonho Lee, William J. Huggins, Martin Head-Gordon, K. Birgitta Whaley", year: "2018", url: "https://arxiv.org/abs/1810.02327" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "hardware-efficient-ansatz",
+    label: "Hardware-efficient ansatz",
+    labelJa: "ハードウェア効率的アンザッツ",
+    summary: "Build the trial state out of the gates and couplings the machine already has, and accept whatever states that reaches. The circuit is shallow because nothing in it was chosen for the chemistry; there is correspondingly no argument that the state you want is inside the family.",
+    summaryJa: "装置がすでに備えているゲートと結合だけで試行状態を構成し、それで到達できる状態を受け入れます。化学的な理由で選ばれた要素が何もないため回路は浅くなりますが、その代わり、求める状態がこの族の中にあるという論拠もありません。",
+    realizes: "ansatz-construction",
+    conditions: "Kandala et al. describe the family as \"trial states specifically tailored to the available interactions in our quantum processor\" — which is the definition and also the limitation, since the family is then a property of that processor rather than of the problem. Their demonstration is bounded and they state its bounds: up to six qubits, Hamiltonians \"with over a hundred Pauli terms\", molecules up to BeH2, and it required \"a compact encoding of fermionic Hamiltonians and a robust stochastic optimization routine\" alongside the ansatz itself.",
+    conditionsJa: "Kandala らはこの族を「我々の量子プロセッサで利用可能な相互作用に合わせて特別に仕立てられた試行状態」と説明しています。これは定義であると同時に限界でもあります。というのも、この族は問題ではなくそのプロセッサの性質になってしまうからです。彼らの実証は範囲が限られており、その範囲は明示されています。最大 6 量子ビット、「百を超える Pauli 項」をもつハミルトニアン、BeH2 までの分子であり、アンザッツ自体に加えて「フェルミオン系ハミルトニアンのコンパクトな符号化と頑健な確率的最適化ルーチン」を必要としました。",
+    steps: [],
+    entries: ["vqe-hardware-efficient-ansatz"],
+    citations: [
+      { title: "Hardware-efficient Variational Quantum Eigensolver for Small Molecules and Quantum Magnets", authors: "Abhinav Kandala, Antonio Mezzacapo, Kristan Temme, Maika Takita, Markus Brink, Jerry M. Chow, Jay M. Gambetta", year: "2017", url: "https://arxiv.org/abs/1704.05018" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "adapt-ansatz",
+    label: "ADAPT-VQE adaptive ansatz",
+    labelJa: "ADAPT-VQE 適応的アンザッツ",
+    shortLabel: "ADAPT ansatz",
+    shortLabelJa: "ADAPT アンザッツ",
+    summary: "Refuse to fix the structure in advance. Start from nothing and add one operator at a time, choosing each from a pool according to what the molecule itself indicates, until the energy stops improving. The circuit ends up short because nothing was included that the problem did not ask for.",
+    summaryJa: "構造を事前に固定することを拒みます。何もない状態から出発し、分子自身が示すところに従って演算子プールから一つずつ選んで追加していき、エネルギーが改善しなくなるまで続けます。問題が要求しなかったものが一切含まれないため、回路は短く済みます。",
+    realizes: "ansatz-construction",
+    conditions: "Grimsley et al. state the problem they are solving as a property of every fixed ansatz: VQE \"typically relies on a pre-selected wavefunction ansatz that results in approximate wavefunctions and energies\". Theirs instead \"grows it systematically one operator at a time in a way dictated by the molecule being simulated\", which \"generates an ansatz with a small number of parameters, leading to shallow-depth circuits\". The comparison they report is against unitary coupled cluster, on numerical simulations \"including for a prototypical strongly correlated molecule\", and it is better \"in terms of both circuit depth and chemical accuracy\" — a numerical result on chosen molecules, not a bound.",
+    conditionsJa: "Grimsley らは、自分たちが解こうとしている問題を、固定アンザッツすべてに共通する性質として述べています。VQE は「通常、あらかじめ選ばれた波動関数アンザッツに依存しており、その結果として波動関数もエネルギーも近似的なものにとどまる」。彼らの手法は代わりに「シミュレーション対象の分子が指示するところに従って、一度に一つずつ系統的に演算子を追加して成長させ」、それによって「少数のパラメータからなるアンザッツを生成し、浅い深さの回路をもたらす」とされます。報告されている比較はユニタリ結合クラスターに対するもので、「典型的な強相関分子を含む」数値シミュレーションにおいて「回路深さと化学的精度の双方の点で」優れるというものです。これは選ばれた分子についての数値的結果であって、限界式ではありません。",
+    steps: [],
+    entries: ["vqe-adapt"],
+    citations: [
+      { title: "An adaptive variational algorithm for exact molecular simulations on a quantum computer", authors: "Harper R. Grimsley, Sophia E. Economou, Edwin Barnes, Nicholas J. Mayhall", year: "2018", url: "https://arxiv.org/abs/1812.11173" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "qubit-adapt-ansatz",
+    label: "qubit-ADAPT-VQE ansatz",
+    labelJa: "qubit-ADAPT-VQE アンザッツ",
+    summary: "The same grow-it-one-operator-at-a-time construction, with the pool rebuilt out of qubit operators rather than fermionic excitations so that the circuits it produces are shallow enough for near-term hardware.",
+    summaryJa: "一度に一つずつ演算子を追加して育てるという構成は同じまま、プールをフェルミオン励起ではなく量子ビット演算子から組み直し、生成される回路が近未来のハードウェアで実行できる程度に浅くなるようにしたものです。",
+    realizes: "ansatz-construction",
+    refines: "adapt-ansatz",
+    refinesMark: "ADAPT",
+    refinesMarkJa: "ADAPT",
+    conditions: "Tang et al. name the gaps in the parent they are closing, and they are gaps in the specification rather than in the results: the original \"did not provide a prescription for how to select the pool, how many operators it must contain, or whether the resulting ansatz will succeed in converging to the ground state\". They also state the practical failure that motivates the qubit pool — the original pool \"leads to state preparation circuits that are too deep for a practical application on near-term devices\".",
+    conditionsJa: "Tang らは、親手法において自分たちが埋めようとしている欠落を名指ししています。それは結果の欠落ではなく仕様の欠落です。元の論文は「プールをどう選ぶか、いくつの演算子を含むべきか、得られたアンザッツが基底状態へ収束するかどうかについて、処方を与えていなかった」。また、量子ビット演算子のプールを導入する動機となった実際上の不具合も述べられています。元のプールは「近未来の装置での実用には深すぎる状態準備回路をもたらす」のです。",
+    steps: [],
+    entries: ["vqe-qubit-adapt"],
+    citations: [
+      { title: "qubit-ADAPT-VQE: An adaptive algorithm for constructing hardware-efficient ansatze on a quantum processor", authors: "Ho Lun Tang, V. O. Shkolnikov, George S. Barron, Harper R. Grimsley, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2019", url: "https://arxiv.org/abs/1911.10205" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "k-upccgsd-ansatz",
+    label: "k-UpCCGSD ansatz",
+    labelJa: "k-UpCCGSD アンザッツ",
+    summary: "Take k repetitions of paired double excitations together with generalized singles, instead of the full set of doubles. The point of the restriction is that the depth then grows linearly in the number of orbitals rather than polynomially, and k is the dial that buys accuracy back.",
+    summaryJa: "二電子励起の全体ではなく、対励起を k 回繰り返したものと一般化された一電子励起を組み合わせます。この制限の要点は、深さが軌道数について多項式ではなく線形に増えるようになることであり、精度を買い戻すためのつまみが k です。",
+    realizes: "ansatz-construction",
+    conditions: "Lee et al. present it as \"affordable and systematically improvable\" — the second half is the role of $k$, and the first is what the pair restriction buys. They compare against the full generalized set (UCCGSD) and the standard one (UCCSD) on classical benchmarks, and report that \"$k$-UpCCGSD is found to show the best scaling for quantum computing applications\" of the three.",
+    conditionsJa: "Lee らはこれを「手頃であり、かつ系統的に改善可能」なものとして提示しています。後半は $k$ の役割であり、前半は対励起への制限が買うものです。彼らは一般化された全体（UCCGSD）と標準的なもの（UCCSD）を古典的なベンチマーク上で比較し、三者のうち「$k$-UpCCGSD が量子計算への応用について最良のスケーリングを示す」と報告しています。",
+    cost: "Circuit depth $\\mathcal{O}(kN)$ in the number $N$ of spin orbitals and the number $k$ of repetitions, as stated in the abstract, against $\\mathcal{O}(N^3)$ for UCCGSD and $\\mathcal{O}((N-\\eta)^2\\eta)$ for UCCSD with $\\eta$ electrons. A depth for the family, not a complexity for solving the problem.",
+    costJa: "スピン軌道数 $N$、繰り返し回数 $k$ として、要旨に述べられている回路深さは $\\mathcal{O}(kN)$ です。これに対し UCCGSD は $\\mathcal{O}(N^3)$、電子数 $\\eta$ の UCCSD は $\\mathcal{O}((N-\\eta)^2\\eta)$ です。これは族についての深さであって、問題を解くことの計算量ではありません。",
+    steps: [],
+    entries: ["vqe-k-upccgsd"],
+    citations: [
+      { title: "Generalized Unitary Coupled Cluster Wavefunctions for Quantum Computation", authors: "Joonho Lee, William J. Huggins, Martin Head-Gordon, K. Birgitta Whaley", year: "2018", url: "https://arxiv.org/abs/1810.02327" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "qcc-ansatz",
+    label: "Qubit coupled-cluster ansatz",
+    labelJa: "量子ビット結合クラスターアンザッツ",
+    shortLabel: "QCC ansatz",
+    shortLabelJa: "QCC アンザッツ",
+    summary: "Skip the fermionic layer and build the ansatz directly in qubit space, ranking candidate entangling operators by how much each would move the energy and keeping the ones that earn their place.",
+    summaryJa: "フェルミオン的な段階を経ず、量子ビット空間で直接アンザッツを構成します。候補となるエンタングリング演算子を、それぞれがエネルギーをどれだけ動かすかによって順位づけし、その位置に値するものだけを残します。",
+    realizes: "ansatz-construction",
+    conditions: "Ryabinkin et al. name two separate problems with the unitary coupled-cluster route, and the second is a hardware constraint rather than an accuracy one: the accuracy \"depends on how many and what kind of terms are included\", and there is \"a growth of the number of simultaneously entangled qubits even at the fixed fermionic excitation rank\", which \"not all quantum computing architectures can cope with\". Their method \"starts directly in the qubit space and uses energy response estimates for ranking the importance of individual entanglers\".",
+    conditionsJa: "Ryabinkin らは、ユニタリ結合クラスター経路について二つの別個の問題を指摘しており、二つめは精度ではなくハードウェア上の制約です。精度は「どれだけの、どのような項を含めるかに依存する」一方、「フェルミオン励起のランクを固定しても、同時にエンタングルする量子ビット数が増大する」という問題があり、これには「すべての量子計算アーキテクチャが対処できるわけではない」。彼らの手法は「量子ビット空間で直接出発し、個々のエンタングラーの重要度を順位づけるためにエネルギー応答の推定を用いる」ものです。",
+    steps: [],
+    entries: ["vqe-qcc"],
+    citations: [
+      { title: "Qubit coupled-cluster method: A systematic approach to quantum chemistry on a quantum computer", authors: "Ilya G. Ryabinkin, Tzu-Ching Yen, Scott N. Genin, Artur F. Izmaylov", year: "2018", url: "https://arxiv.org/abs/1809.03827" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "cvar-objective",
+    label: "Conditional-value-at-risk objective",
+    labelJa: "条件付きバリュー・アット・リスク目的関数",
+    shortLabel: "CVaR objective",
+    shortLabelJa: "CVaR 目的関数",
+    summary: "Change what the classical loop is minimising rather than how it minimises. Instead of averaging every measurement outcome into an expectation value, keep only the best tail of them and average that — which is defensible precisely when the answer is a single good bitstring rather than a physical average.",
+    summaryJa: "古典ループの最小化のしかたではなく、何を最小化するかを取り替えます。すべての測定結果を平均して期待値にするのではなく、良いほうの裾だけを残して平均します。これが正当化されるのは、求める答えが物理的な平均ではなく一本の良いビット列である場合です。",
+    realizes: "parameter-optimization",
+    conditions: "Restricted, by the authors' own argument, to classical optimization problems — the ones \"which yield diagonal Hamiltonians\". Barkoutsos et al. are explicit that expectation-value aggregation \"is fully justified for quantum mechanical observables such as molecular energies\" and that it is the diagonal case where \"aggregating the samples in a different way than the expected value is more natural\". So this belongs to the combinatorial branch of the variational family and not to the chemistry branch that the rest of this region is drawn from. The evidence offered is empirical — \"using classical simulation as well as quantum hardware\" — over the problems in that study, alongside analytical results explaining the differences observed.",
+    conditionsJa: "著者ら自身の議論により、古典的な最適化問題、すなわち「対角なハミルトニアンを与える」問題に限定されます。Barkoutsos らは、期待値による集約が「分子エネルギーのような量子力学的オブザーバブルについては完全に正当化される」こと、そして「期待値とは別の仕方で標本を集約するほうが自然」なのは対角な場合であることを明示しています。したがってこれは変分系統のうち組合せ最適化の枝に属し、この領域の他の部分が描かれている化学の枝には属しません。示されている根拠は経験的なもので、当該研究で扱われた問題について「古典シミュレーションと量子ハードウェアの双方を用いて」得られたものであり、観測された差を説明する解析的結果が添えられています。",
+    steps: [],
+    entries: ["vqe-cvar"],
+    citations: [
+      { title: "Improving Variational Quantum Optimization using CVaR", authors: "Panagiotis Kl. Barkoutsos, Giacomo Nannicini, Anton Robert, Ivano Tavernelli, Stefan Woerner", year: "2019", url: "https://arxiv.org/abs/1907.04769" },
+    ],
+  },
   ],
 };
