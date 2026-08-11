@@ -4028,7 +4028,28 @@ function placeFeeds(
     const fitted = fitMarkedName(feed, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(feed));
     const fittedWidth = estimateTextWidth(fitted.text, M.laneFont);
     const y0 = at.y + outward * inner;
-    const y1 = at.y + outward * (inner + M.feedRun);
+    // **How far the stub is DRAWN — and it is now the same number the fan is
+    // placed at.**
+    //
+    // It was `feedRun` flat, 18px, while an opened ingredient's fan hangs at
+    // `max(feedRun, vHalf)` past `innerReach`. So the line stopped 18px out and
+    // its own fan sat as much as **516.8px further away with nothing drawn
+    // between them** — measured over all 31 opened ingredients on the corpus;
+    // the worst is `hhl-qpe-inversion`'s `hamiltonian-simulation` on
+    // `quantum-linear-solve`. A reader saw a tick, and somewhere below it a
+    // detached fan, which is a fair description of the owner's *"i still don't
+    // see the ingredients"* (`6988d3`).
+    //
+    // **The room was always reserved and simply never spent.** `feedReach`
+    // reserves `max(feedRun, vHalf) + vHalf` and has since ingredients could
+    // open; this is the first half of it, drawn. So no figure gets bigger —
+    // checked, every width and height is unchanged — and `fanBase` below now
+    // reads this number instead of deriving a second one that could drift from
+    // it, which is exactly how the gap opened.
+    const stubReach = feed.open
+      ? Math.max(M.feedRun, size.feeds[index]!.vHalf)
+      : M.feedRun;
+    const y1 = at.y + outward * (inner + stubReach);
     context.out.rightmost = Math.max(
       context.out.rightmost,
       // The glyph draws past the name's end, so the canvas must reach past it
@@ -4099,9 +4120,10 @@ function placeFeeds(
     // top of this function has always said a stub never points back through
     // the figure; until the fix this replaced, the stub obeyed it and its fan
     // did not.
-    const feedVHalf = size.feeds[index]!.vHalf;
-    const fanY = at.y + outward * (inner + Math.max(M.feedRun, feedVHalf));
-    const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: fanY };
+    // **The stub's own drawn end.** Not a second derivation of it: the two were
+    // computed apart, one was drawn and the other was not, and the difference
+    // was the gap above.
+    const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: y1 };
     place(
       fanBase,
       // **`nameless`, because the stub above already carries this name.** The
