@@ -267,6 +267,12 @@ export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>
     "vqe-spin-adapted",
     "vqe-warm-start",
   ],
+  // Zoo-parity intake. Shor 1995 is one paper with two algorithms in its own
+  // title — "Prime Factorization **and** Discrete Logarithms" — and the Quantum
+  // Algorithm Zoo files them as two entries, Factoring and Discrete-log, citing
+  // this same paper for both. Two records sharing it is the literature's own
+  // shape, not a default filling in for a search nobody ran.
+  "https://arxiv.org/abs/quant-ph/9508027": ["discrete-logarithm", "shor-period-finding"],
 };
 
 /**

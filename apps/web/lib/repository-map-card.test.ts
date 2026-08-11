@@ -47,6 +47,7 @@ import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 import { PAPER_REGISTER } from "./repository/paper-register.ts";
 import { isMethod, layerNode, routeOf, type LayerCorpusEntry, type LayerMethod } from "./repository/layers.ts";
+import type { SourceCoverage } from "./repository/types.ts";
 
 const exists = (id: string) => layerNode(LAYER_GRAPH, id) !== null;
 
@@ -838,6 +839,92 @@ test("an empty Implementations section carries a worklist, and never a count of 
   // floor, because it going *down* is the interesting direction: a method authored with a
   // single unread citation would land there.
   assert.equal(withLeads, methods.length, `${withLeads}/${methods.length} methods have a read paper`);
+});
+
+test("an empty Implementations section says WHICH of the three things it means", () => {
+  // **Zero became ambiguous on 2026-08-12 and the card had one sentence for two
+  // very different facts.** Until then every populated register row was an abstract read,
+  // and `papers.ts` forbids an abstract read from claiming a paper has no numerics — so
+  // `simulation: 0` always meant "the abstracts did not mention any" and silence was
+  // right. Full-text reads make zero mean either "every cited paper was read and none
+  // reports a run", which is the section's final answer, or "nobody has looked", which is
+  // work. `unread` is the number that tells them apart, and the panel picks the sentence.
+  //
+  // Ordering matters and is asserted here rather than left to the component: a LEAD
+  // outranks everything, because there is already work to do; and the finding may only be
+  // claimed when NOTHING is unread, since one unread paper makes "none reports a run" a
+  // claim about a paper nobody opened.
+  const paper = (url: string, reports?: SourceCoverage) => ({
+    id: `arxiv:${url.slice(-4)}`,
+    title: "A paper",
+    authors: "Someone",
+    year: "2020",
+    url,
+    ...(reports ? { reports, reportsBasis: "full-text" as const } : {}),
+  });
+  const register = {
+    papers: [
+      paper("https://example.org/0001", { theory: "reported", simulation: "reported", hardware: "absent" }),
+      paper("https://example.org/0002", { theory: "reported", simulation: "absent", hardware: "absent" }),
+      paper("https://example.org/0003"),
+    ],
+  };
+  const cite = (url: string) => ({ title: "A paper", authors: "Someone", year: "2020", url });
+  // The fixture is built inline rather than off the authored graph on this
+  // directory's standing rule: a test that reads the real corpus asserts today's
+  // content and goes green the day the content changes for an unrelated reason.
+  // The states are the vocabulary's own so `routeOf` resolves; nothing here
+  // depends on which they are.
+  const entry = STATE_VOCABULARY.states[0]!.id;
+  const exit = STATE_VOCABULARY.states[1]!.id;
+  const shape = { from: entry, to: exit, takes: "t", takesJa: "t", returns: "r", returnsJa: "r" };
+  const filler = (id: string, urls: string[]) =>
+    ({
+      kind: "method",
+      id,
+      label: id,
+      labelJa: id,
+      summary: "s",
+      summaryJa: "s",
+      realizes: "solve",
+      steps: [],
+      atomic: true,
+      citations: urls.map(cite),
+    }) as const;
+  const graph = {
+    nodes: [
+      {
+        kind: "capability",
+        id: "solve",
+        label: "solve",
+        labelJa: "solve",
+        summary: "s",
+        summaryJa: "s",
+        contract: shape,
+        whyALayer: "w",
+        whyALayerJa: "w",
+      },
+      filler("has-a-lead", ["https://example.org/0002", "https://example.org/0001"]),
+      filler("all-read-none-report", ["https://example.org/0002"]),
+      filler("something-unread", ["https://example.org/0002", "https://example.org/0003"]),
+    ],
+  } as const;
+  const at = (id: string) => {
+    const card = cardFor(
+      { graph, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en", register } as never,
+      id,
+    );
+    assert.ok(card?.kind === "method" && card.implementationLeads.held, `${id}: no leads`);
+    return card.implementationLeads.value;
+  };
+  assert.deepEqual(at("has-a-lead"), { simulation: 1, hardware: 0, unread: 0 });
+  assert.deepEqual(at("all-read-none-report"), { simulation: 0, hardware: 0, unread: 0 });
+  // A citation the register does not carry counts as UNREAD rather than being dropped.
+  // `check-layer-graph.mjs` proves every citation resolves against the register in the
+  // repo and nothing proves it against the register the page was built from; omitting it
+  // would turn a shortfall into the stronger claim, which is the direction this module
+  // never lets a count move.
+  assert.deepEqual(at("something-unread"), { simulation: 0, hardware: 0, unread: 1 });
 });
 
 test("a method whose papers nobody has read reports no leads, rather than none", () => {

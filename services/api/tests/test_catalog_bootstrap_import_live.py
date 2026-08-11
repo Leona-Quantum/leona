@@ -1,7 +1,7 @@
 """Live-DB reconciliation test for the bootstrap-manifest import (ADR-0019, Slice B).
 
-Skipped without DATABASE_URL, in the authz-suite mold. Proves the full 283-record
-pinned manifest imports end-to-end through the durable importer against real
+Skipped without DATABASE_URL, in the authz-suite mold. Proves the whole pinned
+manifest imports end-to-end through the durable importer against real
 Postgres, with no network and no prod creds: every record stages, the bytes that
 land in the DB hash to exactly the manifest's recorded per-item hash (true
 content reconciliation), everything stays private/draft, and a re-run of the same
@@ -86,7 +86,7 @@ async def _drain_batch(scope, factory, job_id, *, authority, source):
 
 
 @requires_db
-async def test_full_283_manifest_reconciles_and_is_idempotent(env):
+async def test_full_manifest_reconciles_and_is_idempotent(env):
     authority, factory = env
     scope = authority.importer_scope()
     source = BootstrapManifestSource()
@@ -94,7 +94,14 @@ async def test_full_283_manifest_reconciles_and_is_idempotent(env):
     manifest = json.loads(default_manifest_path().read_text(encoding="utf-8"))
     recorded_hash = {it["upstream_identity"]: it["source_blob_sha256"] for it in manifest["items"]}
     expected = len(recorded_hash)
-    assert expected == 283
+    # The count is read from the manifest, never written here. This assertion used
+    # to be `== 283`, and what it was really guarding is one line below it: two
+    # items sharing an `upstream_identity` collapse in that dict and the import
+    # silently reconciles fewer records than the manifest claims. A literal cannot
+    # see that once the corpus grows — it just fails on the growth instead, which is
+    # how the number came to be updated by whoever was blocked rather than by whoever
+    # decided the corpus size.
+    assert expected == manifest["item_count"] == len(manifest["items"])
 
     # Fresh batch per run (uuid key), independent of the checksum-derived key, so
     # a rerun doesn't resume a *prior* run's batch — content-level duplicate
@@ -191,7 +198,8 @@ async def test_bootstrap_create_is_idempotent_on_checksum_key(env):
         )
         await session.commit()
     assert first.id == second.id
-    assert first.item_count == second.item_count == 283
+    manifest_count = json.loads(default_manifest_path().read_text(encoding="utf-8"))["item_count"]
+    assert first.item_count == second.item_count == manifest_count
 
 
 @requires_db
