@@ -1,0 +1,132 @@
+{
+  "total": 1,
+  "passed": 1,
+  "pass_rate": 1.0,
+  "pass_rate_ci95_low": 0.20654931437723745,
+  "pass_rate_ci95_high": 1.0,
+  "unique_cases": 1,
+  "stable_passed_cases": 1,
+  "repetitions": 1,
+  "product_accepted": 1,
+  "oracle_cases": 1,
+  "oracle_passed": 1,
+  "false_positives": 0,
+  "false_negatives": 0,
+  "first_candidate_passed": 1,
+  "candidate_revisions": 1,
+  "mean_candidates": 1.0,
+  "recorded_llm_calls": 4,
+  "recorded_input_tokens": 29489,
+  "recorded_output_tokens": 2433,
+  "cases": [
+    {
+      "id": "procedural-v3-s867530920260810-nondyadic-qpe-01",
+      "category": "Procedural — Non-dyadic finite-register QPE",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "semantic_group_id": "procedural-v3-s867530920260810-nondyadic-qpe-01",
+      "prompt_variant": "base",
+      "trial": 1,
+      "passed": true,
+      "run_status": "succeeded",
+      "terminal_reason": "ai_review_aligned_with_reference_check",
+      "verifier_decision": "inconclusive",
+      "export_status": "lossless",
+      "saved": true,
+      "product_accepted": true,
+      "oracle_passed": true,
+      "false_positive": false,
+      "false_negative": false,
+      "first_candidate_passed": true,
+      "observed_values": {
+        "dominant_integer": 14.0,
+        "finite_phase_estimate": 0.875,
+        "dominant_probability": 0.6923484843945301
+      },
+      "observed_top_bitstring": null,
+      "reasons": [],
+      "evidence": {
+        "failed_stage": null,
+        "error_code": null,
+        "qasm_source": "sandbox_epilogue",
+        "qasm_epilogue_applied": true,
+        "qasm_available": true,
+        "qasm_epilogue_error": null,
+        "trusted_result_available": true,
+        "candidate_id": "d1bcc2c7-ff9d-5a1b-a349-12f676b758bd",
+        "execution_id": "7e858d42-2831-5e63-965c-e50696a805b1",
+        "result_evidence_error": null,
+        "candidates_considered": 1,
+        "plans_produced": 1,
+        "sandbox_attempts": 1,
+        "semantic_review_attempts": 1,
+        "recorded_llm_calls": 4,
+        "recorded_input_tokens": 29489,
+        "recorded_output_tokens": 2433
+      }
+    }
+  ],
+  "by_case": [
+    {
+      "id": "procedural-v3-s867530920260810-nondyadic-qpe-01",
+      "category": "Procedural — Non-dyadic finite-register QPE",
+      "split": "holdout",
+      "difficulty": "research",
+      "workload": "scientific",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "product_accepted": 1,
+      "oracle_trials": 1,
+      "oracle_passed": 1,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 1,
+      "mean_candidates": 1.0
+    }
+  ],
+  "by_difficulty": [
+    {
+      "name": "research",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 1,
+      "mean_candidates": 1.0
+    }
+  ],
+  "by_workload": [
+    {
+      "name": "scientific",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 1,
+      "mean_candidates": 1.0
+    }
+  ],
+  "metamorphic_groups": 0,
+  "metamorphic_robust_groups": 0,
+  "metamorphic_consistent_groups": 0,
+  "metamorphic_robustness": 0.0,
+  "metamorphic_consistency": 0.0,
+  "by_semantic_group": [],
+  "by_prompt_variant": [
+    {
+      "name": "base",
+      "trials": 1,
+      "passed": 1,
+      "pass_rate": 1.0,
+      "false_positives": 0,
+      "false_negatives": 0,
+      "first_candidate_passed": 1,
+      "mean_candidates": 1.0
+    }
+  ],
+  "note": "targeted round-6 real-provider QPE rerun after direct diagonal-basis helper (sandbox=local, seed=867530920260810)"
+}

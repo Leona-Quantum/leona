@@ -25,7 +25,7 @@ uv run --package majorana-evals python -m majorana_evals.intent_eval \
 ```
 
 Add two reproducible unseen variants from each of the eight balanced procedural
-families (16 generated plus 14 fixed holdout cases):
+families (16 generated plus 20 fixed holdout cases):
 
 ```bash
 uv run --package majorana-evals python -m majorana_evals.intent_eval \
