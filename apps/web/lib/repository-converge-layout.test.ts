@@ -1876,7 +1876,13 @@ test("a shut line says what is inside it, and the figure counts them", () => {
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of [new Set<string>(), new Set(openableAddresses(focus.id))]) {
       const diagram = openDiagram(focus.id, open);
-      const shut = diagram.lanes.filter((lane) => !lane.open && lane.inside > 0);
+      // Shared lanes (W15) are outside the partition: their interior is not
+      // hidden — it is drawn at `sharedWith` on this same figure — so they are
+      // neither a click owed nor a thing the map is missing. Their control is
+      // the jump, asserted by its own test.
+      const shut = diagram.lanes.filter(
+        (lane) => !lane.open && lane.inside > 0 && lane.sharedWith === null,
+      );
       const clickable = shut.filter((lane) => lane.openHref !== null).length;
 
       // The count is the thing counted, and it is only the clickable half.
@@ -2166,7 +2172,10 @@ test("an open ingredient is named once, not once as a stub and again on its fan"
       }
     }
   }
-  assert.ok(pairs > 50, `only ${pairs} opened ingredients were examined`);
+  // 46 since W15: a duplicated ingredient's later occurrences demote to shared
+  // jumps and stop being *opened* ingredients — measured 46 on the dedup's
+  // landing, floor just below so the sweep cannot quietly become vacuous.
+  assert.ok(pairs > 40, `only ${pairs} opened ingredients were examined`);
 });
 
 test("a lane's ingredients are its own, not its descendants'", () => {
@@ -2599,9 +2608,17 @@ test("the count reaches a reader who is not looking at the picture", () => {
     fullLabel: string;
     repeatMark: string | null;
     refinement: { spoken: string } | null;
+    sharedWith?: string | null;
   }): string =>
     `${lane.fullLabel}${lane.refinement === null ? "" : `, ${lane.refinement.spoken}`}${
       lane.repeatMark === null ? "" : ` ${lane.repeatMark}`
+    }${
+      // The `⤴` is drawn and is not a word either (W15): the spoken form says
+      // what the jump does, asserted here so a screen reader never gets the
+      // bare symbol's silence where a sighted reader gets an affordance.
+      lane.sharedWith == null
+        ? ""
+        : " — its contents are drawn once earlier on this figure; this line goes there"
     }`;
   let checked = 0;
   let narrowed = 0;
@@ -2747,7 +2764,10 @@ test("an opened line draws its name, and the name is not worse placed than a shu
       }
     }
   }
-  assert.ok(openedNamed > 100, `only ${openedNamed} opened lanes drew a name`);
+  // 78 opened since W15 — every duplicate interior that used to inflate the
+  // opened-name population now draws once; the names the dedup removed were
+  // exactly the ones this sweep saw twice. Floors re-pinned just below.
+  assert.ok(openedNamed > 70, `only ${openedNamed} opened lanes drew a name`);
   assert.ok(shutNamed > 100, `only ${shutNamed} shut lanes drew a name`);
   const openedRate = openedHit / openedNamed;
   const shutRate = shutHit / shutNamed;
@@ -2895,7 +2915,10 @@ test("a name on the bone stays inside the band the layout reserved for it", () =
   // its methods. Pinned just under the measurement so the sweep cannot quietly
   // become vacuous, which is a failure this repository has shipped before: a
   // guard whose subject list empties passes for everything.
-  assert.ok(checked >= 40, `only ${checked} names on a bone checked`);
+  // 20 since W15: a demoted duplicate slot never opens into a bone, so the
+  // saturated population halved — the bones that remain are the ones a reader
+  // actually sees, floor re-pinned just below the new measurement.
+  assert.ok(checked >= 18, `only ${checked} names on a bone checked`);
 });
 
 test("a name past the cap is cut, and the full text survives in the title", () => {
@@ -2954,7 +2977,12 @@ test("a name past the cap is cut, and the full text survives in the title", () =
     // `AAA… ×N`. That is the invariant the mark exists for: a
     // count is the one thing on a lane the reader cannot learn anywhere else on
     // the canvas, so the *name* gives way to it and never the other way round.
-    const mark = lane.repeatMark === null ? "" : ` ${lane.repeatMark}`;
+    // Both marks survive the cut, in `markSuffix`'s one order: `⤴` (W15) then
+    // the count — each is a fact the reader can learn nowhere else on the
+    // canvas, so the name gives way to them and never the other way round.
+    const mark = `${lane.sharedWith === null ? "" : " ⤴"}${
+      lane.repeatMark === null ? "" : ` ${lane.repeatMark}`
+    }`;
     assert.ok(
       lane.label.endsWith(`…${mark}`),
       `cut name "${lane.label}" does not end in an ellipsis followed by its mark`,
@@ -2962,10 +2990,15 @@ test("a name past the cap is cut, and the full text survives in the title", () =
     // The cut respects the cap it was sized against, and the column did not grow
     // to fit the uncapped name — that second half is the part that would silently
     // stop being true if the cap were applied at `fitLabel` instead of at the
-    // demand `measure` reports.
+    // demand `measure` reports. A shared lane's cap is the cap plus the `⤴`'s
+    // own width (W15's `sharedAllowance`): the jump glyph rides beyond the cap
+    // rather than costing the name characters, on both the demand and the cut,
+    // which is exactly what this assertion re-derives.
+    const cap =
+      M.labelCap + (lane.sharedWith === null ? 0 : estimateTextWidth(" ⤴", M.laneFont));
     assert.ok(
-      estimateTextWidth(lane.label, M.laneFont) <= M.labelCap,
-      `cut name is ${estimateTextWidth(lane.label, M.laneFont)}px, past the ${M.labelCap}px cap`,
+      estimateTextWidth(lane.label, M.laneFont) <= cap,
+      `cut name is ${estimateTextWidth(lane.label, M.laneFont)}px, past the ${cap}px cap`,
     );
     // And the whole point: nothing was lost from the page. The `<title>` reads
     // `fullLabel`, so the reader still gets every character on hover.
@@ -3095,10 +3128,12 @@ test("no two names overlap on an opened figure either", () => {
     }
   }
   // 254 opened / 264 shut since session 104 on the map alone; the method pages
-  // roughly double both. The floors stay where they were — they exist to catch
-  // the sweep going quiet, not to pin the population's size.
+  // (PR 359) roughly double both. W15 then moves every demoted duplicate
+  // interior's names from the opened column to the shut one — the same names,
+  // drawn once, now on shut shared lanes. The floors exist to catch the sweep
+  // going quiet, not to pin the population's size.
   assert.ok(
-    openNames > 200 && shutNames > 250,
+    openNames > 140 && shutNames > 350,
     `${openNames} opened / ${shutNames} shut names drawn`,
   );
   assert.deepEqual(
@@ -3397,34 +3432,34 @@ test("firstOrderRun is a share of the line, floored by the bow and ceilinged", (
  */
 const SIZE_CEILING = {
   /**
-   * Widest figure, fully opened, either locale. Today **10,573** —
-   * `linear-ode-solve` in `ja`. It was 9,571 before first-order lines started
-   * taking a share of themselves as tendon (`firstOrderRun`, session 112), then
-   * 10,867, and session 115 took 294px back off it by steepening
-   * `tendonAngleDeg` to 76° on the owner's ask to shorten the distance between
-   * states. Saturated is where that change buys least — the 340px ceiling is
-   * already what binds here — and the shut figures a reader actually arrives on
-   * is where it buys most.
+   * Widest figure, fully opened, either locale. Today **6,955** —
+   * `nonlinear-ode-solve` in `ja`, after W15's dedup took `linear-ode-solve`
+   * (10,573 before, the old holder) apart: a shared interior draws once per
+   * figure, and the width was mostly parallel copies of the same fans. The
+   * pre-W15 history: 9,571 before first-order lines started taking a share of
+   * themselves as tendon (`firstOrderRun`, session 112), then 10,867, then
+   * 294px back off via `tendonAngleDeg` 76° (session 115).
    */
-  saturatedWidth: 12_000,
+  saturatedWidth: 8_000,
   /**
-   * Tallest, same sweep. Today **22,982** — `linear-ode-solve` in `en`, and it
-   * is new: that slot drew a two-lane state chain until session 119, when its
-   * own methods' `bypasses` refuted the chain and the figure became the fan
-   * of all seven routes (`drawsAsStateChain`).
+   * Tallest, same sweep. Today **6,056** — `nonlinear-ode-solve` in `en`,
+   * re-measured at the merge after the branch took dev's 360–362 on board (the
+   * 6,395 recorded at authoring predated those; the PR body's 5,142 is
+   * `linear-ode-solve` en — the motivating figure's drop, never the max).
    *
-   * **The trip was taken as the decision the note below demands, and this is
-   * the decision.** The height is not a regression in the drawing — it is the
-   * honest figure, inflated by a defect this file already has on the books: a
-   * shared sub-method is drawn once per branch, so the saturated fan draws
-   * `time-discretization`'s five methods once under Taylor, again under
-   * Krovi, again under Dyson (the 130-group census, NEXT.md §3). The real fix
-   * is that dedup, and this ceiling comes back down with it; a shape that
-   * merely hid the seven routes was not a smaller figure, it was a false one.
-   * Before the fan: 15,900 — `time-discretization` (en), 100px of headroom,
-   * which is why the old number sat at 16,000.
+   * **This is the ceiling coming back down, as D119.6 promised it would.** The
+   * 22,982px `linear-ode-solve` fan that moved the ceiling 16,000 → 24,000 was
+   * the honest figure inflated by the shared-sub-method repeat —
+   * `time-discretization`'s five methods drawn once under Taylor, again under
+   * Krovi, again under Dyson. W15 draws a shared interior once per figure and
+   * later occurrences jump to it, so the debt the 24,000 carried is paid and
+   * the ceiling returns to the measurement-plus-headroom convention. (The
+   * repeat census that used to live here as a prose number — "130 groups" —
+   * drifted while nothing defended it; it is now the invariant test
+   * `a shared interior is drawn once per figure`, which prints its own
+   * denominator every run.)
    */
-  saturatedHeight: 24_000,
+  saturatedHeight: 8_000,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
    * arrival. Today **1,045** against a 1,204px canvas, so this one is nearly
@@ -3554,10 +3589,22 @@ test("every address a figure emits keeps the reader where they were standing", (
       // reader back to the origin at 100%, which does not read as a control
       // working; it reads as the map jumping. This enumeration is the guard, and
       // it had the hole: it listed four of the five addresses a figure emits.
+      // A shared lane's open control is the one address on a figure that MOVES
+      // the reader — that is its entire job (W15: the interior is drawn at
+      // `sharedWith` and the control goes there). Its `at=` is the target,
+      // deliberately, same as the size rungs the header measured. The lane's
+      // OTHER addresses still keep the reader standing, so only the jump is
+      // set aside — and asserted below for what it must carry instead.
       const addresses = [
-        ...carried.lanes.flatMap((lane) => [lane.href, lane.openHref]),
+        ...carried.lanes.flatMap((lane) => [
+          lane.href,
+          lane.sharedWith === null ? lane.openHref : null,
+        ]),
         ...carried.states.map((state) => state.href),
-        ...carried.feeds.flatMap((feed) => [feed.href, feed.openHref]),
+        ...carried.feeds.flatMap((feed) => [
+          feed.href,
+          feed.sharedWith === null ? feed.openHref : null,
+        ]),
       ].filter((href): href is string => typeof href === "string");
       assert.ok(addresses.length > 0, `${focus.id} emitted no addresses`);
       for (const href of addresses) {
@@ -3565,6 +3612,14 @@ test("every address a figure emits keeps the reader where they were standing", (
         assert.ok(
           href.includes(`at=${encodeURIComponent(AT)}`),
           `${focus.id}: ${href} dropped the viewport`,
+        );
+      }
+      for (const lane of carried.lanes) {
+        if (lane.sharedWith === null) continue;
+        assert.ok(
+          lane.openHref !== null &&
+            lane.openHref.includes(`at=${encodeURIComponent(lane.sharedWith)}`),
+          `${focus.id}: ${lane.key} is shared and its control does not go to the drawn occurrence`,
         );
       }
       // And what the reader had open, on the addresses that go to a node's own
@@ -3629,6 +3684,20 @@ test("a line never offers a click it will not honour", () => {
     for (const lane of diagram.lanes) {
       if (lane.openHref === null) continue;
       offered += 1;
+      // A shared lane is the third kind of honoured click (W15): it is named
+      // in `?open=`, drawn shut BECAUSE its interior is drawn at an earlier
+      // occurrence, and following its control moves the reader there — a real
+      // change, just not a toggle. Honoured iff the target address is a lane
+      // this same drawing holds open.
+      if (lane.sharedWith !== null) {
+        assert.ok(
+          diagram.lanes.some(
+            (other) => other.address === lane.sharedWith && other.open,
+          ),
+          `${focus.id}: ${lane.key} jumps to ${lane.sharedWith}, which is not an open lane on this figure`,
+        );
+        continue;
+      }
       // The link is honoured if following it changes the drawing: either it is
       // open now and the link shuts it, or it is shut and the link opens it.
       if (lane.open) continue;
@@ -3772,11 +3841,18 @@ test("a node id in ?open= still opens what it always opened", () => {
     }
   }
   assert.ok(found, "no node holds two shut openable positions — is the id path still distinct?");
-  const byId = openedBy(openDiagram(FOCUS, [...ancestors, found.id]));
-  const byAddress = openedBy(openDiagram(FOCUS, [...ancestors, found.address]));
+  // Open OR shared, since W15: the id form still touches every occurrence, but
+  // occurrences past the first draw as shared jumps rather than as second
+  // interiors — which is the dedup's whole point, not a loss of the id's
+  // meaning. Counting drawn-open alone would say the two forms "became one"
+  // precisely because the duplicate interiors stopped being drawn.
+  const touchedBy = (d: ConvergeDiagram) =>
+    d.lanes.filter((one) => one.open || one.sharedWith !== null).length;
+  const byId = touchedBy(openDiagram(FOCUS, [...ancestors, found.id]));
+  const byAddress = touchedBy(openDiagram(FOCUS, [...ancestors, found.address]));
   assert.ok(
     byId > byAddress,
-    `${found.id} opens ${byId} lanes and its address opens ${byAddress} — the two forms have become one`,
+    `${found.id} touches ${byId} lanes and its address touches ${byAddress} — the two forms have become one`,
   );
 });
 
@@ -3992,6 +4068,62 @@ const DRAWN_NOWHERE: readonly string[] = [
   "level-set-observable-route",
   "homotopy-perturbation-route",
 ];
+
+test("a shared interior is drawn once per figure, and the census prints the denominator", () => {
+  // W15's invariant, replacing the prose number that guarded this before. The
+  // "130 groups" written in NEXT.md and quoted in two test comments drifted —
+  // a fresh census on the session that built the dedup measured 60 groups (39
+  // intra-figure), with the worst offenders larger than the prose said
+  // ("Block-encode a matrix" ×18 where the note said ×14). A number that lives
+  // only in a document is a number nothing is defending, so the census is this
+  // sweep now, and the denominator prints every run.
+  //
+  // The subtree is re-derived here from `parentKey` links, independently of the
+  // layout's own `interiorShape` — a derived value cannot verify itself.
+  let sharedLanes = 0;
+  let openInteriors = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      const open = new Set(openableAddresses(focus.id));
+      const diagram = openDiagram(focus.id, open, locale);
+      const childrenOf = new Map<string, typeof diagram.lanes>();
+      for (const lane of diagram.lanes) {
+        if (lane.parentKey === null) continue;
+        childrenOf.set(lane.parentKey, [...(childrenOf.get(lane.parentKey) ?? []), lane]);
+      }
+      const subtree = (key: string): string =>
+        (childrenOf.get(key) ?? [])
+          .map((lane) => `${lane.draws ?? lane.own ?? ""}(${subtree(lane.key)})`)
+          .join(",");
+      const seen = new Map<string, string>();
+      for (const lane of diagram.lanes) {
+        if (lane.sharedWith !== null) {
+          sharedLanes += 1;
+          continue;
+        }
+        if (!lane.open || lane.draws === null) continue;
+        const interior = subtree(lane.key);
+        if (interior === "") continue;
+        openInteriors += 1;
+        const key = `${lane.draws}#${interior}`;
+        const first = seen.get(key);
+        assert.equal(
+          first,
+          undefined,
+          `${focus.id} (${locale}): ${lane.draws} draws the same interior twice — at ${first} and ${lane.address}`,
+        );
+        seen.set(key, lane.address);
+      }
+    }
+  }
+  console.log(
+    `shared-interior census: ${openInteriors} open interiors drawn, ${sharedLanes} occurrences demoted to jumps, over ${
+      drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).length
+    } saturated figures × 2 locales`,
+  );
+  assert.ok(openInteriors > 50, `only ${openInteriors} open interiors — the sweep has gone quiet`);
+  assert.ok(sharedLanes > 20, `only ${sharedLanes} shared lanes — is the dedup running at all?`);
+});
 
 test("no two routes through one slot draw the same interior unless something says why", () => {
   const drawn = drawnInteriors();
@@ -4554,8 +4686,11 @@ test("every opened line's shut control is reachable where its own children do no
   // The denominators, so a saturation walk that returns nothing cannot pass
   // this test over an empty map — and the chain count is the population the 85
   // came from, so it is the one that must stay swept.
-  assert.ok(opened > 200, `only ${opened} opened lanes were checked`);
-  assert.ok(chains > 80, `only ${chains} of them are chains — the exoskeleton population is missing`);
+  // 128 opened since W15: a saturated figure now opens each shared interior
+  // once, so the sweep's population is the set of interiors a reader can
+  // actually see — smaller, and every member still checked. Floors follow.
+  assert.ok(opened > 110, `only ${opened} opened lanes were checked`);
+  assert.ok(chains > 40, `only ${chains} of them are chains — the exoskeleton population is missing`);
 });
 
 test("a slot drawn as a state chain is walked by every method that fills it", () => {
