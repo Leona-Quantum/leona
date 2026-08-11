@@ -1,4 +1,12 @@
 node_modules/
+# The same name without the slash, because a trailing slash matches directories
+# ONLY and a `node_modules` **symlink** is not a directory to git. A fresh
+# worktree has no deps, and linking them from the main checkout
+# (`ln -s ../majorana/node_modules node_modules`) is the cheap way to run a
+# checker there — after which `git add -A` stages the link as a tracked symlink,
+# because the line above does not match it. Caught here 2026-08-11, one commit
+# before it reached CI.
+node_modules
 .next/
 # Alternate NEXT_DIST_DIR builds, so a second local dev server does not share
 # (and corrupt) the first one's cache.
