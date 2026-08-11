@@ -153,6 +153,15 @@ const COPY = {
       "Nobody has written one yet. The field exists for every method — this is a worklist entry, not a claim that the method is too simple to need one.",
     costHeading: "Cost, as the source states it",
     costNone: "No complexity is recorded here.",
+    implementationsHeading: "Implementations",
+    // **"Absent is not zero", and the note has to say so**, because this is the
+    // section a reader is most likely to misread as a verdict. The schema on
+    // `LayerMethod.implementations` is explicit that absent means nobody has
+    // written this method's implementations down and does **not** mean none
+    // exist — and the paper register already knows better, recording per paper
+    // whether it reports numerics or a hardware run.
+    implementationsNone:
+      "Nobody has written one up yet. That is a gap in this record, not a statement that the method has never been run — the paper register already records, per paper, which sources report numerics or a hardware run.",
     contestedHeading: "Where the claim is contested",
     needsHeading: "What it needs",
     needsNone: "Nothing below this — it bottoms out here.",
@@ -304,6 +313,9 @@ const COPY = {
       "まだ誰も書いていません。この欄はすべての手法に用意してあります。これは作業待ちの項目であって、例を要しないほど単純だという主張ではありません。",
     costHeading: "計算量（出典の記述のまま）",
     costNone: "計算量は記録されていません。",
+    implementationsHeading: "実装",
+    implementationsNone:
+      "まだ誰も書き起こしていません。これはこのレコードの欠落であって、この手法が一度も実行されたことがないという主張ではありません。どの文献が数値計算や実機実行を報告しているかは、論文レジスタが論文ごとにすでに記録しています。",
     contestedHeading: "主張が争われている点",
     needsHeading: "必要とするもの",
     needsNone: "これより下はありません。ここで行き止まりです。",
@@ -1033,6 +1045,73 @@ function MethodView({
           <EmptyNote>{copy.costNone}</EmptyNote>
         )}
       </section>
+
+      {/* **After Cost, which closes the owner's seven on this page**: his order
+          is Input, Theory, Output, Requires, Example, Performance,
+          Implementations, and the section comment above already follows it for
+          Example-before-Performance. This is the seventh, and until now the page
+          stopped at the sixth.
+
+          **This is the same hole 396 closed for `example`, one field along.**
+          `implementations` was drawn only by `map-card-panel.tsx`, so an
+          implementation was reachable through the map card and invisible to
+          anyone who arrived at the method page — authored content that ships and
+          is never seen. It was not noticed earlier because the count was zero:
+          nothing rendered because nothing existed, which looks exactly like a
+          section that is working.
+
+          Methods only, for the reason `example` is methods only — a capability
+          is a slot rather than a procedure, and `LayerMethod.implementations` is
+          typed on the method. */}
+      {isMethod(node) ? (
+        <section className="mj-layers-section">
+          <h2>{copy.implementationsHeading}</h2>
+          {node.implementations?.length ? (
+            <ul className="mj-card-list mj-card-implementations">
+              {node.implementations.map((implementation) => (
+                <li key={implementation.id}>
+                  <h3>{isJa ? implementation.labelJa : implementation.label}</h3>
+                  {/* Zero papers is a real value — the owner's "implementations
+                      that aren't papers but proven to be run" — so the list is
+                      rendered only when there is one, never as an empty stub. */}
+                  {implementation.papers?.length ? (
+                    <ul className="mj-card-list">
+                      {implementation.papers.map((paper) => (
+                        <li key={paper.url}>
+                          <a href={paper.url} rel="noreferrer">
+                            {paper.title}
+                          </a>
+                        </li>
+                      ))}
+                    </ul>
+                  ) : null}
+                  {/* The owner's five sub-sections, in the order he approved
+                      them. Each is drawn only when written: an absent one means
+                      nobody has read that part of the source out, and a heading
+                      over nothing would say the opposite. */}
+                  {(
+                    [
+                      ["about", implementation.about, implementation.aboutJa],
+                      ["methods", implementation.methods, implementation.methodsJa],
+                      ["data", implementation.data, implementation.dataJa],
+                      ["code", implementation.code, implementation.codeJa],
+                      ["results", implementation.results, implementation.resultsJa],
+                    ] as const
+                  ).map(([key, en, ja]) =>
+                    en ? (
+                      <p key={key}>
+                        <MathText source={(isJa ? ja : en) ?? ""} />
+                      </p>
+                    ) : null,
+                  )}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            <EmptyNote>{copy.implementationsNone}</EmptyNote>
+          )}
+        </section>
+      ) : null}
 
       {node.contested ? (
         <section className="mj-layers-section mj-layers-section--contested">
