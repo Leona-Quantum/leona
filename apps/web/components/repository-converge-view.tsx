@@ -1019,6 +1019,13 @@ export function ConvergeView({
               // page is drawing.
               claimed={claimed}
               selection={selection && selection.figure === index ? selection : null}
+              // The owner's translucency ruling: with a card open, the map
+              // behind it goes faint IN THE DRAWING — every element except the
+              // selected one — so the one thing the camera flew to stays at
+              // full strength and reads through the card's translucent surface.
+              // A uniform backdrop veil cannot do this: it dims the selected
+              // item by exactly as much as everything else.
+              veiled={openCard !== null}
             />
           ))}
         </InfiniteCanvas>
