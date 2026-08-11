@@ -111,6 +111,15 @@ def test_comments_and_literals_do_not_satisfy_circuit_contract_or_metrics():
     assert program.resource_metrics(qubits=1, expected_runtime_sec=1).gate_count == 0
 
 
+def test_tuple_assignment_satisfies_the_final_circuit_contract():
+    program = FrameworkProgram(
+        Framework.QISKIT,
+        "FINAL_CIRCUIT, RESULT = build_and_run()\n",
+    )
+
+    assert program.contract_diagnostics(circuit_expected=True) == []
+
+
 def test_multiline_literal_contents_are_preserved_in_fingerprint():
     first = FrameworkProgram(Framework.QISKIT, 'note = """value  \n"""\n')
     second = FrameworkProgram(Framework.QISKIT, 'note = """value\n"""\n')

@@ -127,13 +127,23 @@ def _binds_final_circuit(source: str) -> bool:
     tree = _syntax(source)
     if tree is None:
         return False
+
+    def binds_final_circuit(target: ast.expr | None) -> bool:
+        if isinstance(target, ast.Name):
+            return target.id == "FINAL_CIRCUIT"
+        if isinstance(target, ast.Starred):
+            return binds_final_circuit(target.value)
+        if isinstance(target, (ast.Tuple, ast.List)):
+            return any(binds_final_circuit(element) for element in target.elts)
+        return False
+
     for node in ast.walk(tree):
         targets: list[ast.expr] = []
         if isinstance(node, ast.Assign):
             targets = node.targets
         elif isinstance(node, (ast.AnnAssign, ast.NamedExpr)):
             targets = [node.target]
-        if any(isinstance(target, ast.Name) and target.id == "FINAL_CIRCUIT" for target in targets):
+        if any(binds_final_circuit(target) for target in targets):
             return True
     return False
 
