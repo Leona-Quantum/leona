@@ -1735,7 +1735,13 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
           // This is a stricter bar than the one it replaces, not a relaxed
           // one: the old formula would still pass if the stub's line stopped
           // short, and that was the bug.
-          const fanY = stub.y1;
+          // Back to the push term, because the geometry it describes is back:
+          // #430 drew the stub all the way to the fan and that line crossed
+          // another lane on 68 of 212 ingredients, so the length was reverted
+          // and the fan sits past the stub's end again. See `placeFeeds` and
+          // OWNER_TODO `3f6889` — the gap is known, measured and parked, not
+          // forgotten.
+          const fanY = stub.y1 + stub.outward * Math.max(0, stub.vHalf - M.feedRun);
           const ends = drawnEnds(lane.d);
           for (const [x, y] of [
             [ends.sx, ends.sy],
