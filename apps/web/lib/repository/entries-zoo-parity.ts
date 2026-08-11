@@ -578,6 +578,292 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     ],
     relatedSlugs: ["hhl-linear-systems", "linear-combination-unitaries", "amplitude-amplification"],
   },
+  {
+    slug: "matrix-product-verification",
+    title: "Matrix product verification by quantum walk",
+    titleJa: "量子ウォークによる行列積の検証",
+    family: "Quantum query algorithm",
+    zooName: "Verifying Matrix Products",
+    zooSection: "Algebraic and Number Theoretic Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given three n×n matrices A, B and C over a field, decide whether AB = C, rather than computing the product and comparing it entry by entry.",
+    problemJa:
+      "体上の n×n 行列 A, B, C が三つ与えられたとき、積を計算して成分ごとに比べるのではなく、AB = C が成り立つかどうかを判定する問題です。",
+    idea:
+      "The paper describes a quantum algorithm that decides whether AB = C over any field with bounded error. Its cost is sensitive to how wrong the claimed product is: the worst-case time is n^(5/3), while the expected time is n^(5/3) / min(w, √n)^(1/3) when w entries are wrong, so the expected figure falls as w grows until w reaches √n, past which the minimum in the denominator stops changing. The Zoo records that this algorithm rests on results about quantum walks proven in a separate paper, and that it improves the n^(7/4) algorithm the Zoo credits to Ambainis et al. The same paper also presents a quantum matrix multiplication algorithm that its authors describe as efficient when the result has few nonzero entries.",
+    ideaJa:
+      "この論文は、任意の体上で AB = C が成り立つかどうかを有界誤りで判定する量子アルゴリズムを示しています。コストは主張された積がどれだけ誤っているかに依存し、最悪時間は n^(5/3) である一方、誤っている成分が w 個ある場合の期待時間は n^(5/3) / min(w, √n)^(1/3) となります。この期待時間は w が大きくなるほど小さくなりますが、w が √n に達したあとは分母の min が変わらなくなります。Zoo は、このアルゴリズムが別の論文で証明された量子ウォークに関する結果に基づいており、Zoo が Ambainis らに帰する n^(7/4) のアルゴリズムを改良したものだと記しています。同じ論文には、結果の非零成分が少ない場合に効率的だと著者らが述べる、行列の積を計算する量子アルゴリズムも示されています。",
+    complexity:
+      "Worst-case time n^(5/3) to verify a product of two n×n matrices over any field with bounded error, and expected time n^(5/3) / min(w, √n)^(1/3), where w is the number of wrong entries; the Zoo gives O(n^(7/4)) for the earlier quantum algorithm it credits to Ambainis et al., O(n^2) for the best known randomized classical verification, and O(n^(2.373)) for the best known classical matrix multiplication.",
+    complexityBasis:
+      'abstract of arXiv:quant-ph/0409035: "We present a quantum algorithm that verifies a product of two n*n matrices over any field with bounded error in worst-case time n^{5/3} and expected time n^{5/3} / min(w,sqrt(n))^{1/3}, where w is the number of wrong entries. This improves the previous best algorithm that runs in time n^{7/4}." The comparison figures are from the Quantum Algorithm Zoo entry "Verifying Matrix Products" (LaTeX rendered into plain text): "Classically, the best known (randomized) algorithm achieves this in time O(n^2), whereas the best known classical algorithm for matrix multiplication runs in time O(n^{2.373})", "Ambainis et al. discovered a quantum algorithm for this problem with runtime O(n^{7/4})", and "Buhrman and Špalek improved upon this, obtaining a quantum algorithm for this problem with runtime O(n^{5/3})". The Zoo spells the second author Špalek; the author list recorded for the primary reference gives Robert Spalek, which is the spelling carried in the source field.',
+    caveat:
+      "This is a literature record: no circuit was constructed, compiled, simulated, or run, and no matrix instance was verified. The abstract states its times as bare n^(5/3) and n^(5/3) / min(w, √n)^(1/3), with no O(·) notation, constant factor, gate or qubit count, and no statement of how the entries of A, B and C are made available, so nothing here bounds the cost of a concrete n. The expected-time refinement is governed by w, the number of wrong entries in the claimed product, which is a property of the instance and is not known in advance; the worst-case figure is the one that holds without it. The classical baselines are the fastest algorithms currently known, as the Zoo says, not proven lower bounds, so the polynomial separation is conditional on that state of the art. The quantum-walk results the algorithm is built on, and the earlier n^(7/4) algorithm it improves, are in papers outside this record, and the second result in the same abstract, a quantum matrix multiplication algorithm for results with few nonzero entries, is described only as efficient, with no bound quoted anywhere in the sources read here.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、回路の構成、コンパイル、シミュレーション、実行はいずれも行っておらず、具体的な行列の検証も行っていません。要旨は計算時間を n^(5/3) および n^(5/3) / min(w, √n)^(1/3) とだけ述べており、O(·) の記法も定数因子もゲート数も量子ビット数も示されず、A, B, C の各成分をどのように参照するかも述べられていないため、具体的な n におけるコストはここからは分かりません。期待時間の改善は主張された積のうち誤っている成分の個数 w に支配されますが、w は問題例ごとの性質であり事前には分かりません。w に依存せず成り立つのは最悪時間のほうです。古典側は Zoo が述べるとおり現在知られている最速のアルゴリズムであって証明された下界ではないため、多項式的な差はその前提に依存します。アルゴリズムの土台となる量子ウォークの結果も、改良の対象である n^(7/4) のアルゴリズムも本記録の対象外の論文にあり、同じ要旨のもう一つの結果である、非零成分が少ない場合の行列の積を計算する量子アルゴリズムについては「効率的」と述べられるのみで、ここで参照した資料には計算量の記載がありません。",
+    tags: ["matrix verification", "quantum walk", "linear algebra", "query complexity", "bounded error"],
+    source: {
+      id: "arxiv:quant-ph/0409035",
+      title: "Quantum Verification of Matrix Products",
+      authors: "Harry Buhrman, Robert Spalek",
+      year: "2004",
+      url: "https://arxiv.org/abs/quant-ph/0409035",
+    },
+    literature: [
+      {
+        title: "Quantum Verification of Matrix Products",
+        authors: "Harry Buhrman, Robert Spalek",
+        year: "2004",
+        url: "https://arxiv.org/abs/quant-ph/0409035",
+        relevance: "Primary source and the origin of every figure in the cost claim: bounded-error verification of an n×n matrix product over any field in worst-case time n^(5/3), the expected time n^(5/3) / min(w, √n)^(1/3) in terms of the number w of wrong entries, and the improvement on the previous n^(7/4) algorithm. The same abstract announces a quantum matrix multiplication algorithm for the case where the result has few nonzero entries; consult the paper for what that algorithm costs, since the abstract states no bound for it.",
+        relevanceJa: "一次資料であり、計算量欄の数値はすべてここに由来します。任意の体上での n×n 行列積の有界誤り検証が最悪時間 n^(5/3) であること、誤っている成分の個数 w を用いた期待時間 n^(5/3) / min(w, √n)^(1/3)、および従来の n^(7/4) のアルゴリズムに対する改良が述べられています。同じ要旨では、結果の非零成分が少ない場合に向けた行列の積を計算する量子アルゴリズムにも触れていますが、その計算量は要旨に示されていないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["quantum-walk-line", "element-distinctness", "grover-unstructured-search"],
+  },
+  {
+    slug: "polynomial-interpolation",
+    title: "Polynomial interpolation from oracle queries",
+    titleJa: "オラクルクエリによる多項式補間",
+    family: "Quantum query algorithm",
+    zooName: "Polynomial interpolation",
+    zooSection: "Oracular Algorithms",
+    speedup: "Varies",
+    problem:
+      "Given an oracle that returns the value p(x) of an unknown degree-d polynomial p over the finite field GF(q) at any queried point x, determine the coefficients of p using as few queries as possible.",
+    problemJa:
+      "有限体 GF(q) 上の未知の d 次多項式 p について、問い合わせた点 x での値 p(x) を返すオラクルが与えられたとき、できるだけ少ないクエリ数で p の係数を決定する問題です。",
+    idea:
+      "Classically the d + 1 coefficients cannot be pinned down with fewer than d + 1 queries, and a lower bound proved independently by Kane and Kutin and by Meyer and Pommersheim puts the quantum cost at d/2 + 1/2 queries. Childs, van Dam, Hung and Shparlinski describe an algorithm that attains that lower bound rather than the d queries of the earlier Boneh and Zhandry algorithm, and they show that its success probability, as a function of the number of queries, is precisely optimal. Their abstract states that the algorithm can be implemented with gate complexity poly(log q) with negligible decrease in the success probability. Chen, Childs and Hung carry the same question to a degree-d polynomial in n variables, where their abstract reports a speedup over the classical count (n+d choose d) by a factor of n+1 over ℂ, (n+1)/2 over ℝ and (n+d)/d over GF(q), which it calls a much larger gap than the factor of 2 available in the univariate case.",
+    ideaJa:
+      "古典的には、d + 1 個の係数を決めるのに d + 1 クエリが必要であり、Kane と Kutin、および Meyer と Pommersheim がそれぞれ独立に証明した下界により、量子では d/2 + 1/2 クエリが必要です。Childs、van Dam、Hung、Shparlinski は、先行する Boneh と Zhandry のアルゴリズムの d クエリではなく、この下界に到達するアルゴリズムを示し、クエリ数の関数としての成功確率がちょうど最適であることも示しています。要旨によれば、このアルゴリズムはゲート計算量 poly(log q) で実装でき、その際の成功確率の低下は無視できる程度です。Chen、Childs、Hung は同じ問いを n 変数の d 次多項式へ広げており、古典のクエリ計算量 (n+d choose d) に対して、ℂ 上では n+1 倍、ℝ 上では (n+1)/2 倍、GF(q) 上では (n+d)/d 倍の高速化が得られると要旨は述べており、これは一変数の場合に得られる 2 倍の高速化よりもはるかに大きな差だとしています。",
+    complexity:
+      "Univariate over GF(q): d/2 + 1/2 quantum queries suffice to determine a degree-d polynomial with bounded error, which matches the lower bound, and d/2 + 1 queries suffice for success probability approaching 1 at large q, against d + 1 queries necessary and sufficient classically; the algorithm can be implemented with gate complexity poly(log q) with negligible decrease in the success probability. Multivariate, for degree d in n variables: ⌈(1/(n+1))·(n+d choose d)⌉ queries suffice for probability 1 over ℂ and twice that over ℝ, except for d = 2 and four other special cases, and ⌈(d/(n+d))·(n+d choose d)⌉ queries suffice for probability approaching 1 over GF(q) at large field order, against a classical query complexity of (n+d choose d).",
+    complexityBasis:
+      'abstract of arXiv:1509.09271: "A lower bound shown independently by Kane and Kutin and by Meyer and Pommersheim shows that d/2+1/2 quantum queries are needed to solve this problem with bounded error, whereas an algorithm of Boneh and Zhandry shows that d quantum queries are sufficient. We show that the lower bound is achievable: d/2+1/2 quantum queries suffice to determine the polynomial with bounded error. Furthermore, we show that d/2+1 queries suffice to achieve probability approaching 1 for large q", and "the algorithm can be implemented with gate complexity poly(log q) with negligible decrease in the success probability". The classical univariate count is from the Quantum Algorithm Zoo entry "Polynomial interpolation" (LaTeX rendered into plain text): "Classically, d + 1 queries are necessary and sufficient." The multivariate figures are from the abstract of arXiv:1701.03990, with TeX rendered into Unicode, the binomial written as (n+d choose d) and the subscript of k written as C rather than ℂ: "We show that k_C and 2k_C queries suffice to achieve probability 1 for ℂ and ℝ, respectively, where k_C=⌈(1/(n+1))(n+d choose d)⌉ except for d=2 and four other special cases. For 𝔽_q, we show that ⌈(d/(n+d))(n+d choose d)⌉ queries suffice to achieve probability approaching 1 for large field order q", and "The classical query complexity of this problem is (n+d choose d), so our result provides a speedup by a factor of n+1, (n+1)/2, and (n+d)/d for ℂ, ℝ, and 𝔽_q, respectively." Outside the quotations the finite field is written GF(q) throughout, as in the Zoo entry; the multivariate paper writes the same field as a blackboard-bold F with subscript q, and the Zoo states the multivariate quantum counts in O(·) form rather than as the paper\'s ceilings.',
+    caveat:
+      "This is a literature record: no oracle was instantiated, no circuit was compiled, simulated, or run, and no polynomial was reconstructed here. Every count above is a number of queries in the oracle model, and the two univariate upper bounds are not interchangeable, since d/2 + 1/2 queries are for bounded error while d/2 + 1 queries buy success probability approaching 1 and hold for large q, an asymptotic statement in the field order rather than a guarantee at a fixed q. The multivariate ⌈(1/(n+1))·(n+d choose d)⌉ count is stated with exceptions, for d = 2 and four other special cases, the GF(q) multivariate result again requires large field order, and the authors leave open their conjecture that twice that count also suffices over GF(q). The gate complexity poly(log q) is quoted with no exponent or constant, and no qubit count, circuit depth, or error-correction cost is established. The abstract's cryptographic remark, that these upper bounds improve results of Boneh and Zhandry on the insecurity of cryptographic protocols against quantum attacks, is a statement about query bounds, not a demonstrated attack on any deployed protocol. The remaining variants collected in the same Zoo entry, an oracle returning a quadratic character χ(f(x)), an oracle returning f(x)^e, and reconstruction of rational functions from noisy and incomplete values, rest on papers outside this record, and the speedup class \"Varies\" is the Zoo's classification of its entry rather than anything measured here.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、オラクルを具体化したことも、回路をコンパイル・シミュレート・実行したことも、実際に多項式を復元したこともありません。上記の数値はいずれもオラクルモデルにおけるクエリ数です。一変数の二つの上界は互換ではなく、d/2 + 1/2 は有界誤りに対する値であるのに対し、d/2 + 1 は成功確率が 1 に近づく場合の値で、しかも q が大きい極限での主張であり、特定の q における保証ではありません。多変数の ⌈(1/(n+1))·(n+d choose d)⌉ には d = 2 とその他四つの特別な場合という例外が付き、GF(q) 上の結果も体の位数が大きい場合の主張です。GF(q) 上でもその 2 倍のクエリ数で足りるという予想は、著者らによって未解決のまま残されています。ゲート計算量 poly(log q) は指数も定数も伴わない形で引用したものであり、量子ビット数、回路深さ、誤り訂正のコストはいずれも確立していません。要旨の暗号に関する言及、すなわちこれらの上界が Boneh と Zhandry による暗号プロトコルの量子攻撃に対する脆弱性の結果を改良するという記述は、クエリ数の上界についての主張であって、実運用されているプロトコルへの攻撃を実証したものではありません。同じ Zoo 項目にまとめられている他の変種、すなわち二次指標 χ(f(x)) を返すオラクル、f(x)^e を返すオラクル、雑音を含む不完全な値からの有理関数の復元は、本記録の対象外の論文に基づきます。速度向上の区分「Varies」も Zoo による項目の分類であって、ここで測定した結果ではありません。",
+    tags: ["polynomial interpolation", "oracle", "query complexity", "finite field", "multivariate"],
+    source: {
+      id: "arxiv:1509.09271",
+      title: "Optimal quantum algorithm for polynomial interpolation",
+      authors: "Andrew M. Childs, Wim van Dam, Shih-Han Hung, Igor E. Shparlinski",
+      year: "2015",
+      url: "https://arxiv.org/abs/1509.09271",
+    },
+    literature: [
+      {
+        title: "Optimal quantum algorithm for polynomial interpolation",
+        authors: "Andrew M. Childs, Wim van Dam, Shih-Han Hung, Igor E. Shparlinski",
+        year: "2015",
+        url: "https://arxiv.org/abs/1509.09271",
+        relevance: "Primary source for the univariate bounds: it reports that the d/2 + 1/2 lower bound of Kane and Kutin and of Meyer and Pommersheim is achievable with bounded error, that d/2 + 1 queries reach success probability approaching 1 for large q, that the success probability as a function of the number of queries is precisely optimal, and that gate complexity poly(log q) suffices with negligible decrease in that probability. It ends with a conjecture about the quantum query complexity of multivariate interpolation, which the companion paper below takes up.",
+        relevanceJa: "一変数の場合の上界の一次資料です。Kane と Kutin、Meyer と Pommersheim による下界 d/2 + 1/2 が有界誤りで達成可能であること、d/2 + 1 クエリで成功確率が 1 に近づくこと（q が大きい場合）、クエリ数の関数としての成功確率がちょうど最適であること、成功確率の低下を無視できる範囲でゲート計算量 poly(log q) の実装が可能であることが述べられています。末尾には多変数補間の量子クエリ計算量に関する予想が置かれており、それを引き継ぐのが下記の論文です。",
+      },
+      {
+        title: "Quantum algorithm for multivariate polynomial interpolation",
+        authors: "Jianxin Chen, Andrew M. Childs, Shih-Han Hung",
+        year: "2017",
+        url: "https://arxiv.org/abs/1701.03990",
+        relevance: "The multivariate half of the same Zoo entry. The authors present and analyze algorithms over GF(q), ℝ and ℂ, report that ⌈(1/(n+1))·(n+d choose d)⌉ and twice that many queries suffice for probability 1 over ℂ and ℝ apart from d = 2 and four other special cases, and that ⌈(d/(n+d))·(n+d choose d)⌉ queries suffice over GF(q) at large field order, giving speedup factors of n+1, (n+1)/2 and (n+d)/d against the classical (n+d choose d). Consult it for the special cases and for the conjecture it leaves open over GF(q).",
+        relevanceJa: "同じ Zoo 項目のうち多変数の側を担う論文です。GF(q)、ℝ、ℂ 上のアルゴリズムを提示・解析し、d = 2 とその他四つの特別な場合を除いて、ℂ では ⌈(1/(n+1))·(n+d choose d)⌉ クエリ、ℝ ではその 2 倍のクエリで成功確率 1 が得られること、GF(q) では体の位数が大きい場合に ⌈(d/(n+d))·(n+d choose d)⌉ クエリで足りることを報告し、古典の (n+d choose d) に対してそれぞれ n+1 倍、(n+1)/2 倍、(n+d)/d 倍の高速化になると述べています。例外となる場合や GF(q) 上で未解決のまま残された予想は原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["hidden-shift-problem", "bernstein-vazirani-qiskit", "ordered-search"],
+  },
+  {
+    slug: "string-pattern-matching",
+    title: "String pattern matching by quantum search and deterministic sampling",
+    titleJa: "量子探索と決定的サンプリングによる文字列パターン照合",
+    family: "Quantum query algorithm",
+    zooName: "Pattern matching",
+    zooSection: "Oracular Algorithms",
+    speedup: "Superpolynomial",
+    problem:
+      "Given a text T of length n and a pattern P of length m < n, both over a finite alphabet, find an occurrence of P as a substring of T or report that P is not a substring of T. The Zoo also states the problem for d-dimensional arrays rather than strings, where the task is to return the location of P as an m × m × ... × m block within the n × n × ... × n array T or report that no such location exists.",
+    problemJa:
+      "有限アルファベット上の長さ n のテキスト T と長さ m (< n) のパターン P が与えられたとき、T の部分文字列として P が現れる位置を一つ見つけるか、P が T の部分文字列ではないことを報告する問題です。また Zoo は、文字列ではなく d 次元配列を対象とする形でもこの問題を述べています。その場合は、n × n × ... × n の配列 T の中に P が m × m × ... × m のブロックとして現れる位置を返すか、そのような位置が存在しないことを報告します。",
+    idea:
+      "Ramesh and Vinay describe an algorithm that combines quantum searching algorithms with a technique from parallel string matching called deterministic sampling, which the Zoo restates as Grover's algorithm used together with that classical method. The Zoo records that the Ω(√N) query lower bound for unstructured search implies a worst-case quantum query complexity of Ω(√n + √m) for this problem, and that a quantum algorithm achieving that bound up to logarithmic factors was obtained in a work it identifies only by a reference number; the Ramesh and Vinay abstract separately states a running time of Õ(√n + √m), a bound of a different kind, so this record does not assert that the two are the same result. Montanaro's later work takes a different route to the average case in d dimensions: the Zoo describes it as generalizing Kuperberg's quantum sieve algorithm for the dihedral hidden subgroup and hidden shift problems so that it operates in d dimensions and accommodates small amounts of noise, after which pattern matching is classically reduced to that noisy d-dimensional hidden shift. The superpolynomial label the Zoo attaches to this entry belongs to that average-case result: the Zoo states that superpolynomial quantum speedup can be achieved on average-case instances provided m is greater than logarithmic in n.",
+    ideaJa:
+      "Ramesh と Vinay は、量子探索アルゴリズムと、並列文字列照合の技法である決定的サンプリングを組み合わせたアルゴリズムを記述しており、Zoo はこれを Grover のアルゴリズムとその古典的手法の併用として言い換えています。Zoo によれば、非構造化探索に対する Ω(√N) のクエリ下界から、この問題の最悪時の量子クエリ計算量は Ω(√n + √m) となり、この下界を対数因子を除いて達成する量子アルゴリズムが得られていますが、Zoo はその出典を参照番号でしか示していません。Ramesh と Vinay の要旨が述べるのは Õ(√n + √m) の実行時間であり、これは種類の異なる評価であるため、本記録は両者を同一の結果としては扱いません。Montanaro の後年の研究は、d 次元における平均的な場合へ別の道筋で到達しています。Zoo の説明では、二面体隠れ部分群問題および隠れシフト問題に対する Kuperberg の量子ふるいアルゴリズムを、d 次元で動作し少量の雑音を許容するように一般化したうえで、パターン照合をこの雑音を含む d 次元の隠れシフト問題へ古典的に帰着させます。Zoo がこの項目に与えている超多項式的という区分はこの平均的な場合の結果に対するものであり、Zoo は、m が n の対数より大きい場合に平均的な問題例で超多項式的な量子高速化が得られると述べています。",
+    complexity:
+      "Õ(√n + √m) quantum time to determine whether a pattern of length m occurs in a text of length n, with inverse polynomial failure probability, where Õ allows for logarithmic factors in m and n/m; the Zoo gives Ω(√n + √m) as the worst-case quantum query complexity of the problem, implied by the Ω(√N) lower bound for unstructured search. For the average case in d dimensions, Montanaro's algorithm solves the pattern matching problem for random patterns and texts in time Õ((n/m)^(d/2) 2^(O(d^(3/2) √(log m)))), against Ω̃((n/m)^d + n^(d/2)) for the best possible classical algorithm, a separation Montanaro's abstract calls super-polynomial for large m.",
+    complexityBasis:
+      'abstract of arXiv:quant-ph/0011049 (TeX rendered as Unicode throughout: tilde O and widetilde O as Õ, widetilde Omega as Ω̃; square-bracket reference numbers dropped from the Zoo quote): "We show how to determine whether a given pattern p of length m occurs in a given text t of length n in Õ(√n+√m) [abstract footnote: Õ allows for logarithmic factors in m and n/m] time, with inverse polynomial failure probability. This algorithm combines quantum searching algorithms with a technique from parallel string matching, called Deterministic Sampling."; Quantum Algorithm Zoo entry "Pattern matching": "The Ω(√N) query lower bound for unstructured search implies that the worst-case quantum query complexity of this problem is Ω(√n + √m). A quantum algorithm achieving this, up to logarithmic factors, was obtained"; abstract of arXiv:1408.1816: "This work describes a quantum algorithm which solves the pattern matching problem for random patterns and texts in time Õ((n/m)^(d/2) 2^(O(d^(3/2)√(log m)))). For large m this is super-polynomially faster than the best possible classical algorithm, which requires time Ω̃((n/m)^d + n^(d/2))."',
+    caveat:
+      "This is a literature record: no circuit was constructed, compiled, simulated, or run, and no text was searched for any pattern here. The two headline figures are quoted in different currencies and are not converted into one another: the Ramesh and Vinay abstract states Õ(√n + √m) as a running time whose Õ hides logarithmic factors in m and n/m, whereas Ω(√n + √m) is the Zoo's statement about worst-case quantum query complexity, and neither source gives gate counts, qubit counts, constant factors, or the cost of supplying the oracle. The algorithm is not exact: its abstract claims only inverse polynomial failure probability. Montanaro's bound is an average-case result over random patterns and texts, so it establishes nothing about worst-case instances; the Zoo's condition that m be greater than logarithmic in n governs the superpolynomial speedup it reports there, not the running time itself, and the abstract calls the algorithm super-polynomially faster than the best possible classical algorithm only for large m. The constant inside the 2^(O(d^(3/2) √(log m))) factor is not stated. Cost here also depends on the input model: the Zoo reports a separate Õ(√n) string-matching algorithm in a model where the strings are written out in their entirety using n + m qubits rather than through quantum queries to an oracle providing individual bits, and the paper giving it is outside this record.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、回路の構成、コンパイル、シミュレーション、実行はいずれも行っておらず、具体的なテキストからパターンを探索したわけでもありません。中心となる二つの数値は単位が異なり、本記録は両者を換算していません。Ramesh と Vinay の要旨が与える Õ(√n + √m) は実行時間で、Õ は m と n/m に関する対数因子を隠しています。一方 Ω(√n + √m) は最悪時の量子クエリ計算量についての Zoo の記述であり、いずれの資料にもゲート数、量子ビット数、定数因子、オラクルを用意するコストは示されていません。このアルゴリズムは厳密ではなく、要旨は失敗確率が逆多項式であるとだけ述べています。Montanaro の評価はランダムなパターンとテキストに対する平均的な場合の結果であり、最悪の問題例については何も示しません。m が n の対数より大きいという Zoo の条件は、そこで報告されている超多項式的な高速化に付く条件であって、実行時間そのものに付く条件ではありません。最良の古典アルゴリズムより超多項式的に速いと要旨が述べているのも、m が大きい場合に限られます。2^(O(d^(3/2) √(log m))) の O の中の定数も示されていません。さらにコストは入力モデルにも依存します。Zoo は、個々のビットを返すオラクルへの量子クエリではなく文字列全体を n + m 量子ビットに書き出すモデルにおいて、Õ(√n) の文字列照合アルゴリズムがあることを別に述べていますが、その論文は本記録の対象外です。",
+    tags: ["pattern matching", "string matching", "grover search", "hidden shift", "query complexity"],
+    source: {
+      id: "arxiv:quant-ph/0011049",
+      title: "String Matching in ${\\tilde O}(\\sqrt{n}+\\sqrt{m})$ Quantum Time",
+      authors: "H. Ramesh, V. Vinay",
+      year: "2000",
+      url: "https://arxiv.org/abs/quant-ph/0011049",
+    },
+    literature: [
+      {
+        title: "Quantum pattern matching fast on average",
+        authors: "Ashley Montanaro",
+        year: "2014",
+        url: "https://arxiv.org/abs/1408.1816",
+        relevance: "The average-case half of the same Zoo entry, in d dimensions: the paper describes a quantum algorithm that solves pattern matching for random patterns and texts in time Õ((n/m)^(d/2) 2^(O(d^(3/2) √(log m)))), which for large m Montanaro states is super-polynomially faster than the best possible classical algorithm, that classical bound being Ω̃((n/m)^d + n^(d/2)). The algorithm is based on a quantum subroutine for finding hidden shifts in d dimensions, described as a variant of algorithms proposed by Kuperberg. Consult it for what counts as a random instance, since the bound is an average-case one.",
+        relevanceJa: "同じ Zoo 項目のうち、d 次元での平均的な場合を担う論文です。ランダムなパターンとテキストに対してパターン照合を時間 Õ((n/m)^(d/2) 2^(O(d^(3/2) √(log m)))) で解く量子アルゴリズムを記述しており、m が大きい場合には、時間 Ω̃((n/m)^d + n^(d/2)) を要する最良の古典アルゴリズムより超多項式的に速いと述べています。このアルゴリズムは d 次元で隠れシフトを見つける量子サブルーチンに基づいており、Kuperberg が提案したアルゴリズムの変種と説明されています。評価は平均的な場合のものであるため、何をランダムな問題例とみなすかは原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["grover-unstructured-search", "hidden-shift-problem", "amplitude-amplification"],
+  },
+  {
+    slug: "graph-properties-adjacency-matrix",
+    title: "Quantum query complexity of graph properties in the adjacency matrix model",
+    titleJa: "隣接行列モデルにおけるグラフの性質の量子クエリ計算量",
+    family: "Quantum query algorithm",
+    zooName: "Graph Properties in the Adjacency Matrix Model",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given access only to an oracle that, for a pair of integers in {1, 2, ..., n}, says whether the corresponding vertices of an n-vertex graph are joined by an edge, decide a property of that graph or find a structure in it, such as connectivity, a minimum spanning tree, a lowest weight path, or a triangle, using as few queries as possible.",
+    problemJa:
+      "n 頂点のグラフについて、{1, 2, ..., n} の整数の組に対して対応する二頂点が辺で結ばれているかどうかを答えるオラクルだけが与えられたとき、連結性、最小全域木、最小重みの経路、三角形といったグラフの性質や構造を、できるだけ少ないクエリ数で判定または発見する問題です。",
+    idea:
+      "Durr, Heiligman, Hoyer and Mhalla treat these tasks in two input models, the adjacency matrix model in which the oracle answers about a pair of vertices and an adjacency list-like array model, and they give almost tight lower and upper bounds for the bounded error quantum query complexity of Connectivity, Strong Connectivity, Minimum Spanning Tree and Single Source Shortest Paths. Their abstract states that the upper bounds utilize search procedures for finding minima of functions under various conditions, without naming them; an earlier algorithm of Durr and Hoyer, catalogued here alongside that paper, finds the index of the minimum entry of a table of size N in time O(c√N) with probability at least 1 - 1/2^c. The Zoo places this work inside a wider body of results in the same model: bipartiteness, cycle detection and st-connectivity in Õ(n^(3/2)) queries and quantum gates using only logarithmically many qubits, and Childs and Kothari's Θ(n^(2/3)) for sparse graph properties, sparse meaning that some constant bounds the ratio of edges to vertices for every graph with the property, provided the property cannot be characterized by a list of forbidden subgraphs. Finding a subgraph is treated separately there, the simplest case being the triangle, for which the Zoo reports O(n^(5/4)) quantum queries as the fastest known.",
+    ideaJa:
+      "Durr、Heiligman、Hoyer、Mhalla は、これらの課題を二つの入力モデルで扱っています。一つは頂点の組について辺の有無を答える隣接行列モデル、もう一つは隣接リストに近い配列モデルです。論文は、Connectivity、Strong Connectivity、Minimum Spanning Tree、Single Source Shortest Paths の有界誤り量子クエリ計算量について、ほぼ厳密な上界と下界を与えています。要旨は、上界がさまざまな条件のもとで関数の最小値を見つける探索手続きを利用すると述べるだけで、その手続きを名指ししてはいません。本記録が同じ項目に併せて収めている Durr と Hoyer の先行アルゴリズムは、大きさ N の表の最小要素の位置を、時間 O(c√N) で確率 1 - 1/2^c 以上で見つけます。Zoo はこの研究を、同じモデルにおけるより広い結果群の中に位置づけています。二部性の判定、閉路の検出、st 連結性は Õ(n^(3/2)) のクエリ数と量子ゲート数、かつ対数個の量子ビットで実現でき、辺と頂点の比がある定数以下に収まるという意味で疎なグラフの性質については、禁止部分グラフの一覧で特徴付けられない限り Childs と Kothari が Θ(n^(2/3)) を示しています。部分グラフの発見は Zoo では別に扱われており、最も簡単な場合である三角形については、知られている中で最速のものとして O(n^(5/4)) の量子クエリが挙げられています。",
+    complexity:
+      "Θ(n^(3/2)) quantum queries in the adjacency matrix model for Minimum Spanning Tree and for Connectivity, against Θ(√(nm)) and Θ(n) respectively in the array model; the Zoo adds O(n^(3/2) log² n) for finding lowest weight paths, Õ(n^(3/2)) queries and quantum gates for bipartiteness, cycle detection and st-connectivity, Θ(n^(2/3)) for sparse graph properties that cannot be characterized by a list of forbidden subgraphs, and O(n^(5/4)) queries for finding a triangle. On the classical side the Zoo puts every problem it lists ahead of triangle finding at Ω(n²) queries only under the widely-believed Aanderaa-Karp-Rosenberg conjecture, whereas for triangle finding it states Ω(n²) classical queries outright. Durr and Hoyer's minimum-finding algorithm runs in time O(c√N) on a table of size N and returns the index of the minimum with probability at least 1 - 1/2^c.",
+    complexityBasis:
+      'abstract of arXiv:quant-ph/0401091 (plain-text TeX rendered as Unicode, and widetilde O written as Õ where quoted from the Zoo): "we show that the query complexity of Minimum Spanning Tree is in Θ(n^(3/2)) in the matrix model and in Θ(√(nm)) in the array model, while the complexity of Connectivity is also in Θ(n^(3/2)) in the matrix model, but in Θ(n) in the array model", and "The upper bounds utilize search procedures for finding minima of functions under various conditions."; Quantum Algorithm Zoo entry "Graph Properties in the Adjacency Matrix Model": "finding lowest weight paths has O(n^(3/2) log² n) quantum query complexity", "Deciding whether a graph is bipartite, detecting cycles, and deciding whether a given vertex can be reached from another (st-connectivity) can all be achieved using a number of queries and quantum gates that both scale as Õ(n^(3/2)), and only logarithmically many qubits", "all sparse graph properties have query complexity Θ(n^(2/3)) if they cannot be characterized by a list of forbidden subgraphs and o(n^(2/3)) (little-o) if they can", "The fastest known quantum algorithm for this finds a triangle in O(n^(5/4)) quantum queries", "According to the widely-believed Aanderaa-Karp-Rosenberg conjecture, all of the above problems have Ω(n²) classical query complexity", and "Classically, triangle finding requires Ω(n²) queries"; abstract of arXiv:quant-ph/9607014: "We give a quantum algorithm to find the index y in a table T of size N such that in time O(c sqrt N), T[y] is minimum with probability at least 1-1/2^c."',
+    caveat:
+      "This is a literature record: no oracle was instantiated, no circuit was compiled, simulated, or run, and no graph was decided here. Every figure above is a count of queries in a black-box model except where stated otherwise, so gate counts, ancilla requirements, the cost of realizing the adjacency oracle, and constant factors all sit outside it; the only gate and qubit statement quoted is the Zoo's own, for bipartiteness, cycle detection and st-connectivity. A bound here means little without its input model, since the primary paper reports Connectivity at Θ(n^(3/2)) in the matrix model but Θ(n) in the array model, and Minimum Spanning Tree at Θ(n^(3/2)) against Θ(√(nm)), where the abstract introduces m without defining it and it is reproduced here unexplained; that paper also describes its bounds as almost tight rather than exact. The classical Ω(n²) side is conditional, because the Zoo attributes it to the widely-believed Aanderaa-Karp-Rosenberg conjecture; the exception is triangle finding, for which the Zoo states the classical Ω(n²) outright. The Õ(n^(3/2)) figure for bipartiteness, cycle detection and st-connectivity, the Θ(n^(2/3)) sparse-property result, the O(n^(5/4)) triangle bound and its classical Ω(n²), the Õ(n) span-program algorithm for detecting tree minors, the general k-vertex subgraph exponent and the O(n^(1.883)) result for sub-hypergraphs of 3-uniform hypergraphs all rest on papers outside this record, cited by the Zoo and not read here. The minimum-finding figure is a running time on a table of size N whose success probability, at least 1 - 1/2^c, is set by c, and the graph paper's abstract does not name which minimum-finding procedure its upper bounds use, so no citation between the two papers is claimed here.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、オラクルを具体化したことも、回路をコンパイル、シミュレーション、実行したこともなく、具体的なグラフの判定も行っていません。上記の数値は、断りのある箇所を除きすべてブラックボックスモデルでのクエリ数であり、ゲート数、補助量子ビット、隣接オラクルを実現するコスト、定数因子はいずれも対象外です。ゲート数と量子ビット数に触れているのは、二部性の判定、閉路の検出、st 連結性についての Zoo 自身の記述だけです。また、評価は入力モデルを離れてはほとんど意味を持ちません。主論文は Connectivity を隣接行列モデルで Θ(n^(3/2))、配列モデルでは Θ(n) と報告し、Minimum Spanning Tree についても Θ(n^(3/2)) と Θ(√(nm)) を対比しています。この Θ(√(nm)) の m は要旨では定義されておらず、本記録でも説明のないまま引き写しています。また同論文は、これらの上下界を厳密ではなく「ほぼ厳密」と述べています。古典側の Ω(n²) は条件付きで、Zoo はこれを広く信じられている Aanderaa-Karp-Rosenberg 予想に帰しています。例外は三角形の発見で、こちらは古典的に Ω(n²) クエリを要すると Zoo が断定しています。二部性の判定、閉路の検出、st 連結性に対する Õ(n^(3/2))、疎なグラフの性質に対する Θ(n^(2/3))、三角形の O(n^(5/4)) とその古典的な Ω(n²)、木のマイナーを検出する span プログラムに基づく Õ(n)、k 頂点の部分グラフ一般に対する指数、3 一様ハイパーグラフの部分ハイパーグラフに対する O(n^(1.883)) は、いずれも Zoo が引用している本記録の対象外の論文に基づくもので、それらの原論文は参照していません。最小値探索の数値は大きさ N の表に対する実行時間であり、成功確率は c によって決まり、少なくとも 1 - 1/2^c です。グラフの論文の要旨は、上界がどの最小値探索手続きを用いるかを明示していないため、二つの論文の間に引用関係があるとは本記録では主張していません。",
+    tags: ["graph properties", "adjacency matrix", "query complexity", "minimum finding", "oracle"],
+    source: {
+      id: "arxiv:quant-ph/0401091",
+      title: "Quantum query complexity of some graph problems",
+      authors: "Christoph Durr, Mark Heiligman, Peter Hoyer, Mehdi Mhalla",
+      year: "2004",
+      url: "https://arxiv.org/abs/quant-ph/0401091",
+    },
+    literature: [
+      {
+        title: "A Quantum Algorithm for Finding the Minimum",
+        authors: "Christoph Durr, Peter Hoyer",
+        year: "1996",
+        url: "https://arxiv.org/abs/quant-ph/9607014",
+        relevance: "A minimum-finding algorithm, catalogued alongside the graph paper rather than as a component of it. Durr and Hoyer give a quantum algorithm that finds the index y in a table T of size N such that T[y] is minimum, in time O(c√N) and with probability at least 1 - 1/2^c. The graph paper's abstract states that its upper bounds utilize search procedures for finding minima of functions under various conditions; it does not name them, so consult both papers before treating this one as the subroutine used there.",
+        relevanceJa: "最小値探索のアルゴリズムを与える論文で、グラフの論文の構成要素としてではなく、それと併せて本項目に収めています。大きさ N の表 T について T[y] が最小となる位置 y を、時間 O(c√N) で確率 1 - 1/2^c 以上で見つける量子アルゴリズムを示しています。グラフの論文の要旨は、上界がさまざまな条件のもとで関数の最小値を見つける探索手続きを利用するとだけ述べており、その手続きを名指ししてはいないため、これをそこで用いられたサブルーチンとみなす前に双方の原論文を確認してください。",
+      },
+    ],
+    relatedSlugs: ["grover-unstructured-search", "element-distinctness", "quantum-walk-line"],
+  },
+  {
+    slug: "counterfeit-coin-problem",
+    title: "Counterfeit coin problem by quantum queries",
+    titleJa: "量子クエリによる偽コイン問題",
+    family: "Quantum query algorithm",
+    zooName: "Counterfeit Coins",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given N coins of which exactly k are counterfeit, where the real coins all share one weight and the counterfeit coins all share another, and given a pan balance that can compare the weight of any pair of subsets of the coins but reports only whether they balance or tilt, identify all of the counterfeit coins in as few weighings as possible.",
+    problemJa:
+      "N枚のコインのうちちょうどk枚が偽コインであり、本物のコインはすべて同じ重さ、偽コインもすべてそれとは別の同じ重さであるとします。コインの任意の2つの部分集合の重さを比較できるものの、釣り合ったか傾いたかだけを報告する天秤が与えられたとき、できるだけ少ない秤量回数ですべての偽コインを特定する問題です。",
+    idea:
+      "Both sources turn the balance into an oracle. The Zoo introduces one that, given a pair of subsets of the coins of equal cardinality, outputs one bit indicating balanced or unbalanced; the paper says the balance scale gives only balanced or tilted information, and that the query complexity of such an oracle measures the cost of a weighing algorithm, namely the number of weighings. Iwama, Nishimura, Raymond and Teruyama study the quantum query complexity Q(k,N) of finding all k false coins among N given coins, with the number k assumed known in advance, and their abstract contrasts the O(k^(1/4)) bound they obtain with the classical query complexity Ω(k log(N/k)), which it says depends on N. The Zoo describes the core techniques behind the quantum speedup as amplitude amplification and the Bernstein-Vazirani algorithm, and records the construction as building on previous work by Terhal and Smolin. The paper states that it has no matching lower bound, offering instead evidence that its upper bound is tight: any algorithm that satisfies certain properties, the paper's own included, needs Ω(k^(1/4)) queries.",
+    ideaJa:
+      "いずれの出典も天秤をオラクルとして扱います。Zoo は、枚数の等しい2つの部分集合を受け取って釣り合ったか否かを1ビットで返すオラクルを導入しており、論文は、天秤が釣り合ったか傾いたかの情報のみを与えること、およびそのオラクルのクエリ計算量が秤量アルゴリズムのコスト、すなわち秤量回数を測る尺度になることを述べています。Iwama、Nishimura、Raymond、Teruyama は、偽コインの枚数kが既知であるという前提のもとで、N枚のコインからk枚の偽コインをすべて見つける量子クエリ計算量 Q(k,N) を調べており、その要旨は、得られた上界 O(k^(1/4)) を、Nに依存すると述べる古典クエリ計算量 Ω(k log(N/k)) と対比しています。Zoo は、この高速化の中核をなす技法として振幅増幅と Bernstein-Vazirani アルゴリズムを挙げ、この構成が Terhal と Smolin の先行研究の上に築かれていると記しています。論文は、一致する下界は得られていないと述べたうえで、代わりに、論文自身のものを含め、ある性質を満たす任意のアルゴリズムには Ω(k^(1/4)) クエリが必要であるという、上界が最良であることの証拠を示しています。",
+    complexity:
+      "Q(k,N) = O(k^(1/4)) quantum queries to the balance oracle for any k and N with k < N/2, where Q(k,N) is the quantum query complexity of finding all k false coins among the N given coins; the classical query complexity is Ω(k log(N/k)), a bound that depends on N, so the paper reports a quartic speed-up. No matching lower bound is given: the paper shows only that any algorithm that satisfies certain properties, its own algorithm included, needs Ω(k^(1/4)) queries.",
+    complexityBasis:
+      'abstract of arXiv:1009.0416, quoted verbatim except that TeX control sequences are rendered as Unicode while superscripts are left in TeX form: "Let Q(k,N) be the quantum query complexity of finding all k false coins from the N given coins. We show that for any k and N such that k < N/2, Q(k,N)=O(k^{1/4}), contrasting with the classical query complexity, Ω(k log(N/k)), that depends on N. So our quantum algorithm achieves a quartic speed-up for this problem", and, for the absence of a matching lower bound, "We do not have a matching lower bound, but we show some evidence that the upper bound is tight: any algorithm, including our algorithm, that satisfies certain properties needs Ω(k^{1/4}) queries." The Quantum Algorithm Zoo entry "Counterfeit Coins" states the same two figures, quoted here the same way: "Classically, we need Ω(k log(N/k)) weighings to identify all of the counterfeit coins", and, attributing the upper bound to Iwama et al., "on a quantum computer, one can identify all of the counterfeit coins using O(k^{1/4}) queries". Neither source states a constant factor or a gate count.',
+    caveat:
+      "This is a literature record: no circuit was constructed, compiled, simulated, or run, and no set of coins was weighed. Every figure above is a count of queries to the balance oracle, so gate counts, qubit counts, circuit depth, and the cost of realizing that oracle for an actual pan balance all fall outside it, as do the constant factors hidden by O(·). The upper bound is stated under the condition k < N/2 and assumes the number k of counterfeit coins is known in advance, so it establishes nothing about instances where k is unknown or where k is at least N/2. Optimality is not settled: the paper says it has no matching lower bound, and the Ω(k^(1/4)) evidence it offers is restricted to algorithms satisfying certain properties, which the abstract does not spell out and which this record does not reproduce. The attribution of the speedup to amplitude amplification and the Bernstein-Vazirani algorithm is the Zoo's account of how the construction works, and the earlier Terhal and Smolin result the Zoo credits rests on a paper outside this record.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、回路の構成、コンパイル、シミュレーション、実行はいずれも行っておらず、実際にコインを秤量したわけでもありません。上記の数値はすべて天秤オラクルへのクエリ数であるため、ゲート数、量子ビット数、回路深さ、実際の天秤に対してそのオラクルを実装するコストはいずれも対象外であり、O(·) に隠れた定数因子も同様です。上界は k < N/2 という条件のもとでの主張であり、偽コインの枚数kが事前に既知であることを前提としています。したがって、kが未知の場合や k が N/2 以上の場合については何も述べていません。最適性も確定していません。論文自身が一致する下界を持たないと述べており、示されている Ω(k^(1/4)) の証拠も、ある性質を満たすアルゴリズムに限られます。その性質は要旨に明示されておらず、本記録でも再現していません。高速化を振幅増幅と Bernstein-Vazirani アルゴリズムに帰する説明は Zoo による構成の解説であり、Zoo が挙げる Terhal と Smolin の先行結果は本記録の対象外の論文に基づきます。",
+    tags: ["counterfeit coins", "query complexity", "oracle", "amplitude amplification", "bernstein-vazirani"],
+    source: {
+      id: "arxiv:1009.0416",
+      title: "Quantum Counterfeit Coin Problems",
+      authors: "Kazuo Iwama, Harumichi Nishimura, Rudy Raymond, Junichi Teruyama",
+      year: "2010",
+      url: "https://arxiv.org/abs/1009.0416",
+    },
+    literature: [
+      {
+        title: "Quantum Counterfeit Coin Problems",
+        authors: "Kazuo Iwama, Harumichi Nishimura, Rudy Raymond, Junichi Teruyama",
+        year: "2010",
+        url: "https://arxiv.org/abs/1009.0416",
+        relevance:
+          "Primary source: it models the balance scale as an oracle giving only balanced or tilted information, takes the number of weighings as the cost measure, and gives the O(k^(1/4)) upper bound on the quantum query complexity Q(k,N) for k < N/2, against the classical Ω(k log(N/k)). Consult it for the properties an algorithm must satisfy for the accompanying Ω(k^(1/4)) tightness evidence to apply.",
+        relevanceJa:
+          "一次資料です。天秤を、釣り合ったか傾いたかの情報のみを返すオラクルとしてモデル化し、秤量回数をコストの尺度としたうえで、k < N/2 のときの量子クエリ計算量 Q(k,N) に対する上界 O(k^(1/4)) を、古典の Ω(k log(N/k)) と対比して与えています。付随する Ω(k^(1/4)) の最良性の証拠がどのような性質を満たすアルゴリズムに適用されるかは、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: [
+      "amplitude-amplification",
+      "bernstein-vazirani-qiskit",
+      "grover-unstructured-search",
+      "element-distinctness",
+    ],
+  },
+  {
+    slug: "spectral-sum-estimation",
+    title: "Estimating log-determinants and other spectral sums",
+    titleJa: "対数行列式をはじめとするスペクトル和の推定",
+    family: "Quantum linear algebra",
+    zooName: "Estimating Determinants and Other Spectral Sums",
+    zooSection: "Optimization, Numerics, and Machine Learning",
+    speedup: "Superpolynomial",
+    problem:
+      "Given a function f and a positive semi-definite matrix A whose eigenvalues are λⱼ, estimate the spectral sum Tr[f(A)] = Σⱼ f(λⱼ), a family whose typical examples the paper gives as the von Neumann entropy, the trace of A⁻¹, the log-determinant and the Schatten p-norm, the last of which it says does not require the matrix to be positive semi-definite.",
+    problemJa:
+      "関数fと、固有値をλⱼとする半正定値行列Aが与えられたとき、スペクトル和 Tr[f(A)] = Σⱼ f(λⱼ) を推定する問題です。論文はその典型例として von Neumannエントロピー、A⁻¹のトレース、対数行列式、Schatten p-ノルムを挙げ、このうち Schatten p-ノルムについては行列が半正定値である必要はないと述べています。",
+    idea:
+      "The Zoo sets out one route. For a 2ⁿ × 2ⁿ Hermitian matrix A with only poly(n) nonzero entries per row, given an oracle for those entries, Hamiltonian simulation approximates the unitary e^(-iAt) with poly(n,t) gates, Kitaev's phase estimation turns such time evolutions into an approximate measurement in the eigenbasis of A, and applying that measurement to the maximally mixed state samples uniformly from the eigenvalues, so a Monte Carlo estimate of a spectral sum can be assembled from those samples; taking f(λ) = log(λ) makes the logarithm of the determinant one such sum. Luongo and Shao propose new quantum algorithms for estimating spectral sums of positive semi-definite matrices, stating their results under the assumption of access to a block-encoding of the matrix; their abstract does not mention the entry oracle the Zoo's route assumes. They state that the resulting algorithms are sub-linear in the matrix size and depend at most quadratically on other parameters such as the condition number and the approximation error, and that this polynomially improves the runtime of other quantum algorithms proposed for the same problems. The paper also shows how the same algorithms and techniques apply to three problems in spectral graph theory: approximating the number of triangles, the effective resistance and the number of spanning trees within a graph.",
+    ideaJa:
+      "Zoo は一つの道筋を示しています。各行の非零成分が poly(n) 個しかない 2ⁿ × 2ⁿ のエルミート行列Aについて、それらの成分を返すオラクルが与えられれば、Hamiltonian シミュレーションによりユニタリ e^(-iAt) を poly(n,t) 個のゲートで近似でき、Kitaev の位相推定はこうした時間発展をAの固有基底での近似的な測定に変えます。この測定を最大混合状態に対して行うとAの固有値から一様にサンプリングでき、得られたサンプルからスペクトル和の Monte Carlo 推定を組み立てられます。f(λ) = log(λ) と取れば、行列式の対数がこの形のスペクトル和になります。Luongo と Shao は、半正定値行列のスペクトル和を推定する新しい量子アルゴリズムを提案しており、その結果は行列のブロック符号化へのアクセスを仮定したうえで述べられています。要旨には、Zoo の道筋が仮定する成分オラクルへの言及はありません。得られるアルゴリズムは行列のサイズについて劣線形であり、条件数や近似誤差といった他のパラメータへの依存も高々二次であって、同じ問題に対して提案されてきた他の量子アルゴリズムの実行時間を多項式的に改善すると述べられています。論文はさらに、同じアルゴリズムと技法がスペクトルグラフ理論の3つの問題、すなわち三角形の個数、実効抵抗、全域木の個数の近似に適用できることを示しています。",
+    complexity:
+      "Sub-linear in the matrix size, assuming access to a block-encoding of the matrix, and at most quadratic in other parameters such as the condition number and the approximation error, against what the abstract calls the current best classical randomized algorithms for these quantities, whose runtime it states is at least linear in the number of nonzero entries of the matrix and quadratic in the estimation error; that abstract states no closed-form runtime expression, exponent or constant for the quantum algorithms. The Zoo supplies the surrounding costs for its own route: the unitary e^(-iAt) is approximable by a circuit with only poly(n,t) gates for a 2ⁿ × 2ⁿ Hermitian matrix with poly(n) nonzero entries per row, while computing such a sum classically has worst case computational cost that is exponential in n.",
+    complexityBasis:
+      'abstract of arXiv:2011.06475: "The current best classical randomized algorithms estimating these quantities have a runtime that is at least linearly in the number of nonzero entries of the matrix and quadratic in the estimation error. Assuming access to a block-encoding of a matrix, our algorithms are sub-linear in the matrix size, and depend at most quadratically on other parameters, like the condition number and the approximation error, and thus can compete with most of the randomized and distributed classical algorithms proposed in the literature, and polynomially improve the runtime of other quantum algorithms proposed for the same problems." That abstract gives no closed-form runtime and names no exponent or constant. The Quantum Algorithm Zoo entry "Estimating Determinants and Other Spectral Sums" supplies the costs quoted for its own route, quoted verbatim except that the source\'s LaTeX is rendered here as plain text, e^{-i A t} written e^(-iAt): "the unitary e^(-iAt) can be approximated by a quantum circuit with only poly( n,t ) gates using standard techniques for Hamiltonian simulation", and "Computing such a sum classically has worst case computational cost that is exponential in n."',
+    caveat:
+      "This is a literature record. Nothing was constructed, compiled, simulated, run or benchmarked for it, and no spectral sum of any matrix was estimated. The cost statement is qualitative: sub-linear in the matrix size and at most quadratic in the condition number and the approximation error, with no closed-form expression, exponent or constant stated for it in either source, so nothing here fixes the cost for a given matrix, accuracy or success probability. It is also conditional on the input model. The paper assumes access to a block-encoding of the matrix, and the cost of producing that block-encoding is not established here; the Zoo's route instead assumes an oracle for the poly(n) nonzero entries per row of a 2ⁿ × 2ⁿ Hermitian matrix, so the two cost statements are made in different input models and are not directly comparable. The matrices are positive semi-definite, with the Schatten p-norm the stated exception that does not require the matrix to be PSD, and the classical comparison is against the current best classical randomized algorithms rather than a proved separation. The Zoo attaches its superpolynomial classification to the phase-estimation-on-maximally-mixed-states method of two references it cites by number only; this record does not establish that the paper cited here is either of them, and the exposition and analysis the Zoo credits to the second of those numbers rests on a paper outside this record.",
+    caveatJa:
+      "本項目は文献に基づく記録です。回路の構成、コンパイル、シミュレーション、実行、ベンチマークはいずれも行っておらず、具体的な行列のスペクトル和を推定したこともありません。コストに関する記述は定性的で、行列のサイズについて劣線形、条件数と近似誤差については高々二次というものであり、この主張について閉じた形の式、指数、定数を示した出典はありません。したがって、特定の行列・精度・成功確率に対するコストは本記録からは分かりません。この記述は入力モデルにも依存します。論文は行列のブロック符号化へのアクセスを仮定していますが、そのブロック符号化を用意するコストはここでは確立していません。一方 Zoo の道筋は、各行の非零成分が poly(n) 個である 2ⁿ × 2ⁿ のエルミート行列に対する成分オラクルを仮定しており、両者のコストは異なる入力モデルにおける主張であって直接は比較できません。対象は半正定値行列であり、要旨が明示する例外は行列の半正定値性を必要としない Schatten p-ノルムのみです。古典との比較も、現在知られている最良の古典乱択アルゴリズムに対する比較であって、証明された分離ではありません。Zoo が超多項式的と分類しているのは、最大混合状態に位相推定を適用するこの手法であり、Zoo はその出典を番号でのみ引用しています。本記録は、ここで引用した論文がそのいずれかであることを確認したものではなく、Zoo が2番目の番号に帰している詳しい解説と解析も、本記録の対象外の論文に基づきます。",
+    tags: ["spectral sums", "log-determinant", "phase estimation", "block encoding", "trace estimation"],
+    source: {
+      id: "arxiv:2011.06475",
+      title: "Quantum algorithms for spectral sums",
+      authors: "Alessandro Luongo, Changpeng Shao",
+      year: "2020",
+      url: "https://arxiv.org/abs/2011.06475",
+    },
+    literature: [
+      {
+        title: "Quantum algorithms for spectral sums",
+        authors: "Alessandro Luongo, Changpeng Shao",
+        year: "2020",
+        url: "https://arxiv.org/abs/2011.06475",
+        relevance:
+          "Primary source: it defines the spectral sum Tr[f(A)] = Σⱼ f(λⱼ) of a positive semi-definite matrix, names the log-determinant, the von Neumann entropy, the trace of A⁻¹ and the Schatten p-norm as its typical examples, and states the block-encoding input model together with the sub-linear-in-matrix-size, at-most-quadratic-in-condition-number-and-error scaling quoted in the complexity field. It also applies the techniques to approximating the number of triangles, the effective resistance and the number of spanning trees within a graph.",
+        relevanceJa:
+          "一次資料です。半正定値行列のスペクトル和 Tr[f(A)] = Σⱼ f(λⱼ) を定義し、その典型例として対数行列式、von Neumannエントロピー、A⁻¹のトレース、Schatten p-ノルムを挙げ、ブロック符号化という入力モデルと、計算量欄に引用した「行列サイズについて劣線形、条件数と近似誤差については高々二次」というスケーリングを述べています。さらに、グラフの三角形の個数、実効抵抗、全域木の個数の近似にもこの技法を適用しています。",
+      },
+    ],
+    relatedSlugs: [
+      "quantum-phase-estimation",
+      "quantum-singular-value-transformation",
+      "hhl-linear-systems",
+      "hamiltonian-simulation-ising",
+    ],
+  },
 ];
 
 /** The Zoo entry each record covers — read by scripts/check-zoo-parity.mjs. */
