@@ -86,11 +86,67 @@ export function isMapEligibleRole(role: string | null | undefined): role is MapE
   return typeof role === "string" && (MAP_ELIGIBLE_ROLES as readonly string[]).includes(role);
 }
 
-/** One record, reduced to the two facts this rule reads. */
+/**
+ * The `source.kind`s whose provenance can carry a layer's claim.
+ *
+ * The role rule above asks *what kind of thing is this record*. This one asks a
+ * second question the role facet cannot answer: **where does what it says come
+ * from.** They are independent, and the corpus already holds the pair that
+ * separates them — `qaoa-maxcut-ring` is an `algorithm-reference` by role and
+ * map-eligible today, and its source is
+ * `kind: "verified_run", url: "https://github.com/EshMis/majorana"`: our own
+ * evaluation harness, citing this repository. That is correct provenance for
+ * what the record is — a run we performed — and the one thing a layer anchor
+ * must never rest on, because the anchor renders as *"the Atlas documents this
+ * layer"* and the document would be us.
+ *
+ * `community_submission` is excluded for the neighbouring reason: the layers
+ * surface makes an editorial claim, and an unreviewed submission has not been
+ * through the pass that backs one. No record carries that kind today (measured
+ * 2026-08-11 over the built corpus: 281 `curated_reference`, 2 `verified_run`,
+ * 0 `community_submission`), so that half of the line is a decision taken in
+ * advance rather than a description — which is the point of writing it down
+ * while the answer is still cheap.
+ *
+ * A tuple for the same reason `MAP_ELIGIBLE_ROLES` is one: widening the map to a
+ * second provenance kind is a deliberate edit to this line and nowhere else.
+ */
+export const MAP_CITABLE_SOURCE_KINDS = ["curated_reference"] as const;
+
+export type MapCitableSourceKind = (typeof MAP_CITABLE_SOURCE_KINDS)[number];
+
+/**
+ * **Unknown is not citable.** A caller that cannot say where a record's claims
+ * come from has not established that they can carry a layer's, and the two
+ * states — "this source is our own run" and "nobody told me what this source
+ * is" — must not differ in what the map is allowed to do with the record.
+ *
+ * It also fails the useful way at the wiring: a consumer that forgets to pass
+ * `sourceKind` gets every one of its anchors reported at once, which is a
+ * five-minute fix, rather than a rule that quietly passes everything, which is
+ * a rule that is not there.
+ */
+export function isMapCitableSourceKind(
+  kind: string | null | undefined,
+): kind is MapCitableSourceKind {
+  return typeof kind === "string" && (MAP_CITABLE_SOURCE_KINDS as readonly string[]).includes(kind);
+}
+
+/** One record, reduced to the facts these rules read. */
 export interface EligibilityRecord {
   slug: string;
   /** The `role`-facet topic, or `null` where the record resolves to none. */
   role: string | null;
+  /**
+   * `source.kind`, or `null`/absent where the caller did not supply one — which
+   * `isMapCitableSourceKind` treats as not citable. See its comment.
+   */
+  sourceKind?: string | null;
+  /**
+   * `source.url`, read only to group the reading list by shared provenance. A
+   * record without one is grouped under nothing and never reported as shared.
+   */
+  sourceUrl?: string | null;
 }
 
 export interface AnchorAudit {
@@ -103,6 +159,17 @@ export interface AnchorAudit {
    * file.
    */
   ineligible: Array<{ nodeId: string; slug: string; role: string | null }>;
+  /**
+   * Anchors naming a record the map may not *cite*, whatever its role.
+   * **Also an error**, and deliberately a separate one from `ineligible`.
+   *
+   * The two have different fixes and reporting them together would hide that:
+   * an ineligible role means *this record does not belong on the map* and the
+   * fix is to drop the cross-link; an uncitable source means *this record may
+   * well belong, but not on the strength of that document*, and the fix is
+   * usually to source it properly.
+   */
+  uncitable: Array<{ nodeId: string; slug: string; sourceKind: string | null }>;
   /** Distinct eligible records the graph anchors. */
   anchored: number;
   /** Eligible records in the corpus — the denominator `anchored` is part of. */
@@ -125,6 +192,32 @@ export interface AnchorAudit {
    * ```
    */
   unanchored: string[];
+  /**
+   * The subset of `unanchored` that **cannot be anchored as it stands**, because
+   * its provenance could not carry the claim — see `MAP_CITABLE_SOURCE_KINDS`.
+   *
+   * A caveat on the reading list, not a subtraction from it: `unanchored` keeps
+   * its full length so the coverage number nobody has to recompute stays the
+   * number it has always been. But a reading list is an instruction to go and
+   * anchor these, and one of them is our own evaluation run — a session that
+   * works the list top to bottom should be told that before it writes the
+   * cross-link, not after a reviewer catches it.
+   */
+  unanchorableProvenance: string[];
+  /**
+   * Unanchored records grouped by a source URL more than one of them cites,
+   * commonest first.
+   *
+   * Also a caveat rather than an error, and the one that changes how much work
+   * the list actually is: 25 of the 53 currently cite the same VQE survey — not
+   * because anyone chose it 25 times, but because `vqeEntry`'s first line is
+   * `const source = concept.source ?? VQE_SURVEY`. A survey is a fine catalogue
+   * citation and cannot support a *per-method* map claim, so those records need
+   * their own primary papers before they can be anchored. That is a different
+   * and much larger job than adding cross-links, and the only way to see it
+   * coming is to count how many records lean on one document.
+   */
+  sharedSources: Array<{ url: string; slugs: string[] }>;
 }
 
 /**
@@ -144,6 +237,7 @@ export function auditAnchors(
     corpus.filter((record) => isMapEligibleRole(record.role)).map((record) => record.slug),
   );
   const ineligible: AnchorAudit["ineligible"] = [];
+  const uncitable: AnchorAudit["uncitable"] = [];
   const anchoredEligible = new Set<string>();
   for (const { nodeId, slug } of anchors) {
     const record = byslug.get(slug);
@@ -151,14 +245,38 @@ export function auditAnchors(
     if (!record) continue;
     if (isMapEligibleRole(record.role)) {
       anchoredEligible.add(slug);
+      // Reported, and still counted as anchored: the cross-link exists and the
+      // record is on the map whatever we think of its provenance. Dropping it
+      // from `anchored` would make a provenance error read as a coverage loss
+      // and move a number two other files quote.
+      if (!isMapCitableSourceKind(record.sourceKind)) {
+        uncitable.push({ nodeId, slug, sourceKind: record.sourceKind ?? null });
+      }
       continue;
     }
     ineligible.push({ nodeId, slug, role: record.role });
   }
+  const unanchored = [...eligibleSlugs].filter((slug) => !anchoredEligible.has(slug)).sort();
+  const byUrl = new Map<string, string[]>();
+  for (const slug of unanchored) {
+    const url = byslug.get(slug)?.sourceUrl;
+    if (!url) continue;
+    byUrl.set(url, [...(byUrl.get(url) ?? []), slug]);
+  }
   return {
     ineligible,
+    uncitable,
     anchored: anchoredEligible.size,
     eligible: eligibleSlugs.size,
-    unanchored: [...eligibleSlugs].filter((slug) => !anchoredEligible.has(slug)).sort(),
+    unanchored,
+    unanchorableProvenance: unanchored.filter(
+      (slug) => !isMapCitableSourceKind(byslug.get(slug)?.sourceKind),
+    ),
+    sharedSources: [...byUrl.entries()]
+      .filter(([, slugs]) => slugs.length > 1)
+      // Commonest first, then by url, so the output is stable across runs and a
+      // diff of two runs is a change in the corpus rather than in Map order.
+      .sort((a, b) => b[1].length - a[1].length || a[0].localeCompare(b[0]))
+      .map(([url, slugs]) => ({ url, slugs })),
   };
 }

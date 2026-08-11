@@ -126,11 +126,25 @@ const anchorAudit = eligibilityMod.auditAnchors(
   PUBLIC_REPOSITORY_ENTRIES.map((entry) => ({
     slug: entry.slug,
     role: topicsMod.roleOf(entry.topics ?? []),
+    sourceKind: entry.source?.kind ?? null,
+    sourceUrl: entry.source?.url ?? null,
   })),
 );
 for (const { nodeId, slug, role } of anchorAudit.ineligible) {
   errors.push(
     `${nodeId}: entries names ${slug}, whose role is ${role ?? "none"} — only ${eligibilityMod.MAP_ELIGIBLE_ROLES.join(", ")} records may be anchored to a layer`,
+  );
+}
+// The second half of the same question, and the reason it is separate: role says
+// what a record IS, provenance says what stands behind what it says. A layer
+// anchor renders as "the Atlas documents this layer", so a record sourced to our
+// own evaluation run would have the Atlas cite us. Fires on nothing today — all
+// nine anchors are `curated_reference` — and `qaoa-maxcut-ring` is map-eligible,
+// unanchored and sourced to this repository, which is one helpful cross-link
+// away from being the first hit.
+for (const { nodeId, slug, sourceKind } of anchorAudit.uncitable) {
+  errors.push(
+    `${nodeId}: entries names ${slug}, whose source is ${sourceKind ?? "unrecorded"} — a layer may only be anchored to a record whose provenance is ${eligibilityMod.MAP_CITABLE_SOURCE_KINDS.join(", ")}`,
   );
 }
 
@@ -480,6 +494,20 @@ if (!QUIET) {
         .map(([role, count]) => `${role} ${count}`)
         .join(" · ")}`,
     );
+    // What the list would cost, before anyone starts working it. Both lines are
+    // caveats on the reading list rather than errors: the first says one of
+    // these records cannot be anchored as it stands whatever a session decides
+    // about the map, the second says how many of them lean on one document —
+    // which is the difference between "write 53 cross-links" and "find 25
+    // primary papers first".
+    if (anchorAudit.unanchorableProvenance.length > 0) {
+      console.log(
+        `    not anchorable as they stand (provenance): ${anchorAudit.unanchorableProvenance.join(", ")}`,
+      );
+    }
+    for (const { url, slugs } of anchorAudit.sharedSources) {
+      console.log(`    ${slugs.length} of the ${anchorAudit.unanchored.length} share one source: ${url}`);
+    }
     // Printed one per line with its title, because a bare slug does not tell you
     // whether the record is a method the map is missing or a survey that no node
     // could honestly anchor — and that judgement is the whole of the work.
