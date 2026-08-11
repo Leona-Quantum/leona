@@ -57,7 +57,7 @@ async def test_sse_releases_request_session_before_consuming_stream(monkeypatch)
         assert requested_id == run_id
         return SimpleNamespace()
 
-    async def list_run_events(_scope, _session, requested_id, *, after_seq):
+    async def list_run_events_with_status(_scope, _session, requested_id, *, after_seq):
         trace.append("events_query")
         assert requested_id == run_id
         assert after_seq == 0
@@ -69,7 +69,7 @@ async def test_sse_releases_request_session_before_consuming_stream(monkeypatch)
                 type="run.finished",
                 payload={"status": "succeeded"},
             )
-        ]
+        ], "succeeded"
 
     user_id = uuid.uuid4()
     workspace_id = uuid.uuid4()
@@ -80,7 +80,11 @@ async def test_sse_releases_request_session_before_consuming_stream(monkeypatch)
         return SimpleNamespace(workspace_id=workspace_id, role=Role.OWNER)
 
     monkeypatch.setattr(runs_routes.runs_repo, "get_run", get_run)
-    monkeypatch.setattr(runs_routes.runs_repo, "list_run_events", list_run_events)
+    monkeypatch.setattr(
+        runs_routes.runs_repo,
+        "list_run_events_with_status",
+        list_run_events_with_status,
+    )
     monkeypatch.setattr(runs_routes.system, "resolve_active_workspace", resolve_active_workspace)
     app.dependency_overrides[auth_deps.get_session] = request_session
     app.dependency_overrides[auth_deps.get_identity] = lambda: (
