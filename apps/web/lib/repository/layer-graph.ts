@@ -1328,6 +1328,91 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "ここでの $\\kappa²$ は増幅前の数字です。同じ論文の定理 5 は $\\kappa$ 依存性をほぼ線形まで下げますが、そのためにスペクトルを区分けする低精度の（gapped な）位相推定を再導入しており、フーリエ経路とチェビシェフ経路のどちらにも適用できます。このほぼ線形の結果を位相推定なしと表現するのは誤りです。",
     steps: ["state-preparation", "matrix-function", "success-amplification"],
     bypasses: ["hamiltonian-simulation"],
+    // Transcribed from `summary`, `conditions`, `steps`, `cost` and `contested`.
+    // The two action lines are `summary`: "Expand an approximation of 1/x in
+    // Chebyshev polynomials and implement that expansion directly through the
+    // quantum walk associated with a sparse A, rather than through Hamiltonian
+    // simulation". The `given` line is `conditions`: "Applies to sparse matrices
+    // only: it uses the entry oracle P_A directly", together with the
+    // normalisation ||A|| = 1, the known kappa and the poly(log N)-time
+    // preparation of |b> that the same field says are "assumed as elsewhere in
+    // this family".
+    //
+    // `summary` mentions neither preparing |b> nor amplifying; `steps` does --
+    // state-preparation, matrix-function, success-amplification -- and fixes the
+    // order, so those two lines are transcribed from `steps`, with `conditions`
+    // supplying the wording for |b>.
+    //
+    // What makes this listing not qsvt-matrix-inversion's:
+    // that one's interest is in what the transform leaves behind (a
+    // subnormalised pseudoinverse that the amplification has to convert). This
+    // record's interest is in what it never uses, and both refusals are on the
+    // record, so both are written: `bypasses` is hamiltonian-simulation and
+    // `summary` says "rather than through Hamiltonian simulation", and `summary`
+    // says "Phase estimation is never used, which is what removes the
+    // poly(1/epsilon) bottleneck".
+    //
+    // Three things the listing deliberately does not say:
+    //  - it states no truncation degree for the Chebyshev expansion, because the
+    //    record states none.
+    //  - it does not hang the "O(kappa log(d kappa/epsilon)) uses of P_B" on
+    //    the prepare-|b> line. `cost` names P_B and nowhere says what P_B is, so
+    //    both counts are transcribed together as `cost` states them, attached to
+    //    neither step.
+    //  - it does not write Theorem 5's near-linear kappa as the method.
+    //    `contested` says that result is bought "by reintroducing a low-precision
+    //    ('gapped') phase estimation to bucket the spectrum" and that
+    //    "describing that near-linear result as phase-estimation-free is
+    //    incorrect", so the faster figure appears only inside the comment that
+    //    says so.
+    //
+    // The Fourier route is written as a comment but pointedly NOT as the repo's
+    // "do not build this": `conditions` says the two routes "are incomparable",
+    // so this record does not displace it, and the comment carries the record's
+    // comparison in both directions.
+    //
+    // (The extract this was written from also carried the neighbouring
+    // `matrix-function` capability record, whose `whyALayer` says an LCU of
+    // Chebyshev terms "needs no phase factors but pays in ancillas and in the
+    // coefficient sum". That sentence is on a different record and is not
+    // transcribed here: this listing states no ancilla count and no coefficient
+    // sum.)
+    example: {
+      pseudocode: [
+        "given  a sparse A only -- the entry oracle P_A is used directly -- with",
+        "       the normalisation ||A|| = 1, kappa known, and |b> preparable in",
+        "       poly(log N) time, as elsewhere in this family",
+        "",
+        "prepare |b>",
+        "",
+        "expand an approximation of 1/x in Chebyshev polynomials",
+        "    # the record states no truncation degree for that expansion",
+        "implement that expansion directly through the quantum walk associated",
+        "    with the sparse A",
+        "    # rather than through Hamiltonian simulation",
+        "    # phase estimation is never used, which is what removes the",
+        "    # poly(1/epsilon) bottleneck",
+        "",
+        "amplify",
+        "",
+        "# Theorem 4: O(d kappa^2 log^2(d kappa/epsilon)) queries to P_A and",
+        "# O(kappa log(d kappa/epsilon)) uses of P_B, where d is the sparsity,",
+        "# kappa the condition number and epsilon the state-vector error",
+        "",
+        "# that kappa^2 is the pre-amplification figure. The same paper's Theorem",
+        "# 5 brings the kappa-dependence down to near-linear, but it does so by",
+        "# reintroducing a low-precision (gapped) phase estimation to bucket the",
+        "# spectrum, and it applies to either the Fourier or the Chebyshev route.",
+        "# Describing that near-linear result as phase-estimation-free is",
+        "# incorrect, which is why it is not the route written above.",
+        "",
+        "# the same authors' Fourier route is not displaced by this one: they",
+        "# state that the two are incomparable -- the Fourier approach is more",
+        "# general and slightly better in the sparsity d, the Chebyshev approach",
+        "# is more efficient in kappa and epsilon but applies only to sparse",
+        "# Hamiltonians",
+      ].join("\n"),
+    },
     citations: [
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],
@@ -1347,6 +1432,92 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Constant factors in this family are unsettled. Costa, An, Babbush and Berry (arXiv December 2023; Quantum 9, 1887 (2025)) report numerical testing on random matrices showing the discrete adiabatic solver's constant factor is in practice about 1,200 times smaller than the published upper bound, and about an order of magnitude better than the randomized adiabatic approach of arXiv:2305.11352 — but that comparison was made against the 2023 version of that work, whose published 2025 version postdates it. The ranking therefore rests on a 2023 comparison; the published Quantum version of the discrete-adiabatic benchmark still cites the 2023 preprint of the randomized solver.",
     contestedJa: "この系統の定数因子は決着していません。Costa・An・Babbush・Berry（arXiv は 2023 年 12 月、Quantum 9, 1887 (2025)）はランダム行列を用いた数値実験により、離散断熱の解法の定数因子が実際には公表された上界のおよそ 1,200 分の 1 であり、arXiv:2305.11352 の乱択断熱の手法よりおよそ一桁効率が良いと報告しています。ただしこの比較は当該研究の 2023 年版に対するもので、2025 年に公表された版はそれより後になります。したがってこの順位付けは 2023 年時点の比較にもとづくものです。公表された Quantum 版の離散断熱のベンチマークも、乱択断熱の解法については 2023 年のプレプリントを引いています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
+    // `summary` states this one outright as three ordered stages, and the three
+    // action stanzas are those sentences: "Encode the solution as the null
+    // eigenstate of a Hamiltonian path built from A and |b>", "follow that path
+    // with a sequence of qubitization walk operators to fixed precision", "then
+    // finish with an eigenstate filter implemented as a linear combination of
+    // walk operators rather than by quantum signal processing". The `given` line
+    // is `conditions`: "the walk-operator (qubitization) form of access to the
+    // path Hamiltonians and a lower bound on the spectral gap along the path,
+    // which amounts to a known upper bound on kappa".
+    //
+    // `steps` is block-encode-matrix, state-preparation, matrix-function. The
+    // first two are not given separate lines: the only sentence the record has
+    // about them is `summary`'s "a Hamiltonian path built from A and |b>", which
+    // is where they sit, and inventing a "block-encode A" / "prepare |b>" pair
+    // would be describing a decomposition the record does not describe.
+    //
+    // It is NOT eigenstate-filtering-inversion's listing with different words,
+    // and writing them together is what shows why. Both records build a
+    // Hamiltonian from A and |b> and both end at an eigenstate filter, but
+    // `summary` here says the filter is "implemented as a linear combination of
+    // walk operators rather than by quantum signal processing" -- the exact
+    // mechanism its sibling uses -- so that clause is carried as a comment on
+    // the filter line rather than dropped. The middle stage differs too: this
+    // route walks a path to fixed precision, where the sibling supplies one
+    // starting state and applies its filter once.
+    //
+    // The framing line near the end is `cost`'s own hedge, kept as a hedge:
+    // "Their framing is that the adiabatic route reaches near-linear kappa
+    // without a complicated variable-time amplitude amplification procedure".
+    // `steps` carries no success-amplification; beyond that sentence the listing
+    // asserts nothing about what is or is not amplified.
+    //
+    // What the listing declines:
+    //  - it does not reconcile `cost`'s "strictly linear in kappa" with the same
+    //    field's framing sentence "near-linear kappa". Both are transcribed as
+    //    the record has them.
+    //  - it states no number of walk operators and no path schedule. The record
+    //    states neither, only the complexity.
+    //  - the 1,200x constant factor from `contested` is never given without the
+    //    qualification the record attaches to it: the comparison "was made
+    //    against the 2023 version of that work, whose published 2025 version
+    //    postdates it", so "the ranking therefore rests on a 2023 comparison".
+    //    That clause is in the same stanza as the number, deliberately.
+    example: {
+      pseudocode: [
+        "given  the walk-operator (qubitization) form of access to the path",
+        "       Hamiltonians and a lower bound on the spectral gap along the",
+        "       path, which amounts to a known upper bound on kappa",
+        "",
+        "encode the solution as the null eigenstate of a Hamiltonian path built",
+        "    from A and |b>",
+        "",
+        "follow that path with a sequence of qubitization walk operators to fixed",
+        "    precision",
+        "    # the record does not state how many walk operators that sequence",
+        "    # contains, only the complexity below",
+        "",
+        "finish with an eigenstate filter implemented as a linear combination of",
+        "    walk operators",
+        "    # rather than by quantum signal processing",
+        "",
+        "# the authors' framing is that the adiabatic route reaches near-linear",
+        "# kappa without a complicated variable-time amplitude amplification",
+        "# procedure",
+        "",
+        "# O(kappa log(1/epsilon)) -- strictly linear in kappa, matching a known",
+        "# lower bound on the complexity, and also optimal in the combined",
+        "# scaling in kappa and the precision epsilon. The adiabatic theorem",
+        "# proved here is for intrinsically discrete-time evolutions, which is",
+        "# what removes the residual log(kappa) that continuous adiabatic",
+        "# treatments carried.",
+        "",
+        "# the authors' stated advantages: the algorithm is simpler and easier to",
+        "# implement than the sub-optimal alternatives, and the constant factors",
+        "# are determined, so gate counts can be worked out for a specific",
+        "# application",
+        "",
+        "# and yet constant factors in this family are unsettled. Numerical",
+        "# testing on random matrices reports this solver's constant factor about",
+        "# 1,200 times smaller than the published upper bound, and about an order",
+        "# of magnitude better than the randomized adiabatic approach of",
+        "# arXiv:2305.11352 -- but against the 2023 version of that work, whose",
+        "# published 2025 version postdates it. The ranking rests on a 2023",
+        "# comparison.",
+      ].join("\n"),
+    },
     citations: [
       { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Pedro C. S. Costa, Dong An, Yuval R. Sanders, Yuan Su, Ryan Babbush, Dominic W. Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
       { title: "The discrete adiabatic quantum linear system solver has lower constant factors than the randomized adiabatic solver", authors: "Pedro C. S. Costa, Dong An, Ryan Babbush, Dominic Berry", year: "2023", url: "https://arxiv.org/abs/2312.07690" },
@@ -1366,6 +1537,82 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Lin と Tong によれば、QLSP に対する 2 つの変種はいずれも $d$ 疎行列に対してほぼ最適な問い合わせ計算量 $\\tilde{O}(d \\kappa \\log(1/\\varepsilon))$ を達成します。ここで $\\kappa$ は条件数、$\\varepsilon$ は要求精度です。どちらのアルゴリズムも位相推定も振幅増幅も使わないと、論文の要旨に明記されています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
     bypasses: ["success-amplification"],
+    // The two action lines at the end are `summary`: "Construct the
+    // minimax-optimal polynomial that is 1 at a target eigenvalue and uniformly
+    // small outside a spectral gap, and apply it through quantum signal
+    // processing". The `given` line joins `conditions`' "Requires a
+    // block-encoding of the Hamiltonian, a reasonable lower bound on the
+    // spectral gap" with `summary`'s definition of which Hamiltonian that is:
+    // "For a linear system |x> is the null eigenstate of a Hamiltonian built
+    // from A and |b>". `steps` (block-encode-matrix, state-preparation,
+    // matrix-function) fixes the order; block-encode-matrix is carried in the
+    // `given` rather than as an action line because `conditions` states it as a
+    // requirement, not as something this method performs.
+    //
+    // The starting state is the first action line and not merely a hypothesis,
+    // because `conditions` does more than require it -- it says "Lin and Tong
+    // give two ways of supplying the starting state, one seeded by time-optimal
+    // adiabatic evolution and one that walks a Zeno path of intermediate
+    // Hamiltonians", and `steps` lists state-preparation. Both ways are written,
+    // as that sentence has them, and the listing says nothing further about
+    // them: the record neither ranks them nor connects them to `cost`'s "both
+    // QLSP variants", and the listing does not connect them either.
+    //
+    // How this differs from discrete-adiabatic-inversion, written beside it:
+    // both records build a Hamiltonian from A and |b> and both end at an
+    // eigenstate filter, but that record's filter is "implemented as a linear
+    // combination of walk operators rather than by quantum signal processing"
+    // and it reaches the filter by following a path with a sequence of walk
+    // operators. This one applies the filter through quantum signal processing,
+    // and `summary` says "one application of the filter solves it once a
+    // starting state with non-trivial overlap is supplied". `cost` attributes
+    // the absence to the paper -- "Their abstract states that neither algorithm
+    // uses phase estimation or amplitude amplification" -- and the closing
+    // comment keeps that attribution; `bypasses` is success-amplification.
+    //
+    // What the listing does not say:
+    //  - no degree for the minimax-optimal polynomial, and no account of how it
+    //    is constructed or how phase factors are obtained. `summary` says what
+    //    the polynomial is and stops, so the listing stops there too.
+    //  - it does not resolve the record's own tension. `summary` describes a
+    //    polynomial that is "1 at a target eigenvalue", while `conditions` says
+    //    the method is "Stated for a d-sparse A whose singular values lie in
+    //    [1/kappa, 1] -- the theorems are about singular values, not
+    //    eigenvalues". Both are transcribed, in the closing stanza, unreconciled.
+    //  - this record has no `contested` field, so there is no contested stanza;
+    //    the singular-values caveat is the only reservation the record carries.
+    example: {
+      pseudocode: [
+        "given  a block-encoding of the Hamiltonian -- for a linear system, the",
+        "       Hamiltonian built from A and |b>, whose null eigenstate is |x> --",
+        "       and a reasonable lower bound on the spectral gap",
+        "",
+        "supply an initial state with non-trivial overlap with the target",
+        "    eigenstate",
+        "    # Lin and Tong give two ways of supplying it:",
+        "    #   (a) seeded by time-optimal adiabatic evolution",
+        "    #   (b) walking a Zeno path of intermediate Hamiltonians",
+        "",
+        "construct the minimax-optimal polynomial that is 1 at a target",
+        "    eigenvalue and uniformly small outside a spectral gap",
+        "    # no degree is stated for it on this record, and no construction",
+        "apply it through quantum signal processing",
+        "",
+        "# one application of the filter solves it, once a starting state with",
+        "# non-trivial overlap is supplied",
+        "# Lin and Tong's abstract states that neither algorithm uses phase",
+        "# estimation or amplitude amplification",
+        "",
+        "# near-optimal O~(d kappa log(1/epsilon)) query complexity for a",
+        "# d-sparse matrix, for both variants, with kappa the condition number",
+        "# and epsilon the desired precision",
+        "",
+        "# stated for a d-sparse A whose singular values lie in [1/kappa, 1], and",
+        "# the theorems are about singular values, not eigenvalues -- the filter",
+        "# is nonetheless described as being 1 at a target eigenvalue, and this",
+        "# listing leaves that where the record leaves it",
+      ].join("\n"),
+    },
     citations: [
       { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin Lin, Yu Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
     ],
@@ -1532,6 +1779,95 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["block-encode-matrix", "polynomial-approximation"],
     bypasses: ["qsp-phase-factors"],
     entries: ["linear-combination-unitaries"],
+    // A transcription of `summary`, which states the whole procedure in one
+    // sentence: "Write the target function as a Chebyshev series, then implement
+    // that series as a linear combination of walk-operator powers using a
+    // PREPARE/SELECT pair on an ancilla register, and post-select. No phase
+    // factors are computed -- the polynomial enters through the coefficients of
+    // the combination instead." The listing keeps that order and puts nothing
+    // between the stages.
+    //
+    // The `require` lines are `conditions` verbatim -- "an explicit decomposition
+    // of the target into implementable unitaries with a known coefficient vector,
+    // and the ability to prepare a state from those coefficients" -- and the
+    // `given` line is the rest of that field: Childs, Kothari and Somma "apply
+    // this route to a sparse $A$ through its associated quantum walk, so it runs
+    // from the entry oracle without Hamiltonian simulation as an intermediate".
+    // The ancilla comment is also `conditions` verbatim ("It costs more ancillas
+    // than the QSVT route, which carries the polynomial in one qubit's worth of
+    // phase shifts"), and it is in the listing because it is the record's own
+    // statement of what this route trades away.
+    //
+    // The bypass comment is `summary`'s "No phase factors are computed" read with
+    // the record's `bypasses: ["qsp-phase-factors"]`.
+    //
+    // The cost stanza repeats `cost` including its withholding, which is the
+    // whole shape of that field: the improvement is stated, as the record scopes
+    // it, "in their abstract's own comparative terms" against
+    // Harrow-Hassidim-Lloyd, and the one phrase the record marks as a direct
+    // quotation from the abstract -- "while keeping essentially the same
+    // dependence on other parameters" -- is kept in quotation marks so the
+    // reader can tell which words are the paper's; "The claim is for the
+    // complete linear-systems algorithm this transform powers, not a standalone
+    // cost for the LCU step"; "The abstract states no closed-form bound; the exact
+    // statements, including the condition-number dependence, are in the paper's
+    // full text and are not quoted here." The listing therefore states no closed
+    // form and no condition-number dependence, and says so rather than filling it.
+    //
+    // Deliberately not said: what PREPARE and what SELECT each do, or in what
+    // order they are applied -- `summary` names the pair and the register and
+    // nothing more, so the listing names them and stops. Where the coefficient
+    // vector comes from is not said either: `conditions` requires "a known
+    // coefficient vector" and `steps` names a polynomial-approximation stage, but
+    // no sentence on the record connects the two, so the listing does not either.
+    // No success probability, no amplification step and no claim about what the
+    // post-selection leaves: none of those are on the record, which ends at "and
+    // post-select". No origin is attributed for the LCU construction either; the
+    // citation list carries Childs and Wiebe's Hamiltonian-simulation LCU paper,
+    // but no field on the record says where the construction comes from, and the
+    // map is forbidden to supply that.
+    //
+    // Contrast with its sibling `qsvt-transform`: no phase sequence and no
+    // interleaved U / U dagger body, because this record bypasses the
+    // qsp-phase-factors step; the polynomial arrives as a coefficient vector
+    // rather than as a degree that sets a query count, this record stating no
+    // per-degree count at all; it costs more ancillas rather than one; and it ends
+    // in a post-selection where the QSVT listing ends in a designated block.
+    example: {
+      pseudocode: [
+        "given  the target function, and a sparse A through its associated quantum",
+        "       walk -- the route Childs, Kothari and Somma take, which runs from",
+        "       the entry oracle without Hamiltonian simulation as an intermediate",
+        "",
+        "require  an explicit decomposition of the target into implementable",
+        "         unitaries with a known coefficient vector",
+        "require  the ability to prepare a state from those coefficients",
+        "",
+        "write the target function as a Chebyshev series",
+        "",
+        "# no phase factors are computed: the qsp-phase-factors step is bypassed,",
+        "# and the polynomial enters through the coefficients of the combination",
+        "",
+        "implement the series as a linear combination of walk-operator powers,",
+        "    using a PREPARE/SELECT pair on an ancilla register",
+        "",
+        "post-select",
+        "",
+        "# this route costs more ancillas than the QSVT route, which carries the",
+        "# polynomial in one qubit's worth of phase shifts",
+        "",
+        "# cost, as Childs, Kothari and Somma state it in their abstract's own",
+        "# comparative terms: for a sparse, well-conditioned A the",
+        "# Harrow-Hassidim-Lloyd algorithm runs in time poly(log N, 1/epsilon), and",
+        "# theirs improves this to a running time polynomial in log(1/epsilon) --",
+        "# exponentially improving the dependence on precision \"while keeping",
+        "# essentially the same dependence on other parameters\". That claim is for",
+        "# the complete linear-systems algorithm this transform powers, not a",
+        "# standalone cost for the LCU step. The abstract states no closed-form",
+        "# bound; the exact statements, including the condition-number dependence,",
+        "# are in the paper's full text and are not quoted here.",
+      ].join("\n"),
+    },
     citations: [
       { title: "Hamiltonian Simulation Using Linear Combinations of Unitary Operations", authors: "Andrew M. Childs, Nathan Wiebe", year: "2012", url: "https://arxiv.org/abs/1202.5822" },
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
@@ -1685,6 +2021,97 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "This family is efficient and stable in double precision but is understood to degrade in the fully-coherent regime, where ‖f‖_∞ → 1. The Newton method for symmetric QSP and the nonlinear-Fourier-transform route were developed for that regime specifically, and the strong-convexity guarantee that justifies the standard initial guess is proved only under ‖f‖_∞ = O(d^{-1}), which does not reach it.",
     contestedJa: "この系統は倍精度で効率的かつ安定ですが、‖f‖_∞ → 1 となる完全コヒーレント領域では性能が落ちると理解されています。対称 QSP に対するニュートン法や非線形フーリエ変換に基づく経路は、まさにその領域のために開発されました。標準的な初期値を正当化する強凸性の保証も ‖f‖_∞ = O(d^{-1}) のもとでのみ証明されており、その領域には届きません。",
     steps: [],
+    // Almost entirely a transcription of `conditions`, which is the
+    // distinguishing field here: alone among the four front ends for this
+    // capability, this record writes the procedure out -- the objective, the
+    // sample points, the optimizer, and the initial guess -- so the listing is
+    // the only one of the four that can be a runnable-looking recipe rather than
+    // a stage list. Every line below is one of its sentences.
+    //
+    // - the objective, the sample points and $d̃$ are `conditions` verbatim:
+    //   "$L(Φ̂) = (1/d̃) \Sigma_{j=1}^{d̃} |Re[\langle0|U_Φ(x_j)|0\rangle] −
+    //   f(x_j)|²$ at $x_j = \cos((2j−1)\pi/(4d̃))$ with $d̃ = ⌈(d+1)/2⌉$,
+    //   minimised with L-BFGS over symmetric phase factors";
+    // - the line that opens the route is `summary`: "Instead of constructing the
+    //   complementary polynomial, minimise the mean squared difference between
+    //   the QSP response ... and the target $f$";
+    // - "the positive roots of the Chebyshev polynomial $T_{2d̃}$" is `summary`,
+    //   kept as the comment on the sample-point line;
+    // - the admissibility precondition is `conditions`: "feed in a non-polynomial
+    //   f and $L(Φ) = 0$ generally has no solution, leaving the optimizer stuck
+    //   among many local minima";
+    // - the initial guess and its warning are `conditions`: "$Φ⁰ = (\pi/4, 0,
+    //   \ldots, 0, \pi/4)$ is load-bearing -- the seemingly natural $Φ = (0,
+    //   \ldots, 0)$ is a stationary point whose loss is non-zero";
+    // - "Gradients come from $SU(2)$ matrix products, so root finding is avoided
+    //   entirely and the method runs in standard double precision" is `summary`,
+    //   and is the sentence that separates this route from the direct family;
+    // - the strong-convexity stanza is `conditions` (Wang, Dong and Lin) and the
+    //   final stanza is `contested`.
+    //
+    // The record carries no `contract`, so the `given` line is built from the
+    // precondition `conditions` states -- an admissible polynomial target of
+    // degree d -- rather than from a takes/returns block that does not exist.
+    //
+    // Two notation calls, both flattenings and neither a claim: `conditions`
+    // writes the objective's argument as $Φ̂$ where it defines the objective and
+    // as $Φ$ in its later sentences, and the listing uses one plain-text Phi;
+    // $d̃$ becomes d~ under the plain-ASCII rule for listings.
+    //
+    // What this listing deliberately does not say: any complexity. `cost` states
+    // "No asymptotic bound is claimed", so the listing claims none either and
+    // carries only the empirical record `cost` does give -- degree larger than
+    // 10,000, error below 10^-12, standard double precision -- as a comment
+    // labelled for what it is. Nothing is said about how L-BFGS is run (line
+    // search, tolerance, memory), because the record names the optimizer and
+    // stops. The regime limit is transcribed and not softened: the guarantee is
+    // proved only under $‖f‖_∞ = O(d^{-1})$, "which does not reach" the
+    // fully-coherent regime, and the record names the two siblings built for
+    // that regime instead.
+    example: {
+      pseudocode: [
+        "given  an admissible polynomial target f of degree d",
+        "       # the target must already be an admissible polynomial: feed in a",
+        "       # non-polynomial f and L(Phi) = 0 generally has no solution,",
+        "       # leaving the optimizer stuck among many local minima",
+        "",
+        "# instead of constructing the complementary polynomial, minimise the mean",
+        "# squared difference between the QSP response and the target f",
+        "",
+        "set  d~ = ceil((d + 1) / 2)",
+        "set  x_j = cos((2j - 1) pi / (4 d~))    for j = 1 .. d~",
+        "     # the positive roots of the Chebyshev polynomial T_{2 d~}",
+        "",
+        "define  L(Phi) = (1/d~) sum over j = 1 .. d~ of",
+        "            |Re[<0|U_Phi(x_j)|0>] - f(x_j)|^2",
+        "",
+        "start from  Phi_0 = (pi/4, 0, ..., 0, pi/4)",
+        "# load-bearing: the seemingly natural Phi = (0, ..., 0) is a stationary",
+        "# point whose loss is non-zero",
+        "",
+        "minimise L over symmetric phase sequences with L-BFGS",
+        "    # gradients come from SU(2) matrix products, so root finding is",
+        "    # avoided entirely and the method runs in standard double precision",
+        "",
+        "return the symmetric phase factors",
+        "",
+        "# why Phi_0 and not any starting point: Wang, Dong and Lin later proved",
+        "#   that one global minimum lies in a neighbourhood of Phi_0 on which the",
+        "#   cost function is strongly convex, under ||f||_inf = O(d^-1) with",
+        "#   d = deg(f)",
+        "",
+        "# no asymptotic bound is claimed. What the paper reports is empirical:",
+        "#   phase factors accurately approximating polynomials of degree larger",
+        "#   than 10,000 with error below 10^-12, using standard double precision",
+        "#   arithmetic operations",
+        "",
+        "# where it stops working: the method degrades as ||f||_inf approaches 1,",
+        "#   the fully-coherent regime, which the strong-convexity guarantee above",
+        "#   does not reach. The Newton method for symmetric QSP and the",
+        "#   nonlinear-Fourier-transform route were developed for that regime",
+        "#   specifically",
+      ].join("\n"),
+    },
     citations: [
       { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
       { title: "On the energy landscape of symmetric quantum signal processing", authors: "Jiasu Wang, Yulong Dong, Lin Lin", year: "2021", url: "https://arxiv.org/abs/2110.04993" },
@@ -1805,6 +2232,99 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The paper's claim is stability in double precision, not an improved asymptotic, and no sharp worst-case complexity separating it from the root-finding family is given. Ni and Ying add that the stability of the layer-stripping process most direct methods rely on — this one included — remains an open question.",
     contestedJa: "論文が主張しているのは倍精度での安定性であって漸近計算量の改善ではなく、求根系と分ける鋭い最悪計算量は与えられていません。さらに Ni と Ying は、この手法を含め多くの直接法が依拠する層剥がしの安定性は未解決の問題のままだと指摘しています。",
     steps: [],
+    // Written from `cost`, which is the distinguishing field: this is the only
+    // one of the four front ends whose cost field is itself an accounting --
+    // "computing the vector $m$ costs an empirical $O(d^2)$, and extracting the
+    // phase factors costs $O(d^2 \log d)$ via the FFT and dominates" -- so the
+    // listing can carry that accounting whole, where its root-finding sibling
+    // prices only the whole route and its two double-precision siblings price
+    // nothing at all. `summary` supplies the two stages themselves and what the
+    // route avoids.
+    //
+    // - the stages are `summary`, verbatim: "Build the complementary polynomial
+    //   directly, with Prony's method as the key step, then obtain the phase
+    //   factors by factorization";
+    // - the reason the route exists is `summary` too, and is kept as the comment
+    //   on stage one: "This avoids root finding of high-degree polynomials,
+    //   which is the step that forces variable-precision arithmetic elsewhere in
+    //   the direct family";
+    // - "computing the vector $m$", the FFT, what dominates, "$d$ is the
+    //   polynomial degree", "the cost is classical preprocessing" and "Stated in
+    //   the full text; the abstract carries no bound" are all `cost`, carried in
+    //   `cost`'s own sentence and with its attribution -- "Ying's own
+    //   accounting" -- kept in the listing;
+    // - "Reported numerically stable in double precision arithmetic" and the
+    //   four experiments are `conditions`;
+    // - the closing stanza is `contested`.
+    //
+    // The record carries no `contract`; the `given` line names the degree d
+    // because `cost` is the field that defines it ("$d$ is the polynomial
+    // degree").
+    //
+    // The vector $m$ is priced but not placed. `cost` is the only field that
+    // names it, and no sentence says that computing it is a stage of the route
+    // or where in the route it would sit, so it appears here inside the
+    // accounting comment and not as a step in the sequence. The FFT stays in
+    // that comment for the same reason: `cost` attaches it to the cost of
+    // "extracting the phase factors", not to the factorization as a technique,
+    // so the pseudocode line says only what `summary` says -- "obtain the phase
+    // factors by factorization".
+    //
+    // Judgment call, flagged rather than resolved: `cost` carries two figures
+    // that do not obviously agree -- Ying's own accounting makes the overall
+    // cost $O(d^2 \log d)$, while "the paper's headline comparison is the same
+    // $O(d^2)$ computational cost as the optimization-based method of Dong,
+    // Meng, Whaley and Lin". The listing transcribes both, says in as many words
+    // that the record carries the second beside the first and does not join
+    // them, and joins them no further itself.
+    //
+    // What this listing deliberately does not say: how Prony's method builds the
+    // complementary polynomial, what the vector $m$ is, and how the
+    // factorization extracts the factors. `steps` is empty and no field states
+    // any of it; the record names the key step and stops, and so does the
+    // listing. It also does not upgrade the stability report into an asymptotic
+    // claim -- `contested` is explicit that "The paper's claim is stability in
+    // double precision, not an improved asymptotic", and that the
+    // layer-stripping open question covers this method too, "this one included".
+    example: {
+      pseudocode: [
+        "given  a polynomial of degree d      # d is the polynomial degree",
+        "",
+        "build the complementary polynomial directly,",
+        "    with Prony's method as the key step",
+        "    # this avoids root finding of high-degree polynomials, which is the",
+        "    # step that forces variable-precision arithmetic elsewhere in the",
+        "    # direct family",
+        "",
+        "obtain the phase factors by factorization",
+        "",
+        "return the phase factors",
+        "",
+        "# Ying's own accounting: computing the vector m costs an empirical",
+        "#   O(d^2), and extracting the phase factors costs O(d^2 log d) via the",
+        "#   FFT and dominates, so the overall cost is O(d^2 log d) -- classical",
+        "#   preprocessing. Stated in the full text; the abstract carries no bound",
+        "",
+        "# how Prony's method builds the complementary polynomial, what the vector",
+        "#   m is, and how the factorization proceeds are not stated here",
+        "",
+        "# reported numerically stable in double precision arithmetic, with",
+        "#   experiments on Hamiltonian simulation, eigenstate filtering, matrix",
+        "#   inversion and evaluation of the Fermi-Dirac operator",
+        "",
+        "# the record carries a second figure beside that accounting and does not",
+        "#   join the two -- the paper's headline comparison is the same O(d^2)",
+        "#   computational cost as the optimization-based method of Dong, Meng,",
+        "#   Whaley and Lin at comparable accuracy (about 10^-12), with sequences",
+        "#   beyond 50,000 phase factors demonstrated",
+        "",
+        "# what is claimed is stability in double precision, not an improved",
+        "#   asymptotic: no sharp worst-case complexity separating this from the",
+        "#   root-finding family is given, and Ni and Ying add that the stability",
+        "#   of the layer-stripping process most direct methods rely on -- this",
+        "#   one included -- remains an open question",
+      ].join("\n"),
+    },
     citations: [
       { title: "Stable factorization for phase factors of quantum signal processing", authors: "Lexing Ying", year: "2022", url: "https://arxiv.org/abs/2202.02671" },
       { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Hongkang Ni, Lexing Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
@@ -2155,6 +2675,86 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "述べられているパラメータ $1/2^n$ は、論文自身の Definition 1 と整合しません。Definition 1 は A = α·Ã と置き、したがって $||A||_2 \\leq \\alpha$ を導きます。これは Gilyén らの Definition 43 と同じ向きであって、その逆数ではありません。一方 Theorem 1 の証明は $a_ij/2^n$ に等しいブロックを導出しています。どちらの論文の定義を採っても、副正規化係数は $\\alpha = 2^n = N$ です。これは現在配信されている arXiv 版に対する指摘であり、雑誌掲載版では異なる可能性があります。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`, which is a single sentence in two halves.
+    // First half: "Build the block-encoding directly from uniformly controlled
+    // Ry (magnitude) and Rz (phase) rotations between Hadamards and a SWAP,
+    // with no oracle assumption at all" -- that last clause is the `given` line,
+    // and it is what separates this record from the oracle-fed constructions of
+    // the same capability. Second half: "then threshold the rotation angles and
+    // cancel the resulting CNOT chains to compress the circuit".
+    //
+    // The only order the listing writes is `summary`'s own -- the rotations
+    // sitting between the Hadamards and the SWAP -- and no further sequence is
+    // written. `steps` is empty and the record is atomic: nothing is handed to
+    // a layer below.
+    //
+    // The two parameter comments are `cost` verbatim -- Theorem 1's
+    // "$(1/2^n, n+1)$-block-encoding" of $A$ "when $|a_ij| \leq 1$", and
+    // Theorem 2's "$(1/2^n, n+1, N^3\cdot\delta_c)$-block-encoding of $A$ up to
+    // third order in $\delta_c$". Each sits with the stage the record's own
+    // sentence names: Theorem 1 with the circuit as built, Theorem 2 with the
+    // cutoff $\delta_c$. The listing says nothing about what any entry of either
+    // tuple means, and nothing about where an approximation enters, because the
+    // record explains neither.
+    //
+    // The dispute comment is `contested`, which the listing carries rather than
+    // resolves: the record says the stated $1/2^n$ "is inconsistent with the
+    // paper's own Definition 1", that "under either paper's definition the
+    // subnormalization is $\alpha = 2^n = N$", and that this "applies to the
+    // arXiv text as served; a journal version may differ". So the listing quotes
+    // $1/2^n$ as the paper's stated parameter, states the contest beside it, and
+    // silently substitutes neither value for the other.
+    //
+    // The closing comments are `conditions`. The gate-complexity sentence is the
+    // authors' own words as the record quotes them ("bounded by O(N^2) gates
+    // with a modest prefactor of 2 for real-valued matrices (4 for
+    // complex-valued matrices), and a limited polylogarithmic overhead", and
+    // "this gate complexity scales exponentially in the number of qubits for
+    // generic dense matrices"), reproduced without quotation marks only to avoid
+    // escapes in the source. The last line is `conditions` refusing to go
+    // further -- "The paper states only that the circuit parameters can be
+    // easily generated for problems up to fifteen qubits" -- so the listing
+    // claims no size, depth or runtime beyond that.
+    example: {
+      pseudocode: [
+        "given  A with |a_ij| <= 1, and no oracle assumption at all",
+        "",
+        "build the block-encoding circuit directly from:",
+        "    uniformly controlled Ry rotations    # magnitude",
+        "    uniformly controlled Rz rotations    # phase",
+        "    Hadamards and a SWAP, the rotations sitting between them",
+        "",
+        "# Camps and Van Beeumen Theorem 1: that circuit is a (1/2^n, n+1)-block-",
+        "# encoding of A when |a_ij| <= 1",
+        "",
+        "threshold the rotation angles at a cutoff compression threshold delta_c",
+        "cancel the CNOT chains the thresholding leaves behind",
+        "",
+        "return the compressed circuit",
+        "",
+        "# Camps and Van Beeumen Theorem 2: the cutoff delta_c gives a",
+        "# (1/2^n, n+1, N^3*delta_c)-block-encoding of A, up to third order in delta_c",
+        "",
+        "# the 1/2^n above is transcribed as the paper states it, and contested on this",
+        "# record: it is inconsistent with the paper's own Definition 1, which sets",
+        "# A = alpha * A-tilde and therefore ||A||_2 <= alpha, the same orientation as",
+        "# Gilyen et al.'s Definition 43 and not its reciprocal, while the Theorem 1",
+        "# proof derives a block equal to a_ij/2^n. Under either paper's definition the",
+        "# subnormalization is alpha = 2^n = N. This applies to the arXiv text as",
+        "# served; a journal version may differ",
+        "",
+        "# gate complexity, in the authors' words: bounded by O(N^2) gates with a",
+        "# modest prefactor of 2 for real-valued matrices (4 for complex-valued",
+        "# matrices), and a limited polylogarithmic overhead -- and this gate complexity",
+        "# scales exponentially in the number of qubits for generic dense matrices",
+        "",
+        "# so this is a compression technique for structured matrices -- Heisenberg,",
+        "# Hubbard, Laplacian -- and not a way to load dense unstructured data cheaply",
+        "",
+        "# the paper states only that the circuit parameters can be easily generated",
+        "# for problems up to fifteen qubits",
+      ].join("\n"),
+    },
     citations: [
       { title: "FABLE: Fast Approximate Quantum Circuits for Block-Encodings", authors: "Daan Camps, Roel Van Beeumen", year: "2022", url: "https://arxiv.org/abs/2205.00081" },
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
@@ -2318,6 +2918,53 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Gleinig と Hoefler の Eq. 5 は、非ゼロ係数が $|S|$ 個の $n$ 量子ビット状態に対して $T_CNOT(|S|)$ が $O(|S|·n)$ であることを与えています。アンシラは使いません。Li と Luo は対応する上下界を与えています。アンシラなしではサイズ $O(n·d/\\log n + n)$ で、$d = \\mathrm{poly}(n)$ のとき漸近的に最適です。アンシラ $m$ 個（$m ∈ O(n·d/\\log(n·d) + n)$）ではサイズ $O(n·d/\\log(n+m) + n)$ で、妥当な仮定のもとで一致する下界 $\\Omega(n·d/\\log(n+m) + n)$ が付きます。アンシラ数無制限ではサイズはちょうど $\\Theta(n·d/\\log(n·d) + n)$ です。",
     steps: [],
     atomic: true,
+    // This record states an approach, not a mechanism, and the listing stops
+    // exactly where the record does. `summary` gives the one move: "build the $d$
+    // computational-basis strings directly instead of rotating through the whole
+    // binary tree, so the cost tracks $d$ and $n$ rather than $2^n$". `conditions`
+    // gives the `given` line -- "the state to be $d$-sparse in the computational
+    // basis with $d$ small, and the support to be known in advance" -- and gives
+    // the closing caveat verbatim, which is the point of the card: "sparsity is
+    // basis-dependent".
+    //
+    // The listing deliberately writes NO loop over the d strings and no ordering
+    // among them. The record says the strings are built directly; it does not say
+    // how, so the card says so in as many words rather than inventing a
+    // construction. Gleinig and Hoefler's Eq. 5 is cited on the record only for a
+    // cost, not for its procedure.
+    //
+    // Costs are `cost` verbatim: Gleinig and Hoefler's ancilla-free
+    // T_CNOT(|S|) in O(|S| n), and the two ends of Li and Luo's range. The card
+    // sets the two papers' figures side by side without relating them: `cost`
+    // says "Li and Luo give matching bounds", which is matching upper and lower
+    // bounds of their own, not a match with Gleinig and Hoefler. The middle case
+    // in `cost` -- size O(n d / log(n+m) + n) with m ancillas and its matching
+    // lower bound "under reasonable assumptions" -- is left off the card for
+    // length, not disputed.
+    example: {
+      pseudocode: [
+        "given  an n-qubit state with only d of its 2^n amplitudes nonzero, d small,",
+        "       and its support known in advance",
+        "",
+        "build the d computational-basis strings directly",
+        "",
+        "# not by rotating through the whole binary tree -- that is the whole of the",
+        "# difference, and it is why the cost tracks d and n rather than 2^n",
+        "",
+        "# how the d strings are built is not stated on this record and is not",
+        "# invented here: Gleinig and Hoefler's Eq. 5 is quoted for its cost only --",
+        "# T_CNOT(|S|) in O(|S| n) for a state with |S| nonzero coefficients,",
+        "# ancilla-free",
+        "",
+        "# Li and Luo: without ancillas, size O(n d / log n + n),",
+        "# asymptotically optimal when d = poly(n); with unlimited ancillas, size",
+        "# exactly Theta(n d / log(n d) + n)",
+        "",
+        "# sparsity is basis-dependent: a state that is sparse in one basis is",
+        "# generally dense in another, so this is a property of the problem's",
+        "# encoding as much as of the state",
+      ].join("\n"),
+    },
     citations: [
       { title: "Nearly Optimal Circuit Size for Sparse Quantum State Preparation", authors: "Lvzhou Li, Jingquan Luo", year: "2024", url: "https://arxiv.org/abs/2406.16142" },
       { title: "An Efficient Algorithm for Sparse Quantum State Preparation", authors: "Gleinig, Hoefler", year: "2021", url: "https://doi.org/10.1109/dac18074.2021.9586240" },
@@ -2361,6 +3008,80 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "The abstract states no query-count formula; its cost claims are comparative. The construction keeps the quadratic quantum speedup that fixed-point predecessors gave up, and the optimality named in the title is of exactly this shape: for a given number of oracle queries, the adjustable failure-probability bound is guaranteed, as Yoder, Low and Chuang put it, over \"the broadest possible range\" of the target fraction $\\lambda$. The explicit query count as a function of $\\lambda$'s lower bound and the failure tolerance is in the paper's full text and is not quoted here.",
     costJa: "概要はクエリ数の式を述べておらず、費用に関する主張は比較の形をとります。この構成は、先行する不動点型の手法が手放していた二次的な量子高速化を保持します。表題にある「最適」もまさにこの形のものです。すなわち、オラクルへのクエリ数を固定したとき、調整可能な失敗確率の上界が、Yoder・Low・Chuang の言う「可能な限り広い範囲」の目標割合 $\\lambda$ にわたって保証されます。$\\lambda$ の下界と許容失敗確率の関数としての明示的なクエリ数は論文の本文にあり、ここでは引用していません。",
     steps: ["state-preparation"],
+    // The `given` and `return` lines are the success-amplification `contract`:
+    // takes "the preparation unitary A and its inverse, a reflection about |0>,
+    // and a reflection marking the good subspace -- the Grover operator
+    // Q = -A S_0 A^{-1} S_chi must be applicable at arbitrary powers", plus the
+    // clause that names this variant, "individual variants additionally require a
+    // lower bound on a"; returns "a routine that produces the wanted branch with a
+    // stated failure probability, together with the query count and the maximum
+    // sequential depth consumed". The contract calls the success amplitude a; this
+    // record calls its own quantity lambda, "the fraction of the initial state
+    // made up of target states", and the listing follows the record. `steps:
+    // ["state-preparation"]` is why A is named as coming from the layer below.
+    //
+    // The body is `summary`: "replace the $\pm 1$ reflections of textbook
+    // amplification with tuned phase shifts, so the iteration converges on the
+    // target instead of rotating past it -- which is what happens when the initial
+    // success amplitude is known only as a lower bound". `conditions` supplies the
+    // adjustable failure bound and the emphasis on a bound "rather than $\lambda$
+    // itself".
+    //
+    // Two withholdings, repeated rather than filled, and they are not the same
+    // withholding. `cost` says outright that "the explicit query count as a
+    // function of $\lambda$'s lower bound and the failure tolerance is in the
+    // paper's full text and is not quoted here", so the listing writes the
+    // arguments of that function and not the function, and the full text is
+    // named for the query count only. The phase shifts are simply never given on
+    // the record -- `summary` says only that they are "tuned", and the record
+    // says nothing about where they are stated -- so no angle appears here and
+    // the card does not locate them. The optimality comment is `cost`'s shape
+    // verbatim, including its quoted phrase.
+    //
+    // The displaced form is written as a "do not build this" comment, per the
+    // precedent for records that describe two constructions: Grover's earlier
+    // pi/3 construction is on the record, in `conditions`, together with Yoder,
+    // Low and Chuang's verdict on it, quoted here as they are quoted there.
+    example: {
+      pseudocode: [
+        "given  the preparation unitary A and its inverse, a reflection S_0 about |0>,",
+        "       and a reflection S_chi marking the good subspace, so that",
+        "       Q = - A S_0 A^{-1} S_chi can be applied at arbitrary powers;",
+        "       and a reliable lower bound on the fraction lambda of the initial",
+        "       state made up of target states",
+        "",
+        "# a lower bound, not lambda itself -- that is all this variant of the layer",
+        "# asks for. A is the state-preparation step below this method.",
+        "",
+        "choose the bound on the failure probability -- it is adjustable",
+        "",
+        "replace the +/-1 reflections of textbook amplification with tuned phase",
+        "    shifts, and run the resulting iteration for the number of oracle",
+        "    queries fixed by the lower bound on lambda and the failure tolerance",
+        "",
+        "# so the iteration converges on the target instead of rotating past it;",
+        "# rotating past it is what happens when the success amplitude is known only",
+        "# as a lower bound",
+        "",
+        "return the wanted branch with the chosen failure probability, together with",
+        "    the query count and the maximum sequential depth consumed",
+        "",
+        "# neither the tuned phase shifts nor the query count as a function of",
+        "# lambda's lower bound and the failure tolerance is quoted on this record:",
+        "# the query count is in the paper's full text, and the record stops at the",
+        "# abstract on purpose",
+        "",
+        "# the optimality in their title has exactly this shape: for a given number",
+        "# of oracle queries, the adjustable failure bound is guaranteed over \"the",
+        "# broadest possible range\" of lambda",
+        "",
+        "# do not build this: Grover's earlier pi/3 construction also achieves",
+        "# fixed-point convergence, but such algorithms \"lose the very quadratic",
+        "# advantage that makes Grover's algorithm so appealing\" -- the construction",
+        "# above is described by its authors as the first to reach fixed-point",
+        "# behavior without sacrificing the quantum speedup",
+      ].join("\n"),
+    },
     citations: [
       { title: "Fixed-point quantum search with an optimal number of queries", authors: "Theodore J. Yoder, Guang Hao Low, Isaac L. Chuang", year: "2014", url: "https://arxiv.org/abs/1409.3305" },
       { title: "A different kind of quantum search", authors: "Lov K. Grover", year: "2005", url: "https://arxiv.org/abs/quant-ph/0503205" },
@@ -3163,6 +3884,84 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "論文自身の最悪ケースの見積もりでは、SWAP に基づく探索のコストは 2 量子ビットゲート 1 つあたり高々 $O(N^{2.5})$ です（$N$ は物理量子ビット数）。置き換えの対象である網羅的な写像探索は $O(\\exp(N))$ であり、主張されている指数的高速化は探索計算量についてのものです。依存関係 DAG の構築はゲート数 $g$ について $O(g)$、ヒューリスティック評価 1 回は $O(N)$ です。これは古典的なコンパイルのコストであり、挿入される SWAP 数の上界は述べられていません。LightSABRE の要旨は実装の数値を加えています。Qiskit 1.2.0 の実装は 0.20.1 のおよそ 200 倍速く、元のアルゴリズムに比べ SWAP 数は平均 18.9% 少なくなっています。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`, which states the routine outright: "Insert
+    // SWAPs guided by a lookahead cost function, and obtain a good initial
+    // mapping by traversing the circuit forward and then in reverse, so the
+    // final mapping of one pass seeds the other", together with "A decay term
+    // trades added depth against added gate count". `conditions` supplies the
+    // input side -- "arbitrary coupling graphs, sparse ones included" -- and the
+    // status lines that close the listing.
+    //
+    // The dependency DAG is named on this record only by `cost`
+    // ("Dependency-DAG construction is O(g) in the gate count"), so the
+    // listing builds it and then says nothing about how the search walks it.
+    // "per two-qubit gate" appears only where `cost` puts it, on the search's
+    // complexity ("the SWAP-based search costs at most O(N^2.5) per two-qubit
+    // gate"): that is the rate a cost is charged at, not an iteration the
+    // record states, so the listing writes no loop over gates and no visiting
+    // order inside the search. The complexities in the pseudocode comments are
+    // `cost` in ASCII: O(N^2.5) per two-qubit gate against O(exp(N)) for the
+    // exhaustive mapping-based search it replaces, O(g) for the DAG, O(N) for
+    // one heuristic evaluation, with `cost`'s own reading of them kept -- "the
+    // claimed exponential speedup is in search complexity".
+    //
+    // Deliberately not said, because the record does not say it: the form of
+    // the cost function (only that it looks ahead), which SWAPs are candidates,
+    // the value or the placement of the decay term -- `summary` gives its
+    // effect and nothing about where it sits, so the listing states the effect
+    // on its own and binds it to nothing -- where the first traversal's mapping
+    // comes from, and how many times the two passes run. `conditions` states
+    // that the paper "states no bound on inserted SWAP count", so the listing
+    // states none. The record carries no `contract` of its own (it
+    // `realizes: "qubit-routing"`), so the closing line names only the two
+    // things `summary` says the method produces.
+    //
+    // Also deliberately absent: the LightSABRE implementation figures that
+    // `cost` carries (about 200 times faster in Qiskit 1.2.0 than in 0.20.1,
+    // an average 18.9% fewer SWAPs). The record attributes them to LightSABRE's
+    // abstract and they measure a different implementation, not this routine.
+    // What does belong here is the sentence in `conditions` that makes the pair
+    // a pair -- "Quality and convergence degrade on large circuits, which is
+    // the problem LightSABRE was built to address" -- and it is on this record,
+    // not on LightSABRE's, so this is where it lands.
+    example: {
+      pseudocode: [
+        "given  a circuit of g gates, and a coupling graph on N physical qubits",
+        "       -- arbitrary coupling graphs, sparse ones included",
+        "",
+        "build the dependency DAG of the circuit",
+        "    # O(g) in the gate count",
+        "",
+        "# the initial mapping, obtained bidirectionally",
+        "traverse the circuit forward, then traverse it in reverse,",
+        "    taking the final mapping of one pass as the seed for the other",
+        "# the record states the two traversals and the seeding, and does not",
+        "# state where the first pass's mapping comes from, nor how many times",
+        "# the two passes run",
+        "",
+        "run the SWAP-based search --",
+        "    insert SWAPs guided by a lookahead cost function",
+        "    # the record says only that the insertion is guided by a lookahead",
+        "    # cost function: not the form of the function, not which SWAPs are",
+        "    # candidates, and not how the search walks the DAG",
+        "    # at most O(N^2.5) per two-qubit gate, against O(exp(N)) for the",
+        "    # exhaustive mapping-based search it replaces: the claimed",
+        "    # exponential speedup is in search complexity",
+        "    # one heuristic evaluation is O(N)",
+        "",
+        "# a decay term trades added depth against added gate count -- the",
+        "# record states that effect and no value for it",
+        "",
+        "return the initial mapping and the inserted SWAPs",
+        "",
+        "# a heuristic with no optimality guarantee -- the underlying qubit",
+        "# assignment problem is NP-complete (Siraichi et al., Theorem 3.1)",
+        "# no bound on the inserted SWAP count is stated",
+        "",
+        "# quality and convergence degrade on large circuits, which is the",
+        "# problem LightSABRE was built to address",
+      ].join("\n"),
+    },
     citations: [
       { title: "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices", authors: "Gushu Li, Yufei Ding, Yuan Xie", year: "2018", url: "https://arxiv.org/abs/1809.02573" },
       { title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
@@ -3213,6 +4012,83 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "先行する厳密手法の一部に対して、より広い解空間を探索しながら時間と空間の計算量を指数的に削減したと報告されています。緩和版は、追加ゲート費用で最大 100%、忠実度で最大 10 倍、QAOA では深さで最大 75% まで、主要なヒューリスティクスを上回ると報告されています。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`, which is the entire procedure the record
+    // states: "Encode placement and routing jointly as a mathematical program
+    // over a spacetime variable encoding and solve it exactly. Relaxing the
+    // same formulation yields a fast near-optimal synthesizer." There is no
+    // loop in that sentence and nothing is inserted gate by gate -- one
+    // encoding, one solve -- which is the whole difference from the SABRE pair
+    // beside it in this layer, and why this listing has no iteration in it.
+    //
+    // The record describes two forms, so on the house precedent the listing
+    // shows both instead of silently picking one. Neither is marked do-not-
+    // build, because `conditions` displaces neither: "The exact synthesizer is
+    // the reference against which heuristics are measured; the approximate
+    // variant, obtained by relaxing the same formulation, is the practical
+    // one". The listing repeats those two roles as comments, so the card cannot
+    // be read as a recommendation to solve the exact program in practice.
+    //
+    // The QAOA line is `conditions` verbatim -- "a commutation-aware adjustment
+    // is available for QAOA-structured circuits" -- and stops there, kept in the
+    // record's own passive form, because the record does not state what the
+    // adjustment changes in the program. It stands on its own rather than under
+    // either form: `conditions` gives it as a coordinate clause and never says
+    // which of the two it adjusts, so nesting it would settle a question the
+    // record leaves open.
+    //
+    // The numbers are `cost` in ASCII, with its hedges kept as written:
+    // "Reported as an exponential reduction in time and space complexity
+    // relative to some leading prior optimal approaches, while searching a
+    // strictly larger solution space", and for the relaxation "up to 100% on
+    // additional gate cost and up to 10x on fidelity, and for QAOA by up to 75%
+    // on depth" -- one list, all three attributed by `cost` to the approximate
+    // variant, so all three sit with the relaxation and none with the
+    // commutation-aware adjustment, which the record gives no number for. No
+    // polynomial bound appears, because `conditions` says the underlying qubit
+    // assignment problem is NP-complete (Siraichi et al., Theorem 3.1), "so no
+    // polynomial bound is available".
+    //
+    // Deliberately not said: the variables, constraints or objective of the
+    // program, what a spacetime variable encoding contains, what the relaxation
+    // relaxes, and which solver solves any of it. The record names the encoding
+    // and no part of it. The record carries no `contract` of its own (it
+    // `realizes: "qubit-routing"`), so the closing line names only what
+    // `summary` and the label say is synthesized.
+    example: {
+      pseudocode: [
+        "given  a circuit whose placement and routing are to be decided together",
+        "",
+        "encode placement and routing jointly as a mathematical program",
+        "    over a spacetime variable encoding",
+        "# the record names the encoding and states no part of it: no variables,",
+        "# no constraints, no objective, no solver",
+        "",
+        "# form 1 -- the reference, not the working tool",
+        "solve the program exactly",
+        "    # the exact synthesizer is the reference against which heuristics",
+        "    # are measured",
+        "    # reported as an exponential reduction in time and space complexity",
+        "    # relative to some leading prior optimal approaches, while searching",
+        "    # a strictly larger solution space",
+        "    # no polynomial bound is available: the underlying qubit assignment",
+        "    # problem is NP-complete (Siraichi et al., Theorem 3.1)",
+        "",
+        "# form 2 -- the practical one, out of the same formulation",
+        "relax the same formulation",
+        "    -> a fast near-optimal synthesizer",
+        "    # reported to beat leading heuristics by up to 100% on additional",
+        "    # gate cost and up to 10x on fidelity",
+        "    # and for QAOA by up to 75% on depth",
+        "",
+        "for QAOA-structured circuits a commutation-aware adjustment is",
+        "    available",
+        "    # the record does not state what the adjustment changes in the",
+        "    # program, nor which of the two forms it adjusts, and gives it no",
+        "    # figure of its own",
+        "",
+        "return the layout -- placement and routing, decided together",
+      ].join("\n"),
+    },
     citations: [
       { title: "Optimal Layout Synthesis for Quantum Computing", authors: "Bochen Tan, Jason Cong", year: "2020", url: "https://arxiv.org/abs/2007.15671" },
       { title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
@@ -3746,6 +4622,84 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Error threshold 0.8% under the standard circuit-based noise model, on par with the surface code. A syndrome cycle for a length-$n$ code uses $n$ ancillary qubits and a depth-7 nearest-neighbour CNOT circuit. Bravyi et al. preserve 12 logical qubits for nearly a million syndrome cycles using 288 total physical qubits at physical error rate 0.1%, against an argued nearly 3000 physical qubits for equivalent surface-code suppression.",
     costJa: "標準的な回路レベル雑音モデルのもとでのしきい値は 0.8% で、表面符号と同程度です。長さ $n$ の符号の症候群 1 周期は、$n$ 個のアンシラ量子ビットと深さ 7 の最近接 CNOT 回路で構成されます。Bravyi らは、物理誤り率 0.1% のもとで合計 288 個の物理量子ビットを使い、12 個の論理量子ビットを 100 万に近い症候群周期にわたって保持しています。同等の抑制を表面符号で得るには 3000 個近い物理量子ビットが要る、というのが同論文の議論です。",
     steps: [],
+    // Written from `conditions` first, not `summary`, because `conditions` is
+    // where this record differs from `surface-code`: the binding item is "a
+    // degree-6 qubit connectivity graph decomposable into two edge-disjoint planar
+    // subgraphs -- strictly more than the surface code's 2D nearest-neighbour
+    // grid, and the binding practical constraint". `summary` supplies what that
+    // constraint buys: "Trade the surface code's strictly planar layout for
+    // slightly richer connectivity, in exchange for a much better encoding rate.
+    // Many logical qubits live in one code block instead of one per patch."
+    //
+    // The `given` and `return` lines are the contract of the capability this
+    // method `realizes` (`error-correction`), as on `surface-code` -- same slot,
+    // same opening line, because method records here carry no contract of their
+    // own. The listings diverge on the stanza immediately after it.
+    //
+    // The cycle stanza is `cost` verbatim: "A syndrome cycle for a length-n code
+    // uses n ancillary qubits and a depth-7 nearest-neighbour CNOT circuit." The
+    // threshold, the 12-logical-qubits-in-288-physical memory result and the
+    // argued nearly-3000-qubit surface-code comparison are `cost` verbatim too,
+    // and the memory result keeps the physical error rate 0.1% it was measured at.
+    // The word "argued" is the record's: the surface-code comparison is Bravyi et
+    // al.'s argument, not a measurement, and the listing says so.
+    //
+    // The MEMORY caveat is `conditions` verbatim and is the last thing the listing
+    // says, because it is what stops the card reading as a replacement for the
+    // surface code: "performing logical operations on these codes is substantially
+    // less developed than lattice surgery on surface codes, so this is not yet a
+    // drop-in replacement for a full computation".
+    //
+    // Deliberately absent: no code distance and no distance-solving rule. Unlike
+    // `surface-code`'s `cost`, this record states neither, so the listing states
+    // neither and does not borrow its sibling's -- silently, without narrating the
+    // absence to the reader. No decoder is named either; `conditions` says only
+    // that "matching decoders built for surface codes do not transfer directly",
+    // and the listing carries that sentence and nothing past it.
+    //
+    // This is NOT `surface-code`'s listing with new numbers, and writing them
+    // together is what makes that visible: that one solves for a distance d and
+    // spends approx 12.5 d^2 physical qubits on ONE logical qubit, and this one
+    // has no distance in it at all, holds 12 logical qubits in 288 physical, and
+    // ends on a caveat that it is a memory rather than a computation.
+    example: {
+      pseudocode: [
+        "given  a physical error rate p and noise model, a target logical error rate",
+        "       P_L, a connectivity constraint, and a measurement and feedback cycle",
+        "       time",
+        "",
+        "require  a degree-6 qubit connectivity graph decomposable into two",
+        "         edge-disjoint planar subgraphs",
+        "# strictly more than the surface code's 2D nearest-neighbour grid, and the",
+        "# binding practical constraint",
+        "",
+        "encode many logical qubits into one code block, rather than one per patch",
+        "# the trade: give up the surface code's strictly planar layout for slightly",
+        "# richer connectivity, in exchange for a much better encoding rate",
+        "",
+        "repeat each syndrome cycle:",
+        "    for a length-n code, use n ancillary qubits and a depth-7",
+        "        nearest-neighbour CNOT circuit",
+        "",
+        "decode the syndromes in real time",
+        "# syndrome decoding remains a separate real-time problem, and matching",
+        "# decoders built for surface codes do not transfer directly",
+        "",
+        "return the block's logical qubits and the physical qubits they cost",
+        "",
+        "# error threshold 0.8% under the standard circuit-based noise model, on par",
+        "# with the surface code",
+        "# Bravyi et al. preserve 12 logical qubits for nearly a million syndrome",
+        "# cycles using 288 total physical qubits at physical error rate 0.1%,",
+        "# against an argued nearly 3000 physical qubits for equivalent surface-code",
+        "# suppression",
+        "",
+        "# the headline result is a fault-tolerant MEMORY: performing logical",
+        "# operations on these codes is substantially less developed than lattice",
+        "# surgery on surface codes, so this is not yet a drop-in replacement for a",
+        "# full computation",
+      ].join("\n"),
+    },
     citations: [
       { title: "High-threshold and low-overhead fault-tolerant quantum memory", authors: "Sergey Bravyi, Andrew W. Cross, Jay M. Gambetta, Dmitri Maslov, Patrick Rall, Theodore J. Yoder", year: "2023", url: "https://arxiv.org/abs/2308.07915" },
     ],
