@@ -459,6 +459,18 @@ const FAMILY_RULES: readonly TopicRule[] = [
   { family: "Optimization · time-dependent Hamiltonian", topics: ["algorithm-reference", "adiabatic", "optimization"] },
   { family: "Quantum walk", topics: ["algorithm-reference", "quantum-walk"] },
   { family: "QAOA", topics: ["algorithm-reference", "qaoa", "optimization"] },
+  // Zoo-parity intake (entries-zoo-parity.ts). Six families the catalog had no
+  // rule for, because it had no record of that shape: the two differential-equation
+  // families the map has drawn since W14 with nothing in the repository pointing at
+  // them, and four subject areas the Quantum Algorithm Zoo carries that no Leona
+  // record covered. Each reuses an existing topic id — new *families*, not new
+  // vocabulary, so the facet filters and their tests are untouched.
+  { family: "Quantum differential equations · linear", topics: ["algorithm-reference", "linear-algebra"] },
+  { family: "Quantum differential equations · nonlinear", topics: ["algorithm-reference", "linear-algebra"] },
+  { family: "Topological invariants", topics: ["algorithm-reference", "materials"] },
+  { family: "Markov-chain sampling", topics: ["algorithm-reference", "optimization"] },
+  { family: "Quantum sampling algorithm", topics: ["algorithm-reference", "state-preparation"] },
+  { family: "Optimization · decoded interferometry", topics: ["algorithm-reference", "optimization"] },
 ];
 
 /**
