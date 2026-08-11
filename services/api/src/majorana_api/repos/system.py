@@ -37,7 +37,16 @@ from sqlalchemy.ext.asyncio import AsyncSession
 from sqlalchemy.orm import aliased
 
 from ..ids import uuid7
-from ..orm import Artifact, ArtifactVersion, Job, Membership, Run, User, Workspace
+from ..orm import (
+    Artifact,
+    ArtifactVersion,
+    Job,
+    LicenseAssertion,
+    Membership,
+    Run,
+    User,
+    Workspace,
+)
 
 STARTER_BELL_SLUG_PREFIX = "starter-bell-state"
 STARTER_BELL_CODE = """from qiskit import QuantumCircuit
@@ -406,6 +415,38 @@ async def list_catalog_reviewer_grants(
         )
     ).all()
     return [(row.user_id, row.role, row.workos_user_id) for row in rows]
+
+
+async def count_catalog_assertions_by_reviewer(
+    session: AsyncSession, *, workspace_id: Any
+) -> dict[Any, int]:
+    """How many license assertions in this workspace each account actually signed.
+
+    A membership says an account *may* review. This says which one *did* — and
+    that is the stronger evidence of who the standing reviewer is, because
+    `attest_catalog_record` stamps `reviewer_user_id` on every assertion it
+    writes. An ADMIN grant that never signed anything is a permission nobody
+    used; the grant being "carried forward" lives on these rows.
+
+    Counts assertions rather than distinct records on purpose: the ledger is
+    append-only (a correction is a new row superseding the old, ADR-0020), so a
+    reviewer's footprint is the number of signatures they left, and collapsing
+    supersessions here would understate an account that has actually been doing
+    the reviewing.
+    """
+    rows = (
+        await session.execute(
+            select(LicenseAssertion.reviewer_user_id, func.count())
+            .join(ArtifactVersion, ArtifactVersion.id == LicenseAssertion.artifact_version_id)
+            .join(Artifact, Artifact.id == ArtifactVersion.artifact_id)
+            .where(
+                Artifact.workspace_id == workspace_id,
+                LicenseAssertion.reviewer_user_id.is_not(None),
+            )
+            .group_by(LicenseAssertion.reviewer_user_id)
+        )
+    ).all()
+    return {row[0]: row[1] for row in rows}
 
 
 async def _existing_user(
