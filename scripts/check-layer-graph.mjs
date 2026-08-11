@@ -18,6 +18,16 @@
 // `validateLayerGraph`** — the rules live in one place and cannot drift.
 //
 // Usage: node scripts/check-layer-graph.mjs [--quiet] [--unanchored] [--depth]
+//                                           [--closure=<capability-id>[,<capability-id>…]]
+//
+// `--closure` measures ONE REGION — the slots you name plus every method
+// realising them — field by field, and prints each field's own fraction with
+// its own missing list. It exists because the owner asked for a region to be
+// "completely closed… easily reproducible using our first principles… scalable
+// to other things", and every number above this is a whole-graph total: a
+// region can be finished while the totals barely move, and the totals cannot say
+// which region moved them. `layers.ts` §"Region closure" carries the argument
+// for why the output is a table and never a percentage.
 //
 // `--unanchored` prints the reading list itself rather than its length. The
 // audit has always computed `unanchored` and `map-eligibility.ts` has always
@@ -40,6 +50,16 @@ const esbuild = require("esbuild");
 const QUIET = process.argv.includes("--quiet");
 const SHOW_UNANCHORED = process.argv.includes("--unanchored");
 const SHOW_DEPTH = process.argv.includes("--depth");
+// `--closure=a,b` or `--closure a,b`. No default region: a hard-coded list of
+// the linear-ODE slots would be a fourth copy of a fact the graph already
+// carries, and the first thing to drift when a slot is renamed.
+const CLOSURE_ARG = (() => {
+  const inline = process.argv.find((arg) => arg.startsWith("--closure="));
+  if (inline) return inline.slice("--closure=".length);
+  const index = process.argv.indexOf("--closure");
+  return index >= 0 ? (process.argv[index + 1] ?? "") : null;
+})();
+const CLOSURE_IDS = CLOSURE_ARG === null ? [] : CLOSURE_ARG.split(",").map((id) => id.trim()).filter(Boolean);
 
 async function bundle(relativePath, label) {
   const outDir = mkdtempSync(join(tmpdir(), "layer-graph-"));
@@ -684,6 +704,57 @@ if (!QUIET) {
   );
   if (open.length > 0) {
     console.log(`  no method recorded: ${open.map((node) => node.id).join(", ")}`);
+  }
+}
+
+// One region, measured. Printed even under `--quiet`, because unlike everything
+// above it nobody gets this by accident: it is only computed when a caller names
+// the slots, and a caller who named them wants the answer.
+if (CLOSURE_IDS.length > 0) {
+  const registerMod = await bundle("apps/web/lib/repository/paper-register.ts", "paper-register");
+  const reports = new Map(
+    registerMod.PAPER_REGISTER.papers
+      .filter((paper) => paper.reports)
+      .map((paper) => [paper.url, paper.reports]),
+  );
+  const region = layersMod.regionClosure(LAYER_GRAPH, STATE_VOCABULARY, CLOSURE_IDS, reports);
+  console.log("");
+  console.log(`region closure — ${region.capabilities.join(", ")}`);
+  // A typo in a slot id would otherwise measure a smaller region and report it
+  // as healthier, which is the worst direction for a gauge to be wrong in.
+  if (region.unknown.length > 0) {
+    console.log(`  ⚠ named no capability in this graph: ${region.unknown.join(", ")}`);
+  }
+  console.log(
+    `  ${region.capabilities.length} slots · ${region.methods.length} methods realising them`,
+  );
+  for (const field of region.fields) {
+    const line = `  ${field.field.padEnd(20)} ${String(field.present).padStart(3)}/${field.total}`;
+    console.log(field.missing.length === 0 ? `${line}  ✓` : `${line}  missing: ${field.missing.join(" ")}`);
+  }
+  // Stretches, not methods — see `RegionClosure.hopStretches` for why a
+  // per-method count reads as finished on a region that is not.
+  console.log(
+    `  ${"hop theory".padEnd(20)} ${String(region.hopStretchesAuthored).padStart(3)}/${region.hopStretches} route stretches`,
+  );
+  const byMethod = new Map();
+  for (const hop of region.unauthoredHops) {
+    if (!byMethod.has(hop.method)) byMethod.set(hop.method, []);
+    byMethod.get(hop.method).push(hop.key);
+  }
+  for (const [method, keys] of byMethod) {
+    console.log(`      ${method.padEnd(32)} ${keys.join(" ")}`);
+  }
+  // The classification, and it is the half of this report that says which
+  // absences are work. `accounted` is a finished answer; `unread` is a paper to
+  // read, not an example to write.
+  const verdicts = { accounted: [], outstanding: [], unread: [] };
+  for (const [method, verdict] of region.runEvidence) verdicts[verdict].push(method);
+  console.log(
+    `  ${"a run to write up".padEnd(20)} ${verdicts.outstanding.length} outstanding · ${verdicts.unread.length} unread · ${verdicts.accounted.length} accounted (no cited paper reports one)`,
+  );
+  for (const kind of ["outstanding", "unread", "accounted"]) {
+    if (verdicts[kind].length > 0) console.log(`      ${kind.padEnd(12)} ${verdicts[kind].join(" ")}`);
   }
 }
 
