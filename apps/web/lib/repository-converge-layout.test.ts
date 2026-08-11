@@ -3442,7 +3442,10 @@ const SIZE_CEILING = {
    */
   saturatedWidth: 8_000,
   /**
-   * Tallest, same sweep. Today **6,395** — `nonlinear-ode-solve` in `en`.
+   * Tallest, same sweep. Today **6,056** — `nonlinear-ode-solve` in `en`,
+   * re-measured at the merge after the branch took dev's 360–362 on board (the
+   * 6,395 recorded at authoring predated those; the PR body's 5,142 is
+   * `linear-ode-solve` en — the motivating figure's drop, never the max).
    *
    * **This is the ceiling coming back down, as D119.6 promised it would.** The
    * 22,982px `linear-ode-solve` fan that moved the ceiling 16,000 → 24,000 was
