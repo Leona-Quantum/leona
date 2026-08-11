@@ -64,6 +64,7 @@ async def run_intent_corpus(
             case.prompt,
             RunMode.AUTO,
             llm,
+            has_source_code=case.has_source_code,
             conversation_messages=[turn.model_dump() for turn in case.history],
         )
         observed = decision.resolved.value
