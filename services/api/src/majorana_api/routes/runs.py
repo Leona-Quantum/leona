@@ -575,7 +575,9 @@ async def stream_run_events(
                 yield ": stream duration limit reached; reconnect with Last-Event-ID\n\n"
                 return
             async with factory() as s:
-                events = await runs_repo.list_run_events(scope, s, run_id, after_seq=seq)
+                events, run_status = await runs_repo.list_run_events_with_status(
+                    scope, s, run_id, after_seq=seq
+                )
             if events:
                 idle_polls = 0
                 for ev in events:
@@ -590,11 +592,9 @@ async def stream_run_events(
                     yield ": keep-alive\n\n"
                 # A run that reached terminal status without a run.finished event
                 # (e.g. job died) must not hold the connection open forever.
-                async with factory() as s:
-                    row = await runs_repo.get_run(scope, s, run_id)
-                    if is_terminal(RunStatus(row.status)):
-                        yield ": run terminal without run.finished; closing\n\n"
-                        return
+                if is_terminal(RunStatus(run_status)):
+                    yield ": run terminal without run.finished; closing\n\n"
+                    return
             await asyncio.sleep(SSE_POLL_INTERVAL_S)
 
     return StreamingResponse(
