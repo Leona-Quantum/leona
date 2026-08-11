@@ -626,3 +626,106 @@ for (const story of withOpenFeeds) {
     }
   });
 }
+
+// ---------------------------------------------------------------------------------------
+// **The caption plate — the second plate on this canvas, and the reason it is second.**
+//
+// W19 PR-2 draws a convergence's own name over its shared circle, on a plate of its own.
+// That plate is NOT `.mj-converge-name-plate`, and the difference is this file's business:
+// the marker class is what every guard above filters on, so a caption plate wearing it
+// walked into two assertions written about something else. It failed "every plate before
+// every name" because hubs are the LAST pass by design, and it failed "each plate covers
+// its lane name" because it is paired to a caption, not to a lane — 122 red checks
+// describing a figure that was drawing correctly.
+//
+// Splitting the class fixes that by making each guard filter on what it actually means.
+// The cost of the split is that the new class starts life unguarded, so it gets these:
+// the caption plate must exist somewhere (or the split silently retired a marker), must be
+// emitted before its own text (it occludes by paint order like any other plate), and must
+// be wider than the caption it carries at both edges.
+//
+// **What it deliberately does not re-check:** that a caption never lands on a lane name.
+// That is proved upstream in `repository-converge-layout.test.ts` over every figure,
+// opening and locale — a population this harness's story list does not cover — and a
+// weaker second copy here would only invite someone to fix the wrong one.
+const CAPTION_PLATE = 'class="mj-converge-caption-plate';
+const withCaptions = manifest.filter((story) => source(story).includes(CAPTION_PLATE));
+
+test("the convergence caption is drawn on a plate at all", () => {
+  // The floor. Without it, renaming the class in the component turns every assertion
+  // below into a loop over an empty list, and the suite reports success for a feature
+  // that stopped drawing.
+  expect(
+    withCaptions.length,
+    "no rendered figure carries a caption plate — either the class was renamed without " +
+      "this guard, or the convergence captions stopped drawing entirely",
+  ).toBeGreaterThan(0);
+});
+
+for (const story of withCaptions) {
+  for (const theme of ["light", "dark"] as const) {
+    test(`caption plate covers its caption — ${story.name} (${theme})`, async ({ page }) => {
+      await page.setContent(source(story), { waitUntil: "load" });
+      await page.evaluate((value) => {
+        document.documentElement.setAttribute("data-theme", value);
+      }, theme);
+      await page.evaluate(() => document.fonts.ready);
+
+      const reports = await page.evaluate(() => {
+        // Same coordinate discipline as the name-plate measurement above, and for the
+        // same two reasons recorded there: `getBBox()` alone compares two different
+        // spaces, and `getBoundingClientRect()` alone is sub-pixel on a figure painting
+        // at ~5% scale. Put the text's box into the plate's space and compare there.
+        const intoPlateSpace = (plate: SVGGraphicsElement, element: SVGGraphicsElement) => {
+          const box = element.getBBox();
+          const screen = plate.getScreenCTM();
+          const own = element.getScreenCTM();
+          if (!screen || !own) return { x0: box.x, x1: box.x + box.width };
+          const m = screen.inverse().multiply(own);
+          const xs = [box.x, box.x + box.width].flatMap((x) =>
+            [box.y, box.y + box.height].map((y) => m.a * x + m.c * y + m.e),
+          );
+          return { x0: Math.min(...xs), x1: Math.max(...xs) };
+        };
+        const out: { label: string; left: number; right: number; beforeText: boolean }[] = [];
+        for (const plate of document.querySelectorAll<SVGRectElement>(".mj-converge-caption-plate")) {
+          // Pairing here IS the DOM relationship, unlike the lane case: the component
+          // emits the plate and its caption as the two children of one `<g>`, so the
+          // sibling is the right text by construction rather than by a shared key.
+          const text = plate.parentElement?.querySelector<SVGTextElement>("text.mj-converge-hub-caption");
+          if (!text) {
+            out.push({ label: "", left: -1, right: -1, beforeText: false });
+            continue;
+          }
+          const span = intoPlateSpace(plate, text);
+          const x = Number(plate.getAttribute("x") ?? "0");
+          const width = Number(plate.getAttribute("width") ?? "0");
+          out.push({
+            label: text.textContent ?? "",
+            left: span.x0 - x,
+            right: x + width - span.x1,
+            beforeText: (plate.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+          });
+        }
+        return out;
+      });
+
+      expect(reports.length, `${story.name} matched the caption filter but drew no plate`).toBeGreaterThan(0);
+      for (const report of reports) {
+        const where = `${story.name} (${theme}) caption "${report.label}"`;
+        expect(report.label, `${where}: a caption plate carries no caption text`).not.toEqual("");
+        expect(
+          report.beforeText,
+          `${where}: the plate is emitted AFTER its own caption, so it paints the caption out ` +
+            `instead of clearing the lines under it`,
+        ).toBe(true);
+        // Ink-level vertical coverage is unprovable in this harness for the reason the
+        // header records (the real face arrives through next/font at build time and this
+        // renders from source), so this checks the horizontal span, which is font-driven
+        // but generously so at 4px of designed slack per side.
+        expect(report.left, `${where}: the caption runs past the plate's left edge`).toBeGreaterThanOrEqual(0);
+        expect(report.right, `${where}: the caption runs past the plate's right edge`).toBeGreaterThanOrEqual(0);
+      }
+    });
+  }
+}
