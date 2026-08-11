@@ -541,3 +541,75 @@ async def test_crashed_import_resumes_from_durable_item_state(env, tmp_path):
         assert final_state[first_identity].state == ImportItemState.STAGED
         assert final_state[first_identity].resulting_version_id == staged_version_id
         assert final_state[other_identity].state == ImportItemState.STAGED
+
+
+@requires_db
+async def test_an_item_taken_by_another_processor_mid_batch_is_skipped(env, tmp_path, monkeypatch):
+    """The race that killed the production catalog sync on 2026-08-12.
+
+    `process_import_batch` SELECTs the QUEUED item ids, then re-fetches each one
+    inside the loop. That select is a snapshot, and this batch is not the only
+    processor: `catalog_admin bootstrap-import` creates the job — which enqueues
+    a durable `catalog.import` job the deployed **worker** also handles — and
+    then drains the batch itself. So the worker can take an item *after* the
+    select and *before* the loop reaches it.
+
+    In production that surfaced nine seconds in as
+    ``illegal import item transition staged -> fetching``, and then again as
+    ``staged -> retry_wait`` when the transient handler tried to requeue the
+    already-staged item. The batch died and the corpus stayed unsynced.
+
+    **The interleaving is the whole test.** An earlier version of this staged the
+    item *before* calling `process_import_batch` — which the select then filtered
+    out, so it passed with the fix reverted and proved nothing. The other
+    processor has to win *between* the two steps, so it is simulated from inside
+    the first item's `_advance_item` call.
+    """
+    authority, factory = env
+    scope = authority.importer_scope()
+    source = _fixture_source(_unique_copy(FIXTURES_ROOT / "valid_set", tmp_path / "raced"), "raced")
+
+    async with factory() as session:
+        job = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            source=source,
+            idempotency_key=f"race-{uuid.uuid4()}",
+        )
+        await session.commit()
+        job_id = job.id
+
+    taken: dict[str, str] = {}
+    original = catalog_import._advance_item
+
+    async def racing_advance(scope_, session_, item_, **kwargs):
+        # First item only: another processor commits a sibling as STAGED, which
+        # is exactly what the worker does to a row this loop has already selected.
+        if not taken:
+            async with factory() as other:
+                for identity, row in (await _items_by_identity(other, job_id)).items():
+                    if row.id != item_.id:
+                        row.state = ImportItemState.STAGED
+                        taken[identity] = identity
+                await other.commit()
+        return await original(scope_, session_, item_, **kwargs)
+
+    monkeypatch.setattr(catalog_import, "_advance_item", racing_advance)
+
+    # Must not raise. With the re-check removed this dies on `staged -> fetching`.
+    async with factory() as session:
+        final = await catalog_import.process_import_batch(
+            scope, session, job_id, authority=authority, source=source
+        )
+    assert taken, "the race never fired — the test would prove nothing"
+    # `==`, not `is`: these columns come back as plain strings, so an identity
+    # comparison against the enum is vacuously true and asserts nothing.
+    assert final.status == ImportJobStatus.COMPLETED
+
+    async with factory() as session:
+        after = await _items_by_identity(session, job_id)
+    # The raced item is left as the other processor left it — not re-advanced,
+    # and above all not forced to RETRY_WAIT or DEAD.
+    for identity in after:
+        assert after[identity].state == ImportItemState.STAGED
