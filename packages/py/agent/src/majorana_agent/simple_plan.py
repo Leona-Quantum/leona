@@ -607,7 +607,7 @@ class SimplePlan(_SimplePlanModel):
         )
 
 
-def parse_simple_plan(text: str) -> SimplePlan:
+def parse_simple_plan(text: str, *, omit_broad_lindblad_reference: bool = False) -> SimplePlan:
     """Parse one tolerant JSON object, leaving typed validation errors intact."""
 
     raw = extract_json(text)
@@ -616,6 +616,13 @@ def parse_simple_plan(text: str) -> SimplePlan:
     except (TypeError, ValueError) as exc:
         raise StageOutputError(f"invalid JSON object: {exc}") from exc
     if isinstance(payload, dict):
+        verification = payload.get("verification_plan")
+        if omit_broad_lindblad_reference and isinstance(verification, dict):
+            # The broad planner is correlated with generation and repeatedly emits
+            # malformed deeply nested Lindblad data despite being told to omit it.
+            # A dedicated request-scoped extractor owns this optional reference.
+            verification = {**verification, "exact_lindblad_reference": None}
+            payload = {**payload, "verification_plan": verification}
         criteria = payload.get("success_criteria")
         if isinstance(criteria, dict) and isinstance(criteria.get("additional_notes"), str):
             payload = {
