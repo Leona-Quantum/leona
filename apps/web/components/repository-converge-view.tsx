@@ -91,6 +91,7 @@ import { convergeNotes } from "../lib/repository/converge-notes";
 import { expansionOf } from "../lib/repository/state-graph";
 import { ancestorPath } from "../lib/repository/strand-layout";
 import { formatViewport, IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
+import { resolveSelection } from "../lib/repository/canvas-selection";
 import {
   bypassersOf,
   isCapability,
@@ -655,6 +656,7 @@ export function ConvergeView({
   iopen = EMPTY_IOPEN,
   droppedOpen = 0,
   viewport = IDENTITY,
+  sel = null,
 }: {
   graph: LayerGraph;
   corpus: readonly LayerCorpusEntry[];
@@ -703,6 +705,15 @@ export function ConvergeView({
   droppedOpen?: number;
   /** Where the reader has panned and how far in, from `?at=`. */
   viewport?: Viewport;
+  /**
+   * Which drawn thing the reader is on, from `?sel=` (W16, the Prezi move).
+   *
+   * A parameter for the same reason `at` is: the highlight is part of what a
+   * shared link shows, so it renders on the server and survives JS being off.
+   * The camera move it triggers is the client half (`InfiniteCanvas`), because
+   * `?at=` units are fitted-width-relative and only the client knows the box.
+   */
+  sel?: string | null;
 }): React.ReactElement {
   const lang: "en" | "ja" = locale === "ja" ? "ja" : "en";
   const copy = COPY[lang];
@@ -761,6 +772,11 @@ export function ConvergeView({
     }),
   }));
   const drawn = figures.filter((figure) => !figure.diagram.empty);
+
+  // At most ONE highlighted element across every figure this page draws — the
+  // same page-level-uniqueness shape as `claimed` below, resolved here because
+  // this is the component that knows how many figures there are.
+  const selection = resolveSelection(sel, drawn.map((figure) => figure.diagram));
 
   // The convergence, restated as a number. A picture showing four lines meeting
   // is not the same as being told that those four lines are 4 routes; the
@@ -976,6 +992,13 @@ export function ConvergeView({
           initial={viewport}
           label={copy.canvasLabel(focus ? label(focus) : copy.heading)}
           locale={locale}
+          // Only when the selection resolved to something drawn: a `sel` that
+          // matches nothing must not send the client hunting for an element
+          // that is not there. The open set rides in the key so a toggle that
+          // rearranges the figure re-frames the selected item at its new place
+          // — "persist showing the highlighted item" is a statement about
+          // every layout, not just the one it was selected on.
+          selKey={selection ? `${sel}|${[...open].sort().join(",")}` : null}
           // Still `fill`, and it has to be: `.mj-canvas-viewport--fill` is what
           // binds a plain two-finger wheel to panning and what contains the
           // overscroll that would otherwise navigate the page away mid-pan.
@@ -983,7 +1006,7 @@ export function ConvergeView({
           // deleted gesture.
           fill
         >
-          {drawn.map((figure) => (
+          {drawn.map((figure, index) => (
             <ConvergeCanvas
               key={figure.subject.id}
               diagram={figure.diagram}
@@ -995,6 +1018,7 @@ export function ConvergeView({
               // because this is the component that knows how many figures the
               // page is drawing.
               claimed={claimed}
+              selection={selection && selection.figure === index ? selection : null}
             />
           ))}
         </InfiniteCanvas>

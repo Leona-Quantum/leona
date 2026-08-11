@@ -88,12 +88,27 @@ function first(value: string | string[] | undefined | null): string | undefined 
 export function parseViewport(raw: string | string[] | undefined | null): Viewport {
   const value = first(raw);
   if (!value) return IDENTITY;
-  const parts = value.split(",");
-  if (parts.length !== 3) return IDENTITY;
-  if (parts.some((part) => part.trim() === "")) return IDENTITY;
-  const [x, y, z] = parts.map(Number);
-  if (!Number.isFinite(x) || !Number.isFinite(y) || !Number.isFinite(z)) return IDENTITY;
+  if (!isViewportValue(value)) return IDENTITY;
+  const [x, y, z] = value.split(",").map(Number);
   return { x, y, z: clampZoom(z) };
+}
+
+/**
+ * Whether a string is a viewport address at all — `parseViewport`'s validation,
+ * exposed as a predicate.
+ *
+ * Needed because one caller has to tell "a viewport" apart from "not a
+ * viewport" without treating IDENTITY as the answer to both: the W15 jump
+ * control writes a lane *address* (e.g. `1.0.3`) into `?at=`, and the client
+ * that rewrites those into `?sel=` (see `canvas-selection.ts`) must recognise
+ * them. One predicate, used by `parseViewport` itself, rather than a second
+ * copy of the three rules that would drift from the first.
+ */
+export function isViewportValue(value: string): boolean {
+  const parts = value.split(",");
+  if (parts.length !== 3) return false;
+  if (parts.some((part) => part.trim() === "")) return false;
+  return parts.every((part) => Number.isFinite(Number(part)));
 }
 
 /** Round to 2 decimal places. x/y are CSS pixels — sub-hundredth-of-a-pixel
@@ -578,4 +593,101 @@ export function createCanvasGesture(): CanvasGesture {
 function firstOf(map: Map<number, PointerPosition>): PointerPosition | undefined {
   const next = map.values().next();
   return next.done ? undefined : next.value;
+}
+
+// ---------------------------------------------------------------------------
+// The Prezi move — centering the camera on a selected element (W16)
+// ---------------------------------------------------------------------------
+
+/** A measured rectangle in viewport-local screen pixels — the same space
+ * `Viewport.x/y` and every pointer sample live in. The caller measures (one
+ * `getBoundingClientRect` pair, outside any gesture) and subtracts the box's
+ * own origin; this file never touches a DOM node, for the same testability
+ * reason as `createCanvasGesture`. */
+export interface MeasuredRect {
+  left: number;
+  top: number;
+  width: number;
+  height: number;
+}
+
+/**
+ * The most the camera may zoom IN when centering a selection.
+ *
+ * 2.5 puts the smallest type this canvas draws (12px, `.mj-process-name`) at
+ * 30px — unmissable — while a `--fill` viewport still shows several hundred
+ * content-pixels of the surrounding figure, which is the owner's actual ask:
+ * *"persist showing the highlighted item with the rest of the map around it"*.
+ * Like `maxZoom`'s 8, it is a judgment stop, not a measurement: it only has to
+ * be past "clearly prominent" and short of "the item is the whole screen", and
+ * 2.5 is both. Zooming *out* to fit a large selection has no floor of its own —
+ * `VIEWPORT_LIMITS.minZoom` already bounds it.
+ */
+export const SELECTION_ZOOM_MAX = 2.5;
+
+/**
+ * How much of the limiting box dimension a centered selection may fill.
+ *
+ * 0.8 leaves a tenth of the box on each side of the selection — enough that a
+ * lane's neighbours stay visible around it (the "rest of the map"), and the
+ * reason this is a fill fraction rather than a fixed zoom: a state circle and
+ * a 2,000px lane need opposite camera moves to satisfy the same sentence.
+ */
+export const SELECTION_FILL = 0.8;
+
+/**
+ * The viewport that centers `target` in `box`, zoomed so the selection is
+ * prominent but never the whole picture.
+ *
+ * Derivation, in the same coordinate frame as `zoomAbout`: the target's centre
+ * is at viewport-local `S`; the content point under it is `C = (S − t)/z`. The
+ * new zoom `z'` is chosen from the target's *content-space* size (its measured
+ * size divided by the current `z`, so the answer does not depend on where the
+ * camera happens to be standing — pinned by test): fill `SELECTION_FILL` of the
+ * limiting dimension, capped by `SELECTION_ZOOM_MAX` and the global limits.
+ * The translation then places `C` at the box centre: `t' = box/2 − z'·C`.
+ *
+ * Total: a degenerate measurement (a hidden element reports 0×0) is clamped to
+ * one content pixel rather than dividing by zero into an `Infinity` zoom.
+ */
+export function centerOn(view: Viewport, target: MeasuredRect, box: { width: number; height: number }): Viewport {
+  const cw = Math.max(1, target.width / view.z);
+  const ch = Math.max(1, target.height / view.z);
+  const cx = (target.left + target.width / 2 - view.x) / view.z;
+  const cy = (target.top + target.height / 2 - view.y) / view.z;
+  const fit = Math.min((SELECTION_FILL * box.width) / cw, (SELECTION_FILL * box.height) / ch);
+  const z = clampZoom(Math.min(SELECTION_ZOOM_MAX, fit));
+  return { x: box.width / 2 - z * cx, y: box.height / 2 - z * cy, z };
+}
+
+/** How long the camera takes to fly to a selection. Inside the ≤320ms bound
+ * `docs/ui/components.md` sets for continuity transitions on this canvas. */
+export const FLY_DURATION_MS = 320;
+
+/**
+ * The camera's position `t` of the way from `from` to `to`, `t` in [0, 1].
+ *
+ * `x`/`y` interpolate linearly; `z` interpolates in **log space**, because zoom
+ * is multiplicative — the linear midpoint of 0.5× and 2× is 1.25×, which reads
+ * as "zoomed in, then in some more", where the geometric midpoint 1× is the
+ * halfway a reader's eye expects. Endpoints are exact by construction (`t=0`
+ * returns `from`'s values, `t=1` returns `to`'s — pinned by test), so the tween
+ * cannot land next to its target and leave the URL writeback a hair off.
+ */
+export function interpolateViewport(from: Viewport, to: Viewport, t: number): Viewport {
+  if (t <= 0) return from;
+  if (t >= 1) return to;
+  return {
+    x: from.x + (to.x - from.x) * t,
+    y: from.y + (to.y - from.y) * t,
+    z: from.z * Math.exp(Math.log(to.z / from.z) * t),
+  };
+}
+
+/** The standard symmetric ease — starts and ends at rest. The camera is the
+ * one moving thing on screen during a fly, so an abrupt start reads as a cut
+ * rather than a move; cubic matches `--ease-converge`'s weight closely enough
+ * that the two never run side by side looking like different systems. */
+export function easeInOutCubic(t: number): number {
+  return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2;
 }
