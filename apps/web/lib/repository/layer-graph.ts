@@ -2617,7 +2617,7 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     entries: ["vqe-readout-mitigation"],
     citations: [
-      { title: "Mitigating measurement errors in multi-qubit experiments", authors: "Sergey Bravyi, Sarah Sheldon, Abhinav Kandala, David C. Mckay, Jay M. Gambetta", year: "2020", url: "https://arxiv.org/abs/2006.14044" },
+      { title: "Mitigating measurement errors in multi-qubit experiments", authors: "Sergey Bravyi, Sarah Sheldon, Abhinav Kandala, David C. McKay, Jay M. Gambetta", year: "2020", url: "https://arxiv.org/abs/2006.14044" },
       { title: "Scalable mitigation of measurement errors on quantum computers", authors: "Paul D. Nation, Hwajung Kang, Neereja Sundaresan, Jay M. Gambetta", year: "2021", url: "https://arxiv.org/abs/2108.12518" },
     ],
   },
