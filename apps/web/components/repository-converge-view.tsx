@@ -68,6 +68,8 @@ import {
   parseCardSection,
   withCard,
   withCardSection,
+  withInner,
+  withIopen,
   type CardSelection,
 } from "../lib/repository/map-card";
 import { cardFor, cardSections } from "../lib/repository/card-content";
@@ -80,6 +82,7 @@ import {
   figureHref,
   layoutConverge,
   legendMark,
+  methodHasInterior,
   spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -91,6 +94,7 @@ import { formatViewport, IDENTITY, type Viewport } from "../lib/repository/canva
 import {
   bypassersOf,
   isCapability,
+  isMethod,
   layerNode,
   methodsRealizing,
   nodesWithEntries,
@@ -335,6 +339,13 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
  * gesture writes the same parameter back.
  */
 const SIZES = [50, 75, 100, 150, 200] as const;
+
+/**
+ * The `iopen` default. One frozen module-level set rather than `new Set()` in
+ * the parameter list, which would allocate a distinct "empty" per render and
+ * make the default the one value that never compares equal to itself.
+ */
+const EMPTY_IOPEN: ReadonlySet<string> = new Set();
 
 /**
  * Is this viewport one of the named sizes, or somewhere a reader has dragged to?
@@ -629,6 +640,8 @@ export function ConvergeView({
   about = null,
   card = { id: null, dropped: 0 },
   cardSection = null,
+  inner = { id: null, dropped: 0 },
+  iopen = EMPTY_IOPEN,
   droppedOpen = 0,
   viewport = IDENTITY,
 }: {
@@ -664,6 +677,17 @@ export function ConvergeView({
    * section of the card that id opens without building the card twice.
    */
   cardSection?: string | null;
+  /**
+   * The truncated map inside the open card, from `?inner=` (W9).
+   *
+   * Resolved on the server against `drawableSlots`, by the shape `card` is —
+   * see `lib/repository/map-card.ts`. Single-valued by the same argument
+   * `?card=` is: two nested truncated maps is the process-within-process
+   * tracking the owner ruled out, which is also why `withCard` resets it.
+   */
+  inner?: CardSelection;
+  /** What the reader has opened inside the truncated map, from `?iopen=`. */
+  iopen?: ReadonlySet<string>;
   /** How many ids the URL asked for over the cap. Reported, never dropped silently. */
   droppedOpen?: number;
   /** Where the reader has panned and how far in, from `?at=`. */
@@ -796,6 +820,94 @@ export function ConvergeView({
   // `?sec=` a previous card left behind.
   const cardBase = card.id === null ? base : withCard(base, card.id);
   const cardHrefFor = (id: string) => withCard(base, id);
+
+  // --- the truncated map inside the card (W9) ------------------------------
+  //
+  // > *"Opening processes further when within their card should be possible.
+  // > it stays in the card, but disconnects from the rest of the graph, so the
+  // > user can click around in there."* — owner, session 113
+  //
+  // The section the reader is on is resolved once, here, because two of the
+  // things below hang off the address *including* it: expanding the truncated
+  // map from Theory and stepping back must land on Theory, not on the card's
+  // first section.
+  const resolvedSection =
+    openCard === null
+      ? null
+      : parseCardSection(cardSection ?? undefined, cardSections(openCard).map((s) => s.id));
+  // Where the open card is — base, card and section. Null while no card is
+  // open, and everything below follows it to null: `?inner=` with no card is
+  // an address for a panel that is shut, so it draws nothing.
+  const cardAt =
+    openCard === null
+      ? null
+      : resolvedSection === null
+        ? cardBase
+        : withCardSection(cardBase, resolvedSection);
+  // The truncated map's subject. The page validated `inner.id` against
+  // `drawableSlots`; the capability check is repeated here because this
+  // component is the one that hands the node to `layoutConverge`, and a check
+  // that lives only in the caller is a check the next caller forgets.
+  const innerNode = inner.id === null ? null : layerNode(graph, inner.id);
+  const innerFocus =
+    cardAt !== null && innerNode !== null && isCapability(innerNode) ? innerNode : null;
+  // The address of step (3) of the owner's walk: this card, this section, with
+  // the truncated map of `inner` open inside it. It is the base every address
+  // inside the figure is built on — see `layoutConverge`'s `innerBase`.
+  const innerAddress = innerFocus === null || cardAt === null ? null : withInner(cardAt, innerFocus.id);
+  // The figure itself: the same layout the map runs, handed the truncated
+  // subject and the reader's `?iopen=` set. No `cards` flag — `innerBase` is
+  // the card layer here, hanging every name off the *outer* address so a click
+  // retargets the one mounted panel (the reset) instead of minting a second
+  // map. No `at` either: the panel is not a pannable viewport, and the outer
+  // `?at=` already rides inside `innerAddress`.
+  const innerDiagram =
+    innerFocus === null || innerAddress === null
+      ? null
+      : layoutConverge({
+          graph,
+          vocabulary: STATE_VOCABULARY,
+          focus: innerFocus,
+          locale,
+          open: iopen,
+          innerBase: innerAddress,
+        });
+  // The control that opens it — the owner's step (2), *"click the process to
+  // expand it further"* — minted here because this is the component that holds
+  // the graph, and passed down as an address the panel either renders or does
+  // not. Per card kind:
+  //
+  // - a **process** card opens its own slot, when the layout can draw it;
+  // - a **method** card opens the slot it fills with the method's own lane
+  //   already expanded (`?iopen=<methodId>` — the id form, which opens every
+  //   lane the method draws there), and only *"where the method has an
+  //   interior"* — `methodHasInterior`, the same predicate the lane opens by,
+  //   because a control derived from anything narrower offers some methods a
+  //   truncated map that expands into nothing (a re-derivation from `segments`
+  //   alone did exactly that to `hhl-qpe-inversion`, whose whole interior is
+  //   ingredients);
+  // - the **own-step** card gets none — the stretch is a piece of a route,
+  //   nobody's slot, and a truncated map of it is a figure of nothing.
+  //
+  // The state card's exclusion is the owner's own and is structural today; the
+  // comment sits with the control in `map-card-panel.tsx`.
+  const drawableIds = new Set(candidates.map((slot) => slot.id));
+  let innerHref: string | null = null;
+  if (openCard !== null && cardAt !== null) {
+    if (openCard.kind === "process" && drawableIds.has(openCard.id)) {
+      innerHref = withInner(cardAt, openCard.id);
+    } else if (openCard.kind === "method") {
+      const methodNode = layerNode(graph, openCard.id);
+      if (
+        methodNode &&
+        isMethod(methodNode) &&
+        drawableIds.has(methodNode.realizes) &&
+        methodHasInterior(graph, STATE_VOCABULARY, methodNode)
+      ) {
+        innerHref = withIopen(withInner(cardAt, methodNode.realizes), [openCard.id]);
+      }
+    }
+  }
   // One control, two states. A separate close button in the overlay would be a
   // third thing in a corner the owner asked to hold exactly two.
   const infoHref = about === null ? sectionHrefs[MAP_ABOUT_SECTIONS[0]] : closeHref;
@@ -900,11 +1012,33 @@ export function ConvergeView({
         // Resolved against the sections this card actually has. A `?sec=` naming
         // something else is a stale link, and the panel falls back to the first
         // section rather than blanking a card that opened perfectly well.
-        section={
-          openCard === null
-            ? null
-            : parseCardSection(cardSection ?? undefined, cardSections(openCard).map((s) => s.id))
+        section={resolvedSection}
+        // The truncated map, server-rendered and handed through the client
+        // boundary as markup — `curl` on a `?inner=` address gets the whole
+        // SVG, and the panel adds nothing to it but the frame. `subjectId` is
+        // deliberately null: a `view-transition-name` is document-unique, the
+        // outer canvas may be drawing this same subject behind the card
+        // (`focus=P&card=P&inner=P` is step (3) of the walk), and a duplicate
+        // name kills the transition for both claimants silently.
+        figure={
+          innerDiagram === null || innerDiagram.empty || innerFocus === null ? null : (
+            <div className="mj-card-figure">
+              <ConvergeCanvas
+                diagram={innerDiagram}
+                locale={locale}
+                title={label(innerFocus)}
+                subjectId={null}
+                atlas={atlas}
+              />
+            </div>
+          )
         }
+        // The two ways out of the truncated map that are not "click a label":
+        // back to the card it opened from (same section, `?inner=` and
+        // `?iopen=` gone), and the close control the panel already has, whose
+        // `withCard(base, null)` now drops both parameters too.
+        innerHref={innerHref}
+        innerCloseHref={cardAt}
         // A map rather than a function: `MapCardPanel` is a client component
         // and a function prop cannot cross that boundary. Built on the address
         // the card is already at, so switching section keeps the reader's

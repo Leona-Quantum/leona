@@ -94,7 +94,7 @@
 // reader has opened is in the URL (`?open=`), never in component state — a
 // control that only works after hydration has no address (D88.2).
 import { ownCardId } from "./card-content.ts";
-import { withCard } from "./map-card.ts";
+import { withCard, withIopen } from "./map-card.ts";
 import { estimateTextWidth, fitLabel, LANE_FONT_PX, stateHref } from "./process-layout.ts";
 import {
   bellyOf,
@@ -1310,6 +1310,19 @@ export function toggleHref(
    */
   id?: string | null,
 ): string {
+  return figureHref(focus, toggledOpen(open, address, id), at);
+}
+
+/**
+ * The set after toggling one lane — the arithmetic `toggleHref` and
+ * `innerToggleHref` share, extracted so the two serializers cannot come to
+ * disagree about what a toggle *is* while agreeing about where it writes.
+ */
+function toggledOpen(
+  open: ReadonlySet<string>,
+  address: string,
+  id?: string | null,
+): Set<string> {
   const next = new Set(open);
   // **Both forms, unconditionally**, and only then decide whether to add.
   // Written as an if/else-if first, which is wrong for the one input a click can
@@ -1321,7 +1334,29 @@ export function toggleHref(
   const heldByAddress = next.delete(address);
   const heldById = id !== null && id !== undefined ? next.delete(id) : false;
   if (!heldByAddress && !heldById) next.add(address);
-  return figureHref(focus, next, at);
+  return next;
+}
+
+/**
+ * The address that opens — or shuts — one line **of the truncated map inside
+ * the card**, leaving everything else as it is.
+ *
+ * The same toggle as `toggleHref`, written to `?iopen=` on the *outer* address
+ * instead of to `?open=` on a fresh one. Same address grammar, different key:
+ * the truncated figure's lanes have addresses in exactly the form the outer
+ * figure's do, and writing them under `?open=` would open lanes on the map
+ * *behind* the card — the two sets describe two different figures and must not
+ * share a key. Writing onto `base` rather than through `figureHref` is what
+ * keeps the reader's focus, outer open set, viewport, card and inner intact
+ * across every click inside the panel; see `withIopen` for that argument.
+ */
+export function innerToggleHref(
+  base: string,
+  open: ReadonlySet<string>,
+  address: string,
+  id?: string | null,
+): string {
+  return withIopen(base, toggledOpen(open, address, id));
 }
 
 function laneName(
@@ -1914,6 +1949,31 @@ function variantPosition(
   return route.segments.length + route.feeds.length + index;
 }
 
+/**
+ * Whether a method's lane has anything inside it to draw — the **single
+ * writer** of "this method has an interior".
+ *
+ * **Or `feeds`, not just `segments`.** Twelve of the twenty-nine decomposed
+ * methods have exactly one segment and at least one ingredient — every step
+ * they name is something they *need* rather than a stage they pass through —
+ * and requiring two segments made all twelve of them inert. `hhl-qpe-inversion`
+ * names three steps and opened into nothing at all.
+ *
+ * Exported for the method card's expand control (W9): *"the method card gets it
+ * too where the method has an interior"* has to mean the same interior the lane
+ * opens into, or the card offers a truncated map that expands into nothing —
+ * which is precisely what a view-side re-derivation from `segments` alone did
+ * to `hhl-qpe-inversion` a second time, caught on the served page.
+ */
+export function methodHasInterior(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  method: LayerMethod,
+): boolean {
+  const route = routeOf(graph, vocabulary, method);
+  return route.segments.length >= 2 || route.feeds.length > 0;
+}
+
 function planForMethod(
   graph: LayerGraph,
   vocabulary: StateVocabulary,
@@ -1927,12 +1987,9 @@ function planForMethod(
 ): PlanStrand {
   const route = routeOf(graph, vocabulary, method);
   const segments = route.segments.length;
-  // **Or `feeds`, not just `segments`.** Twelve of the twenty-nine decomposed
-  // methods have exactly one segment and at least one ingredient — every step
-  // they name is something they *need* rather than a stage they pass through —
-  // and requiring two segments made all twelve of them inert. `hhl-qpe-inversion`
-  // names three steps and opened into nothing at all.
-  const holds = segments >= 2 || route.feeds.length > 0;
+  // See `methodHasInterior` — one predicate, drawn on by the lane and offered
+  // on by the card, so the two cannot disagree about what opens.
+  const holds = methodHasInterior(graph, vocabulary, method);
   const canOpen = holds && depth < CONVERGE_DEPTH_MAX && !seen.has(method.id);
   const isOpen = canOpen && isOpenedBy(open, address, method.id);
   const key = `${keyPrefix}method:${method.id}`;
@@ -2850,6 +2907,13 @@ function place(
      * with no card layer — see `layoutFigure`'s `cards` option.
      */
     cardBase: string | null;
+    /**
+     * The outer address this figure's toggles rewrite `?iopen=` on, when the
+     * figure is the truncated map inside the card. Null everywhere else, and
+     * then a toggle writes `?open=` through `toggleHref` as it always did. See
+     * `layoutConverge`'s `innerBase` option.
+     */
+    innerBase: string | null;
   },
 ): void {
   const M = CONVERGE_METRICS;
@@ -3148,13 +3212,25 @@ function place(
     // interior is drawn at `sharedWith`'s address and the control goes there.
     // Built with its own `at=` so the viewport carry at the diagram's edge
     // leaves it alone (`withViewport` lets a deliberate `at=` win).
+    // Composed at the W9×W15 merge: inside the truncated map (`innerBase` set)
+    // a demoted lane gets NO control rather than the jump — `figureHref` builds
+    // a whole outer address, so the jump from in here would silently exit the
+    // card, and the owner's rule is that the truncated map stays in the card.
+    // W15's own lesson applies (a control that cannot do its job is a dead
+    // control): the ⤴ mark and `spokenName` still say the interior is drawn
+    // elsewhere; if the owner wants in-card jumps, that is an inner `at=` to
+    // design, not this href to widen.
     openHref:
       strand.sharedWith !== undefined
-        ? figureHref(context.focusId, context.open, strand.sharedWith)
+        ? context.innerBase === null
+          ? figureHref(context.focusId, context.open, strand.sharedWith)
+          : null
         : strand.openable &&
             (isOpenedBy(context.open, strand.address, strand.id) ||
               context.open.size < CONVERGE_OPEN_MAX)
-          ? toggleHref(context.focusId, context.open, strand.address, null, strand.id)
+          ? context.innerBase === null
+            ? toggleHref(context.focusId, context.open, strand.address, null, strand.id)
+            : innerToggleHref(context.innerBase, context.open, strand.address, strand.id)
           : null,
     sharedWith: strand.sharedWith ?? null,
     href: strand.href,
@@ -3367,15 +3443,22 @@ function placeFeeds(
       // The control that opens the ingredient. Same two conditions as a lane's:
       // something recorded inside, and room left under the cap — unless W15
       // demoted this occurrence, in which case the control is the jump, exactly
-      // as on a lane.
+      // as on a lane — and, exactly as on a lane, the jump only exists OUTSIDE
+      // the truncated map: `figureHref` is a whole outer address, and from
+      // inside the card it would silently exit it (the W9×W15 composition at
+      // the lane's `openHref` records the reasoning once).
       sharedWith: feed.sharedWith ?? null,
       openHref:
         feed.sharedWith !== undefined
-          ? figureHref(context.focusId, context.open, feed.sharedWith)
+          ? context.innerBase === null
+            ? figureHref(context.focusId, context.open, feed.sharedWith)
+            : null
           : feed.openable &&
           (isOpenedBy(context.open, feed.address, feed.id) ||
           context.open.size < CONVERGE_OPEN_MAX)
-          ? toggleHref(context.focusId, context.open, feed.address, null, feed.id)
+          ? context.innerBase === null
+            ? toggleHref(context.focusId, context.open, feed.address, null, feed.id)
+            : innerToggleHref(context.innerBase, context.open, feed.address, feed.id)
           : null,
       address: feed.address,
       open: feed.open,
@@ -3671,6 +3754,27 @@ export function layoutConverge(options: {
    * already produced twice.
    */
   cards?: boolean;
+  /**
+   * Set when this figure is the **truncated map inside the card** (`?inner=`),
+   * and it is the outer map's own address — focus, outer open set, viewport,
+   * `card` and `inner` and all. Every address the figure emits is then built on
+   * it rather than minted fresh:
+   *
+   * - a line's open control toggles `?iopen=` on the base (`innerToggleHref`),
+   *   because the outer `?open=` set belongs to the figure *behind* the card
+   *   and must survive every click inside it;
+   * - a name opens `withCard(base, id)` — and `withCard` drops `inner` and
+   *   `iopen`, so the click that opens a new card is the owner's reset, arrived
+   *   at rather than enforced.
+   *
+   * Not combined with `cards`, whose card layer hangs off an address
+   * `figureHref` mints from the figure's own parameters — inside the panel that
+   * address would name the truncated figure as if it were the page, and
+   * following any link on it would silently swap the reader's whole outer map
+   * for its own inner one. When both are passed, this one wins, because a
+   * figure inside the card has exactly one right base and it is this one.
+   */
+  innerBase?: string | null;
 }): ConvergeDiagram {
   return layoutFigure(options);
 }
@@ -3819,17 +3923,31 @@ function layoutFigure(options: {
    */
   subjectAddress?: string | null;
   cards?: boolean;
+  innerBase?: string | null;
 }): ConvergeDiagram {
   const { graph, vocabulary, focus, locale } = options;
   const focusParam = options.focusParam === undefined ? focus.id : options.focusParam;
   const open = options.open ?? new Set<string>();
   const subjectAddress = options.subjectAddress ?? null;
+  const innerBase = options.innerBase ?? null;
   // The address a `?card=` hangs off: **this figure, exactly as the reader has
   // it**. Built once here from the same three parameters every other address on
   // the figure is built from, rather than per-anchor, so a card link cannot
   // carry a different focus, a different open set or a different viewport from
   // the line beside it. Null when the surface has no card layer — see `cards`.
-  const cardBase = options.cards === true ? figureHref(focusParam, open, options.at) : null;
+  //
+  // Inside the card (`innerBase`), the base is the **outer** address instead:
+  // `withCard` on it swaps which card is over the outer map — and drops `inner`
+  // and `iopen`, which is the reset. The one panel is the card layer here; a
+  // second one never mounts (`MapCardPanel` is mounted exactly once, in
+  // `repository-converge-view.tsx`), so a name inside the truncated map
+  // retargets that panel rather than opening a card inside a card.
+  const cardBase =
+    innerBase !== null
+      ? innerBase
+      : options.cards === true
+        ? figureHref(focusParam, open, options.at)
+        : null;
   const M = CONVERGE_METRICS;
   const expansion: Expansion = expansionOf(graph, vocabulary, focus);
   const caption = labelOf(focus, locale);
@@ -4012,6 +4130,7 @@ function layoutFigure(options: {
         feedKey: null,
         variant: false,
         cardBase,
+        innerBase,
       });
     }
   }

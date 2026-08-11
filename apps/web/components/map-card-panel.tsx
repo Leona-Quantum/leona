@@ -71,6 +71,15 @@ interface Copy {
   close: string;
   eyebrow: Record<"method" | "process" | "own-step", string>;
   openPage: string;
+  /**
+   * The control that opens the truncated map inside this card — the owner's
+   * *"click the process to expand it further"* (W9). One string for both the
+   * process card and the method card, because both controls do one thing: open
+   * a map of just this, here, without leaving the card.
+   */
+  openInner: string;
+  /** The way back from the truncated map to the card it opened from. */
+  innerBack: string;
   realizes: string;
   /** The two directions of `refines`. See `Refinement` below for why they are chrome. */
   refines: string;
@@ -136,6 +145,8 @@ const COPY: Record<Lang, Copy> = {
     close: "Close",
     eyebrow: { method: "Method", process: "Process", "own-step": "Unnamed step" },
     openPage: "Open the full record",
+    openInner: "Expand it here — a map of just this",
+    innerBack: "Back to the card",
     realizes: "Fills the slot",
     // The node page's own words for the same edge (`repository-layers.tsx`,
     // `refinesLabel`). One fact should read as one fact wherever it is drawn.
@@ -232,6 +243,8 @@ const COPY: Record<Lang, Copy> = {
     close: "閉じる",
     eyebrow: { method: "手法", process: "工程", "own-step": "名前のない工程" },
     openPage: "詳細ページを開く",
+    openInner: "ここで展開する — これだけの地図",
+    innerBack: "カードに戻る",
     realizes: "満たすスロット",
     // The two directions must not read the same. The node page's string names the
     // *broader* method, so it stays as it is; the back-link says whose narrower
@@ -991,6 +1004,9 @@ export function MapCardPanel({
   section,
   sectionHrefs,
   locale,
+  figure = null,
+  innerHref = null,
+  innerCloseHref = null,
 }: {
   card: Card | null;
   closeHref: string;
@@ -1005,6 +1021,41 @@ export function MapCardPanel({
   /** One address per section of this card, built by the component that has the card. */
   sectionHrefs: Record<string, string>;
   locale: PublicLocale;
+  /**
+   * The truncated map (`?inner=`), server-rendered, or null when none is open.
+   *
+   * Markup rather than data, for the reason `sectionHrefs` is a map rather
+   * than a function: this is a client component, and the figure is a join of
+   * the graph, the vocabulary and the layout that only the server component
+   * holding all three can make. When it is non-null the sections are `hidden`
+   * — still in the document for `curl`, a crawler and a reader with
+   * JavaScript off, exactly like the nine sections `?sec=` is not showing.
+   *
+   * **This panel never renders a second `MapCardPanel`**, and the truncated
+   * map cannot make it: every name inside the figure is a `withCard` link that
+   * retargets *this* panel's own `?card=` (dropping `inner` and `iopen` — the
+   * owner's reset), so a card inside a card — the second map the whole design
+   * is bounded against — has no code path that produces it.
+   */
+  figure?: React.ReactNode;
+  /**
+   * The control that opens the truncated map, or null on a card that must not
+   * have one. The parent decides, because the parent holds the graph: a
+   * process card whose slot the layout can draw, and a method card with an
+   * interior, get an address; the own-step card gets null.
+   *
+   * **A state card must never get one.** The owner, verbatim: *"Opening states
+   * doesn't have this functionality — you can only go back to where you were,
+   * since you can't click into states further."* The `Card` union has no state
+   * kind today (`method | process | own-step`), so the refusal is structural
+   * rather than enforced — this comment is the tripwire for the session that
+   * adds one: when the state card lands (W5 slice three), it passes null here,
+   * and a test pinning that belongs beside it.
+   */
+  innerHref?: string | null;
+  /** Back from the truncated map to the card it opened from — same section,
+   * `?inner=` and `?iopen=` gone. Null whenever `figure` is. */
+  innerCloseHref?: string | null;
 }): React.ReactElement {
   const lang: Lang = locale === "ja" ? "ja" : "en";
   const copy = COPY[lang];
@@ -1020,6 +1071,15 @@ export function MapCardPanel({
   closeRef.current = () => {
     const url = new URL(window.location.href);
     url.searchParams.delete("card");
+    // Everything that only means something *inside* the card goes with it —
+    // the same four deletions `withCard(base, null)` makes, because Escape and
+    // the backdrop are the close link by another gesture. Leaving `inner` or
+    // `iopen` behind would strand an address claiming a truncated map inside a
+    // card that is shut, and the next `?card=` would inherit an expansion the
+    // reader never made there.
+    url.searchParams.delete("sec");
+    url.searchParams.delete("inner");
+    url.searchParams.delete("iopen");
     router.push(`${url.pathname}${url.search}`, { scroll: false });
   };
 
@@ -1056,7 +1116,13 @@ export function MapCardPanel({
       }}
     >
       <div
-        className="mj-card"
+        // The one width step the truncated map gets (W9 step 5): a wider panel
+        // while a figure is inside, from CSS alone. The owner asked to *"expand
+        // the screen of this now truncated map"*; a size **parameter** was
+        // considered and deliberately not built — no address until he asks for
+        // one, and a class the server sets from `?inner=` is already
+        // curl-visible and JavaScript-free.
+        className={figure === null ? "mj-card" : "mj-card mj-card--inner"}
         role="dialog"
         aria-modal="true"
         aria-labelledby={titleId}
@@ -1084,7 +1150,34 @@ export function MapCardPanel({
                   {copy.realizes}: <a href={card.realizes.href}>{card.realizes.label}</a>
                 </span>
               ) : null}
+              {/* The truncated map's open control — the owner's step (2),
+                  *"click the process to expand it further"*. Only while no
+                  figure is open: with one open, this address is where the
+                  reader already is, and a control that goes nowhere teaches
+                  distrust of the row it sits in. Null on every card that must
+                  not have one — see the prop's comment, which is where the
+                  state-card exclusion is recorded. */}
+              {innerHref !== null && figure === null ? (
+                <a className="mj-card-expand" href={innerHref}>
+                  {copy.openInner}
+                </a>
+              ) : null}
             </p>
+
+            {/* The truncated map, when one is open (`?inner=`). The sections
+                below stay in the document, `hidden` — the same rule the nine
+                unshowing sections already follow — so `curl` gets the whole
+                card *and* the figure whatever the address says. */}
+            {figure !== null ? (
+              <div className="mj-card-inner">
+                {innerCloseHref !== null ? (
+                  <p className="mj-card-inner-back">
+                    <a href={innerCloseHref}>{copy.innerBack}</a>
+                  </p>
+                ) : null}
+                {figure}
+              </div>
+            ) : null}
 
             {/* **The order is read, not written here.** `cardSections` is the
                 one list, and until session 114 this file held a second one in a
@@ -1093,71 +1186,73 @@ export function MapCardPanel({
                 The owner's §2 answer is an order, which is exactly the thing
                 that had no single writer. It is read once, here, and both the
                 row of names and the sections under it are built from it. */}
-            <SectionNav
-              sections={sections}
-              showing={showing?.id}
-              hrefFor={(id) => sectionHrefs[id]}
-              copy={copy}
-            />
+            <div className="mj-card-sections" hidden={figure !== null}>
+              <SectionNav
+                sections={sections}
+                showing={showing?.id}
+                hrefFor={(id) => sectionHrefs[id]}
+                copy={copy}
+              />
 
-            <div className="mj-card-body" role="region" aria-labelledby={titleId} tabIndex={0}>
-              {sections.map((section) => (
-                <Section
-                  key={section.id}
-                  id={section.id}
-                  copy={copy}
-                  value={section.value}
-                  showing={section.id === showing?.id}
-                  labelledBy={navItemId(section.id)}
-                  note={section.id === "no-slot" ? copy.noSlotHere : undefined}
-                  // **The worklist behind the gap.** An empty Implementations
-                  // section says "none found yet", which a reader takes for a
-                  // verdict on the literature. This says what the register
-                  // already knows — how many of the papers cited here report
-                  // numerics or a hardware run — so the emptiness reads as work
-                  // nobody has done rather than as an absence of work to do.
-                  whenEmpty={
-                    section.id === "implementations" && card.kind === "method" ? (
-                      <Leads leads={card.implementationLeads} copy={copy} />
-                    ) : undefined
-                  }
-                >
-                  <Body card={card} id={section.id} copy={copy} />
-                </Section>
-              ))}
+              <div className="mj-card-body" role="region" aria-labelledby={titleId} tabIndex={0}>
+                {sections.map((section) => (
+                  <Section
+                    key={section.id}
+                    id={section.id}
+                    copy={copy}
+                    value={section.value}
+                    showing={section.id === showing?.id}
+                    labelledBy={navItemId(section.id)}
+                    note={section.id === "no-slot" ? copy.noSlotHere : undefined}
+                    // **The worklist behind the gap.** An empty Implementations
+                    // section says "none found yet", which a reader takes for a
+                    // verdict on the literature. This says what the register
+                    // already knows — how many of the papers cited here report
+                    // numerics or a hardware run — so the emptiness reads as work
+                    // nobody has done rather than as an absence of work to do.
+                    whenEmpty={
+                      section.id === "implementations" && card.kind === "method" ? (
+                        <Leads leads={card.implementationLeads} copy={copy} />
+                      ) : undefined
+                    }
+                  >
+                    <Body card={card} id={section.id} copy={copy} />
+                  </Section>
+                ))}
 
-              {/* **References, below the sections and not among them.** The owner
-                  was asked whether a reference list should be an eighth section
-                  and said *"confirm, it isn't needed for papers to be their own
-                  section"*. They are 63/63 on methods, so they are never a gap,
-                  and a collapsible heading over a list that is always full is a
-                  control with one state.
+                {/* **References, below the sections and not among them.** The owner
+                    was asked whether a reference list should be an eighth section
+                    and said *"confirm, it isn't needed for papers to be their own
+                    section"*. They are 63/63 on methods, so they are never a gap,
+                    and a collapsible heading over a list that is always full is a
+                    control with one state.
 
-                  The own stretch carries none: it is a piece of a route rather
-                  than a node, so a paper list there would claim a search that has
-                  no subject. */}
-              {card.kind !== "own-step" && card.papers.held ? (
-                <section className="mj-card-references">
-                  <h3>{copy.references}</h3>
-                  <ul className="mj-card-list">
-                    {card.papers.value.map((paper) => (
-                      <li key={paper.url}>
-                        <a href={paper.url} rel="noreferrer">
-                          {paper.title}
-                        </a>
-                        <p className="mj-card-list-blurb">
-                          {paper.authors} · {paper.year}
-                        </p>
-                      </li>
-                    ))}
-                  </ul>
-                </section>
-              ) : null}
-              {card.kind === "process" ? (
-                <p className="mj-card-coverage" data-coverage={card.coverage}>
-                  {copy.coverage[card.coverage]}
-                </p>
-              ) : null}
+                    The own stretch carries none: it is a piece of a route rather
+                    than a node, so a paper list there would claim a search that has
+                    no subject. */}
+                {card.kind !== "own-step" && card.papers.held ? (
+                  <section className="mj-card-references">
+                    <h3>{copy.references}</h3>
+                    <ul className="mj-card-list">
+                      {card.papers.value.map((paper) => (
+                        <li key={paper.url}>
+                          <a href={paper.url} rel="noreferrer">
+                            {paper.title}
+                          </a>
+                          <p className="mj-card-list-blurb">
+                            {paper.authors} · {paper.year}
+                          </p>
+                        </li>
+                      ))}
+                    </ul>
+                  </section>
+                ) : null}
+                {card.kind === "process" ? (
+                  <p className="mj-card-coverage" data-coverage={card.coverage}>
+                    {copy.coverage[card.coverage]}
+                  </p>
+                ) : null}
+              </div>
             </div>
           </>
         )}
