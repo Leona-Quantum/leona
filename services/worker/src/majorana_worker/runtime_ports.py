@@ -22,6 +22,7 @@ from majorana_frameworks.roles import ProgramRole
 from majorana_openqasm import OpenQASMError, normalize
 from majorana_sandbox import DEFAULT_QUBIT_CEILING, ExecutionSpec, GuardRejection, Sandbox
 from majorana_sandbox import run as sandbox_run
+from majorana_verification import supports_native_result_consistency
 
 
 class SandboxCandidateExecutor:
@@ -60,14 +61,15 @@ class SandboxCandidateExecutor:
                 observation={"contract_diagnostics": authoring_diagnostics},
             )
         # A CIRCUIT reports nothing, so the trusted evidence is the only thing that
-        # can become its result. Native collection is off by default here for
-        # budget reasons (58118a1, "bounded budgets") and stays off for programs —
-        # but for a circuit the alternative is not "cheaper", it is a `RESULT
-        # missing key` failure whose retry target is GENERATION: one seeded
-        # 2048-shot sample of a circuit already capped at 27 qubits, against a
-        # model call plus a full re-execution, repeated until the budget runs out.
-        # Enabling it exactly here spends less, not more.
+        # can become its result. Native collection otherwise stays off for programs
+        # except narrow RESULT profiles whose scalar sign/register ordering can be
+        # checked against the trusted state. For a circuit the alternative is not
+        # "cheaper", it is a `RESULT missing key` repair: one bounded native run is
+        # cheaper than another model call plus full candidate re-execution.
         lower_circuit = circuit_expected and program.role is ProgramRole.CIRCUIT
+        collect_native_evidence = lower_circuit or (
+            circuit_expected and supports_native_result_consistency(plan.expected_output_keys)
+        )
         spec = ExecutionSpec(
             code=program.normalized_source,
             # A lowered circuit does strictly more work than it used to: the
@@ -75,15 +77,18 @@ class SandboxCandidateExecutor:
             # execution. Without headroom a slow-but-passing circuit can cross the
             # deadline and come back TIMEOUT, which is a worse answer than the
             # contract failure it replaced. Still bounded by MAX_TIMEOUT_S.
-            timeout_s=min(plan.expected_runtime_sec + (60 if lower_circuit else 30), 120),
+            timeout_s=min(
+                plan.expected_runtime_sec + (60 if collect_native_evidence else 30),
+                120,
+            ),
             qubits_estimate=plan.qubits_estimate,
             trusted_setup=program.trusted_setup(
                 circuit_expected=circuit_expected,
-                collect_native_evidence=lower_circuit,
+                collect_native_evidence=collect_native_evidence,
             ),
             trusted_observer=program.trusted_observer(
                 circuit_expected=circuit_expected,
-                collect_native_evidence=lower_circuit,
+                collect_native_evidence=collect_native_evidence,
                 derive_result=lower_circuit,
             ),
             protected_result_path=f"/tmp/majorana-result-{uuid4().hex}.json",
