@@ -2892,11 +2892,86 @@ export interface LayerCorpusEntry {
    * whether it was worth following.
    *
    * A projection of the record, never a second copy of it: one sentence and a
-   * link. The record itself — the code, the verification, the export — stays at
-   * `/repository/<slug>`, which is the page that owns it.
+   * link. The record's **code** still stays at `/repository/<slug>`, which is
+   * the page that owns it — see `runnable` below for what the 2026-08-12 ruling
+   * changed and, more to the point, what it did not.
    */
   description: string;
   descriptionJa: string;
+  /**
+   * What this record's runnable variants ARE, without being them.
+   *
+   * **Owner ruling `27267f` (2026-08-12): the method card and the repository
+   * record "may as well be the same thing".** The measurement behind it is
+   * blunt — `implementations` is empty on all 74 methods while `codeVariants`
+   * is present on all 283 records, and in every one of the 27 method→record
+   * pairs the card renders "none-recorded" over a record that carries code. The
+   * section was never un-researched; nothing had joined it.
+   *
+   * The narrowness above survives that ruling and is the reason this field
+   * holds *facts about* the variants — framework, status, filename — and not
+   * `code`. Authoring it twice is what the projection was built to prevent, and
+   * a card that inlined the source would be a second copy in the strongest
+   * sense. A card that says "there is a verified Qiskit implementation, checked
+   * this way, and here is where it lives" is a join.
+   *
+   * Optional because a corpus can be assembled without it — the graph's own
+   * tests build one from slugs alone — and an absent list means "not projected
+   * here", never "this record has no implementation". See `W23-record-join.md`.
+   */
+  runnable?: readonly LayerCorpusRunnable[];
+  /** The record's verification prose, verbatim. The Results of a joined implementation. */
+  verification?: string;
+  /** The record's provenance line, verbatim. Half of the classification stamp. */
+  provenance?: string;
+}
+
+/** One runnable variant of a record, as the map is allowed to know it. */
+export interface LayerCorpusRunnable {
+  readonly framework: string;
+  readonly status?: string;
+  readonly filename?: string;
+}
+
+/**
+ * The one place a repository listing becomes the graph's corpus.
+ *
+ * Both `/repository/layers` routes built this projection by hand from the same
+ * six fields, which was survivable at two copies and is the shape that becomes
+ * five. It is extracted here, beside the interface it builds, so that widening
+ * the projection is one edit — and so a surface cannot quietly start feeding
+ * the graph a field the graph has no business reading.
+ *
+ * Structurally typed rather than importing the listing's own type: this module
+ * is read by the graph, and the graph should not acquire a dependency on the
+ * shape of the page that happens to call it.
+ */
+export function layerCorpusEntry(entry: {
+  slug: string;
+  title: string;
+  titleJa: string;
+  category: PublicRepositoryCategory;
+  description: string;
+  descriptionJa: string;
+  codeVariants?: readonly { framework: string; status?: string; filename?: string }[];
+  verification?: string;
+  provenance?: string;
+}): LayerCorpusEntry {
+  return {
+    slug: entry.slug,
+    title: entry.title,
+    titleJa: entry.titleJa,
+    category: entry.category,
+    description: entry.description,
+    descriptionJa: entry.descriptionJa,
+    runnable: (entry.codeVariants ?? []).map((variant) => ({
+      framework: variant.framework,
+      status: variant.status,
+      filename: variant.filename,
+    })),
+    verification: entry.verification,
+    provenance: entry.provenance,
+  };
 }
 
 /** Every node a given corpus record appears on — the inverse of `entries`. */
