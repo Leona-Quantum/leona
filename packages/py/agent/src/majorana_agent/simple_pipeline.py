@@ -322,7 +322,7 @@ class SimpleCircuitPipeline:
         generation_feedback: SimpleRepairFeedback | None = None
         consecutive_code_repairs = 0
         soundest: ReviewedCandidate | None = None
-        soundest_score: tuple[int, int, int, int, int] | None = None
+        soundest_score: tuple[int, int, int, int, int, int] | None = None
         attempts: list[dict[str, Any]] = []
         # What forced the pending replan. A replan that then fails must not be
         # allowed to erase it — see _with_originating_cause.
