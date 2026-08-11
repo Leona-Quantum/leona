@@ -61,7 +61,7 @@ def test_generation_prompt_always_embeds_nameko_style_reference_implementations(
     assert "Example 1 — Qiskit Bell state" in prompt
     assert "Example 2 — Qiskit H2 VQE" in prompt
     assert "Example 3 — Qiskit portfolio QAOA" in prompt
-    assert "Example 4 — Qiskit coherent bit-flip QEC" in prompt
+    assert "Example 4 — Qiskit coherent bit/phase-flip QEC" in prompt
     assert '("II", -0.3324043)' in prompt
     assert "TOTAL energies near -1.137 Ha" in prompt
     assert "DiagonalGate(phases)" in prompt
@@ -259,7 +259,7 @@ def test_generation_prompt_always_embeds_nameko_style_reference_implementations(
                 "algorithm": "other",
                 "problem_summary": "coherent phase-flip repetition code",
             },
-            "Phase-flip repetition code basis rule",
+            "coherent bit/phase-flip QEC and reduced-state fidelity",
             (
                 "Example 1 —",
                 "Example 2 —",
@@ -616,7 +616,7 @@ def test_lindblad_reference_extraction_is_bounded_and_request_scoped():
     assert "additional circuit, Stinespring dilation, QASM export" in extraction
     assert "does not make otherwise complete scalar evolution unsupported" in extraction
     assert "Do not solve the equation or invent omitted data" in extraction
-    assert "Include every requested numeric RESULT key" in plan
+    assert "Preserve every requested numeric RESULT key" in plan
     assert "non-product initial state" in plan
 
 
@@ -1034,6 +1034,47 @@ def test_typed_algorithm_and_specific_other_context_beat_colliding_keywords(
     assert excluded not in prompt
 
 
+def test_qpe_prompt_includes_direct_diagonal_basis_specialization():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="phase estimation",
+        algorithm="QPE",
+        problem_summary="finite-register diagonal target-unitary phase estimation",
+    )
+
+    assert "BEGIN DIAGONAL_BASIS_QPE_HELPER" in prompt
+    assert "target_basis_index = int(bitstring, 2)" in prompt
+    assert "basis_index & (register_size - 1)" in prompt
+
+
+def test_qpe_diagonal_basis_specialization_executes_with_displayed_order():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="phase estimation",
+        algorithm="QPE",
+        problem_summary="finite-register diagonal target-unitary phase estimation",
+    )
+    source = prompt.split("# BEGIN DIAGONAL_BASIS_QPE_HELPER", 1)[1].split(
+        "# END DIAGONAL_BASIS_QPE_HELPER", 1
+    )[0]
+    source = (
+        source.replace("requested_target_qubit_count", "1")
+        .replace("requested_q_high_to_q0_basis_bitstring", '"1"')
+        .replace("requested_eigenphase", "0.854455167")
+        .replace("requested_counting_qubit_count", "4")
+    )
+    namespace: dict[str, object] = {}
+
+    exec(source, namespace)
+
+    result = namespace["RESULT"]
+    assert isinstance(result, dict)
+    assert result["dominant_integer"] == 14
+    assert result["finite_phase_estimate"] == 0.875
+    assert result["dominant_probability"] == pytest.approx(0.6923484843945318)
+    assert result["phase_probabilities"][13] == pytest.approx(0.16675249761684188)
+
+
 def test_generic_error_correction_does_not_receive_qpe_or_repetition_code_examples():
     prompt = simple_generation_system_prompt(
         framework="qiskit",
@@ -1055,7 +1096,70 @@ def test_repetition_error_correction_receives_the_bounded_qec_example():
         problem_summary="coherent three-qubit phase-flip repetition code",
     )
 
-    assert "Example 4 — Qiskit coherent bit-flip QEC" in prompt
+    assert "Example 4 — Qiskit coherent bit/phase-flip QEC" in prompt
+    assert "conjugate the physical Z error to X" in prompt
+
+
+def test_ordered_trotter_receives_order_preserving_helper_not_exact_dynamics():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="quantum dynamics",
+        algorithm="Simulation",
+        problem_summary="ordered symmetric second-order Trotter product formula",
+    )
+
+    assert "ordered symmetric second-order Pauli Trotterization" in prompt
+    assert "Preserve the term list order exactly" in prompt
+    assert 'f"trotter_z{requested_observable_qubit}"' in prompt
+    assert "bounded exact indexed-Pauli dynamics" not in prompt
+
+
+def test_amplitude_damping_receives_complete_stinespring_map():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="open quantum systems",
+        algorithm="Simulation",
+        problem_summary="coherent-input amplitude damping Stinespring dilation",
+    )
+
+    assert "coherent-input amplitude-damping Stinespring dilation" in prompt
+    assert "circuit.cry" in prompt
+    assert "circuit.cx(environment, system)" in prompt
+    assert "A controlled RY alone" in prompt
+
+
+def test_lindblad_stinespring_receives_direct_commuting_channel_dilation():
+    prompt = simple_generation_system_prompt(
+        framework="qiskit",
+        domain="open quantum systems",
+        algorithm="Simulation",
+        problem_summary="one-qubit Lindblad amplitude damping and dephasing Stinespring",
+    )
+
+    assert "amplitude-damping plus dephasing Lindblad dilation" in prompt
+    assert "circuit.cx(amplitude_environment, system)" in prompt
+    assert "circuit.cz(dephasing_environment, system)" in prompt
+    assert "QR need not preserve" in prompt
+
+
+@pytest.mark.parametrize(
+    ("framework", "required"),
+    [
+        ("qibo", "circuit.add(gates.RZ(0, requested_phi))"),
+        ("qulacs", "circuit.add_gate(RZ(0, -requested_phi))"),
+    ],
+)
+def test_native_one_qubit_rotation_helpers_pin_gate_and_bloch_signs(framework, required):
+    prompt = simple_generation_system_prompt(
+        framework=framework,
+        domain="state preparation",
+        algorithm="StatePreparation",
+        problem_summary="one-qubit RY then RZ exact statevector",
+    )
+
+    assert required in prompt
+    assert "overlap = np.conj(alpha) * beta" in prompt
+    assert '"bloch_y": float(2.0 * overlap.imag)' in prompt
 
 
 def test_specific_non_generic_algorithm_does_not_receive_a_context_only_helper():
