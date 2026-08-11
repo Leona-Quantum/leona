@@ -502,7 +502,16 @@ test("an opened ingredient is actually rendered somewhere, or the check below is
   // Written down here rather than only in the commit, because a floor lowered to
   // fit a run is indistinguishable from one lowered because the thing it counts
   // got smaller, and only the reason tells them apart.
-  expect(stubs, "too few opened stubs to be checking anything").toBeGreaterThanOrEqual(130);
+  //
+  // **136 until W15, and the floor falls because duplicate interiors stopped
+  // being drawn on purpose.** A shared interior draws once per figure and every
+  // other occurrence demotes to a jump (`dedupSharedInteriors`), so the stubs
+  // that used to re-open inside each copy of the same fan now open exactly
+  // once — measured 48 on the dedup's landing. The stubs that remain are every
+  // opened ingredient a reader can actually see, and the census test in
+  // `repository-converge-layout.test.ts` guards the demotions themselves (80
+  // at saturation, printed every run).
+  expect(stubs, "too few opened stubs to be checking anything").toBeGreaterThanOrEqual(44);
 });
 
 for (const story of withOpenFeeds) {
