@@ -1164,7 +1164,88 @@ test("a coined composite is refused in the short form too, where it is likeliest
 // work is measurable. See `plans/atlas-revamp/W10-hollow-twins.md` for the three shapes of fix
 // and which group wants which.
 
-test("the hollow twins are counted, and the count may only fall", () => {
+/**
+ * The hollow-twin census, one line per slot that holds any. See the long comment inside
+ * the test below for what this replaced and why it is an exact census rather than a
+ * ceiling; the short version is that a slot ABSENT from this table is declared to hold
+ * ZERO, so a new region cannot open quietly and a slot that gets fixed cannot leave slack
+ * behind for later rot to fill.
+ */
+const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
+  // The three the owner named by sight. Each is a corpus job, not a gate problem.
+  ["time-discretization", 5],
+  ["nonlinear-linear-embedding", 4],
+  ["hamiltonian-recasting", 2],
+  // Four phase-factor routines that differ in their numerics and in nothing this graph
+  // has recorded yet.
+  ["qsp-phase-factors", 4],
+  ["state-preparation", 3],
+  ["observable-estimation", 3],
+  ["error-mitigation", 3],
+  ["quantum-linear-solve", 2],
+  ["polynomial-approximation", 2],
+  ["block-encode-matrix", 2],
+  ["qubit-routing", 2],
+  ["gate-synthesis", 2],
+  ["error-correction", 2],
+  // W21's region, opened in PR 400: three fixed ansatz families that construct a circuit
+  // family in one step, plus the adaptive pair that each hang one `observable-estimation`
+  // stub. `qubit-adapt-ansatz` is dropped by the `refines` rule in the test, as designed —
+  // a declared refinement is not a hollow twin.
+  ["ansatz-construction", 5],
+]);
+
+/**
+ * Every way the census and the graph disagree, as messages — empty when they agree.
+ *
+ * A function rather than assertions inline in the test, for one reason: a gate that has
+ * only ever been observed passing is a gate nobody has seen work. Pure and total, it can
+ * be handed synthetic rows, which is what the test below it does — it drives all three
+ * failure directions (a slot rising, a slot falling, an undeclared slot appearing) and
+ * asserts each one produces a message. That check fails if the gate ever stops failing.
+ */
+function hollowCensusFailures(
+  rows: ReadonlyArray<{ slot: string; ids: string[] }>,
+  table: ReadonlyMap<string, number>,
+): string[] {
+  const slots = new Set<string>([...table.keys(), ...rows.map((row) => row.slot)]);
+  const failures: string[] = [];
+  for (const slot of [...slots].sort()) {
+    const actual = bySlotIn(rows, slot);
+    const pinned = table.get(slot) ?? 0;
+    if (actual === pinned) continue;
+    // The line to write, spelled out: a gate that reports a number without saying what to
+    // do with it gets satisfied by whatever edit makes the red go away.
+    const line = actual === 0 ? `delete the "${slot}" row` : `["${slot}", ${actual}]`;
+    failures.push(
+      actual > pinned
+        ? `${slot}: ${actual} methods draw a sibling's picture with nothing declaring why — ` +
+            `was ${pinned}. A new one means a method was authored with no recorded interior ` +
+            `beside siblings that already had none. Decompose it, narrow the state, or say ` +
+            `why. If this is a region opening rather than rot, declare it: ${line}. ` +
+            `See plans/atlas-revamp/W10-hollow-twins.md`
+        : `${slot}: ${actual}, down from ${pinned} — corpus work landed and the census has ` +
+            `not been told. Record the win: ${line}. A stale-high number is silent room for ` +
+            `the rot this gate exists to catch.`,
+    );
+  }
+  return failures;
+}
+
+/** How many hollow twins a slot holds, summed across its groups.
+ *
+ * Summed, not `find`: one slot **may** hold more than one group — `ansatz-construction`
+ * holds two — and `find` would answer with whichever came first, which is a number that
+ * depends on corpus order. Shared by the per-slot census and by the owner's named-group
+ * assertions below so that the census and the examples cannot disagree about what a
+ * slot's count is. */
+function bySlotIn(rows: ReadonlyArray<{ slot: string; ids: string[] }>, slot: string): number {
+  return rows
+    .filter((row) => row.slot === slot)
+    .reduce((total, row) => total + row.ids.length, 0);
+}
+
+test("the hollow twins are counted per slot, and every slot's count is declared", () => {
   const methods = LAYER_GRAPH.nodes.filter(isMethod);
   const chainOf = (method: LayerMethod): string => {
     const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
@@ -1289,12 +1370,33 @@ test("the hollow twins are counted, and the count may only fall", () => {
   // it changes a gate rather than the content this PR is about, and a gate rewritten in
   // the same change that first trips it is a gate nobody reviewed. Filed as the next
   // W10 item.
-  assert.ok(
-    counted <= 41,
-    `${counted} methods draw a sibling's picture with nothing declaring why — was 41. ` +
-      `A new one means a method was authored with no recorded interior beside siblings that ` +
-      `already had none. See plans/atlas-revamp/W10-hollow-twins.md`,
-  );
+  //
+  // **DONE — this is that per-slot ceiling (B5, session 134).** It is deliberately its
+  // own change, landing BEFORE the W21-E region that first needs it, which is what the
+  // paragraph above asked for: the gate and the content that trips it are reviewed
+  // separately. `counted` stays printed above because the total is still the scoreboard
+  // the owner asked for; what it no longer is, is the assertion.
+  //
+  // ## Why a census (`===`) and not a ceiling (`<=`)
+  //
+  // A ceiling per slot fixes the region-opening problem on its own. It does not fix the
+  // other half: a slot whose hollow count FALLS leaves its ceiling standing above the
+  // real number, and that slack is silent room for exactly the rot this gate exists to
+  // catch. `time-discretization` at 5 with a ceiling of 5 is pinned; the same slot fixed
+  // down to 3 with the ceiling still at 5 can take two new hollow methods without a word.
+  // That is the `guard-stopped-guarding` shape, arriving by improvement rather than by
+  // neglect, which is the hard kind to notice.
+  //
+  // So the table is an exact census and a fall fails too — with a message that says which
+  // direction moved and hands over the line to write. The cost is real and worth naming:
+  // any lane whose corpus work decomposes a method now edits one number in this file and
+  // its diff records the win. That is the trade, taken deliberately.
+  //
+  // **Absent from the table means zero.** A brand-new slot therefore cannot arrive
+  // quietly — opening a region forces a line here, with the count and the reason, which
+  // is the whole difference between "a region opened" and "a slot rotted" that the global
+  // count could not express.
+  assert.deepEqual(hollowCensusFailures(rows, HOLLOW_BY_SLOT), []);
   // And the groups he named by sight are the big ones, pinned so that "the owner's examples"
   // stays a checkable claim rather than a recollection.
   //
@@ -1303,8 +1405,7 @@ test("the hollow twins are counted, and the count may only fall", () => {
   // corpus order. `time-discretization` held a three and a two until session 118
   // and holds a five now; the sum is what this asks about either way, which is
   // why the consolidation did not have to be edited in here.
-  const bySlot = (slot: string) =>
-    rows.filter((row) => row.slot === slot).reduce((total, row) => total + row.ids.length, 0);
+  const bySlot = (slot: string) => bySlotIn(rows, slot);
   assert.ok(bySlot("time-discretization") >= 2, "the time-discretisation group stopped colliding");
   assert.ok(
     bySlot("nonlinear-linear-embedding") >= 2,
@@ -1313,6 +1414,64 @@ test("the hollow twins are counted, and the count may only fall", () => {
   assert.ok(
     bySlot("hamiltonian-recasting") >= 2,
     "the recasting group — his LCHS identity — stopped colliding",
+  );
+});
+
+test("the per-slot census fails in all three directions, and says which one moved", () => {
+  // Synthetic rows, because the point is to watch the gate FAIL, and the real graph is
+  // (correctly) passing. The three directions are the whole reason the census replaced a
+  // global ceiling, so each gets driven here rather than asserted about in a comment.
+  const table: ReadonlyMap<string, number> = new Map([
+    ["settled-slot", 2],
+    ["fixed-slot", 3],
+  ]);
+  const row = (slot: string, n: number) => ({
+    slot,
+    ids: Array.from({ length: n }, (_, index) => `${slot}-${index}`),
+  });
+
+  // Agreement is silence. Without this the other three could pass by the function simply
+  // always returning something.
+  assert.deepEqual(
+    hollowCensusFailures([row("settled-slot", 2), row("fixed-slot", 3)], table),
+    [],
+  );
+
+  // 1. A declared slot ROSE — the original gate's job, kept.
+  const rose = hollowCensusFailures([row("settled-slot", 3), row("fixed-slot", 3)], table);
+  assert.equal(rose.length, 1);
+  assert.match(rose[0]!, /^settled-slot: 3 methods draw a sibling's picture/);
+  assert.match(rose[0]!, /was 2\./);
+  assert.match(rose[0]!, /\["settled-slot", 3\]/);
+
+  // 2. A declared slot FELL — the half a ceiling cannot see. The message asks for the win
+  //    to be recorded, and a slot emptied entirely asks for its row to go rather than for
+  //    a zero to be written, since absent already means zero.
+  const fell = hollowCensusFailures([row("settled-slot", 2), row("fixed-slot", 2)], table);
+  assert.equal(fell.length, 1);
+  assert.match(fell[0]!, /^fixed-slot: 2, down from 3/);
+  assert.match(fell[0]!, /\["fixed-slot", 2\]/);
+  const emptied = hollowCensusFailures([row("settled-slot", 2)], table);
+  assert.equal(emptied.length, 1);
+  assert.match(emptied[0]!, /delete the "fixed-slot" row/);
+
+  // 3. An UNDECLARED slot appeared — a new region opening, which under the old global
+  //    ceiling was indistinguishable from rot and could only be answered by weakening the
+  //    gate. Here it is answered by declaring the slot, and the message says so.
+  const opened = hollowCensusFailures(
+    [row("settled-slot", 2), row("fixed-slot", 3), row("brand-new-slot", 4)],
+    table,
+  );
+  assert.equal(opened.length, 1);
+  assert.match(opened[0]!, /^brand-new-slot: 4 methods/);
+  assert.match(opened[0]!, /was 0\./);
+  assert.match(opened[0]!, /region opening rather than rot, declare it: \["brand-new-slot", 4\]/);
+
+  // And more than one disagreement is more than one message — a gate that reported only
+  // the first would let the second land silently in the same change.
+  assert.equal(
+    hollowCensusFailures([row("settled-slot", 9), row("brand-new-slot", 4)], table).length,
+    3,
   );
 });
 
