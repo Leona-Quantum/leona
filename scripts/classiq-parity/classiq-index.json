@@ -20,7 +20,7 @@
   {
    "path": "algorithms/amplitude_amplification_and_estimation/oblivious_amplitude_amplification",
    "category": "algorithms",
-   "group": "amplitude_amplification_and_estimation/oblivious_amplitude_amplification",
+   "group": "amplitude_amplification_and_estimation",
    "name": "oblivious_amplitude_amplification",
    "files": [
     "oblivious_amplitude_amplification.ipynb",
@@ -30,7 +30,7 @@
   {
    "path": "algorithms/amplitude_amplification_and_estimation/qmc_user_defined",
    "category": "algorithms",
-   "group": "amplitude_amplification_and_estimation/qmc_user_defined",
+   "group": "amplitude_amplification_and_estimation",
    "name": "qmc_user_defined",
    "files": [
     "qmc_user_defined.ipynb",
@@ -40,7 +40,7 @@
   {
    "path": "algorithms/amplitude_amplification_and_estimation/qsvt_fixed_point_amplitude_amplification",
    "category": "algorithms",
-   "group": "amplitude_amplification_and_estimation/qsvt_fixed_point_amplitude_amplification",
+   "group": "amplitude_amplification_and_estimation",
    "name": "qsvt_fixed_point_amplitude_amplification",
    "files": [
     "qsvt_fixed_point_amplitude_amplification.ipynb",
@@ -50,7 +50,7 @@
   {
    "path": "algorithms/amplitude_amplification_and_estimation/quantum_counting",
    "category": "algorithms",
-   "group": "amplitude_amplification_and_estimation/quantum_counting",
+   "group": "amplitude_amplification_and_estimation",
    "name": "quantum_counting",
    "files": [
     "quantum_counting.ipynb",
@@ -62,7 +62,7 @@
   {
    "path": "algorithms/foundational/bernstein_vazirani",
    "category": "algorithms",
-   "group": "foundational/bernstein_vazirani",
+   "group": "foundational",
    "name": "bernstein_vazirani",
    "files": [
     "bernstein_vazirani.ipynb",
@@ -72,7 +72,7 @@
   {
    "path": "algorithms/foundational/deutsch_jozsa",
    "category": "algorithms",
-   "group": "foundational/deutsch_jozsa",
+   "group": "foundational",
    "name": "deutsch_jozsa",
    "files": [
     "deutsch_jozsa.ipynb",
@@ -82,7 +82,7 @@
   {
    "path": "algorithms/foundational/quantum_teleportation",
    "category": "algorithms",
-   "group": "foundational/quantum_teleportation",
+   "group": "foundational",
    "name": "quantum_teleportation",
    "files": [
     "quantum_teleportation.ipynb",
@@ -92,7 +92,7 @@
   {
    "path": "algorithms/foundational/simon",
    "category": "algorithms",
-   "group": "foundational/simon",
+   "group": "foundational",
    "name": "simon",
    "files": [
     "simon.ipynb",
@@ -102,7 +102,7 @@
   {
    "path": "algorithms/hamiltonian_simulation/hamiltonian_simulation_guide",
    "category": "algorithms",
-   "group": "hamiltonian_simulation/hamiltonian_simulation_guide",
+   "group": "hamiltonian_simulation",
    "name": "hamiltonian_simulation_guide",
    "files": [
     "hamiltonian_simulation_guide.ipynb",
@@ -114,7 +114,7 @@
   {
    "path": "algorithms/hamiltonian_simulation/hamiltonian_simulation_with_block_encoding",
    "category": "algorithms",
-   "group": "hamiltonian_simulation/hamiltonian_simulation_with_block_encoding",
+   "group": "hamiltonian_simulation",
    "name": "hamiltonian_simulation_with_block_encoding",
    "files": [
     "hamiltonian_simulation_gqsp.ipynb",
@@ -126,7 +126,7 @@
   {
    "path": "algorithms/metrology",
    "category": "algorithms",
-   "group": "metrology",
+   "group": null,
    "name": "metrology",
    "files": [
     "classical_shadow_tomography.ipynb",
@@ -136,7 +136,7 @@
   {
    "path": "algorithms/number_theory_and_cryptography/discrete_log",
    "category": "algorithms",
-   "group": "number_theory_and_cryptography/discrete_log",
+   "group": "number_theory_and_cryptography",
    "name": "discrete_log",
    "files": [
     "discrete_log.ipynb",
@@ -146,7 +146,7 @@
   {
    "path": "algorithms/number_theory_and_cryptography/elliptic_curves",
    "category": "algorithms",
-   "group": "number_theory_and_cryptography/elliptic_curves",
+   "group": "number_theory_and_cryptography",
    "name": "elliptic_curves",
    "files": [
     "elliptic_curve_discrete_log.ipynb",
@@ -156,7 +156,7 @@
   {
    "path": "algorithms/number_theory_and_cryptography/hidden_shift",
    "category": "algorithms",
-   "group": "number_theory_and_cryptography/hidden_shift",
+   "group": "number_theory_and_cryptography",
    "name": "hidden_shift",
    "files": [
     "hidden_shift.ipynb",
@@ -166,7 +166,7 @@
   {
    "path": "algorithms/number_theory_and_cryptography/shor",
    "category": "algorithms",
-   "group": "number_theory_and_cryptography/shor",
+   "group": "number_theory_and_cryptography",
    "name": "shor",
    "files": [
     "shor.ipynb",
@@ -176,7 +176,7 @@
   {
    "path": "algorithms/QML/hybrid_qnn",
    "category": "algorithms",
-   "group": "QML/hybrid_qnn",
+   "group": "QML",
    "name": "hybrid_qnn",
    "files": [
     "hybrid_qnn_for_subset_majority.ipynb",
@@ -186,7 +186,7 @@
   {
    "path": "algorithms/QML/qgan",
    "category": "algorithms",
-   "group": "QML/qgan",
+   "group": "QML",
    "name": "qgan",
    "files": [
     "qgan_bars_and_strips.ipynb",
@@ -196,7 +196,7 @@
   {
    "path": "algorithms/QML/qsvm",
    "category": "algorithms",
-   "group": "QML/qsvm",
+   "group": "QML",
    "name": "qsvm",
    "files": [
     "qsvm.ipynb",
@@ -206,7 +206,7 @@
   {
    "path": "algorithms/QML/quantum_autoencoder",
    "category": "algorithms",
-   "group": "QML/quantum_autoencoder",
+   "group": "QML",
    "name": "quantum_autoencoder",
    "files": [
     "quantum_autoencoder.ipynb",
@@ -216,7 +216,7 @@
   {
    "path": "algorithms/quantum_differential_equations_solvers/discrete_poisson_solver",
    "category": "algorithms",
-   "group": "quantum_differential_equations_solvers/discrete_poisson_solver",
+   "group": "quantum_differential_equations_solvers",
    "name": "discrete_poisson_solver",
    "files": [
     "discrete_poisson_solver.ipynb",
@@ -226,7 +226,7 @@
   {
    "path": "algorithms/quantum_differential_equations_solvers/lchs",
    "category": "algorithms",
-   "group": "quantum_differential_equations_solvers/lchs",
+   "group": "quantum_differential_equations_solvers",
    "name": "lchs",
    "files": [
     "lchs.ipynb"
@@ -235,7 +235,7 @@
   {
    "path": "algorithms/quantum_differential_equations_solvers/time_marching",
    "category": "algorithms",
-   "group": "quantum_differential_equations_solvers/time_marching",
+   "group": "quantum_differential_equations_solvers",
    "name": "time_marching",
    "files": [
     "time_marching.ipynb",
@@ -245,7 +245,7 @@
   {
    "path": "algorithms/quantum_linear_solvers/adiabatic_linear_solvers",
    "category": "algorithms",
-   "group": "quantum_linear_solvers/adiabatic_linear_solvers",
+   "group": "quantum_linear_solvers",
    "name": "adiabatic_linear_solvers",
    "files": [
     "solving_qlsp_with_aqc.ipynb",
@@ -255,7 +255,7 @@
   {
    "path": "algorithms/quantum_linear_solvers/hhl",
    "category": "algorithms",
-   "group": "quantum_linear_solvers/hhl",
+   "group": "quantum_linear_solvers",
    "name": "hhl",
    "files": [
     "hhl.ipynb",
@@ -265,7 +265,7 @@
   {
    "path": "algorithms/quantum_linear_solvers/qsvt_matrix_inversion",
    "category": "algorithms",
-   "group": "quantum_linear_solvers/qsvt_matrix_inversion",
+   "group": "quantum_linear_solvers",
    "name": "qsvt_matrix_inversion",
    "files": [
     "qsvt_matrix_inversion.ipynb",
@@ -275,7 +275,7 @@
   {
    "path": "algorithms/quantum_linear_solvers/vqls",
    "category": "algorithms",
-   "group": "quantum_linear_solvers/vqls",
+   "group": "quantum_linear_solvers",
    "name": "vqls",
    "files": [
     "vqls_with_lcu.ipynb",
@@ -285,7 +285,7 @@
   {
    "path": "algorithms/quantum_phase_estimation/qpe_for_matrix",
    "category": "algorithms",
-   "group": "quantum_phase_estimation/qpe_for_matrix",
+   "group": "quantum_phase_estimation",
    "name": "qpe_for_matrix",
    "files": [
     "qpe_for_matrix.ipynb",
@@ -295,7 +295,7 @@
   {
    "path": "algorithms/quantum_phase_estimation/qpe_with_qubitization",
    "category": "algorithms",
-   "group": "quantum_phase_estimation/qpe_with_qubitization",
+   "group": "quantum_phase_estimation",
    "name": "qpe_with_qubitization",
    "files": [
     "qpe_for_molecule_with_qubitization.ipynb",
@@ -305,7 +305,7 @@
   {
    "path": "algorithms/quantum_primitives/gqsp",
    "category": "algorithms",
-   "group": "quantum_primitives/gqsp",
+   "group": "quantum_primitives",
    "name": "gqsp",
    "files": [
     "gqsp.ipynb",
@@ -315,7 +315,7 @@
   {
    "path": "algorithms/quantum_primitives/gradient_estimation",
    "category": "algorithms",
-   "group": "quantum_primitives/gradient_estimation",
+   "group": "quantum_primitives",
    "name": "gradient_estimation",
    "files": [
     "gradient_estimation.ipynb"
@@ -324,7 +324,7 @@
   {
    "path": "algorithms/quantum_primitives/hadamard_test",
    "category": "algorithms",
-   "group": "quantum_primitives/hadamard_test",
+   "group": "quantum_primitives",
    "name": "hadamard_test",
    "files": [
     "hadamard_test.ipynb",
@@ -334,7 +334,7 @@
   {
    "path": "algorithms/quantum_primitives/quantum_oracle_sketching_boolean",
    "category": "algorithms",
-   "group": "quantum_primitives/quantum_oracle_sketching_boolean",
+   "group": "quantum_primitives",
    "name": "quantum_oracle_sketching_boolean",
    "files": [
     "quantum_oracle_sketching_boolean.ipynb"
@@ -343,7 +343,7 @@
   {
    "path": "algorithms/quantum_primitives/swap_test",
    "category": "algorithms",
-   "group": "quantum_primitives/swap_test",
+   "group": "quantum_primitives",
    "name": "swap_test",
    "files": [
     "swap_test.ipynb",
@@ -353,7 +353,7 @@
   {
    "path": "algorithms/quantum_state_preparation/adapt_vqe",
    "category": "algorithms",
-   "group": "quantum_state_preparation/adapt_vqe",
+   "group": "quantum_state_preparation",
    "name": "adapt_vqe",
    "files": [
     "adapt_vqe.ipynb",
@@ -363,7 +363,7 @@
   {
    "path": "algorithms/quantum_state_preparation/fermionic_gaussian",
    "category": "algorithms",
-   "group": "quantum_state_preparation/fermionic_gaussian",
+   "group": "quantum_state_preparation",
    "name": "fermionic_gaussian",
    "files": [
     "fermionic_gaussian.ipynb"
@@ -372,7 +372,7 @@
   {
    "path": "algorithms/quantum_state_preparation/gibbs",
    "category": "algorithms",
-   "group": "quantum_state_preparation/gibbs",
+   "group": "quantum_state_preparation",
    "name": "gibbs",
    "files": [
     "quantum_thermal_state_preparation.ipynb",
@@ -382,7 +382,7 @@
   {
    "path": "algorithms/quantum_walks/glued_trees",
    "category": "algorithms",
-   "group": "quantum_walks/glued_trees",
+   "group": "quantum_walks",
    "name": "glued_trees",
    "files": [
     "glued_trees.ipynb"
@@ -391,7 +391,7 @@
   {
    "path": "algorithms/search_and_optimization/dqi",
    "category": "algorithms",
-   "group": "search_and_optimization/dqi",
+   "group": "search_and_optimization",
    "name": "dqi",
    "files": [
     "dqi_max_xorsat.ipynb",
@@ -401,7 +401,7 @@
   {
    "path": "algorithms/search_and_optimization/grover",
    "category": "algorithms",
-   "group": "search_and_optimization/grover",
+   "group": "search_and_optimization",
    "name": "grover",
    "files": [
     "3_sat_grover.qmod",
@@ -413,7 +413,7 @@
   {
    "path": "algorithms/search_and_optimization/grover_mixer_qaoa",
    "category": "algorithms",
-   "group": "search_and_optimization/grover_mixer_qaoa",
+   "group": "search_and_optimization",
    "name": "grover_mixer_qaoa",
    "files": [
     "gm_qaoa.ipynb",
@@ -423,7 +423,7 @@
   {
    "path": "algorithms/search_and_optimization/QAOA",
    "category": "algorithms",
-   "group": "search_and_optimization/QAOA",
+   "group": "search_and_optimization",
    "name": "QAOA",
    "files": [
     "qaoa.ipynb",
@@ -435,7 +435,7 @@
   {
    "path": "algorithms/search_and_optimization/quantum_likelihood_estimation",
    "category": "algorithms",
-   "group": "search_and_optimization/quantum_likelihood_estimation",
+   "group": "search_and_optimization",
    "name": "quantum_likelihood_estimation",
    "files": [
     "quantum_likelihood_estimation.ipynb"
@@ -444,7 +444,7 @@
   {
    "path": "applications/automotive/cooling_systems_optimization",
    "category": "applications",
-   "group": "automotive/cooling_systems_optimization",
+   "group": "automotive",
    "name": "cooling_systems_optimization",
    "files": [
     "cooling_systems_optimization.ipynb"
@@ -453,7 +453,7 @@
   {
    "path": "applications/benchmarking/quantum_volume",
    "category": "applications",
-   "group": "benchmarking/quantum_volume",
+   "group": "benchmarking",
    "name": "quantum_volume",
    "files": [
     "quantum_volume.ipynb",
@@ -463,7 +463,7 @@
   {
    "path": "applications/benchmarking/randomized_benchmarking",
    "category": "applications",
-   "group": "benchmarking/randomized_benchmarking",
+   "group": "benchmarking",
    "name": "randomized_benchmarking",
    "files": [
     "randomized_benchmarking.ipynb",
@@ -473,7 +473,7 @@
   {
    "path": "applications/CFD/double_slit_experiment",
    "category": "applications",
-   "group": "CFD/double_slit_experiment",
+   "group": "CFD",
    "name": "double_slit_experiment",
    "files": [
     "quantum_double_slit_experiment.ipynb",
@@ -483,7 +483,7 @@
   {
    "path": "applications/CFD/heat_eq_qsvt",
    "category": "applications",
-   "group": "CFD/heat_eq_qsvt",
+   "group": "CFD",
    "name": "heat_eq_qsvt",
    "files": [
     "heat_eq_qsvt.ipynb",
@@ -493,7 +493,7 @@
   {
    "path": "applications/CFD/qlbm",
    "category": "applications",
-   "group": "CFD/qlbm",
+   "group": "CFD",
    "name": "qlbm",
    "files": [
     "qlbm.ipynb",
@@ -503,7 +503,7 @@
   {
    "path": "applications/CFD/QLS_for_hybrid_solvers",
    "category": "applications",
-   "group": "CFD/QLS_for_hybrid_solvers",
+   "group": "CFD",
    "name": "QLS_for_hybrid_solvers",
    "files": [
     "chebyshev_approximation.ipynb",
@@ -515,7 +515,7 @@
   {
    "path": "applications/chemistry/classiq_chemistry_application",
    "category": "applications",
-   "group": "chemistry/classiq_chemistry_application",
+   "group": "chemistry",
    "name": "classiq_chemistry_application",
    "files": [
     "classiq_chemistry_application.ipynb"
@@ -524,7 +524,7 @@
   {
    "path": "applications/chemistry/molecular_energy_curve",
    "category": "applications",
-   "group": "chemistry/molecular_energy_curve",
+   "group": "chemistry",
    "name": "molecular_energy_curve",
    "files": [
     "molecular_energy_curve.ipynb",
@@ -534,7 +534,7 @@
   {
    "path": "applications/chemistry/molecule_eigensolver",
    "category": "applications",
-   "group": "chemistry/molecule_eigensolver",
+   "group": "chemistry",
    "name": "molecule_eigensolver",
    "files": [
     "molecule_eigensolver.ipynb",
@@ -544,7 +544,7 @@
   {
    "path": "applications/chemistry/projection_based_embedding",
    "category": "applications",
-   "group": "chemistry/projection_based_embedding",
+   "group": "chemistry",
    "name": "projection_based_embedding",
    "files": [
     "projected_based_embedding_tutorial.ipynb"
@@ -553,7 +553,7 @@
   {
    "path": "applications/chemistry/protein_folding/protein_folding_with_qaoa",
    "category": "applications",
-   "group": "chemistry/protein_folding/protein_folding_with_qaoa",
+   "group": "chemistry/protein_folding",
    "name": "protein_folding_with_qaoa",
    "files": [
     "protein_folding.ipynb",
@@ -563,7 +563,7 @@
   {
    "path": "applications/chemistry/protein_folding/protein_folding_with_quantum_walk",
    "category": "applications",
-   "group": "chemistry/protein_folding/protein_folding_with_quantum_walk",
+   "group": "chemistry/protein_folding",
    "name": "protein_folding_with_quantum_walk",
    "files": [
     "qfold.ipynb",
@@ -573,7 +573,7 @@
   {
    "path": "applications/chemistry/qpe_for_molecules",
    "category": "applications",
-   "group": "chemistry/qpe_for_molecules",
+   "group": "chemistry",
    "name": "qpe_for_molecules",
    "files": [
     "qpe_for_molecules.ipynb",
@@ -583,7 +583,7 @@
   {
    "path": "applications/chemistry/quantum_drude_oscillator",
    "category": "applications",
-   "group": "chemistry/quantum_drude_oscillator",
+   "group": "chemistry",
    "name": "quantum_drude_oscillator",
    "files": [
     "quantum_drude_oscillator.ipynb",
@@ -593,7 +593,7 @@
   {
    "path": "applications/chemistry/quantum_walk_fmo",
    "category": "applications",
-   "group": "chemistry/quantum_walk_fmo",
+   "group": "chemistry",
    "name": "quantum_walk_fmo",
    "files": [
     "quantum_walk_fmo.ipynb",
@@ -603,7 +603,7 @@
   {
    "path": "applications/chemistry/second_quantized_hamiltonian",
    "category": "applications",
-   "group": "chemistry/second_quantized_hamiltonian",
+   "group": "chemistry",
    "name": "second_quantized_hamiltonian",
    "files": [
     "second_quantized_hamiltonian.ipynb",
@@ -613,7 +613,7 @@
   {
    "path": "applications/chemistry/tensor_hypercontraction",
    "category": "applications",
-   "group": "chemistry/tensor_hypercontraction",
+   "group": "chemistry",
    "name": "tensor_hypercontraction",
    "files": [
     "tensor_hypercontraction.ipynb",
@@ -623,7 +623,7 @@
   {
    "path": "applications/cybersecurity/link_monitoring",
    "category": "applications",
-   "group": "cybersecurity/link_monitoring",
+   "group": "cybersecurity",
    "name": "link_monitoring",
    "files": [
     "link_monitoring.ipynb",
@@ -633,7 +633,7 @@
   {
    "path": "applications/cybersecurity/patching_management",
    "category": "applications",
-   "group": "cybersecurity/patching_management",
+   "group": "cybersecurity",
    "name": "patching_management",
    "files": [
     "patch_min_vertex_cover.ipynb",
@@ -643,7 +643,7 @@
   {
    "path": "applications/cybersecurity/whitebox_fuzzing",
    "category": "applications",
-   "group": "cybersecurity/whitebox_fuzzing",
+   "group": "cybersecurity",
    "name": "whitebox_fuzzing",
    "files": [
     "whitebox_fuzzing.ipynb",
@@ -653,7 +653,7 @@
   {
    "path": "applications/finance/autocallable_options",
    "category": "applications",
-   "group": "finance/autocallable_options",
+   "group": "finance",
    "name": "autocallable_options",
    "files": [
     "partial_exponential_state_preparation.ipynb",
@@ -665,7 +665,7 @@
   {
    "path": "applications/finance/brownian_chebyshev_polynomials",
    "category": "applications",
-   "group": "finance/brownian_chebyshev_polynomials",
+   "group": "finance",
    "name": "brownian_chebyshev_polynomials",
    "files": [
     "brownian_chebyshev_polynomials.ipynb",
@@ -675,7 +675,7 @@
   {
    "path": "applications/finance/credit_card_fraud",
    "category": "applications",
-   "group": "finance/credit_card_fraud",
+   "group": "finance",
    "name": "credit_card_fraud",
    "files": [
     "credit_card_fraud.ipynb",
@@ -685,7 +685,7 @@
   {
    "path": "applications/finance/hybrid_hhl_for_portfolio_optimization",
    "category": "applications",
-   "group": "finance/hybrid_hhl_for_portfolio_optimization",
+   "group": "finance",
    "name": "hybrid_hhl_for_portfolio_optimization",
    "files": [
     "portfolio_optimization_with_hhl.ipynb",
@@ -695,7 +695,7 @@
   {
    "path": "applications/finance/option_pricing",
    "category": "applications",
-   "group": "finance/option_pricing",
+   "group": "finance",
    "name": "option_pricing",
    "files": [
     "option_pricing.ipynb",
@@ -705,7 +705,7 @@
   {
    "path": "applications/finance/portfolio_optimization",
    "category": "applications",
-   "group": "finance/portfolio_optimization",
+   "group": "finance",
    "name": "portfolio_optimization",
    "files": [
     "portfolio_optimization.ipynb",
@@ -715,7 +715,7 @@
   {
    "path": "applications/finance/portfolio_optimization_hhl",
    "category": "applications",
-   "group": "finance/portfolio_optimization_hhl",
+   "group": "finance",
    "name": "portfolio_optimization_hhl",
    "files": [
     "HHL_portfolio.ipynb",
@@ -725,7 +725,7 @@
   {
    "path": "applications/finance/rainbow_options",
    "category": "applications",
-   "group": "finance/rainbow_options",
+   "group": "finance",
    "name": "rainbow_options",
    "files": [
     "rainbow_options_bruteforce_method.ipynb",
@@ -739,7 +739,7 @@
   {
    "path": "applications/finance/value_at_risk",
    "category": "applications",
-   "group": "finance/value_at_risk",
+   "group": "finance",
    "name": "value_at_risk",
    "files": [
     "value_at_risk.ipynb",
@@ -749,7 +749,7 @@
   {
    "path": "applications/image_processing/quantum_hadamard_edge_detection",
    "category": "applications",
-   "group": "image_processing/quantum_hadamard_edge_detection",
+   "group": "image_processing",
    "name": "quantum_hadamard_edge_detection",
    "files": [
     "quantum_image_edge_detection.ipynb"
@@ -758,7 +758,7 @@
   {
    "path": "applications/logistics/facility_location",
    "category": "applications",
-   "group": "logistics/facility_location",
+   "group": "logistics",
    "name": "facility_location",
    "files": [
     "facility_location.ipynb",
@@ -768,7 +768,7 @@
   {
    "path": "applications/logistics/task_scheduling_problem",
    "category": "applications",
-   "group": "logistics/task_scheduling_problem",
+   "group": "logistics",
    "name": "task_scheduling_problem",
    "files": [
     "task_scheduling_problem.ipynb",
@@ -778,7 +778,7 @@
   {
    "path": "applications/logistics/traveling_salesman_problem",
    "category": "applications",
-   "group": "logistics/traveling_salesman_problem",
+   "group": "logistics",
    "name": "traveling_salesman_problem",
    "files": [
     "traveling_salesman_problem.ipynb",
@@ -788,7 +788,7 @@
   {
    "path": "applications/logistics/vehicle_routing_problem",
    "category": "applications",
-   "group": "logistics/vehicle_routing_problem",
+   "group": "logistics",
    "name": "vehicle_routing_problem",
    "files": [
     "vehicle_routing_problem.ipynb",
@@ -798,7 +798,7 @@
   {
    "path": "applications/optimization/adapt_qaoa",
    "category": "applications",
-   "group": "optimization/adapt_qaoa",
+   "group": "optimization",
    "name": "adapt_qaoa",
    "files": [
     "adapt_qaoa.ipynb",
@@ -808,7 +808,7 @@
   {
    "path": "applications/optimization/electric_grid_optimization",
    "category": "applications",
-   "group": "optimization/electric_grid_optimization",
+   "group": "optimization",
    "name": "electric_grid_optimization",
    "files": [
     "electric_grid_optimization.ipynb",
@@ -818,7 +818,7 @@
   {
    "path": "applications/optimization/integer_linear_programming",
    "category": "applications",
-   "group": "optimization/integer_linear_programming",
+   "group": "optimization",
    "name": "integer_linear_programming",
    "files": [
     "integer_linear_programming.ipynb",
@@ -828,7 +828,7 @@
   {
    "path": "applications/optimization/kidney_exchange",
    "category": "applications",
-   "group": "optimization/kidney_exchange",
+   "group": "optimization",
    "name": "kidney_exchange",
    "files": [
     "kidney_exchange_problem.ipynb",
@@ -838,7 +838,7 @@
   {
    "path": "applications/optimization/low_autocorrelation_binary_sequences_problem",
    "category": "applications",
-   "group": "optimization/low_autocorrelation_binary_sequences_problem",
+   "group": "optimization",
    "name": "low_autocorrelation_binary_sequences_problem",
    "files": [
     "evidence_scaling_labs.ipynb",
@@ -848,7 +848,7 @@
   {
    "path": "applications/optimization/max_clique",
    "category": "applications",
-   "group": "optimization/max_clique",
+   "group": "optimization",
    "name": "max_clique",
    "files": [
     "max_clique.ipynb",
@@ -858,7 +858,7 @@
   {
    "path": "applications/optimization/max_independent_set",
    "category": "applications",
-   "group": "optimization/max_independent_set",
+   "group": "optimization",
    "name": "max_independent_set",
    "files": [
     "max_independent_set.ipynb",
@@ -868,7 +868,7 @@
   {
    "path": "applications/optimization/max_induced_k_color_subgraph",
    "category": "applications",
-   "group": "optimization/max_induced_k_color_subgraph",
+   "group": "optimization",
    "name": "max_induced_k_color_subgraph",
    "files": [
     "max_induced_k_color_subgraph.ipynb",
@@ -878,7 +878,7 @@
   {
    "path": "applications/optimization/max_k_vertex_cover",
    "category": "applications",
-   "group": "optimization/max_k_vertex_cover",
+   "group": "optimization",
    "name": "max_k_vertex_cover",
    "files": [
     "max_k_vertex_cover.ipynb",
@@ -888,7 +888,7 @@
   {
    "path": "applications/optimization/min_graph_coloring",
    "category": "applications",
-   "group": "optimization/min_graph_coloring",
+   "group": "optimization",
    "name": "min_graph_coloring",
    "files": [
     "min_graph_coloring.ipynb",
@@ -898,7 +898,7 @@
   {
    "path": "applications/optimization/minimum_dominating_set",
    "category": "applications",
-   "group": "optimization/minimum_dominating_set",
+   "group": "optimization",
    "name": "minimum_dominating_set",
    "files": [
     "minimum_dominating_set.ipynb",
@@ -908,7 +908,7 @@
   {
    "path": "applications/optimization/qaoa_in_qaoa",
    "category": "applications",
-   "group": "optimization/qaoa_in_qaoa",
+   "group": "optimization",
    "name": "qaoa_in_qaoa",
    "files": [
     "qaoa_in_qaoa.ipynb",
@@ -918,7 +918,7 @@
   {
    "path": "applications/optimization/rectangles_packing",
    "category": "applications",
-   "group": "optimization/rectangles_packing",
+   "group": "optimization",
    "name": "rectangles_packing",
    "files": [
     "rectangles_packing_grid.ipynb",
@@ -928,7 +928,7 @@
   {
    "path": "applications/optimization/robust_posture_optimization",
    "category": "applications",
-   "group": "optimization/robust_posture_optimization",
+   "group": "optimization",
    "name": "robust_posture_optimization",
    "files": [
     "robust_posture_optimization.ipynb",
@@ -938,7 +938,7 @@
   {
    "path": "applications/optimization/set_cover",
    "category": "applications",
-   "group": "optimization/set_cover",
+   "group": "optimization",
    "name": "set_cover",
    "files": [
     "set_cover.ipynb",
@@ -948,7 +948,7 @@
   {
    "path": "applications/optimization/set_partition",
    "category": "applications",
-   "group": "optimization/set_partition",
+   "group": "optimization",
    "name": "set_partition",
    "files": [
     "set_partition.ipynb",
@@ -958,7 +958,7 @@
   {
    "path": "applications/optimization/variational_quantum_imaginary_time_evolution",
    "category": "applications",
-   "group": "optimization/variational_quantum_imaginary_time_evolution",
+   "group": "optimization",
    "name": "variational_quantum_imaginary_time_evolution",
    "files": [
     "variational_quantum_imaginary_time_evolution.ipynb",
@@ -968,7 +968,7 @@
   {
    "path": "applications/physical_systems/fermi_hubbard_model_1D",
    "category": "applications",
-   "group": "physical_systems/fermi_hubbard_model_1D",
+   "group": "physical_systems",
    "name": "fermi_hubbard_model_1D",
    "files": [
     "fermi_hubbard_1D.ipynb",
@@ -978,7 +978,7 @@
   {
    "path": "applications/physical_systems/hhl_lanchester",
    "category": "applications",
-   "group": "physical_systems/hhl_lanchester",
+   "group": "physical_systems",
    "name": "hhl_lanchester",
    "files": [
     "hhl_lanchester.ipynb",
@@ -988,7 +988,7 @@
   {
    "path": "applications/physical_systems/ising_model",
    "category": "applications",
-   "group": "physical_systems/ising_model",
+   "group": "physical_systems",
    "name": "ising_model",
    "files": [
     "ising_model.ipynb",
@@ -998,7 +998,7 @@
   {
    "path": "applications/physical_systems/maxwell_equation",
    "category": "applications",
-   "group": "physical_systems/maxwell_equation",
+   "group": "physical_systems",
    "name": "maxwell_equation",
    "files": [
     "maxwell_2d_simulation.ipynb"
@@ -1007,7 +1007,7 @@
   {
    "path": "applications/physical_systems/quantum_chaos",
    "category": "applications",
-   "group": "physical_systems/quantum_chaos",
+   "group": "physical_systems",
    "name": "quantum_chaos",
    "files": [
     "quantum_sawtooth_map.ipynb",
@@ -1017,7 +1017,7 @@
   {
    "path": "applications/plasma/vlasov_ampere",
    "category": "applications",
-   "group": "plasma/vlasov_ampere",
+   "group": "plasma",
    "name": "vlasov_ampere",
    "files": [
     "vlasov_ampere.ipynb",
@@ -1028,7 +1028,7 @@
   {
    "path": "applications/telecom/network_traffic_optimization",
    "category": "applications",
-   "group": "telecom/network_traffic_optimization",
+   "group": "telecom",
    "name": "network_traffic_optimization",
    "files": [
     "network_traffic_optimization.ipynb",
@@ -1038,7 +1038,7 @@
   {
    "path": "applications/telecom/radio_access_network",
    "category": "applications",
-   "group": "telecom/radio_access_network",
+   "group": "telecom",
    "name": "radio_access_network",
    "files": [
     "radio_access_network_positioning_antennas.ipynb",
@@ -1048,7 +1048,7 @@
   {
    "path": "applications/telecom/resiliency_planning",
    "category": "applications",
-   "group": "telecom/resiliency_planning",
+   "group": "telecom",
    "name": "resiliency_planning",
    "files": [
     "resiliency_planning.ipynb",

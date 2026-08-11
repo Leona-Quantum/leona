@@ -77,7 +77,10 @@ const byDirectory = new Map();
 for (const node of tree.tree) {
   if (node.type !== "blob") continue;
   const parts = node.path.split("/");
-  if (!COUNTED_TOPS.includes(parts[0]) || parts.length < 2) continue;
+  // At least category / entry-directory / file: a blob sitting directly in
+  // `algorithms/` is not a publication directory, and admitting it would produce
+  // an "entry" whose path is the bare category and whose name is "algorithms".
+  if (!COUNTED_TOPS.includes(parts[0]) || parts.length < 3) continue;
   if (!node.path.endsWith(".qmod") && !node.path.endsWith(".ipynb")) continue;
   const directory = parts.slice(0, -1).join("/");
   if (!byDirectory.has(directory)) {
@@ -87,7 +90,12 @@ for (const node of tree.tree) {
       // The path between the category and the entry — "finance", "chemistry",
       // "quantum_linear_solvers". Classiq's own shelving, kept because it is the
       // axis a reader asks coverage questions along.
-      group: parts.length > 2 ? parts.slice(1, -1).join("/") : null,
+      //
+      // `parts` still carries the FILENAME, so the entry directory is at -2 and
+      // the shelf is everything between the category and it. Slicing to -1 here
+      // put the entry's own name inside its group, which read fine on the row and
+      // would have given any later group-level rollup exactly one group per entry.
+      group: parts.length > 3 ? parts.slice(1, -2).join("/") : null,
       name: parts[parts.length - 2],
       files: [],
     });
