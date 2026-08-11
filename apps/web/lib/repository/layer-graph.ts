@@ -3992,6 +3992,30 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "上界ではなくベンチマーク相対の値です。Qiskit 1.2.0 の実装は Qiskit 0.20.1 の実装に対しておよそ 200 倍高速で、同じベンチマーク回路上で Li らの SABRE と比べて SWAP ゲート数が平均 18.9% 減少します。",
     steps: [],
     atomic: true,
+    // **No `example` here, and the record is the reason rather than the backlog.**
+    // The batch that gave the other qubit-routing methods a listing reached this
+    // record and stopped, so the omission is written down instead of leaving the
+    // next author to redo the reading.
+    //
+    // `summary` and `cost` state what this method *is* ("a re-engineered SABRE —
+    // the Qiskit production implementation, largely rewritten in Rust") and what
+    // it *measures* (≈200x faster than Qiskit 0.20.1; an average 18.9% decrease in
+    // SWAP count against Li et al.'s SABRE on the same benchmarks). Neither states
+    // what any of the algorithmic changes *are*, and `conditions` marks the figures
+    // as benchmark-relative rather than worst-case, with "Same applicability as
+    // SABRE".
+    //
+    // So a listing here could only be `sabre-routing`'s listing again, or the
+    // paper's changes recalled rather than transcribed. `sameInternalsAsParent`
+    // already says the first of those in the data: a re-engineered implementation
+    // of the same routine is not a second process on the map, and `potentialPath`
+    // adds that every recorded difference is implementation engineering measured as
+    // benchmark constants on that one routine.
+    //
+    // This is therefore not the same kind of hole as an unwritten listing. It
+    // closes by somebody reading the LightSABRE paper and finding a step this
+    // record does not carry — at which point the honest move is a `steps` entry or
+    // a `potentialPath` revision, not a listing bolted onto a folded refinement.
     citations: [
       { title: "LightSABRE: A Lightweight and Enhanced SABRE Algorithm", authors: "Henry Zou, Matthew Treinish, Kevin Hartman, Alexander Ivrii, Jake Lishman", year: "2024", url: "https://arxiv.org/abs/2409.08368" },
     ],
