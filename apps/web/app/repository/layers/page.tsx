@@ -16,7 +16,7 @@ import {
   SECTION_PARAM,
 } from "../../../lib/repository/map-card";
 import { parseAboutSection } from "../../../lib/repository/map-about";
-import { isCapability, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
+import { isCapability, layerCorpusEntry, layerNode, type LayerCorpusEntry } from "../../../lib/repository/layers";
 import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
 import { PAPER_REGISTER } from "../../../lib/repository/paper-register";
 import { PAPER_PARAM, paperRevealFor } from "../../../lib/repository/paper-reveal";
@@ -172,14 +172,7 @@ export default async function RepositoryLayersPage({
   // The narrow projection the graph needs. Passing the whole listing would let a
   // later change to this surface start reading fields the graph has no business
   // depending on.
-  const corpus: LayerCorpusEntry[] = entries.map((entry) => ({
-    slug: entry.slug,
-    title: entry.title,
-    titleJa: entry.titleJa,
-    category: entry.category,
-    description: entry.description,
-    descriptionJa: entry.descriptionJa,
-  }));
+  const corpus: LayerCorpusEntry[] = entries.map(layerCorpusEntry);
   // **The same input the panel is built from**, so the question "can this id be
   // opened" and the answer "here is what opens" cannot disagree. `ConvergeView`
   // builds its own from the same four values; they are one object's worth of

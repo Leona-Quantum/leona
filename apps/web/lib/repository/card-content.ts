@@ -311,11 +311,38 @@ export interface CardExample {
   readonly pseudocode: string | null;
 }
 
+/**
+ * Which branch of `W5-card-spec.md`'s implementations tree an entry came from.
+ *
+ * **The classification stamp of ruling `27267f`, and the thing that makes the
+ * record join safe.** Once a repository record's runnable variant appears in
+ * this list beside a hand-written paper reproduction, the two are
+ * indistinguishable without a stamp — and claiming a corpus scaffold reproduced
+ * a paper is exactly the kind of provenance error the register exists to stop.
+ *
+ * `authored` is the first two branches (an implementation from a paper, or an
+ * independent derivation of one), which are written on the node by hand.
+ * `record` is the third — *"implementations that are not from a paper but have
+ * been run"* — which is a repository record's code variant, joined rather than
+ * re-typed.
+ */
+export type CardImplementationOrigin =
+  | { readonly kind: "authored" }
+  | {
+      readonly kind: "record";
+      readonly slug: string;
+      readonly href: string;
+      /** The record's own verification status, verbatim. Never paraphrased here. */
+      readonly status: string;
+      readonly provenance: string;
+    };
+
 /** One implementation, with the owner's five sub-sections. */
 export interface CardImplementation {
   readonly id: string;
   readonly label: string;
   readonly papers: readonly LayerCitation[];
+  readonly origin: CardImplementationOrigin;
   /** The five, in his order, each held or absent. Ordered so the card cannot reorder them. */
   readonly sections: ReadonlyArray<{
     readonly id: ImplementationSectionId;
@@ -601,27 +628,94 @@ function exampleOf(method: LayerMethod, ja: boolean): CardValue<CardExample> {
   return held({ text: text ?? null, pseudocode: example.pseudocode ?? null });
 }
 
+/**
+ * The joined implementations: what the node authored, then what its records run.
+ *
+ * **Ruling `27267f`, as code.** Before this, the section read `method.implementations`
+ * alone and was empty on all 74 methods — while all 283 corpus records carry
+ * `codeVariants`, and in all 27 method→record pairs the card rendered
+ * "none-recorded" over a record that had code. That was never a research gap.
+ * The content was authored; nothing joined it.
+ *
+ * Authored entries come first and keep their order: they are the two branches of
+ * `W5-card-spec.md`'s tree that a person wrote (an implementation from a paper,
+ * or an independent derivation of one), and a hand-written reproduction is the
+ * more specific claim. Record-derived entries follow, one per runnable variant,
+ * carrying `origin: "record"` so the two can never be confused for each other —
+ * without that stamp the card would let a corpus scaffold read as a paper
+ * reproduction, which is the provenance error the register exists to prevent.
+ *
+ * The variant's **code is deliberately not inlined**. `LayerCorpusEntry` projects
+ * facts about a variant, not its source, and the record page owns the source —
+ * see that interface for why the ruling narrows the projection rather than
+ * widening it into a second copy.
+ */
 function implementationsOf(
   method: LayerMethod,
+  corpus: readonly LayerCorpusEntry[],
   ja: boolean,
 ): CardValue<readonly CardImplementation[]> {
-  const entries = method.implementations ?? [];
-  if (entries.length === 0) return missing("none-recorded");
-  return held(
-    entries.map((entry) => ({
-      id: entry.id,
-      label: ja ? entry.labelJa : entry.label,
-      papers: entry.papers ?? [],
-      // The five in his order, resolved here rather than in the component, for
-      // the reason the whole module exists: a sub-section written as
-      // `{x ? <p/> : null}` inside JSX is one the census cannot count, and the
-      // gaps inside an implementation are the interesting part of it.
-      sections: IMPLEMENTATION_SECTIONS.map((id) => ({
-        id,
-        value: stated(ja ? entry[`${id}Ja` as const] : entry[id]),
-      })),
+  const authored = (method.implementations ?? []).map((entry) => ({
+    id: entry.id,
+    label: ja ? entry.labelJa : entry.label,
+    papers: entry.papers ?? [],
+    origin: { kind: "authored" } as const,
+    // The five in his order, resolved here rather than in the component, for
+    // the reason the whole module exists: a sub-section written as
+    // `{x ? <p/> : null}` inside JSX is one the census cannot count, and the
+    // gaps inside an implementation are the interesting part of it.
+    sections: IMPLEMENTATION_SECTIONS.map((id) => ({
+      id,
+      value: stated(ja ? entry[`${id}Ja` as const] : entry[id]),
     })),
-  );
+  }));
+
+  const bySlug = new Map(corpus.map((entry) => [entry.slug, entry]));
+  const joined: CardImplementation[] = [];
+  for (const slug of entriesFor(method, new Set(bySlug.keys()))) {
+    const record = bySlug.get(slug)!;
+    for (const variant of record.runnable ?? []) {
+      joined.push({
+        // Keyed on the pair, because one record can offer the same method
+        // several frameworks and one framework can appear under several records.
+        id: `record:${slug}:${variant.framework}`,
+        label: `${ja ? record.titleJa : record.title} · ${variant.framework}`,
+        // Empty on purpose, and a real value rather than a gap: this is the
+        // branch the spec calls "not from a paper but has been run".
+        papers: [],
+        origin: {
+          kind: "record",
+          slug,
+          href: `/repository/${slug}`,
+          status: variant.status ?? record.provenance ?? "",
+          provenance: record.provenance ?? "",
+        },
+        sections: IMPLEMENTATION_SECTIONS.map((id) => ({
+          id,
+          value: stated(
+            id === "about"
+              ? ja
+                ? record.descriptionJa
+                : record.description
+              : id === "code"
+                ? variant.filename ?? variant.framework
+                : id === "results"
+                  ? record.verification
+                  : // `methods` and `data` are the record's own gaps, not this
+                    // join's: a repository record states what it is and how it
+                    // was checked, and nothing in it describes a procedure or a
+                    // dataset. Left absent so the card reports them as missing
+                    // rather than inventing a sentence to fill the slot.
+                    undefined,
+          ),
+        })),
+      });
+    }
+  }
+
+  const entries = [...authored, ...joined];
+  if (entries.length === 0) return missing("none-recorded");
+  return held(entries);
 }
 
 /**
@@ -714,7 +808,7 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
         : held(method.citations),
     records: recordsOf(method, corpus, ja),
     example: exampleOf(method, ja),
-    implementations: implementationsOf(method, ja),
+    implementations: implementationsOf(method, corpus, ja),
     implementationLeads: implementationLeadsOf(method, input.register),
   };
 }
