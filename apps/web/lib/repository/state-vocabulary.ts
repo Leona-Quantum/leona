@@ -253,6 +253,25 @@ export const STATE_VOCABULARY: StateVocabulary = {
         "任意の回転角、任意の二量子ビットゲート、そして任意の量子ビット同士が相互作用できる前提の回路。これを実行できる実機はありません。ここからハードウェアまでの一切は、その隔たりを埋め、代償を数える作業です。",
     },
     {
+      id: "parameterized-circuit",
+      label: "Parameterised circuit family",
+      labelJa: "パラメータ付き回路族",
+      summary:
+        "Not one circuit but a family of them, indexed by free real parameters — a fixed gate structure with the angles left open. Nothing can be run and nothing can be costed until the angles are chosen, so this is deliberately a different object from the circuit it becomes: the structure decides which states are reachable at all, and the choice of angles only decides which of those you land on.",
+      summaryJa:
+        "ひとつの回路ではなく、自由な実パラメータで添字づけられた回路の族です。ゲートの構造は固定され、角度だけが未定のまま残されています。角度が決まるまでは実行も費用の見積もりもできないため、これは確定した回路とは意図的に別の対象として扱います。到達しうる状態の範囲を決めるのは構造であり、角度の選択はそのうちのどれに着地するかを決めるにすぎません。",
+      // Its own state rather than `abstract-circuit` reused, and the reason is
+      // the one the file's header rule protects: a family and a member are not
+      // the same object, and the whole variational region turns on the
+      // difference. `ansatz-construction` returns the family — nothing about it
+      // has a gate count yet, because the angles are open — and
+      // `parameter-optimization` is precisely the process that turns a family
+      // into a member. If both ends were `abstract-circuit` the optimisation
+      // hop would read as a process that changes nothing, which is the shape
+      // `validateLayerGraph` rejects outright on a capability contract.
+      specializes: ["abstract-circuit"],
+    },
+    {
       id: "evolution-circuit",
       label: "Circuit for e^{-iHt}",
       labelJa: "e^{-iHt} を実現する回路",
