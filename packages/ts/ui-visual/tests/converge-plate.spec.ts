@@ -642,12 +642,30 @@ for (const story of withOpenFeeds) {
 // The cost of the split is that the new class starts life unguarded, so it gets these:
 // the caption plate must exist somewhere (or the split silently retired a marker), must be
 // emitted before its own text (it occludes by paint order like any other plate), and must
-// be wider than the caption it carries at both edges.
+// hold that text's anchor point inside its own box.
+//
+// **Why the cover is not asserted against the drawn glyphs, which is what I tried first.**
+// The plate's width is `captionWidth + 8`, and `captionWidth` is the ENGINE's estimate for
+// the string. The drawn width is whatever `system-ui` resolves to on the runner, because
+// this harness renders from source with no Next and the real face arrives through
+// `next/font` at build time — the header above says so, and `PlateReport` says it again in
+// the sharpest form available: the hit-target side "can be asserted and the text side
+// cannot". I asserted the text side anyway. It passed on macOS and came back **-2.45px on
+// the CI runner** for the English "Linear ODE system" — one string, one locale, a plate
+// that is correct in production. That is the documented failure mode, not a finding.
+//
+// So the measured slack is REPORTED and not asserted, and the assertion moved to something
+// no font can move: the caption's own anchor point, read off the attributes, must lie
+// inside the plate's declared box. That still catches the mistakes worth catching here —
+// an anchor offset applied for the wrong `textAnchor`, a plate that lost its width — while
+// a font substitution cannot make it lie.
 //
 // **What it deliberately does not re-check:** that a caption never lands on a lane name.
 // That is proved upstream in `repository-converge-layout.test.ts` over every figure,
 // opening and locale — a population this harness's story list does not cover — and a
-// weaker second copy here would only invite someone to fix the wrong one.
+// weaker second copy here would only invite someone to fix the wrong one. The same file
+// pins `captionWidth` to the engine's own measurement, which is the font-independent half
+// of "the plate fits the caption".
 // Token-exact, not a prefix. `PLATE_IN_MARKUP` above is deliberately a prefix because a
 // name plate wears modifiers (`--open`, `--selected`) and all of them are still plates.
 // A prefix here matches `mj-converge-caption-plate-renamed` too, which is not a modifier
@@ -693,24 +711,62 @@ for (const story of withCaptions) {
           );
           return { x0: Math.min(...xs), x1: Math.max(...xs) };
         };
-        const out: { label: string; left: number; right: number; beforeText: boolean }[] = [];
+        const out: {
+          label: string;
+          left: number;
+          right: number;
+          beforeText: boolean;
+          anchor: string;
+          plateX: number;
+          expectedX: number;
+          width: number;
+        }[] = [];
         for (const plate of document.querySelectorAll<SVGRectElement>(".mj-converge-caption-plate")) {
           // Pairing here IS the DOM relationship, unlike the lane case: the component
           // emits the plate and its caption as the two children of one `<g>`, so the
           // sibling is the right text by construction rather than by a shared key.
           const text = plate.parentElement?.querySelector<SVGTextElement>("text.mj-converge-hub-caption");
           if (!text) {
-            out.push({ label: "", left: -1, right: -1, beforeText: false });
+            out.push({
+              label: "",
+              left: -1,
+              right: -1,
+              beforeText: false,
+              anchor: "",
+              plateX: 0,
+              expectedX: 1,
+              width: 0,
+            });
             continue;
           }
           const span = intoPlateSpace(plate, text);
           const x = Number(plate.getAttribute("x") ?? "0");
           const width = Number(plate.getAttribute("width") ?? "0");
+          // Everything below comes off the attributes the component wrote, so no
+          // substituted face can move any of it.
+          //
+          // The plate is `captionWidth + 8` wide and inset 4px around the caption, so
+          // `captionWidth` is recoverable as `width - 8` — which makes the plate's correct
+          // `x` a pure function of the anchor point, the anchor mode and the plate's own
+          // width. That is the whole placement rule, checkable without measuring a glyph.
+          const anchorX = Number(text.getAttribute("x") ?? "0");
+          const anchor = text.getAttribute("text-anchor") ?? "start";
+          const captionWidth = width - 8;
+          const expectedX =
+            anchor === "start"
+              ? anchorX - 4
+              : anchor === "end"
+                ? anchorX - captionWidth - 4
+                : anchorX - captionWidth / 2 - 4;
           out.push({
             label: text.textContent ?? "",
             left: span.x0 - x,
             right: x + width - span.x1,
             beforeText: (plate.compareDocumentPosition(text) & Node.DOCUMENT_POSITION_FOLLOWING) !== 0,
+            anchor,
+            plateX: x,
+            expectedX,
+            width,
           });
         }
         return out;
@@ -725,12 +781,29 @@ for (const story of withCaptions) {
           `${where}: the plate is emitted AFTER its own caption, so it paints the caption out ` +
             `instead of clearing the lines under it`,
         ).toBe(true);
-        // Ink-level vertical coverage is unprovable in this harness for the reason the
-        // header records (the real face arrives through next/font at build time and this
-        // renders from source), so this checks the horizontal span, which is font-driven
-        // but generously so at 4px of designed slack per side.
-        expect(report.left, `${where}: the caption runs past the plate's left edge`).toBeGreaterThanOrEqual(0);
-        expect(report.right, `${where}: the caption runs past the plate's right edge`).toBeGreaterThanOrEqual(0);
+        expect(report.width, `${where}: the plate has no width, so it occludes nothing`).toBeGreaterThan(0);
+        // The placement rule itself, reconstructed from the attributes and compared to
+        // what was written. A weaker version of this — "the anchor point lies somewhere
+        // inside the plate" — was tried first and is NOT enough: with `text-anchor="end"`
+        // the text runs LEFT from its anchor, so a plate placed as if the anchor were the
+        // left edge still contains the anchor while sitting entirely on the wrong side of
+        // the word. Mutating that offset left the weaker check green. This one is red.
+        expect(
+          report.plateX,
+          `${where}: plate x=${report.plateX} but text-anchor="${report.anchor}" with a ` +
+            `${report.width}px plate puts it at ${report.expectedX} — the caption's plate is ` +
+            `offset for a different anchor than the caption uses`,
+        ).toBeCloseTo(report.expectedX, 2);
+      }
+      // Reported, never asserted — see the header. A negative worst-case here is the
+      // gap between the engine's width estimate and the runner's font, not a defect;
+      // it is printed so the margin is visible to whoever reads a CI log next.
+      const slack = reports.flatMap((report) => [report.left, report.right]);
+      if (slack.length > 0) {
+        console.log(
+          `[caption plate] ${story.name} (${theme}): ${reports.length} plate(s), ` +
+            `worst measured slack ${Math.min(...slack).toFixed(2)}px against a substituted face`,
+        );
       }
     });
   }
