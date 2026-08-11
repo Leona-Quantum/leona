@@ -4546,6 +4546,17 @@ test("a card link is offered only where a card layer exists, and never otherwise
           `${capability.id}: ${mark.address}'s card href leaves the map`,
         );
         assert.equal(url.searchParams.get("card"), id);
+        // The click's PLACE, not only its subject. One node is drawn in several
+        // places since W15, and a card id alone falls to the first of them —
+        // which is how the owner's click on "quantum linear solve" flew the
+        // camera to the same-named process elsewhere. The href names the
+        // occurrence it sits on, and `resolveSelection`'s address pass makes
+        // that exact.
+        assert.equal(
+          url.searchParams.get("sel"),
+          mark.address,
+          `${capability.id}: ${mark.address}'s card href does not name its own occurrence`,
+        );
         // Everything the reader was already holding, still held.
         assert.equal(url.searchParams.get("focus"), capability.id);
         assert.deepEqual(
@@ -4582,6 +4593,34 @@ test("a card link carries the reader's viewport, exactly as every other address 
       url.searchParams.get("at"),
       at,
       `${lane.address}: opening a card would put the reader back at the origin`,
+    );
+  }
+});
+
+test("inside the card, a label's card href names no occurrence — the outer figures do not draw that place", () => {
+  // The truncated map's addresses live in the card's own coordinate space; the
+  // outer figures never draw them, so a `?sel=` carrying one would resolve to
+  // nothing and the fly-to the reader gets today (to the node's first outer
+  // drawing, via the card id) would become no fly at all. The interceptor's
+  // fallback — "opening a card is selecting its node" — is the right behaviour
+  // there, and it only fires when the href stays silent.
+  const focus = layerNode(LAYER_GRAPH, "quantum-linear-solve");
+  assert.ok(focus && isCapability(focus));
+  const inner = layoutConverge({
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    focus,
+    locale: "en",
+    innerBase: "/repository/layers?focus=linear-ode-solve&card=quantum-linear-solve",
+  });
+  const offered = [...inner.lanes, ...inner.feeds].filter((mark) => mark.cardHref !== null);
+  assert.ok(offered.length > 0, "the truncated map offered no card links — the fixture has gone quiet");
+  for (const mark of offered) {
+    const url = new URL(mark.cardHref!, "https://leonaqt.com");
+    assert.equal(
+      url.searchParams.get("sel"),
+      null,
+      `${mark.address}: an inner-map card href carries an occurrence the outer map cannot resolve`,
     );
   }
 });

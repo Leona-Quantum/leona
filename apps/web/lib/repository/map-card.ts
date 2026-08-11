@@ -71,8 +71,18 @@ export function parseCardId(
  * and one covers the other; leaving both in the address would make the URL claim
  * a state the page cannot draw, and it is the sort of claim that survives being
  * shared long after anyone remembers which one won.
+ *
+ * `sel` is the address of the drawn occurrence the link sits on, when the
+ * caller knows it. A card id alone cannot say WHERE the click happened — one
+ * node is drawn in several places since W15, and `resolveSelection`'s id
+ * fallback goes to the first of them, which is how the owner's click on
+ * "quantum linear solve" flew the camera to the same-named process elsewhere
+ * on the map. With the occurrence in the href, `?sel=` is exact on the server
+ * too: the shared link highlights the place that was clicked, JS off or on.
+ * Omitted (the card panel's own links, which sit on no drawn occurrence), the
+ * client interceptor still derives a selection from the card id as before.
  */
-export function withCard(base: string, id: string | null): string {
+export function withCard(base: string, id: string | null, sel?: string | null): string {
   const cut = base.indexOf("?");
   const path = cut === -1 ? base : base.slice(0, cut);
   const params = new URLSearchParams(cut === -1 ? "" : base.slice(cut + 1));
@@ -97,6 +107,10 @@ export function withCard(base: string, id: string | null): string {
   if (id !== null) {
     params.delete("about");
     params.set("card", id);
+    // Replace, never inherit: a `sel` riding in from `base` names whatever was
+    // selected when the base was built, not the occurrence this link sits on.
+    params.delete("sel");
+    if (sel != null) params.set("sel", sel);
   }
   const query = params.toString();
   return query ? `${path}?${query}` : path;
