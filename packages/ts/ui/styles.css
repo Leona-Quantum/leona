@@ -11706,6 +11706,14 @@ div.mj-rail-row:hover {
 .mj-converge-loop--measured {
   stroke-dasharray: 3 2.2;
 }
+/* The convergence's own name, over the shared circle (W19 PR-2). The state's
+   authored label in the canvas's name register — it IS a name, unlike the own
+   stretch's phrase, so it wears primary ink and no italic. */
+.mj-converge-hub-caption {
+  fill: var(--text-1);
+  font-family: var(--font-ui);
+  font-size: 12px;
+}
 /* The Atlas holds a full record of this one — same visual language as
    `.mj-process--atlas .mj-process-name` above: a dotted underline on the name,
    not a colour, because colour on this canvas already means the accent and the

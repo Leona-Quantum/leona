@@ -690,6 +690,32 @@ export interface ConvergeState {
   stateId: string;
   /** The name, for a `<title>`. Not drawn on the canvas — it has no extent. */
   label: string;
+  /**
+   * The convergence, drawn as its name (W19 PR-2) — or null, which removes
+   * nothing: `label` stays in the `<title>` and the aria sentence everywhere.
+   *
+   * Non-null only where the `--shared` condition already holds at depth 0
+   * (`arriving > 1 || leaving > 1` — one predicate, the class's own) and the
+   * adjacent span offers the room. The owner's ask: *"we can definitely find a
+   * better way to visualize how several things converge in a step, but then
+   * each composite process has its own name"* — so the SHARED CIRCLE gains the
+   * state's own authored name and every lane keeps its own; nothing is coined.
+   * Drawn ABOVE the circle: the below side is where a bow-0 middle lane's
+   * label lives (fixed global sides), and the caption band sits inside the
+   * half-height every figure already reserves, so no geometry moves.
+   */
+  caption: string | null;
+  /** Anchor x for the caption text, per `captionAnchor`. */
+  captionX: number;
+  /** Caption BASELINE y — above the circle's top. */
+  captionY: number;
+  /**
+   * Ends anchor inward so the caption never leaves the canvas: the first
+   * circle writes rightward, the last leftward, interior ones centre.
+   */
+  captionAnchor: "start" | "middle" | "end";
+  /** The engine's own measurement of the drawn caption — never re-derived. */
+  captionWidth: number;
   cx: number;
   cy: number;
   r: number;
@@ -2679,6 +2705,18 @@ export const loopAllowance = (strand: { loopClosure: LoopClosure | null }): numb
  * `midY` the text's vertical middle; the glyph centres itself `loopGap + r`
  * past it, inside the `labelBand` every name already reserves.
  */
+/**
+ * Where a stub's name sits, vertically — one writer (W19 PR-2).
+ *
+ * This lived inline in the renderer, which was fine while nothing else needed
+ * it; the caption resolver must know where feed names are to keep captions off
+ * them, and a second copy of `+9 : −3` is how the resolver and the drawing
+ * would come to disagree about the same pixels.
+ */
+export function feedNameY(feed: { y1: number; outward: 1 | -1 }): number {
+  return feed.y1 + (feed.outward > 0 ? 9 : -3);
+}
+
 export function loopGlyphPath(endX: number, midY: number): string {
   const r = CONVERGE_METRICS.loopRadius;
   const cx = endX + CONVERGE_METRICS.loopGap + r;
@@ -3558,6 +3596,15 @@ function place(
         // and this field is where it lands when `cardFor` can build one.
         cardHref: null,
         terminal: false,
+        // No caption: `arriving`/`leaving` are the literal 1/1 below — a
+        // boundary inside ONE chain is not a convergence, and the caption's
+        // predicate is the convergence. When inner circles ever carry real
+        // fan-in counts, they earn the caption through the same predicate.
+        caption: null,
+        captionX: 0,
+        captionY: 0,
+        captionAnchor: "middle",
+        captionWidth: 0,
         arriving: 1,
         leaving: 1,
         depth: depth + 1,
@@ -4333,11 +4380,43 @@ function layoutFigure(options: {
 
   const states: ConvergeState[] = plan.chain.map((stateId, index) => {
     const state = layerState(vocabulary, stateId);
+    const label = state ? labelOf(state, locale) : stateId;
+    const cx = xs[index]!;
+    const meets = (arriving.get(stateId) ?? 0) > 1 || (leaving.get(stateId) ?? 0) > 1;
+    // The caption's room (W19 PR-2): inside the adjacent span, never past the
+    // cap. An end circle writes inward and owns half its one span; an interior
+    // circle centres and owns half of its NARROWER side twice over — either
+    // way the caption cannot reach the next circle's territory. Below ~40px a
+    // name is an ellipsis wearing a plate, so the caption stays null and the
+    // `<title>` keeps carrying it — same honesty case as `shortLabelOf`.
+    const spanLeft = index === 0 ? 0 : cx - xs[index - 1]!;
+    const spanRight = index === plan.chain.length - 1 ? 0 : xs[index + 1]! - cx;
+    const captionAnchor: ConvergeState["captionAnchor"] =
+      index === 0 ? "start" : index === plan.chain.length - 1 ? "end" : "middle";
+    const budget = Math.min(
+      M.labelCap,
+      captionAnchor === "start"
+        ? spanRight / 2 - M.stateRadius
+        : captionAnchor === "end"
+          ? spanLeft / 2 - M.stateRadius
+          : Math.min(spanLeft, spanRight) - 2 * M.stateRadius,
+    );
+    const fitted = meets && state && budget >= 40 ? fitLabel(label, M.stateFont, budget) : null;
     return {
       key: `s:${stateId}`,
       stateId,
-      label: state ? labelOf(state, locale) : stateId,
-      cx: xs[index]!,
+      label,
+      caption: fitted === null ? null : fitted.text,
+      captionX:
+        captionAnchor === "start"
+          ? cx - M.stateRadius
+          : captionAnchor === "end"
+            ? cx + M.stateRadius
+            : cx,
+      captionY: yc - M.stateRadius - 8,
+      captionAnchor,
+      captionWidth: fitted === null ? 0 : estimateTextWidth(fitted.text, M.stateFont),
+      cx,
       cy: yc,
       r: M.stateRadius,
       href: stateHref(stateId),
@@ -4414,6 +4493,62 @@ function layoutFigure(options: {
         cardBase,
         innerBase,
       });
+    }
+  }
+
+  // The caption resolver (W19 PR-2): a caption draws above its circle, or
+  // below it, or not at all — decided against the names actually placed, in
+  // that order, deterministically. Text populations it must clear: lane names
+  // (widened by `loopAllowance` where a glyph follows them), stub names (at
+  // `feedNameY`, the one writer), and captions already resolved. A caption
+  // with no clear side goes back to null and the `<title>` keeps the name —
+  // dropping is honest where a collision would lie about both texts. The
+  // candidates sit inside the half-height every figure already reserves, so
+  // resolution moves no geometry; it only chooses among places that exist.
+  {
+    const boxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
+    for (const lane of out.lanes) {
+      if (lane.label === "") continue;
+      boxes.push({
+        x0: lane.labelX - lane.labelWidth / 2,
+        x1: lane.labelX + lane.labelWidth / 2 + loopAllowance(lane),
+        y0: lane.labelY - M.laneFont,
+        y1: lane.labelY,
+      });
+    }
+    for (const feed of out.feeds) {
+      if (feed.label === "") continue;
+      const nameY = feedNameY(feed);
+      boxes.push({
+        x0: feed.x + 4,
+        x1: feed.x + 4 + feed.labelWidth + loopAllowance(feed),
+        y0: nameY - M.laneFont,
+        y1: nameY + 3,
+      });
+    }
+    const clear = (x0: number, x1: number, y0: number, y1: number) =>
+      x0 >= 0 &&
+      x1 <= Math.max(width, round(out.rightmost + M.margin)) &&
+      y0 >= 0 &&
+      boxes.every((box) => !(x0 < box.x1 && box.x0 < x1 && y0 < box.y1 && box.y0 < y1));
+    for (const state of states) {
+      if (state.caption === null) continue;
+      const x0 =
+        state.captionAnchor === "start"
+          ? state.captionX
+          : state.captionAnchor === "end"
+            ? state.captionX - state.captionWidth
+            : state.captionX - state.captionWidth / 2;
+      const above = state.cy - M.stateRadius - 8;
+      const below = state.cy + M.stateRadius + 8 + M.stateFont * 0.8;
+      const at = [above, below].find((y) => clear(x0, x0 + state.captionWidth, y - 12, y + 3));
+      if (at === undefined) {
+        state.caption = null;
+        state.captionWidth = 0;
+      } else {
+        state.captionY = at;
+        boxes.push({ x0, x1: x0 + state.captionWidth, y0: at - 12, y1: at + 3 });
+      }
     }
   }
 
