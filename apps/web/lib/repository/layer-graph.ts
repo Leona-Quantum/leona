@@ -2255,7 +2255,7 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Given a Hamiltonian you can query and some way of preparing trial states, return an estimate of its lowest eigenvalue to a stated additive error. The state achieving that energy may or may not come back with the number; almost every application wants the number.",
     summaryJa: "問い合わせ可能なハミルトニアンと、試行状態を準備する何らかの手段が与えられたとき、その最小固有値の推定値を、明示された加法的誤差の範囲で返します。そのエネルギーを与える状態そのものが一緒に返るとは限りません。応用が必要とするのは、ほとんどの場合その数値のほうです。",
     contract: {
-      from: "hamiltonian-access",
+      from: "ground-state-problem",
       to: "observable-value",
 
       takes: "A Hermitian H reachable as a sum of terms, as sparse-access oracles or as a block-encoding; a way to prepare trial states, and — for the methods that need it — a trial state whose overlap with the ground state is not negligible; a target additive error ε and a confidence 1−δ.",
@@ -2276,7 +2276,7 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Fix the gate structure of a circuit family and leave its rotation angles open. What comes back is not a circuit but the set of states the later optimisation is allowed to search — which is why this is a slot of its own and not a paragraph in one method's write-up.",
     summaryJa: "回路族のゲート構造を定め、回転角は未定のまま残します。返るのは回路ではなく、後段の最適化が探索してよい状態の集合です。この工程が独立した層であって、ある方式の説明の一段落ではないのは、このためです。",
     contract: {
-      from: "hamiltonian-access",
+      from: "ground-state-problem",
       to: "parameterized-circuit",
 
       takes: "The Hamiltonian whose ground state is wanted, together with whatever structure is to be respected — particle number, spin, point-group symmetry, a reference determinant — and the connectivity and native gate set of the device the family has to run on.",

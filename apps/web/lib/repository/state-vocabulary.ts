@@ -173,6 +173,30 @@ export const STATE_VOCABULARY: StateVocabulary = {
         "エルミート演算子であって、個別に指数化できる項の和、疎アクセスオラクル、あるいはブロックエンコーディングとして到達できるもの。シミュレーション計算量を表示する際の基準となるノルムパラメータも伴います。",
       specializes: ["matrix-access"],
     },
+    {
+      id: "ground-state-problem",
+      label: "Hamiltonian whose ground state is wanted",
+      labelJa: "基底状態を求めたいハミルトニアン",
+      summary:
+        "A Hamiltonian you can query, plus the declaration that the quantity being asked for is its lowest eigenvalue. The second half is not decoration: the same operator can be handed to a simulator to evolve a state under it, and evolving it and minimising it are different questions with different answers.",
+      summaryJa:
+        "問い合わせ可能なハミルトニアンに加えて、求められている量がその最小固有値であるという宣言。この後半は飾りではありません。同じ演算子はシミュレータに渡して状態をその下で発展させることもでき、発展させることと最小化することは、答えの異なる別々の問いだからです。",
+      // **Narrower than `hamiltonian-access` on purpose, and the reason is a bug this
+      // state exists to prevent rather than a distinction for its own sake.** With the
+      // variational region entered from `hamiltonian-access`, `statePathsBetween` found
+      // a route out of `nonlinear-ode-solve`: recast the problem to a Hamiltonian, then
+      // hand that Hamiltonian to the variational region and read an observable off it.
+      // Every hop type-checks and the whole path is nonsense — a variational eigensolver
+      // returns a lowest eigenvalue, not the solution of an initial-value problem at
+      // time T — so the figure for `nonlinear-ode-solve` grew a branch no literature
+      // contains and blew through its own size ceiling drawing it.
+      //
+      // The path-finder is not wrong to chain what fits; the vocabulary was wrong to say
+      // these two objects were the same one. This is the owner's session-96 point read in
+      // the other direction: the value of finding paths the literature has not taken
+      // depends entirely on the states being honest about what they are.
+      specializes: ["hamiltonian-access"],
+    },
 
     // --- polynomials and phases ---------------------------------------------
     {
