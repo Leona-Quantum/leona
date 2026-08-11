@@ -58,6 +58,83 @@ test("opening or switching a card selects its node; closing one keeps the select
   assert.equal(closed.get(SEL_PARAM), "p");
 });
 
+test("a card href that names its occurrence keeps it: the address, not the card id, is the click's meaning", () => {
+  const opened = params("card=quantum-linear-solve&sel=linear-ode-solve:1.0.3");
+  carrySelection(params("focus=linear-ode-solve&sel=linear-ode-solve:0.0"), opened);
+  assert.equal(opened.get(SEL_PARAM), "linear-ode-solve:1.0.3");
+});
+
+test("the owner's bug, end to end: a card click on the SECOND drawing of a node lands on that drawing", () => {
+  // "quantum linear solve zoomed into the process of the same name in a
+  // different place in the map." One node, drawn twice (W15: a host plus
+  // demoted references, or a lane plus an ingredient stub), has one card id —
+  // and the id alone falls to the FIRST drawing. The href now carries the
+  // clicked occurrence's address, the carry respects it, and the resolver's
+  // address pass lands on the place the reader actually clicked.
+  const node = layerNode(LAYER_GRAPH, "linear-ode-solve");
+  assert.ok(node && isCapability(node));
+
+  type Mark = { id: string; kind: "lane" | "feed"; address: string; key: string; cardHref: string | null };
+  const marksOf = (diagram: ReturnType<typeof layoutConverge>): Mark[] => [
+    ...diagram.lanes
+      .filter((lane) => lane.nodeId !== null)
+      .map((lane): Mark => ({ id: lane.nodeId!, kind: "lane", address: lane.address, key: lane.key, cardHref: lane.cardHref })),
+    ...diagram.feeds
+      .filter((feed) => feed.nodeId !== "")
+      .map((feed): Mark => ({ id: feed.nodeId, kind: "feed", address: feed.address, key: feed.key, cardHref: feed.cardHref })),
+  ];
+  const secondDrawing = (marks: Mark[]): { first: Mark; second: Mark } | null => {
+    const seen = new Map<string, Mark>();
+    for (const mark of marks) {
+      const first = seen.get(mark.id);
+      if (first !== undefined && mark.cardHref !== null) return { first, second: mark };
+      if (first === undefined) seen.set(mark.id, mark);
+    }
+    return null;
+  };
+
+  // Open outward until some node is drawn in two places — which depth first
+  // produces one is the layout's business, exactly as the feed walk above.
+  const open = new Set<string>();
+  let diagram = layoutConverge({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "en", cards: true });
+  let pair = secondDrawing(marksOf(diagram));
+  for (let round = 0; round < 8 && pair === null; round++) {
+    let grew = false;
+    for (const lane of diagram.lanes) {
+      if (lane.openHref === null || open.has(lane.address)) continue;
+      open.add(lane.address);
+      grew = true;
+    }
+    assert.ok(grew, "the walk keeps finding openable lanes until a node is drawn twice");
+    diagram = layoutConverge({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "en", open, cards: true });
+    pair = secondDrawing(marksOf(diagram));
+  }
+  assert.ok(pair, "the saturation walk never drew one node twice — W15 has changed shape, rewrite this walk");
+
+  // The control arm: by id alone, the resolver goes to the FIRST drawing —
+  // somewhere other than the second. If these two ever coincide the test has
+  // stopped being able to fail, and this assertion is what says so.
+  const byId = resolveSelection(pair.second.id, [diagram]);
+  assert.ok(byId);
+  assert.notEqual(
+    pair.second.kind === "lane" ? byId.laneAddress : byId.feedKey,
+    pair.second.kind === "lane" ? pair.second.address : pair.second.key,
+    "the id fallback already lands on the second drawing — the control proves nothing, pick a different pair",
+  );
+
+  // The click, as the interceptor sees it: the href's own params are `next`.
+  const url = new URL(pair.second.cardHref!, "https://leonaqt.com");
+  const next = url.searchParams;
+  carrySelection(params("focus=linear-ode-solve"), next);
+  const resolved = resolveSelection(next.get(SEL_PARAM), [diagram]);
+  assert.ok(resolved, "the carried selection resolved to nothing");
+  if (pair.second.kind === "lane") {
+    assert.equal(resolved.laneAddress, pair.second.address);
+  } else {
+    assert.equal(resolved.feedKey, pair.second.key);
+  }
+});
+
 test("a W15 jump's ?at=<address> becomes ?sel=, and the live viewport is carried under it", () => {
   // The demoted-lane control writes the HOST's lane address into `at`, which
   // `parseViewport` would swallow into IDENTITY — the jump shipped as a camera

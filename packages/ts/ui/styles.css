@@ -11747,6 +11747,25 @@ div.mj-rail-row:hover {
   stroke-width: 3;
   opacity: 1;
 }
+/* The veil (owner, verbatim: "the item needs to show up through the card
+   itself, and the map need to be faint behind it, hence the translucency and
+   not transparency"). With a card open, the figure itself goes faint — every
+   lane, feed, circle and plate EXCEPT the selected ones — instead of a uniform
+   backdrop wash. The difference is the whole point: a wash over the viewport
+   dims the selected item by exactly as much as its neighbours, so nothing can
+   show through the card; dimming in the drawing leaves the one thing the
+   camera flew to at full ink, and the card's translucent surface (below) lets
+   it read through. Same grammar as `--selected` above: presence, never a new
+   colour. The name pass shares the lane's class, so a dimmed lane dims its
+   name with it; the plate's exemption is its own variant because a plate
+   dimmed under a full-strength name would punch a hole behind the one label
+   the reader is on. */
+.mj-converge-canvas--veiled .mj-converge-lane:not(.mj-converge-lane--selected),
+.mj-converge-canvas--veiled .mj-converge-feed:not(.mj-converge-feed--selected),
+.mj-converge-canvas--veiled .mj-converge-hub:not(.mj-converge-hub--selected),
+.mj-converge-canvas--veiled .mj-converge-name-plate:not(.mj-converge-name-plate--selected) {
+  opacity: 0.3;
+}
 /* The stretch a method performs itself — the owner's *"blank processes"*.
 
    **It carries no declaration yet, and the class is here anyway.** The phrase
@@ -12777,7 +12796,12 @@ div.mj-rail-row:hover {
   place-items: center;
   grid-template-rows: minmax(0, 1fr);
   padding: var(--sp-6);
-  background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+  /* Light on purpose — was 78%, which made the map faint by washing over ALL
+     of it, selected item included, and nothing could show through the card.
+     The faintness now lives in the drawing (`.mj-converge-canvas--veiled`,
+     which exempts the selected element); this layer only quiets the page
+     chrome and keeps the card's edge readable against a busy figure. */
+  background: color-mix(in srgb, var(--bg-0) 30%, transparent);
 }
 .mj-card-backdrop[hidden] {
   display: none;
@@ -12791,8 +12815,31 @@ div.mj-rail-row:hover {
   padding: var(--sp-6);
   border: var(--border-hairline) solid var(--border-0);
   border-radius: var(--radius-card);
-  background: var(--bg-1);
+  /* Translucent, not transparent — the owner's distinction, and the camera is
+     why it matters here and nowhere else in the shell family: the fly-to
+     centres the selected item and this card opens centred over it, so an
+     opaque surface covers exactly the thing the reader just flew to. A 75%
+     tint over the veiled map leaves the selected element (full ink, exempt
+     from the veil) reading through as a presence under the prose, and the
+     slight blur keeps that presence from competing with the text as detail.
+     The info box keeps the opaque look: nothing is ever centred under it. */
+  background: color-mix(in srgb, var(--bg-1) 75%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
   box-shadow: var(--shadow-popover);
+}
+/* The reader who asked the OS for less see-through gets the pre-veil look:
+   opaque card, heavy wash. The selected item no longer shows through — that is
+   the preference's meaning, not a regression of it. */
+@media (prefers-reduced-transparency: reduce) {
+  .mj-card {
+    background: var(--bg-1);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+  }
+  .mj-card-backdrop {
+    background: color-mix(in srgb, var(--bg-0) 78%, transparent);
+  }
 }
 .mj-card:focus-visible {
   outline: none;
