@@ -90,6 +90,15 @@ export interface PaperReveal {
   undrawn: readonly string[];
   /** Reveal addresses dropped at `CONVERGE_OPEN_MAX`. 0 on today's corpus. */
   dropped: number;
+  /**
+   * The W17 fold this landing re-expands, or null (W22, RULING 06de05).
+   *
+   * Carried on the reveal because the surface draws in its OWN `layoutConverge`
+   * call and cannot re-derive it: a renderer that omitted this would draw the
+   * folded figure while the panel described the unfolded one. `?unfold=` on the
+   * layers page is exactly this value.
+   */
+  unfold: string | null;
 }
 
 /** nodeId → every drawn occurrence address, shallowest first. */
@@ -124,24 +133,30 @@ function saturatedOccurrences(
   graph: LayerGraph,
   vocabulary: StateVocabulary,
   focusId: string,
+  unfold?: string,
 ): OccurrenceMap {
   let byFocus = saturationCache.get(graph);
   if (!byFocus) {
     byFocus = new Map();
     saturationCache.set(graph, byFocus);
   }
-  const cached = byFocus.get(focusId);
+  // W22: the unfold is part of the key, not just of the call. Keyed by focus
+  // alone, the first (folded) walk would be handed back for every later
+  // unfolded one and `?unfold=` would silently reveal nothing — the memo
+  // answering a question it was never asked.
+  const key = unfold === undefined ? focusId : `${focusId}|unfold:${unfold}`;
+  const cached = byFocus.get(key);
   if (cached) return cached;
 
   const focus = layerNode(graph, focusId);
   if (!focus || !isCapability(focus)) {
     const empty: OccurrenceMap = new Map();
-    byFocus.set(focusId, empty);
+    byFocus.set(key, empty);
     return empty;
   }
 
   const open = new Set<string>();
-  let diagram = layoutConverge({ graph, vocabulary, focus, locale: "en" });
+  let diagram = layoutConverge({ graph, vocabulary, focus, locale: "en", unfold });
   for (let round = 0; round < 16; round++) {
     let grew = false;
     for (const lane of diagram.lanes) {
@@ -150,7 +165,7 @@ function saturatedOccurrences(
       grew = true;
     }
     if (!grew) break;
-    diagram = layoutConverge({ graph, vocabulary, focus, locale: "en", open });
+    diagram = layoutConverge({ graph, vocabulary, focus, locale: "en", open, unfold });
   }
 
   const occurrences = new Map<string, string[]>();
@@ -170,7 +185,7 @@ function saturatedOccurrences(
   for (const list of occurrences.values()) {
     list.sort((a, b) => depthOf(a) - depthOf(b) || (a < b ? -1 : 1));
   }
-  byFocus.set(focusId, occurrences);
+  byFocus.set(key, occurrences);
   return occurrences;
 }
 
@@ -224,11 +239,12 @@ function drawnUnder(
   vocabulary: StateVocabulary,
   focusId: string,
   open: readonly string[],
+  unfold?: string,
 ): Set<string> {
   const focus = layerNode(graph, focusId);
   const addresses = new Set<string>();
   if (!focus || !isCapability(focus)) return addresses;
-  const diagram = layoutConverge({ graph, vocabulary, focus, locale: "en", open: new Set(open) });
+  const diagram = layoutConverge({ graph, vocabulary, focus, locale: "en", open: new Set(open), unfold });
   for (const lane of diagram.lanes) addresses.add(lane.address);
   for (const feed of diagram.feeds) addresses.add(feed.address);
   return addresses;
@@ -246,11 +262,18 @@ function prune(
   focusId: string,
   open: readonly string[],
   targets: readonly string[],
+  // W22: prune against the figure that actually SHIPS. Measured without this,
+  // the prune asked the folded layout whether an address was load-bearing and
+  // kept `linear-ode-solve:0.3` for arxiv:2312.03916 — true of the folded
+  // figure, dead weight on the unfolded one the reader gets, and the minimality
+  // test said so. A reveal pruned against a different drawing than it ships is
+  // minimal for nobody.
+  unfold?: string,
 ): string[] {
   let current = [...open].sort((a, b) => depthOf(a) - depthOf(b) || (a < b ? -1 : 1));
   for (const candidate of [...current]) {
     const without = current.filter((address) => address !== candidate);
-    const drawn = drawnUnder(graph, vocabulary, focusId, without);
+    const drawn = drawnUnder(graph, vocabulary, focusId, without, unfold);
     if (targets.every((target) => drawn.has(target))) current = without;
   }
   return current;
@@ -275,10 +298,35 @@ export function paperRevealFor(
   const trace = traceFor(tracesOf(graph), paperId);
   if (trace === null) return null;
 
+  // W22 / OWNER RULING 06de05 — the unfold that would apply if this slot were
+  // the focus: a cited method W17 folded away, whose fold group is THIS slot's
+  // own top-level fan (`realizes`).
+  //
+  // Why `realizes` and not "anywhere on the figure": `unfold` reaches
+  // `methodFanGroups` through `planMethodFan`, i.e. the figure's OWN fan, and
+  // is deliberately not threaded into the nested recursion
+  // (`converge-layout.ts:2132-2135`). Measured consequence — with focus
+  // `nonlinear-ode-solve`, where `linear-ode-solve` is drawn nested, unfolding
+  // is a no-op (78 lanes with and without); with focus `linear-ode-solve` it
+  // draws at exactly ONE address. Threading it deeper would unfold the method
+  // at EVERY nested occurrence of its slot, which is the duplicate-path the
+  // ruling forbids — so the fold is re-expanded on the figure that owns it,
+  // and nowhere else.
+  const unfoldOn = (slotId: string): string | undefined => {
+    for (const nodeId of trace.nodes) {
+      if (foldHostOf(graph, nodeId) === null) continue;
+      const node = layerNode(graph, nodeId);
+      if (node && isMethod(node) && node.realizes === slotId) return nodeId;
+    }
+    return undefined;
+  };
+
   let bestFocus: string | null = null;
+  let bestUnfold: string | undefined;
   let bestDrawnCount = 0;
   for (const slot of drawableSlots(graph, vocabulary)) {
-    const occurrences = saturatedOccurrences(graph, vocabulary, slot.id);
+    const unfold = unfoldOn(slot.id);
+    const occurrences = saturatedOccurrences(graph, vocabulary, slot.id, unfold);
     let count = 0;
     for (const nodeId of trace.nodes) {
       if (nodeId === slot.id || occurrences.has(nodeId)) {
@@ -291,14 +339,24 @@ export function paperRevealFor(
       const host = foldHostOf(graph, nodeId);
       if (host !== null && occurrences.has(host)) count += 1;
     }
-    if (count > bestDrawnCount) {
+    // Coverage first, exactly as before. The unfold is a TIE-BREAK only, and it
+    // has to be explicit: a folded node already counts through its host (v2),
+    // so unfolding wins no coverage and the counts come out equal — measured,
+    // all five affected papers tied and kept whichever slot `drawableSlots`
+    // listed first. Between two figures that show the same number of the
+    // paper's citations, the one that draws the paper's OWN cited method beats
+    // the one that only marks the host it was folded into. Never at the cost of
+    // coverage: a figure showing more citations still wins outright.
+    const ties = count === bestDrawnCount && count > 0;
+    if (count > bestDrawnCount || (ties && unfold !== undefined && bestUnfold === undefined)) {
       bestDrawnCount = count;
       bestFocus = slot.id;
+      bestUnfold = unfold;
     }
   }
   if (bestFocus === null) return null;
 
-  const occurrences = saturatedOccurrences(graph, vocabulary, bestFocus);
+  const occurrences = saturatedOccurrences(graph, vocabulary, bestFocus, bestUnfold);
 
   // Does this node draw a lane on ANY figure? Every slot's saturation is
   // already memoized by the focus choice above, so this is a lookup, not a
@@ -338,7 +396,7 @@ export function paperRevealFor(
   const anchors = [...drawn.map((node) => node.address), ...folded.map((node) => node.hostAddress)];
   const chains = new Set<string>();
   for (const address of anchors) for (const ancestor of ancestorsOf(address)) chains.add(ancestor);
-  const open = prune(graph, vocabulary, bestFocus, [...chains], anchors);
+  const open = prune(graph, vocabulary, bestFocus, [...chains], anchors, bestUnfold);
 
   // The cap guard. Unreachable on today's corpus — the population sweep pins
   // every reveal at ≤ a handful — but the parameter this feeds is capped, and
@@ -384,5 +442,6 @@ export function paperRevealFor(
     elsewhere,
     undrawn,
     dropped,
+    unfold: bestUnfold ?? null,
   };
 }

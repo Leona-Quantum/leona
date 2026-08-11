@@ -770,6 +770,14 @@ export function ConvergeView({
     elsewhereCount: number;
     /** Cited nodes no figure draws — the coverage gap, stated (v2). */
     undrawnCount: number;
+    /**
+     * The W17 fold this paper's surface re-expands, or null (W22, RULING
+     * 06de05). MUST be passed to every `layoutConverge` call this component
+     * makes: the reveal's addresses only exist under it, so a figure drawn
+     * without it would be a different drawing from the one the panel and the
+     * `?open=` set describe.
+     */
+    unfold: string | null;
   } | null;
   /** `?paper=` named something the register does not hold. Reported, not eaten. */
   paperDropped?: boolean;
@@ -823,6 +831,17 @@ export function ConvergeView({
       focus: subject,
       locale,
       open,
+      // W22 / RULING 06de05 — the fold this paper's landing re-expands.
+      //
+      // Passed to EVERY subject, not only the reveal's focus, and that is safe
+      // rather than sloppy: `unfold` reaches `methodFanGroups` through this
+      // figure's OWN fan, so on a figure that does not own the folded method's
+      // slot it matches nothing and the drawing is byte-identical (measured:
+      // `nonlinear-ode-solve` returns 78 lanes with and without). Not passed to
+      // the `?inner=` figure below — that is a different drawing with its own
+      // `?iopen=` address space, and shifting those addresses to match an outer
+      // figure's shape would move lanes out from under the reader's clicks.
+      unfold: paper?.unfold ?? undefined,
       // The page's own `?focus=`, not this figure's subject: unfocused, every
       // open link must come back to the overview rather than to one root.
       focusParam: focusId,
