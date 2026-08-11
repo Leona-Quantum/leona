@@ -2437,7 +2437,16 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "ansatz-construction",
     conditions: "Grimsley et al. state the problem they are solving as a property of every fixed ansatz: VQE \"typically relies on a pre-selected wavefunction ansatz that results in approximate wavefunctions and energies\". Theirs instead \"grows it systematically one operator at a time in a way dictated by the molecule being simulated\", which \"generates an ansatz with a small number of parameters, leading to shallow-depth circuits\". The comparison they report is against unitary coupled cluster, on numerical simulations \"including for a prototypical strongly correlated molecule\", and it is better \"in terms of both circuit depth and chemical accuracy\" — a numerical result on chosen molecules, not a bound.",
     conditionsJa: "Grimsley らは、自分たちが解こうとしている問題を、固定アンザッツすべてに共通する性質として述べています。VQE は「通常、あらかじめ選ばれた波動関数アンザッツに依存しており、その結果として波動関数もエネルギーも近似的なものにとどまる」。彼らの手法は代わりに「シミュレーション対象の分子が指示するところに従って、一度に一つずつ系統的に演算子を追加して成長させ」、それによって「少数のパラメータからなるアンザッツを生成し、浅い深さの回路をもたらす」とされます。報告されている比較はユニタリ結合クラスターに対するもので、「典型的な強相関分子を含む」数値シミュレーションにおいて「回路深さと化学的精度の双方の点で」優れるというものです。これは選ばれた分子についての数値的結果であって、限界式ではありません。",
-    steps: [],
+    // **This construction measures**, which is what separates the adaptive
+    // families from the fixed ones on the drawing rather than only in the prose.
+    // Tang et al. state it as a cost that only the adaptive route pays: "the
+    // additional measurement overhead of qubit-ADAPT compared to fixed-ansatz
+    // variational algorithms scales only linearly with the number of qubits".
+    // The step is a feed rather than a hop — estimating an expectation value
+    // does not advance a Hamiltonian towards a circuit family — so the figure
+    // hangs it as a stub, which is exactly the shape of "this one has an
+    // interior and its siblings do not".
+    steps: ["observable-estimation"],
     entries: ["vqe-adapt"],
     citations: [
       { title: "An adaptive variational algorithm for exact molecular simulations on a quantum computer", authors: "Harper R. Grimsley, Sophia E. Economou, Edwin Barnes, Nicholas J. Mayhall", year: "2018", url: "https://arxiv.org/abs/1812.11173" },
@@ -2456,7 +2465,16 @@ export const LAYER_GRAPH: LayerGraph = {
     refinesMarkJa: "ADAPT",
     conditions: "Tang et al. name the gaps in the parent they are closing, and they are gaps in the specification rather than in the results: the original \"did not provide a prescription for how to select the pool, how many operators it must contain, or whether the resulting ansatz will succeed in converging to the ground state\". They also state the practical failure that motivates the qubit pool — the original pool \"leads to state preparation circuits that are too deep for a practical application on near-term devices\".",
     conditionsJa: "Tang らは、親手法において自分たちが埋めようとしている欠落を名指ししています。それは結果の欠落ではなく仕様の欠落です。元の論文は「プールをどう選ぶか、いくつの演算子を含むべきか、得られたアンザッツが基底状態へ収束するかどうかについて、処方を与えていなかった」。また、量子ビット演算子のプールを導入する動機となった実際上の不具合も述べられています。元のプールは「近未来の装置での実用には深すぎる状態準備回路をもたらす」のです。",
-    steps: [],
+    // **This construction measures**, which is what separates the adaptive
+    // families from the fixed ones on the drawing rather than only in the prose.
+    // Tang et al. state it as a cost that only the adaptive route pays: "the
+    // additional measurement overhead of qubit-ADAPT compared to fixed-ansatz
+    // variational algorithms scales only linearly with the number of qubits".
+    // The step is a feed rather than a hop — estimating an expectation value
+    // does not advance a Hamiltonian towards a circuit family — so the figure
+    // hangs it as a stub, which is exactly the shape of "this one has an
+    // interior and its siblings do not".
+    steps: ["observable-estimation"],
     entries: ["vqe-qubit-adapt"],
     citations: [
       { title: "qubit-ADAPT-VQE: An adaptive algorithm for constructing hardware-efficient ansatze on a quantum processor", authors: "Ho Lun Tang, V. O. Shkolnikov, George S. Barron, Harper R. Grimsley, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2019", url: "https://arxiv.org/abs/1911.10205" },
@@ -2492,7 +2510,10 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "ansatz-construction",
     conditions: "Ryabinkin et al. name two separate problems with the unitary coupled-cluster route, and the second is a hardware constraint rather than an accuracy one: the accuracy \"depends on how many and what kind of terms are included\", and there is \"a growth of the number of simultaneously entangled qubits even at the fixed fermionic excitation rank\", which \"not all quantum computing architectures can cope with\". Their method \"starts directly in the qubit space and uses energy response estimates for ranking the importance of individual entanglers\".",
     conditionsJa: "Ryabinkin らは、ユニタリ結合クラスター経路について二つの別個の問題を指摘しており、二つめは精度ではなくハードウェア上の制約です。精度は「どれだけの、どのような項を含めるかに依存する」一方、「フェルミオン励起のランクを固定しても、同時にエンタングルする量子ビット数が増大する」という問題があり、これには「すべての量子計算アーキテクチャが対処できるわけではない」。彼らの手法は「量子ビット空間で直接出発し、個々のエンタングラーの重要度を順位づけるためにエネルギー応答の推定を用いる」ものです。",
-    steps: [],
+    // Measures, for the same reason and on its own abstract's word: the method
+    // "uses energy response estimates for ranking the importance of individual
+    // entanglers". A ranking read off estimates is an observable estimation.
+    steps: ["observable-estimation"],
     entries: ["vqe-qcc"],
     citations: [
       { title: "Qubit coupled-cluster method: A systematic approach to quantum chemistry on a quantum computer", authors: "Ilya G. Ryabinkin, Tzu-Ching Yen, Scott N. Genin, Artur F. Izmaylov", year: "2018", url: "https://arxiv.org/abs/1809.03827" },
@@ -2514,6 +2535,27 @@ export const LAYER_GRAPH: LayerGraph = {
     entries: ["vqe-cvar"],
     citations: [
       { title: "Improving Variational Quantum Optimization using CVaR", authors: "Panagiotis Kl. Barkoutsos, Giacomo Nannicini, Anton Robert, Ivano Tavernelli, Stefan Woerner", year: "2019", url: "https://arxiv.org/abs/1907.04769" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "analytic-gradient-optimization",
+    label: "Analytic-gradient parameter search",
+    labelJa: "解析的勾配によるパラメータ探索",
+    shortLabel: "Analytic gradients",
+    shortLabelJa: "解析的勾配",
+    summary: "Get the gradient of the objective exactly, rather than by finite differences, by running the same circuit again at shifted parameter values. The direction is then not an estimate of a slope taken from two noisy numbers; it is the slope, estimated to whatever precision the shots allow.",
+    summaryJa: "目的関数の勾配を差分近似ではなく厳密に求めます。同じ回路をパラメータをずらした値で再実行することで得られるからです。したがって進む方向は、雑音を含む二つの数値から取った傾きの近似ではなく、傾きそのものを、ショット数が許す精度で推定したものになります。",
+    realizes: "parameter-optimization",
+    conditions: "Schuld et al. state both the mechanism and its limit: gradients \"can be estimated using the same, or almost the same, architecture that executes the original circuit\", and \"in many important instances it is sufficient to run the original quantum circuit twice\". *In many important instances* is the condition — the two-circuit form holds for the gate families the paper identifies, not for every parameterisation — and each of those runs is a full expectation estimate, so an analytic gradient is paid for in circuits per parameter rather than being free.",
+    conditionsJa: "Schuld らは仕組みとその限界の双方を述べています。勾配は「元の回路を実行するのと同じ、あるいはほぼ同じ構成で推定できる」のであり、「多くの重要な場合には、元の量子回路を二度実行すれば十分である」。この「多くの重要な場合には」が条件です。二回の実行で済む形が成り立つのは論文が特定するゲート族についてであって、あらゆるパラメータ化についてではありません。しかもその各実行は完全な期待値推定であるため、解析的勾配はパラメータあたりの回路数という形で代償を払っており、無料ではありません。",
+    // The interior its sibling does not have: this route re-runs the estimation
+    // layer to get its direction, where  changes how the SAME
+    // measurements are aggregated and adds no circuits. Two ways through one
+    // slot that genuinely draw different pictures.
+    steps: ["observable-estimation"],
+    citations: [
+      { title: "Evaluating analytic gradients on quantum hardware", authors: "Maria Schuld, Ville Bergholm, Christian Gogolin, Josh Izaac, Nathan Killoran", year: "2018", url: "https://arxiv.org/abs/1811.11184" },
     ],
   },
   ],
