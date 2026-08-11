@@ -483,14 +483,20 @@ export interface MethodFan {
  * graph, no slot is unfilled today — the range is 2 to 7 methods — so this is a
  * guard against a future edit, not a case the page renders.
  */
-export function methodFanOf(graph: LayerGraph, capability: LayerCapability): MethodFan | null {
+export function methodFanOf(
+  graph: LayerGraph,
+  capability: LayerCapability,
+  unfold?: string,
+): MethodFan | null {
   // Grouped, not flat (W13): a refinement rides inside its parent's lane
   // rather than taking one of its own. `methodFanGroups` is the one writer of
   // that grouping, and every reader of a fan — this function, `fanInside`, and
   // the subject match on a method's own page — goes through it, because three
   // readings of one grouping is how a method's own page and the map would come
-  // to disagree about where the five refinement methods are drawn.
-  const groups = methodFanGroups(graph, capability.id);
+  // to disagree about where the five refinement methods are drawn. `unfold`
+  // rides through to it (s121, W17): a folded refinement draws no lane
+  // anywhere except on its own page, whose planner names it here.
+  const groups = methodFanGroups(graph, capability.id, unfold);
   if (groups.length === 0) return null;
   return {
     from: capability.contract.from,

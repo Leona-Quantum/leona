@@ -99,6 +99,8 @@ interface Copy {
   marks: Record<TheoryMark, string>;
   /** The way out of an opened hop, as an action rather than the step's name again. */
   openStep: string;
+  /** Lead-in to a folded refinement's potential-path note (s121, W17). */
+  refinementNote: string;
   /** The owner's five, inside one implementation. */
   implementationSections: Record<ImplementationSectionId, string>;
   /**
@@ -184,6 +186,7 @@ const COPY: Record<Lang, Copy> = {
       requires: "Requires",
       example: "Example",
       performance: "Performance",
+      refinements: "Refinements",
       contested: "Where the claim is contested",
       implementations: "Implementations",
       records: "In the repository",
@@ -203,6 +206,11 @@ const COPY: Record<Lang, Copy> = {
       assumption: "assumption",
     },
     openStep: "Open this step",
+    // The lead-in to a folded refinement's potential-path note. The claim is
+    // about the MAP's backlog ("what research would earn this its own drawn
+    // path"), so the copy owns the framing and the corpus field carries only
+    // the substance — the same split `leads` makes below.
+    refinementNote: "What would earn it a path of its own",
     implementationSections: {
       about: "About",
       methods: "Methods",
@@ -264,6 +272,7 @@ const COPY: Record<Lang, Copy> = {
       requires: "必要なもの",
       example: "例",
       performance: "性能",
+      refinements: "改良版",
       contested: "主張が争われている点",
       implementations: "実装",
       records: "リポジトリ内",
@@ -280,6 +289,7 @@ const COPY: Record<Lang, Copy> = {
       assumption: "仮定",
     },
     openStep: "この工程を開く",
+    refinementNote: "独自の経路として描くために必要な研究",
     implementationSections: {
       about: "概要",
       methods: "手順",
@@ -979,6 +989,26 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
             </pre>
           ) : null}
         </>
+      ) : null;
+    // A folded refinement (s121, W17): same internals as this method, better
+    // analysis. The entry is the child's own lede and its own potential-path
+    // note, read off the child node — following the link is still how a reader
+    // gets the whole record.
+    case "refinements":
+      return card.kind === "method" && card.refinements.held ? (
+        <ul className="mj-card-list">
+          {card.refinements.value.map((entry) => (
+            <li key={entry.link.id}>
+              <a href={entry.link.href}>{entry.link.label}</a>
+              <p className="mj-card-list-blurb">
+                <MathText source={entry.summary} />
+              </p>
+              <p className="mj-card-list-blurb">
+                {copy.refinementNote}: <MathText source={entry.potentialPath} />
+              </p>
+            </li>
+          ))}
+        </ul>
       ) : null;
     case "implementations":
       return card.kind === "method" && card.implementations.held ? (
