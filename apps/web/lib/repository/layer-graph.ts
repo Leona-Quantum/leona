@@ -4847,6 +4847,43 @@ export const LAYER_GRAPH: LayerGraph = {
         "# resting on shot-based readout has to answer that analysis",
       ].join("\n"),
     },
+    // From a read of the abstract page, like `surface-code`'s. The record already
+    // cites this paper for the method; what the citation does not say, and this
+    // section does, is that somebody ran it.
+    //
+    // **`results` says "to within chemical accuracy" and no number, because the
+    // page states no number.** That is the transcription rule applied to a field
+    // that invites a figure: an experimental entry with no measured value reads
+    // as thin, and supplying one from anywhere else is the failure this corner of
+    // the repo exists to refuse. `data` and `code` are absent for the same
+    // reason — neither is mentioned.
+    //
+    // The processor IS named here where `surface-code`'s is not, and that is not
+    // an inconsistency between the two entries: this abstract says "a small-scale
+    // photonic quantum processor" in its own words, and that one names no device
+    // at all. Named where the source names it, absent where it does not.
+    implementations: [
+      {
+        id: "photonic-heh-plus",
+        label: "The photonic HeH+ ground-state run",
+        labelJa: "光量子プロセッサによる HeH+ 基底状態の実行",
+        papers: [
+          { title: "A variational eigenvalue solver on a quantum processor", authors: "Alberto Peruzzo, Jarrod McClean, Peter Shadbolt, Man-Hong Yung, Xiao-Qi Zhou, Peter J. Love, Alán Aspuru-Guzik, Jeremy L. O'Brien", year: "2013", url: "https://arxiv.org/abs/1304.3061" },
+        ],
+        about:
+          "The experiment this readout layer came out of. Its stated motivation is that phase estimation \"can efficiently find the eigenvalue of a given eigenvector but requires fully coherent evolution\", where the approach demonstrated \"greatly reduces the requirements for coherent evolution\" — the trade this record's `conditions` states from the other side, as a strict $\\varepsilon^{-2}$ shot cost. Published as Nature Communications 5:4213 (2014).",
+        aboutJa:
+          "この読み出し層が生まれた実験です。動機として述べられているのは、位相推定は「与えられた固有ベクトルの固有値を効率的に求められるが、完全にコヒーレントな発展を要する」という点であり、実証された手法は「コヒーレントな発展への要求を大幅に緩和する」とされています。これは本レコードの `conditions` が反対側から、厳密な $\\varepsilon^{-2}$ のショット数コストとして述べているトレードオフです。Nature Communications 5:4213 (2014) として出版されています。",
+        methods:
+          "The algorithm was implemented by combining a small-scale photonic quantum processor with a conventional computer, with state preparation based on ansätze and classical optimization.",
+        methodsJa:
+          "小規模な光量子プロセッサと従来型計算機を組み合わせて実装され、状態準備は ansatz と古典的最適化に基づいています。",
+        results:
+          "The ground-state molecular energy of He-H+ was calculated to within chemical accuracy. The abstract states the accuracy in exactly those words and reports no numerical value, so none is quoted here.",
+        resultsJa:
+          "He-H+ の基底状態分子エネルギーが化学的精度の範囲内で計算されました。要旨はこの表現で精度を述べるにとどまり、数値は報告されていないため、ここでも引用しません。",
+      },
+    ],
     citations: [
       { title: "A variational eigenvalue solver on a quantum processor", authors: "Alberto Peruzzo, Jarrod McClean, Peter Shadbolt, Man-Hong Yung, Xiao-Qi Zhou, Peter J. Love, Alán Aspuru-Guzik, Jeremy L. O'Brien", year: "2013", url: "https://arxiv.org/abs/1304.3061" },
       { title: "Measurements as a roadblock to near-term practical quantum advantage in chemistry: resource analysis", authors: "Jérôme F. Gonthier, Maxwell D. Radin, Corneliu Buda, Eric J. Doskocil, Clena M. Abuan, Jhonathan Romero", year: "2020", url: "https://arxiv.org/abs/2012.04001" },
@@ -5844,6 +5881,43 @@ export const LAYER_GRAPH: LayerGraph = {
         "# introduced",
       ].join("\n"),
     },
+    // From a read of the abstract page. This record's `conditions` already says
+    // the binding constraint is noise characterization and that "PEC's
+    // experimental history is largely the history of noise-learning methods
+    // catching up" — this entry is that history reaching the machine, so it is
+    // recorded as a run rather than restated as a claim.
+    //
+    // **No number appears here, and the reason is the same as the sibling
+    // entries': the abstract states none.** It reports a demonstration and a
+    // milestone, not a measured value, and `cost` already carries the two
+    // overhead statements from the papers that make them. Qubit count, `data`
+    // and `code` are absent because the page does not give them.
+    //
+    // The processor is described exactly as the abstract describes it — "a
+    // superconducting quantum processor with crosstalk errors" — and not by
+    // vendor or product name, which the page does not state.
+    implementations: [
+      {
+        id: "sparse-pauli-lindblad-demonstration",
+        label: "PEC at scale with a learned sparse Pauli-Lindblad model",
+        labelJa: "疎な Pauli-Lindblad モデルの学習による大規模 PEC の実証",
+        papers: [
+          { title: "Probabilistic error cancellation with sparse Pauli-Lindblad models on noisy quantum processors", authors: "Ewout van den Berg, Zlatko K. Minev, Abhinav Kandala, Kristan Temme", year: "2022", url: "https://arxiv.org/abs/2201.09866" },
+        ],
+        about:
+          "The demonstration that moved PEC from principle to practice. The abstract names the obstacle in the same terms this record's `conditions` does: \"Learning correlated noise channels in large quantum circuits, however, has been a major challenge and has severely hampered experimental realizations.\"",
+        aboutJa:
+          "PEC を原理から実践へ移した実証です。要旨は、本レコードの `conditions` と同じ言葉で障害を指摘しています。すなわち「大規模量子回路における相関ノイズチャネルの学習は大きな課題であり、実験的実現を著しく妨げてきた」というものです。",
+        methods:
+          "A protocol for learning and inverting a sparse noise model that captures correlated noise and scales to large quantum devices, demonstrated on a superconducting quantum processor with crosstalk errors.",
+        methodsJa:
+          "相関ノイズを捉え、大規模な量子デバイスにスケールする疎なノイズモデルを学習し、その逆を取るためのプロトコルです。クロストーク誤差をもつ超伝導量子プロセッサ上で実証されています。",
+        results:
+          "The paper presents the demonstration as \"an important milestone in opening the way to quantum computing with noise-free observables at larger circuit volumes\". The abstract reports no numerical result, so none is quoted here; the overhead figures this record does carry are in `cost`, from the papers that state them.",
+        resultsJa:
+          "本論文はこの実証を「より大きな回路体積においてノイズのない観測量による量子計算への道を開く重要な節目」と位置づけています。要旨は数値的な結果を報告していないため、ここでも引用しません。本レコードが保持するオーバーヘッドの数値は、それを述べた論文にもとづき `cost` にあります。",
+      },
+    ],
     citations: [
       { title: "Error mitigation for short-depth quantum circuits", authors: "Kristan Temme, Sergey Bravyi, Jay M. Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
       { title: "Probabilistic error cancellation with sparse Pauli-Lindblad models on noisy quantum processors", authors: "Ewout van den Berg, Zlatko K. Minev, Abhinav Kandala, Kristan Temme", year: "2022", url: "https://arxiv.org/abs/2201.09866" },
