@@ -192,3 +192,53 @@ async def test_bootstrap_create_is_idempotent_on_checksum_key(env):
         await session.commit()
     assert first.id == second.id
     assert first.item_count == second.item_count == 283
+
+
+@requires_db
+async def test_a_second_import_under_the_production_key_is_a_no_op(env):
+    """The re-import path production actually takes, which nothing else covered.
+
+    The 283-record test above uses a fresh uuid key, with the comment "so a rerun
+    doesn't resume a *prior* run's batch". `catalog_admin bootstrap-import` does
+    the opposite: it passes `source.idempotency_key`, derived from the manifest
+    checksum, so a second run with an unchanged manifest RESUMES the first run's
+    batch. Nothing exercised that, which is how the word "idempotent" in the
+    other test's name came to be about job *creation* rather than about
+    re-importing.
+
+    **What this does NOT do: reproduce the 2026-08-12 deploy failure**
+    (`IllegalImportItemTransition: staged -> retry_wait`). It was written trying
+    to, and it passes — which is a result worth keeping rather than a test worth
+    deleting, because it eliminates the obvious explanation. `process_import_batch`
+    selects only QUEUED items, so a STAGED item is never re-processed by a plain
+    re-run; the production failure therefore needs an item that failed
+    transiently FIRST, was returned to QUEUED by `_resolve_retry_wait_items`,
+    reached STAGED on the retry, and then threw again. What it threw is not
+    recoverable from the deploy log — the assert replaces it — which is what the
+    logging added alongside this exists to fix.
+    """
+    authority, factory = env
+    scope = authority.importer_scope()
+    source = BootstrapManifestSource()
+
+    async with factory() as session:
+        first = await catalog_import.create_import_job(
+            scope, session, authority=authority, source=source,
+            idempotency_key=source.idempotency_key,
+        )
+        await session.commit()
+        first_id = first.id
+    assert (
+        await _drain_batch(scope, factory, first_id, authority=authority, source=source)
+    ).status == ImportJobStatus.COMPLETED
+
+    # Second deploy. Same key, so this resumes rather than creating a new batch.
+    async with factory() as session:
+        second = await catalog_import.create_import_job(
+            scope, session, authority=authority, source=source,
+            idempotency_key=source.idempotency_key,
+        )
+        await session.commit()
+        second_id = second.id
+    final = await _drain_batch(scope, factory, second_id, authority=authority, source=source)
+    assert final.status != ImportJobStatus.RUNNING
