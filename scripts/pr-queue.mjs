@@ -189,7 +189,7 @@ function main(argv) {
 
   const prs = JSON.parse(
     gh(["pr", "list", "--base", base, "--limit", "40", "--json",
-      "number,title,isDraft,mergeStateStatus,headRefName,statusCheckRollup,files,body,author"]),
+      "number,title,isDraft,mergeStateStatus,headRefName,baseRefName,statusCheckRollup,files,body,author"]),
   );
   if (!prs.length) {
     console.log(`queue EMPTY — no open PRs into ${base}`);
@@ -215,7 +215,13 @@ function main(argv) {
       owned,
       hasAck: /^\s*Blast-radius:\s*\S/im.test(pr.body ?? ""),
     });
-    console.log(`\n#${pr.number} [${pr.mergeStateStatus}] ${pr.headRefName} · ${files.length} file(s)`);
+    // A PR whose base is not the release branch merges into ANOTHER PR's branch.
+    // #435 read as "merged" tonight and its content never reached dev, so a
+    // read-back written against production could not have flipped. Print it loudly:
+    // the base is the difference between shipping and stacking, and nothing else in
+    // `gh pr list` says so.
+    const stacked = pr.baseRefName !== base ? `  ⤷ STACKED on ${pr.baseRefName} — merging this does NOT reach ${base}` : "";
+    console.log(`\n#${pr.number} [${pr.mergeStateStatus}] ${pr.headRefName} · ${files.length} file(s)${stacked}`);
     console.log(`   ${pr.title.slice(0, 88)}`);
     if (blockers.length) blockers.forEach((b) => console.log(`   BLOCKER  ${b}`));
     else console.log("   READY — announce on the board, then merge");
