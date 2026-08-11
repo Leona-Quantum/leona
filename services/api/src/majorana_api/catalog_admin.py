@@ -707,6 +707,56 @@ async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
     return reviewer
 
 
+async def _report_reviewers() -> None:
+    """Print who holds the catalog reviewer grant, and what each has signed.
+
+    **Read-only. Writes nothing, attests nothing, and never fails a deploy.**
+
+    It exists because the refusal above hands its reader two bare UUIDs and no
+    way to tell them apart. The evidence that separates them is in the database
+    the reader is specifically told not to reach from a laptop
+    (`docs/runbooks/database.md`), so "decide which of these is the real
+    reviewer" was an owner action with no supported way to gather the facts.
+    This makes the deploy that reports the problem also report the answer.
+
+    Deliberately prints no email addresses. This runs in CI and its stdout is
+    retained, and the decision does not need one: which account signed the
+    corpus is the fact, and a UUID is what the operator passes back.
+    """
+    authority = CatalogAuthority.from_env()
+    authority.require_configured()
+    service_ids = {authority.importer_user_id, authority.public_reader_user_id}
+
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    try:
+        async with factory() as session:
+            rows = await system.list_catalog_reviewer_grants(
+                session, workspace_id=authority.workspace_id
+            )
+            signed = await system.count_catalog_assertions_by_reviewer(
+                session, workspace_id=authority.workspace_id
+            )
+    finally:
+        await engine.dispose()
+
+    admins = [(user_id, workos) for user_id, role, workos in rows if role == Role.ADMIN]
+    print(f"catalog reviewer grants: {len(admins)} ADMIN membership(s)")
+    for user_id, workos in sorted(admins, key=lambda row: str(row[0])):
+        marks = []
+        if user_id in service_ids:
+            marks.append("SERVICE IDENTITY — never eligible")
+        if workos.startswith(_RETIRED_WORKOS_PREFIX):
+            marks.append("RETIRED workos id — cannot sign in")
+        note = f"  [{'; '.join(marks)}]" if marks else ""
+        print(f"  {user_id}  signed={signed.get(user_id, 0)}{note}")
+    print(
+        "The account with signatures is the standing reviewer "
+        "(license_assertions.reviewer_user_id). One eligible signatory means "
+        "--attested-by-standing can resolve this on its own."
+    )
+
+
 async def _resolve_reviewer_by_email(email: str) -> uuid.UUID:
     """The live ``users`` row for an email, by the only signal that says which.
 
@@ -751,6 +801,7 @@ def main() -> None:
         "command",
         choices=(
             "provision",
+            "reviewers",
             "bootstrap-import",
             "attest-bootstrap",
             "publish-bootstrap",
@@ -817,6 +868,9 @@ def main() -> None:
         return
     if args.command == "bootstrap-import":
         asyncio.run(_bootstrap_import())
+        return
+    if args.command == "reviewers":
+        asyncio.run(_report_reviewers())
         return
 
     # Resolved once, before any of the three reviewer commands run. Doing it
