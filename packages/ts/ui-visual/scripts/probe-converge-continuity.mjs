@@ -554,5 +554,189 @@ if (selShare) {
 
 out.w16Selection = W16;
 
+// --- Case 3 (owner's zoom note, 2026-08-11): a card click lands on the -------
+// drawing it was clicked on, not on the first drawing of the same node.
+//
+// "quantum linear solve zoomed into the process of the same name in a
+// different place in the map." One node is drawn in several places since W15,
+// and a card href used to carry only the node id — so the selection the
+// interceptor derived fell to the FIRST drawing. The href now names its own
+// occurrence in `?sel=`, and this case clicks a name on a SECOND drawing and
+// asks where the camera went. It is only non-vacuous when such a second
+// drawing exists AND its name is inside the viewport; both are reported.
+//
+// It also reads the presentation half back: with the card open, the canvas
+// must carry the veil class, the selected element must keep full opacity
+// while a sibling is dimmed, and the card surface must be translucent — the
+// owner's "the item needs to show up through the card itself".
+const CARD = {};
+{
+  // A tall viewport, for one reason: the second drawing of a node is usually
+  // deep in a saturated figure, and a click can only land inside the window.
+  // The fly centres into whatever box it has, so the geometry stays honest.
+  const cardPage = await browser.newPage({ viewport: { width: 1400, height: 6000 } });
+
+  const walkUrl = new URL(`${BASE}/repository/layers`);
+  walkUrl.searchParams.set("focus", "linear-ode-solve");
+  const walked = new Set();
+  let pair = null;
+  let walkRounds = 0;
+  for (; walkRounds < 8; walkRounds++) {
+    await cardPage.goto(walkUrl.toString(), { waitUntil: "networkidle" });
+    pair = await cardPage.evaluate(() => {
+      const byCard = new Map();
+      for (const a of document.querySelectorAll("svg.mj-converge-canvas a[href*='card=']")) {
+        const href = a.getAttribute("href");
+        const u = new URL(href, location.href);
+        const card = u.searchParams.get("card");
+        const sel = u.searchParams.get("sel");
+        if (!card || !sel) continue;
+        const list = byCard.get(card) ?? [];
+        if (!list.some((entry) => entry.sel === sel)) list.push({ sel, href });
+        byCard.set(card, list);
+      }
+      for (const [card, list] of byCard) {
+        if (list.length >= 2) return { card, first: list[0], second: list[1] };
+      }
+      return null;
+    });
+    if (pair) break;
+    const grew = await cardPage.evaluate(() => {
+      const open = new Set(new URLSearchParams(location.search).getAll("open"));
+      const found = [];
+      for (const a of document.querySelectorAll("svg.mj-converge-canvas a[href*='open=']")) {
+        for (const value of new URL(a.getAttribute("href"), location.href).searchParams.getAll("open")) {
+          if (!open.has(value)) found.push(value);
+        }
+      }
+      return [...new Set(found)];
+    });
+    const fresh = grew.filter((value) => !walked.has(value));
+    if (fresh.length === 0) break;
+    for (const value of fresh) {
+      walked.add(value);
+      walkUrl.searchParams.append("open", value);
+    }
+  }
+
+  CARD.walkRounds = walkRounds;
+  CARD.pairFound = pair !== null;
+  CARD.caseExisted = false;
+  if (pair) {
+    CARD.cardId = pair.card;
+    CARD.firstDrawingSel = pair.first.sel;
+    CARD.clickedDrawingSel = pair.second.sel;
+    // The control that keeps this case able to fail: if the two drawings share
+    // an address the click cannot distinguish them and the case proves nothing.
+    CARD.drawingsDistinct = pair.first.sel !== pair.second.sel;
+
+    const aim = await cardPage.evaluate((href) => {
+      const a = [...document.querySelectorAll("svg.mj-converge-canvas a[href*='card=']")].find(
+        (x) => x.getAttribute("href") === href,
+      );
+      const hit = a?.querySelector(".mj-converge-hit");
+      if (!hit) return null;
+      const r = hit.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    }, pair.second.href);
+    CARD.clickedAt = aim;
+    CARD.inViewport = aim !== null && aim.x >= 0 && aim.x <= 1400 && aim.y >= 0 && aim.y <= 6000;
+
+    if (CARD.inViewport && CARD.drawingsDistinct) {
+      await cardPage.mouse.click(aim.x, aim.y);
+      CARD.selArrived = await cardPage
+        .waitForFunction(() => window.location.search.includes("sel="), null, { timeout: 5000 })
+        .then(() => true)
+        .catch(() => false);
+      const after = new URL(cardPage.url());
+      CARD.selAfter = after.searchParams.get("sel");
+      CARD.cardAfter = after.searchParams.get("card");
+      // The verdict the owner's note is about: the selection is the clicked
+      // occurrence — not the node id, and not the first drawing of it.
+      CARD.landedOnClickedNotFirst =
+        CARD.selAfter === pair.second.sel && CARD.selAfter !== pair.first.sel;
+
+      const measure = async () =>
+        cardPage.evaluate(
+          ([boxSel, selSel]) => {
+            const root = document.querySelector(boxSel);
+            const target = document.querySelector(selSel);
+            if (!root || !target) return { root: root !== null, target: target !== null };
+            const box = root.getBoundingClientRect();
+            const rect = target.getBoundingClientRect();
+            return {
+              root: true,
+              target: true,
+              dx: rect.left + rect.width / 2 - (box.left + box.width / 2),
+              dy: rect.top + rect.height / 2 - (box.top + box.height / 2),
+            };
+          },
+          [CANVAS_BOX, SELECTED],
+        );
+      const beforeFly = await measure();
+      CARD.selectedClassLanded = beforeFly?.target === true;
+      CARD.rafTicks = await cardPage.evaluate(
+        () =>
+          new Promise((resolve) => {
+            let n = 0;
+            const t0 = performance.now();
+            const step = () => {
+              n += 1;
+              if (performance.now() - t0 < 400) requestAnimationFrame(step);
+              else resolve(n);
+            };
+            requestAnimationFrame(step);
+            setTimeout(() => resolve(n), 1200);
+          }),
+      );
+      CARD.cameraObservable = CARD.rafTicks > 0;
+      const offBefore = beforeFly?.target ? Math.hypot(beforeFly.dx, beforeFly.dy) : null;
+      // The same settle discipline as the W16 cases: the fly waits out the
+      // geometry morph before it measures, so stability alone is not evidence.
+      const started = Date.now();
+      let last = null;
+      let stable = 0;
+      let latest = null;
+      while (Date.now() - started < 9000) {
+        latest = await measure();
+        const key = latest && latest.target ? `${Math.round(latest.dx)},${Math.round(latest.dy)}` : null;
+        stable = key !== null && key === last ? stable + 1 : 0;
+        last = key;
+        if (stable >= 3 && Date.now() - started >= 1200) break;
+        await cardPage.waitForTimeout(120);
+      }
+      const offAfter = latest?.target ? Math.hypot(latest.dx, latest.dy) : null;
+      CARD.offsetBefore = offBefore;
+      CARD.offsetAfter = offAfter;
+      CARD.caseExisted = offBefore !== null && offBefore > 2;
+      CARD.clickedOccurrenceCentred = offAfter !== null && offAfter <= 2;
+
+      // The presentation half, read off the rendered page rather than the
+      // stylesheet: veil on the canvas, full ink on the selected element, a
+      // dimmed sibling, and a see-through card surface.
+      CARD.presentation = await cardPage.evaluate(() => {
+        const card = document.querySelector(".mj-card");
+        const bg = card ? getComputedStyle(card).backgroundColor : null;
+        const alpha = bg?.match(/\/\s*([\d.]+)\)/) ?? bg?.match(/rgba\([^)]+,\s*([\d.]+)\)/);
+        const selected = document.querySelector(
+          ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected",
+        );
+        const dimmed = document.querySelector(
+          ".mj-converge-canvas--veiled .mj-converge-lane:not(.mj-converge-lane--selected)",
+        );
+        return {
+          veiledCanvases: document.querySelectorAll(".mj-converge-canvas--veiled").length,
+          cardBackground: bg,
+          cardAlpha: alpha ? Number(alpha[1]) : null,
+          selectedOpacity: selected ? getComputedStyle(selected).opacity : null,
+          dimmedSiblingOpacity: dimmed ? getComputedStyle(dimmed).opacity : null,
+        };
+      });
+    }
+  }
+  await cardPage.close();
+}
+out.cardClickOccurrence = CARD;
+
 console.log(JSON.stringify(out, null, 2));
 await browser.close();
