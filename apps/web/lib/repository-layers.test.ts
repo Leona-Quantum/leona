@@ -36,6 +36,7 @@ import {
   layerNode,
   nodesForEntry,
   refinementsOf,
+  regionClosure,
   repeatedSteps,
   repetitionOf,
   rootCapabilities,
@@ -53,6 +54,7 @@ import {
   type LayerMethod,
   type StepRepetition,
 } from "./repository/layers.ts";
+import type { SourceCoverage } from "./repository/types.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import type { StateVocabulary } from "./repository/states.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
@@ -279,6 +281,182 @@ test("card depth is counted as three numbers, and a blank field is not one of th
   assert.equal(census.withPseudocode, 1);
   assert.equal(census.withExampleText, 1);
   assert.equal(census.withImplementations, 1);
+});
+
+/**
+ * The region gauge, pinned on the four things that would make it flatter a
+ * region rather than measure one.
+ *
+ * A gauge that reports a region as healthier than it is fails silently and in
+ * the direction nobody checks — the whole reason `regionClosure` exists is that
+ * "linear ODE is closed" was previously a sentence in a session note.
+ */
+const REGION_REPORTS = new Map<string, SourceCoverage>([
+  ["https://example.org/ran-it", { theory: "reported", simulation: "reported", hardware: "absent" }],
+  ["https://example.org/skimmed", { theory: "reported", simulation: "unknown", hardware: "absent" }],
+  ["https://example.org/pure", { theory: "reported", simulation: "absent", hardware: "absent" }],
+]);
+
+function citing(url: string) {
+  return [{ title: "A paper", authors: "Someone", year: "2020", url }];
+}
+
+test("a region is the slots named plus the methods filling them, and a typo is reported", () => {
+  const region = regionClosure(FIXTURE, FIXTURE_STATES, ["solve", "encode", "no-such-slot"], new Map());
+  assert.deepEqual(region.capabilities, ["solve", "encode"]);
+  // Reported rather than dropped. A mistyped slot silently measures a SMALLER
+  // region, and a smaller region reads as a healthier one — the worst direction
+  // for a gauge to be wrong in.
+  assert.deepEqual(region.unknown, ["no-such-slot"]);
+  assert.deepEqual(region.methods, ["direct", "fast", "other", "encode-a"]);
+  // A method id passed where a capability belongs names nothing to realise, so
+  // it cannot quietly pull that one method in as its own region.
+  const notASlot = regionClosure(FIXTURE, FIXTURE_STATES, ["direct"], new Map());
+  assert.deepEqual(notASlot.capabilities, []);
+  assert.deepEqual(notASlot.unknown, ["direct"]);
+  assert.deepEqual(notASlot.methods, []);
+  // A repeated id is one slot. Counting it twice inflates the slot count beside
+  // the fractions, which reads as a bigger region than was measured — and
+  // `methods` is already immune because it filters on a Set, so the two halves
+  // of the same report would disagree. First-seen order is kept.
+  const repeated = regionClosure(
+    FIXTURE,
+    FIXTURE_STATES,
+    ["encode", "solve", "encode", "no-such-slot", "no-such-slot"],
+    new Map(),
+  );
+  assert.deepEqual(repeated.capabilities, ["encode", "solve"]);
+  assert.deepEqual(repeated.unknown, ["no-such-slot"]);
+  assert.deepEqual(repeated.methods, ["direct", "fast", "other", "encode-a"]);
+});
+
+test("a route that delegates every hop has no own stretch, so it is not counted as a gap", () => {
+  // The mutation this is here to catch: taking the stretch list from the key
+  // rule `validateLayerGraph` enforces — steps plus the method's own id, legal
+  // on every method — instead of from `routeOf`. That version puts an own
+  // stretch on `whole`, whose delegated step already reaches the slot's output,
+  // so a note keyed there would render nowhere. It would show as one more gap
+  // on a route that has none, permanently, on a worklist nobody could close.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      capability("whole-step", { contract: contract("alpha", "gamma") }),
+      capability("part-step"),
+      method("whole", "solve", {
+        contract: contract("alpha", "gamma"),
+        steps: ["whole-step"],
+        atomic: undefined,
+      }),
+      method("part", "solve", {
+        contract: contract("alpha", "gamma"),
+        steps: ["part-step"],
+        atomic: undefined,
+      }),
+      method("whole-a", "whole-step", { contract: contract("alpha", "gamma") }),
+      method("part-a", "part-step"),
+    ],
+  };
+  const region = regionClosure(graph, FIXTURE_STATES, ["solve"], new Map());
+  // `whole` contributes one stretch (its delegated step); `part` contributes
+  // two (its step, then the stretch it closes itself).
+  assert.equal(region.hopStretches, 3);
+  assert.deepEqual(region.unauthoredHops, [
+    { method: "whole", key: "whole-step" },
+    { method: "part", key: "part-step" },
+    { method: "part", key: "part" },
+  ]);
+  // And an atomic method is one stretch, its own — the same rule, not a case.
+  const atomicRegion = regionClosure(graph, FIXTURE_STATES, ["part-step"], new Map());
+  assert.equal(atomicRegion.hopStretches, 1);
+  assert.deepEqual(atomicRegion.unauthoredHops, [{ method: "part-a", key: "part-a" }]);
+});
+
+test("an authored hop counts once and only where it is drawn", () => {
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      capability("encode"),
+      method("direct", "solve", {
+        contract: contract("alpha", "gamma"),
+        steps: ["encode"],
+        atomic: undefined,
+        hops: { encode: { theory: "the mathematics", theoryJa: "数学" } },
+      }),
+      method("encode-a", "encode"),
+    ],
+  };
+  const region = regionClosure(graph, FIXTURE_STATES, ["solve"], new Map());
+  assert.equal(region.hopStretches, 2);
+  assert.equal(region.hopStretchesAuthored, 1);
+  assert.deepEqual(region.unauthoredHops, [{ method: "direct", key: "direct" }]);
+});
+
+test("why a worked run is missing is three-valued, and the middle value is the common one", () => {
+  // `accounted` is a finished answer, `outstanding` is work, and `unread` is a
+  // paper to read — three different next actions. Two values would collapse the
+  // last two into "nothing to write up", which is exactly wrong: `papers.ts`
+  // forces `simulation` to `unknown` on an abstract read *because* numerics hide
+  // below the abstract, so a two-valued gauge would report a region of skimmed
+  // sources as complete.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      method("has-a-run", "solve", { citations: citing("https://example.org/ran-it") }),
+      method("skimmed", "solve", { citations: citing("https://example.org/skimmed") }),
+      method("theory-only", "solve", { citations: citing("https://example.org/pure") }),
+      method("off-register", "solve", { citations: citing("https://example.org/not-in-register") }),
+      method("uncited", "solve", { citations: [] }),
+    ],
+  };
+  const region = regionClosure(graph, FIXTURE_STATES, ["solve"], REGION_REPORTS);
+  assert.equal(region.runEvidence.get("has-a-run"), "outstanding");
+  assert.equal(region.runEvidence.get("skimmed"), "unread");
+  assert.equal(region.runEvidence.get("theory-only"), "accounted");
+  // A citation the register does not carry is `unread`, not `accounted`: an
+  // absence of evidence is not evidence of absence, and the register is the only
+  // place that could say otherwise.
+  assert.equal(region.runEvidence.get("off-register"), "unread");
+  // Nor does a method with no sources at all get to claim there is nothing to
+  // write up.
+  assert.equal(region.runEvidence.get("uncited"), "unread");
+});
+
+test("a region's fields are counted apart, and a blank one is not counted at all", () => {
+  // Per field, never averaged. `MethodExample`'s own doc comment draws the line
+  // this refuses to cross: pseudocode is transcribable from the record and a
+  // worked run needs a laboratory, so one figure over both would let the cheap
+  // half stand in for the half nobody at this desk can close.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      method("full", "solve", {
+        conditions: "when it applies",
+        conditionsJa: "適用条件",
+        cost: "$O(n)$",
+        costJa: "$O(n)$",
+        example: { pseudocode: "return u" },
+      }),
+      method("blank", "solve", { example: { pseudocode: "  \n " } }),
+    ],
+  };
+  const region = regionClosure(graph, FIXTURE_STATES, ["solve"], new Map());
+  const field = (name: string) => region.fields.find((entry) => entry.field === name);
+  assert.deepEqual(field("cost"), { field: "cost", present: 1, total: 2, missing: ["blank"] });
+  // Whitespace is not authorship, and `validateLayerGraph` already refuses a
+  // pseudocode field that trims to nothing — the gauge has to agree with it or
+  // the two halves of the codebase disagree about what is written.
+  assert.deepEqual(field("example.pseudocode"), {
+    field: "example.pseudocode",
+    present: 1,
+    total: 2,
+    missing: ["blank"],
+  });
+  assert.equal(field("example.text")?.present, 0);
+  // No combined number exists to be quoted, by construction.
+  assert.equal(
+    Object.keys(region).some((key) => key.toLowerCase().includes("percent")),
+    false,
+  );
 });
 
 test("a corpus that does not carry a declared slug is counted, not silently absorbed", () => {
