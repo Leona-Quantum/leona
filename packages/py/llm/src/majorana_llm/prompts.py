@@ -281,28 +281,39 @@ RESULT = {
     "optimal_parameters": [float(value) for value in optimization.x],
 }
 
-Example 4 — Qiskit coherent bit-flip QEC and reduced-state fidelity
--------------------------------------------------------------------
+Example 4 — Qiskit coherent bit/phase-flip QEC and reduced-state fidelity
+-------------------------------------------------------------------------
 from qiskit import QuantumCircuit
 from qiskit.quantum_info import Statevector, partial_trace, state_fidelity
 
-# DEMO DATA ONLY. Replace the logical state, code, noise model, and error cases.
+# DEMO DATA ONLY. Replace the logical state, code kind, and artifact error case.
 logical_angle = 0.74
+logical_phase = -0.31
+code_kind = "bit-flip"  # or "phase-flip"
 
 def encoded_state_circuit() -> QuantumCircuit:
     circuit = QuantumCircuit(3)
     circuit.ry(logical_angle, 0)
+    circuit.rz(logical_phase, 0)
     circuit.cx(0, 1)
     circuit.cx(0, 2)
+    if code_kind == "phase-flip":
+        circuit.h([0, 1, 2])
     return circuit
 
 ideal_encoded_state = Statevector.from_instruction(encoded_state_circuit())
 
-def coherent_recovery(error_qubit: int) -> QuantumCircuit:
+def coherent_recovery(error_qubit: int | None) -> QuantumCircuit:
     # Data qubits are 0..2 and coherent syndrome ancillas are 3..4.
     circuit = QuantumCircuit(5)
     circuit.compose(encoded_state_circuit(), qubits=[0, 1, 2], inplace=True)
-    circuit.x(error_qubit)
+    if error_qubit is not None:
+        getattr(circuit, "x" if code_kind == "bit-flip" else "z")(error_qubit)
+
+    # In the phase code, conjugate the physical Z error to X before using the
+    # ordinary bit-flip parity circuit. Restore the encoded basis afterwards.
+    if code_kind == "phase-flip":
+        circuit.h([0, 1, 2])
     circuit.cx(0, 3)
     circuit.cx(1, 3)
     circuit.cx(1, 4)
@@ -316,10 +327,12 @@ def coherent_recovery(error_qubit: int) -> QuantumCircuit:
     circuit.x(3)
     circuit.ccx(3, 4, 2)
     circuit.x(3)
+    if code_kind == "phase-flip":
+        circuit.h([0, 1, 2])
     return circuit
 
 fidelities: list[float] = []
-for error_qubit in range(3):
+for error_qubit in (None, 0, 1, 2):
     recovered_state = Statevector.from_instruction(coherent_recovery(error_qubit))
     reduced_data_state = partial_trace(recovered_state, [3, 4])
     fidelities.append(float(state_fidelity(reduced_data_state, ideal_encoded_state)))
@@ -338,16 +351,14 @@ product. partial_trace returns a DensityMatrix that can be passed directly to
 state_fidelity together with an ideal Statevector. Trace out Qiskit qubit indices, not
 reshaped NumPy tensor axes.
 
-Phase-flip repetition code basis rule
--------------------------------------
-The three-qubit phase-flip code is the Hadamard-basis conjugate of the bit-flip code;
-gate order is essential. Prepare the logical state on q0, apply CNOT q0->q1 and
-q0->q2 FIRST, then H on all three data qubits, producing alpha|+++>+beta|--->. After
-one physical Z error, apply H to all data qubits so it becomes one X error, extract the
-ordinary bit-flip parity into ancillas initialized in |0>, apply the same syndrome-
-controlled X correction, and finally H all data qubits back to the encoded basis. Do
-not put syndrome ancillas in |+>, apply H before the encoding CNOTs, or replace the
-conjugated-basis X correction with a controlled-Z guess.
+The no-error case is part of the minimum. Do not invent per-error RESULT keys the
+request did not ask for. Do not measure syndrome ancillas, put them in |+>, apply H
+before the encoding CNOTs, or replace the conjugated-basis X correction with a
+controlled-Z guess. The example keeps the recovered three data qubits encoded and
+therefore compares their 8x8 reduced density matrix with the three-qubit ideal encoded
+Statevector. If a request explicitly requires decoding to one logical qubit, trace out
+data q1 and q2 as well as the syndrome ancillas before comparing with a 2-element ideal
+logical Statevector. Never multiply an 8x8 density matrix by a 2-element state.
 
 QAOA objective direction
 ------------------------
@@ -473,8 +484,9 @@ _VERIFICATION_PLAN_DIRECTIVE = (
     "amplitudes and solution_component only for unnormalized classical x entries. Omit "
     "the reference for non-symmetric, complex, singular/underspecified, non-power-of-two, "
     "or larger systems. The worker solves the typed system; do not place derived answers "
-    "in Plan notes. For an exact open-system task, include "
-    "exact_lindblad_reference only when ALL of these hold: at most 3 system qubits; a "
+    "in Plan notes. For an exact open-system task, ALWAYS omit "
+    "exact_lindblad_reference from this broad request Plan. A dedicated request-scoped "
+    "extractor adds it after Plan decoding and supports at most 3 system qubits; a "
     "written product initial state whose local states are Z/X/Y eigenstates; one "
     "time-independent Hamiltonian; a time-independent Lindblad generator written as "
     "positive rate*D[L], where D[L](rho)=L*rho*L_dagger-0.5*{L_dagger*L,rho}; one "
@@ -489,8 +501,8 @@ _VERIFICATION_PLAN_DIRECTIVE = (
     "a conventional dephasing rate. Map |0>,|1>,|+>,|->,|+i>,|-i> to "
     "zero,one,plus,minus,plus_i,minus_i. Population results name a full basis_state; "
     "density elements name row_state and column_state; observable expectations provide "
-    "their operator; purity has no target. Include every requested numeric RESULT key "
-    "that this schema supports, including secondary metrics. Do not coerce a non-product "
+    "their operator; purity has no target. Preserve every requested numeric RESULT key "
+    "in expected_output_keys, including secondary metrics. Do not coerce a non-product "
     "initial state, time-dependent or non-Markovian generator, missing rate/operator/time, "
     "or larger system into this reference; omit it. methods may be empty when an exact "
     "dynamics or Lindblad reference is the only reference. For a bounded binary "
@@ -1238,6 +1250,100 @@ eigenphases. Replace every input and RESULT name from the request. Exact stateve
 probabilities, sampled counts, and the known continuous input phase are different
 quantities: report only the requested one and never substitute one for another.
 
+For the common request that defines a diagonal target unitary by one computational-basis
+bitstring and its eigenphase, use the specialization below. The written bitstring order
+is q_(n-1)...q_0 and therefore converts directly with int(bitstring, 2). Replace only the
+four request values in the call; do not combine this specialization with the more general
+helper that follows it.
+
+# BEGIN DIAGONAL_BASIS_QPE_HELPER
+import numpy as np
+from qiskit import QuantumCircuit, transpile
+from qiskit.circuit.library import QFTGate, UnitaryGate
+from qiskit.quantum_info import Statevector
+
+def diagonal_basis_phase_estimation(
+    target_qubits: int,
+    target_basis_bitstring: str,
+    eigenphase: float,
+    counting_qubits: int,
+):
+    target_width = int(target_qubits)
+    counting_width = int(counting_qubits)
+    bitstring = str(target_basis_bitstring)
+    phase = float(eigenphase) % 1.0
+    if not 1 <= target_width <= 4 or not 1 <= counting_width <= 16:
+        raise ValueError("target/counting widths are outside the bounded helper")
+    if len(bitstring) != target_width or set(bitstring) - {"0", "1"}:
+        raise ValueError("target bitstring must be q_(n-1)...q_0 at target width")
+    if not np.isfinite(phase):
+        raise ValueError("eigenphase must be finite")
+
+    target_dimension = 1 << target_width
+    target_basis_index = int(bitstring, 2)
+    unitary = np.eye(target_dimension, dtype=complex)
+    unitary[target_basis_index, target_basis_index] = np.exp(2j * np.pi * phase)
+
+    counting = list(range(counting_width))
+    target = list(range(counting_width, counting_width + target_width))
+    circuit = QuantumCircuit(counting_width + target_width)
+    # bitstring is q_(n-1)...q_0; Qiskit physical qubit 0 is its rightmost bit.
+    for physical_qubit, bit in enumerate(reversed(bitstring)):
+        if bit == "1":
+            circuit.x(target[physical_qubit])
+    circuit.h(counting)
+    for power_index, control in enumerate(counting):
+        controlled_power = UnitaryGate(
+            np.linalg.matrix_power(unitary, 2**power_index)
+        ).control(1)
+        circuit.append(controlled_power, [control, *target])
+    circuit.append(QFTGate(counting_width).inverse(), counting)
+
+    state = np.asarray(Statevector.from_instruction(circuit).data, dtype=complex)
+    register_size = 1 << counting_width
+    probabilities = np.zeros(register_size, dtype=float)
+    for basis_index, probability in enumerate(np.abs(state) ** 2):
+        # Counting qubits occupy the low-order physical positions by construction.
+        probabilities[basis_index & (register_size - 1)] += float(probability)
+    probabilities /= float(np.sum(probabilities))
+    dominant_integer = int(np.argmax(probabilities))
+    artifact = transpile(
+        circuit,
+        basis_gates=["u", "cx"],
+        optimization_level=0,
+        seed_transpiler=7,
+    )
+    return (
+        artifact,
+        [float(value) for value in probabilities],
+        dominant_integer,
+        float(dominant_integer / register_size),
+        float(probabilities[dominant_integer]),
+    )
+
+(
+    FINAL_CIRCUIT,
+    phase_probabilities,
+    dominant_integer,
+    finite_phase_estimate,
+    dominant_probability,
+) = diagonal_basis_phase_estimation(
+    requested_target_qubit_count,
+    requested_q_high_to_q0_basis_bitstring,
+    requested_eigenphase,
+    requested_counting_qubit_count,
+)
+RESULT = {
+    "phase_probabilities": phase_probabilities,
+    "dominant_integer": int(dominant_integer),
+    "finite_phase_estimate": float(finite_phase_estimate),
+    "dominant_probability": float(dominant_probability),
+}
+# END DIAGONAL_BASIS_QPE_HELPER
+
+For an arbitrary supplied finite unitary/eigenstate or a request for sampled counts,
+use the general helper below instead.
+
 # BEGIN BOUNDED_QPE_HELPER
 import numpy as np
 from qiskit import ClassicalRegister, QuantumCircuit, transpile
@@ -1688,6 +1794,268 @@ FINAL_CIRCUIT = dynamics_circuit
 RESULT = {
     "observable_expectation": float(observable_expectation),
     "survival_probability": float(survival_probability),
+}
+"""
+
+_AMPLITUDE_DAMPING_REFERENCE = r"""
+Example — coherent-input amplitude-damping Stinespring dilation
+---------------------------------------------------------------
+For q0 as system and q1 as an environment initialized in |0>, amplitude damping
+must map |1,0> to sqrt(1-gamma)|1,0> + sqrt(gamma)|0,1>. A controlled RY alone
+leaves the system excited in both branches and is not amplitude damping; the
+environment-controlled X is essential. Keep Qiskit basis order q1q0 explicit.
+
+# BEGIN AMPLITUDE_DAMPING_HELPER
+import numpy as np
+from qiskit import QuantumCircuit
+from qiskit.quantum_info import Statevector, partial_trace
+
+def coherent_amplitude_damping(theta: float, phi: float, gamma: float):
+    if not 0.0 <= float(gamma) <= 1.0:
+        raise ValueError("gamma must lie in [0, 1]")
+    system, environment = 0, 1
+    circuit = QuantumCircuit(2)
+    circuit.ry(2.0 * float(theta), system)
+    circuit.rz(float(phi), system)
+    circuit.cry(2.0 * np.arcsin(np.sqrt(float(gamma))), system, environment)
+    circuit.cx(environment, system)
+
+    state = Statevector.from_instruction(circuit)
+    density = np.asarray(partial_trace(state, [environment]).data, dtype=complex)
+    return circuit, {
+        "excited_population": float(density[1, 1].real),
+        "coherence_0_1_real": float(density[0, 1].real),
+        "coherence_0_1_imag": float(density[0, 1].imag),
+        "state_purity": float(np.trace(density @ density).real),
+    }
+# END AMPLITUDE_DAMPING_HELPER
+
+FINAL_CIRCUIT, RESULT = coherent_amplitude_damping(
+    requested_theta,
+    requested_phi,
+    requested_gamma,
+)
+"""
+
+
+_LINDBLAD_STINESPRING_REFERENCE = r"""
+Example — one-qubit amplitude-damping plus dephasing Lindblad dilation
+------------------------------------------------------------------------
+Use this only for a time-independent one-qubit generator H=h*Z with
+kappa*D[sigma_minus] + gamma*D[Z], a written product initial state, and the request
+for separate amplitude-damping and dephasing environment qubits. These commuting,
+phase-covariant channels have a direct finite-time dilation; do not construct a Choi
+matrix and then QR arbitrary zero columns, because QR need not preserve the required
+Kraus isometry columns.
+
+# BEGIN LINDBLAD_STINESPRING_HELPER
+import numpy as np
+from scipy.linalg import expm
+from qiskit import QuantumCircuit
+from qiskit.quantum_info import DensityMatrix, Statevector, partial_trace, state_fidelity
+
+def one_qubit_lindblad_stinespring(
+    evolution_time: float,
+    h_coefficient: float,
+    amplitude_rate: float,
+    dephasing_rate: float,
+):
+    t = float(evolution_time)
+    kappa = float(amplitude_rate)
+    gamma = float(dephasing_rate)
+    if t < 0.0 or kappa < 0.0 or gamma < 0.0:
+        raise ValueError("time and Lindblad rates must be nonnegative")
+
+    identity = np.eye(2, dtype=complex)
+    z = np.diag([1.0, -1.0]).astype(complex)
+    lowering = np.array([[0.0, 1.0], [0.0, 0.0]], dtype=complex)
+    hamiltonian = float(h_coefficient) * z
+    def dissipator(jump):
+        product = jump.conj().T @ jump
+        return np.kron(jump.conj(), jump) - 0.5 * (
+            np.kron(identity, product) + np.kron(product.T, identity)
+        )
+    liouvillian = -1j * (
+        np.kron(identity, hamiltonian) - np.kron(hamiltonian.T, identity)
+    ) + kappa * dissipator(lowering) + gamma * dissipator(z)
+    rho0 = 0.5 * np.array([[1.0, -1.0], [-1.0, 1.0]], dtype=complex)
+    rho_exact = (
+        expm(liouvillian * t) @ rho0.reshape(4, order="F")
+    ).reshape((2, 2), order="F")
+
+    system, amplitude_environment, dephasing_environment = 0, 1, 2
+    circuit = QuantumCircuit(3)
+    circuit.x(system)
+    circuit.h(system)  # H|1> = |->
+    damping_probability = 1.0 - np.exp(-kappa * t)
+    circuit.cry(
+        2.0 * np.arcsin(np.sqrt(damping_probability)),
+        system,
+        amplitude_environment,
+    )
+    circuit.cx(amplitude_environment, system)
+    dephasing_probability = 0.5 * (1.0 - np.exp(-2.0 * gamma * t))
+    circuit.ry(
+        2.0 * np.arcsin(np.sqrt(dephasing_probability)),
+        dephasing_environment,
+    )
+    circuit.cz(dephasing_environment, system)
+    circuit.rz(2.0 * float(h_coefficient) * t, system)
+
+    reduced = partial_trace(Statevector.from_instruction(circuit), [1, 2])
+    return circuit, {
+        "excited_population": float(rho_exact[1, 1].real),
+        "coherence_real": float(rho_exact[0, 1].real),
+        "coherence_imag": float(rho_exact[0, 1].imag),
+        "purity": float(np.trace(rho_exact @ rho_exact).real),
+        "stinespring_density_fidelity": float(
+            state_fidelity(DensityMatrix(rho_exact), reduced)
+        ),
+    }
+# END LINDBLAD_STINESPRING_HELPER
+
+FINAL_CIRCUIT, RESULT = one_qubit_lindblad_stinespring(
+    requested_evolution_time,
+    requested_h_coefficient,
+    requested_amplitude_rate,
+    requested_dephasing_rate,
+)
+"""
+
+
+_QIBO_ONE_QUBIT_ROTATION_REFERENCE = r"""
+Qibo one-qubit RY/RZ statevector reference
+-------------------------------------------
+import numpy as np
+from qibo import Circuit, gates
+from qibo.backends import NumpyBackend
+
+circuit = Circuit(1)
+circuit.add(gates.RY(0, requested_theta))
+circuit.add(gates.RZ(0, requested_phi))
+vector = NumpyBackend().execute_circuit(circuit).state(numpy=True).reshape(-1)
+alpha, beta = vector
+overlap = np.conj(alpha) * beta
+FINAL_CIRCUIT = circuit
+RESULT = {
+    "bloch_x": float(2.0 * overlap.real),
+    "bloch_y": float(2.0 * overlap.imag),
+    "bloch_z": float(abs(alpha) ** 2 - abs(beta) ** 2),
+    "probability_one": float(abs(beta) ** 2),
+}
+"""
+
+
+_QULACS_ONE_QUBIT_ROTATION_REFERENCE = r"""
+Qulacs common-mathematical RY/RZ statevector reference
+------------------------------------------------------
+import numpy as np
+from qulacs import QuantumCircuit, QuantumState
+from qulacs.gate import RY, RZ
+
+circuit = QuantumCircuit(1)
+# Qulacs uses exp(+i*angle*Pauli/2); negate each common mathematical angle once.
+circuit.add_gate(RY(0, -requested_theta))
+circuit.add_gate(RZ(0, -requested_phi))
+state = QuantumState(1)
+state.set_zero_state()
+circuit.update_quantum_state(state)
+alpha, beta = state.get_vector()
+overlap = np.conj(alpha) * beta
+FINAL_CIRCUIT = circuit
+RESULT = {
+    "bloch_x": float(2.0 * overlap.real),
+    "bloch_y": float(2.0 * overlap.imag),
+    "bloch_z": float(abs(alpha) ** 2 - abs(beta) ** 2),
+    "probability_one": float(abs(beta) ** 2),
+}
+"""
+
+
+_ORDERED_TROTTER_REFERENCE = r"""
+Example — ordered symmetric second-order Pauli Trotterization
+-------------------------------------------------------------
+Use this when the request fixes the written Pauli-term order and number of product-
+formula steps. Qiskit Pauli labels and displayed basis strings are q_(n-1)...q_0,
+with q0 rightmost. Preserve the term list order exactly; do not let a dict, sum, or
+library synthesizer reorder it, and never substitute the exact unitary for the bound
+Trotter circuit.
+
+# BEGIN ORDERED_TROTTER_HELPER
+import numpy as np
+from scipy.linalg import expm
+from qiskit import QuantumCircuit
+from qiskit.circuit.library import PauliEvolutionGate
+from qiskit.quantum_info import SparsePauliOp, Statevector
+
+def ordered_second_order_trotter(
+    ordered_terms,
+    initial_bitstring: str,
+    evolution_time: float,
+    steps: int,
+    observable_qubit: int,
+):
+    terms = [(float(coefficient), str(label)) for coefficient, label in ordered_terms]
+    if len(terms) < 2 or len({len(label) for _, label in terms}) != 1:
+        raise ValueError("ordered Pauli terms must share one nonzero width")
+    width = len(terms[0][1])
+    if (
+        len(initial_bitstring) != width
+        or set(initial_bitstring) - {"0", "1"}
+        or not 1 <= int(steps) <= 1000
+        or not 0 <= int(observable_qubit) < width
+    ):
+        raise ValueError("initial state, steps, or observable qubit is invalid")
+    if any(set(label) - {"I", "X", "Y", "Z"} for _, label in terms):
+        raise ValueError("Hamiltonian terms must be Pauli labels")
+
+    circuit = QuantumCircuit(width)
+    for qubit, bit in enumerate(reversed(initial_bitstring)):
+        if bit == "1":
+            circuit.x(qubit)
+    step_time = float(evolution_time) / int(steps)
+    for _ in range(int(steps)):
+        sequence = [
+            *((coefficient, label, step_time / 2.0) for coefficient, label in terms[:-1]),
+            (terms[-1][0], terms[-1][1], step_time),
+            *((coefficient, label, step_time / 2.0) for coefficient, label in reversed(terms[:-1])),
+        ]
+        for coefficient, label, duration in sequence:
+            operator = SparsePauliOp.from_list([(label, coefficient)])
+            circuit.append(PauliEvolutionGate(operator, time=duration), range(width))
+
+    trotter_state = np.asarray(Statevector.from_instruction(circuit).data, dtype=complex)
+    hamiltonian = sum(
+        (SparsePauliOp.from_list([(label, coefficient)]).to_matrix() for coefficient, label in terms),
+        np.zeros((1 << width, 1 << width), dtype=complex),
+    )
+    initial = np.zeros(1 << width, dtype=complex)
+    initial[int(initial_bitstring, 2)] = 1.0
+    exact_state = expm(-1j * float(evolution_time) * hamiltonian) @ initial
+    observable_label = ["I"] * width
+    observable_label[width - 1 - int(observable_qubit)] = "Z"
+    observable = SparsePauliOp("".join(observable_label)).to_matrix()
+    trotter_z = float(np.vdot(trotter_state, observable @ trotter_state).real)
+    exact_z = float(np.vdot(exact_state, observable @ exact_state).real)
+    fidelity = float(abs(np.vdot(exact_state, trotter_state)) ** 2)
+    return circuit, trotter_z, exact_z, fidelity
+# END ORDERED_TROTTER_HELPER
+
+FINAL_CIRCUIT, trotter_observable, exact_observable, exact_trotter_fidelity = (
+    ordered_second_order_trotter(
+        requested_ordered_terms,
+        requested_initial_bitstring,
+        requested_evolution_time,
+        requested_steps,
+        requested_observable_qubit,
+    )
+)
+trotter_result_key = f"trotter_z{requested_observable_qubit}"
+exact_result_key = f"exact_z{requested_observable_qubit}"
+RESULT = {
+    trotter_result_key: float(trotter_observable),
+    exact_result_key: float(exact_observable),
+    "exact_trotter_fidelity": float(exact_trotter_fidelity),
 }
 """
 
@@ -2238,6 +2606,15 @@ def simple_generation_system_prompt(
         marker in context
         for marker in ("lindblad", "master equation", "open-system", "open system")
     )
+    amplitude_damping_context = any(
+        marker in context for marker in ("amplitude damping", "amplitude-damping")
+    )
+    lindblad_stinespring_context = open_system_context and "stinespring" in context
+    one_qubit_rotation_context = (
+        any(marker in context for marker in ("one qubit", "one-qubit", "single qubit"))
+        and "ry" in context
+        and "rz" in context
+    )
     exact_dynamics_context = any(
         marker in context
         for marker in (
@@ -2247,6 +2624,15 @@ def simple_generation_system_prompt(
             "explicit matrix exponential",
             "matrix-exponential evolution",
             "pauli dynamics",
+        )
+    )
+    ordered_trotter_context = "trotter" in context and any(
+        marker in context
+        for marker in (
+            "second-order",
+            "second order",
+            "product-formula",
+            "product formula",
         )
     )
     repetition_qec_context = any(
@@ -2282,11 +2668,19 @@ def simple_generation_system_prompt(
             family = "teleportation"
         elif repetition_qec_context:
             family = "error_correction"
+        elif lindblad_stinespring_context:
+            family = "lindblad_stinespring"
+        elif amplitude_damping_context:
+            family = "amplitude_damping"
+        elif one_qubit_rotation_context:
+            family = "single_qubit_rotation"
         elif open_system_context:
             # There is no bounded open-system generation scaffold. Keep the common
             # numerical invariants and avoid borrowing QPE/dynamics code from a
             # secondary comparison mentioned in a Lindblad/master-equation summary.
             family = None
+        elif ordered_trotter_context:
+            family = "ordered_trotter"
         elif exact_dynamics_context and not open_system_context:
             family = "exact_dynamics"
         elif "amplitude estimation" in context or "amplitude-estimation" in context:
@@ -2319,6 +2713,12 @@ def simple_generation_system_prompt(
             selected += _VQE_GENERATION_REFERENCE
         elif family == "exact_dynamics":
             selected += _EXACT_PAULI_DYNAMICS_REFERENCE
+        elif family == "ordered_trotter":
+            selected += _ORDERED_TROTTER_REFERENCE
+        elif family == "amplitude_damping":
+            selected += _AMPLITUDE_DAMPING_REFERENCE
+        elif family == "lindblad_stinespring":
+            selected += _LINDBLAD_STINESPRING_REFERENCE
         elif family == "teleportation":
             selected += _COHERENT_TELEPORTATION_REFERENCE
         elif family == "error_correction":
@@ -2331,8 +2731,12 @@ def simple_generation_system_prompt(
         selected += _BRAKET_BELL_GENERATION_REFERENCE
     elif framework.lower() == "qibo" and family == "bell":
         selected += _QIBO_BELL_GENERATION_REFERENCE
+    elif framework.lower() == "qibo" and family == "single_qubit_rotation":
+        selected += _QIBO_ONE_QUBIT_ROTATION_REFERENCE
     elif framework.lower() == "qulacs" and family == "bell":
         selected += _QULACS_BELL_GENERATION_REFERENCE
+    elif framework.lower() == "qulacs" and family == "single_qubit_rotation":
+        selected += _QULACS_ONE_QUBIT_ROTATION_REFERENCE
     prompt = SIMPLE_GENERATION_SYSTEM_PROMPT.replace(
         _GENERATION_REFERENCE_IMPLEMENTATIONS,
         selected.rstrip() + "\n",
@@ -2706,14 +3110,25 @@ def _render(system: str, user: str) -> RenderedPrompt:
     return RenderedPrompt(system=system, user=user)
 
 
-def render_intent_prompt(task_prompt: str) -> RenderedPrompt:
+def render_intent_prompt(task_prompt: str, *, has_source_code: bool = False) -> RenderedPrompt:
     """Classify one message as a task to execute or a message to answer.
 
-    Only the current message is shown, deliberately. Conversation history makes
-    the classifier sticky: after one execute turn every follow-up ("thanks",
-    "why did that work?") reads as part of the task and routes to execute.
+    Only the current message and bounded attachment metadata are shown,
+    deliberately. Conversation history makes the classifier sticky: after one
+    execute turn every follow-up ("thanks", "why did that work?") reads as part
+    of the task and routes to execute.
     """
-    return _render(INTENT_ROUTER_SYSTEM_PROMPT, f"User message:\n{task_prompt}")
+    source_context = (
+        "Submission context: selected-framework source code is attached. Treat the "
+        "attachment as authoritative input when the user refers to this code or circuit, "
+        "but do not turn an explanation question into an execution request.\n"
+        if has_source_code
+        else ""
+    )
+    return _render(
+        INTENT_ROUTER_SYSTEM_PROMPT,
+        f"{source_context}User message:\n{task_prompt}",
+    )
 
 
 def render_conversation_title_prompt(
