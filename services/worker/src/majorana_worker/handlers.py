@@ -1192,7 +1192,7 @@ async def handle_run_dead_letter(
 
 
 async def close_orphaned_run(session: AsyncSession, orphan: system.OrphanedRun) -> bool:
-    """Close a run whose execution job is terminal but which nothing ever finished.
+    """Close a run whose execution path ended but which nothing ever finished.
 
     Reconciles from the run side, because delivery from the job side is not
     guaranteed to happen: `mark_job_dead_lettered` stamps `dead_lettered_at` once
@@ -1204,11 +1204,12 @@ async def close_orphaned_run(session: AsyncSession, orphan: system.OrphanedRun) 
     uses, so this completes a partial sequence rather than writing a rival one,
     and `fail_run_from_dead_letter` no-ops on an already-terminal run.
     """
-    reason = (
-        "execution job ended without closing this run"
-        if orphan.delivery_error is None
-        else f"dead-letter delivery was abandoned: {orphan.delivery_error}"
-    )
+    if orphan.job_id is None:
+        reason = "run had no execution job after the direct-handler grace period"
+    elif orphan.delivery_error is None:
+        reason = "execution job ended without closing this run"
+    else:
+        reason = f"dead-letter delivery was abandoned: {orphan.delivery_error}"
     scope = Scope(
         user_id=orphan.user_id,
         workspace_id=orphan.workspace_id,
