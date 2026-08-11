@@ -148,6 +148,25 @@ for (const { nodeId, slug, sourceKind } of anchorAudit.uncitable) {
   );
 }
 
+// A citation a factory produced is not a citation anyone chose, and it is
+// invisible from the record's own side: `vqeEntry` fell back to one survey for
+// 25 records, every one of which read as sourced. So a source shared by more
+// than one unanchored record has to be declared, with its slug set, in
+// `DECLARED_SHARED_SOURCES`.
+//
+// Runs on the default path on purpose. The census this reads has been printed
+// since #392, but only under `--unanchored`, which CI does not pass — a guard
+// behind a reporting flag is a guard that never runs.
+for (const { url, slugs, declared } of eligibilityMod.undeclaredSharedSources(
+  anchorAudit.sharedSources,
+)) {
+  errors.push(
+    declared
+      ? `${url} is declared shared by ${declared.join(", ")} but is actually cited by ${slugs.join(", ")} — update DECLARED_SHARED_SOURCES, and if a record just got its own paper, remove it from the list`
+      : `${slugs.length} unanchored records share ${url} (${slugs.join(", ")}) with no entry in DECLARED_SHARED_SOURCES — a per-method map claim cannot rest on a document shared by default; give each its own primary paper or declare the share with its reason`,
+  );
+}
+
 // The route `/repository/layers/...` shadows `/repository/[slug]` for the static
 // segment. A record whose slug is that segment would 200 with the wrong page.
 for (const segment of layersMod.RESERVED_REPOSITORY_SEGMENTS) {
