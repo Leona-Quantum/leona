@@ -120,6 +120,22 @@ interface Copy {
    * would have to say "1 papers" in one locale to stay one string.
    */
   leads: (simulation: number, hardware: number) => string;
+  /**
+   * The **other** answer an empty Implementations section can give, and it is a
+   * finding rather than a worklist entry: every cited paper has been read to its
+   * full text and none of them reports a run.
+   *
+   * Until 2026-08-12 this sentence had nothing to say — every populated register
+   * row was an abstract read, and `papers.ts` forbids an abstract read from
+   * claiming a paper has no numerics, so "0 report numerics" always meant "the
+   * abstracts did not mention any". `Leads` returned null and called that
+   * silence honest, which it was. Full-text reads make the silence dishonest in
+   * the other direction: **"None found yet." reads as "nobody has looked"**, and
+   * on these records somebody has looked, at every one of them.
+   */
+  leadsNone: string;
+  /** …and when some cited papers are still unread, how many. */
+  leadsUnread: (unread: number) => string;
   takes: string;
   returns: string;
   /** The paper list, below the sections rather than among them — the owner's §2 Q4. */
@@ -233,6 +249,9 @@ const COPY: Record<Lang, Copy> = {
       if (hardware > 0) parts.push(`${hardware} report${hardware === 1 ? "s" : ""} a hardware run`);
       return `Of the papers cited here, ${parts.join(" and ")} — nobody has written those up yet.`;
     },
+    leadsNone: "Every paper cited here has been read in full, and none reports a run.",
+    leadsUnread: (unread) =>
+      `${unread} paper${unread === 1 ? "" : "s"} cited here ${unread === 1 ? "has" : "have"} not been read past the abstract, so there may be a run nobody has looked for.`,
     implementationFromRecord: "From the repository — run, not written up from a paper",
     takes: "Takes",
     returns: "Returns",
@@ -313,6 +332,9 @@ const COPY: Record<Lang, Copy> = {
       if (hardware > 0) parts.push(`${hardware} 件が実機での実行を報告`);
       return `ここで引用している文献のうち、${parts.join("、")}しています。まだ記述されていません。`;
     },
+    leadsNone: "ここで引用している文献はいずれも全文を読んでおり、実行の報告はありません。",
+    leadsUnread: (unread) =>
+      `ここで引用している文献のうち ${unread} 件はまだ要旨までしか読んでいませんので、見落とされている実行があるかもしれません。`,
     implementationFromRecord: "リポジトリの記録 — 論文からの再現ではなく、実行されたもの",
     takes: "入力",
     returns: "出力",
@@ -882,16 +904,36 @@ function Leads({
   leads,
   copy,
 }: {
-  leads: CardValue<{ simulation: number; hardware: number }>;
+  leads: CardValue<{ simulation: number; hardware: number; unread: number }>;
   copy: Copy;
 }): React.ReactElement | null {
   if (!leads.held) return null;
-  const { simulation, hardware } = leads.value;
-  // Nothing to say when the read papers report neither. The gap note above has
-  // already said the section is empty, and "0 of them report numerics" adds a
-  // number where the honest answer is silence.
-  if (simulation === 0 && hardware === 0) return null;
-  return <p className="mj-card-leads">{copy.leads(simulation, hardware)}</p>;
+  const { simulation, hardware, unread } = leads.value;
+  // **Three answers, because an empty section means three different things.**
+  // A lead ("2 of these report numerics — nobody has written them up"), a
+  // finding ("all of them were read and none reports a run"), or an admission
+  // ("one is still unread"). The first was here from the start; the other two
+  // were one sentence — silence — until full-text reads made zero ambiguous.
+  //
+  // Ordered by what a reader should act on. A lead outranks the rest even when
+  // something is unread, because there is already work to do; and the finding is
+  // only claimed when NOTHING is unread, since one unread paper is enough to
+  // make "none reports a run" a claim about a paper nobody opened.
+  if (simulation > 0 || hardware > 0) {
+    return <p className="mj-card-leads">{copy.leads(simulation, hardware)}</p>;
+  }
+  if (unread > 0) {
+    return (
+      <p className="mj-card-leads" data-leads="unread">
+        {copy.leadsUnread(unread)}
+      </p>
+    );
+  }
+  return (
+    <p className="mj-card-leads" data-leads="none">
+      {copy.leadsNone}
+    </p>
+  );
 }
 
 /** The contract, drawn as one half of itself. See the `input`/`output` note below. */
