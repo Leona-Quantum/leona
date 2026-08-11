@@ -1023,6 +1023,15 @@ export const LAYER_GRAPH: LayerGraph = {
     // discretization. Nothing in either field is a bound no paper carries.
     label: "Truncated Dyson series of the propagator",
     labelJa: "伝播子の Dyson 級数打ち切り",
+    // The literature's own phrase — Berry and Costa's title says "Dyson series",
+    // their §4 works with the truncated Dyson series by that name — not a
+    // coinage. Authored (W19) because this pin and Taylor's are the visible
+    // difference between the two all-at-once lanes, and at drawn width the
+    // full 40-character label was the pair's only wide one: Taylor's pin has
+    // carried its short form since it was authored. Owner pre-approved the
+    // proposal route for this string ("that's fine", Inbox 4d7660).
+    shortLabel: "Truncated Dyson series",
+    shortLabelJa: "Dyson 級数打ち切り",
     summary: "Truncate the Dyson series — the expansion that stands in for the propagator once the generator varies with time — and encode its terms as rows of a system of linear equations. This is what extends the all-at-once approach to genuinely time-dependent generators; solving the system those rows make up is the layer below.",
     summaryJa: "生成子が時間に依存する場合に伝播子の役割を担うのが Dyson 級数です。これを打ち切り、その各項を連立一次方程式の行として符号化します。一括符号化の手法が真に時間依存な生成子にまで拡張されるのは、この置き換えによるものです。組み上がった系を解くのは一つ下の層です。",
     conditions: "Theorem 4.1 is stated for $\\dot{x}(t) = A(t)x(t) + b(t)$ with $A(t)$ of non-positive logarithmic norm, the equation's parameters provided through unitaries $U_A$, $U_b$, $U_x$ with known normalisations $\\lambda_A$, $\\lambda_b$, $\\lambda_x$. No smoothness condition is required: the oracle counts are independent of derivatives of the parameters.",
