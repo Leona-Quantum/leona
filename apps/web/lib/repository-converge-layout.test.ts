@@ -39,7 +39,7 @@ import {
 import type { LayerGraph } from "./repository/layers.ts";
 import { PATH_LIMITS, expansionOf, methodFanOf } from "./repository/state-graph.ts";
 import { estimateTextWidth } from "./repository/process-layout.ts";
-import { ribbonY } from "./repository/strand-geometry.ts";
+import { levelShares, ribbonY } from "./repository/strand-geometry.ts";
 import {
   isCapability,
   isMethod,
@@ -2288,25 +2288,123 @@ test("a lane's ingredients are its own, not its descendants'", () => {
   );
 });
 
-test("a chain's column is wide enough for its widest step, taken once per step", () => {
-  // The rule `place` depends on: a chain of k steps divides the column into k
-  // equal shares, so the column must hold `k × widest`. The authored graph has
-  // no chain long-named enough to make this bite — mutating the rule to plain
-  // `max` left every figure green — so it is asserted here as the arithmetic it
-  // is, against the property rather than against a figure.
-  for (const needs of [[10], [10, 300, 20], [140, 140, 140], [5, 5], [0, 900, 1]]) {
+test("a chain's column holds every step's own demand, and each step is cut the piece it paid for", () => {
+  // The pair `place` depends on: `chainColumnNeed` sums the demands, and
+  // `levelShares` divides a belly at least that long **in proportion to those
+  // same demands**. Their safety property is one line of arithmetic — allocate
+  // `L ≥ Σd` in proportion to `d` and every piece is at least its own `d` — and
+  // it is asserted here as arithmetic, against the property rather than against
+  // a figure, because a figure that happens not to exercise it proves nothing.
+  const CASES = [[10], [10, 300, 20], [140, 140, 140], [5, 5], [0, 900, 1], [7, 0]];
+  for (const needs of CASES) {
     const column = chainColumnNeed(needs);
-    for (const need of needs) {
+    // Exactly the sum bought — and then cut with nothing spare, the tightest
+    // case, since a longer belly only ever makes every piece bigger.
+    const pieces = levelShares({ x0: 0, x1: Math.max(column, 1), y: 0 }, needs);
+    assert.equal(pieces.length, needs.length, `${JSON.stringify(needs)}: lost a step in the cut`);
+    for (const [index, need] of needs.entries()) {
+      const piece = pieces[index]!;
       assert.ok(
-        column / needs.length >= need,
-        `${JSON.stringify(needs)}: a share of ${column / needs.length} cannot hold ${need}`,
+        piece.x1 - piece.x0 >= need - 1e-9,
+        `${JSON.stringify(needs)}: step ${index} was cut ${piece.x1 - piece.x0} for a demand of ${need}`,
       );
     }
+    // The pieces tile the belly: no gap between two steps, and the last one
+    // closes on the end, which is where the final circle is drawn.
+    for (let index = 1; index < pieces.length; index += 1) {
+      assert.equal(pieces[index]!.x0, pieces[index - 1]!.x1, `${JSON.stringify(needs)}: a seam moved`);
+    }
+    assert.equal(pieces.at(-1)!.x1, Math.max(column, 1), `${JSON.stringify(needs)}: the chain stops short of its own end`);
   }
+
   assert.equal(chainColumnNeed([]), 0, "no steps need no column");
-  assert.equal(chainColumnNeed([10, 300, 20]), 900);
-  // Summing is the wrong answer and is wrong in the direction that clips.
-  assert.ok(chainColumnNeed([10, 300, 20]) > 330, "the sum is not enough for an equal division");
+  assert.equal(chainColumnNeed([10, 300, 20]), 330);
+  // **The control, and it is the rule this replaced.** Until W18+ the column was
+  // `k × widest` because the cut was into equal slices — 900px for this chain
+  // against the 330px its steps actually ask for. A regression to that rule
+  // fails here, and so does any "safety" multiplier quietly reintroduced.
+  assert.ok(
+    chainColumnNeed([10, 300, 20]) < 3 * 300,
+    "the column is back to paying for the widest step once per step",
+  );
+});
+
+test("two shut steps of one chain are drawn in proportion to their own names", () => {
+  // The compaction, measured on the drawing rather than restated from the code.
+  //
+  // A chain's steps tile their parent's belly, so the belly is cut somewhere;
+  // the question this asks is *where*. Under the equal-slice rule every step of
+  // a chain came out the same length whatever it held — a 129px name and a
+  // whole opened fan were handed the same 2,776px — and the answer here is that
+  // two SHUT steps of one chain now differ in length exactly as their names do.
+  //
+  // **Failable by hand, and that is the point**: restoring `levelSlices(belly,
+  // k)` in `place`'s chain arm makes every ratio below equal and this fails on
+  // the first pair whose names differ. Restoring `k × widest` in
+  // `chainColumnNeed` alone does not fail it — it inflates the belly without
+  // changing the proportions — which is why `a chain's column holds every
+  // step's own demand` pins that half as arithmetic.
+  //
+  // Chains are recovered from the DRAWING (siblings whose x-ranges tile), not
+  // from a layout flag, so the check cannot be satisfied by a lane that says it
+  // is a step without being drawn as one.
+  const MIN = CONVERGE_METRICS.minTendonRun;
+  let pairs = 0;
+  let worst = { at: "", spread: 0 };
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = openDiagram(focus.id, openableAddresses(focus.id), locale);
+      const parents = new Set(
+        [...diagram.lanes.map((lane) => lane.parentKey), ...diagram.feeds.map((feed) => feed.parentKey)]
+          .filter((key): key is string => key !== null),
+      );
+      const byParent = new Map<string, ConvergeLane[]>();
+      for (const lane of diagram.lanes) {
+        if (lane.parentKey === null) continue;
+        byParent.set(lane.parentKey, [...(byParent.get(lane.parentKey) ?? []), lane]);
+      }
+      for (const [, siblings] of byParent) {
+        if (siblings.length < 2) continue;
+        const row = [...siblings].sort((a, b) => a.x0 - b.x0);
+        // A chain, as drawn: each step starts where the previous one ended.
+        const tiles = row.every((lane, index) => index === 0 || Math.abs(lane.x0 - row[index - 1]!.x1) < 0.02);
+        if (!tiles) continue;
+        // Only steps that hold nothing but their own name: an opened step's
+        // demand is its interior, which this test cannot see, and a step with
+        // an ingredient buys room for the stub as well.
+        const shut = row.filter(
+          (lane) => !parents.has(lane.key) && !lane.labelTruncated && lane.label !== "",
+        );
+        if (shut.length < 2) continue;
+        const ratios = shut.map((lane) => ({
+          lane,
+          ratio: (lane.x1 - lane.x0) / (lane.labelWidth + loopAllowance(lane) + 2 * MIN),
+        }));
+        // Every step is the same multiple of its own demand — that multiple is
+        // the belly's surplus over the summed demands, shared out.
+        const lo = Math.min(...ratios.map((r) => r.ratio));
+        const hi = Math.max(...ratios.map((r) => r.ratio));
+        const spread = hi / lo;
+        if (spread > worst.spread) {
+          worst = { at: `${focus.id} (${locale}) ${ratios[0]!.lane.parentKey ?? "?"}`, spread };
+        }
+        // Only pairs whose names actually differ are evidence: two equal names
+        // are drawn equally under either rule.
+        const widths = new Set(shut.map((lane) => Math.round(lane.labelWidth)));
+        if (widths.size > 1) pairs += 1;
+        assert.ok(
+          spread <= 1.01,
+          `${focus.id} (${locale}): steps of one chain are drawn ${spread.toFixed(2)}× apart `
+            + `relative to their own demands — `
+            + ratios.map((r) => `${r.lane.label}: ${Math.round(r.lane.x1 - r.lane.x0)}px for ${Math.round(r.lane.labelWidth)}px`).join("; "),
+        );
+      }
+    }
+  }
+  console.log(`[chain proportions] ${pairs} chains carry two shut steps with different names, worst spread ${worst.spread.toFixed(3)} (${worst.at})`);
+  // Not vacuous: a sweep that found no chain with two differently-named shut
+  // steps would pass every assertion above without measuring anything.
+  assert.ok(pairs > 0, "no chain on the corpus has two shut steps with different names — this measured nothing");
 });
 
 test("on the overview, opening a line comes back to the overview", () => {
@@ -3761,20 +3859,40 @@ test("firstOrderRun is a share of the line, floored by the bow and ceilinged", (
  */
 const SIZE_CEILING = {
   /**
-   * Widest figure, fully opened, either locale. Today **6,955** —
-   * `nonlinear-ode-solve` in `ja`, after W15's dedup took `linear-ode-solve`
-   * (10,573 before, the old holder) apart: a shared interior draws once per
-   * figure, and the width was mostly parallel copies of the same fans. The
-   * pre-W15 history: 9,571 before first-order lines started taking a share of
-   * themselves as tendon (`firstOrderRun`, session 112), then 10,867, then
-   * 294px back off via `tendonAngleDeg` 76° (session 115).
+   * Widest figure, fully opened, either locale. Today **5,908** —
+   * `quantum-linear-solve` in `en`.
+   *
+   * **Lowered from 8,000, which is the opposite of the move this block warns
+   * about, and it is calibrated rather than chosen.** The holder before this
+   * session was `nonlinear-ode-solve` (ja) at **7,083**, under the rule that
+   * cut a chain's belly into equal slices and sized the column at `k × widest`
+   * to pay for them. Cutting by demand instead (`chainColumnNeed`,
+   * `levelShares`) took the summed width of all 44 figure-locales from 78,867
+   * to 66,517px, and this figure with it. So 7,000 is the number that makes the
+   * ceiling a real gate on that change: **the geometry it replaced does not fit
+   * under it**, while today's widest has 1,092px — 18% — of room to grow, which
+   * is more headroom in relative terms than the 917px the old 8,000 left.
+   *
+   * The pre-W15 history, kept because it is the record of what each shape
+   * cost: `linear-ode-solve` held it at 10,573 before a shared interior drew
+   * once per figure; 9,571 before first-order lines took a share of themselves
+   * as tendon (`firstOrderRun`, session 112), then 10,867, then 294px back off
+   * via `tendonAngleDeg` 76° (session 115).
    */
-  saturatedWidth: 8_000,
+  saturatedWidth: 7_000,
   /**
-   * Tallest, same sweep. Today **6,056** — `nonlinear-ode-solve` in `en`,
-   * re-measured at the merge after the branch took dev's 360–362 on board (the
-   * 6,395 recorded at authoring predated those; the PR body's 5,142 is
-   * `linear-ode-solve` en — the motivating figure's drop, never the max).
+   * Tallest, same sweep. Today **5,646** — `nonlinear-ode-solve` in `en`, and
+   * **untouched by the width work above**, which is worth recording rather than
+   * leaving as a silent null result: cutting a chain's belly by demand moves x
+   * and only x, so the height is the same 5,646 before and after. The vertical
+   * half of the owner's ask (`5314ca`, "much less horizontal *and vertical*
+   * tolerance") is therefore still owed, and this number is what it will be
+   * measured against.
+   *
+   * The 6,056 this note used to quote was `nonlinear-ode-solve` en re-measured
+   * at the W15 merge (the 6,395 recorded at authoring predated dev's 360–362;
+   * the PR body's 5,142 is `linear-ode-solve` en — the motivating figure's drop,
+   * never the max).
    *
    * **This is the ceiling coming back down, as D119.6 promised it would.** The
    * 22,982px `linear-ode-solve` fan that moved the ceiling 16,000 → 24,000 was
@@ -3791,8 +3909,14 @@ const SIZE_CEILING = {
   saturatedHeight: 8_000,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
-   * arrival. Today **1,045** against a 1,204px canvas, so this one is nearly
-   * tight on purpose: past 1,204 every figure arrives scaled down to fit.
+   * arrival. Today **824** against a 1,204px canvas — 963 before this session,
+   * and the 139px came off a figure with nothing open because a composite run
+   * lane is open *by construction* (`planForSlot` sets `open: true` on a
+   * multi-edge run), so a shut figure contains chains and the demand-cut
+   * reaches them too. The ceiling stays at 1,400 rather than following the
+   * measurement down: past 1,204 every figure arrives scaled down to fit, and
+   * a bar between the measurement and that cliff is the one that reports a
+   * regression before a reader sees it.
    *
    * **Session 115 shortened the columns and did not move this number**, which is
    * worth writing down rather than reading as a null result. `nonlinear-ode-solve`

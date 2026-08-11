@@ -374,6 +374,40 @@ async def list_users_by_email(session: AsyncSession, email: str) -> list[tuple[A
     return [(row.id, row.workos_user_id) for row in rows]
 
 
+async def list_catalog_reviewer_grants(
+    session: AsyncSession, *, workspace_id: Any
+) -> list[tuple[Any, Role, str]]:
+    """Every membership of the catalog workspace, as `(user_id, role, workos_user_id)`.
+
+    The WorkOS id is joined in because the rule that reads this has to tell a
+    live account from one the environment switch retired — the same distinction
+    `pick_live_reviewer` exists for, and the most likely reason this workspace
+    would ever carry two ADMIN memberships.
+
+    The reviewer principal is not stored in configuration anywhere — it exists
+    only as the ADMIN membership `catalog.grant_catalog_reviewer` wrote the
+    first time a human attested. This returns the whole membership set rather
+    than filtering to ADMIN in SQL, for the same reason `list_users_by_email`
+    returns every row: the **rule** for which membership is the standing
+    reviewer belongs with its caller (`catalog_admin.pick_standing_reviewer`),
+    where it is tested without a database, and a rule cannot refuse an
+    ambiguity it was never shown.
+
+    Provisioning writes the importer as OWNER and the public reader as VIEWER
+    (`ensure_system_catalog_authority`), so role alone separates the humans from
+    the service identities — but the caller re-checks the ids, because "no
+    service identity holds ADMIN" is an invariant of a different function.
+    """
+    rows = (
+        await session.execute(
+            select(Membership.user_id, Membership.role, User.workos_user_id)
+            .join(User, User.id == Membership.user_id)
+            .where(Membership.workspace_id == workspace_id)
+        )
+    ).all()
+    return [(row.user_id, row.role, row.workos_user_id) for row in rows]
+
+
 async def _existing_user(
     session: AsyncSession, workos_user_id: str
 ) -> tuple[User, Workspace] | None:

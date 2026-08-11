@@ -441,6 +441,111 @@ export const LAYER_GRAPH: LayerGraph = {
     // one, went green, and the claim above survived twenty-odd merges. A pin is
     // only a fix once something reads it.
     via: { "time-discretization": "truncated-taylor-propagator" },
+
+    // **The listing, and it is a transcription** — the standard `forward-euler`
+    // set above it. Its parameters, its assembly and its extraction are this
+    // record's own `summary`, `conditions`, `cost`, `steps`, `via` and the two
+    // hop notes below; the rest is Berry, Childs, Ostrander and Wang's own
+    // statement of the algorithm (arXiv:1701.03684 §7, "Statement of the
+    // Algorithm"), read from the full PDF.
+    //
+    // **The shape is the argument.** The amplification loop is drawn AROUND the
+    // solve rather than after it, because that is where §7 puts it and it is
+    // what distinguishes this route from an implicit stepper: the whole horizon
+    // is one system solved once per amplification round, not one solve per time
+    // step. A reader comparing this listing with `backward-euler`'s sees the
+    // difference the map draws as `repeats` on one route and nothing on this
+    // one.
+    //
+    // `text` is deliberately absent: the paper reports no run, so prose
+    // describing one would be invented. The register row for arxiv:1701.03684
+    // says `simulation: "unknown"` on an abstract basis, and `--closure` reports
+    // this method as `unread` rather than as having nothing to write up.
+    example: {
+      pseudocode: [
+        "given  A (constant coefficients, diagonalizable A = V D V^-1, Re(lambda_i) <= 0),",
+        "       b, x_in with known norms ||x_in||, ||b||, horizon T, error budget e <= 1/2,",
+        "       oracles O_A for the entries of A, and controlled O_x, O_b",
+        "",
+        "set    h     = T / ceil(T ||A||)",
+        "       m = p = T/h = ceil(T ||A||)",
+        "       g     = max_{t in [0,T]} ||x(t)|| / ||x(T)||",
+        "       delta = e / (25 sqrt(m) g)                   # the solver's error budget",
+        "       Omega = 70 g kappa_V m^{3/2} (||x_in|| + T ||b||) / (e ||x(T)||)",
+        "       k     = ceil( 2 log(Omega) / log log(Omega) )   # ensures (k+1)! >= Omega",
+        "",
+        "# --- time-discretization, via truncated-taylor-propagator -------------------",
+        "assemble  C_{m,k,p}(Ah) x = |0>|x_in> + h sum_{i=0..m-1} |i(k+1)+1>|b>",
+        "    Taylor-term rows :  x_{i,j} = (Ah/j) x_{i,j-1},   2 <= j <= k",
+        "                        x_{i,1} = Ah x_{i,0} + h b",
+        "    step-closing row :  x_{i,0} = sum_{j=0..k} x_{i-1,j}",
+        "    padding rows     :  x_{m,j} = x_{m,j-1},          1 <= j <= p",
+        "    # sparse and well-conditioned: O(ks) nonzeros per row or column, and",
+        "    # condition number O(kappa_V k m) by Theorem 5.  Unlike with finite",
+        "    # difference methods, no additional hypothesis is needed to ensure",
+        "    # numerical stability.",
+        "",
+        "repeat O(g) times, coherently -- the amplitude amplification rounds:",
+        "",
+        "    # --- own work: prepare the right-hand side ---",
+        "    prepare |0>|x_in> + h sum_{i=0..m-1} |i(k+1)+1>|b>",
+        "        # a constant number of calls to O_x and O_b, poly(log(mk)) gates",
+        "",
+        "    # --- quantum-linear-solve ---",
+        "    solve C_{m,k,p}(Ah) x = (that state) with a QLSA, to within delta of the",
+        "        normalised solution",
+        "        # this route reduces to a quantum linear solve; it does not remove",
+        "        # that layer",
+        "",
+        "    # --- own work: extract the answer ---",
+        "    measure the first register in the standard basis",
+        "    accept iff the outcome lies in S = {m(k+1), ..., m(k+1)+p}",
+        "        # the last p+1 blocks all hold x_{m,0}, the state at time T",
+        "        # one round accepts with probability at least 1/78 g^2  (p = m)",
+        "",
+        "return the second register -- a state e-close to x(T)/||x(T)||, with a flag",
+        "       indicating success",
+      ].join("\n"),
+    },
+    hops: {
+      // **The two delegated hops of this route, and the first pair authored by
+      // the B4 closure pass** (2026-08-12). Both transcribe Berry, Childs,
+      // Ostrander and Wang, arXiv:1701.03684, read as a full PDF rather than an
+      // abstract or an ar5iv render: the replacement and the row recurrences are
+      // §2 Eqs. (2)-(5) and (12)-(14), the two lemma bounds are Appendix A
+      // Lemmas 10 and 12, the hypotheses and the accumulated bound are Theorem 6,
+      // and the conditioning of the assembled system is Theorem 5, Eq. (70).
+      //
+      // **Two things a second reader changed, and they are why the pass had a
+      // second reader.** The first draft's approximation mark said the lemmas
+      // "bound each replacement by 1/(k+1)!" — the paper bounds the *unscaled*
+      // pair, so the b-term carries an extra factor h, and the draft's own
+      // quoted Eq. (77) contradicted its gloss of it. The first draft's
+      // assumption mark listed only the step size and k >= 5, (k+1)! >= 2m;
+      // Theorem 6 is stated for a **diagonalizable** A with Re(lambda_i) <= 0,
+      // without which Lemma 10 does not apply at all, and its bound carries
+      // kappa_V. Both marks now say what the paper says.
+      //
+      // **A third note was authored for this method's own stretch and is
+      // deliberately not here.** `taylor-all-at-once` delegates both hops and
+      // its second one already lands on the slot's exit state, so `routeOf`
+      // gives it no own segment: a note keyed `"taylor-all-at-once"` would pass
+      // `validateLayerGraph` and render nowhere. Same for `krovi-linear-ode` and
+      // `dyson-all-at-once` below. `--closure` counts drawn stretches for
+      // exactly this reason.
+      "time-discretization": {
+        theory:
+          "Over one step of length $h$ the exact solution $\\vec{x}(h) = e^{Ah}\\vec{x}(0) + (e^{Ah} - I)A^{-1}\\vec{b}$ is replaced by $T_k(Ah)\\vec{x}(0) + S_k(Ah)h\\vec{b}$, where $T_k(z) = \\sum_{j=0}^{k} z^j/j!$ and $S_k(z) = \\sum_{j=1}^{k} z^{j-1}/j!$. [[approximation: $T_k(Ah)$ stands in for $e^{Ah}$ and $S_k(Ah)h$ for $(e^{Ah}-I)A^{-1}$. Lemmas 10 and 12 bound the two replacements in their unscaled form, $\\lvert T_k(z) - e^{z}\\rvert \\le 1/(k+1)!$ and $\\lvert S_k(z) - (e^{z}-1)z^{-1}\\rvert \\le 1/(k+1)!$, so the $\\vec{b}$ term picks up a factor $h$ when the bound is carried to the step above.]] Each Taylor term becomes one row of $C_{m,k,p}(Ah)$ built from the row before it, $x_{i,j} = (Ah/j)\\,x_{i,j-1}$ for $2 \\le j \\le k$ with $x_{i,1} = Ah\\,x_{i,0} + h\\,b$, and the row that closes a step sums them, $x_{i,0} = \\sum_{j=0}^{k} x_{i-1,j}$. [[assumption: The step is short — $h \\le 1/\\lVert A\\rVert$, so $\\lVert Ah\\rVert \\le 1$ — and the lemmas hold only for $\\lvert z\\rvert \\le 1$ with $\\operatorname{Re}(z) \\le 0$, which is why Theorem 6 is stated for a diagonalizable $A = VDV^{-1}$ whose every eigenvalue satisfies $\\operatorname{Re}(\\lambda_i) \\le 0$, with $k \\ge 5$ and $(k+1)! \\ge 2m$; its accumulated bound carries $\\kappa_V = \\lVert V\\rVert\\,\\lVert V^{-1}\\rVert$.]]",
+        theoryJa:
+          "長さ $h$ の 1 ステップについて、厳密解 $\\vec{x}(h) = e^{Ah}\\vec{x}(0) + (e^{Ah} - I)A^{-1}\\vec{b}$ を $T_k(Ah)\\vec{x}(0) + S_k(Ah)h\\vec{b}$ で置き換えます。ここで $T_k(z) = \\sum_{j=0}^{k} z^j/j!$、$S_k(z) = \\sum_{j=1}^{k} z^{j-1}/j!$ です。[[approximation: $e^{Ah}$ を $T_k(Ah)$ が、$(e^{Ah}-I)A^{-1}$ を $S_k(Ah)h$ が肩代わりします。補題 10 と補題 12 が評価するのは尺度をかけない形の $\\lvert T_k(z) - e^{z}\\rvert \\le 1/(k+1)!$ と $\\lvert S_k(z) - (e^{z}-1)z^{-1}\\rvert \\le 1/(k+1)!$ ですので、上のステップへ持ち上げると $\\vec{b}$ の項には $h$ の因子が付きます。]] Taylor 級数の各項は $C_{m,k,p}(Ah)$ の 1 行となり、直前の行から $x_{i,j} = (Ah/j)\\,x_{i,j-1}$（$2 \\le j \\le k$、ただし $x_{i,1} = Ah\\,x_{i,0} + h\\,b$）として作られ、ステップを閉じる行がそれらを足し合わせて $x_{i,0} = \\sum_{j=0}^{k} x_{i-1,j}$ とします。[[assumption: 刻み幅が短いこと、すなわち $h \\le 1/\\lVert A\\rVert$ より $\\lVert Ah\\rVert \\le 1$ であることを前提とします。上の補題が成り立つのは $\\lvert z\\rvert \\le 1$ かつ $\\operatorname{Re}(z) \\le 0$ の場合だけですので、定理 6 は $A = VDV^{-1}$ と対角化でき、すべての固有値が $\\operatorname{Re}(\\lambda_i) \\le 0$ を満たす行列について述べられており、さらに $k \\ge 5$ かつ $(k+1)! \\ge 2m$ を要求します。積み上げた評価には対角化行列の条件数 $\\kappa_V = \\lVert V\\rVert\\,\\lVert V^{-1}\\rVert$ が現れます。]]",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The system handed down is $C_{m,k,p}(Ah)\\,x = \\lvert 0\\rangle\\lvert x_{\\mathrm{in}}\\rangle + h\\sum_{i=0}^{m-1} \\lvert i(k+1)+1\\rangle\\lvert b\\rangle$, a $(d+1)N \\times (d+1)N$ matrix with $d = m(k+1)+p$ and, for $A$ of sparsity $s$, $O(ks)$ nonzero entries in any row or column; it is nonsingular because it is lower triangular with nonzero diagonal entries. Theorem 5 bounds its condition number by $\\kappa_C \\le 6\\kappa_V k(m+p)$, which at the algorithm's parameter choice $m = p = \\lceil T\\lVert A\\rVert\\rceil$ is $O(\\kappa_V k m)$. [[assumption: $A = VDV^{-1}$ is diagonalizable with $\\lVert A\\rVert \\le 1$ and $\\operatorname{Re}(\\lambda_i) \\le 0$ for every eigenvalue, and $k \\ge 5$ with $(k+1)! \\ge 2m$; the bound is in terms of $\\kappa_V = \\lVert V\\rVert\\,\\lVert V^{-1}\\rVert$, the condition number of the diagonalizing $V$.]] [[approximation: The solver returns a state only $\\delta$-close to the normalised solution, with $\\delta = \\varepsilon/(25\\sqrt{m}\\,g)$ chosen so that the extracted state is $\\varepsilon$-close.]]",
+        theoryJa:
+          "下層に渡される系は $C_{m,k,p}(Ah)\\,x = \\lvert 0\\rangle\\lvert x_{\\mathrm{in}}\\rangle + h\\sum_{i=0}^{m-1} \\lvert i(k+1)+1\\rangle\\lvert b\\rangle$ です。これは $d = m(k+1)+p$ とする $(d+1)N \\times (d+1)N$ 行列で、$A$ の疎性を $s$ とすると任意の行・列の非零成分は $O(ks)$ 個であり、対角成分が非零の下三角行列ですので正則です。定理 5 はその条件数を $\\kappa_C \\le 6\\kappa_V k(m+p)$ と抑えており、アルゴリズムのパラメータ選択 $m = p = \\lceil T\\lVert A\\rVert\\rceil$ のもとでは $O(\\kappa_V k m)$ となります。[[assumption: $A = VDV^{-1}$ と対角化でき、$\\lVert A\\rVert \\le 1$ かつすべての固有値が $\\operatorname{Re}(\\lambda_i) \\le 0$ を満たすこと、および $k \\ge 5$ かつ $(k+1)! \\ge 2m$ であることを前提とします。評価は対角化行列 $V$ の条件数 $\\kappa_V = \\lVert V\\rVert\\,\\lVert V^{-1}\\rVert$ を用いて述べられています。]] [[approximation: ソルバーが返すのは正規化された解に $\\delta$ まで近い状態にすぎません。$\\delta = \\varepsilon/(25\\sqrt{m}\\,g)$ は、取り出される状態が $\\varepsilon$ まで近くなるように選ばれています。]]",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
@@ -492,6 +597,74 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "The paper's own framing: the norm of the matrix exponential characterizes the run time of quantum algorithms for linear ODEs. The precise bound is not reproduced here.",
     costJa: "論文自身の言い方では、線形常微分方程式に対する量子アルゴリズムの実行時間を特徴づけるのは行列指数のノルムです。厳密な評価式はここでは再掲しません。",
     steps: ["time-discretization", "quantum-linear-solve"],
+
+    // A transcription, from Krovi arXiv:2202.01054 §4-§5.4 plus this record's own
+    // fields. It is deliberately NOT the parent's listing with names changed:
+    // what differs is the operator the steps are packed into (L = I - N) and the
+    // quantity the conditioning is charged against, and those are the lines a
+    // reader is here for. `text` absent for the same reason as the parent's.
+    example: {
+      pseudocode: [
+        "given  sparse A, b, x_0 through the oracles O_A, O_b, O_x;  horizon T;  error e",
+        "",
+        "choose the parameters (Theorem 7):",
+        "    h = T / ceil(T ||A||),   m = p = T/h = ceil(T ||A||),   delta <= e/2",
+        "    Omega = e^3 T ||A|| (1 + T e^2 ||b|| / ||x_T||)",
+        "    k = ceil( 2 log Omega / log log Omega )        # this choice makes (k+1)! > Omega",
+        "",
+        "# the discretization is the parent's truncated Taylor recurrence:",
+        "#     y_{i+1} = T_k(Ah) y_i + S_k(Ah) h b        over the m steps",
+        "# what is different here is the operator it is packed into",
+        "",
+        "build  L = I - N  from block encodings:",
+        "    M_1 = sum_{j=0..k-1}  |j+1><j|  (x)  Ah/(j+1)",
+        "    M_2 = sum_{j=0..k}    |0><j|    (x)  I",
+        "    N   = sum_{i=0..m}       |i+1><i| (x) M_2 (I - M_1)^{-1}",
+        "        + sum_{i=m+1..m+p-1} |i+1><i| (x) I          # the p padding steps, the \"ramp\"",
+        "",
+        "prepare  |psi_in> = |0,0,x_0> + h sum_{i=0..m-1} |i,1,b>",
+        "    # one call each to O_x and O_b, plus polylog(m) elementary gates",
+        "",
+        "solve  L |y> = |psi_in>  with the QLSA               # the layer below",
+        "    # kappa_L <= (m+p) C(A) (1+delta) e (1+e),  C(A) = sup_{t in [0,T]} ||exp(At)||",
+        "    # this is the whole point of the reanalysis: the kappa charged here is bounded",
+        "    # through the norm of the matrix exponential, not through kappa_V",
+        "",
+        "measure the time-step register; keep the outcomes m, ..., m+p-1",
+        "    # succeeds with probability >= 1/(18 g^2),  g = max_t ||x(t)|| / ||x(T)||",
+        "    # amplitude amplification to constant success multiplies the cost by g",
+        "",
+        "return the collapsed state  y_m / ||y_m||            # within 2*delta <= e of x_T/||x_T||",
+      ].join("\n"),
+    },
+    hops: {
+      // Krovi, arXiv:2202.01054, full text. The point of both notes is what this
+      // FOLDED refinement re-analyses rather than what it re-builds: the step is
+      // the parent's truncated-Taylor recurrence (§4), and what changes is the
+      // operator it is packed into, L = I - N, and the conditioning bound that
+      // travels with it — Theorem 4's kappa_L through C(A) = sup ||exp(At)||,
+      // where the parent's Theorem 5 gave kappa_C through kappa_V. That
+      // substitution is the paper's contribution and it is why the two notes
+      // quote different theorems from the parent's two.
+      //
+      // The assumption mark on the solve hop is Krovi's own caveat, not ours:
+      // C(A) has to be finite and checkable, and he answers the objection by
+      // observing that bounding a condition number is no easier. Recorded
+      // because a refinement whose whole claim is "a better quantity" must say
+      // what the better quantity costs to know.
+      "time-discretization": {
+        theory:
+          "The step itself is the parent's truncated-Taylor recurrence, $y_{i+1} = T_k(Ah)y_i + S_k(Ah)hb$ over $m = \\lceil T/h \\rceil$ steps; what Krovi changes is the operator it is packed into — $L = I - N$, with $N$ built from $M_2(I-M_1)^{-1}$ — picked, in his own words, because it is easier to analyze (§4). [[approximation: The propagator $e^{Ah}$ is replaced by its $k$-term Taylor sum $T_k(Ah)$, whose remainder obeys $||R_k(Ah)|| \\le e/(k+1)!$ (Lemma 12); Theorem 3 then fixes $k$ by $(k+1)! \\ge (me^3/\\delta)(1 + Te^2||b||/||x_T||)$, and Remark 6 records that this $k$ \"does not depend on the condition number of the matrix $A$ or its diagonalizing matrix\".]] [[assumption: $||Ah|| \\le 1$, and $me^2/(k+1)! \\le 1$.]] The conditioning bound that goes down with the system is Theorem 4's $\\kappa_L \\le (m+p)C(A)(1+\\delta)e(1+e)$, with $C(A) = \\sup_{t \\in [0,T]} ||e^{At}||$ — where the parent's Theorem 5 gave $\\kappa_C \\le 6\\kappa_V k(m+p)$.",
+        theoryJa:
+          "工程そのものは親と同じ Taylor 打ち切りの漸化式で、$y_{i+1} = T_k(Ah)y_i + S_k(Ah)hb$ を $m = \\lceil T/h \\rceil$ ステップ繰り返します。Krovi が変えるのはそれを収める作用素で、$M_2(I-M_1)^{-1}$ から組み立てた $N$ による $L = I - N$ です。本人の言葉では「解析しやすい」ことが選択の理由です（第 4 節）。[[approximation: 伝播子 $e^{Ah}$ を $k$ 項の Taylor 和 $T_k(Ah)$ で置き換えます。剰余は補題 12 により $||R_k(Ah)|| \\le e/(k+1)!$ で抑えられ、定理 3 は $(k+1)! \\ge (me^3/\\delta)(1 + Te^2||b||/||x_T||)$ によって $k$ を定めます。注意 6 は、この $k$ が「行列 $A$ の条件数にも、その対角化行列の条件数にも依存しない」ことを記しています。]] [[assumption: $||Ah|| \\le 1$ かつ $me^2/(k+1)! \\le 1$ であること。]] 系とともに下層へ渡される条件数の評価は、定理 4 の $\\kappa_L \\le (m+p)C(A)(1+\\delta)e(1+e)$ です。ここで $C(A) = \\sup_{t \\in [0,T]} ||e^{At}||$ であり、親の定理 5 が与えていた $\\kappa_C \\le 6\\kappa_V k(m+p)$ に代わるものです。",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The assembled system $L|y\\rangle = |\\psi_{in}\\rangle$ is handed to a QLSA costing $O(\\kappa \\log(1/\\varepsilon))$ oracle calls, and this is the hop the re-analysis is aimed at: the $\\kappa$ charged here is $\\kappa_L$, bounded through $C(A) = \\sup_{t \\in [0,T]}||e^{At}||$ rather than through the eigenvector condition number $\\kappa_V$, and Theorem 6 puts the query complexity at $O(sk\\kappa_L\\,\\mathrm{polylog}(k,m,d,\\kappa_L,1/\\varepsilon))$. [[assumption: The substituted quantity has to be finite and checkable — \"to verify that $C(A)$ is bounded is not always an easy task\", which Krovi answers by observing that bounding a condition number, or checking diagonalizability, is no easier.]] [[approximation: $L$ is never held exactly: $I-M_1$ is block-encoded from the sparse-access oracles, inverted by Lemma 2 and multiplied by $M_2$, each factor only an $(\\alpha,a,\\epsilon)$ block encoding, so the per-factor error must be driven to $\\epsilon_1 \\le O(\\varepsilon/(\\kappa_L k \\log(1/\\varepsilon)))$ for the total to stay $\\varepsilon$.]]",
+        theoryJa:
+          "組み上げた系 $L|y\\rangle = |\\psi_{in}\\rangle$ は、オラクル呼び出し $O(\\kappa \\log(1/\\varepsilon))$ 回の QLSA に渡されます。再解析が狙うのはまさにこの工程です。ここで課される $\\kappa$ は $\\kappa_L$ であり、固有ベクトル行列の条件数 $\\kappa_V$ ではなく $C(A) = \\sup_{t \\in [0,T]}||e^{At}||$ を通して評価されます。定理 6 はクエリ計算量を $O(sk\\kappa_L\\,\\mathrm{polylog}(k,m,d,\\kappa_L,1/\\varepsilon))$ としています。[[assumption: 置き換えた量は有限であり、かつ確かめられる必要があります。「$C(A)$ が有界であることを確かめるのは、必ずしも容易な作業ではない」と述べられており、Krovi は条件数の評価や対角化可能性の確認も同程度に難しいと答えています。]] [[approximation: $L$ を厳密に保持することはありません。$I-M_1$ を疎アクセスのオラクルからブロック符号化し、補題 2 で逆行列を作り、$M_2$ を掛けます。各因子は $(\\alpha,a,\\epsilon)$ ブロック符号化にすぎませんので、全体の誤差を $\\varepsilon$ に収めるには、因子ごとの誤差を $\\epsilon_1 \\le O(\\varepsilon/(\\kappa_L k \\log(1/\\varepsilon)))$ まで下げる必要があります。]]",
+      },
+    },
     citations: [
       { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
@@ -522,6 +695,73 @@ export const LAYER_GRAPH: LayerGraph = {
     // quantum linear equation solver"* and names none of the five recorded ways
     // through `quantum-linear-solve`, so a pin there would be a guess.
     via: { "time-discretization": "truncated-dyson-series" },
+
+    // A transcription, from Berry and Costa arXiv:2212.03544 §2.1 and §4.1 plus
+    // this record's own fields. The held rows after step r are in the listing
+    // because they are what makes R = 2r and therefore what the conditioning
+    // bound handed down depends on — omitting them would leave the kappa in the
+    // hop note below unexplained.
+    example: {
+      pseudocode: [
+        "given  A(t) with non-positive logarithmic norm, b(t), x_0, horizon T, budget e",
+        "       the parameters provided through the unitaries U_A, U_b, U_x",
+        "       with known normalisations lambda_A, lambda_b, lambda_x",
+        "       x_max >= max_t ||x(t)||",
+        "",
+        "split [0,T] into r steps of length dt = T / ceil(lambda_A T)",
+        "    # dt taken as large as lambda_A dt <= 1 allows, which is what makes r = lambda_A T",
+        "",
+        "# encode the Dyson series in a system of linear equations",
+        "for each step m = 1 ... r:",
+        "    V_m = W_K(m dt, (m-1) dt)    # the Dyson series for the propagator, truncated at K",
+        "    v_m = v_K(m dt, (m-1) dt)    # the same integrals with b(t_k) in place of A(t_k)",
+        "    # forming these two is this route's time discretization",
+        "",
+        "assemble the lower bidiagonal block system  AA X = B  over R = 2r rows:",
+        "    row 0       :  x~(0)                            = x_0     # the initial condition",
+        "    row m <= r  :  x~(m dt) - V_m x~((m-1) dt)      = v_m     # one row per time step",
+        "    row m > r   :  x~(m dt) -     x~((m-1) dt)      = 0       # solution held constant",
+        "    # the trailing rows do not evolve anything; they are there to boost the success",
+        "    # probability of the final amplitude amplification",
+        "    # AA is the paper's block matrix; kappa_AA = ||AA|| ||AA^-1|| = O(R) = O(lambda_A T)",
+        "",
+        "prepare B, and amplitude-amplify its state preparation to amplitude Theta(1)",
+        "    # B is prepared twice inside the solver's walk step; without this boost the",
+        "    # success amplitude would enter squared",
+        "",
+        "solve  AA X = B  with the optimal quantum linear equation solver",
+        "    # O(kappa_AA log(1/e)) calls to the block encodings of AA and B",
+        "",
+        "amplitude-amplify the component of X over rows r+1 ... R",
+        "    # O(x_max / ||x(T)||) steps on average",
+        "",
+        "return the state approximating |x(T)>",
+      ].join("\n"),
+    },
+    hops: {
+      // Berry and Costa, arXiv:2212.03544, full text (the accepted Quantum
+      // version). §2.1.1 Eqs. (19)-(26) for the bidiagonal block system,
+      // §2.1.2 for the truncated propagator blocks, §4.1 Theorem 4.1 and its
+      // proof for the conditioning and the solver count.
+      //
+      // Two assumption marks rather than one, because the paper needs two
+      // different things and they fail differently: a non-positive logarithmic
+      // norm is what bounds ||A^{-1}|| at all, and lambda_A * Delta t <= 1 is a
+      // parameter restriction imposed to keep the block encoding's lambda-value
+      // at O(1). Collapsing them would read as one hypothesis with two clauses.
+      "time-discretization": {
+        theory:
+          "The interval is cut into $r$ steps of length $\\Delta t = T/\\lceil \\lambda_A T \\rceil$ and the steps become rows of one lower bidiagonal block system $\\mathcal{A}\\mathcal{X} = \\mathcal{B}$, row $m$ reading $\\tilde{x}(m\\Delta t) = V_m x((m-1)\\Delta t) + v_m$ with $V_m = W_K(m\\Delta t,(m-1)\\Delta t)$ the truncated Dyson propagator over that step and $v_m = v_K(m\\Delta t,(m-1)\\Delta t)$ its driven counterpart. [[assumption: $A(t)$ has non-positive logarithmic norm, which gives $\\|W(t,t_0)\\| \\le 1$ and is what bounds $\\|\\mathcal{A}^{-1}\\| \\le R(1+\\varepsilon) = O(R)$, hence $\\kappa_{\\mathcal{A}} = O(R)$.]] [[assumption: $\\lambda_A \\Delta t \\le 1$, the restriction limiting how large $\\Delta t$ can be, imposed to keep the $\\lambda$-value of the block encoding of $\\mathcal{A}$ at $O(1)$; it is what fixes $r = \\lambda_A T$.]] Rows $r+1$ to $R$ hold the solution constant rather than evolving it, and with an equal number of held and evolving steps, $R = 2r$, the condition number handed down is $\\kappa_{\\mathcal{A}} = O(\\lambda_A T)$.",
+        theoryJa:
+          "区間を長さ $\\Delta t = T/\\lceil \\lambda_A T \\rceil$ の $r$ ステップに分割し、各ステップを一つの下二重対角ブロック系 $\\mathcal{A}\\mathcal{X} = \\mathcal{B}$ の行とします。第 $m$ 行は $\\tilde{x}(m\\Delta t) = V_m x((m-1)\\Delta t) + v_m$ で、$V_m = W_K(m\\Delta t,(m-1)\\Delta t)$ はそのステップ上の打ち切り Dyson 伝播子、$v_m = v_K(m\\Delta t,(m-1)\\Delta t)$ はこれに対応する駆動項です。[[assumption: $A(t)$ の対数ノルムが非正であること。これにより $\\|W(t,t_0)\\| \\le 1$ となり、$\\|\\mathcal{A}^{-1}\\| \\le R(1+\\varepsilon) = O(R)$ が抑えられて $\\kappa_{\\mathcal{A}} = O(R)$ が得られます。]] [[assumption: $\\lambda_A \\Delta t \\le 1$ であること。これが $\\Delta t$ の大きさを制限する条件であり、$\\mathcal{A}$ のブロック符号化の $\\lambda$ 値を $O(1)$ に保つために課されます。$r = \\lambda_A T$ を定めるのもこの条件です。]] 第 $r+1$ 行から第 $R$ 行までは発展させずに解を保持する行で、発展させる行と保持する行を同数、すなわち $R = 2r$ と取ると、下層に引き渡される条件数は $\\kappa_{\\mathcal{A}} = O(\\lambda_A T)$ となります。",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The assembled system is handed to the optimal quantum linear equation solver of Costa et al., whose complexity is $O(\\kappa_{\\mathcal{A}} \\log(1/\\varepsilon_{\\mathrm{QLSP}}))$ calls to the block encodings of $\\mathcal{A}$ and $\\mathcal{B}$, which here is $O(\\lambda_A T \\log(1/\\varepsilon))$. [[assumption: The solver's error $\\varepsilon_{\\mathrm{QLSP}}$ can be taken proportional to $\\varepsilon$ — that is what the bound $d_{BW} \\le \\varepsilon_{\\mathrm{QLSP}} x_{\\max}\\sqrt{R+1}/\\sqrt{r}$ needs, and it holds because $R = 2r$.]] $\\mathcal{B}$ is prepared twice inside that solver's walk step, which would square its success amplitude, so amplitude amplification boosts the preparation to $\\Theta(1)$ first, at $O((\\lambda_b/\\lambda_A)/(\\min_m \\|v(m\\Delta t,(m-1)\\Delta t)\\| - \\varepsilon x_{\\max}/(\\lambda_A T)))$ steps — the second factor of the constant $R$ in Theorem 4.1. An, Childs and Lin name this hop as what the route pays for: even with the optimal solver the state-preparation oracle for $y$ in $Mx = y$ is queried $O(\\kappa_M \\log(1/\\varepsilon))$ times, so the initial state is queried $\\tilde{O}((\\|u_0\\|/\\|u(T)\\|)\\alpha_A T \\log(1/\\varepsilon))$ times, linearly in $T$ and $\\|A(t)\\|$.",
+        theoryJa:
+          "組み上がった系は Costa らの最適な量子線形方程式ソルバーに渡されます。その計算量は $\\mathcal{A}$ と $\\mathcal{B}$ のブロック符号化への呼び出しで $O(\\kappa_{\\mathcal{A}} \\log(1/\\varepsilon_{\\mathrm{QLSP}}))$ 回、ここでは $O(\\lambda_A T \\log(1/\\varepsilon))$ 回です。[[assumption: ソルバーの誤差 $\\varepsilon_{\\mathrm{QLSP}}$ を $\\varepsilon$ に比例して取れること。評価式 $d_{BW} \\le \\varepsilon_{\\mathrm{QLSP}} x_{\\max}\\sqrt{R+1}/\\sqrt{r}$ が要求するのはこれであり、$R = 2r$ と取っているため成り立ちます。]] $\\mathcal{B}$ はソルバーのウォークステップ内で 2 回準備されますので、そのままでは成功振幅が二乗されます。これを避けるため、先に状態準備へ振幅増幅をかけて $\\Theta(1)$ まで引き上げます。その回数 $O((\\lambda_b/\\lambda_A)/(\\min_m \\|v(m\\Delta t,(m-1)\\Delta t)\\| - \\varepsilon x_{\\max}/(\\lambda_A T)))$ が、定理 4.1 の定数 $R$ の第二の因子です。An・Childs・Lin は、この経路が支払う代価としてまさにこの区間を挙げています。最適なソルバーを用いても $Mx = y$ の $y$ に対する状態準備オラクルへのクエリは $O(\\kappa_M \\log(1/\\varepsilon))$ 回必要であり、その結果、初期状態へのクエリは $\\tilde{O}((\\|u_0\\|/\\|u(T)\\|)\\alpha_A T \\log(1/\\varepsilon))$ 回、$T$ と $\\|A(t)\\|$ に線形に依存します。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -543,6 +783,13 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "計算量は、ユニタリな力学からのずれを定量化する増幅比に線形に依存します。この線形依存はクエリ計算量の下界を達成することが証明されており、最悪の場合にはこれ以上改善できません。",
     steps: ["time-discretization"],
     repeats: {
+      // Fang, Lin and Tong, arXiv:2208.06941, full text. These two notes are
+      // where this route's `repeats` field stops being a bare count: the short-
+      // time propagator is what the loop turns on, and the uniform singular
+      // value amplification is what each turn buys back. The exponential decay
+      // of the success probability in the number of steps — already quoted in
+      // `repeats.note` — is the reason the amplification is inside the loop
+      // rather than after it, and the notes say so at the hop where it happens.
       "time-discretization": {
         count: "once per time step, with an amplification at every one",
         countJa: "各時間ステップにつき 1 回、そのつど増幅を伴います。",
@@ -554,6 +801,55 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     bypasses: ["quantum-linear-solve"],
+
+    // A transcription, from Fang, Lin and Tong arXiv:2208.06941 §1.2, §3.1-3.2
+    // and Theorem 8, plus this record's own `repeats` — whose count *"once per
+    // time step, with an amplification at every one"* is the loop this listing
+    // draws. The two lines that say what does NOT happen (no assembled system,
+    // no linear solve) are `bypasses`, written where a reader of the listing
+    // meets them rather than only on the map.
+    example: {
+      pseudocode: [
+        "given  A(t) on [0,T] with alpha = sup_t ||A(t)||,  Uinit preparing |psi(0)>,  tolerance eps",
+        "",
+        "choose the mesh 0 = t_0 < ... < t_L = T  with  t_l - t_{l-1} <= 1/(2 alpha)",
+        "    # so L = Theta(alpha T) segments",
+        "",
+        "for l = 1 ... L:                    # once per time step",
+        "    # the time-discretization slot, invoked per segment, not once for the whole horizon",
+        "    U_l <- block encoding of  Xi_l = T-ordered exp( int_{t_{l-1}}^{t_l} A(t) dt )",
+        "           # truncated Dyson series (Sec 3.1), or the first-order Magnus step (Sec 5)",
+        "           # consistent to ||Xi_l - Xibar_l|| <= eps_l ||Xi_l||, with sum_l eps_l <= 1/2",
+        "",
+        "    # the amplification, at every turn: subnormalization alpha_l -> ||Xi_l||/(1-delta)",
+        "    Utilde_l <- uniform singular value amplification of U_l, delta = 1/L",
+        "                # oblivious to the state, so no earlier step is re-prepared",
+        "",
+        "# no all-at-once system is assembled and no quantum linear solve is called",
+        "",
+        "counter <- |L>  on ceil(log2 L) + 1 qubits",
+        "apply Utilde_1, ..., Utilde_L in order, each decrementing counter by controlled ADD-dagger",
+        "    # coherent: nothing is measured between turns",
+        "",
+        "post-select counter = |0>              # succeeds with probability Omega(Q^-2)",
+        "amplitude-amplify, O(Q) rounds        # Q = prod_l ||Xi_l|| / |||psi(T)>||",
+        "return the state on the flagged branch",
+      ].join("\n"),
+    },
+    hops: {
+      "time-discretization": {
+        theory:
+          "What this slot returns on this route is a product of step propagators rather than a global system: the mesh is chosen so that $t_l - t_{l-1} \\le (2\\alpha)^{-1}$ with $\\alpha = \\sup_t \\|A(t)\\|$, hence $L = \\Theta(\\alpha T)$ segments, and each segment contributes a block encoding of the short-time propagator $\\Xi_l = \\mathcal{T} e^{\\int_{t_{l-1}}^{t_l} A(t)\\,dt}$. [[approximation: The Dyson series is truncated at order $K$, with error at most $(\\int_a^b \\|A(s)\\|\\,ds)^K / K!$; the segment is cut short precisely so that $\\int_a^b \\|A(s)\\|\\,ds = O(1)$ and a few terms already give high accuracy.]] [[assumption: Each step's integrator $\\bar{\\Xi}_l$ must be consistent with $\\Xi_l$ to $\\|\\Xi_l - \\bar{\\Xi}_l\\| \\le \\varepsilon_l \\|\\Xi_l\\|$ — a precision relative to $\\|\\Xi_l\\|$ and not an absolute one — and the composition theorem additionally needs $\\sum_l \\varepsilon_l \\le 1/2$ across the whole mesh.]] Section 5 pairs the same marching with a first-order truncated Magnus step $\\bar{\\Xi} = e^{\\frac{b-a}{M}\\sum_{k=0}^{M-1} A(a + k(b-a)/M)}$ instead, which is equivalent to dropping the time-ordering operator and needs no time-clocking quantum control logic.",
+        theoryJa:
+          "この経路においてこの層が返すのは大域的な系ではなく、ステップ伝播子の積です。刻みは $t_l - t_{l-1} \\le (2\\alpha)^{-1}$（$\\alpha = \\sup_t \\|A(t)\\|$）を満たすように取りますので区間数は $L = \\Theta(\\alpha T)$ となり、各区間が短時間伝播子 $\\Xi_l = \\mathcal{T} e^{\\int_{t_{l-1}}^{t_l} A(t)\\,dt}$ のブロック符号化をひとつ与えます。[[approximation: Dyson 級数は $K$ 次で打ち切られ、誤差は高々 $(\\int_a^b \\|A(s)\\|\\,ds)^K / K!$ です。$\\int_a^b \\|A(s)\\|\\,ds = O(1)$ となるように区間を短く切っていますので、数項ですでに高い精度が得られます。]] [[assumption: 各ステップの積分子 $\\bar{\\Xi}_l$ は $\\|\\Xi_l - \\bar{\\Xi}_l\\| \\le \\varepsilon_l \\|\\Xi_l\\|$ の精度で $\\Xi_l$ と整合していなければなりません。これは絶対誤差ではなく $\\|\\Xi_l\\|$ に対する相対的な精度であり、さらに合成の定理は刻み全体にわたって $\\sum_l \\varepsilon_l \\le 1/2$ を要求します。]] 第 5 節では、同じ時間前進法を一次の打ち切り Magnus ステップ $\\bar{\\Xi} = e^{\\frac{b-a}{M}\\sum_{k=0}^{M-1} A(a + k(b-a)/M)}$ と組み合わせています。これは時間順序演算子を落とすことに等しく、時刻制御の量子制御論理を必要としません。",
+      },
+      "time-marching-usva": {
+        theory:
+          "Each step's block encoding $U_l$ carries a subnormalization $\\alpha_l \\ge \\|\\Xi_l\\|$, so post-selecting through all $L$ steps succeeds with probability $\\|\\Xi_L \\cdots \\Xi_1 |\\psi(0)\\rangle\\|^2 / (\\alpha_1 \\alpha_2 \\cdots \\alpha_L)^2$; for the Euler step $\\alpha_l = 1 + \\|A\\|T/L$, and that costs $e^{2\\|A\\|T} \\| |\\psi(0)\\rangle \\|^2 / \\| |\\psi(T)\\rangle \\|^2$ trials. Uniform singular value amplification rebuilds each $U_l$ as a $(\\|\\Xi_l\\|/(1-\\delta),\\, m_l+1,\\, \\varepsilon'\\|\\Xi_l\\|)$-block encoding at $O\\!\\left(\\frac{\\alpha_l}{\\delta\\|\\Xi_l\\|}\\log\\frac{\\alpha_l}{\\|\\Xi_l\\|\\varepsilon'}\\right)$ uses of $U_l$, and it is oblivious to the state it acts on, so no earlier step is ever re-prepared; with $\\delta = 1/L$ one has $(1-\\delta)^L = \\Omega(1)$, the denominator becomes $\\|\\Xi_L\\|^2 \\cdots \\|\\Xi_1\\|^2$, and the success probability is $\\Omega(Q^{-2})$ for $Q = \\prod_l \\|\\Xi_l\\| / \\| |\\psi(T)\\rangle \\|$. [[approximation: The amplifying odd polynomial only has to agree with $\\gamma' x$, $\\gamma' = \\alpha_l/\\|\\bar{\\Xi}_l\\|$, on $[-\\gamma'^{-1}, \\gamma'^{-1}]$; because the target is discontinuous there, the Gibbs phenomenon forces it to approximate $(1-\\delta)$ times that target in order to keep $|p(x)| \\le 1$ on $[-1,1]$, and the $1/(1-\\delta)$ left in the subnormalization is what that costs.]] A counter register of $\\lceil \\log_2 L \\rceil + 1$ qubits, started in $|L\\rangle$ and decremented by a controlled $\\mathrm{ADD}^{\\dagger}$ at each successful step, keeps the whole chain coherent, so amplitude amplification runs without duplicating the ancilla register and the $Q$ dependence drops from $O(Q^2)$ to $O(Q)$. [[assumption: Every one of the $L$ steps must have succeeded — the procedure post-selects on the counter register to ensure exactly that, and success is flagged by the measurement result of a single qubit.]]",
+        theoryJa:
+          "各ステップのブロック符号化 $U_l$ は部分正規化因子 $\\alpha_l \\ge \\|\\Xi_l\\|$ を伴いますので、$L$ ステップすべてを後選択して成功する確率は $\\|\\Xi_L \\cdots \\Xi_1 |\\psi(0)\\rangle\\|^2 / (\\alpha_1 \\alpha_2 \\cdots \\alpha_L)^2$ です。Euler ステップでは $\\alpha_l = 1 + \\|A\\|T/L$ となり、$e^{2\\|A\\|T} \\| |\\psi(0)\\rangle \\|^2 / \\| |\\psi(T)\\rangle \\|^2$ 回の試行を要します。一様特異値増幅は各 $U_l$ を $(\\|\\Xi_l\\|/(1-\\delta),\\, m_l+1,\\, \\varepsilon'\\|\\Xi_l\\|)$ ブロック符号化に作り直します。必要な $U_l$ の使用回数は $O\\!\\left(\\frac{\\alpha_l}{\\delta\\|\\Xi_l\\|}\\log\\frac{\\alpha_l}{\\|\\Xi_l\\|\\varepsilon'}\\right)$ であり、作用させる量子状態に依存しない操作ですので、前のステップの状態を作り直す必要はありません。$\\delta = 1/L$ と取れば $(1-\\delta)^L = \\Omega(1)$ となり、分母は $\\|\\Xi_L\\|^2 \\cdots \\|\\Xi_1\\|^2$ に変わって、$Q = \\prod_l \\|\\Xi_l\\| / \\| |\\psi(T)\\rangle \\|$ に対し成功確率は $\\Omega(Q^{-2})$ となります。[[approximation: 増幅に用いる奇多項式は、$\\gamma' = \\alpha_l/\\|\\bar{\\Xi}_l\\|$ として $[-\\gamma'^{-1}, \\gamma'^{-1}]$ の上で $\\gamma' x$ に一致すれば足ります。しかし目標関数はその端で不連続ですので Gibbs 現象が生じ、$[-1,1]$ 上で $|p(x)| \\le 1$ を保つには目標の $(1-\\delta)$ 倍を近似するほかありません。部分正規化因子に残る $1/(1-\\delta)$ がその代価です。]] $\\lceil \\log_2 L \\rceil + 1$ 量子ビットのカウンタレジスタを $|L\\rangle$ から始め、成功のたびに制御 $\\mathrm{ADD}^{\\dagger}$ で 1 ずつ減らすことで、連鎖全体がコヒーレントに保たれます。そのため補助レジスタを複製せずに振幅増幅を行うことができ、$Q$ 依存性は $O(Q^2)$ から $O(Q)$ に下がります。[[assumption: $L$ ステップのすべてが成功していなければなりません。手順はまさにそれを保証するためにカウンタレジスタを後選択し、成功は 1 量子ビットの測定結果によって示されます。]]",
+      },
+    },
     citations: [
       { title: "Time-marching based quantum solvers for time-dependent linear differential equations", authors: "Di Fang, Lin Lin, Yu Tong", year: "2022", url: "https://arxiv.org/abs/2208.06941" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -597,6 +893,48 @@ export const LAYER_GRAPH: LayerGraph = {
     // is that they do **not** end the same way — so the answer is four hop notes,
     // each quoting the paper that owns it, and not a twentieth slot. The whole
     // argument, with the quotes, is `plans/atlas-revamp/W11-readout-stretch.md`.
+
+    // A transcription, from An, Liu and Lin arXiv:2303.01029 — main text
+    // "Implementation" and Supplemental §II and §VI.2 — plus this record's own
+    // fields. Read from the full PDF including the Supplemental Materials, which
+    // the session-123 `cost` read above did not reach.
+    example: {
+      pseudocode: [
+        "given  A(t) = L(t) + iH(t)  with L(t) >= 0 on [0,T],  b(t),  u_0,  tolerance eps",
+        "       O_prep : |0> -> |u_0>",
+        "       O_L(s,tau) = e^{-iL(tau)s},  O_H(s,tau) = e^{-iH(tau)s}",
+        "       O_coef : |0> -> (1/sqrt(||c||_1)) sum_j sqrt(c_j) |j>",
+        "       O_b    : |j'>|0> -> |j'>|b(s_j')>",
+        "",
+        "# 1. truncate and discretize the k-integral of the LCHS identity",
+        "K   = c/eps                          # remainder pi - 2 arctan K = O(1/K) = O(eps)",
+        "k_j = -K + 2jK/M,   w_j = (2 - 1_{j=0,M}) K/M,   c_j = w_j / (pi (1 + k_j^2))",
+        "M   = O(||L|| T / eps^2)             # trapezoidal-rule error",
+        "",
+        "# 2. each surviving term is one Hamiltonian simulation problem",
+        "#      U_j(T) = T exp(-i int_0^T (H(s) + k_j L(s)) ds)",
+        "#    implemented by a p-th order product formula with the SAME step count r for all j",
+        "",
+        "# 3. homogeneous part, by LCU",
+        "apply O_coef (x) O_prep",
+        "for l' = 0 ... r-1:",
+        "    for l = 0 ... Xi_p - 1:",
+        "        apply SEL_L(alpha_l T/r, (l'+gamma_l) T/r)   # sum_j |j><j| (x) e^{-iL(tau) k_j s};",
+        "                                                     # O(log M) queries to O_L",
+        "        apply O_H(beta_l T/r, (l'+delta_l) T/r)",
+        "apply O_coef^dagger on the ancilla register",
+        "",
+        "# 4. inhomogeneous part: the same construction over a two-dimensional trapezoidal",
+        "#    rule in (k,s), with O_b loading |b(s_j')>",
+        "# 5. combine the two with one extra ancilla qubit and a single-qubit rotation",
+        "#    (an outer LCU)",
+        "",
+        "# 6. measure ALL the ancilla registers; if every outcome is 0 the state",
+        "#    approximately encodes u(T).  One shot succeeds with probability",
+        "#    (||T|psi>|| / ||alpha||_1)^2; amplitude amplification raises it to Omega(1)",
+        "#    at O(||alpha||_1 / ||T|psi>||) queries.",
+      ].join("\n"),
+    },
     hops: {
       "lchs-route": {
         theory:
@@ -609,6 +947,30 @@ export const LAYER_GRAPH: LayerGraph = {
           "[[assumption: 「最後に補助レジスタをすべて測定し、結果がすべて 0 であれば、得られる状態が ODE の解 $u(t)$ を近似的に符号化する」とされており、この結果が論文の各定理のいう成功フラグです。]] " +
           "一回の成功確率は (‖T|ψ⟩‖/‖α‖_1)^2 で、振幅増幅により O(‖α‖_1/‖T|ψ⟩‖) 回の問い合わせで $\\Omega(1)$ まで引き上げられます。" +
           "論文には地図が描いていないもう一つの終わり方もあります。ハイブリッド実装で、$⟨u_0|U\\dagger_k O U_k'|u_0⟩$ を Hadamard テストと振幅推定で見積もり、総和は古典的なモンテカルロ標本抽出で取ります。",
+      },
+      // The two delegated hops, authored 2026-08-12 from An, Liu and Lin,
+      // arXiv:2303.01029, read as a full PDF *including the Supplemental
+      // Materials* — which the session-123 `cost` read above explicitly did not
+      // reach. The kernel identity and the Hermiticity of H(s) + k_j L(s) are
+      // the main text's "Implementation" section; the truncation K = O(1/eps),
+      // the quadrature nodes and weights, and M = O(||L||T/eps^2) are
+      // Supplemental §II; the product-formula error and the step count r are
+      // Supplemental §VI.2.
+      //
+      // The second reader found one defect and it was in the evidence rather
+      // than the prose: the draft quoted (S18) without the factor 2 that sits
+      // outside the integral. The prose never used the mis-quoted form.
+      "hamiltonian-recasting": {
+        theory:
+          "The route hands the recasting slot the split $A(t) = L(t) + iH(t)$, with $L(t) = (A(t)+A(t)^\\dagger)/2$ and $H(t) = (A(t)-A(t)^\\dagger)/2i$, and receives back Theorem 1's identity $\\mathcal{T}e^{-\\int_0^t A(s)\\,ds} = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)}\\, \\mathcal{T}e^{-i\\int_0^t (H(s)+kL(s))\\,ds}\\,dk$ — an exact equality between the non-unitary propagator and a Cauchy-weighted integral of unitary ones. [[assumption: Theorem 1 assumes $L(t) \\succeq 0$ for all $t \\in I = [0,T]$; the paper adds that this \"can always be satisfied without loss of generality\" by the substitution $u(t) = e^{ct}v(t)$, which moves the generator to $L(t) + cI + iH(t)$ with $-c$ the minimum over $I$ of the smallest eigenvalues of $L(t)$.]] With a source term present the same kernel carries the inhomogeneous part: by Duhamel's principle the solution also picks up $\\int_0^t \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)}\\, \\mathcal{T}e^{-i\\int_s^t (H(s')+kL(s'))\\,ds'} b(s)\\,dk\\,ds$.",
+        theoryJa:
+          "この経路は書き換えの層に、分解 $A(t) = L(t) + iH(t)$（$L(t) = (A(t)+A(t)^\\dagger)/2$、$H(t) = (A(t)-A(t)^\\dagger)/2i$）を渡し、定理 1 の恒等式 $\\mathcal{T}e^{-\\int_0^t A(s)\\,ds} = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)}\\, \\mathcal{T}e^{-i\\int_0^t (H(s)+kL(s))\\,ds}\\,dk$ を受け取ります。これは非ユニタリな伝播子と、ユニタリな伝播子の Cauchy 重み付き積分との厳密な等式です。[[assumption: 定理 1 は区間 $I = [0,T]$ の全体で $L(t) \\succeq 0$ を仮定します。論文はこの条件が「一般性を失うことなく常に満たしうる」と述べており、$u(t) = e^{ct}v(t)$ と置き換えれば生成子は $L(t) + cI + iH(t)$ になります。ここで $-c$ は $I$ 上の $L(t)$ の最小固有値の最小値です。]] ソース項がある場合も同じカーネルが担います。Duhamel の原理により、解にはさらに $\\int_0^t \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)}\\, \\mathcal{T}e^{-i\\int_s^t (H(s')+kL(s'))\\,ds'} b(s)\\,dk\\,ds$ が加わります。",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "What reaches the simulation slot is one time-dependent Hamiltonian simulation problem per quadrature node: $U_j(T) = \\mathcal{T}e^{-i\\int_0^T (H(s)+k_j L(s))\\,ds}$, whose generator $H(s) + k_j L(s)$ is Hermitian for every real $k_j$. [[approximation: The $k$-integral is first truncated to $[-K,K]$, whose remainder is $\\pi - 2\\arctan K = O(K^{-1}) = O(\\varepsilon)$ so that $K = c/\\varepsilon$, then discretized by a trapezoidal rule at $M+1$ nodes $k_j = -K + 2jK/M$ with weights $w_j$ and coefficients $c_j = w_j/(\\pi(1+k_j^2))$, needing $M = O(\\|L\\|T/\\varepsilon^2)$ points.]] [[approximation: Each $U_j(T)$ is then replaced by a $p$-th order product formula with the same number of steps $r$ for all $j$, whose error is $O(\\Gamma_p^{p+1} K^{p+1} T^{p+1}/r^p)$ and which therefore fixes $r = O(\\Gamma_p^{1+1/p}\\|c\\|_1^{1/p} K^{1+1/p} T^{1+1/p}/\\varepsilon^{1/p})$.]] The family is indexed coherently rather than built one circuit at a time — the select oracle $\\mathrm{SEL}_L(s,\\tau) = \\sum_j |j\\rangle\\langle j| \\otimes e^{-iL(\\tau)k_j s}$ costs $O(\\log M)$ queries to $O_L(s,\\tau)$ — but the truncation is paid for in depth: \"the spectral radius of the Hermitian part $L$ needs to be multiplied by a factor up to the frequency cutoff $K$\", with $K = O(1/\\varepsilon)$ from the kernel's quadratic decay, which \"increases the maximal circuit depth by a factor $\\varepsilon^{-1}$\".",
+        theoryJa:
+          "シミュレーションの層に届くのは、求積の節点ごとにひとつの時間依存ハミルトニアンシミュレーション問題です。すなわち $U_j(T) = \\mathcal{T}e^{-i\\int_0^T (H(s)+k_j L(s))\\,ds}$ であり、その生成子 $H(s) + k_j L(s)$ はどの実数 $k_j$ についてもエルミートです。[[approximation: まず $k$ 積分を $[-K,K]$ に打ち切ります。剰余は $\\pi - 2\\arctan K = O(K^{-1}) = O(\\varepsilon)$ ですので $K = c/\\varepsilon$ と取ります。次に台形則で離散化し、節点 $k_j = -K + 2jK/M$、重み $w_j$、係数 $c_j = w_j/(\\pi(1+k_j^2))$ とします。必要な点数は $M = O(\\|L\\|T/\\varepsilon^2)$ です。]] [[approximation: 続いて各 $U_j(T)$ を、すべての $j$ に共通のステップ数 $r$ をもつ $p$ 次の積公式で置き換えます。その誤差は $O(\\Gamma_p^{p+1} K^{p+1} T^{p+1}/r^p)$ であり、これが $r = O(\\Gamma_p^{1+1/p}\\|c\\|_1^{1/p} K^{1+1/p} T^{1+1/p}/\\varepsilon^{1/p})$ を定めます。]] この族は回路を 1 本ずつ組むのではなくコヒーレントに添字づけられ、select オラクル $\\mathrm{SEL}_L(s,\\tau) = \\sum_j |j\\rangle\\langle j| \\otimes e^{-iL(\\tau)k_j s}$ は $O_L(s,\\tau)$ への $O(\\log M)$ 回の問い合わせで構成できます。しかし打ち切りの代価は深さで支払われます。「エルミート部 $L$ のスペクトル半径には周波数の打ち切り $K$ までの因子が掛かる」とされ、カーネルの二次的な減衰から $K = O(1/\\varepsilon)$ ですので、「回路の最大深さは $\\varepsilon^{-1}$ 倍になる」のです。",
       },
     },
     via: { "hamiltonian-recasting": "lchs-kernel-identity" },
@@ -657,6 +1019,44 @@ export const LAYER_GRAPH: LayerGraph = {
     // parent's — two papers each stating a fact is not the drift that rule
     // guards against. What the note does *not* restate is the difference; that
     // is this method's lede, one click away.
+
+    // A transcription, from An, Childs and Lin arXiv:2312.03916 §2.2 and §3.1
+    // plus this record's own fields. Only the lines that differ from the parent
+    // route's listing are here in substance — the kernel, the cutoff it allows
+    // and the composite quadrature — because this is a folded refinement and a
+    // second copy of the parent's construction is exactly what folding exists to
+    // avoid.
+    example: {
+      pseudocode: [
+        "given  A(t) = L(t) + iH(t) with L(t) positive semi-definite on [0,T],  u_0,  b(t),  target error eps",
+        "       beta in (0,1) fixed",
+        "       kernel  f(z) = 1 / ( C_beta * exp( (1+iz)^beta ) ),   C_beta = 2*pi*exp(-2^beta)",
+        "       g(k)   = f(k) / (1 - ik)",
+        "       U(T,k) = T exp( -i * int_0^T ( k L(s) + H(s) ) ds )",
+        "",
+        "# 1. recast: truncate and discretize the k-integral of the LCHS identity   [Sec. 3.1]",
+        "K  = O( (log(1/eps))^(1/beta) )                  # truncate to [-K,K]              [Lemma 10]",
+        "h1 = 1 / ( e * T * max_t ||L(t)|| )              # composite quadrature step size  [Lemma 11]",
+        "Q  = O( log(1/eps) )                             # Gauss nodes per subinterval     [Lemma 11]",
+        "M  = 2*K*Q/h1 = O( T * max_t ||L(t)|| * (log(1/eps))^(1+1/beta) )   # unitaries    [Lemma 11]",
+        "c_{q,m} = w_q * g(k_{q,m})  at the Gauss nodes k_{q,m};  sum_{q,m} |c_{q,m}| = O(1)  [Lemma 12]",
+        "",
+        "# 2. simulate: one Hamiltonian simulation problem per node                  [Sec. 4.2.1]",
+        "build HAM-T for k_j L + H from HAM-T_L, HAM-T_H by an inner LCU:",
+        "    O_k loads k_j, controlled rotation c-R, controlled HAM-T_L / HAM-T_H, then c-R^T",
+        "    a second rotation makes the block-encoding factor uniform at alpha_L*K + alpha_H",
+        "SEL = sum_j |j><j| (x) W_j,   W_j block-encodes V_j with ||V_j - U(T,k_j)|| <= eps_1",
+        "    implemented by the truncated Dyson series method",
+        "    cost: Otilde( alpha_A * K * T * log(1/eps_1) ) queries to HAM-T_L, HAM-T_H  [Thm. 15 proof]",
+        "",
+        "# 3. combine by LCU and post-select                                          [Sec. 4.2.1]",
+        "apply (O_{c,l}^dagger (x) I) SEL (O_{c,r} (x) I)  to  |0>|u_0>",
+        "    = |0> (1/||c||_1) ( sum_j c_j V_j ) |u_0>  +  |perp>",
+        "the inhomogeneous term is prepared the same way over nodes s_{j'} and combined with it  [Sec. 4.2.2]",
+        "measure the ancillas and keep the all-zeros branch",
+        "O(||c||_1) rounds of amplitude amplification for a constant-level success probability   [Lemma 24]",
+      ].join("\n"),
+    },
     hops: {
       "lchs-improved-kernel": {
         theory:
@@ -667,6 +1067,28 @@ export const LAYER_GRAPH: LayerGraph = {
           "終わり方は親と同じです。「補助レジスタを 0 で後選択すると目的の状態が得られる」「一定水準の成功確率を得るには O(‖c‖_1) 回の振幅増幅が必要である」と述べられています。" +
           "[[assumption: 残すのは補助レジスタが 0 を示した状態だけで、それ以外は捨てられます。反復回数はその代価です。]] " +
           "この論文が変えているのはここより上流、すなわちカーネルとそれに与える複合 Gauss 求積、そして各時間発展に用いる打ち切り Dyson 級数であって、この区間ではありません。",
+      },
+      // An, Childs and Lin, arXiv:2312.03916, full text. Like `krovi-linear-ode`
+      // this is a FOLDED refinement, so both notes state what the improved
+      // kernel *changes* at each hop and not what the parent identity is:
+      // f(z) = 1/(C_beta e^{(1+iz)^beta}) decays as e^{-cos(beta pi/2)|k|^beta}
+      // instead of the Cauchy kernel's quadratic decay (§2.2), which is what
+      // drops the cutoff from K = O(1/eps) to K = O((log(1/eps))^{1/beta})
+      // (Lemma 10) and the node count to O(T max||L|| (log 1/eps)^{1+1/beta})
+      // (§3.1). Proposition 8's near-optimality — any faster decay forces f == 0
+      // on the closed lower half plane — is the reason this is the end of that
+      // line rather than one more improvement, and it is in the note.
+      "hamiltonian-recasting": {
+        theory:
+          "This hop hands the recasting slot the parent's identity with a different kernel: $f(z) = 1/(C_\\beta e^{(1+iz)^\\beta})$, $\\beta \\in (0,1)$, $C_\\beta = 2\\pi e^{-2^\\beta}$, which on the real axis satisfies $|f(k)| \\le e^{-\\cos(\\beta\\pi/2)|k|^\\beta}$ where the Cauchy kernel decays only as $\\Theta(k^{-2})$. [[assumption: Theorem 6 admits a kernel only if $f$ is analytic on the lower half plane and continuous on its closure, obeys $|z|^\\alpha|f(z)| \\le \\tilde{C}$ there for some $\\alpha > 0$, and is normalized by $\\int_{\\mathbb{R}} f(k)/(1-ik)\\,dk = 1$; the quadrature bounds below additionally assume $T\\max_t||L(t)|| \\ge 32/e$.]] [[approximation: The $k$-integral is truncated to $[-K,K]$ and replaced by composite Gaussian quadrature with $Q$ nodes on each subinterval of width $h_1$ — the faster decay makes $K = O((\\log(1/\\varepsilon))^{1/\\beta})$ enough where the Cauchy kernel forced $K = O(1/\\varepsilon)$, so the family handed down has $M = 2KQ/h_1 = O(T\\max_t||L(t)||(\\log(1/\\varepsilon))^{1+1/\\beta})$ members, with $\\sum_{q,m}|c_{q,m}| = O(1)$.]] Proposition 8 closes the direction: a kernel meeting the analyticity and boundedness conditions that decayed as $e^{-c|k|}$ would be identically zero, so $\\beta \\to 1$ is asymptotically near-optimal within this framework.",
+        theoryJa:
+          "このホップが再定式化の枠に渡すのは親と同じ恒等式ですが、カーネルが異なります。$f(z) = 1/(C_\\beta e^{(1+iz)^\\beta})$、$\\beta \\in (0,1)$、$C_\\beta = 2\\pi e^{-2^\\beta}$ であり、Cauchy カーネルが $\\Theta(k^{-2})$ でしか減衰しないのに対し、実軸上で $|f(k)| \\le e^{-\\cos(\\beta\\pi/2)|k|^\\beta}$ を満たします。 [[assumption: 定理 6 がカーネルとして認めるのは、下半平面で解析的かつその閉包上で連続であり、そこである $\\alpha > 0$ について $|z|^\\alpha|f(z)| \\le \\tilde{C}$ を満たし、$\\int_{\\mathbb{R}} f(k)/(1-ik)\\,dk = 1$ と規格化された $f$ だけです。後述の求積の評価はさらに $T\\max_t||L(t)|| \\ge 32/e$ を仮定します。]] [[approximation: $k$ 積分は $[-K,K]$ に打ち切られ、幅 $h_1$ の各小区間で $Q$ 点を用いる複合 Gauss 求積に置き換えられます。減衰が速いため、Cauchy カーネルが $K = O(1/\\varepsilon)$ を強いたのに対し $K = O((\\log(1/\\varepsilon))^{1/\\beta})$ で足り、下層に渡される族の要素数は $M = 2KQ/h_1 = O(T\\max_t||L(t)||(\\log(1/\\varepsilon))^{1+1/\\beta})$、係数は $\\sum_{q,m}|c_{q,m}| = O(1)$ を満たします。]] 命題 8 がこの方向を閉じています。解析性と有界性の条件を満たしたうえで $e^{-c|k|}$ で減衰するカーネルは恒等的に零になりますので、この枠組みでは $\\beta \\to 1$ が漸近的にほぼ最適です。",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "Each quadrature node becomes one Hamiltonian simulation problem, $U(T,k_j) = \\mathcal{T}e^{-i\\int_0^T (k_j L(s)+H(s))\\,ds}$, and the whole family is implemented as a single $\\mathrm{SEL} = \\sum_j |j\\rangle\\langle j| \\otimes W_j$ by the truncated Dyson series method. [[assumption: The input model is HAM-T oracles for $L$ and $H$ with block-encoding factors $\\alpha_L \\ge \\max_t||L(t)||$ and $\\alpha_H \\ge \\max_t||H(t)||$; a HAM-T for $k_jL+H$ is assembled from them by an inner LCU, and a second controlled rotation pins its block-encoding factor at the worst case $\\alpha_L K + \\alpha_H$ so that one uniform factor serves every node.]] [[approximation: $W_j$ block-encodes not $U(T,k_j)$ but a $V_j$ with $||V_j - U(T,k_j)|| \\le \\varepsilon_1$, at $\\tilde{O}(\\alpha_A K T \\log(1/\\varepsilon_1))$ queries to those oracles.]] This is the stretch where the kernel is paid back: $||k L(t)+H(t)|| \\le K||L(t)||+||H(t)||$, so the smaller $K$ carries straight into the simulation, and Table 1's $\\alpha_A T/\\varepsilon$ for the original LCHS becomes $\\alpha_A T(\\log(1/\\varepsilon))^{1+1/\\beta}$ — one $\\log(1/\\varepsilon)$ from the Dyson truncation, $(\\log(1/\\varepsilon))^{1/\\beta}$ from $K$.",
+        theoryJa:
+          "求積の各節点がひとつのハミルトニアンシミュレーション問題 $U(T,k_j) = \\mathcal{T}e^{-i\\int_0^T (k_j L(s)+H(s))\\,ds}$ になり、族全体は打ち切り Dyson 級数法によって単一の $\\mathrm{SEL} = \\sum_j |j\\rangle\\langle j| \\otimes W_j$ として実装されます。 [[assumption: 入力モデルは $L$ と $H$ に対する HAM-T オラクルで、そのブロック符号化因子は $\\alpha_L \\ge \\max_t||L(t)||$、$\\alpha_H \\ge \\max_t||H(t)||$ です。$k_jL+H$ の HAM-T はそれらから内側の LCU で組み立てられ、二つめの制御回転がブロック符号化因子を最悪値 $\\alpha_L K + \\alpha_H$ に固定しますので、すべての節点を一つの因子で扱えます。]] [[approximation: $W_j$ がブロック符号化するのは $U(T,k_j)$ そのものではなく、$||V_j - U(T,k_j)|| \\le \\varepsilon_1$ を満たす $V_j$ であり、これらのオラクルへの $\\tilde{O}(\\alpha_A K T \\log(1/\\varepsilon_1))$ 回の問い合わせで実装されます。]] カーネルの改良が回収されるのはこの区間です。$||k L(t)+H(t)|| \\le K||L(t)||+||H(t)||$ ですので、$K$ が小さいことがそのままシミュレーションに効き、表 1 の元の LCHS の $\\alpha_A T/\\varepsilon$ は $\\alpha_A T(\\log(1/\\varepsilon))^{1+1/\\beta}$ になります。$\\log(1/\\varepsilon)$ の一つは Dyson 級数の打ち切りから、$(\\log(1/\\varepsilon))^{1/\\beta}$ は $K$ から来ます。",
       },
     },
     via: { "hamiltonian-recasting": "lchs-kernel-identity" },
@@ -709,6 +1131,37 @@ export const LAYER_GRAPH: LayerGraph = {
     // all, and the projector is a half-line rather than an all-zeros flag. Two
     // endings this different under one capability would be a claim the sources do
     // not make — `plans/atlas-revamp/W11-readout-stretch.md` has the comparison.
+
+    // A transcription, from Jin, Liu and Yu arXiv:2212.13969 and the long
+    // companion arXiv:2212.14703 (§2.1.1 and §3), plus this record's own fields.
+    example: {
+      pseudocode: [
+        "given  A from the spatial discretisation (in general non-Hermitian), u_0, evolution time t",
+        "#   du(t)/dt = -A u(t)",
+        "",
+        "split A into Hermitian parts:",
+        "    A = H + i H_bar,   H = (A + A^dag)/2,   H_bar = i(A^dag - A)/2",
+        "#   to ensure stability, H is assumed positive semi-definite",
+        "",
+        "# ---- hamiltonian-recasting, via the warped phase transformation ----",
+        "introduce p > 0 and set   v(t,p) = e^{-p} u(t)",
+        "extend the initial data:  v(0,p) = e^{-|p|} u(0)   on p in (-inf, inf)",
+        "#   v then satisfies  d_t v + H d_p v - i H_bar v = 0",
+        "Fourier transform in p:   i d_t v~ = (eta H + H_bar) v~",
+        "#   one Schrodinger equation for each eta, since eta H + H_bar is Hermitian",
+        "discretise eta:           i d/dt v~ = (H (x) D + H_bar (x) 1) v~ = H_total v~",
+        "",
+        "# ---- hamiltonian-simulation ----",
+        "simulate the Hermitian H_total under sparse access to it",
+        "#   no linear system is assembled, and no time discretisation is chosen",
+        "",
+        "# ---- this method's own stretch: read the answer back out of p ----",
+        "apply the inverse QFT F_p^{-1} on the p register to obtain |w(t)>",
+        "project onto p > 0:   1 (x) sum_{k=N/2}^{N} |k><k|",
+        "#   or pointwise instead: u(t,x) = e^{p*} w(t,x,p*) for a chosen p* > 0",
+        "amplitude-amplify with Q = -S_w S_p to recover |u(t)>",
+      ].join("\n"),
+    },
     hops: {
       schrodingerisation: {
         theory:
@@ -719,6 +1172,23 @@ export const LAYER_GRAPH: LayerGraph = {
           "「第二レジスタに対して p に関する逆量子 Fourier 変換 $F_p^{-1}$ を施すと $|w(t)\\rangle$ が得られる」とされ、解はそこから $p > 0$ に制限して復元されます。積分としては $u(t,x) = ∫_0^∞ w(t,x,p) dp$、状態としては $1 \\otimes \\Sigma_{k=N/2}^{N} |k⟩⟨k|$ への射影です。" +
           "[[assumption: u を担うのは $p > 0$ の半直線だけですので、残るのはその射影が残したものです。「単純な射影は確率 (‖u(t)‖‖exp(−p)‖/‖w(t)‖)^2 ∼ N(‖u(t)‖/‖w(t)‖)^2 で |u(t)⟩ を取り出す」とされています。]] " +
           "オラクル $Q = −S_w S_p$ による振幅増幅はこれを ∼√N‖u(t)‖/‖w(t)‖ まで引き上げ、Q への問い合わせは Õ(‖w(t)‖/(√N‖u(t)‖)) 回です。論文は各点での復元も認めています。任意の $p* > 0$ を選び $u(t,x) = e^{p*} w(t,x,p*)$ とするやり方です。",
+      },
+      // Jin, Liu and Yu — the short paper arXiv:2212.13969 and the long
+      // companion arXiv:2212.14703, both read in full. The split matters and is
+      // respected here as it is in `cost`: the short paper states the warped
+      // phase transformation and no complexity; the companion is where the
+      // gate-complexity theorems are.
+      "hamiltonian-recasting": {
+        theory:
+          "For the spatially discretised system $du(t)/dt = -Au(t)$ the generator \"is in general not Hermitian\", so $A$ is split into Hermitian parts, $A = H + i\\bar{H}$ with $H = (A+A^\\dagger)/2$ and $\\bar{H} = i(A^\\dagger - A)/2$. [[assumption: To ensure stability, $H$ is assumed positive semi-definite — a stability assumption, not something needed in order to form the Schrödinger system, which is the difference this record already records against LCHS.]] The warped phase transformation is then applied to $u(t)$ in the $p > 0$ region, $v(t,p) = e^{-p}u(t)$, the initial condition is extended to $p<0$ by $v(0,p) = e^{-|p|}u(0)$, and on $p \\in (-\\infty,\\infty)$ the new variable satisfies $\\partial_t v + H\\partial_p v - i\\bar{H}v = 0$; Fourier transforming in $p$ gives $i\\partial_t \\tilde{v} = (\\eta H + \\bar{H})\\tilde{v}$, \"which is still a system of Schrödinger equations, one for each $\\eta$, since $\\eta H + \\bar{H}$ is Hermitian\". [[approximation: That continuous family is discretised in $\\eta$ to a single Hermitian generator, $i\\,d\\tilde{v}/dt = (H \\otimes D + \\bar{H} \\otimes 1)\\tilde{v} = H^{total}\\tilde{v}$, with $D = \\mathrm{diag}(\\mu_1,\\dots,\\mu_N)$, $\\mu_j = \\pi(j - N/2)$.]] What goes down with it is the recovery map this slot's contract requires: $u(t) = \\int_{-\\infty}^{\\infty}\\chi(p)v(t,p)\\,dp$, with $\\chi$ the indicator of $p \\ge 0$.",
+        theoryJa:
+          "空間離散化した系 $du(t)/dt = -Au(t)$ の生成子は「一般にエルミートではない」ため、$A$ をエルミートな部分に分けて $A = H + i\\bar{H}$、$H = (A+A^\\dagger)/2$、$\\bar{H} = i(A^\\dagger - A)/2$ と書きます。[[assumption: 安定性を保証するために $H$ は半正定値と仮定されます。これは安定性についての仮定であって、Schrödinger 方程式系を作るために要るものではありません。LCHS との違いとしてこの記録がすでに述べているのはその点です。]] つぎに $p > 0$ の領域で $u(t)$ に warped phase 変換 $v(t,p) = e^{-p}u(t)$ を施し、初期条件を $v(0,p) = e^{-|p|}u(0)$ として $p<0$ へ拡張しますと、$p \\in (-\\infty,\\infty)$ 上で $v$ は $\\partial_t v + H\\partial_p v - i\\bar{H}v = 0$ を満たします。$p$ について Fourier 変換すると $i\\partial_t \\tilde{v} = (\\eta H + \\bar{H})\\tilde{v}$ となり、「$\\eta H + \\bar{H}$ はエルミートですので、これはやはり $\\eta$ ごとに一つの Schrödinger 方程式系です」。[[approximation: この連続な族を $\\eta$ について離散化し、単一のエルミート生成子 $i\\,d\\tilde{v}/dt = (H \\otimes D + \\bar{H} \\otimes 1)\\tilde{v} = H^{total}\\tilde{v}$ にします。ここで $D = \\mathrm{diag}(\\mu_1,\\dots,\\mu_N)$、$\\mu_j = \\pi(j - N/2)$ です。]] あわせて引き渡されるのが、この層の契約が求める復元写像です。$u(t) = \\int_{-\\infty}^{\\infty}\\chi(p)v(t,p)\\,dp$ で、$\\chi$ は $p \\ge 0$ の指示関数です。",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "What the recasting hands down is $H^{total}$, Hermitian, so this stretch is ordinary sparse-access Hamiltonian simulation: \"an $s$-sparse Hamiltonian $H$ acting on $m_H$ qubits can be simulated within error $\\varepsilon$ with $O(\\tau \\log(\\tau/\\varepsilon)/\\log\\log(\\tau/\\varepsilon))$ queries\" and $O(\\tau(m_H + \\log^{2.5}(\\tau/\\varepsilon))\\log(\\tau/\\varepsilon)/\\log\\log(\\tau/\\varepsilon))$ additional two-qubit gates, \"where $\\tau = s\\|H\\|_{max}t$ and $t$ is the evolution time\". [[assumption: Sparse access to the matrix — the black boxes $O_A$ and $O_F$ of Definition 3.1 — and a generator that does not move: \"in the sequel, we assume $A$ is independent of time\".]] The extra variable is what this stretch is charged for, through the norm parameter rather than through the dimension: the proof of Theorem 3.1 uses $\\|D_\\mu\\|_{max} \\lesssim 1/\\Delta p$, which is where its $\\tilde{O}(s(A)\\|A\\|_{max}/\\Delta p)$ comes from. [[approximation: In the special case where $H_1$ diagonalises in the momentum basis and $H_2$ is diagonal, the Hamiltonian system is not simulated by that route at all but solved by the first-order time splitting scheme, \"as in the proof of Theorem 2.1\".]]",
+        theoryJa:
+          "書き換えが引き渡すのはエルミートな $H^{total}$ ですので、この区間は通常のスパースアクセスによるハミルトニアンシミュレーションです。「$m_H$ 量子ビットに作用する $s$ 疎なハミルトニアン $H$ は、誤差 $\\varepsilon$ 以内で $O(\\tau \\log(\\tau/\\varepsilon)/\\log\\log(\\tau/\\varepsilon))$ 回の問い合わせ」と $O(\\tau(m_H + \\log^{2.5}(\\tau/\\varepsilon))\\log(\\tau/\\varepsilon)/\\log\\log(\\tau/\\varepsilon))$ 個の追加 2 量子ビットゲートでシミュレートできます。「ここで $\\tau = s\\|H\\|_{max}t$、$t$ は発展時間です」。[[assumption: 行列へのスパースアクセス、すなわち定義 3.1 の黒箱 $O_A$ と $O_F$ が必要で、さらに生成子が時間に依らないことも必要です。「以下では $A$ は時間に依存しないと仮定する」と述べられています。]] 追加した変数の代価は、次元ではなくノルムのパラメータを通してこの区間に課されます。定理 3.1 の証明は $\\|D_\\mu\\|_{max} \\lesssim 1/\\Delta p$ を用いており、$\\tilde{O}(s(A)\\|A\\|_{max}/\\Delta p)$ はそこから出てきます。[[approximation: $H_1$ が運動量基底で対角化でき $H_2$ が対角行列である特別な場合には、この経路でシミュレートするのではなく、一次の時間分割法で解きます。「定理 2.1 の証明と同様に」と述べられています。]]",
       },
     },
     via: { "hamiltonian-recasting": "warped-phase-transformation" },
@@ -774,6 +1244,58 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: [],
     atomic: true,
     entries: ["linear-combination-unitaries"],
+
+    // A transcription, from An, Liu and Lin arXiv:2303.01029 Theorem 1 and
+    // Eq. (4), plus this record's own `summary` and `conditions`. The shift
+    // branch is in the listing because `conditions` already states it as a real
+    // restriction: without it the identity simply does not apply where the
+    // Hermitian part has a negative eigenvalue, and a listing that skipped
+    // straight to the family would read as if it always does.
+    //
+    // Step 4 is marked as an equality rather than an approximation on purpose —
+    // the identity is exact, and everything lossy happens one layer down in the
+    // truncation and the quadrature. That is the same division the hop note
+    // below draws.
+    example: {
+      pseudocode: [
+        "given  A(t) on [0,T]",
+        "",
+        "# 1. split into Hermitian and anti-Hermitian parts",
+        "L(t) = (A(t) + A(t)^dagger) / 2",
+        "H(t) = (A(t) - A(t)^dagger) / (2i)",
+        "",
+        "# 2. the identity requires L(t) >= 0 on the whole interval",
+        "if L(t) is not positive semidefinite somewhere on [0,T]:",
+        "    c = - min_{t in [0,T]} lambda_min( L(t) )",
+        "    substitute u(t) = e^{ct} v(t)",
+        "    # v solves  d_t v = -( L(t) + cI + iH(t) ) v + e^{-ct} b(t),   and L(t) + cI >= 0",
+        "",
+        "# 3. every member of the one-parameter family is Hermitian by construction",
+        "#      for each k in R:   H(t) + k L(t)  is Hermitian",
+        "#      so  V(t; ik) = T exp( -i int_0^t ( H(s) + k L(s) ) ds )  is unitary",
+        "",
+        "# 4. the identity -- an equality, not an approximation",
+        "#      T exp( - int_0^t A(s) ds )  =  int_R  1/(pi (1 + k^2))  V(t; ik)  dk",
+        "",
+        "# 5. hand downstream: the family { H(t) + k L(t) }_k, and the kernel",
+        "#    1/(pi (1 + k^2)) whose decay rate fixes how many members survive",
+        "#    truncation and quadrature of the k-integral",
+        "return  { H(t) + k L(t) }_k,  kernel 1/(pi (1 + k^2))",
+      ].join("\n"),
+    },
+    hops: {
+      // The recasting itself, from An, Liu and Lin arXiv:2303.01029's Theorem 1
+      // and its Supplemental proof (Lemmas 4 and 5). This node is `atomic`, so
+      // its own id is its only stretch — the same shape as `forward-euler`
+      // above, and the same rule: the key is the method's own id because the
+      // route is one segment no slot covers.
+      "lchs-kernel-identity": {
+        theory:
+          "Split $A(t) = L(t) + iH(t)$ and every member of the one-parameter family $H(t) + kL(t)$, $k \\in \\mathbb{R}$, is Hermitian by construction, so $V(t;ik) = \\mathcal{T}e^{-i\\int_0^t (H(s)+kL(s))\\,ds}$ is unitary; Theorem 1 states that the non-unitary propagator is exactly their kernel-weighted integral, $\\mathcal{T}e^{-\\int_0^t A(s)\\,ds} = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)} V(t;ik)\\,dk$. The weight is the Fourier transform of $e^{-|x|}$, $\\hat f(k) = \\frac{1}{2\\pi}\\int_{\\mathbb{R}} e^{-|x|}e^{-ikx}\\,dx = \\frac{1}{\\pi(1+k^2)}$, which is nonnegative and integrates to $1$ — the Cauchy-Lorentz density — and Theorem 1 is that scalar representation generalized to time-dependent, non-Hermitian $A$. [[assumption: The proof — \"a special instance of the matrix version of the Cauchy integral theorem, which is a key for avoiding the spectral mapping argument\" — needs $L(t) \\succeq \\lambda_0 > 0$ on the interval, where Lemma 5 gives $P\\int_{\\mathbb{R}} \\frac{1}{1+ik} V(t;ik)\\,dk = 0$ and $W(t) = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)} V(t;ik)\\,dk$ is shown to satisfy $W'(t) = -(L(t)+iH(t))W(t)$, $W(0) = I$; the stated hypothesis $L(t) \\succeq 0$ follows by continuity of both sides in $L(t)$ as $\\lambda_0 \\to 0$.]] Nothing is approximated at this stretch: the identity is an equality, and the approximation appears only where the $k$-integral is truncated and discretized into $u(t) \\approx \\sum_j c_j U_j(t) u_0$ with $c_j = \\omega_j/(\\pi(1+k_j^2))$, which is the count this construction hands downstream.",
+        theoryJa:
+          "$A(t) = L(t) + iH(t)$ と分けると、1 パラメータ族 $H(t) + kL(t)$（$k \\in \\mathbb{R}$）の各要素は構成上エルミートですので、$V(t;ik) = \\mathcal{T}e^{-i\\int_0^t (H(s)+kL(s))\\,ds}$ はユニタリです。定理 1 は、非ユニタリな伝播子がこれらのカーネル重み付き積分にちょうど等しいこと、すなわち $\\mathcal{T}e^{-\\int_0^t A(s)\\,ds} = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)} V(t;ik)\\,dk$ を述べます。重みは $e^{-|x|}$ の Fourier 変換 $\\hat f(k) = \\frac{1}{2\\pi}\\int_{\\mathbb{R}} e^{-|x|}e^{-ikx}\\,dx = \\frac{1}{\\pi(1+k^2)}$ であり、非負で積分が $1$ になる Cauchy–Lorentz 分布の密度です。定理 1 は、このスカラーの表現を時間依存かつ非エルミートな $A$ へ一般化したものです。[[assumption: 証明は「スペクトル写像の議論を避ける鍵となる、行列版 Cauchy の積分定理の特別な場合」に依拠し、区間上で $L(t) \\succeq \\lambda_0 > 0$ を必要とします。補題 5 が $P\\int_{\\mathbb{R}} \\frac{1}{1+ik} V(t;ik)\\,dk = 0$ を与え、$W(t) = \\int_{\\mathbb{R}} \\frac{1}{\\pi(1+k^2)} V(t;ik)\\,dk$ が $W'(t) = -(L(t)+iH(t))W(t)$、$W(0) = I$ を満たすことが示されます。定理の仮定である $L(t) \\succeq 0$ は、両辺が $L(t)$ について連続であることから $\\lambda_0 \\to 0$ の極限として従います。]] この区間では何も近似されません。恒等式は等式であり、近似が現れるのは $k$ 積分を打ち切って離散化し $u(t) \\approx \\sum_j c_j U_j(t) u_0$（$c_j = \\omega_j/(\\pi(1+k_j^2))$）とするときだけです。その項数こそが、この構成が下流に渡すものです。",
+      },
+    },
     citations: [
       { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -793,6 +1315,47 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Jin・Liu・Yu は、統一されたひとつのクエリ計算量の定理ではなく、変換と適用例を示しています。熱方程式、移流方程式、Fokker-Planck 方程式、線形 Boltzmann 方程式、Black-Scholes 方程式であり、Vlasov-Fokker-Planck 方程式および非線形常微分方程式の Liouville 表現への拡張も含みます。したがって LCHS の数値と同一条件で比較した数値はここには示しません。この欠落は当方の手落ちではなく、原論文の形です。",
     steps: [],
     atomic: true,
+
+    // A transcription, from Jin, Liu and Yu arXiv:2212.14703 §2.1.1 plus this
+    // record's own `summary` and `conditions`. **Written on the heat equation,
+    // and the listing says so in a comment** rather than stating the
+    // transformation in a generality the source does not: §2.1.1 works the case
+    // out on that equation, and the symmetric extension and the "no boundary
+    // condition is needed at p = 0" argument are its sentences about it.
+    example: {
+      pseudocode: [
+        "given  the linear equation for u and its initial data u_0",
+        "#   worked here on the heat equation  d_t u - Laplacian u = 0",
+        "",
+        "introduce one auxiliary variable p > 0",
+        "set     w(t,x,p) = e^{-p} u(t,x)",
+        "#   then  d_t w + d_p Laplacian_x w = 0   for p > 0",
+        "",
+        "extend the initial data symmetrically to p < 0:  w(0,x,p) = e^{-|p|} u_0(x)",
+        "#   the wave moves from right to left, so no boundary condition is needed at p = 0,",
+        "#   and the extension does not impact the region p > 0",
+        "",
+        "truncate the p-line:  impose w(t,x,p=-L) = w(t,x,p=L) = 0 for L > 0 large enough",
+        "#   justified by the exponential decay of e^{-|p|}",
+        "discretise p with step Dp and Fourier transform in p",
+        "#   what comes out is a Hamiltonian system; simulating it is the layer below",
+        "",
+        "# recovery, afterwards:",
+        "#   u(t,x) = integral_0^inf w(t,x,p) dp",
+        "#   or     u(t,x) = e^{p*} w(t,x,p*) for any chosen p* > 0",
+      ].join("\n"),
+    },
+    hops: {
+      // The transformation itself, from Jin, Liu and Yu (arXiv:2212.13969, with
+      // the companion arXiv:2212.14703 for the statements the short paper does
+      // not carry). Atomic, so its own id is its only stretch.
+      "warped-phase-transformation": {
+        theory:
+          "One auxiliary variable $p > 0$ is introduced and the solution is multiplied into it, $w(t,x,p) = e^{-p}u(t,x)$; for the heat equation $\\partial_t u - \\Delta u = 0$, \"a simple calculation shows that $w$ solves $\\partial_t w + \\partial_p \\Delta_x w = 0$, $p > 0$\", and $u$ comes back either as $u(t,x) = \\int_0^\\infty w(t,x,p)\\,dp$ or, \"since $u(t,x) = e^p w(t,x,p)$ for all $p > 0$\", pointwise at any chosen $p_* > 0$ as $u(t,x) = e^{p_*}w(t,x,p_*)$. [[assumption: The half-line is enough because of which way the wave goes: in the Fourier variable \"the solution $\\hat{w}$ moves from the right to the left, so no boundary condition is needed at $p = 0$\", and \"if we extend $w$ to $p < 0$, then the solution does not impact the region $p > 0$\" — so the symmetric extension $w(0,x,p) = e^{-|p|}u_0(x)$ changes nothing where the answer is read.]] [[approximation: The $p$-line is then cut to a finite computational domain — \"due to the exponential decay of $e^{-|p|}$ one can (computationally) impose the periodic boundary condition $w(t,x,p=-L) = w(t,x,p=L)$ ($=0$) along the $p$-direction for some $L > 0$ sufficiently large\".]]",
+        theoryJa:
+          "補助変数 $p > 0$ をひとつ導入し、解に掛け合わせて $w(t,x,p) = e^{-p}u(t,x)$ とします。熱方程式 $\\partial_t u - \\Delta u = 0$ については「簡単な計算により、$w$ は $p > 0$ で $\\partial_t w + \\partial_p \\Delta_x w = 0$ を満たすことが分かります」。$u$ は $u(t,x) = \\int_0^\\infty w(t,x,p)\\,dp$ として戻すか、「すべての $p > 0$ について $u(t,x) = e^p w(t,x,p)$ が成り立つ」ため、任意に選んだ $p_* > 0$ で各点ごとに $u(t,x) = e^{p_*}w(t,x,p_*)$ として戻します。[[assumption: 半直線だけで足りるのは波の進む向きによります。Fourier 変数では「解 $\\hat{w}$ は右から左へ動くので、$p = 0$ に境界条件は不要」であり、「$w$ を $p < 0$ に拡張しても、その解は $p > 0$ の領域に影響しません」。したがって対称な拡張 $w(0,x,p) = e^{-|p|}u_0(x)$ は、答えを読み出す領域を何も変えません。]] [[approximation: そのうえで $p$ 軸は有限の計算領域に切り詰められます。「$e^{-|p|}$ の指数的な減衰により、十分大きな $L > 0$ をとって $p$ 方向に周期境界条件 $w(t,x,p=-L) = w(t,x,p=L)$（$=0$）を（計算上）課すことができます」。]]",
+      },
+    },
     citations: [
       { title: "Quantum simulation of partial differential equations via Schrodingerisation", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.13969" },
       { title: "Quantum simulation of partial differential equations via Schrodingerisation: technical details", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.14703" },
@@ -1041,6 +1604,22 @@ export const LAYER_GRAPH: LayerGraph = {
         "# A-stability removes the step-size restriction, not the repetition.",
       ].join("\n"),
     },
+    hops: {
+      // Dong, Li and Xue, arXiv:2504.06948, Definition 3.1. **The note states
+      // the scheme and quotes no complexity, on purpose** — `cost` and
+      // `conditions` above already record why: their theorems require diagonal
+      // Pade order k >= 3 and Crank-Nicolson is the (1,1) approximant, outside
+      // them. A hop note that borrowed a neighbouring theorem's bound would put
+      // the claim this record refuses one section further down the same card.
+      // The k >= 3 restriction was re-checked against the paper by a second
+      // reader during this pass and holds.
+      "trapezoidal-rule": {
+        theory:
+          "The step averages the generator at the two ends, $(I - \\frac{h}{2}A)u_{k+1} = (I + \\frac{h}{2}A)u_k + \\frac{h}{2}(b_k + b_{k+1})$, which as a rational approximation of $e^{hA}$ is the $(1,1)$ diagonal Padé approximant $R_{11}(Ah) = [D_{11}(Ah)]^{-1}N_{11}(Ah)$ of Dong, Li and Xue's Definition 3.1. [[approximation: The propagator $e^{hA}$ is replaced by a ratio of degree-one polynomials in $Ah$, whose denominator $D_{11}(Ah) = I - \\frac{h}{2}A$ is the matrix each implicit step solves against; second order, so the precision dependence stays polynomial in $1/\\varepsilon$.]] For the autonomous case they treat, a step of this form, $\\hat{x}(sh) = R(Ah)\\hat{x}((s-1)h) + (R(Ah) - I)A^{-1}b$, is encoded as block rows of one large block-sparse linear system, and that assembled system is what this layer hands down. [[assumption: The denominator must be non-singular, which the source assures only when $p$ and $q$ are large enough or when the eigenvalues of $A$ are all negative.]]",
+        theoryJa:
+          "各ステップは両端で生成子を平均し、$(I - \\frac{h}{2}A)u_{k+1} = (I + \\frac{h}{2}A)u_k + \\frac{h}{2}(b_k + b_{k+1})$ となります。これは $e^{hA}$ の有理近似として見ると、Dong・Li・Xue の Definition 3.1 にある $(1,1)$ 型の対角 Padé 近似 $R_{11}(Ah) = [D_{11}(Ah)]^{-1}N_{11}(Ah)$ にあたります。[[approximation: 伝播子 $e^{hA}$ を $Ah$ の一次多項式どうしの比で置き換えます。その分母 $D_{11}(Ah) = I - \\frac{h}{2}A$ が、各陰的ステップで解く相手の行列です。二次精度ですので、精度依存性は $1/\\varepsilon$ の多項式のままです。]] 彼らが扱う自励系の場合、この形のステップ $\\hat{x}(sh) = R(Ah)\\hat{x}((s-1)h) + (R(Ah) - I)A^{-1}b$ は、ひとつの大きなブロック疎線形系のブロック行として符号化され、この層が引き渡すのはその組み上げた系です。[[assumption: 分母は非特異でなければなりません。出典がそれを保証するのは、$p$ と $q$ が十分大きいときか、$A$ の固有値がすべて負のときに限られます。]]",
+      },
+    },
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
@@ -1085,6 +1664,22 @@ export const LAYER_GRAPH: LayerGraph = {
         "    # finite difference methods, no additional hypothesis is needed to ensure",
         "    # numerical stability",
       ].join("\n"),
+    },
+    hops: {
+      // Berry, Childs, Ostrander and Wang, arXiv:1701.03684: Eq. (3) for T_k,
+      // Appendix A Lemmas 10 and 12 for the two 1/(k+1)! bounds, Theorem 6 for
+      // what they accumulate to. Deliberately narrower than the `example`
+      // listing above it — the listing walks the assembly, and this carries the
+      // truncation-error bound that `time-discretization`'s contract says this
+      // layer must hand back. The *conditioning* bound the same contract names
+      // is on `taylor-all-at-once`'s solve hop instead, so Theorem 5 is
+      // transcribed once rather than twice.
+      "truncated-taylor-propagator": {
+        theory:
+          "The propagator over one step is replaced by $T_k(Ah) = \\sum_{j=0}^{k}(Ah)^j/j!$, whose terms become extra rows of the linear system. [[approximation: For $\\lvert z\\rvert \\le 1$ and $\\operatorname{Re}(z) \\le 0$, Lemma 10 gives $\\lvert T_k(z) - e^{z}\\rvert \\le 1/(k+1)!$ and Lemma 12 gives $\\lvert S_k(z) - (e^{z}-1)z^{-1}\\rvert \\le 1/(k+1)!$, and Theorem 6 accumulates these into $\\lVert x(jh) - x_{j,0}\\rVert \\le 2.8\\,\\kappa_V\\,j\\,(\\lVert x_{\\mathrm{in}}\\rVert + mh\\lVert b\\rVert)/(k+1)!$.]] Because the bound falls factorially in $k$, for the quantity $\\Omega$ of Eq. (114) the order $k = \\lceil 2\\log\\Omega/\\log\\log\\Omega\\rceil$ already gives $(k+1)! \\ge \\Omega$ — accuracy is bought by adding rows rather than by shrinking $h$ and lengthening the system. [[assumption: $A$ has constant coefficients and is diagonalizable as $A = VDV^{-1}$ with $\\operatorname{Re}(\\lambda_i) \\le 0$, the step satisfies $\\lVert Ah\\rVert \\le 1$, and $k \\ge 5$ with $(k+1)! \\ge 2m$.]]",
+        theoryJa:
+          "1 ステップの伝播子を $T_k(Ah) = \\sum_{j=0}^{k}(Ah)^j/j!$ で置き換え、その各項を線形系の追加行として符号化します。[[approximation: $\\lvert z\\rvert \\le 1$ かつ $\\operatorname{Re}(z) \\le 0$ のとき、補題 10 は $\\lvert T_k(z) - e^{z}\\rvert \\le 1/(k+1)!$ を、補題 12 は $\\lvert S_k(z) - (e^{z}-1)z^{-1}\\rvert \\le 1/(k+1)!$ を与え、定理 6 はこれらを積み上げて $\\lVert x(jh) - x_{j,0}\\rVert \\le 2.8\\,\\kappa_V\\,j\\,(\\lVert x_{\\mathrm{in}}\\rVert + mh\\lVert b\\rVert)/(k+1)!$ とします。]] 誤差が $k$ について階乗的に小さくなるため、式 (114) の量 $\\Omega$ に対して次数を $k = \\lceil 2\\log\\Omega/\\log\\log\\Omega\\rceil$ と選ぶだけで $(k+1)! \\ge \\Omega$ が満たされます。すなわち精度は、$h$ を縮めて系を長くするのではなく、行を足すことで得られます。[[assumption: $A$ は定数係数であり、$A = VDV^{-1}$ と対角化できて $\\operatorname{Re}(\\lambda_i) \\le 0$ を満たすこと、刻み幅が $\\lVert Ah\\rVert \\le 1$ を満たすこと、および $k \\ge 5$ かつ $(k+1)! \\ge 2m$ であることを前提とします。]]",
+      },
     },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
@@ -1150,6 +1745,21 @@ export const LAYER_GRAPH: LayerGraph = {
         "    # no smoothness condition is required: the oracle counts are independent",
         "    # of derivatives of the parameters",
       ].join("\n"),
+    },
+    hops: {
+      // Berry and Costa, arXiv:2212.03544 §1.1-1.2 and §4.1. Two approximation
+      // marks because the route makes two different replacements here and only
+      // one of them is the truncation: the series is cut at order K, and then
+      // each surviving time integral is replaced by an M-term sum. The second
+      // is the only place derivatives of A enter, and they enter the gate count
+      // alone — worth marking separately for the reason the field exists, that
+      // a reader must be able to see where each error is paid.
+      "truncated-dyson-series": {
+        theory:
+          "The propagator is the time-ordered Dyson series $W(t,t_0) = \\sum_{k \\ge 0} \\frac{1}{k!}\\int_{t_0}^{t}\\!dt_1 \\cdots \\int_{t_0}^{t}\\!dt_k\\, \\mathcal{T}A(t_1)\\cdots A(t_k)$, and the driven part is $v(t,t_0) = \\sum_{k \\ge 1}\\int_{t_0}^{t}\\!dt_1 \\cdots \\int_{t_0}^{t_{k-1}}\\!dt_k\\, A(t_1)\\cdots A(t_{k-1})b(t_k)$. [[approximation: Both sums are cut at order $K$, giving $x_K(t) = W_K(t,t_0)x(t_0) + v_K(t,t_0)$ with error $O((A_{\\max}\\Delta t)^{K+1}\\|x(t_0)\\|/(K+1)! + A_{\\max}^{K}\\Delta t^{K+1}b_{\\max}/(K+1)!)$, and $K = O(\\log(\\lambda_{Ax}T/\\varepsilon)/\\log\\log(\\lambda_{Ax}T/\\varepsilon))$ is the order that holds it to $\\varepsilon$.]] [[approximation: Each remaining time integral is then replaced by an $M$-term sum over $\\delta t = \\Delta t/M$, costing $O((T/r)^2\\max_t\\|A'(t)\\|/M)$ in $W_K$, with $M$ chosen so this stays below $\\varepsilon/r$ per segment — the one place derivatives of the parameters enter, and they enter only the gate count.]] [[assumption: $A_{\\max}\\Delta t = O(1)$, which is what the truncation bound is derived under.]] The surviving terms are the blocks $V_m$, $v_m$ of the system; solving it is the layer below.",
+        theoryJa:
+          "伝播子は時間順序付きの Dyson 級数 $W(t,t_0) = \\sum_{k \\ge 0} \\frac{1}{k!}\\int_{t_0}^{t}\\!dt_1 \\cdots \\int_{t_0}^{t}\\!dt_k\\, \\mathcal{T}A(t_1)\\cdots A(t_k)$ であり、駆動項に対応するのは $v(t,t_0) = \\sum_{k \\ge 1}\\int_{t_0}^{t}\\!dt_1 \\cdots \\int_{t_0}^{t_{k-1}}\\!dt_k\\, A(t_1)\\cdots A(t_{k-1})b(t_k)$ です。[[approximation: 両者を次数 $K$ で打ち切り、$x_K(t) = W_K(t,t_0)x(t_0) + v_K(t,t_0)$ とします。誤差は $O((A_{\\max}\\Delta t)^{K+1}\\|x(t_0)\\|/(K+1)! + A_{\\max}^{K}\\Delta t^{K+1}b_{\\max}/(K+1)!)$ であり、これを $\\varepsilon$ に収める次数が $K = O(\\log(\\lambda_{Ax}T/\\varepsilon)/\\log\\log(\\lambda_{Ax}T/\\varepsilon))$ です。]] [[approximation: 残る各時間積分を、さらに $\\delta t = \\Delta t/M$ 刻みの $M$ 項の和で置き換えます。$W_K$ における代価は $O((T/r)^2\\max_t\\|A'(t)\\|/M)$ で、$M$ は各区間でこれが $\\varepsilon/r$ 以下となるように選びます。パラメータの微分が入ってくるのはここだけであり、しかも入るのはゲート数だけです。]] [[assumption: $A_{\\max}\\Delta t = O(1)$ であること。上の打ち切り誤差の評価はこれを前提として導かれています。]] 残った項がこの系のブロック $V_m$, $v_m$ であり、その系を解くのは一つ下の層です。",
+      },
     },
     citations: [
       { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
@@ -1226,6 +1836,19 @@ export const LAYER_GRAPH: LayerGraph = {
       ].join("\n"),
     },
     repeats: {
+      // Harrow, Hassidim and Lloyd, arXiv:0811.3171, read as a full PDF: §II
+      // "Algorithm" and "Run-time and error analysis" for the conditional
+      // evolution, the rotation and the post-selection, Appendix A §A1 for the
+      // amplification iterate and the state-preparation unitary B.
+      //
+      // **Two of these four notes are where this route's `repeats` field stops
+      // being a bare count.** `repeats` already records that state preparation
+      // and Hamiltonian simulation each run O(kappa) times; the notes say WHY —
+      // B and B-dagger sit inside the amplification iterate, so |b> is rebuilt
+      // in every round, and the whole phase estimation is rebuilt with it. That
+      // is the difference between this route and `qsvt-matrix-inversion`, which
+      // prepares its right-hand side once, and the map draws the two as the same
+      // shape until these notes are read.
       "state-preparation": {
         count: "O(κ) times — once per amplification round",
         countJa: "O(κ) 回。増幅の各ラウンドにつき 1 回。",
@@ -1247,6 +1870,32 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     bypasses: ["polynomial-approximation", "qsp-phase-factors"],
     entries: ["hhl-linear-systems"],
+    hops: {
+      "state-preparation": {
+        theory:
+          "$|b\\rangle = \\sum_j \\beta_j |u_j\\rangle$ is produced by an efficiently implementable unitary $B$ applied to $|\\mathrm{initial}\\rangle$, whose gate count is $T_B$. $B$ and $B^\\dagger$ sit inside the amplification iterate $U_{\\mathrm{invert}} B R_{\\mathrm{init}} B^\\dagger U_{\\mathrm{invert}}^\\dagger R_{\\mathrm{succ}}$, so $|b\\rangle$ is prepared afresh in each of the $O(\\kappa)$ rounds and appears in the run-time $\\tilde{O}(\\kappa T_B + \\kappa^2 s^2 \\log(N)/\\varepsilon)$ as the term $\\kappa T_B$. [[assumption: nothing beyond efficient implementability is assumed of $B$ — it may produce $|b\\rangle$ \"possibly along with garbage in an ancilla register\" — and the possibility that $B$ errs in producing $|b\\rangle$ is neglected, since without another way of producing or verifying $|b\\rangle$ there is no way to mitigate those errors, so any error there translates directly into error in the final $|x\\rangle$.]]",
+        theoryJa:
+          "$|b\\rangle = \\sum_j \\beta_j |u_j\\rangle$ は、効率的に実装できるユニタリ $B$ を $|\\mathrm{initial}\\rangle$ に作用させて用意します。そのゲート数を $T_B$ とします。$B$ と $B^\\dagger$ は増幅の反復 $U_{\\mathrm{invert}} B R_{\\mathrm{init}} B^\\dagger U_{\\mathrm{invert}}^\\dagger R_{\\mathrm{succ}}$ の内側にありますので、$|b\\rangle$ は $O(\\kappa)$ 回のラウンドごとに改めて用意され、実行時間 $\\tilde{O}(\\kappa T_B + \\kappa^2 s^2 \\log(N)/\\varepsilon)$ には $\\kappa T_B$ の項として現れます。[[assumption: $B$ に課される仮定は効率的に実装できることだけで、「補助レジスタにゴミを伴っていてもよい」とされます。また $B$ が $|b\\rangle$ の生成に失敗する可能性は無視されます。$|b\\rangle$ を生成あるいは検証する他の手段がない以上その誤差は補正しようがないためで、そこで生じた誤差はそのまま最終状態 $|x\\rangle$ の誤差になります。]]",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "The conditional Hamiltonian evolution $\\sum_{\\tau=0}^{T-1} |\\tau\\rangle\\langle\\tau| \\otimes e^{iA\\tau t_0/T}$ is applied to $|\\Psi_0\\rangle |b\\rangle$ and the first register is Fourier transformed, giving $\\sum_{j,k} \\alpha_{k|j}\\beta_j |k\\rangle |u_j\\rangle$, in which $|\\alpha_{k|j}|$ is large if and only if $\\lambda_j \\approx 2\\pi k/t_0 =: \\tilde{\\lambda}_k$. For $s$-sparse $A$ and $t \\le t_0$ this costs $T_H = \\tilde{O}(\\log(N)s^2 t_0)$ to error $\\varepsilon_H$, and with $t_0 = O(\\kappa/\\varepsilon)$ the amplification repeats the whole estimation $O(\\kappa)$ times. [[approximation: the eigenvalues are replaced by the phase estimates $\\tilde{\\lambda}_k = 2\\pi k/t_0$; phase estimation is \"the dominant source of error\", erring by $O(1/t_0)$ in estimating $\\lambda$, which translates into a relative error of $O(1/\\lambda t_0)$ in $\\lambda^{-1}$, so for $\\lambda \\ge 1/\\kappa$ taking $t_0 = O(\\kappa/\\varepsilon)$ induces a final error of $\\varepsilon$.]] [[assumption: $A$ is $s$-sparse and efficiently row computable — at most $s$ nonzero entries per row, computable in time $O(s)$ given a row index — and this is the only step of the algorithm where sparsity of $A$ is required.]]",
+        theoryJa:
+          "条件付きハミルトニアン発展 $\\sum_{\\tau=0}^{T-1} |\\tau\\rangle\\langle\\tau| \\otimes e^{iA\\tau t_0/T}$ を $|\\Psi_0\\rangle |b\\rangle$ に作用させ、第一レジスタを Fourier 変換すると $\\sum_{j,k} \\alpha_{k|j}\\beta_j |k\\rangle |u_j\\rangle$ が得られます。ここで $|\\alpha_{k|j}|$ が大きいのは $\\lambda_j \\approx 2\\pi k/t_0 =: \\tilde{\\lambda}_k$ のとき、かつそのときに限ります。$A$ が $s$ 疎で $t \\le t_0$ であれば、これは誤差 $\\varepsilon_H$ のもとで $T_H = \\tilde{O}(\\log(N)s^2 t_0)$ の時間を要し、$t_0 = O(\\kappa/\\varepsilon)$ としたうえで、増幅がこの推定全体を $O(\\kappa)$ 回繰り返します。[[approximation: 固有値は位相推定の値 $\\tilde{\\lambda}_k = 2\\pi k/t_0$ に置き換えられます。位相推定は「誤差の支配的な源」であり、$\\lambda$ の推定で $O(1/t_0)$ の誤差を生じ、それが $\\lambda^{-1}$ では $O(1/\\lambda t_0)$ の相対誤差になります。したがって $\\lambda \\ge 1/\\kappa$ のもとで $t_0 = O(\\kappa/\\varepsilon)$ と取ると、最終的な誤差は $\\varepsilon$ になります。]] [[assumption: $A$ は $s$ 疎で効率的に行が計算できること、すなわち各行の非ゼロ成分が高々 $s$ 個で、行の添字が与えられればそれらを $O(s)$ 時間で計算できることを仮定します。アルゴリズム中で $A$ の疎性を要求するのはこの段階だけです。]]",
+      },
+      "success-amplification": {
+        theory:
+          "Measuring the flag register $S$ after $U_{\\mathrm{invert}}$ and obtaining the outcome 'well' has approximately applied an operator proportional to $A^{-1}$, with success probability $\\tilde{p}$; rather than repeating $1/\\tilde{p}$ times, amplitude amplification obtains the same result in $O(1/\\sqrt{\\tilde{p}})$ repetitions of $U_{\\mathrm{invert}} B R_{\\mathrm{init}} B^\\dagger U_{\\mathrm{invert}}^\\dagger R_{\\mathrm{succ}}$ applied to $U_{\\mathrm{invert}} B |\\mathrm{initial}\\rangle$, where $R_{\\mathrm{succ}} = I^S - 2|\\mathrm{well}\\rangle\\langle\\mathrm{well}|^S$ and $R_{\\mathrm{init}} = I - 2|\\mathrm{initial}\\rangle\\langle\\mathrm{initial}|$. Since $C = O(1/\\kappa)$ and $\\lambda \\le 1$ the post-selection succeeds with probability at least $\\Omega(1/\\kappa^2)$, so the ideal repetition count $\\pi/4\\sqrt{\\tilde{p}}$ is $O(\\kappa)$. [[assumption: $\\tilde{p}$ is initially unknown, so the entire procedure is repeated with a geometrically increasing number of repetitions — $1, 2, 4, 8, \\ldots$ — until a power of two $\\ge \\kappa$ is reached, which yields a constant probability of success using $\\le 4\\kappa$ repetitions and therefore needs the cutoff $\\kappa$, which is an input to the algorithm.]]",
+        theoryJa:
+          "$U_{\\mathrm{invert}}$ ののちフラグレジスタ $S$ を測定して「well」が得られれば、$A^{-1}$ に比例する演算子をほぼ適用したことになります。その成功確率を $\\tilde{p}$ とすると、$1/\\tilde{p}$ 回繰り返す代わりに振幅増幅を用いて、$U_{\\mathrm{invert}} B |\\mathrm{initial}\\rangle$ に $U_{\\mathrm{invert}} B R_{\\mathrm{init}} B^\\dagger U_{\\mathrm{invert}}^\\dagger R_{\\mathrm{succ}}$ を $O(1/\\sqrt{\\tilde{p}})$ 回適用することで同じ結果が得られます。ここで $R_{\\mathrm{succ}} = I^S - 2|\\mathrm{well}\\rangle\\langle\\mathrm{well}|^S$、$R_{\\mathrm{init}} = I - 2|\\mathrm{initial}\\rangle\\langle\\mathrm{initial}|$ です。$C = O(1/\\kappa)$ かつ $\\lambda \\le 1$ ですので、事後選択の成功確率は少なくとも $\\Omega(1/\\kappa^2)$ であり、理想的な反復回数 $\\pi/4\\sqrt{\\tilde{p}}$ は $O(\\kappa)$ になります。[[assumption: $\\tilde{p}$ は最初は分かりませんので、反復回数を $1, 2, 4, 8, \\ldots$ と幾何級数的に増やしながら手続き全体を繰り返し、$\\kappa$ 以上の 2 のべきに達したところで止めます。これにより $4\\kappa$ 回以下の反復で定数の成功確率が得られますが、そのためには打ち切り値 $\\kappa$ が必要で、これはアルゴリズムへの入力です。]]",
+      },
+      "hhl-qpe-inversion": {
+        theory:
+          "The map wanted is the one taking $|\\lambda_j\\rangle$ to $C\\lambda_j^{-1}|\\lambda_j\\rangle$ for a normalising constant $C$; it is not unitary, so it has some probability of failing. It is realised by adjoining an ancilla qubit and rotating conditioned on $|\\tilde{\\lambda}_k\\rangle$, which yields the branch $\\sqrt{1 - C^2/\\tilde{\\lambda}_k^2}\\,|0\\rangle + (C/\\tilde{\\lambda}_k)|1\\rangle$ with $C = O(1/\\kappa)$; the phase estimation is then undone to uncompute the $\\tilde{\\lambda}_k$ and the last qubit is measured, and conditioned on seeing $1$ the state is proportional to $\\sum_j \\beta_j (C/\\lambda_j)|u_j\\rangle$, which is $|x\\rangle = \\sum_j \\beta_j\\lambda_j^{-1}|u_j\\rangle$ up to normalisation — the normalisation factor being determined from the probability of obtaining $1$. [[approximation: what is produced is not $\\sum_j \\lambda_j^{-1}\\beta_j|u_j\\rangle$ but a state close to $\\sum_{j,\\lambda_j \\ge 1/\\kappa} \\lambda_j^{-1}\\beta_j|u_j\\rangle|\\mathrm{well}\\rangle + \\sum_{j,\\lambda_j < 1/\\kappa} \\beta_j|u_j\\rangle|\\mathrm{ill}\\rangle$; only the well-conditioned part is inverted, eigenvectors with eigenvalue $\\le 1/\\kappa' = 1/2\\kappa$ are flagged as ill-conditioned without being inverted, and the two behaviours are interpolated for $1/\\kappa' < |\\lambda| < 1/\\kappa$, because no eigenvalue can be resolved exactly.]] [[assumption: $C = O(1/\\kappa)$ together with $\\lambda \\le 1$ is what leaves the post-selection a success probability of at least $\\Omega(1/\\kappa^2)$; correctness is guaranteed under $\\|A\\| \\le 1$ and $\\|A^{-1}\\| \\le \\kappa$, with $\\kappa$ supplied as a chosen cutoff.]]",
+        theoryJa:
+          "必要なのは $|\\lambda_j\\rangle$ を $C\\lambda_j^{-1}|\\lambda_j\\rangle$ に写す線形写像です（$C$ は規格化定数）。これはユニタリではありませんので、失敗する確率を持ちます。実装は補助量子ビットを一つ加え、$|\\tilde{\\lambda}_k\\rangle$ で条件付けて回転させることで行い、$C = O(1/\\kappa)$ のもとで $\\sqrt{1 - C^2/\\tilde{\\lambda}_k^2}\\,|0\\rangle + (C/\\tilde{\\lambda}_k)|1\\rangle$ という分岐が得られます。続いて位相推定を逆に実行して $\\tilde{\\lambda}_k$ を打ち消し、最後の量子ビットを測定します。結果が $1$ であれば、状態は $\\sum_j \\beta_j (C/\\lambda_j)|u_j\\rangle$ に比例し、規格化を除いて $|x\\rangle = \\sum_j \\beta_j\\lambda_j^{-1}|u_j\\rangle$ になります。規格化因子は $1$ が得られる確率から決まります。[[approximation: 実際に得られるのは $\\sum_j \\lambda_j^{-1}\\beta_j|u_j\\rangle$ ではなく、$\\sum_{j,\\lambda_j \\ge 1/\\kappa} \\lambda_j^{-1}\\beta_j|u_j\\rangle|\\mathrm{well}\\rangle + \\sum_{j,\\lambda_j < 1/\\kappa} \\beta_j|u_j\\rangle|\\mathrm{ill}\\rangle$ に近い状態です。逆数化されるのは条件の良い部分だけで、固有値が $1/\\kappa' = 1/2\\kappa$ 以下の固有ベクトルは逆数化されずに条件が悪いものとして印を付けられ、$1/\\kappa' < |\\lambda| < 1/\\kappa$ の範囲では両者が補間されます。固有値を厳密に分解することができないためです。]] [[assumption: 事後選択の成功確率が少なくとも $\\Omega(1/\\kappa^2)$ に保たれるのは、$C = O(1/\\kappa)$ と $\\lambda \\le 1$ が成り立つからです。正しさが保証されるのは $\\|A\\| \\le 1$ かつ $\\|A^{-1}\\| \\le \\kappa$ のもとであり、$\\kappa$ は選択された打ち切り値として与えられます。]]",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for solving linear systems of equations", authors: "Aram W. Harrow, Avinatan Hassidim, Seth Lloyd", year: "2008", url: "https://arxiv.org/abs/0811.3171" },
       { title: "Quantum tomography using state-preparation unitaries", authors: "Joran van Apeldoorn, Arjan Cornelissen, András Gilyén, Giacomo Nannicini", year: "2022", url: "https://arxiv.org/abs/2207.08800" },
@@ -1296,6 +1945,17 @@ export const LAYER_GRAPH: LayerGraph = {
       ].join("\n"),
     },
     repeats: {
+      // Gilyén, Su, Low and Wiebe arXiv:1806.01838 (Theorem 41 and §3.2) with
+      // Chakraborty, Gilyén and Jeffery arXiv:1804.01973 for the block-encoding
+      // access model, both read as full PDFs.
+      //
+      // **One claim was cut by a second reader and it is worth recording which:**
+      // the first draft said the singular-value framing means the matrix "need
+      // not be Hermitian or sparse". The Hermitian half is the paper's, stated
+      // just before Theorem 17. The sparsity half is not: sparse access is one
+      // input model for BUILDING a block encoding (Lemma 48), not a hypothesis
+      // this construction waives. It was a true-of-the-subject sentence that the
+      // cited paper does not make, which is the exact failure the gap rule names.
       "block-encode-matrix": {
         count: "m = O((1/δ) log(1/ε)) applications of U and U†",
         countJa: "U と U† を m = O((1/δ) log(1/ε)) 回。",
@@ -1304,6 +1964,38 @@ export const LAYER_GRAPH: LayerGraph = {
         closure: "coherent",
         note: "Gilyén, Su, Low and Wiebe's Theorem 41 count, and δ = 1/κ after normalisation — so this is the condition number, appearing as a number of turns rather than as a mysterious factor. The log(1/ε) is what an approximating polynomial of that degree costs, and it is why this route's precision dependence is logarithmic where phase-estimation inversion's is not.",
         noteJa: "Gilyén・Su・Low・Wiebe の Theorem 41 による回数で、正規化後は δ = 1/κ です。つまりこれは条件数が、正体不明の因子ではなく反復回数として現れたものです。log(1/ε) はその次数の近似多項式にかかる代価であり、この経路の精度依存性が対数的である一方、位相推定による反転がそうでない理由でもあります。",
+      },
+    },
+    hops: {
+      "block-encode-matrix": {
+        theory:
+          "The route touches $A$ only through a projected unitary encoding $A = \\tilde{\\Pi} U \\Pi$, of which a block-encoding — $A = \\alpha(\\langle 0|^{\\otimes a} \\otimes I) U (|0\\rangle^{\\otimes a} \\otimes I)$ — is the special case. The transformation queries it $m = O((1/\\delta)\\log(1/\\varepsilon))$ times as $U$ and $U^\\dagger$, coherently, with a single ancilla qubit carrying the phase shifts. [[assumption: Every non-zero singular value of $A = \\tilde{\\Pi} U \\Pi$ is at least $\\delta$, which is $\\delta = 1/\\kappa$ after normalisation.]] [[assumption: For the end-to-end form, Chakraborty, Gilyén and Jeffery need the encoding's own error to be $o(\\varepsilon/(\\kappa^2 \\log^3(\\kappa/\\varepsilon)))$, and its subnormalisation $\\alpha$ multiplies the query count.]]",
+        theoryJa:
+          "この経路が $A$ に触れるのは射影ユニタリ符号化 $A = \\tilde{\\Pi} U \\Pi$ を通してのみで、ブロック符号化 $A = \\alpha(\\langle 0|^{\\otimes a} \\otimes I) U (|0\\rangle^{\\otimes a} \\otimes I)$ はその特別な場合にあたります。変換はこれを $U$ と $U^\\dagger$ として $m = O((1/\\delta)\\log(1/\\varepsilon))$ 回、コヒーレントに問い合わせ、位相シフトは 1 つの補助量子ビットが担います。[[assumption: $A = \\tilde{\\Pi} U \\Pi$ の非零特異値がすべて $\\delta$ 以上であることが必要で、正規化後は $\\delta = 1/\\kappa$ です。]] [[assumption: 端から端までの形については、Chakraborty・Gilyén・Jeffery は符号化自身の誤差が $o(\\varepsilon/(\\kappa^2 \\log^3(\\kappa/\\varepsilon)))$ であることを要求し、その正規化因子 $\\alpha$ は問い合わせ回数に掛かります。]]",
+      },
+      "state-preparation": {
+        theory:
+          "The problem this hop feeds is stated with a procedure that computes $|b\\rangle$ in the image of $A$, the target being a state within $\\varepsilon$ of $A^{+}|b\\rangle / \\lVert A^{+}|b\\rangle \\rVert$. [[assumption: $|b\\rangle$ lies in the image of $A$ — in Chakraborty, Gilyén and Jeffery's Theorem 30 it is an input state spanned by the eigenvectors of $H$.]] Preparing it costs $T_b$, and that cost enters the end-to-end bill multiplied by the condition number, as the $\\kappa T_b \\log(1/\\varepsilon)$ term.",
+        theoryJa:
+          "このホップが供給する先の問題は、$A$ の像に入る $|b\\rangle$ を計算する手続きを前提として述べられており、目標は $A^{+}|b\\rangle / \\lVert A^{+}|b\\rangle \\rVert$ から $\\varepsilon$ 以内の状態です。[[assumption: $|b\\rangle$ が $A$ の像に入っていることが必要で、Chakraborty・Gilyén・Jeffery の定理 30 では $H$ の固有ベクトルで張られる入力状態とされています。]] その準備には $T_b$ がかかり、この費用は条件数倍されて全体の見積もりに入ります。すなわち $\\kappa T_b \\log(1/\\varepsilon)$ の項です。",
+      },
+      "matrix-function": {
+        theory:
+          "With every non-zero singular value at least $\\delta$, an odd real polynomial $P_<$ that $\\varepsilon$-approximates $\\delta/(2x)$ on $[-1,1] \\setminus (-\\delta,\\delta)$ gives $P_<^{(SV)}(A^\\dagger) = \\Pi U_\\Phi^\\dagger \\tilde{\\Pi}$, which $\\varepsilon$-approximates $(\\delta/2)A^{+}$. [[approximation: $1/x$ is replaced by $f(x) = (1-(1-x^2)^b)/x$ with $b = \\lceil \\kappa^2 \\log(\\kappa/\\varepsilon) \\rceil$, which is $\\varepsilon$-close to $1/x$ only on $[-1,1] \\setminus (-1/\\kappa, 1/\\kappa)$, and $f$ in turn by an odd Chebyshev expansion of degree $O(\\kappa \\log(\\kappa/\\varepsilon))$.]] [[assumption: Singular value transformation by real polynomials requires $P_<$ to have parity $n \\bmod 2$ and to satisfy $|P_<(x)| \\le 1$ for every $x \\in [-1,1]$; the construction secures the bound by taking $P_< = P \\cdot (1 - P')$ with $P'$ an even polynomial approximating a rectangle function.]]",
+        theoryJa:
+          "非零特異値がすべて $\\delta$ 以上であるとき、$[-1,1] \\setminus (-\\delta,\\delta)$ 上で $\\delta/(2x)$ を $\\varepsilon$ 近似する奇の実多項式 $P_<$ をとると、$P_<^{(SV)}(A^\\dagger) = \\Pi U_\\Phi^\\dagger \\tilde{\\Pi}$ が $(\\delta/2)A^{+}$ を $\\varepsilon$ 近似します。[[approximation: $1/x$ は、$b = \\lceil \\kappa^2 \\log(\\kappa/\\varepsilon) \\rceil$ とした $f(x) = (1-(1-x^2)^b)/x$ に置き換えられます。これが $1/x$ に $\\varepsilon$ 近いのは $[-1,1] \\setminus (-1/\\kappa, 1/\\kappa)$ 上に限られます。さらに $f$ は次数 $O(\\kappa \\log(\\kappa/\\varepsilon))$ の奇のチェビシェフ展開に置き換えられます。]] [[assumption: 実多項式による特異値変換は、$P_<$ が $n \\bmod 2$ のパリティを持ち、すべての $x \\in [-1,1]$ で $|P_<(x)| \\le 1$ を満たすことを要求します。構成では、矩形関数を近似する偶多項式 $P'$ を用いて $P_< = P \\cdot (1 - P')$ とすることで、この上界を確保しています。]]",
+      },
+      "success-amplification": {
+        theory:
+          "The flagged branch carries the subnormalisation: applying the $(2\\kappa,\\, a + O(\\log(\\kappa \\log(1/\\varepsilon))),\\, \\varepsilon)$-block-encoding of $A^{-1}$ to $|b\\rangle$ leaves $\\frac{1}{2\\kappa}|0\\rangle^{\\otimes a}(A^{-1}|b\\rangle) + |0^{\\perp}\\rangle$, so standard amplitude amplification needs a number of rounds linear in $\\kappa$ and the overall dependence on $\\kappa$ comes out quadratic. Chakraborty, Gilyén and Jeffery recover a linear $\\kappa$ by using variable-time amplitude amplification in its place. [[assumption: Variable-time amplitude amplification needs the solver recast as a variable-stopping-time algorithm — a sequence of $\\lceil \\log_2 \\kappa \\rceil + 1$ steps $A_1, A_2, \\ldots$, each with its own single-qubit clock register, where step $j$ runs gapped phase estimation on $e^{iA}$ at precision $2^{-j}$ and inverts only the branch that step flags.]]",
+        theoryJa:
+          "フラグの立つ枝は正規化因子を抱えたままです。$A^{-1}$ の $(2\\kappa,\\, a + O(\\log(\\kappa \\log(1/\\varepsilon))),\\, \\varepsilon)$ ブロック符号化を $|b\\rangle$ に適用すると $\\frac{1}{2\\kappa}|0\\rangle^{\\otimes a}(A^{-1}|b\\rangle) + |0^{\\perp}\\rangle$ が残りますので、通常の振幅増幅では $\\kappa$ に比例する回数のラウンドが必要になり、$\\kappa$ への依存は全体として二次になります。Chakraborty・Gilyén・Jeffery は、これを可変時間振幅増幅に置き換えることで $\\kappa$ について線形に戻しています。[[assumption: 可変時間振幅増幅は、ソルバーを可変停止時間アルゴリズムとして書き直すことを要求します。すなわち $\\lceil \\log_2 \\kappa \\rceil + 1$ 個の段 $A_1, A_2, \\ldots$ からなる列で、各段はそれぞれ 1 量子ビットの時計レジスタを持ち、第 $j$ 段は $e^{iA}$ に対して精度 $2^{-j}$ の gapped 位相推定を行い、そこでフラグの立った枝だけを反転します。]]",
+      },
+      "qsvt-matrix-inversion": {
+        theory:
+          "Assembled: for $0 < \\varepsilon \\le \\delta \\le 1/2$ there is an $m = O((1/\\delta)\\log(1/\\varepsilon))$ and an efficiently computable $\\Phi \\in \\mathbb{R}^m$ whose circuit $U_\\Phi$, restricted to the singular-value subspaces that are zero or at least $\\delta$, implements $(\\delta/2) \\cdot A^{+}$ to error $\\varepsilon$ — using a single ancilla qubit, $m$ uses of $U$ and $U^\\dagger$, $m$ uses of $C_\\Pi\\mathrm{NOT}$ and $C_{\\tilde{\\Pi}}\\mathrm{NOT}$, and $m$ single-qubit gates. Because the transform acts on singular values, it applies to an arbitrary matrix rather than only a Hermitian or normal one. [[assumption: $0 < \\varepsilon \\le \\delta \\le 1/2$; the authors call the $\\varepsilon \\le \\delta$ part quite natural but not necessary, removable through their Corollary 69.]]",
+        theoryJa:
+          "組み上げると、$0 < \\varepsilon \\le \\delta \\le 1/2$ に対して $m = O((1/\\delta)\\log(1/\\varepsilon))$ と、効率的に計算できる $\\Phi \\in \\mathbb{R}^m$ が存在します。その回路 $U_\\Phi$ は、特異値が $0$ または $\\delta$ 以上である部分空間に制限したとき、$(\\delta/2) \\cdot A^{+}$ を誤差 $\\varepsilon$ で実装します。要するのは補助量子ビット 1 つ、$U$ と $U^\\dagger$ の使用 $m$ 回、$C_\\Pi\\mathrm{NOT}$ と $C_{\\tilde{\\Pi}}\\mathrm{NOT}$ の使用 $m$ 回、そして 1 量子ビットゲート $m$ 個です。変換が特異値に作用するため、エルミート行列や正規行列に限らず任意の行列に適用できます。[[assumption: $0 < \\varepsilon \\le \\delta \\le 1/2$ が必要です。著者らは $\\varepsilon \\le \\delta$ の部分について、きわめて自然ではあるが必要ではなく、Corollary 69 によって外せると述べています。]]",
       },
     },
     citations: [
@@ -1328,6 +2020,127 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "ここでの $\\kappa²$ は増幅前の数字です。同じ論文の定理 5 は $\\kappa$ 依存性をほぼ線形まで下げますが、そのためにスペクトルを区分けする低精度の（gapped な）位相推定を再導入しており、フーリエ経路とチェビシェフ経路のどちらにも適用できます。このほぼ線形の結果を位相推定なしと表現するのは誤りです。",
     steps: ["state-preparation", "matrix-function", "success-amplification"],
     bypasses: ["hamiltonian-simulation"],
+    // Transcribed from `summary`, `conditions`, `steps`, `cost` and `contested`.
+    // The two action lines are `summary`: "Expand an approximation of 1/x in
+    // Chebyshev polynomials and implement that expansion directly through the
+    // quantum walk associated with a sparse A, rather than through Hamiltonian
+    // simulation". The `given` line is `conditions`: "Applies to sparse matrices
+    // only: it uses the entry oracle P_A directly", together with the
+    // normalisation ||A|| = 1, the known kappa and the poly(log N)-time
+    // preparation of |b> that the same field says are "assumed as elsewhere in
+    // this family".
+    //
+    // `summary` mentions neither preparing |b> nor amplifying; `steps` does --
+    // state-preparation, matrix-function, success-amplification -- and fixes the
+    // order, so those two lines are transcribed from `steps`, with `conditions`
+    // supplying the wording for |b>.
+    //
+    // What makes this listing not qsvt-matrix-inversion's:
+    // that one's interest is in what the transform leaves behind (a
+    // subnormalised pseudoinverse that the amplification has to convert). This
+    // record's interest is in what it never uses, and both refusals are on the
+    // record, so both are written: `bypasses` is hamiltonian-simulation and
+    // `summary` says "rather than through Hamiltonian simulation", and `summary`
+    // says "Phase estimation is never used, which is what removes the
+    // poly(1/epsilon) bottleneck".
+    //
+    // Three things the listing deliberately does not say:
+    //  - it states no truncation degree for the Chebyshev expansion, because the
+    //    record states none.
+    //  - it does not hang the "O(kappa log(d kappa/epsilon)) uses of P_B" on
+    //    the prepare-|b> line. `cost` names P_B and nowhere says what P_B is, so
+    //    both counts are transcribed together as `cost` states them, attached to
+    //    neither step.
+    //  - it does not write Theorem 5's near-linear kappa as the method.
+    //    `contested` says that result is bought "by reintroducing a low-precision
+    //    ('gapped') phase estimation to bucket the spectrum" and that
+    //    "describing that near-linear result as phase-estimation-free is
+    //    incorrect", so the faster figure appears only inside the comment that
+    //    says so.
+    //
+    // The Fourier route is written as a comment but pointedly NOT as the repo's
+    // "do not build this": `conditions` says the two routes "are incomparable",
+    // so this record does not displace it, and the comment carries the record's
+    // comparison in both directions.
+    //
+    // (The extract this was written from also carried the neighbouring
+    // `matrix-function` capability record, whose `whyALayer` says an LCU of
+    // Chebyshev terms "needs no phase factors but pays in ancillas and in the
+    // coefficient sum". That sentence is on a different record and is not
+    // transcribed here: this listing states no ancilla count and no coefficient
+    // sum.)
+    example: {
+      pseudocode: [
+        "given  a sparse A only -- the entry oracle P_A is used directly -- with",
+        "       the normalisation ||A|| = 1, kappa known, and |b> preparable in",
+        "       poly(log N) time, as elsewhere in this family",
+        "",
+        "prepare |b>",
+        "",
+        "expand an approximation of 1/x in Chebyshev polynomials",
+        "    # the record states no truncation degree for that expansion",
+        "implement that expansion directly through the quantum walk associated",
+        "    with the sparse A",
+        "    # rather than through Hamiltonian simulation",
+        "    # phase estimation is never used, which is what removes the",
+        "    # poly(1/epsilon) bottleneck",
+        "",
+        "amplify",
+        "",
+        "# Theorem 4: O(d kappa^2 log^2(d kappa/epsilon)) queries to P_A and",
+        "# O(kappa log(d kappa/epsilon)) uses of P_B, where d is the sparsity,",
+        "# kappa the condition number and epsilon the state-vector error",
+        "",
+        "# that kappa^2 is the pre-amplification figure. The same paper's Theorem",
+        "# 5 brings the kappa-dependence down to near-linear, but it does so by",
+        "# reintroducing a low-precision (gapped) phase estimation to bucket the",
+        "# spectrum, and it applies to either the Fourier or the Chebyshev route.",
+        "# Describing that near-linear result as phase-estimation-free is",
+        "# incorrect, which is why it is not the route written above.",
+        "",
+        "# the same authors' Fourier route is not displaced by this one: they",
+        "# state that the two are incomparable -- the Fourier approach is more",
+        "# general and slightly better in the sparsity d, the Chebyshev approach",
+        "# is more efficient in kappa and epsilon but applies only to sparse",
+        "# Hamiltonians",
+      ].join("\n"),
+    },
+    hops: {
+      // Childs, Kothari and Somma, arXiv:1511.02306, full PDF: Problem 1 and §2.1
+      // for the access model and the LCU lemmas, §4.1-4.2 for the polynomial and
+      // its truncation, Theorem 4 for the query counts.
+      //
+      // The own-stretch note is where this route's `bypasses` of
+      // `hamiltonian-simulation` stops being an assertion: the Chebyshev
+      // polynomials are implemented by steps of the sparse-access quantum walk,
+      // so the entry oracle is used directly and neither $e^{-iAt}$ nor phase
+      // estimation appears anywhere in the construction. A bypass edge that the
+      // reader can only take on trust is the thing `W12` warned about.
+      "state-preparation": {
+        theory:
+          "This route consumes its right-hand side as a procedure $P_B$ with $P_B|0^s\\rangle=|b\\rangle$, where $|b\\rangle\\propto\\sum_i b_i|i\\rangle$, and Theorem 4 charges $O(\\kappa\\log(d\\kappa/\\varepsilon))$ uses of it. [[assumption: $P_B$ prepares $|b\\rangle$ in time $O(\\mathrm{poly}(\\log N))$ — part of Problem 1's definition of the QLSP, not something the algorithm establishes.]] [[assumption: Multiple copies of $|b\\rangle$ can be created, which is the authors' stated reason the construction needs no oblivious amplitude amplification — a tool that would not work anyway when $M$ is far from unitary.]]",
+        theoryJa:
+          "この経路は右辺を、$P_B|0^s\\rangle=|b\\rangle$ を行う手続き $P_B$ として受け取ります。ここで $|b\\rangle$ は $\\sum_i b_i|i\\rangle$ に比例し、定理 4 はその使用回数を $O(\\kappa\\log(d\\kappa/\\varepsilon))$ 回と見積もっています。[[assumption: $P_B$ は $|b\\rangle$ を $O(\\mathrm{poly}(\\log N))$ 時間で用意します。これは Problem 1 における QLSP の定義に含まれる前提であり、アルゴリズムが示すものではありません。]] [[assumption: 入力状態 $|b\\rangle$ の複製をいくつでも作れます。著者らはこれを、oblivious な振幅増幅を必要としない理由として挙げています。その手法は $M$ がユニタリから遠い場合にはそもそも働きません。]]",
+      },
+      "matrix-function": {
+        theory:
+          "The object to be applied is $H^{-1}$ for $H:=A/d$, and $1/x$ is first tamed to $f(x)=\\bigl(1-(1-x^2)^b\\bigr)/x$, which is bounded at the origin. [[approximation: $f$ is $\\varepsilon$-close to $1/x$ on $D_{\\kappa d}=[-1,-1/(\\kappa d)]\\cup[1/(\\kappa d),1]$ for any integer $b\\ge(\\kappa d)^2\\log(\\kappa d/\\varepsilon)$ (Lemma 17).]] Being a polynomial of degree $2b-1$, $f$ is then represented exactly by odd Chebyshev polynomials $T_{2j+1}$, $j\\le b-1$, with coefficients $4(-1)^j\\,2^{-2b}\\sum_{i=j+1}^{b}\\binom{2b}{b+i}$ (Lemma 18). [[approximation: The series is truncated at $j_0=\\sqrt{b\\log(4b/\\varepsilon)}$; each discarded bracket is the probability of more than $b+j$ heads in $2b$ fair flips and is bounded by $e^{-j^2/b}$, so the surviving degree is $O(j_0)=O(d\\kappa\\log(d\\kappa/\\varepsilon))$ (Lemma 19).]] Every surviving term is applied by powers of the quantum walk $W=S(2TT^\\dagger-1)$, for which $W^nT|\\psi\\rangle=T\\,T_n(H)|\\psi\\rangle+|\\perp_\\psi\\rangle$, at $O(n)$ queries to $P_A$. [[assumption: $\\|H\\|\\le1$ because $A$ is $d$-sparse with $\\|A\\|_{\\max}\\le1$, and the expansion need only be correct on $D_{\\kappa d}$ because the eigenvalues of $A$ are known to lie in $D_\\kappa$.]]",
+        theoryJa:
+          "適用すべき対象は $H:=A/d$ に対する $H^{-1}$ で、まず $1/x$ を、原点で有界な $f(x)=\\bigl(1-(1-x^2)^b\\bigr)/x$ へと馴らします。[[approximation: 整数 $b\\ge(\\kappa d)^2\\log(\\kappa d/\\varepsilon)$ であれば、$f$ は領域 $D_{\\kappa d}=[-1,-1/(\\kappa d)]\\cup[1/(\\kappa d),1]$ 上で $1/x$ に $\\varepsilon$ の精度で一致します（補題 17）。]] $f$ は次数 $2b-1$ の多項式ですので、奇数次のチェビシェフ多項式 $T_{2j+1}$（$j\\le b-1$）と係数 $4(-1)^j\\,2^{-2b}\\sum_{i=j+1}^{b}\\binom{2b}{b+i}$ によって厳密に表せます（補題 18）。[[approximation: この級数を $j_0=\\sqrt{b\\log(4b/\\varepsilon)}$ で打ち切ります。捨てられる括弧内の量は、公平なコインを $2b$ 回投げて表が $b+j$ 回を超える確率であり、$e^{-j^2/b}$ で抑えられます。残る次数は $O(j_0)=O(d\\kappa\\log(d\\kappa/\\varepsilon))$ です（補題 19）。]] 残った各項は、量子ウォーク $W=S(2TT^\\dagger-1)$ の冪として適用されます。$W^nT|\\psi\\rangle=T\\,T_n(H)|\\psi\\rangle+|\\perp_\\psi\\rangle$ が成り立ち、$P_A$ への問い合わせは $O(n)$ 回です。[[assumption: $A$ は $d$ 疎で $\\|A\\|_{\\max}\\le1$ ですので $\\|H\\|\\le1$ が従います。また $A$ の固有値が $D_\\kappa$ に入ることは既知ですので、展開は $D_{\\kappa d}$ 上で正しければ十分です。]]",
+      },
+      "success-amplification": {
+        theory:
+          "Measuring the flag register of $V^\\dagger U V\\,|0^r\\rangle|b\\rangle=\\frac{1}{\\alpha}|0^r\\rangle M|b\\rangle+|\\Xi^\\perp\\rangle$ returns $M|b\\rangle/\\|M|b\\rangle\\|$ only with probability $(\\|M|b\\rangle\\|/\\alpha)^2$, so the branch is amplified rather than merely retried. Amplitude amplification produces it after $O(\\alpha/\\|M|b\\rangle\\|)$ uses of $V^\\dagger U V$ and $P_B$ in expectation, which is $O(\\alpha)$ here because $|f(x)|\\ge1$ on $D_\\kappa$ forces $\\|f(A)|b\\rangle\\|\\ge1$; with $\\alpha\\le 4j_0/d$ that is $O(\\kappa\\log(d\\kappa/\\varepsilon))$ uses of $P_B$. [[assumption: A reflection about the starting state $|0^r\\rangle|b\\rangle$ is available; it is built as $P_B(1-2|0^{r+s}\\rangle\\langle0^{r+s}|)P_B^\\dagger$ from two uses of $P_B$, one performed in reverse.]] [[assumption: The expected cost needs no estimate of $\\|M|b\\rangle\\|$, but a worst-case guarantee needs an upper bound on the success probability — $\\alpha$ is known, so running ten times the expected running time gives the $O(\\alpha)$ worst case.]]",
+        theoryJa:
+          "$V^\\dagger U V\\,|0^r\\rangle|b\\rangle=\\frac{1}{\\alpha}|0^r\\rangle M|b\\rangle+|\\Xi^\\perp\\rangle$ のフラグ用レジスタを測定しても、$M|b\\rangle/\\|M|b\\rangle\\|$ が得られるのは確率 $(\\|M|b\\rangle\\|/\\alpha)^2$ に限られますので、この分岐は単にやり直すのではなく増幅します。振幅増幅は、期待値で $V^\\dagger U V$ と $P_B$ を $O(\\alpha/\\|M|b\\rangle\\|)$ 回使ってこれを与えます。$D_\\kappa$ 上で $|f(x)|\\ge1$ ですので $\\|f(A)|b\\rangle\\|\\ge1$ となり、この回数は $O(\\alpha)$ です。$\\alpha\\le 4j_0/d$ より、$P_B$ の使用回数は $O(\\kappa\\log(d\\kappa/\\varepsilon))$ 回になります。[[assumption: 出発状態 $|0^r\\rangle|b\\rangle$ に関する反射が使えることを要求します。これは $P_B$ を 2 回（うち 1 回は逆向きに）使って $P_B(1-2|0^{r+s}\\rangle\\langle0^{r+s}|)P_B^\\dagger$ として構成されます。]] [[assumption: 期待値としてのコストには $\\|M|b\\rangle\\|$ の見積もりは不要ですが、最悪ケースの保証には成功確率の上界が必要です。$\\alpha$ は既知ですので、期待実行時間の 10 倍だけ走らせることで $O(\\alpha)$ の最悪ケースが得られます。]]",
+      },
+      "chebyshev-lcu-inversion": {
+        theory:
+          "$A^{-1}$ is applied as a linear combination of unitaries: with $M=\\sum_i\\alpha_i T_i$ and $\\alpha_i>0$, $U=\\sum_i|i\\rangle\\langle i|\\otimes U_i$ and $V|0^m\\rangle=\\alpha^{-1/2}\\sum_i\\sqrt{\\alpha_i}\\,|i\\rangle$ with $\\alpha=\\sum_i\\alpha_i$, the operator $V^\\dagger U V$ sends $|0^r\\rangle|b\\rangle$ to $\\frac{1}{\\alpha}|0^r\\rangle M|b\\rangle+|\\Xi^\\perp\\rangle$, so the all-zeros branch carries $M|b\\rangle$. The building blocks $T_i$ are the Chebyshev polynomials $T_n(A/d)$, implemented by steps of the sparse-access quantum walk, so the entry oracle $P_A$ is used directly and neither $e^{-iAt}$ nor phase estimation appears anywhere in the construction. [[approximation: A combination that is $\\varepsilon$-close to $f$ on the spectrum yields a state $4\\varepsilon$-close to $f(A)|b\\rangle/\\|f(A)|b\\rangle\\|$, provided $|f(x)|\\ge1$ there — Corollary 10, applied to $f(x)=1/x$ on $D_\\kappa=[-1,-1/\\kappa]\\cup[1/\\kappa,1]$.]] [[assumption: $A$ is Hermitian and $d$-sparse with $\\|A\\|=1$ and known condition number $\\kappa$, reached through the entry oracle $P_A$ of Problem 1.]]",
+        theoryJa:
+          "$A^{-1}$ はユニタリの線形結合として適用されます。$M=\\sum_i\\alpha_i T_i$、$\\alpha_i>0$ とし、$U=\\sum_i|i\\rangle\\langle i|\\otimes U_i$、$V|0^m\\rangle=\\alpha^{-1/2}\\sum_i\\sqrt{\\alpha_i}\\,|i\\rangle$（$\\alpha=\\sum_i\\alpha_i$）とおくと、$V^\\dagger U V$ は $|0^r\\rangle|b\\rangle$ を $\\frac{1}{\\alpha}|0^r\\rangle M|b\\rangle+|\\Xi^\\perp\\rangle$ へ写しますので、全ゼロの分岐が $M|b\\rangle$ を担います。構成要素 $T_i$ はチェビシェフ多項式 $T_n(A/d)$ であり、疎行列アクセスの量子ウォークのステップとして実装されます。したがってエントリオラクル $P_A$ を直接使うことになり、$e^{-iAt}$ も位相推定も構成のどこにも現れません。[[approximation: スペクトル上で $f$ に $\\varepsilon$ の精度で一致する線形結合は、そこで $|f(x)|\\ge1$ である限り、$f(A)|b\\rangle/\\|f(A)|b\\rangle\\|$ に $4\\varepsilon$ まで近い状態を与えます。これは $D_\\kappa=[-1,-1/\\kappa]\\cup[1/\\kappa,1]$ 上の $f(x)=1/x$ に系 10 を適用したものです。]] [[assumption: $A$ はエルミートかつ $d$ 疎で、$\\|A\\|=1$、条件数 $\\kappa$ は既知であり、Problem 1 のエントリオラクル $P_A$ を通じてアクセスされます。]]",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],
@@ -1347,6 +2160,124 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Constant factors in this family are unsettled. Costa, An, Babbush and Berry (arXiv December 2023; Quantum 9, 1887 (2025)) report numerical testing on random matrices showing the discrete adiabatic solver's constant factor is in practice about 1,200 times smaller than the published upper bound, and about an order of magnitude better than the randomized adiabatic approach of arXiv:2305.11352 — but that comparison was made against the 2023 version of that work, whose published 2025 version postdates it. The ranking therefore rests on a 2023 comparison; the published Quantum version of the discrete-adiabatic benchmark still cites the 2023 preprint of the randomized solver.",
     contestedJa: "この系統の定数因子は決着していません。Costa・An・Babbush・Berry（arXiv は 2023 年 12 月、Quantum 9, 1887 (2025)）はランダム行列を用いた数値実験により、離散断熱の解法の定数因子が実際には公表された上界のおよそ 1,200 分の 1 であり、arXiv:2305.11352 の乱択断熱の手法よりおよそ一桁効率が良いと報告しています。ただしこの比較は当該研究の 2023 年版に対するもので、2025 年に公表された版はそれより後になります。したがってこの順位付けは 2023 年時点の比較にもとづくものです。公表された Quantum 版の離散断熱のベンチマークも、乱択断熱の解法については 2023 年のプレプリントを引いています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
+    // `summary` states this one outright as three ordered stages, and the three
+    // action stanzas are those sentences: "Encode the solution as the null
+    // eigenstate of a Hamiltonian path built from A and |b>", "follow that path
+    // with a sequence of qubitization walk operators to fixed precision", "then
+    // finish with an eigenstate filter implemented as a linear combination of
+    // walk operators rather than by quantum signal processing". The `given` line
+    // is `conditions`: "the walk-operator (qubitization) form of access to the
+    // path Hamiltonians and a lower bound on the spectral gap along the path,
+    // which amounts to a known upper bound on kappa".
+    //
+    // `steps` is block-encode-matrix, state-preparation, matrix-function. The
+    // first two are not given separate lines: the only sentence the record has
+    // about them is `summary`'s "a Hamiltonian path built from A and |b>", which
+    // is where they sit, and inventing a "block-encode A" / "prepare |b>" pair
+    // would be describing a decomposition the record does not describe.
+    //
+    // It is NOT eigenstate-filtering-inversion's listing with different words,
+    // and writing them together is what shows why. Both records build a
+    // Hamiltonian from A and |b> and both end at an eigenstate filter, but
+    // `summary` here says the filter is "implemented as a linear combination of
+    // walk operators rather than by quantum signal processing" -- the exact
+    // mechanism its sibling uses -- so that clause is carried as a comment on
+    // the filter line rather than dropped. The middle stage differs too: this
+    // route walks a path to fixed precision, where the sibling supplies one
+    // starting state and applies its filter once.
+    //
+    // The framing line near the end is `cost`'s own hedge, kept as a hedge:
+    // "Their framing is that the adiabatic route reaches near-linear kappa
+    // without a complicated variable-time amplitude amplification procedure".
+    // `steps` carries no success-amplification; beyond that sentence the listing
+    // asserts nothing about what is or is not amplified.
+    //
+    // What the listing declines:
+    //  - it does not reconcile `cost`'s "strictly linear in kappa" with the same
+    //    field's framing sentence "near-linear kappa". Both are transcribed as
+    //    the record has them.
+    //  - it states no number of walk operators and no path schedule. The record
+    //    states neither, only the complexity.
+    //  - the 1,200x constant factor from `contested` is never given without the
+    //    qualification the record attaches to it: the comparison "was made
+    //    against the 2023 version of that work, whose published 2025 version
+    //    postdates it", so "the ranking therefore rests on a 2023 comparison".
+    //    That clause is in the same stanza as the number, deliberately.
+    example: {
+      pseudocode: [
+        "given  the walk-operator (qubitization) form of access to the path",
+        "       Hamiltonians and a lower bound on the spectral gap along the",
+        "       path, which amounts to a known upper bound on kappa",
+        "",
+        "encode the solution as the null eigenstate of a Hamiltonian path built",
+        "    from A and |b>",
+        "",
+        "follow that path with a sequence of qubitization walk operators to fixed",
+        "    precision",
+        "    # the record does not state how many walk operators that sequence",
+        "    # contains, only the complexity below",
+        "",
+        "finish with an eigenstate filter implemented as a linear combination of",
+        "    walk operators",
+        "    # rather than by quantum signal processing",
+        "",
+        "# the authors' framing is that the adiabatic route reaches near-linear",
+        "# kappa without a complicated variable-time amplitude amplification",
+        "# procedure",
+        "",
+        "# O(kappa log(1/epsilon)) -- strictly linear in kappa, matching a known",
+        "# lower bound on the complexity, and also optimal in the combined",
+        "# scaling in kappa and the precision epsilon. The adiabatic theorem",
+        "# proved here is for intrinsically discrete-time evolutions, which is",
+        "# what removes the residual log(kappa) that continuous adiabatic",
+        "# treatments carried.",
+        "",
+        "# the authors' stated advantages: the algorithm is simpler and easier to",
+        "# implement than the sub-optimal alternatives, and the constant factors",
+        "# are determined, so gate counts can be worked out for a specific",
+        "# application",
+        "",
+        "# and yet constant factors in this family are unsettled. Numerical",
+        "# testing on random matrices reports this solver's constant factor about",
+        "# 1,200 times smaller than the published upper bound, and about an order",
+        "# of magnitude better than the randomized adiabatic approach of",
+        "# arXiv:2305.11352 -- but against the 2023 version of that work, whose",
+        "# published 2025 version postdates it. The ranking rests on a 2023",
+        "# comparison.",
+      ].join("\n"),
+    },
+    hops: {
+      // Costa, An, Sanders, Su, Babbush and Berry, arXiv:2111.08152, full PDF,
+      // with arXiv:2312.07690 for the constant-factor follow-up. The own stretch
+      // is the discrete adiabatic walk itself — the schedule, the eigenpath and
+      // the discrete adiabatic theorem's bound — and it is the only one of these
+      // five routes whose optimal scaling comes from the walk rather than from a
+      // polynomial applied to a block encoding.
+      "block-encode-matrix": {
+        theory:
+          "The slot must encode not $A$ alone but the path Hamiltonian $H(s) = (1-f(s))H_0 + f(s)H_1$, assembled from a block encoding $U_A$ with $<0|U_A|0> = A$, the $|b>$ oracle inside $Q_b$, four ancilla qubits, and a one-qubit rotation $R(s)$ — the only operation through which the step index $s$ enters. A reflection on the control qubits then turns that encoding into the walk operator $W_T(s)$. [[assumption: the block encoding must be symmetric and its operator sequence self-inverse, which is what qubitisation requires, and $U_A$ must be applicable in a selected way — either $U_A$, $U_A^\\dagger$, or the identity.]] [[approximation: using $R(s)$ at the start and a Hadamard rather than $R(s)^\\dagger$ at the end block-encodes $A(f(s))/\\sqrt{2[(1-f(s))^2+f(s)^2]}$ in place of $A(f(s))$; that prefactor lies between $1/\\sqrt{2}$ and $1$, and reduces the gap.]]",
+        theoryJa:
+          "この層に求められるのは $A$ 単体ではなく、経路上のハミルトニアン $H(s) = (1-f(s))H_0 + f(s)H_1$ の符号化です。これは $<0|U_A|0> = A$ を満たすブロック符号化 $U_A$、$Q_b$ の内部で使う $|b>$ のオラクル、4 個の補助量子ビット、そして刻み $s$ が入る唯一の操作である 1 量子ビット回転 $R(s)$ から組み立てられます。制御量子ビットに対する反転を加えると、この符号化はウォーク演算子 $W_T(s)$ になります。[[assumption: キュービタイゼーションが要求するとおり、ブロック符号化は対称でなければならず、その操作列は自己逆でなければなりません。また $U_A$ は $U_A$、$U_A^\\dagger$、恒等演算のいずれかを選んで適用できる必要があります。]] [[approximation: 先頭に $R(s)$ を置き、末尾に $R(s)^\\dagger$ ではなく Hadamard を置く構成では、$A(f(s))$ ではなく $A(f(s))/\\sqrt{2[(1-f(s))^2+f(s)^2]}$ が符号化されます。この係数は $1/\\sqrt{2}$ と $1$ の間にあり、ギャップを小さくします。]]",
+      },
+      "state-preparation": {
+        theory:
+          "This route uses the $|b>$ oracle $U_b$, with $U_b|0> = |b>$, in two places: to prepare the initial state $|0,b>$, which is the eigenvalue-zero eigenstate of $H_0$ that the walk is to carry to $|0, A^{-1}b>$, and to build the projector $Q_b = I_N - |b><b|$ from $U_b$ and $U_b^\\dagger$, which sits inside every step's block encoding of $H(s)$. [[assumption: access to the oracles includes forward, reverse and controlled uses; only the reflection inside $Q_b$ has to be made controlled, not $U_b$ itself.]]",
+        theoryJa:
+          "この経路は $U_b|0> = |b>$ を満たす $|b>$ のオラクル $U_b$ を 2 か所で使います。ひとつは初期状態 $|0,b>$、すなわちウォークが $|0, A^{-1}b>$ まで運ぶことを目指す $H_0$ の固有値 0 の固有状態の準備であり、もうひとつは $U_b$ と $U_b^\\dagger$ から組み立てる射影子 $Q_b = I_N - |b><b|$ で、これは各ステップの $H(s)$ のブロック符号化の内部に置かれます。[[assumption: オラクルへのアクセスは順方向・逆方向・制御付きの利用を含む、という標準的な前提を置きます。制御化が必要なのは $Q_b$ の内部の反転だけで、$U_b$ そのものを制御化する必要はありません。]]",
+      },
+      "matrix-function": {
+        theory:
+          "What this slot supplies here is not an approximation of $1/x$ but a filter on the walk's eigenphases, applied as a linear combination of $\\ell$ walk steps with weights $w_j$ prepared symmetrically before and after, giving $\\tilde{w}(\\phi) = \\sum_j w_j e^{ij\\phi} / \\sum_j w_j$. [[approximation: the ideal filter is replaced by the Dolph–Chebyshev window $\\tilde{w}(\\phi) = T_\\ell(\\beta\\cos\\phi)$ with $\\beta = \\cosh(\\ell^{-1}\\cosh^{-1}(1/\\varepsilon))$, which minimises the largest leakage, and the error of the filtered state is bounded by $\\max_{k \\in \\perp} \\tilde{w}(\\phi_k)$ over the eigenphases outside the spectrum of interest.]] Setting the width of the peak equal to the gap $1/\\kappa$ gives $\\ell = \\cosh^{-1}(1/\\varepsilon)/\\cosh^{-1}(1/\\cos(1/\\kappa)) \\le \\kappa\\ln(2/\\varepsilon)$, so the cost is $\\ell$ calls to the block-encoded matrix rather than the $2\\ell$ of the singular-value-processing filter, at the price of one extra ancilla qubit. [[assumption: the initial probability of the state on the spectrum of interest is at least $1/2$ — which is what running the preceding walk to a fixed precision is for.]]",
+        theoryJa:
+          "この層がここで供給するのは $1/x$ の近似ではなく、ウォークの固有位相に対するフィルタです。重み $w_j$ を前後対称に用意したうえで $\\ell$ 回のウォークステップの線形結合として適用し、$\\tilde{w}(\\phi) = \\sum_j w_j e^{ij\\phi} / \\sum_j w_j$ を得ます。[[approximation: 理想的なフィルタは Dolph–Chebyshev 窓 $\\tilde{w}(\\phi) = T_\\ell(\\beta\\cos\\phi)$、$\\beta = \\cosh(\\ell^{-1}\\cosh^{-1}(1/\\varepsilon))$ に置き換えられます。これは漏れの最大値を最小にするもので、フィルタ後の状態の誤差は、関心のあるスペクトルの外にある固有位相についての $\\max_{k \\in \\perp} \\tilde{w}(\\phi_k)$ で上から抑えられます。]] ピークの幅をギャップ $1/\\kappa$ に等しく取ると $\\ell = \\cosh^{-1}(1/\\varepsilon)/\\cosh^{-1}(1/\\cos(1/\\kappa)) \\le \\kappa\\ln(2/\\varepsilon)$ となりますので、ブロック符号化された行列への呼び出しは、量子特異値処理によるフィルタの $2\\ell$ 回ではなく $\\ell$ 回で済み、その代わりに補助量子ビットが 1 つ多く必要になります。[[assumption: 初期状態が関心のあるスペクトル上に持つ確率が少なくとも $1/2$ であること。先行するウォークを一定精度まで走らせるのは、これを確保するためです。]]",
+      },
+      "discrete-adiabatic-inversion": {
+        theory:
+          "The eigenpath is $H(s) = (1-f(s))H_0 + f(s)H_1$, whose eigenvalue-zero eigenstate is carried from $|0,b>$ to $|0, A^{-1}b>$, and it is walked with $T$ qubitisation steps, $U_T(s) = \\prod_n W_T(n/T)$, rather than simulated as a continuous evolution. The schedule satisfies $\\dot{f}(s) = d_p \\Delta_0^p(s)$, slowing the walk where the gap is small. [[approximation: $\\Delta_0(s) = 1 - f(s) + f(s)/\\kappa$ stands in for the exact gap — it is a lower bound, written as an equality — and for a general $A$ the relation $\\sqrt{(1-f)^2 + (f/\\kappa)^2} \\ge (1 - f + f/\\kappa)/\\sqrt{2}$ is what lets the same schedule function be kept.]] The discrete adiabatic theorem then bounds the departure from the ideal path as $\\|U_T(s) - U_T^A(s)\\| \\le 5632\\,\\kappa/T + O(\\sqrt{\\kappa}/T)$ for positive-definite Hermitian $A$ and $15307\\,\\kappa/T + O(\\sqrt{\\kappa}/T)$ for general $A$, so a fixed error is reached in $T = O(\\kappa)$ steps. [[assumption: $\\|A\\| = 1$ with $\\|A^{-1}\\| = \\kappa$, and $T \\ge \\kappa$ steps of the walk under the $p = 3/2$ schedule.]]",
+        theoryJa:
+          "固有経路は $H(s) = (1-f(s))H_0 + f(s)H_1$ であり、その固有値 0 の固有状態が $|0,b>$ から $|0, A^{-1}b>$ へ運ばれます。これを連続時間の発展として模擬するのではなく、キュービタイゼーションのウォークを $T$ 歩、$U_T(s) = \\prod_n W_T(n/T)$ としてたどります。スケジュールは $\\dot{f}(s) = d_p \\Delta_0^p(s)$ を満たし、ギャップの小さいところでウォークの変化を遅くします。[[approximation: 厳密なギャップの代わりに $\\Delta_0(s) = 1 - f(s) + f(s)/\\kappa$ を用います。これは下界ですが等号として書かれています。一般の $A$ に対しては $\\sqrt{(1-f)^2 + (f/\\kappa)^2} \\ge (1 - f + f/\\kappa)/\\sqrt{2}$ という関係により、同じスケジュール関数をそのまま使えます。]] 離散断熱定理は理想的な経路からのずれを、正定値エルミートな $A$ では $\\|U_T(s) - U_T^A(s)\\| \\le 5632\\,\\kappa/T + O(\\sqrt{\\kappa}/T)$、一般の $A$ では $15307\\,\\kappa/T + O(\\sqrt{\\kappa}/T)$ と評価しますので、一定の誤差には $T = O(\\kappa)$ 歩で到達します。[[assumption: $\\|A\\| = 1$ かつ $\\|A^{-1}\\| = \\kappa$ であること、および $p = 3/2$ のスケジュールで $T \\ge \\kappa$ 歩のウォークを行うこと。]]",
+      },
+    },
     citations: [
       { title: "Optimal scaling quantum linear systems solver via discrete adiabatic theorem", authors: "Pedro C. S. Costa, Dong An, Yuval R. Sanders, Yuan Su, Ryan Babbush, Dominic W. Berry", year: "2021", url: "https://arxiv.org/abs/2111.08152" },
       { title: "The discrete adiabatic quantum linear system solver has lower constant factors than the randomized adiabatic solver", authors: "Pedro C. S. Costa, Dong An, Ryan Babbush, Dominic Berry", year: "2023", url: "https://arxiv.org/abs/2312.07690" },
@@ -1366,6 +2297,114 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Lin と Tong によれば、QLSP に対する 2 つの変種はいずれも $d$ 疎行列に対してほぼ最適な問い合わせ計算量 $\\tilde{O}(d \\kappa \\log(1/\\varepsilon))$ を達成します。ここで $\\kappa$ は条件数、$\\varepsilon$ は要求精度です。どちらのアルゴリズムも位相推定も振幅増幅も使わないと、論文の要旨に明記されています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
     bypasses: ["success-amplification"],
+    // The two action lines at the end are `summary`: "Construct the
+    // minimax-optimal polynomial that is 1 at a target eigenvalue and uniformly
+    // small outside a spectral gap, and apply it through quantum signal
+    // processing". The `given` line joins `conditions`' "Requires a
+    // block-encoding of the Hamiltonian, a reasonable lower bound on the
+    // spectral gap" with `summary`'s definition of which Hamiltonian that is:
+    // "For a linear system |x> is the null eigenstate of a Hamiltonian built
+    // from A and |b>". `steps` (block-encode-matrix, state-preparation,
+    // matrix-function) fixes the order; block-encode-matrix is carried in the
+    // `given` rather than as an action line because `conditions` states it as a
+    // requirement, not as something this method performs.
+    //
+    // The starting state is the first action line and not merely a hypothesis,
+    // because `conditions` does more than require it -- it says "Lin and Tong
+    // give two ways of supplying the starting state, one seeded by time-optimal
+    // adiabatic evolution and one that walks a Zeno path of intermediate
+    // Hamiltonians", and `steps` lists state-preparation. Both ways are written,
+    // as that sentence has them, and the listing says nothing further about
+    // them: the record neither ranks them nor connects them to `cost`'s "both
+    // QLSP variants", and the listing does not connect them either.
+    //
+    // How this differs from discrete-adiabatic-inversion, written beside it:
+    // both records build a Hamiltonian from A and |b> and both end at an
+    // eigenstate filter, but that record's filter is "implemented as a linear
+    // combination of walk operators rather than by quantum signal processing"
+    // and it reaches the filter by following a path with a sequence of walk
+    // operators. This one applies the filter through quantum signal processing,
+    // and `summary` says "one application of the filter solves it once a
+    // starting state with non-trivial overlap is supplied". `cost` attributes
+    // the absence to the paper -- "Their abstract states that neither algorithm
+    // uses phase estimation or amplitude amplification" -- and the closing
+    // comment keeps that attribution; `bypasses` is success-amplification.
+    //
+    // What the listing does not say:
+    //  - no degree for the minimax-optimal polynomial, and no account of how it
+    //    is constructed or how phase factors are obtained. `summary` says what
+    //    the polynomial is and stops, so the listing stops there too.
+    //  - it does not resolve the record's own tension. `summary` describes a
+    //    polynomial that is "1 at a target eigenvalue", while `conditions` says
+    //    the method is "Stated for a d-sparse A whose singular values lie in
+    //    [1/kappa, 1] -- the theorems are about singular values, not
+    //    eigenvalues". Both are transcribed, in the closing stanza, unreconciled.
+    //  - this record has no `contested` field, so there is no contested stanza;
+    //    the singular-values caveat is the only reservation the record carries.
+    example: {
+      pseudocode: [
+        "given  a block-encoding of the Hamiltonian -- for a linear system, the",
+        "       Hamiltonian built from A and |b>, whose null eigenstate is |x> --",
+        "       and a reasonable lower bound on the spectral gap",
+        "",
+        "supply an initial state with non-trivial overlap with the target",
+        "    eigenstate",
+        "    # Lin and Tong give two ways of supplying it:",
+        "    #   (a) seeded by time-optimal adiabatic evolution",
+        "    #   (b) walking a Zeno path of intermediate Hamiltonians",
+        "",
+        "construct the minimax-optimal polynomial that is 1 at a target",
+        "    eigenvalue and uniformly small outside a spectral gap",
+        "    # no degree is stated for it on this record, and no construction",
+        "apply it through quantum signal processing",
+        "",
+        "# one application of the filter solves it, once a starting state with",
+        "# non-trivial overlap is supplied",
+        "# Lin and Tong's abstract states that neither algorithm uses phase",
+        "# estimation or amplitude amplification",
+        "",
+        "# near-optimal O~(d kappa log(1/epsilon)) query complexity for a",
+        "# d-sparse matrix, for both variants, with kappa the condition number",
+        "# and epsilon the desired precision",
+        "",
+        "# stated for a d-sparse A whose singular values lie in [1/kappa, 1], and",
+        "# the theorems are about singular values, not eigenvalues -- the filter",
+        "# is nonetheless described as being 1 at a target eigenvalue, and this",
+        "# listing leaves that where the record leaves it",
+      ].join("\n"),
+    },
+    hops: {
+      // Lin and Tong, arXiv:1910.14596, full PDF. The interesting fact is on the
+      // matrix-function hop and it is why this route carries a `bypasses` of
+      // `success-amplification`: the minimax filtering polynomial is what removes
+      // the need for amplitude amplification, so the skipped layer is a
+      // consequence of the polynomial rather than an independent choice. Stated
+      // at the hop where it happens, per the field's own rule.
+      "block-encode-matrix": {
+        theory:
+          "The sparse-access oracles $O_{A,1}$, $O_{A,2}$ give a $(d, n+2, 0)$-block-encoding of $A$, the oracle $O_B$ gives a $(1,1,0)$-block-encoding of $Q_b = I - |b><b|$, and applying $O_B$, $O_{A,1}$, $O_{A,2}$ twice gives a $(d, n+4, 0)$-block-encoding $U_{H_1}$ of $H_1 = |0><1| \\otimes AQ_b + |1><0| \\otimes Q_bA$. The subnormalisation this hop returns is $\\alpha = d$, and Theorem 3 counts the filter in $O((\\alpha/\\Delta)\\log(1/\\varepsilon))$ applications of the block-encoding — so this $\\alpha$ is where the $d$ in the route's $O(d\\kappa\\log(1/\\varepsilon))$ comes from. [[assumption: $A$ is $d$-sparse with singular values in $[1/\\kappa, 1]$, so $\\kappa$ is an upper bound on the condition number rather than the condition number itself.]] [[assumption: the block-encoding is taken to be exact — Theorem 1' is stated for an $(\\alpha, m, 0)$-block-encoding, and Lin and Tong assume exactness for simplicity.]]",
+        theoryJa:
+          "スパースアクセスのオラクル $O_{A,1}$, $O_{A,2}$ は $A$ の $(d, n+2, 0)$ ブロック符号化を与え、オラクル $O_B$ は $Q_b = I - |b><b|$ の $(1,1,0)$ ブロック符号化を与えます。$O_B$, $O_{A,1}$, $O_{A,2}$ を 2 度ずつ適用すると、$H_1 = |0><1| \\otimes AQ_b + |1><0| \\otimes Q_bA$ の $(d, n+4, 0)$ ブロック符号化 $U_{H_1}$ が得られます。この層が返す副正規化係数は $\\alpha = d$ であり、定理 3 はフィルタをブロック符号化の $O((\\alpha/\\Delta)\\log(1/\\varepsilon))$ 回の適用として数えますので、この経路の $O(d\\kappa\\log(1/\\varepsilon))$ に現れる $d$ はここから来ます。[[assumption: $A$ は $d$ 疎行列で、その特異値は $[1/\\kappa, 1]$ に含まれます。したがって $\\kappa$ は条件数そのものではなく、その上界です。]] [[assumption: ブロック符号化は厳密であるとみなされています。定理 1' は $(\\alpha, m, 0)$ ブロック符号化について述べられており、Lin と Tong は簡単のため厳密性を仮定しています。]]",
+      },
+      "state-preparation": {
+        theory:
+          "The filter is applied to a state $|\\psi> = \\gamma|\\psi_\\lambda> + |\\perp>$ with $<\\psi_\\lambda|\\perp> = 0$, supplied by an oracle $O_\\psi$; the block-encoding of $P_\\lambda$ succeeds with probability at least $\\gamma^2$, so oracle and filter are run on average $O(1/\\gamma^2)$ times, and amplitude amplification would only reduce that to $O(1/\\gamma)$. For the linear system the right-hand side enters through $O_B|0> = |b>$: the Zeno route starts from $|x(0)> = |b>$ itself, and the AQC route runs AQC(p) to constant precision to obtain $|\\tilde x_0> = \\gamma_0|0>|x> + \\gamma_1|1>|b> + |\\perp>$. [[assumption: the starting state has non-trivial overlap with the target eigenstate, $\\gamma > 0$ — and in the QLSP application $|\\gamma_0| = \\Omega(1)$ is guaranteed, which is what turns the $O(1/\\gamma^2)$ repetition into a constant and makes amplitude amplification unnecessary.]]",
+        theoryJa:
+          "フィルタが適用されるのは、オラクル $O_\\psi$ が用意する状態 $|\\psi> = \\gamma|\\psi_\\lambda> + |\\perp>$（$<\\psi_\\lambda|\\perp> = 0$）です。$P_\\lambda$ のブロック符号化が成功する確率は少なくとも $\\gamma^2$ ですので、オラクルとフィルタは平均して $O(1/\\gamma^2)$ 回実行することになり、振幅増幅を使ってもこれが $O(1/\\gamma)$ に下がるだけです。線形方程式では右辺は $O_B|0> = |b>$ から入ります。ゼノ効果による経路は $|x(0)> = |b>$ そのものから出発し、断熱計算による経路は AQC(p) を一定精度まで走らせて $|\\tilde x_0> = \\gamma_0|0>|x> + \\gamma_1|1>|b> + |\\perp>$ を得ます。[[assumption: 初期状態は目標固有状態と無視できない重なり $\\gamma > 0$ を持つ必要があります。QLSP への応用では $|\\gamma_0| = \\Omega(1)$ が保証されますので、$O(1/\\gamma^2)$ の繰り返しは定数となり、振幅増幅は不要になります。]]",
+      },
+      "matrix-function": {
+        theory:
+          "The filter is the degree-$2\\ell$ polynomial $R_\\ell(x;\\Delta) = T_\\ell(-1 + 2(x^2-\\Delta^2)/(1-\\Delta^2)) / T_\\ell(-1 + 2(-\\Delta^2)/(1-\\Delta^2))$, and Lemma 2(i) shows it solves the minimax problem $\\min_{p \\in P_{2\\ell}[x], p(0)=1} \\max_{x \\in D_\\Delta} |p(x)|$ on $D_\\Delta = [-1,-\\Delta] \\cup [\\Delta,1]$ — the best compression ratio of the unwanted components among all polynomials of degree up to $2\\ell$. [[approximation: the spectral projector $P_\\lambda$ is replaced by $R_\\ell$ applied to $\\tilde H = (H - \\lambda I)/(\\alpha+|\\lambda|)$, with $||R_\\ell(\\tilde H;\\tilde\\Delta) - P_\\lambda|| \\le 2e^{-\\sqrt{2}\\ell\\tilde\\Delta}$ by Lemma 2(ii).]] Because $R_\\ell$ is even and $|R_\\ell(x;\\tilde\\Delta)| \\le 1$ on $[-1,1]$, Theorem 1' implements it by quantum signal processing, and Theorem 3 gives a $(1, m+2, \\varepsilon)$-block-encoding of $P_\\lambda$ from $O((\\alpha/\\Delta)\\log(1/\\varepsilon))$ applications of controlled-$U_H$ and $U_H^\\dagger$. [[assumption: $\\lambda$ is known exactly and separated from the rest of the spectrum by a gap at least $\\Delta$, so that $0$ is separated from the rest of the spectrum of $\\tilde H$ by $\\tilde\\Delta = \\Delta/(\\alpha+|\\lambda|) \\ge \\Delta/(2\\alpha)$.]]",
+        theoryJa:
+          "フィルタは次数 $2\\ell$ の多項式 $R_\\ell(x;\\Delta) = T_\\ell(-1 + 2(x^2-\\Delta^2)/(1-\\Delta^2)) / T_\\ell(-1 + 2(-\\Delta^2)/(1-\\Delta^2))$ です。補題 2(i) によれば、これは $D_\\Delta = [-1,-\\Delta] \\cup [\\Delta,1]$ 上のミニマックス問題 $\\min_{p \\in P_{2\\ell}[x], p(0)=1} \\max_{x \\in D_\\Delta} |p(x)|$ を解きます。すなわち次数 $2\\ell$ 以下のすべての多項式のなかで、不要な成分を最もよく圧縮します。[[approximation: スペクトル射影子 $P_\\lambda$ は、$\\tilde H = (H - \\lambda I)/(\\alpha+|\\lambda|)$ に $R_\\ell$ を適用したもので置き換えられます。補題 2(ii) により、その誤差は $||R_\\ell(\\tilde H;\\tilde\\Delta) - P_\\lambda|| \\le 2e^{-\\sqrt{2}\\ell\\tilde\\Delta}$ です。]] $R_\\ell$ は偶関数で $[-1,1]$ 上 $|R_\\ell(x;\\tilde\\Delta)| \\le 1$ を満たしますので、定理 1' により量子信号処理で実装できます。定理 3 は、制御付き $U_H$ と $U_H^\\dagger$ の $O((\\alpha/\\Delta)\\log(1/\\varepsilon))$ 回の適用から $P_\\lambda$ の $(1, m+2, \\varepsilon)$ ブロック符号化を与えます。[[assumption: $\\lambda$ は厳密に既知であり、スペクトルの残りから少なくとも $\\Delta$ のギャップで隔てられている必要があります。これにより $\\tilde H$ のスペクトルにおいても $0$ は $\\tilde\\Delta = \\Delta/(\\alpha+|\\lambda|) \\ge \\Delta/(2\\alpha)$ だけ隔てられます。]]",
+      },
+      "eigenstate-filtering-inversion": {
+        theory:
+          "The linear system becomes an eigenvalue problem: the null space of $H_1 = |0><1| \\otimes AQ_b + |1><0| \\otimes Q_bA$, with $Q_b = I - |b><b|$, is spanned by $|0>|x>$ and $|1>|b>$, and the rest of the spectrum is separated from $0$ by a gap $1/\\kappa$. Along the path $H(f) = (1-f)H_0 + fH_1$ with $H_0 = \\sigma_x \\otimes Q_b$ that gap is bounded below by $\\Delta_*(f) = 1 - f + f/\\kappa$, so time-optimal AQC(p) supplies $|\\tilde x_0>$; one application of the filter removes $|\\perp>$, and measuring the first qubit and obtaining $0$ leaves $|0>|x> + O(\\varepsilon)$. [[approximation: AQC(p) is run only to constant precision, which is all $|\\gamma_0| = \\Omega(1)$ requires, so its $O(1/\\varepsilon)$ runtime never enters — and $\\gamma_1$ comes entirely from the error of the time-dependent Hamiltonian simulation, since AQC itself keeps the state orthogonal to $|1>|b>$.]] Because the filter approximates a projector, $||P|| = 1$ and its block-encoding needs subnormalisation only $O(1)$, so the success probability is already $\\Omega(1)$ — whereas a block-encoding of $A^{-1}$ requires subnormalisation at least $\\kappa$, hence worst-case success $\\Omega(\\kappa^{-2})$ and $O(\\kappa)$ rounds of amplitude amplification. [[assumption: a lower bound on the gap along the path, that is an upper bound on $\\kappa$, is known; $A$ is taken Hermitian positive definite here, the indefinite and non-Hermitian cases being handled by matrix dilation.]]",
+        theoryJa:
+          "線形方程式は固有値問題に置き換えられます。$Q_b = I - |b><b|$ とした $H_1 = |0><1| \\otimes AQ_b + |1><0| \\otimes Q_bA$ の零空間は $|0>|x>$ と $|1>|b>$ で張られ、スペクトルの残りは $0$ からギャップ $1/\\kappa$ で隔てられています。$H_0 = \\sigma_x \\otimes Q_b$ とした経路 $H(f) = (1-f)H_0 + fH_1$ に沿って、このギャップは $\\Delta_*(f) = 1 - f + f/\\kappa$ で下から抑えられますので、時間最適な AQC(p) が $|\\tilde x_0>$ を供給します。フィルタを 1 回かけると $|\\perp>$ が除かれ、第 1 量子ビットを測定して $0$ が得られれば $|0>|x> + O(\\varepsilon)$ が残ります。[[approximation: AQC(p) は一定精度までしか走らせません。$|\\gamma_0| = \\Omega(1)$ にはそれで十分ですので、AQC 自身の $O(1/\\varepsilon)$ の実行時間は表に出ません。また $\\gamma_1$ は時間依存ハミルトニアンシミュレーションの誤差のみに由来します。AQC 自体は状態を $|1>|b>$ と直交に保つからです。]] フィルタが近似するのは射影子ですので $||P|| = 1$ であり、そのブロック符号化に必要な副正規化係数は $O(1)$ にとどまります。したがって成功確率はそれだけで $\\Omega(1)$ です。これに対し $A^{-1}$ のブロック符号化は少なくとも $\\kappa$ の副正規化係数を要し、最悪の場合の成功確率は $\\Omega(\\kappa^{-2})$、振幅増幅は $O(\\kappa)$ 回必要になります。[[assumption: 経路に沿ったギャップの下界、すなわち $\\kappa$ の上界が既知である必要があります。ここでは $A$ をエルミートかつ正定値としており、不定値の場合や非エルミートの場合は行列の拡大によって扱われます。]]",
+      },
+    },
     citations: [
       { title: "Optimal polynomial based quantum eigenstate filtering with application to solving quantum linear systems", authors: "Lin Lin, Yu Tong", year: "2019", url: "https://arxiv.org/abs/1910.14596" },
     ],
@@ -1416,6 +2455,96 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     entries: ["quantum-singular-value-transformation"],
+    // A transcription of `summary` and `conditions`, in the order those fields
+    // put things. `summary` states the body of the circuit outright --
+    // "Interleave the block-encoding $U$, its inverse, and projector-controlled
+    // phase shifts $e^{iφ(2Π-I)}$ so that the designated block becomes $P$
+    // applied to the singular values of $A$" -- and it supplies the two lines
+    // the listing keeps as comments: "The phase sequence is the compiled form of
+    // the polynomial", and "a single ancilla qubit carries the phase shifts".
+    //
+    // The two `require` lines and the complex/real branch are `conditions`:
+    // "definite parity, matching the degree mod 2", "$|P(x)| ≤ 1$ for every $x$
+    // in $[-1,1]$", and "A complex $P$ is handled directly; a real $P$ -- which
+    // is what approximations of $1/x$, sign and cos give you -- needs the
+    // extra-ancilla $|+>$ construction of their Corollary 18". The parity comment
+    // is carried because `conditions` insists on it in those words ("Parity is
+    // not a convention") and gives the reason it insists.
+    //
+    // The `given` line names the block-encoding from `summary` and takes the two
+    // suppliers from `steps` ("block-encode-matrix", "polynomial-approximation",
+    // "qsp-phase-factors"); that the degree $n$ arrives from below is `cost`
+    // verbatim, not an inference.
+    //
+    // The counts stanza is `cost` verbatim, Lemma 19, including the sentence that
+    // is the point of the record on this map: the degree $n$ "is handed down by
+    // the polynomial-approximation layer, so that layer is what sets this
+    // circuit's query count". No other number appears -- no accuracy, no gate
+    // constant, no scaling -- because `cost` states none.
+    //
+    // The closing stanza is `contested`, hedged exactly as that field hedges it:
+    // the dequantization result is stated only for the close-to-low-rank,
+    // l2-norm-sampling input model, and the field's own limit ("Sparse-access
+    // QSVT and general Hamiltonian simulation are not dequantized") travels with
+    // it, because `contested` says overstating this in either direction is the
+    // usual failure.
+    //
+    // Deliberately not said: how the Corollary 18 $|+>$ construction works (the
+    // record names it and stops); how the phase sequence is computed (that is the
+    // `qsp-phase-factors` step's own record, and this listing only takes from
+    // it); and the Martyn, Rossi, Tan and Chuang route from single-qubit QSP
+    // through the eigenvalue transform, which `conditions` offers as a reading
+    // ladder rather than as a stage of this circuit. Nothing is drawn from
+    // `repeats` -- its counts already appear in `cost`, and its extra claims
+    // (nothing is measured; the price is depth and query count) are outside the
+    // fields this batch transcribes from.
+    //
+    // Contrast with its sibling `lcu-chebyshev-transform`: this listing has a
+    // phase sequence, an interleaved U / U dagger body and one ancilla qubit,
+    // because this record's `steps` include qsp-phase-factors and its `summary`
+    // compiles the polynomial into phases. It has no post-selection line because
+    // this record states none.
+    example: {
+      pseudocode: [
+        "given  the block-encoding U of A from the block-encode-matrix step, and a",
+        "       polynomial P whose degree n is handed down by the",
+        "       polynomial-approximation layer",
+        "",
+        "require  P has definite parity, matching the degree mod 2",
+        "require  |P(x)| <= 1 for every x in [-1,1]",
+        "",
+        "# parity is not a convention: Gilyen, Su, Low and Wiebe argue it is",
+        "# necessary, following from the sign ambiguity in pairing singular vectors",
+        "",
+        "take the phase sequence from the qsp-phase-factors step",
+        "# the phase sequence is the compiled form of the polynomial",
+        "",
+        "if P is complex:",
+        "    it is handled directly",
+        "else:",
+        "    # a real P -- which is what approximations of 1/x, sign and cos give you",
+        "    use the extra-ancilla |+> construction of Gilyen, Su, Low and Wiebe,",
+        "        Corollary 18",
+        "",
+        "interleave  U, its inverse, and the projector-controlled phase shifts",
+        "            e^{i phi (2 Pi - I)}",
+        "# a single ancilla qubit carries the phase shifts",
+        "",
+        "the designated block becomes P applied to the singular values of A",
+        "",
+        "# Gilyen, Su, Low and Wiebe, Lemma 19: a degree-n transform costs n uses of",
+        "# U and U dagger, n uses of C_Pi NOT, n uses of C_Pi-tilde NOT and n",
+        "# single-qubit gates, with a single ancilla qubit. The degree n is handed",
+        "# down by the polynomial-approximation layer, so that layer is what sets",
+        "# this circuit's query count.",
+        "",
+        "# where the matrix is close to low rank and the input model is l2-norm",
+        "# sampling access, Chia, Gilyen, Li, Lin, Tang and Wang give classical",
+        "# singular value transformation running in time independent of the input",
+        "# dimension; sparse-access QSVT and general Hamiltonian simulation are not",
+        "# dequantized",
+      ].join("\n"),
+    },
     citations: [
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "A Grand Unification of Quantum Algorithms", authors: "John M. Martyn, Zane M. Rossi, Andrew K. Tan, Isaac L. Chuang", year: "2021", url: "https://arxiv.org/abs/2105.02859" },
@@ -1442,6 +2571,95 @@ export const LAYER_GRAPH: LayerGraph = {
     steps: ["block-encode-matrix", "polynomial-approximation"],
     bypasses: ["qsp-phase-factors"],
     entries: ["linear-combination-unitaries"],
+    // A transcription of `summary`, which states the whole procedure in one
+    // sentence: "Write the target function as a Chebyshev series, then implement
+    // that series as a linear combination of walk-operator powers using a
+    // PREPARE/SELECT pair on an ancilla register, and post-select. No phase
+    // factors are computed -- the polynomial enters through the coefficients of
+    // the combination instead." The listing keeps that order and puts nothing
+    // between the stages.
+    //
+    // The `require` lines are `conditions` verbatim -- "an explicit decomposition
+    // of the target into implementable unitaries with a known coefficient vector,
+    // and the ability to prepare a state from those coefficients" -- and the
+    // `given` line is the rest of that field: Childs, Kothari and Somma "apply
+    // this route to a sparse $A$ through its associated quantum walk, so it runs
+    // from the entry oracle without Hamiltonian simulation as an intermediate".
+    // The ancilla comment is also `conditions` verbatim ("It costs more ancillas
+    // than the QSVT route, which carries the polynomial in one qubit's worth of
+    // phase shifts"), and it is in the listing because it is the record's own
+    // statement of what this route trades away.
+    //
+    // The bypass comment is `summary`'s "No phase factors are computed" read with
+    // the record's `bypasses: ["qsp-phase-factors"]`.
+    //
+    // The cost stanza repeats `cost` including its withholding, which is the
+    // whole shape of that field: the improvement is stated, as the record scopes
+    // it, "in their abstract's own comparative terms" against
+    // Harrow-Hassidim-Lloyd, and the one phrase the record marks as a direct
+    // quotation from the abstract -- "while keeping essentially the same
+    // dependence on other parameters" -- is kept in quotation marks so the
+    // reader can tell which words are the paper's; "The claim is for the
+    // complete linear-systems algorithm this transform powers, not a standalone
+    // cost for the LCU step"; "The abstract states no closed-form bound; the exact
+    // statements, including the condition-number dependence, are in the paper's
+    // full text and are not quoted here." The listing therefore states no closed
+    // form and no condition-number dependence, and says so rather than filling it.
+    //
+    // Deliberately not said: what PREPARE and what SELECT each do, or in what
+    // order they are applied -- `summary` names the pair and the register and
+    // nothing more, so the listing names them and stops. Where the coefficient
+    // vector comes from is not said either: `conditions` requires "a known
+    // coefficient vector" and `steps` names a polynomial-approximation stage, but
+    // no sentence on the record connects the two, so the listing does not either.
+    // No success probability, no amplification step and no claim about what the
+    // post-selection leaves: none of those are on the record, which ends at "and
+    // post-select". No origin is attributed for the LCU construction either; the
+    // citation list carries Childs and Wiebe's Hamiltonian-simulation LCU paper,
+    // but no field on the record says where the construction comes from, and the
+    // map is forbidden to supply that.
+    //
+    // Contrast with its sibling `qsvt-transform`: no phase sequence and no
+    // interleaved U / U dagger body, because this record bypasses the
+    // qsp-phase-factors step; the polynomial arrives as a coefficient vector
+    // rather than as a degree that sets a query count, this record stating no
+    // per-degree count at all; it costs more ancillas rather than one; and it ends
+    // in a post-selection where the QSVT listing ends in a designated block.
+    example: {
+      pseudocode: [
+        "given  the target function, and a sparse A through its associated quantum",
+        "       walk -- the route Childs, Kothari and Somma take, which runs from",
+        "       the entry oracle without Hamiltonian simulation as an intermediate",
+        "",
+        "require  an explicit decomposition of the target into implementable",
+        "         unitaries with a known coefficient vector",
+        "require  the ability to prepare a state from those coefficients",
+        "",
+        "write the target function as a Chebyshev series",
+        "",
+        "# no phase factors are computed: the qsp-phase-factors step is bypassed,",
+        "# and the polynomial enters through the coefficients of the combination",
+        "",
+        "implement the series as a linear combination of walk-operator powers,",
+        "    using a PREPARE/SELECT pair on an ancilla register",
+        "",
+        "post-select",
+        "",
+        "# this route costs more ancillas than the QSVT route, which carries the",
+        "# polynomial in one qubit's worth of phase shifts",
+        "",
+        "# cost, as Childs, Kothari and Somma state it in their abstract's own",
+        "# comparative terms: for a sparse, well-conditioned A the",
+        "# Harrow-Hassidim-Lloyd algorithm runs in time poly(log N, 1/epsilon), and",
+        "# theirs improves this to a running time polynomial in log(1/epsilon) --",
+        "# exponentially improving the dependence on precision \"while keeping",
+        "# essentially the same dependence on other parameters\". That claim is for",
+        "# the complete linear-systems algorithm this transform powers, not a",
+        "# standalone cost for the LCU step. The abstract states no closed-form",
+        "# bound; the exact statements, including the condition-number dependence,",
+        "# are in the paper's full text and are not quoted here.",
+      ].join("\n"),
+    },
     citations: [
       { title: "Hamiltonian Simulation Using Linear Combinations of Unitary Operations", authors: "Andrew M. Childs, Nathan Wiebe", year: "2012", url: "https://arxiv.org/abs/1202.5822" },
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
@@ -1484,6 +2702,94 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "There is a live tension over the precision requirement. The survey above places the halving/capitalization method of Chao, Ding, Gilyén, Huang and Szegedy in the root-finding family said to need $O(d \\mathrm{polylog}(d/\\varepsilon))$ bits, while that paper itself reports finding sequences of more than 3000 angles within 5 minutes in standard double precision arithmetic. The two claims have not been reconciled in the literature.",
     contestedJa: "要求される精度をめぐっては見解の対立が残っています。上記の整理は Chao・Ding・Gilyén・Huang・Szegedy の halving と capitalization による手法を $O(d \\mathrm{polylog}(d/\\varepsilon))$ ビットを要する求根系に位置づけていますが、当の論文自身は、標準的な倍精度演算で 3000 を超える角度列を 5 分以内に求めたと報告しています。この 2 つの主張は現時点で整合していません。",
     steps: [],
+    // A transcription of `summary` for the shape and of `cost` + `conditions`
+    // for everything that makes this route different from its three siblings.
+    // Among the four front ends that compute the same object, this is the one
+    // whose distinguishing field is `cost`: it is the only one of the four that
+    // states an arithmetic model, and the record says outright that the model is
+    // the point -- "earlier efficiency claims had assumed a strong arithmetic
+    // model of computation and lacked numerical stability analysis, and this
+    // work replaces that with a realistic one". So the listing is built around
+    // precision, not around a procedure.
+    //
+    // - the two stages are `summary`, verbatim: "Compute the complementary
+    //   polynomial by finding the roots of a high-degree polynomial, then strip
+    //   off one phase factor at a time from the assembled $SU(2)$-valued
+    //   product";
+    // - the note naming Haah is `summary` too -- "Haah's product decomposition
+    //   is the version of this route that comes with a full arithmetic-model
+    //   analysis" -- and is why the cost line carries his name;
+    // - "Root finding is the numerical weak point of the family", the bit count
+    //   and "variable-precision arithmetic rather than double precision" are
+    //   `conditions`, with its attribution to Ni and Ying's survey kept;
+    // - the open question is `conditions` as well: "the stability of the
+    //   layer-stripping process used by most direct methods remains an open
+    //   question";
+    // - the closing stanza is `contested`.
+    //
+    // The record carries no `contract`, so the `given` line is taken from the
+    // only field that names inputs at all -- `cost`'s "for a degree-$N$
+    // approximation at accuracy $\varepsilon$". Judgment call kept visible in
+    // the listing: the record uses two symbols for the degree, $N$ in `cost`
+    // (Haah's bound) and $d$ in `conditions` (the survey's bit count). They are
+    // not unified here; each stays with the source that wrote it.
+    //
+    // What this listing deliberately does not say. `steps` is empty and no field
+    // states how a root set becomes the complementary polynomial, how one factor
+    // is stripped, or what ends the stripping -- so the loop stops on the
+    // record's own words, "one phase factor at a time", and a comment says the
+    // rest is not here. It is also not filled in from the sibling records: the
+    // Prony route's accounting is that record's, not this one's.
+    //
+    // The `contested` stanza is in the listing and not only in the prose because
+    // it is the one thing a reader must not carry away wrong. The survey's bit
+    // count and the halving/capitalization paper's own double-precision report
+    // "have not been reconciled in the literature", and the listing repeats both
+    // and reconciles neither.
+    example: {
+      pseudocode: [
+        "given  a degree-N approximation at accuracy epsilon",
+        "       # N is cost's symbol (Haah); the precision claim below is the",
+        "       # survey's and is written in d -- the record uses both",
+        "",
+        "# stage 1 -- the complementary polynomial",
+        "find the roots of a high-degree polynomial",
+        "build the complementary polynomial from them",
+        "# root finding is the numerical weak point of the family",
+        "",
+        "# stage 2 -- layer stripping",
+        "assemble the SU(2)-valued product",
+        "repeat, one phase factor at a time:",
+        "    strip a phase factor off the assembled product",
+        "# how a factor is stripped, and what ends the stripping, are not stated",
+        "",
+        "return the phase factors",
+        "",
+        "# precision -- this is what separates the route from the double-precision",
+        "#   front ends: Ni and Ying's survey groups this family (the",
+        "#   Gilyen-Su-Low-Wiebe construction, Haah, and the",
+        "#   halving/capitalization method) as requiring O(d polylog(d/epsilon))",
+        "#   bits of precision, citing Haah, which means variable-precision",
+        "#   arithmetic rather than double precision",
+        "",
+        "# cost -- Haah, whose product decomposition is the version of this route",
+        "#   that comes with a full arithmetic-model analysis:",
+        "#   O(N^3 polylog(N/epsilon)) time for a degree-N approximation at",
+        "#   accuracy epsilon, under the random-access memory model of",
+        "#   computation. The model is the point of the result -- earlier",
+        "#   efficiency claims had assumed a strong arithmetic model and lacked",
+        "#   numerical stability analysis",
+        "",
+        "# open -- the stability of the layer-stripping process used by most",
+        "#   direct methods remains an open question",
+        "",
+        "# unreconciled -- the same survey places the halving/capitalization",
+        "#   method of Chao, Ding, Gilyen, Huang and Szegedy in this family, while",
+        "#   that paper itself reports finding sequences of more than 3000 angles",
+        "#   within 5 minutes in standard double precision arithmetic. The two",
+        "#   claims have not been reconciled in the literature",
+      ].join("\n"),
+    },
     citations: [
       { title: "Product Decomposition of Periodic Functions in Quantum Signal Processing", authors: "Jeongwan Haah", year: "2018", url: "https://arxiv.org/abs/1806.10236" },
       { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Hongkang Ni, Lexing Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
@@ -1507,6 +2813,97 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "This family is efficient and stable in double precision but is understood to degrade in the fully-coherent regime, where ‖f‖_∞ → 1. The Newton method for symmetric QSP and the nonlinear-Fourier-transform route were developed for that regime specifically, and the strong-convexity guarantee that justifies the standard initial guess is proved only under ‖f‖_∞ = O(d^{-1}), which does not reach it.",
     contestedJa: "この系統は倍精度で効率的かつ安定ですが、‖f‖_∞ → 1 となる完全コヒーレント領域では性能が落ちると理解されています。対称 QSP に対するニュートン法や非線形フーリエ変換に基づく経路は、まさにその領域のために開発されました。標準的な初期値を正当化する強凸性の保証も ‖f‖_∞ = O(d^{-1}) のもとでのみ証明されており、その領域には届きません。",
     steps: [],
+    // Almost entirely a transcription of `conditions`, which is the
+    // distinguishing field here: alone among the four front ends for this
+    // capability, this record writes the procedure out -- the objective, the
+    // sample points, the optimizer, and the initial guess -- so the listing is
+    // the only one of the four that can be a runnable-looking recipe rather than
+    // a stage list. Every line below is one of its sentences.
+    //
+    // - the objective, the sample points and $d̃$ are `conditions` verbatim:
+    //   "$L(Φ̂) = (1/d̃) \Sigma_{j=1}^{d̃} |Re[\langle0|U_Φ(x_j)|0\rangle] −
+    //   f(x_j)|²$ at $x_j = \cos((2j−1)\pi/(4d̃))$ with $d̃ = ⌈(d+1)/2⌉$,
+    //   minimised with L-BFGS over symmetric phase factors";
+    // - the line that opens the route is `summary`: "Instead of constructing the
+    //   complementary polynomial, minimise the mean squared difference between
+    //   the QSP response ... and the target $f$";
+    // - "the positive roots of the Chebyshev polynomial $T_{2d̃}$" is `summary`,
+    //   kept as the comment on the sample-point line;
+    // - the admissibility precondition is `conditions`: "feed in a non-polynomial
+    //   f and $L(Φ) = 0$ generally has no solution, leaving the optimizer stuck
+    //   among many local minima";
+    // - the initial guess and its warning are `conditions`: "$Φ⁰ = (\pi/4, 0,
+    //   \ldots, 0, \pi/4)$ is load-bearing -- the seemingly natural $Φ = (0,
+    //   \ldots, 0)$ is a stationary point whose loss is non-zero";
+    // - "Gradients come from $SU(2)$ matrix products, so root finding is avoided
+    //   entirely and the method runs in standard double precision" is `summary`,
+    //   and is the sentence that separates this route from the direct family;
+    // - the strong-convexity stanza is `conditions` (Wang, Dong and Lin) and the
+    //   final stanza is `contested`.
+    //
+    // The record carries no `contract`, so the `given` line is built from the
+    // precondition `conditions` states -- an admissible polynomial target of
+    // degree d -- rather than from a takes/returns block that does not exist.
+    //
+    // Two notation calls, both flattenings and neither a claim: `conditions`
+    // writes the objective's argument as $Φ̂$ where it defines the objective and
+    // as $Φ$ in its later sentences, and the listing uses one plain-text Phi;
+    // $d̃$ becomes d~ under the plain-ASCII rule for listings.
+    //
+    // What this listing deliberately does not say: any complexity. `cost` states
+    // "No asymptotic bound is claimed", so the listing claims none either and
+    // carries only the empirical record `cost` does give -- degree larger than
+    // 10,000, error below 10^-12, standard double precision -- as a comment
+    // labelled for what it is. Nothing is said about how L-BFGS is run (line
+    // search, tolerance, memory), because the record names the optimizer and
+    // stops. The regime limit is transcribed and not softened: the guarantee is
+    // proved only under $‖f‖_∞ = O(d^{-1})$, "which does not reach" the
+    // fully-coherent regime, and the record names the two siblings built for
+    // that regime instead.
+    example: {
+      pseudocode: [
+        "given  an admissible polynomial target f of degree d",
+        "       # the target must already be an admissible polynomial: feed in a",
+        "       # non-polynomial f and L(Phi) = 0 generally has no solution,",
+        "       # leaving the optimizer stuck among many local minima",
+        "",
+        "# instead of constructing the complementary polynomial, minimise the mean",
+        "# squared difference between the QSP response and the target f",
+        "",
+        "set  d~ = ceil((d + 1) / 2)",
+        "set  x_j = cos((2j - 1) pi / (4 d~))    for j = 1 .. d~",
+        "     # the positive roots of the Chebyshev polynomial T_{2 d~}",
+        "",
+        "define  L(Phi) = (1/d~) sum over j = 1 .. d~ of",
+        "            |Re[<0|U_Phi(x_j)|0>] - f(x_j)|^2",
+        "",
+        "start from  Phi_0 = (pi/4, 0, ..., 0, pi/4)",
+        "# load-bearing: the seemingly natural Phi = (0, ..., 0) is a stationary",
+        "# point whose loss is non-zero",
+        "",
+        "minimise L over symmetric phase sequences with L-BFGS",
+        "    # gradients come from SU(2) matrix products, so root finding is",
+        "    # avoided entirely and the method runs in standard double precision",
+        "",
+        "return the symmetric phase factors",
+        "",
+        "# why Phi_0 and not any starting point: Wang, Dong and Lin later proved",
+        "#   that one global minimum lies in a neighbourhood of Phi_0 on which the",
+        "#   cost function is strongly convex, under ||f||_inf = O(d^-1) with",
+        "#   d = deg(f)",
+        "",
+        "# no asymptotic bound is claimed. What the paper reports is empirical:",
+        "#   phase factors accurately approximating polynomials of degree larger",
+        "#   than 10,000 with error below 10^-12, using standard double precision",
+        "#   arithmetic operations",
+        "",
+        "# where it stops working: the method degrades as ||f||_inf approaches 1,",
+        "#   the fully-coherent regime, which the strong-convexity guarantee above",
+        "#   does not reach. The Newton method for symmetric QSP and the",
+        "#   nonlinear-Fourier-transform route were developed for that regime",
+        "#   specifically",
+      ].join("\n"),
+    },
     citations: [
       { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
       { title: "On the energy landscape of symmetric quantum signal processing", authors: "Jiasu Wang, Yulong Dong, Lin Lin", year: "2021", url: "https://arxiv.org/abs/2110.04993" },
@@ -1527,6 +2924,87 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The robustness claim is the paper's own and stands; the efficiency ranking has since moved. Ni and Ying present a structured-matrix method they describe as the fastest applicable across all regimes, and characterise this Newton iteration's per-iteration cost as dominated by a linear solve — a figure that is theirs, not this paper's, which claims no complexity.",
     contestedJa: "頑健性についての主張は論文自身のものであり、そのまま成り立ちます。ただし効率の順位付けはその後動いています。Ni と Ying は、すべての領域に適用できる手法のなかで最も高速だとする構造行列に基づく手法を提示し、このニュートン反復の 1 反復あたりのコストを線形方程式の求解が支配するものとして特徴付けています。これは両氏による評価であり、計算量を何も主張していないこの論文自身の数字ではありません。",
     steps: [],
+    // Written from `conditions`, which is what distinguishes this record from
+    // its siblings: it is the only one of the four front ends whose quantitative
+    // content is a *convergence record across regimes* -- "6 iterations to
+    // machine precision at $α = 0.9$, rising only to 18 iterations at
+    // $α = 1 − 10^{-9}$, where the Jacobian is highly ill-conditioned". `cost`
+    // says so in as many words: "the paper claims no complexity for the
+    // iteration -- checked against the full text, whose quantitative content is
+    // the convergence record already in conditions". So this listing is an
+    // iteration and an iteration count, where its least-squares neighbour is an
+    // objective and its two direct-family neighbours are stage lists.
+    //
+    // - the framing is `summary`, verbatim: "Treat phase-factor finding as a
+    //   nonlinear system rather than a minimization, and solve it with a Newton
+    //   iteration built for symmetric QSP" -- the loop below exists because the
+    //   record says "Newton iteration" and counts its iterations, and for no
+    //   other reason;
+    // - the comment on the Jacobian is `summary`: "The matrix-product-state
+    //   structure of symmetric QSP makes computing the Jacobian cost about the
+    //   same as a single function evaluation";
+    // - "Converges rapidly and robustly in all parameter regimes, including the
+    //   case of an ill-conditioned Jacobian, using standard double precision
+    //   arithmetic", the $α cos(1000x)$ example at degree $≈ 1433$, the real
+    //   arithmetic reformulation and QSPPACK are all `conditions`;
+    // - the closing stanza is `contested`.
+    //
+    // The record carries no `contract`; the `given` line is `summary`'s own
+    // framing of the input -- the problem written as a system, not an objective
+    // -- which is also the sentence that contrasts it with the least-squares
+    // record.
+    //
+    // What this listing deliberately does not say, and this is the whole reason
+    // the comment is long. It does NOT write a linear solve inside the loop.
+    // `cost` disowns exactly that sentence: "The per-iteration characterization
+    // in circulation, a cost dominated by one linear solve, is Ni and Ying's,
+    // not this paper's". Writing it as a step would launder a third party's
+    // figure into this paper's procedure, so it appears once, as a comment, with
+    // its owner attached. Nothing is said about how the Newton step is formed or
+    // what the convergence test is -- `steps` is empty and no field states
+    // either -- and no complexity is stated anywhere, because the record states
+    // none.
+    example: {
+      pseudocode: [
+        "given  phase-factor finding written as a nonlinear system,",
+        "       not as a minimization",
+        "",
+        "repeat:",
+        "    compute the Jacobian",
+        "        # the matrix-product-state structure of symmetric QSP makes",
+        "        # computing the Jacobian cost about the same as a single",
+        "        # function evaluation",
+        "    take a Newton step",
+        "until converged",
+        "",
+        "return the phase factors",
+        "",
+        "# how the Newton step is taken, and what the convergence test is, are",
+        "#   not on this record. The per-iteration characterization in",
+        "#   circulation -- a cost dominated by one linear solve -- is Ni and",
+        "#   Ying's, not this paper's, which claims no complexity for the",
+        "#   iteration at all",
+        "",
+        "# what the paper does state is where it converges and how fast:",
+        "#   rapidly and robustly in all parameter regimes, including the case of",
+        "#   an ill-conditioned Jacobian, using standard double precision",
+        "#   arithmetic",
+        "#",
+        "#   reported example -- the highly oscillatory target alpha cos(1000x)",
+        "#   at polynomial degree about 1433:",
+        "#       alpha = 0.9        ->  6 iterations to machine precision",
+        "#       alpha = 1 - 10^-9  -> 18 iterations, Jacobian highly",
+        "#                             ill-conditioned",
+        "",
+        "# the authors also give a reformulation of symmetric QSP in real",
+        "#   arithmetic, and the method is implemented in the QSPPACK package",
+        "",
+        "# the robustness claim above is the paper's own and stands; the",
+        "#   efficiency ranking has since moved -- Ni and Ying present a",
+        "#   structured-matrix method they describe as the fastest applicable",
+        "#   across all regimes",
+      ].join("\n"),
+    },
     citations: [
       { title: "Robust iterative method for symmetric quantum signal processing in all parameter regimes", authors: "Yulong Dong, Lin Lin, Hongkang Ni, Jiasu Wang", year: "2023", url: "https://arxiv.org/abs/2307.12468" },
     ],
@@ -1546,6 +3024,99 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The paper's claim is stability in double precision, not an improved asymptotic, and no sharp worst-case complexity separating it from the root-finding family is given. Ni and Ying add that the stability of the layer-stripping process most direct methods rely on — this one included — remains an open question.",
     contestedJa: "論文が主張しているのは倍精度での安定性であって漸近計算量の改善ではなく、求根系と分ける鋭い最悪計算量は与えられていません。さらに Ni と Ying は、この手法を含め多くの直接法が依拠する層剥がしの安定性は未解決の問題のままだと指摘しています。",
     steps: [],
+    // Written from `cost`, which is the distinguishing field: this is the only
+    // one of the four front ends whose cost field is itself an accounting --
+    // "computing the vector $m$ costs an empirical $O(d^2)$, and extracting the
+    // phase factors costs $O(d^2 \log d)$ via the FFT and dominates" -- so the
+    // listing can carry that accounting whole, where its root-finding sibling
+    // prices only the whole route and its two double-precision siblings price
+    // nothing at all. `summary` supplies the two stages themselves and what the
+    // route avoids.
+    //
+    // - the stages are `summary`, verbatim: "Build the complementary polynomial
+    //   directly, with Prony's method as the key step, then obtain the phase
+    //   factors by factorization";
+    // - the reason the route exists is `summary` too, and is kept as the comment
+    //   on stage one: "This avoids root finding of high-degree polynomials,
+    //   which is the step that forces variable-precision arithmetic elsewhere in
+    //   the direct family";
+    // - "computing the vector $m$", the FFT, what dominates, "$d$ is the
+    //   polynomial degree", "the cost is classical preprocessing" and "Stated in
+    //   the full text; the abstract carries no bound" are all `cost`, carried in
+    //   `cost`'s own sentence and with its attribution -- "Ying's own
+    //   accounting" -- kept in the listing;
+    // - "Reported numerically stable in double precision arithmetic" and the
+    //   four experiments are `conditions`;
+    // - the closing stanza is `contested`.
+    //
+    // The record carries no `contract`; the `given` line names the degree d
+    // because `cost` is the field that defines it ("$d$ is the polynomial
+    // degree").
+    //
+    // The vector $m$ is priced but not placed. `cost` is the only field that
+    // names it, and no sentence says that computing it is a stage of the route
+    // or where in the route it would sit, so it appears here inside the
+    // accounting comment and not as a step in the sequence. The FFT stays in
+    // that comment for the same reason: `cost` attaches it to the cost of
+    // "extracting the phase factors", not to the factorization as a technique,
+    // so the pseudocode line says only what `summary` says -- "obtain the phase
+    // factors by factorization".
+    //
+    // Judgment call, flagged rather than resolved: `cost` carries two figures
+    // that do not obviously agree -- Ying's own accounting makes the overall
+    // cost $O(d^2 \log d)$, while "the paper's headline comparison is the same
+    // $O(d^2)$ computational cost as the optimization-based method of Dong,
+    // Meng, Whaley and Lin". The listing transcribes both, says in as many words
+    // that the record carries the second beside the first and does not join
+    // them, and joins them no further itself.
+    //
+    // What this listing deliberately does not say: how Prony's method builds the
+    // complementary polynomial, what the vector $m$ is, and how the
+    // factorization extracts the factors. `steps` is empty and no field states
+    // any of it; the record names the key step and stops, and so does the
+    // listing. It also does not upgrade the stability report into an asymptotic
+    // claim -- `contested` is explicit that "The paper's claim is stability in
+    // double precision, not an improved asymptotic", and that the
+    // layer-stripping open question covers this method too, "this one included".
+    example: {
+      pseudocode: [
+        "given  a polynomial of degree d      # d is the polynomial degree",
+        "",
+        "build the complementary polynomial directly,",
+        "    with Prony's method as the key step",
+        "    # this avoids root finding of high-degree polynomials, which is the",
+        "    # step that forces variable-precision arithmetic elsewhere in the",
+        "    # direct family",
+        "",
+        "obtain the phase factors by factorization",
+        "",
+        "return the phase factors",
+        "",
+        "# Ying's own accounting: computing the vector m costs an empirical",
+        "#   O(d^2), and extracting the phase factors costs O(d^2 log d) via the",
+        "#   FFT and dominates, so the overall cost is O(d^2 log d) -- classical",
+        "#   preprocessing. Stated in the full text; the abstract carries no bound",
+        "",
+        "# how Prony's method builds the complementary polynomial, what the vector",
+        "#   m is, and how the factorization proceeds are not stated here",
+        "",
+        "# reported numerically stable in double precision arithmetic, with",
+        "#   experiments on Hamiltonian simulation, eigenstate filtering, matrix",
+        "#   inversion and evaluation of the Fermi-Dirac operator",
+        "",
+        "# the record carries a second figure beside that accounting and does not",
+        "#   join the two -- the paper's headline comparison is the same O(d^2)",
+        "#   computational cost as the optimization-based method of Dong, Meng,",
+        "#   Whaley and Lin at comparable accuracy (about 10^-12), with sequences",
+        "#   beyond 50,000 phase factors demonstrated",
+        "",
+        "# what is claimed is stability in double precision, not an improved",
+        "#   asymptotic: no sharp worst-case complexity separating this from the",
+        "#   root-finding family is given, and Ni and Ying add that the stability",
+        "#   of the layer-stripping process most direct methods rely on -- this",
+        "#   one included -- remains an open question",
+      ].join("\n"),
+    },
     citations: [
       { title: "Stable factorization for phase factors of quantum signal processing", authors: "Lexing Ying", year: "2022", url: "https://arxiv.org/abs/2202.02671" },
       { title: "Fast Phase Factor Finding for Quantum Signal Processing", authors: "Hongkang Ni, Lexing Ying", year: "2024", url: "https://arxiv.org/abs/2410.06409" },
@@ -1706,6 +3277,76 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The Lemma 48 count is in queries, not gates. Zhang and Yuan open the oracle: \"For general matrices (even including sparse ones), we prove that sparse-access input models and block-encoding both require nearly linear circuit complexities relative to the matrix dimension.\" A routine that is logarithmic in queries to an oracle whose own circuit is linear in $N$ is a linear-cost routine.",
     contestedJa: "Lemma 48 が数えているのはクエリ数であって、ゲート数ではありません。Zhang と Yuan はそのオラクルの中身を開き、「一般の行列については（スパースなものを含めても）、スパースアクセス入力モデルとブロックエンコーディングのいずれも、行列次元に対してほぼ線形の回路計算量を必要とすることを証明する」と述べています。オラクルへのクエリ数が対数的でも、そのオラクル自身の回路が $N$ に線形であれば、全体としては線形コストのルーチンです。",
     steps: [],
+    // A transcription of `summary`, which states the whole procedure in one
+    // sentence: "prepare uniform superpositions over the sparsity pattern,
+    // rotate an ancilla by arcsin of each entry, and swap registers to leave
+    // $A$ in the flagged block". The three stanzas are those three clauses in
+    // that order. The record says nothing about how any of the three is built
+    // inside -- which register is the ancilla, how the superposition is
+    // prepared, which registers are swapped, what the flag is -- so the listing
+    // states each stage and stops. (`steps` on this record is empty: there is
+    // no sub-capability to hand anything down to.)
+    //
+    // The `given` line is `conditions`: "$s_r$-row-sparse and $s_c$-column-sparse
+    // with $|a_ij| <= 1$ after rescaling", with the oracle names from `summary`
+    // ("row and column index oracles $O_r$, $O_c$ and an entry oracle $O_A$").
+    // The comment under it is `conditions` almost verbatim, including its
+    // caveat that efficient $O_r$, $O_c$ "is an assumption about structure, and
+    // it is separate from the question of whether it holds for a given
+    // application". The oracles are inputs here; the record does not construct
+    // them, and neither does the listing.
+    //
+    // The parameter stanza is `cost`, Lemma 48, carried with the record's own
+    // correction attached. The record says the lemma "states $\alpha =
+    // \sqrt(s_r·s_c)$ flat" and that "the $\alpha = \sqrt(s_r·s_c)·||A||_max$
+    // form usually quoted is the standard rescaling, not what the lemma says";
+    // the listing therefore writes the flat form and repeats the disclaimer
+    // rather than quietly upgrading to the familiar one. `cost` does not define
+    // $w$, so the listing does not either -- it transcribes $w+3$ and
+    // $O(w + \log^{2.5}(s_r·s_c/\varepsilon))$ as written. The record gives the
+    // oracle-use counts but not which stage each use falls in, so they stay in
+    // the cost comment instead of being placed in the body.
+    //
+    // The closing stanza is `contested`: "The Lemma 48 count is in queries, not
+    // gates", plus Zhang and Yuan's proved claim that "sparse-access input
+    // models and block-encoding both require nearly linear circuit complexities
+    // relative to the matrix dimension". That is why the listing quotes no gate
+    // cost for $O_r$, $O_c$ or $O_A$ themselves: the record gives none, and
+    // says outright that the query count is not one.
+    example: {
+      pseudocode: [
+        "given  A, s_r-row-sparse and s_c-column-sparse, with |a_ij| <= 1 after rescaling,",
+        "       the row and column index oracles O_r and O_c,",
+        "       and the entry oracle O_A",
+        "",
+        "# O_r and O_c must be efficiently implementable. That is an assumption about",
+        "# structure, separate from whether it holds for a given application",
+        "",
+        "prepare uniform superpositions over the sparsity pattern",
+        "",
+        "rotate an ancilla by arcsin of each entry",
+        "",
+        "swap registers",
+        "",
+        "# A is left in the flagged block: that is the block-encoding",
+        "",
+        "# Gilyen, Su, Low and Wiebe Lemma 48 gives a (sqrt(s_r*s_c), w+3, epsilon)-",
+        "# block-encoding of A, from a single use of O_r, a single use of O_c, two uses",
+        "# of O_A, plus O(w + log^2.5(s_r*s_c/epsilon)) one- and two-qubit gates",
+        "# -- the record does not say which of the stages above each use falls in",
+        "",
+        "# Lemma 48 assumes |a_ij| <= 1 and states alpha = sqrt(s_r*s_c) flat. The",
+        "# alpha = sqrt(s_r*s_c)*||A||_max form usually quoted is the standard",
+        "# rescaling, not what the lemma says, so it is not written here",
+        "",
+        "# and that count is in queries, not gates. Zhang and Yuan open the oracle: for",
+        "# general matrices, even including sparse ones, they prove that sparse-access",
+        "# input models and block-encoding both require nearly linear circuit",
+        "# complexities relative to the matrix dimension. A routine that is logarithmic",
+        "# in queries to an oracle whose own circuit is linear in N is a linear-cost",
+        "# routine",
+      ].join("\n"),
+    },
     citations: [
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "Circuit complexity of quantum access models for encoding classical data", authors: "Xiao-Ming Zhang, Xiao Yuan", year: "2023", url: "https://arxiv.org/abs/2311.11365" },
@@ -1727,6 +3368,84 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Gilyén–Su–Low–Wiebe（arXiv:1806.01838）の Lemma 52 によれば、係数ベクトルに対する $(\\beta, b, \\varepsilon_1)$-state-preparation-pair を $(P_L, P_R)$、各 $U_j$ を $(\\alpha, a, \\varepsilon_2)$-ブロックエンコーディングとするとき、結果は $(\\alpha\\cdot\\beta, a+b, \\alpha\\cdot\\varepsilon_1 + \\alpha\\cdot\\beta\\cdot\\varepsilon_2)$-ブロックエンコーディングとなり、SELECT・$P_R$・$P_L†$ をそれぞれ 1 回ずつ使います。Definition 51 が $\\beta \\geq ||y||_1$ を要求しており、Pauli 分解の場合これが量子化学の文献でいう $\\lambda = ||c||_1$ にあたります。Babbush らは $N$ 個の軌道に対して T ゲート計算量 $O(N + \\log(1/\\varepsilon))$ の SELECT/PREPARE 実装を与え、qubitization 型の位相推定に最適なクエリ計算量 $O(\\lambda/\\varepsilon)$ をもたらしています。$L$ 項に対するフラグ量子ビット数 $b = ceil(\\log2 L)$ は Definition 51 の要件 $2^b \\geq L$ から導かれるものであり、Lemma 52 が述べているわけではありません。",
     steps: ["state-preparation"],
     entries: ["linear-combination-unitaries"],
+    // A transcription of `summary`, which names the three stages and their
+    // order outright: "PREPARE loads amplitudes proportional to $sqrt(|c_j|)$
+    // into an ancilla register, SELECT applies the controlled Pauli strings,
+    // and PREPARE$†$ unprepares, leaving $A/||c||_1$ in the block flagged by
+    // the all-zeros ancilla". The listing keeps `summary`'s names (PREPARE /
+    // SELECT / PREPARE-dagger) in the body and notes in the cost stanza that
+    // `cost` counts the same objects under Lemma 52's names, "a single use each
+    // of SELECT, $P_R$ and $P_L†$". Unlike its sparse-access sibling this
+    // record names the flag -- "the all-zeros ancilla" -- so the listing names
+    // it too. How PREPARE, SELECT or the decomposition itself are built is not
+    // on the record and is not written here.
+    //
+    // The hand-off comment on the PREPARE line is `steps: ["state-preparation"]`
+    // -- the one place this record delegates to a layer below, which is what
+    // most distinguishes it from the other two constructions of this capability
+    // (both have empty `steps`).
+    //
+    // The two comment stanzas around it are `conditions`: "Efficient only when
+    // the number of Pauli terms is $\mathrm{poly}(n)$ and $||c||_1$ stays
+    // small", "an arbitrary $2^n \times 2^n$ matrix has $4^n$ Pauli
+    // coefficients", and its closing warning that "a decomposition with many
+    // terms of comparable magnitude is expensive even when $A$ itself is
+    // well-conditioned, because the term count enters the cost through
+    // $||c||_1$" -- which is why that sentence sits next to the $\beta \geq
+    // ||y||_1$ line rather than at the top.
+    //
+    // The parameter stanza is `cost`, Lemma 52, transcribed with its own
+    // attribution intact: $\beta \geq ||y||_1$ is "required by their Definition
+    // 51", and the flag-qubit count is repeated as the record qualifies it --
+    // "$b = ceil(\log2 L)$ ... is implied by Definition 51's requirement $2^b
+    // \geq L$; Lemma 52 does not state it". The listing keeps that as an
+    // implication, not as a lemma result. The Babbush et al. compilation figures
+    // are `cost` verbatim and stay attributed to that paper, which is a second
+    // citation on this record, not the source of Lemma 52.
+    //
+    // This record has no `contested` field, so the listing raises no dispute
+    // about the parameters it quotes.
+    example: {
+      pseudocode: [
+        "given  a decomposition A = Sum_j c_j P_j over Pauli strings",
+        "",
+        "# the input model chemistry and lattice Hamiltonians supply for free",
+        "# -- efficient only when the number of Pauli terms is poly(n) and ||c||_1",
+        "# stays small. It does not rescue a general dense matrix: an arbitrary",
+        "# 2^n x 2^n matrix has 4^n Pauli coefficients, so this route is a win only",
+        "# where the physics hands you a short decomposition",
+        "",
+        "PREPARE:          load amplitudes proportional to sqrt(|c_j|) into an ancilla",
+        "                  register",
+        "    # loading the coefficient vector is state preparation: hand it to the",
+        "    # layer below",
+        "",
+        "SELECT:           apply the controlled Pauli strings",
+        "",
+        "PREPARE^dagger:   unprepare",
+        "",
+        "# A/||c||_1 is left in the block flagged by the all-zeros ancilla",
+        "",
+        "# Gilyen, Su, Low and Wiebe Lemma 52: with (P_L, P_R) a",
+        "# (beta, b, epsilon_1)-state-preparation-pair for the coefficient vector and",
+        "# each U_j an (alpha, a, epsilon_2)-block-encoding, the result is an",
+        "# (alpha*beta, a+b, alpha*epsilon_1 + alpha*beta*epsilon_2)-block-encoding,",
+        "# using a single use each of SELECT, P_R and P_L^dagger",
+        "",
+        "# their Definition 51 requires beta >= ||y||_1; for a Pauli decomposition",
+        "# that is the lambda = ||c||_1 of the chemistry literature. So a decomposition",
+        "# with many terms of comparable magnitude is expensive even when A itself is",
+        "# well-conditioned -- the term count enters the cost through ||c||_1",
+        "",
+        "# b = ceil(log2 L) for L terms is implied by Definition 51's requirement",
+        "# 2^b >= L; Lemma 52 does not state it, and this listing does not claim it as",
+        "# the lemma's",
+        "",
+        "# Babbush et al. give a SELECT/PREPARE compilation with T-gate complexity",
+        "# O(N + log(1/epsilon)) for N orbitals, enabling qubitized phase estimation",
+        "# with optimal query complexity O(lambda/epsilon)",
+      ].join("\n"),
+    },
     citations: [
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "Encoding Electronic Spectra in Quantum Circuits with Linear T Complexity", authors: "Ryan Babbush, Craig Gidney, Dominic W. Berry, Nathan Wiebe, Jarrod McClean, Alexandru Paler, Austin Fowler, Hartmut Neven", year: "2018", url: "https://arxiv.org/abs/1805.03662" },
@@ -1748,6 +3467,86 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "述べられているパラメータ $1/2^n$ は、論文自身の Definition 1 と整合しません。Definition 1 は A = α·Ã と置き、したがって $||A||_2 \\leq \\alpha$ を導きます。これは Gilyén らの Definition 43 と同じ向きであって、その逆数ではありません。一方 Theorem 1 の証明は $a_ij/2^n$ に等しいブロックを導出しています。どちらの論文の定義を採っても、副正規化係数は $\\alpha = 2^n = N$ です。これは現在配信されている arXiv 版に対する指摘であり、雑誌掲載版では異なる可能性があります。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`, which is a single sentence in two halves.
+    // First half: "Build the block-encoding directly from uniformly controlled
+    // Ry (magnitude) and Rz (phase) rotations between Hadamards and a SWAP,
+    // with no oracle assumption at all" -- that last clause is the `given` line,
+    // and it is what separates this record from the oracle-fed constructions of
+    // the same capability. Second half: "then threshold the rotation angles and
+    // cancel the resulting CNOT chains to compress the circuit".
+    //
+    // The only order the listing writes is `summary`'s own -- the rotations
+    // sitting between the Hadamards and the SWAP -- and no further sequence is
+    // written. `steps` is empty and the record is atomic: nothing is handed to
+    // a layer below.
+    //
+    // The two parameter comments are `cost` verbatim -- Theorem 1's
+    // "$(1/2^n, n+1)$-block-encoding" of $A$ "when $|a_ij| \leq 1$", and
+    // Theorem 2's "$(1/2^n, n+1, N^3\cdot\delta_c)$-block-encoding of $A$ up to
+    // third order in $\delta_c$". Each sits with the stage the record's own
+    // sentence names: Theorem 1 with the circuit as built, Theorem 2 with the
+    // cutoff $\delta_c$. The listing says nothing about what any entry of either
+    // tuple means, and nothing about where an approximation enters, because the
+    // record explains neither.
+    //
+    // The dispute comment is `contested`, which the listing carries rather than
+    // resolves: the record says the stated $1/2^n$ "is inconsistent with the
+    // paper's own Definition 1", that "under either paper's definition the
+    // subnormalization is $\alpha = 2^n = N$", and that this "applies to the
+    // arXiv text as served; a journal version may differ". So the listing quotes
+    // $1/2^n$ as the paper's stated parameter, states the contest beside it, and
+    // silently substitutes neither value for the other.
+    //
+    // The closing comments are `conditions`. The gate-complexity sentence is the
+    // authors' own words as the record quotes them ("bounded by O(N^2) gates
+    // with a modest prefactor of 2 for real-valued matrices (4 for
+    // complex-valued matrices), and a limited polylogarithmic overhead", and
+    // "this gate complexity scales exponentially in the number of qubits for
+    // generic dense matrices"), reproduced without quotation marks only to avoid
+    // escapes in the source. The last line is `conditions` refusing to go
+    // further -- "The paper states only that the circuit parameters can be
+    // easily generated for problems up to fifteen qubits" -- so the listing
+    // claims no size, depth or runtime beyond that.
+    example: {
+      pseudocode: [
+        "given  A with |a_ij| <= 1, and no oracle assumption at all",
+        "",
+        "build the block-encoding circuit directly from:",
+        "    uniformly controlled Ry rotations    # magnitude",
+        "    uniformly controlled Rz rotations    # phase",
+        "    Hadamards and a SWAP, the rotations sitting between them",
+        "",
+        "# Camps and Van Beeumen Theorem 1: that circuit is a (1/2^n, n+1)-block-",
+        "# encoding of A when |a_ij| <= 1",
+        "",
+        "threshold the rotation angles at a cutoff compression threshold delta_c",
+        "cancel the CNOT chains the thresholding leaves behind",
+        "",
+        "return the compressed circuit",
+        "",
+        "# Camps and Van Beeumen Theorem 2: the cutoff delta_c gives a",
+        "# (1/2^n, n+1, N^3*delta_c)-block-encoding of A, up to third order in delta_c",
+        "",
+        "# the 1/2^n above is transcribed as the paper states it, and contested on this",
+        "# record: it is inconsistent with the paper's own Definition 1, which sets",
+        "# A = alpha * A-tilde and therefore ||A||_2 <= alpha, the same orientation as",
+        "# Gilyen et al.'s Definition 43 and not its reciprocal, while the Theorem 1",
+        "# proof derives a block equal to a_ij/2^n. Under either paper's definition the",
+        "# subnormalization is alpha = 2^n = N. This applies to the arXiv text as",
+        "# served; a journal version may differ",
+        "",
+        "# gate complexity, in the authors' words: bounded by O(N^2) gates with a",
+        "# modest prefactor of 2 for real-valued matrices (4 for complex-valued",
+        "# matrices), and a limited polylogarithmic overhead -- and this gate complexity",
+        "# scales exponentially in the number of qubits for generic dense matrices",
+        "",
+        "# so this is a compression technique for structured matrices -- Heisenberg,",
+        "# Hubbard, Laplacian -- and not a way to load dense unstructured data cheaply",
+        "",
+        "# the paper states only that the circuit parameters can be easily generated",
+        "# for problems up to fifteen qubits",
+      ].join("\n"),
+    },
     citations: [
       { title: "FABLE: Fast Approximate Quantum Circuits for Block-Encodings", authors: "Daan Camps, Roel Van Beeumen", year: "2022", url: "https://arxiv.org/abs/2205.00081" },
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
@@ -1786,6 +3585,60 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Möttönen–Vartiainen–Bergholm–Salomaa は $2^{n+2} − 4n − 4$ 個の CNOT ゲートと $2^{n+2} − 5$ 個の 1 量子ビット回転を与え、角度の解析的な表式も示しています。Yuan と Zhang はアンシラを併用する場合を決着させ、アンシラ数 $m$ がいくつであっても深さ計算量が $\\Theta(n + 2^n/(n+m))$、サイズ計算量が $\\Theta(2^n)$ であることを確定させました。Li と Luo は独立に、アンシラ数無制限のもとで $n$ 量子ビットの $d$ スパース状態のサイズが $\\Theta(n·d/\\log(n·d) + n)$ であることを与えています。これを $\\Theta(2^n)$ に変える $d = 2^n$ の代入は本項での計算であり、論文の記述ではありません。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`, which states the construction outright: "one
+    // layer of uniformly controlled (multiplexed) Ry and Rz rotations per qubit,
+    // the angles computed analytically from the amplitude list", and which also
+    // supplies the closing note that this is "the exact, assumption-free method
+    // most software stacks emit by default". The `given` line is built from
+    // `summary`'s "amplitude list": this record carries no contract of its own,
+    // and the state-preparation capability's contract is not part of the source
+    // text for this record, so nothing here is attributed to a contract.
+    //
+    // `conditions` frames the card at both ends -- "applies to any state, with
+    // no structural assumption -- which is exactly why it cannot beat the
+    // exponential bound" and "ancilla-free in its basic form".
+    //
+    // The gate counts are `cost` verbatim (Mottonen, Vartiainen, Bergholm and
+    // Salomaa; Yuan and Zhang), so they are quotable. What the listing does NOT
+    // write is the angles themselves: `cost` says only that the paper gives "an
+    // analytic expression for the angles", so the listing says that and stops.
+    //
+    // Deliberately omitted: Li and Luo's sparse-state size bound, also in `cost`.
+    // The record flags that the substitution turning it into Theta(2^n) is
+    // "arithmetic we performed, not a statement in their paper", and a derived
+    // number does not belong in a transcription. That bound is transcribed on
+    // `sparse-state-preparation`, where it is the paper's own claim about the
+    // paper's own case.
+    //
+    // Also deliberately absent: any division of labour between the Ry and the Rz
+    // layers (which one carries magnitude, which one carries phase) and any
+    // order between them. The record names both families and says "per qubit";
+    // it says nothing more, so neither does the listing.
+    example: {
+      pseudocode: [
+        "given  n qubits and the amplitude list of the arbitrary state to prepare",
+        "",
+        "for each of the n qubits:",
+        "    apply one layer of uniformly controlled (multiplexed) Ry rotations",
+        "    apply one layer of uniformly controlled (multiplexed) Rz rotations",
+        "",
+        "# every angle in those layers is computed analytically from the amplitude",
+        "# list; Mottonen, Vartiainen, Bergholm and Salomaa give the analytic",
+        "# expression, which is not transcribed here",
+        "",
+        "# the state is prepared exactly -- this is the assumption-free method most",
+        "# software stacks emit by default",
+        "",
+        "# their count, ancilla-free in this basic form: 2^(n+2) - 4n - 4 CNOT gates",
+        "# and 2^(n+2) - 5 one-qubit rotations",
+        "",
+        "# Yuan and Zhang settle the ancilla-assisted case: depth Theta(n + 2^n/(n+m))",
+        "# and size Theta(2^n), for any number m of ancillary qubits",
+        "",
+        "# applies to any state, with no structural assumption -- which is exactly",
+        "# why it cannot beat the exponential bound",
+      ].join("\n"),
+    },
     citations: [
       { title: "Transformation of quantum states using uniformly controlled rotations", authors: "Mikko Mottonen, Juha J. Vartiainen, Ville Bergholm, Martti M. Salomaa", year: "2004", url: "https://arxiv.org/abs/quant-ph/0407010" },
       { title: "Optimal (controlled) quantum state preparation and improved unitary synthesis by quantum circuits with any number of ancillary qubits", authors: "Pei Yuan, Shengyu Zhang", year: "2022", url: "https://arxiv.org/abs/2202.11302" },
@@ -1857,6 +3710,53 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Gleinig と Hoefler の Eq. 5 は、非ゼロ係数が $|S|$ 個の $n$ 量子ビット状態に対して $T_CNOT(|S|)$ が $O(|S|·n)$ であることを与えています。アンシラは使いません。Li と Luo は対応する上下界を与えています。アンシラなしではサイズ $O(n·d/\\log n + n)$ で、$d = \\mathrm{poly}(n)$ のとき漸近的に最適です。アンシラ $m$ 個（$m ∈ O(n·d/\\log(n·d) + n)$）ではサイズ $O(n·d/\\log(n+m) + n)$ で、妥当な仮定のもとで一致する下界 $\\Omega(n·d/\\log(n+m) + n)$ が付きます。アンシラ数無制限ではサイズはちょうど $\\Theta(n·d/\\log(n·d) + n)$ です。",
     steps: [],
     atomic: true,
+    // This record states an approach, not a mechanism, and the listing stops
+    // exactly where the record does. `summary` gives the one move: "build the $d$
+    // computational-basis strings directly instead of rotating through the whole
+    // binary tree, so the cost tracks $d$ and $n$ rather than $2^n$". `conditions`
+    // gives the `given` line -- "the state to be $d$-sparse in the computational
+    // basis with $d$ small, and the support to be known in advance" -- and gives
+    // the closing caveat verbatim, which is the point of the card: "sparsity is
+    // basis-dependent".
+    //
+    // The listing deliberately writes NO loop over the d strings and no ordering
+    // among them. The record says the strings are built directly; it does not say
+    // how, so the card says so in as many words rather than inventing a
+    // construction. Gleinig and Hoefler's Eq. 5 is cited on the record only for a
+    // cost, not for its procedure.
+    //
+    // Costs are `cost` verbatim: Gleinig and Hoefler's ancilla-free
+    // T_CNOT(|S|) in O(|S| n), and the two ends of Li and Luo's range. The card
+    // sets the two papers' figures side by side without relating them: `cost`
+    // says "Li and Luo give matching bounds", which is matching upper and lower
+    // bounds of their own, not a match with Gleinig and Hoefler. The middle case
+    // in `cost` -- size O(n d / log(n+m) + n) with m ancillas and its matching
+    // lower bound "under reasonable assumptions" -- is left off the card for
+    // length, not disputed.
+    example: {
+      pseudocode: [
+        "given  an n-qubit state with only d of its 2^n amplitudes nonzero, d small,",
+        "       and its support known in advance",
+        "",
+        "build the d computational-basis strings directly",
+        "",
+        "# not by rotating through the whole binary tree -- that is the whole of the",
+        "# difference, and it is why the cost tracks d and n rather than 2^n",
+        "",
+        "# how the d strings are built is not stated on this record and is not",
+        "# invented here: Gleinig and Hoefler's Eq. 5 is quoted for its cost only --",
+        "# T_CNOT(|S|) in O(|S| n) for a state with |S| nonzero coefficients,",
+        "# ancilla-free",
+        "",
+        "# Li and Luo: without ancillas, size O(n d / log n + n),",
+        "# asymptotically optimal when d = poly(n); with unlimited ancillas, size",
+        "# exactly Theta(n d / log(n d) + n)",
+        "",
+        "# sparsity is basis-dependent: a state that is sparse in one basis is",
+        "# generally dense in another, so this is a property of the problem's",
+        "# encoding as much as of the state",
+      ].join("\n"),
+    },
     citations: [
       { title: "Nearly Optimal Circuit Size for Sparse Quantum State Preparation", authors: "Lvzhou Li, Jingquan Luo", year: "2024", url: "https://arxiv.org/abs/2406.16142" },
       { title: "An Efficient Algorithm for Sparse Quantum State Preparation", authors: "Gleinig, Hoefler", year: "2021", url: "https://doi.org/10.1109/dac18074.2021.9586240" },
@@ -1900,6 +3800,80 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "The abstract states no query-count formula; its cost claims are comparative. The construction keeps the quadratic quantum speedup that fixed-point predecessors gave up, and the optimality named in the title is of exactly this shape: for a given number of oracle queries, the adjustable failure-probability bound is guaranteed, as Yoder, Low and Chuang put it, over \"the broadest possible range\" of the target fraction $\\lambda$. The explicit query count as a function of $\\lambda$'s lower bound and the failure tolerance is in the paper's full text and is not quoted here.",
     costJa: "概要はクエリ数の式を述べておらず、費用に関する主張は比較の形をとります。この構成は、先行する不動点型の手法が手放していた二次的な量子高速化を保持します。表題にある「最適」もまさにこの形のものです。すなわち、オラクルへのクエリ数を固定したとき、調整可能な失敗確率の上界が、Yoder・Low・Chuang の言う「可能な限り広い範囲」の目標割合 $\\lambda$ にわたって保証されます。$\\lambda$ の下界と許容失敗確率の関数としての明示的なクエリ数は論文の本文にあり、ここでは引用していません。",
     steps: ["state-preparation"],
+    // The `given` and `return` lines are the success-amplification `contract`:
+    // takes "the preparation unitary A and its inverse, a reflection about |0>,
+    // and a reflection marking the good subspace -- the Grover operator
+    // Q = -A S_0 A^{-1} S_chi must be applicable at arbitrary powers", plus the
+    // clause that names this variant, "individual variants additionally require a
+    // lower bound on a"; returns "a routine that produces the wanted branch with a
+    // stated failure probability, together with the query count and the maximum
+    // sequential depth consumed". The contract calls the success amplitude a; this
+    // record calls its own quantity lambda, "the fraction of the initial state
+    // made up of target states", and the listing follows the record. `steps:
+    // ["state-preparation"]` is why A is named as coming from the layer below.
+    //
+    // The body is `summary`: "replace the $\pm 1$ reflections of textbook
+    // amplification with tuned phase shifts, so the iteration converges on the
+    // target instead of rotating past it -- which is what happens when the initial
+    // success amplitude is known only as a lower bound". `conditions` supplies the
+    // adjustable failure bound and the emphasis on a bound "rather than $\lambda$
+    // itself".
+    //
+    // Two withholdings, repeated rather than filled, and they are not the same
+    // withholding. `cost` says outright that "the explicit query count as a
+    // function of $\lambda$'s lower bound and the failure tolerance is in the
+    // paper's full text and is not quoted here", so the listing writes the
+    // arguments of that function and not the function, and the full text is
+    // named for the query count only. The phase shifts are simply never given on
+    // the record -- `summary` says only that they are "tuned", and the record
+    // says nothing about where they are stated -- so no angle appears here and
+    // the card does not locate them. The optimality comment is `cost`'s shape
+    // verbatim, including its quoted phrase.
+    //
+    // The displaced form is written as a "do not build this" comment, per the
+    // precedent for records that describe two constructions: Grover's earlier
+    // pi/3 construction is on the record, in `conditions`, together with Yoder,
+    // Low and Chuang's verdict on it, quoted here as they are quoted there.
+    example: {
+      pseudocode: [
+        "given  the preparation unitary A and its inverse, a reflection S_0 about |0>,",
+        "       and a reflection S_chi marking the good subspace, so that",
+        "       Q = - A S_0 A^{-1} S_chi can be applied at arbitrary powers;",
+        "       and a reliable lower bound on the fraction lambda of the initial",
+        "       state made up of target states",
+        "",
+        "# a lower bound, not lambda itself -- that is all this variant of the layer",
+        "# asks for. A is the state-preparation step below this method.",
+        "",
+        "choose the bound on the failure probability -- it is adjustable",
+        "",
+        "replace the +/-1 reflections of textbook amplification with tuned phase",
+        "    shifts, and run the resulting iteration for the number of oracle",
+        "    queries fixed by the lower bound on lambda and the failure tolerance",
+        "",
+        "# so the iteration converges on the target instead of rotating past it;",
+        "# rotating past it is what happens when the success amplitude is known only",
+        "# as a lower bound",
+        "",
+        "return the wanted branch with the chosen failure probability, together with",
+        "    the query count and the maximum sequential depth consumed",
+        "",
+        "# neither the tuned phase shifts nor the query count as a function of",
+        "# lambda's lower bound and the failure tolerance is quoted on this record:",
+        "# the query count is in the paper's full text, and the record stops at the",
+        "# abstract on purpose",
+        "",
+        "# the optimality in their title has exactly this shape: for a given number",
+        "# of oracle queries, the adjustable failure bound is guaranteed over \"the",
+        "# broadest possible range\" of lambda",
+        "",
+        "# do not build this: Grover's earlier pi/3 construction also achieves",
+        "# fixed-point convergence, but such algorithms \"lose the very quadratic",
+        "# advantage that makes Grover's algorithm so appealing\" -- the construction",
+        "# above is described by its authors as the first to reach fixed-point",
+        "# behavior without sacrificing the quantum speedup",
+      ].join("\n"),
+    },
     citations: [
       { title: "Fixed-point quantum search with an optimal number of queries", authors: "Theodore J. Yoder, Guang Hao Low, Isaac L. Chuang", year: "2014", url: "https://arxiv.org/abs/1409.3305" },
       { title: "A different kind of quantum search", authors: "Lov K. Grover", year: "2005", url: "https://arxiv.org/abs/quant-ph/0503205" },
@@ -1919,6 +3893,66 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Ambainis states his generalization of amplitude amplification \"to the case when parts of the quantum algorithm that is being amplified stop at different times\" improves the running time of the Harrow et al. linear-systems algorithm \"from O(kappa^2 log N) to O(kappa log^3 kappa log N) where kappa is the condition number of the system of equations\". Chakraborty, Gilyén and Jeffery build on it directly: they \"develop a technique of variable-time amplitude estimation, based on Ambainis' variable-time amplitude amplification technique\".",
     costJa: "Ambainis は、振幅増幅を「増幅されている量子アルゴリズムの各部分が異なる時刻で停止する場合」へ一般化することにより、Harrow らの線形方程式アルゴリズムの実行時間を「O(kappa^2 log N) から O(kappa log^3 kappa log N) へ（kappa は方程式系の条件数）」改善すると述べています。Chakraborty–Gilyén–Jeffery はこれを直接踏まえ、「Ambainis の可変時間振幅増幅の技法に基づく可変時間振幅推定の技法を開発する」と述べています。",
     steps: [],
+    // The distinguishing sentence is in `conditions`, not `summary`, so the
+    // listing is written from it: "requires the amplified algorithm to decompose
+    // into stages carrying a per-branch stopping flag; a routine with a single
+    // uniform stopping time gains nothing from it". That is also the clause the
+    // success-amplification `contract` points at -- "individual variants
+    // additionally require a lower bound on a, or a per-branch stopping flag" --
+    // and it is the half of the fork that fixed-point amplification does not
+    // take, so the two listings open on different requirements by construction.
+    // The rest of the `given` is `contract.takes`; the `return` line is
+    // `contract.returns` ("the wanted branch with a stated failure probability,
+    // together with the query count and the maximum sequential depth consumed"),
+    // and `whyALayer` says why the depth is the line that matters here: it "is
+    // the resource a coherence-limited device actually runs out of first".
+    //
+    // The one action line is `summary` verbatim: "amplify in nested stages so
+    // branches that finish early are not charged at the worst-case depth". How
+    // the stages nest is not on the record, so the listing says that and stops
+    // rather than describing a schedule -- there is no loop here, and no count of
+    // stages, because the record states neither.
+    //
+    // The placement comment is `conditions`: "its natural position is above a
+    // solver whose branches differ in cost -- which is where the $\kappa$
+    // dependence of a linear-system solve actually lives -- rather than above a
+    // bare preparation". That is what licenses the kappa figures, which are
+    // `cost` verbatim from Ambainis, down to naming Harrow et al.'s algorithm as
+    // the thing improved. Chakraborty, Gilyen and Jeffery appear because `cost`
+    // records that they build variable-time amplitude estimation on this
+    // technique; the listing claims nothing further about their construction.
+    example: {
+      pseudocode: [
+        "given  the routine to be amplified, decomposed into stages that carry a",
+        "       per-branch stopping flag; and A, its inverse, the reflection S_0",
+        "       about |0> and the reflection S_chi marking the good subspace",
+        "",
+        "# a routine with a single uniform stopping time gains nothing from this",
+        "",
+        "amplify in nested stages, so that branches which finish early are not",
+        "    charged at the worst-case depth",
+        "",
+        "# how the stages nest is not stated on this record and is not invented here",
+        "",
+        "return the wanted branch with a stated failure probability, together with",
+        "    the query count and the maximum sequential depth consumed",
+        "",
+        "# the depth is the line to read: it is the resource a coherence-limited",
+        "# device actually runs out of first",
+        "",
+        "# its natural position is above a solver whose branches differ in cost --",
+        "# which is where the kappa dependence of a linear-system solve actually",
+        "# lives -- rather than above a bare preparation",
+        "",
+        "# Ambainis generalizes amplitude amplification to the case when parts of the",
+        "# algorithm being amplified stop at different times, improving the Harrow",
+        "# et al. linear-systems running time from O(kappa^2 log N) to",
+        "# O(kappa log^3 kappa log N), kappa the condition number of the system",
+        "",
+        "# Chakraborty, Gilyen and Jeffery build variable-time amplitude estimation",
+        "# directly on this technique",
+      ].join("\n"),
+    },
     citations: [
       { title: "Variable time amplitude amplification and a faster quantum algorithm for solving systems of linear equations", authors: "Andris Ambainis", year: "2010", url: "https://arxiv.org/abs/1010.4458" },
       { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Shantanav Chakraborty, András Gilyén, Stacey Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },
@@ -2138,6 +4172,77 @@ export const LAYER_GRAPH: LayerGraph = {
         noteJa: "これが測定を挟んで閉じる反復であり、費用のすべてがその事実にあります。1 ショットごとに状態は壊れますので、下層の状態準備回路は 1 回実行して何度も読むのではなく、標本ごとに丸ごと実行し直されます。必要な標本数は ε^-2 で増えます。可換な項をまとめれば定数は変わりますが、指数は変わりません。指数は、独立な古典的結果を平均することの代価そのものだからです。反復をコヒーレントに保つ手法が支払うのは ε^-1 であり、それが次の行の内容です。",
       },
     },
+    // A transcription of `summary`, which states the whole procedure in one
+    // sentence: "Decompose O into Pauli strings, rotate each into the
+    // computational basis with a layer of single-qubit Cliffords, sample
+    // bitstrings, and recombine the per-term averages linearly". "No ancilla, no
+    // controlled operations, minimum added depth" is kept beside the rotation
+    // line because it is the sentence that separates this row from the coherent
+    // one below it, and it belongs where the layer is added.
+    //
+    // The `given` line is `conditions`: O "given as a Pauli or
+    // fermionic-operator sum with an efficiently enumerable term count", "the
+    // extra single-qubit basis-change layer is affordable", and "the preparation
+    // must be repeatable". The count, and the reason this is a loop at all, are
+    // the `repeats` note: "O(1/ε²) shots, and one preparation per shot", each
+    // shot destroying the state so the preparation "is not run once and read
+    // many times -- it is run again, in full, for every sample".
+    //
+    // The closing stanzas are `cost` and `contested`. `cost` gives the coherent
+    // endpoint Huggins et al. record -- O(1/ε) state preparations for a single
+    // expectation value -- and says "Shot-based averaging as described here is
+    // the ε^-2 endpoint"; the exponent sentence is `conditions` and the
+    // `repeats` note ("changes the constant, not the exponent, because the
+    // exponent is what averaging independent classical outcomes costs").
+    // `contested` is on the card because the record states outright that a
+    // near-term chemistry advantage claim resting on shot-based readout "has to
+    // answer that analysis".
+    //
+    // What the listing deliberately does NOT say: how the O(1/ε²) shots are
+    // divided among the terms -- the record states a total and no allocation
+    // rule -- and no constant anywhere, since `conditions` says only that
+    // grouping commuting terms "changes the constant" and never states one.
+    //
+    // ε is spelled `epsilon` here per the plain-ASCII rule; the sibling
+    // amplitude-estimation listing shortens it to `e`, and the divergence is a
+    // deliberate call rather than an oversight.
+    example: {
+      pseudocode: [
+        "given  O as a Pauli or fermionic-operator sum with an efficiently",
+        "       enumerable term count, a repeatable state preparation, and room for",
+        "       the extra single-qubit basis-change layer, to a target error epsilon",
+        "",
+        "decompose O into Pauli strings",
+        "",
+        "for each Pauli string:",
+        "    rotate it into the computational basis with a layer of single-qubit",
+        "        Cliffords",
+        "    sample bitstrings, and average the outcomes for this term",
+        "    # no ancilla, no controlled operations, minimum added depth",
+        "",
+        "# O(1/epsilon^2) shots in all, and one state preparation per shot: each",
+        "# shot destroys the state, so the preparation is not run once and read many",
+        "# times -- it is run again, in full, for every sample",
+        "",
+        "recombine the per-term averages linearly",
+        "",
+        "return the estimate of the expectation value of O",
+        "",
+        "# a strict epsilon^-2 method: grouping commuting terms changes the",
+        "# constant, not the exponent, because the exponent is what averaging",
+        "# independent classical outcomes costs. There is no coherence-derived",
+        "# advantage available here -- Huggins et al. record the coherent endpoint of",
+        "# this layer at O(1/epsilon) state preparations for a single expectation",
+        "# value, and the shot-based averaging above is the epsilon^-2 endpoint",
+        "",
+        "# Gonthier et al.'s resource analysis concludes that modern improvements",
+        "# including low-rank Hamiltonian factorization will not be sufficient to",
+        "# achieve practical quantum computational advantage for their molecular set",
+        "# or similar molecules, and points instead at operator estimation that",
+        "# leverages quantum coherence: a near-term chemistry advantage claim",
+        "# resting on shot-based readout has to answer that analysis",
+      ].join("\n"),
+    },
     citations: [
       { title: "A variational eigenvalue solver on a quantum processor", authors: "Alberto Peruzzo, Jarrod McClean, Peter Shadbolt, Man-Hong Yung, Xiao-Qi Zhou, Peter J. Love, Alán Aspuru-Guzik, Jeremy L. O'Brien", year: "2013", url: "https://arxiv.org/abs/1304.3061" },
       { title: "Measurements as a roadblock to near-term practical quantum advantage in chemistry: resource analysis", authors: "Jérôme F. Gonthier, Maxwell D. Radin, Corneliu Buda, Eric J. Doskocil, Clena M. Abuan, Jhonathan Romero", year: "2020", url: "https://arxiv.org/abs/2012.04001" },
@@ -2234,6 +4339,109 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     entries: ["vqe-classical-shadows"],
+    // A transcription of `summary`, which states the loop and what each turn
+    // keeps: "Apply a random unitary from a chosen ensemble, measure in the
+    // computational basis, and keep the (unitary, outcome) pair; inverting the
+    // measurement channel turns each pair into an unbiased single-shot snapshot
+    // of ρ, and median-of-means over snapshots predicts many observables at
+    // once." Its last sentence -- "The observables may be chosen after the data
+    // has been taken" -- is written into the `given` line and again at the step
+    // where that freedom is spent, because it is the whole difference from the
+    // direct-sampling row above, where O must be fixed and decomposed first.
+    //
+    // The counts are `cost` and the `repeats` note, in both of the forms the
+    // record gives them: the total, "N = O(log(M) · max_i ||O_i − tr(O_i)2^{-n}
+    // I||²_shadow / ε²) total measurements to predict M linear functions to
+    // additive error ε", and the "formally" version, "K = 2 log(2M/δ)
+    // median-of-means batches with N = 34/ε² · max_i ||·||²_shadow per batch".
+    // The record uses N for both the total and the per-batch count; the listing
+    // keeps the record's own qualifiers ("total", "per batch") rather than
+    // resolving the collision, and 34 is the record's constant, not a rounding.
+    // δ appears only inside K = 2 log(2M/δ) and the record never says what it
+    // is, so the listing does not name it either.
+    //
+    // The ensemble note is `conditions` plus the two bounds in `cost`, kept
+    // inside the loop beside the draw because that is where the choice is made
+    // and the record says the method "lives or dies" on it: random Pauli
+    // "shallow and hardware-ready but costs exponentially in the observable's
+    // locality" (4^k||O||²_∞ for k-local O, "improving to 3^k for tensor
+    // products of single-qubit observables") against the global random Clifford,
+    // which "handles dense observables but needs an n-qubit Clifford circuit,
+    // which is deep" (3 tr(O²)).
+    //
+    // Two closing stanzas come from `contested` and one from `conditions`,
+    // because the record marks all three as things a reader gets wrong:
+    // "independent of system size" holding only for bounded shadow norm and
+    // "quoting the log(M) without the max_i ||·||²_shadow factor" being "the
+    // standard misreading"; Aaronson's shadow tomography being "a different
+    // construction" whose bound is "a copy count for a procedure that measures
+    // the copies collectively, not a hardware shot count"; and the O'Donnell and
+    // Wright figure that `conditions` calls "what makes the layer worth having",
+    // carried with the record's own hedge, "upper bounds only".
+    //
+    // What the listing deliberately does NOT say: which ensemble to pick (the
+    // record states the trade and ranks neither); anything about relative error
+    // -- `conditions` says the guarantee "is additive per observable and says
+    // nothing about relative error for near-zero expectations", so the refusal
+    // is transcribed as a refusal; how median-of-means combines the K batches,
+    // which the record names but never spells out; and no bound on the shadow
+    // norm beyond the two the record quotes. ε and δ are spelled `epsilon` and
+    // `delta` per the plain-ASCII rule, where the sibling amplitude-estimation
+    // listing shortens ε to `e`.
+    example: {
+      pseudocode: [
+        "given  a preparation of rho, run once per measurement, a chosen ensemble",
+        "       of random unitaries, and a target additive error epsilon -- the M",
+        "       observables to be predicted need not be fixed yet",
+        "",
+        "repeat N times, one state preparation per measurement:",
+        "    draw a random unitary from the chosen ensemble and apply it",
+        "    measure in the computational basis",
+        "    keep the pair (unitary, outcome)",
+        "    # the draw is the choice the method lives or dies on, through the",
+        "    # shadow norm of the target observables under that ensemble:",
+        "    #     random Pauli -- shallow and hardware-ready, but costs",
+        "    #         exponentially in the observable's locality; shadow norm",
+        "    #         bounded by 4^k ||O||^2_infinity for a k-local O, improving",
+        "    #         to 3^k for tensor products of single-qubit observables",
+        "    #     global random Clifford -- handles dense observables, bounded by",
+        "    #         3 tr(O^2), but needs an n-qubit Clifford circuit, deep",
+        "",
+        "# N = O(log(M) * max_i ||O_i - tr(O_i) 2^-n I||^2_shadow / epsilon^2) total",
+        "# measurements to predict M linear functions to additive error epsilon;",
+        "# formally K = 2 log(2M/delta) median-of-means batches, with",
+        "# N = 34/epsilon^2 * max_i ||.||^2_shadow per batch",
+        "",
+        "invert the measurement channel on each kept pair",
+        "    # each pair becomes an unbiased single-shot snapshot of rho",
+        "",
+        "choose the observables O_1 ... O_M",
+        "    # they may be chosen after the data has been taken, and M enters the",
+        "    # count above only logarithmically, so the loop does not lengthen with",
+        "    # the number of observables",
+        "",
+        "predict all M at once by median-of-means over the snapshots",
+        "",
+        "return the M predictions",
+        "",
+        "# the guarantee is additive per observable and says nothing about relative",
+        "# error for near-zero expectations",
+        "",
+        "# independence of system size holds for observables of bounded shadow norm",
+        "# and is not a claim about arbitrary observables: quoting the log(M)",
+        "# without the max_i ||.||^2_shadow factor is the standard misreading",
+        "",
+        "# reconstructing rho itself instead costs O(rank(rho) * d / epsilon^2)",
+        "# <= O(d^2/epsilon^2) copies for trace-distance error epsilon (O'Donnell",
+        "# and Wright, upper bounds only), which at d = 2^n is exponential in the",
+        "# qubit count -- which is what makes this layer worth having",
+        "",
+        "# a different construction from Aaronson's shadow tomography, whose",
+        "# Otilde(epsilon^-4 * log^4 M * log D) is a copy count for a procedure that",
+        "# measures the copies collectively, not a hardware shot count: the two are",
+        "# not interchangeable despite the shared word",
+      ].join("\n"),
+    },
     citations: [
       { title: "Predicting Many Properties of a Quantum System from Very Few Measurements", authors: "Hsin-Yuan Huang, Richard Kueng, John Preskill", year: "2020", url: "https://arxiv.org/abs/2002.08953" },
       { title: "Shadow Tomography of Quantum States", authors: "Scott Aaronson", year: "2017", url: "https://arxiv.org/abs/1711.01053" },
@@ -2276,6 +4484,68 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "パス・パイプラインの計算量は、要旨にも本文にも述べられていません。論文の定量的な主張はベンチマークによるものです。すなわち、広範なベンチマークにおいて回路最適化と量子ビットルーティングの点でほとんどの競合を上回る、というのが論文自身の表現です。最適化の対象は 2 量子ビットゲート数と深さであり、コンパイラ自体を走らせるコストは述べられていません。",
     steps: ["qubit-routing"],
     bypasses: ["gate-synthesis"],
+    // A transcription of `summary`, which states the pipeline as an ordered list
+    // outright: it "decomposes to the device's own two-qubit gate, routes onto the
+    // coupling graph, and optimizes for two-qubit gate count and depth", and
+    // "Arbitrary-angle single-qubit rotations are emitted directly, because the
+    // hardware executes them". That last sentence is this record's
+    // `bypasses: ["gate-synthesis"]` written as prose, and it is the line that
+    // keeps this listing from reading like the fault-tolerant pipeline's: there a
+    // rotation becomes a discrete gate word, here it is emitted as it stands.
+    //
+    // The opening `given` and the closing caveat are `conditions`: the backend
+    // "accepts continuous-angle rotations, i.e. pre-fault-tolerant hardware", and
+    // it "does not apply to a surface-code backend, where only a discrete gate set
+    // is available and synthesis becomes mandatory; the targets optimized here,
+    // depth and two-qubit gate count, are also the wrong targets there". The record
+    // carries no `contract`, so the `given` line names only the inputs `summary`
+    // and `conditions` themselves name -- circuit, device two-qubit gate, coupling
+    // graph -- and invents no further signature.
+    //
+    // Routing is one line because routing is this record's one `step`
+    // (`qubit-routing`). The listing hands it to the layer below rather than
+    // describing placement or SWAP insertion, which this record does not describe.
+    //
+    // The listing states NO complexity, deliberately. `cost` says outright: "The
+    // paper states no complexity for the pass pipeline, in the abstract or the full
+    // text; its quantitative claims are benchmarks ... the cost of running the
+    // compiler itself is left unstated." The closing comment repeats that
+    // withholding and quotes the benchmark claim that stands in its place
+    // ("outperforming most competitors in circuit optimisation and qubit routing,
+    // in its own words", the record's spelling kept) instead of filling it. Note
+    // the asymmetry with the sibling fault-tolerant record, which does carry a
+    // fully worked numeric tradeoff: that difference is on the records, not
+    // introduced here.
+    example: {
+      pseudocode: [
+        "given  a circuit, and a backend that accepts continuous-angle rotations",
+        "       i.e. pre-fault-tolerant hardware, with its own two-qubit gate",
+        "       and its coupling graph",
+        "",
+        "decompose to the device's own two-qubit gate",
+        "",
+        "emit arbitrary-angle single-qubit rotations directly",
+        "    # the hardware executes them, so no discrete synthesis stage is entered",
+        "",
+        "route onto the coupling graph",
+        "    # hand the connectivity constraint to the layer below",
+        "",
+        "optimize for two-qubit gate count and depth",
+        "",
+        "return the decomposed, routed and optimized circuit",
+        "",
+        "# this pipeline does not apply to a surface-code backend: only a discrete",
+        "# gate set is available there and synthesis becomes mandatory, and the",
+        "# targets optimized here, depth and two-qubit gate count, are also the wrong",
+        "# targets there",
+        "",
+        "# no complexity is transcribed because the paper states none, in the",
+        "# abstract or the full text: its quantitative claims are benchmarks --",
+        "# extensively benchmarked and outperforming most competitors in circuit",
+        "# optimisation and qubit routing, in its own words. the cost of running the",
+        "# compiler itself is left unstated",
+      ].join("\n"),
+    },
     citations: [
       { title: "t|ket⟩: A Retargetable Compiler for NISQ Devices", authors: "Seyon Sivarajah, Silas Dilkes, Alexander Cowtan, Will Simmons, Alec Edgington, Ross Duncan", year: "2020", url: "https://arxiv.org/abs/2003.10611" },
     ],
@@ -2295,6 +4565,75 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Costed in T-count, T-depth, logical qubit count and lattice area rather than gate count. Litinski's worked tradeoff: at $p = 1e-4$ with a 1 μs code cycle, a 100-logical-qubit computation with T-count 1e8 and T-depth 1e6 runs in 4 hours using 55,000 qubits, in 22 minutes using 120,000 qubits, or in 1 second using 330,000,000 qubits.",
     costJa: "費用はゲート数ではなく、T 数・T 深さ・論理量子ビット数・格子面積で数えます。Litinski の試算では、$p = 1e-4$、符号周期 1 μs のもとで、論理量子ビット 100 個・T 数 1e8・T 深さ 1e6 の計算は、55,000 量子ビットなら 4 時間、120,000 量子ビットなら 22 分、330,000,000 量子ビットなら 1 秒で終わります。",
     steps: ["gate-synthesis", "error-correction"],
+    // A transcription of `summary`, which states the pipeline as an ordered list
+    // outright: "Decompose to Clifford+T, approximate every continuous rotation by
+    // a discrete gate word, optimize for T-count and T-depth, then express the
+    // result as a schedule of logical operations on encoded patches -- typically
+    // Pauli-product measurements under lattice surgery." The listing keeps that
+    // order and adds no stage the summary does not name.
+    //
+    // `conditions` supplies the `given` ("Applies when the target is a surface-code
+    // architecture") and three lines this listing would otherwise be missing, each
+    // of which is exactly where this pipeline parts from its pre-fault-tolerant
+    // sibling: the compiler "chooses the code distance and the patch layout, which
+    // is why that layer sits beneath this route as a step rather than as a
+    // precondition"; "Clifford gates are cheap or free because they can be commuted
+    // into the Pauli frame, and T and Toffoli gates dominate"; and "Routing in the
+    // SWAP sense is replaced by lattice-level layout and ancilla-bus scheduling".
+    // The last of those is why this listing has no routing stage at all where the
+    // NISQ record has one -- the negative is on the record, so it is in the listing.
+    //
+    // The two `steps` (`gate-synthesis`, `error-correction`) are handed to the
+    // layers below: the listing says a continuous rotation becomes a discrete gate
+    // word and that the compiler chooses distance and layout, and stops there. It
+    // does not say how a gate word is found or how a patch is laid out; those are
+    // the lower records' sentences, not this one's.
+    //
+    // The numbers are `cost` verbatim -- "Costed in T-count, T-depth, logical qubit
+    // count and lattice area rather than gate count" and Litinski's worked tradeoff
+    // at $p = 1e-4$ with a 1 microsecond code cycle. They are transcribed because
+    // the record states them, not computed or extended: no scaling law is inferred
+    // from the three rows, and nothing is said about intermediate qubit counts. The
+    // micro sign in the record's "1 μs" is written out as "1 microsecond" for the
+    // plain-ASCII listing. The record states no complexity for the pipeline itself,
+    // and the listing states none.
+    example: {
+      pseudocode: [
+        "given  a circuit, and a surface-code architecture as the target",
+        "",
+        "decompose to Clifford+T",
+        "",
+        "approximate every continuous rotation by a discrete gate word",
+        "    # hand the discrete synthesis to the layer below",
+        "",
+        "optimize for T-count and T-depth",
+        "    # the cost model inverts relative to pre-fault-tolerant compilation:",
+        "    # Clifford gates are cheap or free because they can be commuted into",
+        "    # the Pauli frame, and T and Toffoli gates dominate",
+        "",
+        "choose the code distance and the patch layout",
+        "    # the compiler does not merely sit on top of error correction, which is",
+        "    # why that layer sits beneath this route as a step rather than as a",
+        "    # precondition -- hand the chosen distance and layout to it",
+        "",
+        "express the result as a schedule of logical operations on encoded patches",
+        "    # typically Pauli-product measurements under lattice surgery",
+        "    # routing in the SWAP sense does not appear in this pipeline: it is",
+        "    # replaced by lattice-level layout and ancilla-bus scheduling",
+        "",
+        "return that schedule",
+        "",
+        "# costed in T-count, T-depth, logical qubit count and lattice area rather",
+        "# than gate count",
+        "",
+        "# Litinski's worked tradeoff, transcribed as the record states it: at",
+        "# p = 1e-4 with a 1 microsecond code cycle, a 100-logical-qubit computation",
+        "# with T-count 1e8 and T-depth 1e6 runs in",
+        "#     4 hours     using          55,000 qubits",
+        "#     22 minutes  using         120,000 qubits",
+        "#     1 second    using     330,000,000 qubits",
+      ].join("\n"),
+    },
     citations: [
       { title: "A Game of Surface Codes: Large-Scale Quantum Computing with Lattice Surgery", authors: "Daniel Litinski", year: "2018", url: "https://arxiv.org/abs/1808.02892" },
       { title: "Low overhead quantum computation using lattice surgery", authors: "Austin G. Fowler, Craig Gidney", year: "2018", url: "https://arxiv.org/abs/1808.06709" },
@@ -2337,6 +4676,84 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "論文自身の最悪ケースの見積もりでは、SWAP に基づく探索のコストは 2 量子ビットゲート 1 つあたり高々 $O(N^{2.5})$ です（$N$ は物理量子ビット数）。置き換えの対象である網羅的な写像探索は $O(\\exp(N))$ であり、主張されている指数的高速化は探索計算量についてのものです。依存関係 DAG の構築はゲート数 $g$ について $O(g)$、ヒューリスティック評価 1 回は $O(N)$ です。これは古典的なコンパイルのコストであり、挿入される SWAP 数の上界は述べられていません。LightSABRE の要旨は実装の数値を加えています。Qiskit 1.2.0 の実装は 0.20.1 のおよそ 200 倍速く、元のアルゴリズムに比べ SWAP 数は平均 18.9% 少なくなっています。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`, which states the routine outright: "Insert
+    // SWAPs guided by a lookahead cost function, and obtain a good initial
+    // mapping by traversing the circuit forward and then in reverse, so the
+    // final mapping of one pass seeds the other", together with "A decay term
+    // trades added depth against added gate count". `conditions` supplies the
+    // input side -- "arbitrary coupling graphs, sparse ones included" -- and the
+    // status lines that close the listing.
+    //
+    // The dependency DAG is named on this record only by `cost`
+    // ("Dependency-DAG construction is O(g) in the gate count"), so the
+    // listing builds it and then says nothing about how the search walks it.
+    // "per two-qubit gate" appears only where `cost` puts it, on the search's
+    // complexity ("the SWAP-based search costs at most O(N^2.5) per two-qubit
+    // gate"): that is the rate a cost is charged at, not an iteration the
+    // record states, so the listing writes no loop over gates and no visiting
+    // order inside the search. The complexities in the pseudocode comments are
+    // `cost` in ASCII: O(N^2.5) per two-qubit gate against O(exp(N)) for the
+    // exhaustive mapping-based search it replaces, O(g) for the DAG, O(N) for
+    // one heuristic evaluation, with `cost`'s own reading of them kept -- "the
+    // claimed exponential speedup is in search complexity".
+    //
+    // Deliberately not said, because the record does not say it: the form of
+    // the cost function (only that it looks ahead), which SWAPs are candidates,
+    // the value or the placement of the decay term -- `summary` gives its
+    // effect and nothing about where it sits, so the listing states the effect
+    // on its own and binds it to nothing -- where the first traversal's mapping
+    // comes from, and how many times the two passes run. `conditions` states
+    // that the paper "states no bound on inserted SWAP count", so the listing
+    // states none. The record carries no `contract` of its own (it
+    // `realizes: "qubit-routing"`), so the closing line names only the two
+    // things `summary` says the method produces.
+    //
+    // Also deliberately absent: the LightSABRE implementation figures that
+    // `cost` carries (about 200 times faster in Qiskit 1.2.0 than in 0.20.1,
+    // an average 18.9% fewer SWAPs). The record attributes them to LightSABRE's
+    // abstract and they measure a different implementation, not this routine.
+    // What does belong here is the sentence in `conditions` that makes the pair
+    // a pair -- "Quality and convergence degrade on large circuits, which is
+    // the problem LightSABRE was built to address" -- and it is on this record,
+    // not on LightSABRE's, so this is where it lands.
+    example: {
+      pseudocode: [
+        "given  a circuit of g gates, and a coupling graph on N physical qubits",
+        "       -- arbitrary coupling graphs, sparse ones included",
+        "",
+        "build the dependency DAG of the circuit",
+        "    # O(g) in the gate count",
+        "",
+        "# the initial mapping, obtained bidirectionally",
+        "traverse the circuit forward, then traverse it in reverse,",
+        "    taking the final mapping of one pass as the seed for the other",
+        "# the record states the two traversals and the seeding, and does not",
+        "# state where the first pass's mapping comes from, nor how many times",
+        "# the two passes run",
+        "",
+        "run the SWAP-based search --",
+        "    insert SWAPs guided by a lookahead cost function",
+        "    # the record says only that the insertion is guided by a lookahead",
+        "    # cost function: not the form of the function, not which SWAPs are",
+        "    # candidates, and not how the search walks the DAG",
+        "    # at most O(N^2.5) per two-qubit gate, against O(exp(N)) for the",
+        "    # exhaustive mapping-based search it replaces: the claimed",
+        "    # exponential speedup is in search complexity",
+        "    # one heuristic evaluation is O(N)",
+        "",
+        "# a decay term trades added depth against added gate count -- the",
+        "# record states that effect and no value for it",
+        "",
+        "return the initial mapping and the inserted SWAPs",
+        "",
+        "# a heuristic with no optimality guarantee -- the underlying qubit",
+        "# assignment problem is NP-complete (Siraichi et al., Theorem 3.1)",
+        "# no bound on the inserted SWAP count is stated",
+        "",
+        "# quality and convergence degrade on large circuits, which is the",
+        "# problem LightSABRE was built to address",
+      ].join("\n"),
+    },
     citations: [
       { title: "Tackling the Qubit Mapping Problem for NISQ-Era Quantum Devices", authors: "Gushu Li, Yufei Ding, Yuan Xie", year: "2018", url: "https://arxiv.org/abs/1809.02573" },
       { title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
@@ -2367,6 +4784,30 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "上界ではなくベンチマーク相対の値です。Qiskit 1.2.0 の実装は Qiskit 0.20.1 の実装に対しておよそ 200 倍高速で、同じベンチマーク回路上で Li らの SABRE と比べて SWAP ゲート数が平均 18.9% 減少します。",
     steps: [],
     atomic: true,
+    // **No `example` here, and the record is the reason rather than the backlog.**
+    // The batch that gave the other qubit-routing methods a listing reached this
+    // record and stopped, so the omission is written down instead of leaving the
+    // next author to redo the reading.
+    //
+    // `summary` and `cost` state what this method *is* ("a re-engineered SABRE —
+    // the Qiskit production implementation, largely rewritten in Rust") and what
+    // it *measures* (≈200x faster than Qiskit 0.20.1; an average 18.9% decrease in
+    // SWAP count against Li et al.'s SABRE on the same benchmarks). Neither states
+    // what any of the algorithmic changes *are*, and `conditions` marks the figures
+    // as benchmark-relative rather than worst-case, with "Same applicability as
+    // SABRE".
+    //
+    // So a listing here could only be `sabre-routing`'s listing again, or the
+    // paper's changes recalled rather than transcribed. `sameInternalsAsParent`
+    // already says the first of those in the data: a re-engineered implementation
+    // of the same routine is not a second process on the map, and `potentialPath`
+    // adds that every recorded difference is implementation engineering measured as
+    // benchmark constants on that one routine.
+    //
+    // This is therefore not the same kind of hole as an unwritten listing. It
+    // closes by somebody reading the LightSABRE paper and finding a step this
+    // record does not carry — at which point the honest move is a `steps` entry or
+    // a `potentialPath` revision, not a listing bolted onto a folded refinement.
     citations: [
       { title: "LightSABRE: A Lightweight and Enhanced SABRE Algorithm", authors: "Henry Zou, Matthew Treinish, Kevin Hartman, Alexander Ivrii, Jake Lishman", year: "2024", url: "https://arxiv.org/abs/2409.08368" },
     ],
@@ -2387,6 +4828,83 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "先行する厳密手法の一部に対して、より広い解空間を探索しながら時間と空間の計算量を指数的に削減したと報告されています。緩和版は、追加ゲート費用で最大 100%、忠実度で最大 10 倍、QAOA では深さで最大 75% まで、主要なヒューリスティクスを上回ると報告されています。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`, which is the entire procedure the record
+    // states: "Encode placement and routing jointly as a mathematical program
+    // over a spacetime variable encoding and solve it exactly. Relaxing the
+    // same formulation yields a fast near-optimal synthesizer." There is no
+    // loop in that sentence and nothing is inserted gate by gate -- one
+    // encoding, one solve -- which is the whole difference from the SABRE pair
+    // beside it in this layer, and why this listing has no iteration in it.
+    //
+    // The record describes two forms, so on the house precedent the listing
+    // shows both instead of silently picking one. Neither is marked do-not-
+    // build, because `conditions` displaces neither: "The exact synthesizer is
+    // the reference against which heuristics are measured; the approximate
+    // variant, obtained by relaxing the same formulation, is the practical
+    // one". The listing repeats those two roles as comments, so the card cannot
+    // be read as a recommendation to solve the exact program in practice.
+    //
+    // The QAOA line is `conditions` verbatim -- "a commutation-aware adjustment
+    // is available for QAOA-structured circuits" -- and stops there, kept in the
+    // record's own passive form, because the record does not state what the
+    // adjustment changes in the program. It stands on its own rather than under
+    // either form: `conditions` gives it as a coordinate clause and never says
+    // which of the two it adjusts, so nesting it would settle a question the
+    // record leaves open.
+    //
+    // The numbers are `cost` in ASCII, with its hedges kept as written:
+    // "Reported as an exponential reduction in time and space complexity
+    // relative to some leading prior optimal approaches, while searching a
+    // strictly larger solution space", and for the relaxation "up to 100% on
+    // additional gate cost and up to 10x on fidelity, and for QAOA by up to 75%
+    // on depth" -- one list, all three attributed by `cost` to the approximate
+    // variant, so all three sit with the relaxation and none with the
+    // commutation-aware adjustment, which the record gives no number for. No
+    // polynomial bound appears, because `conditions` says the underlying qubit
+    // assignment problem is NP-complete (Siraichi et al., Theorem 3.1), "so no
+    // polynomial bound is available".
+    //
+    // Deliberately not said: the variables, constraints or objective of the
+    // program, what a spacetime variable encoding contains, what the relaxation
+    // relaxes, and which solver solves any of it. The record names the encoding
+    // and no part of it. The record carries no `contract` of its own (it
+    // `realizes: "qubit-routing"`), so the closing line names only what
+    // `summary` and the label say is synthesized.
+    example: {
+      pseudocode: [
+        "given  a circuit whose placement and routing are to be decided together",
+        "",
+        "encode placement and routing jointly as a mathematical program",
+        "    over a spacetime variable encoding",
+        "# the record names the encoding and states no part of it: no variables,",
+        "# no constraints, no objective, no solver",
+        "",
+        "# form 1 -- the reference, not the working tool",
+        "solve the program exactly",
+        "    # the exact synthesizer is the reference against which heuristics",
+        "    # are measured",
+        "    # reported as an exponential reduction in time and space complexity",
+        "    # relative to some leading prior optimal approaches, while searching",
+        "    # a strictly larger solution space",
+        "    # no polynomial bound is available: the underlying qubit assignment",
+        "    # problem is NP-complete (Siraichi et al., Theorem 3.1)",
+        "",
+        "# form 2 -- the practical one, out of the same formulation",
+        "relax the same formulation",
+        "    -> a fast near-optimal synthesizer",
+        "    # reported to beat leading heuristics by up to 100% on additional",
+        "    # gate cost and up to 10x on fidelity",
+        "    # and for QAOA by up to 75% on depth",
+        "",
+        "for QAOA-structured circuits a commutation-aware adjustment is",
+        "    available",
+        "    # the record does not state what the adjustment changes in the",
+        "    # program, nor which of the two forms it adjusts, and gives it no",
+        "    # figure of its own",
+        "",
+        "return the layout -- placement and routing, decided together",
+      ].join("\n"),
+    },
     citations: [
       { title: "Optimal Layout Synthesis for Quantum Computing", authors: "Bochen Tan, Jason Cong", year: "2020", url: "https://arxiv.org/abs/2007.15671" },
       { title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
@@ -2477,6 +4995,81 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Ross と Selinger: 典型的な場合の T 数は $3\\log2(1/\\varepsilon) + O(\\log \\log(1/\\varepsilon))$、期待実行時間は $O(\\mathrm{polylog}(1/\\varepsilon))$ です。素因数分解オラクルがない場合に得られる T 数は $m + O(\\log \\log(1/\\varepsilon))$ で、$m$ は 2 番目に良い解の T 数です。Selinger の先行アルゴリズムは $z$ 回転に対して T 数 $K + 4\\log2(1/\\varepsilon)$（$K$ はおよそ 10）を与え、証明された最悪ケース下界は同じ形で $K = -9$、任意の $SU(2)$ の元では $K + 12\\log2(1/\\varepsilon)$ です。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`, which states the whole procedure in one
+    // sentence: "Reduce approximation of a z-rotation to a grid problem over the
+    // ring $Z[1/sqrt(2), i]$ plus a relative norm equation, then exactly synthesize
+    // the resulting ring element." That is two stages and the listing has two
+    // stages. The record does not say how the grid problem is searched or how the
+    // relative norm equation is solved, so the listing says neither, and says
+    // outright that it is not saying it. This is also why there is no "hand to the
+    // layer below" line anywhere: the record is `atomic: true` with `steps: []`,
+    // unlike the two compilation pipelines it sits under.
+    //
+    // The `given` names the rotation and the approximation error, the two things
+    // `summary` and `cost` between them take as input; epsilon is the record's own
+    // varepsilon, written plain. There is no `contract` on this record, so nothing
+    // further is claimed about the signature.
+    //
+    // `conditions` supplies the qualifications, and they are not decoration -- the
+    // record is emphatic that the headline claim is conditional: "Specific to
+    // $z$-rotations over Clifford+T (general $SU(2)$ at higher cost), and
+    // ancilla-free. The optimality claim carries a real condition: it requires a
+    // factoring oracle, such as a quantum computer. Without one the algorithm is
+    // near-optimal only under a mild number-theoretic hypothesis, and its provable
+    // efficiency rests on that same hypothesis. Exact synthesis of the resulting
+    // ring element is unconditional (Kliuchnikov, Maslov, Mosca)." The listing
+    // attaches the unconditional note to the exact-synthesis stage, where the
+    // record attaches it, and keeps the oracle condition attached to the counts.
+    //
+    // The counts are `cost` verbatim, including the fact that the record names no
+    // value for the O(log log(1/epsilon)) term and none is supplied here.
+    //
+    // The record carries two forms, so per the repo's precedent the displaced one
+    // is written as a comment marked "do not build this" rather than silently
+    // dropped or silently chosen: `summary` calls Ross-Selinger "the production
+    // method for z-rotations under Clifford+T", and `cost` gives "Selinger's
+    // earlier algorithm" with its own counts, its K approximately 10, and the
+    // proved worst-case lower bound of the same form with K = -9. Those are the
+    // record's numbers, transcribed; the earlier form's procedure is not described
+    // because the record does not describe it.
+    example: {
+      pseudocode: [
+        "given  a z-rotation and a target approximation error epsilon",
+        "",
+        "# specific to z-rotations over Clifford+T -- general SU(2) at higher cost",
+        "# -- and ancilla-free",
+        "",
+        "reduce the approximation of the z-rotation to",
+        "    a grid problem over the ring  Z[1/sqrt(2), i]",
+        "    plus a relative norm equation",
+        "# the record states the reduction, not how either the grid problem or the",
+        "# norm equation is solved, and this listing states neither",
+        "",
+        "exactly synthesize the resulting ring element",
+        "    # this stage is unconditional (Kliuchnikov, Maslov, Mosca): it needs",
+        "    # neither the oracle nor the hypothesis below",
+        "",
+        "return the ancilla-free Clifford+T approximation of the rotation",
+        "",
+        "# T-count  3 log2(1/epsilon) + O(log log(1/epsilon))  in the typical case,",
+        "# with expected runtime  O(polylog(1/epsilon)).  the record names no value",
+        "# for the O(log log) term and none is supplied here",
+        "",
+        "# the optimality claim carries a real condition: it requires a factoring",
+        "# oracle, such as a quantum computer. without one the algorithm is",
+        "# near-optimal only under a mild number-theoretic hypothesis, its provable",
+        "# efficiency rests on that same hypothesis, and the T-count it finds is",
+        "#     m + O(log log(1/epsilon)),  m the T-count of the second-to-optimal",
+        "#     solution",
+        "",
+        "# do not build this -- Selinger's earlier algorithm. the record calls",
+        "# Ross-Selinger the production method for z-rotations under Clifford+T; the",
+        "# earlier form is kept here only for the contrast in its stated counts:",
+        "#     T-count  K + 4 log2(1/epsilon),  K approximately 10 for z-rotations,",
+        "#     against a proved worst-case lower bound of the same form with K = -9,",
+        "#     and  K + 12 log2(1/epsilon)  for an arbitrary SU(2) element",
+      ].join("\n"),
+    },
     citations: [
       { title: "Optimal ancilla-free Clifford+T approximation of z-rotations", authors: "Neil J. Ross, Peter Selinger", year: "2014", url: "https://arxiv.org/abs/1403.2975" },
       { title: "Efficient Clifford+T approximation of single-qubit operators", authors: "Peter Selinger", year: "2012", url: "https://arxiv.org/abs/1212.6253" },
@@ -2566,6 +5159,87 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Two statements, one per generation. Temme, Bravyi and Gambetta: a noisy basis simulates the ideal circuit with overhead $\\gamma_{\\beta} \\ge 1$, and the $\\approx \\delta^{-2}$ runs that precision $\\delta$ would cost without noise are multiplied by $\\gamma_{\\beta}^2$ (their Eq. 9). Van den Berg et al., for the learned sparse Pauli–Lindblad model: inverting one noise channel costs sampling overhead $\\gamma = \\exp(2\\sum_k \\lambda_k)$, a circuit of $l$ noisy layers costs $\\gamma(l) = \\prod_{i=1}^{l} \\gamma_i$, and the estimator's variance scales with the square of the sampling overhead. Both stated in the full texts; neither abstract carries a formula.",
     costJa: "世代ごとに一つずつ、二つの言明があります。Temme・Bravyi・Gambetta によれば、雑音のある基底は理想回路をオーバーヘッド $\\gamma_{\\beta} \\ge 1$ で模倣し、雑音なしで精度 $\\delta$ に必要なおよそ $\\delta^{-2}$ 回の実行に $\\gamma_{\\beta}^2$ が掛かります（式 (9)）。van den Berg らは、学習した疎な Pauli–Lindblad モデルについて、一つの雑音チャネルの逆演算にはサンプリング・オーバーヘッド $\\gamma = \\exp(2\\sum_k \\lambda_k)$ を要し、雑音のある層が $l$ 個の回路では $\\gamma(l) = \\prod_{i=1}^{l} \\gamma_i$ となり、推定量の分散はサンプリング・オーバーヘッドの二乗に比例して増えると述べています。いずれも本文に述べられており、要旨に式はありません。",
     steps: [],
+    // Transcribed from `summary`, which states the procedure outright: "Write the
+    // inverse of the characterized noise channel as a quasi-probability
+    // distribution over implementable operations, sample circuits from it, and
+    // combine the results with signed weights". The closing line of the listing is
+    // the rest of that same sentence -- "it inverts the noise rather than fitting
+    // through it, so it is unbiased in principle" -- and it is in the listing
+    // because it is the contrast that makes PEC a different method from
+    // extrapolation rather than a variant of it.
+    //
+    // The characterization stanza is `conditions`: "Requires an accurate
+    // characterization of the noise channel, and that is the binding constraint --
+    // PEC's experimental history is largely the history of noise-learning methods
+    // catching up." The two named generations of that characterization (van den
+    // Berg et al. learning "a sparse Pauli-Lindblad model that captures crosstalk,
+    // over twirled circuits, so that the noise really is stochastic Pauli noise";
+    // Endo, Benjamin and Li treating "imperfect knowledge of the error model
+    // explicitly") are `conditions` verbatim, and the closing circuit-size caution
+    // is Temme, Bravyi and Gambetta's sentence from the same field.
+    //
+    // The two overheads are `cost`, which opens by saying what it is: "Two
+    // statements, one per generation." So both are transcribed and each is
+    // attributed to its authors, rather than merged into one formula or one of
+    // them dropped. `cost` also records that "Both stated in the full texts;
+    // neither abstract carries a formula" -- which is why they are carried as
+    // attributed statements and not as a single headline cost for the method.
+    //
+    // `delta` on the `given` line is `cost`'s precision delta; there is no
+    // `contract` on a method record, so the inputs are named from the fields that
+    // name them (`cost`'s "ideal circuit" and precision delta, `conditions`'
+    // characterization of the noise channel).
+    //
+    // Deliberately NOT written as the `readout-error-mitigation` pair, where one
+    // of two forms is a "do not build this" comment: that pattern belongs to a
+    // record whose `summary` displaces a form. Nothing on this record displaces
+    // anything -- van den Berg et al. "make it work at scale", they do not replace
+    // a form the record warns the reader off -- so both generations stand.
+    //
+    // Deliberately absent: how the sparse Pauli-Lindblad model is learned (the
+    // record names the model and stops), how many circuits a sample is, and any
+    // run count beyond the two the record states.
+    example: {
+      pseudocode: [
+        "given  the ideal circuit, a characterization of the noise channel, and a",
+        "       target precision delta",
+        "",
+        "# an accurate characterization of the noise channel is required, and that is",
+        "# the binding constraint -- PEC's experimental history is largely the history",
+        "# of noise-learning methods catching up",
+        "#   van den Berg et al. make it work at scale by learning a sparse",
+        "#   Pauli-Lindblad model that captures crosstalk, over twirled circuits, so",
+        "#   that the noise really is stochastic Pauli noise",
+        "#   Endo, Benjamin and Li treat imperfect knowledge of the error model",
+        "#   explicitly",
+        "",
+        "write the inverse of the characterized noise channel as a quasi-probability",
+        "    distribution over implementable operations",
+        "sample circuits from that distribution",
+        "combine the results with signed weights",
+        "",
+        "return the combined estimate",
+        "",
+        "# unlike extrapolation this inverts the noise rather than fitting through it,",
+        "# so it is unbiased in principle",
+        "",
+        "# what it costs -- two statements, one per generation, both from the full",
+        "# texts; neither abstract carries a formula:",
+        "#   Temme, Bravyi and Gambetta, their Eq. 9: a noisy basis simulates the",
+        "#   ideal circuit with overhead gamma_beta >= 1, and the approx delta^-2",
+        "#   runs that precision delta would cost without noise are multiplied by",
+        "#   gamma_beta^2",
+        "#   van den Berg et al., for the learned sparse Pauli-Lindblad model:",
+        "#   inverting one noise channel costs sampling overhead",
+        "#   gamma = exp(2 sum_k lambda_k), a circuit of l noisy layers costs",
+        "#   gamma(l) = prod_{i=1}^{l} gamma_i, and the estimator's variance scales",
+        "#   with the square of the sampling overhead",
+        "",
+        "# Temme, Bravyi and Gambetta state that the size of the circuits to which",
+        "# these techniques can be applied is limited by the rate at which errors are",
+        "# introduced",
+      ].join("\n"),
+    },
     citations: [
       { title: "Error mitigation for short-depth quantum circuits", authors: "Kristan Temme, Sergey Bravyi, Jay M. Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
       { title: "Probabilistic error cancellation with sparse Pauli-Lindblad models on noisy quantum processors", authors: "Ewout van den Berg, Zlatko K. Minev, Abhinav Kandala, Kristan Temme", year: "2022", url: "https://arxiv.org/abs/2201.09866" },
@@ -2655,6 +5329,138 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Fowler, Mariantoni, Martinis and Cleland give the empirical scaling $P_L ≈ 0.03 (p/p_th)^d_e$, with error dimension $d_e = (d+1)/2$ for odd $d$ (rounded down to $d/2$ for even $d$), and measure $p_th = 0.57$% for their circuit and noise model. In their defect-based construction a logical qubit costs $2.5 x 1.25 x (2d)^2 ≈ 12.5 d^2$ physical qubits — about 3600 at $d = 17$ and about 14500 at $d = 34$. Google reports logical error suppressed by $Λ = 2.14 ± 0.02$ per two units of distance, reaching $0.143$% $± 0.003$% per cycle on a 101-qubit distance-7 code, beyond break-even by a factor $2.4 ± 0.3$.",
     costJa: "Fowler・Mariantoni・Martinis・Cleland は経験則 $P_L ≈ 0.03 (p/p_th)^d_e$（誤り次元 $d_e$ は奇数の $d$ では $(d+1)/2$、偶数の $d$ では $d/2$ に切り下げ）を与え、自らの回路と雑音モデルで $p_th = 0.57$% を測っています。同論文の欠陥に基づく構成では、論理量子ビット 1 個あたり $2.5 x 1.25 x (2d)^2 ≈ 12.5 d^2$ 個の物理量子ビットを要し、$d = 17$ でおよそ 3600 個、$d = 34$ でおよそ 14500 個になります。Google は距離 2 単位あたり $Λ = 2.14 ± 0.02$ の論理誤り抑制を報告し、101 量子ビットの距離 7 の符号で 1 周期あたり $0.143$% $± 0.003$%、損益分岐点を $2.4 ± 0.3$ 倍上回ったとしています。",
     steps: [],
+    // The encoding stanza is `summary` verbatim -- "Encode a logical qubit in the
+    // homology of a two-dimensional lattice of physical qubits, with weight-4
+    // stabilizers measured by nearest-neighbour circuits" -- together with the
+    // reason it dominates, "it needs only a 2D nearest-neighbour grid and
+    // tolerates a comparatively high physical error rate".
+    //
+    // Everything that makes this a procedure rather than a description comes from
+    // `conditions`: the threshold requirement on p, the fact that "The code
+    // distance is not a property of a machine; it is solved for from p and the
+    // target logical error rate the algorithm's total operation count demands",
+    // the poor rate ("one logical qubit per patch"), and real-time syndrome
+    // decoding as "a separate engineering problem with a hard latency budget".
+    // The listing keeps `conditions`' own warning beside the requirement it
+    // qualifies: a threshold depends on the code variant, the syndrome-extraction
+    // circuit, the noise model AND the decoder, and "a threshold quoted without
+    // all four means nothing".
+    //
+    // The `given` and `return` lines are the contract of the capability this
+    // method `realizes` (`error-correction` takes "A physical error rate p and
+    // noise model; a target logical error rate P_L; a connectivity constraint; a
+    // measurement and feedback cycle time" and returns logical qubits with "the
+    // code and code distance d that were chosen for them, a
+    // physical-qubits-per-logical-qubit figure, and a decoding latency
+    // requirement"), because method records here carry no contract of their own.
+    // Its sibling `qldpc-code` opens on the same line for the same reason: they
+    // answer the same slot, and the listings diverge on the stanza after it.
+    //
+    // Every number is `cost`, and each is kept with the thing that makes it mean
+    // anything: p_th = 0.57% stays tagged "for their circuit and noise model", the
+    // physical-qubit counts stay tagged with the d they belong to, and the Google
+    // figures keep their error bars.
+    //
+    // The reading caution on the Google result is `conditions` verbatim and is in
+    // the listing because the misreading it names travels with the number: the
+    // once-an-hour correlated-error floor "was measured with repetition codes run
+    // to probe the limits, not observed as the limit of the surface-code
+    // memories".
+    //
+    // Deliberately absent, and this is where it differs from `qldpc-code`: no
+    // syndrome-cycle depth, no ancilla count and no named decoder -- this record
+    // states none, where its sibling's `cost` states a cycle outright. For the
+    // same reason there is no round loop here; the record mentions cycles only
+    // inside Google's per-cycle figure, so the listing does not build a loop out
+    // of it.
+    example: {
+      pseudocode: [
+        "given  a physical error rate p and noise model, a target logical error rate",
+        "       P_L, a connectivity constraint, and a measurement and feedback cycle",
+        "       time",
+        "",
+        "require  p strictly below a threshold that depends on the code variant, the",
+        "         syndrome-extraction circuit, the noise model AND the decoder",
+        "# a threshold quoted without all four means nothing",
+        "",
+        "encode a logical qubit in the homology of a two-dimensional lattice of",
+        "    physical qubits",
+        "measure the weight-4 stabilizers with nearest-neighbour circuits",
+        "# only a 2D nearest-neighbour grid is needed, and the code tolerates a",
+        "# comparatively high physical error rate -- which is why it is the dominant",
+        "# fault-tolerant code",
+        "",
+        "solve for the code distance d from p and the target logical error rate P_L",
+        "    that the algorithm's total operation count demands",
+        "# the code distance is not a property of a machine",
+        "# Fowler, Mariantoni, Martinis and Cleland give the empirical scaling",
+        "#     P_L approx 0.03 (p/p_th)^d_e,  error dimension d_e = (d+1)/2 for odd d",
+        "#     (rounded down to d/2 for even d), and measure p_th = 0.57% for their",
+        "#     circuit and noise model",
+        "",
+        "decode the syndromes in real time",
+        "# a separate engineering problem with a hard latency budget, and the decoder",
+        "# is part of what sets the observed threshold",
+        "",
+        "return the logical qubits, the distance d solved for, the physical qubits",
+        "    they cost per logical qubit, and the decoding latency to be met",
+        "# the encoding rate is poor: one logical qubit per patch",
+        "# in Fowler et al.'s defect-based construction a logical qubit costs",
+        "#     2.5 x 1.25 x (2d)^2 approx 12.5 d^2 physical qubits -- about 3600 at",
+        "#     d = 17 and about 14500 at d = 34",
+        "",
+        "# measured: Google reports logical error suppressed by Lambda = 2.14 +/- 0.02",
+        "# per two units of distance, reaching 0.143% +/- 0.003% per cycle on a",
+        "# 101-qubit distance-7 code, beyond break-even by a factor 2.4 +/- 0.3",
+        "# one caution on reading that result: the once-an-hour correlated-error floor",
+        "# sometimes quoted beside it was measured with repetition codes run to probe",
+        "# the limits, not observed as the limit of the surface-code memories",
+      ].join("\n"),
+    },
+    // **The first `implementations` entry in the graph, and it is written from a
+    // read of the abstract page rather than from the record.**
+    //
+    // That is the difference between this field and `example.pseudocode` beside
+    // it: a listing is transcribable from the record, an implementation "needs
+    // somebody to read a source" (`LayerMethod.implementations`). So the source
+    // was fetched and read, and the fields below carry only what that page
+    // states.
+    //
+    // **What the page does not state is why `data` and `code` are absent.** The
+    // abstract page names no processor, no manufacturer and no released artefact.
+    // The device this ran on is widely known and is deliberately NOT written
+    // here: naming it would be recall dressed as a citation, which is the failure
+    // this whole corner of the repo is built to refuse. If somebody reads the
+    // full text or the Nature version and finds the processor named, those fields
+    // are where it goes — absent means unread, not none (the schema says so).
+    //
+    // `results` deliberately repeats figures that `cost` already carries. They
+    // are not duplicated by accident: on the cost card they are what the method
+    // costs, and here they are what one run measured, which is the distinction
+    // the owner's five sub-sections exist to draw. The reading caution that
+    // travels with the once-an-hour figure stays attached to it here too.
+    implementations: [
+      {
+        id: "below-threshold-memories",
+        label: "The two below-threshold surface-code memories",
+        labelJa: "しきい値を下回る二つの表面符号メモリ",
+        papers: [
+          { title: "Quantum error correction below the surface code threshold", authors: "Rajeev Acharya, et al.", year: "2024", url: "https://arxiv.org/abs/2408.13687" },
+        ],
+        about:
+          "The first reported surface-code memories running *below* threshold — the condition the code's whole promise rests on, and the one this record's `conditions` field states as a requirement rather than an achievement. Published as Nature 638 (2025) 920–926.",
+        aboutJa:
+          "しきい値を**下回って**動作する表面符号メモリの最初の報告です。この符号の主張全体が乗っているのがこの条件であり、本レコードの `conditions` が達成ではなく要件として述べているものです。Nature 638 (2025) 920–926 として出版されています。",
+        methods:
+          "Two memories: a distance-7 code, and a distance-5 code integrated with a real-time decoder. Repetition codes were run out to distance-29 separately, to probe where the error-correction performance stops improving.",
+        methodsJa:
+          "二つのメモリ、すなわち距離 7 の符号と、リアルタイム復号器を組み込んだ距離 5 の符号です。誤り訂正性能が改善しなくなる限界を探るため、これとは別に距離 29 までの反復符号も実行されています。",
+        results:
+          "The logical error rate is suppressed by $\\Lambda = 2.14 \\pm 0.02$ per two units of code distance, reaching $0.143\\% \\pm 0.003\\%$ error per cycle on a 101-qubit distance-7 code — beyond break-even, exceeding the best physical qubit's lifetime by $2.4 \\pm 0.3$. Below-threshold performance held while decoding in real time, at an average decoder latency of 63 μs at distance 5 over a million cycles, with a 1.1 μs cycle time. The distance-29 repetition codes were limited by rare correlated error events about once an hour, or every $3 \\times 10^9$ cycles — a figure measured while probing the limits, not a floor observed on the surface-code memories themselves.",
+        resultsJa:
+          "論理誤り率は符号距離 2 単位あたり $\\Lambda = 2.14 \\pm 0.02$ で抑制され、101 量子ビットの距離 7 符号でサイクルあたり $0.143\\% \\pm 0.003\\%$ に達しています。これは損益分岐点を超えており、最良の物理量子ビットの寿命を $2.4 \\pm 0.3$ 倍上回ります。リアルタイム復号でもしきい値を下回る性能が保たれ、距離 5 で 100 万サイクルにわたり復号器の平均遅延は 63 μs、サイクル時間は 1.1 μs でした。距離 29 の反復符号は、およそ 1 時間に一度、すなわち $3 \\times 10^9$ サイクルに一度という稀な相関誤りに律速されています。これは限界を探る過程で測られた値であり、表面符号メモリ自体で観測された下限ではありません。",
+      },
+    ],
     citations: [
       { title: "Surface codes: Towards practical large-scale quantum computation", authors: "Austin G. Fowler, Matteo Mariantoni, John M. Martinis, Andrew N. Cleland", year: "2012", url: "https://arxiv.org/abs/1208.0928" },
       { title: "Quantum error correction below the surface code threshold", authors: "Rajeev Acharya, Laleh Aghababaie-Beni, Igor Aleiner, Trond I. Andersen, Markus Ansmann, Frank Arute, Kunal Arya, Abraham Asfaw, Nikita Astrakhantsev, Juan Atalaya, Ryan Babbush, Dave Bacon, Brian Ballard, Joseph C. Bardin, Johannes Bausch, Andreas Bengtsson, Alexander Bilmes, Sam Blackwell, Sergio Boixo, Gina Bortoli, Alexandre Bourassa, Jenna Bovaird, Leon Brill, Michael Broughton, David A. Browne, Brett Buchea, Bob B. Buckley, David A. Buell, Tim Burger, Brian Burkett, Nicholas Bushnell, Anthony Cabrera, Juan Campero, Hung-Shen Chang, Yu Chen, Zijun Chen, Ben Chiaro, Desmond Chik, Charina Chou, Jahan Claes, Agnetta Y. Cleland, Josh Cogan, Roberto Collins, Paul Conner, William Courtney, Alexander L. Crook, Ben Curtin, Sayan Das, Alex Davies, Laura De Lorenzo, Dripto M. Debroy, Sean Demura, Michel Devoret, Agustin Di Paolo, Paul Donohoe, Ilya Drozdov, Andrew Dunsworth, Clint Earle, Thomas Edlich, Alec Eickbusch, Aviv Moshe Elbag, Mahmoud Elzouka, Catherine Erickson, Lara Faoro, Edward Farhi, Vinicius S. Ferreira, Leslie Flores Burgos, Ebrahim Forati, Austin G. Fowler, Brooks Foxen, Suhas Ganjam, Gonzalo Garcia, Robert Gasca, Élie Genois, William Giang, Craig Gidney, Dar Gilboa, Raja Gosula, Alejandro Grajales Dau, Dietrich Graumann, Alex Greene, Jonathan A. Gross, Steve Habegger, John Hall, Michael C. Hamilton, Monica Hansen, Matthew P. Harrigan, Sean D. Harrington, Francisco J. H. Heras, Stephen Heslin, Paula Heu, Oscar Higgott, Gordon Hill, Jeremy Hilton, George Holland, Sabrina Hong, Hsin-Yuan Huang, Ashley Huff, William J. Huggins, Lev B. Ioffe, Sergei V. Isakov, Justin Iveland, Evan Jeffrey, Zhang Jiang, Cody Jones, Stephen Jordan, Chaitali Joshi, Pavol Juhas, Dvir Kafri, Hui Kang, Amir H. Karamlou, Kostyantyn Kechedzhi, Julian Kelly, Trupti Khaire, Tanuj Khattar, Mostafa Khezri, Seon Kim, Paul V. Klimov, Andrey R. Klots, Bryce Kobrin, Pushmeet Kohli, Alexander N. Korotkov, Fedor Kostritsa, Robin Kothari, Borislav Kozlovskii, John Mark Kreikebaum, Vladislav D. Kurilovich, Nathan Lacroix, David Landhuis, Tiano Lange-Dei, Brandon W. Langley, Pavel Laptev, Kim-Ming Lau, Loïck Le Guevel, Justin Ledford, Kenny Lee, Yuri D. Lensky, Shannon Leon, Brian J. Lester, Wing Yan Li, Yin Li, Alexander T. Lill, Wayne Liu, William P. Livingston, Aditya Locharla, Erik Lucero, Daniel Lundahl, Aaron Lunt, Sid Madhuk, Fionn D. Malone, Ashley Maloney, Salvatore Mandrá, Leigh S. Martin, Steven Martin, Orion Martin, Cameron Maxfield, Jarrod R. McClean, Matt McEwen, Seneca Meeks, Anthony Megrant, Xiao Mi, Kevin C. Miao, Amanda Mieszala, Reza Molavi, Sebastian Molina, Shirin Montazeri, Alexis Morvan, Ramis Movassagh, Wojciech Mruczkiewicz, Ofer Naaman, Matthew Neeley, Charles Neill, Ani Nersisyan, Hartmut Neven, Michael Newman, Jiun How Ng, Anthony Nguyen, Murray Nguyen, Chia-Hung Ni, Thomas E. O'Brien, William D. Oliver, Alex Opremcak, Kristoffer Ottosson, Andre Petukhov, Alex Pizzuto, John Platt, Rebecca Potter, Orion Pritchard, Leonid P. Pryadko, Chris Quintana, Ganesh Ramachandran, Matthew J. Reagor, David M. Rhodes, Gabrielle Roberts, Eliott Rosenberg, Emma Rosenfeld, Pedram Roushan, Nicholas C. Rubin, Negar Saei, Daniel Sank, Kannan Sankaragomathi, Kevin J. Satzinger, Henry F. Schurkus, Christopher Schuster, Andrew W. Senior, Michael J. Shearn, Aaron Shorter, Noah Shutty, Vladimir Shvarts, Shraddha Singh, Volodymyr Sivak, Jindra Skruzny, Spencer Small, Vadim Smelyanskiy, W. Clarke Smith, Rolando D. Somma, Sofia Springer, George Sterling, Doug Strain, Jordan Suchard, Aaron Szasz, Alex Sztein, Douglas Thor, Alfredo Torres, M. Mert Torunbalci, Abeer Vaishnav, Justin Vargas, Sergey Vdovichev, Guifre Vidal, Benjamin Villalonga, Catherine Vollgraff Heidweiller, Steven Waltman, Shannon X. Wang, Brayden Ware, Kate Weber, Theodore White, Kristi Wong, Bryan W. K. Woo, Cheng Xing, Z. Jamie Yao, Ping Yeh, Bicheng Ying, Juhwan Yoo, Noureldin Yosri, Grayson Young, Adam Zalcman, Yaxing Zhang, Ningfeng Zhu, Nicholas Zobrist", year: "2024", url: "https://arxiv.org/abs/2408.13687" },
@@ -2676,6 +5482,84 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Error threshold 0.8% under the standard circuit-based noise model, on par with the surface code. A syndrome cycle for a length-$n$ code uses $n$ ancillary qubits and a depth-7 nearest-neighbour CNOT circuit. Bravyi et al. preserve 12 logical qubits for nearly a million syndrome cycles using 288 total physical qubits at physical error rate 0.1%, against an argued nearly 3000 physical qubits for equivalent surface-code suppression.",
     costJa: "標準的な回路レベル雑音モデルのもとでのしきい値は 0.8% で、表面符号と同程度です。長さ $n$ の符号の症候群 1 周期は、$n$ 個のアンシラ量子ビットと深さ 7 の最近接 CNOT 回路で構成されます。Bravyi らは、物理誤り率 0.1% のもとで合計 288 個の物理量子ビットを使い、12 個の論理量子ビットを 100 万に近い症候群周期にわたって保持しています。同等の抑制を表面符号で得るには 3000 個近い物理量子ビットが要る、というのが同論文の議論です。",
     steps: [],
+    // Written from `conditions` first, not `summary`, because `conditions` is
+    // where this record differs from `surface-code`: the binding item is "a
+    // degree-6 qubit connectivity graph decomposable into two edge-disjoint planar
+    // subgraphs -- strictly more than the surface code's 2D nearest-neighbour
+    // grid, and the binding practical constraint". `summary` supplies what that
+    // constraint buys: "Trade the surface code's strictly planar layout for
+    // slightly richer connectivity, in exchange for a much better encoding rate.
+    // Many logical qubits live in one code block instead of one per patch."
+    //
+    // The `given` and `return` lines are the contract of the capability this
+    // method `realizes` (`error-correction`), as on `surface-code` -- same slot,
+    // same opening line, because method records here carry no contract of their
+    // own. The listings diverge on the stanza immediately after it.
+    //
+    // The cycle stanza is `cost` verbatim: "A syndrome cycle for a length-n code
+    // uses n ancillary qubits and a depth-7 nearest-neighbour CNOT circuit." The
+    // threshold, the 12-logical-qubits-in-288-physical memory result and the
+    // argued nearly-3000-qubit surface-code comparison are `cost` verbatim too,
+    // and the memory result keeps the physical error rate 0.1% it was measured at.
+    // The word "argued" is the record's: the surface-code comparison is Bravyi et
+    // al.'s argument, not a measurement, and the listing says so.
+    //
+    // The MEMORY caveat is `conditions` verbatim and is the last thing the listing
+    // says, because it is what stops the card reading as a replacement for the
+    // surface code: "performing logical operations on these codes is substantially
+    // less developed than lattice surgery on surface codes, so this is not yet a
+    // drop-in replacement for a full computation".
+    //
+    // Deliberately absent: no code distance and no distance-solving rule. Unlike
+    // `surface-code`'s `cost`, this record states neither, so the listing states
+    // neither and does not borrow its sibling's -- silently, without narrating the
+    // absence to the reader. No decoder is named either; `conditions` says only
+    // that "matching decoders built for surface codes do not transfer directly",
+    // and the listing carries that sentence and nothing past it.
+    //
+    // This is NOT `surface-code`'s listing with new numbers, and writing them
+    // together is what makes that visible: that one solves for a distance d and
+    // spends approx 12.5 d^2 physical qubits on ONE logical qubit, and this one
+    // has no distance in it at all, holds 12 logical qubits in 288 physical, and
+    // ends on a caveat that it is a memory rather than a computation.
+    example: {
+      pseudocode: [
+        "given  a physical error rate p and noise model, a target logical error rate",
+        "       P_L, a connectivity constraint, and a measurement and feedback cycle",
+        "       time",
+        "",
+        "require  a degree-6 qubit connectivity graph decomposable into two",
+        "         edge-disjoint planar subgraphs",
+        "# strictly more than the surface code's 2D nearest-neighbour grid, and the",
+        "# binding practical constraint",
+        "",
+        "encode many logical qubits into one code block, rather than one per patch",
+        "# the trade: give up the surface code's strictly planar layout for slightly",
+        "# richer connectivity, in exchange for a much better encoding rate",
+        "",
+        "repeat each syndrome cycle:",
+        "    for a length-n code, use n ancillary qubits and a depth-7",
+        "        nearest-neighbour CNOT circuit",
+        "",
+        "decode the syndromes in real time",
+        "# syndrome decoding remains a separate real-time problem, and matching",
+        "# decoders built for surface codes do not transfer directly",
+        "",
+        "return the block's logical qubits and the physical qubits they cost",
+        "",
+        "# error threshold 0.8% under the standard circuit-based noise model, on par",
+        "# with the surface code",
+        "# Bravyi et al. preserve 12 logical qubits for nearly a million syndrome",
+        "# cycles using 288 total physical qubits at physical error rate 0.1%,",
+        "# against an argued nearly 3000 physical qubits for equivalent surface-code",
+        "# suppression",
+        "",
+        "# the headline result is a fault-tolerant MEMORY: performing logical",
+        "# operations on these codes is substantially less developed than lattice",
+        "# surgery on surface codes, so this is not yet a drop-in replacement for a",
+        "# full computation",
+      ].join("\n"),
+    },
     citations: [
       { title: "High-threshold and low-overhead fault-tolerant quantum memory", authors: "Sergey Bravyi, Andrew W. Cross, Jay M. Gambetta, Dmitri Maslov, Patrick Rall, Theodore J. Yoder", year: "2023", url: "https://arxiv.org/abs/2308.07915" },
     ],

@@ -404,6 +404,57 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   );
 });
 
+test("every authored hop note reaches the card, including the ones keyed to an ingredient", () => {
+  // **The failure this exists to stop, found by walking into it.** `hops` is keyed by a step
+  // id, `validateLayerGraph` accepts any of the method's steps, and until this test the card
+  // read a note only off the CHAIN. A step is either a chain hop or an ingredient — and a
+  // note keyed to an ingredient rendered on no surface at all: Theory held, Requires held,
+  // and several paragraphs of sourced mathematics simply gone. `hhl-qpe-inversion` delegates
+  // all three of its steps as ingredients, so its route draws one segment and *every*
+  // sentence about preparing |b⟩ O(κ) times had nowhere to go. That is the hop where the
+  // route's dominant cost lives.
+  //
+  // It is the same argument `IngredientList` already makes for `repeats` — *"7 of the 10
+  // records key a `feeds` step rather than a hop… A count drawn only on the chain would have
+  // left every one of them exactly where it was — nowhere"* — and it had only been applied to
+  // one of the two fields keyed that way.
+  //
+  // The expected set is read off the graph rather than typed here, so authoring a note
+  // against a step no surface reads fails this test rather than going quietly missing.
+  let checked = 0;
+  let viaIngredient = 0;
+  for (const locale of ["en", "ja"] as const) {
+    for (const card of cards(locale)) {
+      if (card.kind !== "method") continue;
+      const node = LAYER_GRAPH.nodes.find((one) => one.id === card.id)!;
+      if (!isMethod(node) || node.hops === undefined) continue;
+      const onChain = new Map(
+        (card.trace.held ? card.trace.value : []).map((hop) => [hop.via?.id ?? card.id, hop.theory]),
+      );
+      const onList = new Map(
+        (card.ingredients.held ? card.ingredients.value : []).map((item) => [item.link.id, item.theory]),
+      );
+      for (const key of Object.keys(node.hops)) {
+        const drawn = onChain.get(key) ?? onList.get(key);
+        assert.ok(
+          drawn !== undefined && drawn.held,
+          `${card.id} (${locale}): the note keyed "${key}" renders on no surface — it is neither a hop of the drawn chain nor an ingredient`,
+        );
+        checked += 1;
+        if (onChain.get(key) === undefined) viaIngredient += 1;
+      }
+    }
+  }
+  // Floors, not exact counts: authoring more notes must not fail this. But the ingredient
+  // arm must be non-zero, or the surface this test was written for is untested and could be
+  // deleted without anything going red.
+  assert.ok(checked > 0, "no authored hop notes at all — this test is asserting nothing");
+  assert.ok(
+    viaIngredient > 0,
+    `${viaIngredient} notes reach the card through the ingredient list — the arm this test exists for is unexercised`,
+  );
+});
+
 // --- how many times a step is walked ----------------------------------------
 
 test("every recorded multiplicity reaches the card, and the card is where most of them are ingredients", () => {

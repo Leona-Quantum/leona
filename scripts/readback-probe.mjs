@@ -34,7 +34,8 @@
  *   --control-url <u>    an arm that must hold BEFORE and AFTER (regression guard)
  *   --control-expect <s> repeatable, applies to --control-url
  *   --control-absent <s> repeatable, applies to --control-url
- *   --sha <sha>          stop early if the GitHub Actions `deploy` run for this SHA fails
+ *   --sha <sha>          stop early if the Actions `deploy` run for this SHA fails — see
+ *                        "two pipelines" below before you pass it
  *   --timeout <s>        give up after this long (default 900)
  *   --interval <s>       seconds between polls (default 30)
  *   --state <path>       persist/reuse the pre-measurement across sessions
@@ -47,6 +48,27 @@
  *
  * Every request is cache-busted with a fresh `cb=` and sent no-store, because the
  * domain sits behind a CDN and a cached 200 is the fourth way not to pay a read-back.
+ *
+ * ## Two pipelines, and `--sha` only watches one of them
+ *
+ * "Deploy-watch by SHA" names two independent things in this repo:
+ *
+ *   - `.github/workflows/deploy.yml` (the Actions run called `deploy`) ships the Cloud
+ *     Run **api and worker** and runs **DB migrations**. It has no Vercel step.
+ *   - The **web app** is deployed by Vercel's own git integration, which reports as a
+ *     commit *status context* named `Vercel`, not as an Actions job.
+ *
+ * So a page can be live while the Actions run is still going — measured on `2f945f76`,
+ * where production served the new lane while `deploy` was `in_progress`. Pass `--sha`
+ * when what you are proving is deployed by that workflow (`services/`, `packages/py/`,
+ * `db/migrations/`); for a page change it is a backend safety net, not a signal about
+ * your page, and the content poll remains the only verdict.
+ *
+ * With `--sha` the Vercel status context is printed beside each poll as an ANNOTATION
+ * and never acted on, because it has been measured wrong in both directions: `cc5f5539`
+ * said success and served nothing of the kind, `83b8fe6c` said "rate limited" and was
+ * what the domain served. Aborting on a red Vercel status would therefore abandon
+ * read-backs that were about to pass.
  */
 
 import { execFileSync } from "node:child_process";
@@ -162,6 +184,25 @@ function report(label, result) {
   }
   for (const row of result.forbidden) {
     console.log(`    ${row.ok ? "gone" : "PRESENT"} ${label} absent ${JSON.stringify(row.needle)} ×${row.count}`);
+  }
+}
+
+/**
+ * The web app's own deploy signal, printed and never acted on. It is here so a stuck
+ * read-back can be told apart from a stuck deploy without leaving the terminal — but see
+ * the header: this field has been wrong in both directions, so it annotates, it does not
+ * decide. Returns null when it cannot be read, which is not evidence of anything either.
+ */
+function vercelStatusFor(sha) {
+  try {
+    const out = execFileSync(
+      "gh",
+      ["api", `repos/{owner}/{repo}/commits/${sha}/status`, "--jq", "[.statuses[] | select(.context==\"Vercel\") | .state] | first // \"none\""],
+      { encoding: "utf8" },
+    );
+    return out.trim() || null;
+  } catch {
+    return null;
   }
 }
 
@@ -335,7 +376,11 @@ async function main(argv) {
     }
     const result = evaluate(fetched.body, target);
     const hits = result.expected.map((r) => r.count).concat(result.forbidden.map((r) => r.count));
-    console.log(`  … ${new Date().toISOString().slice(11, 19)} HTTP ${fetched.status} counts=[${hits}]`);
+    const vercel = args.sha ? vercelStatusFor(args.sha) : null;
+    const note = vercel ? `  [Vercel status: ${vercel} — annotation, not a verdict]` : "";
+    console.log(
+      `  … ${new Date().toISOString().slice(11, 19)} HTTP ${fetched.status} counts=[${hits}]${note}`,
+    );
     if (result.ok) {
       post = { at: new Date().toISOString(), result };
       break;

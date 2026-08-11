@@ -56,7 +56,7 @@
 import { estimateTextWidth, LANE_FONT_PX } from "./process-layout.ts";
 import { stateSatisfies, validateStateVocabulary, type StateVocabulary } from "./states.ts";
 import { validatePairedTheory, validateTheory } from "./theory-marks.ts";
-import type { PublicRepositoryCategory } from "./types";
+import type { PublicRepositoryCategory, SourceCoverage } from "./types";
 
 /** A node is one of exactly two things, and the distinction is load-bearing. */
 export type LayerNodeKind = "capability" | "method";
@@ -1562,6 +1562,244 @@ export function layerCensus(
     withPseudocode: methods.filter((node) => (node.example?.pseudocode ?? "").trim() !== "").length,
     withExampleText: methods.filter((node) => (node.example?.text ?? "").trim() !== "").length,
     withImplementations: methods.filter((node) => (node.implementations ?? []).length > 0).length,
+  };
+}
+
+// ---------------------------------------------------------------------------
+// Region closure
+//
+// > *"make sure everything is completely closed and perfectly implemented for
+// > linear ODE so it can be scaled, making sure it is easily reproducible using
+// > our first principles… this means it is scalable to other things without
+// > major problems."*
+// > — owner, 2026-08-11 inbox
+//
+// `layerCensus` counts the **whole graph**, and every number it prints is a
+// total. That is the right shape for "how much of the atlas is written" and the
+// wrong shape for the question above, which is asked of one region at a time:
+// a region can be finished while the graph's totals barely move, and the totals
+// cannot tell anyone which region moved them.
+//
+// ## Why the answer is a table and not a percentage
+//
+// The tempting summary is one number — "linear ODE is 78% closed". It would be
+// wrong in a way that matters, because **the fields are not the same kind of
+// gap**, and `MethodExample`'s own doc comment already draws the line this
+// splits on:
+//
+// - `pseudocode` "can be written from the method's own recorded contract and
+//   step list" — closable at this desk, today, with no new information;
+// - a hop's `theory` needs the cited source read, but the source is already
+//   named on the record, so the work is bounded and known;
+// - `text` "needs a run somebody actually did" and `implementations` needs one
+//   too — **and if no cited paper reports a run, no amount of work closes
+//   them.** An empty section there is the correct and final answer.
+//
+// Averaging those together lets the transcribable half stand in for the half
+// that needs a laboratory, which is the substitution the honesty taxonomy on
+// `LayerCensus.withPseudocode` exists to prevent. So this returns each field's
+// own fraction and each field's own missing list, and no combined figure exists
+// to be quoted.
+//
+// ## The part that makes "closed" checkable rather than claimed
+//
+// For `text` and `implementations` the register already knows whether there is
+// anything to write up: `PaperRegisterEntry.reports` records, per paper, whether
+// it reports simulation or hardware. So an absence on a method can be
+// **classified** rather than merely counted, on the register's own three-valued
+// rule:
+//
+// - `accounted` — every cited paper reports `absent` on both axes. Nobody ran
+//   anything; the empty section is the truth and closing it is not work.
+// - `outstanding` — some cited paper reports a run. There is something to write
+//   up and this is a worklist item.
+// - `unread` — some cited paper says `unknown`, or carries no `reports` row at
+//   all. **The account itself does not exist yet**, and the next action is to
+//   read that paper's full text, not to write an example.
+//
+// The three-valued shape is not decoration: `papers.ts` forces `simulation` to
+// `unknown` on an abstract read precisely because numerics hide below the
+// abstract, so a two-valued version of this would report "nothing to write up"
+// for every method in the graph whose sources were only skimmed. The middle
+// value is the common one today and it is the one that names the work.
+// ---------------------------------------------------------------------------
+
+/** How one content field stands across a region. */
+export interface RegionFieldCoverage {
+  /** The field as an author types it — `cost`, `example.pseudocode`. */
+  field: string;
+  /** Methods carrying it. */
+  present: number;
+  /** Methods in the region. The denominator, printed rather than implied. */
+  total: number;
+  /** Which methods do not carry it, in graph order. */
+  missing: readonly string[];
+}
+
+/**
+ * Why a method has no worked run written up — the classification above.
+ *
+ * Keyed by method id, and only for methods that are actually missing the field:
+ * a method that carries one needs no account.
+ */
+export type RunEvidenceVerdict = "accounted" | "outstanding" | "unread";
+
+/** One route stretch with no hop note on it. See `RegionClosure.unauthoredHops`. */
+export interface UnauthoredHop {
+  method: string;
+  /** The capability id of the hop, or the method's own id for its own stretch. */
+  key: string;
+}
+
+/**
+ * A region, measured. See the block above for why there is no single number.
+ */
+export interface RegionClosure {
+  /** The slots asked for, in the order given, minus any that name nothing. */
+  capabilities: readonly string[];
+  /** Ids that named no capability in this graph — a typo, printed rather than ignored. */
+  unknown: readonly string[];
+  /** Every method realising one of those slots, in graph order. */
+  methods: readonly string[];
+  fields: readonly RegionFieldCoverage[];
+  /**
+   * Every stretch of every route in the region, and how many carry a hop note.
+   *
+   * **Stretches, not methods.** A method with one authored hop out of five reads
+   * as "has hops" on any per-method count, and that is exactly the region that
+   * looks finished and is not. `hops` is keyed per stretch, so the honest
+   * denominator is the stretch.
+   */
+  hopStretches: number;
+  hopStretchesAuthored: number;
+  unauthoredHops: readonly UnauthoredHop[];
+  /** Per method missing `example.text`, why. Empty when the field is filled. */
+  runEvidence: ReadonlyMap<string, RunEvidenceVerdict>;
+}
+
+/**
+ * Classify one method's missing worked run against the register.
+ *
+ * `reports` is looked up by the citation's `url`, which is the register's own
+ * key rule (`papers.ts`: "every url here must resolve in the paper register").
+ * A method with no citations at all comes back `unread` rather than `accounted`
+ * — an absence of sources is not evidence that no run exists, it is the absence
+ * of the evidence.
+ */
+function runEvidenceFor(
+  method: LayerMethod,
+  reports: ReadonlyMap<string, SourceCoverage>,
+): RunEvidenceVerdict {
+  const citations = method.citations ?? [];
+  if (citations.length === 0) return "unread";
+  let sawUnknown = false;
+  for (const citation of citations) {
+    const row = reports.get(citation.url);
+    if (!row) {
+      sawUnknown = true;
+      continue;
+    }
+    if (row.simulation === "reported" || row.hardware === "reported") return "outstanding";
+    if (row.simulation === "unknown" || row.hardware === "unknown") sawUnknown = true;
+  }
+  return sawUnknown ? "unread" : "accounted";
+}
+
+/**
+ * Measure a region: the named slots, the methods filling them, field by field.
+ *
+ * `reports` is passed in rather than imported for the reason `corpus` is on
+ * `layerCensus` — this module references the corpus and the register **by
+ * identifier only, in one direction**, and importing either would make the
+ * graph's schema depend on the data it describes.
+ */
+export function regionClosure(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+  capabilityIds: readonly string[],
+  reports: ReadonlyMap<string, SourceCoverage>,
+): RegionClosure {
+  // De-duplicated first, first-seen order kept. `--closure=solve,solve` is one
+  // region, and counting it as two slots is the same failure as the typo below:
+  // a slot count that is too high makes the fractions beside it read as a
+  // bigger region than was measured. `methods` was already immune (it filters
+  // on a Set) and the two would then disagree.
+  const requested = [...new Set(capabilityIds)];
+  const capabilities = requested.filter((id) =>
+    graph.nodes.some((node) => node.id === id && isCapability(node)),
+  );
+  const unknown = requested.filter((id) => !capabilities.includes(id));
+  const wanted = new Set(capabilities);
+  const methods = graph.nodes.filter(
+    (node): node is LayerMethod => isMethod(node) && wanted.has(node.realizes),
+  );
+
+  const filled = (value: string | undefined) => (value ?? "").trim() !== "";
+  const measures: readonly { field: string; has: (method: LayerMethod) => boolean }[] = [
+    { field: "summary", has: (method) => filled(method.summary) },
+    { field: "conditions", has: (method) => filled(method.conditions) },
+    { field: "cost", has: (method) => filled(method.cost) },
+    { field: "citations", has: (method) => (method.citations ?? []).length > 0 },
+    { field: "example.pseudocode", has: (method) => filled(method.example?.pseudocode) },
+    { field: "example.text", has: (method) => filled(method.example?.text) },
+    { field: "implementations", has: (method) => (method.implementations ?? []).length > 0 },
+  ];
+
+  const fields = measures.map(({ field, has }) => ({
+    field,
+    present: methods.filter(has).length,
+    total: methods.length,
+    missing: methods.filter((method) => !has(method)).map((method) => method.id),
+  }));
+
+  // A route's stretches are every step it lists — whether that step advances the
+  // route or feeds it, since both are drawn and both are keyable — plus its own
+  // stretch **only where it has one**.
+  //
+  // The feed arm of that sentence was **not** true when this function was
+  // written and was made true afterwards: the card read a note off the chain
+  // only, so a note keyed to an ingredient rendered nowhere, and this gauge was
+  // counting a stretch no reader could reach. `CardIngredient.theory` closed it,
+  // and `repository-map-card.test.ts` now fails if any authored key renders on
+  // no surface — which is the guard that keeps this denominator honest rather
+  // than this comment.
+  //
+  // The "only where it has one" is the whole reason this walks `routeOf` instead
+  // of taking `[...steps, id]` from the schema's key rule. `validateLayerGraph`
+  // accepts a method's own id as a key on *any* method, but a route whose
+  // delegated steps already reach its slot's output draws no own stretch, so a
+  // note keyed there would render nowhere. Counting those as gaps would put
+  // stretches on the worklist that no author could ever close and no reader
+  // could ever see — a denominator inflated by exactly the routes that are
+  // already finished.
+  const unauthoredHops: UnauthoredHop[] = [];
+  let hopStretches = 0;
+  let hopStretchesAuthored = 0;
+  for (const method of methods) {
+    const route = routeOf(graph, vocabulary, method);
+    const ownStretch = route.segments.some((segment) => segment.capabilityId === null);
+    for (const key of [...method.steps, ...(ownStretch ? [method.id] : [])]) {
+      hopStretches += 1;
+      if (method.hops?.[key]) hopStretchesAuthored += 1;
+      else unauthoredHops.push({ method: method.id, key });
+    }
+  }
+
+  const runEvidence = new Map<string, RunEvidenceVerdict>();
+  for (const method of methods) {
+    if (filled(method.example?.text) && (method.implementations ?? []).length > 0) continue;
+    runEvidence.set(method.id, runEvidenceFor(method, reports));
+  }
+
+  return {
+    capabilities,
+    unknown,
+    methods: methods.map((method) => method.id),
+    fields,
+    hopStretches,
+    hopStretchesAuthored,
+    unauthoredHops,
+    runEvidence,
   };
 }
 
