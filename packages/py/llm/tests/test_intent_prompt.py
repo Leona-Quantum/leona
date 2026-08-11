@@ -77,6 +77,17 @@ def test_render_intent_prompt_passes_the_message_through_unchanged():
     assert rendered.user == "User message:\nBell状態とは？"
 
 
+def test_render_intent_prompt_describes_an_attachment_without_copying_source():
+    rendered = render_intent_prompt(
+        "Run this attached circuit",
+        has_source_code=True,
+    )
+
+    assert rendered.system == INTENT_ROUTER_SYSTEM_PROMPT
+    assert "selected-framework source code is attached" in rendered.user
+    assert rendered.user.endswith("User message:\nRun this attached circuit")
+
+
 def test_execution_prompts_define_a_self_contained_conversation_handoff():
     assert "problem_summary is the canonical handoff" in SIMPLE_PLAN_SYSTEM_PROMPT
     contextual = with_execution_conversation_context("base", has_history=True)

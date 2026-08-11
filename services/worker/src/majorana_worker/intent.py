@@ -10,7 +10,8 @@ mode the run really dispatches in:
 
 1. an explicit non-auto mode the router has no business overriding (`chat`,
    `execute`, `ideate`, or `explain`) passes straight through;
-2. every auto-mode message receives one short classification on the route model.
+2. every auto-mode message receives one short classification on the route model,
+   including submissions that carry attached source code.
 
 Every path returns a `ModeDecision` carrying why, which the worker emits as
 `run.mode_resolved` so the choice is visible in the event stream rather than
@@ -109,14 +110,18 @@ async def resolve_mode(
     conversation_messages: Sequence[Mapping[str, str]] = (),
 ) -> ModeDecision:
     """Resolve `requested` to the mode this run will actually dispatch in."""
-    if has_source_code:
-        # Studio ran this: the user pressed Simulate or Verify on code they are
-        # looking at. There is no intent left to infer.
-        return ModeDecision(requested, requested, "passthrough", "run carries source code")
     if requested is not RunMode.AUTO:
+        # Studio's Simulate/Verify controls submit explicit EXECUTE. Likewise an
+        # explicit CHAT/IDEATE/EXPLAIN selection remains authoritative even when
+        # a saved artifact is attached as context.
         return ModeDecision(requested, requested, "passthrough", "mode explicitly selected")
 
-    rendered = render_intent_prompt(prompt)
+    # AUTO must always settle to CHAT or EXECUTE. The old source-code shortcut
+    # returned AUTO unchanged, and handlers consequently dispatched it through
+    # the non-execute conversation path. Tell the classifier that source exists
+    # without sending the code itself, so "run this attached circuit" is input-
+    # ready while an explanation question about the same attachment stays chat.
+    rendered = render_intent_prompt(prompt, has_source_code=has_source_code)
     # Routing decides whether USER-SUPPLIED task data is complete. Assistant prose
     # can explain or propose a formulation, but it cannot fill an omitted instance
     # or turn that proposal into authorization to execute. Enforce the prompt's
