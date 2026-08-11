@@ -769,12 +769,20 @@ if (CLOSURE_IDS.length > 0) {
   // absences are work. `accounted` is a finished answer; `unread` is a paper to
   // read, not an example to write.
   const verdicts = { accounted: [], outstanding: [], unread: [] };
-  for (const [method, verdict] of region.runEvidence) verdicts[verdict].push(method);
+  for (const [method, evidence] of region.runEvidence) {
+    // The paper beside the verdict, because "some cited paper reports numerics"
+    // is a lead and not a promise — the register is keyed by paper and a method
+    // cites several. Printing which one turns a reader's next step from "read
+    // three papers" into "look at this section".
+    verdicts[evidence.verdict].push(evidence.paper ? `${method} (${evidence.paper})` : method);
+  }
   console.log(
     `  ${"a run to write up".padEnd(20)} ${verdicts.outstanding.length} outstanding · ${verdicts.unread.length} unread · ${verdicts.accounted.length} accounted (no cited paper reports one)`,
   );
   for (const kind of ["outstanding", "unread", "accounted"]) {
-    if (verdicts[kind].length > 0) console.log(`      ${kind.padEnd(12)} ${verdicts[kind].join(" ")}`);
+    if (verdicts[kind].length === 0) continue;
+    console.log(`      ${kind}:`);
+    for (const one of verdicts[kind]) console.log(`        ${one}`);
   }
 }
 
