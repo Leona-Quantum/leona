@@ -1719,10 +1719,16 @@ export function regionClosure(
   capabilityIds: readonly string[],
   reports: ReadonlyMap<string, SourceCoverage>,
 ): RegionClosure {
-  const capabilities = capabilityIds.filter((id) =>
+  // De-duplicated first, first-seen order kept. `--closure=solve,solve` is one
+  // region, and counting it as two slots is the same failure as the typo below:
+  // a slot count that is too high makes the fractions beside it read as a
+  // bigger region than was measured. `methods` was already immune (it filters
+  // on a Set) and the two would then disagree.
+  const requested = [...new Set(capabilityIds)];
+  const capabilities = requested.filter((id) =>
     graph.nodes.some((node) => node.id === id && isCapability(node)),
   );
-  const unknown = capabilityIds.filter((id) => !capabilities.includes(id));
+  const unknown = requested.filter((id) => !capabilities.includes(id));
   const wanted = new Set(capabilities);
   const methods = graph.nodes.filter(
     (node): node is LayerMethod => isMethod(node) && wanted.has(node.realizes),

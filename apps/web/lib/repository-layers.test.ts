@@ -315,6 +315,19 @@ test("a region is the slots named plus the methods filling them, and a typo is r
   assert.deepEqual(notASlot.capabilities, []);
   assert.deepEqual(notASlot.unknown, ["direct"]);
   assert.deepEqual(notASlot.methods, []);
+  // A repeated id is one slot. Counting it twice inflates the slot count beside
+  // the fractions, which reads as a bigger region than was measured — and
+  // `methods` is already immune because it filters on a Set, so the two halves
+  // of the same report would disagree. First-seen order is kept.
+  const repeated = regionClosure(
+    FIXTURE,
+    FIXTURE_STATES,
+    ["encode", "solve", "encode", "no-such-slot", "no-such-slot"],
+    new Map(),
+  );
+  assert.deepEqual(repeated.capabilities, ["encode", "solve"]);
+  assert.deepEqual(repeated.unknown, ["no-such-slot"]);
+  assert.deepEqual(repeated.methods, ["direct", "fast", "other", "encode-a"]);
 });
 
 test("a route that delegates every hop has no own stretch, so it is not counted as a gap", () => {
