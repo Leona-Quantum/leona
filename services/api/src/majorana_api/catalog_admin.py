@@ -586,6 +586,98 @@ def pick_live_reviewer(email: str, rows: Sequence[tuple[uuid.UUID, str]]) -> uui
     return live[0][0]
 
 
+def pick_standing_reviewer(
+    rows: Sequence[tuple[uuid.UUID, Role, str]],
+    *,
+    service_ids: frozenset[uuid.UUID],
+) -> uuid.UUID:
+    """Which account already holds the catalog reviewer grant.
+
+    This is the rule that lets an **unattended** run attest — the deploy
+    pipeline has no operator to type a UUID or an email, and inventing a
+    principal for it to attest as would be a new grant made by nobody.
+
+    So it does not name an account: it *continues* one. The only accounts it can
+    return are those a human already granted ADMIN on the catalog workspace by
+    running `attest-bootstrap` explicitly (`catalog.grant_catalog_reviewer` is
+    the sole path to that role). An automated run therefore cannot widen who
+    holds the grant, only re-use it — which is why this is safe to reach from CI
+    and `--attested-by <arbitrary uuid>` is not.
+
+    Provisioning writes the importer as OWNER and the public reader as VIEWER,
+    so ADMIN already excludes them. `service_ids` re-excludes them anyway: that
+    separation is an invariant of `ensure_system_catalog_authority` and
+    `grant_catalog_reviewer`, and a rule that grants ADMIN should not depend on
+    a *different* function's invariant holding. If one of them ever did hold
+    ADMIN, the honest outcome is this refusing to find a reviewer, not this
+    attesting as the importer.
+
+    Retired rows are excluded for the reason `pick_live_reviewer` excludes them:
+    the WorkOS environment switch minted a second `users` row per account, so an
+    attestation run done before the reattachment and one done after can have
+    granted ADMIN to *both* rows of one person. That is the likeliest way this
+    workspace ever carries two reviewer grants, and it is not a real ambiguity —
+    one of the two is an account nobody can sign in to. Attesting as it would
+    succeed and reach no one.
+
+    A genuine ambiguity — two live accounts — still refuses, same as
+    `pick_live_reviewer` and for the same reason: two humans holding the grant is
+    a state nobody has decided between, and an unattended run picking one
+    silently is how an attestation lands under a name that never looked at it.
+    """
+    candidates = sorted(
+        {
+            user_id
+            for user_id, role, workos_user_id in rows
+            if role == Role.ADMIN
+            and user_id not in service_ids
+            and not workos_user_id.startswith(_RETIRED_WORKOS_PREFIX)
+        }
+    )
+    if not candidates:
+        raise SystemExit(
+            "no human account holds the catalog reviewer grant on this workspace, so "
+            "there is no standing attestation to continue. Run the first attestation "
+            "explicitly — `--attested-by-email <you>` — and this flag works from then on."
+        )
+    if len(candidates) > 1:
+        raise SystemExit(
+            f"{len(candidates)} accounts hold the catalog reviewer grant "
+            f"({', '.join(str(user_id) for user_id in candidates)}) — an unattended run "
+            "will not choose between them. Pass --attested-by explicitly."
+        )
+    return candidates[0]
+
+
+async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
+    """The account already holding the grant, read from the workspace itself.
+
+    Deliberately configuration-free. The alternative was a repository variable
+    holding the owner's UUID or email, which is one more place for a production
+    identity to be stated, to go stale, and to be wrong in a way nothing checks.
+    The workspace already knows who the reviewer is; asking it cannot disagree
+    with the database the attestation is about to be written to.
+    """
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    try:
+        async with factory() as session:
+            rows = await system.list_catalog_reviewer_grants(
+                session, workspace_id=authority.workspace_id
+            )
+    finally:
+        await engine.dispose()
+
+    service_ids = frozenset(
+        user_id
+        for user_id in (authority.importer_user_id, authority.public_reader_user_id)
+        if user_id is not None
+    )
+    reviewer = pick_standing_reviewer(rows, service_ids=service_ids)
+    print(f"reviewer: {reviewer} (standing catalog grant, --attested-by-standing)")
+    return reviewer
+
+
 async def _resolve_reviewer_by_email(email: str) -> uuid.UUID:
     """The live ``users`` row for an email, by the only signal that says which.
 
@@ -648,6 +740,14 @@ def main() -> None:
         "Refuses if the email is ambiguous; see _resolve_reviewer_by_email (D70.2)",
     )
     parser.add_argument(
+        "--attested-by-standing",
+        action="store_true",
+        help="continue the attestation grant this catalog workspace already holds, instead "
+        "of naming a reviewer. Refuses if no account holds it, or if more than one does. "
+        "This is the form the deploy pipeline uses, because it cannot widen who holds the "
+        "grant — see pick_standing_reviewer",
+    )
+    parser.add_argument(
         "--re-attest",
         metavar="IDENTITY,IDENTITY,…",
         help="upstream identities whose provenance claim changed and which you have "
@@ -656,10 +756,25 @@ def main() -> None:
         "attesting anything. See plan_re_attestation",
     )
     args = parser.parse_args()
-    if args.attested_by and args.attested_by_email:
-        parser.error("pass --attested-by or --attested-by-email, not both")
-    if args.command in _NEEDS_REVIEWER and not (args.attested_by or args.attested_by_email):
-        parser.error(f"{args.command} requires --attested-by or --attested-by-email")
+    # Three ways to name the reviewer, and they answer the same question, so
+    # passing two is an operator who believes two different things about who is
+    # attesting. Counted rather than checked pairwise: adding a fourth form
+    # should not require remembering to add three more comparisons.
+    named = [
+        flag
+        for flag, given in (
+            ("--attested-by", bool(args.attested_by)),
+            ("--attested-by-email", bool(args.attested_by_email)),
+            ("--attested-by-standing", args.attested_by_standing),
+        )
+        if given
+    ]
+    if len(named) > 1:
+        parser.error(f"pass exactly one of {', '.join(named)} — they name the same reviewer")
+    if args.command in _NEEDS_REVIEWER and not named:
+        parser.error(
+            f"{args.command} requires --attested-by, --attested-by-email or --attested-by-standing"
+        )
     if args.re_attest is not None and args.command not in _ACCEPTS_RE_ATTEST:
         parser.error(
             f"--re-attest applies to {' and '.join(sorted(_ACCEPTS_RE_ATTEST))}, not {args.command}"
@@ -680,11 +795,14 @@ def main() -> None:
     # discover it cannot name a reviewer — leaving the corpus staged, which is
     # the half-done state `_sync_bootstrap` exists to prevent.
     async def _run() -> None:
-        reviewer = (
-            args.attested_by
-            if args.attested_by
-            else await _resolve_reviewer_by_email(args.attested_by_email)
-        )
+        if args.attested_by:
+            reviewer = args.attested_by
+        elif args.attested_by_standing:
+            authority = CatalogAuthority.from_env()
+            authority.require_configured()
+            reviewer = await _resolve_standing_reviewer(authority)
+        else:
+            reviewer = await _resolve_reviewer_by_email(args.attested_by_email)
         if args.command == "attest-bootstrap":
             await _attest_bootstrap(reviewer, re_attest)
         elif args.command == "publish-bootstrap":

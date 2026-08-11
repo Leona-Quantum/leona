@@ -98,6 +98,7 @@ import { withCard, withIopen } from "./map-card.ts";
 import { estimateTextWidth, fitLabel, LANE_FONT_PX, stateHref } from "./process-layout.ts";
 import {
   bellyOf,
+  levelShares,
   levelSlices,
   ribbonOutline,
   ribbonPath,
@@ -1731,6 +1732,28 @@ interface PlanStrand {
    * there.
    */
   own: string | null;
+  /**
+   * The phrase this strand draws **instead of** its own `label`, or null when it
+   * draws its own name like everything else.
+   *
+   * Non-null on exactly the own-stretch lanes today, where it is `ownStepName`.
+   * It exists because the two were separate strings in separate functions and
+   * the layout **sized one and drew the other**: `label` is the method's name
+   * (`fullLabel`, the `<title>` and the spoken sentence all still want it), the
+   * canvas draws the standing phrase, and `ownNameDemand` measured `label` —
+   * so `lchs-route`'s own stretch was costed at its short form's 25.4px and
+   * drawn 108.1px wide in `en`. Nothing caught it while a chain's steps were
+   * handed equal slices of a belly sized for the widest of them: the surplus
+   * paid the 83px difference. Cutting the belly by demand removed the surplus
+   * and the phrase was clipped to "the method itse…" — the sizing bug arriving
+   * on the canvas, three sessions after it was written.
+   *
+   * A field on the plan rather than a locale threaded into `measure`: the plan
+   * is where every other localized string on a strand is resolved, so this is
+   * one writer with two readers (`drawnName` for the demand, `place` for the
+   * cut) rather than one string spelled out in two places.
+   */
+  standingName: string | null;
   opensInto: OpensInto | null;
   slots: readonly string[];
   interior: readonly string[];
@@ -1988,6 +2011,9 @@ function chainInside(
       nameless: true,
       draws: null,
       own: method.id,
+      // What it draws, resolved here with every other localized string on the
+      // plan. See `standingName`.
+      standingName: ownStepName(locale),
       opensInto: null,
       slots: [],
       interior: [],
@@ -2065,6 +2091,7 @@ function planForSlot(
     nameless: false,
     draws: node === null ? null : slotId,
     own: null,
+    standingName: null,
     opensInto: methods.length > 0 ? "ways" : null,
     slots: [slotId],
     interior: [],
@@ -2314,6 +2341,7 @@ function planForMethod(
     // The method, always — `id` above goes null on a leaf and the name does not.
     draws: method.id,
     own: null,
+    standingName: null,
     opensInto: holds ? "steps" : null,
     slots: [],
     interior: [],
@@ -2411,6 +2439,7 @@ function planForLane(
     nameless: false,
     draws: null,
     own: null,
+    standingName: null,
     opensInto: "steps",
     slots: named.slots,
     interior: lane.interior,
@@ -2451,24 +2480,41 @@ function planForNarrowed(
 // ---------------------------------------------------------------------------
 
 /**
- * How much label width a column needs to hold a chain of `k` steps.
+ * How much of a column a chain of `k` steps needs: **the sum of what its steps
+ * ask for**, because each step is now handed a slice as long as its own demand.
  *
- * `k × widest`, never the sum, and the reason is in `place`: each step is handed
- * an **equal** share of the column, so the column has to be wide enough for the
- * widest of them taken that many times. Summing would size the column for a
- * division the placement does not make, and the step with the longest name is
- * the one that would be clipped.
+ * ## It was `k × widest`, and that is what made an opened figure long
  *
- * Its own exported function because the authored graph does not currently
- * contain a chain whose steps are long enough for this to bite — mutating it to
- * plain `max` left every test on the real graph green. A rule that today's data
- * cannot exercise still has to be checkable, so it is checked as arithmetic
- * against the property it exists for rather than through a figure that happens
- * not to need it yet.
+ * The old rule was not a mistake at the time — it was the honest sizing for an
+ * **equal** division, which is what `place` used to make: hand every step
+ * `belly/k` and the belly has to hold the widest of them `k` times over, or the
+ * longest name is the one that gets clipped. The cost is invisible while a
+ * chain's steps are alike and enormous the moment they are not, and a chain
+ * whose steps are alike is not what this corpus contains. Measured on
+ * `nonlinear-ode-solve` (ja), fully opened, before this change: the two-step
+ * chain inside `Taylor の一括符号化` ran 5,552px because one step opens onto a
+ * whole linear-solve fan (2,744px of real demand) and the other is a shut leaf
+ * whose name is 129px wide — so **2,579px of that belly was bought for a leaf
+ * that needed 197px**, and the same trade was being made at four levels of
+ * nesting at once.
+ *
+ * The owner's ask is the other side of that number, verbatim: *"the whole map
+ * can be compressed in its expanded state as well… shorted things so they are
+ * just a little wider than the actual labels… much less horizontal and vertical
+ * tolerance between things."* A step that is one-fifth of the work does not get
+ * a fifth of the picture by shrinking anything it draws; it gets it by no
+ * longer being paid the widest step's price.
+ *
+ * `levelShares` is the placement half — one weight vector, `stepDemand`, read
+ * by the sizing here and by the cut there, never derived twice. The property
+ * that makes the pair safe is one line of arithmetic: allocate a length of at
+ * least `Σ demand` in proportion to `demand`, and every piece is at least its
+ * own demand.
  */
 export function chainColumnNeed(childNeeds: readonly number[]): number {
-  if (childNeeds.length === 0) return 0;
-  return childNeeds.length * Math.max(...childNeeds);
+  let total = 0;
+  for (const need of childNeeds) total += need;
+  return total;
 }
 
 /**
@@ -2521,6 +2567,22 @@ function feedReach(feeds: readonly Measure[]): number {
 /** Half a strand's drawn thickness at `depth`. */
 function halfAt(depth: number): number {
   return CONVERGE_METRICS.strandHalf * CONVERGE_METRICS.depthTaper ** depth;
+}
+
+/**
+ * How much of its parent's belly one step of a chain asks for: its own label
+ * budget, whatever it spends inside itself, and the two tapers that pinch it to
+ * a point at its boundary circles.
+ *
+ * **One function, two uses.** `measure` sums these to size the belly and
+ * `place` divides the belly by the same vector — the same discipline
+ * `allocateBowsAroundSpine` already keeps for the band. Recomputing the weights
+ * at the cut would be the `hFit` mistake for a third time: the two would agree
+ * until some later arm of `measure` charged something one of them could not
+ * see, and the symptom would be a step drawn shorter than the name it holds.
+ */
+function stepDemand(step: Measure): number {
+  return step.hFit + step.hRun + 2 * CONVERGE_METRICS.minTendonRun;
 }
 
 interface Measure {
@@ -2703,6 +2765,8 @@ type MarkedStrand = {
   shortLabel: string | null;
   repeatMark: string | null;
   refinement: StrandRefinement | null;
+  /** See `PlanStrand.standingName`. Optional so a feed's record still fits. */
+  standingName?: string | null;
 };
 
 /**
@@ -2894,7 +2958,10 @@ export function spokenName(lane: {
 }
 
 export function drawnName(strand: MarkedStrand): string {
-  return `${strand.shortLabel ?? strand.label}${markSuffix(strand)}`;
+  // A standing phrase displaces the name entirely — it is not a short form of
+  // it. The `??` chain reads in drawing order for that reason: what the canvas
+  // writes, then the authored short form, then the name.
+  return `${strand.standingName ?? strand.shortLabel ?? strand.label}${markSuffix(strand)}`;
 }
 
 /** How far past its own edge a strand must clear before a variant row starts:
@@ -3032,11 +3099,10 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
     // boundary circle between two of them, which sits on the belly and pokes out
     // of the widest child's band.
     //
-    // `count × widest`, not the sum: `place` hands each step an equal slice of
-    // the belly, so the belly has to be long enough for the widest of them taken
-    // that many times. Summing would size the column for a division the
-    // placement does not make, and the step with the longest name would be the
-    // one clipped.
+    // **The sum, because `place` cuts by demand.** The belly has to hold every
+    // step's own demand laid end to end, and `levelShares` then gives each step
+    // exactly the piece this sum bought for it. `chainColumnNeed` carries the
+    // rule and the measurement that changed it from `k × widest`.
     const innerReach =
       Math.max(...children.map((child) => child.vHalf)) + M.innerStateRadius;
     return {
@@ -3044,15 +3110,34 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       // The feed clause used to be a bare label width, capped. It is now the
       // feed's own measured demand times `(n+1)` — which subsumes that label,
       // since a shut feed measures as a leaf whose `hFit` *is* its capped name.
-      hFit: Math.max(chainColumnNeed(children.map((child) => child.hFit)), feedFit),
+      // **`own` belongs in this max and was missing from it.** An opened chain
+      // wears its own name on the exoskeleton drawn along this very span (see
+      // `labelInside`/`framed`), so the column has to hold that name as much as
+      // it has to hold the steps — every other arm of `measureCore` includes it
+      // and this one did not. It never showed while the chain asked for
+      // `k × widest`: that number was larger than any single name on this
+      // corpus, so it paid for the name by accident. Cutting the demand to the
+      // sum removed the accident and the name went over the edge — measured on
+      // `hamiltonian-simulation` (ja) with `0.1` open, where the column dropped
+      // to 252.0px against `lcu-taylor-simulation`'s own 298.7px demand and the
+      // canvas drew "…によるシミュレ…". A latent hole, reached by making the
+      // sizing honest.
+      hFit: Math.max(own, chainColumnNeed(children.map((child) => child.hFit)), feedFit),
       // A step sits **on** the belly — `place` hands it bow 0 — so a chain adds
       // no bow of its own and buys no tendon of its own. What each step *does*
       // spend is its own two tendons, which at bow 0 are exactly `minTendonRun`
       // — the taper that pinches it to a point at its boundary circles. Those,
-      // plus whatever the step spends inside itself, then get the `k` multiplier
-      // for the same reason `chainColumnNeed` does: the step is drawn in a `1/k`
-      // slice, so a run spent inside one is a run the belly has to find `k`
-      // times over.
+      // plus whatever the step spends inside itself, are summed for the same
+      // reason the fit above is: a step is drawn in a slice as long as its own
+      // demand, so the belly finds each step's run once, for that step, rather
+      // than finding the deepest step's run `k` times over.
+      //
+      // The two lines together are `Σ stepDemand`, member for member — which is
+      // the length `levelShares` divides. That identity is the whole safety
+      // argument for cutting by demand and it is why the two arms are written
+      // as one sum each rather than as one combined number: `hFit` is a label
+      // budget and `hRun` is drawing room, and the file has already paid twice
+      // for letting those two collapse into each other.
       hRun:
         Math.max(
           chainColumnNeed(children.map((child) => child.hRun + 2 * M.minTendonRun)),
@@ -3377,7 +3462,11 @@ function place(
   const fitted = strand.composite
     ? { text: "", truncated: false }
     : strand.own !== null
-      ? fitLabel(ownStepName(context.locale), M.laneFont, nameBudget(context.columnFit))
+      ? // `drawnName`, not `ownStepName` a second time: the phrase the plan
+        // resolved is the one the column was sized for, and reading it through
+        // the same function the demand reads is what makes "sized for what it
+        // draws" a property of the code rather than of two literals agreeing.
+        fitLabel(drawnName(strand), M.laneFont, nameBudget(context.columnFit))
       : strand.nameless
         ? { text: "", truncated: false }
         : fitMarkedName(strand, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(strand));
@@ -3592,14 +3681,24 @@ function place(
     // R14 the owner named this session: *"tendons … make everything with content
     // horizontal, so things are easy to read and labels and lines don't cross
     // structurally."*
-    const pieces = levelSlices(belly, strand.children.length);
-    // Bow 0 for every step, so the row's run is `minTendonRun` — the taper that
-    // pinches each step to a point at its boundary circles. Through `runAcross`
-    // rather than as a literal, so the clamp against a short slice applies here
-    // too and the run a step is drawn with is the run `measure` charged for it.
-    const stepRun = runAcross([0], pieces[0]!.x1 - pieces[0]!.x0);
+    // **Cut by demand, not into equal slices.** See `chainColumnNeed` for the
+    // measurement that changed this and `levelShares` for the arithmetic; the
+    // weights are `stepDemand`, which is the same vector `measure` summed to buy
+    // this belly in the first place.
+    const pieces = levelShares(belly, size.children.map(stepDemand));
+    const bellyLength = belly.x1 - belly.x0;
     for (const [index, child] of strand.children.entries()) {
-      place(pieces[index]!, child, size.children[index]!, 0, stepRun, depth + 1, {
+      const piece = pieces[index]!;
+      // Bow 0 for every step, so a step's run is `minTendonRun` — the taper that
+      // pinches it to a point at its boundary circles. Through `runAcross`
+      // rather than as a literal, so the clamp against a short slice applies
+      // here too and the run a step is drawn with is the run `measure` charged
+      // for it. **Per piece since the pieces stopped being equal**: reading one
+      // run off `pieces[0]` was sound only while every piece was the same
+      // length, and it is the clamp — `min(wanted, length/2)` — that makes the
+      // difference visible, on exactly the shortest step.
+      const stepRun = runAcross([0], piece.x1 - piece.x0);
+      place(piece, child, size.children[index]!, 0, stepRun, depth + 1, {
         ...context,
         parentKey: strand.key,
         // Cleared: a step lies on the line it decomposes even when that line is
@@ -3607,8 +3706,11 @@ function place(
         feedKey: null,
         // Cleared for the same reason: a variant's own steps are not variants.
         variant: false,
-        // Each step gets its share of the column, so a chain of three names is
-        // fitted against a third of the width rather than against all of it.
+        // Each step is fitted against **the share of the column its own piece
+        // is**, not against a `1/k` of it — the same change the cut above made,
+        // read on the label budget. A step that was handed a fifth of the belly
+        // because a fifth is what it asked for may not then be fitted as though
+        // it held a half.
         //
         // Floored at the step's **own measured demand**, which is the number the
         // column was sized to hold in the first place. The share and the demand
@@ -3621,7 +3723,7 @@ function place(
         // agree by construction rather than by luck.
         columnFit: Math.max(
           size.children[index]!.hFit,
-          context.columnFit / strand.children.length,
+          bellyLength > 0 ? (context.columnFit * (piece.x1 - piece.x0)) / bellyLength : 0,
         ),
       });
     }
