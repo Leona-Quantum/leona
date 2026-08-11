@@ -1577,6 +1577,36 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Remez 交換法そのものの計算量を Dong・Meng・Whaley・Lin は述べていません。論文が述べているのは比較の形の利点です。$1/x$ の近似では、ミニマックス多項式は Fourier–Chebyshev 展開の打ち切りに比べ、同じ精度を 2〜3 分の 1 の次数で達成します。論文の表 III では、$\\varepsilon_0 = 10^{-14}$、$\\kappa = 10$〜$50$ の範囲で、打ち切りの次数 759〜4035 に対し、奇関数の場合 303〜1519、偶関数の場合 280〜1400 です。要旨ではなく本文に述べられています。",
     steps: [],
     atomic: true,
+    // A transcription of `conditions`, which states the loop outright: "the
+    // coefficients are solved from a reference set of degree-plus-two sampled
+    // points, which is then adjusted". `summary` supplies what it is for and
+    // what it beats.
+    //
+    // The attribution note is `conditions` verbatim and belongs in the listing
+    // as much as in the prose: Remez is classical approximation theory, and the
+    // citation on this record is the QSP paper that employs it, not its origin.
+    example: {
+      pseudocode: [
+        "given  the target function f, a degree d, and the interval",
+        "",
+        "choose a reference set of d + 2 sample points on the interval",
+        "",
+        "repeat:",
+        "    solve for the degree-d polynomial P and the equioscillation error E",
+        "        that fit f at the d + 2 reference points",
+        "    move the reference set to the extrema of  f - P",
+        "until the reference set stops moving",
+        "",
+        "return P",
+        "",
+        "# the genuine minimax polynomial of degree d, where truncating a Chebyshev",
+        "# series is only near-optimal -- a tighter polynomial of the same degree",
+        "# handed on to the phase-factor stage",
+        "",
+        "# classical approximation theory, not a quantum algorithm: the citation on",
+        "# this record is the QSP paper that employs it, not its origin",
+      ].join("\n"),
+    },
     citations: [
       { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
     ],
@@ -1717,6 +1747,36 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "Herbert は、区間積分を Grover と Rudolph が指定した方法で求める限り、端から端までの量子的な高速化は得られないことを示しました。量子モンテカルロの RMSE は状態準備回路へのクエリ数 $N_q$ に対して $\\Theta(1/N_q)$ で減少しますが、その区間積分を計算する古典モンテカルロの RMSE はサンプル数 $N_s$ に対して $\\Theta(1/sqrt(N_s))$ でしか減少しません。Herbert の Theorem 1 は、RMSE $ε̂$ を達成するには $Ω̃(1/ε̂²)$ 回の演算を要すると結論しており、これは古典的な速度です。",
     steps: [],
     atomic: true,
+    // A transcription of `summary` — "at layer k a uniformly controlled
+    // rotation splits each current interval's probability mass between its two
+    // halves, so only n rotation layers are needed" — with the integral this
+    // record's `conditions` is about written where it is actually needed.
+    //
+    // The closing comment is `conditions` verbatim, and it is the point of this
+    // card: the subinterval integrals must genuinely be available, Grover and
+    // Rudolph's own text points at Monte Carlo for the log-concave case, and
+    // the method is routinely cited as though the two classes were one.
+    example: {
+      pseudocode: [
+        "given  a probability density p over 2^n subintervals, n qubits, and a way to",
+        "       obtain the integral of p over any subinterval",
+        "",
+        "for k = 0 ... n - 1:",
+        "    # layer k, controlled on the k qubits already prepared",
+        "    for each of the 2^k current intervals I:",
+        "        theta_I = 2 arccos( sqrt( integral of p over the left half of I",
+        "                                  / integral of p over I ) )",
+        "    apply one uniformly controlled rotation carrying the angles theta_I",
+        "        to qubit k",
+        "",
+        "# n rotation layers, not 2^n -- that is the whole of the construction",
+        "",
+        "# sound only where those subinterval integrals are genuinely available in",
+        "# closed form or from an efficient deterministic routine. Grover and Rudolph",
+        "# point at Monte Carlo for the log-concave case, so \"efficiently integrable\"",
+        "# and \"log-concave\" are not the same class.",
+      ].join("\n"),
+    },
     citations: [
       { title: "Creating superpositions that correspond to efficiently integrable probability distributions", authors: "Lov Grover, Terry Rudolph", year: "2002", url: "https://arxiv.org/abs/quant-ph/0208112" },
       { title: "The Problem with Grover-Rudolph State Preparation for Quantum Monte-Carlo", authors: "Steven Herbert", year: "2021", url: "https://arxiv.org/abs/2101.02240" },
@@ -1841,6 +1901,29 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "弱点は精度への依存性であり、後続の系統はまさにそれを直すために作られました。Berry–Childs–Cleve–Kothari–Somma の打ち切り Taylor 級数の方法では、コストは要求精度の逆数に対して対数的に依存し、著者らはこれが最適だと述べています。とはいえ積公式が時代遅れになったわけではありません。上記の交換子に基づく限界は、定数の面でも構造を持つ系でも有利になることが多く、アンシラの追加も不要です。ただし、高精度が要求される場面で積公式だけを引用したコスト見積もりは、選ぶ系統を誤っています。",
     steps: [],
     atomic: true,
+    // A transcription of `summary` and `conditions`. The alternation, the
+    // absence of a block-encoding and of an all-zeros flag, the commutator
+    // error and the free choice of term order are all sentences already on this
+    // record. No error bound is written into the listing: `conditions` credits
+    // the commutator analysis to Childs, Su, Tran, Wiebe and Zhu without
+    // quoting a constant, and a listing is not the place to acquire one.
+    example: {
+      pseudocode: [
+        "given  H = sum_j H_j  with each H_j efficiently exponentiable,",
+        "       evolution time t, step count r,  h = t/r",
+        "",
+        "for step = 1 ... r:",
+        "    # first order (Lie-Trotter): one short evolution per summand, in order",
+        "    for j = 1 ... m:   apply exp(-i h H_j)",
+        "    # higher order: the same summands in the symmetrised sub-step sequence",
+        "    # of the chosen Suzuki formula",
+        "",
+        "# no block-encoding is built, and there is no all-zeros flag to amplify",
+        "",
+        "# the error is governed by commutators among the summands, and the term",
+        "# order affects it -- the formula itself does not fix that order",
+      ].join("\n"),
+    },
     bypasses: ["block-encode-matrix"],
     entries: ["trotter-suzuki-simulation"],
     citations: [
@@ -2194,6 +2277,33 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "実務上支配的な場合については、既に置き換えられています。Clifford+T の $z$ 回転では数論的な合成が $\\log(1/\\varepsilon)$ に比例する $T$ 数に達するのに対し、ゲート集合を問わない Solovay–Kitaev の上界は指数がおよそ 3.97 です。代数的な構造を利用できないゲート集合でだけ残る手段であり、そこでも Kuperberg が指数を下げています。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`: "recursively refine an approximation using
+    // group commutators, for any finite inverse-closed set that densely
+    // generates the group". Written as the recursion because that sentence is a
+    // recursion, and the hypotheses in the closing comment are `conditions`
+    // verbatim — including the one this record exists to state, that the
+    // algorithm gives no optimality guarantee.
+    example: {
+      pseudocode: [
+        "given  a target unitary U, a finite inverse-closed generating set that",
+        "       densely generates the group, and a recursion depth n",
+        "",
+        "function approximate(U, n):",
+        "    if n == 0:",
+        "        return the nearest element of the precomputed net over the base set",
+        "    V = approximate(U, n - 1)",
+        "    D = U V^-1                       # what the previous level left to correct",
+        "    write D as a group commutator    D = A B A^-1 B^-1",
+        "    A' = approximate(A, n - 1)",
+        "    B' = approximate(B, n - 1)",
+        "    return A' B' A'^-1 B'^-1 V",
+        "",
+        "return approximate(U, n)",
+        "",
+        "# the general-purpose fallback: it works on gate sets with no exploitable",
+        "# algebraic structure, and it gives no optimality guarantee",
+      ].join("\n"),
+    },
     citations: [
       { title: "The Solovay-Kitaev algorithm", authors: "Christopher M. Dawson, Michael A. Nielsen", year: "2005", url: "https://arxiv.org/abs/quant-ph/0505030" },
       { title: "Breaking the cubic barrier in the Solovay-Kitaev algorithm", authors: "Greg Kuperberg", year: "2023", url: "https://arxiv.org/abs/2306.13158" },
@@ -2258,6 +2368,32 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "看板となった実証、すなわち誤り耐性以前における量子計算の有用性の裏付けとして報告された 127 量子ビットの IBM Eagle での kicked Ising 実験（Kim ら、Nature 618, 500 (2023)）は、その後に古典計算で再現され、精度でも上回られました。一つは信念伝播に基づくテンソルネットワーク（Tindall・Fishman・Stoudenmire・Sels）で、量子プロセッサの結果より正確かつ精密でした。もう一つはノートパソコンの 1 コア上で走らせた疎パウリ動力学（Begusic・Chan）で、報告された量子側の実行時間より桁違いに高速でした。誤り緩和そのものは機能しました。残らなかったのは量子優位という読み方です。",
     steps: [],
     atomic: true,
+    // A transcription of `summary` and `conditions`. The three caveats in the
+    // trailing comment are `conditions` verbatim and are the reason the listing
+    // is worth having on this record: the returned object is an expectation
+    // value, and the sentence that says it cannot be handed to a coherent
+    // downstream subroutine is the one a reader planning a pipeline needs.
+    example: {
+      pseudocode: [
+        "given  a circuit C, an observable O, an extrapolation model,",
+        "       and noise scale factors s_1 < s_2 < ... < s_m  (s_1 = 1, the device as it is)",
+        "",
+        "for each scale factor s:",
+        "    build C_s -- the same circuit with the device noise amplified by s",
+        "    measure <O> on C_s over enough shots for the target variance",
+        "",
+        "fit the chosen model to the points (s, <O>_s)",
+        "    # Richardson's deferred approach to the limit, or another model",
+        "",
+        "return the fit evaluated at s = 0",
+        "",
+        "# the extrapolation model is an assumption, and a wrong model produces a",
+        "# confidently wrong number",
+        "# bias falls while variance rises, so the shot cost goes up",
+        "# what comes back is an expectation value: it cannot be handed to a coherent",
+        "# downstream subroutine",
+      ].join("\n"),
+    },
     citations: [
       { title: "Error mitigation for short-depth quantum circuits", authors: "Kristan Temme, Sergey Bravyi, Jay M. Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
       { title: "Efficient tensor network simulation of IBM's Eagle kicked Ising experiment", authors: "Joseph Tindall, Matt Fishman, Miles Stoudenmire, Dries Sels", year: "2023", url: "https://arxiv.org/abs/2306.14887" },
@@ -2297,6 +2433,35 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Nation・Kang・Sundaresan・Gambetta は、行列を陽に作らない前処理付きの反復解法が $O(1)$ 回の反復で収束し、直接分解に比べて桁違いに少ないメモリで済み、直接法では扱えない量子ビット数でも数秒で緩和できると報告しています。",
     steps: [],
     atomic: true,
+    // Two listings in one, because `summary` describes two forms — "the naive
+    // form calibrates and inverts the full 2^n x 2^n matrix; the scalable form
+    // never forms it" — and a single listing would have to pick one and read as
+    // if it were the method. The displaced form is written as a comment rather
+    // than as steps, so nothing here reads as a recommendation to build it.
+    //
+    // The category-error sentence is `conditions` verbatim, and it is on this
+    // record because the mistake it names is common.
+    example: {
+      pseudocode: [
+        "given  the observed counts over the bitstrings the device actually returned",
+        "",
+        "# The form Nation et al. displace, for contrast -- do not build this:",
+        "#     calibrate the full 2^n x 2^n assignment matrix A, then apply A^-1.",
+        "#     That needs 2^n calibration circuits and a 2^n x 2^n inverse, and it",
+        "#     can return unphysical negative probabilities.",
+        "",
+        "# The scalable form never forms A:",
+        "restrict to the subspace spanned by the observed bitstrings",
+        "build only the entries of A that act within that subspace",
+        "solve  A_sub p_true = p_observed  iteratively, without forming an inverse",
+        "",
+        "return p_true, with its computable error bound",
+        "",
+        "# readout error only. This does nothing about gate or decoherence error, and",
+        "# treating it as general-purpose mitigation is a category error.",
+        "# correlated as well as uncorrelated errors are accommodated",
+      ].join("\n"),
+    },
     citations: [
       { title: "Scalable mitigation of measurement errors on quantum computers", authors: "Paul D. Nation, Hwajung Kang, Neereja Sundaresan, Jay M. Gambetta", year: "2021", url: "https://arxiv.org/abs/2108.12518" },
     ],
