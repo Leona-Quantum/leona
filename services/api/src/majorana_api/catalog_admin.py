@@ -707,6 +707,61 @@ async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
     return reviewer
 
 
+def format_reviewer_report(
+    rows: Sequence[tuple[uuid.UUID, Role, str]],
+    *,
+    signed: Mapping[uuid.UUID, int],
+    service_ids: frozenset[uuid.UUID],
+) -> list[str]:
+    """The reviewer report, as lines, decided without a database.
+
+    Separated from the query for the reason the rest of this module already is:
+    the part worth testing is which accounts get marked and which do not, and a
+    test that needs Postgres is a test the unit suite does not run.
+
+    It matters more here than "it is only display" suggests. These lines are the
+    entire input to a decision about who may attest to the public corpus, and a
+    wrong mark — an eligible account labelled retired, or a retired one not
+    labelled at all — sends the reader to the wrong answer with no way to notice.
+
+    Marks are cumulative rather than exclusive: an account can be both a service
+    identity and retired, and reporting only the first would hide the other.
+    """
+    admins = [(user_id, workos) for user_id, role, workos in rows if role == Role.ADMIN]
+    lines = [f"catalog reviewer grants: {len(admins)} ADMIN membership(s)"]
+    eligible = 0
+    for user_id, workos in sorted(admins, key=lambda row: str(row[0])):
+        marks = []
+        if user_id in service_ids:
+            marks.append("SERVICE IDENTITY — never eligible")
+        if workos.startswith(_RETIRED_WORKOS_PREFIX):
+            marks.append("RETIRED workos id — cannot sign in")
+        if not marks and signed.get(user_id, 0) > 0:
+            eligible += 1
+        note = f"  [{'; '.join(marks)}]" if marks else ""
+        lines.append(f"  {user_id}  signed={signed.get(user_id, 0)}{note}")
+    lines.append(
+        "The account with signatures is the standing reviewer "
+        "(license_assertions.reviewer_user_id)."
+    )
+    # Said as a verdict rather than left as arithmetic for the reader. This
+    # report exists because somebody was being asked to decide from raw rows;
+    # printing the rows and stopping would reproduce that.
+    if eligible == 1:
+        lines.append(
+            "VERDICT: exactly one eligible account has signed — "
+            "--attested-by-standing can resolve this on its own. Unpark with: "
+            "gh variable set CATALOG_SYNC_ENABLED --body true"
+        )
+    else:
+        lines.append(
+            f"VERDICT: {eligible} eligible accounts have signed — "
+            "--attested-by-standing will refuse. A person must pick one and pass "
+            "--attested-by explicitly."
+        )
+    return lines
+
+
 async def _report_reviewers() -> None:
     """Print who holds the catalog reviewer grant, and what each has signed.
 
@@ -740,21 +795,8 @@ async def _report_reviewers() -> None:
     finally:
         await engine.dispose()
 
-    admins = [(user_id, workos) for user_id, role, workos in rows if role == Role.ADMIN]
-    print(f"catalog reviewer grants: {len(admins)} ADMIN membership(s)")
-    for user_id, workos in sorted(admins, key=lambda row: str(row[0])):
-        marks = []
-        if user_id in service_ids:
-            marks.append("SERVICE IDENTITY — never eligible")
-        if workos.startswith(_RETIRED_WORKOS_PREFIX):
-            marks.append("RETIRED workos id — cannot sign in")
-        note = f"  [{'; '.join(marks)}]" if marks else ""
-        print(f"  {user_id}  signed={signed.get(user_id, 0)}{note}")
-    print(
-        "The account with signatures is the standing reviewer "
-        "(license_assertions.reviewer_user_id). One eligible signatory means "
-        "--attested-by-standing can resolve this on its own."
-    )
+    for line in format_reviewer_report(rows, signed=signed, service_ids=frozenset(service_ids)):
+        print(line)
 
 
 async def _resolve_reviewer_by_email(email: str) -> uuid.UUID:
