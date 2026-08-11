@@ -110,13 +110,13 @@ export const LAYER_GRAPH: LayerGraph = {
     hops: {
       "observable-estimation": {
         theory:
-          "No state is read out here: what is produced is ⟨O⟩ = Σ_x O(x) f(x), the expectation value of a phase-space observable. An ancilla is appended and R̂_φ built by a reversible computation of φ = O^{1/2}ψ — \"the reversible calculation requires two KvN simulations: one to compute φ … and one to uncompute φ, which requires running the KvN simulation backward in time\". Amplitude estimation of the ancilla's |1⟩ amplitude then gives the estimate. " +
-          "[[approximation: Amplitude estimation returns an estimate rather than the value. \"Since each evaluation of R̂_φ and R̂†_φ uses two evaluations of |ψ⟩, the amplitude amplification algorithm requires four KvN simulations to be performed per step\", so accuracy ε costs 4K ∼ O(1/ε) simulations — the readout re-invokes the step above it rather than measuring its output.]] " +
-          "Joseph rules out the two alternatives by name: averaging repeated projective measurements returns to the classical 1/ε^2 law, and measuring the entire PDF over all states he calls \"not desirable\".",
+          "No state is read out here: what is produced is $⟨O⟩ = \\Sigma_x O(x) f(x)$, the expectation value of a phase-space observable. An ancilla is appended and $R̂_\\phi$ built by a reversible computation of $\\phi = O^{1/2}\\psi$ — \"the reversible calculation requires two KvN simulations: one to compute $\\phi$ … and one to uncompute $\\phi$, which requires running the KvN simulation backward in time\". Amplitude estimation of the ancilla's $|1\\rangle$ amplitude then gives the estimate. " +
+          "[[approximation: Amplitude estimation returns an estimate rather than the value. \"Since each evaluation of $R̂_\\phi$ and $R̂\\dagger_\\phi$ uses two evaluations of $|\\psi\\rangle$, the amplitude amplification algorithm requires four KvN simulations to be performed per step\", so accuracy $\\varepsilon$ costs $4K \\sim O(1/\\varepsilon)$ simulations — the readout re-invokes the step above it rather than measuring its output.]] " +
+          "Joseph rules out the two alternatives by name: averaging repeated projective measurements returns to the classical $1/\\varepsilon^2$ law, and measuring the entire PDF over all states he calls \"not desirable\".",
         theoryJa:
-          "ここでは状態そのものは読み出されません。得られるのは位相空間の観測量の期待値 ⟨O⟩ = Σ_x O(x) f(x) です。補助量子ビットを一つ加え、φ = O^{1/2}ψ の可逆計算によって R̂_φ を構成します。「この可逆計算には二回の KvN シミュレーションが必要である。一回は φ を計算するため、もう一回は φ を打ち消すためで、後者は KvN シミュレーションを時間逆向きに走らせることを要する」とされています。続いて補助量子ビットの |1⟩ 振幅を振幅推定します。" +
-          "[[approximation: 振幅推定が返すのは値ではなく推定値です。「R̂_φ と R̂†_φ の各評価が |ψ⟩ の評価を二回使うため、振幅増幅アルゴリズムは一段あたり四回の KvN シミュレーションを要する」とされ、精度 ε には 4K ∼ O(1/ε) 回かかります。読み出しは上の工程の出力を測るのではなく、上の工程を呼び直しています。]] " +
-          "Joseph は代替案を名指しで退けています。射影測定を繰り返して平均を取る方法は古典的な 1/ε^2 の法則に戻ってしまい、全状態にわたって確率密度関数そのものを測ることは「望ましくない」と述べています。",
+          "ここでは状態そのものは読み出されません。得られるのは位相空間の観測量の期待値 $⟨O⟩ = \\Sigma_x O(x) f(x)$ です。補助量子ビットを一つ加え、$\\phi = O^{1/2}\\psi$ の可逆計算によって $R̂_\\phi$ を構成します。「この可逆計算には二回の KvN シミュレーションが必要である。一回は $\\phi$ を計算するため、もう一回は $\\phi$ を打ち消すためで、後者は KvN シミュレーションを時間逆向きに走らせることを要する」とされています。続いて補助量子ビットの $|1\\rangle$ 振幅を振幅推定します。" +
+          "[[approximation: 振幅推定が返すのは値ではなく推定値です。「$R̂_\\phi$ と $R̂\\dagger_\\phi$ の各評価が $|\\psi\\rangle$ の評価を二回使うため、振幅増幅アルゴリズムは一段あたり四回の KvN シミュレーションを要する」とされ、精度 $\\varepsilon$ には $4K \\sim O(1/\\varepsilon)$ 回かかります。読み出しは上の工程の出力を測るのではなく、上の工程を呼び直しています。]] " +
+          "Joseph は代替案を名指しで退けています。射影測定を繰り返して平均を取る方法は古典的な $1/\\varepsilon^2$ の法則に戻ってしまい、全状態にわたって確率密度関数そのものを測ることは「望ましくない」と述べています。",
       },
     },
     // The lift this route uses returns a *Hermitian* generator, and that is the
@@ -600,15 +600,15 @@ export const LAYER_GRAPH: LayerGraph = {
     hops: {
       "lchs-route": {
         theory:
-          "The simulated unitaries are combined by LCU: a prepare pair loads the quadrature weights onto an ancilla register and a select oracle indexes the family, so that W block-encodes Σ_j c_j U_j on the all-zeros branch. " +
-          "[[assumption: \"The final step is to measure all the ancilla registers, and if all the outcomes are 0, then the resulting state approximately encodes the solution u(t) of the ODE\" — that outcome is the flag every theorem in the paper refers to.]] " +
-          "One shot succeeds with probability (‖T|ψ⟩‖/‖α‖_1)^2, and amplitude amplification raises it to Ω(1) at O(‖α‖_1/‖T|ψ⟩‖) queries. " +
-          "The paper gives a second ending the map does not draw: a hybrid implementation that estimates ⟨u_0|U†_k O U_k'|u_0⟩ by a Hadamard test and amplitude estimation, and performs the summation classically by Monte Carlo sampling.",
+          "The simulated unitaries are combined by LCU: a prepare pair loads the quadrature weights onto an ancilla register and a select oracle indexes the family, so that W block-encodes $\\Sigma_j c_j U_j$ on the all-zeros branch. " +
+          "[[assumption: \"The final step is to measure all the ancilla registers, and if all the outcomes are 0, then the resulting state approximately encodes the solution $u(t)$ of the ODE\" — that outcome is the flag every theorem in the paper refers to.]] " +
+          "One shot succeeds with probability (‖T|ψ⟩‖/‖α‖_1)^2, and amplitude amplification raises it to $\\Omega(1)$ at O(‖α‖_1/‖T|ψ⟩‖) queries. " +
+          "The paper gives a second ending the map does not draw: a hybrid implementation that estimates $⟨u_0|U\\dagger_k O U_k'|u_0⟩$ by a Hadamard test and amplitude estimation, and performs the summation classically by Monte Carlo sampling.",
         theoryJa:
-          "シミュレートしたユニタリ群は LCU で線形結合されます。prepare 対が求積の重みを補助レジスタに載せ、select オラクルが各ユニタリを選びますので、W は Σ_j c_j U_j を全ゼロの枝にブロック符号化します。" +
-          "[[assumption: 「最後に補助レジスタをすべて測定し、結果がすべて 0 であれば、得られる状態が ODE の解 u(t) を近似的に符号化する」とされており、この結果が論文の各定理のいう成功フラグです。]] " +
-          "一回の成功確率は (‖T|ψ⟩‖/‖α‖_1)^2 で、振幅増幅により O(‖α‖_1/‖T|ψ⟩‖) 回の問い合わせで Ω(1) まで引き上げられます。" +
-          "論文には地図が描いていないもう一つの終わり方もあります。ハイブリッド実装で、⟨u_0|U†_k O U_k'|u_0⟩ を Hadamard テストと振幅推定で見積もり、総和は古典的なモンテカルロ標本抽出で取ります。",
+          "シミュレートしたユニタリ群は LCU で線形結合されます。prepare 対が求積の重みを補助レジスタに載せ、select オラクルが各ユニタリを選びますので、W は $\\Sigma_j c_j U_j$ を全ゼロの枝にブロック符号化します。" +
+          "[[assumption: 「最後に補助レジスタをすべて測定し、結果がすべて 0 であれば、得られる状態が ODE の解 $u(t)$ を近似的に符号化する」とされており、この結果が論文の各定理のいう成功フラグです。]] " +
+          "一回の成功確率は (‖T|ψ⟩‖/‖α‖_1)^2 で、振幅増幅により O(‖α‖_1/‖T|ψ⟩‖) 回の問い合わせで $\\Omega(1)$ まで引き上げられます。" +
+          "論文には地図が描いていないもう一つの終わり方もあります。ハイブリッド実装で、$⟨u_0|U\\dagger_k O U_k'|u_0⟩$ を Hadamard テストと振幅推定で見積もり、総和は古典的なモンテカルロ標本抽出で取ります。",
       },
     },
     via: { "hamiltonian-recasting": "lchs-kernel-identity" },
@@ -712,13 +712,13 @@ export const LAYER_GRAPH: LayerGraph = {
     hops: {
       schrodingerisation: {
         theory:
-          "\"By applying an inverse quantum Fourier transform F_p^{-1}, with respect to p, onto the second register we obtain |w(t)⟩\", and the solution is then recovered by restricting to p > 0 — as the integral u(t,x) = ∫_0^∞ w(t,x,p) dp, or on the state by projecting onto 1 ⊗ Σ_{k=N/2}^{N} |k⟩⟨k|. " +
-          "[[assumption: Only the p > 0 half-line carries u, so what survives is what that projection keeps: \"a simple projection retrieves |u(t)⟩ with probability (‖u(t)‖‖exp(−p)‖/‖w(t)‖)^2 ∼ N(‖u(t)‖/‖w(t)‖)^2\".]] " +
-          "Amplitude amplification with the oracle Q = −S_w S_p raises that to ∼√N‖u(t)‖/‖w(t)‖, at Õ(‖w(t)‖/(√N‖u(t)‖)) queries to Q. The paper also allows a pointwise recovery instead: choose any p* > 0 and take u(t,x) = e^{p*} w(t,x,p*).",
+          "\"By applying an inverse quantum Fourier transform $F_p^{-1}$, with respect to p, onto the second register we obtain $|w(t)\\rangle$\", and the solution is then recovered by restricting to $p > 0$ — as the integral $u(t,x) = ∫_0^∞ w(t,x,p) dp$, or on the state by projecting onto $1 \\otimes \\Sigma_{k=N/2}^{N} |k⟩⟨k|$. " +
+          "[[assumption: Only the $p > 0$ half-line carries u, so what survives is what that projection keeps: \"a simple projection retrieves |u(t)⟩ with probability (‖u(t)‖‖exp(−p)‖/‖w(t)‖)^2 ∼ N(‖u(t)‖/‖w(t)‖)^2\".]] " +
+          "Amplitude amplification with the oracle $Q = −S_w S_p$ raises that to ∼√N‖u(t)‖/‖w(t)‖, at Õ(‖w(t)‖/(√N‖u(t)‖)) queries to Q. The paper also allows a pointwise recovery instead: choose any $p* > 0$ and take $u(t,x) = e^{p*} w(t,x,p*)$.",
         theoryJa:
-          "「第二レジスタに対して p に関する逆量子 Fourier 変換 F_p^{-1} を施すと |w(t)⟩ が得られる」とされ、解はそこから p > 0 に制限して復元されます。積分としては u(t,x) = ∫_0^∞ w(t,x,p) dp、状態としては 1 ⊗ Σ_{k=N/2}^{N} |k⟩⟨k| への射影です。" +
-          "[[assumption: u を担うのは p > 0 の半直線だけですので、残るのはその射影が残したものです。「単純な射影は確率 (‖u(t)‖‖exp(−p)‖/‖w(t)‖)^2 ∼ N(‖u(t)‖/‖w(t)‖)^2 で |u(t)⟩ を取り出す」とされています。]] " +
-          "オラクル Q = −S_w S_p による振幅増幅はこれを ∼√N‖u(t)‖/‖w(t)‖ まで引き上げ、Q への問い合わせは Õ(‖w(t)‖/(√N‖u(t)‖)) 回です。論文は各点での復元も認めています。任意の p* > 0 を選び u(t,x) = e^{p*} w(t,x,p*) とするやり方です。",
+          "「第二レジスタに対して p に関する逆量子 Fourier 変換 $F_p^{-1}$ を施すと $|w(t)\\rangle$ が得られる」とされ、解はそこから $p > 0$ に制限して復元されます。積分としては $u(t,x) = ∫_0^∞ w(t,x,p) dp$、状態としては $1 \\otimes \\Sigma_{k=N/2}^{N} |k⟩⟨k|$ への射影です。" +
+          "[[assumption: u を担うのは $p > 0$ の半直線だけですので、残るのはその射影が残したものです。「単純な射影は確率 (‖u(t)‖‖exp(−p)‖/‖w(t)‖)^2 ∼ N(‖u(t)‖/‖w(t)‖)^2 で |u(t)⟩ を取り出す」とされています。]] " +
+          "オラクル $Q = −S_w S_p$ による振幅増幅はこれを ∼√N‖u(t)‖/‖w(t)‖ まで引き上げ、Q への問い合わせは Õ(‖w(t)‖/(√N‖u(t)‖)) 回です。論文は各点での復元も認めています。任意の $p* > 0$ を選び $u(t,x) = e^{p*} w(t,x,p*)$ とするやり方です。",
       },
     },
     via: { "hamiltonian-recasting": "warped-phase-transformation" },
@@ -854,13 +854,13 @@ export const LAYER_GRAPH: LayerGraph = {
     hops: {
       "forward-euler": {
         theory:
-          "The steps are u_{k+1} = (I + hA)u_k + h b_k, assembled into a banded all-at-once linear system. " +
-          "[[approximation: First-order local accuracy, which is what leaves the surrounding algorithm with 1/ε rather than log(1/ε) precision dependence.]] " +
-          "[[assumption: Explicit, and therefore conditionally stable — a stiff generator forces a small step h and hence many steps, inflating the dimension of the assembled system.]]",
+          "The steps are $u_{k+1} = (I + hA)u_k + h b_k$, assembled into a banded all-at-once linear system. " +
+          "[[approximation: First-order local accuracy, which is what leaves the surrounding algorithm with $1/\\varepsilon$ rather than $\\log(1/\\varepsilon)$ precision dependence.]] " +
+          "[[assumption: Explicit, and therefore conditionally stable — a stiff generator forces a small step $h$ and hence many steps, inflating the dimension of the assembled system.]]",
         theoryJa:
-          "各ステップは u_{k+1} = (I + hA)u_k + h b_k で、これを帯行列の一括線形系にまとめます。" +
-          "[[approximation: 一次精度であることが、周囲のアルゴリズムの精度依存性を log(1/ε) ではなく 1/ε にとどめます。]] " +
-          "[[assumption: 陽的であるため条件付き安定です。剛性の強い生成子では刻み幅 h を小さくせざるをえず、ステップ数が増えて組み立てた線形系の次元が膨らみます。]]",
+          "各ステップは $u_{k+1} = (I + hA)u_k + h b_k$ で、これを帯行列の一括線形系にまとめます。" +
+          "[[approximation: 一次精度であることが、周囲のアルゴリズムの精度依存性を $\\log(1/\\varepsilon)$ ではなく $1/\\varepsilon$ にとどめます。]] " +
+          "[[assumption: 陽的であるため条件付き安定です。剛性の強い生成子では刻み幅 $h$ を小さくせざるをえず、ステップ数が増えて組み立てた線形系の次元が膨らみます。]]",
       },
     },
     citations: [
@@ -955,11 +955,11 @@ export const LAYER_GRAPH: LayerGraph = {
     hops: {
       "backward-euler": {
         theory:
-          "Each step solves (I − hA)u_{k+1} = u_k + h b_{k+1}, once per time step — T/h of them to reach time T. " +
-          "[[approximation: First-order implicit stepping, so the precision dependence stays polynomial in 1/ε.]]",
+          "Each step solves $(I − hA)u_{k+1} = u_k + h b_{k+1}$, once per time step — $T/h$ of them to reach time $T$. " +
+          "[[approximation: First-order implicit stepping, so the precision dependence stays polynomial in $1/\\varepsilon$.]]",
         theoryJa:
-          "各ステップは (I − hA)u_{k+1} = u_k + h b_{k+1} を解きます。各時間ステップにつき 1 回、時刻 T に達するまでに T/h 回です。" +
-          "[[approximation: 一次精度の陰的な時間刻みですので、精度依存性は 1/ε の多項式のままです。]]",
+          "各ステップは $(I − hA)u_{k+1} = u_k + h b_{k+1}$ を解きます。各時間ステップにつき 1 回、時刻 $T$ に達するまでに $T/h$ 回です。" +
+          "[[approximation: 一次精度の陰的な時間刻みですので、精度依存性は $1/\\varepsilon$ の多項式のままです。]]",
       },
     },
     citations: [
