@@ -175,6 +175,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "doi:10.1017/cbo9780511973765", title: "Quantum Phase Transitions", authors: "S. Sachdev", year: "2011", url: "https://doi.org/10.1017/cbo9780511973765" },
     { id: "doi:10.1017/cbo9780511976667", title: "Quantum Computation and Quantum Information: 10th Anniversary Edition", authors: "Michael A. Nielsen and Isaac L. Chuang", year: "2010", url: "https://doi.org/10.1017/cbo9780511976667" },
     { id: "doi:10.1098/rspa.1963.0204", title: "Electron Correlations in Narrow Energy Bands", authors: "J. Hubbard", year: "1963", url: "https://doi.org/10.1098/rspa.1963.0204" },
+    { id: "doi:10.1098/rspa.1992.0167", title: "Rapid solution of problems by quantum computation", authors: "David Deutsch, Richard Jozsa", year: "1992", url: "https://doi.org/10.1098/rspa.1992.0167" },
     { id: "doi:10.1103/physicsphysiquefizika.1.195", title: "On the Einstein Podolsky Rosen Paradox", authors: "John S. Bell", year: "1964", url: "https://doi.org/10.1103/physicsphysiquefizika.1.195" },
     { id: "doi:10.1103/physrev.93.99", title: "Coherence in Spontaneous Radiation Processes", authors: "R. H. Dicke", year: "1954", url: "https://doi.org/10.1103/physrev.93.99" },
     { id: "doi:10.1103/physreva.40.4277", title: "Quantum states with Einstein-Podolsky-Rosen correlations admitting a hidden-variable model", authors: "R. F. Werner", year: "1989", url: "https://doi.org/10.1103/physreva.40.4277" },
@@ -186,6 +187,7 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "doi:10.1109/9.119632", title: "Multivariate stochastic approximation using a simultaneous perturbation gradient approximation", authors: "J. C. Spall", year: "1992", url: "https://doi.org/10.1109/9.119632" },
     { id: "doi:10.1109/dac18074.2021.9586240", title: "An Efficient Algorithm for Sparse Quantum State Preparation", authors: "Gleinig, Hoefler", year: "2021", url: "https://doi.org/10.1109/dac18074.2021.9586240" },
     { id: "doi:10.1126/science.273.5278.1073", title: "Universal Quantum Simulators", authors: "Seth Lloyd", year: "1996", url: "https://doi.org/10.1126/science.273.5278.1073" },
+    { id: "doi:10.1137/s0097539796300921", title: "Quantum Complexity Theory", authors: "Ethan Bernstein, Umesh Vazirani", year: "1997", url: "https://doi.org/10.1137/s0097539796300921" },
     { id: "doi:10.1145/3168822", title: "Qubit allocation", authors: "Siraichi, Santos, Collange, Pereira", year: "2018", url: "https://doi.org/10.1145/3168822" },
   ],
 };
