@@ -30,6 +30,7 @@ import {
   layoutConverge,
   layoutConvergeForMethod,
   legendMark,
+  ownStepName,
   spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -1804,25 +1805,30 @@ test("an opened figure still names every drawn label without clipping it", () =>
     for (const locale of ["en", "ja"] as const) {
       for (const open of openings(focus.id)) {
         for (const lane of openDiagram(focus.id, open, locale).lanes) {
-          // Two lanes draw nothing, for opposite reasons, and both are
-          // **declared** rather than inferred:
+          // Two kinds of lane suppress their NAME, and both are **declared**
+          // rather than inferred:
           //   `composite` — the run of named hops, whose own name would be
-          //                 `A → B`, the coined composite the owner refused;
-          //   `nameless`  — the remainder hop, the part of a route the method
-          //                 performs itself. Its name is the method's, and the
-          //                 method writes it once, on the bone above it.
-          // Before session 104 the remainder hop drew the method's name a
-          // second time, one level down, which is what the owner saw as
-          // *"time marching expands into propagation then itself"*.
+          //                 `A → B`, the coined composite the owner refused.
+          //                 Draws nothing, ever.
+          //   `nameless`  — a lane whose real name something else on the canvas
+          //                 already draws. Its remainder-hop case (`own`) draws
+          //                 the standing PHRASE since W19 — `ownStepName`, not
+          //                 the method's name, so the session-104 duplicate
+          //                 ("time marching expands into propagation then
+          //                 itself") stays impossible while the session-113
+          //                 blank ("i would like them labeled") is finally
+          //                 paid. The other nameless case (an open feed's fan
+          //                 base, session 118) still draws nothing: its name is
+          //                 on the stub one shape above.
           //
           // Checked both ways round, which is what makes it a check rather than
           // a restatement: `lane.open` was here first and is not the predicate —
           // an ordinary opened lane that lost its name would have passed.
-          const declaredSilent = lane.composite || lane.nameless;
+          const declaredSilent = lane.composite || (lane.nameless && lane.own === null);
           if (lane.label === "") {
             assert.ok(
               declaredSilent,
-              `${lane.key} draws no name and is neither a composite run nor a remainder hop`,
+              `${lane.key} draws no name and is neither a composite run nor a borrowed-name lane`,
             );
             continue;
           }
@@ -1831,6 +1837,13 @@ test("an opened figure still names every drawn label without clipping it", () =>
             `${lane.key} declares itself silent (composite=${lane.composite} ` +
               `nameless=${lane.nameless}) yet draws "${lane.label}"`,
           );
+          if (lane.own !== null) {
+            assert.equal(
+              lane.label,
+              ownStepName(locale),
+              `${lane.key} is a remainder hop but draws "${lane.label}", not the standing phrase`,
+            );
+          }
           assert.ok(lane.fullLabel !== "", `${lane.key} has a drawn name but no full one`);
           assert.equal(
             lane.labelTruncated,
@@ -2443,6 +2456,104 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
     "a recorded multiplicity reaches no figure at all",
   );
   console.log(`[map repeat census] ${expected.size} records, ${marked} marked lanes drawn across every figure and opening`);
+});
+
+test("a loop draws as a loop exactly where a count is drawn (W19)", () => {
+  // The owner's ask, verbatim: *"iterator needs to be clearer if there is one
+  // with arrows."* The corpus records closure on every repetition; before W19
+  // the renderer read it zero times. Both directions are the check: a marked
+  // shape without a closure is a loop the glyph misses, and a closure without
+  // a mark is a loop no source counted — `withRepeatMark` writes them
+  // together, and this is what says nothing else writes either.
+  let closures = 0;
+  const seen = new Set<string>();
+  const sweep = (diagram: ConvergeDiagram, where: string) => {
+    for (const lane of diagram.lanes) {
+      assert.equal(
+        lane.loopClosure !== null,
+        lane.repeatMark !== null,
+        `${where}: ${lane.key} has repeatMark=${lane.repeatMark} but loopClosure=${lane.loopClosure}`,
+      );
+      if (lane.loopClosure !== null) {
+        closures += 1;
+        seen.add(lane.loopClosure);
+      }
+    }
+    for (const feed of diagram.feeds) {
+      assert.equal(
+        feed.loopClosure !== null,
+        feed.repeatMark !== null,
+        `${where}: ${feed.key} has repeatMark=${feed.repeatMark} but loopClosure=${feed.loopClosure}`,
+      );
+      // The glyph is end-anchored on the engine's own measurement of the drawn
+      // string. A second derivation of a width is what clipped the widest
+      // label in a column built for it, twice — so the carried number IS the
+      // measurement, asserted, not trusted.
+      assert.ok(
+        Math.abs(feed.labelWidth - estimateTextWidth(feed.label, CONVERGE_METRICS.laneFont)) < EPS,
+        `${where}: ${feed.key} carries labelWidth=${feed.labelWidth} for "${feed.label}"`,
+      );
+      if (feed.loopClosure !== null) {
+        closures += 1;
+        seen.add(feed.loopClosure);
+      }
+    }
+  };
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of openings(focus.id)) {
+        sweep(openDiagram(focus.id, open, locale), `${focus.id} (${locale})`);
+      }
+    }
+  }
+  for (const method of LAYER_GRAPH.nodes) {
+    if (!isMethod(method) || method.repeats === undefined) continue;
+    sweep(pageFigure(method.id), `${method.id} page`);
+  }
+  // The denominator, and the distinction: both closures must actually reach a
+  // drawing, or the styled difference between a coherent and a measured loop
+  // is a CSS rule nothing exercises.
+  assert.ok(closures > 0, "no closure reached any figure — the glyph draws nowhere");
+  assert.ok(seen.has("coherent"), "no coherent loop reaches a drawing");
+  console.log(`[loop glyph census] ${closures} closures drawn; kinds reached: ${[...seen].sort().join(", ")}`);
+});
+
+test("the all-at-once pair earns no loop and the marcher earns one (W19)", () => {
+  // The owner's complaint made falsifiable: *"some difference needs to be seen
+  // between truncated dyson process and the all-at-once."* Neither all-at-once
+  // encoding iterates — no `repeats` on either route or either pin, a verified
+  // negative — while time-marching's per-step amplification loop is the fan's
+  // one genuine iterator. The glyph is that difference, drawn; this pins it to
+  // the exact lanes the complaint names, so a corpus edit that quietly gives
+  // Taylor a loop (or costs the marcher its own) fails here by name.
+  const diagram = openDiagram("linear-ode-solve", openableAddresses("linear-ode-solve"));
+  // Subtree membership for the EXISTENCE claim only. The negative below must
+  // not use it: HHL's own ×O(κ) loops nest under both all-at-once lanes and
+  // are correct there — the claim is about the pair's own lanes and pins, not
+  // about everything reachable beneath them (`keyNames`'s whole-id lesson,
+  // met again one level up).
+  const marchers = diagram.lanes.filter((lane) => keyNames(lane.key).has("time-marching-usva"));
+  assert.ok(marchers.length > 0, "the time-marching lane is not drawn at all");
+  assert.ok(
+    marchers.some((lane) => lane.loopClosure === "coherent"),
+    "time-marching's per-step loop draws no glyph anywhere on its lanes",
+  );
+  for (const [id, pin] of [
+    ["taylor-all-at-once", "truncated-taylor-propagator"],
+    ["dyson-all-at-once", "truncated-dyson-series"],
+  ] as const) {
+    const own = diagram.lanes.filter(
+      (lane) => lane.draws === id || lane.draws === pin,
+    );
+    assert.ok(own.length > 0, `${id} is not drawn at all`);
+    for (const lane of own) {
+      assert.equal(
+        lane.loopClosure,
+        null,
+        `${lane.key} draws a loop glyph, but ${id} is a single-pass encoding`,
+      );
+    }
+  }
 });
 
 test("every declared refinement is drawn on the lane of the method that declares it", () => {
