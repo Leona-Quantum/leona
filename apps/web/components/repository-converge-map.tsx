@@ -46,6 +46,7 @@
 // different screen: the destination page draws the same subject under the same
 // name, so the browser morphs one into the other.
 import {
+  feedNameY,
   loopGlyphPath,
   ownStepName,
   spokenName,
@@ -227,6 +228,36 @@ function Hub({
           r={n(Math.max(state.r + 6, 13))}
         />
       </a>
+      {/* The convergence, drawn as its name (W19 PR-2). Hubs are the figure's
+          LAST pass, so this plate sits over every taper it must rub out — the
+          same paint-order argument that moved `NamePlate` out of `Lane`. The
+          anchor above already speaks this name with its note, so the drawn
+          copy is decoration to a screen reader. */}
+      {state.caption === null ? null : (
+        <g aria-hidden="true">
+          <rect
+            className="mj-converge-name-plate"
+            x={n(
+              state.captionAnchor === "start"
+                ? state.captionX - 4
+                : state.captionAnchor === "end"
+                  ? state.captionX - state.captionWidth - 4
+                  : state.captionX - state.captionWidth / 2 - 4,
+            )}
+            y={n(state.captionY - 12)}
+            width={n(state.captionWidth + 8)}
+            height="15"
+          />
+          <text
+            className="mj-converge-hub-caption"
+            x={n(state.captionX)}
+            y={n(state.captionY)}
+            textAnchor={state.captionAnchor}
+          >
+            {state.caption}
+          </text>
+        </g>
+      )}
     </g>
   );
 }
@@ -265,9 +296,9 @@ function Feed({
 }): React.ReactElement {
   const title = `${copy.needs}: ${spokenName(feed)}`;
   const action = feed.open ? copy.closeHere : copy.openHere;
-  // One writer for where the name sits: the text below and the loop glyph
-  // after it must agree about this y or the glyph floats beside nothing.
-  const nameY = feed.y1 + (feed.outward > 0 ? 9 : -3);
+  // One writer for where the name sits — shared with the caption resolver,
+  // which keeps captions off this text. See `feedNameY`.
+  const nameY = feedNameY(feed);
   const stub = (
     <line
       className="mj-converge-feed-line"
