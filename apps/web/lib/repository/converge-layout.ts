@@ -583,11 +583,33 @@ export const CONVERGE_DEPTH_MAX = 4;
  * re-measures both numbers off the graph on every run, so the next time growth
  * passes it the build says so instead of a reader quietly losing clicks.
  *
+ * **That is exactly what happened, which is the third time and the first time it
+ * was caught by the guard rather than by a reader.** W21-E's excited-state
+ * region took the four-root overview from 73 addresses to **151**, so 128 was
+ * below the graph again and the test failed with `the cap dropped 23 of 151
+ * clicks`. It also failed a second, less obvious way that is worth recording
+ * because it is not what a cap is expected to break: a W15 shared lane names the
+ * earlier occurrence its interior is drawn at, and when the cap dropped that
+ * earlier address the later lane advertised a jump to a lane that was not open —
+ * a control that does nothing, on a figure whose interior looked fine.
+ *
+ * 256 by the same derivation: today's 151, plus the reserved slot, with room to
+ * roughly double again.
+ *
  * Raising it costs no layout work. Only an address that matches a lane opens
  * anything; the rest sit inert in a `Set` at O(1). What the cap actually bounds
- * is the size of the parsed set, and at 128 a hand-written URL is about 3KB.
+ * is the size of the parsed set, and at 128 a hand-written URL was about 3KB; at
+ * 256 it is about 6KB.
+ *
+ * **And that is the number worth naming, because it is where this stops being a
+ * free raise.** A fully-opened URL is a request line, and 8KB is the default
+ * total request-header limit in common proxies and servers — so the next doubling
+ * would not merely be a bigger `Set`, it would put the reader's own saturated
+ * reading position within reach of a 431 from something in front of the app. Past
+ * 256 the answer is a different address scheme (a compressed or referenced open
+ * set), not another power of two here.
  */
-export const CONVERGE_OPEN_MAX = 128;
+export const CONVERGE_OPEN_MAX = 256;
 
 /**
  * The shape of a lane address, and the only thing `?open=` validates against.
@@ -4484,6 +4506,13 @@ function dedupSharedInteriors(
   subjectAddress: string | null,
 ): void {
   const depthOf = (address: string): number => address.split(".").length;
+  // Every demotion this pass makes, in the order it made them: the group's key,
+  // the strand chosen to draw it, and the strands pointed at that strand. Kept
+  // because a later round can bury an earlier round's host, and the twins left
+  // pointing at it are only findable if the pass remembers who they were — a
+  // demoted twin's own interior is gone, so its group key cannot be recomputed
+  // from it afterwards. Read by the repair pass below the loop.
+  const demotions: { key: string; host: PlanStrand; twins: PlanStrand[] }[] = [];
   for (;;) {
     // Occurrences with an interior, over the live (post-demotion) tree.
     const groups = new Map<string, PlanStrand[]>();
@@ -4506,7 +4535,8 @@ function dedupSharedInteriors(
     // The qualifying group whose host is shallowest, or done.
     let host: PlanStrand | null = null;
     let twins: PlanStrand[] = [];
-    for (const members of groups.values()) {
+    let hostKey = "";
+    for (const [key, members] of groups) {
       if (members.length < 2) continue;
       const open = members.filter((member) => member.open);
       if (open.length === 0) continue;
@@ -4516,9 +4546,11 @@ function dedupSharedInteriors(
       if (host === null || depthOf(candidate.address) < depthOf(host.address)) {
         host = candidate;
         twins = members.filter((member) => member !== candidate);
+        hostKey = key;
       }
     }
-    if (host === null) return;
+    if (host === null) break;
+    demotions.push({ key: hostKey, host, twins });
     for (const twin of twins) {
       twin.sharedWith = host.address;
       twin.children = [];
@@ -4529,6 +4561,99 @@ function dedupSharedInteriors(
       twin.open = false;
       twin.openable = false;
       twin.opensInto = null;
+    }
+  }
+
+  repointBuriedHosts(bundles, demotions);
+}
+
+/**
+ * Re-point every jump whose host the pass went on to bury.
+ *
+ * **The bug this exists for, because it is not the one the loop above expects.**
+ * That loop takes the shallowest open occurrence as each round's host and says
+ * shallowest-first means "no later demotion can bury an already-chosen host".
+ * Shallowest-first orders the ROUNDS, not the tree: a later round's host can be
+ * shallower than an earlier round's, so the earlier host — or, worse, an
+ * ancestor of it — is exactly what that round demotes. Demotion drops the whole
+ * interior, so the earlier host's lane either goes shut or stops existing, while
+ * every twin still names its address. A reader gets a control that looks live,
+ * says "its contents are drawn once earlier on this figure", and goes nowhere.
+ *
+ * Found on W21-E's excited-state figure, where four lanes jumped to `0.3.2`
+ * after the pass buried the occurrence chosen to draw them — an address the
+ * figure did not draw at all. `a line never offers a click it will not honour`
+ * catches it, which is why this is a repair rather than a discovery.
+ *
+ * **Repair rather than refusal, and the difference is a real invariant.** The
+ * obvious fix — refuse to demote anything containing a host — keeps every
+ * pointer valid and breaks W15 itself: the strand that would have been demoted
+ * keeps its interior, and `a shared interior is drawn once per figure` fails on
+ * the duplicate. Measured, not reasoned about: that version drew
+ * `observable-estimation` twice on the ground-state figure. So the demotion
+ * stands and the jump moves, which is the outcome both invariants can hold.
+ *
+ * A buried host's twins re-point to the shallowest live occurrence of the same
+ * group — same drawn node, same corpus-level interior, still open, not itself
+ * demoted. That is exactly the host the loop would have chosen had it run with
+ * the tree in its final shape. When no such occurrence survives, the twins are
+ * restored to ordinary shut lanes carrying their own open control: they draw
+ * nothing either way, and a control that reopens the line a reader is looking at
+ * is honest where a jump into nothing is not.
+ */
+function repointBuriedHosts(
+  bundles: readonly { readonly lanes: readonly PlanStrand[] }[],
+  demotions: readonly { key: string; host: PlanStrand; twins: PlanStrand[] }[],
+): void {
+  if (demotions.length === 0) return;
+  const depthOf = (address: string): number => address.split(".").length;
+
+  // The tree as it finally stands. A strand is reachable here iff the figure
+  // draws it, which is the question a dangling jump turns on.
+  const live = new Set<PlanStrand>();
+  const walk = (strand: PlanStrand): void => {
+    live.add(strand);
+    for (const child of strand.children) walk(child);
+    for (const feed of strand.feeds) walk(feed);
+    for (const variant of strand.variants) walk(variant);
+  };
+  for (const bundle of bundles) for (const lane of bundle.lanes) walk(lane);
+
+  // Candidate hosts, by the same key the loop groups on, computed on the final
+  // tree — so a strand that lost its interior to a demotion cannot be offered
+  // as somewhere to jump to.
+  const candidates = new Map<string, PlanStrand[]>();
+  for (const strand of live) {
+    if (strand.sharedWith !== undefined || !strand.open) continue;
+    if (strand.draws === null) continue;
+    if (strand.children.length === 0 && strand.feeds.length === 0) continue;
+    const key = `${strand.draws}#${corpusShape(strand)}`;
+    candidates.set(key, [...(candidates.get(key) ?? []), strand]);
+  }
+
+  for (const { key, host, twins } of demotions) {
+    if (live.has(host) && host.sharedWith === undefined && host.open) continue;
+    const replacement = (candidates.get(key) ?? []).reduce<PlanStrand | null>(
+      (best, strand) =>
+        best === null || depthOf(strand.address) < depthOf(best.address) ? strand : best,
+      null,
+    );
+    for (const twin of twins) {
+      // A twin buried by a later demotion of its own is not this twin's problem
+      // any more: it is gone from the figure and its jump goes with it.
+      if (!live.has(twin)) continue;
+      if (replacement !== null) {
+        twin.sharedWith = replacement.address;
+        continue;
+      }
+      // No live occurrence of the group survives, so there is nowhere to jump.
+      // Drop the dangling pointer and leave the lane exactly as the demotion
+      // made it — shut, with no interior and no control. Handing it back its
+      // open control would be the same defect wearing the other hat: a line
+      // named in `?open=`, drawn shut because its interior is gone, still
+      // offering a click. `a line that opens into something says so` catches
+      // that, and did.
+      twin.sharedWith = undefined;
     }
   }
 }

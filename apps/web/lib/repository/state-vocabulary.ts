@@ -174,6 +174,30 @@ export const STATE_VOCABULARY: StateVocabulary = {
       specializes: ["matrix-access"],
     },
     {
+      id: "eigenvalue-problem",
+      label: "Hamiltonian whose eigenvalues are wanted",
+      labelJa: "固有値を求めたいハミルトニアン",
+      summary:
+        "A Hamiltonian you can query, plus the declaration that what is being asked for is a piece of its spectrum rather than an evolution under it. Which piece — the bottom of it, or a state above the bottom — is the next distinction down, and the two are separate states because the methods that answer them do not substitute for one another.",
+      summaryJa:
+        "問い合わせ可能なハミルトニアンに加えて、求められているのがその下での発展ではなくスペクトルの一部であるという宣言。どの部分か——最下部か、それとも最下部より上の状態か——はもう一段下の区別であり、それらを別々の状態としているのは、両者に答える方式が互いに代替にならないからです。",
+      // **The parent `ground-state-problem` used to have, added when the region
+      // gained a second question.** Everything the comment below says about
+      // narrowness applies at THIS level: the ODE route that walked
+      // `nonlinear-ode-solve` → recast to a Hamiltonian → the variational region
+      // is stopped here, because a recasting produces a Hamiltonian to evolve and
+      // never a declaration that its spectrum is what is wanted.
+      //
+      // It exists because `ansatz-construction` serves both questions and only one
+      // of them is a ground state. Pointing that slot at `ground-state-problem`
+      // was right while the region had one root; with `excited-state-problem`
+      // beside it, the same slot would have been unreachable from half its own
+      // region — and the two ways out of that are a lie about what an
+      // excited-state problem is (declaring it a kind of ground-state problem, so
+      // it inherits the slot) or this: name the thing they actually share.
+      specializes: ["hamiltonian-access"],
+    },
+    {
       id: "ground-state-problem",
       label: "Hamiltonian whose ground state is wanted",
       labelJa: "基底状態を求めたいハミルトニアン",
@@ -195,7 +219,30 @@ export const STATE_VOCABULARY: StateVocabulary = {
       // these two objects were the same one. This is the owner's session-96 point read in
       // the other direction: the value of finding paths the literature has not taken
       // depends entirely on the states being honest about what they are.
-      specializes: ["hamiltonian-access"],
+      //
+      // **Re-parented to `eigenvalue-problem` when the excited-state region arrived, and
+      // nothing about the protection above changed.** `kindsOf` walks upward transitively,
+      // so this is still a `hamiltonian-access` for every satisfaction check that asks;
+      // what it is no longer is the ONLY way to say "a spectral question", which is what
+      // made it the wrong entry for a slot that serves excited states too.
+      specializes: ["eigenvalue-problem"],
+    },
+    {
+      id: "excited-state-problem",
+      label: "Hamiltonian whose excited state is wanted",
+      labelJa: "励起状態を求めたいハミルトニアン",
+      summary:
+        "A Hamiltonian you can query, plus a declaration of which state above the lowest one is being asked for — the k-th, the lowest in a chosen symmetry sector, or the one nearest a target energy. That target is part of the problem, not a setting: a method that finds the ground state has not answered this question, and most methods here need the ground state before they can start.",
+      summaryJa:
+        "問い合わせ可能なハミルトニアンに加えて、最下位より上のどの状態が求められているかの宣言——第 k 励起状態、選ばれた対称性セクター内の最低状態、あるいは目標エネルギーに最も近い状態。この目標は設定ではなく問題の一部です。基底状態を求めただけではこの問いに答えたことにならず、しかもここに属する方式の多くは、始める前に基底状態そのものを必要とします。",
+      // **A sibling of `ground-state-problem`, not a kind of it**, and the distinction is
+      // the one the whole region rests on. An excited-state problem carries the opposite
+      // declaration — the quantity wanted is NOT the lowest eigenvalue — so calling it a
+      // specialisation would let `stateSatisfies` hand one to a ground-state method and
+      // call the result an answer. It is narrow in the same way and for the same reason
+      // its sibling is: nothing in the differential-equation region produces one, so no
+      // path can be invented into this region from there.
+      specializes: ["eigenvalue-problem"],
     },
 
     // --- polynomials and phases ---------------------------------------------
