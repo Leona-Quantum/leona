@@ -172,12 +172,34 @@ class IdempotencyKeyInFlight(Exception):
 
 
 class RunAllowanceReached(Exception):
-    """The account has spent its weekly execute allowance. Carries both numbers."""
+    """The account has spent its weekly execute allowance. Carries both numbers.
 
-    def __init__(self, used: int, limit: int) -> None:
-        super().__init__(f"{used}/{limit} weekly execute runs used")
+    ## And the two halves of `used`, separately
+
+    `used` is what the gate compared, and it is a SUM: recorded spend plus the
+    in-flight runs charged at `TOKENS_PER_RUN_EQUIVALENT` apiece (see
+    `reserve_execute_run_slot`). Reporting only the sum makes the one number a
+    refused user is invited to check un-checkable — `tier_allowance_refusal`
+    says the token figure "is there to be checked against the usage screen",
+    but the usage screen reports recorded spend, and no reservation appears on
+    it. An account that has truly spent 120,000 is told 150,000, and the 30,000
+    it cannot find is a reservation that will be replaced by real spend the
+    moment its run terminates.
+
+    So the halves travel too. `used` keeps its meaning, because it is the figure
+    the comparison actually refused on and changing it would move the gate.
+    """
+
+    def __init__(
+        self, used: int, limit: int, *, spent: int | None = None, reserved: int | None = None
+    ) -> None:
+        super().__init__(f"{used}/{limit} weekly execute tokens used")
         self.used = used
         self.limit = limit
+        #: Recorded token spend — the figure the usage screen shows.
+        self.spent = used if spent is None else spent
+        #: Held for admitted-but-unfinished runs; on no usage screen anywhere.
+        self.reserved = 0 if reserved is None else reserved
 
 
 async def reserve_execute_run_slot(
@@ -243,9 +265,10 @@ async def reserve_execute_run_slot(
     await session.execute(select(User.id).where(User.id == scope.user_id).with_for_update())
     spent = await usage_repo.account_tokens_since(scope, session, since)
     in_flight = await count_in_flight_execute_runs(scope, session)
-    used = spent + in_flight * TOKENS_PER_RUN_EQUIVALENT
+    reserved = in_flight * TOKENS_PER_RUN_EQUIVALENT
+    used = spent + reserved
     if used >= limit:
-        raise RunAllowanceReached(used, limit)
+        raise RunAllowanceReached(used, limit, spent=spent, reserved=reserved)
 
 
 async def count_in_flight_execute_runs(scope: Scope, session: AsyncSession) -> int:
