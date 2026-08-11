@@ -256,6 +256,28 @@ rule; `services/api/tests/test_catalog_admin_standing_reviewer.py` pins it witho
 
 Use it by hand only to check what the pipeline would do. For a real hand-run, name yourself.
 
+### `reviewers` — who holds the grant, and what each has signed
+
+```bash
+uv run --package majorana-api python -m majorana_api.catalog_admin reviewers
+```
+
+Read-only: it writes nothing and attests nothing. Prints every ADMIN membership of the catalog
+workspace with the number of `license_assertions` that account has actually signed, and marks any
+that is a service identity or carries a retired WorkOS id.
+
+**This is the command that answers a `--attested-by-standing` refusal.** A membership says an
+account *may* review; a signature count says one *did*, and the account with the signatures is the
+standing reviewer the flag continues. One eligible signatory means the flag can resolve the
+workspace on its own; two, or none, is a decision a person has to make.
+
+It prints **no email addresses** — deliberately, because it also runs in the deploy pipeline, whose
+logs are retained. Which account signed is the fact the decision needs, and a UUID is what gets
+passed back to `--attested-by`.
+
+The parked branch of `deploy.yml`'s catalog step runs it on every deploy, so the run that reports a
+stale catalog also reports why and who could fix it.
+
 ## Live gates
 
 ```bash
