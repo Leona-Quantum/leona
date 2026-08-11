@@ -2,7 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
-import { carrySelection } from "../lib/repository/canvas-selection";
+import { carryPaper, carrySelection } from "../lib/repository/canvas-selection";
 
 /**
  * Opening a line moves the picture instead of replacing the page.
@@ -143,6 +143,10 @@ export function CanvasContinuity({
       // (W16). Derived from the URL diff alone, after the `at` substitution so
       // the jump-rewrite rule sees the anchor's own `at`, not the live one.
       carrySelection(liveParams, next.searchParams);
+
+      // The paper surface rides along too (W20) — same shape, separate rule:
+      // selection is about one drawn thing, the paper about the whole surface.
+      carryPaper(liveParams, next.searchParams);
 
       event.preventDefault();
       // `scroll: false` because the reader is looking at a figure, not arriving

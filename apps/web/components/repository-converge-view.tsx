@@ -186,6 +186,13 @@ interface ConvergeCopy {
   closeInfo: string;
   /** Names the clipped reading for a screen reader and for a printout. */
   readingRegion: string;
+  /** The paper surface's panel (W20). */
+  paperEyebrow: string;
+  paperShows: (drawn: number, total: number) => string;
+  paperElsewhere: (n: number) => string;
+  paperRecord: string;
+  paperClear: string;
+  paperUnknown: string;
 }
 
 const COPY: Record<"en" | "ja", ConvergeCopy> = {
@@ -267,6 +274,13 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     openInfo: "About this map",
     closeInfo: "Close",
     readingRegion: "This figure in words",
+    paperEyebrow: "Paper",
+    paperShows: (drawn: number, total: number) =>
+      `Draws ${drawn} of the ${total} steps this paper is cited on.`,
+    paperElsewhere: (n: number) => `${n} more ${n === 1 ? "sits" : "sit"} elsewhere on the map.`,
+    paperRecord: "Open the paper record",
+    paperClear: "Clear the paper from the map",
+    paperUnknown: "This link names a paper the register does not hold.",
   },
   ja: {
     heading: "経路が合流する場所",
@@ -338,6 +352,13 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     openInfo: "この地図について",
     closeInfo: "閉じる",
     readingRegion: "この図の内容を文章で",
+    paperEyebrow: "論文",
+    paperShows: (drawn: number, total: number) =>
+      `この論文が引用されている ${total} 工程のうち ${drawn} 件をこの図に描いています。`,
+    paperElsewhere: (n: number) => `ほか ${n} 件はマップの別の場所にあります。`,
+    paperRecord: "論文レコードを開く",
+    paperClear: "マップから論文を外す",
+    paperUnknown: "このリンクが指す論文はレジスタにありません。",
   },
 };
 
@@ -657,6 +678,8 @@ export function ConvergeView({
   droppedOpen = 0,
   viewport = IDENTITY,
   sel = null,
+  paper = null,
+  paperDropped = false,
 }: {
   graph: LayerGraph;
   corpus: readonly LayerCorpusEntry[];
@@ -714,6 +737,24 @@ export function ConvergeView({
    * `?at=` units are fitted-width-relative and only the client knows the box.
    */
   sel?: string | null;
+  /**
+   * The open paper surface, from `?paper=` (W20) — resolved and joined to the
+   * register by the page, because the page owns parameter validation and this
+   * component owns drawing. Null when no paper is open. The `cited` set is
+   * matched against what lanes DRAW, so every drawn occurrence of a cited node
+   * carries the mark, revealed or not — the paper touches all of them.
+   */
+  paper?: {
+    slug: string;
+    title: string;
+    authors: string;
+    year: string;
+    cited: ReadonlySet<string>;
+    drawnCount: number;
+    elsewhereCount: number;
+  } | null;
+  /** `?paper=` named something the register does not hold. Reported, not eaten. */
+  paperDropped?: boolean;
 }): React.ReactElement {
   const lang: "en" | "ja" = locale === "ja" ? "ja" : "en";
   const copy = COPY[lang];
@@ -835,6 +876,13 @@ export function ConvergeView({
     MAP_ABOUT_SECTIONS.map((id) => [id, withAbout(base, id)]),
   ) as Record<MapAboutSection, string>;
   const closeHref = withAbout(base, null);
+  // The paper panel's dismissal (W20). The EMPTY value, not an absent key, and
+  // that is load-bearing: the client interceptor carries a live `?paper=` onto
+  // any href that stays silent about it (`carryPaper`), so a close link that
+  // merely omitted the key would have the paper put straight back. The server
+  // reads the empty value as "no paper"; the opens in `base` keep the revealed
+  // branches standing — closing the panel does not fold the map.
+  const paperCloseHref = `${base}${base.includes("?") ? "&" : "?"}paper=`;
   // The card, assembled from the graph, the vocabulary and the corpus — the
   // three things this component already holds and no other component holds
   // together. `?about=` is cleared by `withCard` when a card opens, because two
@@ -1026,6 +1074,7 @@ export function ConvergeView({
               // A uniform backdrop veil cannot do this: it dims the selected
               // item by exactly as much as everything else.
               veiled={openCard !== null}
+              cited={paper?.cited ?? null}
             />
           ))}
         </InfiniteCanvas>
@@ -1096,6 +1145,39 @@ export function ConvergeView({
         }
         locale={locale}
       />
+
+      {/* The paper surface's own card (W20) — the owner's "the overarching
+          paper card itself". A pinned panel, NOT the modal card shell: the
+          modal centres over the very pipeline the reveal just opened, and this
+          surface exists to be looked at. Same translucent grammar as the card
+          (PR 381) so the figure reads through it at the edge. Rendered only
+          when `?paper=` said something; an unknown value gets the honest note
+          rather than silence. */}
+      {paper !== null ? (
+        <aside className="mj-paper-panel" aria-label={copy.paperEyebrow}>
+          <p className="mj-card-eyebrow">{copy.paperEyebrow}</p>
+          <h2 className="mj-paper-panel-title">{paper.title}</h2>
+          <p className="mj-paper-panel-meta">
+            {paper.authors} · {paper.year}
+          </p>
+          <p className="mj-paper-panel-count">
+            {copy.paperShows(paper.drawnCount, paper.cited.size)}
+            {paper.elsewhereCount > 0 ? ` ${copy.paperElsewhere(paper.elsewhereCount)}` : ""}
+          </p>
+          <p className="mj-paper-panel-links">
+            <a href={`/repository/papers/${paper.slug}`}>{copy.paperRecord}</a>
+            <a href={paperCloseHref}>{copy.paperClear}</a>
+          </p>
+        </aside>
+      ) : paperDropped ? (
+        <aside className="mj-paper-panel" aria-label={copy.paperEyebrow}>
+          <p className="mj-card-eyebrow">{copy.paperEyebrow}</p>
+          <p className="mj-paper-panel-count">{copy.paperUnknown}</p>
+          <p className="mj-paper-panel-links">
+            <a href={paperCloseHref}>{copy.paperClear}</a>
+          </p>
+        </aside>
+      ) : null}
 
       {/* The figure in words, clipped rather than deleted.
 

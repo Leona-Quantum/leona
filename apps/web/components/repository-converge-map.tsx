@@ -256,10 +256,12 @@ function Feed({
   feed,
   copy,
   selected = false,
+  cited = false,
 }: {
   feed: ConvergeFeed;
   copy: ConvergeCopy;
   selected?: boolean;
+  cited?: boolean;
 }): React.ReactElement {
   const title = `${copy.needs}: ${spokenName(feed)}`;
   const action = feed.open ? copy.closeHere : copy.openHere;
@@ -277,7 +279,7 @@ function Feed({
   );
   return (
     <g
-      className={`mj-converge-feed${feed.open ? " mj-converge-feed--open" : ""}${selected ? " mj-converge-feed--selected" : ""}`}
+      className={`mj-converge-feed${feed.open ? " mj-converge-feed--open" : ""}${selected ? " mj-converge-feed--selected" : ""}${cited ? " mj-converge-feed--paper-cited" : ""}`}
       data-depth={feed.depth}
     >
       {/* Target one: the stub. Opens or shuts the ingredient, here. */}
@@ -349,7 +351,7 @@ function Feed({
  * and a second copy of this string is how one of them would quietly stop
  * matching.
  */
-function laneClass(lane: ConvergeLane, documented: boolean, selected = false): string {
+function laneClass(lane: ConvergeLane, documented: boolean, selected = false, cited = false): string {
   return `mj-converge-lane mj-converge-lane--${lane.standing}${
     lane.open ? " mj-converge-lane--open" : ""
   }${documented ? " mj-converge-lane--atlas" : ""}${
@@ -358,6 +360,11 @@ function laneClass(lane: ConvergeLane, documented: boolean, selected = false): s
     // Both call sites pass it (the drawing and the name pass), so the name
     // carries the emphasis its lane does.
     selected ? " mj-converge-lane--selected" : ""
+  }${
+    // The paper surface's mark (W20): this lane draws a node the open paper
+    // cites. A literature statement like `--atlas`, so it wears the same
+    // family — an underline on the name — solid where atlas is dotted.
+    cited ? " mj-converge-lane--paper-cited" : ""
   }${
     // The line the page is *about*, on a method's own page. Not a standing and
     // not a category: those say what the literature records about a line, and
@@ -450,12 +457,14 @@ function LaneName({
   atlas,
   title,
   selected = false,
+  cited = false,
 }: {
   lane: ConvergeLane;
   copy: ConvergeCopy;
   atlas: ReadonlySet<string>;
   title: string;
   selected?: boolean;
+  cited?: boolean;
 }): React.ReactElement | null {
   if (lane.label === "") return null;
   // The card when this surface has one, the node's own page when it does not.
@@ -466,7 +475,7 @@ function LaneName({
   const nameHref = lane.cardHref ?? lane.href;
   const nameAction = lane.cardHref === null ? copy.readAbout : copy.readHere;
   return (
-    <g className={laneClass(lane, isDocumented(lane, atlas), selected)} data-depth={lane.depth}>
+    <g className={laneClass(lane, isDocumented(lane, atlas), selected, cited)} data-depth={lane.depth}>
       {/* `spokenName`, not `fullLabel`: the count must reach a reader who is not
           looking at the picture. See `spokenName`. */}
       <a href={nameHref} aria-label={`${spokenName(lane)} — ${nameAction}`}>
@@ -567,11 +576,13 @@ function Lane({
   copy,
   atlas,
   selected = false,
+  cited = false,
 }: {
   lane: ConvergeLane;
   copy: ConvergeCopy;
   atlas: ReadonlySet<string>;
   selected?: boolean;
+  cited?: boolean;
 }): React.ReactElement {
   const documented = isDocumented(lane, atlas);
   const title = laneTitle(lane, copy, atlas);
@@ -592,7 +603,7 @@ function Lane({
   // of crossfading a snapshot of it. See the converge block in `styles.css`.
 
   return (
-    <g className={laneClass(lane, documented, selected)} data-depth={lane.depth}>
+    <g className={laneClass(lane, documented, selected, cited)} data-depth={lane.depth}>
       {/* Open: the centre line stays, faint, and what was inside is drawn in its
           place. Shut: the tapered body. Never both — an opened strand still
           drawing its own body would claim to be a way across at the same time
@@ -741,6 +752,7 @@ export function ConvergeCanvas({
   claimed,
   selection = null,
   veiled = false,
+  cited = null,
 }: {
   diagram: ConvergeDiagram;
   locale: PublicLocale;
@@ -764,6 +776,13 @@ export function ConvergeCanvas({
    * that figure is what the reader is looking AT, not what is behind it.
    */
   veiled?: boolean;
+  /**
+   * Node ids the open paper cites (W20) — the `--paper-cited` mark, matched
+   * against what a lane DRAWS (`draws`, falling back to `nodeId`: a leaf
+   * method's lane has `id: null` and its subject in `draws`). Null when no
+   * paper surface is open, which is a different statement from an empty set.
+   */
+  cited?: ReadonlySet<string> | null;
   /**
    * View-transition names already spoken for **on this page**.
    *
@@ -822,10 +841,17 @@ export function ConvergeCanvas({
           copy={copy}
           atlas={atlas}
           selected={selection?.laneAddress === lane.address}
+          cited={cited?.has(lane.draws ?? lane.nodeId ?? "") ?? false}
         />
       ))}
       {diagram.feeds.map((feed) => (
-        <Feed key={feed.key} feed={feed} copy={copy} selected={selection?.feedKey === feed.key} />
+        <Feed
+          key={feed.key}
+          feed={feed}
+          copy={copy}
+          selected={selection?.feedKey === feed.key}
+          cited={cited?.has(feed.nodeId) ?? false}
+        />
       ))}
       {/* Every plate, then every name, and both after every line. Three passes
           over one list rather than one pass emitting three things, because on
@@ -852,6 +878,7 @@ export function ConvergeCanvas({
           atlas={atlas}
           title={laneTitle(lane, copy, atlas)}
           selected={selection?.laneAddress === lane.address}
+          cited={cited?.has(lane.draws ?? lane.nodeId ?? "") ?? false}
         />
       ))}
       {diagram.states.map((state) => (

@@ -11718,6 +11718,18 @@ div.mj-rail-row:hover {
   text-underline-offset: 3px;
   text-decoration-thickness: 1px;
 }
+/* The paper surface's mark (W20): this lane or stub draws a node the open
+   paper cites. A literature statement, so it wears the atlas family — an
+   underline, solid where atlas's is dotted, and a shade heavier. After the
+   atlas rule on purpose: a node can be both, and the paper's claim is the one
+   the reader asked this surface about. Not a colour, not a dash — both spoken
+   for, same argument as `--selected`. */
+.mj-converge-lane--paper-cited .mj-converge-lane-name,
+.mj-converge-feed--paper-cited .mj-converge-feed-name {
+  text-decoration: underline solid from-font;
+  text-underline-offset: 3px;
+  text-decoration-thickness: 1.5px;
+}
 /* The line this page is about — set only on a method's own page, and on exactly
    one lane of it.
 
@@ -12850,6 +12862,47 @@ div.mj-rail-row:hover {
   backdrop-filter: blur(3px);
   box-shadow: var(--shadow-popover);
 }
+/* --- the paper panel (W20) ------------------------------------------------ */
+/* The paper surface's card — the owner's "the overarching paper card itself".
+   Pinned, not modal: the reveal just opened the pipeline this panel describes,
+   and a centred backdrop would sit exactly on top of it. Top-right because the
+   map chrome (back arrow, info icon) owns the top-left. Same translucent
+   surface grammar as `.mj-card` so the figure reads through its edge. */
+.mj-paper-panel {
+  position: fixed;
+  z-index: 90;
+  top: var(--sp-4);
+  right: var(--sp-4);
+  width: min(21rem, calc(100vw - 2 * var(--sp-4)));
+  padding: var(--sp-4);
+  border: var(--border-hairline) solid var(--border-0);
+  border-radius: var(--radius-card);
+  background: color-mix(in srgb, var(--bg-1) 88%, transparent);
+  -webkit-backdrop-filter: blur(3px);
+  backdrop-filter: blur(3px);
+  box-shadow: var(--shadow-popover);
+}
+.mj-paper-panel-title {
+  margin: 0 0 var(--sp-1);
+  font-size: var(--fs-16);
+  line-height: 1.35;
+}
+.mj-paper-panel-meta {
+  margin: 0 0 var(--sp-2);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
+.mj-paper-panel-count {
+  margin: 0 0 var(--sp-3);
+  font-size: var(--fs-13);
+}
+.mj-paper-panel-links {
+  display: flex;
+  gap: var(--sp-4);
+  margin: 0;
+  font-size: var(--fs-13);
+}
+
 /* The reader who asked the OS for less see-through gets the pre-veil look:
    opaque card, heavy wash. The selected item no longer shows through — that is
    the preference's meaning, not a regression of it. */
