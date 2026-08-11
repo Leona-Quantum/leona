@@ -433,14 +433,15 @@ export function tendonRunFor(bow: number): number {
 /**
  * The run a whole row of siblings shares, which is what keeps them from crossing.
  *
- * **One run for the row, not one per member.** The crossing-free argument is that
- * every line in a row is `base + bow·φ(x)` for one shared φ — see the ribbon
- * block in `strand-geometry.ts`. φ is built from the run, so siblings with
- * different runs are compared against different φ and the argument evaporates:
+ * **One SHARED FLOOR for the row, not an arbitrary run per member.** The
+ * crossing-free argument is that every line in a row is `base + bow·φ(x)` for
+ * one shared φ — see the ribbon block in `strand-geometry.ts` — and φ is built
+ * from the run, so siblings with *arbitrary* different runs lose the argument:
  * two lines could then cross between their bellies. Taking the max means the
  * row's anchors line up in two vertical columns, which is also what the owner
  * asked the shape to buy — *"so that things become standardized and easy to
- * read"*.
+ * read"*. `hugRuns` below is the one sanctioned relaxation: per-lane runs that
+ * are provably order-preserving, with this shared value as their floor.
  *
  * Clamped to half the range so a belly can never invert. That clamp should never
  * bite, because the column is sized with the run already in it; `every belly is
@@ -450,6 +451,53 @@ export function tendonRunFor(bow: number): number {
 export function runAcross(bows: readonly number[], length: number): number {
   const wanted = Math.max(0, ...bows.map((bow) => tendonRunFor(bow)));
   return Math.min(wanted, length / 2);
+}
+
+/**
+ * Per-lane runs that let each belly hug its own content — the owner's ask,
+ * verbatim (s121, live injection): *"muscle bellies are much and unnecessarily
+ * longer than the labels themselves, tendons are okay to lengthen but things
+ * can be more compact in general."*
+ *
+ * A row's column is sized by its widest member, and every sibling used to wear
+ * the whole column's `bare` as its belly — measured before this change: 28 of
+ * 62 first-order lanes ran past 1.5× their own label, the worst ("HHL", a 19px
+ * name) at 11.9×. The slack now goes into the lane's own tendons instead: each
+ * lane's desired run is `(span − its own bare) / 2`, floored at the row's
+ * shared run so no lane ever gets a shorter tendon than the shared rule
+ * already grants, and ceilinged at `span / 2` so a belly cannot invert.
+ *
+ * **Why differing runs do not revive the crossing problem.** With per-lane φ
+ * the sibling difference is `bow_i·φ_i − bow_j·φ_j`, and it keeps one sign
+ * whenever flatness order matches bow order: a longer run rises later on the
+ * left tendon, holds its belly on a SUBSET of a shorter run's belly, and falls
+ * earlier on the right — so `run_i ≥ run_j` gives `φ_i ≤ φ_j` at every x, and
+ * with `|bow_i| < |bow_j|` (same sign) the products stay strictly ordered.
+ * Opposite-sign lanes sit on opposite sides of the base and meet only where
+ * both φ are zero; a zero-bow lane IS its base whatever its run, so it is
+ * free. Enforcement: per sign group, walk lanes by ascending |bow| and cap
+ * each run at the smallest already granted — the inner lane's need binds the
+ * outer lane's hug, never the reverse, because the reverse would shrink a
+ * belly below its own name.
+ */
+export function hugRuns(
+  lanes: readonly { bow: number; bare: number }[],
+  shared: number,
+  span: number,
+): number[] {
+  const runs = lanes.map((lane) => Math.min(span / 2, Math.max(shared, (span - lane.bare) / 2)));
+  for (const sign of [1, -1]) {
+    const members = lanes
+      .map((lane, index) => ({ index, size: Math.abs(lane.bow), sign: Math.sign(lane.bow) }))
+      .filter((member) => member.sign === sign && member.size > 0)
+      .sort((a, b) => a.size - b.size);
+    let cap = Number.POSITIVE_INFINITY;
+    for (const member of members) {
+      runs[member.index] = Math.min(runs[member.index]!, cap);
+      cap = runs[member.index]!;
+    }
+  }
+  return runs;
 }
 
 /**
@@ -3389,8 +3437,18 @@ function place(
   // that every line in a row is `belly + bow·φ` for one shared φ, and φ is built
   // from the run.
   const childRun = runAcross(bows, belly.x1 - belly.x0);
+  // Each child's belly hugs its own content, shared run as the floor — see
+  // `hugRuns` for the ask and the order-preservation argument.
+  const childRuns = hugRuns(
+    strand.children.map((_, index) => ({
+      bow: bows[index]!,
+      bare: size.children[index]!.hFit + size.children[index]!.hRun + M.labelPad * 2,
+    })),
+    childRun,
+    belly.x1 - belly.x0,
+  );
   for (const [index, child] of strand.children.entries()) {
-    place(belly, child, size.children[index]!, bows[index]!, childRun, depth + 1, {
+    place(belly, child, size.children[index]!, bows[index]!, childRuns[index]!, depth + 1, {
       ...context,
       parentKey: strand.key,
       feedKey: null,
@@ -4148,8 +4206,21 @@ function layoutFigure(options: {
     // first-order run that depends on the line's length cannot survive that: the
     // two would disagree the moment the length entered only one of them.
     const run = columns[index]!.run;
+    // Each lane's belly hugs its own content, the column's run as the floor —
+    // see `hugRuns` for the ask and the order-preservation argument. `bare`
+    // per lane mirrors the column's own formula member-wise (fit + interior
+    // run + padding), so a lane whose demand IS the column's keeps exactly the
+    // shared geometry.
+    const runs = hugRuns(
+      bundle.lanes.map((_, at) => ({
+        bow: bows[at]!,
+        bare: measured[index]![at]!.hFit + measured[index]![at]!.hRun + M.labelPad * 2,
+      })),
+      run,
+      base.x1 - base.x0,
+    );
     for (const [at, lane] of bundle.lanes.entries()) {
-      place(base, lane, measured[index]![at]!, bows[at]!, run, 0, {
+      place(base, lane, measured[index]![at]!, bows[at]!, runs[at]!, 0, {
         vocabulary,
         locale,
         focusId: focusParam,
