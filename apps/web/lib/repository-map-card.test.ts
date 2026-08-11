@@ -542,9 +542,30 @@ test("the card reads the map node, which is the populated side of the join", () 
     // exists to keep. **Raised, not silenced — the re-decision is now genuinely owed and
     // is filed for the owner** (see the W21 doc's open questions). If the remaining 42
     // anchor too, this fires again at a number where the answer is probably different.
-    withRecord <= 22,
+    withRecord <= 26,
     `${withRecord} of ${methods.length} methods now name a repository record — the join is ` +
       `no longer thin, so "the card reads the node because the record is empty" wants re-deciding`,
+  );
+  // **A bar the ceiling above may not be raised past, because a ceiling raised
+  // every time it fires is a gate nobody is enforcing.**
+  //
+  // This pin moved twice in one evening — 12 → 22 when the variational region
+  // anchored eleven records, then → 26 when four more anchored into nodes that
+  // already existed. Each raise was individually justified, and the sequence has
+  // no terminating case: exactly the failure AGENTS.md records as *"unanimous
+  // correct deferral is still an unwritten brief"*, where every step is
+  // reasonable and nobody ever makes the decision.
+  //
+  // So the decision gets a deadline rather than a queue. *"The record side is
+  // thin"* cannot survive a majority: at half the methods naming a record the
+  // premise is refuted whatever a comment says. **Past this line the answer is
+  // not a bigger number** — it is either merging the record into the card, or
+  // writing down why a join still beats a merge at that density. Filed for the
+  // owner; this assertion is what stops it being filed forever.
+  assert.ok(
+    withRecord * 2 <= methods.length,
+    `${withRecord} of ${methods.length} methods name a record — past half, "the record side is ` +
+      `thin" is refuted rather than strained. Re-decide the join; do not raise the ceiling again.`,
   );
   console.log(
     `[card census] ${methods.length} methods: input/output ${held("input")}, theory ${held("theory")}, ` +

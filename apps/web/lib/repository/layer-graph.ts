@@ -2233,6 +2233,7 @@ export const LAYER_GRAPH: LayerGraph = {
         noteJa: "直接サンプリングと同じく測定を挟んで閉じる反復であり、ε^-2 も同じです。古典シャドウが得るのは反復の短さではなく、オブザーバブルの個数とともに伸びない反復です。M は対数でしか効かず、どのオブザーバブルを見るかはデータ取得後に決められます。厳密には反復はまとめられ、K = 2 log(2M/δ) 個のバッチそれぞれで N = 34/ε² · max_i ||·||²_shadow 回を測定します。安く済むかどうかを決めるのはシャドウノルムであり、ランダム Pauli アンサンブルのもとでは局所性に対して指数的です。",
       },
     },
+    entries: ["vqe-classical-shadows"],
     citations: [
       { title: "Predicting Many Properties of a Quantum System from Very Few Measurements", authors: "Hsin-Yuan Huang, Richard Kueng, John Preskill", year: "2020", url: "https://arxiv.org/abs/2002.08953" },
       { title: "Shadow Tomography of Quantum States", authors: "Scott Aaronson", year: "2017", url: "https://arxiv.org/abs/1711.01053" },
@@ -2545,6 +2546,7 @@ export const LAYER_GRAPH: LayerGraph = {
         "# downstream subroutine",
       ].join("\n"),
     },
+    entries: ["vqe-zero-noise-extrapolation"],
     citations: [
       { title: "Error mitigation for short-depth quantum circuits", authors: "Kristan Temme, Sergey Bravyi, Jay M. Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
       { title: "Efficient tensor network simulation of IBM's Eagle kicked Ising experiment", authors: "Joseph Tindall, Matt Fishman, Miles Stoudenmire, Dries Sels", year: "2023", url: "https://arxiv.org/abs/2306.14887" },
@@ -2613,7 +2615,9 @@ export const LAYER_GRAPH: LayerGraph = {
         "# correlated as well as uncorrelated errors are accommodated",
       ].join("\n"),
     },
+    entries: ["vqe-readout-mitigation"],
     citations: [
+      { title: "Mitigating measurement errors in multi-qubit experiments", authors: "Sergey Bravyi, Sarah Sheldon, Abhinav Kandala, David C. Mckay, Jay M. Gambetta", year: "2020", url: "https://arxiv.org/abs/2006.14044" },
       { title: "Scalable mitigation of measurement errors on quantum computers", authors: "Paul D. Nation, Hwajung Kang, Neereja Sundaresan, Jay M. Gambetta", year: "2021", url: "https://arxiv.org/abs/2108.12518" },
     ],
   },
@@ -3014,6 +3018,7 @@ export const LAYER_GRAPH: LayerGraph = {
     // measurements are aggregated and adds no circuits. Two ways through one
     // slot that genuinely draw different pictures.
     steps: ["observable-estimation"],
+    entries: ["vqe-gradient-based"],
     citations: [
       { title: "Evaluating analytic gradients on quantum hardware", authors: "Maria Schuld, Ville Bergholm, Christian Gogolin, Josh Izaac, Nathan Killoran", year: "2018", url: "https://arxiv.org/abs/1811.11184" },
     ],
