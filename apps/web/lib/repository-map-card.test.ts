@@ -386,7 +386,11 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // added 14: `variational-ground-state` draws three, `variational-imaginary-time` two, and the
   // adaptive and gradient methods one apiece for the `observable-estimation` stub their sources
   // say they hang. Updated deliberately, which is what the paragraph above asks for.
-  assert.equal(hops, 105, `${hops} hops, not 105`);
+  // **122 since W21-E.** The excited-state region added 17: the four routes that reuse
+  // VQE's three hops draw three apiece, the deflation route draws those three plus the
+  // `ground-state-energy` ingredient it hangs, and the subspace-expansion and
+  // equation-of-motion routes draw their own stretch beside two ingredients each.
+  assert.equal(hops, 122, `${hops} hops, not 122`);
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
   // authored hop is what proves the parse, the spans, the legend and both locales against
@@ -542,7 +546,16 @@ test("the card reads the map node, which is the populated side of the join", () 
     // exists to keep. **Raised, not silenced — the re-decision is now genuinely owed and
     // is filed for the owner** (see the W21 doc's open questions). If the remaining 42
     // anchor too, this fires again at a number where the answer is probably different.
-    withRecord <= 26,
+    // **26 → 33 in W21-E, and this is the third raise, which is the point at which
+    // the sequence rather than the step is what needs answering.** Seven excited-state
+    // records anchored at once. It is still under the bar below — 33 of 81 is not a
+    // majority — so the raise is permitted by this file's own rule, and it is being
+    // taken with the terminating work already in flight rather than deferred again:
+    // the record-join re-decision (`OWNER_TODO 27267f`, owner-ruled that a method card
+    // and a repository record "may as well be the same thing") is a claimed lane
+    // tonight. **The next lane to anchor records should expect to be answering that
+    // design rather than editing this number.**
+    withRecord <= 33,
     `${withRecord} of ${methods.length} methods now name a repository record — the join is ` +
       `no longer thin, so "the card reads the node because the record is empty" wants re-deciding`,
   );
@@ -1001,7 +1014,11 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // is the honest starting state of a new region and not a defect in it. The trailing
   // count moved by one: `variational-ground-state` ends on `observable-estimation`, so
   // its blank follows a named step rather than standing alone.
-  assert.equal(withOwn.length, 66);
+  // 68 since W21-E: the subspace-expansion and equation-of-motion routes each close
+  // the whole stretch themselves — they take the ground state as an ingredient and do
+  // their own work with it — while the other five excited-state routes end on
+  // `observable-estimation` and so have no own stretch, exactly as VQE does not.
+  assert.equal(withOwn.length, 68);
   assert.equal(trailing.length, 14);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1056,7 +1073,8 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 57 until session 120 — the KvN route lost its stretch to the W14 wiring.
   // 66 since W21: the ten methods of the variational region each have one, for the reason
   // recorded on the stretch census above.
-  assert.equal(built, 66);
+  // 68 since W21-E, for the two routes named on the stretch census above.
+  assert.equal(built, 68);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);

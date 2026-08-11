@@ -376,6 +376,21 @@ const KNOWN_TWINS = [
     why: "Three readouts that each consume a prepared state and nothing else. The chain is one step long, so there is no second step to tell them apart by; what tells them apart is their own cost, which is on the method.",
   },
   {
+    slot: "excited-state-energy",
+    methods: [
+      "subspace-search-excited-state",
+      "folded-spectrum-excited-state",
+      "penalty-excited-state",
+      "contracted-excited-state",
+    ],
+    why: "Four routes to a state above the ground state that each choose an ansatz, optimise its parameters and estimate an observable — the same three hops VQE takes, which is the point rather than an accident: all four reuse the ground-state machinery unchanged. What separates them is WHICH OBJECTIVE the optimiser is handed: a weighted sum over mutually orthogonal inputs (SSVQE), the variance around a chosen target energy (folded spectrum), the energy plus a term punishing the wrong symmetry sector (penalty), and a contracted multistate objective (MC-VQE). This graph records an objective as its own node only where a paper is devoted to one — `cvar-objective` is exactly that — so three of these four have nothing honest to pin a `via` to; their objective is part of the method's own definition and shares its single source. The fourth is different and is a worklist item rather than a permanent exemption: `vqe-variance-objective` (arXiv:2006.15781) IS a paper devoted to variance minimisation, so once that record has a node under `parameter-optimization`, `folded-spectrum-excited-state` pins it and leaves this group. Splitting the other three would mean authoring three objective nodes out of the same three papers already cited here, which draws one paper twice instead of recording a distinction the literature makes.",
+  },
+  {
+    slot: "excited-state-energy",
+    methods: ["subspace-expansion-excited-state", "equation-of-motion-excited-state"],
+    why: "Both take the ground state as given, measure a set of matrix elements, and hand a small generalised eigenvalue problem to a classical solver — so both draw one own-hop with the same two ingredients, and they draw it because they genuinely share it. What separates them is which operators the matrix elements run over: a linear expansion around the prepared state for the subspace expansion, excitation operators in the equation-of-motion formalism for qEOM. That is the same shape of gap as the ADAPT/QCC row below — this graph has no vocabulary for an operator set — and it splits the same way, by giving that set a state, which would also give the estimation slot something to narrow.",
+  },
+  {
     slot: "ansatz-construction",
     methods: ["adapt-ansatz", "qubit-adapt-ansatz", "qcc-ansatz"],
     why: "The three adaptive constructions, and they draw one chain because they genuinely share it: each grows the ansatz by measuring how much a candidate operator would move the energy, so each hangs one `observable-estimation` stub and nothing else. What separates them is the POOL the candidates are drawn from — fermionic excitations for ADAPT, qubit operators for qubit-ADAPT, entanglers ranked by energy response for QCC — and this graph has no vocabulary for an operator pool, so there is nothing honest to pin a `via` to. Recorded as a worklist item rather than papered over: giving the pool a state would split this group, and it would also give `parameter-optimization` something to narrow. `qubit-adapt-ansatz` additionally declares `refines: adapt-ansatz`, which is why the card already says why IT looks like its parent; the residual pair is ADAPT and QCC.",
