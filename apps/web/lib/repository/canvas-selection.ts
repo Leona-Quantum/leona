@@ -77,9 +77,15 @@ export function resolveSelection(
  *    becomes what it meant: the address moves to `sel` (the camera then flies
  *    to it), and the live viewport is carried so the ground does not shift
  *    under the fly's start.
- * 2. **Opening a card is selecting its node.** A newly-set or changed `?card=`
- *    selects the carded node; closing one keeps the selection — the reader
- *    finished reading, they did not leave the thing.
+ * 2. **Opening a card is selecting its node — unless the href already said
+ *    WHERE.** The map's own card links carry the clicked occurrence's address
+ *    in `?sel=` (`withCard`'s third argument), and that address is the click's
+ *    meaning: deriving from the card id instead would fall to the first drawn
+ *    occurrence of the node, which is what flew the owner's "quantum linear
+ *    solve" click to the same-named process elsewhere on the map. A card href
+ *    with no `sel` of its own (the panel's internal links) still selects the
+ *    carded node by id, as before. Closing a card keeps the selection — the
+ *    reader finished reading, they did not leave the thing.
  * 3. **Opening a lane is selecting it.** A value added to `?open=` becomes the
  *    selection (a click adds at most one).
  * 4. **Shutting the selected lane deselects it.** A value removed from
@@ -99,7 +105,7 @@ export function carrySelection(current: URLSearchParams, next: URLSearchParams):
 
   const card = next.get("card");
   if (card !== null && card !== current.get("card")) {
-    next.set(SEL_PARAM, card);
+    if (!next.has(SEL_PARAM)) next.set(SEL_PARAM, card);
     return;
   }
 

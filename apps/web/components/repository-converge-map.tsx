@@ -394,7 +394,18 @@ function isDocumented(lane: ConvergeLane, atlas: ReadonlySet<string>): boolean {
  * the collapse click on the line underneath it. Out here it is inert, and the
  * name's target is exactly `.mj-converge-hit`.
  */
-function NamePlate({ lane }: { lane: ConvergeLane }): React.ReactElement | null {
+function NamePlate({
+  lane,
+  selected = false,
+}: {
+  lane: ConvergeLane;
+  /**
+   * The veil exemption, nothing else. A plate has no `--selected` look of its
+   * own — the emphasis is the name's — but a plate dimmed under a full-strength
+   * name would read as a hole behind the one label the reader is on.
+   */
+  selected?: boolean;
+}): React.ReactElement | null {
   if (lane.label === "") return null;
   return (
     <rect
@@ -403,7 +414,7 @@ function NamePlate({ lane }: { lane: ConvergeLane }): React.ReactElement | null 
         // bone's, a shell's, or a leaf's own body (`labelInside`) — let the
         // line show through rather than cutting a hole in the canvas.
         lane.bone || lane.frame !== null || lane.labelInside ? " mj-converge-name-plate--open" : ""
-      }`}
+      }${selected ? " mj-converge-name-plate--selected" : ""}`}
       data-name={lane.key}
       x={n(lane.labelX - lane.labelWidth / 2 - 5)}
       /* `-12.5` / 17, not `-12` / 16. The 16px height was measured against
@@ -703,6 +714,7 @@ export function ConvergeCanvas({
   atlas = EMPTY_ATLAS,
   claimed,
   selection = null,
+  veiled = false,
 }: {
   diagram: ConvergeDiagram;
   locale: PublicLocale;
@@ -716,6 +728,16 @@ export function ConvergeCanvas({
    * paints is what the client's camera fly-to finds and measures.
    */
   selection?: { laneAddress: string | null; stateKey: string | null; feedKey: string | null } | null;
+  /**
+   * A card is open over this figure: every element except the selected one
+   * drops to a fraction of its ink (the owner's "the map need to be faint
+   * behind it"). A class on the root rather than a style per element, because
+   * which elements are exempt is the stylesheet's `--selected` grammar — weight
+   * and presence, never a new colour — and this component should not hold a
+   * second copy of that list. Never set on the truncated map inside the card:
+   * that figure is what the reader is looking AT, not what is behind it.
+   */
+  veiled?: boolean;
   /**
    * View-transition names already spoken for **on this page**.
    *
@@ -756,7 +778,7 @@ export function ConvergeCanvas({
   if (subjectClaims) named.add(subjectId);
   return (
     <svg
-      className="mj-converge-canvas"
+      className={`mj-converge-canvas${veiled ? " mj-converge-canvas--veiled" : ""}`}
       viewBox={`0 0 ${n(diagram.width)} ${n(diagram.height)}`}
       width={n(diagram.width)}
       height={n(diagram.height)}
@@ -794,7 +816,7 @@ export function ConvergeCanvas({
           - Circles last, unchanged: a circle is the thing several lines share,
             so it sits on top of all of them. */}
       {diagram.lanes.map((lane) => (
-        <NamePlate key={lane.key} lane={lane} />
+        <NamePlate key={lane.key} lane={lane} selected={selection?.laneAddress === lane.address} />
       ))}
       {diagram.lanes.map((lane) => (
         <LaneName

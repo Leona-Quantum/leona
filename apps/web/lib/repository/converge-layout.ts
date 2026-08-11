@@ -3262,13 +3262,19 @@ function place(
     // than about the method. Pointing it at the method's own card would answer a
     // question the reader did not ask: they clicked the piece *inside* the line,
     // and the line is already one click away.
+    // The third argument names WHICH drawn occurrence this link sits on, so the
+    // selection — and the camera fly it triggers — lands on the thing clicked
+    // rather than on the first place the node happens to be drawn (see
+    // `withCard`). Only on the outer map: an inner-map lane's address names a
+    // place inside the card, which the outer figures do not draw, so carrying
+    // it would trade today's first-occurrence fly for no fly at all.
     cardHref:
       context.cardBase === null
         ? null
         : strand.own !== null
-          ? withCard(context.cardBase, ownCardId(strand.own))
+          ? withCard(context.cardBase, ownCardId(strand.own), context.innerBase === null ? strand.address : null)
           : strand.draws !== null
-            ? withCard(context.cardBase, strand.draws)
+            ? withCard(context.cardBase, strand.draws, context.innerBase === null ? strand.address : null)
             : null,
     composite: strand.composite,
     nameless: strand.nameless,
@@ -3551,7 +3557,7 @@ function placeFeeds(
       href: feed.href,
       cardHref:
         context.cardBase !== null && feed.id !== null
-          ? withCard(context.cardBase, feed.id)
+          ? withCard(context.cardBase, feed.id, context.innerBase === null ? feed.address : null)
           : null,
       x: round(at.x),
       y0: round(y0),
