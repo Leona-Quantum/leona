@@ -1191,6 +1191,40 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The headline exponential speedup is over a different deliverable. Learning the full solution vector rather than a functional of it takes $Θ̃(d/ε)$ applications of the preparation unitary and its inverse to obtain an $\\varepsilon$-l2 approximation of a $d$-dimensional pure state (here $d$ is the dimension, written $N$ above; elsewhere in this group $d$ denotes the sparsity) — a characterised complexity, not a loose upper bound — and that linear-in-dimension factor cancels the log-dimension advantage. The $\\kappa²$ is also superseded: later solvers reach $O(\\kappa \\log(1/\\varepsilon))$.",
     contestedJa: "見出しに掲げられる指数的な高速化は、別の成果物に対するものです。x の汎関数ではなく解ベクトル全体を得ようとすると、$d$ 次元の純粋状態（ここでの $d$ は次元であり、上の $N$ にあたります。本群の他の項目では $d$ は疎性を表します）を $\\varepsilon$ の l2 精度で近似するのに、状態を用意するユニタリとその逆を $Θ̃(d/ε)$ 回適用する必要があります。これは上界の緩い評価ではなく特徴付けられた計算量であり、次元に比例するこの因子は次元の対数ぶんの優位を打ち消します。$\\kappa²$ も置き換えられており、のちの解法は $O(\\kappa \\log(1/\\varepsilon))$ に到達しています。",
     steps: ["state-preparation", "hamiltonian-simulation", "success-amplification"],
+    // **The first listing on a decomposed route, and it exists to show the one
+    // thing the step list cannot.** `steps` is flat — state-preparation,
+    // hamiltonian-simulation, success-amplification — and the page draws it as
+    // an ordered list with a "runs O(κ) times" badge beside one entry. Which
+    // steps are INSIDE that loop is not a fact a flat list can carry, and here
+    // it is the whole cost story: `repeats` says |b⟩ is prepared afresh in every
+    // one of the O(κ) rounds, and that is one of the two κ factors.
+    //
+    // So the listing nests, and everything in it is transcribed: the sequence
+    // is `summary` verbatim, the loop and its note are `repeats`, and the
+    // hypotheses and the two closing remarks are `conditions`.
+    example: {
+      pseudocode: [
+        "given  A Hermitian (the general case reduced by dilation), s-sparse with",
+        "       efficient entry oracles, ||A|| ~ 1 with the relevant spectrum in",
+        "       [1/k, 1], k known or upper-bounded, and |b> preparable in poly(log N)",
+        "",
+        "repeat O(k) times, coherently -- the amplification rounds:",
+        "    prepare |b>                       # afresh inside every round",
+        "    run phase estimation against exp(-iAt), writing eigenvalue estimates",
+        "        into an ancilla register",
+        "    apply a controlled rotation with amplitude proportional to 1/lambda~",
+        "    uncompute the phase estimation",
+        "    post-select on the rotation ancilla",
+        "",
+        "# the success amplitude is about 1/k, which is why there are O(k) rounds --",
+        "# and preparing |b> inside each of them is one of the two k factors",
+        "",
+        "# only the well-conditioned part of |b> is inverted; the ill-conditioned",
+        "# part is flagged and discarded",
+        "# no polynomial approximation and no phase sequence is ever computed: the",
+        "# eigenvalue reciprocal is phase estimation plus a conditional rotation",
+      ].join("\n"),
+    },
     repeats: {
       "state-preparation": {
         count: "O(κ) times — once per amplification round",
@@ -1234,6 +1268,33 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The $O(\\kappa \\log(1/\\varepsilon))$ figure is a query count against the block-encoding, not a gate count, and it carries neither $\\alpha$ nor the amplification. Lin and Tong summarise the end-to-end QSP/QSVT query complexity as $O(\\kappa² \\mathrm{polylog}(\\kappa/\\varepsilon))$, reduced to $O(\\kappa \\mathrm{polylog}(\\kappa/\\varepsilon))$ only by variable-time amplitude amplification — and they state that the performance of that technique for this problem has not been quantitatively reported in the literature.",
     contestedJa: "$O(\\kappa \\log(1/\\varepsilon))$ という数字はブロック符号化への問い合わせ回数であってゲート数ではなく、$\\alpha$ も増幅ぶんも含んでいません。Lin と Tong は QSP/QSVT の全体としての問い合わせ計算量を $O(\\kappa² \\mathrm{polylog}(\\kappa/\\varepsilon))$ と整理し、$O(\\kappa \\mathrm{polylog}(\\kappa/\\varepsilon))$ まで下がるのは可変時間振幅増幅を用いた場合だけだとしています。さらに両氏は、この問題に対するその技法の性能は定量的に報告されていないと述べています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function", "success-amplification"],
+    // Transcribed from `summary`, `conditions` and the `repeats` note. The
+    // subnormalisation sentence is the reason this listing is worth having:
+    // `conditions` says what the transform produces is (δ/2)·A⁺ and therefore
+    // **not** the normalised solution state, so a reader who stops at the third
+    // step has the wrong object. Writing amplification as the step that
+    // converts it puts that where it is acted on.
+    example: {
+      pseudocode: [
+        "given  a projected unitary encoding of A whose non-zero singular values are",
+        "       all at least d  (d = 1/k after normalisation), with 0 < e <= d <= 1/2",
+        "",
+        "block-encode A",
+        "prepare |b>",
+        "apply the quantum singular value transformation with an odd polynomial",
+        "    approximating a scaled 1/x away from the origin",
+        "    # m = O((1/d) log(1/e)) applications of U and U^-1, coherently -- the",
+        "    # condition number appearing as a number of turns, not as a factor",
+        "",
+        "# what the transform produces is (d/2) A^+, the Moore-Penrose pseudoinverse",
+        "# carrying a subnormalisation. This is NOT yet the normalised solution state.",
+        "",
+        "amplify                               # which is what converts it",
+        "",
+        "# A need not be Hermitian or sparse -- only block-encodable, because the",
+        "# transform acts on singular values",
+      ].join("\n"),
+    },
     repeats: {
       "block-encode-matrix": {
         count: "m = O((1/δ) log(1/ε)) applications of U and U†",
@@ -1577,6 +1638,36 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Remez 交換法そのものの計算量を Dong・Meng・Whaley・Lin は述べていません。論文が述べているのは比較の形の利点です。$1/x$ の近似では、ミニマックス多項式は Fourier–Chebyshev 展開の打ち切りに比べ、同じ精度を 2〜3 分の 1 の次数で達成します。論文の表 III では、$\\varepsilon_0 = 10^{-14}$、$\\kappa = 10$〜$50$ の範囲で、打ち切りの次数 759〜4035 に対し、奇関数の場合 303〜1519、偶関数の場合 280〜1400 です。要旨ではなく本文に述べられています。",
     steps: [],
     atomic: true,
+    // A transcription of `conditions`, which states the loop outright: "the
+    // coefficients are solved from a reference set of degree-plus-two sampled
+    // points, which is then adjusted". `summary` supplies what it is for and
+    // what it beats.
+    //
+    // The attribution note is `conditions` verbatim and belongs in the listing
+    // as much as in the prose: Remez is classical approximation theory, and the
+    // citation on this record is the QSP paper that employs it, not its origin.
+    example: {
+      pseudocode: [
+        "given  the target function f, a degree d, and the interval",
+        "",
+        "choose a reference set of d + 2 sample points on the interval",
+        "",
+        "repeat:",
+        "    solve for the degree-d polynomial P and the equioscillation error E",
+        "        that fit f at the d + 2 reference points",
+        "    move the reference set to the extrema of  f - P",
+        "until the reference set stops moving",
+        "",
+        "return P",
+        "",
+        "# the genuine minimax polynomial of degree d, where truncating a Chebyshev",
+        "# series is only near-optimal -- a tighter polynomial of the same degree",
+        "# handed on to the phase-factor stage",
+        "",
+        "# classical approximation theory, not a quantum algorithm: the citation on",
+        "# this record is the QSP paper that employs it, not its origin",
+      ].join("\n"),
+    },
     citations: [
       { title: "Efficient phase-factor evaluation in quantum signal processing", authors: "Yulong Dong, Xiang Meng, K. Birgitta Whaley, Lin Lin", year: "2020", url: "https://arxiv.org/abs/2002.11649" },
     ],
@@ -1717,6 +1808,36 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "Herbert は、区間積分を Grover と Rudolph が指定した方法で求める限り、端から端までの量子的な高速化は得られないことを示しました。量子モンテカルロの RMSE は状態準備回路へのクエリ数 $N_q$ に対して $\\Theta(1/N_q)$ で減少しますが、その区間積分を計算する古典モンテカルロの RMSE はサンプル数 $N_s$ に対して $\\Theta(1/sqrt(N_s))$ でしか減少しません。Herbert の Theorem 1 は、RMSE $ε̂$ を達成するには $Ω̃(1/ε̂²)$ 回の演算を要すると結論しており、これは古典的な速度です。",
     steps: [],
     atomic: true,
+    // A transcription of `summary` — "at layer k a uniformly controlled
+    // rotation splits each current interval's probability mass between its two
+    // halves, so only n rotation layers are needed" — with the integral this
+    // record's `conditions` is about written where it is actually needed.
+    //
+    // The closing comment is `conditions` verbatim, and it is the point of this
+    // card: the subinterval integrals must genuinely be available, Grover and
+    // Rudolph's own text points at Monte Carlo for the log-concave case, and
+    // the method is routinely cited as though the two classes were one.
+    example: {
+      pseudocode: [
+        "given  a probability density p over 2^n subintervals, n qubits, and a way to",
+        "       obtain the integral of p over any subinterval",
+        "",
+        "for k = 0 ... n - 1:",
+        "    # layer k, controlled on the k qubits already prepared",
+        "    for each of the 2^k current intervals I:",
+        "        theta_I = 2 arccos( sqrt( integral of p over the left half of I",
+        "                                  / integral of p over I ) )",
+        "    apply one uniformly controlled rotation carrying the angles theta_I",
+        "        to qubit k",
+        "",
+        "# n rotation layers, not 2^n -- that is the whole of the construction",
+        "",
+        "# sound only where those subinterval integrals are genuinely available in",
+        "# closed form or from an efficient deterministic routine. Grover and Rudolph",
+        "# point at Monte Carlo for the log-concave case, so \"efficiently integrable\"",
+        "# and \"log-concave\" are not the same class.",
+      ].join("\n"),
+    },
     citations: [
       { title: "Creating superpositions that correspond to efficiently integrable probability distributions", authors: "Lov Grover, Terry Rudolph", year: "2002", url: "https://arxiv.org/abs/quant-ph/0208112" },
       { title: "The Problem with Grover-Rudolph State Preparation for Quantum Monte-Carlo", authors: "Steven Herbert", year: "2021", url: "https://arxiv.org/abs/2101.02240" },
@@ -1841,6 +1962,29 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "弱点は精度への依存性であり、後続の系統はまさにそれを直すために作られました。Berry–Childs–Cleve–Kothari–Somma の打ち切り Taylor 級数の方法では、コストは要求精度の逆数に対して対数的に依存し、著者らはこれが最適だと述べています。とはいえ積公式が時代遅れになったわけではありません。上記の交換子に基づく限界は、定数の面でも構造を持つ系でも有利になることが多く、アンシラの追加も不要です。ただし、高精度が要求される場面で積公式だけを引用したコスト見積もりは、選ぶ系統を誤っています。",
     steps: [],
     atomic: true,
+    // A transcription of `summary` and `conditions`. The alternation, the
+    // absence of a block-encoding and of an all-zeros flag, the commutator
+    // error and the free choice of term order are all sentences already on this
+    // record. No error bound is written into the listing: `conditions` credits
+    // the commutator analysis to Childs, Su, Tran, Wiebe and Zhu without
+    // quoting a constant, and a listing is not the place to acquire one.
+    example: {
+      pseudocode: [
+        "given  H = sum_j H_j  with each H_j efficiently exponentiable,",
+        "       evolution time t, step count r,  h = t/r",
+        "",
+        "for step = 1 ... r:",
+        "    # first order (Lie-Trotter): one short evolution per summand, in order",
+        "    for j = 1 ... m:   apply exp(-i h H_j)",
+        "    # higher order: the same summands in the symmetrised sub-step sequence",
+        "    # of the chosen Suzuki formula",
+        "",
+        "# no block-encoding is built, and there is no all-zeros flag to amplify",
+        "",
+        "# the error is governed by commutators among the summands, and the term",
+        "# order affects it -- the formula itself does not fix that order",
+      ].join("\n"),
+    },
     bypasses: ["block-encode-matrix"],
     entries: ["trotter-suzuki-simulation"],
     citations: [
@@ -1862,6 +2006,37 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Berry, Childs, Cleve, Kothari and Somma: the cost of the algorithm depends logarithmically on the inverse of the desired precision, which the authors state is optimal. Berry, Childs and Kothari, using a linear combination of quantum walk steps with coefficients given by Bessel functions, report a complexity in queries and 2-qubit gates that is \"logarithmic in the inverse error, and nearly linear in the product $\\tau$ of the evolution time, the sparsity, and the magnitude of the largest entry of the Hamiltonian\".",
     costJa: "Berry–Childs–Cleve–Kothari–Somma によれば、このアルゴリズムのコストは要求精度の逆数に対して対数的に依存し、著者らはこれが最適だと述べています。Berry–Childs–Kothari は、Bessel 関数を係数とする量子ウォークのステップの線形結合を用い、クエリ数および 2 量子ビットゲート数で測った計算量が「誤差の逆数に対して対数的であり、発展時間・スパース度・ハミルトニアンの最大成分の大きさの積 $\\tau$ に対してほぼ線形である」と報告しています。",
     steps: ["block-encode-matrix", "state-preparation", "success-amplification"],
+    // `summary` names the three sub-steps in order — "PREPARE loads the
+    // coefficients, SELECT applies the terms, PREPARE† unprepares" — which is
+    // already a listing in prose, so this transcribes it directly.
+    //
+    // Amplification is written inside the segment loop rather than after it
+    // because `conditions` insists on exactly that: the projection succeeds only
+    // on the all-zeros flag, so amplification "is part of the method rather than
+    // an afterthought". The 1-norm remark is the other half of the same field.
+    example: {
+      pseudocode: [
+        "given  H = sum_j c_j V_j  with each V_j efficiently implementable and a cheap",
+        "       PREPARE over the coefficients; evolution time t split into short",
+        "       segments",
+        "",
+        "for each segment:",
+        "    truncate the Taylor series of exp(-iH t_seg) and collect its terms as a",
+        "        linear combination of unitaries",
+        "",
+        "    PREPARE            # load the coefficients into the ancilla register",
+        "    SELECT             # apply the terms, controlled on that register",
+        "    PREPARE^-1         # unprepare",
+        "",
+        "    amplify the all-zeros ancilla flag",
+        "        # the projection onto the wanted block succeeds only on that flag,",
+        "        # so this is part of the method rather than an afterthought",
+        "",
+        "# the cost scales with the 1-norm of the coefficient vector rather than with",
+        "# ||H||: a decomposition with many comparable terms is expensive even for a",
+        "# benign H",
+      ].join("\n"),
+    },
     entries: ["linear-combination-unitaries"],
     citations: [
       { title: "Simulating Hamiltonian dynamics with a truncated Taylor series", authors: "Dominic W. Berry, Andrew M. Childs, Richard Cleve, Robin Kothari, Rolando D. Somma", year: "2014", url: "https://arxiv.org/abs/1412.4687" },
@@ -1882,6 +2057,35 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Low and Chuang state a query complexity $O(t + \\log(1/\\varepsilon))$ to both oracles \"that is optimal with respect to all parameters in both the asymptotic and non-asymptotic regime\", using at most two additional ancilla qubits. The approach subsumes prior sparse-Hamiltonian and linear-combination-of-unitaries approaches with significant improvements in space and gate complexity, such as a quadratic speed-up for precision simulations.",
     costJa: "Low と Chuang は、両方のオラクルに対するクエリ計算量 $O(t + \\log(1/\\varepsilon))$ が「漸近的な領域でも非漸近的な領域でも、すべてのパラメータに関して最適である」と述べ、追加のアンシラは高々 2 量子ビットであるとしています。この方法は従来のスパースハミルトニアン法およびユニタリの線形結合による方法を包含し、空間およびゲート計算量を大きく節約します。高精度のシミュレーションに対する二次的な高速化はその一例です。",
     steps: ["block-encode-matrix", "qsp-phase-factors"],
+    // A transcription of `summary`'s two sentences and `conditions`' three
+    // caveats. Short, because the method is short: two steps and the whole of
+    // the content is what W is and what is done to it.
+    //
+    // The provenance line in `conditions` — Low and Chuang build on Childs'
+    // extension of Szegedy's walk rather than introducing it — stays in the
+    // prose field. A listing is the procedure, not the attribution, and the
+    // card draws both.
+    example: {
+      pseudocode: [
+        "given  a block-encoding pair (U, |G>) with H = (<G| x I) U (|G> x I),",
+        "       H Hermitian, and the subnormalisation alpha inherited from whatever",
+        "       built that encoding",
+        "",
+        "build the walk operator W from (U, |G>)",
+        "    # W splits the space into invariant two-dimensional SU(2) subspaces, one",
+        "    # per eigenvalue of H, with eigenvalues exp(+- i arccos(H/alpha))",
+        "",
+        "apply the quantum signal processing phases to W",
+        "",
+        "return exp(-iHt)",
+        "",
+        "# consumes a block-encoding-like access model rather than raw data, so it",
+        "# does not solve the data-input problem by itself",
+        "# downstream cost is linear in alpha",
+        "# the arccos relation means eigenvalues near the edges of the spectrum are",
+        "# resolved differently from those near zero",
+      ].join("\n"),
+    },
     entries: ["quantum-signal-processing"],
     citations: [
       { title: "Hamiltonian Simulation by Qubitization", authors: "Guang Hao Low, Isaac L. Chuang", year: "2016", url: "https://arxiv.org/abs/1610.06546" },
@@ -1955,6 +2159,36 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Reaching additive error $\\varepsilon$ takes of order $1/\\varepsilon$ sequential applications of $Q$, and that is a depth as much as a count, so a device with a capped coherent depth cannot spend it. Giurgica-Tiron, Kerenidis, Labib, Prakash and Zeng give two algorithms — Power law AE and QoPrime AE — carrying a parameter $\\beta ∈ (0,1]$ with $N = \\tilde{O}(1/\\varepsilon^{1+\\beta})$ oracle calls and $D = O(1/\\varepsilon^{1−\\beta})$ sequential calls, so $N·D = \\tilde{O}(1/\\varepsilon²)$ throughout and $\\beta = 1$ recovers classical sampling. A quoted \"quadratic speedup\" that does not state the depth it assumes has not stated its cost.",
     contestedJa: "加法誤差 $\\varepsilon$ の達成に要する $Q$ の適用回数はおよそ $1/\\varepsilon$ ですが、これは回数であると同時に逐次深さでもあり、コヒーレント深さに上限のある装置はそれを使い切れません。Giurgica-Tiron–Kerenidis–Labib–Prakash–Zeng は Power law AE と QoPrime AE という二つのアルゴリズムを与えています。パラメータ $\\beta ∈ (0,1]$ に対しオラクル呼び出しは $N = \\tilde{O}(1/\\varepsilon^{1+\\beta})$、逐次呼び出しは $D = O(1/\\varepsilon^{1−\\beta})$ であり、全域で $N·D = \\tilde{O}(1/\\varepsilon²)$ が成り立ち、$\\beta = 1$ で古典的なサンプリングに戻ります。前提とする深さを述べずに「二次的な高速化」と書いた見積もりは、コストを述べたことになりません。",
     steps: ["state-preparation"],
+    // Transcribed from `summary`, `conditions` and the `repeats` note. Two
+    // details are in the listing because both are sign-and-convention facts a
+    // reader implementing this needs at the point of use rather than in a
+    // paragraph: the global minus in Q, which `conditions` says fixes the
+    // eigenphase convention the amplitude is read off from, and that each of
+    // the M iterations runs the preparation forwards AND backwards, which is
+    // what `repeats` records.
+    example: {
+      pseudocode: [
+        "given  coherent, controlled access to the state-preparation unitary A and to",
+        "       its inverse, and a bound on the observable's eigenvalues or on its",
+        "       tail distribution",
+        "",
+        "encode the expectation value into an amplitude",
+        "",
+        "form the Grover operator   Q = - A S_0 A^-1 S_chi",
+        "    # the global minus is Brassard, Hoyer, Mosca and Tapp's definition, and",
+        "    # it is what fixes the eigenphase convention the amplitude is read off",
+        "    # from",
+        "",
+        "run M = O(1/e) iterations, coherently -- phase estimation on Q, or one of",
+        "    the QPE-free variants",
+        "    # each iteration runs the preparation forwards and backwards once",
+        "",
+        "return the amplitude, hence the expectation value",
+        "",
+        "# a state that has been prepared and measured cannot be reused, so this is",
+        "# the fault-tolerant-regime readout and direct sampling is the near-term one",
+      ].join("\n"),
+    },
     repeats: {
       "state-preparation": {
         count: "M iterations, M = O(1/ε), each running the preparation forwards and backwards once",
@@ -2194,6 +2428,33 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "実務上支配的な場合については、既に置き換えられています。Clifford+T の $z$ 回転では数論的な合成が $\\log(1/\\varepsilon)$ に比例する $T$ 数に達するのに対し、ゲート集合を問わない Solovay–Kitaev の上界は指数がおよそ 3.97 です。代数的な構造を利用できないゲート集合でだけ残る手段であり、そこでも Kuperberg が指数を下げています。",
     steps: [],
     atomic: true,
+    // A transcription of `summary`: "recursively refine an approximation using
+    // group commutators, for any finite inverse-closed set that densely
+    // generates the group". Written as the recursion because that sentence is a
+    // recursion, and the hypotheses in the closing comment are `conditions`
+    // verbatim — including the one this record exists to state, that the
+    // algorithm gives no optimality guarantee.
+    example: {
+      pseudocode: [
+        "given  a target unitary U, a finite inverse-closed generating set that",
+        "       densely generates the group, and a recursion depth n",
+        "",
+        "function approximate(U, n):",
+        "    if n == 0:",
+        "        return the nearest element of the precomputed net over the base set",
+        "    V = approximate(U, n - 1)",
+        "    D = U V^-1                       # what the previous level left to correct",
+        "    write D as a group commutator    D = A B A^-1 B^-1",
+        "    A' = approximate(A, n - 1)",
+        "    B' = approximate(B, n - 1)",
+        "    return A' B' A'^-1 B'^-1 V",
+        "",
+        "return approximate(U, n)",
+        "",
+        "# the general-purpose fallback: it works on gate sets with no exploitable",
+        "# algebraic structure, and it gives no optimality guarantee",
+      ].join("\n"),
+    },
     citations: [
       { title: "The Solovay-Kitaev algorithm", authors: "Christopher M. Dawson, Michael A. Nielsen", year: "2005", url: "https://arxiv.org/abs/quant-ph/0505030" },
       { title: "Breaking the cubic barrier in the Solovay-Kitaev algorithm", authors: "Greg Kuperberg", year: "2023", url: "https://arxiv.org/abs/2306.13158" },
@@ -2258,6 +2519,32 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "看板となった実証、すなわち誤り耐性以前における量子計算の有用性の裏付けとして報告された 127 量子ビットの IBM Eagle での kicked Ising 実験（Kim ら、Nature 618, 500 (2023)）は、その後に古典計算で再現され、精度でも上回られました。一つは信念伝播に基づくテンソルネットワーク（Tindall・Fishman・Stoudenmire・Sels）で、量子プロセッサの結果より正確かつ精密でした。もう一つはノートパソコンの 1 コア上で走らせた疎パウリ動力学（Begusic・Chan）で、報告された量子側の実行時間より桁違いに高速でした。誤り緩和そのものは機能しました。残らなかったのは量子優位という読み方です。",
     steps: [],
     atomic: true,
+    // A transcription of `summary` and `conditions`. The three caveats in the
+    // trailing comment are `conditions` verbatim and are the reason the listing
+    // is worth having on this record: the returned object is an expectation
+    // value, and the sentence that says it cannot be handed to a coherent
+    // downstream subroutine is the one a reader planning a pipeline needs.
+    example: {
+      pseudocode: [
+        "given  a circuit C, an observable O, an extrapolation model,",
+        "       and noise scale factors s_1 < s_2 < ... < s_m  (s_1 = 1, the device as it is)",
+        "",
+        "for each scale factor s:",
+        "    build C_s -- the same circuit with the device noise amplified by s",
+        "    measure <O> on C_s over enough shots for the target variance",
+        "",
+        "fit the chosen model to the points (s, <O>_s)",
+        "    # Richardson's deferred approach to the limit, or another model",
+        "",
+        "return the fit evaluated at s = 0",
+        "",
+        "# the extrapolation model is an assumption, and a wrong model produces a",
+        "# confidently wrong number",
+        "# bias falls while variance rises, so the shot cost goes up",
+        "# what comes back is an expectation value: it cannot be handed to a coherent",
+        "# downstream subroutine",
+      ].join("\n"),
+    },
     citations: [
       { title: "Error mitigation for short-depth quantum circuits", authors: "Kristan Temme, Sergey Bravyi, Jay M. Gambetta", year: "2016", url: "https://arxiv.org/abs/1612.02058" },
       { title: "Efficient tensor network simulation of IBM's Eagle kicked Ising experiment", authors: "Joseph Tindall, Matt Fishman, Miles Stoudenmire, Dries Sels", year: "2023", url: "https://arxiv.org/abs/2306.14887" },
@@ -2297,6 +2584,35 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Nation・Kang・Sundaresan・Gambetta は、行列を陽に作らない前処理付きの反復解法が $O(1)$ 回の反復で収束し、直接分解に比べて桁違いに少ないメモリで済み、直接法では扱えない量子ビット数でも数秒で緩和できると報告しています。",
     steps: [],
     atomic: true,
+    // Two listings in one, because `summary` describes two forms — "the naive
+    // form calibrates and inverts the full 2^n x 2^n matrix; the scalable form
+    // never forms it" — and a single listing would have to pick one and read as
+    // if it were the method. The displaced form is written as a comment rather
+    // than as steps, so nothing here reads as a recommendation to build it.
+    //
+    // The category-error sentence is `conditions` verbatim, and it is on this
+    // record because the mistake it names is common.
+    example: {
+      pseudocode: [
+        "given  the observed counts over the bitstrings the device actually returned",
+        "",
+        "# The form Nation et al. displace, for contrast -- do not build this:",
+        "#     calibrate the full 2^n x 2^n assignment matrix A, then apply A^-1.",
+        "#     That needs 2^n calibration circuits and a 2^n x 2^n inverse, and it",
+        "#     can return unphysical negative probabilities.",
+        "",
+        "# The scalable form never forms A:",
+        "restrict to the subspace spanned by the observed bitstrings",
+        "build only the entries of A that act within that subspace",
+        "solve  A_sub p_true = p_observed  iteratively, without forming an inverse",
+        "",
+        "return p_true, with its computable error bound",
+        "",
+        "# readout error only. This does nothing about gate or decoherence error, and",
+        "# treating it as general-purpose mitigation is a category error.",
+        "# correlated as well as uncorrelated errors are accommodated",
+      ].join("\n"),
+    },
     citations: [
       { title: "Scalable mitigation of measurement errors on quantum computers", authors: "Paul D. Nation, Hwajung Kang, Neereja Sundaresan, Jay M. Gambetta", year: "2021", url: "https://arxiv.org/abs/2108.12518" },
     ],
