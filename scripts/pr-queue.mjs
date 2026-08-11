@@ -72,6 +72,8 @@ export function codeownerPaths(text) {
  * READY discovers it by a failed merge.
  */
 export function blockersFor({ isDraft, mergeStateStatus, checks, required, threads, owned, hasAck }) {
+  // `threads === null` means the count could not be read. That is not zero, and
+  // printing READY on it would be the convenient answer rather than the true one.
   const blockers = [];
   const missing = required.filter((name) => !(name in checks));
   const running = Object.entries(checks)
@@ -85,7 +87,9 @@ export function blockersFor({ isDraft, mergeStateStatus, checks, required, threa
   if (missing.length)
     blockers.push(`required check never dispatched: ${missing.join(",")} — re-dispatch, do not wait`);
   if (failing.length) blockers.push(`failing: ${failing.join(",")}`);
-  if (threads > 0)
+  if (threads === null)
+    blockers.push("review-thread count UNREADABLE — check by hand; a thread blocks even when the reviewer's check is green");
+  else if (threads > 0)
     blockers.push(`${threads} unresolved review thread(s) — blocks even when the reviewer's check is green`);
   if (owned.length && !hasAck)
     blockers.push(
@@ -133,6 +137,7 @@ function selfTest() {
   push("queued counts as running, not missing", first({ checks: { ts: "SUCCESS", py: "QUEUED" } }).startsWith("still running"));
   push("failure is named", first({ checks: { ts: "FAILURE", py: "SUCCESS" } }).includes("ts:FAILURE"));
   push("threads block", first({ threads: 3 }).includes("3 unresolved"));
+  push("unreadable thread count is a blocker, not zero", first({ threads: null }).includes("UNREADABLE"));
   push("codeowners without ack blocks", first({ owned: ["db/migrations/"] }).includes("Blast-radius"));
   push("codeowners with ack does not", blockersFor({ ...base, owned: ["db/migrations/"], hasAck: true }).length === 0);
   push("behind is a blocker", first({ mergeStateStatus: "BEHIND" }).startsWith("BEHIND"));
@@ -168,7 +173,7 @@ function unresolvedThreads(number) {
     const nodes = JSON.parse(out).data.repository.pullRequest.reviewThreads.nodes;
     return nodes.filter((thread) => !thread.isResolved).length;
   } catch {
-    return 0; // a thread count we could not read is not a thread count we may invent
+    return null; // a count we could not read is not zero, and blockersFor says so
   }
 }
 
