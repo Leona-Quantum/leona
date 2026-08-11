@@ -115,7 +115,7 @@ interface ConvergeCopy {
   ledeFan: string;
   ledeOverview: string;
   grainStates: (interior: number) => string;
-  grainMethods: (n: number, slot: string) => string;
+  grainMethods: (n: number, slot: string, folded: number) => string;
   truncatedNote: string;
   inconsistentNote: string;
   collapsed: (n: number) => string;
@@ -199,8 +199,17 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       "Four problems nothing else needs — the places a reader arrives. Open a line to see what is recorded inside it, or click its name to go there.",
     grainStates: (interior: number) =>
       `The ${interior === 1 ? "circle" : `${interior} circles`} between the ends ${interior === 1 ? "is an object" : "are objects"} every way across passes through.`,
-    grainMethods: (n: number, slot: string) =>
-      `${n} recorded ${n === 1 ? "way" : "ways"} of doing ${slot}. Nothing smaller is recorded inside it, so there is no object in the middle to draw.`,
+    // The drawn count must not impersonate the recorded count (s121, W17): a
+    // folded refinement is recorded and deliberately not drawn, and the legend
+    // says both numbers or it is claiming the corpus is smaller than it is.
+    grainMethods: (n: number, slot: string, folded: number) =>
+      folded > 0
+        ? `${n + folded} recorded ways of doing ${slot}; ${n} are drawn — the other ${
+            folded === 1 ? "one is a refinement" : `${folded} are refinements`
+          } with the same internals, folded into ${
+            folded === 1 ? "its parent's card" : "their parents' cards"
+          }. Nothing smaller is recorded inside it, so there is no object in the middle to draw.`
+        : `${n} recorded ${n === 1 ? "way" : "ways"} of doing ${slot}. Nothing smaller is recorded inside it, so there is no object in the middle to draw.`,
     truncatedNote:
       "The search for ways across hit its limit, so this figure is part of what the graph records rather than all of it.",
     inconsistentNote:
@@ -269,8 +278,10 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
       "他のどの手法からも必要とされない四つの問題 — 読者が最初に立つ場所です。線をクリックすると内側が開き、名前をクリックするとそこへ移動します。",
     grainStates: (interior: number) =>
       `両端のあいだにある ${interior} 個の円は、どの道を通っても必ず経由する対象です。`,
-    grainMethods: (n: number, slot: string) =>
-      `${slot}を行う記録された手法が ${n} 件あります。内側により小さな対象は記録されていないため、中間に描く対象はありません。`,
+    grainMethods: (n: number, slot: string, folded: number) =>
+      folded > 0
+        ? `${slot}を行う記録された手法は ${n + folded} 件です。うち ${n} 件を描き、残る ${folded} 件は内部が同じ改良版として親の手法のカード内に畳み込まれています。内側により小さな対象は記録されていないため、中間に描く対象はありません。`
+        : `${slot}を行う記録された手法が ${n} 件あります。内側により小さな対象は記録されていないため、中間に描く対象はありません。`,
     truncatedNote:
       "経路の探索が上限に達したため、この図はグラフが記録する全体ではなく、その一部です。",
     inconsistentNote:
@@ -1120,8 +1131,12 @@ export function ConvergeView({
                 {first.grain === "states"
                   ? copy.grainStates(first.states.filter((state) => state.depth === 0).length - 2)
                   : copy.grainMethods(
-                      first.lanes.filter((lane) => lane.depth === 0).length,
+                      // The layout's own count, not a depth filter: a variant
+                      // lane's drawn depth is 1, so "depth === 0" undercounted
+                      // every fan with a drawn refinement (PR 366 review).
+                      first.drawnMethodCount,
                       label(focus),
+                      first.foldedCount,
                     )}
               </p>
             ) : null}

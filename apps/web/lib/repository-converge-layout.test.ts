@@ -1622,9 +1622,16 @@ test("a line that opens into something says so, and a line that does not is not 
   // shut nonlinear figure's walk gained the simulate → estimate run: two slot
   // lanes between the linear-ivp and solution-answer circles that no way across
   // drew before, both real, both sourced (Joseph §V C).
-  assert.equal(openable + leaves + 1, 66, "the nineteen figures draw 66 lines between them");
-  assert.equal(openable, 29, "29 of them open into something recorded");
-  assert.equal(leaves, 36, "36 are leaves — nothing finer is recorded for them");
+  // 66 until session 121 (W17). The owner's refinement-folding ruling took three
+  // variant lanes off the shut figures — `krovi-linear-ode` and
+  // `lchs-improved-kernel` (both openable) and `lightsabre-routing` (a leaf) —
+  // because a refinement with `sameInternalsAsParent` lives in its parent
+  // card's Refinements section rather than as a lane. **The drop is three
+  // pictures removed on purpose, not affordance quietly lost**: each of the
+  // three still draws on its own page, where the planner unfolds its subject.
+  assert.equal(openable + leaves + 1, 63, "the nineteen figures draw 63 lines between them");
+  assert.equal(openable, 27, "27 of them open into something recorded");
+  assert.equal(leaves, 35, "35 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -2449,20 +2456,23 @@ test("every declared refinement is drawn on the lane of the method that declares
   // The subject is the opposite of the repeat mark's. A count belongs to an
   // occurrence, so that test's expected set is keyed per (method, step) and
   // asks which *lane* carries it. A narrowing belongs to the node, so this one
-  // is keyed per method and asks whether it reached a drawing **at all** — a
-  // record no figure draws is the failure this shape allows, and it is not
-  // hypothetical: two of these five are never in a shut figure's fan, because
-  // `linear-ode-solve` draws its own steps when it is the focus and its methods
-  // only when something above it opens the slot.
+  // is keyed per method and asks whether it reached a drawing **at all**.
+  //
+  // Split since s121 (W17): a refinement with `sameInternalsAsParent` is
+  // FOLDED — the owner's ruling — and must reach no slot figure at all; the
+  // one drawing it still owns is its own page, checked at the bottom. The
+  // drawn set is the two Koopman children, whose constructions differ.
   const expected = new Map<string, string>();
+  const foldedExpected = new Map<string, string>();
   const parentOf = new Map<string, string>();
   for (const node of LAYER_GRAPH.nodes) {
     if (!isMethod(node) || node.refines === undefined) continue;
     assert.ok(node.refinesMark !== undefined, `${node.id}: refines with no mark reached the layout`);
-    expected.set(node.id, node.refinesMark);
+    (node.sameInternalsAsParent === true ? foldedExpected : expected).set(node.id, node.refinesMark);
     parentOf.set(node.id, node.refines);
   }
-  assert.ok(expected.size > 0, "no refinement is recorded at all — this test measures nothing");
+  assert.ok(expected.size > 0, "no drawn refinement is recorded at all — this test measures nothing");
+  assert.ok(foldedExpected.size > 0, "no folded refinement is recorded — the fold sweep below measures nothing");
   const drawn = new Set<string>();
   let marks = 0;
   let nested = 0;
@@ -2553,6 +2563,14 @@ test("every declared refinement is drawn on the lane of the method that declares
         );
         if (onLane || onFeed) drawn.add(methodId);
       }
+      // The fold, checked as an absence where it claims one: a folded
+      // refinement must draw NO lane on any slot figure, at any opening.
+      for (const id of foldedExpected.keys()) {
+        assert.ok(
+          !diagram.lanes.some((lane) => lane.draws === id),
+          `${focus.id} with ${[...open].join("+")}: folded ${id} draws a lane`,
+        );
+      }
     }
   }
   assert.deepEqual(
@@ -2560,8 +2578,24 @@ test("every declared refinement is drawn on the lane of the method that declares
     [],
     "a declared refinement reaches no figure at all",
   );
+  // And the one drawing a folded refinement still owns: its own page, which
+  // unfolds exactly its subject — nested under its parent, mark intact, as
+  // W13 drew it before the fold.
+  for (const [id, mark] of foldedExpected) {
+    const node = layerNode(LAYER_GRAPH, id);
+    assert.ok(node && isMethod(node), `${id} is not a method`);
+    const page = layoutConvergeForMethod({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      method: node,
+      locale: "en",
+    });
+    const lane = page.lanes.find((l) => l.draws === id && l.variant);
+    assert.ok(lane, `${id}: folded, and its own page does not draw it nested`);
+    assert.equal(lane!.refinement?.mark, mark, `${id}: its own page's lane lost the refinement mark`);
+  }
   console.log(
-    `[map refinement census] ${expected.size} records, ${marks} marked shapes drawn across every figure and opening`,
+    `[map refinement census] ${expected.size} drawn + ${foldedExpected.size} folded records, ${marks} marked shapes drawn across every figure and opening`,
   );
 });
 
@@ -3959,29 +3993,28 @@ function interiorOf(drawn: Map<string, Set<string>>, id: string): string | null 
 test("a route that pins its step draws the algorithm's name there, not the slot's", () => {
   const drawn = drawnInteriors();
   const taylor = interiorOf(drawn, "taylor-all-at-once");
-  const krovi = interiorOf(drawn, "krovi-linear-ode");
   const dyson = interiorOf(drawn, "dyson-all-at-once");
-  assert.ok(taylor && krovi && dyson, "the three all-at-once routes are drawn");
+  assert.ok(taylor && dyson, "the two pinned all-at-once routes are drawn");
 
-  // Three routes, three pictures. Not three *routes* — `steps` is still
-  // `time-discretization + quantum-linear-solve` on all three, which is correct
+  // Two routes, two pictures. Not two *routes* — `steps` is still
+  // `time-discretization + quantum-linear-solve` on both, which is correct
   // and is why comparing routes here would prove nothing.
-  assert.equal(new Set([taylor, krovi, dyson]).size, 3, `${taylor}\n${krovi}\n${dyson}`);
+  assert.equal(new Set([taylor, dyson]).size, 2, `${taylor}\n${dyson}`);
 
   // And the names are the pinned ones, read off the drawing rather than inferred
-  // from the count above being 3 — a count of 3 is also what three *wrongly*
+  // from the count above being 2 — a count of 2 is also what two *wrongly*
   // labelled hops would give.
   assert.match(taylor, /^Truncated Taylor series of the propagator ▸ /);
   assert.match(dyson, /^Truncated Dyson series of the propagator ▸ /);
-  // Krovi keeps the slot, and that is the honest drawing rather than a gap: the
-  // paper re-analyses the all-at-once construction and chooses no discretization
-  // of its own, so a pin here would be this map asserting something no source
-  // does. See the note on its `refines` edge in `layer-graph.ts`.
-  assert.match(krovi, /^Choose a time discretization or propagator approximation ▸ /);
+  // Krovi drew the slot-labelled pair here until s121 — honest (the paper
+  // chooses no discretization, so no pin is permitted) but a third lane whose
+  // internals a reader already finds one lane away. Folded by the owner's W17
+  // ruling: no slot figure draws it, and the absence is the assertion.
+  assert.equal(interiorOf(drawn, "krovi-linear-ode"), null, "krovi is folded and must draw no slot-figure interior");
 
   // The other group the same pin splits. Schrödingerisation recasts through the
-  // warped phase transformation and the two LCHS routes through the kernel
-  // identity; unpinned, all three drew `hamiltonian-recasting → simulate`.
+  // warped phase transformation and the LCHS route through the kernel
+  // identity; unpinned, they drew `hamiltonian-recasting → simulate`.
   const lchs = interiorOf(drawn, "lchs-route");
   const schrodinger = interiorOf(drawn, "schrodingerisation");
   assert.ok(lchs && schrodinger);
@@ -3989,12 +4022,12 @@ test("a route that pins its step draws the algorithm's name there, not the slot'
   assert.match(lchs, /^Kernel-weighted combination of unitary propagators ▸ /);
   assert.match(schrodinger, /^Warped phase transformation ▸ /);
 
-  // `lchs-improved-kernel` is *deliberately* still identical to `lchs-route`:
-  // it pins the same kernel identity and simulates the same way, and it says so
-  // with `refines`. That is the declared case the census below lets through, and
-  // asserting it here is what stops the census's exemption being a licence
-  // nobody re-reads.
-  assert.equal(interiorOf(drawn, "lchs-improved-kernel"), lchs);
+  // `lchs-improved-kernel` — the owner's model case for W17 — is folded for
+  // exactly the reason this assertion used to state: its interior was
+  // *deliberately* identical to `lchs-route`'s (same kernel-identity pin, same
+  // simulate), so the pair now draws ONE lane and the refinement lives in the
+  // LCHS card's Refinements section.
+  assert.equal(interiorOf(drawn, "lchs-improved-kernel"), null, "the improved kernel is folded and must draw no slot-figure interior");
 });
 
 /**
@@ -4067,6 +4100,13 @@ const DRAWN_NOWHERE: readonly string[] = [
   "kvn-simulation-route",
   "level-set-observable-route",
   "homotopy-perturbation-route",
+  // s121 (W17): the two folded refinements that hold an interior. Different
+  // reason from the four above — not aggregation at a root, but the owner's
+  // fold ruling: no slot figure draws them. Both still draw on their own
+  // pages, where `layoutConvergeForMethod` unfolds its subject.
+  // (`lightsabre-routing` is folded too, but atomic — no interior to miss.)
+  "krovi-linear-ode",
+  "lchs-improved-kernel",
 ];
 
 test("a shared interior is drawn once per figure, and the census prints the denominator", () => {
@@ -4725,6 +4765,13 @@ test("a slot drawn as a state chain is walked by every method that fills it", ()
       fans += 1;
       const drawn = new Set(diagram.lanes.map((lane) => lane.draws));
       for (const method of methods) {
+        // A folded refinement (s121, W17) is the one absence a fan may have:
+        // it lives in its parent card's Refinements section, and its parent IS
+        // on the fan — checked by the refinement census, not exempted blind.
+        if (method.sameInternalsAsParent === true) {
+          assert.ok(!drawn.has(method.id), `${focus.id}: folded ${method.id} is on the fan`);
+          continue;
+        }
         assert.ok(
           drawn.has(method.id),
           `${focus.id} draws the fan and ${method.id} is not on it`,
@@ -4739,25 +4786,67 @@ test("a slot drawn as a state chain is walked by every method that fills it", ()
   assert.ok(fans >= 15, `only ${fans} fan figures — the sweep is short`);
 });
 
-test("the slot whose own methods refuted its chain draws all seven of them", () => {
+test("the slot whose own methods refuted its chain draws its five distinct routes", () => {
   // The concrete case, pinned by name so the general gate above cannot rot
   // into a sweep that measures nothing: `linear-ode-solve` must fan, and every
-  // one of its seven methods — including the three whose `bypasses` refuted
-  // the old chain — must be on its own slot's figure.
+  // method with a walk of its own — including the ones whose `bypasses`
+  // refuted the old chain — must be on its own slot's figure. Seven until
+  // s121 (W17): the owner's fold ruling took `krovi-linear-ode` and
+  // `lchs-improved-kernel` into their parents' cards, so the figure now draws
+  // the five structurally distinct routes and the two folds are asserted as
+  // absences.
   const diagram = diagramFor("linear-ode-solve");
   assert.equal(diagram.grain, "methods", "linear-ode-solve is drawing the refuted chain again");
   const drawn = new Set(diagram.lanes.map((lane) => lane.draws));
   for (const id of [
     "taylor-all-at-once",
-    "krovi-linear-ode",
     "dyson-all-at-once",
     "time-marching-usva",
     "lchs-route",
-    "lchs-improved-kernel",
     "schrodingerisation",
   ]) {
     assert.ok(drawn.has(id), `linear-ode-solve's own figure does not draw ${id}`);
   }
+  for (const id of ["krovi-linear-ode", "lchs-improved-kernel"]) {
+    assert.ok(!drawn.has(id), `linear-ode-solve's figure draws folded ${id}`);
+  }
+});
+
+test("the legend's two numbers count drawn variants and the unfolded subject", () => {
+  // CodeRabbit on PR 366, confirmed by measurement before fixing: a variant
+  // lane's drawn depth is 1, so the component's depth-0 filter undercounted
+  // every fan with a DRAWN refinement (the embedding fan said 4 where 6 draw),
+  // and a folded method's own page dropped its unfolded subject from both
+  // numbers. The diagram carries both counts itself now; drawn + folded must
+  // equal recorded, which is the sentence the legend prints.
+  const embedding = diagramFor("nonlinear-linear-embedding");
+  assert.equal(embedding.grain, "methods");
+  assert.equal(embedding.drawnMethodCount, 6, "four tops and two drawn Koopman variants");
+  assert.equal(embedding.foldedCount, 0);
+
+  const ode = diagramFor("linear-ode-solve");
+  assert.equal(ode.drawnMethodCount, 5);
+  assert.equal(ode.foldedCount, 2);
+  assert.equal(
+    ode.drawnMethodCount + ode.foldedCount,
+    methodsRealizing(LAYER_GRAPH, "linear-ode-solve").length,
+    "drawn + folded is not the recorded count",
+  );
+
+  const node = layerNode(LAYER_GRAPH, "krovi-linear-ode");
+  assert.ok(node && isMethod(node));
+  const page = layoutConvergeForMethod({
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    method: node,
+    locale: "en",
+  });
+  assert.equal(page.drawnMethodCount, 6, "the unfolded subject counts as drawn on its own page");
+  assert.equal(page.foldedCount, 1, "the OTHER fold stays folded there");
+  assert.equal(
+    page.drawnMethodCount + page.foldedCount,
+    methodsRealizing(LAYER_GRAPH, "linear-ode-solve").length,
+  );
 });
 
 test("a narrowing is not a second lane beside the slot whose fan already contains it", () => {

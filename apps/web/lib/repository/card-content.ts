@@ -216,41 +216,38 @@ export interface MethodCard extends CardCommon {
   readonly kind: "method";
   readonly realizes: CardLink | null;
   /**
-   * The two halves of `refines`, and why neither is a `CardValue`.
+   * The two halves of `refines` — chrome for the DRAWN relation, and (since
+   * s121) a section for the folded one. Two owner rulings, in order:
    *
-   * The owner, session 113: *"why do LCHS and LCHS improve kernel break down to
-   * the same thing, they clearly have different implementation so something at
-   * least has to change right?"* — and his answer to the write-up: *"just make it
-   * clear what the difference is, and it should show up in UI in clear way
-   * without cluttering."*
+   * Session 113: *"just make it clear what the difference is, and it should
+   * show up in UI in clear way without cluttering"* — which made the relation
+   * chrome, not a section, because a "Narrower versions: none found yet" line
+   * on all 58 methods that have none would be 58 statements about a search
+   * nobody ran.
    *
-   * The chain is identical **on purpose**: what the improved-kernel paper changes
-   * is the kernel inside `lchs-kernel-identity`, a parameter of the construction
-   * rather than a different construction, which is why the duplicate-path gate
-   * exempts a declared refinement. So the data is right and the *drawing* was
-   * silent — the reader saw two identical lanes and nothing said they were
-   * related, let alone how.
+   * Session 121 superseded HALF of that: *"these kinds of refinements can
+   * exist within the LCHS card within its own section … until there is
+   * actually a difference that we can represent in the map itself for the
+   * user."* A refinement with `sameInternalsAsParent` no longer draws a lane
+   * at all, so the parent's card is now the ONLY surface that shows it beside
+   * what it narrows — that is what earns it a real section (`refinements`
+   * below). The chrome keeps carrying what it always carried: the child card's
+   * own back-link, and the drawn (non-folded) narrower versions.
    *
-   * **Chrome, not a section, and that is the "without cluttering" half.** Every
-   * other thing on this card is a `CardValue` because it is *content the corpus
-   * might hold and might not have found yet* — "none found yet" is a claim about
-   * a search. A refinement edge is not that. It is a structural relation the
-   * graph is the whole authority on, `refinementsOf`/`alternativesTo` are already
-   * a partition of the siblings, and a card printing "none found yet" under
-   * *Narrower versions* on all 58 methods that have none would be 58 statements
-   * about a search nobody ran. So it draws where it exists and nothing where it
-   * does not — the same call `repository-layers.tsx` already made for `refines`
-   * on the node page.
-   *
-   * **What is different is answered by following the link, not by a second copy
-   * of the answer.** `lchs-improved-kernel`'s own lede already opens with the
-   * kernel, its decay rate and what it replaces. A `differsBy` field here would
-   * restate that one click away from the sentence it was copied from, and the two
-   * would drift the first time either was edited.
+   * **What is different is still answered by the child's own words, not by a
+   * copy.** The section entry reads the child node's `summary` and
+   * `potentialPath` directly — nothing is restated, so nothing can drift.
    */
   readonly refines: CardLink | null;
-  /** Narrower versions of this one. Empty is the common case and draws nothing. */
+  /** Narrower versions that DRAW — folded ones live in `refinements` instead. */
   readonly refinedBy: readonly CardLink[];
+  /**
+   * Folded refinements: same internals as this method, better analysis —
+   * each entry the child's own lede plus what would earn it a path of its own.
+   * `none-recorded` is the honest empty (the field exists; the corpus records
+   * no fold here), same as `example`/`implementations` since session 114.
+   */
+  readonly refinements: CardValue<readonly CardRefinementEntry[]>;
   readonly whenItApplies: CardValue<string>;
   /** *Performance*, on the card. `cost` is what the graph calls the field it reads. */
   readonly cost: CardValue<string>;
@@ -294,6 +291,18 @@ export interface MethodCard extends CardCommon {
    * because zero is a count and this would be an absence of one.
    */
   readonly implementationLeads: CardValue<CardImplementationLeads>;
+}
+
+/**
+ * One folded refinement on its parent's card (s121, W17): the link, the
+ * child's own lede, and the child's own note on what granular research would
+ * give it a drawable path. Both prose strings are READ off the child node,
+ * never copied into a second home.
+ */
+export interface CardRefinementEntry {
+  readonly link: CardLink;
+  readonly summary: string;
+  readonly potentialPath: string;
 }
 
 /** A worked example, its pseudocode, or both. */
@@ -615,6 +624,33 @@ function implementationsOf(
   );
 }
 
+/**
+ * The `refinements` section's entries: this method's folded narrower versions
+ * (`sameInternalsAsParent`), each carrying the child's own lede and its own
+ * potential-path note. Validation guarantees `potentialPath` exists in both
+ * locales whenever the flag is set, so the fallback empty string here is
+ * unreachable rather than a silent default.
+ */
+function refinementEntriesOf(
+  graph: LayerGraph,
+  method: LayerMethod,
+  ja: boolean,
+): CardValue<readonly CardRefinementEntry[]> {
+  const entries = refinementsOf(graph, method)
+    .filter((child) => child.sameInternalsAsParent === true)
+    .map((child) => {
+      const link = linkFor(graph, child.id, ja);
+      if (link === null) return null;
+      return {
+        link,
+        summary: ja ? child.summaryJa : child.summary,
+        potentialPath: (ja ? child.potentialPathJa : child.potentialPath) ?? "",
+      };
+    })
+    .filter((entry): entry is CardRefinementEntry => entry !== null && entry.potentialPath !== "");
+  return entries.length === 0 ? missing("none-recorded") : held(entries);
+}
+
 function methodCard(input: CardInput, method: LayerMethod): MethodCard {
   const { graph, vocabulary, corpus } = input;
   const ja = input.locale === "ja";
@@ -658,9 +694,14 @@ function methodCard(input: CardInput, method: LayerMethod): MethodCard {
     // scan — `refinementsOf` — and there is no second place the back-link could
     // drift from. It is the same argument `bypassedBy` makes on the process card.
     refines: method.refines === undefined ? null : linkFor(graph, method.refines, ja),
+    // The partition the s121 ruling cut: a narrower version either DRAWS (its
+    // own lane, chrome here) or FOLDS (no lane, a full entry in the
+    // `refinements` section). One child, one home.
     refinedBy: refinementsOf(graph, method)
+      .filter((child) => child.sameInternalsAsParent !== true)
       .map((child) => linkFor(graph, child.id, ja))
       .filter((link): link is CardLink => link !== null),
+    refinements: refinementEntriesOf(graph, method, ja),
     contract: contractOf(graph, method, ja),
     whenItApplies: stated(ja ? method.conditionsJa : method.conditions),
     cost: stated(ja ? method.costJa : method.cost),
@@ -790,6 +831,7 @@ export type CardSectionId =
   | "requires"
   | "example"
   | "performance"
+  | "refinements"
   | "contested"
   | "implementations"
   | "records"
@@ -880,6 +922,11 @@ export function cardSections(card: Card): readonly CardSection[] {
     of("requires", card.ingredients),
     of("example", card.example),
     of("performance", card.cost),
+    // After Performance and before Contested, s121: a folded refinement's whole
+    // claim is "same walk, better analysis", which is a performance-adjacent
+    // sentence — and like Contested it is commentary on the method's standing
+    // rather than part of the recipe above it.
+    of("refinements", card.refinements),
     of("contested", card.contested),
     of("implementations", card.implementations),
     of("records", card.records),

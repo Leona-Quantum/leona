@@ -228,6 +228,35 @@ export interface LayerMethod extends LayerNodeBase {
   refinesMark?: string;
   refinesMarkJa?: string;
   /**
+   * Present only with `refines`, and only when this refinement records **no
+   * map-representable internal difference** from its parent — same steps, same
+   * bypasses, a `via` that adds nothing the parent's does not.
+   *
+   * The owner's s121 ruling: *"until there is actually a difference that we
+   * can represent in the map itself for the user, the refinement can exist
+   * within the broader card with a short explanation, and be recorded as
+   * potential for new paths."* A folded refinement draws no lane of its own;
+   * it lives as an entry in its parent card's Refinements section. Its node
+   * stays — page, URL, citations, mathematics all survive — only the lane goes.
+   *
+   * Declared rather than derived, because field equality cannot tell "the same
+   * construction re-analysed" (Krovi, the improved kernel) from "a different
+   * construction that happens to be atomic" (the two Koopman lifts, which the
+   * owner ruled keep their lanes in s103). What CAN be checked is checked:
+   * validation refuses the flag when the chain facts differ, so it cannot
+   * assert what the fields refute.
+   */
+  sameInternalsAsParent?: true;
+  /**
+   * Required with `sameInternalsAsParent`, absent otherwise: what granular
+   * research would give this refinement drawable internals of its own — the
+   * owner's "recorded as potential for new paths". A statement about the MAP's
+   * backlog, never a claim about the paper; the paper's own content stays in
+   * the node's ordinary fields.
+   */
+  potentialPath?: string;
+  potentialPathJa?: string;
+  /**
    * When it applies and when it does not.
    *
    * **Absent means no source we read stated one.** Never `""` — an empty string
@@ -776,11 +805,30 @@ export function refinementsOf(graph: LayerGraph, method: LayerMethod): LayerMeth
  */
 export interface MethodFanGroup {
   method: LayerMethod;
-  /** Members of the same fan that narrow `method`, in graph order. */
+  /** Members of the same fan that narrow `method` AND draw a lane, in graph order. */
   variants: readonly LayerMethod[];
+  /**
+   * Members that narrow `method` and are **folded** (`sameInternalsAsParent`):
+   * no lane on any fan — they live as entries in the parent card's Refinements
+   * section (owner's s121 ruling), and their own pages keep drawing their own
+   * routes. Kept in the group rather than dropped so the partition invariant
+   * survives: every method realizing the slot appears exactly once across
+   * `method` ∪ `variants` ∪ `folded`.
+   */
+  folded: readonly LayerMethod[];
 }
 
-export function methodFanGroups(graph: LayerGraph, capabilityId: string): MethodFanGroup[] {
+/**
+ * `unfold` (s121, W17): the one folded member the caller needs drawn anyway —
+ * a folded method's OWN page is still about that method, so the page planner
+ * unfolds exactly its subject; every other surface passes nothing and the fold
+ * holds. An id, not a flag, so a page can never accidentally unfold a sibling.
+ */
+export function methodFanGroups(
+  graph: LayerGraph,
+  capabilityId: string,
+  unfold?: string,
+): MethodFanGroup[] {
   const methods = methodsRealizing(graph, capabilityId);
   const byId = new Map(methods.map((method) => [method.id, method]));
   // The top-level ancestor within this fan. Validation refuses `refines
@@ -800,9 +848,16 @@ export function methodFanGroups(graph: LayerGraph, capabilityId: string): Method
     }
   };
   const top = methods.filter((method) => topOf(method) === method);
+  const drawn = (other: LayerMethod) =>
+    other.sameInternalsAsParent !== true || other.id === unfold;
   return top.map((method) => ({
     method,
-    variants: methods.filter((other) => other !== method && topOf(other) === method),
+    variants: methods.filter(
+      (other) => other !== method && topOf(other) === method && drawn(other),
+    ),
+    folded: methods.filter(
+      (other) => other !== method && topOf(other) === method && !drawn(other),
+    ),
   }));
 }
 
@@ -2308,8 +2363,53 @@ export function validateLayerGraph(
           );
         }
       }
+      // **The fold flag cannot assert what the fields refute.** A folded
+      // refinement (owner's s121 ruling) draws no lane because it records no
+      // map-representable difference — so the claim is checked against the
+      // chain facts it summarises. The Koopman children stay drawable
+      // precisely because their authors do NOT declare this: "a different
+      // construction that happens to be atomic" is a judgment the corpus
+      // records, not one a machine could infer from field equality.
+      if (node.sameInternalsAsParent === true && parent && isMethod(parent)) {
+        const same = (a: readonly string[] | undefined, b: readonly string[] | undefined) =>
+          JSON.stringify(a ?? []) === JSON.stringify(b ?? []);
+        if (!same(node.steps, parent.steps)) {
+          errors.push(
+            `${node.id}: sameInternalsAsParent, but its steps differ from ${parent.id}'s — a different walk is a drawable difference, so it is not folded`,
+          );
+        }
+        if (!same(node.bypasses, parent.bypasses)) {
+          errors.push(
+            `${node.id}: sameInternalsAsParent, but its bypasses differ from ${parent.id}'s`,
+          );
+        }
+        if (node.via !== undefined && JSON.stringify(node.via) !== JSON.stringify(parent.via ?? {})) {
+          errors.push(
+            `${node.id}: sameInternalsAsParent, but its via pins differ from ${parent.id}'s — a different pin is a drawable difference`,
+          );
+        }
+        if (node.through !== undefined && JSON.stringify(node.through) !== JSON.stringify(parent.through ?? {})) {
+          errors.push(
+            `${node.id}: sameInternalsAsParent, but its through narrowings differ from ${parent.id}'s`,
+          );
+        }
+      }
+      for (const [field, value] of [
+        ["potentialPath", node.potentialPath],
+        ["potentialPathJa", node.potentialPathJa],
+      ] as const) {
+        if (node.sameInternalsAsParent === true) {
+          if (typeof value !== "string" || value.trim() === "") {
+            errors.push(
+              `${node.id}: sameInternalsAsParent and ${field} is missing — a folded refinement records what would earn it a path of its own, in both locales`,
+            );
+          }
+        } else if (value !== undefined) {
+          errors.push(`${node.id}: ${field} is set and sameInternalsAsParent is not — the note belongs to the fold`);
+        }
+      }
     } else {
-      for (const field of ["refinesMark", "refinesMarkJa"] as const) {
+      for (const field of ["refinesMark", "refinesMarkJa", "sameInternalsAsParent", "potentialPath", "potentialPathJa"] as const) {
         if (node[field] !== undefined) {
           errors.push(`${node.id}: ${field} is set and refines is not`);
         }

@@ -1087,6 +1087,20 @@ export interface ConvergeDiagram {
    * revisit; that is why the reason is not baked into the number.
    */
   cappedCount: number;
+  /**
+   * Recorded methods this figure does NOT draw because they are folded
+   * refinements (s121, W17) — same internals as a drawn parent, living in its
+   * card's Refinements section. Carried so the legend can keep saying how many
+   * ways are RECORDED without the drawn-lane count quietly impersonating it.
+   */
+  foldedCount: number;
+  /**
+   * Methods a fan figure draws — tops plus nested variants. 0 on a chain.
+   * The legend reads THIS, not a depth filter: a variant lane's drawn depth
+   * is 1, so filtering `depth === 0` undercounts every fan with a drawn
+   * refinement.
+   */
+  drawnMethodCount: number;
 }
 
 /**
@@ -1984,6 +1998,11 @@ function planForMethod(
   seen: Set<string>,
   keyPrefix: string,
   address: string,
+  // s121 (W17): the one folded refinement this figure draws anyway — set only
+  // by the subject's own page, threaded to the grouping and NOT into the
+  // recursion below, because the unfolded id realizes THIS slot and can appear
+  // nowhere deeper.
+  unfold?: string,
 ): PlanStrand {
   const route = routeOf(graph, vocabulary, method);
   const segments = route.segments.length;
@@ -2048,7 +2067,7 @@ function planForMethod(
   // nesting at all. `seen` is honoured for the same reason it is everywhere
   // else: a variant already drawn on the way down must not be drawn again
   // inside itself.
-  const ownGroup = methodFanGroups(graph, method.realizes).find(
+  const ownGroup = methodFanGroups(graph, method.realizes, unfold).find(
     (group) => group.method.id === method.id,
   );
   // `flatMap` over the group with its own index, never filter-then-map: a
@@ -3658,6 +3677,8 @@ export function layoutConvergeForMethod(options: {
       truncated: false,
       chainConsistent: true,
       cappedCount: 0,
+      foldedCount: 0,
+      drawnMethodCount: 0,
     };
   }
   // The reader's own `?open=` **and** this method, which is not negotiable: the
@@ -3674,7 +3695,11 @@ export function layoutConvergeForMethod(options: {
   // `variantPosition` numbers — the same writer `planForMethod` used to mint
   // the address, so the two cannot disagree about where the five refinement
   // methods live.
-  const fan = methodFanOf(graph, slot);
+  // With the subject unfolded (s121, W17): a folded refinement draws no lane on
+  // the slot's figure, but its own page is still ABOUT it, so this one surface
+  // asks the grouping to draw it — nested under its parent, exactly as W13 drew
+  // it before the fold.
+  const fan = methodFanOf(graph, slot, method.id);
   let subjectAddress: string | null = null;
   if (fan) {
     const at = fan.lanes.findIndex((lane) => lane.method.id === method.id);
@@ -3702,6 +3727,7 @@ export function layoutConvergeForMethod(options: {
     at: options.at,
     plan: "fan",
     subjectAddress,
+    unfold: method.id,
   });
 }
 
@@ -3922,6 +3948,8 @@ function layoutFigure(options: {
    * so a nested child of the same method is never mistaken for it.
    */
   subjectAddress?: string | null;
+  /** s121 (W17): the folded refinement this figure draws anyway — its own page only. */
+  unfold?: string;
   cards?: boolean;
   innerBase?: string | null;
 }): ConvergeDiagram {
@@ -3963,7 +3991,7 @@ function layoutFigure(options: {
   // methods appeared on their own slot's figure.
   const plan =
     options.plan === "fan" || !drawsAsStateChain(graph, vocabulary, focus, expansion)
-      ? planMethodFan(graph, vocabulary, focus, locale, open)
+      ? planMethodFan(graph, vocabulary, focus, locale, open, options.unfold)
       : planStateChain(graph, vocabulary, expansion, locale, open, focus.id);
 
   if (!plan) {
@@ -3981,6 +4009,8 @@ function layoutFigure(options: {
       truncated: expansion.truncated,
       chainConsistent: expansion.chainConsistent,
       cappedCount: 0,
+      foldedCount: 0,
+      drawnMethodCount: 0,
     };
   }
 
@@ -4170,6 +4200,8 @@ function layoutFigure(options: {
     truncated: expansion.truncated,
     chainConsistent: expansion.chainConsistent,
     cappedCount: out.capped,
+    foldedCount: plan.folded ?? 0,
+    drawnMethodCount: plan.drawnMethods ?? 0,
   };
 }
 
@@ -4177,6 +4209,16 @@ interface Plan {
   chain: readonly string[];
   bundles: readonly { from: string; to: string; lanes: readonly PlanStrand[] }[];
   grain: ConvergeGrain;
+  /** Folded refinements this fan holds back (s121, W17). Absent on a chain. */
+  folded?: number;
+  /**
+   * Methods this fan DRAWS — tops plus nested variants. Counted here, where
+   * the fan is, because the component's depth filter cannot: a variant lane
+   * carries drawn depth 1, so "depth === 0" undercounted every fan with a
+   * drawn refinement (CodeRabbit on PR 366, confirmed by measurement — the
+   * embedding fan said 4 where 6 draw).
+   */
+  drawnMethods?: number;
 }
 
 function planStateChain(
@@ -4223,13 +4265,16 @@ function planMethodFan(
   focus: LayerCapability,
   locale: PublicLocale,
   open: ReadonlySet<string>,
+  unfold?: string,
 ): Plan | null {
   // The fan IS the focus's own figure, so the subject is `focus` itself.
-  const fan = methodFanOf(graph, focus);
+  const fan = methodFanOf(graph, focus, unfold);
   if (!fan) return null;
   return {
     chain: [fan.from, fan.to],
     grain: "methods",
+    folded: fan.folded,
+    drawnMethods: fan.lanes.reduce((sum, lane) => sum + 1 + lane.variants.length, 0),
     bundles: [
       {
         from: fan.from,
@@ -4245,6 +4290,7 @@ function planMethodFan(
             new Set([focus.id]),
             `${focus.id}:`,
             addressRoot(focus.id, 0, laneIndex),
+            unfold,
           ),
         ),
       },

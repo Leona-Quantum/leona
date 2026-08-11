@@ -188,6 +188,11 @@ test("the card draws the sections the owner asked for, in the order he asked for
       "requires",
       "example",
       "performance",
+      // s121 (W17): folded refinements, after Performance — "same walk,
+      // better analysis" is a performance-adjacent sentence, and like
+      // Contested it is commentary on the method's standing rather than part
+      // of the recipe above it.
+      "refinements",
       "contested",
       "implementations",
       "records",
@@ -236,10 +241,11 @@ test("a section is never empty and silent — every one resolves to held, or to 
   const seen = new Set<string>();
   for (const card of cards()) {
     const sections = cardSections(card);
-    // Ten on a method, six on a process — the two card kinds are different shapes, and a
+    // Eleven on a method (ten until s121 — `refinements` is W17's addition),
+    // six on a process — the two card kinds are different shapes, and a
     // count that only fitted the fatter one would pass a process card that had lost half
     // its sections.
-    const expected = card.kind === "method" ? 10 : 6;
+    const expected = card.kind === "method" ? 11 : 6;
     assert.equal(
       sections.length,
       expected,
@@ -254,8 +260,9 @@ test("a section is never empty and silent — every one resolves to held, or to 
     }
   }
   // Pinned so a section cannot quietly leave the card. Removing one is a change to this
-  // number, which is a change somebody has to justify in a diff.
-  assert.equal(seen.size, 16, `${seen.size} distinct sections: ${[...seen].sort().join(", ")}`);
+  // number, which is a change somebody has to justify in a diff. 16 until s121
+  // (`method:refinements` is W17's addition).
+  assert.equal(seen.size, 17, `${seen.size} distinct sections: ${[...seen].sort().join(", ")}`);
 });
 
 test("the two gaps stay different facts — the undesigned sections never say 'none found yet'", () => {
@@ -772,13 +779,32 @@ test("a method's card says what it is a narrower version of, and what narrows it
     // **The round trip, and it is the half that rots.** `refines` is authored on the child
     // and the back-link is a scan, so the two can only disagree if the scan stops matching
     // the field — which is exactly what happens when somebody adds a second way to declare
-    // a refinement and updates one reader.
+    // a refinement and updates one reader. Since s121 (W17) the scan has two
+    // homes and each child has exactly one: a FOLDED child
+    // (`sameInternalsAsParent`) is a full entry in the parent's `refinements`
+    // section, a drawn child is a chrome link in `refinedBy` — never both.
     const parent = byId.get(node.refines!);
     assert.ok(parent, `${node.id} refines ${node.refines}, which draws no card`);
-    assert.ok(
-      parent.refinedBy.some((child) => child.id === node.id),
-      `${node.refines} does not list ${node.id} among its narrower versions`,
-    );
+    if (node.sameInternalsAsParent === true) {
+      assert.ok(
+        parent.refinements.held &&
+          parent.refinements.value.some((entry) => entry.link.id === node.id),
+        `${node.refines} does not carry folded ${node.id} in its refinements section`,
+      );
+      assert.ok(
+        !parent.refinedBy.some((child) => child.id === node.id),
+        `${node.refines} lists folded ${node.id} in chrome too — one child, one home`,
+      );
+    } else {
+      assert.ok(
+        parent.refinedBy.some((child) => child.id === node.id),
+        `${node.refines} does not list ${node.id} among its narrower versions`,
+      );
+      assert.ok(
+        !(parent.refinements.held && parent.refinements.value.some((entry) => entry.link.id === node.id)),
+        `${node.refines} carries drawn ${node.id} in its refinements section too`,
+      );
+    }
   }
 
   // And nothing anywhere else. A back-link that appeared on a method nothing refines would
@@ -787,52 +813,81 @@ test("a method's card says what it is a narrower version of, and what narrows it
   for (const card of methods) {
     if (!parents.has(card.id)) {
       assert.equal(card.refinedBy.length, 0, `${card.id} lists narrower versions but nothing refines it`);
+      assert.ok(
+        !card.refinements.held,
+        `${card.id} holds a refinements section but nothing refines it`,
+      );
     }
   }
 
-  // The "without cluttering" claim, as a number rather than as an intention: this draws on
-  // nine cards and is absent — not "none found yet" — on the other fifty-four. If it ever
-  // becomes most of them, it is a section and wants a heading, not a line under the lede.
+  // The "without cluttering" claim, as a number rather than as an intention. Nine cards
+  // until s121: the fold moved three children out of chrome-on-parent into the parents'
+  // sections, so the chrome now draws on six cards (five children's own back-links +
+  // koopman-linearization's two drawn narrower versions) and the section holds on three
+  // (taylor-all-at-once, lchs-route, sabre-routing). If chrome ever becomes most of the
+  // sixty-three, it is a section and wants a heading, not a line under the lede.
   const drawn = methods.filter((card) => card.refines !== null || card.refinedBy.length > 0);
   assert.equal(
     drawn.length,
-    9,
+    6,
     `the refinement line draws on ${drawn.length} of ${methods.length} cards: ${drawn.map((c) => c.id).sort().join(", ")}`,
+  );
+  const sectioned = methods.filter((card) => card.refinements.held);
+  assert.deepEqual(
+    sectioned.map((c) => c.id).sort(),
+    ["lchs-route", "sabre-routing", "taylor-all-at-once"],
+    "the refinements section holds on exactly the three folded parents",
   );
 });
 
-test("the owner's LCHS pair: the identical chain now says which is the narrower one", () => {
+test("the owner's LCHS pair: the fold puts the narrower one inside the broader card", () => {
+  // Session 113 asked the pair to say which is narrower; s121 went further, in
+  // the owner's own words: *"it just doesn't make sense to put LCHS with
+  // improved kernel as a separate process when we haven't researched the
+  // internals enough … the refinement can exist within the LCHS card within
+  // its own section."* So the improved kernel is FOLDED (W17): no lane of its
+  // own, a full entry in the LCHS card's Refinements section, its node and
+  // page untouched.
   const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: [], locale: "en", register: PAPER_REGISTER } as const;
   const improved = cardFor(input, "lchs-improved-kernel");
   const original = cardFor(input, "lchs-route");
   assert.ok(improved?.kind === "method" && original?.kind === "method");
 
+  // The child's own back-link survives the fold; the parent's chrome does not
+  // carry it — the section is its one home on the parent.
   assert.equal(improved.refines?.id, "lchs-route");
-  assert.deepEqual(original.refinedBy.map((child) => child.id), ["lchs-improved-kernel"]);
-  // The two draw the same chain, and that is the fact the reader was tripping over. Pinned
-  // here rather than assumed: if the chains ever diverge, this line is the one that says the
-  // refinement edge is no longer the *only* thing distinguishing them, and the copy under
-  // the lede can stop carrying that weight alone.
+  assert.deepEqual(original.refinedBy, []);
+  assert.ok(original.refinements.held, "the LCHS card holds no refinements section");
+  const entry = original.refinements.value.find((e) => e.link.id === "lchs-improved-kernel");
+  assert.ok(entry, "the improved kernel is not in the LCHS card's refinements section");
+
+  // The two still record the same chain — the fold is a consequence of that
+  // fact, and validation refuses the flag the day the chains diverge, so this
+  // pin is what says "the fold is still earned" rather than inherited.
   const chain = (card: typeof improved) =>
     card.trace.held ? card.trace.value.map((hop) => `${hop.from}>${hop.to}:${hop.via?.id ?? "own"}`) : [];
-  assert.deepEqual(chain(improved), chain(original), "the LCHS pair no longer draws one chain");
+  assert.deepEqual(chain(improved), chain(original), "the LCHS pair no longer records one chain");
 
-  // **What is different is not restated on the card, and that is deliberate.** It is the
-  // first sentence of the narrower method's own lede, one click away. A copy here would be
-  // the same claim in two places, and the copy is the one that goes stale.
+  // **What is different is still the child's own words, read in place, not
+  // copied.** The entry's lede is the child's `summary` (the kernel, its decay
+  // rate, what it replaces) and the potential-path note is the child's own
+  // `potentialPath` — the owner's "recorded as potential for new paths".
+  assert.match(entry!.summary, /kernel/i);
   assert.match(improved.summary, /kernel/i);
+  assert.equal(entry!.summary, improved.summary, "the entry restates instead of reading the lede");
+  assert.ok(entry!.potentialPath.length > 0, "the fold carries no potential-path note");
 
-  // Both directions localise, all the way to the label a reader actually reads.
+  // Both directions localise, all the way to the strings a reader actually reads.
   const ja = { ...input, locale: "ja" } as const;
   const improvedJa = cardFor(ja, "lchs-improved-kernel");
   const originalJa = cardFor(ja, "lchs-route");
   assert.ok(improvedJa?.kind === "method" && originalJa?.kind === "method");
   assert.notEqual(improvedJa.refines?.label, improved.refines?.label, "the parent's name did not change locale");
-  assert.notEqual(
-    originalJa.refinedBy[0]?.label,
-    original.refinedBy[0]?.label,
-    "the narrower version's name did not change locale",
-  );
+  assert.ok(originalJa.refinements.held, "the ja card lost the section");
+  const entryJa = originalJa.refinements.value.find((e) => e.link.id === "lchs-improved-kernel");
+  assert.ok(entryJa, "the ja section lost the improved kernel");
+  assert.notEqual(entryJa!.summary, entry!.summary, "the entry's lede did not change locale");
+  assert.notEqual(entryJa!.potentialPath, entry!.potentialPath, "the potential-path note did not change locale");
 });
 
 // --- the stretch a method performs itself -----------------------------------
