@@ -84,6 +84,10 @@ const stamp = Date.now();
 let checks = 0;
 let served = 0;
 const misses = [];
+// Per field, because one total hides which KIND of content is unverified — and
+// the first version of this probe was verifying one lane's fields and silently
+// reporting nothing about four others.
+const byField = new Map();
 
 for (const locale of ["en", "ja"]) {
   for (const id of region.methods) {
@@ -93,10 +97,25 @@ for (const locale of ["en", "ja"]) {
       const p = phrase(locale === "ja" ? hop.theoryJa : hop.theory);
       if (p) wanted.push([`hops[${key}]`, p]);
     }
-    const text = locale === "ja" ? node.example?.textJa : node.example?.text;
-    if (text) {
-      const p = phrase(text);
-      if (p) wanted.push(["example.text", p]);
+    // The other four fields a reader opens a card for. Added 2026-08-12 after the
+    // first version covered only what THIS lane happened to author: hop notes,
+    // worked runs and implementation labels. Every other lane in the batch fills
+    // `cost`, `conditions` and `pseudocode`, and none of those was being read
+    // back — so a shared instrument was verifying one lane's work and quietly
+    // reporting nothing about the rest.
+    //
+    // `pseudocode` is deliberately NOT localised (its identifiers are the
+    // record's own symbols), so it is checked once rather than per locale — the
+    // same block is expected on both pages, which is itself the assertion.
+    for (const [field, value] of [
+      ["cost", locale === "ja" ? node.costJa : node.cost],
+      ["conditions", locale === "ja" ? node.conditionsJa : node.conditions],
+      ["example.text", locale === "ja" ? node.example?.textJa : node.example?.text],
+      ["example.pseudocode", node.example?.pseudocode],
+    ]) {
+      if (!value) continue;
+      const p = phrase(value);
+      if (p) wanted.push([field, p]);
     }
     for (const impl of node.implementations ?? []) {
       wanted.push([`implementations[${impl.id}]`, locale === "ja" ? impl.labelJa : impl.label]);
@@ -115,12 +134,23 @@ for (const locale of ["en", "ja"]) {
     }
     checks += wanted.length;
     served += wanted.length - bad.length;
+    for (const [field] of wanted) {
+      const row = byField.get(field.replace(/\[.*\]/, "[]")) ?? { checked: 0, served: 0 };
+      row.checked += 1;
+      byField.set(field.replace(/\[.*\]/, "[]"), row);
+    }
+    for (const [field] of wanted.filter(([w]) => !bad.some(([b]) => b === w))) {
+      byField.get(field.replace(/\[.*\]/, "[]")).served += 1;
+    }
     if (bad.length > 0) misses.push({ locale, id, bad: bad.map(([w, p]) => `${w}: ${p.slice(0, 60)}…`) });
     console.log(`${locale} ${id.padEnd(32)} ${wanted.length - bad.length}/${wanted.length}${bad.length ? "  MISSING" : ""}`);
   }
 }
 
 console.log(`\n${served}/${checks} authored fragments served by ${base}, both locales`);
+for (const [field, row] of [...byField.entries()].sort()) {
+  console.log(`  ${field.padEnd(24)} ${row.served}/${row.checked}`);
+}
 for (const m of misses) {
   console.log(`  ✖ ${m.locale} ${m.id}`);
   for (const b of m.bad) console.log(`      ${b}`);
