@@ -1094,6 +1094,13 @@ export interface ConvergeDiagram {
    * ways are RECORDED without the drawn-lane count quietly impersonating it.
    */
   foldedCount: number;
+  /**
+   * Methods a fan figure draws — tops plus nested variants. 0 on a chain.
+   * The legend reads THIS, not a depth filter: a variant lane's drawn depth
+   * is 1, so filtering `depth === 0` undercounts every fan with a drawn
+   * refinement.
+   */
+  drawnMethodCount: number;
 }
 
 /**
@@ -3671,6 +3678,7 @@ export function layoutConvergeForMethod(options: {
       chainConsistent: true,
       cappedCount: 0,
       foldedCount: 0,
+      drawnMethodCount: 0,
     };
   }
   // The reader's own `?open=` **and** this method, which is not negotiable: the
@@ -4002,6 +4010,7 @@ function layoutFigure(options: {
       chainConsistent: expansion.chainConsistent,
       cappedCount: 0,
       foldedCount: 0,
+      drawnMethodCount: 0,
     };
   }
 
@@ -4192,6 +4201,7 @@ function layoutFigure(options: {
     chainConsistent: expansion.chainConsistent,
     cappedCount: out.capped,
     foldedCount: plan.folded ?? 0,
+    drawnMethodCount: plan.drawnMethods ?? 0,
   };
 }
 
@@ -4201,6 +4211,14 @@ interface Plan {
   grain: ConvergeGrain;
   /** Folded refinements this fan holds back (s121, W17). Absent on a chain. */
   folded?: number;
+  /**
+   * Methods this fan DRAWS — tops plus nested variants. Counted here, where
+   * the fan is, because the component's depth filter cannot: a variant lane
+   * carries drawn depth 1, so "depth === 0" undercounted every fan with a
+   * drawn refinement (CodeRabbit on PR 366, confirmed by measurement — the
+   * embedding fan said 4 where 6 draw).
+   */
+  drawnMethods?: number;
 }
 
 function planStateChain(
@@ -4256,6 +4274,7 @@ function planMethodFan(
     chain: [fan.from, fan.to],
     grain: "methods",
     folded: fan.folded,
+    drawnMethods: fan.lanes.reduce((sum, lane) => sum + 1 + lane.variants.length, 0),
     bundles: [
       {
         from: fan.from,

@@ -114,7 +114,11 @@ test("every rendered figure wears its names on plates, and there are as many as 
   expect(withPlates.length, "a rendered figure draws no name plate at all").toBeGreaterThanOrEqual(
     36,
   );
-  expect(plateCount, "too few name plates to be checking anything").toBeGreaterThanOrEqual(540);
+  // 540 until s121 (W17): the refinement fold took three variant lanes off the
+  // shut figures (krovi, the improved kernel, LightSABRE) — ×2 locales = 6
+  // plates fewer, a picture removed on purpose. Measured 534 on that change;
+  // the floor moves with it so the next silent drop still trips.
+  expect(plateCount, "too few name plates to be checking anything").toBeGreaterThanOrEqual(534);
 });
 
 /** Every `data-name` on an element with this class, in the order they are drawn. */

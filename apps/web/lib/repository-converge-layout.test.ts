@@ -4812,6 +4812,43 @@ test("the slot whose own methods refuted its chain draws its five distinct route
   }
 });
 
+test("the legend's two numbers count drawn variants and the unfolded subject", () => {
+  // CodeRabbit on PR 366, confirmed by measurement before fixing: a variant
+  // lane's drawn depth is 1, so the component's depth-0 filter undercounted
+  // every fan with a DRAWN refinement (the embedding fan said 4 where 6 draw),
+  // and a folded method's own page dropped its unfolded subject from both
+  // numbers. The diagram carries both counts itself now; drawn + folded must
+  // equal recorded, which is the sentence the legend prints.
+  const embedding = diagramFor("nonlinear-linear-embedding");
+  assert.equal(embedding.grain, "methods");
+  assert.equal(embedding.drawnMethodCount, 6, "four tops and two drawn Koopman variants");
+  assert.equal(embedding.foldedCount, 0);
+
+  const ode = diagramFor("linear-ode-solve");
+  assert.equal(ode.drawnMethodCount, 5);
+  assert.equal(ode.foldedCount, 2);
+  assert.equal(
+    ode.drawnMethodCount + ode.foldedCount,
+    methodsRealizing(LAYER_GRAPH, "linear-ode-solve").length,
+    "drawn + folded is not the recorded count",
+  );
+
+  const node = layerNode(LAYER_GRAPH, "krovi-linear-ode");
+  assert.ok(node && isMethod(node));
+  const page = layoutConvergeForMethod({
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    method: node,
+    locale: "en",
+  });
+  assert.equal(page.drawnMethodCount, 6, "the unfolded subject counts as drawn on its own page");
+  assert.equal(page.foldedCount, 1, "the OTHER fold stays folded there");
+  assert.equal(
+    page.drawnMethodCount + page.foldedCount,
+    methodsRealizing(LAYER_GRAPH, "linear-ode-solve").length,
+  );
+});
+
 test("a narrowing is not a second lane beside the slot whose fan already contains it", () => {
   // Session 118's fourth repeat mechanism, the one that lives in the walk: a
   // single-edge `through` lane drew the Koopman-von Neumann lift as its own

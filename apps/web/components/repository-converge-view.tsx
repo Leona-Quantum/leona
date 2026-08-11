@@ -1107,7 +1107,10 @@ export function ConvergeView({
                 {first.grain === "states"
                   ? copy.grainStates(first.states.filter((state) => state.depth === 0).length - 2)
                   : copy.grainMethods(
-                      first.lanes.filter((lane) => lane.depth === 0).length,
+                      // The layout's own count, not a depth filter: a variant
+                      // lane's drawn depth is 1, so "depth === 0" undercounted
+                      // every fan with a drawn refinement (PR 366 review).
+                      first.drawnMethodCount,
                       label(focus),
                       first.foldedCount,
                     )}
