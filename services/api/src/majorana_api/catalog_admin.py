@@ -590,6 +590,7 @@ def pick_standing_reviewer(
     rows: Sequence[tuple[uuid.UUID, Role, str]],
     *,
     service_ids: frozenset[uuid.UUID],
+    signed: Mapping[uuid.UUID, int] | None = None,
 ) -> uuid.UUID:
     """Which account already holds the catalog reviewer grant.
 
@@ -640,13 +641,36 @@ def pick_standing_reviewer(
             "there is no standing attestation to continue. Run the first attestation "
             "explicitly — `--attested-by-email <you>` — and this flag works from then on."
         )
-    if len(candidates) > 1:
-        raise SystemExit(
-            f"{len(candidates)} accounts hold the catalog reviewer grant "
-            f"({', '.join(str(user_id) for user_id in candidates)}) — an unattended run "
-            "will not choose between them. Pass --attested-by explicitly."
-        )
-    return candidates[0]
+    if len(candidates) == 1:
+        return candidates[0]
+
+    # More than one grant. Before refusing, ask the stronger question: not who
+    # *may* review, but who actually *has*.
+    #
+    # **This is not a tiebreak invented to get past a refusal — it narrows the
+    # candidate set, it never widens it.** A membership says an account holds the
+    # permission; `license_assertions.reviewer_user_id` says an account used it.
+    # The flag is called `--attested-by-standing` because it continues a standing
+    # attestation, and an attestation lives on those rows, not on a membership
+    # nobody ever exercised. An ADMIN grant with no signatures is a permission
+    # somebody was given and never used, and continuing it would be starting a
+    # new line of attestation rather than continuing an existing one.
+    #
+    # Found in production on this rule's first run: two live accounts held ADMIN
+    # on the catalog workspace, neither marked retired, so the duplicate-row
+    # exclusion above could not resolve it and the sync parked. If exactly one of
+    # them signed the corpus, that account is the answer and always was.
+    signatures = signed or {}
+    signatories = [user_id for user_id in candidates if signatures.get(user_id, 0) > 0]
+    if len(signatories) == 1:
+        return signatories[0]
+
+    detail = ", ".join(f"{user_id} ({signatures.get(user_id, 0)} signed)" for user_id in candidates)
+    raise SystemExit(
+        f"{len(candidates)} accounts hold the catalog reviewer grant ({detail}) and "
+        f"{len(signatories)} of them have signed — an unattended run will not choose "
+        "between them. Pass --attested-by explicitly."
+    )
 
 
 async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
@@ -665,6 +689,11 @@ async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
             rows = await system.list_catalog_reviewer_grants(
                 session, workspace_id=authority.workspace_id
             )
+            # Read in the same session as the grants, so the two answers are
+            # about one state of the database rather than two.
+            signed = await system.count_catalog_assertions_by_reviewer(
+                session, workspace_id=authority.workspace_id
+            )
     finally:
         await engine.dispose()
 
@@ -673,9 +702,101 @@ async def _resolve_standing_reviewer(authority: CatalogAuthority) -> uuid.UUID:
         for user_id in (authority.importer_user_id, authority.public_reader_user_id)
         if user_id is not None
     )
-    reviewer = pick_standing_reviewer(rows, service_ids=service_ids)
+    reviewer = pick_standing_reviewer(rows, service_ids=service_ids, signed=signed)
     print(f"reviewer: {reviewer} (standing catalog grant, --attested-by-standing)")
     return reviewer
+
+
+def format_reviewer_report(
+    rows: Sequence[tuple[uuid.UUID, Role, str]],
+    *,
+    signed: Mapping[uuid.UUID, int],
+    service_ids: frozenset[uuid.UUID],
+) -> list[str]:
+    """The reviewer report, as lines, decided without a database.
+
+    Separated from the query for the reason the rest of this module already is:
+    the part worth testing is which accounts get marked and which do not, and a
+    test that needs Postgres is a test the unit suite does not run.
+
+    It matters more here than "it is only display" suggests. These lines are the
+    entire input to a decision about who may attest to the public corpus, and a
+    wrong mark — an eligible account labelled retired, or a retired one not
+    labelled at all — sends the reader to the wrong answer with no way to notice.
+
+    Marks are cumulative rather than exclusive: an account can be both a service
+    identity and retired, and reporting only the first would hide the other.
+    """
+    admins = [(user_id, workos) for user_id, role, workos in rows if role == Role.ADMIN]
+    lines = [f"catalog reviewer grants: {len(admins)} ADMIN membership(s)"]
+    eligible = 0
+    for user_id, workos in sorted(admins, key=lambda row: str(row[0])):
+        marks = []
+        if user_id in service_ids:
+            marks.append("SERVICE IDENTITY — never eligible")
+        if workos.startswith(_RETIRED_WORKOS_PREFIX):
+            marks.append("RETIRED workos id — cannot sign in")
+        if not marks and signed.get(user_id, 0) > 0:
+            eligible += 1
+        note = f"  [{'; '.join(marks)}]" if marks else ""
+        lines.append(f"  {user_id}  signed={signed.get(user_id, 0)}{note}")
+    lines.append(
+        "The account with signatures is the standing reviewer "
+        "(license_assertions.reviewer_user_id)."
+    )
+    # Said as a verdict rather than left as arithmetic for the reader. This
+    # report exists because somebody was being asked to decide from raw rows;
+    # printing the rows and stopping would reproduce that.
+    if eligible == 1:
+        lines.append(
+            "VERDICT: exactly one eligible account has signed — "
+            "--attested-by-standing can resolve this on its own. Unpark with: "
+            "gh variable set CATALOG_SYNC_ENABLED --body true"
+        )
+    else:
+        lines.append(
+            f"VERDICT: {eligible} eligible accounts have signed — "
+            "--attested-by-standing will refuse. A person must pick one and pass "
+            "--attested-by explicitly."
+        )
+    return lines
+
+
+async def _report_reviewers() -> None:
+    """Print who holds the catalog reviewer grant, and what each has signed.
+
+    **Read-only. Writes nothing, attests nothing, and never fails a deploy.**
+
+    It exists because the refusal above hands its reader two bare UUIDs and no
+    way to tell them apart. The evidence that separates them is in the database
+    the reader is specifically told not to reach from a laptop
+    (`docs/runbooks/database.md`), so "decide which of these is the real
+    reviewer" was an owner action with no supported way to gather the facts.
+    This makes the deploy that reports the problem also report the answer.
+
+    Deliberately prints no email addresses. This runs in CI and its stdout is
+    retained, and the decision does not need one: which account signed the
+    corpus is the fact, and a UUID is what the operator passes back.
+    """
+    authority = CatalogAuthority.from_env()
+    authority.require_configured()
+    service_ids = {authority.importer_user_id, authority.public_reader_user_id}
+
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    try:
+        async with factory() as session:
+            rows = await system.list_catalog_reviewer_grants(
+                session, workspace_id=authority.workspace_id
+            )
+            signed = await system.count_catalog_assertions_by_reviewer(
+                session, workspace_id=authority.workspace_id
+            )
+    finally:
+        await engine.dispose()
+
+    for line in format_reviewer_report(rows, signed=signed, service_ids=frozenset(service_ids)):
+        print(line)
 
 
 async def _resolve_reviewer_by_email(email: str) -> uuid.UUID:
@@ -722,6 +843,7 @@ def main() -> None:
         "command",
         choices=(
             "provision",
+            "reviewers",
             "bootstrap-import",
             "attest-bootstrap",
             "publish-bootstrap",
@@ -788,6 +910,9 @@ def main() -> None:
         return
     if args.command == "bootstrap-import":
         asyncio.run(_bootstrap_import())
+        return
+    if args.command == "reviewers":
+        asyncio.run(_report_reviewers())
         return
 
     # Resolved once, before any of the three reviewer commands run. Doing it
