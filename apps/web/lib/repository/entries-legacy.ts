@@ -396,11 +396,16 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       { label: "Seed", value: "42" },
     ],
     source: {
-      kind: "verified_run",
-      title: "LeonaQ live evaluation record",
-      url: "https://github.com/EshMis/majorana",
-      contributor: "LeonaQ evaluation harness",
-      reviewedBy: "LeonaQ verification pass",
+      kind: "curated_reference",
+      title: "A Quantum Approximate Optimization Algorithm",
+      url: "https://arxiv.org/abs/1411.4028",
+      // `contributor`/`reviewedBy` describe the citation, not the run. Leaving
+      // "evaluation harness" here under Farhi et al. would read as our harness
+      // having contributed the paper. The run is not lost and was never in this
+      // field: it is `status: "verified"`, `verification` (TVD 0.0088, seed 42,
+      // 4096 shots) and `provenance: "Verified run"`, a few lines above.
+      contributor: "LeonaQ public reference set",
+      reviewedBy: "LeonaQ literature curation pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -1656,8 +1661,8 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     tags: ["query", "oracle", "phase kickback", "Cirq"],
     resources: [{ label: "Qubits", value: "3" }, { label: "Depth", value: "oracle-dependent" }, { label: "Queries", value: "1" }],
     metadata: [{ label: "Promise", value: "Constant or balanced" }, { label: "Quantum queries", value: "1" }, { label: "Classical deterministic", value: "2^n / 2 + 1" }],
-    sourceTitle: "Introduction to Cirq · Deutsch–Jozsa",
-    sourceUrl: "https://quantumai.google/cirq/start/intro",
+    sourceTitle: "Rapid solution of problems by quantum computation",
+    sourceUrl: "https://doi.org/10.1098/rspa.1992.0167",
     wires: ["x[0]", "x[1]", "out"],
     operations: [{ label: "H", qubits: [0, 1, 2], tone: "accent" }, { label: "U_f", qubits: [0, 1, 2], tone: "ok" }, { label: "M", qubits: [0, 1], tone: "warn" }],
     outcomes: [{ label: "constant", probability: 0.5 }, { label: "balanced", probability: 0.5 }],
@@ -1692,8 +1697,8 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     tags: ["query", "hidden string", "oracle", "Qiskit"],
     resources: [{ label: "Qubits", value: "n + 1" }, { label: "Depth", value: "oracle-dependent" }, { label: "Queries", value: "1" }],
     metadata: [{ label: "Function", value: "f(x) = s · x mod 2" }, { label: "Quantum queries", value: "1" }, { label: "Classical queries", value: "n" }],
-    sourceTitle: "IBM Quantum Learning · Bernstein–Vazirani",
-    sourceUrl: "https://quantum.cloud.ibm.com/learning/en/courses/fundamentals-of-quantum-algorithms/quantum-query-algorithms/deutsch-jozsa-algorithm",
+    sourceTitle: "Quantum Complexity Theory",
+    sourceUrl: "https://doi.org/10.1137/s0097539796300921",
     wires: ["x[0]", "x[1]", "x[2]", "out"],
     operations: [{ label: "H", qubits: [0, 1, 2, 3], tone: "accent" }, { label: "U_s", qubits: [0, 1, 2, 3], tone: "ok" }, { label: "M", qubits: [0, 1, 2], tone: "warn" }],
     outcomes: [{ label: "secret s", probability: 1 }],
