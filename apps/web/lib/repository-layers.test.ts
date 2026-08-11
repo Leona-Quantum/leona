@@ -2085,3 +2085,67 @@ test("a process that reaches a circle two ways is one process arriving", () => {
   assert.deepEqual(sharp.arrivals, [{ method: "lift-b", edgeKey: "lift" }]);
   assert.equal(sharp.asserted, sharp.departures.length);
 });
+
+/**
+ * The linear-ODE region's closed half stays closed.
+ *
+ * **A ratchet, not a pin.** Every assertion below is `>=`, so authoring more can
+ * never fail it and dropping something always does. That asymmetry is the whole
+ * design: the owner's ask was that this region be *"completely closed… so it can
+ * be scaled"*, and a region that closes on Tuesday and quietly opens on
+ * Wednesday was never closed — it was measured once.
+ *
+ * **Why it is asserted here and not left to `--closure`.** The gauge prints; it
+ * does not fail. `check-layer-graph.mjs` runs in `lint` but its region report is
+ * only computed when a caller names the slots, and nothing in CI names them. A
+ * number nobody asserts is a number that moves.
+ *
+ * The two evidence-bound fields are deliberately **not** ratcheted. `example.text`
+ * and `implementations` depend on what sources report, and a later editor who
+ * correctly removes a worked example — because a closer read showed the paper's
+ * numerics were not a run of this method after all — must not be fighting a
+ * test. `regionClosure`'s `runEvidence` is where those two are watched, and it
+ * watches the register rather than the prose.
+ */
+test("the linear-ODE region does not go backwards on the half that is closed", () => {
+  const SLOTS = [
+    "linear-ode-solve",
+    "hamiltonian-recasting",
+    "time-discretization",
+    "quantum-linear-solve",
+  ];
+  const region = regionClosure(LAYER_GRAPH, STATE_VOCABULARY, SLOTS, new Map());
+  // The region itself, so a slot renamed out from under this test fails loudly
+  // rather than shrinking the thing being measured. `--closure` reports an
+  // unrecognised id; here it must be an error.
+  assert.deepEqual(region.unknown, [], "a slot id in this test names no capability");
+  assert.ok(
+    region.methods.length >= 19,
+    `the region has ${region.methods.length} methods, fewer than the 19 it was closed over`,
+  );
+  const field = (name: string) => region.fields.find((entry) => entry.field === name)!;
+  for (const name of ["summary", "conditions", "cost", "citations", "example.pseudocode"]) {
+    const entry = field(name);
+    assert.equal(
+      entry.missing.length,
+      0,
+      `${name} is missing on ${entry.missing.join(", ")} — the region was closed on this field`,
+    );
+  }
+  // Stretches, not methods: a method with one authored hop of five reads as
+  // "has hops" on any per-method count, and that is exactly the region that
+  // looks finished and is not.
+  assert.equal(
+    region.hopStretchesAuthored,
+    region.hopStretches,
+    `hop theory covers ${region.hopStretchesAuthored} of ${region.hopStretches} drawn route stretches — ` +
+      `unauthored: ${region.unauthoredHops.map((hop) => `${hop.method}/${hop.key}`).join(", ")}`,
+  );
+  // A floor under the denominator too. Without it, deleting a route would make
+  // the equality above pass on a smaller region — the same "measure less, look
+  // healthier" failure `unknown` guards at the slot level.
+  assert.ok(
+    region.hopStretches >= 45,
+    `${region.hopStretches} drawn stretches, fewer than the 45 the region was closed over`,
+  );
+});
