@@ -249,6 +249,19 @@ export const LAYER_GRAPH: LayerGraph = {
     refines: "koopman-linearization",
     refinesMark: "Koopman",
     refinesMarkJa: "Koopman",
+    // `cost` is authored (session 122) on the Dyson sibling's terms: from the
+    // source rather than from memory, and saying in the field itself that the
+    // number is the whole algorithm's and not this step's alone. What was read
+    // is Liu et al.'s **abstract** — which is exactly what the register already
+    // records for `arxiv:2011.03185` (`reportsBasis: "abstract"`), so the cost
+    // and the register agree about their own basis. The theorem's constants and
+    // its dependence of the truncation level $N$ on $R$ and $\varepsilon$ are in
+    // the full text, were not read, and are therefore not quoted: an unread
+    // bound stated here would be this map asserting a number no source it
+    // consulted carries. Upgrading this to a full-text read is a normal edit —
+    // change the field and change the register row's basis with it.
+    cost: "Liu et al. state the algorithm's complexity as $T^2 q \\cdot \\mathrm{poly}(\\log T, \\log n, \\log(1/\\varepsilon))/\\varepsilon$, where $T$ is the evolution time, $n$ the dimension of the nonlinear system, $\\varepsilon$ the allowed error, and $q$ a quantity measuring the decay of the solution. It is quoted here as the paper states it: a complexity for the complete algorithm — this embedding together with the linear solver the truncated tower feeds — and not a standalone cost for the linearization, which on its own is a change of variables and buys nothing until something solves the system it produces. The bound holds under the $R < 1$ hypothesis recorded above. How the truncation level $N$ depends on $R$ and $\\varepsilon$ is in the paper's full text and is not quoted here.",
+    costJa: "Liu らはアルゴリズムの計算量を $T^2 q \\cdot \\mathrm{poly}(\\log T, \\log n, \\log(1/\\varepsilon))/\\varepsilon$ と述べています。ここで $T$ は発展時間、$n$ は非線形系の次元、$\\varepsilon$ は許容誤差であり、$q$ は解の減衰を測る量です。これは論文の記述のまま引いたものです。すなわち、この埋め込みと、打ち切られた塔が渡す線形ソルバとを合わせたアルゴリズム全体についての計算量であって、線形化単体の費用ではありません。線形化はそれ自体としては変数変換にすぎず、生成された系を何かが解くまでは何も得られないからです。この評価は上に記した $R < 1$ の仮定のもとで成り立ちます。打ち切り水準 $N$ が $R$ と $\\varepsilon$ にどう依存するかは論文の本文にあり、ここでは引用していません。",
     conditions: "Stated for $du/dt = F_2 u^{\\otimes2} + F_1 u + F_0(t)$ with $F_1$ diagonalizable and eigenvalues ordered $Re(\\lambda_n) \\leq \\ldots \\leq Re(\\lambda_1) < 0$, that is, a strictly dissipative linear part. Liu et al. give a convergence theorem for $R < 1$, where $R = (1/|Re(\\lambda_1)|)(||u_in|| ||F_2|| + ||F_0||/||u_in||)$. It does not apply when the linear part has an eigenvalue with non-negative real part.",
     conditionsJa: "$du/dt = F_2 u^{\\otimes2} + F_1 u + F_0(t)$ の形で述べられており、$F_1$ は対角化可能で、固有値が $Re(\\lambda_n) \\leq \\ldots \\leq Re(\\lambda_1) < 0$ の順に並ぶこと、すなわち線形部が厳密に散逸的であることを要求します。Liu らは $R = (1/|Re(\\lambda_1)|)(||u_in|| ||F_2|| + ||F_0||/||u_in||)$ として $R < 1$ の場合に収束定理を与えています。線形部が実部非負の固有値をもつ場合には適用できません。",
     contested: "Liu et al. also prove that the general quadratic ODE problem is intractable for R ≥ √2, so the band 1 ≤ R < √2 is open and $R < 1$ must not be described as necessary. Wu, Wang and Li subsequently prove linear convergence with respect to the truncation level $N$ under a resonance condition instead of a dissipative one, with numerical experiments on Burgers' equation, Fermi-Pasta-Ulam chains and the Korteweg-de Vries equation; that enlarges the set of systems for which the embedding is known to converge and does not overturn the R ≥ √2 result.",
