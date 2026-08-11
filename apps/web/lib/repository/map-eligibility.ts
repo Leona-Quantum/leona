@@ -221,6 +221,75 @@ export interface AnchorAudit {
 }
 
 /**
+ * Every source URL that more than one unanchored record may cite, with the
+ * exact set of records allowed to cite it.
+ *
+ * **The thing this guards is a factory default, not a typo.** Until W21-B, 25 of
+ * the 53 unanchored records cited one VQE survey — not because anyone chose it
+ * 25 times, but because `vqeEntry`'s first line is
+ * `const source = concept.source ?? VQE_SURVEY`. A default that manufactures a
+ * citation is invisible in every diff: the record reads as sourced, the checker
+ * counted it as sourced, and no file recorded a decision. So a share is legal
+ * only when it is *written down here with its reason*, and the slug set has to
+ * match exactly.
+ *
+ * Exactly, in both directions, and the second one is the point: give one of the
+ * residue records below its own paper and this check fails until the slug is
+ * removed from the list. That is the failure that stops a stale allowance from
+ * quietly re-permitting a share nobody re-examined.
+ */
+export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>> = {
+  // Peruzzo et al. 2013 is the paper that introduced VQE. Both records are about
+  // the algorithm as a whole rather than one of its parts, so one primary paper
+  // standing behind both is the literature agreeing, not a default filling in.
+  "https://arxiv.org/abs/1304.3061": ["vqe-ground-state-energy", "vqe-objective-loop"],
+  // Lee et al. 2018 introduces generalized UCC *and* its k-UpCCGSD truncation in
+  // one paper. Two records, one genuine origin — the case W21-B's check exists to
+  // permit rather than to punish.
+  "https://arxiv.org/abs/1810.02327": ["vqe-generalized-excitations", "vqe-k-upccgsd"],
+  // W21-B residue. These four kept the survey because a search for a specific
+  // primary paper came back empty, which is a different fact from "nobody looked"
+  // and is why they are named one by one:
+  //   vqe-batched-adapt   — no paper found for appending several high-gradient
+  //                         operators per ADAPT iteration. TETRIS-ADAPT is the
+  //                         near neighbour and is a *different record*, so citing
+  //                         it here would be the drift this file guards against.
+  //   vqe-spin-adapted    — searches returned 2026 papers on spin-adapted
+  //                         variants, none of them the origin of the idea.
+  //   vqe-active-space    — active-space selection is classical quantum chemistry
+  //                         predating VQE; no VQE-specific primary paper found.
+  //   vqe-warm-start      — the warm-start literature found is QAOA/optimization,
+  //                         not the chemistry parameter-initialisation this
+  //                         record describes.
+  "https://arxiv.org/abs/2103.08505": [
+    "vqe-active-space",
+    "vqe-batched-adapt",
+    "vqe-spin-adapted",
+    "vqe-warm-start",
+  ],
+};
+
+/**
+ * The shared sources that are **not** covered by an exact declaration above.
+ *
+ * Separate from `auditAnchors` because the audit answers "what is the state of
+ * the map" and this answers "is that state one somebody signed off on" — and a
+ * caller that wants the census without the refusal (the `--unanchored` reading
+ * list) must be able to have it.
+ */
+export function undeclaredSharedSources(
+  shared: readonly { url: string; slugs: string[] }[],
+): Array<{ url: string; slugs: readonly string[]; declared: readonly string[] | null }> {
+  const undeclared: Array<{ url: string; slugs: readonly string[]; declared: readonly string[] | null }> = [];
+  for (const { url, slugs } of shared) {
+    const declared = DECLARED_SHARED_SOURCES[url] ?? null;
+    if (declared && [...declared].sort().join(" ") === [...slugs].sort().join(" ")) continue;
+    undeclared.push({ url, slugs, declared });
+  }
+  return undeclared;
+}
+
+/**
  * Audit a graph's cross-links against the corpus's roles.
  *
  * Takes the anchors as `(nodeId, slug)` pairs rather than a `LayerGraph`, so this
