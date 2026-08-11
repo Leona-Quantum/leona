@@ -278,9 +278,29 @@ loop is: edit the entries → regenerate the manifest
 (`node scripts/generate-catalog-bootstrap-manifest.mjs`) → `bootstrap-import` →
 `attest-bootstrap` → `publish-bootstrap`.
 
-**Since 2026-08-12 the deploy pipeline runs the last three for you.** `deploy.yml`'s final
-step, `sync the published catalog`, runs `sync-bootstrap --attested-by-standing` against
-production on every deploy. So the loop you are responsible for is: **edit the entries,
+**Since 2026-08-12 the deploy pipeline can run the last three for you — but it is PARKED
+as of its first run.** `deploy.yml`'s step `sync the published catalog` runs
+`sync-bootstrap --attested-by-standing` against production on every deploy, and is gated on
+the repository variable `CATALOG_SYNC_ENABLED` being `true`. It is currently not set.
+
+**Why it is parked, and what unparks it.** On its first production run the step refused:
+
+```
+2 accounts hold the catalog reviewer grant
+(019f5b84-d1ab-72a3-9c68-41416325b3f4, 019fb3ae-39f8-78b6-a04a-dfdfb847952f)
+— an unattended run will not choose between them. Pass --attested-by explicitly.
+```
+
+Neither carries the `retired-workos-env:` marker, so this is **not** the environment-switch
+duplicate that `pick_standing_reviewer` already resolves: two live accounts hold ADMIN on
+the catalog workspace. Deciding which is the real reviewer and revoking the other's grant is
+a production database decision, so it is owner-only and parked rather than guessed. Once the
+grant is unambiguous, `gh variable set CATALOG_SYNC_ENABLED --body true` re-arms it — no code
+change. Until then every deploy prints a warning naming the parked state, so a stale catalog
+cannot be silent.
+
+While parked, the loop below is still yours to run by hand, and a corpus content change does
+NOT reach `/repository/<slug>` on merge. So the loop you are responsible for is: **edit the entries,
 regenerate the manifest, commit both in the same PR, merge.** The manifest regeneration is
 still yours — CI refuses the PR without it — and it is still what pins the release the
 importer imports (ADR-0019, amended 2026-08-12).
