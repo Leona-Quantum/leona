@@ -1087,6 +1087,13 @@ export interface ConvergeDiagram {
    * revisit; that is why the reason is not baked into the number.
    */
   cappedCount: number;
+  /**
+   * Recorded methods this figure does NOT draw because they are folded
+   * refinements (s121, W17) — same internals as a drawn parent, living in its
+   * card's Refinements section. Carried so the legend can keep saying how many
+   * ways are RECORDED without the drawn-lane count quietly impersonating it.
+   */
+  foldedCount: number;
 }
 
 /**
@@ -3663,6 +3670,7 @@ export function layoutConvergeForMethod(options: {
       truncated: false,
       chainConsistent: true,
       cappedCount: 0,
+      foldedCount: 0,
     };
   }
   // The reader's own `?open=` **and** this method, which is not negotiable: the
@@ -3993,6 +4001,7 @@ function layoutFigure(options: {
       truncated: expansion.truncated,
       chainConsistent: expansion.chainConsistent,
       cappedCount: 0,
+      foldedCount: 0,
     };
   }
 
@@ -4182,6 +4191,7 @@ function layoutFigure(options: {
     truncated: expansion.truncated,
     chainConsistent: expansion.chainConsistent,
     cappedCount: out.capped,
+    foldedCount: plan.folded ?? 0,
   };
 }
 
@@ -4189,6 +4199,8 @@ interface Plan {
   chain: readonly string[];
   bundles: readonly { from: string; to: string; lanes: readonly PlanStrand[] }[];
   grain: ConvergeGrain;
+  /** Folded refinements this fan holds back (s121, W17). Absent on a chain. */
+  folded?: number;
 }
 
 function planStateChain(
@@ -4243,6 +4255,7 @@ function planMethodFan(
   return {
     chain: [fan.from, fan.to],
     grain: "methods",
+    folded: fan.folded,
     bundles: [
       {
         from: fan.from,

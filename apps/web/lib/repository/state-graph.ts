@@ -456,6 +456,8 @@ export interface MethodFan {
   from: string;
   to: string;
   lanes: readonly MethodLane[];
+  /** Folded refinements no lane draws (s121, W17) — the legend's honest remainder. */
+  folded: number;
 }
 
 /**
@@ -506,6 +508,7 @@ export function methodFanOf(
       method: group.method,
       variants: group.variants,
     })),
+    folded: groups.reduce((sum, group) => sum + group.folded.length, 0),
   };
 }
 
