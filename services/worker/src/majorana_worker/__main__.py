@@ -99,6 +99,14 @@ if DEAD_LETTER_LEASE_S <= DEAD_LETTER_TIMEOUT_S:
     raise ValueError("WORKER_DEAD_LETTER_LEASE_S must exceed WORKER_DEAD_LETTER_TIMEOUT_S")
 DEAD_LETTER_INTERVAL_S = _positive_env("WORKER_DEAD_LETTER_INTERVAL_S", 15.0)
 QUEUE_METRICS_INTERVAL_S = _positive_env("WORKER_QUEUE_METRICS_INTERVAL_S", 15.0)
+# The queue-depth sample sits on the poll cycle that also claims work, so an
+# unbounded one would add its own latency to `claim_job`. That matters most in
+# exactly the condition the metric exists to diagnose: when the pool is
+# saturated, a checkout can block for the pool timeout, so the instrument for
+# measuring saturation would deepen it. Bounded well under the claim-latency
+# budget the worker is held to (p95 < 100 ms at 20 workers) and treated as a
+# failed sample when it expires.
+QUEUE_METRICS_TIMEOUT_S = _positive_env("WORKER_QUEUE_METRICS_TIMEOUT_S", 0.05)
 
 
 class Sweep:
@@ -146,6 +154,14 @@ _job_queue_depth = _meter.create_histogram(
     unit="{job}",
     description="Ready-to-claim jobs observed by a worker",
 )
+_job_queue_depth_timeouts = _meter.create_counter(
+    "majorana.jobs.queue_depth.timeouts",
+    description=(
+        "Queue-depth samples dropped for exceeding their latency bound. "
+        "Without this, a bounded sample makes 'the pool is busy' and 'the queue "
+        "is empty' produce the same absence of data."
+    ),
+)
 _jobs_in_flight = _meter.create_up_down_counter(
     "majorana.jobs.in_flight",
     unit="{job}",
@@ -171,11 +187,24 @@ async def _record_queue_depth(factory) -> int | None:
     best-effort: a failed metric query must never stop the worker or delay a
     claimed job. The sample contains no job kind, run ID, payload, or error.
     """
-    try:
+
+    async def _sample() -> int:
         async with factory() as session:
-            depth = await system.count_runnable_jobs(session)
+            return await system.count_runnable_jobs(session)
+
+    try:
+        depth = await asyncio.wait_for(_sample(), timeout=QUEUE_METRICS_TIMEOUT_S)
         _job_queue_depth.record(depth)
         return depth
+    except TimeoutError:
+        # Not an error worth a stack trace: a slow sample is itself the signal
+        # that the pool is busy, and dropping it is the whole point of the
+        # bound. Counted rather than merely skipped, so that a run whose
+        # queue_depth histogram is empty can be told apart from a run whose
+        # queue was empty. The next sweep tries again.
+        _job_queue_depth_timeouts.add(1)
+        log.debug("queue depth sample exceeded %.3fs; skipped", QUEUE_METRICS_TIMEOUT_S)
+        return None
     except Exception:
         log.warning("queue depth metric query failed", exc_info=True)
         return None
@@ -331,18 +360,27 @@ async def _process_claimed_job(
         handler = HANDLERS.get(kind)
         if handler is None:
             # Fail closed rather than retry-loop garbage.
-            async with factory() as session:
-                await system.finish_job(
-                    session,
-                    job_id=job_id,
-                    lease_token=lease_token,
-                    status="dead",
-                    last_error=f"no handler registered for kind {kind!r}",
-                    last_error_kind="unknown_kind",
-                )
-                await session.commit()
-            _job_terminals.add(1, {"status": "dead", "reason": "unknown_kind"})
-            log.error("job %s dead: no handler for kind %r", job_id, kind)
+            try:
+                async with factory() as session:
+                    await system.finish_job(
+                        session,
+                        job_id=job_id,
+                        lease_token=lease_token,
+                        status="dead",
+                        last_error=f"no handler registered for kind {kind!r}",
+                        last_error_kind="unknown_kind",
+                    )
+                    await session.commit()
+            except system.JobLeaseLostError:
+                # Same rule as the handler path below: a replacement worker owns
+                # this job now, so do not overwrite its outcome. Without this
+                # the error escapes _process_claimed_job into the generic poll
+                # backoff and the lease-loss metric never records.
+                _job_lease_losses.add(1, {"kind": kind})
+                log.exception("job %s (%s) lost its lease while dead-lettering", job_id, kind)
+            else:
+                _job_terminals.add(1, {"status": "dead", "reason": "unknown_kind"})
+                log.error("job %s dead: no handler for kind %r", job_id, kind)
         else:
             try:
                 await _execute_with_heartbeat(
@@ -368,17 +406,25 @@ async def _process_claimed_job(
                 log.exception("job %s (%s) lost its lease", job_id, kind)
             except RetryableJobError as exc:
                 log.warning("job %s (%s) requested retry: %s", job_id, kind, exc)
-                async with factory() as session:
-                    retry_status, retry_delay = await system.retry_job(
-                        session,
-                        job_id=job_id,
-                        lease_token=lease_token,
-                        last_error=str(exc),
-                        last_error_kind="retryable",
-                        base_delay_seconds=RETRY_BASE_S,
-                        max_delay_seconds=RETRY_MAX_S,
-                    )
-                    await session.commit()
+                try:
+                    async with factory() as session:
+                        retry_status, retry_delay = await system.retry_job(
+                            session,
+                            job_id=job_id,
+                            lease_token=lease_token,
+                            last_error=str(exc),
+                            last_error_kind="retryable",
+                            base_delay_seconds=RETRY_BASE_S,
+                            max_delay_seconds=RETRY_MAX_S,
+                        )
+                        await session.commit()
+                except system.JobLeaseLostError:
+                    # This raise happens INSIDE an except block, so the sibling
+                    # `except system.JobLeaseLostError` above is already out of
+                    # scope and cannot catch it. It needs its own handler here.
+                    _job_lease_losses.add(1, {"kind": kind})
+                    log.exception("job %s (%s) lost its lease while retrying", job_id, kind)
+                    return
                 if retry_status == "queued":
                     _job_requeues.add(1, {"reason": "retryable_failure"})
                     log.info("job %s retry scheduled in %.1fs", job_id, retry_delay)
