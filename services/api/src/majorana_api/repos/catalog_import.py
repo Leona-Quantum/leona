@@ -23,6 +23,7 @@ prerequisite, not an optional follow-up.
 """
 
 import dataclasses
+import logging
 import uuid
 
 from majorana_contracts import Scope, assert_import_item_transition
@@ -47,6 +48,9 @@ from ..jobs import CATALOG_IMPORT_JOB_KIND
 from ..orm import ImportItem, ImportJob, Job
 from . import catalog, system
 from ._base import NotFoundError, RepoError
+
+_log = logging.getLogger(__name__)
+
 
 TERMINAL_ITEM_STATES = frozenset(
     {ImportItemState.STAGED, ImportItemState.REJECTED, ImportItemState.DEAD}
@@ -481,6 +485,23 @@ async def process_import_batch(
             await session.commit()
         except Exception as exc:  # transient: bounded item-level retry, never a batch rollback
             attempted_state = getattr(exc, "reached_state", ImportItemState.FETCHING)
+            # Logged BEFORE the transition below, because that transition can
+            # raise and replace this exception with one about the lifecycle.
+            #
+            # Found in production 2026-08-12: an item reached STAGED, threw
+            # here, and `assert_import_item_transition(STAGED, RETRY_WAIT)`
+            # failed — so the batch died reporting an illegal transition and
+            # the error that actually happened was never printed anywhere. The
+            # lifecycle message is a true statement about an unrepresentable
+            # state and it is NOT the cause; whoever is debugging that needs
+            # this line to find out what is.
+            _log.warning(
+                "import item %s failed transiently after reaching %s: %r",
+                item_id,
+                attempted_state,
+                exc,
+                exc_info=True,
+            )
             await session.rollback()
             reloaded = await session.get(ImportItem, item_id)
             reloaded.attempts += 1
