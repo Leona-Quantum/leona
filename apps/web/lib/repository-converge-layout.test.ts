@@ -1662,9 +1662,11 @@ test("a line that opens into something says so, and a line that does not is not 
   // subspace expansion, the equation-of-motion route, folded spectrum, the
   // penalty route and the contracted multistate route.
   // 83 since B5 unit 3: `variance-objective` and `measurement-grouped-readout`, one lane each.
-  assert.equal(openable + leaves + 1, 83, "the twenty-three figures draw 83 lines between them");
+  // 86 since B5's leaf anchors: `particle-hole-ansatz` and `orbital-optimized-ansatz`
+  // under `ansatz-construction`, `symmetry-verification` under `error-mitigation`.
+  assert.equal(openable + leaves + 1, 86, "the twenty-three figures draw 86 lines between them");
   assert.equal(openable, 41, "41 of them open into something recorded");
-  assert.equal(leaves, 41, "41 are leaves — nothing finer is recorded for them");
+  assert.equal(leaves, 44, "44 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {

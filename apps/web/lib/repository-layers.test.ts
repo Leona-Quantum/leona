@@ -1240,7 +1240,10 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // to tell any of them apart by — what this one changes is which TERMS share one set of
   // shots, and a term grouping is not a step.
   ["observable-estimation", 4],
-  ["error-mitigation", 3],
+  // 4 since B5's leaf anchors: `symmetry-verification` is a fourth mitigation consuming a
+  // prepared state and nothing else. What separates it from its siblings is WHICH quantity
+  // it checks and what it does with a violation, and neither is a step this graph draws.
+  ["error-mitigation", 4],
   ["quantum-linear-solve", 2],
   ["polynomial-approximation", 2],
   ["block-encode-matrix", 2],
@@ -1251,7 +1254,11 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // family in one step, plus the adaptive pair that each hang one `observable-estimation`
   // stub. `qubit-adapt-ansatz` is dropped by the `refines` rule in the test, as designed —
   // a declared refinement is not a hollow twin.
-  ["ansatz-construction", 5],
+  // 7 since B5's leaf anchors: `particle-hole-ansatz` and `orbital-optimized-ansatz` join
+  // the fixed families. Both construct their circuit family in one step and have no
+  // recorded interior yet — the honest state of a family nobody has decomposed, and both
+  // are authored as leaves rather than given stubs they were not described as having.
+  ["ansatz-construction", 7],
   // **W21-E's region, and this line is the thing a global ceiling could not say.** Six of
   // the seven excited-state methods draw a sibling's picture, in two groups: four take
   // VQE's three hops and differ only in the objective handed to the optimiser, and two
