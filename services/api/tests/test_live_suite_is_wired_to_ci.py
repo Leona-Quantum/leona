@@ -17,7 +17,13 @@ import re
 from pathlib import Path
 
 _REPO_ROOT = Path(__file__).resolve().parents[3]
-_TESTS = Path(__file__).resolve().parent
+# Both services keep live suites; the worker's directory joined this scan on
+# 2026-08-11, when its only live suite turned out to be named by no workflow —
+# the exact dark state described above, one directory over from the guard.
+_TEST_DIRS = (
+    Path(__file__).resolve().parent,
+    _REPO_ROOT / "services" / "worker" / "tests",
+)
 _WORKFLOWS = _REPO_ROOT / ".github" / "workflows"
 
 #: `filename -> why it is deliberately not run in CI`. Empty today, on purpose.
@@ -25,10 +31,10 @@ NOT_RUN_IN_CI: dict[str, str] = {}
 
 
 def _live_files_on_disk() -> set[str]:
-    return {path.name for path in _TESTS.glob("test_*_live.py")}
+    return {path.name for tests in _TEST_DIRS for path in tests.glob("test_*_live.py")}
 
 
-_LIVE_PATH = re.compile(r"services/api/tests/(test_[a-z0-9_]+_live\.py)")
+_LIVE_PATH = re.compile(r"services/(?:api|worker)/tests/(test_[a-z0-9_]+_live\.py)")
 
 
 def _uncommented(text: str) -> str:
