@@ -54,6 +54,7 @@
 // `@view-transition { navigation: auto }` does not animate, so using one here
 // would silently delete the zoom this surface is built around.
 import { LayerCensusPanel } from "./repository-layers";
+import type { FoldedNode } from "../lib/repository/paper-reveal";
 import { ConvergeCanvas } from "./repository-converge-map";
 import { CanvasContinuity } from "./canvas-continuity";
 import { InfiniteCanvas } from "./infinite-canvas";
@@ -189,7 +190,9 @@ interface ConvergeCopy {
   /** The paper surface's panel (W20). */
   paperEyebrow: string;
   paperShows: (drawn: number, total: number) => string;
+  paperFolded: (n: number) => string;
   paperElsewhere: (n: number) => string;
+  paperUndrawn: (n: number) => string;
   paperRecord: string;
   paperClear: string;
   paperUnknown: string;
@@ -277,7 +280,15 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     paperEyebrow: "Paper",
     paperShows: (drawn: number, total: number) =>
       `Draws ${drawn} of the ${total} steps this paper is cited on.`,
+    paperFolded: (n: number) =>
+      n === 1
+        ? "1 cited method is folded into a lane drawn here:"
+        : `${n} cited methods are folded into lanes drawn here:`,
     paperElsewhere: (n: number) => `${n} more ${n === 1 ? "sits" : "sit"} elsewhere on the map.`,
+    paperUndrawn: (n: number) =>
+      n === 1
+        ? "1 cited step is not yet drawn anywhere on the map."
+        : `${n} cited steps are not yet drawn anywhere on the map.`,
     paperRecord: "Open the paper record",
     paperClear: "Clear the paper from the map",
     paperUnknown: "This link names a paper the register does not hold.",
@@ -355,7 +366,10 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     paperEyebrow: "論文",
     paperShows: (drawn: number, total: number) =>
       `この論文が引用されている ${total} 工程のうち ${drawn} 件をこの図に描いています。`,
+    paperFolded: (n: number) =>
+      `引用手法のうち ${n} 件は、ここに描かれたレーンに折りたたまれています:`,
     paperElsewhere: (n: number) => `ほか ${n} 件はマップの別の場所にあります。`,
+    paperUndrawn: (n: number) => `引用先のうち ${n} 件は、まだマップ上のどの図にも描かれていません。`,
     paperRecord: "論文レコードを開く",
     paperClear: "マップから論文を外す",
     paperUnknown: "このリンクが指す論文はレジスタにありません。",
@@ -751,13 +765,28 @@ export function ConvergeView({
     year: string;
     cited: ReadonlySet<string>;
     drawnCount: number;
+    /** Cited methods W17-folded into drawn lanes (v2) — see `FoldedNode`. */
+    folded: readonly FoldedNode[];
     elsewhereCount: number;
+    /** Cited nodes no figure draws — the coverage gap, stated (v2). */
+    undrawnCount: number;
   } | null;
   /** `?paper=` named something the register does not hold. Reported, not eaten. */
   paperDropped?: boolean;
 }): React.ReactElement {
   const lang: "en" | "ja" = locale === "ja" ? "ja" : "en";
   const copy = COPY[lang];
+  // W20 v2: a folded cited method's mark lands on its HOST lane — the host
+  // draws that refinement's internals by the fold's own definition, so the
+  // host is the honest bearer. Merged HERE so the map keeps its one matching
+  // rule; the panel's numbers stay the reveal's own buckets (hosts must not
+  // inflate the cited denominator).
+  const citedForMap =
+    paper === null
+      ? null
+      : paper.folded.length === 0
+        ? paper.cited
+        : new Set([...paper.cited, ...paper.folded.map((fold) => fold.hostId)]);
   const notes = convergeNotes(lang);
   const candidates = drawableSlots(graph, STATE_VOCABULARY);
   const converging = convergingSlots(graph, STATE_VOCABULARY);
@@ -1074,7 +1103,7 @@ export function ConvergeView({
               // A uniform backdrop veil cannot do this: it dims the selected
               // item by exactly as much as everything else.
               veiled={openCard !== null}
-              cited={paper?.cited ?? null}
+              cited={citedForMap}
             />
           ))}
         </InfiniteCanvas>
@@ -1163,7 +1192,24 @@ export function ConvergeView({
           <p className="mj-paper-panel-count">
             {copy.paperShows(paper.drawnCount, paper.cited.size)}
             {paper.elsewhereCount > 0 ? ` ${copy.paperElsewhere(paper.elsewhereCount)}` : ""}
+            {paper.undrawnCount > 0 ? ` ${copy.paperUndrawn(paper.undrawnCount)}` : ""}
           </p>
+          {paper.folded.length > 0 ? (
+            <p className="mj-paper-panel-count">
+              {copy.paperFolded(paper.folded.length)}{" "}
+              {paper.folded.map((fold, index) => {
+                const foldedNode = layerNode(graph, fold.nodeId);
+                return (
+                  <span key={fold.nodeId}>
+                    {index > 0 ? " · " : ""}
+                    <a href={`/repository/layers/${fold.nodeId}`}>
+                      {foldedNode ? label(foldedNode) : fold.nodeId}
+                    </a>
+                  </span>
+                );
+              })}
+            </p>
+          ) : null}
           <p className="mj-paper-panel-links">
             <a href={`/repository/papers/${paper.slug}`}>{copy.paperRecord}</a>
             <a href={paperCloseHref}>{copy.paperClear}</a>

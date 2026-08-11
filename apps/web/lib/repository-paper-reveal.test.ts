@@ -3,7 +3,7 @@ import test from "node:test";
 import { paperRevealFor } from "./repository/paper-reveal.ts";
 import { layoutConverge, drawableSlots, CONVERGE_OPEN_MAX } from "./repository/converge-layout.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
-import { layerNode, isCapability } from "./repository/layers.ts";
+import { layerNode, isCapability, isMethod } from "./repository/layers.ts";
 import { paperTraces } from "./repository/paper-traces.ts";
 import { paperSlug } from "./repository/papers.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
@@ -80,7 +80,9 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
   let revealed = 0;
   const unrevealed: string[] = [];
   let drawnTotal = 0;
+  let foldedTotal = 0;
   let elsewhereTotal = 0;
+  let undrawnTotal = 0;
   for (const trace of traces) {
     const reveal = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(trace.paper));
     if (reveal === null) {
@@ -98,10 +100,13 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
     }
     revealed += 1;
     drawnTotal += reveal.drawn.length;
+    foldedTotal += reveal.folded.length;
     elsewhereTotal += reveal.elsewhere.length;
+    undrawnTotal += reveal.undrawn.length;
 
     // The claim, checked by re-drawing with ONLY the reveal set: every
-    // occurrence the reveal names must actually draw under it.
+    // occurrence the reveal names must actually draw under it — a folded
+    // node's HOST occurrence exactly as a drawn node's own.
     const addresses = drawnAddresses(reveal.focusId, reveal.open);
     for (const node of reveal.drawn) {
       assert.ok(
@@ -109,22 +114,85 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
         `${trace.paper}: ${node.nodeId} claimed at ${node.address}, not drawn under the reveal set`,
       );
     }
+    for (const fold of reveal.folded) {
+      assert.ok(
+        addresses.has(fold.hostAddress),
+        `${trace.paper}: ${fold.nodeId}'s host ${fold.hostId} claimed at ${fold.hostAddress}, not drawn under the reveal set`,
+      );
+      // The fold bucket's own honesty: the folded node genuinely draws NO
+      // lane of its own anywhere — otherwise it belongs in drawn/elsewhere,
+      // and "folded into a lane drawn here" would be covering for a miss.
+      index = index ?? saturatedIndex();
+      assert.ok(
+        !index.has(fold.nodeId) && !drawableIds.has(fold.nodeId),
+        `${trace.paper}: ${fold.nodeId} is bucketed as folded but draws its own lane somewhere`,
+      );
+    }
 
-    // The accounting: every cited node is drawn here, elsewhere, or IS the
-    // focus — no node silently vanishes from the ledger.
+    // The accounting: every cited node is drawn here, folded into a drawn
+    // host, elsewhere, undrawn-anywhere, or IS the focus — no node silently
+    // vanishes from the ledger.
     const focusCited = trace.nodes.includes(reveal.focusId) && !reveal.drawn.some((n) => n.nodeId === reveal.focusId) ? 1 : 0;
     assert.equal(
-      reveal.drawn.length + reveal.elsewhere.length + focusCited,
+      reveal.drawn.length +
+        reveal.folded.length +
+        reveal.elsewhere.length +
+        reveal.undrawn.length +
+        focusCited,
       trace.nodes.length,
-      `${trace.paper}: drawn + elsewhere + focus does not account for every cited node`,
+      `${trace.paper}: drawn + folded + elsewhere + undrawn + focus does not account for every cited node`,
     );
 
-    // The entry: when the figure draws anything, the camera has somewhere to land.
+    // The honesty claim behind the panel's "sits elsewhere on the map" (the
+    // v2 fix): every `elsewhere` node really is drawn on some other figure —
+    // itself, or (folded) through its host. Before the folded bucket existed
+    // this was false for every folded node the chosen figure didn't host.
+    index = reveal.elsewhere.length > 0 ? (index ?? saturatedIndex()) : index;
+    for (const nodeId of reveal.elsewhere) {
+      const hereOrSomewhere =
+        (index!.has(nodeId) || drawableIds.has(nodeId)) ||
+        (() => {
+          const node = layerNode(LAYER_GRAPH, nodeId);
+          const host =
+            node && isMethod(node) && node.sameInternalsAsParent === true
+              ? (node.refines ?? null)
+              : null;
+          return host !== null && (index!.has(host) || drawableIds.has(host));
+        })();
+      assert.ok(
+        hereOrSomewhere,
+        `${trace.paper}: ${nodeId} is bucketed "elsewhere" but draws nowhere on the map — the panel would state a falsehood`,
+      );
+    }
+    // And the mirror: an `undrawn` node really draws nowhere — its own lane,
+    // its own figure, or its fold host's lane would each disqualify it.
+    index = reveal.undrawn.length > 0 ? (index ?? saturatedIndex()) : index;
+    for (const nodeId of reveal.undrawn) {
+      assert.ok(
+        !index!.has(nodeId) && !drawableIds.has(nodeId),
+        `${trace.paper}: ${nodeId} is bucketed "undrawn" yet draws somewhere — the coverage gap is overstated`,
+      );
+      const node = layerNode(LAYER_GRAPH, nodeId);
+      const host =
+        node && isMethod(node) && node.sameInternalsAsParent === true ? (node.refines ?? null) : null;
+      assert.ok(
+        host === null || (!index!.has(host) && !drawableIds.has(host)),
+        `${trace.paper}: ${nodeId} is "undrawn" but its fold host ${host} draws — it belongs in folded or elsewhere`,
+      );
+    }
+
+    // The entry: when the figure draws anything — a cited lane or a fold
+    // host — the camera has somewhere to land.
     if (reveal.drawn.length > 0) {
       assert.ok(reveal.sel !== null, `${trace.paper}: drawn nodes but no entry for the camera`);
       assert.ok(
         reveal.drawn.some((node) => node.address === reveal.sel),
         `${trace.paper}: sel ${reveal.sel} is not one of the revealed occurrences`,
+      );
+    } else if (reveal.folded.length > 0) {
+      assert.ok(
+        reveal.folded.some((fold) => fold.hostAddress === reveal.sel),
+        `${trace.paper}: only fold hosts draw, yet sel ${reveal.sel} is not one of their occurrences`,
       );
     }
 
@@ -134,8 +202,12 @@ test("every map-citing paper reveals — or is verifiably undrawn, never silentl
   // The floor keeps the feature real: if a structure change folds half the
   // corpus out of the drawing, this number is the alarm, not a silent shrink.
   assert.ok(revealed >= 75, `only ${revealed} of ${traces.length} papers reveal — the map has stopped drawing the corpus`);
+  // The v2 floor: the fold bucket must stay real. 5 papers carried a folded
+  // citation when this was written; a structure change may move the number,
+  // but zero means the bucket has silently died while its panel copy ships.
+  assert.ok(foldedTotal >= 1, "no reveal carries a folded citation — the fold bucket has gone dark");
   console.log(
-    `paper reveals: ${revealed}/${traces.length} papers; occurrences drawn ${drawnTotal}, cited elsewhere ${elsewhereTotal}; verifiably undrawn: ${unrevealed.join(", ") || "none"}`,
+    `paper reveals: ${revealed}/${traces.length} papers; occurrences drawn ${drawnTotal}, folded into hosts ${foldedTotal}, cited elsewhere ${elsewhereTotal}, drawn nowhere ${undrawnTotal}; verifiably undrawn papers: ${unrevealed.join(", ") || "none"}`,
   );
 });
 
@@ -155,7 +227,11 @@ test("the reveal is minimal: removing any single address hides a claimed occurre
       removals += 1;
       const smaller = reveal.open.filter((address) => address !== removed);
       const addresses = drawnAddresses(reveal.focusId, smaller);
-      const stillAllDrawn = reveal.drawn.every((node) => addresses.has(node.address));
+      // Fold-host occurrences are reveal targets exactly as drawn ones (v2):
+      // an address whose only job is drawing a host is load-bearing, not dead.
+      const stillAllDrawn =
+        reveal.drawn.every((node) => addresses.has(node.address)) &&
+        reveal.folded.every((fold) => addresses.has(fold.hostAddress));
       assert.ok(
         !stillAllDrawn,
         `${trace.paper}: ${removed} is dead weight — every occurrence still draws without it`,
