@@ -1254,11 +1254,13 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // family in one step, plus the adaptive pair that each hang one `observable-estimation`
   // stub. `qubit-adapt-ansatz` is dropped by the `refines` rule in the test, as designed —
   // a declared refinement is not a hollow twin.
-  // 7 since B5's leaf anchors: `particle-hole-ansatz` and `orbital-optimized-ansatz` join
-  // the fixed families. Both construct their circuit family in one step and have no
-  // recorded interior yet — the honest state of a family nobody has decomposed, and both
-  // are authored as leaves rather than given stubs they were not described as having.
-  ["ansatz-construction", 7],
+  // 8 since B5's leaf anchors: `particle-hole-ansatz` and `orbital-optimized-ansatz` join
+  // `symmetry-preserving-ansatz` (PR 441), so five fixed families now. Each constructs its
+  // circuit family in one step and has no recorded interior yet — the honest state of a
+  // family nobody has decomposed — and each is authored as a LEAF rather than given a stub
+  // it was never described as having, which would be inventing structure to escape this
+  // line.
+  ["ansatz-construction", 8],
   // **W21-E's region, and this line is the thing a global ceiling could not say.** Six of
   // the seven excited-state methods draw a sibling's picture, in two groups: four take
   // VQE's three hops and differ only in the objective handed to the optimiser, and two
@@ -1279,7 +1281,10 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // one hop, with no second hop to separate them. What separates them is the objective
   // itself, which is not a step this graph draws — the same shape as the readout row
   // above, and the same fix (an objective needs a state before a `via` can pin it).
-  ["parameter-optimization", 2],
+  // 3 since B5 unit 4: `natural-gradient-optimization` is a third one-hop filler.
+  // The three differ in the objective (`cvar-objective`, `variance-objective`) or in the
+  // metric the step is taken against (this one), and neither is a step this graph draws.
+  ["parameter-optimization", 3],
 ]);
 
 /**

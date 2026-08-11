@@ -1664,9 +1664,9 @@ test("a line that opens into something says so, and a line that does not is not 
   // 83 since B5 unit 3: `variance-objective` and `measurement-grouped-readout`, one lane each.
   // 86 since B5's leaf anchors: `particle-hole-ansatz` and `orbital-optimized-ansatz`
   // under `ansatz-construction`, `symmetry-verification` under `error-mitigation`.
-  assert.equal(openable + leaves + 1, 86, "the twenty-three figures draw 86 lines between them");
+  assert.equal(openable + leaves + 1, 88, "the twenty-three figures draw 88 lines between them");
   assert.equal(openable, 41, "41 of them open into something recorded");
-  assert.equal(leaves, 44, "44 are leaves — nothing finer is recorded for them");
+  assert.equal(leaves, 46, "46 are leaves — nothing finer is recorded for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
