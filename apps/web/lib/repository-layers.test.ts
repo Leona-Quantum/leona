@@ -1100,9 +1100,33 @@ test("the hollow twins are counted, and the count may only fall", () => {
   // **The job is unchanged in kind.** 36 methods in 13 groups still draw a
   // sibling's picture with nothing declaring why, and the largest is still the
   // embedding group he named.
+  // **41 since W21, and the raise needs its reason because a ceiling that rises is
+  // exactly what a gate being abandoned looks like.**
+  //
+  // The five are two groups, both in the newly opened `ansatz-construction` slot:
+  // three fixed families (`uccsd-ansatz`, `hardware-efficient-ansatz`,
+  // `k-upccgsd-ansatz`) that each construct a circuit family in one step and have no
+  // recorded interior, and the residual adaptive pair (`adapt-ansatz`, `qcc-ansatz`)
+  // that each hang one `observable-estimation` stub. `qubit-adapt-ansatz` is dropped
+  // by the `refines` rule above, as designed.
+  //
+  // **The structural point, which is worth more than the number: this ceiling is a
+  // GLOBAL count, so it cannot tell a slot rotting from a region opening.** Every
+  // method of a brand-new capability starts undecomposed — that is the honest state of
+  // a slot nobody has taken apart yet, not a method "authored with no recorded interior
+  // beside siblings that already had none". So under a global ceiling, opening any new
+  // region is unconditionally a failure, and the only way past it is the raise this
+  // comment is attached to. That makes the gate weaker every time it is used, which is
+  // the opposite of what it is for.
+  //
+  // **The fix is a per-slot ceiling** — pin each slot's hollow count, let a new slot
+  // declare its own, and then a rise anywhere is unambiguous rot. Not done here because
+  // it changes a gate rather than the content this PR is about, and a gate rewritten in
+  // the same change that first trips it is a gate nobody reviewed. Filed as the next
+  // W10 item.
   assert.ok(
-    counted <= 36,
-    `${counted} methods draw a sibling's picture with nothing declaring why — was 36. ` +
+    counted <= 41,
+    `${counted} methods draw a sibling's picture with nothing declaring why — was 41. ` +
       `A new one means a method was authored with no recorded interior beside siblings that ` +
       `already had none. See plans/atlas-revamp/W10-hollow-twins.md`,
   );

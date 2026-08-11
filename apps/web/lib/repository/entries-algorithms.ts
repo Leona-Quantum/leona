@@ -1152,7 +1152,7 @@ FINAL_CIRCUIT = circuit`,
     literature: [
       {
         title: "Determining eigenstates and thermal states on a quantum computer using quantum imaginary time evolution",
-        authors: "Mario Motta, Chong Sun, Adrian Teck Keng Tan, Matthew J. O' Rourke, Erika Ye, Austin J. Minnich, Fernando G. S. L. Brandao, Garnet Kin-Lic Chan",
+        authors: "Mario Motta, Chong Sun, Adrian Teck Keng Tan, Matthew J. O'Rourke, Erika Ye, Austin J. Minnich, Fernando G. S. L. Brandao, Garnet Kin-Lic Chan",
         year: "2019",
         url: "https://arxiv.org/abs/1901.07653",
         relevance: "Introduces quantum imaginary-time evolution and discusses ground, excited, and thermal-state preparation.",

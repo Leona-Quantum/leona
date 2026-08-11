@@ -375,6 +375,11 @@ const KNOWN_TWINS = [
     methods: ["direct-sampling-readout", "amplitude-estimation-readout", "classical-shadow-readout"],
     why: "Three readouts that each consume a prepared state and nothing else. The chain is one step long, so there is no second step to tell them apart by; what tells them apart is their own cost, which is on the method.",
   },
+  {
+    slot: "ansatz-construction",
+    methods: ["adapt-ansatz", "qubit-adapt-ansatz", "qcc-ansatz"],
+    why: "The three adaptive constructions, and they draw one chain because they genuinely share it: each grows the ansatz by measuring how much a candidate operator would move the energy, so each hangs one `observable-estimation` stub and nothing else. What separates them is the POOL the candidates are drawn from — fermionic excitations for ADAPT, qubit operators for qubit-ADAPT, entanglers ranked by energy response for QCC — and this graph has no vocabulary for an operator pool, so there is nothing honest to pin a `via` to. Recorded as a worklist item rather than papered over: giving the pool a state would split this group, and it would also give `parameter-optimization` something to narrow. `qubit-adapt-ansatz` additionally declares `refines: adapt-ansatz`, which is why the card already says why IT looks like its parent; the residual pair is ADAPT and QCC.",
+  },
 ];
 
 // A group carries its slot and its chain as **fields**. The version this
