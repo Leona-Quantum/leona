@@ -115,6 +115,24 @@ def test_simple_plan_normalizes_one_additional_note_to_a_list():
     assert simple.success_criteria.additional_notes == ["Compare with exact diagonalization"]
 
 
+def test_broad_lindblad_reference_can_be_ignored_before_typed_validation():
+    payload = _payload()
+    payload["verification_plan"] = {
+        "methods": [],
+        "exact_lindblad_reference": {"malformed": "broad planner copy"},
+    }
+
+    with pytest.raises(ValidationError):
+        parse_simple_plan(json.dumps(payload))
+
+    simple = parse_simple_plan(
+        json.dumps(payload),
+        omit_broad_lindblad_reference=True,
+    )
+    assert simple.verification_plan is not None
+    assert simple.verification_plan.exact_lindblad_reference is None
+
+
 def _exact_diag_payload() -> dict:
     """An H2 plan whose reference is the real Kandala et al. two-qubit operator."""
 
