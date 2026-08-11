@@ -14,6 +14,8 @@ import pytest
 from majorana_contracts.enums import VerificationMethod, VerificationResultKind
 
 from majorana_verification import (
+    native_result_consistency,
+    supports_native_result_consistency,
     verify_exact_native,
     verify_native_sampled_counts,
     verify_native_statistical_counts,
@@ -54,6 +56,159 @@ def test_endianness_normalization_moves_msb_support():
     statevector, _mapping, _qubits, _clbits = statevector_from_evidence(_payload_msb_x0())
     probabilities = statevector.probabilities_dict()
     assert probabilities == pytest.approx({"01": 1.0})  # qiskit layout: q0 rightmost
+
+
+def test_native_result_consistency_catches_bloch_y_sign_and_msb_layout():
+    theta = 0.83
+    phi = -0.41
+    alpha = math.cos(theta / 2)
+    beta = complex(math.cos(phi), math.sin(phi)) * math.sin(theta / 2)
+    payload = {
+        "amplitudes": [alpha, 0.0, beta.real, beta.imag],
+        "qubits": 1,
+        "endianness": "q0_msb",
+        "clbits": 0,
+        "measurement_map": {},
+    }
+    expected = {
+        "bloch_x": math.sin(theta) * math.cos(phi),
+        "bloch_y": math.sin(theta) * math.sin(phi),
+        "bloch_z": math.cos(theta),
+        "probability_one": math.sin(theta / 2) ** 2,
+    }
+
+    passing = native_result_consistency(payload, expected, list(expected))
+    assert passing is not None and passing.passed
+    wrong_sign = native_result_consistency(
+        payload,
+        expected | {"bloch_y": -expected["bloch_y"]},
+        list(expected),
+    )
+    assert wrong_sign is not None and not wrong_sign.passed
+    assert "bloch_y" in wrong_sign.scores["disagreements"][0]
+
+
+def test_native_result_profiles_are_selected_before_execution():
+    assert supports_native_result_consistency(["bloch_x", "bloch_y", "bloch_z", "probability_one"])
+    assert supports_native_result_consistency(["trotter_z2", "exact_z2", "exact_trotter_fidelity"])
+    assert not supports_native_result_consistency(["counts"])
+
+
+def test_native_qpe_consistency_accepts_either_bin_of_an_exact_tie():
+    # (|00> + |01>)/sqrt(2) in q0-LSB order: the one counting qubit (q0) holds
+    # equal mass on both register integers, so either is a valid dominant outcome
+    # and neither may lose to np.argmax's lowest-index preference.
+    payload = {
+        "amplitudes": [2**-0.5, 0.0, 2**-0.5, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "qubits": 2,
+        "endianness": "q0_lsb",
+        "clbits": 0,
+        "measurement_map": {},
+    }
+    keys = [
+        "dominant_integer",
+        "finite_phase_estimate",
+        "dominant_probability",
+        "phase_probabilities",
+    ]
+    tied_high = {
+        "dominant_integer": 1,
+        "finite_phase_estimate": 0.5,
+        "dominant_probability": 0.5,
+        "phase_probabilities": [0.5, 0.5],
+    }
+    tied_low = tied_high | {"dominant_integer": 0, "finite_phase_estimate": 0.0}
+
+    for report in (tied_low, tied_high):
+        outcome = native_result_consistency(payload, report, keys)
+        assert outcome is not None and outcome.passed
+
+    # The estimate must match the ACCEPTED bin, not just any tied one.
+    mismatched = tied_high | {"finite_phase_estimate": 0.0}
+    outcome = native_result_consistency(payload, mismatched, keys)
+    assert outcome is not None and not outcome.passed
+
+
+def test_native_result_consistency_checks_q0_reduced_density_not_environment():
+    gamma = 0.36
+    alpha = 0.61
+    phase = -0.72
+    c = math.cos(alpha)
+    s = math.sin(alpha)
+    # q0 is the system and q1 is the environment in q0-LSB order.
+    vector = [
+        c,
+        complex(math.cos(phase), math.sin(phase)) * s * math.sqrt(1 - gamma),
+        complex(math.cos(phase), math.sin(phase)) * s * math.sqrt(gamma),
+        0.0,
+    ]
+    payload = {
+        "amplitudes": [component for value in vector for component in (value.real, value.imag)],
+        "qubits": 2,
+        "endianness": "q0_lsb",
+        "clbits": 0,
+        "measurement_map": {},
+    }
+    coherence = math.sqrt(1 - gamma) * c * s * complex(math.cos(-phase), math.sin(-phase))
+    expected = {
+        "excited_population": (1 - gamma) * s**2,
+        "coherence_0_1_real": coherence.real,
+        "coherence_0_1_imag": coherence.imag,
+        "state_purity": (c**2 + gamma * s**2) ** 2
+        + ((1 - gamma) * s**2) ** 2
+        + 2 * abs(coherence) ** 2,
+    }
+    report = native_result_consistency(payload, expected, list(expected))
+    assert report is not None and report.passed
+
+    swapped_population = expected | {"excited_population": gamma * s**2}
+    wrong = native_result_consistency(payload, swapped_population, list(expected))
+    assert wrong is not None and not wrong.passed
+
+
+def test_native_result_consistency_checks_qpe_integer_order_and_trotter_observable():
+    high_amp = math.sqrt(0.75)
+    low_amp = 0.5
+    qpe_payload = {
+        # counting q0,q1 has asymmetric mass at y=1 and y=2; target q2 is |1>.
+        "amplitudes": [
+            component
+            for value in [0, 0, 0, 0, 0, high_amp, low_amp, 0]
+            for component in (float(value), 0.0)
+        ],
+        "qubits": 3,
+        "endianness": "q0_lsb",
+        "clbits": 0,
+        "measurement_map": {},
+    }
+    result = {
+        "dominant_integer": 1,
+        "finite_phase_estimate": 0.25,
+        "dominant_probability": 0.75,
+        "phase_probabilities": [0.0, 0.75, 0.25, 0.0],
+    }
+    report = native_result_consistency(qpe_payload, result, list(result))
+    assert report is not None and report.passed
+    reversed_result = result | {
+        "phase_probabilities": list(reversed(result["phase_probabilities"])),
+        "dominant_integer": 2,
+        "finite_phase_estimate": 0.5,
+    }
+    wrong = native_result_consistency(qpe_payload, reversed_result, list(result))
+    assert wrong is not None and not wrong.passed
+
+    trotter_payload = {
+        "amplitudes": [0.0, 0.0, 1.0, 0.0, 0.0, 0.0, 0.0, 0.0],
+        "qubits": 2,
+        "endianness": "q0_lsb",
+        "clbits": 0,
+        "measurement_map": {},
+    }
+    trotter = {"trotter_z0": -1.0, "exact_z0": 0.0, "exact_trotter_fidelity": 0.5}
+    assert native_result_consistency(trotter_payload, trotter, list(trotter)).passed
+    assert not native_result_consistency(
+        trotter_payload, trotter | {"trotter_z0": 1.0}, list(trotter)
+    ).passed
 
 
 def test_native_counts_pass_and_fail_against_the_born_distribution():
