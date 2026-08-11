@@ -1678,6 +1678,33 @@ export interface RegionFieldCoverage {
  */
 export type RunEvidenceVerdict = "accounted" | "outstanding" | "unread";
 
+/**
+ * A verdict and, where there is one, the paper that produced it.
+ *
+ * **The url is what turns `outstanding` from a mood into an errand.** The
+ * register is keyed by PAPER and a method cites several, so "some cited paper
+ * reports numerics" cannot mean "there is a run of this method to write up" —
+ * it means *someone should look here*. Measured 2026-08-12 over the linear-ODE
+ * region: all seven `outstanding` methods were read and **all seven** turned out
+ * to be numerics about a neighbouring method — HHL's belonged to the discrete
+ * adiabatic walk, backward Euler's and Crank-Nicolson's to diagonal Pade orders
+ * the paper explicitly excludes them from, Chebyshev's to eigenstate filtering.
+ *
+ * Seven for seven is enough to stop printing the verdict alone. With the url
+ * beside it a reader can tell in one glance whether the lead is worth a read,
+ * and the gauge stops implying a promise it cannot keep.
+ */
+export interface RunEvidence {
+  verdict: RunEvidenceVerdict;
+  /**
+   * The citation the verdict turns on: the first paper reporting a run for
+   * `outstanding`, the first unread or unregistered one for `unread`. Absent for
+   * `accounted`, where the verdict is about every citation at once rather than
+   * about any particular one.
+   */
+  paper?: string;
+}
+
 /** One route stretch with no hop note on it. See `RegionClosure.unauthoredHops`. */
 export interface UnauthoredHop {
   method: string;
@@ -1707,8 +1734,8 @@ export interface RegionClosure {
   hopStretches: number;
   hopStretchesAuthored: number;
   unauthoredHops: readonly UnauthoredHop[];
-  /** Per method missing `example.text`, why. Empty when the field is filled. */
-  runEvidence: ReadonlyMap<string, RunEvidenceVerdict>;
+  /** Per method missing `example.text`, why — and which paper says so. */
+  runEvidence: ReadonlyMap<string, RunEvidence>;
 }
 
 /**
@@ -1723,20 +1750,22 @@ export interface RegionClosure {
 function runEvidenceFor(
   method: LayerMethod,
   reports: ReadonlyMap<string, SourceCoverage>,
-): RunEvidenceVerdict {
+): RunEvidence {
   const citations = method.citations ?? [];
-  if (citations.length === 0) return "unread";
-  let sawUnknown = false;
+  if (citations.length === 0) return { verdict: "unread" };
+  let unread: string | undefined;
   for (const citation of citations) {
     const row = reports.get(citation.url);
     if (!row) {
-      sawUnknown = true;
+      unread ??= citation.url;
       continue;
     }
-    if (row.simulation === "reported" || row.hardware === "reported") return "outstanding";
-    if (row.simulation === "unknown" || row.hardware === "unknown") sawUnknown = true;
+    if (row.simulation === "reported" || row.hardware === "reported") {
+      return { verdict: "outstanding", paper: citation.url };
+    }
+    if (row.simulation === "unknown" || row.hardware === "unknown") unread ??= citation.url;
   }
-  return sawUnknown ? "unread" : "accounted";
+  return unread === undefined ? { verdict: "accounted" } : { verdict: "unread", paper: unread };
 }
 
 /**
@@ -1819,7 +1848,7 @@ export function regionClosure(
     }
   }
 
-  const runEvidence = new Map<string, RunEvidenceVerdict>();
+  const runEvidence = new Map<string, RunEvidence>();
   for (const method of methods) {
     if (filled(method.example?.text) && (method.implementations ?? []).length > 0) continue;
     runEvidence.set(method.id, runEvidenceFor(method, reports));
