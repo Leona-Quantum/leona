@@ -119,6 +119,7 @@ export function InfiniteCanvas({
   locale,
   fill = false,
   selKey = null,
+  layoutKey = null,
 }: {
   children: ReactNode;
   initial: Viewport;
@@ -136,6 +137,23 @@ export function InfiniteCanvas({
    * are fitted-width-relative and only this component knows the box.
    */
   selKey?: string | null;
+  /**
+   * What the reader has OPENED, as a key — the other half of what used to be
+   * baked into `selKey`.
+   *
+   * Split out because the two changes mean different things to the camera.
+   * A new `selKey` is *"I have chosen something else to look at"*, and W16
+   * answers it by framing that thing. A new `layoutKey` under an unchanged
+   * `selKey` is *"the figure rearranged under what I was already looking at"* —
+   * a toggle — and the owner's ask for that one is explicit (`e6585b`):
+   * **"do not zoom in when clicking to expand/contract. just recenter."**
+   *
+   * Opening a line carries no `sel=` (checked: no open href in
+   * `converge-layout.ts` writes one), so before the split every toggle arrived
+   * as a changed combined key and was answered with a full re-fit — the reader's
+   * own magnification thrown away on every click.
+   */
+  layoutKey?: string | null;
   /**
    * This is the map surface, not an illustration inside a written record.
    *
@@ -199,6 +217,12 @@ export function InfiniteCanvas({
     markGesturing: () => void;
   } | null>(null);
   const cancelFlyRef = useRef<(() => void) | null>(null);
+  /**
+   * The `selKey` the camera last acted on, so a toggle can be told from a new
+   * selection. `null` on mount, which makes the first fly a `fit` — arriving on
+   * a `?sel=` link IS choosing what to look at.
+   */
+  const lastSelKeyRef = useRef<string | null>(null);
 
   // --- ?at= sync: debounced, replaceState only, every other param kept -----
   const isFirstRender = useRef(true);
@@ -543,6 +567,13 @@ export function InfiniteCanvas({
   // Declared after the gesture effect on purpose: effects run in declaration
   // order, so on first mount `flyApiRef` is already populated when this one
   // looks for it.
+  // Which of the two keys moved, decided before the settle timer so the answer
+  // is the navigation that actually happened rather than whatever the refs hold
+  // by the time the camera measures.
+  const zoomMode: "fit" | "keep" = selKey !== null && selKey === lastSelKeyRef.current ? "keep" : "fit";
+  useEffect(() => {
+    lastSelKeyRef.current = selKey;
+  }, [selKey]);
   useEffect(() => {
     if (selKey === null) return;
     const el = rootRef.current;
@@ -575,6 +606,7 @@ export function InfiniteCanvas({
         from,
         { left: rect.left - box.left, top: rect.top - box.top, width: rect.width, height: rect.height },
         { width: box.width, height: box.height },
+        zoomMode,
       );
       // Already framed — a sub-pixel tween would still debounce a new `?at=`
       // into the URL for a move nobody saw.
@@ -627,7 +659,7 @@ export function InfiniteCanvas({
       cancel();
       if (cancelFlyRef.current === cancel) cancelFlyRef.current = null;
     };
-  }, [selKey]);
+  }, [selKey, layoutKey]);
 
   // --- keyboard: arrows pan, +/- zoom, 0 resets to `initial` ---------------
 
