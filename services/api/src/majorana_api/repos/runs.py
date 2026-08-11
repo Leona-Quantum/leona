@@ -11,7 +11,7 @@ from typing import Any
 
 from majorana_contracts import Scope
 from majorana_contracts.enums import Framework, RunMode, RunStatus, VerificationMethod
-from sqlalchemy import func, select, update
+from sqlalchemy import and_, func, select, update
 from sqlalchemy.exc import IntegrityError
 from sqlalchemy.ext.asyncio import AsyncSession
 
@@ -950,6 +950,35 @@ async def list_run_events(
         .order_by(RunEvent.seq)
     )
     return list((await session.execute(stmt)).scalars().all())
+
+
+async def list_run_events_with_status(
+    scope: Scope,
+    session: AsyncSession,
+    run_id: uuid.UUID,
+    *,
+    after_seq: int = 0,  # SSE resume: Last-Event-ID
+) -> tuple[list[RunEvent], str | None]:
+    """Read new events and the parent run status in one scoped statement.
+
+    The SSE live tail needs the status only when no event is available, to close
+    a run that became terminal without publishing ``run.finished``.  Keeping
+    that status in the same outer-join query avoids a second database round trip
+    on every idle poll while preserving the event cursor and workspace fence.
+    """
+    stmt = (
+        select(Run.status, RunEvent)
+        .outerjoin(
+            RunEvent,
+            and_(RunEvent.run_id == Run.id, RunEvent.seq > after_seq),
+        )
+        .where(Run.id == run_id, Run.workspace_id == scope.workspace_id)
+        .order_by(RunEvent.seq)
+    )
+    rows = (await session.execute(stmt)).all()
+    if not rows:
+        raise NotFoundError("run")
+    return [event for _status, event in rows if event is not None], rows[0][0]
 
 
 async def add_verification_record(
