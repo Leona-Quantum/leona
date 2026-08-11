@@ -409,16 +409,58 @@ test("why a worked run is missing is three-valued, and the middle value is the c
     ],
   };
   const region = regionClosure(graph, FIXTURE_STATES, ["solve"], REGION_REPORTS);
-  assert.equal(region.runEvidence.get("has-a-run"), "outstanding");
-  assert.equal(region.runEvidence.get("skimmed"), "unread");
-  assert.equal(region.runEvidence.get("theory-only"), "accounted");
+  assert.deepEqual(region.runEvidence.get("has-a-run"), {
+    verdict: "outstanding",
+    paper: "https://example.org/ran-it",
+  });
+  assert.deepEqual(region.runEvidence.get("skimmed"), {
+    verdict: "unread",
+    paper: "https://example.org/skimmed",
+  });
+  // `accounted` carries no paper, and that is the honest shape: the verdict is
+  // about every citation at once rather than about any particular one.
+  assert.deepEqual(region.runEvidence.get("theory-only"), { verdict: "accounted" });
   // A citation the register does not carry is `unread`, not `accounted`: an
   // absence of evidence is not evidence of absence, and the register is the only
   // place that could say otherwise.
-  assert.equal(region.runEvidence.get("off-register"), "unread");
+  assert.deepEqual(region.runEvidence.get("off-register"), {
+    verdict: "unread",
+    paper: "https://example.org/not-in-register",
+  });
   // Nor does a method with no sources at all get to claim there is nothing to
-  // write up.
-  assert.equal(region.runEvidence.get("uncited"), "unread");
+  // write up. No paper either — there is none to name.
+  assert.deepEqual(region.runEvidence.get("uncited"), { verdict: "unread" });
+});
+
+test("an outstanding verdict names the paper that produced it, because it is a lead and not a promise", () => {
+  // **Seven for seven, measured.** The register is keyed by PAPER and a method
+  // cites several, so "some cited paper reports numerics" cannot mean "there is a
+  // run of THIS method to write up". Every one of the linear-ODE region's seven
+  // `outstanding` methods was read on 2026-08-12 and every one turned out to be
+  // numerics about a neighbouring method. Printing the deciding url turns a
+  // reader's next step from "read three papers" into "look at this section", and
+  // stops the gauge implying a promise it cannot keep.
+  //
+  // Pinned on the FIRST reporting citation rather than any of them, because a
+  // method citing two reporting papers would otherwise report a different one
+  // between runs and the gauge's output would stop being diffable.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      method("two-leads", "solve", {
+        citations: [
+          { title: "A paper", authors: "Someone", year: "2020", url: "https://example.org/pure" },
+          { title: "A paper", authors: "Someone", year: "2020", url: "https://example.org/ran-it" },
+          { title: "A paper", authors: "Someone", year: "2020", url: "https://example.org/skimmed" },
+        ],
+      }),
+    ],
+  };
+  const region = regionClosure(graph, FIXTURE_STATES, ["solve"], REGION_REPORTS);
+  assert.deepEqual(region.runEvidence.get("two-leads"), {
+    verdict: "outstanding",
+    paper: "https://example.org/ran-it",
+  });
 });
 
 test("a region's fields are counted apart, and a blank one is not counted at all", () => {
