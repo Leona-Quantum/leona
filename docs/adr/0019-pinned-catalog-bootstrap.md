@@ -31,6 +31,47 @@
 > The figures in the body are the numbers as of the original decision; they are left as
 > written and each is marked inline with the current count.
 
+> **Amendment, 2026-08-12 — the sync is now run by the deploy pipeline, not by hand.**
+> This narrows one sentence in the status note above ("production publication is still an
+> owner-run, approval-gated CLI action") and nothing else. `deploy.yml`'s final step,
+> `sync the published catalog`, runs `catalog_admin sync-bootstrap --attested-by-standing`
+> against production on every deploy, through the Cloud SQL Auth Proxy the migrate step
+> already starts.
+>
+> **Why the original rule had to move.** "Later TypeScript changes require a new pinned
+> manifest release and explicit import job rather than automatic sync" was written to keep
+> the *runtime* from reading the TypeScript corpus — and it still does. What it also did,
+> unintentionally, was make every corpus content change depend on a human remembering to
+> create a throwaway Cloud Run job against the production database. That step was skipped:
+> two corrected author names (`Matthew J. O'Rourke`, `David C. McKay`) shipped to the map on
+> 2026-08-03 and were still absent from the catalog rows on 2026-08-11, with the site
+> serving the wrong names for eight days and no signal anywhere that it was doing so. A gate
+> whose safe path is "someone will run the command" is not a gate; it is an unwritten brief.
+>
+> **What is unchanged, and deliberately so.** Alembic and application startup still insert
+> and publish nothing — this is a pipeline step, not a runtime or migration behaviour, which
+> is the distinction the original decision actually protects. What is imported is still a
+> **pinned manifest release**: CI's drift guard refuses any PR whose regenerated
+> `manifest.json` is not committed alongside the corpus edit, so the manifest at the merged
+> commit is the pinned artifact, and `BootstrapManifestSource` re-verifies its whole-manifest
+> checksum and every per-item sha256 before staging. The import job is still **explicit** —
+> it is a named step running the same CLI, not a background reconciler.
+>
+> **Approval gating is preserved rather than automated away.** `--attested-by-standing`
+> cannot name a principal: it resolves to the account that *already* holds ADMIN on the
+> catalog workspace, which only a human running `attest-bootstrap` by hand can create
+> (`grant_catalog_reviewer` is the sole path to that role). So an unattended run can continue
+> an existing grant and can never widen who holds one. It refuses when nobody holds the
+> grant and when two live accounts do. And `plan_re_attestation` is untouched: a record whose
+> **provenance claim** moved still refuses outright, keeps its previous version live, and
+> waits for a person to look at it and name it with `--re-attest`. The standing grant it
+> applies is the owner's committed statement in `catalog_bootstrap/attestation-policy.json`,
+> reviewed like any other file.
+>
+> **Reversal.** Delete the `sync the published catalog` step from `.github/workflows/deploy.yml`.
+> Nothing else depends on it; the CLI keeps working by hand exactly as documented. Doing so
+> restores the eight-day staleness failure above, so restore the hand step in the same breath.
+
 **Context:** The latest integrated `dev` baseline validates 285 TypeScript Atlas
 records: 29 gates, 60 operators, 13 states, and 183 algorithms *[figures as of
 2026-07-18; the corpus is 283 records — 29/60/13/181 — since the 2026-07-19 amendment

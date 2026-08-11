@@ -235,6 +235,27 @@ account ADMIN on the catalog workspace, so the wrong pick is a real grant on a d
 select id, workos_user_id, created_at from users where email = '<you>' order by created_at;
 ```
 
+### `--attested-by-standing` — the form with nobody at the keyboard
+
+The deploy pipeline cannot type an email, and inventing a principal for it would be a grant
+made by nobody. So it passes `--attested-by-standing`, which does not *name* an account: it
+**continues** the one that already holds ADMIN on the catalog workspace.
+
+That is a deliberately narrow power. `catalog.grant_catalog_reviewer` is the only path to
+that role and it runs only inside an explicit `attest-bootstrap`, so the set this can choose
+from is exactly the set some human already created by hand. **An unattended run can re-use a
+grant; it can never widen who holds one.**
+
+It refuses rather than guessing in every other case: nobody holds the grant (a fresh
+environment — make the first attestation by hand with `--attested-by-email`), or two *live*
+accounts do (it names both and points at `--attested-by`). Retired rows are excluded by the
+same rule as above, which matters here because a workspace attested both before and after the
+WorkOS reattachment carries **two** ADMIN memberships for one person — a duplicate, not an
+ambiguity, and the pipeline resolves it instead of stopping. `pick_standing_reviewer` is the
+rule; `services/api/tests/test_catalog_admin_standing_reviewer.py` pins it without a database.
+
+Use it by hand only to check what the pipeline would do. For a real hand-run, name yourself.
+
 ## Live gates
 
 ```bash
@@ -255,8 +276,30 @@ The catalog is authoritative once published. **A change to
 `MAJORANA_PUBLIC_CATALOG_API` is on — see `deploys.md § The public catalog flag`. The
 loop is: edit the entries → regenerate the manifest
 (`node scripts/generate-catalog-bootstrap-manifest.mjs`) → `bootstrap-import` →
-`attest-bootstrap` → `publish-bootstrap`. There is no automatic sync, by design
-(ADR-0019); a new pinned manifest release plus an explicit import job is the only path.
+`attest-bootstrap` → `publish-bootstrap`.
+
+**Since 2026-08-12 the deploy pipeline runs the last three for you.** `deploy.yml`'s final
+step, `sync the published catalog`, runs `sync-bootstrap --attested-by-standing` against
+production on every deploy. So the loop you are responsible for is: **edit the entries,
+regenerate the manifest, commit both in the same PR, merge.** The manifest regeneration is
+still yours — CI refuses the PR without it — and it is still what pins the release the
+importer imports (ADR-0019, amended 2026-08-12).
+
+Run the commands by hand when you are working against a **non-production** database, when
+the pipeline step has refused and you are resolving it, or when you are making the **first**
+attestation on a fresh environment — that one cannot be automated, because
+`--attested-by-standing` continues an existing grant and a fresh workspace has none.
+
+**When the pipeline step goes red, the deploy still succeeded.** It runs last, after the
+stack has been verified live, so a refusal means the new revision is serving and only the
+corpus content did not land. Nothing is partially published: every record stays on its
+previous version. The usual cause is a moved provenance claim — see *When `attest-bootstrap`
+refuses* above, resolve it with an explicit `--re-attest` run, and the next deploy converges.
+
+The step runs on **every** deploy rather than only when `manifest.json` changed. A no-change
+run writes nothing (the importer compares hashes; publishing an already-public record is a
+no-op), and a sync gated on "did this push touch the manifest" would be stale forever the
+first time an event was missed.
 
 **Check the manifest is current before running any of it**, or the import faithfully ships
 the last generation's content and reports success:
