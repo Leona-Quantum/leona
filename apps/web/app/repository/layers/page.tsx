@@ -6,6 +6,7 @@ import { getRepositoryListEntries } from "../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
 import { drawableSlots, resolveOpenIds } from "../../../lib/repository/converge-layout";
 import { parseViewport } from "../../../lib/repository/canvas-viewport";
+import { SEL_PARAM } from "../../../lib/repository/canvas-selection";
 import { cardExists } from "../../../lib/repository/card-content";
 import {
   INNER_PARAM,
@@ -245,6 +246,11 @@ export default async function RepositoryLayersPage({
         // JavaScript off, which is the whole reason the viewport is a parameter
         // rather than component state.
         viewport={parseViewport(params.at)}
+        // Which drawn thing the reader is on (W16, the Prezi move). Passed raw
+        // and resolved in `ConvergeView` against what actually drew, the same
+        // division of labour as `cardSection`: the page can say an id names a
+        // node; only the layout knows whether anything on the figure draws it.
+        sel={one(params, SEL_PARAM)}
       />
     </PublicSite>
   );

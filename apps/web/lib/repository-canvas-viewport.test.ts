@@ -4,13 +4,19 @@ import {
   DRAG_THRESHOLD_PX,
   IDENTITY,
   KEYBOARD_ZOOM_FACTOR,
+  SELECTION_FILL,
+  SELECTION_ZOOM_MAX,
   VIEWPORT_LIMITS,
   WHEEL_LINE_HEIGHT_PX,
   WHEEL_ZOOM_SENSITIVITY,
   WHEEL_ZOOM_STEP_LIMIT,
+  centerOn,
   clampZoom,
   createCanvasGesture,
+  easeInOutCubic,
   formatViewport,
+  interpolateViewport,
+  isViewportValue,
   panBy,
   parseViewport,
   transformOf,
@@ -366,4 +372,115 @@ test("cancelAll forgets every contact, and a move for an untracked contact is in
   // different route.
   assert.equal(gesture.move({ id: 1, x: 900, y: 900 }).view, null);
   assert.deepEqual(gesture.ids(), []);
+});
+
+// ---------------------------------------------------------------------------
+// The Prezi move (W16): centering math, tween interpolation, the `at` predicate
+// ---------------------------------------------------------------------------
+
+test("isViewportValue tells a viewport from a W15 lane address, with parseViewport's exact rules", () => {
+  for (const good of ["1,2,3", "0,0,1", "-5.5,3,0.5", " 1 , 2 , 3 "]) {
+    assert.equal(isViewportValue(good), true, good);
+  }
+  // "linear-ode-solve:0.0.1.1.0" is the load-bearing rejection, in the exact
+  // shape the demoted-lane jump control writes into `?at=` (verified against a
+  // real saturated figure): `carrySelection` rewrites it into `?sel=` only
+  // because this predicate refuses it.
+  for (const bad of [
+    "",
+    "linear-ode-solve:0.0.1.1.0",
+    "1.0.3",
+    "1,2",
+    "1,2,3,4",
+    "a,b,c",
+    ",,1",
+    "1,NaN,2",
+    "1,2,Infinity",
+  ]) {
+    assert.equal(isViewportValue(bad), false, bad);
+  }
+});
+
+test("centerOn puts the target's content centre at the box centre — verified independently", () => {
+  const view = { x: 37, y: -12, z: 1.4 };
+  const target = { left: 400, top: 250, width: 140, height: 60 };
+  const box = { width: 1200, height: 800 };
+  const landed = centerOn(view, target, box);
+  // The content point under the target's measured centre, computed here from
+  // the transform's definition rather than through centerOn's own arithmetic.
+  const contentX = (target.left + target.width / 2 - view.x) / view.z;
+  const contentY = (target.top + target.height / 2 - view.y) / view.z;
+  assert.ok(Math.abs(landed.x + landed.z * contentX - box.width / 2) < 1e-9);
+  assert.ok(Math.abs(landed.y + landed.z * contentY - box.height / 2) < 1e-9);
+});
+
+test("centerOn does not depend on where the camera is standing", () => {
+  // One content-space rectangle, measured under two different viewports: the
+  // landing viewport must be identical, or a shared `?sel=` link would frame
+  // differently depending on the pan the reader happened to arrive with.
+  const content = { left: 300, top: 180, width: 200, height: 40 };
+  const box = { width: 1000, height: 700 };
+  const measuredUnder = (v: { x: number; y: number; z: number }) => ({
+    left: v.x + v.z * content.left,
+    top: v.y + v.z * content.top,
+    width: v.z * content.width,
+    height: v.z * content.height,
+  });
+  const a = centerOn({ x: 0, y: 0, z: 1 }, measuredUnder({ x: 0, y: 0, z: 1 }), box);
+  const b = centerOn({ x: -250, y: 90, z: 2.2 }, measuredUnder({ x: -250, y: 90, z: 2.2 }), box);
+  assert.ok(Math.abs(a.x - b.x) < 1e-9);
+  assert.ok(Math.abs(a.y - b.y) < 1e-9);
+  assert.ok(Math.abs(a.z - b.z) < 1e-9);
+});
+
+test("centerOn caps a small target at SELECTION_ZOOM_MAX and zooms out to fit a large one", () => {
+  const box = { width: 1200, height: 800 };
+  // A state circle: ~26 content px. Filling 80% of the box would be z ≈ 24; the
+  // camera stops at the prominence cap instead — the owner's "with the rest of
+  // the map around it".
+  const small = centerOn(IDENTITY, { left: 500, top: 300, width: 26, height: 26 }, box);
+  assert.equal(small.z, SELECTION_ZOOM_MAX);
+  // A 4000px lane: the camera zooms OUT so the whole selection fits inside
+  // SELECTION_FILL of the box.
+  const large = centerOn(IDENTITY, { left: 0, top: 300, width: 4000, height: 40 }, box);
+  assert.ok(Math.abs(large.z - (SELECTION_FILL * box.width) / 4000) < 1e-9);
+  assert.ok(large.z * 4000 <= box.width);
+});
+
+test("centerOn is total at the edges: a zero-size measurement and an absurd one both stay finite", () => {
+  const box = { width: 1200, height: 800 };
+  // A hidden element reports 0×0; the divide-by-zero would otherwise be an
+  // Infinity zoom written straight into the URL.
+  const degenerate = centerOn(IDENTITY, { left: 10, top: 10, width: 0, height: 0 }, box);
+  assert.ok(Number.isFinite(degenerate.x) && Number.isFinite(degenerate.y));
+  assert.equal(degenerate.z, SELECTION_ZOOM_MAX);
+  // A million content pixels wide: the fit factor falls below minZoom and the
+  // shared clamp holds, same clamp as every other zoom writer.
+  const absurd = centerOn(IDENTITY, { left: 0, top: 0, width: 1e6, height: 40 }, box);
+  assert.equal(absurd.z, VIEWPORT_LIMITS.minZoom);
+});
+
+test("interpolateViewport: exact endpoints, linear x/y, geometric z", () => {
+  const from = { x: 0, y: 100, z: 0.5 };
+  const to = { x: 200, y: -60, z: 2 };
+  assert.deepEqual(interpolateViewport(from, to, 0), from);
+  assert.deepEqual(interpolateViewport(from, to, 1), to);
+  const mid = interpolateViewport(from, to, 0.5);
+  assert.equal(mid.x, 100);
+  assert.equal(mid.y, 20);
+  // The geometric midpoint of 0.5x and 2x is 1x — the halfway a reader's eye
+  // expects from a zoom, where the linear midpoint 1.25x reads as overshoot.
+  assert.ok(Math.abs(mid.z - 1) < 1e-9);
+});
+
+test("easeInOutCubic is a symmetric ease with exact endpoints and no backtracking", () => {
+  assert.equal(easeInOutCubic(0), 0);
+  assert.equal(easeInOutCubic(1), 1);
+  assert.equal(easeInOutCubic(0.5), 0.5);
+  let previous = 0;
+  for (let i = 1; i <= 100; i++) {
+    const value = easeInOutCubic(i / 100);
+    assert.ok(value >= previous, `not monotone at ${i / 100}`);
+    previous = value;
+  }
 });

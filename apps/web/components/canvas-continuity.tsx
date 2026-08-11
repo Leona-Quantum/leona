@@ -2,6 +2,7 @@
 
 import { useRouter } from "next/navigation";
 import { useEffect, useRef, type ReactNode } from "react";
+import { carrySelection } from "../lib/repository/canvas-selection";
 
 /**
  * Opening a line moves the picture instead of replacing the page.
@@ -131,11 +132,17 @@ export function CanvasContinuity({
       // Where the reader is *now*, which is not what the anchor says once they
       // have panned. Only substituted into a link that is passing the rendered
       // value along; a link that names a different viewport chose it.
-      const live = new URLSearchParams(window.location.search).get("at");
+      const liveParams = new URLSearchParams(window.location.search);
+      const live = liveParams.get("at");
       const carried = next.searchParams.get("at");
       if (live !== null && carried === inherited.current && live !== carried) {
         next.searchParams.set("at", live);
       }
+
+      // What the click means for `?sel=` — the Prezi move's selection identity
+      // (W16). Derived from the URL diff alone, after the `at` substitution so
+      // the jump-rewrite rule sees the anchor's own `at`, not the live one.
+      carrySelection(liveParams, next.searchParams);
 
       event.preventDefault();
       // `scroll: false` because the reader is looking at a figure, not arriving

@@ -47,6 +47,17 @@ on an element *inside* an `<svg>` is never captured by the browser (measured —
 style keeps the name and no group is ever built, so it fails silently), and the only shape on
 this canvas that can carry a view-transition name is the root `<svg>` itself.
 
+Under the same rule — added 2026-08-11, owner-requested (*"the whole zoom onto, center, and
+persist showing the highlighted item with the rest of the map around it functionality is
+still not present- that is the beauty of prezi"*, s121 inbox) — the converge canvas's
+**camera fly to a selection** (W16): a ≤320 ms rAF tween of the viewport transform when
+`?sel=` changes, in `infinite-canvas.tsx` through the same single-writer `transformOf` path
+as every gesture. It is JS-driven state, not a `@keyframes`, so it has no row in the table
+above; it is on this list because an animated canvas step was previously *removed* for not
+being on it (the keyboard-step note in `infinite-canvas.tsx`), and the difference between
+that removal and this addition is exactly the owner's call quoted here. Any reader input
+cancels it mid-flight, and `prefers-reduced-motion` gets the same ending in one step.
+
 **No parallax. No springs.** The prose reveal is opt-in (`RunView` receives `animateText`),
 presentation-only, and `prefers-reduced-motion` shows the complete text immediately.
 Static fixtures keep it off so screenshot and a11y stories remain deterministic.
