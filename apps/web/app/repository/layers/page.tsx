@@ -279,7 +279,9 @@ export default async function RepositoryLayersPage({
                 year: paperRow.year,
                 cited: new Set(paperReveal.cited),
                 drawnCount: paperReveal.drawn.length,
+                folded: paperReveal.folded,
                 elsewhereCount: paperReveal.elsewhere.length,
+                undrawnCount: paperReveal.undrawn.length,
               }
             : null
         }
