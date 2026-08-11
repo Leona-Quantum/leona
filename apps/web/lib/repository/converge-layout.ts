@@ -132,6 +132,7 @@ import {
   type LayerCapability,
   type LayerGraph,
   type LayerMethod,
+  type LoopClosure,
 } from "./layers.ts";
 import { layerState, type StateVocabulary } from "./states.ts";
 import type { PublicLocale } from "../public-locale.ts";
@@ -209,6 +210,17 @@ export const CONVERGE_METRICS = {
   captionFont: 13,
   /** A lane's label sits this far off its own edge. */
   labelLift: 7,
+  /**
+   * The loop glyph: a drawn circular arrow after the name of a lane a route
+   * walks more than once (W19). The owner's ask, verbatim: *"iterator needs to
+   * be clearer if there is one with arrows."* The `×count` mark stays in the
+   * label — it is quantitative and budget-first — and this is the loop drawn AS
+   * a loop beside it. Sized under `labelBand` so the glyph lives inside the
+   * vertical room every name already reserves and moves nothing.
+   */
+  loopRadius: 5,
+  /** Between the name's last glyph and the loop glyph. */
+  loopGap: 6,
   /**
    * How thick an opened line — the **bone** — is drawn.
    *
@@ -810,6 +822,14 @@ export interface ConvergeLane {
    */
   repeatMark: string | null;
   /**
+   * The marked loop's closure, or null exactly when `repeatMark` is null (W19).
+   *
+   * The renderer draws `loopGlyphPath` at the name's end when this is set —
+   * solid for a coherent loop, broken for a measured one — and styles by this
+   * field alone. Emitted for `repeatMark`'s occurrence reason.
+   */
+  loopClosure: LoopClosure | null;
+  /**
    * The address of the earlier occurrence drawing this lane's interior, or null
    * — see `dedupSharedInteriors` (W15).
    *
@@ -1040,6 +1060,16 @@ export interface ConvergeFeed {
   shortLabel: string | null;
   /** The count drawn at the end of `label`. See `ConvergeLane.repeatMark`. */
   repeatMark: string | null;
+  /** The marked loop's closure. See `ConvergeLane.loopClosure`. */
+  loopClosure: LoopClosure | null;
+  /**
+   * The drawn label's own measured width (W19) — the engine's number, carried
+   * so the renderer can end-anchor the loop glyph without measuring text a
+   * second way. `ConvergeLane` has carried its `labelWidth` since the click
+   * target was sized to the name; a feed name never needed one until the glyph
+   * gave it something drawn past its end.
+   */
+  labelWidth: number;
   /** What this stub narrows. See `ConvergeLane.refinement`. */
   refinement: StrandRefinement | null;
   labelTruncated: boolean;
@@ -1556,6 +1586,18 @@ interface PlanStrand {
    */
   repeatMark: string | null;
   /**
+   * How the loop the mark counts closes — the corpus's `coherent` | `measured`
+   * distinction (W19), or null exactly when `repeatMark` is null.
+   *
+   * Carried beside the mark rather than re-read from the corpus, for the mark's
+   * own reason: the loop is a fact about *this occurrence's edge*. The renderer
+   * styles the drawn loop glyph by it — a measured loop reads out between
+   * turns and its arc is broken where the readout happens; a coherent one is
+   * unbroken. Before this field, `closure` was authored, validated, counted by
+   * `validateLayerGraph` — and read zero times by any drawing surface.
+   */
+  loopClosure: LoopClosure | null;
+  /**
    * That this lane is a **narrower version** of another method — see
    * `StrandRefinement`.
    *
@@ -1905,6 +1947,7 @@ function chainInside(
       // The stretch a method closes itself is not one of its steps, so nothing
       // can have recorded a multiplicity for it. See `repeatMark`.
       repeatMark: null,
+      loopClosure: null,
       // Nor a refinement: this is a *step*, and only a method narrows a method.
       refinement: null,
       href: `/repository/layers/${method.id}`,
@@ -1980,6 +2023,7 @@ function planForSlot(
     // Set by whoever plans this occurrence, not here: a slot is one node on
     // many lanes and the count belongs to the route above it. See `repeatMark`.
     repeatMark: null,
+    loopClosure: null,
     // A slot is a capability. `refines` is a relation between two methods, so a
     // slot's own lane never carries one — the methods inside its fan do.
     refinement: null,
@@ -2168,6 +2212,7 @@ function planForMethod(
     // A method is not a step of itself. Its *steps* carry the marks, and
     // `planForMethod` writes them onto the children it plans below.
     repeatMark: null,
+    loopClosure: null,
     // The refinement, by contrast, is the method's own and is set right here:
     // it is true of this node wherever it is drawn, not of one route through it.
     refinement: refinementOf(graph, method, locale),
@@ -2270,6 +2315,7 @@ function planForLane(
     // Null for the same reason, and it costs nothing: a composite draws no name
     // at all, so a mark on it would be measured into a width nothing uses.
     repeatMark: null,
+    loopClosure: null,
     refinement: null,
     href: named.href,
     standing,
@@ -2460,9 +2506,16 @@ interface Measure {
 }
 
 /** An ingredient stub's drawn name width, capped the same way a lane's is. */
-function feedWidth(feed: { label: string; shortLabel: string | null }): number {
+function feedWidth(feed: {
+  label: string;
+  shortLabel: string | null;
+  loopClosure?: LoopClosure | null;
+}): number {
   const M = CONVERGE_METRICS;
-  return Math.min(M.labelCap, estimateTextWidth(feed.shortLabel ?? feed.label, M.laneFont));
+  return (
+    Math.min(M.labelCap, estimateTextWidth(feed.shortLabel ?? feed.label, M.laneFont)) +
+    loopAllowance({ loopClosure: feed.loopClosure ?? null })
+  );
 }
 
 /**
@@ -2601,6 +2654,52 @@ type MarkedStrand = {
 const sharedAllowance = (strand: { sharedWith?: string | null }): number =>
   strand.sharedWith == null ? 0 : estimateTextWidth(" ⤴", CONVERGE_METRICS.laneFont);
 
+/**
+ * Width the drawn loop glyph adds past a marked name (W19).
+ *
+ * The `⤴`'s rule, for the `⤴`'s reason: a constant-width affordance rides
+ * BEYOND the label cap rather than eating the name's characters. Unlike the
+ * jump glyph this one is geometry, not text — `markSuffix` never carries it —
+ * so the demand (`ownNameDemand`, `feedWidth`), the placement
+ * (`loopGlyphPath`'s callers) and the overlap sweeps all add it through this
+ * one function or drift apart the way `hFit` once did.
+ */
+export const loopAllowance = (strand: { loopClosure: LoopClosure | null }): number =>
+  strand.loopClosure === null
+    ? 0
+    : CONVERGE_METRICS.loopGap + 2 * CONVERGE_METRICS.loopRadius;
+
+/**
+ * The loop glyph's path: a three-quarter circular arc with an arrowhead,
+ * drawn after a marked name — the iteration, drawn as the loop it is.
+ *
+ * One writer of the geometry. The layout hands the renderer `loopClosure` and
+ * the label's own end; the renderer asks here for the shape, and a test can ask
+ * the same question of the same function. `endX` is where the drawn text ends,
+ * `midY` the text's vertical middle; the glyph centres itself `loopGap + r`
+ * past it, inside the `labelBand` every name already reserves.
+ */
+export function loopGlyphPath(endX: number, midY: number): string {
+  const r = CONVERGE_METRICS.loopRadius;
+  const cx = endX + CONVERGE_METRICS.loopGap + r;
+  const cy = midY;
+  // Three-quarter arc from the top, opening at the left — the gap faces the
+  // name, the arrowhead points back over it: "…and around again."
+  const x0 = cx;
+  const y0 = cy - r;
+  const x1 = cx - r;
+  const y1 = cy;
+  const head = 3;
+  return (
+    `M ${x0.toFixed(2)} ${y0.toFixed(2)} ` +
+    `A ${r} ${r} 0 1 1 ${x1.toFixed(2)} ${y1.toFixed(2)} ` +
+    `M ${x1.toFixed(2)} ${y1.toFixed(2)} ` +
+    `l ${-head} ${-head} ` +
+    `M ${x1.toFixed(2)} ${y1.toFixed(2)} ` +
+    `l ${head} ${-head}`
+  );
+}
+
 function markSuffix(strand: {
   repeatMark: string | null;
   refinement: StrandRefinement | null;
@@ -2650,7 +2749,11 @@ function withRepeatMark(
 ): PlanStrand {
   const repetition = repetitionOf(method, stepId);
   if (repetition === null) return strand;
-  return { ...strand, repeatMark: locale === "ja" ? repetition.markJa : repetition.mark };
+  return {
+    ...strand,
+    repeatMark: locale === "ja" ? repetition.markJa : repetition.mark,
+    loopClosure: repetition.closure,
+  };
 }
 
 /**
@@ -2765,7 +2868,12 @@ function measure(strand: PlanStrand, depth: number): Measure {
  */
 function ownNameDemand(strand: PlanStrand): number {
   const M = CONVERGE_METRICS;
-  return Math.min(M.labelCap + sharedAllowance(strand), estimateTextWidth(drawnName(strand), M.laneFont));
+  return (
+    Math.min(M.labelCap + sharedAllowance(strand), estimateTextWidth(drawnName(strand), M.laneFont)) +
+    // Geometry, not text: the glyph is never in `drawnName`, so its room is
+    // added past the cap rather than measured inside it. See `loopAllowance`.
+    loopAllowance(strand)
+  );
 }
 
 function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants"> {
@@ -3137,7 +3245,13 @@ function place(
   // 119) — one shape, one destination. Everything still expandable keeps the
   // two-target split: the line opens, the name reads.
   const labelInside =
-    strand.inside === 0 && !strand.composite && !strand.nameless && !strand.openable;
+    (strand.inside === 0 && !strand.composite && !strand.nameless && !strand.openable) ||
+    // The own stretch wears its phrase IN the line (W19): it is a leaf, and the
+    // owner's session-119 rule for leaves is the placement the session-113 ask
+    // was waiting for — in its own band, off the below-spine text population
+    // where the 4 recorded overlaps were measured. See the comment above
+    // `fitted` for the two failures the phrase sits between.
+    strand.own !== null;
   const labelY = onBone
     ? peak.y - M.spineStroke / 2 - M.labelLift
     : framed
@@ -3156,26 +3270,25 @@ function place(
   // coined composite the owner refused. It is drawn as its hops and the hops
   // carry the names.
   //
-  // A **method's own stretch**: its label is the method's name, already drawn on
-  // the line above it. The owner asked for this one to be labelled in session
-  // 113 — *"I am seeing some blank processes — i would like them labeled"* — and
-  // a standing phrase was built for it (`ownStepName`, the wording the card has
-  // used since W5 slice one, which is not a name and so cannot be the duplicate
-  // session 104 removed). **It is not drawn yet, and the reason is measured:**
-  // writing it here puts 4 opened-against-shut name overlaps back on the canvas,
-  // at 10px and at 12px alike, so the collision is where the phrase sits rather
-  // than how wide it is. `no two names overlap on an opened figure either` pins
-  // all three kinds at 0 and that test's own comment records these same 4 as
-  // what session 104 removed by silencing this hop.
-  //
-  // So the label waits for a placement rule, and the hop is named on hover, in
-  // its `<title>`, to a screen reader and on its own card meanwhile — see
-  // `cardHref` below, which is what makes it separately clickable from its
-  // parent, the other half of what he asked for.
-  const fitted =
-    strand.composite || strand.nameless
-      ? { text: "", truncated: false }
-      : fitMarkedName(strand, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(strand));
+  // A **method's own stretch** draws the standing phrase, IN its line (W19).
+  // Its *name* is the method's, already on the line above it — writing that
+  // here was the session-104 duplicate. Blank was the session-113 complaint
+  // ("I am seeing some blank processes — i would like them labeled"), repeated
+  // verbatim by the owner's 2026-08-11 "blank thing after" note. `ownStepName`
+  // is the phrase built to sit between those two failures; what it waited for
+  // was a placement: written below the spine like a step name, it put 4
+  // opened-against-shut overlaps back on the canvas at 10–12px, so the
+  // collision was position, not width. `labelInside` is that placement — the
+  // phrase sits in the lane's own band, which no other text population enters,
+  // and `no two names overlap on an opened figure either` is the gate that
+  // says so rather than this comment.
+  const fitted = strand.composite
+    ? { text: "", truncated: false }
+    : strand.own !== null
+      ? fitLabel(ownStepName(context.locale), M.laneFont, nameBudget(context.columnFit))
+      : strand.nameless
+        ? { text: "", truncated: false }
+        : fitMarkedName(strand, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(strand));
   const fittedWidth = fitted.text === "" ? 0 : estimateTextWidth(fitted.text, M.laneFont);
   // A framed name sits at the LEFT of the shell, not the centre — the owner's
   // own bracket sketch, and a measured constraint: `placeFeeds` puts a lone
@@ -3252,6 +3365,7 @@ function place(
     fullLabel: strand.label,
     shortLabel: strand.shortLabel,
     repeatMark: strand.repeatMark,
+    loopClosure: strand.loopClosure,
     refinement: strand.refinement,
     labelTruncated: fitted.truncated,
     // Two addresses, because there are two kinds of thing here.
@@ -3538,11 +3652,14 @@ function placeFeeds(
     const t = (index + 1) / (strand.feeds.length + 1);
     const at = { x: belly.x0 + (belly.x1 - belly.x0) * t, y: belly.y };
     const fitted = fitMarkedName(feed, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(feed));
+    const fittedWidth = estimateTextWidth(fitted.text, M.laneFont);
     const y0 = at.y + outward * inner;
     const y1 = at.y + outward * (inner + M.feedRun);
     context.out.rightmost = Math.max(
       context.out.rightmost,
-      at.x + 4 + estimateTextWidth(fitted.text, M.laneFont),
+      // The glyph draws past the name's end, so the canvas must reach past it
+      // too — the same silent-clip `rightmost` exists to prevent for the text.
+      at.x + 4 + fittedWidth + loopAllowance(feed),
     );
     context.out.feeds.push({
       key: `${strand.key}~${feed.id ?? index}`,
@@ -3552,6 +3669,8 @@ function placeFeeds(
       fullLabel: feed.label,
       shortLabel: feed.shortLabel,
       repeatMark: feed.repeatMark,
+      loopClosure: feed.loopClosure,
+      labelWidth: fittedWidth,
       refinement: feed.refinement,
       labelTruncated: fitted.truncated,
       href: feed.href,

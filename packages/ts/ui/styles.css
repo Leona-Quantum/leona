@@ -11684,6 +11684,28 @@ div.mj-rail-row:hover {
   fill: var(--text-2);
   font-style: italic;
 }
+/* The phrase on a method's own stretch (W19): a note beside real names, in
+   the same footnote register `--unpublished` already established — secondary
+   ink, italic. Not a colour: colour on this canvas already means the accent. */
+.mj-converge-lane-name--own {
+  fill: var(--text-2);
+  font-style: italic;
+}
+/* The loop glyph (W19): a route that walks its lane more than once draws the
+   loop as a loop, after the name whose `×count` states how often. Secondary
+   ink for the same reason as above. `--measured` breaks the arc — that loop
+   reads out between turns, and the gap is where the readout happens; a
+   coherent loop is unbroken. This is `LoopClosure` drawn, after being
+   authored, validated and counted but never rendered. */
+.mj-converge-loop {
+  fill: none;
+  stroke: var(--text-2);
+  stroke-width: 1.4;
+  stroke-linecap: round;
+}
+.mj-converge-loop--measured {
+  stroke-dasharray: 3 2.2;
+}
 /* The Atlas holds a full record of this one — same visual language as
    `.mj-process--atlas .mj-process-name` above: a dotted underline on the name,
    not a colour, because colour on this canvas already means the accent and the

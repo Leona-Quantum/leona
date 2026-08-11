@@ -46,6 +46,7 @@
 // different screen: the destination page draws the same subject under the same
 // name, so the browser morphs one into the other.
 import {
+  loopGlyphPath,
   ownStepName,
   spokenName,
   type ConvergeDiagram,
@@ -262,6 +263,9 @@ function Feed({
 }): React.ReactElement {
   const title = `${copy.needs}: ${spokenName(feed)}`;
   const action = feed.open ? copy.closeHere : copy.openHere;
+  // One writer for where the name sits: the text below and the loop glyph
+  // after it must agree about this y or the glyph floats beside nothing.
+  const nameY = feed.y1 + (feed.outward > 0 ? 9 : -3);
   const stub = (
     <line
       className="mj-converge-feed-line"
@@ -315,14 +319,20 @@ function Feed({
         aria-label={`${title} — ${feed.cardHref === null ? copy.readAbout : copy.readHere}`}
       >
         <title>{`${title} — ${feed.cardHref === null ? copy.readAbout : copy.readHere}`}</title>
-        <text
-          className="mj-converge-feed-name"
-          x={n(feed.x + 4)}
-          y={n(feed.y1 + (feed.outward > 0 ? 9 : -3))}
-        >
+        <text className="mj-converge-feed-name" x={n(feed.x + 4)} y={n(nameY)}>
           {feed.label}
         </text>
       </a>
+      {/* Same glyph, same rules, as a lane's — see `LaneName`. Seven of the
+          corpus's ten recorded loops are facts about an ingredient, so a glyph
+          drawn on lanes alone would miss most of what it exists to show. */}
+      {feed.loopClosure === null ? null : (
+        <path
+          className={`mj-converge-loop${feed.loopClosure === "measured" ? " mj-converge-loop--measured" : ""}`}
+          d={loopGlyphPath(feed.x + 4 + feed.labelWidth, nameY - 4)}
+          aria-hidden="true"
+        />
+      )}
     </g>
   );
 }
@@ -485,7 +495,11 @@ function LaneName({
           height="15"
         />
         <text
-          className="mj-converge-lane-name"
+          /* `--own`: the phrase on a method's own stretch (W19) is a note, not
+             a name — `ownStepName`'s comment carries the two failures it sits
+             between — so it wears the footnote register (`--text-2`, italic)
+             and must not compete with the real names beside it. */
+          className={`mj-converge-lane-name${lane.own === null ? "" : " mj-converge-lane-name--own"}`}
           data-name={lane.key}
           /* Positioned by `transform`, not by `x`/`y`. Those are not animatable
              CSS properties on a `<text>` (measured), so a name set with them
@@ -499,6 +513,18 @@ function LaneName({
           {lane.label}
         </text>
       </a>
+      {/* The loop, drawn as a loop (W19). Decorative reinforcement of the
+          `×count` already in the label — the count reaches every reader through
+          `spokenName`, so the glyph carries no text and takes no clicks. Its
+          room is `loopAllowance`, reserved by the same layout that placed the
+          name it follows. */}
+      {lane.loopClosure === null ? null : (
+        <path
+          className={`mj-converge-loop${lane.loopClosure === "measured" ? " mj-converge-loop--measured" : ""}`}
+          d={loopGlyphPath(lane.labelX + lane.labelWidth / 2, lane.labelY - 4)}
+          aria-hidden="true"
+        />
+      )}
     </g>
   );
 }
