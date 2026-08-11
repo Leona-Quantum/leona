@@ -378,6 +378,19 @@ export type ImplementationSectionId = (typeof IMPLEMENTATION_SECTIONS)[number];
 export interface CardImplementationLeads {
   readonly simulation: number;
   readonly hardware: number;
+  /**
+   * Cited papers with **no** `reports` row — nobody has read them for this.
+   *
+   * Carried because `simulation: 0` alone is ambiguous in the one direction that
+   * matters. Until 2026-08-12 every populated row in the register was an
+   * abstract read, so zero always meant *"the abstracts did not mention
+   * numerics"* and silence was the honest response. Full-text reads changed
+   * that: zero now means one of two very different things — **every cited paper
+   * has been read and none reports a run**, which is a finding and the section's
+   * final answer, or **nobody has looked**, which is a worklist item. This is
+   * the number that tells them apart.
+   */
+  readonly unread: number;
 }
 
 /**
@@ -608,15 +621,20 @@ function implementationLeadsOf(
   register: PaperRegister,
 ): CardValue<CardImplementationLeads> {
   const byUrl = new Map(register.papers.map((paper) => [paper.url, paper]));
-  const read = (method.citations ?? [])
-    .map((citation) => byUrl.get(citation.url))
-    .filter((paper) => paper?.reports !== undefined);
+  const cited = (method.citations ?? []).map((citation) => byUrl.get(citation.url));
+  const read = cited.filter((paper) => paper?.reports !== undefined);
   // Absent, not zero. No cited paper has been read for this, so there is no
   // count to report — and "0 papers report numerics" would claim a search.
   if (read.length === 0) return missing("none-recorded");
+  // A paper the register does not carry counts as unread rather than being
+  // dropped: `check-layer-graph.mjs` proves every citation resolves against the
+  // register in the repo, and nothing proves it against the register the page
+  // was built from. Silently omitting it would turn a shortfall into a stronger
+  // claim, which is the direction this module never lets a count move.
   return held({
     simulation: read.filter((paper) => paper!.reports!.simulation === "reported").length,
     hardware: read.filter((paper) => paper!.reports!.hardware === "reported").length,
+    unread: cited.length - read.length,
   });
 }
 
