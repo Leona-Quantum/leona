@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import test from "node:test";
-import { carrySelection, resolveSelection, SEL_PARAM } from "./repository/canvas-selection.ts";
+import { carryPaper, carrySelection, resolveSelection, SEL_PARAM } from "./repository/canvas-selection.ts";
 import { layoutConverge } from "./repository/converge-layout.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { layerNode, isCapability } from "./repository/layers.ts";
@@ -231,4 +231,24 @@ test("resolveSelection: a node id falls to the first lane drawing it; the first 
 
   assert.equal(resolveSelection("no-such-thing-at-all", [diagram]), null);
   assert.equal(resolveSelection(null, [diagram]), null);
+});
+
+test("the paper surface rides along, and its tombstone is final", () => {
+  // Silence carries: the map's own links cannot name the paper, so a click
+  // about something else keeps the surface.
+  const ride = params("focus=x&open=a");
+  carryPaper(params("focus=x&paper=arxiv-1806.01838"), ride);
+  assert.equal(ride.get("paper"), "arxiv-1806.01838");
+
+  // An href that mentions paper — even as the EMPTY close tombstone — has
+  // spoken, and the carry must not overrule it: re-adding the live value here
+  // is exactly how a close control would stop closing.
+  const closed = params("focus=x&paper=");
+  carryPaper(params("focus=x&paper=arxiv-1806.01838"), closed);
+  assert.equal(closed.get("paper"), "");
+
+  // And after the close, the empty live value resurrects nothing.
+  const after = params("focus=x&open=b");
+  carryPaper(params("focus=x&paper="), after);
+  assert.equal(after.get("paper"), null);
 });
