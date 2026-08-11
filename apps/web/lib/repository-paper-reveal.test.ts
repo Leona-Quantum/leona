@@ -1,0 +1,180 @@
+import assert from "node:assert/strict";
+import test from "node:test";
+import { paperRevealFor } from "./repository/paper-reveal.ts";
+import { layoutConverge, drawableSlots, CONVERGE_OPEN_MAX } from "./repository/converge-layout.ts";
+import { LAYER_GRAPH } from "./repository/layer-graph.ts";
+import { layerNode, isCapability } from "./repository/layers.ts";
+import { paperTraces } from "./repository/paper-traces.ts";
+import { paperSlug } from "./repository/papers.ts";
+import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
+
+/**
+ * `?paper=` — the reveal that turns a paper's citations into a drawn pipeline
+ * (W20). Tested against the real graph and the real register, over EVERY
+ * map-citing paper: a fixture paper would be the fixture supplying the answer,
+ * and the population is the point — the owner's spec is about any paper a
+ * reader clicks, not about one that happens to work.
+ */
+
+const traces = paperTraces(LAYER_GRAPH);
+
+function drawnAddresses(focusId: string, open: readonly string[]): Set<string> {
+  const focus = layerNode(LAYER_GRAPH, focusId);
+  assert.ok(focus && isCapability(focus), `${focusId} is a drawable capability`);
+  const diagram = layoutConverge({
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    focus,
+    locale: "en",
+    open: new Set(open),
+  });
+  const addresses = new Set<string>();
+  for (const lane of diagram.lanes) addresses.add(lane.address);
+  for (const feed of diagram.feeds) addresses.add(feed.address);
+  return addresses;
+}
+
+/**
+ * The test's OWN saturation index, built through the public API and not the
+ * module's internals — the independent measurement that keeps "this paper
+ * reveals nowhere" a verified fact rather than the module agreeing with
+ * itself. A node with no occurrence here and no drawable figure of its own is
+ * genuinely undrawn on today's map (the W17 fold produces exactly these:
+ * methods folded into a parent card draw no lane of their own).
+ */
+function saturatedIndex(): Map<string, Set<string>> {
+  const index = new Map<string, Set<string>>();
+  for (const slot of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const focus = layerNode(LAYER_GRAPH, slot.id);
+    assert.ok(focus && isCapability(focus));
+    const open = new Set<string>();
+    let diagram = layoutConverge({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus, locale: "en" });
+    for (let round = 0; round < 16; round++) {
+      let grew = false;
+      for (const lane of diagram.lanes) {
+        if (lane.openHref === null || open.has(lane.address)) continue;
+        open.add(lane.address);
+        grew = true;
+      }
+      if (!grew) break;
+      diagram = layoutConverge({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus, locale: "en", open });
+    }
+    const note = (nodeId: string | null) => {
+      if (nodeId === null || nodeId === "") return;
+      const set = index.get(nodeId) ?? new Set<string>();
+      set.add(slot.id);
+      index.set(nodeId, set);
+    };
+    // `draws`, as the module does: a leaf method's lane has `id: null` and its
+    // subject in `draws` — the same measurement recorded in `paper-reveal.ts`.
+    for (const lane of diagram.lanes) note(lane.draws ?? lane.nodeId);
+    for (const feed of diagram.feeds) note(feed.nodeId);
+  }
+  return index;
+}
+
+test("every map-citing paper reveals — or is verifiably undrawn, never silently skipped", () => {
+  assert.ok(traces.length >= 80, `only ${traces.length} traces — the register has gone quiet`);
+  const drawableIds = new Set(drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).map((slot) => slot.id));
+  let index: Map<string, Set<string>> | null = null;
+  let revealed = 0;
+  const unrevealed: string[] = [];
+  let drawnTotal = 0;
+  let elsewhereTotal = 0;
+  for (const trace of traces) {
+    const reveal = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(trace.paper));
+    if (reveal === null) {
+      // Null must MEAN undrawable, per the independent index — a paper whose
+      // nodes draw somewhere and still got null is a focus-choice bug.
+      index = index ?? saturatedIndex();
+      for (const nodeId of trace.nodes) {
+        assert.ok(
+          !index.has(nodeId) && !drawableIds.has(nodeId),
+          `${trace.paper}: ${nodeId} draws somewhere, yet the reveal came back null`,
+        );
+      }
+      unrevealed.push(trace.paper);
+      continue;
+    }
+    revealed += 1;
+    drawnTotal += reveal.drawn.length;
+    elsewhereTotal += reveal.elsewhere.length;
+
+    // The claim, checked by re-drawing with ONLY the reveal set: every
+    // occurrence the reveal names must actually draw under it.
+    const addresses = drawnAddresses(reveal.focusId, reveal.open);
+    for (const node of reveal.drawn) {
+      assert.ok(
+        addresses.has(node.address),
+        `${trace.paper}: ${node.nodeId} claimed at ${node.address}, not drawn under the reveal set`,
+      );
+    }
+
+    // The accounting: every cited node is drawn here, elsewhere, or IS the
+    // focus — no node silently vanishes from the ledger.
+    const focusCited = trace.nodes.includes(reveal.focusId) && !reveal.drawn.some((n) => n.nodeId === reveal.focusId) ? 1 : 0;
+    assert.equal(
+      reveal.drawn.length + reveal.elsewhere.length + focusCited,
+      trace.nodes.length,
+      `${trace.paper}: drawn + elsewhere + focus does not account for every cited node`,
+    );
+
+    // The entry: when the figure draws anything, the camera has somewhere to land.
+    if (reveal.drawn.length > 0) {
+      assert.ok(reveal.sel !== null, `${trace.paper}: drawn nodes but no entry for the camera`);
+      assert.ok(
+        reveal.drawn.some((node) => node.address === reveal.sel),
+        `${trace.paper}: sel ${reveal.sel} is not one of the revealed occurrences`,
+      );
+    }
+
+    assert.ok(reveal.open.length <= CONVERGE_OPEN_MAX, `${trace.paper}: reveal exceeds the open cap`);
+    assert.equal(reveal.dropped, 0, `${trace.paper}: the cap guard fired on today's corpus`);
+  }
+  // The floor keeps the feature real: if a structure change folds half the
+  // corpus out of the drawing, this number is the alarm, not a silent shrink.
+  assert.ok(revealed >= 75, `only ${revealed} of ${traces.length} papers reveal — the map has stopped drawing the corpus`);
+  console.log(
+    `paper reveals: ${revealed}/${traces.length} papers; occurrences drawn ${drawnTotal}, cited elsewhere ${elsewhereTotal}; verifiably undrawn: ${unrevealed.join(", ") || "none"}`,
+  );
+});
+
+test("the reveal is minimal: removing any single address hides a claimed occurrence", () => {
+  // Gating makes every ancestor load-bearing, and this is the assertion that
+  // keeps "expands only branches needed" (the owner's words) true rather than
+  // approximately true. Bounded to reveals of ≤6 addresses so the sweep stays
+  // proportionate; the bound is a floor on coverage, printed, not a silent cap.
+  let checked = 0;
+  let removals = 0;
+  for (const trace of traces) {
+    const reveal = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(trace.paper));
+    if (reveal === null) continue; // verifiably undrawn — the population test owns that claim
+    if (reveal.open.length === 0 || reveal.open.length > 6) continue;
+    checked += 1;
+    for (const removed of reveal.open) {
+      removals += 1;
+      const smaller = reveal.open.filter((address) => address !== removed);
+      const addresses = drawnAddresses(reveal.focusId, smaller);
+      const stillAllDrawn = reveal.drawn.every((node) => addresses.has(node.address));
+      assert.ok(
+        !stillAllDrawn,
+        `${trace.paper}: ${removed} is dead weight — every occurrence still draws without it`,
+      );
+    }
+  }
+  assert.ok(checked >= 10, `only ${checked} papers had a removable reveal — the sweep has gone quiet`);
+  console.log(`minimality: ${checked} papers, ${removals} single-address removals, all load-bearing`);
+});
+
+test("an unknown slug, a junk value, and an uncited paper all reveal nothing — and throw nothing", () => {
+  assert.equal(paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, "no-such-paper"), null);
+  assert.equal(paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, ""), null);
+  assert.equal(paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, "arxiv-0000.00000"), null);
+});
+
+test("the reveal is deterministic: two calls agree byte for byte", () => {
+  const first = traces[0]!;
+  const a = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(first.paper));
+  const b = paperRevealFor(LAYER_GRAPH, STATE_VOCABULARY, paperSlug(first.paper));
+  assert.deepEqual(a, b);
+});
