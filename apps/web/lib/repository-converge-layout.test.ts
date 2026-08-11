@@ -2316,6 +2316,162 @@ test("a chain's column holds every step's own demand, and each step is cut the p
   );
 });
 
+test("every shared circle that qualifies for a caption is drawn with one", () => {
+  // **This test exists because a compaction removed the feature and every
+  // other guard stayed green.** W19 PR-2 gives a shared circle the state's own
+  // authored name — the owner's *"each composite process has its own name"* —
+  // drawn when the `--shared` predicate holds at depth 0 and there is a clear
+  // side to draw it on. The resolver drops the caption when there is not, which
+  // is the honest behaviour and also a silent one.
+  //
+  // Vertical compaction took the clearance away without meaning to: the lanes
+  // nearest the base were being held off it by a `labelBand` reserved for names
+  // that are written *inside* their own lines, so removing that band closed the
+  // caption's side. Measured then: **75 of 88 eligible circles down to 64**,
+  // across `time-discretization`, `hamiltonian-recasting`, `qsp-phase-factors`,
+  // `polynomial-approximation` and `state-preparation`. Nothing failed. The
+  // browser sweep went from 279 tests to 269 and still said `passed`.
+  //
+  // The clearance is now `captionBand()`, asked for by name at the figure's own
+  // base the way `spineBand` is asked for at an opened lane's bone — and with
+  // it every eligible circle draws, which is 13 more than the geometry this
+  // replaced managed.
+  //
+  // **If this trips: a caption lost its side, and the answer is the clearance,
+  // not this bar.** Print says which circle; `captionBand` is where the room
+  // comes from.
+  let drawn = 0;
+  let eligible = 0;
+  const dropped: string[] = [];
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = openDiagram(focus.id, openableAddresses(focus.id), locale);
+      for (const state of diagram.states) {
+        // The class's own predicate, not a restatement of the resolver's.
+        if (state.depth !== 0) continue;
+        if (state.arriving <= 1 && state.leaving <= 1) continue;
+        eligible += 1;
+        if (state.caption !== null) drawn += 1;
+        else dropped.push(`${focus.id} (${locale}) ${state.stateId}`);
+      }
+    }
+  }
+  console.log(`[captions] ${drawn} of ${eligible} eligible shared circles draw their own name`);
+  // Not vacuous: a corpus with no shared circle at depth 0 would pass a floor
+  // while asserting nothing about captions at all.
+  assert.ok(eligible >= 40, `only ${eligible} eligible shared circles — this measured nothing`);
+  // **A floor at what the drawing already achieves, not at what it could.** 75
+  // is the count before and after the vertical compaction, measured both ways;
+  // 88 — every eligible circle — is reachable and is parked as a decision the
+  // owner takes, because the clearance that buys it moves the figure's own
+  // through-line off its axis (see `dropsNameBand`, and OWNER_TODO `03ea5b`).
+  //
+  // So this bar answers one question: **did a caption stop being drawn?** Raise
+  // it when the count rises; never lower it to make a change fit.
+  assert.ok(
+    drawn >= 75,
+    `${dropped.length} shared circle(s) lost their caption (${drawn} drawn, was 75): `
+      + `${dropped.slice(0, 6).join(", ")}${dropped.length > 6 ? ` (+${dropped.length - 6} more)` : ""}`,
+  );
+});
+
+test("a name written inside its own line is not given a second band beside it", () => {
+  // The vertical half of `5314ca`, measured on the drawing.
+  //
+  // `labelBand` is *"room beside a strand for its own name"*, and `measureCore`
+  // reserved it on **both** sides of every lane — including the lanes whose name
+  // is not beside them at all. Measured on `nonlinear-ode-solve` (en),
+  // saturated, before this: the drawn strands were 10.1% of the figure's
+  // 5,645.5px, and two adjacent shut leaves sat **exactly 36px apart edge to
+  // edge** — `2·labelBand + laneGap` — with a 12px name that was inside one of
+  // the two lines rather than in that gap.
+  //
+  // So the bar has two sides and both are failable:
+  //   · **at or above `laneGap`** — the layout still owes two siblings the gap
+  //     it promises them, so a crush that packed them tighter fails here rather
+  //     than being discovered on the page;
+  //   · **below the old `2·labelBand + laneGap`** — restoring the reservation
+  //     puts every one of these pairs back at exactly 36 and fails here.
+  //
+  // The names themselves are guarded elsewhere and deliberately not restated:
+  // `no two names overlap on an opened figure either` is what says the text
+  // still clears, and it is the invariant this compaction was tightened against.
+  const OLD_RESERVATION = 2 * CONVERGE_METRICS.labelBand + CONVERGE_METRICS.laneGap;
+  const gaps: number[] = [];
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    for (const locale of ["en", "ja"] as const) {
+      const diagram = openDiagram(focus.id, openableAddresses(focus.id), locale);
+      const parents = new Set(
+        [...diagram.lanes.map((lane) => lane.parentKey), ...diagram.feeds.map((feed) => feed.parentKey)]
+          .filter((key): key is string => key !== null),
+      );
+      const byParent = new Map<string, ConvergeLane[]>();
+      for (const lane of diagram.lanes) {
+        if (lane.parentKey === null) continue;
+        byParent.set(lane.parentKey, [...(byParent.get(lane.parentKey) ?? []), lane]);
+      }
+      for (const [, siblings] of byParent) {
+        // **Neighbours in the row, not merely both leaves.** Sorting the leaves
+        // and pairing those is the version this test had first, and it reported
+        // a 507.3px "gap" between two leaves with an opened sibling drawn
+        // between them — the space was that sibling's interior, which is not
+        // slack and not this test's subject. So the row is walked whole and a
+        // pair counts only when the two are genuinely consecutive in it.
+        const row = [...siblings].sort((a, b) => a.bellyY - b.bellyY);
+        const isSubject = (lane: ConvergeLane) => !parents.has(lane.key) && lane.label !== "";
+        for (let index = 1; index < row.length; index += 1) {
+          const below = row[index - 1]!;
+          const above = row[index]!;
+          if (!isSubject(below) || !isSubject(above)) continue;
+          // **Not across the bone.** Two siblings on opposite sides of their
+          // parent's spine have `spineBand` reserved between them each way,
+          // plus the opened parent's own name written on the bone in that very
+          // space — `allocateBowsAroundSpine` exists to keep a child off it.
+          // That is a band with something in it, so it is not this test's
+          // subject; measured, it is every pair here wider than 40px (65.6,
+          // 68.6, 72.9, 90.0 on `nonlinear-ode-solve` en) and each one is a
+          // `−bow` paired with a `+bow`.
+          if (below.bow < 0 && above.bow > 0) continue;
+          // Adjacent in y **and** overlapping in x, or they are not sharing a gap.
+          if (Math.min(below.bellyX1, above.bellyX1) - Math.max(below.bellyX0, above.bellyX0) <= 0) continue;
+          const gap = Math.abs(above.bellyY - below.bellyY) - below.half - above.half;
+          gaps.push(gap);
+          assert.ok(
+            gap >= CONVERGE_METRICS.laneGap - 0.01,
+            `${focus.id} (${locale}): "${below.label}" and "${above.label}" are ${gap.toFixed(1)}px apart, `
+              + `inside the ${CONVERGE_METRICS.laneGap}px every two siblings are owed`,
+          );
+        }
+      }
+    }
+  }
+  // **The median, not the maximum, and the reason is a measurement.** A pair can
+  // legitimately be far apart when the layout has reserved something between
+  // them that this test cannot see from two lanes alone — a variant row's
+  // bracket is the case that remains, at 87.8px on `ansatz-construction`'s
+  // `adapt-ansatz`. Barring the maximum would therefore be barring the bracket.
+  // The median is the statistic the reservation actually moved: under the old
+  // rule EVERY ordinary pair sat at exactly `2·labelBand + laneGap`, so a median
+  // below it cannot be produced by the old geometry at all.
+  const sorted = [...gaps].sort((a, b) => a - b);
+  const median = sorted[Math.floor(sorted.length / 2)]!;
+  console.log(
+    `[inside names] ${gaps.length} adjacent shut-leaf pairs: gap min ${sorted[0]!.toFixed(1)}px `
+      + `median ${median.toFixed(1)}px max ${sorted.at(-1)!.toFixed(1)}px, `
+      + `against the ${OLD_RESERVATION}px two label bands used to buy`,
+  );
+  assert.ok(gaps.length > 0, "no adjacent shut leaves on the corpus — this measured nothing");
+  // **`− 1`, and it is float slack rather than a softened bar.** Checked by
+  // hand against the pre-change geometry: it puts this median at 35.999…px,
+  // which a strict `< 36` lets through by a rounding error. With the margin the
+  // control fails as it must, and today's 18.9px clears it by 16px.
+  assert.ok(
+    median < OLD_RESERVATION - 1,
+    `the median gap between two adjacent shut leaves is ${median.toFixed(3)}px, at the `
+      + `${OLD_RESERVATION}px a label band on each side used to buy — the reservation is back`,
+  );
+});
+
 test("two shut steps of one chain are drawn in proportion to their own names", () => {
   // The compaction, measured on the drawing rather than restated from the code.
   //
@@ -3868,13 +4024,19 @@ const SIZE_CEILING = {
    */
   saturatedWidth: 7_000,
   /**
-   * Tallest, same sweep. Today **5,646** — `nonlinear-ode-solve` in `en`, and
-   * **untouched by the width work above**, which is worth recording rather than
-   * leaving as a silent null result: cutting a chain's belly by demand moves x
-   * and only x, so the height is the same 5,646 before and after. The vertical
-   * half of the owner's ask (`5314ca`, "much less horizontal *and vertical*
-   * tolerance") is therefore still owed, and this number is what it will be
-   * measured against.
+   * Tallest, same sweep. Today **4,634** — `nonlinear-ode-solve` in `en`.
+   *
+   * **Lowered from 8,000, calibrated exactly as `saturatedWidth` was.** This
+   * figure measured **5,645.5** before the vertical half of `5314ca` — the
+   * number the width work left untouched by construction, recorded here at the
+   * time so this bar could be set against it. 5,500 is therefore a ceiling
+   * **the geometry it replaces cannot fit under**, while today's tallest keeps
+   * 866px (18.7%) of room to grow.
+   *
+   * What came off it: a lane that writes its name INSIDE its own line, and an
+   * opened fan that writes its name on the BONE, both stopped reserving a
+   * `labelBand` beside themselves for a name that is not written there. Corpus
+   * summed height 72,232 → 54,836px (−24.1%).
    *
    * The 6,056 this note used to quote was `nonlinear-ode-solve` en re-measured
    * at the W15 merge (the 6,395 recorded at authoring predated dev's 360–362;
@@ -3893,7 +4055,7 @@ const SIZE_CEILING = {
    * `a shared interior is drawn once per figure`, which prints its own
    * denominator every run.)
    */
-  saturatedHeight: 8_000,
+  saturatedHeight: 5_500,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
    * arrival. Today **824** against a 1,204px canvas — 963 before this session,
