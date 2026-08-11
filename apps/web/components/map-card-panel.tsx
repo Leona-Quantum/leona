@@ -104,6 +104,15 @@ interface Copy {
   /** The owner's five, inside one implementation. */
   implementationSections: Record<ImplementationSectionId, string>;
   /**
+   * The classification stamp on an implementation joined from a repository record.
+   *
+   * Ruling `27267f` merged the record into the card, so this list now mixes two
+   * of `W5-card-spec.md`'s three branches. Unstamped, a corpus scaffold sitting
+   * beside a hand-written paper reproduction reads as one — which is a
+   * provenance claim nobody made.
+   */
+  implementationFromRecord: string;
+  /**
    * The worklist line under an empty Implementations section.
    *
    * A function rather than a template string, because the two counts pluralise
@@ -224,6 +233,7 @@ const COPY: Record<Lang, Copy> = {
       if (hardware > 0) parts.push(`${hardware} report${hardware === 1 ? "s" : ""} a hardware run`);
       return `Of the papers cited here, ${parts.join(" and ")} — nobody has written those up yet.`;
     },
+    implementationFromRecord: "From the repository — run, not written up from a paper",
     takes: "Takes",
     returns: "Returns",
     references: "References",
@@ -303,6 +313,7 @@ const COPY: Record<Lang, Copy> = {
       if (hardware > 0) parts.push(`${hardware} 件が実機での実行を報告`);
       return `ここで引用している文献のうち、${parts.join("、")}しています。まだ記述されていません。`;
     },
+    implementationFromRecord: "リポジトリの記録 — 論文からの再現ではなく、実行されたもの",
     takes: "入力",
     returns: "出力",
     references: "文献",
@@ -802,6 +813,20 @@ function Implementations({
           <details className="mj-card-implementation" data-implementation={entry.id}>
             <summary>{entry.label}</summary>
             <div className="mj-card-implementation-body">
+              {/* The stamp, before the content, because it changes how the
+                  content should be read: these five sections describe something
+                  that was RUN, not something a paper reported. The record's own
+                  status is quoted rather than summarised — it is the record's
+                  claim about itself, and paraphrasing it here would be this
+                  surface making a verification claim it did not check. */}
+              {entry.origin.kind === "record" ? (
+                <p className="mj-card-list-blurb" data-implementation-origin="record">
+                  <a href={entry.origin.href} rel="noreferrer">
+                    {copy.implementationFromRecord}
+                  </a>
+                  {entry.origin.status ? ` · ${entry.origin.status}` : null}
+                </p>
+              ) : null}
               {/* Zero papers is a real value — his "implementations that aren't
                   papers but proven to be run" — so this draws nothing rather
                   than a gap note when there are none. */}
