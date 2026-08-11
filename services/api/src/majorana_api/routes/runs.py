@@ -595,7 +595,9 @@ async def stream_run_events(
                     return
                 _sse_polls.add(1)
                 async with factory() as s:
-                    events = await runs_repo.list_run_events(scope, s, run_id, after_seq=seq)
+                    events, run_status = await runs_repo.list_run_events_with_status(
+                        scope, s, run_id, after_seq=seq
+                    )
                 if events:
                     idle_polls = 0
                     for ev in events:
@@ -610,11 +612,11 @@ async def stream_run_events(
                         yield ": keep-alive\n\n"
                     # A run that reached terminal status without a run.finished event
                     # (e.g. job died) must not hold the connection open forever.
-                    async with factory() as s:
-                        row = await runs_repo.get_run(scope, s, run_id)
-                        if is_terminal(RunStatus(row.status)):
-                            yield ": run terminal without run.finished; closing\n\n"
-                            return
+                    # The status arrives with the event read (#372); re-querying it
+                    # here would undo that PR while still looking merged.
+                    if is_terminal(RunStatus(run_status)):
+                        yield ": run terminal without run.finished; closing\n\n"
+                        return
                 await asyncio.sleep(SSE_POLL_INTERVAL_S)
         finally:
             _sse_active_streams.add(-1)
