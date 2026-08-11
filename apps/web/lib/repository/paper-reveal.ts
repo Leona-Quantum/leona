@@ -24,7 +24,7 @@
 import type { LayerGraph } from "./layers.ts";
 import type { StateVocabulary } from "./states.ts";
 import { layoutConverge, drawableSlots, CONVERGE_OPEN_MAX } from "./converge-layout.ts";
-import { layerNode, isCapability } from "./layers.ts";
+import { layerNode, isCapability, isMethod } from "./layers.ts";
 import { paperTraces, traceFor, type PaperTrace } from "./paper-traces.ts";
 import { paperIdFromSlug, type PaperId } from "./papers.ts";
 
@@ -35,6 +35,22 @@ export interface RevealedNode {
   nodeId: string;
   /** The occurrence's own address — what `?sel=` can land on. */
   address: string;
+}
+
+/**
+ * A cited method that draws NO lane of its own because W17 folded it into its
+ * host (`sameInternalsAsParent`): the host's drawn lane IS this refinement's
+ * internals, by the fold's own definition, so the host is where the paper's
+ * presence honestly lands. Before this bucket existed (v2), these nodes fell
+ * into `elsewhere` — and the panel's "sits elsewhere on the map" was false for
+ * every one of them: a folded node sits nowhere; it sits INSIDE a drawn lane.
+ */
+export interface FoldedNode {
+  nodeId: string;
+  /** The method whose drawn lane carries this refinement's internals. */
+  hostId: string;
+  /** The host's revealed occurrence — what the highlight and camera can use. */
+  hostAddress: string;
 }
 
 export interface PaperReveal {
@@ -56,8 +72,22 @@ export interface PaperReveal {
   sel: string | null;
   /** Every cited node this figure draws, with its revealed occurrence. */
   drawn: readonly RevealedNode[];
-  /** Cited nodes this figure does NOT draw — the denominator's other half. */
+  /** Cited methods folded (W17) into lanes this figure draws — see `FoldedNode`. */
+  folded: readonly FoldedNode[];
+  /**
+   * Cited nodes drawn on some OTHER figure — themselves, or (folded) through
+   * their host. The population test holds that claim per node: before v2 this
+   * bucket also swallowed folded and never-drawn nodes, and the panel's "sits
+   * elsewhere on the map" was false for every one of them.
+   */
   elsewhere: readonly string[];
+  /**
+   * Cited nodes drawn on NO figure at all — the map's own coverage gap,
+   * stated instead of mislabeled. The parity workstream (the 53-record
+   * audit) is what closes these; the panel names the count so a reader is
+   * told the truth rather than sent hunting for a lane that does not exist.
+   */
+  undrawn: readonly string[];
   /** Reveal addresses dropped at `CONVERGE_OPEN_MAX`. 0 on today's corpus. */
   dropped: number;
 }
@@ -142,6 +172,20 @@ function saturatedOccurrences(
   }
   byFocus.set(focusId, occurrences);
   return occurrences;
+}
+
+/**
+ * The method this node is folded into (W17), or null when it draws itself.
+ *
+ * `refines` is the host by the fold's own construction: `sameInternalsAsParent`
+ * is only valid ON a refinement, and validation refuses the flag when the
+ * chain facts differ from the parent's — so the parent's lane drawing IS this
+ * node's internals drawing, which is what lets a reveal claim it honestly.
+ */
+function foldHostOf(graph: LayerGraph, nodeId: string): string | null {
+  const node = layerNode(graph, nodeId);
+  if (!node || !isMethod(node) || node.sameInternalsAsParent !== true) return null;
+  return node.refines ?? null;
 }
 
 /** How many segments below the root pair — `s:0.1` is 0, `s:0.1.2` is 1. */
@@ -237,7 +281,15 @@ export function paperRevealFor(
     const occurrences = saturatedOccurrences(graph, vocabulary, slot.id);
     let count = 0;
     for (const nodeId of trace.nodes) {
-      if (nodeId === slot.id || occurrences.has(nodeId)) count += 1;
+      if (nodeId === slot.id || occurrences.has(nodeId)) {
+        count += 1;
+        continue;
+      }
+      // A folded method counts where its HOST draws (v2): before this line,
+      // a paper cited only by folded methods scored 0 on every figure and
+      // revealed nowhere — the 387 residual.
+      const host = foldHostOf(graph, nodeId);
+      if (host !== null && occurrences.has(host)) count += 1;
     }
     if (count > bestDrawnCount) {
       bestDrawnCount = count;
@@ -247,23 +299,46 @@ export function paperRevealFor(
   if (bestFocus === null) return null;
 
   const occurrences = saturatedOccurrences(graph, vocabulary, bestFocus);
+
+  // Does this node draw a lane on ANY figure? Every slot's saturation is
+  // already memoized by the focus choice above, so this is a lookup, not a
+  // walk. A drawable slot IS drawn — as its own figure.
+  const drawsAnywhere = (nodeId: string): boolean => {
+    for (const slot of drawableSlots(graph, vocabulary)) {
+      if (slot.id === nodeId) return true;
+      if (saturatedOccurrences(graph, vocabulary, slot.id).has(nodeId)) return true;
+    }
+    return false;
+  };
+
   const drawn: RevealedNode[] = [];
+  const folded: FoldedNode[] = [];
   const elsewhere: string[] = [];
+  const undrawn: string[] = [];
   for (const nodeId of trace.nodes) {
     const list = occurrences.get(nodeId);
-    if (list && list.length > 0) drawn.push({ nodeId, address: list[0]! });
-    else if (nodeId !== bestFocus) elsewhere.push(nodeId);
+    if (list && list.length > 0) {
+      drawn.push({ nodeId, address: list[0]! });
+      continue;
+    }
+    if (nodeId === bestFocus) continue;
+    const host = foldHostOf(graph, nodeId);
+    const hostList = host !== null ? occurrences.get(host) : undefined;
+    if (host !== null && hostList && hostList.length > 0) {
+      folded.push({ nodeId, hostId: host, hostAddress: hostList[0]! });
+    } else if (drawsAnywhere(nodeId) || (host !== null && drawsAnywhere(host))) {
+      elsewhere.push(nodeId);
+    } else {
+      undrawn.push(nodeId);
+    }
   }
 
+  // Host occurrences are reveal targets exactly like drawn ones: the fold's
+  // presence is the host lane, so the open set must make the host draw.
+  const anchors = [...drawn.map((node) => node.address), ...folded.map((node) => node.hostAddress)];
   const chains = new Set<string>();
-  for (const node of drawn) for (const ancestor of ancestorsOf(node.address)) chains.add(ancestor);
-  const open = prune(
-    graph,
-    vocabulary,
-    bestFocus,
-    [...chains],
-    drawn.map((node) => node.address),
-  );
+  for (const address of anchors) for (const ancestor of ancestorsOf(address)) chains.add(ancestor);
+  const open = prune(graph, vocabulary, bestFocus, [...chains], anchors);
 
   // The cap guard. Unreachable on today's corpus — the population sweep pins
   // every reveal at ≤ a handful — but the parameter this feeds is capped, and
@@ -294,6 +369,9 @@ export function paperRevealFor(
     const entry = bestComponent.find((nodeId) => drawnIds.has(nodeId));
     if (entry !== undefined) sel = drawnIds.get(entry)!;
   }
+  // A paper whose figure presence is all fold hosts still needs a landing:
+  // the first host occurrence is where the camera can honestly point.
+  if (sel === null && folded.length > 0) sel = folded[0]!.hostAddress;
 
   return {
     paperId,
@@ -302,7 +380,9 @@ export function paperRevealFor(
     open: [...open],
     sel,
     drawn,
+    folded,
     elsewhere,
+    undrawn,
     dropped,
   };
 }
