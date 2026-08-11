@@ -11714,6 +11714,39 @@ div.mj-rail-row:hover {
 .mj-converge-lane--subject .mj-converge-lane-name {
   font-weight: 600;
 }
+/* The thing `?sel=` names — what the reader is ON (W16, the Prezi move). The
+   camera centers it and this is the "persist showing the highlighted item"
+   half: it must survive every pan away and back, so it is a standing paint,
+   not a hover. Same grammar as `--subject` (weight and presence, never a new
+   colour — colour on this canvas means one thing, and a signal that is only a
+   colour is invisible to part of the audience): the shut body fills solid and
+   takes the outline, the open spine steps up from its faint 0.16, the stub
+   doubles its weight, the circle thickens its ring, and the name goes bold.
+   Heavier than `--subject`'s 1.25 outline because the two answer different
+   questions — "what is this page about" is ambient, "what am I on" is the
+   thing the camera just flew to. */
+.mj-converge-lane--selected .mj-converge-strand-body {
+  stroke: currentColor;
+  stroke-width: 1.75;
+  opacity: 0.85;
+}
+.mj-converge-lane--selected .mj-converge-spine {
+  opacity: 0.4;
+}
+.mj-converge-lane--selected .mj-converge-lane-name {
+  font-weight: 600;
+}
+.mj-converge-feed--selected .mj-converge-feed-line {
+  stroke-width: 2;
+  opacity: 0.8;
+}
+.mj-converge-feed--selected .mj-converge-feed-name {
+  font-weight: 600;
+}
+.mj-converge-hub--selected .mj-converge-dot {
+  stroke-width: 3;
+  opacity: 1;
+}
 /* The stretch a method performs itself — the owner's *"blank processes"*.
 
    **It carries no declaration yet, and the class is here anyway.** The phrase

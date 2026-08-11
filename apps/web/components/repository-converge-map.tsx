@@ -182,7 +182,15 @@ export function transitionNameFor(id: string): string {
   return `mj-fig-${id.replace(/[^a-zA-Z0-9_-]/g, "-")}`;
 }
 
-function Hub({ state, copy }: { state: ConvergeState; copy: ConvergeCopy }): React.ReactElement {
+function Hub({
+  state,
+  copy,
+  selected = false,
+}: {
+  state: ConvergeState;
+  copy: ConvergeCopy;
+  selected?: boolean;
+}): React.ReactElement {
   const note = state.depth > 0
     ? copy.handsOn
     : state.terminal
@@ -198,7 +206,7 @@ function Hub({ state, copy }: { state: ConvergeState; copy: ConvergeCopy }): Rea
         state.depth === 0 && (state.arriving > 1 || state.leaving > 1)
           ? " mj-converge-hub--shared"
           : ""
-      }`}
+      }${selected ? " mj-converge-hub--selected" : ""}`}
     >
       {/* The note rides IN the aria-label, not only in the `<title>`.
           `aria-label` wins the accessible-name computation over an SVG `<title>`
@@ -243,7 +251,15 @@ function Hub({ state, copy }: { state: ConvergeState; copy: ConvergeCopy }): Rea
  * same rule R12.2 gives every line: `openHref` is null there, and the bare line
  * keeps the descriptive title so it does not lose its name along with its action.
  */
-function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React.ReactElement {
+function Feed({
+  feed,
+  copy,
+  selected = false,
+}: {
+  feed: ConvergeFeed;
+  copy: ConvergeCopy;
+  selected?: boolean;
+}): React.ReactElement {
   const title = `${copy.needs}: ${spokenName(feed)}`;
   const action = feed.open ? copy.closeHere : copy.openHere;
   const stub = (
@@ -257,7 +273,7 @@ function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React
   );
   return (
     <g
-      className={`mj-converge-feed${feed.open ? " mj-converge-feed--open" : ""}`}
+      className={`mj-converge-feed${feed.open ? " mj-converge-feed--open" : ""}${selected ? " mj-converge-feed--selected" : ""}`}
       data-depth={feed.depth}
     >
       {/* Target one: the stub. Opens or shuts the ingredient, here. */}
@@ -323,10 +339,16 @@ function Feed({ feed, copy }: { feed: ConvergeFeed; copy: ConvergeCopy }): React
  * and a second copy of this string is how one of them would quietly stop
  * matching.
  */
-function laneClass(lane: ConvergeLane, documented: boolean): string {
+function laneClass(lane: ConvergeLane, documented: boolean, selected = false): string {
   return `mj-converge-lane mj-converge-lane--${lane.standing}${
     lane.open ? " mj-converge-lane--open" : ""
   }${documented ? " mj-converge-lane--atlas" : ""}${
+    // The thing `?sel=` names (W16, the Prezi move) — like `subject`, a fact
+    // about where the reader is rather than about what the literature records.
+    // Both call sites pass it (the drawing and the name pass), so the name
+    // carries the emphasis its lane does.
+    selected ? " mj-converge-lane--selected" : ""
+  }${
     // The line the page is *about*, on a method's own page. Not a standing and
     // not a category: those say what the literature records about a line, and
     // this says which line the reader clicked to get here. It is also the only
@@ -406,11 +428,13 @@ function LaneName({
   copy,
   atlas,
   title,
+  selected = false,
 }: {
   lane: ConvergeLane;
   copy: ConvergeCopy;
   atlas: ReadonlySet<string>;
   title: string;
+  selected?: boolean;
 }): React.ReactElement | null {
   if (lane.label === "") return null;
   // The card when this surface has one, the node's own page when it does not.
@@ -421,7 +445,7 @@ function LaneName({
   const nameHref = lane.cardHref ?? lane.href;
   const nameAction = lane.cardHref === null ? copy.readAbout : copy.readHere;
   return (
-    <g className={laneClass(lane, isDocumented(lane, atlas))} data-depth={lane.depth}>
+    <g className={laneClass(lane, isDocumented(lane, atlas), selected)} data-depth={lane.depth}>
       {/* `spokenName`, not `fullLabel`: the count must reach a reader who is not
           looking at the picture. See `spokenName`. */}
       <a href={nameHref} aria-label={`${spokenName(lane)} — ${nameAction}`}>
@@ -505,10 +529,12 @@ function Lane({
   lane,
   copy,
   atlas,
+  selected = false,
 }: {
   lane: ConvergeLane;
   copy: ConvergeCopy;
   atlas: ReadonlySet<string>;
+  selected?: boolean;
 }): React.ReactElement {
   const documented = isDocumented(lane, atlas);
   const title = laneTitle(lane, copy, atlas);
@@ -529,7 +555,7 @@ function Lane({
   // of crossfading a snapshot of it. See the converge block in `styles.css`.
 
   return (
-    <g className={laneClass(lane, documented)} data-depth={lane.depth}>
+    <g className={laneClass(lane, documented, selected)} data-depth={lane.depth}>
       {/* Open: the centre line stays, faint, and what was inside is drawn in its
           place. Shut: the tapered body. Never both — an opened strand still
           drawing its own body would claim to be a way across at the same time
@@ -676,10 +702,20 @@ export function ConvergeCanvas({
   subjectId = null,
   atlas = EMPTY_ATLAS,
   claimed,
+  selection = null,
 }: {
   diagram: ConvergeDiagram;
   locale: PublicLocale;
   title: string;
+  /**
+   * The one element `?sel=` resolved to on THIS figure, or null (W16).
+   *
+   * Already resolved by the caller (`resolveSelection`) so this stays a
+   * renderer of typed data: at most one of the three keys is non-null, and a
+   * figure that is not the selected one receives null outright. The class it
+   * paints is what the client's camera fly-to finds and measures.
+   */
+  selection?: { laneAddress: string | null; stateKey: string | null; feedKey: string | null } | null;
   /**
    * View-transition names already spoken for **on this page**.
    *
@@ -732,10 +768,16 @@ export function ConvergeCanvas({
     >
       <title>{title}</title>
       {diagram.lanes.map((lane) => (
-        <Lane key={lane.key} lane={lane} copy={copy} atlas={atlas} />
+        <Lane
+          key={lane.key}
+          lane={lane}
+          copy={copy}
+          atlas={atlas}
+          selected={selection?.laneAddress === lane.address}
+        />
       ))}
       {diagram.feeds.map((feed) => (
-        <Feed key={feed.key} feed={feed} copy={copy} />
+        <Feed key={feed.key} feed={feed} copy={copy} selected={selection?.feedKey === feed.key} />
       ))}
       {/* Every plate, then every name, and both after every line. Three passes
           over one list rather than one pass emitting three things, because on
@@ -761,10 +803,11 @@ export function ConvergeCanvas({
           copy={copy}
           atlas={atlas}
           title={laneTitle(lane, copy, atlas)}
+          selected={selection?.laneAddress === lane.address}
         />
       ))}
       {diagram.states.map((state) => (
-        <Hub key={state.key} state={state} copy={copy} />
+        <Hub key={state.key} state={state} copy={copy} selected={selection?.stateKey === state.key} />
       ))}
     </svg>
   );

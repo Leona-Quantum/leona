@@ -2,10 +2,14 @@
 
 import { useEffect, useId, useRef, useState, type KeyboardEvent, type ReactNode } from "react";
 import {
+  FLY_DURATION_MS,
   IDENTITY,
   KEYBOARD_ZOOM_FACTOR,
+  centerOn,
   createCanvasGesture,
+  easeInOutCubic,
   formatViewport,
+  interpolateViewport,
   panBy,
   transformOf,
   wheelPixels,
@@ -40,6 +44,28 @@ const URL_SYNC_DEBOUNCE_MS = 250;
  * handed back promptly once the reader stops.
  */
 const GESTURE_SETTLE_MS = 200;
+
+/**
+ * How long after a selection change the camera waits before measuring its
+ * target (W16, the Prezi move).
+ *
+ * Not a feel constant — it is the canvas's own geometry-transition duration
+ * (`--dur-converge`, 280ms, plus two frames of slack). A same-document toggle
+ * morphs `d`/`cx`/`cy` under CSS transitions, and `getBoundingClientRect`
+ * reports the *currently rendered* interpolated geometry: measured at t=0 the
+ * camera would fly to where the selection was, settling wrong by exactly the
+ * distance the morph moved it. Waiting out the morph makes the sequence read
+ * as "the figure rearranges, then the camera moves to the result" — which is
+ * also the Prezi rhythm rather than an implementation apology.
+ */
+const FLY_SETTLE_MS = 320;
+
+/** The element the camera centers — whichever kind `?sel=` resolved to. The
+ * lane class appears on two `<g>`s (the drawing pass and the name pass);
+ * `querySelector` returns the drawing, which paints first, and its box is the
+ * one to frame. */
+const SELECTED_SELECTOR =
+  ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected";
 
 /**
  * The `sr-only` description of what the pointer can do here, per surface.
@@ -92,11 +118,24 @@ export function InfiniteCanvas({
   label,
   locale,
   fill = false,
+  selKey = null,
 }: {
   children: ReactNode;
   initial: Viewport;
   label: string;
   locale: PublicLocale;
+  /**
+   * When this changes to a non-null value, the camera flies to the element
+   * matching `SELECTED_SELECTOR` in `children` (W16, the Prezi move).
+   *
+   * A key rather than a boolean or a target: the caller builds it from the
+   * selection *and* the open set, so the camera re-frames the selected item
+   * when a toggle rearranges the figure under it — "persist showing the
+   * highlighted item" is a statement about every layout, not just the first.
+   * The geometry itself is measured here, not passed in, because `?at=` units
+   * are fitted-width-relative and only this component knows the box.
+   */
+  selKey?: string | null;
   /**
    * This is the map surface, not an illustration inside a written record.
    *
@@ -142,6 +181,24 @@ export function InfiniteCanvas({
   }, [fill]);
 
   const rootRef = useRef<HTMLDivElement>(null);
+
+  // The gesture effect (registered once, empty deps) and the fly effect
+  // (re-runs per `selKey`) have to reach each other without either one
+  // re-registering the other's listeners, so they meet through refs: the
+  // gesture effect publishes its `commit`/`markGesturing` here, and the fly
+  // effect publishes its cancel — which every reader input calls, because a
+  // camera the reader cannot interrupt by grabbing the canvas is a camera
+  // fighting the reader.
+  const flyApiRef = useRef<{
+    commit: (v: Viewport) => void;
+    /** Land in one synchronous state write, bypassing the per-frame coalescing
+     * — the keyboard step's shape, for the same reason: there is exactly one
+     * write, so there is nothing to coalesce, and the rAF the coalescing waits
+     * on never fires at all in a hidden tab. */
+    step: (v: Viewport) => void;
+    markGesturing: () => void;
+  } | null>(null);
+  const cancelFlyRef = useRef<(() => void) | null>(null);
 
   // --- ?at= sync: debounced, replaceState only, every other param kept -----
   const isFirstRender = useRef(true);
@@ -270,6 +327,15 @@ export function InfiniteCanvas({
       }, GESTURE_SETTLE_MS);
     }
 
+    flyApiRef.current = {
+      commit,
+      step: (v: Viewport) => {
+        viewRef.current = v;
+        setView(v);
+      },
+      markGesturing,
+    };
+
     function apply(outcome: GestureOutcome) {
       for (const id of outcome.capture) {
         if (!el!.hasPointerCapture(id)) el!.setPointerCapture(id);
@@ -297,6 +363,9 @@ export function InfiniteCanvas({
       // pen report `button: 0` on their primary contact, so this does not
       // filter them.
       if (e.pointerType === "mouse" && e.button !== 0) return;
+      // The reader took hold of the canvas: a camera fly in progress yields
+      // immediately, wherever it was.
+      cancelFlyRef.current?.();
       // The click belonging to the previous gesture, if the browser was going
       // to synthesize one, has already been dispatched by now: `pointerup` and
       // `click` are delivered synchronously for the same gesture. Anything
@@ -384,6 +453,9 @@ export function InfiniteCanvas({
       // the first event of a wheel burst and the moment to re-read the rect.
       // Every later event in the burst, momentum included, reuses it.
       if (!promoted) invalidateRect();
+      // Same rule as `pointerdown`: wheel input is the reader steering, and
+      // the camera fly yields to it.
+      cancelFlyRef.current?.();
       if (e.ctrlKey) {
         // A horizontal-only event (deltaY === 0) is not a zoom input: the
         // common source is a two-finger horizontal swipe, which is a pan.
@@ -462,8 +534,100 @@ export function InfiniteCanvas({
       observer?.disconnect();
       if (frame) window.cancelAnimationFrame(frame);
       if (settleTimer) window.clearTimeout(settleTimer);
+      flyApiRef.current = null;
     };
   }, []);
+
+  // --- the Prezi move: fly the camera to the selected element (W16) ---------
+  //
+  // Declared after the gesture effect on purpose: effects run in declaration
+  // order, so on first mount `flyApiRef` is already populated when this one
+  // looks for it.
+  useEffect(() => {
+    if (selKey === null) return;
+    const el = rootRef.current;
+    if (!el) return;
+    let frame = 0;
+    let timer = 0;
+    // A hidden tab may not have performed its first real layout when the
+    // settle timer fires: measured there, the viewport box reports 0 × its
+    // min-height, and centering into a zero-width box is what wrote
+    // `at=…,0.1` garbage into the URL during verification. A box with no
+    // extent is not a measurement — wait another settle interval and look
+    // again, boundedly, rather than flying on it.
+    let attempts = 0;
+    const FLY_MEASURE_ATTEMPTS = 25;
+    // Wait out the geometry morph before measuring — see `FLY_SETTLE_MS`.
+    const attempt = () => {
+      timer = 0;
+      const target = el.querySelector(SELECTED_SELECTOR);
+      const api = flyApiRef.current;
+      if (!target || !api) return;
+      const box = el.getBoundingClientRect();
+      if (box.width < 1 || box.height < 1) {
+        attempts += 1;
+        if (attempts < FLY_MEASURE_ATTEMPTS) timer = window.setTimeout(attempt, FLY_SETTLE_MS);
+        return;
+      }
+      const rect = target.getBoundingClientRect();
+      const from = viewRef.current;
+      const to = centerOn(
+        from,
+        { left: rect.left - box.left, top: rect.top - box.top, width: rect.width, height: rect.height },
+        { width: box.width, height: box.height },
+      );
+      // Already framed — a sub-pixel tween would still debounce a new `?at=`
+      // into the URL for a move nobody saw.
+      if (Math.abs(to.x - from.x) < 1 && Math.abs(to.y - from.y) < 1 && Math.abs(to.z / from.z - 1) < 0.01) {
+        return;
+      }
+      // The same *ending*, instantly, on two conditions that both mean "nobody
+      // is watching this move": reduced motion by preference, and a hidden tab
+      // by fact. The hidden case is not an edge case — a shared `?sel=` link
+      // opened in a background tab hydrates there, and a hidden tab's
+      // `requestAnimationFrame` never fires (measured in the agent pane: rAF
+      // starved indefinitely, and the one frame a later forced composite let
+      // through landed a tween built from measurements taken seconds earlier —
+      // which is how a garbage viewport got written into `?at=`). Measuring
+      // and committing in the same task is what makes the landing atomic:
+      // there is no gap for the ground to move in.
+      if (
+        window.matchMedia("(prefers-reduced-motion: reduce)").matches ||
+        document.visibilityState === "hidden"
+      ) {
+        // `step`, not `commit`: commit's flush is itself a rAF, so in a hidden
+        // tab it would write `viewRef` now and the DOM whenever a frame next
+        // fires — a silent divergence that surfaces as a viewport jump (and,
+        // through the debounced writeback, as a wrong `?at=`) at the moment
+        // the tab becomes visible.
+        api.step(to);
+        return;
+      }
+      const start = performance.now();
+      const step = (now: number) => {
+        const t = Math.min(1, (now - start) / FLY_DURATION_MS);
+        api.commit(interpolateViewport(from, to, easeInOutCubic(t)));
+        // Keeps the compositor promotion alive for the whole fly plus the
+        // settle gap, exactly as a pointer gesture would.
+        api.markGesturing();
+        frame = t < 1 ? window.requestAnimationFrame(step) : 0;
+      };
+      frame = window.requestAnimationFrame(step);
+    };
+    timer = window.setTimeout(attempt, FLY_SETTLE_MS);
+    const cancel = () => {
+      window.clearTimeout(timer);
+      if (frame) {
+        window.cancelAnimationFrame(frame);
+        frame = 0;
+      }
+    };
+    cancelFlyRef.current = cancel;
+    return () => {
+      cancel();
+      if (cancelFlyRef.current === cancel) cancelFlyRef.current = null;
+    };
+  }, [selKey]);
 
   // --- keyboard: arrows pan, +/- zoom, 0 resets to `initial` ---------------
 
@@ -483,6 +647,8 @@ export function InfiniteCanvas({
    * same frame to fold it into.
    */
   function stepByKeyboard(next: Viewport) {
+    // Keyboard is reader input like any other: it interrupts a camera fly.
+    cancelFlyRef.current?.();
     viewRef.current = next;
     setView(next);
   }
