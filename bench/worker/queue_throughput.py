@@ -236,6 +236,9 @@ def _patched_worker(queue: _InMemoryQueue, handler: _DeterministicHandler):
     async def recover_stale_jobs(_session):
         return system.StaleJobRecovery(requeued=0, dead_jobs=())
 
+    async def count_runnable_jobs(_session) -> int:
+        return queue.remaining_depth
+
     async def claim_pending_dead_letter(_session, *, worker_id: str, lease_seconds: float):
         del worker_id, lease_seconds
         return None
@@ -260,6 +263,7 @@ def _patched_worker(queue: _InMemoryQueue, handler: _DeterministicHandler):
         "recover_stale_jobs": system.recover_stale_jobs,
         "claim_pending_dead_letter": system.claim_pending_dead_letter,
         "list_orphaned_runs": system.list_orphaned_runs,
+        "count_runnable_jobs": system.count_runnable_jobs,
     }
     previous_port = os.environ.pop("PORT", None)
     worker_main.engine_from_env = lambda: _Engine()
@@ -274,6 +278,13 @@ def _patched_worker(queue: _InMemoryQueue, handler: _DeterministicHandler):
     system.recover_stale_jobs = recover_stale_jobs
     system.claim_pending_dead_letter = claim_pending_dead_letter
     system.list_orphaned_runs = list_orphaned_runs
+    # The worker samples queue depth for the capacity metric (#373).  That query
+    # is best-effort and swallows its own errors, so leaving it unswapped does
+    # not fail the run -- it just prints a traceback into a benchmark whose whole
+    # output contract is one clean JSON record, and it would make
+    # ``external_database_called`` a claim the harness no longer checks here.
+    # The in-memory queue already knows its own depth, so answer from that.
+    system.count_runnable_jobs = count_runnable_jobs
     try:
         yield
     finally:
@@ -289,6 +300,7 @@ def _patched_worker(queue: _InMemoryQueue, handler: _DeterministicHandler):
         system.recover_stale_jobs = saved["recover_stale_jobs"]
         system.claim_pending_dead_letter = saved["claim_pending_dead_letter"]
         system.list_orphaned_runs = saved["list_orphaned_runs"]
+        system.count_runnable_jobs = saved["count_runnable_jobs"]
         if previous_port is not None:
             os.environ["PORT"] = previous_port
 
