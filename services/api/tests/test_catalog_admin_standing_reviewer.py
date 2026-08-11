@@ -171,6 +171,113 @@ def test_two_live_reviewers_still_refuse_even_with_a_retired_row_present() -> No
     assert "bbb3" not in message
 
 
+def test_two_live_grants_resolve_to_the_one_that_actually_signed() -> None:
+    """The production case this rule met on its first run.
+
+    Two live accounts held ADMIN on the catalog workspace, neither marked
+    retired, so the duplicate-row exclusion could not resolve it and the deploy
+    step parked. The stronger question is not who *may* review but who *has*:
+    `attest_catalog_record` stamps `reviewer_user_id` on every assertion, so a
+    standing attestation lives on those rows.
+
+    This narrows and never widens — an account with no signatures cannot be
+    chosen by it, and the flag continues an attestation rather than starting one.
+    """
+    rows = [*PROVISIONED, (OWNER_HUMAN, Role.ADMIN, LIVE), (SECOND_HUMAN, Role.ADMIN, "user_01B")]
+    assert (
+        pick_standing_reviewer(rows, service_ids=SERVICE_IDS, signed={OWNER_HUMAN: 283})
+        == OWNER_HUMAN
+    )
+    # …and it is the signatures deciding, not the order or the id.
+    assert (
+        pick_standing_reviewer(rows, service_ids=SERVICE_IDS, signed={SECOND_HUMAN: 283})
+        == SECOND_HUMAN
+    )
+
+
+def test_both_signatories_still_refuse_and_report_the_counts() -> None:
+    """Two accounts that have each signed is a real ambiguity, not a duplicate.
+
+    The counts go in the message because they are what an operator decides on —
+    "one signed 283 and the other signed 2" is a different situation from an
+    even split, and a bare pair of UUIDs sends them to the database to find out.
+    """
+    with pytest.raises(SystemExit) as excinfo:
+        pick_standing_reviewer(
+            [*PROVISIONED, (OWNER_HUMAN, Role.ADMIN, LIVE), (SECOND_HUMAN, Role.ADMIN, "user_01B")],
+            service_ids=SERVICE_IDS,
+            signed={OWNER_HUMAN: 283, SECOND_HUMAN: 2},
+        )
+    message = str(excinfo.value)
+    assert "283 signed" in message and "2 signed" in message
+    assert "--attested-by" in message
+
+
+def test_no_signatures_at_all_refuses_rather_than_picking_either() -> None:
+    """Two unused grants is the same ambiguity it was before this tiebreak.
+
+    The narrowing must not become a way through: if neither account has signed,
+    there is no standing attestation to continue and the rule is back where it
+    started.
+    """
+    with pytest.raises(SystemExit, match="will not choose"):
+        pick_standing_reviewer(
+            [*PROVISIONED, (OWNER_HUMAN, Role.ADMIN, LIVE), (SECOND_HUMAN, Role.ADMIN, "user_01B")],
+            service_ids=SERVICE_IDS,
+            signed={},
+        )
+
+
+def test_signatures_never_promote_an_account_that_holds_no_grant() -> None:
+    """The tiebreak filters the candidates; it does not supply them.
+
+    A signature count for an account with no ADMIN membership — a revoked
+    reviewer, say — must not resurrect it. Widening is the one thing this
+    addition must be incapable of.
+
+    **Reaching the tiebreak is the whole point of this fixture.** The obvious
+    version of this test passes a corpus with no ADMIN at all, which refuses at
+    the empty-candidates check long before any signature is consulted — so it
+    proves nothing about the tiebreak, and a mutation that read the signature map
+    directly instead of intersecting it with the candidates survived it. Here two
+    live accounts hold the grant, so the tiebreak *does* run, and neither of them
+    has signed while a third account outside the workspace has.
+    """
+    outsider = uuid.UUID("019f5b84-0000-4000-8000-00000000cccc")
+    with pytest.raises(SystemExit, match="will not choose"):
+        pick_standing_reviewer(
+            [*PROVISIONED, (OWNER_HUMAN, Role.ADMIN, LIVE), (SECOND_HUMAN, Role.ADMIN, "user_01B")],
+            service_ids=SERVICE_IDS,
+            signed={outsider: 283},
+        )
+
+
+def test_a_signature_map_cannot_reinstate_a_retired_row() -> None:
+    """The narrowing composes with the exclusions above rather than bypassing them.
+
+    A retired account that signed the corpus before the WorkOS reattachment is
+    exactly the row most likely to carry signatures — and it is still an account
+    nobody can sign in to.
+    """
+    assert (
+        pick_standing_reviewer(
+            [*PROVISIONED, (OWNER_HUMAN, Role.ADMIN, LIVE), (SECOND_HUMAN, Role.ADMIN, RETIRED)],
+            service_ids=SERVICE_IDS,
+            signed={SECOND_HUMAN: 283},
+        )
+        == OWNER_HUMAN
+    )
+
+
+def test_a_service_identity_cannot_be_promoted_by_signatures_either() -> None:
+    with pytest.raises(SystemExit, match="no human account holds"):
+        pick_standing_reviewer(
+            [(IMPORTER, Role.ADMIN, "system-catalog-importer")],
+            service_ids=SERVICE_IDS,
+            signed={IMPORTER: 283},
+        )
+
+
 def test_one_account_listed_twice_is_one_account() -> None:
     """A duplicated membership row is not a second reviewer.
 
