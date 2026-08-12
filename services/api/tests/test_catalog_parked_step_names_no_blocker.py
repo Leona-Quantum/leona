@@ -106,3 +106,16 @@ def test_the_text_still_says_what_the_parked_state_costs() -> None:
     assert "parked" in warnings
     assert "/repository" in warnings
     assert "catalog_sync_enabled" in warnings
+
+    # The three above are satisfied by a warning that merely mentions the switch
+    # and the route. Neither of the two consequences a reader is here for — that
+    # this deploy's content did NOT arrive, and that the rows being served are the
+    # old ones — has to appear for them to pass, so they do not yet rule out the
+    # useless echo this test's docstring describes.
+    #
+    # Fragments, not the sentences they sit in: the surrounding prose is meant to
+    # be rewritten as the park drags on (that is the whole argument of the echo it
+    # guards), and a test holding a full sentence hostage would stop that. These
+    # two are the parts a rewording cannot drop without dropping the meaning.
+    assert "not reached" in warnings, "the echo no longer says the content did not arrive"
+    assert "previous rows" in warnings, "the echo no longer says the DB serves the old rows"
