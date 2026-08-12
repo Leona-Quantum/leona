@@ -565,6 +565,30 @@ jobs:
       # The step below this one prints the parked state on EVERY deploy, so a
       # disabled sync cannot become the silent staleness this whole feature
       # exists to end.
+      #
+      # UPDATE 2026-08-12, later the same day: THE REVIEWER HALF IS SETTLED, and
+      # the deploy is what settled it. `pick_standing_reviewer` gained a
+      # signature-count narrowing, and the read-only report below has printed the
+      # same answer on every deploy since:
+      #
+      #   019f5b84-d1ab-72a3-9c68-41416325b3f4  signed=1153
+      #   019fb3ae-39f8-78b6-a04a-dfdfb847952f  signed=0
+      #   VERDICT: exactly one eligible account has signed
+      #
+      # One of the two grants was never used, so there is nothing to choose
+      # between: `--attested-by-standing` continues the account that signed, and
+      # revoking the other is tidying rather than a precondition.
+      #
+      # It stays parked on a DIFFERENT blocker, which is why the flag has not
+      # moved. Records whose provenance claim moved cannot inherit the grant made
+      # about the old claim, and a human has to look at each and re-sign it by
+      # name. Until that happens, turning this on runs the import — which resets
+      # a changed record's review_state to DRAFT and takes it off /repository —
+      # and then exits at the attest step before `publish-bootstrap` ever runs.
+      # So the flip does not merely go red: it leaves the corpus staged and
+      # unpublished, which is worse for a reader than the staleness it fixes.
+      # The order is signature first, flag second. `attest-plan` below names
+      # exactly which records are waiting.
       - name: sync the published catalog
         if: steps.creds.outputs.have == 'true' && vars.CATALOG_SYNC_ENABLED == 'true'
         run: |
@@ -587,11 +611,21 @@ jobs:
             sync-bootstrap --attested-by-standing; then
             echo "::error::the catalog sync refused. THE CODE ROLLOUT ABOVE SUCCEEDED and"
             echo "::error::production is serving the new revision — what did not happen is"
-            echo "::error::the corpus content reaching /repository. Nothing was partially"
-            echo "::error::published: a refusal leaves every record on its previous version."
+            echo "::error::the corpus content reaching /repository."
+            echo "::error::"
+            echo "::error::NOTHING WAS PARTIALLY PUBLISHED, AND THE LISTING IS STILL SHORTER."
+            echo "::error::Both are true and the second is the one that surprises people. No"
+            echo "::error::record is serving half-attested content — but the import ran before"
+            echo "::error::the refusal, and staging a new version resets review_state to DRAFT,"
+            echo "::error::so every record whose content changed in this deploy has dropped OUT"
+            echo "::error::OF THE BROWSE LISTING until it is attested. Direct links to those"
+            echo "::error::records keep working. Expect the /repository count to fall, and do"
+            echo "::error::not read that as a second failure."
+            echo "::error::"
             echo "::error::The usual cause is a record whose provenance claim moved, which"
             echo "::error::needs a person: docs/runbooks/system-catalog.md § When"
-            echo "::error::attest-bootstrap refuses."
+            echo "::error::attest-bootstrap refuses. The identities are printed above, in"
+            echo "::error::full — re-sign exactly those and the next deploy converges."
             exit 1
           fi
 
@@ -613,15 +647,32 @@ jobs:
           echo "::warning::catalog sync is PARKED (CATALOG_SYNC_ENABLED is not 'true')."
           echo "::warning::Corpus CONTENT changes in this deploy have NOT reached"
           echo "::warning::/repository — the catalog DB is serving its previous rows."
-          echo "::warning::Blocked on: two live accounts hold the catalog reviewer"
-          echo "::warning::grant, so an unattended run refuses to pick one. Resolve"
-          echo "::warning::which is the real reviewer, revoke the other, then:"
+          echo "::warning::Blocked on: records whose stated source moved cannot inherit"
+          echo "::warning::the grant signed about the old source, so a person has to look"
+          echo "::warning::at each and re-sign it by name. The attestation plan below"
+          echo "::warning::names them; docs/runbooks/system-catalog.md § When"
+          echo "::warning::attest-bootstrap refuses is how. DO NOT set the variable first:"
+          echo "::warning::the import stages the new content and takes those records off"
+          echo "::warning::/repository, then the attest step exits before anything is"
+          echo "::warning::published. Signature first, then:"
           echo "::warning::  gh variable set CATALOG_SYNC_ENABLED --body true"
-          echo "::warning::See docs/runbooks/system-catalog.md and OWNER_TODO."
           echo "--- who holds the grant (read-only; never fails this deploy) ---"
           (
             set -euo pipefail
             . scripts/catalog-admin-env.sh || exit 1
             uv run --package majorana-api python -m majorana_api.catalog_admin reviewers
-          ) || echo "::warning::could not read the reviewer grants; the warning above stands."
+            # The second half of the same question, and the half that is still
+            # open. `reviewers` says whether an unattended run can name a
+            # signatory; this says whether it would have anything to refuse.
+            # Read-only in the same way — it resolves artifacts, reads claim
+            # hashes and prints; it grants nothing and attests nothing — so it
+            # belongs in the same guarded subshell and can never redden a deploy.
+            #
+            # It runs here rather than being something an operator invokes,
+            # because the whole difficulty was that the refused set could only be
+            # learned by causing the refusal, from inside a deployment boundary
+            # nobody can reach from a laptop.
+            echo "--- what the attest step would do (read-only) ---"
+            uv run --package majorana-api python -m majorana_api.catalog_admin attest-plan
+          ) || echo "::warning::could not read the catalog diagnostics; the warning above stands."
           exit 0

@@ -206,6 +206,38 @@ place it is a standing, re-runnable handle on the production database that anyon
 is a comma and `--attested-by` values are fine, but any argument containing a comma would be
 silently split into two.
 
+### Clearing refusals in production — the one run where that delimiter is load-bearing
+
+`--re-attest` takes a **comma-separated** list, so it is the argument the paragraph above is
+warning about. Without `^~^`, gcloud splits a 25-identity list into 25 positional arguments
+and the command fails on an unrecognised argument rather than doing anything dangerous — but
+it fails after you have assembled the list, which is the expensive part.
+
+Get the identities from `attest-plan` (below) or from the refusal itself. Both print one per
+line and neither hands back a pasteable string; assembling the list is the step where a
+person looks at each record, and that is deliberate.
+
+```bash
+gcloud run jobs update leona-admin-oneshot \
+  --project=majorana-core --region=us-west1 \
+  --args="^~^-m~majorana_api.catalog_admin~sync-bootstrap~--attested-by~<reviewer-uuid>~--re-attest~<id>,<id>,…"
+
+gcloud run jobs execute leona-admin-oneshot --project=majorana-core --region=us-west1 --wait
+```
+
+`sync-bootstrap` rather than `attest-bootstrap`, because re-signing alone leaves the records
+attested and still private — the publish step is what returns them to the browse listing.
+
+**Name the reviewer explicitly here.** `--attested-by-standing` is the pipeline's form and it
+resolves correctly, but a re-signature is a human act and the audit row should carry the
+account of the human who made it. `--attested-by-email` refuses while two live rows carry one
+email, which is the current state of this workspace, so pass the UUID: it is the account
+`reviewers` reports with a nonzero `signed=` count.
+
+**Expect it to refuse if your list is even one identity out**, in either direction, and to
+write nothing when it does. That is `plan_re_attestation` reconciling, not a failure — reread
+the refusal, fix the list, run again.
+
 ### Finding the reviewer — use `--attested-by-email`, not a hand-copied UUID
 
 **`--attested-by-email <you>` resolves the row and refuses if it is ambiguous.** Prefer it.
@@ -305,7 +337,14 @@ as of its first run.** `deploy.yml`'s step `sync the published catalog` runs
 `sync-bootstrap --attested-by-standing` against production on every deploy, and is gated on
 the repository variable `CATALOG_SYNC_ENABLED` being `true`. It is currently not set.
 
-**Why it is parked, and what unparks it.** On its first production run the step refused:
+**Owner decision, 2026-08-12 (ai-ops#13): keep the step, and switch it on when someone can
+watch a deploy through.** The alternatives on the table were leaving it off indefinitely and
+taking it back out in favour of the hand step; both were declined. So the pipeline step is
+permanent and the only open question is when the variable moves — which is what the two
+blockers below answer. It is not "on hold pending a design decision"; it is finished code
+waiting on data.
+
+**Why it was parked.** On its first production run the step refused:
 
 ```
 2 accounts hold the catalog reviewer grant
@@ -313,13 +352,81 @@ the repository variable `CATALOG_SYNC_ENABLED` being `true`. It is currently not
 — an unattended run will not choose between them. Pass --attested-by explicitly.
 ```
 
-Neither carries the `retired-workos-env:` marker, so this is **not** the environment-switch
-duplicate that `pick_standing_reviewer` already resolves: two live accounts hold ADMIN on
-the catalog workspace. Deciding which is the real reviewer and revoking the other's grant is
-a production database decision, so it is owner-only and parked rather than guessed. Once the
-grant is unambiguous, `gh variable set CATALOG_SYNC_ENABLED --body true` re-arms it — no code
-change. Until then every deploy prints a warning naming the parked state, so a stale catalog
-cannot be silent.
+Neither carries the `retired-workos-env:` marker, so this was **not** the environment-switch
+duplicate that `pick_standing_reviewer` already resolves: two live accounts held ADMIN on
+the catalog workspace.
+
+**That half is settled, and the deploy is what settled it.** `pick_standing_reviewer` now
+asks the stronger question — not who *may* review but who actually *has* — and the read-only
+`reviewers` report has printed the same answer on every deploy since:
+
+```
+catalog reviewer grants: 2 ADMIN membership(s)
+  019f5b84-d1ab-72a3-9c68-41416325b3f4  signed=1153
+  019fb3ae-39f8-78b6-a04a-dfdfb847952f  signed=0
+VERDICT: exactly one eligible account has signed
+```
+
+One of the two grants was never used, so there is nothing to choose between. Revoking the
+unused one is tidying, not a precondition. Do not read the older instruction "resolve which
+is the real reviewer, revoke the other" as still blocking — it is not.
+
+**What is still blocking, and it is not the reviewer.** Records whose provenance claim moved
+refuse to inherit the grant made about the old claim, and a person has to look at each and
+re-sign it by name (*When `attest-bootstrap` refuses*, above). Until that happens the
+variable must stay off, and the reason is sharper than "the deploy goes red":
+
+- `bootstrap-import` stages the new content, which resets a changed record's `review_state`
+  from ACCEPTED to DRAFT and takes it **off** `/repository`;
+- `attest-bootstrap` then exits on the refusal, so `publish-bootstrap` never runs and the
+  newly-imported records are never published.
+
+So flipping the variable before the signature leaves the corpus staged and unpublished —
+worse for a reader than the staleness the feature exists to fix, and red for every other
+lane merging at that moment. **Signature first, variable second.** Once the refusals are
+cleared, `gh variable set CATALOG_SYNC_ENABLED --body true` re-arms it in one command, with
+no code change.
+
+Until then every deploy prints a warning naming the parked state, so a stale catalog cannot
+be silent.
+
+### `attest-plan` — which records are waiting for a signature
+
+```bash
+uv run --package majorana-api python -m majorana_api.catalog_admin attest-plan
+```
+
+**Read-only: it writes nothing, grants nothing and attests nothing**, and it takes no
+reviewer — there is no principal to name because nothing is signed. It reports what an
+attest run *would* do: how many records take a first signature (and how many of those are
+not imported yet), how many carry their grant forward, and **every** identity that needs a
+fresh one, unsliced.
+
+It exists because the refused set was otherwise unknowable without causing the refusal.
+`attest-bootstrap` computes it, prints it and exits having already written every record it
+did not refuse; `sync-bootstrap` does that in the middle of a production deploy. The one
+question a person must answer before the variable can move could only be answered by running
+the thing that is blocked on the answer.
+
+Two properties worth knowing before acting on its output:
+
+- **It works before the current manifest has been imported.** It resolves records by
+  `upstream_identity` rather than through the import ledger. That is not a second
+  reconciliation rule — `_advance_item` sets `resulting_artifact_id` from the same lookup, so
+  for an already-staged record both paths name one artifact.
+- **Its answer is stable across an import.** `latest_license_claim_hash` reads assertions
+  across all versions and staging writes no assertion, so importing does not change which
+  records refuse. Only an attest run does.
+
+The parked branch of `deploy.yml`'s catalog step runs it on every deploy, next to
+`reviewers`. Between them the two reports answer both halves of "can this be switched on
+yet": who would sign, and whether anything would refuse.
+
+It deliberately prints the identities one per line rather than as a ready-to-paste
+`--re-attest` argument, and it deliberately does not accept `--re-attest` itself. The flag
+exists to buy a look at each record; a pasteable string makes not looking the cheapest path,
+and a dry-run that took the list would let an operator rehearse against the reconciliation
+until it went green.
 
 While parked, the loop below is still yours to run by hand, and a corpus content change does
 NOT reach `/repository/<slug>` on merge. So the loop you are responsible for is: **edit the entries,
@@ -334,9 +441,21 @@ attestation on a fresh environment — that one cannot be automated, because
 
 **When the pipeline step goes red, the deploy still succeeded.** It runs last, after the
 stack has been verified live, so a refusal means the new revision is serving and only the
-corpus content did not land. Nothing is partially published: every record stays on its
-previous version. The usual cause is a moved provenance claim — see *When `attest-bootstrap`
-refuses* above, resolve it with an explicit `--re-attest` run, and the next deploy converges.
+corpus content did not land. The usual cause is a moved provenance claim — see *When
+`attest-bootstrap` refuses* above, resolve it with an explicit `--re-attest` run, and the
+next deploy converges.
+
+**Nothing is partially published, and the listing still gets shorter.** Both are true, and
+the second one is the surprise. No record serves half-attested content — but the refusal
+happens *after* the import, and staging a new version resets `review_state` to DRAFT, so
+every record whose content changed in that deploy drops out of the browse listing until it
+is attested. The public predicate is ACCEPTED **and** PUBLIC; a DRAFT record fails the first
+half. Direct links to those records keep working, because the listing query is what filters
+them, so the symptom is a `/repository` count that falls rather than an error anywhere.
+
+This is not hypothetical and it is the state production has been in: a run refused 25
+records and `x-catalog-total` went from 283 to 258. Read a falling count after a refusal as
+the refusal, not as a second failure.
 
 The step runs on **every** deploy rather than only when `manifest.json` changed. A no-change
 run writes nothing (the importer compares hashes; publishing an already-public record is a
