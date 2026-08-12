@@ -273,6 +273,141 @@ def plan_re_attestation(
     )
 
 
+def format_attest_plan_report(
+    decision: ReAttestationPlan, *, unimported: Sequence[str]
+) -> list[str]:
+    """What the next attest run would do, as lines, decided without a database.
+
+    Separated from the queries for the reason the rest of this module already is,
+    and with the same stakes as `format_reviewer_report`: these lines are read out
+    of a deploy log by somebody deciding whether to sign, and a count in place of
+    an identity sends them back to a database they are told not to reach.
+
+    `unimported` is the subset of `first_signature` that has no artifact yet. Both
+    take a first signature, but they are different situations and the difference
+    is what the reader is actually asking about: a record with no artifact is new
+    corpus content waiting on an import, while a record that exists and carries no
+    prior claim is a grant the database does not have. Lumping them together makes
+    "40 records need a first signature" read as forty missing grants.
+    """
+    total = (
+        len(decision.first_signature)
+        + len(decision.carried_forward)
+        + len(decision.needs_signature)
+    )
+    lines = [f"attestation plan: {total} records included by the policy"]
+    first = len(decision.first_signature)
+    fresh = f" ({len(unimported)} of them not imported yet)" if unimported else ""
+    lines.append(f"  first signature:         {first}{fresh}")
+    lines.append(f"  carried forward:         {len(decision.carried_forward)}")
+    lines.append(f"  needs a fresh signature: {len(decision.needs_signature)}")
+    # Unsliced, for the reason the attest run's own refusal list is unsliced:
+    # `--re-attest` refuses unless the names it is given equal the refused set
+    # exactly, in both directions, so a truncated list here cannot be acted on at
+    # all. A run printing 20 of 25 is what made this command necessary.
+    #
+    # Still one per line rather than a ready-to-paste comma string, matching
+    # `plan_re_attestation` and `_attest_bootstrap`. The flag exists to buy a look
+    # at each record, and handing back the exact argument makes not looking the
+    # cheapest path — which would make this command a way around the guard rather
+    # than a way to reach it.
+    for identity in decision.needs_signature:
+        lines.append(f"  needs a fresh signature (provenance claim changed): {identity}")
+    if decision.needs_signature:
+        lines.append(
+            f"VERDICT: {len(decision.needs_signature)} records changed their provenance claim "
+            "and cannot inherit the existing grant, so an unattended sync REFUSES at the "
+            "attest step and publishes nothing. A person looks at what moved in each and "
+            "re-signs them by name: attest-bootstrap --re-attest <identity>,<identity>,… "
+            "See docs/runbooks/system-catalog.md § When attest-bootstrap refuses."
+        )
+    else:
+        lines.append(
+            "VERDICT: no record needs a fresh signature — the attest step would not refuse. "
+            "Whether an unattended run can name a reviewer is the other half; see `reviewers`."
+        )
+    return lines
+
+
+async def _attest_plan() -> None:
+    """Print what an attest run would do to each record, deciding nothing.
+
+    **Read-only. Writes nothing, grants nothing, attests nothing.** Unlike
+    `attest-bootstrap` it does not call `grant_catalog_reviewer`, so it needs no
+    reviewer at all — there is no principal to name because nothing is signed.
+
+    It exists because the refused set was unknowable without causing the refusal.
+    `attest-bootstrap` computes it, prints it, and exits non-zero having already
+    written every record it did not refuse; `sync-bootstrap` does that in the
+    middle of a production deploy. So "which records need a signature" — the exact
+    question a human has to answer before the sync can be switched on — could only
+    be answered by running the thing that is blocked on the answer.
+
+    Resolution is by `upstream_identity` rather than through the import ledger, so
+    this works before the current manifest has ever been imported. That is not a
+    second reconciliation rule: `_advance_item` sets `resulting_artifact_id` from
+    this same lookup, so for a record the current batch has already staged both
+    paths name one artifact. Before the import they diverge only in that the
+    ledger has nothing to name yet.
+
+    The answer is stable across an import, which is what makes it safe to act on
+    later: `latest_license_claim_hash` reads assertions across all versions, and
+    staging a new version writes no assertion. Only an attest run moves it.
+    """
+    authority = CatalogAuthority.from_env()
+    authority.require_configured()
+    scope = authority.importer_scope()
+    source = BootstrapManifestSource()
+    policy = AttestationPolicy.load()
+    plan = _bootstrap_plan(source, policy)
+
+    engine = engine_from_env()
+    factory = session_factory(engine)
+    previous_claims: dict[str, str | None] = {}
+    unimported: list[str] = []
+    try:
+        # One session for the whole read, unlike `_attest_bootstrap`'s session per
+        # record: that one commits per record and must not hold a transaction open
+        # across the corpus, and this one writes nothing.
+        #
+        # One session is not one snapshot. The engine runs at PostgreSQL's default
+        # READ COMMITTED, so each statement here takes a fresh snapshot and a
+        # concurrent attest run could land between two of these reads — the report
+        # would then describe a state the database was never wholly in. That is
+        # accepted rather than fixed with REPEATABLE READ, because the coherence
+        # is not what makes the output safe to act on: `--re-attest` refuses
+        # unless the named set equals the refused set exactly, in both
+        # directions, so a plan that has gone stale makes the real run refuse
+        # rather than wave anything through. Buying a snapshot would buy a
+        # tidier-looking list and no additional protection, and it would be the
+        # only isolation-level override in the codebase.
+        async with factory() as session:
+            for record in plan.included:
+                identity = record.upstream_identity
+                existing = await catalog.find_staged_artifact_by_upstream_identity(
+                    scope, session, authority=authority, upstream_identity=identity
+                )
+                if existing is None:
+                    unimported.append(identity)
+                    previous_claims[identity] = None
+                    continue
+                artifact, _version = existing
+                previous_claims[identity] = await catalog.latest_license_claim_hash(
+                    scope, session, artifact.id, authority=authority
+                )
+    finally:
+        await engine.dispose()
+
+    # `requested=None` is the normal-run classification and the only one this
+    # command can honestly report. Accepting `--re-attest` here would turn the
+    # both-directions reconciliation into something an operator could rehearse
+    # against until it went green, which is the brute-force path the flag's
+    # named-identities design exists to close.
+    decision = plan_re_attestation(plan.included, previous_claims, None)
+    for line in format_attest_plan_report(decision, unimported=unimported):
+        print(line)
+
+
 async def _attest_bootstrap(
     attested_by: uuid.UUID, re_attest: frozenset[str] | None = None
 ) -> None:
@@ -859,6 +994,7 @@ def main() -> None:
         choices=(
             "provision",
             "reviewers",
+            "attest-plan",
             "bootstrap-import",
             "attest-bootstrap",
             "publish-bootstrap",
@@ -928,6 +1064,9 @@ def main() -> None:
         return
     if args.command == "reviewers":
         asyncio.run(_report_reviewers())
+        return
+    if args.command == "attest-plan":
+        asyncio.run(_attest_plan())
         return
 
     # Resolved once, before any of the three reviewer commands run. Doing it
