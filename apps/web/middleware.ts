@@ -9,6 +9,9 @@ import { isPublicDemoEnabled } from "./lib/public-demo";
 const PUBLIC_PATHS = [
   "/",
   "/auth/callback",
+  // Same-origin observable entrypoint and its error subtree. Requiring a
+  // session here would make starting a session impossible by definition.
+  "/auth/sign-in",
   // Logout must remain reachable after the session cookie is gone; the route
   // itself makes the operation idempotent for already-signed-out visitors.
   "/auth/sign-out",

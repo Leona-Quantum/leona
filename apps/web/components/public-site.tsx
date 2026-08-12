@@ -4,6 +4,7 @@ import { getMajoranaAuth, getMajoranaSignInUrl, isMajoranaAuthConfigured } from 
 import { PUBLIC_SHELL_COPY, type PublicLocale } from "../lib/public-locale";
 import { getPublicLocale } from "../lib/public-locale-server";
 import { LanguageToggle } from "./language-toggle";
+import { SignInLink } from "./sign-in-link";
 import { ThemeToggle } from "./theme-toggle";
 import { CONTACT_EMAIL, CONTACT_MAILTO } from "../lib/public-contact";
 
@@ -96,9 +97,19 @@ export async function PublicSite({
               {copy.actions.signOut}
             </a>
           ) : null}
-          <a className="mj-public-nav-primary" href={primaryAction.href}>
-            {primaryAction.label}
-          </a>
+          {!user && signInHref ? (
+            <SignInLink
+              className="mj-public-nav-primary"
+              href={primaryAction.href}
+              pendingLabel={resolvedLocale === "ja" ? "サインインを開いています…" : "Opening sign in…"}
+            >
+              {primaryAction.label}
+            </SignInLink>
+          ) : (
+            <a className="mj-public-nav-primary" href={primaryAction.href}>
+              {primaryAction.label}
+            </a>
+          )}
         </header>
 
         {children}

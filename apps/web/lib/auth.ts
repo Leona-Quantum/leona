@@ -7,6 +7,8 @@ import {
 } from "@workos-inc/authkit-nextjs";
 import { isWorkosAuthConfigured } from "./auth-config";
 import { isLocalDevAuthEnabled, LOCAL_DEV_ACCESS_TOKEN } from "./local-dev-auth";
+import { safeReturnTo } from "./return-to";
+import { majoranaSignInPath } from "./sign-in";
 import { siteOrigin } from "./site-origin";
 
 const LOCAL_DEV_AUTH: UserInfo = {
@@ -43,11 +45,12 @@ export async function getMajoranaAuth(options?: { ensureSignedIn?: boolean }) {
 }
 
 export async function getMajoranaSignInUrl(): Promise<string> {
-  if (isLocalDevAuthEnabled()) return "/run";
-  // Keep the post-AuthKit destination explicit at the call site as well as in
-  // the callback route. This avoids falling back to a stale caller/default
-  // pathname when a user starts sign-in from a public page.
-  return getSignInUrl({ returnTo: "/run" });
+  return majoranaSignInPath("/run");
+}
+
+/** Called only after an explicit click reaches the same-origin sign-in route. */
+export async function getMajoranaAuthorizationUrl(returnTo: string): Promise<string> {
+  return getSignInUrl({ returnTo: safeReturnTo(returnTo) });
 }
 
 export function isMajoranaAuthConfigured(): boolean {

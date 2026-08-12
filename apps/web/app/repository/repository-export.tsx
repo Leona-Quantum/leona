@@ -1,6 +1,7 @@
 "use client";
 
 import { useState } from "react";
+import { SignInLink } from "../../components/sign-in-link";
 import type { PublicLocale } from "../../lib/public-locale";
 
 const COPY: Record<PublicLocale, {
@@ -16,6 +17,7 @@ const COPY: Record<PublicLocale, {
   contact: string;
   error: string;
   starBoundary: string;
+  openingSignIn: string;
 }> = {
   en: {
     adding: "Adding…",
@@ -30,6 +32,7 @@ const COPY: Record<PublicLocale, {
     contact: "Contact Leona Quantum ↗",
     error: "The entry could not be added to your workspace.",
     starBoundary: "This public Atlas star is not copied with the entry; the private copy starts unstarred.",
+    openingSignIn: "Opening sign in…",
   },
   ja: {
     adding: "追加中…",
@@ -44,6 +47,7 @@ const COPY: Record<PublicLocale, {
     contact: "Leona Quantumに問い合わせる ↗",
     error: "この資料をワークスペースに追加できませんでした。",
     starBoundary: "Atlasで付けたスターは、追加したコピーには引き継がれません。",
+    openingSignIn: "サインインを開いています…",
   },
 };
 
@@ -114,7 +118,13 @@ export function RepositoryExportAction({
             </p>
             <p className="mj-repository-dialog-note">{copy.starBoundary}</p>
             {signInHref ? (
-              <a className="mj-primary-button" href={signInHref}>{copy.signIn}</a>
+              <SignInLink
+                className="mj-primary-button"
+                href={signInHref}
+                pendingLabel={copy.openingSignIn}
+              >
+                {copy.signIn}
+              </SignInLink>
             ) : (
               <p className="mj-repository-dialog-note">{copy.unavailable}</p>
             )}

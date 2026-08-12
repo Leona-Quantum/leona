@@ -3,6 +3,36 @@ import test from "node:test";
 import { readFileSync } from "node:fs";
 import { fileURLToPath } from "node:url";
 import { siteOrigin } from "./site-origin.ts";
+import { majoranaSignInPath, signInFailurePath } from "./sign-in.ts";
+
+test("sign-in starts on this deployment rather than at the provider", () => {
+  assert.equal(majoranaSignInPath(), "/auth/sign-in?returnTo=%2Frun");
+  assert.equal(
+    majoranaSignInPath("/repository?q=qft#result"),
+    "/auth/sign-in?returnTo=%2Frepository%3Fq%3Dqft%23result",
+  );
+});
+
+test("sign-in return paths fail closed against open redirects", () => {
+  for (const unsafe of [
+    "https://evil.example/collect",
+    "//evil.example/collect",
+    "/\\evil.example/collect",
+    "javascript:alert(1)",
+  ]) {
+    assert.equal(majoranaSignInPath(unsafe), "/auth/sign-in?returnTo=%2Frun");
+  }
+});
+
+test("the failure page carries bounded diagnostics and a safe retry target", () => {
+  assert.equal(
+    signInFailurePath("provider_unavailable", "request-123", "/studio?artifact=abc"),
+    "/auth/sign-in/error?reason=provider_unavailable&requestId=request-123&returnTo=%2Fstudio%3Fartifact%3Dabc",
+  );
+  const path = signInFailurePath("not_configured", "x".repeat(100), "https://evil.example");
+  assert.match(path, /requestId=x{64}/);
+  assert.match(path, /returnTo=%2Frun/);
+});
 
 test("the origin comes off the configured sign-in callback", () => {
   assert.equal(
