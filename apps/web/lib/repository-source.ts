@@ -17,7 +17,7 @@
 // 2026-08-12. The corpus was 342 and rising, and the database lags the committed
 // corpus by one catalog sync, so for any record edited since the last sync the two
 // sides carry *different content* and nothing in the response says which one the
-// visitor got. Found in production: #466 changed a provenance label on 32 records, was
+// visitor got. Found in production: PR 466 changed a provenance label on 32 records, was
 // merged and deployed, and the public page kept serving the old label because the
 // database had not been synced — a fallback justified by an equality that no longer
 // held, which is the exact shape of silent-stale-read this comment block exists to
