@@ -8,10 +8,36 @@
 // would create a second unauthenticated surface for no gain.
 //
 // Fallback policy: if the API is unreachable or returns nothing usable, fall back
-// to the static corpus rather than 500 the public site. That is safe precisely
-// because both sides are the same 283 records (owner decision 2026-07-19) — the
-// visitor sees identical content either way. It is logged loudly because a silent
-// fallback would make a broken cutover look like a working one.
+// to the static corpus rather than 500 the public site. It is logged loudly because
+// a silent fallback would make a broken cutover look like a working one.
+//
+// **The two sides are NOT interchangeable, and the justification that said they were
+// has been removed.** It read: "safe precisely because both sides are the same 283
+// records — the visitor sees identical content either way." Both halves were false by
+// 2026-08-12. The corpus was 342 and rising, and the database lags the committed
+// corpus by one catalog sync, so for any record edited since the last sync the two
+// sides carry *different content* and nothing in the response says which one the
+// visitor got. Found in production: #466 changed a provenance label on 32 records, was
+// merged and deployed, and the public page kept serving the old label because the
+// database had not been synced — a fallback justified by an equality that no longer
+// held, which is the exact shape of silent-stale-read this comment block exists to
+// warn about.
+//
+// What is actually true, and what makes the fallback still the right default:
+//
+//   - The DB copy is AUTHORITATIVE when present. It is the reviewed, attested,
+//     published corpus; the static barrel is the source the manifest is generated
+//     from, one sync upstream of it.
+//   - They agree only immediately after a sync. `deploy.yml`'s `sync the published
+//     catalog` step runs on every deploy (ADR-0019, live since 2026-08-12), so the
+//     window is normally one deploy — but it is a window, not zero.
+//   - Falling back therefore serves content that may be NEWER than the database, not
+//     older. That is the direction that makes it tolerable: a reader gets the
+//     committed corpus, which is what the next sync will publish anyway.
+//
+// So the fallback is a availability trade with a known, bounded divergence — not the
+// no-op the old sentence claimed. Do not restore an equality claim here; if you need
+// the two sides to agree, the thing to check is whether the sync ran, not this file.
 //
 // Server-only by convention, not by the `server-only` package (not a workspace
 // dependency): the only importers are server components and route handlers. The
@@ -174,7 +200,28 @@ export async function getRepositoryEntry(slug: string): Promise<PublicRepository
   // not 404 a record that genuinely exists; a slug in neither is undefined, and
   // the caller turns that into a real notFound().
   const parsed = payload === null ? null : parseCatalogEntries([payload]).entries[0] ?? null;
-  return parsed ?? PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
+  const fallback = PUBLIC_REPOSITORY_ENTRIES.find((entry) => entry.slug === slug);
+  // Logged, like both list paths above, and it is the one that most needed it.
+  //
+  // A miss HERE is narrower than "the API is down": the service can be perfectly
+  // healthy and still not publish this one record, because it is unattested,
+  // refused, or not yet imported. That is a per-record silent stale read — the
+  // page renders fine, from the committed corpus, and nothing anywhere says the
+  // published copy is missing.
+  //
+  // Cost of not logging it, measured: `bernstein-vazirani-qiskit` served a
+  // superseded citation while two equally-refused siblings served corrected ones,
+  // and working out why took eliminating a CDN cache, a stale build, a duplicate
+  // slug and the `prod` branch. One line here would have named it immediately.
+  if (!parsed && fallback) {
+    console.error(
+      `[repository-source] falling back to the static corpus for ${slug}: ` +
+        "the API did not serve this record. It is not necessarily unhealthy — an " +
+        "unattested, refused or unimported record is absent from the published " +
+        "catalog, and this page is now showing the committed corpus instead.",
+    );
+  }
+  return parsed ?? fallback;
 }
 
 /**
@@ -182,9 +229,11 @@ export async function getRepositoryEntry(slug: string): Promise<PublicRepository
  * or null when there is no estimate to show.
  *
  * **Null has no static fallback, on purpose.** Every other reader here falls
- * back to the committed corpus when the API is unreachable, which is safe
- * because both sides hold the same 283 records — the visitor sees identical
- * content either way. An estimate is not content: it is derived by the
+ * back to the committed corpus when the API is unreachable, which is tolerable
+ * because the corpus is the source the database is synced *from* — a reader gets
+ * content that is at worst one sync ahead of what is published (see the module
+ * header; the two sides are not identical and the claim that they were has been
+ * removed). An estimate is not content: it is derived by the
  * estimation package from the entry's circuit, that package is Python, and the
  * web build has no second implementation of it. A TypeScript reimplementation
  * living here is exactly the drift the estimator's own module comment warns
@@ -213,9 +262,12 @@ export async function getRepositoryEstimate(slug: string): Promise<RepositoryEst
  * Every published entry's cost under ONE assumption set, or null.
  *
  * One request rather than one per card — not only for the obvious reason, but
- * because 283 independently-parameterised responses is the shape in which a
- * client ends up ranking rows costed under different assumptions without ever
- * deciding to. The identity arrives once, on the container.
+ * because one independently-parameterised response per record is the shape in
+ * which a client ends up ranking rows costed under different assumptions without
+ * ever deciding to. The identity arrives once, on the container.
+ *
+ * Stated without a record count deliberately: the corpus has been 283, 323 and 342
+ * this year and the argument does not depend on the number.
  */
 export async function getRepositoryEstimates(): Promise<RepositoryEstimateList | null> {
   if (!isPublicCatalogApiEnabled()) return null;
