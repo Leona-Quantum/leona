@@ -10,6 +10,7 @@ import {
   WHEEL_LINE_HEIGHT_PX,
   WHEEL_ZOOM_SENSITIVITY,
   WHEEL_ZOOM_STEP_LIMIT,
+  cameraMode,
   centerOn,
   clampZoom,
   createCanvasGesture,
@@ -412,6 +413,33 @@ test("centerOn puts the target's content centre at the box centre — verified i
   const contentY = (target.top + target.height / 2 - view.y) / view.z;
   assert.ok(Math.abs(landed.x + landed.z * contentX - box.width / 2) < 1e-9);
   assert.ok(Math.abs(landed.y + landed.z * contentY - box.height / 2) < 1e-9);
+});
+
+test("expanding holds the reader's zoom even when the click also selects what it opened", () => {
+  // **The case production caught after the first fix shipped, pinned here so it
+  // cannot come back.**
+  //
+  // The first rule asked whether the SELECTION was unchanged, on the premise
+  // that an open href carries no `sel=`. `converge-layout.ts` writes none — but
+  // `toggleHref` composes one through `nextSel`, so opening a line also selects
+  // it. Measured on production with `probe-camera-recenter.mjs`: the first
+  // toggle took the camera **1 → 2.5** (`SELECTION_ZOOM_MAX`) with the "fix"
+  // deployed. The predicate is the open set, and only the open set.
+  assert.equal(
+    cameraMode({ mounted: true, layoutKey: "a" }, { layoutKey: "a,b" }),
+    "keep",
+    "expanding re-framed the camera — this is exactly what e6585b asks not to happen",
+  );
+  assert.equal(
+    cameraMode({ mounted: true, layoutKey: "a,b" }, { layoutKey: "a" }),
+    "keep",
+    "contracting re-framed the camera",
+  );
+  // W16 survives: a pure selection change still frames what the reader picked.
+  assert.equal(cameraMode({ mounted: true, layoutKey: "a" }, { layoutKey: "a" }), "fit");
+  // And the first fly of a page frames, because arriving on a link is choosing.
+  assert.equal(cameraMode({ mounted: false, layoutKey: null }, { layoutKey: "a" }), "fit");
+  assert.equal(cameraMode({ mounted: false, layoutKey: null }, { layoutKey: null }), "fit");
 });
 
 test("a toggle recenters at the reader's own zoom, and a new selection still frames", () => {
