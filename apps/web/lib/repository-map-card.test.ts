@@ -887,7 +887,10 @@ test("every declared absence reaches a reader, in both locales", () => {
       }
     }
   }
-  // Non-vacuous, and the floor is the six merged in #452 across both locales.
+  // Non-vacuous, and the floor is the six declarations the graph carries, across
+  // both locales. (Written "PR 452" rather than with a hash: check-raw-hex reads
+  // a three-digit PR reference as a colour literal, which is how this landed a
+  // red `ts` job the first time.)
   assert.ok(declared >= 12, `${declared} declarations checked, fewer than the 12 that exist`);
   // The two locales must not be one string — the failure a paired field has, and
   // the one an English-only read cannot see.
