@@ -57,10 +57,39 @@ export type CardGap = "none-recorded" | "no-field-yet";
 export type CardValue<T> = { readonly held: true; readonly value: T } | {
   readonly held: false;
   readonly gap: CardGap;
+  /**
+   * Why the field is empty, in this locale, when the record says so.
+   *
+   * **A gap note that says nothing is what this replaces.** `noneFound` — the
+   * owner's own *"none found yet"* — is right when nobody has looked, and it is
+   * the wrong sentence on a record where somebody looked at every source and
+   * wrote down what they found. `backward-euler` has an implementations entry
+   * for exactly that reason: Dong, Li and Xue set the off-diagonal Padé cases
+   * aside two sections before their first experiment. A reader seeing "None
+   * found yet." there is being told the opposite of what the record knows.
+   *
+   * Read off `LayerMethod.absences`, which validation has already proved is only
+   * ever set on a field that is genuinely empty — so this can never contradict a
+   * value beside it.
+   */
+  readonly reason?: string;
 };
 
 const held = <T,>(value: T): CardValue<T> => ({ held: true, value });
-const missing = <T,>(gap: CardGap): CardValue<T> => ({ held: false, gap });
+const missing = <T,>(gap: CardGap, reason?: string): CardValue<T> =>
+  reason === undefined ? { held: false, gap } : { held: false, gap, reason };
+
+/**
+ * The declared reason for a field being empty, in the card's locale.
+ *
+ * Keyed exactly as an author writes it — `cost`, `example.text` — so the lookup
+ * and the declaration cannot drift apart into two spellings of one field name.
+ */
+function absenceOf(method: LayerMethod, field: string, ja: boolean): string | undefined {
+  const absence = method.absences?.[field];
+  if (absence === undefined) return undefined;
+  return ja ? absence.reasonJa : absence.reason;
+}
 
 /**
  * A value that is present only when it is non-empty.
@@ -328,6 +357,17 @@ export interface CardRefinementEntry {
 /** A worked example, its pseudocode, or both. */
 export interface CardExample {
   readonly text: string | null;
+  /**
+   * Why there is no worked run, when the record says so — the half of
+   * `absences` that a section-level gap note can never reach.
+   *
+   * **Four of the graph's first six declared absences are exactly this case**,
+   * and all four were invisible until this field existed: a method with
+   * pseudocode and no prose has a HELD Example section, so the section-level gap
+   * note never draws and the reason had nowhere to go. The pseudocode was
+   * hiding the account of the missing half.
+   */
+  readonly textReason: string | null;
   readonly pseudocode: string | null;
 }
 
@@ -663,7 +703,11 @@ function exampleOf(method: LayerMethod, ja: boolean): CardValue<CardExample> {
   // Pseudocode is not localised — see `MethodExample.pseudocode`. It is the same
   // block in both locales on purpose, because its identifiers are the record's
   // own symbols and a translated listing is a second one that drifts.
-  return held({ text: text ?? null, pseudocode: example.pseudocode ?? null });
+  return held({
+    text: text ?? null,
+    textReason: text ? null : (absenceOf(method, "example.text", ja) ?? null),
+    pseudocode: example.pseudocode ?? null,
+  });
 }
 
 /**
@@ -752,7 +796,13 @@ function implementationsOf(
   }
 
   const entries = [...authored, ...joined];
-  if (entries.length === 0) return missing("none-recorded");
+  // The declared reason applies to the AUTHORED half only, and the join is
+  // checked first for that reason: a record that supplies a runnable variant has
+  // filled the section by another route, so a reason saying "no cited paper
+  // implements this" would be true and beside the point.
+  if (entries.length === 0) {
+    return missing("none-recorded", absenceOf(method, "implementations", ja));
+  }
   return held(entries);
 }
 
