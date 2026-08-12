@@ -368,8 +368,19 @@ async def _attest_plan() -> None:
     try:
         # One session for the whole read, unlike `_attest_bootstrap`'s session per
         # record: that one commits per record and must not hold a transaction open
-        # across the corpus, and this one writes nothing. It also makes the answer
-        # one state of the database rather than 323 of them.
+        # across the corpus, and this one writes nothing.
+        #
+        # One session is not one snapshot. The engine runs at PostgreSQL's default
+        # READ COMMITTED, so each statement here takes a fresh snapshot and a
+        # concurrent attest run could land between two of these reads — the report
+        # would then describe a state the database was never wholly in. That is
+        # accepted rather than fixed with REPEATABLE READ, because the coherence
+        # is not what makes the output safe to act on: `--re-attest` refuses
+        # unless the named set equals the refused set exactly, in both
+        # directions, so a plan that has gone stale makes the real run refuse
+        # rather than wave anything through. Buying a snapshot would buy a
+        # tidier-looking list and no additional protection, and it would be the
+        # only isolation-level override in the codebase.
         async with factory() as session:
             for record in plan.included:
                 identity = record.upstream_identity
