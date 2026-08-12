@@ -169,11 +169,75 @@ export const CONVERGE_METRICS = {
    * as the circles at the ends, met at a finer grain, and drawing it at the same
    * size would say the inside of one lane is as big a claim as the figure it
    * sits in.
+   *
+   * 6 until issue 22. It is added to a chain arm as `innerReach`, so it is
+   * paid once per level of nesting on every chain — one pixel is −344px of
+   * summed saturated height, the cheapest vertical pixel here after
+   * `labelBand`. Still visibly smaller than `stateRadius`, which is the whole
+   * claim the number carries.
    */
-  innerStateRadius: 6,
-  /** Half a top-level strand's thickness, at its thickest point. */
+  innerStateRadius: 5,
+  /**
+   * ## The tolerances, cut — issue 22, and where it stopped
+   *
+   * > *"the whole map can be compressed in its expanded state as well. it is
+   * > unnecessarily long and tall with too much space in between everywhere.
+   * > shorted things so they are just a little wider than the actual labels,
+   * > tendons used as buffers, much less horizontal and vertical tolerance
+   * > between things."*
+   * > — owner, issue 22
+   *
+   * Four numbers moved: `labelPad` 18 → 8, `margin` 34 → 18,
+   * `innerStateRadius` 6 → 5 and `spineBand` 22 → 19. Over all 46
+   * figure-locales:
+   *
+   *     saturated  summed width   27,832 -> 25,327  (-9.0%)
+   *     saturated  summed height  21,477 -> 19,593  (-8.8%)
+   *     saturated  tallest figure  1,946 ->  1,840
+   *     shut       summed width   16,759 -> 14,395  (-14.1%)
+   *     shut       summed height  12,979 -> 11,499  (-11.4%)
+   *     shut       tallest figure    499 ->    467
+   *
+   * ## **The vertical cut was measured, built, and then taken back out**
+   *
+   * A sensitivity sweep put the height in `labelBand` (−828px for three
+   * pixels), `laneGap` and `strandHalf`, and a combined cut —
+   * `labelBand` 13 → 10, `laneGap` 6 → 5, `strandHalf` 9 → 8,
+   * `labelLift` 7 → 6, with `laneBow` brought along — passed **all 88 layout
+   * invariants**, including both name-overlap sweeps, and took a further
+   * ~200px off the tallest saturated figure.
+   *
+   * It is not here, because on the **rendered page** it put
+   * *"QSVT matrix inversion"* 2.2px into *"HHL"* on the shut
+   * `quantum-linear-solve` figure. Measured against the real `next/font` face
+   * through a browser, not against the estimator.
+   *
+   * **The reason is a modelling gap, and it is the finding worth keeping.**
+   * The overlap invariants model a drawn name as `laneFont` tall — 12px — and
+   * a 12px name draws about **15px** of ink box. `NamePlate` already knows
+   * this: it sizes its cover 17px tall and its comment records measuring 15.2px
+   * for a Japanese name. So the engine believes it has three pixels it does
+   * not have, and the margin on that pair was **0.6px before this unit** — the
+   * cut did not create the tightness, it spent the last of it.
+   *
+   * Two lanes are close there because a leaf reserves no name band (issue 17's
+   * `dropsNameBand`, correctly — its name is inside its own line) while its
+   * neighbour's name hangs down into exactly that space. The honest fix is to
+   * teach the sweeps the rendered height and give an inside-name lane the
+   * clearance a neighbour's name actually needs; that is layout work with its
+   * own measurements, and doing it buys the whole vertical cut back. Recorded
+   * rather than taken, and the four numbers above are the part that is safe
+   * today: none of them changes how close two names sit.
+   */
+  /** Half a top-level strand's thickness, at its thickest point. Part of the
+   *  vertical cut issue 22 measured and did not take — see the block above. */
   strandHalf: 9,
-  /** Room beside a strand for its own name. */
+  /** Room beside a strand for its own name.
+   *
+   *  13, and the single most expensive tolerance on the canvas — the sweep
+   *  measured −828px of summed saturated height for three pixels off it,
+   *  because every lane at every depth reserves it on both sides. See the
+   *  block above for why it is still 13. */
   labelBand: 13,
   /**
    * Between two sibling strands.
@@ -214,10 +278,29 @@ export const CONVERGE_METRICS = {
    * is the point of having it.
    */
   laneBow: 50,
-  /** Shortest a bundle may be drawn before its labels are considered. */
+  /** Shortest a bundle may be drawn before its labels are considered.
+   *  Left at 150 through issue 22: the sweep measured 110 and 90 at −28px of
+   *  summed width between them, which is one figure's rounding. It binds on
+   *  almost nothing, and a floor that binds on nothing is not where the width
+   *  is. */
   minSpan: 150,
-  /** Slack either side of a lane's label. */
-  labelPad: 18,
+  /**
+   * Slack either side of a lane's label — **the box, minus the label**.
+   *
+   * 18 until issue 22, and this is the owner's *"shorted things so they are
+   * just a little wider than the actual labels"* in one number: a column is
+   * `need + hRun + 2·labelPad` before its tendons, so this is literally how
+   * much wider than its own name a belly is drawn. Ten pixels off it is
+   * **−923px of summed saturated width** and costs no label a character —
+   * `hFit` is the *measured* demand and is untouched, so the room a name is
+   * fitted into is exactly where it was. Confirmed on the rendered page rather
+   * than inferred: 0 machine-cut names on six figures, shut and opened.
+   *
+   * 8 and not less because it is also the clearance between a name and the
+   * tendon that starts where the belly ends; below that a long name in a
+   * short column reads as touching the taper.
+   */
+  labelPad: 8,
   /**
    * The widest a name may make its column, in px. Past this the name is cut and
    * the full text stays in the `<title>`.
@@ -244,15 +327,32 @@ export const CONVERGE_METRICS = {
    * drives it with a fixture rather than waiting for the graph to grow into it.
    */
   labelCap: 300,
-  /** Room above and below the whole fan. */
-  margin: 34,
+  /**
+   * Room above and below the whole fan — and around it.
+   *
+   * 34 until issue 22, and it is the largest single line of that cut:
+   * **−1,288px on both axes at once**, because it is added twice per figure in
+   * each direction over 46 figure-locales. On the figures a reader arrives on
+   * that was 68 of 250 vertical pixels — the whitespace was a quarter of the
+   * drawing.
+   *
+   * It is not "between things", which is what the owner asked to cut, so it is
+   * held at a value that still reads as a frame rather than taken to zero. The
+   * canvas-containment invariants are what bound it below: every shape and
+   * every name has to stay inside `width`/`height`, and a name at the first or
+   * last circle is what runs out of room first.
+   */
+  margin: 18,
   /** Read from `process-layout.ts`, which is also what `validateLayerGraph`
    *  measures a `shortLabel` against. One writer: a second copy of this number
    *  would let the lint accept a short form the map then draws too wide. */
   laneFont: LANE_FONT_PX,
   stateFont: 12,
   captionFont: 13,
-  /** A lane's label sits this far off its own edge. */
+  /** A lane's label sits this far off its own edge. One pixel off it is
+   *  −152px of summed saturated height and it is paid on the shut figures too,
+   *  so it is the second-cheapest vertical pixel here — and it is part of the
+   *  vertical cut issue 22 measured and did not take. See `labelBand`. */
   labelLift: 7,
   /**
    * The loop glyph: a drawn circular arrow after the name of a lane a route
@@ -297,8 +397,18 @@ export const CONVERGE_METRICS = {
    *
    * Reserved by `allocateBowsAroundSpine`, which both `measure` and `place`
    * call — one number, two uses, never two derivations.
+   *
+   * 22 until issue 22, for −320px of summed saturated height. **This one is
+   * in the shipped cut** where the rest of the vertical set is not, because it
+   * is the band an opened line keeps for its own name down the middle of its
+   * own fan — it does not change how close two *neighbouring* names sit, which
+   * is what the rendered overlap turned on. Its own
+   * derivation above is `spineStroke/2 + labelLift + laneFont·0.8` = 2 + 6 +
+   * 9.6 = 17.6, and it is held at 19 rather than 18 for the reason the
+   * original note gives: the band must not be exactly the text bounding box.
+   * The 12px Japanese names are why the extra pixel and a half is not spent.
    */
-  spineBand: 22,
+  spineBand: 19,
   /**
    * How much thinner a strand gets per level of nesting.
    *
