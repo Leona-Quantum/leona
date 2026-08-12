@@ -463,6 +463,76 @@ test("an outstanding verdict names the paper that produced it, because it is a l
   });
 });
 
+test("a declared absence is checked every way it can be false except the one that matters", () => {
+  // **What this replaces is a `//` comment.** This graph already carries careful
+  // accounts of honest absences — `backward-euler`'s `cost` says so in the field,
+  // `koopman-linearization`'s says so in a comment above it — and no machine could
+  // tell either from a field nobody had looked at. So a region could only be
+  // declared closed by a human reading the file.
+  //
+  // Three of the four rules are enforceable and are enforced here. The fourth —
+  // that the reason names what was READ — is review's, and it is the one that
+  // matters most: "not stated" is the absent field with extra words.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      method("accounted", "solve", {
+        absences: { cost: { reason: "the source proves it only for k >= 3", reasonJa: "出典は k >= 3 の場合しか示していません" } },
+      }),
+      method("explains-a-filled-field", "solve", {
+        cost: "$O(n)$",
+        costJa: "$O(n)$",
+        absences: { cost: { reason: "r", reasonJa: "r" } },
+      }),
+      method("not-declarable", "solve", {
+        absences: { entries: { reason: "r", reasonJa: "r" } },
+      }),
+      method("half-translated", "solve", {
+        absences: { conditions: { reason: "r", reasonJa: "  " } },
+      }),
+    ],
+  };
+  const errors = validateLayerGraph(graph, new Set<string>(), NARROWING, NO_DISPOSITIONS);
+  // A reason beside a FILLED field is the second copy that drifts the first time
+  // either is edited.
+  assert.ok(
+    errors.some((e) => e.includes("explains-a-filled-field") && e.includes("not empty")),
+    `expected a filled-field error, got ${JSON.stringify(errors)}`,
+  );
+  // A field a source could never supply is not a field an absence can account
+  // for — `entries` is about the corpus, not about any paper.
+  assert.ok(errors.some((e) => e.includes("not-declarable") && e.includes("absences names entries")));
+  // Half the readers cannot read half a reason.
+  assert.ok(errors.some((e) => e.includes("half-translated") && e.includes("empty reason")));
+  // And the honest one passes.
+  assert.ok(!errors.some((e) => e.includes("accounted:")), `the valid declaration was rejected: ${JSON.stringify(errors)}`);
+});
+
+test("a field whose every gap is declared is CLOSED, and one open gap is enough to reopen it", () => {
+  // The verdict the gauge could not reach before. Per FIELD rather than one
+  // boolean, because the fields are not the same kind of gap — "the region is
+  // closed" is a claim about each of them separately, and collapsing them is the
+  // same substitution the no-percentage rule above refuses.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      method("filled", "solve", { cost: "$O(n)$", costJa: "$O(n)$", conditions: "c", conditionsJa: "c" }),
+      method("declared", "solve", {
+        conditions: "c",
+        conditionsJa: "c",
+        absences: { cost: { reason: "no source states one", reasonJa: "出典にありません" } },
+      }),
+      method("open", "solve", { cost: "$O(n)$", costJa: "$O(n)$" }),
+    ],
+  };
+  const region = regionClosure(graph, FIXTURE_STATES, ["solve"], new Map());
+  assert.deepEqual(region.declaredAbsences.get("cost"), ["declared"]);
+  // `cost` is closed: one method carries it, one declares why it does not.
+  assert.ok(region.closedFields.includes("cost"));
+  // `conditions` is NOT: `open` neither carries it nor accounts for it.
+  assert.ok(!region.closedFields.includes("conditions"));
+});
+
 test("a region's fields are counted apart, and a blank one is not counted at all", () => {
   // Per field, never averaged. `MethodExample`'s own doc comment draws the line
   // this refuses to cross: pseudocode is transcribable from the record and a
