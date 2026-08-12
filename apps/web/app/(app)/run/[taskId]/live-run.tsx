@@ -1081,7 +1081,7 @@ function FinalOutput({
             {result.trust.tone === "ok" ? "✓" : "–"}
           </span>
           <span className="mj-run-final-output-heading-copy">
-            <span>{accepted ? locale === "ja" ? "成果物" : "Deliverable" : locale === "ja" ? "結果を保持" : "Result preserved"}</span>
+            <span>{accepted ? locale === "ja" ? "結果とコード" : "Result and code" : locale === "ja" ? "確認できる結果" : "Result preserved"}</span>
             <strong>{heading}</strong>
           </span>
         </summary>
@@ -1222,7 +1222,7 @@ function SimulationResult({ event, locale }: { event: WireEvent; locale: PublicL
           <pre className="mj-run-live-result-json">{JSON.stringify(result, null, 2)}</pre>
         ) : (
           <p className="mj-run-live-empty-result">
-            {locale === "ja" ? "この記録は構造化シミュレーション値に対応していません。実行診断は以下で確認できます。" : "This replay predates structured simulation values. Runtime diagnostics remain below."}
+            {locale === "ja" ? "この結果には数値の詳細が含まれていません。実行の状態は以下で確認できます。" : "This replay predates structured simulation values. Runtime diagnostics remain below."}
           </p>
         )}
       </section>
@@ -1395,12 +1395,12 @@ function ResourceStage({ event }: { event: WireEvent }) {
 
 function ActivityEmptyDetail({ state, locale }: { state: AgentActivityState; locale: PublicLocale }) {
   const copy = state === "active"
-    ? locale === "ja" ? "処理を続けています。新しい証拠が記録されると、ここに表示されます。" : "Work is continuing. New evidence will appear here when it is recorded."
+    ? locale === "ja" ? "処理を続けています。新しい確認結果が出ると、ここに表示されます。" : "Work is continuing. New evidence will appear here when it is recorded."
     : state === "error"
-      ? locale === "ja" ? "詳細な証拠を記録する前に、この処理は停止しました。" : "This operation stopped before detailed evidence was recorded."
+      ? locale === "ja" ? "詳しい確認結果が出る前に、この処理は停止しました。" : "This operation stopped before detailed evidence was recorded."
       : state === "warn"
-        ? locale === "ja" ? "記録された証拠が限定された状態で、この処理は完了しました。" : "This operation completed with limited recorded evidence."
-        : locale === "ja" ? "この処理には追加の詳細が記録されていません。" : "No additional detail was recorded for this operation.";
+        ? locale === "ja" ? "確認できる情報が限られた状態で、この処理は完了しました。" : "This operation completed with limited recorded evidence."
+        : locale === "ja" ? "この処理には追加の詳細がありません。" : "No additional detail was recorded for this operation.";
   return (
     <div className="mj-run-live-active-copy">
       {state === "active" ? <span className="mj-run-live-pulse" aria-hidden="true" /> : null}
@@ -1458,9 +1458,9 @@ function CodeActivityDetail({
       {detail.attempts.length > 1 || bestEffort?.candidates_considered ? (
         <div className="mj-run-attempt-history">
           <div className="mj-run-activity-section-head">
-            <strong>{locale === "ja" ? "修正履歴" : "Repair history"}</strong>
+            <strong>{locale === "ja" ? "コードの更新履歴" : "Repair history"}</strong>
             {bestEffort?.candidates_considered ? (
-              <span>{bestEffort.candidates_considered}{locale === "ja" ? "件の候補を検討" : " candidates considered"}</span>
+              <span>{bestEffort.candidates_considered}{locale === "ja" ? "通りを確認" : " candidates considered"}</span>
             ) : null}
           </div>
           {detail.attempts.length ? (
@@ -1470,7 +1470,7 @@ function CodeActivityDetail({
                   <span aria-hidden="true">
                     {attempt.state === "done" ? "✓" : attempt.state === "error" ? "×" : "–"}
                   </span>
-                  <strong>{locale === "ja" ? "リビジョン" : "Revision"} {attempt.revision}</strong>
+                  <strong>{locale === "ja" ? "更新版" : "Revision"} {attempt.revision}</strong>
                   <small>{attempt.status}</small>
                 </li>
               ))}
@@ -1484,15 +1484,15 @@ function CodeActivityDetail({
       <section>
         <div className="mj-run-activity-section-head mj-run-code-section-head">
           <div>
-            <strong>{locale === "ja" ? "候補コード" : "Candidate source"}</strong>
-            {selectedRevision ? <span>{locale === "ja" ? "リビジョン" : "Revision"} {selectedRevision}</span> : null}
+            <strong>{locale === "ja" ? "実行用コード" : "Candidate source"}</strong>
+            {selectedRevision ? <span>{locale === "ja" ? "更新版" : "Revision"} {selectedRevision}</span> : null}
           </div>
           <div className="mj-run-code-actions">
             {detail.attempts.length > 1 ? (
               <label>
-                <span className="sr-only">{locale === "ja" ? "表示するコードリビジョン" : "Displayed code revision"}</span>
+                <span className="sr-only">{locale === "ja" ? "表示するコードの更新版" : "Displayed code revision"}</span>
                 <select
-                  aria-label={locale === "ja" ? "表示するコードリビジョン" : "Displayed code revision"}
+                  aria-label={locale === "ja" ? "表示するコードの更新版" : "Displayed code revision"}
                   value={selectedIndex ?? ""}
                   onChange={(event) => {
                     selectionTouched.current = true;
@@ -1502,7 +1502,7 @@ function CodeActivityDetail({
                 >
                   {detail.attempts.map((attempt) => (
                     <option key={`${attempt.revision}-${attempt.eventIndex}`} value={attempt.eventIndex}>
-                      {locale === "ja" ? "リビジョン" : "Revision"} {attempt.revision} · {attempt.status}
+                      {locale === "ja" ? "更新版" : "Revision"} {attempt.revision} · {attempt.status}
                     </option>
                   ))}
                 </select>
@@ -1619,12 +1619,12 @@ function VerificationActivityDetail({
         const methodLabels = locale === "ja" ? VERIFICATION_METHOD_LABEL_JA : VERIFICATION_METHOD_LABEL;
         const label = event.method && methodLabels[event.method]
           ? methodLabels[event.method]
-          : locale === "ja" ? `検証: ${event.method ?? "確認"}` : `Verification: ${event.method ?? "check"}`;
+          : locale === "ja" ? `確認: ${event.method ?? "確認"}` : `Verification: ${event.method ?? "check"}`;
         return (
           <VerificationRow event={event} key={`${event.seq ?? index}-${event.method ?? "check"}`} label={label} locale={locale}>
             {event.details ? (
               <details className="mj-run-verification-evidence">
-                <summary>{locale === "ja" ? "証拠" : "Evidence"}</summary>
+                <summary>{locale === "ja" ? "確認内容" : "Evidence"}</summary>
                 <EventRecord value={event.details} />
               </details>
             ) : null}
@@ -1638,7 +1638,7 @@ function VerificationActivityDetail({
         </VerificationRow>
       ) : null}
       {strict ? (
-        <VerificationRow event={strict} label={locale === "ja" ? "厳密な採用レビュー" : "Strict acceptance review"} locale={locale}>
+        <VerificationRow event={strict} label={locale === "ja" ? "追加の確認" : "Strict acceptance review"} locale={locale}>
           <StrictVerificationStage event={strict} />
         </VerificationRow>
       ) : null}
@@ -1687,8 +1687,8 @@ const FINALIZE_LABEL_JA: Record<string, string> = {
   "sandbox.result": "最終シミュレーション",
   "baseline.result": "参照ベースラインとの比較",
   "run.analysis": "結果分析",
-  "artifact.saved": "結果パッケージを作成",
-  "run.best_effort": "利用可能な最良候補を保持",
+  "artifact.saved": "Result package created",
+  "run.best_effort": "確認用に最良の結果を保持",
 };
 
 function finalizeState(event: WireEvent): "done" | "warn" | "error" {
@@ -1701,8 +1701,8 @@ function finalizeStatus(event: WireEvent, locale: PublicLocale): string {
   if (event.type === "run.best_effort") return locale === "ja" ? "不採用" : "Not accepted";
   if (event.not_applicable_reason) return locale === "ja" ? "対象外" : "Not applicable";
   if (event.type === "sandbox.result") return event.exit_code === 0 ? locale === "ja" ? "合格" : "Passed" : locale === "ja" ? "失敗" : "Failed";
-  if (event.type === "artifact.saved") return locale === "ja" ? "パッケージ済み" : "Packaged";
-  if (event.type === "code.finalized" && event.revision) return `${locale === "ja" ? "リビジョン" : "Revision"} ${event.revision}`;
+  if (event.type === "artifact.saved") return locale === "ja" ? "保存済み" : "Packaged";
+  if (event.type === "code.finalized" && event.revision) return `${locale === "ja" ? "更新版" : "Revision"} ${event.revision}`;
   return locale === "ja" ? "完了" : "Complete";
 }
 

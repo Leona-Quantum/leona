@@ -2163,8 +2163,42 @@ def _apply_trusted_task_reference(plan: Plan, task_prompt: str) -> Plan:
     if terms is None or plan.algorithm is not Algorithm.VQE:
         return plan
     thresholds = plan.verification_plan.thresholds if plan.verification_plan is not None else None
+    custom = dict(plan.parameters.custom or {})
+    custom.update(
+        {
+            "hamiltonian_terms": [
+                {"pauli": pauli, "coefficient": coefficient} for coefficient, pauli in terms
+            ],
+            "report_convention": "total_energy",
+            "nuclear_repulsion_energy_Ha": 0.7199689,
+        }
+    )
+    convention_note = (
+        "Server convention (must override any conflicting draft wording): report the "
+        "H2 total ground-state energy including nuclear repulsion, using the total-energy "
+        "Hamiltonian above; the target is approximately -1.1373061 Hartree, not the "
+        "electronic-only value -1.8572750 Hartree."
+    )
+    problem_summary = plan.problem_summary
+    if convention_note not in problem_summary:
+        problem_summary = f"{problem_summary.rstrip()}\n\n{convention_note}"
+    algorithm_rationale = plan.algorithm_rationale
+    if convention_note not in algorithm_rationale:
+        algorithm_rationale = f"{algorithm_rationale.rstrip()} {convention_note}"
+    success_criteria = plan.success_criteria.model_copy(
+        update={
+            "additional_notes": [
+                *(plan.success_criteria.additional_notes or []),
+                convention_note,
+            ]
+        }
+    )
     return plan.model_copy(
         update={
+            "problem_summary": problem_summary,
+            "algorithm_rationale": algorithm_rationale,
+            "parameters": plan.parameters.model_copy(update={"custom": custom}),
+            "success_criteria": success_criteria,
             "verification_plan": VerificationPlan(
                 methods=[VerificationMethod.EXACT_DIAG],
                 reference_method="server_owned_task_reference",
@@ -2172,7 +2206,7 @@ def _apply_trusted_task_reference(plan: Plan, task_prompt: str) -> Plan:
                     PauliTerm(coefficient=coefficient, pauli=pauli) for coefficient, pauli in terms
                 ],
                 thresholds=thresholds,
-            )
+            ),
         }
     )
 
@@ -2236,7 +2270,15 @@ def _reconcile_exact_diag_success_criteria(plan: Plan) -> SimplePortResult[Plan]
         and exact > float(upper)
         and not math.isclose(exact, float(upper), rel_tol=1e-12, abs_tol=1e-12)
     )
-    criteria_updates: dict[str, Any] = {"additional_notes": None}
+    # Drop model-authored notes, but preserve the server-owned convention note
+    # injected for trusted task references so later stages cannot reintroduce a
+    # conflicting electronic-vs-total energy interpretation.
+    server_notes = [
+        note
+        for note in (plan.success_criteria.additional_notes or [])
+        if isinstance(note, str) and note.startswith("Server convention (must override")
+    ]
+    criteria_updates: dict[str, Any] = {"additional_notes": server_notes or None}
     if outside:
         criteria_updates["expected_range"] = None
     reconciled_verification = verification.model_copy(

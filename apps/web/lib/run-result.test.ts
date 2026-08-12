@@ -123,6 +123,25 @@ test("a successful run leads with what it produced, not with a verdict", () => {
   assert.equal(result.code?.source, "print('bell')");
 });
 
+test("a generated final explanation replaces the short deterministic fallback", () => {
+  const explanation = [
+    "H2の基底状態エネルギーは **-1.137 Ha** でした。",
+    "VQEで試行状態を最適化し、隔離されたシミュレータ上で期待値を評価しました。",
+    "次は厳密対角化の基準値と比較すると、誤差を定量的に確認できます。",
+  ].join("\n\n");
+  const result = runResultFromEvents(
+    succeeded([
+      { type: "sandbox.result", result: { energy_Ha: -1.137 } } as OutcomeEvent,
+      { type: "run.analysis", interpretation: explanation } as OutcomeEvent,
+    ]),
+    null,
+    "ja",
+  );
+
+  assert.equal(result?.summary, explanation);
+  assert.doesNotMatch(result?.summary ?? "", /ご依頼に基づく成果物/);
+});
+
 test("scalar values are reported in the order the plan promised them", () => {
   const result = runResultFromEvents([
     { type: "run.queued", mode: "execute" },
