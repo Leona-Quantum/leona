@@ -21,6 +21,33 @@
  * Required contexts are read from branch protection rather than hardcoded, so this does
  * not become a second copy of that list that drifts from the first.
  *
+ * ## Why BEHIND is still swept by hand, and will be
+ *
+ * Two repository settings were put to the owner as the way to stop sweeping this board
+ * (github.com/EshMis/ai-ops/issues/20, 2026-08-12). Where they landed:
+ *
+ * **`allow_update_branch` is ON** — verified against the API, not assumed. What it buys
+ * is smaller than the issue that asked for it claimed. It does **not** keep branches up
+ * to date; GitHub's own wording is that people with write permission "always have the
+ * ability, on the pull request page, to update a pull request's head branch when it's not
+ * up to date" — where before it was offered only when strict protection was already
+ * blocking. Always-available button, still a button. `gh pr update-branch` per PR remains
+ * the move, and the line this script prints for a BEHIND PR is still the whole answer.
+ *
+ * **The merge queue cannot be turned on here, and it is not a setting anyone mislaid.**
+ * The owner replied *"i cant find this setting"*, and the reason is that it is not
+ * rendered: merge queue is available in public repositories owned by an **organization**,
+ * or in private repositories under GitHub Enterprise Cloud. `EshMis/majorana` is public
+ * but owned by a **user** account, so no branch-protection rule and no ruleset on it can
+ * carry one. Nothing to click, on any plan, at any price — the fix is a repository
+ * transfer to an organization, which is the owner's call and is asked on that issue
+ * rather than assumed here.
+ *
+ * So the 122-test-runs-on-side-branches night this board was written for is not something
+ * a switch fixes. What reduces it is merge ORDER (the overlap section below) and arming
+ * `gh pr merge --auto` so a PR lands the moment it goes green, rather than waiting for
+ * whoever is awake to notice.
+ *
  * Usage: node scripts/pr-queue.mjs [--base dev] [--self-test]
  */
 
