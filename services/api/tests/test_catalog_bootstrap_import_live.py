@@ -231,7 +231,10 @@ async def test_a_second_import_under_the_production_key_is_a_no_op(env):
 
     async with factory() as session:
         first = await catalog_import.create_import_job(
-            scope, session, authority=authority, source=source,
+            scope,
+            session,
+            authority=authority,
+            source=source,
             idempotency_key=source.idempotency_key,
         )
         await session.commit()
@@ -243,7 +246,10 @@ async def test_a_second_import_under_the_production_key_is_a_no_op(env):
     # Second deploy. Same key, so this resumes rather than creating a new batch.
     async with factory() as session:
         second = await catalog_import.create_import_job(
-            scope, session, authority=authority, source=source,
+            scope,
+            session,
+            authority=authority,
+            source=source,
             idempotency_key=source.idempotency_key,
         )
         await session.commit()
