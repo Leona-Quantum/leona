@@ -5,6 +5,7 @@ import {
   FLY_DURATION_MS,
   IDENTITY,
   KEYBOARD_ZOOM_FACTOR,
+  cameraMode,
   centerOn,
   createCanvasGesture,
   easeInOutCubic,
@@ -218,11 +219,12 @@ export function InfiniteCanvas({
   } | null>(null);
   const cancelFlyRef = useRef<(() => void) | null>(null);
   /**
-   * The `selKey` the camera last acted on, so a toggle can be told from a new
-   * selection. `null` on mount, which makes the first fly a `fit` — arriving on
-   * a `?sel=` link IS choosing what to look at.
+  /**
+   * The `layoutKey` the camera last acted on. `null` on mount, which keeps the
+   * first fly a `fit` — arriving on a link IS choosing what to look at.
    */
-  const lastSelKeyRef = useRef<string | null>(null);
+  const lastLayoutKeyRef = useRef<string | null>(null);
+  const mountedRef = useRef(false);
 
   // --- ?at= sync: debounced, replaceState only, every other param kept -----
   const isFirstRender = useRef(true);
@@ -570,10 +572,31 @@ export function InfiniteCanvas({
   // Which of the two keys moved, decided before the settle timer so the answer
   // is the navigation that actually happened rather than whatever the refs hold
   // by the time the camera measures.
-  const zoomMode: "fit" | "keep" = selKey !== null && selKey === lastSelKeyRef.current ? "keep" : "fit";
+  // **The open set is what decides this, not the selection — and that correction
+  // came from the read-back, not from review.**
+  //
+  // The first version asked "is `selKey` unchanged?", on the stated premise that
+  // an open href carries no `sel=`. That premise was false and the check that
+  // produced it was aimed at the wrong file: `converge-layout.ts` writes no
+  // `sel=`, but `toggleHref` composes one through `nextSel` in
+  // `canvas-selection.ts` — opening a line also selects it, which is the right
+  // behaviour and exactly what made the guard miss. Measured on production
+  // afterwards with `probe-camera-recenter.mjs`: the first toggle still took the
+  // camera from **1 → 2.5** (`SELECTION_ZOOM_MAX`), which is the defect
+  // `e6585b` names, on the merged "fix".
+  //
+  // So the question is the one the owner actually asked — *did the reader
+  // expand or contract something?* If the open set moved, it is a toggle and the
+  // camera recenters at their zoom, whatever the selection did alongside it. A
+  // pure selection change (`layoutKey` steady) still frames, which is W16.
+  const zoomMode = cameraMode(
+    { mounted: mountedRef.current, layoutKey: lastLayoutKeyRef.current },
+    { layoutKey },
+  );
   useEffect(() => {
-    lastSelKeyRef.current = selKey;
-  }, [selKey]);
+    lastLayoutKeyRef.current = layoutKey;
+    mountedRef.current = true;
+  }, [selKey, layoutKey]);
   useEffect(() => {
     if (selKey === null) return;
     const el = rootRef.current;
