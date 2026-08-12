@@ -1200,7 +1200,7 @@ html[lang="ja"] .mj-company-hero-title-line {
 }
 .mj-run-follow-ups-heading strong {
   color: var(--text-1);
-  font-size: var(--fs-20);
+  font-size: var(--fs-16);
   font-weight: 500;
 }
 .mj-run-follow-ups-list {
@@ -1217,7 +1217,7 @@ html[lang="ja"] .mj-company-hero-title-line {
   color: var(--text-1);
   cursor: pointer;
   font: inherit;
-  font-size: var(--fs-16);
+  font-size: var(--fs-14);
   line-height: 1.35;
   text-align: left;
 }
