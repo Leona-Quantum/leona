@@ -2346,63 +2346,47 @@ test("a chain's column holds every step's own demand, and each step is cut the p
   );
 });
 
-test("every shared circle that qualifies for a caption is drawn with one", () => {
-  // **This test exists because a compaction removed the feature and every
-  // other guard stayed green.** W19 PR-2 gives a shared circle the state's own
-  // authored name — the owner's *"each composite process has its own name"* —
-  // drawn when the `--shared` predicate holds at depth 0 and there is a clear
-  // side to draw it on. The resolver drops the caption when there is not, which
-  // is the honest behaviour and also a silent one.
+test("a state is never given a drawn name — only a hover tooltip", () => {
+  // > *"states never have visible labels, only hover tooltips."*
+  // > — owner, issue 17
   //
-  // Vertical compaction took the clearance away without meaning to: the lanes
-  // nearest the base were being held off it by a `labelBand` reserved for names
-  // that are written *inside* their own lines, so removing that band closed the
-  // caption's side. Measured then: **75 of 88 eligible circles down to 64**,
-  // across `time-discretization`, `hamiltonian-recasting`, `qsp-phase-factors`,
-  // `polynomial-approximation` and `state-preparation`. Nothing failed. The
-  // browser sweep went from 279 tests to 269 and still said `passed`.
+  // Two tests stood here and both were about the caption W19 PR-2 drew over a
+  // shared circle: one held a floor at 75 of 88 eligible circles, the other
+  // pinned the text, the anchor and the plate's fit. The ruling reverses their
+  // subject, so this replaces both — and it is the shape of guard those two
+  // asked for, because the failure they were built around is a feature leaving
+  // the page in silence. A caption that comes back has a field to come back
+  // on, and the field is what this refuses.
   //
-  // The clearance is now `captionBand()`, asked for by name at the figure's own
-  // base the way `spineBand` is asked for at an opened lane's bone — and with
-  // it every eligible circle draws, which is 13 more than the geometry this
-  // replaced managed.
-  //
-  // **If this trips: a caption lost its side, and the answer is the clearance,
-  // not this bar.** Print says which circle; `captionBand` is where the room
-  // comes from.
-  let drawn = 0;
-  let eligible = 0;
-  const dropped: string[] = [];
+  // **The name itself is not gone**, which is the half that would be a
+  // regression rather than the ruling: every state still carries its authored
+  // label, and `Hub` writes it into the `<title>` and the `aria-label`. So
+  // this checks both — nothing drawn, and the string still there to hover.
+  let states = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const locale of ["en", "ja"] as const) {
       const diagram = openDiagram(focus.id, openableAddresses(focus.id), locale);
       for (const state of diagram.states) {
-        // The class's own predicate, not a restatement of the resolver's.
-        if (state.depth !== 0) continue;
-        if (state.arriving <= 1 && state.leaving <= 1) continue;
-        eligible += 1;
-        if (state.caption !== null) drawn += 1;
-        else dropped.push(`${focus.id} (${locale}) ${state.stateId}`);
+        states += 1;
+        // A drawn caption needed five fields to place it. Reading them off the
+        // object is what a re-introduction cannot do quietly: a caption is a
+        // string with an x, a y, an anchor and a width, and none of the five
+        // exists.
+        for (const gone of ["caption", "captionX", "captionY", "captionAnchor", "captionWidth"]) {
+          assert.ok(
+            !(gone in state),
+            `${focus.id} (${locale}): ${state.stateId} carries ${gone} — a state is drawing a name again`,
+          );
+        }
+        assert.ok(
+          state.label.length > 0,
+          `${focus.id} (${locale}): ${state.stateId} has no label to hover`,
+        );
       }
     }
   }
-  console.log(`[captions] ${drawn} of ${eligible} eligible shared circles draw their own name`);
-  // Not vacuous: a corpus with no shared circle at depth 0 would pass a floor
-  // while asserting nothing about captions at all.
-  assert.ok(eligible >= 40, `only ${eligible} eligible shared circles — this measured nothing`);
-  // **A floor at what the drawing already achieves, not at what it could.** 75
-  // is the count before and after the vertical compaction, measured both ways;
-  // 88 — every eligible circle — is reachable and is parked as a decision the
-  // owner takes, because the clearance that buys it moves the figure's own
-  // through-line off its axis (see `dropsNameBand`, and OWNER_TODO `03ea5b`).
-  //
-  // So this bar answers one question: **did a caption stop being drawn?** Raise
-  // it when the count rises; never lower it to make a change fit.
-  assert.ok(
-    drawn >= 75,
-    `${dropped.length} shared circle(s) lost their caption (${drawn} drawn, was 75): `
-      + `${dropped.slice(0, 6).join(", ")}${dropped.length > 6 ? ` (+${dropped.length - 6} more)` : ""}`,
-  );
+  // Not vacuous, and the shared circles are the population that had captions.
+  assert.ok(states >= 100, `only ${states} circles swept`);
 });
 
 test("a name written inside its own line is not given a second band beside it", () => {
@@ -2856,110 +2840,6 @@ test("the all-at-once pair earns no loop and the marcher earns one (W19)", () =>
       );
     }
   }
-});
-
-test("a shared circle wears the convergence's own name (W19 PR-2)", () => {
-  // The owner: *"we can definitely find a better way to visualize how several
-  // things converge in a step, but then each composite process has its own
-  // name."* The shared circle gains the state's authored name; every lane
-  // keeps its own; nothing is coined. Concrete first: on the linear-ODE
-  // figure the two terminals are where five ways part and meet, and both
-  // spans are wide, so the caption is the label VERBATIM — a cut here would
-  // be a regression in the figure the complaint names.
-  // Verbatim on the SATURATED figure, whose spans are wide; merely present on
-  // the shut landing figure, whose ~150px spans cut the name to an honest
-  // ellipsis with the full label still in the `<title>` — the same two-tier
-  // claim every drawn name on this canvas already lives under.
-  for (const locale of ["en", "ja"] as const) {
-    const saturated = openDiagram("linear-ode-solve", openableAddresses("linear-ode-solve"), locale)
-      .states.filter((state) => state.depth === 0);
-    for (const state of saturated) {
-      const meets = state.arriving > 1 || state.leaving > 1;
-      if (!meets) {
-        assert.equal(state.caption, null, `${state.key} (${locale}) captions without convergence`);
-      } else if (state.caption !== null) {
-        assert.equal(state.caption, state.label, `${state.key} (${locale}) caption cut when saturated`);
-      }
-    }
-    assert.ok(
-      saturated.some((state) => state.caption !== null),
-      `(${locale}) the resolver dropped every caption on the figure the complaint names`,
-    );
-    assert.ok(
-      openDiagram("linear-ode-solve", [], locale).states.some((state) => state.caption !== null),
-      `(${locale}) the landing figure draws no caption at all`,
-    );
-  }
-  // Then the caption as a text population, over every figure, opening and
-  // locale: never on an inner circle (their 1/1 counts are literal), never
-  // outside the canvas, never over a lane's name, never over another caption,
-  // and its width is the engine's own measurement.
-  type Box = { key: string; x0: number; x1: number; y0: number; y1: number };
-  const collide = (a: Box, b: Box) =>
-    a.x0 < b.x1 - EPS && b.x0 < a.x1 - EPS && a.y0 < b.y1 - EPS && b.y0 < a.y1 - EPS;
-  let drawn = 0;
-  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    for (const locale of ["en", "ja"] as const) {
-      for (const open of openings(focus.id)) {
-        const diagram = openDiagram(focus.id, open, locale);
-        const captions: Box[] = [];
-        for (const state of diagram.states) {
-          if (state.caption === null) continue;
-          drawn += 1;
-          assert.equal(state.depth, 0, `${state.key}: an inner circle drew a caption`);
-          assert.ok(
-            state.arriving > 1 || state.leaving > 1,
-            `${state.key} (${focus.id}, ${locale}) captions without convergence`,
-          );
-          assert.ok(
-            Math.abs(state.captionWidth - estimateTextWidth(state.caption, CONVERGE_METRICS.stateFont)) < EPS,
-            `${state.key}: captionWidth is not the engine's own measurement`,
-          );
-          const x0 =
-            state.captionAnchor === "start"
-              ? state.captionX
-              : state.captionAnchor === "end"
-                ? state.captionX - state.captionWidth
-                : state.captionX - state.captionWidth / 2;
-          const box = { key: state.key, x0, x1: x0 + state.captionWidth, y0: state.captionY - 12, y1: state.captionY + 3 };
-          assert.ok(
-            box.x0 >= -EPS && box.x1 <= diagram.width + EPS && box.y0 >= -EPS,
-            `${state.key} (${focus.id}, ${locale}): caption leaves the canvas`,
-          );
-          captions.push(box);
-        }
-        const names: Box[] = diagram.lanes
-          .filter((lane) => lane.label !== "")
-          .map((lane) => ({
-            key: lane.key,
-            x0: lane.labelX - lane.labelWidth / 2,
-            // Widened by the glyph's room where one follows the name — the
-            // resolver's own arithmetic, through the same one writer.
-            x1: lane.labelX + lane.labelWidth / 2 + loopAllowance(lane),
-            y0: lane.labelY - CONVERGE_METRICS.laneFont,
-            y1: lane.labelY,
-          }));
-        for (const caption of captions) {
-          for (const name of names) {
-            assert.ok(
-              !collide(caption, name),
-              `${focus.id} (${locale}): caption ${caption.key} overlaps name ${name.key}`,
-            );
-          }
-        }
-        for (let i = 0; i < captions.length; i += 1) {
-          for (let j = i + 1; j < captions.length; j += 1) {
-            assert.ok(
-              !collide(captions[i]!, captions[j]!),
-              `${focus.id} (${locale}): captions ${captions[i]!.key} and ${captions[j]!.key} overlap`,
-            );
-          }
-        }
-      }
-    }
-  }
-  assert.ok(drawn > 0, "no caption reached any figure — the feature draws nowhere");
-  console.log(`[hub caption census] ${drawn} captions drawn across every figure, opening and locale`);
 });
 
 test("every declared refinement is drawn on the lane of the method that declares it", () => {
