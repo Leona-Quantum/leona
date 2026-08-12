@@ -1087,9 +1087,19 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
       return card.kind === "method" && card.example.held ? (
         <>
           {card.example.value.text ? (
-            <p>
-              <MathText source={card.example.value.text} />
-            </p>
+            <>
+              <p>
+                <MathText source={card.example.value.text} />
+              </p>
+              {/* Whose run it is, and what kind. All three runs in the graph are
+                  classical simulations, and a section headed "Example" with numbers
+                  under it reads as "this ran on a quantum computer" unless the card
+                  says otherwise. Reuses the metadata line the card already has rather
+                  than inventing a style for one sentence. */}
+              {card.example.value.runNote ? (
+                <p className="mj-card-run-note">{card.example.value.runNote}</p>
+              ) : null}
+            </>
           ) : card.example.value.textReason ? (
             /* **The account of the missing half, which the section-level gap note
                can never reach.** A method with pseudocode and no prose has a HELD

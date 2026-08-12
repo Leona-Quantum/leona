@@ -565,34 +565,84 @@ export interface HopNote {
   theoryJa?: string;
 }
 
+/**
+ * Where a worked example's run is reported.
+ *
+ * Not free text, and not a citation of its own: `paper` must be a url this method
+ * **already cites**, so a run cannot arrive with a source the rest of the record
+ * has never heard of, and the paper-register rules that already police citations
+ * cover this too rather than being re-implemented here.
+ */
+export interface MethodExampleRun {
+  /** One of this method's own `citations` urls. */
+  paper: string;
+  /** Where in it — a section, table, figure or example number. */
+  at: string;
+  /**
+   * What was actually run. `simulation` is a classical numerical computation,
+   * `hardware` a quantum device, `analytic` a worked instance carried through by
+   * hand. All three of today's runs are `simulation`, and saying so is the point:
+   * a reader must not read "worked example" as "this ran on a quantum computer".
+   */
+  kind: "simulation" | "hardware" | "analytic";
+}
+
 /** A worked example, its pseudocode, or both. See `LayerMethod.example`. */
 export interface MethodExample {
   /**
-   * Prose: an example of running it. Absent when nobody has written one.
+   * Prose describing **a run of this method that somebody did**. Absent when
+   * nobody has written one — which the card renders as not filled in yet.
    *
-   * ## A filled field may carry a negative result, and `cost` is the precedent
+   * ## This field used to allow a negative account, and the owner ruled it out
    *
-   * The first seven of these were authored 2026-08-12 and three of the seven say
-   * *there is no run*. That is deliberate and it is not a loophole: `cost` has
-   * done exactly this since session 122 — `backward-euler`'s reads *"No verified
-   * source states an end-to-end cost for a pure backward-Euler encoding, and the
-   * field says so"*, and then names the nearest treatment and why it does not
-   * apply. It is a filled field whose content is an absence with its evidence.
+   * Fifteen of these were authored 2026-08-12 and twelve of them said *there is
+   * no run of this method*, then described what the source does contain instead.
+   * The argument for that was real and is worth keeping on the record: a card
+   * saying "none written yet" sends a reader to the paper hunting for a run that
+   * is not there, while a paragraph saying *the only numerics measure the
+   * condition number of the assembled system, at dimensions 15 to 100* saves the
+   * trip and is itself a finding. It leaned on `cost`, which has carried
+   * evidenced absences since session 122.
    *
-   * The alternative is worse for the reader in a way that is easy to miss. A
-   * card saying "none written yet" sends someone to the paper to look for a run
-   * that is not there; a paragraph saying *the only numerics measure the
-   * condition number of the assembled system, at dimensions 15 to 100, and fix
-   * no discretisation at all* saves the trip and is itself the finding. Both are
-   * honest; only one is useful.
+   * He was asked and said no:
    *
-   * **The rule that keeps it from becoming a loophole:** a negative account must
-   * name what the source *does* contain and why that is not a run of this
-   * method. "No example yet" as a sentence is not a filled field — it is the
-   * absent field with extra words, and it should simply be absent.
+   * > *"many of these methods definitely do have other papers with runs. so they
+   * > can stay as no implementation has been filled in yet, and papers remain
+   * > filling in wherever they actually apply in the cards."*
+   * > — owner, github.com/EshMis/ai-ops/issues/19, 2026-08-12
+   *
+   * The reasoning behind that is the part the earlier argument missed. A negative
+   * account is a claim about **one paper**, written into a field a reader takes
+   * as a claim about **the method** — and for most of these the method does have
+   * a run somewhere, in a paper this record has not cited yet. So the paragraph
+   * that was meant to save a trip was quietly closing a door: it reads as *this
+   * method has never been run*, which is a stronger and usually false statement.
+   * Empty says the true thing, which is that nobody has filled it in.
+   *
+   * ## Why `run` exists, rather than a sentence in a doc comment
+   *
+   * The old rule — *a negative account must name what the source does contain* —
+   * lived here, in prose, and twelve records satisfied it. A rule with no guard
+   * is one refactor from gone, and this one had already produced the outcome it
+   * was written to prevent. So the shape enforces it now: `text` cannot be
+   * written without `run`, and `run` has to name a paper **this method already
+   * cites** and a place inside it. There is no paper reporting a run that does
+   * not exist, so a negative account is not merely discouraged — it is
+   * unwritable.
+   *
+   * `cost` keeps its evidenced absences and is untouched. The two fields are not
+   * the same shape: a cost is a property of the construction, so "no source
+   * states one" is a fact about the literature as a whole, while a worked example
+   * is an event somebody performed, and its absence in one paper says nothing
+   * about whether it happened.
    */
   text?: string;
   textJa?: string;
+  /**
+   * The run `text` describes. Required whenever `text` is present, and the reason
+   * `text` cannot carry a negative account. See the comment on `text`.
+   */
+  run?: MethodExampleRun;
   /**
    * Pseudocode, as a plain block. **Not localised, and that is deliberate.**
    * The identifiers are the record's own symbols and the keywords are the
@@ -2575,6 +2625,35 @@ export function validateLayerGraph(
       }
       if (node.example.text === undefined && node.example.pseudocode === undefined) {
         errors.push(`${node.id}: example records nothing — omit it instead`);
+      }
+      // The owner's #19 ruling, as a rule rather than a paragraph: prose in this
+      // field describes a run somebody did, and a run has a place in a paper. A
+      // negative account has no paper to name, which is what makes this a gate
+      // and not a request. See the comment on `MethodExample.text`.
+      if (node.example.text !== undefined && node.example.run === undefined) {
+        errors.push(
+          `${node.id}: example.text without example.run — this field is for a run somebody did, `
+          + "and a run names where it is reported. If the source has no run of this method, "
+          + "leave the field out; the card then says nobody has filled it in, which is the "
+          + "true statement (github.com/EshMis/ai-ops/issues/19)",
+        );
+      }
+      const run = node.example.run;
+      if (run !== undefined) {
+        if (node.example.text === undefined) {
+          errors.push(`${node.id}: example.run with no example.text — a citation describing nothing`);
+        }
+        if (run.at.trim() === "") {
+          errors.push(`${node.id}: example.run names no place in ${run.paper} — a whole paper is not a run`);
+        }
+        // Against the method's own citations, not against a global register: a run
+        // sourced from a paper this record does not cite is a claim the rest of the
+        // record cannot support, and it would slip past a register lookup.
+        if (!(node.citations ?? []).some((citation) => citation.url === run.paper)) {
+          errors.push(
+            `${node.id}: example.run cites ${run.paper}, which is not one of this method's citations`,
+          );
+        }
       }
     }
 

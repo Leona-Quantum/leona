@@ -778,24 +778,53 @@ test("the first pseudocode is on the map, and it is the sentences its own record
   );
   assert.equal(node.repeats, undefined, "the step this loop bound was keyed to is back");
   assert.ok(node.conditions?.includes("T/h"), "the loop bound moved");
-  // **The half-filled shape, and it MOVED rather than being deleted.** The point this
-  // assertion has always made is that a card can hold pseudocode with no prose — the
-  // owner's "populate on demand" only works if the easy half ships without the hard
-  // half. It was pinned here because `backward-euler` was the only populated `example`
-  // in the graph; as of 2026-08-12 this record carries prose too (a negative account:
-  // Dong, Li and Xue's numerics are diagonal Padé at order nine and this method is the
-  // $(0,1)$ approximant they set aside two sections earlier).
+  // **The half-filled shape, and this record is back in it.** The point this assertion
+  // has always made is that a card can hold pseudocode with no prose — the owner's
+  // "populate on demand" only works if the easy half ships without the hard half.
   //
-  // So the subject moves to a record still in that shape rather than the guarantee being
-  // dropped — a guard whose subject is gone is a guard that has stopped guarding, which
-  // is the same rule the paragraph above applied when `repeats` was removed. If the day
-  // comes that NO method is half-filled, this fails and somebody decides deliberately
-  // whether that shape still needs proving.
-  assert.ok(text !== null && text.length > 0, "backward-euler's example prose went missing");
+  // For a few hours on 2026-08-12 `backward-euler` also carried prose, and it was a
+  // negative account: Dong, Li and Xue's numerics are diagonal Padé at order nine and
+  // this method is the $(0,1)$ approximant they set aside two sections earlier. The
+  // owner then ruled that the field is for runs only (EshMis/ai-ops#19) — because a
+  // negative account is a claim about one paper written where a reader takes it as a
+  // claim about the method, and most of these methods do have a run in a paper this
+  // record has not cited. So the prose came off, and this record is the half-filled
+  // subject again.
+  assert.equal(text, null, "backward-euler carries example prose — #19 ruled this field runs-only");
   const halfFilled = cardFor(input, "chebyshev-lcu-inversion");
   assert.ok(halfFilled?.kind === "method" && halfFilled.example.held);
   assert.ok(halfFilled.example.value.pseudocode !== null, "the half-filled subject lost its listing");
   assert.equal(halfFilled.example.value.text, null);
+  // **And the fully-filled shape still exists**, on one of the three genuine runs, so
+  // "a card can hold both" stays a checked claim rather than one nothing exercises. A
+  // guard whose subject is gone is a guard that has stopped guarding — the same rule
+  // the `repeats` paragraph above applied — and dropping this alongside the prose would
+  // have left the both-halves path with no witness at all.
+  const bothHalves = cardFor(input, "eigenstate-filtering-inversion");
+  assert.ok(bothHalves?.kind === "method" && bothHalves.example.held);
+  assert.ok(bothHalves.example.value.pseudocode !== null, "the both-halves subject lost its listing");
+  assert.ok(
+    (bothHalves.example.value.text ?? "").length > 0,
+    "no method carries example prose any more — if that is deliberate, this guard needs a new subject or a deletion",
+  );
+  // **And the run says whose it is, and what kind.** `example.run` was added to make a
+  // negative account unwritable, and it would do that job as validation data that
+  // renders nowhere — which is how the fact a reader most needs stays invisible. All
+  // three runs in the graph are classical simulations, and an "Example" section with
+  // numbers under it reads as a quantum execution unless the card says otherwise.
+  assert.equal(
+    bothHalves.example.value.runNote,
+    "Classical simulation · Section 4.3, Figure 2 of arXiv:1910.14596",
+  );
+  // A record with no prose has no provenance line to draw — the two are required
+  // together, so a line under nothing would mean the validator had been bypassed.
+  assert.equal(halfFilled.example.value.runNote, null);
+  const bothHalvesJa = cardFor({ ...input, locale: "ja" }, "eigenstate-filtering-inversion");
+  assert.ok(bothHalvesJa?.kind === "method" && bothHalvesJa.example.held);
+  assert.equal(
+    bothHalvesJa.example.value.runNote,
+    "古典計算機によるシミュレーション・arXiv:1910.14596 Section 4.3, Figure 2",
+  );
   // Pseudocode is not localised: its identifiers are the record's own symbols, and a
   // translated listing is a second one that drifts from the first.
   const ja = cardFor({ ...input, locale: "ja" }, "backward-euler");
