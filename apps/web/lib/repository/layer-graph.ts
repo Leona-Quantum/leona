@@ -8501,6 +8501,74 @@ export const LAYER_GRAPH: LayerGraph = {
   },
   {
     kind: "method",
+    id: "tetris-adapt-ansatz",
+    label: "TETRIS-ADAPT-VQE ansatz",
+    labelJa: "TETRIS-ADAPT-VQE アンザッツ",
+    shortLabel: "TETRIS-ADAPT",
+    shortLabelJa: "TETRIS-ADAPT",
+    summary: "Keep ADAPT's habit of growing the ansatz from measured gradients, and stop adding one operator per round. Several operators acting on disjoint qubits can go in together, filling the same layer instead of stacking — the same circuit, packed rather than piled.",
+    summaryJa: "測定した勾配からアンザッツを育てるという ADAPT のやり方はそのままに、1 周につき 1 演算子という制限をやめます。互いに素な量子ビットに作用する複数の演算子は同時に加えることができ、積み上げるのではなく同じ層に詰め込まれます。回路は同じでも、積まれ方が違います。",
+    realizes: "ansatz-construction",
+    conditions: "Anastasiou et al. describe the change as lifting exactly one rule: this is \"a modified version of the ADAPT-VQE algorithm in which the one-operator-at-a-time rule is lifted to allow for the addition of multiple operators with disjoint supports in each iteration\". What it buys is stated without a number and with its limits named — the result is \"denser but significantly shallower circuits, without increasing the number of CNOT gates or variational parameters\", and \"its advantage over the original algorithm in terms of circuit depths increases with the system size\". It also cuts the measurement overhead ADAPT pays between rounds: \"the expensive step of measuring the energy gradient with respect to each candidate unitary at each iteration is performed only a fraction of the time compared to ADAPT-VQE\", because fewer rounds are needed once a round may add more than one operator. The motivation is hardware rather than accuracy — adaptive algorithms \"are not yet viable due, in large part, to the severe coherence time limitations on current devices\".",
+    conditionsJa: "Anastasiou らは、この変更をちょうど一つの規則を外すこととして説明しています。これは「ADAPT-VQE アルゴリズムの改変版であり、1 回の反復につき 1 演算子という規則を外して、台が互いに素な複数の演算子を各反復で追加できるようにしたもの」です。それによって得られるものは、数値を伴わずに、しかし限界を明示して述べられています。結果は「より密だが著しく浅い回路であり、CNOT ゲート数も変分パラメータ数も増やさない」ものであり、「回路深さの点での元のアルゴリズムに対する優位は、系のサイズとともに増大する」。ADAPT が各周のあいだに支払う測定の負担も減ります。「各反復で候補となる各ユニタリに関するエネルギー勾配を測定するという高価な工程が、ADAPT-VQE に比べてごく一部の回数しか実行されない」。1 周でより多くの演算子を追加できれば、必要な周回数が減るからです。動機は精度ではなくハードウェアです。適応的アルゴリズムは「現行デバイスの厳しいコヒーレンス時間の制約が大きな理由となって、まだ実用の域にない」とされています。",
+    refines: "adapt-ansatz",
+    refinesMark: "ADAPT",
+    refinesMarkJa: "ADAPT",
+    // **Folded (s121, W17), and folding is the CORRECT model here rather than a
+    // way past the figure ceiling.** This refinement records no
+    // map-representable internal difference from its parent: the same single
+    // step, the same `observable-estimation` stub, no `via` its parent does not
+    // have. What actually changed is how many operators one round may add —
+    // a rule about the search, not a construction — and this graph has no
+    // vocabulary for that. Validation enforces the claim rather than trusting
+    // it: the flag is refused if the chain facts differ.
+    //
+    // Do NOT resolve the fold by inventing a `via` pin. The paper chooses no
+    // different filler for the estimation step; it changes how often that step
+    // is reached, which is exactly the distinction the map does not draw.
+    sameInternalsAsParent: true,
+    potentialPath: "Drawing this apart from ADAPT needs the map to represent a SCHEDULE — how many operators a round admits, and therefore how often the gradient measurement is paid — where today a repeat is a count on one hop and nothing expresses \"fewer rounds, more per round\". The paper's own claim is precisely a trade between those two, so the moment the map can say it, this refinement has a drawable difference and stops being folded.",
+    potentialPathJa: "これを ADAPT と別に描くには、地図が「スケジュール」を表現できる必要があります。すなわち、1 周が何個の演算子を受け入れ、その結果として勾配測定を何回支払うのか、ということです。今日の地図では、繰り返しは一つのホップ上の回数でしかなく、「周回数は減り、1 周あたりは増える」を言い表す手立てがありません。この論文の主張はまさにその二者間の取引そのものなので、地図がそれを言えるようになった時点で、この精緻化は描画可能な差異をもち、折り畳まれた状態ではなくなります。",
+    steps: ["observable-estimation"],
+    entries: ["vqe-tetris-adapt"],
+    citations: [
+      { title: "TETRIS-ADAPT-VQE: An adaptive algorithm that yields shallower, denser circuit ansätze", authors: "Panagiotis G. Anastasiou, Yanzhu Chen, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2022", url: "https://arxiv.org/abs/2209.10562" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "iterative-qcc-ansatz",
+    label: "Iterative qubit coupled cluster",
+    labelJa: "反復的キュービット結合クラスター",
+    shortLabel: "iQCC",
+    shortLabelJa: "iQCC",
+    summary: "Stop growing the circuit and grow the Hamiltonian instead. Each round folds the entanglers found so far into the operator by a canonical transformation, so every round runs a circuit of the same size — the cost moves off the device and into the number of terms that have to be measured.",
+    summaryJa: "回路を大きくするのをやめ、代わりにハミルトニアンを大きくします。各周では、それまでに見つかったエンタングラーを正準変換によって演算子側へ畳み込むため、どの周も同じ大きさの回路を実行します。代償は装置から離れ、測定すべき項の個数へと移ります。",
+    realizes: "ansatz-construction",
+    conditions: "Ryabinkin et al. state the trade in one sentence — \"each iteration involves a canonical transformation of the Hamiltonian and employs constant-size quantum circuits at the expense of increasing the Hamiltonian size\" — which is the whole point of the method: a NISQ device is bounded in circuit size, not in how many terms a classical computer can carry. The condition attached to convergence is the part not to skip: they \"found that the exact ground-state energies can be systematically approached only if the generators of the QCC ansatz are sampled from a specific set of operators\", so the generator pool is a correctness requirement here rather than a tuning choice, and the paper supplies an algorithm for constructing that set. Evidence is numerical, on LiH, H2O and N2; no hardware run is reported.",
+    conditionsJa: "Ryabinkin らはこの取引を一文で述べています。「各反復はハミルトニアンの正準変換を伴い、ハミルトニアンの大きさが増える代わりに、一定サイズの量子回路を用いる」。これこそがこの方法の要点です。NISQ 装置に課される限界は回路の大きさであって、古典計算機が扱える項数ではないからです。収束に付された条件は飛ばしてはならない部分です。彼らは「厳密な基底状態エネルギーに系統的に近づけるのは、QCC アンザッツの生成子が特定の演算子の集合から選ばれている場合に限られる」ことを見出しました。したがってここでの生成子プールは調整の選択ではなく正しさの要件であり、論文はその集合を構成するアルゴリズムを与えています。根拠は LiH、H2O、N2 についての数値計算であり、実機での実行の報告はありません。",
+    refines: "qcc-ansatz",
+    refinesMark: "QCC",
+    refinesMarkJa: "QCC",
+    // **Folded (W17/s121), and the `potentialPath` below is doing real work
+    // rather than excusing the fold.** Against its parent this records no
+    // map-representable internal difference: the same single step, the same
+    // `observable-estimation` stub it uses to screen generators, no `via` QCC
+    // lacks. The difference the paper is actually about — the Hamiltonian is
+    // transformed between rounds while the circuit stays the same size — is a
+    // difference this map has no shape for, because nothing here draws a
+    // problem being rewritten between iterations of the method solving it.
+    sameInternalsAsParent: true,
+    potentialPath: "Drawing this apart from QCC needs the map to represent a problem that CHANGES between rounds: iQCC folds each round's entanglers into the Hamiltonian by a canonical transformation, so the operator handed to round n+1 is not the one round n was given. Today a method's inputs are fixed for the whole route, and the `hamiltonian-recasting` slot that does exist recasts a problem ONCE on the way into a region rather than repeatedly inside a loop. Give the map a way to say \"the same slot, on a rewritten problem, again\" and this refinement has drawable internals — and so, probably, does every other method whose cost is a growing operator rather than a growing circuit.",
+    potentialPathJa: "これを QCC と別に描くには、地図が「周ごとに変化する問題」を表現できる必要があります。iQCC は各周のエンタングラーを正準変換によってハミルトニアンへ畳み込むため、第 n+1 周に渡される演算子は第 n 周が受け取ったものとは別物です。今日の地図では、方式の入力は経路全体を通じて固定であり、既存の `hamiltonian-recasting` の層も、領域へ入る途中で問題を一度だけ書き換えるものであって、ループの内部で繰り返し書き換えるものではありません。「同じ層を、書き換えられた問題の上で、もう一度」と言える手立てを地図に与えれば、この精緻化は描画可能な内部構造をもちます。そしておそらく、回路ではなく演算子が増えることを代償とする他のあらゆる方式についても同じことが言えます。",
+    steps: ["observable-estimation"],
+    entries: ["vqe-iterative-qcc"],
+    citations: [
+      { title: "Iterative Qubit Coupled Cluster approach with efficient screening of generators", authors: "Ilya G. Ryabinkin, Robert A. Lang, Scott N. Genin, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1906.11192" },
+    ],
+  },
+  {
+    kind: "method",
     id: "measurement-grouped-readout",
     label: "Measure commuting terms together",
     labelJa: "可換な項をまとめて測定する",
