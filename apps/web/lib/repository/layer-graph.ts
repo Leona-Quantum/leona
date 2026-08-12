@@ -1124,6 +1124,124 @@ export const LAYER_GRAPH: LayerGraph = {
     whyALayerJa: "この層が全体の分岐点です。ここを満たす手法は、構造的に二つの系統に分かれます。ひとつは大きな線形系をまとめて組み立てて量子線形ソルバーを呼ぶもの、もうひとつは線形系をそもそも作らず、ハミルトニアンシミュレーションや特異値増幅の反復に帰着させるものです。両者は初期状態準備オラクルへのクエリ数が定数倍ではなく構造的に異なり、初期状態の準備が高価な場合には、その差が全体の費用を支配します。",
   },
   {
+    // **The route the catalog already held and the map did not draw.** The
+    // corpus record `linear-differential-equations` — anchored to this slot,
+    // above — has this paper as its `source`, and its own prose distinguishes
+    // this construction from the Taylor one in as many words: "Berry discretizes
+    // the evolution with a high-order finite difference method… The later Berry,
+    // Childs, Ostrander and Wang algorithm replaces the difference stencil with
+    // a Taylor series approximation." So a reader arriving from the catalog
+    // reached the slot and found four all-at-once routes, none of them the one
+    // their record was about. Recorded as an absence by `slot-closure.ts` in
+    // session 129 and authored here from the full text.
+    //
+    // **No `via` pin, and this is the `krovi-linear-ode` case rather than an
+    // omission.** The discretization is an A(α)-stable linear k-step method of
+    // order p, chosen from a family rather than named — Definition 2 and the
+    // remark that "for any α < π/2 and k ∈ ℕ, there is an A(α)-stable linear
+    // k-step method of order p = k". None of the five recorded ways through
+    // `time-discretization` is that, and forward Euler is the thing this paper
+    // introduces multistep methods in order to *beat* (§III: Euler gives
+    // "a scaling of the complexity of at least O(Δt⁴)"). Pinning it to one would
+    // put a name on a hop the source leaves open.
+    kind: "method",
+    id: "berry-multistep",
+    label: "Linear multistep method, all-at-once encoding",
+    labelJa: "線形多段法の一括符号化",
+    shortLabel: "Multistep, all-at-once",
+    shortLabelJa: "多段法の一括符号化",
+    summary: "The first quantum algorithm for general linear ODEs. Discretize with a high-order linear multistep method, lay every time step out at once against a clock register so that one state $\\sum_j |t_j\\rangle|x_j\\rangle$ holds the whole history, and solve the resulting sparse linear system with a quantum linear system algorithm. Going high-order is what buys the $\\Delta t$ scaling: plain Euler costs at least $O(\\Delta t^4)$ here.",
+    summaryJa: "一般の線形常微分方程式に対する最初の量子アルゴリズムです。高次の線形多段法で離散化し、時刻レジスタに対してすべての時間ステップを一度に並べることで、ひとつの状態 $\\sum_j |t_j\\rangle|x_j\\rangle$ が履歴全体を保持するようにし、得られた疎な線形系を量子線形システムアルゴリズムで解きます。$\\Delta t$ に関するスケーリングを買うのが高次化です。素朴な Euler 法ではここで少なくとも $O(\\Delta t^4)$ かかります。",
+    realizes: "linear-ode-solve",
+    conditions: "Theorem 9 assumes the multistep method is of order $p$ and $A(\\alpha)$-stable, that $A$ is diagonalisable as $A = VDV^{-1}$, and that its eigenvalues all satisfy $|\\arg(-\\lambda_i)| \\leq \\alpha$ — so the eigenvalues must sit in a wedge in the left half-plane, and where $A$ has an eigenvalue with positive real part the paper's remedy is to \"simply subtract a multiple of the identity, and rescale the solution\". Two further hypotheses: $\\max_{t \\in [t_0, t_0+\\Delta t]} ||x(t)|| = O(||x(t_0+\\Delta t)||)$, which rules out a solution that decays away from its own final value, and $\\varepsilon = o(||x_{in}||)$. $A(\\alpha)$-stability rather than $A$-stability is forced rather than chosen: \"the second Dahlquist barrier is that an $A$-stable multistep method must be of order $p \\leq 2$\", and the point of the paper is $p > 2$. **The rigorous result is for constant coefficients**: the Conclusions state that the approach \"can also be used to solve linear differential equations with time-dependent coefficients, though the error analysis will be more difficult\", so unlike the Dyson and LCHS routes this one does not meet the slot's $A(t)$ contract with a proof behind it.",
+    conditionsJa: "定理 9 は、多段法が $p$ 次かつ $A(\\alpha)$-安定であること、$A$ が $A = VDV^{-1}$ と対角化できること、その固有値がすべて $|\\arg(-\\lambda_i)| \\leq \\alpha$ を満たすことを仮定します。すなわち固有値は左半平面の楔の中になければなりません。$A$ が正の実部をもつ固有値を含む場合の処方は、論文の言葉では「単に単位行列の定数倍を差し引き、解をスケールし直す」ことです。さらに二つの仮定があります。解がそれ自身の終端値から離れて減衰することを排除する $\\max_{t \\in [t_0, t_0+\\Delta t]} ||x(t)|| = O(||x(t_0+\\Delta t)||)$ と、$\\varepsilon = o(||x_{in}||)$ です。$A$-安定ではなく $A(\\alpha)$-安定なのは選択ではなく強制です。「第二 Dahlquist 障壁により、$A$-安定な多段法は $p \\leq 2$ 次でなければならない」一方、この論文の主眼は $p > 2$ にあります。**厳密な結果は定数係数に対するもの**です。結論部は、この手法が「時間依存の係数をもつ線形微分方程式にも使えるが、誤差解析はより難しくなる」と述べていますので、Dyson や LCHS の経路と異なり、この経路はこの層の $A(t)$ の契約を証明付きで満たしてはいません。",
+    cost: "Theorem 9, the main result: $\\tilde{O}( \\log(N_x) s^{9/2} (||A||\\Delta t)^{2+2/p} \\kappa_V^5 (||x_{in}|| + ||b||/||A||)/\\varepsilon^2 )$ calls to the oracles for $A$, $b$ and $x_{in}$, where $s$ is the sparsity, $N_x$ the dimension and $\\kappa_V$ the condition number of the eigenvector matrix. Dropping the term for the error in *starting* the multistep method improves the other quantities without changing the $||A||\\Delta t$ scaling: $\\tilde{O}( \\log(N_x) s^{9/2} (||A||\\Delta t)^{2+2/p} \\kappa_V^{2+4/p} (||x_{in}|| + ||b||/||A||)^{1/p}/\\varepsilon^{1+2/p} )$. The Conclusions quote the headline in $||A||$ and $\\Delta t$ alone: $\\tilde{O}( (||A||\\Delta t)^2 )$. The paper says outright that this is probably not the last word — \"it is likely that this is suboptimal, because the lower bound is linear scaling\", the no-fast-forwarding bound $O(||A||\\Delta t)$ — and every later route on this slot is an attempt on that gap.",
+    costJa: "主結果である定理 9 は、$A$、$b$、$x_{in}$ のオラクルへの呼び出し回数を $\\tilde{O}( \\log(N_x) s^{9/2} (||A||\\Delta t)^{2+2/p} \\kappa_V^5 (||x_{in}|| + ||b||/||A||)/\\varepsilon^2 )$ とします。ここで $s$ は疎性、$N_x$ は次元、$\\kappa_V$ は固有ベクトル行列の条件数です。多段法の**開始**時の誤差に由来する項を落とすと、$||A||\\Delta t$ に関するスケーリングは変わらないまま他の量が改善され、$\\tilde{O}( \\log(N_x) s^{9/2} (||A||\\Delta t)^{2+2/p} \\kappa_V^{2+4/p} (||x_{in}|| + ||b||/||A||)^{1/p}/\\varepsilon^{1+2/p} )$ となります。結論部は $||A||$ と $\\Delta t$ だけに着目した形として $\\tilde{O}( (||A||\\Delta t)^2 )$ を挙げています。論文はこれが最終形ではないだろうと明言しています。「下界は線形スケーリングであるから、これは最適ではない可能性が高い」——no-fast-forwarding による下界 $O(||A||\\Delta t)$ です。この層の後続の経路はいずれも、この隔たりへの挑戦です。",
+    steps: ["time-discretization", "quantum-linear-solve"],
+    entries: ["linear-differential-equations"],
+    // The two delegated hops, transcribed from the v2 PDF read in full: §III and
+    // §IV for the first, §V-§VI and Theorem 9's proof for the second. Keyed by
+    // the slot rather than by this node's id, which is the convention for a hop
+    // a route DELEGATES — `taylor-all-at-once` does the same for the same pair.
+    hops: {
+      "time-discretization": {
+        theory:
+          "What crosses here is a system of rows, and the register that indexes them. The step is Eq. (9), $\\sum_{\\ell=0}^{k}\\alpha_{\\ell}x_{j+\\ell} = h\\sum_{\\ell=0}^{k}\\beta_{\\ell}[A(t_{j+\\ell})x_{j+\\ell} + b(t_{j+\\ell})]$, and the trick that makes one linear system out of a whole evolution is a \"Feynman's clock\": an added register encoding the time, so that $|\\psi\\rangle := \\sum_{j=0}^{N_t}|t_j\\rangle|x_j\\rangle$ holds the solution at every step rather than at the last one. [[approximation: The method has order $p$ exactly when $\\rho(e^h) - h\\sigma(e^h) = O(h^{p+1})$ for the generating polynomials $\\rho(\\zeta) = \\sum_j\\alpha_j\\zeta^j$, $\\sigma(\\zeta) = \\sum_j\\beta_j\\zeta^j$; going high-order is the whole point, because Euler at order one forces $N_t = O(\\Delta t^2/\\varepsilon)$ and \"a scaling of the complexity of at least $O(\\Delta t^4)$\".]] [[assumption: The method is $A(\\alpha)$-stable — $S \\supset S_{\\alpha} = \\{\\mu; |\\arg(-\\mu)| < \\alpha, \\mu \\neq 0\\}$, Definition 2 — rather than $A$-stable, because the second Dahlquist barrier caps an $A$-stable method at order two; and every eigenvalue of $A$ lies in that wedge, with a shift by a multiple of the identity where one does not.]] **The horizon is doubled on purpose.** Reading the answer off the clock succeeds with probability only $1/(N_t+1)$, so $x$ is held constant over $[t_0+\\Delta t, t_0+2\\Delta t]$ with $N_t = 2\\Delta t/h$ — \"then any measurement result for the time in this interval will give the state corresponding to the solution\" — which costs nothing in the scaling of $N_t$.",
+        theoryJa:
+          "ここを渡るのは行の集まりと、それに添字を与えるレジスタです。ステップは式 (9) の $\\sum_{\\ell=0}^{k}\\alpha_{\\ell}x_{j+\\ell} = h\\sum_{\\ell=0}^{k}\\beta_{\\ell}[A(t_{j+\\ell})x_{j+\\ell} + b(t_{j+\\ell})]$ です。発展全体をひとつの線形系にまとめる工夫が「Feynman の時計」で、時刻を符号化するレジスタを加えることにより、$|\\psi\\rangle := \\sum_{j=0}^{N_t}|t_j\\rangle|x_j\\rangle$ が最終ステップだけでなく各ステップの解を保持するようにします。[[approximation: 生成多項式 $\\rho(\\zeta) = \\sum_j\\alpha_j\\zeta^j$、$\\sigma(\\zeta) = \\sum_j\\beta_j\\zeta^j$ について、次数が $p$ であることは $\\rho(e^h) - h\\sigma(e^h) = O(h^{p+1})$ と厳密に同値です。高次化こそが要点であり、1 次の Euler 法では $N_t = O(\\Delta t^2/\\varepsilon)$ が必要となり「複雑さは少なくとも $O(\\Delta t^4)$ のスケーリングとなる」からです。]] [[assumption: 手法が $A$-安定ではなく $A(\\alpha)$-安定であること。すなわち定義 2 の $S \\supset S_{\\alpha} = \\{\\mu; |\\arg(-\\mu)| < \\alpha, \\mu \\neq 0\\}$ です。$A$-安定な手法は第二 Dahlquist 障壁により 2 次で頭打ちになるためです。あわせて $A$ のすべての固有値がその楔に入っていること。入らない場合は単位行列の定数倍だけ移動させます。]] **時間の幅は意図的に二倍に取られます。** 時計から答えを読み出す成功確率は $1/(N_t+1)$ しかありませんので、$[t_0+\\Delta t, t_0+2\\Delta t]$ では $x$ を一定に保ち、$N_t = 2\\Delta t/h$ とします。「するとこの区間の時刻という測定結果は、どれも解に対応する状態を与える」わけです。これは $N_t$ のスケーリングには何の代償も生じません。",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The assembled system $\\mathcal{A}\\vec{x} = \\vec{b}$ of Eq. (7) goes to a quantum linear system algorithm — Harrow, Hassidim and Lloyd's, whose runtime Berry quotes as $\\tilde{O}(\\log(N)s^4\\kappa^2/\\varepsilon_L)$. [[assumption: The condition number of the assembled system is not the condition number of $A$: Theorem 7 gives $\\kappa = O(N_t\\kappa_V)$, so the clock register's length enters the solve directly, and $\\kappa_V$ — the condition number of the eigenvector matrix $V$ in $A = VDV^{-1}$ — enters in place of any conditioning of $A$ itself.]] [[approximation: The solver's error is a trace distance on the state it returns, and the two error budgets are tied by $\\varepsilon_L = \\Theta(\\varepsilon)$; the argument for that is Eqs. (60)-(70), which bound the post-measurement state against the exact one by $O(\\varepsilon_L p_{ex}^{-1})$ and then show $p_{ex} = \\Omega(1)$.]] What makes $p_{ex}$ a constant rather than $1/(N_t+1)$ is the doubled horizon of the previous hop, so the two hops are not independent: the discretization pays for the readout. Preparing the right-hand side costs $O(\\sqrt{s})$ by Lemma 8, and the superposition over times $O(\\log N_t)$ \"simply by choosing $N_t$ to be a power of two\".",
+          theoryJa:
+          "組み上がった式 (7) の系 $\\mathcal{A}\\vec{x} = \\vec{b}$ を量子線形システムアルゴリズムに渡します。Harrow・Hassidim・Lloyd のもので、Berry はその実行時間を $\\tilde{O}(\\log(N)s^4\\kappa^2/\\varepsilon_L)$ と引用しています。[[assumption: 組み上がった系の条件数は $A$ の条件数ではありません。定理 7 は $\\kappa = O(N_t\\kappa_V)$ を与えますので、時計レジスタの長さがそのまま求解に効いてきます。また $A$ 自身の条件数ではなく、$A = VDV^{-1}$ における固有ベクトル行列 $V$ の条件数 $\\kappa_V$ が現れます。]] [[approximation: ソルバの誤差は返される状態のトレース距離であり、二つの誤差予算は $\\varepsilon_L = \\Theta(\\varepsilon)$ で結ばれます。その論証が式 (60)-(70) で、測定後の状態と厳密な状態との隔たりを $O(\\varepsilon_L p_{ex}^{-1})$ で抑えたうえで $p_{ex} = \\Omega(1)$ を示します。]] $p_{ex}$ が $1/(N_t+1)$ ではなく定数になるのは、一つ前のホップで時間幅を二倍に取ったおかげです。つまり二つのホップは独立ではなく、離散化が読み出しの費用を肩代わりしています。右辺の準備は補題 8 により $O(\\sqrt{s})$、時刻の重ね合わせは「$N_t$ を 2 の冪に選ぶだけで」$O(\\log N_t)$ です。",
+      },
+    },
+    example: {
+      pseudocode: [
+        "given  A (sparse, constant coefficients), b, x_in, horizon dt, error budget e",
+        "",
+        "choose a linear k-step method of order p that is A(alpha)-stable",
+        "    # A-stability would cap p at 2 (the second Dahlquist barrier), and the",
+        "    # whole point of going high-order is p > 2",
+        "    # alpha must be wide enough that every eigenvalue of A has |arg(-lambda_i)| <= alpha",
+        "",
+        "set N_t = 2*dt/h  time steps",
+        "    # twice the horizon on purpose: x is held constant on [dt, 2dt], so that",
+        "    # measuring the clock register lands on the answer with probability Omega(1)",
+        "    # instead of 1/(N_t + 1)",
+        "",
+        "assemble the sparse linear system  script_A x_vec = b_vec  whose rows are:",
+        "    row 0:            x_0 = x_in",
+        "    stepping rows:    sum_l alpha_l x_{j+l}  =  h * sum_l beta_l ( A x_{j+l} + b )",
+        "    holding rows:     x_{j+1} - x_j = 0        # the constant tail",
+        "",
+        "hand the system to the layer below",
+        "    # the solution comes back as one state  sum_j |t_j> |x_j>  over a clock",
+        "    # register: the whole history at once, not the final time alone",
+        "",
+        "measure the clock register; keep the outcomes in [dt, 2dt]",
+        "    # what is left is a state encoding x(dt), to within trace distance e",
+      ].join("\n"),
+    },
+    // The paper reports no run of the method — established by reading it, not by
+    // the abstract being quiet, which is why the register row for 1010.2745
+    // moves to a full-text basis in the same commit.
+    absences: {
+      "example.text": {
+        reason:
+          "Read in full: 1010.2745 carries no numerics at all. It is a construction and a complexity analysis end to end — Definitions 1 and 2, the stability polynomials, the block system of Eq. (8), and Theorem 9 — with no instance, no simulation and no figure. The register row records that as a full-text read rather than an abstract one.",
+        reasonJa:
+          "全文を読んだ結果です。1010.2745 には数値実験が一切ありません。定義 1 と 2、安定性多項式、式 (8) のブロック系、そして定理 9 と、最初から最後まで構成と計算量解析であり、具体例もシミュレーションも図もありません。書誌情報の側では、これを要旨読みではなく全文読みとして記録しています。",
+      },
+    },
+    implementations: [
+      {
+        id: "berry-clock-linear-system",
+        label: "The clock-register linear system $\\mathcal{A}\\vec{x} = \\vec{b}$ (sections III and IV)",
+        labelJa: "時刻レジスタの線形系 $\\mathcal{A}\\vec{x} = \\vec{b}$（第 III 節・第 IV 節）",
+        papers: [
+          { title: "High-order quantum algorithm for solving linear differential equations", authors: "Dominic W. Berry", year: "2010", url: "https://arxiv.org/abs/1010.2745" },
+        ],
+        about:
+          "Why a linear system rather than a simulation, in the paper's own order. Section II sets up the alternative first and rejects it: for a general $A$, split into Hermitian and antiHermitian parts and combine the two evolutions by a Lie-Trotter formula, and \"it appears to give a complexity that increases exponentially with the time interval $\\Delta t$\" — because the amplitude \"must therefore decay exponentially, because we must allow for the maximum eigenvalue of $A_H$\". That approach also \"does not enable simulation of inhomogeneous differential equations\". Section III's answer is the trick the rest of the construction rests on: a \"Feynman's clock\", an additional register encoding the time, so that one state $|\\psi\\rangle := \\sum_{j=0}^{N_t}|t_j\\rangle|x_j\\rangle$ holds the solution at all times rather than the final time alone.",
+        aboutJa:
+          "なぜシミュレーションではなく線形系なのかを、論文自身の順序で辿ります。第 II 節はまず代替案を立て、そして退けます。一般の $A$ をエルミート部と反エルミート部に分け、二つの発展を Lie-Trotter 公式で合成するというものですが、「時間間隔 $\\Delta t$ について複雑さが指数的に増大するように見える」とされます。振幅は「$A_H$ の最大固有値を見込まねばならないため、指数的に減衰せざるをえない」からです。またこの方法は「非斉次な微分方程式のシミュレーションを可能にしない」とも述べられています。第 III 節の答えが、以降の構成全体を支える工夫です。すなわち時刻を符号化する追加のレジスタ、「Feynman の時計」を置き、ひとつの状態 $|\\psi\\rangle := \\sum_{j=0}^{N_t}|t_j\\rangle|x_j\\rangle$ が終端時刻だけでなくすべての時刻の解を保持するようにします。",
+        methods:
+          "The system is $\\mathcal{A}\\vec{x} = \\vec{b}$ of Eq. (7), where \"each entry of $\\mathcal{A}$ is a block of the dimension of $A$, and each entry of $\\vec{x}$ and $\\vec{b}$ is a block of the dimension of $x$\". Eq. (8) writes it out for the Euler case with $A$ and $b$ time-independent: the first block row is $\\mathbb{1}$ against $x_{in}$ and \"sets the initial value, $x_0 = x_{in}$\"; the stepping rows are $-(\\mathbb{1}+Ah)$ on the subdiagonal against $\\mathbb{1}$ on the diagonal, so that \"$x_{j+1} - (x_j + Ax_jh) = bh$\"; and \"the final rows indicate equations where $x_{j+1} - x_j = 0$\", the tail that holds $x$ constant. Section IV replaces the stepping rows with a general linear multistep method, Eq. (9): $\\sum_{\\ell=0}^{k}\\alpha_{\\ell}x_{j+\\ell} = h\\sum_{\\ell=0}^{k}\\beta_{\\ell}[A(t_{j+\\ell})x_{j+\\ell} + b(t_{j+\\ell})]$, whose stability is read off the generating polynomials $\\rho(\\zeta) = \\sum_j \\alpha_j\\zeta^j$ and $\\sigma(\\zeta) = \\sum_j \\beta_j\\zeta^j$ through the roots of $\\rho(\\zeta) - \\mu\\sigma(\\zeta) = 0$: the stability domain is $S := \\{\\mu \\in \\mathbb{C};\\ \\text{all roots } \\zeta_j(\\mu) \\text{ satisfy } |\\zeta_j(\\mu)| \\leq 1,\\ \\text{multiple roots satisfy } |\\zeta_j(\\mu)| < 1\\}$, and the method has order $p$ if and only if $\\rho(e^h) - h\\sigma(e^h) = O(h^{p+1})$. Definition 2 is the property the algorithm needs: $A(\\alpha)$-stable for $0 < \\alpha < \\pi/2$ means $S \\supset S_{\\alpha} = \\{\\mu;\\ |\\arg(-\\mu)| < \\alpha,\\ \\mu \\neq 0\\}$. **The doubling is load-bearing and easy to miss.** Reading the answer off the clock register succeeds with probability only $1/(N_t+1)$, so the paper solves to $t_0 + 2\\Delta t$ with $x$ held constant on the second half — \"then any measurement result for the time in this interval will give the state corresponding to the solution\" — which is what makes $p_{ex} = \\Omega(1)$ in Eq. (69) and costs nothing in the scaling of $N_t$.",
+        methodsJa:
+          "系は式 (7) の $\\mathcal{A}\\vec{x} = \\vec{b}$ です。「$\\mathcal{A}$ の各成分は $A$ と同じ次元のブロックであり、$\\vec{x}$ と $\\vec{b}$ の各成分は $x$ と同じ次元のブロック」です。式 (8) は、$A$ と $b$ が時間に依存しない Euler の場合について、これを具体的に書き下しています。第一のブロック行は $x_{in}$ に対する $\\mathbb{1}$ で、「初期値 $x_0 = x_{in}$ を定め」ます。前進の行は副対角に $-(\\mathbb{1}+Ah)$、対角に $\\mathbb{1}$ を置き、「$x_{j+1} - (x_j + Ax_jh) = bh$」を表します。そして「最後の数行は $x_{j+1} - x_j = 0$ という式を表し」、これが $x$ を一定に保つ末尾です。第 IV 節は前進の行を一般の線形多段法、式 (9) の $\\sum_{\\ell=0}^{k}\\alpha_{\\ell}x_{j+\\ell} = h\\sum_{\\ell=0}^{k}\\beta_{\\ell}[A(t_{j+\\ell})x_{j+\\ell} + b(t_{j+\\ell})]$ に置き換えます。その安定性は生成多項式 $\\rho(\\zeta) = \\sum_j \\alpha_j\\zeta^j$、$\\sigma(\\zeta) = \\sum_j \\beta_j\\zeta^j$ から、方程式 $\\rho(\\zeta) - \\mu\\sigma(\\zeta) = 0$ の根を通して読み取られます。安定領域は $S := \\{\\mu \\in \\mathbb{C};\\ (11)\\ \\text{のすべての根 } \\zeta_j(\\mu) \\text{ が } |\\zeta_j(\\mu)| \\leq 1,\\ \\text{重根は } |\\zeta_j(\\mu)| < 1\\}$ であり、次数が $p$ であることは $\\rho(e^h) - h\\sigma(e^h) = O(h^{p+1})$ と同値です。定義 2 がこのアルゴリズムの必要とする性質です。$0 < \\alpha < \\pi/2$ に対する $A(\\alpha)$-安定性とは $S \\supset S_{\\alpha} = \\{\\mu;\\ |\\arg(-\\mu)| < \\alpha,\\ \\mu \\neq 0\\}$ を意味します。**時間を二倍に取ることは本質的で、しかも見落としやすい点です。** 時刻レジスタから答えを読み出す成功確率は $1/(N_t+1)$ しかありませんので、論文は $t_0 + 2\\Delta t$ まで解き、後半では $x$ を一定に保ちます。「するとこの区間の時刻という測定結果は、どれも解に対応する状態を与える」わけです。これが式 (69) の $p_{ex} = \\Omega(1)$ を成り立たせており、$N_t$ のスケーリングには何の代償も生じません。",
+        data:
+          "No dataset and no instantiated matrix. $A$, $b$ and $x_{in}$ stay symbolic throughout, reached only through oracles, and the sole concrete display is the five-block-row Euler example of Eq. (8) — drawn to make the block structure legible, with $A$ and $b$ still symbolic. The one quantitative choice the construction fixes is $N_t = 2\\Delta t/h$.",
+        dataJa:
+          "データセットも、具体化された行列もありません。$A$、$b$、$x_{in}$ は終始記号のままで、オラクルを通してのみ触れられます。唯一の具体的な表示は式 (8) の 5 ブロック行からなる Euler の例であり、これもブロック構造を読み取りやすくするためのもので、$A$ と $b$ は記号のままです。構成が定める唯一の量的な選択は $N_t = 2\\Delta t/h$ です。",
+      },
+    ],
+    citations: [
+      { title: "High-order quantum algorithm for solving linear differential equations", authors: "Dominic W. Berry", year: "2010", url: "https://arxiv.org/abs/1010.2745" },
+    ],
+  },
+  {
     kind: "method",
     id: "taylor-all-at-once",
     label: "Taylor propagator, all-at-once encoding",

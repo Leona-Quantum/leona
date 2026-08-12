@@ -1702,9 +1702,15 @@ test("a line that opens into something says so, and a line that does not is not 
   // fourteen described above: the ingredient was the whole of what opening it
   // would have drawn, that ingredient is now on the card, and the canvas has
   // nothing left to expand. `leaves` 60 → 61, `openable` unchanged at 27.
-  assert.equal(openable + leaves + 1, 89, "the twenty-three figures draw 89 lines between them");
-  assert.equal(openable, 27, "27 of them open into something the canvas draws");
+  //
+  // And one more openable line in session 129: `berry-multistep` is a seventh
+  // top-level route on `linear-ode-solve`, and unlike `layerwise-training` it
+  // DOES open — the two hops it delegates are named route segments, not
+  // ingredients, so the canvas still has something to expand.
+  assert.equal(openable + leaves + 1, 90, "the twenty-three figures draw 90 lines between them");
+  assert.equal(openable, 28, "28 of them open into something the canvas draws");
   assert.equal(leaves, 61, "61 are leaves — the canvas records nothing finer for them");
+
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -5266,7 +5272,10 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
   assert.equal(embedding.foldedCount, 0);
 
   const ode = diagramFor("linear-ode-solve");
-  assert.equal(ode.drawnMethodCount, 5);
+  // 5 → 6 in session 129: `berry-multistep` is a sixth top-level route on this
+  // slot. The folded pair is unchanged — Krovi and the improved kernel — so the
+  // sentence the legend prints still adds up against `methodsRealizing`.
+  assert.equal(ode.drawnMethodCount, 6);
   assert.equal(ode.foldedCount, 2);
   assert.equal(
     ode.drawnMethodCount + ode.foldedCount,
@@ -5282,7 +5291,9 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
     method: node,
     locale: "en",
   });
-  assert.equal(page.drawnMethodCount, 6, "the unfolded subject counts as drawn on its own page");
+  // 6 → 7 with `berry-multistep`: Krovi's own page unfolds Krovi and draws the
+  // slot's other six tops beside it, one of which is now Berry.
+  assert.equal(page.drawnMethodCount, 7, "the unfolded subject counts as drawn on its own page");
   assert.equal(page.foldedCount, 1, "the OTHER fold stays folded there");
   assert.equal(
     page.drawnMethodCount + page.foldedCount,

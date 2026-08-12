@@ -408,7 +408,11 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // and nothing else — so the step it consumes costs a stub on the drawing and no second hop
   // here. Worth stating because the arithmetic looks wrong otherwise: a method with a step
   // that contributes one hop is the ingredient shape, not a miscount.
-  assert.equal(hops, 132, `${hops} hops, not 132`);
+  // +2 in session 129: `berry-multistep` carries a hop note on each of the two stretches it
+  // delegates — the same pair `taylor-all-at-once` does, and the contrast with the note above
+  // is exactly the ingredient/segment distinction.
+  assert.equal(hops, 134, `${hops} hops, not 134`);
+
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
   // authored hop is what proves the parse, the spans, the legend and both locales against

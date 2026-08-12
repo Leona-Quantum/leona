@@ -1315,6 +1315,17 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // it checks and what it does with a violation, and neither is a step this graph draws.
   ["error-mitigation", 4],
   ["quantum-linear-solve", 2],
+  // 2 since session 129 authored `berry-multistep`. It and `krovi-linear-ode` draw the same
+  // "discretize → solve", and the shared picture is the finding rather than the defect: neither
+  // hop can be pinned, for OPPOSITE reasons. Krovi's paper chooses no discretization — it
+  // re-analyses the Taylor propagator Berry, Childs, Ostrander and Wang already chose. Berry's
+  // defines one, but only as a family (Definition 2, any A(α)-stable k-step method of order
+  // p = k) and never instantiates it. Authoring that family as a sixth `time-discretization`
+  // node was tried in the same session and backed out: forward Euler, backward Euler and the
+  // trapezoidal rule ARE linear multistep methods, so the family would have been drawn beside
+  // three of its own instances. The full argument is the KNOWN_TWINS row in
+  // `scripts/check-layer-graph.mjs`; this line is its count.
+  ["linear-ode-solve", 2],
   ["polynomial-approximation", 2],
   ["block-encode-matrix", 2],
   ["qubit-routing", 2],
