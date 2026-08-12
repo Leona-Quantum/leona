@@ -13263,6 +13263,15 @@ div.mj-rail-row:hover {
   text-transform: uppercase;
   letter-spacing: 0.06em;
 }
+/* Where a worked example's run came from, and what kind of run it is. Quiet,
+   because it is provenance rather than content — but present, because all three
+   runs in the graph are classical simulations and "Example" with numbers under
+   it otherwise reads as a quantum execution. */
+.mj-card-run-note {
+  margin: calc(-1 * var(--sp-1)) 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
+}
 /* Pseudocode. Whitespace is the only structure it has, so it keeps it — and it
    scrolls inside its own box rather than widening the card, because a listing
    with a long line must not make the whole panel scroll sideways. */
