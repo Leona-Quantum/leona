@@ -64,25 +64,41 @@ async function bundle(relativePath, label) {
 const index = JSON.parse(readFileSync(join(root, "scripts/classiq-parity/classiq-index.json"), "utf8"));
 const corpusMod = await bundle("apps/web/lib/public-repository.ts", "public-repository");
 const coverageMod = await bundle("apps/web/lib/repository/classiq-coverage.ts", "classiq-coverage");
+const intakeMod = await bundle("apps/web/lib/repository/entries-classiq-parity.ts", "entries-classiq-parity");
 
 const { PUBLIC_REPOSITORY_ENTRIES } = corpusMod;
 const { CLASSIQ_COVERAGE, CLASSIQ_NOT_APPLICABLE } = coverageMod;
+const { CLASSIQ_PARITY_COVERAGE } = intakeMod;
+
+// Half derived, half declared — the same split as the Zoo gauge, and for the same
+// reason: a record written for a Classiq entry states which entry from its own data
+// and cannot drift, while the pre-existing records need a hand-written map, and
+// that hand-written half is what the error checks below are guarding.
+const coverage = new Map();
+const claim = (path, slug, origin) => {
+  if (!coverage.has(path)) coverage.set(path, []);
+  coverage.get(path).push({ slug, origin });
+};
+for (const { classiqPath, slug } of CLASSIQ_PARITY_COVERAGE) claim(classiqPath, slug, "intake");
+for (const [path, slugs] of Object.entries(CLASSIQ_COVERAGE)) {
+  for (const slug of slugs) claim(path, slug, "declared");
+}
 
 const corpusSlugs = new Set(PUBLIC_REPOSITORY_ENTRIES.map((entry) => entry.slug));
 const indexPaths = new Set(index.entries.map((entry) => entry.path));
 
 const errors = [];
-for (const [path, slugs] of Object.entries(CLASSIQ_COVERAGE)) {
+for (const [path, claims] of coverage) {
   if (!indexPaths.has(path)) {
     errors.push(
-      `coverage declares "${path}" (${slugs.join(", ")}), but the pinned index has no such`
-      + " publication directory — the library moved or renamed it. Refresh the index with"
-      + " `node scripts/generate-classiq-index.mjs` and re-point the declaration.",
+      `coverage declares "${path}" (${claims.map((c) => c.slug).join(", ")}), but the pinned index`
+      + " has no such publication directory — the library moved or renamed it. Refresh the index"
+      + " with `node scripts/generate-classiq-index.mjs` and re-point the declaration.",
     );
   }
-  for (const slug of slugs) {
+  for (const { slug, origin } of claims) {
     if (!corpusSlugs.has(slug)) {
-      errors.push(`coverage of "${path}" names slug "${slug}", which is not in the corpus`);
+      errors.push(`${origin} coverage of "${path}" names slug "${slug}", which is not in the corpus`);
     }
   }
 }
@@ -90,7 +106,7 @@ for (const path of Object.keys(CLASSIQ_NOT_APPLICABLE)) {
   if (!indexPaths.has(path)) {
     errors.push(`notApplicable declares "${path}", which is not in the pinned index`);
   }
-  if (Object.hasOwn(CLASSIQ_COVERAGE, path)) {
+  if (coverage.has(path)) {
     errors.push(`"${path}" is declared both covered and not-applicable — pick one`);
   }
 }
@@ -99,7 +115,7 @@ const rows = index.entries.map((entry) => ({
   path: entry.path,
   category: entry.category,
   group: entry.group,
-  slugs: CLASSIQ_COVERAGE[entry.path] ?? [],
+  slugs: (coverage.get(entry.path) ?? []).map((c) => c.slug),
   notApplicable: Object.hasOwn(CLASSIQ_NOT_APPLICABLE, entry.path),
 }));
 const covered = rows.filter((row) => row.slugs.length > 0);
