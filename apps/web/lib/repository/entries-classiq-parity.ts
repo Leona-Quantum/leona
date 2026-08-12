@@ -1396,6 +1396,203 @@ const CLASSIQ_ALGORITHMS: ClassiqAlgorithm[] = [
       "quantum-counting",
     ],
   },
+  {
+    slug: "quantum-kicked-rotator-simulation",
+    title: "Quantum simulation of the kicked rotator model",
+    titleJa: "キックされた回転子モデルの量子シミュレーション",
+    family: "Hamiltonian simulation",
+    classiqPath: "applications/physical_systems/quantum_chaos",
+    classiqCategory: "applications",
+    classiqGroup: "physical_systems",
+    classiqName: "quantum_chaos",
+    problem:
+      "Simulate the quantum kicked rotator model — used to study quantum chaos, localization and the Anderson transition — with a quantum algorithm that scales better than classical simulation of the same model.",
+    problemJa:
+      "量子カオス、局在、アンダーソン転移を調べるために用いられる量子キックドローターモデルを、そのモデルの古典的シミュレーションよりもよくスケールする量子アルゴリズムでシミュレートする問題です。",
+    idea:
+      "Georgeot and Shepelyansky present a quantum algorithm that simulates the quantum kicked rotator model exponentially faster than classical algorithms. They state that this result shows that important physical problems of quantum chaos, localization and the Anderson transition can be modelled efficiently on a quantum computer. They also report a second, related result: a similar algorithm simulates efficiently classical chaos in certain area-preserving maps. The abstract states both results at the level of an asymptotic comparison — exponentially faster, and efficiently — without describing how either algorithm is built, what resource it is measured in, or what base or regime the exponential or the efficient scaling holds over; those specifics, if given at all, are in the paper and not in the abstract read for this record.",
+    ideaJa:
+      "Georgeot と Shepelyansky は、量子キックドローターモデルを古典アルゴリズムより指数的に高速にシミュレートする量子アルゴリズムを提示しています。著者らは、この結果が、量子カオス、局在、アンダーソン転移という重要な物理的問題を量子計算機上で効率的にモデル化できることを示すと述べています。さらに、関連する第二の結果として、類似のアルゴリズムがある種の面積保存写像における古典カオスを効率的にシミュレートすると報告しています。要旨はいずれの結果も「指数的に」「効率的に」という漸近的な比較の水準で述べるにとどまり、どちらのアルゴリズムがどのように構成されているか、どの資源で測っているか、指数や効率的なスケーリングがどのような底やパラメータ領域で成り立つかは記していません。これらの詳細は、もし示されているとしても論文の中にあり、本記録が読んだ要旨にはありません。",
+    complexity:
+      "Exponentially faster than classical algorithms, for simulating the quantum kicked rotator model — a statement about the cost of simulating that one dynamical system, not a bound on solving a decision, search, or optimization problem. The abstract gives no big-O expression, no base for the exponential, no qubit or gate count, and no error dependence; a second, separate claim — that a similar algorithm simulates classical chaos in certain area-preserving maps efficiently — is likewise unquantified.",
+    complexityBasis:
+      'The abstract of arXiv:quant-ph/0010005 states no big-O expression, qubit count, or gate count. Its cost claim is: "We present a quantum algorithm which simulates the quantum kicked rotator model exponentially faster than classical algorithms." That is a claim about simulating a model, not about solving a decision or optimization problem, and the abstract does not say faster in which resource or with what base. The abstract separately states "important physical problems of quantum chaos, localization and Anderson transition can be modelled efficiently on a quantum computer", which names the problems the simulation bears on without attaching a bound to any of them, and "We also show that a similar algorithm simulates efficiently classical chaos in certain area-preserving maps", whose efficiently is likewise left undefined. The Classiq index entry this record covers, applications/physical_systems/quantum_chaos, gives a directory path and a file list and states no bound. Those are the only sources read for this field.',
+    caveat:
+      "This is a literature record. No circuit was built, compiled, simulated or run for it, and no instance of the kicked rotator model was computed here; the record documents the algorithm as its abstract states it and does not reproduce or verify any published demonstration of it. The index entry read for this record gives only a directory path, applications/physical_systems/quantum_chaos, and a file list, nothing about what those files contain. The exponential speedup the abstract states is for simulating one specific dynamical system, the quantum kicked rotator model, against unnamed classical algorithms for the same task; it is not a claim about solving quantum chaos, localization or the Anderson transition as decision or optimization problems, and the abstract states no base for the exponential, no error dependence, no qubit or gate count, and no regime of validity. What an exponentially faster simulation of a model gives a reader is the ability to compute the model's own dynamics — the same quantities a classical simulation of the kicked rotator would compute, only faster in an unspecified resource — and nothing more: it does not by itself establish a proof about the underlying physics of chaos, localization or the Anderson transition, and the abstract's claim that these can be modelled efficiently is the authors' inference from having an efficient simulator, not a separate, independently bounded result about any of the three phenomena. The second finding, that a similar algorithm efficiently simulates classical chaos in certain area-preserving maps, is stated with the same lack of quantitative detail — no maps are named, no error or resource bound is given, and efficiently is not defined in the abstract. The abstract reports no numerical experiment, no simulation run and no hardware result of the paper's own, so none is carried here, and no comparison against a specific classical algorithm's proven complexity is made — the comparison is against classical algorithms as a class, which is a comparison against a general reference point rather than a proven lower bound for any one classical method.",
+    caveatJa:
+      "本項目は文献に基づく記録です。ここで回路を構成・コンパイル・シミュレーション・実行したことはなく、キックドローターモデルの具体例を計算したこともありません。本記録は要旨が述べるアルゴリズムをそのまま記述したものであり、公開されている実演を再現・検証したものではありません。本記録が参照した索引項目が与えるのは、applications/physical_systems/quantum_chaos というディレクトリのパスとファイルの一覧だけで、それらのファイルの中身については何も分かりません。要旨が述べる指数的な高速化は、量子キックドローターモデルという一つの力学系をシミュレートする際に、名指しされていない古典アルゴリズム群と比べたものであり、量子カオス・局在・アンダーソン転移を決定問題や最適化問題として解くという主張ではありません。要旨は、指数の底、誤差への依存性、量子ビット数やゲート数、成り立つパラメータ領域のいずれも示していません。あるモデルを指数的に高速にシミュレートできるということが読者に与えるのは、そのモデル自身の力学を計算する能力、すなわち古典的なシミュレーションが計算するのと同じ量を、何らかの未特定の資源についてより速く計算できるということだけであり、それ以上のものではありません。カオス・局在・アンダーソン転移という物理そのものについての証明を与えるものではなく、要旨が述べる「効率的にモデル化できる」という主張は、効率的なシミュレータを得たことからの著者らの推論であって、三つの現象それぞれについて別個に評価された結果ではありません。第二の結果、すなわち類似のアルゴリズムがある種の面積保存写像における古典カオスを効率的にシミュレートするという主張も同様に定量的な詳細を欠いており、対象となる写像の名前も、誤差や資源の評価も示されておらず、「効率的」の定義も要旨にはありません。要旨は論文自身による数値実験、シミュレーションの実行、実機での結果のいずれも報告していないため、本記録にもそれらはありません。また、特定の古典アルゴリズムの証明された計算量との比較でもなく、「古典アルゴリズム」という一般的な参照点との比較であるため、いずれかの古典的手法に対する証明された下界ではありません。",
+    tags: ["quantum chaos", "kicked rotator", "localization", "anderson transition", "exponential speedup"],
+    source: {
+      id: "arxiv:quant-ph/0010005",
+      title: "Exponential Gain in Quantum Computing of Quantum Chaos and Localization",
+      authors: "B. Georgeot, D. L. Shepelyansky",
+      year: "2000",
+      url: "https://arxiv.org/abs/quant-ph/0010005",
+    },
+    literature: [
+      {
+        title: "Exponential Gain in Quantum Computing of Quantum Chaos and Localization",
+        authors: "B. Georgeot, D. L. Shepelyansky",
+        year: "2000",
+        url: "https://arxiv.org/abs/quant-ph/0010005",
+        relevance:
+          "Primary source: it presents the quantum algorithm that simulates the quantum kicked rotator model exponentially faster than classical algorithms, states that this makes quantum chaos, localization and the Anderson transition efficiently modellable on a quantum computer, and reports a related algorithm for efficiently simulating classical chaos in certain area-preserving maps. Consult it for how either algorithm is constructed, what resource the speedup is measured in, and any qubit, gate or error bound, none of which the abstract states.",
+        relevanceJa:
+          "一次資料です。量子キックドローターモデルを古典アルゴリズムより指数的に高速にシミュレートする量子アルゴリズムを提示し、これにより量子カオス・局在・アンダーソン転移を量子計算機上で効率的にモデル化できると述べ、さらにある種の面積保存写像における古典カオスを効率的にシミュレートする関連アルゴリズムを報告しています。いずれのアルゴリズムがどのように構成されているか、高速化がどの資源で測られているか、量子ビット数・ゲート数・誤差の評価については要旨に記載がないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: [
+      "trotter-suzuki-simulation",
+      "hamiltonian-simulation-ising",
+      "quantum-adiabatic-evolution",
+      "quantum-fourier-transform",
+    ],
+  },
+  {
+    slug: "wave-equation-simulation",
+    title: "Quantum algorithm for simulating the wave equation",
+    titleJa: "波動方程式をシミュレートする量子アルゴリズム",
+    family: "Quantum differential equations · linear",
+    classiqPath: "applications/physical_systems/maxwell_equation",
+    classiqCategory: "applications",
+    classiqGroup: "physical_systems",
+    classiqName: "maxwell_equation",
+    problem:
+      "Simulate the wave equation under Dirichlet and Neumann boundary conditions on a quantum computer, using Hamiltonian simulation and quantum linear system algorithms as subroutines.",
+    problemJa:
+      "ディリクレ境界条件およびノイマン境界条件のもとでの波動方程式を、Hamiltonian シミュレーションと量子線形方程式アルゴリズムを部分手続きとして用いる量子アルゴリズムによって、量子計算機上でシミュレートする問題です。",
+    idea:
+      "Costa, Jordan and Ostrander present a quantum algorithm for simulating the wave equation under Dirichlet and Neumann boundary conditions. The algorithm uses Hamiltonian simulation and quantum linear system algorithms as subroutines, and relies on factorizations of discretized Laplacian operators. The authors state that this factorization allows for improved scaling in truncation errors and improved scaling for state preparation, relative to general-purpose linear differential-equation algorithms; the abstract gives this comparison in qualitative terms only, without a complexity expression for either side. The authors also state that they consider using the same Hamiltonian-simulation approach for Klein-Gordon equations and Maxwell's equations — the abstract goes no further than naming this as something considered, with no algorithm described and no result reported for either equation.",
+    ideaJa:
+      "Costa、Jordan、Ostrander は、ディリクレ境界条件およびノイマン境界条件のもとでの波動方程式をシミュレートする量子アルゴリズムを提示しています。このアルゴリズムは Hamiltonian シミュレーションと量子線形方程式アルゴリズムを部分手続きとして用い、離散化されたラプラシアン演算子の因数分解に依拠しています。著者らは、この因数分解により、汎用的な線形微分方程式アルゴリズムと比べて、打ち切り誤差のスケーリングと状態準備のスケーリングの双方が改善されると述べています。要旨はこの比較を定性的な言葉でのみ示しており、どちらの側についても計算量の式は与えていません。著者らはまた、同じ Hamiltonian シミュレーションの手法をクライン・ゴルドン方程式とマクスウェル方程式にも用いることを検討していると述べていますが、要旨はこれを「検討している」ことの言及にとどめており、いずれの方程式についてもアルゴリズムの記述や結果の報告はありません。",
+    complexity:
+      "Improved scaling in truncation error and improved scaling for the cost of state preparation, relative to general-purpose linear differential-equation algorithms, for the wave-equation algorithm this abstract presents. The abstract states this comparison only in those qualitative terms — no complexity expression, exponent, or constant is given for the wave-equation algorithm or for the general-purpose algorithms it is compared against, and no bound at all is given for the separately mentioned, merely considered use of the same approach for Klein-Gordon or Maxwell's equations.",
+    complexityBasis:
+      'The abstract of arXiv:1711.05394 states no big-O expression, qubit count, or gate count. Its complexity claim is comparative and qualitative: "It relies on factorizations of discretized Laplacian operators to allow for improved scaling in truncation errors and improved scaling for state preparation relative to general purpose linear differential equation algorithms." The abstract also names the subroutines the algorithm is built from — "The algorithm uses Hamiltonian simulation and quantum linear system algorithms as subroutines" — without quoting a cost for either. On the further, separately mentioned use of the same approach, the abstract states only "We also consider using Hamiltonian simulation for Klein-Gordon equations" and, in the same sentence, Maxwell\'s equations — naming both as something considered, with no algorithm described and no result or bound given for either. The Classiq index entry this record covers, applications/physical_systems/maxwell_equation, gives a directory path and a file list (maxwell_2d_simulation.ipynb) and states no bound. Those are the only sources read for this field.',
+    caveat:
+      "This is a literature record. No circuit was built, compiled, simulated or run for it, no wave-equation instance was solved, and no timing or resource figure was produced here; the record documents the algorithm the abstract states and does not reproduce or verify any published demonstration of it. The index entry read for this record is at applications/physical_systems/maxwell_equation and gives that directory path and a file list, maxwell_2d_simulation.ipynb, nothing about what the file contains. This Classiq directory pairs with a paper whose subject, on its own abstract, is the wave equation, not Maxwell's equations: the abstract's only sentence naming Maxwell's equations is that the authors also consider using Hamiltonian simulation for Klein-Gordon equations and Maxwell's equations, with no algorithm described, no complexity stated, and no result reported for either equation. This record accordingly documents the wave-equation algorithm and treats the Maxwell connection as exactly that tentative — a stated intention to consider the approach, not a demonstrated algorithm for Maxwell's equations — and it should not be read as a record of a quantum algorithm for Maxwell's equations. The improved-scaling claim that is stated concretely applies to the wave-equation algorithm only, is qualitative rather than quantified — no exponent, no constant, no explicit dependence on the error tolerance or the discretization is given — and is a comparison against general-purpose linear differential-equation algorithms as a class, which is a comparison against a stated point of reference rather than a proven lower bound on that class. The abstract states no experiment, simulation run, or hardware result for the wave-equation algorithm, so none is carried here, and nothing here supports a claim about state preparation cost, readout, or hardware feasibility beyond the qualitative improved scaling for state preparation the abstract itself gives.",
+    caveatJa:
+      "本項目は文献に基づく記録です。回路の構成、コンパイル、シミュレーション、実行はいずれも行っておらず、具体的な波動方程式の問題例も解いておらず、所要時間や資源量の数値も出していません。本記録は要旨が述べるアルゴリズムを記述したものであり、公開されている実演を再現・検証したものではありません。本記録が参照した索引項目は applications/physical_systems/maxwell_equation にあり、そのディレクトリのパスとファイルの一覧 maxwell_2d_simulation.ipynb を与えるのみで、ファイルの中身については何も分かりません。この Classiq のディレクトリと組になっている論文は、要旨に即して見る限り、その主題が波動方程式であってマクスウェル方程式ではありません。マクスウェル方程式に言及する要旨中の一文は、著者らがクライン・ゴルドン方程式とマクスウェル方程式についても Hamiltonian シミュレーションを用いることを検討しているというものにとどまり、アルゴリズムの記述も、計算量の記載も、いずれの方程式についての結果の報告もありません。したがって本記録は波動方程式のアルゴリズムを記述するものとし、マクスウェルとのつながりは要旨が示す通りの、検討しているという意向の表明にとどめて扱っており、アルゴリズムとして実演されたものではありません。本記録はマクスウェル方程式のための量子アルゴリズムについての記録として読まれるべきではありません。具体的に述べられているスケーリング改善の主張は波動方程式のアルゴリズムにのみ適用され、定量化されておらず、指数も定数も、誤差許容度や離散化への明示的な依存性も示されていません。また、これは汎用的な線形微分方程式アルゴリズムという括りとの比較であって、その括り全体に対する証明された下界ではなく、示された参照点との比較にすぎません。要旨は波動方程式アルゴリズムについて実験、シミュレーションの実行、実機での結果のいずれも報告していないため、本記録にもそれらはありません。また、要旨自身が与える定性的な状態準備のスケーリングの改善を超えて、状態準備のコスト、読み出し、実機での実現可能性について本記録が主張することもありません。",
+    tags: ["wave equation", "hamiltonian simulation", "linear systems", "boundary conditions", "laplacian discretization"],
+    source: {
+      id: "arxiv:1711.05394",
+      title: "Quantum Algorithm for Simulating the Wave Equation",
+      authors: "Pedro C.S. Costa, Stephen Jordan, Aaron Ostrander",
+      year: "2017",
+      url: "https://arxiv.org/abs/1711.05394",
+    },
+    literature: [
+      {
+        title: "Quantum Algorithm for Simulating the Wave Equation",
+        authors: "Pedro C.S. Costa, Stephen Jordan, Aaron Ostrander",
+        year: "2017",
+        url: "https://arxiv.org/abs/1711.05394",
+        relevance:
+          "Primary source: it presents the wave-equation algorithm built from Hamiltonian simulation and quantum linear system subroutines, states that factoring the discretized Laplacian improves the scaling of truncation error and of state preparation relative to general-purpose linear differential-equation algorithms, and states that Klein-Gordon equations and Maxwell's equations are considered as further uses of the same Hamiltonian-simulation approach. Consult it for the complexity expressions themselves, for the wave-equation algorithm's qubit and gate counts, and for whatever it says about Klein-Gordon and Maxwell's equations beyond the sentence the abstract gives.",
+        relevanceJa:
+          "一次資料です。Hamiltonian シミュレーションと量子線形方程式の部分手続きから構成される波動方程式のアルゴリズムを示し、離散化されたラプラシアンを因数分解することで、汎用的な線形微分方程式アルゴリズムに比べて打ち切り誤差と状態準備のスケーリングが改善されると述べ、同じ Hamiltonian シミュレーションの手法のさらなる応用としてクライン・ゴルドン方程式とマクスウェル方程式を検討していると述べています。計算量の式そのもの、波動方程式アルゴリズムの量子ビット数・ゲート数、クライン・ゴルドン方程式とマクスウェル方程式について要旨の一文を超えて論文が述べている内容は、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: [
+      "linear-differential-equations",
+      "hhl-linear-systems",
+      "heat-equation-solver",
+      "hamiltonian-simulation-ising",
+    ],
+  },
+  {
+    slug: "coarse-grained-vqe-intermolecular-interactions",
+    title: "Coarse-grained variational quantum eigensolver for intermolecular interactions",
+    titleJa: "分子間相互作用のための粗視化変分量子固有値ソルバー",
+    family: "Variational quantum eigensolver",
+    classiqPath: "applications/chemistry/quantum_drude_oscillator",
+    classiqCategory: "applications",
+    classiqGroup: "chemistry",
+    classiqName: "quantum_drude_oscillator",
+    problem:
+      "Determine the ground state of weakly-interacting, non-covalently bonded molecules — the weakly-bound intermolecular regime that variational quantum algorithms applied to strongly-bound, covalently-bonded systems with full molecular-orbital bases had left largely unexplored — using a coarse-grained representation of the electronic response suited to a VQA.",
+    problemJa:
+      "強く結合した共有結合系に対して完全な分子軌道基底を用いる変分量子アルゴリズムでは、これまで大きく手つかずのままであった弱く結合した分子間相互作用の領域について、VQA に適した電子応答の粗視化表現を用いて、弱く相互作用する非共有結合分子の基底状態を求める問題です。",
+    idea:
+      "Anderson, Kiffner, Barkoutsos, Tavernelli, Crain and Jaksch develop a coarse-grained representation of the electronic response that they state is ideally suited for determining the ground state of weakly interacting molecules using a variational quantum algorithm. Their construction requires qubit numbers that grow linearly with the number of molecules, and they derive scaling behaviour for the number of circuits and measurements required, stating that this compares favourably to traditional variational quantum eigensolver methods — the abstract attaches this favourable comparison to circuits and measurements specifically, separately from the linear qubit count. The authors demonstrate the method on IBM superconducting quantum processors, showing its capability to resolve the dispersion energy as a function of separation for a pair of non-polar molecules, and state that this establishes a means by which quantum computers can model Van der Waals interactions directly from zero-point quantum fluctuations. Within this coarse-grained approximation, they conclude that current-generation quantum hardware is capable of probing energies in this weakly bound but chemically ubiquitous and biologically important regime. They also report performing experiments on simulated and real quantum computers for systems of three, four and five oscillators, and for oscillators with anharmonic onsite binding potentials, stating that the consequences of the latter are unexamined in large systems by classical computational methods but can be incorporated here with low computational overhead.",
+    ideaJa:
+      "Anderson、Kiffner、Barkoutsos、Tavernelli、Crain、Jaksch は、変分量子アルゴリズム (VQA) を用いて弱く相互作用する分子の基底状態を求めるのに適していると述べる、電子応答の粗視化表現を開発しています。彼らの構成では、必要な量子ビット数は分子の数に対して線形に増加し、必要な回路数と測定数についてはスケーリングの振る舞いを導出し、これが従来の変分量子固有値ソルバー法と比べて有利であると述べています。要旨はこの有利な比較を、線形な量子ビット数とは別に、回路数と測定数に固有のものとして述べています。著者らは IBM の超伝導量子プロセッサ上でこの手法を実演し、一対の非極性分子について分離距離の関数として分散エネルギーを分解できる能力を示し、これにより量子計算機がゼロ点量子ゆらぎから直接ファンデルワールス相互作用をモデル化できる手段が確立されると述べています。この粗視化近似のもとで、著者らは、現行世代の量子ハードウェアが、この弱く結合しているが化学的にありふれ生物学的にも重要な領域のエネルギーを探ることが可能であると結論づけています。さらに、シミュレートされた量子計算機と実機の双方で、3個・4個・5個の振動子からなる系、および非調和なオンサイト結合ポテンシャルを持つ振動子について実験を行ったと報告し、後者の帰結は古典的な計算手法では大規模な系において検討されていないが、ここでは低い計算オーバーヘッドで取り込めると述べています。",
+    complexity:
+      "Qubit numbers that grow linearly with the number of molecules. Separately, the abstract states that scaling behaviour for the number of circuits and the number of measurements required is derived and compares favourably to traditional variational quantum eigensolver methods, but it gives no explicit function of either quantity and no exponent or constant for the qubit scaling beyond linearly.",
+    complexityBasis:
+      'The abstract of arXiv:2110.00968 states two separate scaling claims, each attached to a different resource. On qubits: "We require qubit numbers that grow linearly with the number of molecules". On a different pair of resources, scaling is derived but not given as an explicit function: "and derive scaling behaviour for the number of circuits and measurements required, which compare favourably to traditional variational quantum eigensolver methods." No exponent, big-O expression, or constant accompanies either claim, and compare favourably states a direction of comparison, not a bound: what the number of circuits or measurements actually is, as a function of system size, is not given. The Classiq index entry this record covers, applications/chemistry/quantum_drude_oscillator, gives a directory path and a file list and states no bound. Those are the only sources read for this field.',
+    caveat:
+      "This is a literature record. No circuit was built, compiled, simulated or run for it, no molecule was represented on a quantum processor, and no dispersion energy was computed here; the record documents the algorithm the abstract states and does not reproduce or verify any published demonstration of it. The index entry read for this record is at applications/chemistry/quantum_drude_oscillator and gives that directory path and a file list, quantum_drude_oscillator.ipynb and quantum_drude_oscillator.qmod, nothing about what those files contain; the abstract itself never names a Drude oscillator or any other specific coarse-grained model by name, so this record follows the abstract's own vocabulary — a coarse-grained representation of the electronic response, and oscillators — rather than asserting a model name the abstract does not use. The two scaling claims are kept separate because the abstract attaches them to different resources: the linear-in-the-number-of-molecules claim is for qubit count only, and the favourable-comparison claim is for the number of circuits and measurements only, with no explicit function given for either and no statement connecting the two. Neither claim carries an accuracy target, a convergence guarantee, an ansatz description, or an optimizer, and comparing favourably to traditional variational quantum eigensolver methods is a comparison against a named class of methods, not a proven bound against any one of them. The demonstration on IBM superconducting quantum processors, the resolved dispersion energy for a pair of non-polar molecules, and the experiments on systems of three, four and five oscillators and on oscillators with anharmonic potentials are the paper's own reported experiments, at the sizes it reports, run partly in simulation and partly on real hardware as the abstract states; none of them was repeated, checked, or extended here. The conclusion that current-generation quantum hardware is capable of probing energies in this regime is stated by the authors as holding within their coarse-grained approximation, and it is their conclusion from their own reported experiments, not an independent finding of this record; the abstract does not state the achieved accuracy against a reference calculation, so no accuracy claim is carried here either.",
+    caveatJa:
+      "本項目は文献に基づく記録です。ここで回路を構成・コンパイル・シミュレーション・実行したことはなく、量子プロセッサ上で分子を表現したことも、分散エネルギーを計算したこともありません。本記録は要旨が述べるアルゴリズムを記述したものであり、公開されている実演を再現・検証したものではありません。本記録が参照した索引項目は applications/chemistry/quantum_drude_oscillator にあり、そのディレクトリのパスとファイルの一覧 quantum_drude_oscillator.ipynb、quantum_drude_oscillator.qmod を与えるのみで、それらのファイルの中身については何も分かりません。要旨自体は「ドルーデ振動子」あるいはそれに類する特定の粗視化モデルの名称を一度も用いていないため、本記録は要旨自体の語彙、すなわち電子応答の粗視化表現、振動子、に従っており、要旨が用いていないモデル名を主張することはしていません。二つのスケーリングに関する主張は、要旨がそれぞれ異なる資源に結び付けているため別々に扱っています。分子数に対して線形であるという主張は量子ビット数のみについてのものであり、有利な比較という主張は回路数と測定数のみについてのもので、いずれについても明示的な関数は与えられておらず、両者を結び付ける記述もありません。いずれの主張にも、精度の目標も、収束の保証も、アンサッツの記述も、最適化器の指定もなく、従来の変分量子固有値ソルバー法と比べて有利というのは名指しされた手法の一群との比較であって、そのいずれか一つに対する証明された評価ではありません。IBM の超伝導量子プロセッサ上での実演、一対の非極性分子についての分散エネルギーの分解、3個・4個・5個の振動子からなる系および非調和ポテンシャルを持つ振動子についての実験は、いずれも論文自身が報告する実験であり、要旨が述べる通り一部はシミュレーションで、一部は実機で行われたもので、それぞれが報告する規模のものです。これらはいずれも本記録のために追試・検証・拡張したものではありません。現行世代の量子ハードウェアがこの領域のエネルギーを探ることが可能であるという結論は、著者らがこの粗視化近似のもとで成り立つとして述べたものであり、著者ら自身の実験からの著者らの結論であって、本記録が独自に確認したものではありません。要旨は参照計算に対する達成精度を述べていないため、精度についての主張も本記録にはありません。",
+    tags: ["variational quantum eigensolver", "coarse graining", "intermolecular interactions", "van der waals", "dispersion energy"],
+    source: {
+      id: "arxiv:2110.00968",
+      title: "Coarse grained intermolecular interactions on quantum processors",
+      authors: "Lewis W. Anderson, Martin Kiffner, Panagiotis Kl. Barkoutsos, Ivano Tavernelli, Jason Crain, Dieter Jaksch",
+      year: "2021",
+      url: "https://arxiv.org/abs/2110.00968",
+    },
+    literature: [
+      {
+        title: "Coarse grained intermolecular interactions on quantum processors",
+        authors: "Lewis W. Anderson, Martin Kiffner, Panagiotis Kl. Barkoutsos, Ivano Tavernelli, Jason Crain, Dieter Jaksch",
+        year: "2021",
+        url: "https://arxiv.org/abs/2110.00968",
+        relevance:
+          "Primary source: it develops the coarse-grained electronic-response representation for weakly-interacting molecules, states the linear qubit scaling with the number of molecules and the derived, favourably-compared scaling for circuits and measurements, and reports the IBM superconducting-processor demonstration resolving the dispersion energy of a pair of non-polar molecules and further experiments on systems of three to five oscillators and on anharmonic oscillators. Consult it for the explicit circuit- and measurement-scaling functions, the coarse-grained model's construction, and the accuracy of the reported dispersion energies, none of which the abstract states.",
+        relevanceJa:
+          "一次資料です。弱く相互作用する分子のための電子応答の粗視化表現を開発し、分子数に対する量子ビット数の線形なスケーリングと、回路数・測定数について導出され有利に比較されるスケーリングを述べ、一対の非極性分子の分散エネルギーを分解する IBM 超伝導プロセッサでの実演、および3個から5個の振動子からなる系や非調和振動子についてのさらなる実験を報告しています。回路数・測定数の明示的なスケーリング関数、粗視化モデルの構成、報告された分散エネルギーの精度は要旨に記載がないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["vqe-ground-state-energy", "vqe-hardware-efficient-ansatz", "vqe-measurement-grouping", "operator-coulomb"],
+  },
+  {
+    slug: "environment-assisted-quantum-walk",
+    title: "Environment-assisted quantum walks in photosynthetic energy transfer",
+    titleJa: "光合成エネルギー移動における環境支援量子ウォーク",
+    family: "Quantum walk",
+    classiqPath: "applications/chemistry/quantum_walk_fmo",
+    classiqCategory: "applications",
+    classiqGroup: "chemistry",
+    classiqName: "quantum_walk_fmo",
+    problem:
+      "Determine the role quantum dynamical effects play in the efficiency of exciton (energy) transfer within photosynthetic molecular arrays — such as the Fenna-Matthews-Olson (FMO) protein complex, whose long-lived coherence had recently been demonstrated experimentally — that interact with a thermal bath.",
+    problemJa:
+      "熱浴と相互作用する光合成分子アレイ、たとえば長寿命のコヒーレンスが最近実験的に示されたフェナ・マシューズ・オルソン (FMO) タンパク質複合体において、量子力学的効果が励起子（エネルギー）移動の効率にどのような役割を果たすかを明らかにする問題です。",
+    idea:
+      "Mohseni, Rebentrost, Lloyd and Aspuru-Guzik develop a theoretical framework for studying the role of quantum interference effects in the energy-transfer dynamics of molecular arrays that interact with a thermal bath, working within the Lindblad formalism. To do this, they generalize continuous-time quantum walks to non-unitary and temperature-dependent dynamics in Liouville space, derived from a microscopic Hamiltonian. They explore the different physical effects of coherence and decoherence processes through a universal measure of the energy-transfer efficiency and its susceptibility. Applying the framework to the Fenna-Matthews-Olson (FMO) protein complex — for which direct evidence of long-lived coherence had recently been demonstrated experimentally, citing Engel et al., Nature 446, 782 (2007) — they demonstrate that an effective interplay between the free Hamiltonian and thermal fluctuations in the environment leads to a substantial increase in the complex's energy-transfer efficiency, from about 70% to 99%. That figure is the paper's own result about the physical efficiency of energy transfer within the FMO complex, obtained from the generalized quantum-walk framework the paper develops; it is not a claim about the running time, resource cost, or speedup of an algorithm, and the abstract states none of those for the framework itself.",
+    ideaJa:
+      "Mohseni、Rebentrost、Lloyd、Aspuru-Guzik は、熱浴と相互作用する分子アレイのエネルギー移動ダイナミクスにおいて量子干渉効果が果たす役割を調べるための理論的枠組みを、Lindblad 形式のもとで構築しています。そのために、微視的な Hamiltonian から導かれる Liouville 空間における非ユニタリかつ温度に依存する力学へと、連続時間量子ウォークを一般化しています。コヒーレンスと脱コヒーレンス過程のさまざまな物理的効果を、エネルギー移動効率とその感受性に対する普遍的な尺度を通じて調べています。長寿命のコヒーレンスの直接的な証拠が最近実験的に示された（Engel et al., Nature 446, 782 (2007) を引用）フェナ・マシューズ・オルソン (FMO) タンパク質複合体にこの枠組みを適用し、自由 Hamiltonian と環境の熱ゆらぎとの効果的な相互作用が、この複合体のエネルギー移動効率をおよそ70%から99%へと大幅に増大させることを示しています。この数値は、論文が構築した一般化された量子ウォークの枠組みから得られた、FMO 複合体内でのエネルギー移動の物理的効率についての論文自身の結果であり、アルゴリズムの実行時間、資源コスト、高速化についての主張ではありません。要旨は枠組み自体についてそれらのいずれも述べていません。",
+    complexity: "",
+    complexityBasis:
+      'The abstract of arXiv:0805.2741 states no algorithmic complexity, running time, gate count, or qubit count. Its one quantitative result is a physical efficiency figure for a specific molecular complex: "we demonstrate that for the FMO complex an effective interplay between free Hamiltonian and thermal fluctuations in the environment leads to a substantial increase in energy transfer efficiency from about 70% to 99%." That is a result about the transfer efficiency of the FMO complex itself, obtained from the paper\'s theoretical framework, not a bound on the cost of the generalized quantum walk or of any other algorithm; the abstract states no runtime, no query count, and no comparison of computational cost for the framework it develops. The Classiq index entry this record covers, applications/chemistry/quantum_walk_fmo, gives a directory path and a file list and states no bound. Those are the only sources read for this field, and the complexity field is left empty on purpose rather than filled with an efficiency figure that is not a complexity bound.',
+    caveat:
+      "This is a literature record. No circuit was built, compiled, simulated or run for it, and no energy-transfer efficiency was computed here; the record documents the theoretical framework the abstract states and does not reproduce or verify any published demonstration of it. The index entry read for this record is at applications/chemistry/quantum_walk_fmo and gives that directory path and a file list, quantum_walk_fmo.ipynb and quantum_walk_fmo.qmod, nothing about what those files contain. The Fenna-Matthews-Olson (FMO) complex is squarely within the abstract's scope — the abstract names it directly and reports a result specifically about it — but the 70%-to-99% figure is a physical result about that complex's own energy-transfer efficiency, computed from the paper's generalized continuous-time-quantum-walk framework, and it is not an algorithmic speedup, a running time, or a resource bound for any computation; the abstract states none of the latter for the framework at all. The experimental citation in the abstract, to Engel et al., Nature 446, 782 (2007), is for a different, earlier finding — direct evidence of long-lived coherence in the FMO complex's dynamics — and is not the source of the 70%-to-99% figure, which the present paper's abstract presents as its own theoretical demonstration. The generalization of continuous-time quantum walks to non-unitary, temperature-dependent Lindblad dynamics is the paper's methodological contribution, and the abstract does not state that this framework is intended to run as an algorithm on a quantum computer, does not give a circuit or gate representation of it, and does not compare its cost to that of any classical method for computing the same efficiency. Nothing here, therefore, supports a claim that the paper demonstrates a quantum-computational advantage: what it demonstrates, on the abstract's own terms, is a physical mechanism — the interplay of a molecule's free Hamiltonian with thermal fluctuations — that raises transfer efficiency in one named complex, reported as the paper's own finding and not repeated or checked here.",
+    caveatJa:
+      "本項目は文献に基づく記録です。ここで回路を構成・コンパイル・シミュレーション・実行したことはなく、エネルギー移動効率を計算したこともありません。本記録は要旨が述べる理論的枠組みを記述したものであり、公開されている実演を再現・検証したものではありません。本記録が参照した索引項目は applications/chemistry/quantum_walk_fmo にあり、そのディレクトリのパスとファイルの一覧 quantum_walk_fmo.ipynb、quantum_walk_fmo.qmod を与えるのみで、それらのファイルの中身については何も分かりません。フェナ・マシューズ・オルソン (FMO) 複合体は要旨の範囲に明確に含まれており、要旨はこれを直接名指しし、それについての結果を報告しています。しかし70%から99%という数値は、この論文が構築した一般化連続時間量子ウォークの枠組みから計算された、この複合体自身のエネルギー移動効率についての物理的な結果であって、いかなる計算についてもアルゴリズムの高速化、実行時間、資源の評価ではありません。要旨は枠組み自体についてこれらのいずれも述べていません。要旨中の実験についての引用、Engel et al., Nature 446, 782 (2007) は、FMO 複合体のダイナミクスにおける長寿命コヒーレンスの直接的証拠という、別の、より早い時期の知見についてのものであり、70%から99%という数値の出所ではありません。この数値は、本論文の要旨が自らの理論的な実証として提示しているものです。連続時間量子ウォークを非ユニタリかつ温度に依存する Lindblad 力学へ一般化したことが本論文の方法論上の貢献であり、要旨は、この枠組みが量子計算機上でアルゴリズムとして実行されることを意図しているとは述べておらず、その回路表現やゲート表現も与えておらず、同じ効率を計算する古典的な手法とのコスト比較も行っていません。したがって、本記録は論文が量子計算上の優位性を示しているという主張を裏付けるものではありません。要旨自身の言葉で論文が示しているのは、ある分子の自由 Hamiltonian と熱ゆらぎとの相互作用が、名指しされた一つの複合体における移動効率を高めるという物理的な機構であり、これは論文自身の知見として報告されているものであって、本記録のために追試・検証したものではありません。",
+    tags: ["quantum walk", "photosynthesis", "energy transfer", "lindblad dynamics", "fmo complex"],
+    source: {
+      id: "arxiv:0805.2741",
+      title: "Environment-Assisted Quantum Walks in Photosynthetic Energy Transfer",
+      authors: "Masoud Mohseni, Patrick Rebentrost, Seth Lloyd, Alán Aspuru-Guzik",
+      year: "2008",
+      url: "https://arxiv.org/abs/0805.2741",
+    },
+    literature: [
+      {
+        title: "Environment-Assisted Quantum Walks in Photosynthetic Energy Transfer",
+        authors: "Masoud Mohseni, Patrick Rebentrost, Seth Lloyd, Alán Aspuru-Guzik",
+        year: "2008",
+        url: "https://arxiv.org/abs/0805.2741",
+        relevance:
+          "Primary source: it develops the Lindblad-formalism theoretical framework and the generalization of continuous-time quantum walks to non-unitary, temperature-dependent Liouville-space dynamics, and reports the resulting increase in the FMO complex's energy-transfer efficiency from about 70% to 99%. Consult it for the universal efficiency-and-susceptibility measure, the microscopic Hamiltonian the dynamics are derived from, and the derivation connecting the free-Hamiltonian/thermal-fluctuation interplay to the reported efficiency figure, none of which the abstract states in detail.",
+        relevanceJa:
+          "一次資料です。Lindblad 形式による理論的枠組みと、連続時間量子ウォークを非ユニタリかつ温度に依存する Liouville 空間での力学へ一般化したことを示し、その結果として得られる FMO 複合体のエネルギー移動効率のおよそ70%から99%への増大を報告しています。エネルギー移動効率とその感受性に対する普遍的な尺度、力学の導出元となる微視的 Hamiltonian、自由 Hamiltonian と熱ゆらぎとの相互作用を報告された効率の数値に結びつける導出については、要旨に詳細な記載がないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["quantum-walk-line", "welded-tree-traversal", "element-distinctness", "gibbs-state-sampling"],
+  },
 ];
 
 /** The Classiq directory each record covers — read by scripts/check-classiq-parity.mjs. */
