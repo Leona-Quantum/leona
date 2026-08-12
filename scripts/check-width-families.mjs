@@ -33,10 +33,10 @@
 //   * Every slug's declared width equals its own circuit's `qubitCount`, so the
 //     suffix the fold reads is not a naming convention drifting from the
 //     circuit it names.
-//   * 235 browse rows. The number the roadmap promises, computed the way the
+//   * 239 browse rows. The number the roadmap promises, computed the way the
 //     page computes it rather than typed in. It was 176 when R2.6 sized it
 //     against 281 cards; the parity intake published 12 unfolded records and then
-//     6, 6, 8, 8 and 19 more, so the number moved by exactly 59. Deliberately, which is what the error
+//     6, 6, 8, 8, 19 and 4 more, so the number moved by exactly 63. Deliberately, which is what the error
 //     message below asks for: this figure exists to make an *accidental* change
 //     in the fold — a member's `status` drifting and eight cards reappearing —
 //     visible, and it can only do that if intake changes are entered by hand.
@@ -208,15 +208,15 @@ for (const [index, slugs] of CURATED_GROUPS.entries()) {
 }
 
 const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
-// 176 at R2.6 (281 records), then +12, +6, +6, +8, +8 and +19 as the Zoo- and
+// 176 at R2.6 (281 records), then +12, +6, +6, +8, +8, +19 and +4 as the Zoo- and
 // Classiq-parity intake batches added records that belong to no width family and
-// therefore fold to nothing: 188, 194, 200, 208, 216, 235. See the header.
+// therefore fold to nothing: 188, 194, 200, 208, 216, 235, 239. See the header.
 //
 // Note for whoever changes it next: this count is computed from the **manifest**,
 // not from the corpus module — so a corpus change that has not regenerated
 // `services/api/catalog_bootstrap/manifest.json` yet will report the OLD number
 // and look like it did not move the fold at all.
-const EXPECTED_BROWSE_ROWS = 235;
+const EXPECTED_BROWSE_ROWS = 239;
 if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
     `${records.length} records fold to ${rows.length} browse rows, expected ${EXPECTED_BROWSE_ROWS}. `

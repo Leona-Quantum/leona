@@ -478,6 +478,15 @@ const FAMILY_RULES: readonly TopicRule[] = [
   // the Classiq half of the parity question needed its own index.
   { family: "Quantum benchmarking protocol", topics: ["algorithm-reference", "stabilizer"] },
   { family: "Quantum image processing", topics: ["algorithm-reference", "machine-learning"] },
+  // A fourth, added because the obvious existing family was the wrong one. A literature
+  // record about simulating a named physical model — the Fermi-Hubbard chain, the kicked
+  // rotator — reads as "Hamiltonian simulation", but that family's rule stamps the record
+  // `benchmark-circuit`, which says *this is one of our benchmark circuits* and quietly
+  // takes it out of the map-eligible denominator (see ./map-eligibility.ts). The two
+  // families that do carry `algorithm-reference` both say "product formula", and neither
+  // of these papers' abstracts claims one. So: the role these records actually have, over
+  // existing topic ids, asserting no method.
+  { family: "Hamiltonian simulation · model systems", topics: ["algorithm-reference", "materials"] },
   { family: "Optimization · Ising encoding", topics: ["algorithm-reference", "optimization"] },
 ];
 
