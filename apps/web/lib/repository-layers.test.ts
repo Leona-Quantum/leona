@@ -1755,13 +1755,69 @@ test("an example holds prose, pseudocode or both — never a name with neither",
   // The owner's "first pass": pseudocode alone, with no prose describing a run somebody
   // did. That has to be legal or the easy half is unshippable until the hard half exists.
   assert.deepEqual(errors({ pseudocode: "for k …" }), []);
-  assert.deepEqual(errors({ text: "t", textJa: "t" }), []);
-  assert.deepEqual(errors({ text: "t", textJa: "t", pseudocode: "for k …" }), []);
-  assert.deepEqual(errors({ text: "t" }), ["route: example.text is present in one locale only"]);
+  assert.deepEqual(errors({ text: "t" }), [
+    "route: example.text is present in one locale only",
+    ...errors({ text: "t", textJa: "t" }),
+  ]);
   assert.deepEqual(errors({ pseudocode: "  " }), [
     "route: example.pseudocode is present but empty — omit it instead",
   ]);
   assert.deepEqual(errors({}), ["route: example records nothing — omit it instead"]);
+});
+
+test("example prose has to name the run it describes, which is what makes a negative account unwritable", () => {
+  // **The rule this replaces was a paragraph in a doc comment**, and it had already
+  // produced the outcome it was written to prevent: twelve of the fifteen filled
+  // examples said "the source reports no run", which reads as a claim about the method
+  // rather than about one paper. The owner ruled the field runs-only
+  // (github.com/EshMis/ai-ops/issues/19), and a ruling with no guard is one refactor
+  // from gone — so the shape enforces it. A negative account has no paper reporting the
+  // run, so it cannot supply `run`, so it cannot be written at all.
+  const CITED = "https://arxiv.org/abs/1910.14596";
+  const cite = { title: "T", authors: "A", year: "2019", url: CITED };
+  const errors = (example: unknown): string[] =>
+    validateLayerGraph(
+      {
+        nodes: [
+          capability("slot"),
+          method("route", "slot", { example: example as never, citations: [cite] as never }),
+          method("b", "slot"),
+        ],
+      },
+      new Set<string>(),
+      FIXTURE_STATES,
+      NO_DISPOSITIONS,
+    ).filter((error) => error.startsWith("route:"));
+
+  const run = { paper: CITED, at: "§4.3, Fig. 2", kind: "simulation" } as const;
+
+  // Agreement is silence — without this, everything below could pass by the validator
+  // simply always complaining.
+  assert.deepEqual(errors({ text: "t", textJa: "t", run }), []);
+  assert.deepEqual(errors({ text: "t", textJa: "t", run, pseudocode: "for k …" }), []);
+
+  // 1. Prose with no run. The whole ruling, in one assertion.
+  assert.deepEqual(errors({ text: "t", textJa: "t" }).map((e) => e.split(" — ")[0]), [
+    "route: example.text without example.run",
+  ]);
+
+  // 2. A run with no prose is a citation describing nothing.
+  assert.deepEqual(errors({ run, pseudocode: "for k …" }), [
+    "route: example.run with no example.text — a citation describing nothing",
+  ]);
+
+  // 3. A whole paper is not a place. "It is in there somewhere" is the shape a negative
+  //    account would take once it learned it needed a `run`.
+  assert.deepEqual(errors({ text: "t", textJa: "t", run: { ...run, at: "  " } }), [
+    `route: example.run names no place in ${CITED} — a whole paper is not a run`,
+  ]);
+
+  // 4. The paper has to be one the method already cites. A run sourced from somewhere
+  //    the rest of the record has never heard of is a claim nothing else supports, and
+  //    it would pass a plain "is this a url" check.
+  assert.deepEqual(errors({ text: "t", textJa: "t", run: { ...run, paper: "https://arxiv.org/abs/0000.00000" } }), [
+    "route: example.run cites https://arxiv.org/abs/0000.00000, which is not one of this method's citations",
+  ]);
 });
 
 test("an implementation is named, uniquely, and its papers look like papers", () => {

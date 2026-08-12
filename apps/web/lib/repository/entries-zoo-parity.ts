@@ -53,6 +53,55 @@ type ZooAlgorithm = {
   zooSection: string;
   /** The Zoo's own speedup class for that entry, verbatim. */
   speedup: string;
+  /**
+   * What this record's **own primary paper** says about that speedup class.
+   *
+   * ## Why the field exists
+   *
+   * The `speedup` above is a quotation from an outside index, and on at least one
+   * record it is a quotation about a whole *section* rather than about the paper:
+   * `gibbs-state-sampling` sits under "Preparing Eigenstates and Thermal States",
+   * which the Zoo labels superpolynomial as a block. The owner was asked whether a
+   * record may show a rating like that at all:
+   *
+   * > *"i will say try your best to find the claim from a primary source or a
+   * > refutation of it. otherwise, keep track of which claims are from secondary
+   * > sources like the zoo. this way i can get expert opinion and rederive it in
+   * > some way without only relying on something like the zoo. we do ideally want
+   * > to pose this repository as superior to zoo and classiq and braid and all
+   * > others without outright claiming that, so less references to them the better
+   * > since they must have gotten those things from somewhere!"*
+   * > — owner, github.com/EshMis/ai-ops/issues/18, 2026-08-12
+   *
+   * So: not dropped, and not shown as ours either. Every speedup class carries a
+   * statement of whether a primary source backs it, which is both the honesty the
+   * reader needs and the worklist the owner asked for — "which claims are from
+   * secondary sources" is now a number this repository can produce rather than a
+   * thing somebody would have to re-read 32 records to find out.
+   *
+   * ## Three states, and `absent` is scoped by what was read
+   *
+   * - `reported` — the primary source states a comparable speedup. `quote` is its
+   *   own words, not a paraphrase.
+   * - `absent`   — the text named in `read` was read and states no speedup. A
+   *   positive claim, and **deliberately narrower than "the paper does not"**:
+   *   `read` says exactly what was looked at, because an abstract is not a paper
+   *   and "we read the abstract" must not harden into "the authors never say it".
+   * - `unknown`  — nobody has checked. The honest default and NOT the same thing.
+   *
+   * The same three-valued discipline as `SourceCoverage` in ./types.ts, and for the
+   * same reason: collapsing the middle value into the last one loses the only fact
+   * that distinguishes a finding from a gap.
+   *
+   * The intake as shipped checked the problem statement, the speedup class against
+   * the Zoo, the reference metadata and the complexity claim. It did **not** ask
+   * whether the primary paper supports the class, so `unknown` is accurate for the
+   * records that carry it — it is a worklist, not a shrug.
+   */
+  speedupPrimary:
+    | { states: "reported"; quote: string }
+    | { states: "absent"; read: string }
+    | { states: "unknown" };
   problem: string;
   problemJa: string;
   idea: string;
@@ -84,6 +133,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Discrete-log",
     zooSection: "Algebraic and Number Theoretic Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem: "Given three n-bit numbers a, b and N with the promise that b = a^s mod N for some s, recover the exponent s.",
     problemJa: "n ビットの整数 a, b, N が与えられ、ある s について b = a^s mod N が成り立つと約束されているとき、その指数 s を求める問題です。",
     idea: "Shor's paper gives efficient randomized quantum algorithms for two problems believed hard classically, integer factoring and discrete logarithms, and both take a number of steps polynomial in the input size. The Zoo entry points the reader to the abelian hidden subgroup problem, and it states that by similar techniques quantum computers can solve the discrete logarithm problem on elliptic curves, thereby breaking elliptic-curve cryptography. Roetteler, Naehrig, Svore and Lauter make that elliptic-curve variant concrete by giving reversible circuits for modular addition, multiplication and inversion and for elliptic-curve point addition, then counting the qubits and Toffoli gates such a circuit needs.",
@@ -120,6 +170,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Formula Evaluation",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem: "Determine the value at the root of a read-once Boolean formula, canonically a NAND tree on N variables, given only oracle access to the variables and using as few queries as possible.",
     problemJa: "各変数が一度しか現れないブール式、すなわちファンアウトを持たない木構造の回路について、変数へのオラクルアクセスだけを用いて、できるだけ少ないクエリ数で根の値を決定する問題です。代表例は N 変数のNAND木です。",
     idea: "Farhi, Goldstone and Gutmann gave a quantum algorithm for evaluating NAND trees with a continuous-time quantum walk, running in time O(√(N log N)) in the Hamiltonian query model, which is not the model in which a discrete circuit calls an oracle. Childs, Cleve, Jordan and Yonge-Mallo point out that their algorithm can be converted into one that works in the conventional quantum query model, at the price of an arbitrarily small polynomial overhead: O(N^(1/2 + ε)) queries for any fixed ε > 0. The Zoo places NAND-tree evaluation inside a longer line of work on formula evaluation, in which Reichardt's span-program formalism finally settled the quantum query complexity of any formula of O(1) fanin on N variables at Θ(√N), and in which Grover's algorithm can be regarded as the special case where every gate is OR.",
@@ -156,6 +207,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Hidden Shift",
     zooSection: "Oracular Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem: "Given oracle access to a function f on the integers mod N together with the promise that f(x) = g(x+s) for a known function g and an unknown shift s, recover s.",
     problemJa: "既知の関数 g に対して f(x) = g(x+s) が成り立つという約束のもとで、N を法とする整数上の関数 f へのオラクルアクセスから未知のシフト s を求める問題です。",
     idea: "Nearly all of the successful quantum algorithms use the Fourier transform to recover subgroup structure, above all periodicity; van Dam, Hallgren and Ip point out that the same transform also captures shift structure, which had received far less attention. They give three unknown-shift problems that can be solved efficiently on a quantum computer using the quantum Fourier transform, and they define the hidden coset problem, one framework that contains both the hidden shift problem and the hidden subgroup problem. The Quantum Algorithm Zoo records that their construction covers the case where f is a multiplicative character of a finite ring or field, and that the previously discovered shifted Legendre symbol algorithm is subsumed as a special case, because the Legendre symbol is a multiplicative character of Fₚ.",
@@ -192,6 +244,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Ordered Search",
     zooSection: "Oracular Algorithms",
     speedup: "Constant factor",
+    speedupPrimary: { states: "unknown" },
     problem: "Given oracle access to a list of N numbers held in order from least to greatest, together with a number x, determine where in the list x would fit.",
     problemJa: "小さい順に並んだN個の数のリストへのオラクルアクセスが与えられ、さらに数xが与えられたとき、xがリストのどの位置に入るかを求める問題です。",
     idea: "The paper characterizes a class of quantum query algorithms for ordered search as a semidefinite program, and solving that program yields new algorithms for small instances of the problem. Those small-instance algorithms are then extended to arbitrarily large N by recursion, which produces an exact quantum ordered search algorithm improving on the previously best known exact algorithm. Because classical binary search already costs log₂ N queries, the quantum gain here is a constant factor on that logarithm rather than a change of order.",
@@ -228,6 +281,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Welded Tree",
     zooSection: "Oracular Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given oracle access to a graph built by joining two depth-n binary trees with a random weld, so that every node except the two roots has degree three, start from the label of one root and find the label of the other root.",
     problemJa:
@@ -276,6 +330,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Collision Finding and Element Distinctness",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem: "Given oracle access to N items carrying no promise about the underlying function, find two items that are equal, or establish that all N are distinct.",
     problemJa: "写像の構造に関する約束が一切ない N 個の要素へオラクル経由でアクセスできるとき、値の等しい 2 要素を見つける、あるいは N 個すべてが相異なることを確かめる問題です。",
     idea: "Ambainis builds the algorithm out of a quantum walk instead of a direct search, which is what improves on the earlier O(N^(3/4))-query quantum algorithm the abstract credits to Buhrman et al. and matches the query lower bound of Shi. The same construction also solves the generalization in which k equal items must be found among N. The easier promised version is older: when f is r-to-one, Brassard, Hoyer and Tapp give an algorithm that finds a collision by using Grover's search in a novel way, and their technique also yields a claw-finding algorithm for a pair of functions and a space-time tradeoff. The Zoo groups the two under one entry because dropping the two-to-one promise is exactly what turns collision finding into element distinctness.",
@@ -312,6 +367,14 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Preparing Eigenstates and Thermal States",
     zooSection: "Approximation and Simulation Algorithms",
     speedup: "Superpolynomial",
+    // The record that prompted the owner's ruling, and the one the ruling was
+    // acted on. Poulin and Wocjan's abstract was read in full: it states the
+    // preparation, the universal D^α thermalisation-time bound with α < 1/2, and
+    // the partition-function algorithm's dependence on that time and on the
+    // squared accuracy — and it makes no comparison to a classical algorithm at
+    // all. No "superpolynomial", no "exponential speedup", no classical runtime.
+    // The class is the section heading's, and the paper does not carry it.
+    speedupPrimary: { states: "absent", read: "abstract of arXiv:0905.2199" },
     problem: "Prepare the thermal Gibbs state of an interacting quantum system on a quantum computer, and use that preparation to evaluate the system's partition function to a target accuracy.",
     problemJa: "相互作用する量子系の熱的 Gibbs 状態を量子計算機上で準備し、その準備を用いて分配関数を目標精度で評価する問題です。",
     idea: "Poulin and Wocjan's algorithm prepares the thermal Gibbs state of an interacting quantum system directly on the quantum register. The paper states that the algorithm sets a universal upper bound D^α on the thermalization time of a quantum system, with D the Hilbert space dimension and the exponent α < 1/2 proportional to the Helmholtz free energy density. A second algorithm derived from the same preparation evaluates the partition function, its running time proportional to the system's thermalization time and inversely proportional to the targeted accuracy squared. In the Zoo this sits among methods for approximating ground states, low energy states, and thermal states for some classes of Hamiltonians; the Zoo notes that simulating Hamiltonian time evolution, as well as some problems of preparing ground and thermal states, can all be done as special cases of the quantum singular value transformation.",
@@ -348,6 +411,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Knot Invariants",
     zooSection: "Approximation and Simulation Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a braid on n strands with m crossings and an integer k, compute a certain additive approximation to the Jones polynomial of the link obtained by closing the braid, evaluated at the primitive root of unity e^(2πi/k).",
     problemJa:
@@ -394,6 +458,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Simulated Annealing",
     zooSection: "Approximation and Simulation Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem: "Sample from the final limiting distribution πₙ of a slowly varying sequence of Markov chains, where πₙ is chosen to concentrate on good solutions of a combinatorial optimization problem.",
     problemJa: "ゆっくり変化するマルコフ連鎖の列の最終的な極限分布 πₙ からサンプリングする問題です。πₙ は組合せ最適化問題の良い解に集中するように選ばれます。",
     idea: "Classical simulated annealing applies stochastic matrices M₁, M₂, …, Mₙ whose limiting distributions satisfy |πₜ₊₁ − πₜ| < ε for some small ε, so that an easily prepared π₁ can be carried step by step to πₙ; these distributions are typically thermal distributions at successively lower temperatures. Somma, Boixo, Barnum and Knill describe a quantum algorithm that simulates that annealing process on a quantum computer, using quantum walks together with the quantum Zeno effect induced by randomizing the evolution. The cost is governed by δ, the minimum over the schedule of the gap between the largest and second largest eigenvalues of each Mᵢ, and the quantum algorithm requires only the square root of the classical dependence on that gap. The Zoo describes this construction as building upon results of Szegedy.",
@@ -430,6 +495,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Optimization by Decoded Quantum Interferometry",
     zooSection: "Optimization, Numerics, and Machine Learning",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem: "Given a set of constraints over a finite field, such as a max-XORSAT instance or the task of finding a degree-n polynomial over 𝔽ₚ that approximates a given data set as well as possible, produce an assignment that satisfies as many constraints as possible.",
     problemJa: "有限体上の制約集合、たとえばmax-XORSATインスタンスや、与えられたデータ集合を𝔽ₚ上でできるだけよく近似する次数nの多項式を求める課題に対し、満たす制約の数ができるだけ多い割り当てを出力します。",
     idea: "Decoded Quantum Interferometry uses the quantum Fourier transform to reduce the optimization problem to a decoding problem, so the number of constraints the output satisfies is set by the number of errors that can be decoded. When each constraint depends on only a few variables, the induced code is a classical LDPC code, which efficient classical decoders such as belief propagation handle at large error counts. When the constraints carry algebraic structure, as in polynomial fitting over 𝔽ₚ, that structure carries over to the decoding problem and yields Reed-Solomon codes, which classical algorithms decode up to half their distance; this is the regime where the paper claims its speedup. The construction is built on Regev's reduction.",
@@ -466,6 +532,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Solving Linear Differential Equations",
     zooSection: "Optimization, Numerics, and Machine Learning",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a first-order linear differential equation d/dt x = A(t)x + b(t) with N-dimensional vectors x and b and an N×N matrix A, and given an initial condition x(0), produce the solution x(t) at a later time t to precision ε, in the sense that the normalized vector x(t)/‖x(t)‖ returned is at distance at most ε from the exact solution.",
     problemJa:
@@ -528,6 +595,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Solving Nonlinear Differential Equations",
     zooSection: "Optimization, Numerics, and Machine Learning",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a system of nonlinear ordinary differential equations, in the primary algorithm's case a dissipative quadratic n-dimensional system, produce the solution at a chosen evolution time T to error ε, encoded in the amplitudes of a quantum state.",
     problemJa:
@@ -586,6 +654,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Verifying Matrix Products",
     zooSection: "Algebraic and Number Theoretic Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given three n×n matrices A, B and C over a field, decide whether AB = C, rather than computing the product and comparing it entry by entry.",
     problemJa:
@@ -630,6 +699,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Polynomial interpolation",
     zooSection: "Oracular Algorithms",
     speedup: "Varies",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given an oracle that returns the value p(x) of an unknown degree-d polynomial p over the finite field GF(q) at any queried point x, determine the coefficients of p using as few queries as possible.",
     problemJa:
@@ -682,6 +752,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Pattern matching",
     zooSection: "Oracular Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a text T of length n and a pattern P of length m < n, both over a finite alphabet, find an occurrence of P as a substring of T or report that P is not a substring of T. The Zoo also states the problem for d-dimensional arrays rather than strings, where the task is to return the location of P as an m × m × ... × m block within the n × n × ... × n array T or report that no such location exists.",
     problemJa:
@@ -726,6 +797,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Graph Properties in the Adjacency Matrix Model",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given access only to an oracle that, for a pair of integers in {1, 2, ..., n}, says whether the corresponding vertices of an n-vertex graph are joined by an edge, decide a property of that graph or find a structure in it, such as connectivity, a minimum spanning tree, a lowest weight path, or a triangle, using as few queries as possible.",
     problemJa:
@@ -770,6 +842,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Counterfeit Coins",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given N coins of which exactly k are counterfeit, where the real coins all share one weight and the counterfeit coins all share another, and given a pan balance that can compare the weight of any pair of subsets of the coins but reports only whether they balance or tilt, identify all of the counterfeit coins in as few weighings as possible.",
     problemJa:
@@ -821,6 +894,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Estimating Determinants and Other Spectral Sums",
     zooSection: "Optimization, Numerics, and Machine Learning",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a function f and a positive semi-definite matrix A whose eigenvalues are λⱼ, estimate the spectral sum Tr[f(A)] = Σⱼ f(λⱼ), a family whose typical examples the paper gives as the von Neumann entropy, the trace of A⁻¹, the log-determinant and the Schatten p-norm, the last of which it says does not require the matrix to be positive semi-definite.",
     problemJa:
@@ -872,6 +946,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Matrix Commutativity",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given oracle access to k matrices of size n × n, where a query names a matrix index x together with a pair of indices i, j and returns the ij entry of the x-th matrix, decide whether all k of the matrices commute with one another.",
     problemJa:
@@ -923,6 +998,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Group Commutativity",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a list of k generators for a group G together with black-box access to group multiplication, decide whether G is commutative using as few queries to that black box as possible.",
     problemJa:
@@ -969,6 +1045,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Hidden Nonlinear Structures",
     zooSection: "Oracular Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given oracle access to a hidden subset over a finite field that is not a lattice, that is, a hidden nonlinear structure, identify that subset.",
     problemJa:
@@ -1014,6 +1091,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Matrix Rank",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given oracle access to the integer entries of an n×m matrix A, determine the rank of A.",
     problemJa:
@@ -1071,6 +1149,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Search with Wildcards",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Identify a hidden n-bit string x using an oracle that, for a chosen subset S of the n positions and a string y of length |S|, returns one when the substring of x specified by S equals y and zero otherwise.",
     problemJa:
@@ -1122,6 +1201,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Quantum Dynamic Programming for path-in-the-hypercube",
     zooSection: "Optimization, Numerics, and Machine Learning",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a subgraph of the Boolean hypercube on bit strings of length n, whose edges all run from smaller to larger Hamming weight, decide whether it contains a path from the all-zeros vertex 0^n to the all-ones vertex 1^n.",
     problemJa:
@@ -1168,6 +1248,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Graph Properties in the Adjacency List Model",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given only an oracle that, for a vertex of an N-vertex graph of degree d together with an index j in {1, 2, ..., d}, returns that vertex's j-th neighbor or null when the vertex has degree less than d, decide in as few queries as possible whether the graph is bipartite or far from bipartite — far meaning that a constant fraction of the edges would have to be removed to achieve bipartiteness — and, in the same model, whether the graph is an expander or far from being one.",
     problemJa:
@@ -1214,6 +1295,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Center of Radial Function",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given oracle access to a spherically symmetric function f from R^d to an arbitrary set S, locate its center of symmetry to a fixed precision using as few queries as possible.",
     problemJa:
@@ -1260,6 +1342,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Group Order and Membership",
     zooSection: "Oracular Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a finite group G presented only through an oracle that takes an ordered pair of element labels and returns the label of their product, compute the order of G from the labels of a set of generators, and decide whether a given bitstring is the label of a group element — in the constructive form of the membership question, exhibiting that element as a product of the generators.",
     problemJa:
@@ -1306,6 +1389,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Statistical Difference",
     zooSection: "Oracular Algorithms",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given oracle access to two unknown probability distributions P and Q on an N-element set — in the Zoo's setup, black boxes A and B whose domain is the integers 1 through T and whose range is the integers 1 through N, with the distribution over outputs induced by choosing uniformly at random among allowed inputs — approximate the L1 distance between the two distributions to constant precision.",
     problemJa:
@@ -1352,6 +1436,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Finite Rings and Ideals",
     zooSection: "Oracular Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given black-box access to a finite ring R, not necessarily commutative, together with a list of generators for an ideal I in R, find an additive basis representation for I.",
     problemJa:
@@ -1398,6 +1483,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Three-manifold Invariants",
     zooSection: "Approximation and Simulation Algorithms",
     speedup: "Superpolynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given a compact, orientable three-manifold presented by a Heegaard splitting, compute a certain additive approximation to its Turaev-Viro invariant, the scalar topological invariant that takes the same value on homeomorphic manifolds.",
     problemJa:
@@ -1443,6 +1529,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Computing the Principal Eigenvector",
     zooSection: "Optimization, Numerics, and Machine Learning",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given query access to the entries of a d × d Hermitian matrix A, output a classical description of a good approximation of its top eigenvector, the eigenvector belonging to the largest eigenvalue.",
     problemJa:
@@ -1494,6 +1581,7 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     zooName: "Approximating Nash Equilibria",
     zooSection: "Optimization, Numerics, and Machine Learning",
     speedup: "Polynomial",
+    speedupPrimary: { states: "unknown" },
     problem:
       "Given oracle access to the m × n payoff matrix of a zero-sum game with bounded entries, compute a classical representation of an ε-approximate Nash equilibrium of that game.",
     problemJa:
@@ -1538,10 +1626,60 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
 export const ZOO_PARITY_COVERAGE: ReadonlyArray<{ slug: string; zooName: string }> =
   ZOO_ALGORITHMS.map((concept) => ({ slug: concept.slug, zooName: concept.zooName }));
 
+/**
+ * Where each record's speedup class stands against its own primary paper — read
+ * by `scripts/check-zoo-parity.mjs`, which pins the census exactly.
+ *
+ * Exported as the whole discriminated value rather than just the state word, so
+ * the checker can refuse a `reported` with no quote and an `absent` with nothing
+ * named as read. A state with no evidence behind it is the shape this field was
+ * added to prevent, and it would type-check perfectly well as an empty string.
+ */
+export const ZOO_SPEEDUP_PROVENANCE: ReadonlyArray<{
+  slug: string;
+  speedup: string;
+  primary: ZooAlgorithm["speedupPrimary"];
+}> = ZOO_ALGORITHMS.map((concept) => ({
+  slug: concept.slug,
+  speedup: concept.speedup,
+  primary: concept.speedupPrimary,
+}));
+
+/**
+ * What a reader is told about who stands behind the speedup class, in one line
+ * per locale.
+ *
+ * A sentence rather than a bare state word: "unknown" on a card means nothing to
+ * whoever is reading it, and the difference between *nobody has looked* and *we
+ * looked and it is not there* is exactly the difference this field exists to make
+ * legible. `absent` names what was read, because the claim is only as wide as the
+ * text behind it.
+ */
+function speedupPrimaryLine(concept: ZooAlgorithm): { en: string; ja: string } {
+  switch (concept.speedupPrimary.states) {
+    case "reported":
+      return {
+        en: `Stated by the primary source: "${concept.speedupPrimary.quote}"`,
+        ja: `一次資料に記載があります：「${concept.speedupPrimary.quote}」`,
+      };
+    case "absent":
+      return {
+        en: `Not stated by the primary source — ${concept.speedupPrimary.read} was read and makes no such claim`,
+        ja: `一次資料には記載がありません（${concept.speedupPrimary.read} を確認）`,
+      };
+    default:
+      return {
+        en: "Not checked against the primary source yet",
+        ja: "一次資料との照合はまだ行っていません",
+      };
+  }
+}
+
 function zooEntry(concept: ZooAlgorithm): PublicRepositoryEntry {
   const complexityLine = concept.complexity === ""
     ? "Not stated by the sources read"
     : concept.complexity;
+  const primary = speedupPrimaryLine(concept);
   return makeReferenceEntry({
     slug: concept.slug,
     title: concept.title,
@@ -1571,16 +1709,25 @@ function zooEntry(concept: ZooAlgorithm): PublicRepositoryEntry {
     descriptionJa: concept.problemJa,
     introduction: `${concept.problem} ${concept.idea}`,
     introductionJa: `${concept.problemJa}${concept.ideaJa}`,
+    // The Zoo's name came out of this paragraph, and out of the resource label
+    // below, on the owner's ruling that *"less references to them the better"*.
+    // What did NOT come out is the claim's provenance: the sentence still says
+    // the class is a secondary-source classification and not this paper's, and
+    // the index is still named once, in `metadata`, which is the "keep track of
+    // which claims are from secondary sources" half of the same ruling. Dropping
+    // the attribution entirely would have turned a quotation into our own claim,
+    // which is the opposite of what he asked for.
     explanation:
-      `${concept.idea} The Quantum Algorithm Zoo files this under ${concept.zooSection} with speedup class`
-      + ` "${concept.speedup}". ${
+      `${concept.idea} This record's speedup class, "${concept.speedup}", is a secondary source's`
+      + ` classification of the ${concept.zooSection.toLowerCase()} it files this under — not a claim its`
+      + ` primary paper makes. ${primary.en}. ${
         concept.complexity === ""
           ? `The sources read state no complexity bound for this record (${concept.complexityBasis}).`
           : `Reported cost: ${concept.complexity}.`
       }`,
     explanationJa:
-      `${concept.ideaJa}Quantum Algorithm Zooでは「${concept.zooSection}」に分類され、速度向上の区分は`
-      + `「${concept.speedup}」です。${
+      `${concept.ideaJa}本記録の速度向上の区分「${concept.speedup}」は、二次資料が分類したものであり、`
+      + `一次論文の主張ではありません。${primary.ja}。${
         concept.complexity === ""
           ? "参照した出典は本記録に対する計算量の上界を述べていません。"
           : `報告されている計算量は ${concept.complexity} です。`
@@ -1588,16 +1735,27 @@ function zooEntry(concept: ZooAlgorithm): PublicRepositoryEntry {
     tags: concept.tags,
     resources: [
       { label: "Record type", value: "Literature reference" },
-      // Named for whose classification it is. The Zoo assigns a speedup class to
-      // its *entry* — sometimes to a whole section of them — and a reader who sees
-      // a bare "Speedup" on a single-paper record will read it as a claim this
-      // record is making about that paper. It is not; it is a quotation.
-      { label: "Speedup class (Quantum Algorithm Zoo)", value: concept.speedup },
+      // Named for whose classification it is. An outside index assigns a speedup
+      // class to its *entry* — sometimes to a whole section of them — and a reader
+      // who sees a bare "Speedup" on a single-paper record will read it as a claim
+      // this record is making about that paper. It is not; it is a quotation.
+      //
+      // The line below it is the one the owner asked for: whether the paper this
+      // record is actually about backs the class, is silent on it, or has not been
+      // read for it yet. Without that second line the first is a rating with no
+      // standing, and a reader cannot tell a checked claim from an unchecked one.
+      { label: "Speedup class (secondary source)", value: concept.speedup },
+      { label: "Primary source on the speedup", value: primary.en },
       { label: "Reported cost", value: complexityLine },
     ],
     metadata: [
-      { label: "Quantum Algorithm Zoo entry", value: concept.zooName },
-      { label: "Zoo section", value: concept.zooSection },
+      // The tracking half of the owner's #18 ruling, and the ONE place the outside
+      // index is named to a reader. It is here rather than in the prose because
+      // this is the row somebody re-deriving the class from first principles needs
+      // — "which claims are from secondary sources, so i can get expert opinion
+      // and rederive it" — and it is a lookup, not part of the argument.
+      { label: "Secondary source for the speedup class", value: `Quantum Algorithm Zoo — "${concept.zooName}"` },
+      { label: "Section it is filed under", value: concept.zooSection },
       { label: "Complexity basis", value: concept.complexityBasis },
       { label: "Circuit", value: "Not supplied" },
     ],

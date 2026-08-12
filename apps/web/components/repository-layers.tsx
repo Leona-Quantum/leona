@@ -60,7 +60,7 @@ import {
 import { convergeNotes } from "../lib/repository/converge-notes";
 import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
-import { cardFor } from "../lib/repository/card-content";
+import { cardFor, exampleRunNote } from "../lib/repository/card-content";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { paperTraces } from "../lib/repository/paper-traces";
 import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
@@ -1014,9 +1014,20 @@ function MethodView({
           {node.example?.text || node.example?.pseudocode ? (
             <>
               {node.example.text ? (
-                <p>
-                  <MathText source={(isJa ? node.example.textJa : node.example.text) ?? ""} />
-                </p>
+                <>
+                  <p>
+                    <MathText source={(isJa ? node.example.textJa : node.example.text) ?? ""} />
+                  </p>
+                  {/* Whose run it is and what kind — the same line the card draws,
+                      from the same function, because this page and the card are two
+                      renderers of one field and a note on only one of them is worse
+                      than none. All three runs in the graph are classical
+                      simulations, and a section headed "Example" with numbers under
+                      it reads as a quantum execution unless something says otherwise. */}
+                  {exampleRunNote(node.example.run, isJa) ? (
+                    <p className="mj-card-run-note">{exampleRunNote(node.example.run, isJa)}</p>
+                  ) : null}
+                </>
               ) : null}
               {/* Not localised, and this page says why by not offering a second
                   one: the identifiers are the record's own symbols. Same class

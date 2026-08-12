@@ -11706,34 +11706,6 @@ div.mj-rail-row:hover {
 .mj-converge-loop--measured {
   stroke-dasharray: 3 2.2;
 }
-/* The plate under that caption. Visually a name plate and deliberately NOT
-   `.mj-converge-name-plate`: that class is a marker two `converge-plate.spec.ts`
-   guards read out of the emitted markup ("every plate before every name", "each
-   plate covers its lane name"), and a caption plate answers to neither — it is
-   emitted in the hub pass on purpose, and what it covers is a caption. It gets
-   the same five declarations rather than sharing the selector so the two can be
-   read apart at a glance; they are the same by intent, not by accident.
-
-   **No `transition` here, on purpose.** Its text (`.mj-converge-hub-caption`)
-   has none either, so the pair snaps together. Adding one to the plate alone
-   would rebuild exactly the defect recorded further down this file — the plate
-   arriving 200ms before the word it sits under. If a caption ever animates,
-   animate both or neither. */
-.mj-converge-caption-plate {
-  fill: var(--bg-1);
-  stroke: none;
-  pointer-events: none;
-  rx: 3;
-  ry: 3;
-}
-/* The convergence's own name, over the shared circle (W19 PR-2). The state's
-   authored label in the canvas's name register — it IS a name, unlike the own
-   stretch's phrase, so it wears primary ink and no italic. */
-.mj-converge-hub-caption {
-  fill: var(--text-1);
-  font-family: var(--font-ui);
-  font-size: 12px;
-}
 /* The Atlas holds a full record of this one — same visual language as
    `.mj-process--atlas .mj-process-name` above: a dotted underline on the name,
    not a colour, because colour on this canvas already means the accent and the
@@ -13262,6 +13234,15 @@ div.mj-rail-row:hover {
   font-size: var(--fs-12);
   text-transform: uppercase;
   letter-spacing: 0.06em;
+}
+/* Where a worked example's run came from, and what kind of run it is. Quiet,
+   because it is provenance rather than content — but present, because all three
+   runs in the graph are classical simulations and "Example" with numbers under
+   it otherwise reads as a quantum execution. */
+.mj-card-run-note {
+  margin: calc(-1 * var(--sp-1)) 0 var(--sp-3);
+  color: var(--text-2);
+  font-size: var(--fs-12);
 }
 /* Pseudocode. Whitespace is the only structure it has, so it keeps it — and it
    scrolls inside its own box rather than widening the card, because a listing

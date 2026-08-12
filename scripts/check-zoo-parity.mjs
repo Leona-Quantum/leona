@@ -73,7 +73,7 @@ const intakeMod = await bundle("apps/web/lib/repository/entries-zoo-parity.ts", 
 const coverageMod = await bundle("apps/web/lib/repository/zoo-coverage.ts", "zoo-coverage");
 
 const { PUBLIC_REPOSITORY_ENTRIES } = corpusMod;
-const { ZOO_PARITY_COVERAGE } = intakeMod;
+const { ZOO_PARITY_COVERAGE, ZOO_SPEEDUP_PROVENANCE } = intakeMod;
 const { ZOO_LEGACY_COVERAGE, ZOO_NOT_APPLICABLE } = coverageMod;
 
 const corpusSlugs = new Set(PUBLIC_REPOSITORY_ENTRIES.map((entry) => entry.slug));
@@ -161,6 +161,71 @@ if (AS_JSON) {
   if (SHOW_MISSING) {
     for (const row of missing) console.log(`  missing: ${row.name}  [${row.section}]`);
   }
+}
+
+// --- whose claim is the speedup class? -----------------------------------------
+//
+// Every `speedup` on an intake record is a quotation from the Quantum Algorithm Zoo,
+// and on at least one of them it is a quotation about a whole SECTION rather than
+// about the paper. The owner ruled that such a class may stay, provided the record
+// says whether its own primary source backs it, and that "which claims are from
+// secondary sources" stays countable (EshMis/ai-ops#18, 2026-08-12).
+//
+// **An exact census, and a fall fails too** — the same shape, and for the same
+// reason, as the per-slot hollow-twin census in `repository-layers.test.ts` that the
+// owner settled on the same day (#21). A ceiling on `unknown` would let the number
+// drift down as primary sources get read and then quietly absorb a new unchecked
+// record without a word; an exact count makes reading a paper an edit to this line,
+// which is the diff that records the win.
+const SPEEDUP_PROVENANCE_CENSUS = {
+  // Nobody has yet found a primary paper stating a comparable speedup in its own
+  // words. Zero is a real value here, not an unfinished one.
+  reported: 0,
+  // gibbs-state-sampling. Poulin and Wocjan's abstract was read in full and makes
+  // no comparison to a classical algorithm; the Zoo's "Superpolynomial" is the
+  // section heading's. This is the record the owner's ruling was about.
+  absent: 1,
+  // The worklist. The intake checked the problem statement, the class against the
+  // Zoo, the reference metadata and the complexity claim — it never asked whether
+  // the paper supports the class. `unknown` says that, rather than pretending.
+  unknown: 31,
+};
+
+const seen = { reported: 0, absent: 0, unknown: 0 };
+for (const { slug, primary } of ZOO_SPEEDUP_PROVENANCE) {
+  if (!(primary?.states in seen)) {
+    errors.push(`${slug}: speedupPrimary.states is "${primary?.states}", which is not one of reported/absent/unknown`);
+    continue;
+  }
+  seen[primary.states] += 1;
+  // A state with no evidence behind it is exactly what this field was added to
+  // stop, and an empty string type-checks perfectly well.
+  if (primary.states === "reported" && !primary.quote?.trim()) {
+    errors.push(`${slug}: speedupPrimary is "reported" with no quote — a claim with nothing behind it`);
+  }
+  if (primary.states === "absent" && !primary.read?.trim()) {
+    errors.push(
+      `${slug}: speedupPrimary is "absent" with nothing named in \`read\` — "the paper does not say it" `
+      + "is only as wide as the text somebody actually read",
+    );
+  }
+}
+for (const [state, pinned] of Object.entries(SPEEDUP_PROVENANCE_CENSUS)) {
+  if (seen[state] === pinned) continue;
+  errors.push(
+    seen[state] > pinned
+      ? `speedup provenance: ${seen[state]} records are "${state}", was ${pinned}. If a primary source was read, `
+        + `record the win: ${state}: ${seen[state]}. If a record was added without checking one, that is the `
+        + "worklist growing and it should be deliberate."
+      : `speedup provenance: ${seen[state]} records are "${state}", down from ${pinned}. Update the census: `
+        + `${state}: ${seen[state]}. A stale-high number is silent room for an unchecked claim to hide in.`,
+  );
+}
+if (!QUIET && !AS_JSON) {
+  console.log(
+    `  speedup class vs primary source: ${seen.reported} reported, ${seen.absent} absent, ${seen.unknown} unchecked`
+    + ` (of ${ZOO_SPEEDUP_PROVENANCE.length})`,
+  );
 }
 
 if (errors.length > 0) {

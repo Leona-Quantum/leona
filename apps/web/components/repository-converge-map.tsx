@@ -97,6 +97,17 @@ interface ConvergeCopy {
   lineReadHere: string;
   openHere: string;
   closeHere: string;
+  /**
+   * What an **opened** line's name does — shut it (issue 17).
+   *
+   * A fourth string beside `closeHere` rather than a reuse of it, for the same
+   * reason `lineReadHere` is a third beside `readHere`: the two are different
+   * controls in different places, and a reader told "click the line" while
+   * their pointer is on a word has been told to go somewhere else. The name
+   * and the line now do the same thing on an opened lane, and each says so in
+   * its own words.
+   */
+  nameCloseHere: string;
   inside: string;
   needs: string;
   inAtlas: string;
@@ -129,6 +140,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     lineReadHere: "click the line to read about it here",
     openHere: "click the line to open it here",
     closeHere: "click the line to close it",
+    nameCloseHere: "click the name to close it",
     inside: "open",
     needs: "needs",
     inAtlas: "the Atlas has a full record of this",
@@ -150,6 +162,7 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     lineReadHere: "線をクリックするとこの場で解説を開きます",
     openHere: "線をクリックするとこの場で展開します",
     closeHere: "線をクリックすると畳みます",
+    nameCloseHere: "名前をクリックすると畳みます",
     inside: "展開中",
     needs: "必要なもの",
     inAtlas: "アトラスに完全な記録があります",
@@ -228,50 +241,13 @@ function Hub({
           r={n(Math.max(state.r + 6, 13))}
         />
       </a>
-      {/* The convergence, drawn as its name (W19 PR-2). Hubs are the figure's
-          LAST pass, so this plate sits over every taper it must rub out — the
-          same paint-order argument that moved `NamePlate` out of `Lane`. The
-          anchor above already speaks this name with its note, so the drawn
-          copy is decoration to a screen reader.
-
-          **It wears its own class, and that is load-bearing rather than
-          cosmetic.** `mj-converge-name-plate` is the marker two guards in
-          `converge-plate.spec.ts` read out of the emitted markup: one pins
-          every plate BEFORE every name (a plate rubs out any earlier name it
-          overlaps), the other measures each plate against the lane name it is
-          supposed to cover. A caption plate answers to neither — it is in the
-          last pass on purpose, and the text it covers is a caption, not a lane
-          name — so borrowing the marker made both guards fail on a figure that
-          was drawing correctly. The contract it DOES answer to is proved
-          upstream in `repository-converge-layout.test.ts`: over every figure,
-          opening and locale, no caption box overlaps any lane name's box. That
-          is what makes emitting it last safe, and it is a stronger claim than
-          paint order could make. */}
-      {state.caption === null ? null : (
-        <g aria-hidden="true">
-          <rect
-            className="mj-converge-caption-plate"
-            x={n(
-              state.captionAnchor === "start"
-                ? state.captionX - 4
-                : state.captionAnchor === "end"
-                  ? state.captionX - state.captionWidth - 4
-                  : state.captionX - state.captionWidth / 2 - 4,
-            )}
-            y={n(state.captionY - 12)}
-            width={n(state.captionWidth + 8)}
-            height="15"
-          />
-          <text
-            className="mj-converge-hub-caption"
-            x={n(state.captionX)}
-            y={n(state.captionY)}
-            textAnchor={state.captionAnchor}
-          >
-            {state.caption}
-          </text>
-        </g>
-      )}
+      {/* **No drawn name, and that is the owner's rule rather than an
+          omission**: *"states never have visible labels, only hover
+          tooltips"* (issue 17). W19 PR-2 drew one — a fitted caption on its
+          own plate, above the circle or below it — and the whole apparatus is
+          gone with the ruling. The anchor above is where the name lives now,
+          in the `<title>` a hover shows and in the `aria-label` a screen
+          reader reads, both carrying the convergence sentence with it. */}
     </g>
   );
 }
@@ -506,13 +482,40 @@ function LaneName({
   cited?: boolean;
 }): React.ReactElement | null {
   if (lane.label === "") return null;
-  // The card when this surface has one, the node's own page when it does not.
-  // **One expression, not two branches**, because the anchor around it is
+  // **An opened line's name is part of the control that shuts it.**
+  //
+  // > *"processes that are opened have the label ON the center bone, so they
+  // > have the same click box that collapses. processes that aren't opened yet
+  // > have the label above/below the line; labels click into cards, lines
+  // > click to expand."*
+  // > — owner, issue 17
+  //
+  // The placement was already his: `place` writes an opened fan's name on the
+  // bone and an opened chain's on its exoskeleton, which is that lane's
+  // collapse target for the reason a chain has no clear spine left. What did
+  // not follow was the click — the name went to the card whatever the line was
+  // doing, so on an opened line the reader had the collapse stroke everywhere
+  // except on the one shape drawn in the middle of it, and hitting the word
+  // opened a panel over the figure they were trying to close.
+  //
+  // **The card is not lost from an opened line**, and it must not be, because
+  // the ruling would otherwise trade one destination for another: the body of
+  // an opened chain's steps, every branch of an opened fan and the circles at
+  // both ends all still open cards, and shutting the line puts its own card
+  // one click from the same word. What the name gives up is being a *second*
+  // way to the card on the one line where it was also sitting on the collapse
+  // target.
+  //
+  // One expression rather than two branches, because the anchor around it is
   // twenty lines of hit-target geometry and duplicating it to change one
-  // attribute is how the two copies come apart. The full page is not lost: it
-  // is the card's first link.
-  const nameHref = lane.cardHref ?? lane.href;
-  const nameAction = lane.cardHref === null ? copy.readAbout : copy.readHere;
+  // attribute is how the two copies come apart.
+  const shuts = lane.open && lane.openHref !== null;
+  const nameHref = shuts ? lane.openHref! : (lane.cardHref ?? lane.href);
+  const nameAction = shuts
+    ? copy.nameCloseHere
+    : lane.cardHref === null
+      ? copy.readAbout
+      : copy.readHere;
   return (
     <g className={laneClass(lane, isDocumented(lane, atlas), selected, cited)} data-depth={lane.depth}>
       {/* `spokenName`, not `fullLabel`: the count must reach a reader who is not
