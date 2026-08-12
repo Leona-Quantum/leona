@@ -13,7 +13,7 @@
   "deletion should be: it lands in the same commit as the record's removal, where a",
   "reviewer sees both. The project's standing rule is archive, don't delete."
  ],
- "identityCount": 307,
+ "identityCount": 315,
  "identities": [
   "amplitude-amplification",
   "amplitude-estimation",
@@ -153,15 +153,19 @@
   "deutsch-jozsa-cirq",
   "dicke-state",
   "discrete-logarithm",
+  "distribution-property-testing",
   "ecr-gate",
   "element-distinctness",
   "fermi-hubbard-operator",
+  "finite-ring-ideals",
   "fredkin-cswap-gate",
   "ghz-state-pennylane",
   "gibbs-state-sampling",
   "graph-properties-adjacency-matrix",
+  "graph-property-testing",
   "graph-state-ring",
   "group-commutativity-testing",
+  "group-order-and-membership",
   "grover-unstructured-search",
   "h2-molecular-hamiltonian",
   "hadamard-gate",
@@ -258,6 +262,7 @@
   "quantum-singular-value-transformation",
   "quantum-teleportation",
   "quantum-walk-line",
+  "radial-function-center",
   "rx-rotation-gate",
   "rxx-interaction-gate",
   "ry-rotation-gate",
@@ -278,8 +283,10 @@
   "t-phase-gate",
   "thermal-gibbs-state",
   "toffoli-ccx-gate",
+  "top-eigenvector-estimation",
   "transverse-field-ising-operator",
   "trotter-suzuki-simulation",
+  "turaev-viro-invariants",
   "u3-universal-gate",
   "vqe-active-space",
   "vqe-adapt",
@@ -321,6 +328,7 @@
   "vqe-zero-noise-extrapolation",
   "w-state",
   "welded-tree-traversal",
-  "werner-state"
+  "werner-state",
+  "zero-sum-game-equilibria"
  ]
 }
