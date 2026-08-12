@@ -734,34 +734,28 @@ export type OpensInto = "ways" | "steps";
 export interface ConvergeState {
   key: string;
   stateId: string;
-  /** The name, for a `<title>`. Not drawn on the canvas — it has no extent. */
-  label: string;
   /**
-   * The convergence, drawn as its name (W19 PR-2) — or null, which removes
-   * nothing: `label` stays in the `<title>` and the aria sentence everywhere.
+   * The name — a `<title>` and an `aria-label`, and **never drawn**.
    *
-   * Non-null only where the `--shared` condition already holds at depth 0
-   * (`arriving > 1 || leaving > 1` — one predicate, the class's own) and the
-   * adjacent span offers the room. The owner's ask: *"we can definitely find a
-   * better way to visualize how several things converge in a step, but then
-   * each composite process has its own name"* — so the SHARED CIRCLE gains the
-   * state's own authored name and every lane keeps its own; nothing is coined.
-   * Drawn ABOVE the circle: the below side is where a bow-0 middle lane's
-   * label lives (fixed global sides), and the caption band sits inside the
-   * half-height every figure already reserves, so no geometry moves.
+   * > *"states never have visible labels, only hover tooltips."*
+   * > — owner, issue 17
+   *
+   * W19 PR-2 read an earlier ask — *"each composite process has its own
+   * name"* — as licence to write a shared circle's own name above it, and
+   * built the whole apparatus for it: a fitted caption, an anchor that turned
+   * inward at the ends, a width, and a resolver that chose a side against the
+   * names already placed or dropped the caption when neither side was clear.
+   * The ruling above is the correction, and it is a correction of the
+   * *subject*: a composite **process** is a line, and a line already carries
+   * its own name. So the circle carries none, and the five fields that placed
+   * one are gone rather than left null — a field nothing writes is the next
+   * session's invitation to start writing it again.
+   *
+   * Nothing is lost from the page. `Hub` puts this string in the `<title>`
+   * and in the `aria-label` alongside the convergence sentence, so a hover, a
+   * screen reader and a printout all still name the state.
    */
-  caption: string | null;
-  /** Anchor x for the caption text, per `captionAnchor`. */
-  captionX: number;
-  /** Caption BASELINE y — above the circle's top. */
-  captionY: number;
-  /**
-   * Ends anchor inward so the caption never leaves the canvas: the first
-   * circle writes rightward, the last leftward, interior ones centre.
-   */
-  captionAnchor: "start" | "middle" | "end";
-  /** The engine's own measurement of the drawn caption — never re-derived. */
-  captionWidth: number;
+  label: string;
   cx: number;
   cy: number;
   r: number;
@@ -2709,43 +2703,28 @@ function framedNameHalf(): number {
  * May this lane give up the band beside it — the `labelBand` it reserves for a
  * name it does not write there?
  *
- * `wearsNameInside` is the whole of the *drawing* answer. This adds the one
- * thing the drawing does not know: **at depth 0 that band is holding something
- * else up.**
+ * `wearsNameInside` is the whole of the answer, and **it is now the whole of
+ * the condition too.**
  *
- * A shared circle's caption (W19 PR-2 — the owner's *"each composite process
- * has its own name"*) is drawn above or below a depth-0 circle, and the
- * resolver drops it when neither side is clear. The side it uses is the room
- * between the base and the nearest lane's name, and on the figure's own base
- * that room was — accidentally — the leaf `labelBand`. Dropping it there cost
- * **11 of the 75 drawn captions** (75 → 64 of 88 eligible, on
- * `time-discretization`, `hamiltonian-recasting`, `qsp-phase-factors`,
- * `polynomial-approximation` and `state-preparation`), and nothing failed: the
- * resolver behaved exactly as documented while the feature quietly left the
- * page. What noticed was the browser sweep's own subject count — 279 tests
- * became 269, and both said `passed`.
+ * It read `depth > 0 && wearsNameInside(strand)`, and the depth clause was
+ * never about the drawing: at depth 0 that band was holding a **caption** up.
+ * A shared circle wore its own name above or below it (W19 PR-2), the resolver
+ * chose the side against the names already placed, and the room it chose from
+ * on the figure's own base was — accidentally — the leaf `labelBand`. Dropping
+ * the band there cost 11 of the 75 drawn captions, so the exemption was added
+ * to hold them.
  *
- * ## Why depth, and not a caption band at the base
- *
- * The obvious fix is to reserve that clearance by name, the way an opened
- * lane's bone reserves `spineBand`. It was built and measured rather than
- * argued about: it recovers every caption — **88 of 88, thirteen more than
- * production draws** — and keeps the whole height cut. But
- * `allocateBowsAroundSpine` keeps *every* member off the middle, and at depth 0
- * the member on the middle is the figure's own through-line: a one-lane bundle
- * stopped lying on its own axis, and the summed-band half-height stopped
- * describing the row, which four containment tests said at once. That is a
- * change to what the primary line MEANS, not to how much room it is given, so
- * it is parked as **OWNER_TODO `03ea5b`** with its numbers rather than taken
- * unasked.
- *
- * So: nested lanes give the band up, the figure's own row keeps it. The nested
- * lanes are where the height is — 65 of the 100 lanes on the tallest figure —
- * and the corpus keeps every caption it draws today, for 784px of the 17,396px
- * this unit saves.
+ * The owner has since ruled that *"states never have visible labels, only
+ * hover tooltips"* (issue 17). There is no caption to hold up, so the
+ * exemption has no subject and goes with it: a leaf at depth 0 stops reserving
+ * a band beside itself for a name it writes inside its own line, exactly as
+ * one at depth 1 already does. That is the same rule applied everywhere rather
+ * than a new one — and the alternative, a `depth > 0` clause whose comment
+ * defends a feature the canvas no longer has, is how a number comes to be
+ * defended by a sentence that has stopped describing it.
  */
-function dropsNameBand(strand: Parameters<typeof wearsNameInside>[0], depth: number): boolean {
-  return depth > 0 && wearsNameInside(strand);
+function dropsNameBand(strand: Parameters<typeof wearsNameInside>[0]): boolean {
+  return wearsNameInside(strand);
 }
 
 /**
@@ -3267,10 +3246,10 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       // name is written **in** the line instead. See `insideNameHalf` for the
       // measurement. A `max`, not a sum: an inside name is centred on the
       // belly, so the band is the thicker of the stroke and the text.
-      vHalf: dropsNameBand(strand, depth)
+      vHalf: dropsNameBand(strand)
         ? Math.max(halfAt(depth), insideNameHalf())
         : halfAt(depth) + M.labelBand,
-      nameBand: dropsNameBand(strand, depth) ? 0 : M.labelBand,
+      nameBand: dropsNameBand(strand) ? 0 : M.labelBand,
       hFit: own,
       hRun: 0,
       children: [],
@@ -3278,7 +3257,7 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       // The text is centred on the belly, so an inside name widens the strand's
       // own reach rather than sitting beyond it — `max`, and the same `max` the
       // band above is built from.
-      innerReach: dropsNameBand(strand, depth)
+      innerReach: dropsNameBand(strand)
         ? Math.max(halfAt(depth), insideNameHalf())
         : halfAt(depth),
     };
@@ -3982,15 +3961,6 @@ function place(
         // and this field is where it lands when `cardFor` can build one.
         cardHref: null,
         terminal: false,
-        // No caption: `arriving`/`leaving` are the literal 1/1 below — a
-        // boundary inside ONE chain is not a convergence, and the caption's
-        // predicate is the convergence. When inner circles ever carry real
-        // fan-in counts, they earn the caption through the same predicate.
-        caption: null,
-        captionX: 0,
-        captionY: 0,
-        captionAnchor: "middle",
-        captionWidth: 0,
         arriving: 1,
         leaving: 1,
         depth: depth + 1,
@@ -4947,40 +4917,10 @@ function layoutFigure(options: {
     const state = layerState(vocabulary, stateId);
     const label = state ? labelOf(state, locale) : stateId;
     const cx = xs[index]!;
-    const meets = (arriving.get(stateId) ?? 0) > 1 || (leaving.get(stateId) ?? 0) > 1;
-    // The caption's room (W19 PR-2): inside the adjacent span, never past the
-    // cap. An end circle writes inward and owns half its one span; an interior
-    // circle centres and owns half of its NARROWER side twice over — either
-    // way the caption cannot reach the next circle's territory. Below ~40px a
-    // name is an ellipsis wearing a plate, so the caption stays null and the
-    // `<title>` keeps carrying it — same honesty case as `shortLabelOf`.
-    const spanLeft = index === 0 ? 0 : cx - xs[index - 1]!;
-    const spanRight = index === plan.chain.length - 1 ? 0 : xs[index + 1]! - cx;
-    const captionAnchor: ConvergeState["captionAnchor"] =
-      index === 0 ? "start" : index === plan.chain.length - 1 ? "end" : "middle";
-    const budget = Math.min(
-      M.labelCap,
-      captionAnchor === "start"
-        ? spanRight / 2 - M.stateRadius
-        : captionAnchor === "end"
-          ? spanLeft / 2 - M.stateRadius
-          : Math.min(spanLeft, spanRight) - 2 * M.stateRadius,
-    );
-    const fitted = meets && state && budget >= 40 ? fitLabel(label, M.stateFont, budget) : null;
     return {
       key: `s:${stateId}`,
       stateId,
       label,
-      caption: fitted === null ? null : fitted.text,
-      captionX:
-        captionAnchor === "start"
-          ? cx - M.stateRadius
-          : captionAnchor === "end"
-            ? cx + M.stateRadius
-            : cx,
-      captionY: yc - M.stateRadius - 8,
-      captionAnchor,
-      captionWidth: fitted === null ? 0 : estimateTextWidth(fitted.text, M.stateFont),
       cx,
       cy: yc,
       r: M.stateRadius,
@@ -5061,62 +5001,13 @@ function layoutFigure(options: {
     }
   }
 
-  // The caption resolver (W19 PR-2): a caption draws above its circle, or
-  // below it, or not at all — decided against the names actually placed, in
-  // that order, deterministically. Text populations it must clear: lane names
-  // (widened by `loopAllowance` where a glyph follows them), stub names (at
-  // `feedNameY`, the one writer), and captions already resolved. A caption
-  // with no clear side goes back to null and the `<title>` keeps the name —
-  // dropping is honest where a collision would lie about both texts. The
-  // candidates sit inside the half-height every figure already reserves, so
-  // resolution moves no geometry; it only chooses among places that exist.
-  {
-    const boxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
-    for (const lane of out.lanes) {
-      if (lane.label === "") continue;
-      boxes.push({
-        x0: lane.labelX - lane.labelWidth / 2,
-        x1: lane.labelX + lane.labelWidth / 2 + loopAllowance(lane),
-        y0: lane.labelY - M.laneFont,
-        y1: lane.labelY,
-      });
-    }
-    for (const feed of out.feeds) {
-      if (feed.label === "") continue;
-      const nameY = feedNameY(feed);
-      boxes.push({
-        x0: feed.x + 4,
-        x1: feed.x + 4 + feed.labelWidth + loopAllowance(feed),
-        y0: nameY - M.laneFont,
-        y1: nameY + 3,
-      });
-    }
-    const clear = (x0: number, x1: number, y0: number, y1: number) =>
-      x0 >= 0 &&
-      x1 <= Math.max(width, round(out.rightmost + M.margin)) &&
-      y0 >= 0 &&
-      boxes.every((box) => !(x0 < box.x1 && box.x0 < x1 && y0 < box.y1 && box.y0 < y1));
-    for (const state of states) {
-      if (state.caption === null) continue;
-      const x0 =
-        state.captionAnchor === "start"
-          ? state.captionX
-          : state.captionAnchor === "end"
-            ? state.captionX - state.captionWidth
-            : state.captionX - state.captionWidth / 2;
-      const above = state.cy - M.stateRadius - 8;
-      const below = state.cy + M.stateRadius + 8 + M.stateFont * 0.8;
-      const at = [above, below].find((y) => clear(x0, x0 + state.captionWidth, y - 12, y + 3));
-      if (at === undefined) {
-        state.caption = null;
-        state.captionWidth = 0;
-      } else {
-        state.captionY = at;
-        boxes.push({ x0, x1: x0 + state.captionWidth, y0: at - 12, y1: at + 3 });
-      }
-    }
-  }
-
+  // **The caption resolver stood here and its subject is gone.** It chose a
+  // side for a shared circle's own name — above, below, or nowhere — against
+  // every name already placed, and dropped the caption when neither side was
+  // clear. The owner ruled the captions off (*"states never have visible
+  // labels, only hover tooltips"*, issue 17), so there is nothing left to
+  // resolve: a circle's name reaches the reader through the `<title>` and the
+  // `aria-label` `Hub` writes, on hover and to a screen reader alike.
   return {
     // Stretched to cover any ingredient name that runs past the last circle.
     // Never shrunk: `width` is the tiled columns plus their margins, and that is
