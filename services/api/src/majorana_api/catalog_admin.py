@@ -456,7 +456,22 @@ async def _attest_bootstrap(
         # "and 4 more" is the one list nobody may have to reconstruct.
         for identity in decision.re_signed:
             print(f"  re-signed after a provenance claim change (--re-attest): {identity}")
-        for identity in refused[:20]:
+        # Unsliced too, and for a sharper reason than the re-signed list above:
+        # this is the one list somebody HAS to reconstruct. `--re-attest` refuses
+        # unless the names it is given equal the refused set exactly, in both
+        # directions, so a truncated refusal list cannot be acted on at all.
+        #
+        # Found in production 2026-08-12: a run refused 25 records and printed
+        # 20 of them. The five it withheld were the difference between "paste
+        # these identities" and "reconstruct the set from a database you were
+        # told not to reach", on a run whose refusal had taken those records off
+        # the public listing until somebody could.
+        #
+        # Still one per line rather than a ready-to-paste comma string: the flag
+        # exists to buy a look at each record, and handing back the exact
+        # argument makes not looking the cheapest path (same reasoning as
+        # plan_re_attestation's mismatch message).
+        for identity in refused:
             print(f"  needs a fresh signature (provenance claim changed): {identity}")
         if refused:
             # Fail-closed. These records keep their previous version live and
