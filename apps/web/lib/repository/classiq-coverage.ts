@@ -17,12 +17,15 @@
 // way to move this number, which is exactly why `check-classiq-parity.mjs` reports
 // it instead of gating on it.
 //
-// Measured at the pinned commit: 26 of 103 covered — and the shape of the 77 is the
-// finding, not the count. Leona is deep on gates, operators and textbook algorithms
-// and holds almost nothing in the *applied* half: finance, logistics, chemistry at
-// scale, CFD, telecom, cybersecurity. An independent token-overlap measurement in
-// 2026-08 put 51 of Classiq's then-102 entries as sharing no vocabulary with any
-// Leona slug, which is the same finding arrived at a cruder way.
+// First measured at the pinned commit: 26 of 103 covered — and the shape of the 77
+// was the finding, not the count. Leona was deep on gates, operators and textbook
+// algorithms and held almost nothing in the *applied* half: finance, logistics,
+// chemistry at scale, CFD, telecom, cybersecurity. An independent token-overlap
+// measurement in 2026-08 put 51 of Classiq's then-102 entries as sharing no
+// vocabulary with any Leona slug, which is the same finding arrived at a cruder way.
+// Two intakes have since worked that half — 8 records, then 19 records and the nine
+// declarations at the foot of this file — and `check-classiq-parity.mjs` prints
+// where it stands now. Do not read a count out of this comment; run the gauge.
 
 /** Index path (verbatim from the pinned snapshot) → slugs that cover it. */
 export const CLASSIQ_COVERAGE: Readonly<Record<string, readonly string[]>> = {
@@ -73,6 +76,55 @@ export const CLASSIQ_COVERAGE: Readonly<Record<string, readonly string[]>> = {
     "qite-imaginary-time",
   ],
   "applications/physical_systems/ising_model": ["hamiltonian-simulation-ising"],
+
+  // ---- Applied half, declared 2026-08-12 ----------------------------------
+  // Nine demonstrations whose algorithm this catalog already carries as a record.
+  // Nothing was written for these; the work was reading each demonstration's own
+  // problem statement and deciding whether the record answers it. Where it does
+  // not, the entry stays MISSING — `classiq_chemistry_application` (a tour of a
+  // platform module, not an algorithm), `second_quantized_hamiltonian` (a title
+  // and nothing else) and `max_k_vertex_cover` (a k-bounded maximisation, not the
+  // vertex cover Lucas formulates) were all looked at here and left alone.
+
+  // Three VQE demonstrations of one algorithm. `molecule_eigensolver` states its
+  // own subject as finding ground states and energies of H2, H2O and LiH by VQE;
+  // `molecular_energy_curve` runs the same solver across internuclear distances
+  // and plots the result, which is a use of the algorithm rather than a different
+  // one. The second slug on the eigensolver is the ansatz the demonstration needs
+  // and this catalog holds separately.
+  "applications/chemistry/molecule_eigensolver": [
+    "vqe-ground-state-energy",
+    "vqe-hardware-efficient-ansatz",
+  ],
+  "applications/chemistry/molecular_energy_curve": ["vqe-ground-state-energy"],
+  // The Lanchester demonstration discretizes a linear model into a linear system
+  // and solves it with HHL; HHL is the algorithm it demonstrates.
+  "applications/physical_systems/hhl_lanchester": ["hhl-linear-systems"],
+
+  // Six problems whose Ising formulation is in Lucas, arXiv:1302.5843, the source
+  // of `ising-formulations-np-problems`.
+  //
+  // **The basis for these six is a full-text read, not the abstract**, and that
+  // distinction matters because the record itself says so: its caveat declines to
+  // claim on the *abstract's* authority that any individually named problem is
+  // among the ones the paper treats, because the abstract names them only as a
+  // class ("all of Karp's 21 NP-complete problems"). The paper's own section
+  // titles settle it, and they were read for this declaration — Number
+  // Partitioning, Cliques, Vertex Cover, Set Cover and Graph Coloring each have
+  // one, and the Set Packing section states that the problem of the maximal
+  // number of vertices no two of which are adjacent "is exactly equivalent to the
+  // set packing problem described above. This version is called the maximal
+  // independent set (MIS) problem." Each mapping below pairs one of those
+  // sections with a demonstration whose own problem statement is that problem:
+  // `set_partition`'s notebook is titled for the Number Partition Problem, and
+  // `link_monitoring` states its subject as the Minimum Vertex Cover problem, so
+  // neither is being matched on its directory name.
+  "applications/optimization/set_partition": ["ising-formulations-np-problems"],
+  "applications/optimization/max_clique": ["ising-formulations-np-problems"],
+  "applications/optimization/max_independent_set": ["ising-formulations-np-problems"],
+  "applications/optimization/set_cover": ["ising-formulations-np-problems"],
+  "applications/optimization/min_graph_coloring": ["ising-formulations-np-problems"],
+  "applications/cybersecurity/link_monitoring": ["ising-formulations-np-problems"],
 };
 
 /** Index path → why this catalog does not carry it. Empty by design; see ./zoo-coverage.ts. */
