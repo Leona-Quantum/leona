@@ -4756,6 +4756,11 @@ const DRAWN_NOWHERE: readonly string[] = [
   // admits), which the map cannot draw; that is on the node as `potentialPath`, so this
   // entry is a statement about the map's backlog rather than about the paper.
   "tetris-adapt-ansatz",
+  // Same class again: `iterative-qcc-ansatz` folds into `qcc-ansatz` and hangs its
+  // parent's screening stub, so it holds an interior and no slot figure draws it. Its
+  // backlog item is the more general of the two — a Hamiltonian that grows between
+  // rounds while the circuit does not — and it is on the node as `potentialPath`.
+  "iterative-qcc-ansatz",
   "lchs-improved-kernel",
 ];
 

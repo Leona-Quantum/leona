@@ -7775,6 +7775,38 @@ export const LAYER_GRAPH: LayerGraph = {
   },
   {
     kind: "method",
+    id: "iterative-qcc-ansatz",
+    label: "Iterative qubit coupled cluster",
+    labelJa: "反復的キュービット結合クラスター",
+    shortLabel: "iQCC",
+    shortLabelJa: "iQCC",
+    summary: "Stop growing the circuit and grow the Hamiltonian instead. Each round folds the entanglers found so far into the operator by a canonical transformation, so every round runs a circuit of the same size — the cost moves off the device and into the number of terms that have to be measured.",
+    summaryJa: "回路を大きくするのをやめ、代わりにハミルトニアンを大きくします。各周では、それまでに見つかったエンタングラーを正準変換によって演算子側へ畳み込むため、どの周も同じ大きさの回路を実行します。代償は装置から離れ、測定すべき項の個数へと移ります。",
+    realizes: "ansatz-construction",
+    conditions: "Ryabinkin et al. state the trade in one sentence — \"each iteration involves a canonical transformation of the Hamiltonian and employs constant-size quantum circuits at the expense of increasing the Hamiltonian size\" — which is the whole point of the method: a NISQ device is bounded in circuit size, not in how many terms a classical computer can carry. The condition attached to convergence is the part not to skip: they \"found that the exact ground-state energies can be systematically approached only if the generators of the QCC ansatz are sampled from a specific set of operators\", so the generator pool is a correctness requirement here rather than a tuning choice, and the paper supplies an algorithm for constructing that set. Evidence is numerical, on LiH, H2O and N2; no hardware run is reported.",
+    conditionsJa: "Ryabinkin らはこの取引を一文で述べています。「各反復はハミルトニアンの正準変換を伴い、ハミルトニアンの大きさが増える代わりに、一定サイズの量子回路を用いる」。これこそがこの方法の要点です。NISQ 装置に課される限界は回路の大きさであって、古典計算機が扱える項数ではないからです。収束に付された条件は飛ばしてはならない部分です。彼らは「厳密な基底状態エネルギーに系統的に近づけるのは、QCC アンザッツの生成子が特定の演算子の集合から選ばれている場合に限られる」ことを見出しました。したがってここでの生成子プールは調整の選択ではなく正しさの要件であり、論文はその集合を構成するアルゴリズムを与えています。根拠は LiH、H2O、N2 についての数値計算であり、実機での実行の報告はありません。",
+    refines: "qcc-ansatz",
+    refinesMark: "QCC",
+    refinesMarkJa: "QCC",
+    // **Folded (W17/s121), and the `potentialPath` below is doing real work
+    // rather than excusing the fold.** Against its parent this records no
+    // map-representable internal difference: the same single step, the same
+    // `observable-estimation` stub it uses to screen generators, no `via` QCC
+    // lacks. The difference the paper is actually about — the Hamiltonian is
+    // transformed between rounds while the circuit stays the same size — is a
+    // difference this map has no shape for, because nothing here draws a
+    // problem being rewritten between iterations of the method solving it.
+    sameInternalsAsParent: true,
+    potentialPath: "Drawing this apart from QCC needs the map to represent a problem that CHANGES between rounds: iQCC folds each round's entanglers into the Hamiltonian by a canonical transformation, so the operator handed to round n+1 is not the one round n was given. Today a method's inputs are fixed for the whole route, and the `hamiltonian-recasting` slot that does exist recasts a problem ONCE on the way into a region rather than repeatedly inside a loop. Give the map a way to say \"the same slot, on a rewritten problem, again\" and this refinement has drawable internals — and so, probably, does every other method whose cost is a growing operator rather than a growing circuit.",
+    potentialPathJa: "これを QCC と別に描くには、地図が「周ごとに変化する問題」を表現できる必要があります。iQCC は各周のエンタングラーを正準変換によってハミルトニアンへ畳み込むため、第 n+1 周に渡される演算子は第 n 周が受け取ったものとは別物です。今日の地図では、方式の入力は経路全体を通じて固定であり、既存の `hamiltonian-recasting` の層も、領域へ入る途中で問題を一度だけ書き換えるものであって、ループの内部で繰り返し書き換えるものではありません。「同じ層を、書き換えられた問題の上で、もう一度」と言える手立てを地図に与えれば、この精緻化は描画可能な内部構造をもちます。そしておそらく、回路ではなく演算子が増えることを代償とする他のあらゆる方式についても同じことが言えます。",
+    steps: ["observable-estimation"],
+    entries: ["vqe-iterative-qcc"],
+    citations: [
+      { title: "Iterative Qubit Coupled Cluster approach with efficient screening of generators", authors: "Ilya G. Ryabinkin, Robert A. Lang, Scott N. Genin, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1906.11192" },
+    ],
+  },
+  {
+    kind: "method",
     id: "measurement-grouped-readout",
     label: "Measure commuting terms together",
     labelJa: "可換な項をまとめて測定する",
