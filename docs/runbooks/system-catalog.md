@@ -206,7 +206,37 @@ place it is a standing, re-runnable handle on the production database that anyon
 is a comma and `--attested-by` values are fine, but any argument containing a comma would be
 silently split into two.
 
-### Finding the reviewer — use `--attested-by-email`, not a hand-copied UUID
+#### Clearing refusals in production — the one run where that delimiter is load-bearing
+
+`--re-attest` takes a **comma-separated** list, so it is the argument the paragraph above is
+warning about. Without `^~^`, gcloud splits a 25-identity list into 25 positional arguments
+and the command fails on an unrecognised argument rather than doing anything dangerous — but
+it fails after you have assembled the list, which is the expensive part.
+
+Get the identities from `attest-plan` (below) or from the refusal itself. Both print one per
+line and neither hands back a pasteable string; assembling the list is the step where a
+person looks at each record, and that is deliberate.
+
+```bash
+gcloud run jobs update leona-admin-oneshot \
+  --project=majorana-core --region=us-west1 \
+  --args="^~^-m~majorana_api.catalog_admin~sync-bootstrap~--attested-by~<reviewer-uuid>~--re-attest~<id>,<id>,…"
+
+gcloud run jobs execute leona-admin-oneshot --project=majorana-core --region=us-west1 --wait
+```
+
+`sync-bootstrap` rather than `attest-bootstrap`, because re-signing alone leaves the records
+attested and still private — the publish step is what returns them to the browse listing.
+
+**Name the reviewer explicitly here.** `--attested-by-standing` is the pipeline's form and it
+resolves correctly, but a re-signature is a human act and the audit row should carry the
+account of the human who made it. `--attested-by-email` refuses while two live rows carry one
+email, which is the current state of this workspace, so pass the UUID: it is the account
+`reviewers` reports with a nonzero `signed=` count.
+
+**Expect it to refuse if your list is even one identity out**, in either direction, and to
+write nothing when it does. That is `plan_re_attestation` reconciling, not a failure — reread
+the refusal, fix the list, run again.
 
 **`--attested-by-email <you>` resolves the row and refuses if it is ambiguous.** Prefer it.
 The alternative is running an ad-hoc query against production, reading the rule below
