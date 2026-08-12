@@ -14,6 +14,7 @@ import { RepositoryProfilePanel, hasVisibleProfile } from "../../../components/r
 import { RepositoryInterfacePanel } from "../../../components/repository-interface";
 import { EntryLayerLinks } from "../../../components/repository-layers";
 import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
+import { layerCorpusEntry } from "../../../lib/repository/layers";
 import { deriveInterface, neighboursOf, type EntryInterface } from "../../../lib/repository/interface";
 import { resolveEntryPort, type BrowseSearchParams } from "../../../lib/repository/browse-params";
 import { RepositoryEntryView } from "./repository-entry-view";
@@ -176,7 +177,12 @@ export default async function RepositoryEntryPage({
           // which is 279 of the 283 today — the strip is absent rather than
           // empty, and the honest count of what the graph does cover is printed
           // on /repository/layers instead.
-          <EntryLayerLinks graph={LAYER_GRAPH} slug={entry.slug} locale={locale} />
+          <EntryLayerLinks
+            graph={LAYER_GRAPH}
+            slug={entry.slug}
+            locale={locale}
+            corpus={[layerCorpusEntry(entry)]}
+          />
         }
       />
     </PublicSite>
