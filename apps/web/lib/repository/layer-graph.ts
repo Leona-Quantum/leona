@@ -1493,6 +1493,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "この構成は計算量の見積もりまでで、それ以上には進みません。定理 6 は、この系に適用した QLSA のクエリ計算量を $O(sk\\kappa_L\\,\\mathrm{polylog}(k, m, d, \\kappa_L, 1/\\varepsilon))$ とし、ゲート計算量はこれより高々 $O(\\mathrm{polylog}(k, m, 1/\\varepsilon))$ 倍大きいとしています。定理 7 はアルゴリズム全体を $O(gT\\lVert A\\rVert C(A)\\,\\mathrm{poly}(s, \\log d, \\log(1 + Te^2\\lVert b\\rVert/\\lVert x_T\\rVert), \\log(1/\\varepsilon), \\log(T\\lVert A\\rVert C(A))))$ 回のクエリにまとめます。ここで $g = \\max_{t \\in [0,T]}\\lVert x(t)\\rVert/\\lVert x(T)\\rVert$ です。論文のどこにもハードウェアやシミュレータの名前は挙がっておらず、この実装は仕様として書かれた回路であって、実行された回路ではありません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "Krovi (arXiv:2202.01054) integrates no differential equation and names no quantum linear solver, no hardware and no simulator. Its one piece of numerical work, Section 3.1 with Figure 2, measures the condition number of the linear system the discretisation hands down to the solver, on the tridiagonal twisted-Toeplitz family of Eq. (3.10) at dimensions 15 to 100 — a quantity from inside the method, not a run of it.",
+        reasonJa: "Krovi の論文（arXiv:2202.01054）は微分方程式を積分しておらず、量子線形ソルバー、ハードウェア、シミュレータのいずれも登場しません。唯一の数値である第 3.1 節・図 2 が測るのは、離散化が下層のソルバーへ渡す線形系の条件数であり、式 (3.10) の三重対角 twisted Toeplitz 族を次元 15 から 100 で扱ったものです。手法の内部にある量であって、手法の実行ではありません。",
+      },
+    },
     citations: [
       { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
@@ -1640,6 +1646,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "定理 4.2 は、$U_b$ と $U_x$ への呼び出しを平均 $O(R\\lambda T \\log(1/\\varepsilon))$ 回、$U_A$ への呼び出しを $O(R\\lambda T \\log(1/\\varepsilon)\\log(\\lambda_{Ax}T/\\varepsilon))$ 回、追加のゲートを $O(R\\lambda T \\log(1/\\varepsilon)\\log(\\lambda_{Ax}T/\\varepsilon)\\log(\\lambda_A T/\\varepsilon))$ 個と与えます。ここで $\\lambda_{Ax} = \\max(\\lambda_A, \\lVert b \\rVert/x_{\\max})$ であり、$\\lambda$ は時間依存の定理が $\\lambda_A$ と書いている位置に置かれています。定理 4.1 と比べて縮む点は二つあり、証明がそれを明示しています。状態準備が少なくとも定数の確率で成功するようになるため、その因子が $R$ から外れること、そして時刻レジスタに対する算術が不要になるため $\\log(TD/(\\lambda\\varepsilon))$ の項がゲート数から外れることです。ただし $k$ のレジスタを用意する回転のために $\\log(\\lambda T/\\varepsilon)$ の因子は残ります。時間依存の場合と同様、これは仕様として書かれた回路であって実行されたものではありません。論文には数値実験もハードウェアもシミュレータも現れません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "Berry and Costa (arXiv:2212.03544) carry no numerical work at all — no figure, no table, no computed value from the first section through the appendix, and no hardware or simulator named. An, Childs and Lin, cited beside it, do compute, but every number there measures the LCHS kernel, which is the competing route rather than this one.",
+        reasonJa: "Berry と Costa（arXiv:2212.03544）には数値的な作業が一切なく、第 1 節から付録まで図も表も計算値もなく、ハードウェアやシミュレータの名前も出てきません。並記されている An・Childs・Lin は計算を行っていますが、その数値はすべて LCHS の核関数を測るものであり、本経路ではなく競合する経路に属します。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -1818,6 +1830,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "$\\gamma' = 5$、$\\delta = 0.05$、$\\varepsilon = 0.01$ において、この構成が返す次数は 21 であり、同じパラメータで $(1-\\delta)\\,\\mathrm{XRect}(x)$ を近似する多項式の 2001 に対するものです。図 2 は (a) と (b) に両者の多項式を、(c) と (d) に $I$ 上での誤差を描いています。(e) は $\\gamma'$ と $\\delta$ を固定して次数を掃引し、$L^\\infty$ 誤差 $\\max_{x \\in I}|p(x) - (1-\\delta)\\,\\mathrm{XRect}(x)|$ を示しており、両者とも次数に対して指数的に収束する一方、凸最適化による構成の収束率が著しく速いことがわかります。著者らはこれにより各 $U_l$ へのクエリ数が桁違いに減ると述べています。これは古典的な数値計算による構成であり、ハードウェアや量子シミュレータの名は挙げられていません。測っているのは多項式であって、ソルバーではありません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "The only numerical experiment in arXiv:2208.06941 — Section 2.3 with Figure 2, and Appendix C — measures the degree of the odd polynomial that uniform singular value amplification hands to QSVT, and nothing else. No differential equation is integrated, no quantum state is prepared, and no value of the problem's own parameters enters anywhere.",
+        reasonJa: "arXiv:2208.06941 が報告する唯一の数値実験（第 2.3 節・図 2・付録 C）が測るのは、一様特異値増幅が QSVT に渡す奇多項式の次数だけです。微分方程式は積分されず、量子状態も準備されず、問題側のパラメータはどこにも入りません。",
+      },
+    },
     citations: [
       { title: "Time-marching based quantum solvers for time-dependent linear differential equations", authors: "Di Fang, Lin Lin, Yu Tong", year: "2022", url: "https://arxiv.org/abs/2208.06941" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -2269,6 +2287,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "命題 20 は、元の LCHS 論文の定理 9 を言い換えたものです。$\\varepsilon_{HS} = O(\\varepsilon/||O||)$ と選べば、$u(t)^{*}Ou(t)$ を確率 $1-\\delta$ 以上で誤差 $\\varepsilon$ 以内に推定できます。必要な標本数は $O\\!\\left(\\left(\\frac{||O||}{\\varepsilon}\\right)^2\\log\\frac{1}{\\delta}\\right)$ であり、各回路は $O_u$ と、$U_O$ および $\\tilde{U}(T,k)$ の制御版に対して $O\\!\\left(\\frac{\\alpha_O}{\\varepsilon}\\log\\frac{\\alpha_O}{\\varepsilon}\\log\\frac{||O||}{\\delta\\varepsilon}\\right)$ 回の問い合わせを行います。論文はこの取引を両側から述べています。補助量子ビットは少なくて済み、コヒーレントに制御されたシミュレーションも不要になりますが、全体としてのクエリ計算量は悪化します。これも証明であって計測ではなく、実機でも模擬でも、このハイブリッドを実行した記録はありません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "The numerics in arXiv:2312.03916 measure the kernel's truncation, not a run of the solver. Section 2.2 with Figure 2 approximates the single matrix function e^{-(L+iH)} for random 8 × 8 Hermitian matrices and plots how the truncation error of the k-integral falls as the cutoff grows, against the original Cauchy kernel. No differential equation is solved.",
+        reasonJa: "arXiv:2312.03916 の数値計算はカーネルの打ち切りを測るものであって、ソルバーの実行ではありません。第 2.2 節・図 2 は、無作為な 8 × 8 エルミート行列に対して単一の行列関数 e^{-(L+iH)} を近似し、k 積分の打ち切り誤差が打ち切り幅とともにどう減るかを、元の Cauchy カーネルと比較して示しています。微分方程式は解かれていません。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
       { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
@@ -2412,6 +2436,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "定理 3.1 の一般的な評価 $N_{Gates,Schr} = (m_d + m_p)\\tilde{O}(s(A)\\|A\\|_{max}/\\Delta p) + O(m_p\\log m_p)$ が得られます。これはこの記録がすでに cost 欄に載せているものです。線形 Boltzmann 方程式については定理 4.3 があり、その評価は補題を二度適用して組み立てられています。補助変数の代価がどこに現れるかも明言されています。証明の中で $\\|D_\\mu\\|_{max} \\lesssim 1/\\Delta p$ が用いられ、さらに §2.2 の移流方程式では $p$ に関する微分が二階であるため、「アルゴリズム II を用いる場合には、時間計算量に $1/\\Delta p^2$ の乗数が生じる」と注意されています。短い方の論文は反対側から同じ形に達しており、その定理 3 は $\\tilde{O}((\\|u(0)\\|/\\|u(t)\\|)st\\|H\\|_{max}/\\varepsilon)$ を与えます。いずれについても実行は報告されていません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "The short paper (arXiv:2212.13969) carries no numerical test and points elsewhere for one: \"For more details and numerical experiments on justifying the setup in Eq. (14), see our technical companion paper\". That companion's Example 2.1 is a classical spectral solve of the one-dimensional heat equation, and it tests the warped phase transformation — the recasting — rather than this route end to end. It is written up on the `warped-phase-transformation` record, where it belongs.",
+        reasonJa: "短い方の論文（arXiv:2212.13969）には数値テストがなく、「式 (14) の設定を裏づけるより詳しい内容と数値実験については、技術詳細版の姉妹論文を参照されたい」と他所を指しています。その例 2.1 は一次元熱方程式の古典スペクトル解法であり、本経路を端から端まで実行したものではなく、書き換えにあたる warped phase 変換を検証するものです。当該の実行は `warped-phase-transformation` の記録に書かれています。",
+      },
+    },
     citations: [
       { title: "Quantum simulation of partial differential equations via Schrodingerisation", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.13969" },
       { title: "Quantum simulation of partial differential equations via Schrodingerisation: technical details", authors: "Shi Jin, Nana Liu, Yue Yu", year: "2022", url: "https://arxiv.org/abs/2212.14703" },
@@ -2589,6 +2619,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "定理 9 は、確率 $1-\\delta$ 以上で $u(t)^*Ou(t)$ を精度 $\\varepsilon$ で推定するのに、標本数 $O\\!\\left(\\frac{\\lVert O\\rVert^2}{\\varepsilon^2}\\log\\frac{1}{\\delta}\\right)$ を要し、各回路が $O_{\\mathrm{prep}}$、$U_O$、$\\widetilde U_k(t)$ へ $O\\!\\left(\\frac{\\alpha_O}{\\varepsilon}\\log\\frac{\\alpha_O}{\\varepsilon}\\log\\frac{\\lVert O\\rVert\\log(1/\\delta)}{\\delta\\varepsilon}\\right)$ 回問い合わせるとしています。$1/\\varepsilon^2$ は古典的な標本抽出の代価であり、コヒーレントな実装との違いはここにあります。標本抽出の実験は、実機でもシミュレーションでも行われていません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "An, Liu and Lin (arXiv:2303.01029) contain no numerical experiment at all: the single figure is a contour used to prove a lemma, and no device, simulator or software is named. An, Childs and Lin (arXiv:2312.03916) do compute, but Section 2.2's Figure 2 measures how fast a different kernel decays, and this record's Cauchy kernel appears there only as the baseline the new one is drawn against.",
+        reasonJa: "An・Liu・Lin（arXiv:2303.01029）には数値実験が一つもありません。唯一の図は補題の証明に用いる積分路であり、装置もシミュレータもソフトウェアも名前が挙がりません。An・Childs・Lin（arXiv:2312.03916）は計算を行っていますが、第 2.2 節・図 2 が測るのは別の核の減衰の速さであり、本記録の Cauchy 核はそこで比較の基準線としてのみ現れます。",
+      },
+    },
     citations: [
       { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
       { title: "Quantum algorithm for linear non-unitary dynamics with near-optimal dependence on all parameters", authors: "Dong An, Andrew M. Childs, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2312.03916" },
@@ -2885,6 +2921,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "結果は図として報告されています。上段は初期条件と、非線形時間の三分の一 $T_{nl}/3 = L_0/(3U_0)$ における解です。下段は、打ち切り次数 $N$ の各 Carleman 解と、前進 Euler 法による直接積分との絶対誤差の $l2$ ノルム、および対応する時間最大誤差の収束です。得られた知見は、$R \\approx 44$ がアルゴリズムの解析の要求する $R < 1$ を破っているにもかかわらず、$N$ を $4$ まで上げるにつれて時間最大誤差が指数的に減る、というものです。論文はこれを意外なこととし、「式 (6.9) の何らかの性質が、現在の解析の予想以上にこの方程式を Carleman 線形化に適したものにしている」ことの証左と読んでいます。全体を通じて古典計算です。量子デバイスもシミュレータも量子線形システムアルゴリズムも関与せず、Euler 離散化そのものの誤差は報告されていません。それは比較される二つの計算で同一だからです。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "Nothing in Liu, Kolden, Krovi, Loureiro, Trivisa and Childs (arXiv:2011.03185) assembles the banded all-at-once system of Eq. (3.8) or hands it to a solver, and no quantum linear system algorithm is executed anywhere in it. Its one piece of numerical work is Figure 1 of Section 6, which the paper itself names \"Integration of the forced viscous Burgers equation using Carleman linearization on a classical computer\".",
+        reasonJa: "Liu・Kolden・Krovi・Loureiro・Trivisa・Childs（arXiv:2011.03185）のどこにも、式 (3.8) の帯行列による一括系を組み立ててソルバーへ渡す場面はなく、量子線形システムアルゴリズムが実行されることもありません。唯一の数値的作業は第 6 節の図 1 で、論文自身がそれを「古典計算機上での Carleman 線形化による強制粘性 Burgers 方程式の積分」と呼んでいます。",
+      },
+    },
     citations: [
       { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Jin-Peng Liu, Herman Øie Kolden, Hari K. Krovi, Nuno F. Loureiro, Konstantina Trivisa, Andrew M. Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
     ],
@@ -2985,6 +3027,10 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     absences: {
+      "example.text": {
+        reason: "Dong, Li and Xue (arXiv:2504.06948) set the off-diagonal Padé cases aside in one sentence of Section 3.1 — \"we consider the case p = q = k in the rest of the paper\" — and backward Euler is the (0,1) member. Everything they then measure is diagonal, so the paper's experiments are about schemes this record is not.",
+        reasonJa: "Dong・Li・Xue（arXiv:2504.06948）は第 3.1 節の一文「本論文の残りでは $p = q = k$ の場合を考える」で非対角の Padé 近似を脇に置いており、後退 Euler 法はその $(0,1)$ にあたります。以降の測定はすべて対角の場合についてのものなので、この論文の実験は本記録とは別のスキームを扱っています。",
+      },
       "implementations": {
         reason:
           "Dong, Li and Xue implement diagonal Pade approximants and nothing else. Their Section 3.1 sets the off-diagonal cases aside in one sentence — \"Since the diagonal Pade approximation ($p = q$) is usually preferred over the off-diagonal cases ($p \\\\ne q$), we consider the case $p = q = k$ in the rest of the paper\" — two sections before the first experiment, and backward Euler is the $(0,1)$ approximant. The words \"backward Euler\" appear nowhere in the paper. So there is no implementation of THIS scheme to write up, which is the same sentence that stops `cost` quoting a complexity here.",
@@ -3057,6 +3103,10 @@ export const LAYER_GRAPH: LayerGraph = {
       },
     },
     absences: {
+      "example.text": {
+        reason: "Crank-Nicolson is the (1,1) member of the family Dong, Li and Xue (arXiv:2504.06948) do encode, but k = 1 is the one order their results never reach: Theorem 3.6 is stated for k ≥ 3, Table 1 begins at k = 5, and every experiment in Section 5.2 runs at k = 9 or higher. The words Crank-Nicolson and trapezoidal appear nowhere in the paper.",
+        reasonJa: "Crank-Nicolson 法は Dong・Li・Xue（arXiv:2504.06948）が符号化する族の $(1,1)$ にあたりますが、$k = 1$ は彼らの結果が届かない唯一の次数です。定理 3.6 は $k \\ge 3$ で述べられ、表 1 は $k = 5$ から始まり、第 5.2 節の実験はすべて $k = 9$ 以上で行われています。Crank-Nicolson および台形則という語は論文中に一度も現れません。",
+      },
       "implementations": {
         reason:
           "The same sentence as `backward-euler`'s: Dong, Li and Xue analyse and implement only diagonal Pade approximants, and Crank-Nicolson is the $(1,1)$ case, which their complexity theorems exclude by requiring $k \\\\ge 3$. Their four numerical experiments run order nine or an order chosen to meet a precision — never this one.",
@@ -3313,6 +3363,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "数値結果はありません。節約されるものは測定ではなく記述として示されています。時刻レジスタに対する算術がなくなることで、定理 4.2 のゲート数から $\\log(TD/(\\lambda\\varepsilon))$ の項が消え、状態準備の振幅が少なくとも定数になることで、同定理の定数 $R$ からもその因子が消えます。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "Berry and Costa (arXiv:2212.03544) are theorem and proof throughout: no figure, no table, no computed value, and no hardware or simulator named. What stands where a worked instance would be is the symbolic three-step block matrix of Eq. (19), whose entries are symbols — no generator, no inhomogeneity and no dimension is ever chosen.",
+        reasonJa: "Berry と Costa（arXiv:2212.03544）は全編が定理と証明で、図も表も計算値もなく、ハードウェアやシミュレータの名前も挙がりません。実例が置かれるべき位置にあるのは式 (19) の記号的な 3 ステップのブロック行列で、その成分は記号のままです。生成子も非斉次項も次元も、具体化されていません。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for time-dependent differential equations using Dyson series", authors: "Dominic W. Berry, Pedro C. S. Costa", year: "2022", url: "https://arxiv.org/abs/2212.03544" },
     ],
@@ -3522,6 +3578,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "計算された数値はなく、この実例が与えるのは一連の条件付きの主張です。定理 4 は次を述べます。ある $\\delta > 0$ について時間 $\\kappa^{1-\\delta}\\mathrm{poly}\\log(N)$ で走る行列反転の量子アルゴリズムが存在すれば $\\mathrm{BQP} = \\mathrm{PSPACE}$ となること、相対化する量子アルゴリズムはその時間では走りえないこと、そして $\\mathrm{poly}(\\kappa, \\log(N))$ 時間の古典アルゴリズムが存在すれば $\\mathrm{BPP} = \\mathrm{BQP}$ となることです。定理 5 は、相対化する古典の行列反転アルゴリズムは $3\\alpha + 4\\beta \\ge 1/2$ でない限り時間 $N^{\\alpha}2^{\\beta\\kappa}$ では走りえず、正定値行列に限れば評価は $N^{\\alpha}2^{\\beta\\sqrt{\\kappa}}$ になるとします。定理 6 は、確率 $2/3$ 以上で $\\langle x|M|x\\rangle$ の $\\varepsilon$ 以内の値を出力する行列反転推定問題について、$\\mathrm{poly}(\\kappa, \\log(N), \\log(1/\\varepsilon))$ 時間の量子アルゴリズムがあれば $\\mathrm{BQP} = \\mathrm{PP}$ となり、相対化する量子アルゴリズムは $\\alpha + \\beta \\ge 1$ でない限り $N^{\\alpha}\\mathrm{poly}(\\kappa)/\\varepsilon^{\\beta}$ では走りえないとします。論文自身のまとめは、行列反転が BQP 完全であること、そして $\\kappa$ 依存性を $\\kappa^{1-\\delta}$ に改善するだけでも、任意の時間 $T$ の量子アルゴリズムを時間 $o(T)$ でシミュレートできてしまう、というものです。あわせて、自身のアルゴリズムがこの推定問題を $\\tilde{O}(\\log(N)\\kappa^2 s^2/\\varepsilon^3)$ で解くことも記されています。$|x\\rangle$ をトレース距離 $\\varepsilon/2$ で作り、分散が高々 $1/4$ のビットを $1/3\\varepsilon^2$ 回サンプリングする、という数え方です。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "Harrow, Hassidim and Lloyd (arXiv:0811.3171) carry no numerical work: no figure, no table, no simulated instance, no simulator and no hardware. The only concrete matrix written down anywhere is assembled in Appendix A 5 out of a quantum circuit to prove matrix inversion BQP-complete — an argument about an instance rather than an instance that was solved. The numerics the register finds belong to Costa et al. and measure the discrete adiabatic walk, which has its own record.",
+        reasonJa: "Harrow・Hassidim・Lloyd（arXiv:0811.3171）には数値的な作業がありません。図も表もシミュレーションの実例もシミュレータもハードウェアも存在しません。具体的な行列が書き下される唯一の箇所は付録 A 5 で、行列反転が BQP 完全であることを示すために量子回路から組み立てられたものです。これは実例についての議論であって、解かれた実例ではありません。登録簿が見つける数値は Costa らのもので、別記録である離散断熱ウォークを測っています。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for solving linear systems of equations", authors: "Aram W. Harrow, Avinatan Hassidim, Seth Lloyd", year: "2008", url: "https://arxiv.org/abs/0811.3171" },
       { title: "Quantum tomography using state-preparation unitaries", authors: "Joran van Apeldoorn, Arjan Cornelissen, András Gilyén, Giacomo Nannicini", year: "2022", url: "https://arxiv.org/abs/2207.08800" },
@@ -3726,6 +3788,12 @@ export const LAYER_GRAPH: LayerGraph = {
           "数値結果はありません。評価は証明されるだけで測定はされておらず、その帰結を外から指摘しているのが Lin と Tong です。両氏は、知る限り量子線形方程式問題に対する可変時間振幅増幅の性能は文献で定量的に報告されていない、と述べています。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason: "Gilyén, Su, Low and Wiebe report no numerical work whatever — their only figures are circuit diagrams for the gate sequences of Theorem 17 — and Chakraborty, Gilyén and Jeffery have no figures at all. The numbers the register finds are Lin and Tong's Section 4.3 with Figure 2, and they measure the eigenstate-filtering route, which is written up on the `eigenstate-filtering-inversion` record.",
+        reasonJa: "Gilyén・Su・Low・Wiebe には数値的な作業がまったくなく、図は定理 17 のゲート列を描いた回路図だけです。Chakraborty・Gilyén・Jeffery には図が一つもありません。登録簿が見つける数値は Lin と Tong の第 4.3 節・図 2 のもので、測っているのは固有状態フィルタリング経路であり、それは `eigenstate-filtering-inversion` の記録に書かれています。",
+      },
+    },
     citations: [
       { title: "Quantum singular value transformation and beyond: exponential improvements for quantum matrix arithmetics", authors: "András Gilyén, Yuan Su, Guang Hao Low, Nathan Wiebe", year: "2018", url: "https://arxiv.org/abs/1806.01838" },
       { title: "The power of block-encoded matrix powers: improved regression techniques via faster Hamiltonian simulation", authors: "Shantanav Chakraborty, András Gilyén, Stacey Jeffery", year: "2018", url: "https://arxiv.org/abs/1804.01973" },

@@ -504,6 +504,24 @@ export interface LayerMethod extends LayerNodeBase {
    * **Absent is still the common case and still fine.** A field with no value and
    * no declared absence is simply not accounted for yet, which is what the gauge
    * has always reported. This adds a way to close that, not an obligation.
+   *
+   * ## An absence is about the sources cited here, never about the method
+   *
+   * The rule the twelve `example.text` reasons added on 2026-08-12 have to obey,
+   * and the one worth applying to every field on this list. An `example.text`
+   * absence says *the papers this record cites report no run of this method*. It
+   * does **not** say the method has never been run, and it must not be written so
+   * that a reader could take it that way — the owner's ruling that put those
+   * reasons here rested on precisely that distinction:
+   *
+   * > *"many of these methods definitely do have other papers with runs."*
+   * > — owner, github.com/EshMis/ai-ops/issues/19, 2026-08-12
+   *
+   * That is why a reason names its papers. "No run has been reported" is a claim
+   * about the literature and nobody can support it; "Berry and Costa carry no
+   * figure, table or computed value" is a claim about two documents somebody
+   * opened. Only the second is defensible, and only the second tells the next
+   * reader where **not** to look again.
    */
   absences?: Readonly<Record<string, MethodAbsence>>;
 }
