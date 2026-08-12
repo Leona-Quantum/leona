@@ -7739,6 +7739,42 @@ export const LAYER_GRAPH: LayerGraph = {
   },
   {
     kind: "method",
+    id: "tetris-adapt-ansatz",
+    label: "TETRIS-ADAPT-VQE ansatz",
+    labelJa: "TETRIS-ADAPT-VQE アンザッツ",
+    shortLabel: "TETRIS-ADAPT",
+    shortLabelJa: "TETRIS-ADAPT",
+    summary: "Keep ADAPT's habit of growing the ansatz from measured gradients, and stop adding one operator per round. Several operators acting on disjoint qubits can go in together, filling the same layer instead of stacking — the same circuit, packed rather than piled.",
+    summaryJa: "測定した勾配からアンザッツを育てるという ADAPT のやり方はそのままに、1 周につき 1 演算子という制限をやめます。互いに素な量子ビットに作用する複数の演算子は同時に加えることができ、積み上げるのではなく同じ層に詰め込まれます。回路は同じでも、積まれ方が違います。",
+    realizes: "ansatz-construction",
+    conditions: "Anastasiou et al. describe the change as lifting exactly one rule: this is \"a modified version of the ADAPT-VQE algorithm in which the one-operator-at-a-time rule is lifted to allow for the addition of multiple operators with disjoint supports in each iteration\". What it buys is stated without a number and with its limits named — the result is \"denser but significantly shallower circuits, without increasing the number of CNOT gates or variational parameters\", and \"its advantage over the original algorithm in terms of circuit depths increases with the system size\". It also cuts the measurement overhead ADAPT pays between rounds: \"the expensive step of measuring the energy gradient with respect to each candidate unitary at each iteration is performed only a fraction of the time compared to ADAPT-VQE\", because fewer rounds are needed once a round may add more than one operator. The motivation is hardware rather than accuracy — adaptive algorithms \"are not yet viable due, in large part, to the severe coherence time limitations on current devices\".",
+    conditionsJa: "Anastasiou らは、この変更をちょうど一つの規則を外すこととして説明しています。これは「ADAPT-VQE アルゴリズムの改変版であり、1 回の反復につき 1 演算子という規則を外して、台が互いに素な複数の演算子を各反復で追加できるようにしたもの」です。それによって得られるものは、数値を伴わずに、しかし限界を明示して述べられています。結果は「より密だが著しく浅い回路であり、CNOT ゲート数も変分パラメータ数も増やさない」ものであり、「回路深さの点での元のアルゴリズムに対する優位は、系のサイズとともに増大する」。ADAPT が各周のあいだに支払う測定の負担も減ります。「各反復で候補となる各ユニタリに関するエネルギー勾配を測定するという高価な工程が、ADAPT-VQE に比べてごく一部の回数しか実行されない」。1 周でより多くの演算子を追加できれば、必要な周回数が減るからです。動機は精度ではなくハードウェアです。適応的アルゴリズムは「現行デバイスの厳しいコヒーレンス時間の制約が大きな理由となって、まだ実用の域にない」とされています。",
+    refines: "adapt-ansatz",
+    refinesMark: "ADAPT",
+    refinesMarkJa: "ADAPT",
+    // **Folded (s121, W17), and folding is the CORRECT model here rather than a
+    // way past the figure ceiling.** This refinement records no
+    // map-representable internal difference from its parent: the same single
+    // step, the same `observable-estimation` stub, no `via` its parent does not
+    // have. What actually changed is how many operators one round may add —
+    // a rule about the search, not a construction — and this graph has no
+    // vocabulary for that. Validation enforces the claim rather than trusting
+    // it: the flag is refused if the chain facts differ.
+    //
+    // Do NOT resolve the fold by inventing a `via` pin. The paper chooses no
+    // different filler for the estimation step; it changes how often that step
+    // is reached, which is exactly the distinction the map does not draw.
+    sameInternalsAsParent: true,
+    potentialPath: "Drawing this apart from ADAPT needs the map to represent a SCHEDULE — how many operators a round admits, and therefore how often the gradient measurement is paid — where today a repeat is a count on one hop and nothing expresses \"fewer rounds, more per round\". The paper's own claim is precisely a trade between those two, so the moment the map can say it, this refinement has a drawable difference and stops being folded.",
+    potentialPathJa: "これを ADAPT と別に描くには、地図が「スケジュール」を表現できる必要があります。すなわち、1 周が何個の演算子を受け入れ、その結果として勾配測定を何回支払うのか、ということです。今日の地図では、繰り返しは一つのホップ上の回数でしかなく、「周回数は減り、1 周あたりは増える」を言い表す手立てがありません。この論文の主張はまさにその二者間の取引そのものなので、地図がそれを言えるようになった時点で、この精緻化は描画可能な差異をもち、折り畳まれた状態ではなくなります。",
+    steps: ["observable-estimation"],
+    entries: ["vqe-tetris-adapt"],
+    citations: [
+      { title: "TETRIS-ADAPT-VQE: An adaptive algorithm that yields shallower, denser circuit ansätze", authors: "Panagiotis G. Anastasiou, Yanzhu Chen, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2022", url: "https://arxiv.org/abs/2209.10562" },
+    ],
+  },
+  {
+    kind: "method",
     id: "measurement-grouped-readout",
     label: "Measure commuting terms together",
     labelJa: "可換な項をまとめて測定する",
