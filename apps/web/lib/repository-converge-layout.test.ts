@@ -1707,9 +1707,17 @@ test("a line that opens into something says so, and a line that does not is not 
   // top-level route on `linear-ode-solve`, and unlike `layerwise-training` it
   // DOES open — the two hops it delegates are named route segments, not
   // ingredients, so the canvas still has something to expand.
-  assert.equal(openable + leaves + 1, 90, "the twenty-three figures draw 90 lines between them");
-  assert.equal(openable, 28, "28 of them open into something the canvas draws");
-  assert.equal(leaves, 61, "61 are leaves — the canvas records nothing finer for them");
+  //
+  // Two more in session 130, and they land on opposite sides, which is why the
+  // total moves by 2 while neither sub-count moves by 2. `childs-liu-spectral`
+  // is an eighth top-level route on `linear-ode-solve` and OPENS, for Berry's
+  // reason: both of its hops are named route segments. The
+  // `chebyshev-pseudospectral-collocation` it pins is a LEAF — atomic, like
+  // every other member of `time-discretization` except the two propagator
+  // series. `openable` 28 → 29, `leaves` 61 → 62.
+  assert.equal(openable + leaves + 1, 92, "the twenty-three figures draw 92 lines between them");
+  assert.equal(openable, 29, "29 of them open into something the canvas draws");
+  assert.equal(leaves, 62, "62 are leaves — the canvas records nothing finer for them");
 
 });
 
@@ -5299,9 +5307,10 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
 
   const ode = diagramFor("linear-ode-solve");
   // 5 → 6 in session 129: `berry-multistep` is a sixth top-level route on this
-  // slot. The folded pair is unchanged — Krovi and the improved kernel — so the
+  // slot. 6 → 7 in session 130: `childs-liu-spectral` is a seventh. The folded
+  // pair is unchanged both times — Krovi and the improved kernel — so the
   // sentence the legend prints still adds up against `methodsRealizing`.
-  assert.equal(ode.drawnMethodCount, 6);
+  assert.equal(ode.drawnMethodCount, 7);
   assert.equal(ode.foldedCount, 2);
   assert.equal(
     ode.drawnMethodCount + ode.foldedCount,
@@ -5317,9 +5326,9 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
     method: node,
     locale: "en",
   });
-  // 6 → 7 with `berry-multistep`: Krovi's own page unfolds Krovi and draws the
-  // slot's other six tops beside it, one of which is now Berry.
-  assert.equal(page.drawnMethodCount, 7, "the unfolded subject counts as drawn on its own page");
+  // 6 → 7 with `berry-multistep`, 7 → 8 with `childs-liu-spectral`: Krovi's own
+  // page unfolds Krovi and draws the slot's other seven tops beside it.
+  assert.equal(page.drawnMethodCount, 8, "the unfolded subject counts as drawn on its own page");
   assert.equal(page.foldedCount, 1, "the OTHER fold stays folded there");
   assert.equal(
     page.drawnMethodCount + page.foldedCount,

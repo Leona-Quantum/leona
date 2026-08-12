@@ -411,7 +411,10 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // +2 in session 129: `berry-multistep` carries a hop note on each of the two stretches it
   // delegates — the same pair `taylor-all-at-once` does, and the contrast with the note above
   // is exactly the ingredient/segment distinction.
-  assert.equal(hops, 134, `${hops} hops, not 134`);
+  // 137 in session 130: `childs-liu-spectral` carries two (its Chebyshev
+  // collocation and its linear solve) and `chebyshev-pseudospectral-collocation`
+  // one (its own stretch).
+  assert.equal(hops, 137, `${hops} hops, not 137`);
 
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
@@ -1352,7 +1355,12 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // step — the slot it consumes is an ingredient hanging off the strand, not something it
   // walks through first — so `trailing` is deliberately unchanged at 14. The two numbers
   // moving apart is the point of counting them separately.
-  assert.equal(withOwn.length, 78);
+  // 79 since `chebyshev-pseudospectral-collocation` (session 130). It is atomic, so
+  // its stretch is the whole route and stands at index 0 — `trailing` is deliberately
+  // unchanged at 14, the same way `layerwise-training` moved one number and not the
+  // other. `childs-liu-spectral`, authored in the same commit, moves NEITHER: it
+  // delegates both of its hops to named slots, so it has no own stretch at all.
+  assert.equal(withOwn.length, 79);
   assert.equal(trailing.length, 14);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1411,7 +1419,9 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 78 since `layerwise-training`, tracking the stretch census above one-for-one, which is
   // the whole claim this test makes: the own-card population and the stretch population are
   // the same set, so they move together or one of them is wrong.
-  assert.equal(built, 78);
+  // 79 since `chebyshev-pseudospectral-collocation`, tracking the stretch census
+  // above one-for-one as it must.
+  assert.equal(built, 79);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);

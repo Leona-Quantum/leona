@@ -1298,7 +1298,14 @@ test("a coined composite is refused in the short form too, where it is likeliest
  */
 const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // The three the owner named by sight. Each is a corpus job, not a gate problem.
-  ["time-discretization", 5],
+  // 5 → 6 in session 130, and declared rather than absorbed: the sixth is
+  // `chebyshev-pseudospectral-collocation`, authored from arXiv:1901.00961 §2 so
+  // that `childs-liu-spectral` had something sourced to pin its first hop to.
+  // It is hollow for the same reason the five beside it are — what a
+  // discretization produces is a system of rows, and assembling rows is not a
+  // capability this graph decomposes — so this is a region widening by one
+  // known member, not a new kind of gap.
+  ["time-discretization", 6],
   ["nonlinear-linear-embedding", 4],
   ["hamiltonian-recasting", 2],
   // Four phase-factor routines that differ in their numerics and in nothing this graph

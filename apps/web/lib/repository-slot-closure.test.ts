@@ -14,6 +14,7 @@ import { isCapability, isMethod, layerNode, type LayerGraph } from "./repository
 import { layoutConverge } from "./repository/converge-layout.ts";
 import { cardFor } from "./repository/card-content.ts";
 import { PAPER_REGISTER } from "./repository/paper-register.ts";
+import { paperIdFromUrl } from "./repository/papers.ts";
 
 const CARD_INPUT = {
   graph: LAYER_GRAPH,
@@ -35,7 +36,7 @@ function edited(closure: SlotClosure, members: SlotClosure["members"]): SlotClos
 }
 
 test("the authored graph agrees with every closure pinned against it", () => {
-  const errors = auditSlotClosures(LAYER_GRAPH);
+  const errors = auditSlotClosures(LAYER_GRAPH, PAPER_REGISTER);
   assert.deepEqual(errors, [], errors.join("\n"));
 
   // Denominators. An empty closure list, or a closure whose slot nothing
@@ -84,7 +85,7 @@ test("a method added to a closed slot without a row fails the closure", () => {
     ],
   } as unknown as LayerGraph;
 
-  const errors = auditSlotClosure(grown, closure);
+  const errors = auditSlotClosure(grown, closure, PAPER_REGISTER);
   assert.ok(
     errors.some((error) => error.includes("probe-eighth-linear-ode-route")),
     `an unrecorded eighth method passed the closure: ${JSON.stringify(errors)}`,
@@ -100,7 +101,7 @@ test("every other closure rule fails on its own mutation", () => {
   assert.ok(real);
 
   const fails = (closure: SlotClosure, needle: string, what: string) => {
-    const errors = auditSlotClosure(LAYER_GRAPH, closure);
+    const errors = auditSlotClosure(LAYER_GRAPH, closure, PAPER_REGISTER);
     assert.ok(
       errors.some((error) => error.includes(needle)),
       `${what}: expected an error mentioning "${needle}", got ${JSON.stringify(errors)}`,
@@ -156,6 +157,60 @@ test("every other closure rule fails on its own mutation", () => {
     "the row outlived the gap it records",
     "an absence whose paper is already cited on this slot",
   );
+
+  // [7] the register rule, both halves, and it needs its own arms for a reason
+  // the other rules do not have. **This closure now has no absent members at
+  // all** — `childs-liu-spectral` was the last one and it is authored — so the
+  // absence half of [7] has no live subject on the real graph and would pass
+  // over nothing forever. The arms below are what keep it a check.
+  //
+  // The shapes are chosen to be the two mistakes that actually happen: an id
+  // that is well-formed and simply has no row (a paper somebody cited before
+  // registering it), and a URL the register cannot key on at all (a journal
+  // landing page, a PDF host, a search result). The second is the sharper of
+  // the two, because `/^https:\/\/arxiv\.org\/abs\//` — everything that stood
+  // behind these fields before — accepts it happily.
+  fails(
+    absent({ citation: { ...real.source, url: "https://arxiv.org/abs/9999.99999" } }),
+    "is not in the paper register",
+    "an absence citing an arXiv id nobody has registered",
+  );
+  fails(
+    { ...real, source: { ...real.source, url: "https://arxiv.org/abs/9999.99999" } },
+    "the enumeration is pinned to a paper the register does not carry",
+    "an enumeration pinned to an unregistered paper",
+  );
+  // Well-formed, on the right host, and not an address the register keys on —
+  // the case the old regex could never have caught, since it only ever looked
+  // at the prefix.
+  fails(
+    { ...real, source: { ...real.source, url: "https://arxiv.org/list/quant-ph/recent" } },
+    "does not resolve to an arXiv abstract",
+    "an enumeration pinned to an arXiv listing page rather than a paper",
+  );
+});
+
+test("the register rule is exercised by the real closures and not only by mutations", () => {
+  // The denominator for [7]. Every arm above builds its own broken closure, so
+  // all three would still pass if `unregistered` were never reached on anything
+  // real — which is the shape of wrong-reason pass this repository keeps
+  // finding. This asserts the rule has live subjects: the enumeration's own
+  // source, plus every absent member's citation, are papers the register
+  // actually carries.
+  let checked = 0;
+  const index = new Map(PAPER_REGISTER.papers.map((paper) => [paper.id, paper]));
+  for (const closure of SLOT_CLOSURES) {
+    for (const url of [
+      closure.source.url,
+      ...closure.members.filter(isAbsentMember).map((member) => member.citation.url),
+    ]) {
+      const id = paperIdFromUrl(url);
+      assert.ok(id, `${closure.slot}: ${url} is not an address the register can key on`);
+      assert.ok(index.has(id), `${closure.slot}: ${id} is not in the paper register`);
+      checked += 1;
+    }
+  }
+  assert.ok(checked >= 1, "rule [7] ran against no real URL at all");
 });
 
 test("every method a closure pins is reachable from its own slot, by the path a reader takes", () => {
