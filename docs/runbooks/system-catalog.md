@@ -1,8 +1,13 @@
 # Runbook: the system catalog (provision, import, attest, publish)
 
-The public `/repository` corpus is not a fixture and not a migration. It is 283 records
-staged, reviewed and published through the durable importer by four CLI commands, and
-this file is the only written record of how to run them.
+The public `/repository` corpus is not a fixture and not a migration. It is every record in
+`services/api/catalog_bootstrap/manifest.json`, staged, reviewed and published through the
+durable importer, and this file is the only written record of how it is run.
+
+**The corpus size is not written down here on purpose.** It has been 285, 283, 323 and 342
+this year, it moves whenever a lane adds records, and a number in prose is wrong from the
+next merge onwards. `manifest.json`'s `item_count` is the figure; every count below is
+stated relative to it.
 
 Supersedes `neon-system-catalog.md`, archived at
 `docs/archive/repository-migration-2026-07/`. That file's temporary-Neon-branch procedure
@@ -89,8 +94,8 @@ uv run --package majorana-api python -m majorana_api.catalog_admin attest-bootst
 uv run --package majorana-api python -m majorana_api.catalog_admin publish-bootstrap --attested-by "<your user id>"
 ```
 
-**`bootstrap-import`** must report `accepted=283 rejected=0 dead=0`. Anything else means
-the pinned manifest and the database disagree — stop rather than re-running. It submits
+**`bootstrap-import`** must report `accepted=<item_count> rejected=0 dead=0`. Anything else
+means the pinned manifest and the database disagree — stop rather than re-running. It submits
 `services/api/catalog_bootstrap/manifest.json` through the unchanged durable importer as
 `ImportProvider.CATALOG_BOOTSTRAP`, re-verifying the whole-manifest checksum and every
 per-item sha256 fail-closed at construction. Records stage with
@@ -109,7 +114,8 @@ up (`select id from users where email = '<you>'`); it is not a secret.
 provenance row, a declared license carrying the policy's SPDX id, an approved reviewer
 decision, and review acceptance for each covered record. The policy's statement and
 checksum are recorded on every audited row, so a published record traces back to the exact
-sentence that was signed. **It publishes nothing.** Expect `attested=283 excluded=0`.
+sentence that was signed. **It publishes nothing.** Expect `attested=<item_count>
+excluded=0`.
 
 **The policy is fail-closed, in both directions.** A record it neither includes nor
 explicitly excludes aborts the run — if you regenerate the manifest and a record appears
@@ -122,7 +128,7 @@ grant covers every record that exists.
 
 **`publish-bootstrap`** re-evaluates readiness per record and refuses any that is missing
 a binding, so an unattested record cannot ride along — it is reported as blocked and left
-private. Expect `published=283 blocked=0`.
+private. Expect `published=<item_count> blocked=0`.
 
 Changing the license, or attesting records the current policy excludes, is a policy-file
 edit plus a normal review. Never a flag and never a command-line override.
@@ -332,63 +338,75 @@ loop is: edit the entries → regenerate the manifest
 (`node scripts/generate-catalog-bootstrap-manifest.mjs`) → `bootstrap-import` →
 `attest-bootstrap` → `publish-bootstrap`.
 
-**Since 2026-08-12 the deploy pipeline can run the last three for you — but it is PARKED
-as of its first run.** `deploy.yml`'s step `sync the published catalog` runs
-`sync-bootstrap --attested-by-standing` against production on every deploy, and is gated on
-the repository variable `CATALOG_SYNC_ENABLED` being `true`. It is currently not set.
+**Since 2026-08-12 the deploy pipeline runs the last three for you, and it is ON.**
+`deploy.yml`'s step `sync the published catalog` runs `sync-bootstrap
+--attested-by-standing` against production on every deploy, gated on the repository variable
+`CATALOG_SYNC_ENABLED`, which is now `true`. **A corpus content change reaches
+`/repository` on the next deploy. You no longer run any of this by hand.**
+
+First unattended run, deploy 31599927661, 2026-08-12T13:22:43Z:
+
+```text
+reviewer: 019f5b84-… (standing catalog grant, --attested-by-standing)
+bootstrap import finished: accepted=342 rejected=0 dead=0
+bulk attestation complete: attested=342 carried_forward=342 re_signed=0 needs_signature=0
+publish complete: published=342 blocked=0
+```
 
 **Owner decision, 2026-08-12 (ai-ops#13): keep the step, and switch it on when someone can
-watch a deploy through.** The alternatives on the table were leaving it off indefinitely and
-taking it back out in favour of the hand step; both were declined. So the pipeline step is
-permanent and the only open question is when the variable moves — which is what the two
-blockers below answer. It is not "on hold pending a design decision"; it is finished code
-waiting on data.
+watch a deploy through.** The alternatives — leaving it off indefinitely, or taking it back
+out in favour of the hand step — were both declined.
 
-**Why it was parked.** On its first production run the step refused:
+**The published count dips while the sync is running.** The import stages new versions
+before anything is attested, and staging resets `review_state` to DRAFT, so a reader or a
+monitor sampling mid-step sees fewer records than either side of it. Observed on that first
+run: 342 → 338 → 342 inside about three minutes. A low count during a deploy is the sync
+working, not a fault; judge it after the step, not during.
 
-```
-2 accounts hold the catalog reviewer grant
-(019f5b84-d1ab-72a3-9c68-41416325b3f4, 019fb3ae-39f8-78b6-a04a-dfdfb847952f)
-— an unattended run will not choose between them. Pass --attested-by explicitly.
-```
+### What unparked it, kept for the next person who has to unpark something
 
-Neither carries the `retired-workos-env:` marker, so this was **not** the environment-switch
-duplicate that `pick_standing_reviewer` already resolves: two live accounts held ADMIN on
-the catalog workspace.
+Two blockers, and neither was the one the warning named for most of a day.
 
-**That half is settled, and the deploy is what settled it.** `pick_standing_reviewer` now
-asks the stronger question — not who *may* review but who actually *has* — and the read-only
-`reviewers` report has printed the same answer on every deploy since:
+The step parked because two live accounts held the catalog reviewer grant. That resolved
+itself once `pick_standing_reviewer` started asking who had actually *signed* rather than who
+*may* review — one of the two grants had never been used. The prose kept naming it for hours
+afterwards, contradicted by its own report six lines below, which is why the parked step is
+now forbidden from naming a blocker at all: `reviewers` and `attest-plan` derive it, and
+`test_catalog_parked_step_names_no_blocker` keeps prose out.
 
-```
-catalog reviewer grants: 2 ADMIN membership(s)
-  019f5b84-d1ab-72a3-9c68-41416325b3f4  signed=1153
-  019fb3ae-39f8-78b6-a04a-dfdfb847952f  signed=0
-VERDICT: exactly one eligible account has signed
-```
+The real blocker was 25 records whose provenance claim had moved, needing a human signature.
+That was cleared under an owner authorization recorded in `desk/decisions/Leona.md`. The
+published corpus went **258 → 342**.
 
-One of the two grants was never used, so there is nothing to choose between. Revoking the
-unused one is tidying, not a precondition. Do not read the older instruction "resolve which
-is the real reviewer, revoke the other" as still blocking — it is not.
+**If you ever assemble a `--re-attest` list, pin one image and use it for both the plan and
+the run.** The corpus moved 323 → 342 during the twenty minutes between verifying that list
+and signing it, because other lanes kept merging. `--re-attest` requires the named set to
+equal the refused set exactly, so a list assembled against a manifest you are not about to
+run is already stale. Read the set off `attest-plan` on the *same image* you then sign with.
 
-**What is still blocking, and it is not the reviewer.** Records whose provenance claim moved
-refuse to inherit the grant made about the old claim, and a person has to look at each and
-re-sign it by name (*When `attest-bootstrap` refuses*, above). Until that happens the
-variable must stay off, and the reason is sharper than "the deploy goes red":
+**Why it parked, and why that stopped mattering.** Its first production run refused with
+`2 accounts hold the catalog reviewer grant … an unattended run will not choose between
+them`. Neither carried the `retired-workos-env:` marker, so it was not the environment-switch
+duplicate `pick_standing_reviewer` already resolves — two live accounts genuinely held ADMIN.
+
+`pick_standing_reviewer` now asks the stronger question: not who *may* review, but who
+actually *has*. One of the two grants had never been used, so there was nothing to choose
+between and nothing to revoke. **Do not act on the older instruction "resolve which is the
+real reviewer, revoke the other" — it describes a state that no longer exists.**
+
+**The order stays signature first, variable second**, and it is not caution. If any record
+is refusing when the variable is on:
 
 - `bootstrap-import` stages the new content, which resets a changed record's `review_state`
   from ACCEPTED to DRAFT and takes it **off** `/repository`;
 - `attest-bootstrap` then exits on the refusal, so `publish-bootstrap` never runs and the
   newly-imported records are never published.
 
-So flipping the variable before the signature leaves the corpus staged and unpublished —
-worse for a reader than the staleness the feature exists to fix, and red for every other
-lane merging at that moment. **Signature first, variable second.** Once the refusals are
-cleared, `gh variable set CATALOG_SYNC_ENABLED --body true` re-arms it in one command, with
-no code change.
-
-Until then every deploy prints a warning naming the parked state, so a stale catalog cannot
-be silent.
+The corpus is left staged and unpublished — worse for a reader than the staleness this
+feature exists to end, and red for every other lane merging at that moment. So clear the
+refusals first (*When `attest-bootstrap` refuses*, above), then let the sync run. This is
+the standing rule now that the variable is on, not a one-off precondition: the next moved
+claim reddens a deploy and takes its record off the listing until somebody signs it.
 
 ### `attest-plan` — which records are waiting for a signature
 
