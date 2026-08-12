@@ -60,7 +60,7 @@ import {
 import { convergeNotes } from "../lib/repository/converge-notes";
 import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
-import { cardFor, exampleRunNote } from "../lib/repository/card-content";
+import { absenceOf, cardFor, exampleRunNote } from "../lib/repository/card-content";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { paperTraces } from "../lib/repository/paper-traces";
 import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
@@ -1028,6 +1028,26 @@ function MethodView({
                     <p className="mj-card-run-note">{exampleRunNote(node.example.run, isJa)}</p>
                   ) : null}
                 </>
+              ) : null}
+              {/* **Why there is no run, when the record says so — and the card has
+                  drawn this for longer than this page has.**
+
+                  A method with pseudocode and no prose has a non-empty Example
+                  section, so the `EmptyNote` below never fires and the account of
+                  the missing half had nowhere to go on this page. That is the exact
+                  hole `CardExample.textReason` was added to fill on the card, and
+                  this page was reading the node directly and therefore missing it.
+                  Twelve linear-ODE methods hit it at once when #19 took their
+                  worked examples off: a reader saw a listing and, about the run,
+                  nothing at all — which is indistinguishable from nobody having
+                  looked, and somebody had.
+
+                  Same shape and same markers as the card's, so a sweep counting
+                  explained gaps sees both surfaces. */}
+              {!node.example.text && absenceOf(node, "example.text", isJa) ? (
+                <p className="mj-card-gap mj-card-gap--none-recorded" data-gap="none-recorded" data-explained="true">
+                  <MathText source={absenceOf(node, "example.text", isJa) ?? ""} />
+                </p>
               ) : null}
               {/* Not localised, and this page says why by not offering a second
                   one: the identifiers are the record's own symbols. Same class

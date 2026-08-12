@@ -758,10 +758,35 @@ test("Example and Implementations stopped saying the model is still being design
 });
 
 test("the first pseudocode is on the map, and it is the sentences its own record already carries", () => {
-  // `backward-euler` is the one populated `example` in the graph. It is here rather than
-  // only in a fixture because a model with no instance anywhere has never been rendered in
-  // its held state, and "the layout has a value" is not "a reader can see one".
+  // `backward-euler` is here, against the real graph rather than only a fixture, because a
+  // model with no instance anywhere has never been rendered in its held state, and "the
+  // layout has a value" is not "a reader can see one".
+  //
+  // **It is NOT "the one populated `example` in the graph", which is what this comment said
+  // for several sessions.** That was false when it was written and stayed false while the
+  // corpus moved under it — dozens of methods carry an `example`, and the count has moved
+  // three times this month. The claim survived because nothing checks a comment: the
+  // assertions below never depended on uniqueness, so it cost nothing until somebody read it
+  // and believed it.
+  //
+  // **So the census is printed rather than written down here.** A second number in prose is
+  // how the first one got stale, and the fix for a comment that quotes a measurement is not
+  // a fresher measurement.
+  //
+  // What this test actually holds is three separate things, and they are worth naming so the
+  // next edit knows which one it is touching: that a card renders a *held* example at all;
+  // that the pseudocode restates sentences the record itself carries, checked against the
+  // record rather than against a copy; and that both the half-filled and the fully-filled
+  // shapes exist somewhere in the corpus. None of those is a claim about this record being
+  // the only one of anything.
   const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER } as const;
+  const methods = LAYER_GRAPH.nodes.filter(isMethod);
+  const examples = methods.filter((node) => node.example !== undefined);
+  console.log(
+    `[example census] ${examples.length} of ${methods.length} methods carry an example · `
+      + `${examples.filter((node) => (node.example?.pseudocode ?? "").trim() !== "").length} pseudocode · `
+      + `${examples.filter((node) => (node.example?.text ?? "").trim() !== "").length} a run in prose`,
+  );
   const card = cardFor(input, "backward-euler");
   assert.ok(card?.kind === "method");
   assert.ok(card.example.held, "backward-euler draws no example");
