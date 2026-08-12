@@ -1340,6 +1340,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "論文はこの特殊化を、走らせるアルゴリズムとしてではなく論拠として用いています。Hamiltonian シミュレーションがこの場合にあたるため、no-fast-forwarding 定理から、発展時間 $T$ への依存が対数因子を除いて最適であることが従う、というものです。計算は行われておらず、この場合のための別立ての構成も書かれていません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason:
+          "Berry, Childs, Ostrander and Wang report no run of any kind. A full-text read (2026-08-12, which moved the register row for arxiv:1701.03684 from an abstract basis to a full-text one) found no figure, no table, no worked instance with numbers, no dataset, no simulator and no hardware anywhere in the paper — the only occurrences of \"simulation\" are in the sense of Hamiltonian simulation. There is therefore nothing to write up, and there is no neighbouring numerical work to describe either.",
+        reasonJa:
+          "Berry・Childs・Ostrander・Wang はいかなる実行も報告していません。2026-08-12 の全文読解（これにより arxiv:1701.03684 の登録行は要旨ベースから全文ベースへ移りました）では、図も表も、数値を伴う具体例も、データも、シミュレータも実機も見当たりませんでした。「シミュレーション」という語が現れるのはハミルトニアンシミュレーションの意味においてのみです。したがって書き起こすべき実行はなく、代わりに述べるべき近傍の数値実験もありません。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
@@ -2042,6 +2050,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "得られたものは定理 3 であり、実行はありません。このアルゴリズムは $|u(T)\\rangle$ の $\\varepsilon$ 近似を $\\Omega(1)$ の成功確率と成功フラグつきで用意します。$O_{V_I}$ と $O_{V_R}$ へのクエリは $\\tilde{O}\\left(\\frac{\\|u_0\\|}{\\|u(T)\\|}T\\left(\\max_t\\|H(t)\\|\\right)\\mathrm{poly}\\log\\frac{\\max_t\\|V_R'(t)\\|\\|V_I\\|}{\\varepsilon}\\right)$ 回、$O_{\\mathrm{prep}}$ へのクエリは $O(\\|u_0\\|/\\|u(T)\\|)$ 回で、$\\max_t\\|H(t)\\| = O(N^2 + \\max_t\\|V_R(t)\\|)$ です。著者らはこれをすべてのパラメータについてほぼ最適なスケーリングと述べ、さらに $H(t)$ が任意の時間依存ハミルトニアン、$L$ が時間非依存で高速前進可能なハミルトニアンであるより一般の場合にも同じ結果が成り立つと注意しています。その代わりにこの変種が支払う代価は Discussion に書かれています。相互作用描像でのハミルトニアンシミュレーションは「実装が難しいかもしれない」とされ、より望ましい解決策としてカーネル $(1+k^2)^{-1}$ を速く減衰するものに置き換えることが挙げられています。これは本項目の隣にある改良カーネルの記録が進んだ方向です。ここでも実行はありません。Supplemental §VIII は定理 3 の証明であり、数値結果は報告されていません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason:
+          "An, Liu and Lin's contribution is analytical throughout: Theorem 1 is the kernel identity, Theorems 2 and 3 are query-complexity theorems and Theorem 9 is a sampling-complexity theorem for the hybrid variant. A full-text read including the Supplemental Materials found no numerical experiment, no simulator and no hardware run. The improved-kernel paper cited under Refinements does carry numerics, but they measure that kernel's truncation and belong to `lchs-improved-kernel`.",
+        reasonJa:
+          "An・Liu・Lin の寄与は終始解析的です。定理 1 はカーネル恒等式、定理 2 と定理 3 はクエリ計算量の定理、定理 9 はハイブリッド版の標本計算量の定理です。補足資料を含む全文読解では、数値実験もシミュレータも実機での実行も見当たりませんでした。「改良」の節で引用している改良カーネルの論文には数値実験がありますが、それはそのカーネルの打ち切りを測るものであり、`lchs-improved-kernel` に属します。",
+      },
+    },
     citations: [
       { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
     ],
@@ -3035,6 +3051,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "[[approximation: 一次精度の陰的な時間刻みですので、精度依存性は $1/\\varepsilon$ の多項式のままです。]]",
       },
     },
+    absences: {
+      "implementations": {
+        reason:
+          "Dong, Li and Xue implement diagonal Pade approximants and nothing else. Their Section 3.1 sets the off-diagonal cases aside in one sentence — \"Since the diagonal Pade approximation ($p = q$) is usually preferred over the off-diagonal cases ($p \\\\ne q$), we consider the case $p = q = k$ in the rest of the paper\" — two sections before the first experiment, and backward Euler is the $(0,1)$ approximant. The words \"backward Euler\" appear nowhere in the paper. So there is no implementation of THIS scheme to write up, which is the same sentence that stops `cost` quoting a complexity here.",
+        reasonJa:
+          "Dong・Li・Xue が実装しているのは対角 Pade 近似だけです。第 3.1 節は「対角 Pade 近似（$p = q$）は非対角の場合（$p \\\\ne q$）より通常好まれるため、本論文の残りでは $p = q = k$ の場合を考える」と一文で非対角の場合を脇に置いており、これは最初の数値実験より二節も前のことです。後退 Euler 法は $(0,1)$ 近似にあたります。論文中に「後退 Euler」という語は一度も現れません。したがってこの手法自体の実装として書き起こせるものはありません。これは `cost` がここで計算量を引用しない理由と同じ一文です。",
+      },
+    },
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
@@ -3104,6 +3128,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "The step averages the generator at the two ends, $(I - \\frac{h}{2}A)u_{k+1} = (I + \\frac{h}{2}A)u_k + \\frac{h}{2}(b_k + b_{k+1})$, which as a rational approximation of $e^{hA}$ is the $(1,1)$ diagonal Padé approximant $R_{11}(Ah) = [D_{11}(Ah)]^{-1}N_{11}(Ah)$ of Dong, Li and Xue's Definition 3.1. [[approximation: The propagator $e^{hA}$ is replaced by a ratio of degree-one polynomials in $Ah$, whose denominator $D_{11}(Ah) = I - \\frac{h}{2}A$ is the matrix each implicit step solves against; second order, so the precision dependence stays polynomial in $1/\\varepsilon$.]] For the autonomous case they treat, a step of this form, $\\hat{x}(sh) = R(Ah)\\hat{x}((s-1)h) + (R(Ah) - I)A^{-1}b$, is encoded as block rows of one large block-sparse linear system, and that assembled system is what this layer hands down. [[assumption: The denominator must be non-singular, which the source assures only when $p$ and $q$ are large enough or when the eigenvalues of $A$ are all negative.]]",
         theoryJa:
           "各ステップは両端で生成子を平均し、$(I - \\frac{h}{2}A)u_{k+1} = (I + \\frac{h}{2}A)u_k + \\frac{h}{2}(b_k + b_{k+1})$ となります。これは $e^{hA}$ の有理近似として見ると、Dong・Li・Xue の Definition 3.1 にある $(1,1)$ 型の対角 Padé 近似 $R_{11}(Ah) = [D_{11}(Ah)]^{-1}N_{11}(Ah)$ にあたります。[[approximation: 伝播子 $e^{hA}$ を $Ah$ の一次多項式どうしの比で置き換えます。その分母 $D_{11}(Ah) = I - \\frac{h}{2}A$ が、各陰的ステップで解く相手の行列です。二次精度ですので、精度依存性は $1/\\varepsilon$ の多項式のままです。]] 彼らが扱う自励系の場合、この形のステップ $\\hat{x}(sh) = R(Ah)\\hat{x}((s-1)h) + (R(Ah) - I)A^{-1}b$ は、ひとつの大きなブロック疎線形系のブロック行として符号化され、この層が引き渡すのはその組み上げた系です。[[assumption: 分母は非特異でなければなりません。出典がそれを保証するのは、$p$ と $q$ が十分大きいときか、$A$ の固有値がすべて負のときに限られます。]]",
+      },
+    },
+    absences: {
+      "implementations": {
+        reason:
+          "The same sentence as `backward-euler`'s: Dong, Li and Xue analyse and implement only diagonal Pade approximants, and Crank-Nicolson is the $(1,1)$ case, which their complexity theorems exclude by requiring $k \\\\ge 3$. Their four numerical experiments run order nine or an order chosen to meet a precision — never this one.",
+        reasonJa:
+          "`backward-euler` と同じ一文によります。Dong・Li・Xue が解析し実装しているのは対角 Pade 近似だけであり、Crank-Nicolson は $(1,1)$ の場合で、彼らの計算量の定理は $k \\\\ge 3$ を要求してこれを除外しています。四つの数値実験が走らせているのは次数 9 か、精度を満たすように選ばれた次数であって、この場合ではありません。",
       },
     },
     citations: [
@@ -3193,6 +3225,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "この構成について論文が出しているのは定理であって、測定値ではありません。補題 4 はノルムを評価し、行列を単位部分・ステップを閉じる部分・Taylor 項の部分に分けることで、$\\lVert A\\rVert \\le 1$ かつ $k \\ge 5$ のとき $\\lVert C_{m,k,p}(A)\\rVert \\le 2\\sqrt{k}$ を示します。補題 2 は、$\\lvert\\lambda\\rvert \\le 1$、$\\operatorname{Re}(\\lambda) \\le 0$、$k \\ge 5$、$(k+1)! \\ge 2m$ のもとでスカラーの場合の逆行列の各列を抑えます。補題 3 はこれを、系全体を $\\tilde{V} = \\sum_{j}\\lvert j\\rangle\\langle j\\rvert \\otimes V$ により $C(A) = \\tilde{V}C(D)\\tilde{V}^{-1}$ と対角化して持ち上げ、$\\lVert C_{m,k,p}(A)^{-1}\\rVert \\le 3\\kappa_V\\sqrt{k}(m+p)$ を得ます。$\\tilde{V}$ の条件数は $V$ のそれと同じです。定理 5 は両者を掛け合わせて $\\kappa_C \\le 6\\kappa_V k(m+p)$ とします。定理 6 は、対角化した変数のもとで付録 A の二つの $1/(k+1)!$ の補題を通じて 1 ステップごとの打ち切り誤差を積み上げ、$j \\in \\{0, 1, \\ldots, m\\}$ のすべてについて $\\lVert\\lvert x(jh)\\rangle - x_{j,0}\\rVert \\le 2.8\\kappa_V j(\\lVert x_{\\mathrm{in}}\\rVert + mh\\lVert b\\rVert)/(k+1)!$ を与えます。数値的に計算されたものは何もありません。論文は実験を報告しておらず、図も表もなく、シミュレータやハードウェアの名前も挙がっていません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason:
+          "Its only source is arXiv:1701.03684, and the full-text read that settled `taylor-all-at-once` above settles this record too: the paper reports no numerics of any kind. Nothing about the truncated propagator was run separately either.",
+        reasonJa:
+          "この記録の出典は arXiv:1701.03684 のみであり、上の `taylor-all-at-once` を確定させた全文読解がこの記録も確定させます。すなわち、この論文はいかなる数値実験も報告していません。打ち切り伝播子だけを取り出して実行した記録もありません。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
@@ -3998,6 +4038,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "第 4.1 節はクエリ数の見積もりで、第 4.3 節はゲート数の見積もりで終わります。$W$ も $T$ も $P_A$ への $O(1)$ 回の問い合わせで済みますので、$T_n(H)$ を作る写像の費用は $O(n)$ 回となり、これがチェビシェフ経路のクエリ計算量を、増幅の回数と生き残った最高次数との積にしています。ウォーク 1 ステップは、誤差 $\\varepsilon'$ までであればゲート計算量 $O(\\log N + \\log^{2.5}(\\kappa d/\\varepsilon'))$ で行えます。ここで実行されるものはありません。ウォークは仕様として定められ、費用が数えられ、正しさが証明されるだけで、具体的な $A$ もシミュレータもデバイスも現れません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason:
+          "Childs, Kothari and Somma's paper is a complexity result and carries no numerical section; a full-text read (2026-08-12) confirmed it, and the register row moved to a full-text basis with that reading. The numerics on the neighbouring `eigenstate-filtering-inversion` record are Lin and Tong's and test a different construction.",
+        reasonJa:
+          "Childs・Kothari・Somma の論文は計算量の結果であり、数値実験の節を持ちません。2026-08-12 の全文読解でこれを確認し、その読解をもって登録行は全文ベースに移りました。隣の `eigenstate-filtering-inversion` にある数値実験は Lin・Tong のもので、別の構成を試すものです。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],

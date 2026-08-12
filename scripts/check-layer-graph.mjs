@@ -748,9 +748,23 @@ if (CLOSURE_IDS.length > 0) {
   console.log(
     `  ${region.capabilities.length} slots · ${region.methods.length} methods realising them`,
   );
+  const declared = region.declaredAbsences;
   for (const field of region.fields) {
     const line = `  ${field.field.padEnd(20)} ${String(field.present).padStart(3)}/${field.total}`;
-    console.log(field.missing.length === 0 ? `${line}  ✓` : `${line}  missing: ${field.missing.join(" ")}`);
+    if (field.missing.length === 0) {
+      console.log(`${line}  ✓`);
+      continue;
+    }
+    // A gap with a declared reason is ACCOUNTED, not open — the whole point of
+    // `absences`. Printed apart from the open ones so the worklist stays a
+    // worklist: a reader scanning for what to do next must not have to re-read
+    // twelve settled cases to find the two live ones.
+    const accounted = new Set(declared.get(field.field) ?? []);
+    const open = field.missing.filter((id) => !accounted.has(id));
+    const closed = field.missing.filter((id) => accounted.has(id));
+    const mark = open.length === 0 ? "  ✓ (every gap accounted for)" : `  missing: ${open.join(" ")}`;
+    console.log(`${line}${mark}`);
+    if (closed.length > 0) console.log(`      accounted: ${closed.join(" ")}`);
   }
   // Stretches, not methods — see `RegionClosure.hopStretches` for why a
   // per-method count reads as finished on a region that is not.
@@ -765,6 +779,12 @@ if (CLOSURE_IDS.length > 0) {
   for (const [method, keys] of byMethod) {
     console.log(`      ${method.padEnd(32)} ${keys.join(" ")}`);
   }
+  // The one line that was not sayable before `absences`: which fields have
+  // nothing left open at all. Fields, not one boolean — they are not the same
+  // kind of gap, so "closed" is a claim about each separately.
+  console.log(
+    `  ${"closed".padEnd(20)} ${region.closedFields.length}/${region.fields.length} fields — ${region.closedFields.join(", ") || "none"}`,
+  );
   // The classification, and it is the half of this report that says which
   // absences are work. `accounted` is a finished answer; `unread` is a paper to
   // read, not an example to write.

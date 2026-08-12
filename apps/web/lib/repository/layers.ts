@@ -466,7 +466,72 @@ export interface LayerMethod extends LayerNodeBase {
    * a verdict.
    */
   implementations?: readonly MethodImplementation[];
+  /**
+   * Why a field on this method is empty — one entry per empty field, keyed by
+   * the field name an author types.
+   *
+   * ## The thing this replaces is a `//` comment
+   *
+   * This file already carries careful accounts of honest absences.
+   * `backward-euler`'s `cost` says so in the field itself; `koopman-linearization`
+   * and `carleman-fourier-linearization` say it in a comment above theirs — every
+   * complexity in their source is the end-to-end bill for a route, not the
+   * framework's. Those readings are real, they were expensive, and **no machine
+   * can tell them from a field nobody has looked at.** So a region can only ever
+   * be declared closed by a human reading the file, which is exactly the
+   * position `plans/atlas-revamp/B4-linear-ode-closure.md` set out to leave.
+   *
+   * With this, `regionClosure` can say **closed** instead of printing a table
+   * somebody has to judge: every field is either filled from a source or carries
+   * a reason that a reader — and a checker — can see.
+   *
+   * ## Four rules, and each one is a way this could have become decoration
+   *
+   * 1. **A key must name a field that is actually empty.** A reason beside a
+   *    filled field is the second copy that drifts the first time either is
+   *    edited; `validateLayerGraph` rejects it.
+   * 2. **A key must name a field that can be empty.** `summary` is required, so
+   *    an absence for it is a claim about a field that cannot have one.
+   * 3. **Both locales or neither**, like every other prose pair here. A reason
+   *    half the readers cannot read is half a reason.
+   * 4. **The reason must say what was read.** This is the one rule validation
+   *    cannot enforce and the one that matters most: *"not stated"* is the absent
+   *    field with extra words. The bar is `backward-euler`'s — *the nearest
+   *    treatment proves its theorems for order $k \ge 3$ and this is the $(0,1)$
+   *    approximant, outside them*. A reason that names no source is worse than
+   *    no reason, because it looks like an account.
+   *
+   * **Absent is still the common case and still fine.** A field with no value and
+   * no declared absence is simply not accounted for yet, which is what the gauge
+   * has always reported. This adds a way to close that, not an obligation.
+   */
+  absences?: Readonly<Record<string, MethodAbsence>>;
 }
+
+/** Why one field is empty. See `LayerMethod.absences`. */
+export interface MethodAbsence {
+  reason: string;
+  reasonJa: string;
+}
+
+/**
+ * The fields an absence may be declared for.
+ *
+ * Deliberately **not** every optional field. A declaration is a claim that
+ * somebody read the sources and found nothing, so it only makes sense where a
+ * source could have supplied something: the four content fields plus the
+ * per-hop mathematics. `entries` is excluded because a missing cross-link is a
+ * fact about the corpus rather than about any paper, and `contested` because
+ * absence there already means "nothing we read disputes this" — declaring it
+ * would be restating the field's own definition.
+ */
+export const DECLARABLE_ABSENCES: readonly string[] = [
+  "cost",
+  "conditions",
+  "example.text",
+  "example.pseudocode",
+  "implementations",
+];
 
 /**
  * What a source says about one hop of a route.
@@ -1736,6 +1801,26 @@ export interface RegionClosure {
   unauthoredHops: readonly UnauthoredHop[];
   /** Per method missing `example.text`, why — and which paper says so. */
   runEvidence: ReadonlyMap<string, RunEvidence>;
+  /**
+   * Field → the methods that declare a reason for leaving it empty.
+   *
+   * Read off `absences`, which validation has already proved is only ever set on
+   * a field that is genuinely empty — so these are exactly the gaps that are
+   * accounted for rather than open.
+   */
+  declaredAbsences: ReadonlyMap<string, readonly string[]>;
+  /**
+   * Fields with nothing left open: every method either carries a value or
+   * declares why it does not.
+   *
+   * **This is the verdict the gauge could not reach before**, and the reason it
+   * is a list of fields rather than one boolean: the fields are not the same
+   * kind of gap (see the block above `RegionFieldCoverage`), so "the region is
+   * closed" is a claim about each of them separately. A caller wanting one
+   * answer can ask whether this list covers the fields it cares about; the gauge
+   * itself never collapses them.
+   */
+  closedFields: readonly string[];
 }
 
 /**
@@ -1854,6 +1939,24 @@ export function regionClosure(
     runEvidence.set(method.id, runEvidenceFor(method, reports));
   }
 
+  // Declared absences, keyed the way an author writes them. `validateLayerGraph`
+  // has already refused any declaration against a field that is filled, so this
+  // needs no second opinion about whether the gap is real.
+  const declaredAbsences = new Map<string, string[]>();
+  for (const method of methods) {
+    for (const field of Object.keys(method.absences ?? {})) {
+      const row = declaredAbsences.get(field) ?? [];
+      row.push(method.id);
+      declaredAbsences.set(field, row);
+    }
+  }
+  const closedFields = fields
+    .filter((entry) => {
+      const declared = new Set(declaredAbsences.get(entry.field) ?? []);
+      return entry.missing.every((id) => declared.has(id));
+    })
+    .map((entry) => entry.field);
+
   return {
     capabilities,
     unknown,
@@ -1863,6 +1966,8 @@ export function regionClosure(
     hopStretchesAuthored,
     unauthoredHops,
     runEvidence,
+    declaredAbsences,
+    closedFields,
   };
 }
 
@@ -2426,6 +2531,40 @@ export function validateLayerGraph(
       // what they need to do is write its twin. One defect, one diagnosis.
       if (Object.values(note).every((value) => value === undefined)) {
         errors.push(`${node.id}: hops[${key}] records nothing — omit it instead`);
+      }
+    }
+
+    // An absence is a claim, and every way it can be a false one is checked
+    // except the one no validator can reach — whether the reason names what was
+    // read. See `LayerMethod.absences` rule 4; that one is review's.
+    for (const [field, absence] of Object.entries(node.absences ?? {})) {
+      if (!DECLARABLE_ABSENCES.includes(field)) {
+        errors.push(
+          `${node.id}: absences names ${field}, which is not one of ${DECLARABLE_ABSENCES.join(", ")}`,
+        );
+        continue;
+      }
+      const filled = ((): boolean => {
+        switch (field) {
+          case "cost":
+            return (node.cost ?? "").trim() !== "";
+          case "conditions":
+            return (node.conditions ?? "").trim() !== "";
+          case "example.text":
+            return (node.example?.text ?? "").trim() !== "";
+          case "example.pseudocode":
+            return (node.example?.pseudocode ?? "").trim() !== "";
+          default:
+            return (node.implementations ?? []).length > 0;
+        }
+      })();
+      if (filled) {
+        errors.push(
+          `${node.id}: absences explains ${field}, which is not empty — the reason and the value would drift apart`,
+        );
+      }
+      if (absence.reason.trim() === "" || absence.reasonJa.trim() === "") {
+        errors.push(`${node.id}: absences[${field}] has an empty reason in one locale or both`);
       }
     }
 
