@@ -25,7 +25,7 @@
 // | role | count | may anchor |
 // |---|---|---|
 // | `benchmark-circuit` | 120 | no |
-// | `algorithm-reference` | 62 | **yes** |
+// | `algorithm-reference` | 102 | **yes** |
 // | `operator` | 62 | no |
 // | `gate-primitive` | 27 | no |
 // | `state` | 12 | no |
@@ -34,8 +34,35 @@
 // edited: eight records were later reclassified from `algorithm-reference` to
 // `benchmark-circuit`, which moves the eligible denominator — the one number
 // the paragraph below is an argument about — without touching a line of this
-// file. The total is the invariant, not the split. Hence the command: the
-// checker prints the census so the table can be checked instead of trusted.
+// file. It then read 62 algorithm records through the Zoo- and Classiq-parity
+// intakes that took the real figure to 102. The total is the invariant, not the
+// split. Hence the command: the checker prints the census so the table can be
+// checked instead of trusted. (Read 2026-08-12, 323 records.)
+//
+// ## The owner was asked whether this rule is the right one, and said yes
+//
+// The question put to him was the literal reading of his own earlier remark
+// that a method's card and its repository record "may as well be the same
+// thing": should **every** record get a map node, or only the ones that match a
+// method? Read literally it meant either inventing ~259 nodes in a map already
+// pressing its height ceiling, or demoting most of the corpus.
+//
+// > *"cards in the map are large, and are algorithms in the repository, nothing
+// > else yet. including operators/gates/whatever states are would be
+// > introducing tons of primitives for no reason, then code implementations
+// > would probably include them anyway. […] gates are just primitives, so it is
+// > okay for them to be their section. operators are useful for certain
+// > algorithms like VQE, QSVT, and others […]"*
+// > — owner, github.com/EshMis/ai-ops/issues/14, 2026-08-12
+//
+// So `MAP_ELIGIBLE_ROLES` stays at one entry, and the three excluded object
+// roles stay excluded **by his ruling** and not merely by the argument below
+// it. Widening this list is now a question for him, not a judgement call for
+// the session that finds the one-line edit convenient. Note what he did *not*
+// rule out: gates and operators keep their repository sections — he named a use
+// for operators specifically ("build up a solid repository of these"). The one
+// thing still open is what the `states` category is for; he said he does not
+// see it, and that is asked separately rather than acted on here.
 //
 // A layer node is a **slot** or a **way of filling one**. The four excluded
 // roles are none of those:
