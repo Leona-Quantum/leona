@@ -409,7 +409,9 @@ async def _attest_plan() -> None:
 
 
 async def _attest_bootstrap(
-    attested_by: uuid.UUID, re_attest: frozenset[str] | None = None
+    attested_by: uuid.UUID,
+    re_attest: frozenset[str] | None = None,
+    authorization: str | None = None,
 ) -> None:
     """Bind provenance + the owner's approved license onto the staged corpus.
 
@@ -424,6 +426,14 @@ async def _attest_bootstrap(
     `re_attest` carries the operator's deliberate re-signature of records whose
     provenance claim moved (`--re-attest`); see `plan_re_attestation` for why it
     names identities rather than being a `--force`.
+
+    `authorization` records WHAT permitted those re-signatures, and is required
+    alongside `--re-attest`. Without it the audited row carries the reviewer's
+    user id and the policy's first-person statement and nothing else — which
+    reads as "the account holder personally attested to this record", and is an
+    over-claim whenever the person authorised the act somewhere else and
+    something ran the command on their behalf. On an append-only table
+    (ADR-0020) that sentence cannot be amended later.
     """
     authority = CatalogAuthority.from_env()
     authority.require_configured()
@@ -536,6 +546,16 @@ async def _attest_bootstrap(
                         # inferable-from-the-release-date.
                         "re_signed_after_claim_change": identity in re_signed,
                         "previous_claim_hash": previous_claim,
+                        # Only on the records this run actually re-signed. On a
+                        # carried-forward record it would assert that this
+                        # authorization was consulted about a record nobody
+                        # looked at — over-claiming in the opposite direction to
+                        # the one the field exists to prevent.
+                        **(
+                            {"authorization": authorization}
+                            if authorization and identity in re_signed
+                            else {}
+                        ),
                     },
                 )
                 await session.commit()
@@ -573,6 +593,10 @@ async def _attest_bootstrap(
                     "re_signed_after_claim_change": {
                         identity: previous_claims[identity] for identity in decision.re_signed
                     },
+                    # The corpus-level answer to "on whose say-so". Recorded even
+                    # when nothing was re-signed is wrong, so it rides with the
+                    # re-signature list it explains.
+                    **({"authorization": authorization} if authorization and re_signed else {}),
                 },
             )
             await session.commit()
@@ -673,7 +697,11 @@ async def _publish_bootstrap(attested_by: uuid.UUID) -> None:
         await engine.dispose()
 
 
-async def _sync_bootstrap(attested_by: uuid.UUID, re_attest: frozenset[str] | None = None) -> None:
+async def _sync_bootstrap(
+    attested_by: uuid.UUID,
+    re_attest: frozenset[str] | None = None,
+    authorization: str | None = None,
+) -> None:
     """Import, attest and publish the manifest as one operation.
 
     This exists because the three steps are not independently safe to leave
@@ -692,7 +720,7 @@ async def _sync_bootstrap(attested_by: uuid.UUID, re_attest: frozenset[str] | No
     corpus staged-but-unpublished, which is the gap the command exists to close.
     """
     await _bootstrap_import()
-    await _attest_bootstrap(attested_by, re_attest)
+    await _attest_bootstrap(attested_by, re_attest, authorization)
     await _publish_bootstrap(attested_by)
 
 
@@ -1021,6 +1049,13 @@ def main() -> None:
         "grant — see pick_standing_reviewer",
     )
     parser.add_argument(
+        "--authorization",
+        metavar="WHO SAID SO, AND WHERE",
+        help="what permitted the re-signatures — a citation a later reader can follow "
+        "(e.g. an issue comment URL, its author and its timestamp). REQUIRED with "
+        "--re-attest, and stamped onto the re-signed rows and the run's ledger entry",
+    )
+    parser.add_argument(
         "--re-attest",
         metavar="IDENTITY,IDENTITY,…",
         help="upstream identities whose provenance claim changed and which you have "
@@ -1052,6 +1087,29 @@ def main() -> None:
         parser.error(
             f"--re-attest applies to {' and '.join(sorted(_ACCEPTS_RE_ATTEST))}, not {args.command}"
         )
+    if args.authorization is not None and args.command not in _ACCEPTS_RE_ATTEST:
+        parser.error(
+            f"--authorization applies to {' and '.join(sorted(_ACCEPTS_RE_ATTEST))}, "
+            f"not {args.command}"
+        )
+    # Paired in both directions, because each half alone records something false.
+    #
+    # A re-signature with no authorization leaves an append-only row carrying the
+    # reviewer's user id under the policy's first-person statement and nothing
+    # else — which reads as "this account holder personally examined this record".
+    # Whenever the person authorised the act somewhere else and something ran the
+    # command for them, that is an over-claim, and ADR-0020 means it cannot be
+    # amended afterwards.
+    #
+    # An authorization with nothing re-signed is the mirror: a citation stamped on
+    # a run that exercised no human decision at all.
+    if args.re_attest is not None and not args.authorization:
+        parser.error(
+            "--re-attest requires --authorization: a re-signature is a human decision, "
+            "and the row it writes cannot say whose afterwards"
+        )
+    if args.authorization is not None and args.re_attest is None:
+        parser.error("--authorization only means something with --re-attest")
     # Parsed before anything connects to a database: a malformed list is an
     # operator typo, and discovering it after a 283-record import is the shape of
     # failure `_sync_bootstrap` and the reviewer resolution above already avoid.
@@ -1083,11 +1141,11 @@ def main() -> None:
         else:
             reviewer = await _resolve_reviewer_by_email(args.attested_by_email)
         if args.command == "attest-bootstrap":
-            await _attest_bootstrap(reviewer, re_attest)
+            await _attest_bootstrap(reviewer, re_attest, args.authorization)
         elif args.command == "publish-bootstrap":
             await _publish_bootstrap(reviewer)
         else:
-            await _sync_bootstrap(reviewer, re_attest)
+            await _sync_bootstrap(reviewer, re_attest, args.authorization)
 
     asyncio.run(_run())
 
