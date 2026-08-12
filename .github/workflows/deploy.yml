@@ -611,11 +611,21 @@ jobs:
             sync-bootstrap --attested-by-standing; then
             echo "::error::the catalog sync refused. THE CODE ROLLOUT ABOVE SUCCEEDED and"
             echo "::error::production is serving the new revision — what did not happen is"
-            echo "::error::the corpus content reaching /repository. Nothing was partially"
-            echo "::error::published: a refusal leaves every record on its previous version."
+            echo "::error::the corpus content reaching /repository."
+            echo "::error::"
+            echo "::error::NOTHING WAS PARTIALLY PUBLISHED, AND THE LISTING IS STILL SHORTER."
+            echo "::error::Both are true and the second is the one that surprises people. No"
+            echo "::error::record is serving half-attested content — but the import ran before"
+            echo "::error::the refusal, and staging a new version resets review_state to DRAFT,"
+            echo "::error::so every record whose content changed in this deploy has dropped OUT"
+            echo "::error::OF THE BROWSE LISTING until it is attested. Direct links to those"
+            echo "::error::records keep working. Expect the /repository count to fall, and do"
+            echo "::error::not read that as a second failure."
+            echo "::error::"
             echo "::error::The usual cause is a record whose provenance claim moved, which"
             echo "::error::needs a person: docs/runbooks/system-catalog.md § When"
-            echo "::error::attest-bootstrap refuses."
+            echo "::error::attest-bootstrap refuses. The identities are printed above, in"
+            echo "::error::full — re-sign exactly those and the next deploy converges."
             exit 1
           fi
 
