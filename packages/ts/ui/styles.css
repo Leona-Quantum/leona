@@ -9858,9 +9858,12 @@ div.mj-rail-row:hover {
 /* The owner asked for the interface as a shape — "puzzle pieces that connect to
    the corresponding pieces that fit before and after it". The shape earns its
    place because a FLAT edge is the common case and carries information a chip
-   cannot: 121 of 283 records have no ports at all and 120 more end in a
-   measurement nothing consumes, so most pieces in this catalogue have a
-   straight side, and you can see that before reading a word.
+   cannot: most records have no ports at all, and most of the rest end in a
+   measurement nothing consumes — so most pieces in this catalogue have a
+   straight side, and you can see that before reading a word. (Measured 2026-07
+   on the then-283-record corpus: 121 with no ports, 120 more terminating. Stated
+   as the proportion rather than the counts, because the shape argument rests on
+   "most" and the corpus keeps growing.)
 
    The two readings are real text inside the piece. The notches are
    aria-hidden — they restate what the text already says. */

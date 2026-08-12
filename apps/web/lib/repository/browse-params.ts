@@ -106,8 +106,9 @@ export function resolveBrowseParams(params: BrowseSearchParams): ResolvedBrowseP
     // cannot supply is not an order.
     order: order !== undefined && isBrowseOrder(order) ? order : "catalog",
     // Only the two spellings a link of ours produces. Anything else is off,
-    // because this filter *removes* 163 of 283 records and a typo should not
-    // silently hide most of the catalogue.
+    // because this filter *removes* the majority of records — 163 of the then-283
+    // when it was written — and a typo should not silently hide most of the
+    // catalogue.
     circuitOnly: circuit === "1" || circuit === "true",
     rows: resolveRowLimit(first(params.rows)),
   };

@@ -16,10 +16,16 @@
  * Entries requested per page.
  *
  * Chosen so a page of the FULL view stays under Vercel's 2 MB data-cache
- * ceiling: the whole corpus is ~2.37 MB across 283 records, so 100 records is
- * roughly 840 KB. The unpaginated full view was over that ceiling and therefore
- * refetched on every single request; paginating is what makes its `revalidate`
- * window real rather than decorative.
+ * ceiling. The figure that governs is **per record, not per corpus**: full-view
+ * entries run ~8.4 KB each (measured 2026-07 at ~2.37 MB over 283 records), so
+ * 100 records is roughly 840 KB and the ceiling is four pages away. Stated per
+ * record deliberately — the corpus has been 283, 323 and 342 this year, and a
+ * page size justified by a total would need rechecking on every corpus change
+ * while this one only moves if records get fatter.
+ *
+ * The unpaginated full view was over that ceiling and therefore refetched on
+ * every single request; paginating is what makes its `revalidate` window real
+ * rather than decorative.
  */
 export const CATALOG_PAGE_SIZE = 100;
 

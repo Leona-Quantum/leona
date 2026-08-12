@@ -1,8 +1,10 @@
 # catalog_bootstrap
 
 `manifest.json` is the **pinned bootstrap manifest** for the Neon system catalog (ADR-0019): a
-deterministic, schema-versioned, integrity-checked snapshot of the validated 283-record public catalog,
-generated from `apps/web/lib/public-repository.ts`.
+deterministic, schema-versioned, integrity-checked snapshot of the validated public catalog,
+generated from `apps/web/lib/public-repository.ts`. Its record count is `item_count` in the file
+and is not restated here — it has been 285, 283, 323 and 342, and a number in this sentence is
+wrong from the next corpus merge onwards.
 
 **It is generated — do not hand-edit.** Regenerate with `source_commit` pinned to the `dev` baseline the
 catalog data came from (so the value is stable and meaningful, not the ephemeral branch HEAD):

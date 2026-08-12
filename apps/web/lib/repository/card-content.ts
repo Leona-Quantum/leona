@@ -755,7 +755,7 @@ function exampleOf(method: LayerMethod, ja: boolean): CardValue<CardExample> {
  * The joined implementations: what the node authored, then what its records run.
  *
  * **Ruling `27267f`, as code.** Before this, the section read `method.implementations`
- * alone and was empty on all 74 methods — while all 283 corpus records carry
+ * alone and was empty on all 74 methods — while every corpus record carries
  * `codeVariants`, and in all 27 method→record pairs the card rendered
  * "none-recorded" over a record that had code. That was never a research gap.
  * The content was authored; nothing joined it.
