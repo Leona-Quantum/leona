@@ -45,6 +45,7 @@ import {
   type LayerMethod,
   type LayerNode,
   type LoopClosure,
+  type MethodExampleRun,
 } from "./layers.ts";
 import type { PaperRegister } from "./papers.ts";
 import type { StateVocabulary } from "./states.ts";
@@ -357,6 +358,19 @@ export interface CardRefinementEntry {
 /** A worked example, its pseudocode, or both. */
 export interface CardExample {
   readonly text: string | null;
+  /**
+   * Where the run in `text` is reported, and what kind of run it is — one line,
+   * localised. `null` when there is no prose.
+   *
+   * **Rendered, not merely stored.** `MethodExample.run` exists to make a negative
+   * account unwritable, and it would do that job as pure validation data — but it
+   * also carries the fact a reader most needs and is likeliest to get wrong. All
+   * three runs in the graph are classical simulations, and a section headed
+   * "Example" with numbers under it reads as *this ran on a quantum computer*
+   * unless something on the card says otherwise. A field that validates and
+   * renders nowhere is how that stays invisible.
+   */
+  readonly runNote: string | null;
   /**
    * Why there is no worked run, when the record says so — the half of
    * `absences` that a section-level gap note can never reach.
@@ -696,6 +710,29 @@ function hopNoteOf(
   };
 }
 
+/**
+ * "Classical simulation · Section 4.3, Figure 2 of arXiv:1910.14596", localised.
+ *
+ * **Exported because the example is drawn twice.** The card builds it through
+ * `CardExample`; the method's own page (`components/repository-layers.tsx`) reads
+ * `node.example` straight off the node. Two renderers of one field is how a field
+ * comes to appear on one surface and not the other — which is exactly what happened
+ * on the first pass of this change, and was only caught by reading the rendered page
+ * rather than the diff. One function, both callers.
+ */
+export function exampleRunNote(run: MethodExampleRun | undefined, ja: boolean): string | null {
+  if (run === undefined) return null;
+  const kind = {
+    simulation: { en: "Classical simulation", ja: "古典計算機によるシミュレーション" },
+    hardware: { en: "Run on quantum hardware", ja: "量子ハードウェア上での実行" },
+    analytic: { en: "Worked analytic instance", ja: "解析的に追った具体例" },
+  }[run.kind];
+  // The arXiv id rather than the url: the url is already a link on the card's
+  // citation list, and a bare address inside a one-line note is chrome.
+  const paper = run.paper.replace(/^https?:\/\/arxiv\.org\/abs\//, "arXiv:");
+  return ja ? `${kind.ja}・${paper} ${run.at}` : `${kind.en} · ${run.at} of ${paper}`;
+}
+
 function exampleOf(method: LayerMethod, ja: boolean): CardValue<CardExample> {
   const example = method.example;
   if (example === undefined) return missing("none-recorded");
@@ -705,6 +742,10 @@ function exampleOf(method: LayerMethod, ja: boolean): CardValue<CardExample> {
   // own symbols and a translated listing is a second one that drifts.
   return held({
     text: text ?? null,
+    // Keyed off `text`, not off `run`: the two are required together by
+    // `validateLayerGraph`, and reading `run` independently here would draw a
+    // provenance line under nothing on a record that had somehow got past it.
+    runNote: text ? exampleRunNote(example.run, ja) : null,
     textReason: text ? null : (absenceOf(method, "example.text", ja) ?? null),
     pseudocode: example.pseudocode ?? null,
   });
