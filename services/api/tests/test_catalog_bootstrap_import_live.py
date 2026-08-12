@@ -200,3 +200,96 @@ async def test_bootstrap_create_is_idempotent_on_checksum_key(env):
     assert first.id == second.id
     manifest_count = json.loads(default_manifest_path().read_text(encoding="utf-8"))["item_count"]
     assert first.item_count == second.item_count == manifest_count
+
+
+@requires_db
+async def test_a_second_import_under_the_production_key_is_a_no_op(env):
+    """The re-import path production actually takes, which nothing else covered.
+
+    The full-manifest test above uses a fresh uuid key, with the comment "so a
+    rerun doesn't resume a *prior* run's batch". `catalog_admin bootstrap-import`
+    does the opposite: it passes `source.idempotency_key`, derived from the
+    manifest checksum, so a second run with an unchanged manifest RESUMES the
+    first run's batch. Nothing exercised that, which is how the word "idempotent"
+    in the other test's name came to be about job *creation* rather than about
+    re-importing.
+
+    **What this does NOT do: reproduce the 2026-08-12 JST deploy failure**
+    (2026-08-11 UTC — the incident is dated in the project's working timezone)
+    (`IllegalImportItemTransition: staged -> retry_wait`). It was written trying
+    to, and it passes — which is a result worth keeping rather than a test worth
+    deleting, because it eliminates the obvious explanation. `process_import_batch`
+    selects only QUEUED items, so a STAGED item is never re-processed by a plain
+    re-run; the production failure therefore needs an item that failed
+    transiently FIRST, was returned to QUEUED by `_resolve_retry_wait_items`,
+    reached STAGED on the retry, and then threw again. What it threw is not
+    recoverable from the deploy log — the assert replaces it — which is what the
+    logging added alongside this exists to fix.
+    """
+    authority, factory = env
+    scope = authority.importer_scope()
+    source = BootstrapManifestSource()
+
+    async with factory() as session:
+        first = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            source=source,
+            idempotency_key=source.idempotency_key,
+        )
+        await session.commit()
+        first_id = first.id
+    assert (
+        await _drain_batch(scope, factory, first_id, authority=authority, source=source)
+    ).status == ImportJobStatus.COMPLETED
+
+    # What the finished batch looks like before the second deploy touches it.
+    # Captured per item rather than counted: a re-stage that swapped in a fresh
+    # version would leave every count identical and change the ids, so a count is
+    # not able to see the failure this test exists to rule out. The expected size
+    # is read from the manifest for the reason argued above — a literal here would
+    # be a second place the corpus size has to be updated.
+    expected = json.loads(default_manifest_path().read_text(encoding="utf-8"))["item_count"]
+
+    async def _batch_state():
+        async with factory() as session:
+            items = (
+                (
+                    await session.execute(
+                        select(ImportItem).where(ImportItem.import_job_id == first_id)
+                    )
+                )
+                .scalars()
+                .all()
+            )
+            return {
+                i.upstream_identity: (i.state, i.resulting_artifact_id, i.resulting_version_id)
+                for i in items
+            }
+
+    before = await _batch_state()
+    assert len(before) == expected
+    assert {state for state, _, _ in before.values()} == {ImportItemState.STAGED}
+
+    # Second deploy. Same key, so this resumes rather than creating a new batch.
+    async with factory() as session:
+        second = await catalog_import.create_import_job(
+            scope,
+            session,
+            authority=authority,
+            source=source,
+            idempotency_key=source.idempotency_key,
+        )
+        await session.commit()
+        second_id = second.id
+    # The claim in this test's name. Without it the test still passes against a
+    # second, parallel batch — which is precisely the outcome it is here to rule
+    # out, and the one the fresh-uuid test above deliberately produces instead.
+    assert second_id == first_id
+
+    final = await _drain_batch(scope, factory, second_id, authority=authority, source=source)
+    # `!= RUNNING` also accepts FAILED and DEAD. A re-import that dies is the
+    # thing being ruled out, not a passing result.
+    assert final.status == ImportJobStatus.COMPLETED
+    assert await _batch_state() == before  # nothing re-staged, nothing re-versioned
