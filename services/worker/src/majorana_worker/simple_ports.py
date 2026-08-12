@@ -94,6 +94,7 @@ from majorana_llm import (
     LLMClient,
     LLMProviderError,
     LLMRequest,
+    AI_ASSUMPTION_MODE_DIRECTIVE,
     ResponseLocale,
     SIMPLE_ARTIFACT_REVIEW_SYSTEM_PROMPT,
     SIMPLE_BUSINESS_REFERENCE_EXTRACTION_SYSTEM_PROMPT,
@@ -516,6 +517,11 @@ class _ConversationPlanAlignmentOutput(BaseModel):
         max_length=8,
         description="Missing user problem data only, never Plan defects or design choices",
     )
+    assumptions: list[str] = Field(
+        default_factory=list,
+        max_length=8,
+        description="Values the assistant chose only when AI-completion mode is enabled",
+    )
     request_alignment: _ConversationPlanAlignmentChecks
     mismatches: list[str] = Field(default_factory=list, max_length=8)
 
@@ -528,7 +534,7 @@ class _ConversationPlanAlignmentOutput(BaseModel):
         summary = normalized.get("authoritative_task_summary")
         if isinstance(summary, str):
             normalized["authoritative_task_summary"] = summary.strip()[:2_000]
-        for name in ("missing_inputs", "mismatches"):
+        for name in ("missing_inputs", "assumptions", "mismatches"):
             entries = normalized.get(name)
             if isinstance(entries, list):
                 normalized[name] = [
@@ -3438,6 +3444,7 @@ class ProductionSimplePipelinePorts:
         framework: Framework,
         conversation_messages: Sequence[Mapping[str, str]] = (),
         response_locale: ResponseLocale = "en",
+        allow_ai_assumptions: bool = False,
         requested_shots: int | None = None,
         requested_seed: int | None = None,
         initial_source: str | None = None,
@@ -3454,6 +3461,7 @@ class ProductionSimplePipelinePorts:
         self._conversation_messages = tuple(conversation_messages)
         self._prior_user_requests = _prior_user_requests(self._conversation_messages)
         self._response_locale = response_locale
+        self._allow_ai_assumptions = allow_ai_assumptions
         self._framework = framework
         self._requested_shots = (
             min(requested_shots, 20_000)
@@ -4134,6 +4142,7 @@ class ProductionSimplePipelinePorts:
                 "prior_user_requests": list(self._prior_user_requests),
                 "current_request": self._task_prompt,
                 "proposed_plan": plan.model_dump(mode="json"),
+                "allow_ai_assumptions": self._allow_ai_assumptions,
             },
             sort_keys=True,
         )
@@ -4145,7 +4154,12 @@ class ProductionSimplePipelinePorts:
                     # follow-up can be resolved across technical or multilingual input.
                     model=model_for("plan"),
                     system=with_response_locale(
-                        SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT,
+                        (
+                            f"{SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT}\n\n"
+                            f"{AI_ASSUMPTION_MODE_DIRECTIVE}"
+                            if self._allow_ai_assumptions
+                            else SIMPLE_CONVERSATION_PLAN_ALIGNMENT_SYSTEM_PROMPT
+                        ),
                         self._response_locale,
                         surface="alignment",
                     ),
@@ -4179,6 +4193,7 @@ class ProductionSimplePipelinePorts:
         audit_details = {
             "authoritative_task_summary": audit.authoritative_task_summary,
             "missing_inputs": audit.missing_inputs,
+            "assumptions": audit.assumptions,
             # When inputs are incomplete, missing_inputs is the only actionable
             # diagnosis. Discard proposal commentary so a model's self-corrected
             # non-mismatch cannot confuse the user or a later repair controller.
@@ -4204,6 +4219,24 @@ class ProductionSimplePipelinePorts:
                 retryable=True,
                 retry_target=SimpleRetryTarget.PLANNING,
                 details=audit_details,
+            )
+        if self._allow_ai_assumptions and audit.assumptions:
+            custom = dict(plan.parameters.custom or {})
+            existing = custom.get("assumptions")
+            prior = existing if isinstance(existing, list) else []
+            assumptions = list(dict.fromkeys([*prior, *audit.assumptions]))[:8]
+            custom["assumptions"] = assumptions
+            summary = plan.problem_summary
+            if "assistant-selected assumptions" not in summary.casefold():
+                summary = (
+                    f"{summary}\nAssistant-selected assumptions: "
+                    + "; ".join(assumptions)
+                )[:2_000]
+            plan = plan.model_copy(
+                update={
+                    "parameters": plan.parameters.model_copy(update={"custom": custom}),
+                    "problem_summary": summary,
+                }
             )
         return SimplePortResult.success(plan)
 
@@ -4258,6 +4291,7 @@ class ProductionSimplePipelinePorts:
             "selected_framework": self._framework.value,
             "requested_shots": self._requested_shots,
             "requested_seed": self._requested_seed,
+            "allow_ai_assumptions": self._allow_ai_assumptions,
             "known_reference": known_reference_for_task(self._task_prompt),
             "previous_plan": previous.plan.model_dump(mode="json") if previous else None,
             "repair_feedback": asdict(feedback) if feedback else None,
@@ -4271,7 +4305,11 @@ class ProductionSimplePipelinePorts:
                     model=model_for("plan"),
                     system=with_response_locale(
                         with_execution_conversation_context(
-                            SIMPLE_PLAN_SYSTEM_PROMPT,
+                            (
+                                f"{SIMPLE_PLAN_SYSTEM_PROMPT}\n\n{AI_ASSUMPTION_MODE_DIRECTIVE}"
+                                if self._allow_ai_assumptions
+                                else SIMPLE_PLAN_SYSTEM_PROMPT
+                            ),
                             has_history=bool(self._conversation_messages),
                         ),
                         self._response_locale,
@@ -4472,6 +4510,7 @@ class ProductionSimplePipelinePorts:
                     current_request=self._task_prompt,
                 ),
                 "selected_framework": self._framework.value,
+                "allow_ai_assumptions": self._allow_ai_assumptions,
                 "plan": plan.plan.model_dump(mode="json"),
                 # CandidateRevision already enforces the source-size ceiling. Repairs
                 # need the complete program: keeping only the tail can remove imports,
@@ -4489,16 +4528,19 @@ class ProductionSimplePipelinePorts:
             }
             user_text = json.dumps(user, default=str, sort_keys=True)
             try:
+                generation_system = simple_generation_system_prompt(
+                    framework=plan.plan.framework.value,
+                    domain=plan.plan.domain,
+                    algorithm=plan.plan.algorithm.value,
+                    problem_summary=plan.plan.problem_summary,
+                )
+                if self._allow_ai_assumptions:
+                    generation_system = f"{generation_system}\n\n{AI_ASSUMPTION_MODE_DIRECTIVE}"
                 response = await self._llm.complete(
                     LLMRequest(
                         model=_generation_model_for_plan(plan.plan),
                         system=with_execution_conversation_context(
-                            simple_generation_system_prompt(
-                                framework=plan.plan.framework.value,
-                                domain=plan.plan.domain,
-                                algorithm=plan.plan.algorithm.value,
-                                problem_summary=plan.plan.problem_summary,
-                            ),
+                            generation_system,
                             has_history=bool(self._conversation_messages),
                         ),
                         user=user_text,

@@ -50,6 +50,7 @@ type WireEvent = {
   message?: string;
   status?: string;
   mode?: string;
+  resolved?: string;
   stage?: string | null;
   verifier_decision?: string | null;
   evidence_strength?: string | null;
@@ -78,6 +79,8 @@ type WireEvent = {
   compatibility?: Record<string, unknown>;
   artifact_id?: string;
   title?: string;
+  missing_inputs?: string[];
+  allow_ai_assumptions_available?: boolean;
   plan?: {
     problem_summary?: string;
     domain?: string;
@@ -679,7 +682,10 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
 
   async function submitFollowup(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    const taskPrompt = prompt.trim();
+    await sendFollowup(prompt.trim(), false);
+  }
+
+  async function sendFollowup(taskPrompt: string, allowAssumptions: boolean) {
     if (!taskPrompt) return;
     // The composer stays editable during a turn — drafting the next question
     // while reading the answer is the normal way to use this — but a turn is a
@@ -722,7 +728,8 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
           // neither control here, so a conversation could never be told to
           // execute, and every turn was submitted as Qiskit whatever the user
           // had picked on the way in.
-          mode,
+          mode: allowAssumptions ? "execute" : mode,
+          allow_ai_assumptions: allowAssumptions,
           framework,
           response_locale: locale,
         }),
@@ -836,6 +843,7 @@ export function LiveRun({ taskId, locale = "en" }: { taskId: string; locale?: Pu
                     turn={turn}
                     locale={locale}
                     onFollowUp={fixtureEvents ? undefined : selectFollowUp}
+                    onUseAiAssumptions={fixtureEvents ? undefined : (promptText) => void sendFollowup(promptText, true)}
                   />
                 ) : turn.id === activeRunId && (streamingText || reasoningText || liveEvents.length > 0) ? (
                   <AssistantMessage reasoning={reasoningText} text={streamingText} streaming={streaming} events={liveEvents} turnId={turn.id} locale={locale} />
@@ -885,10 +893,12 @@ export function CompletedAssistant({
   turn,
   locale = "en",
   onFollowUp,
+  onUseAiAssumptions,
 }: {
   turn: Turn;
   locale?: PublicLocale;
   onFollowUp?: (prompt: string) => void;
+  onUseAiAssumptions?: (prompt: string) => void;
 }) {
   // Failure context and the best produced output are separate concerns. A rejected
   // candidate still remains inspectable after the reason it was rejected.
@@ -906,6 +916,13 @@ export function CompletedAssistant({
     : result
       ? "result"
       : "answer";
+  const canOfferAiAssumptions = turn.events.some(
+    (event) => event.type === "chat.completed" && event.allow_ai_assumptions_available,
+  ) || turn.events.some(
+    (event) => event.type === "run.mode_resolved"
+      && event.resolved === "chat"
+      && /(?:missing|required|not provided|not specified|未指定|不足|必要|欠け)/i.test(event.reason ?? ""),
+  );
   return (
     <div className={`mj-chat-message mj-chat-message--assistant${activity || result || outcome ? " mj-chat-message--run" : ""}`}>
       {chatFallbackNotice(turn.events) ? <ChatFallbackNotice locale={locale} /> : null}
@@ -927,6 +944,14 @@ export function CompletedAssistant({
           <ArtifactLink events={turn.events} locale={locale} />
         </>
       )}
+      {onUseAiAssumptions && canOfferAiAssumptions ? (
+        <section className="mj-ai-assumption-action" aria-label={locale === "ja" ? "不足情報の補完" : "Complete missing details"}>
+          <p>{locale === "ja" ? "不足している値をAIが教育用の例として補完し、そのまま実行できます。" : "The AI can fill the missing values with a clearly labeled educational example and run it."}</p>
+          <button className="mj-primary-button" type="button" onClick={() => onUseAiAssumptions(turn.prompt)}>
+            {locale === "ja" ? "AIが補完して実行" : "Fill details and run"}
+          </button>
+        </section>
+      ) : null}
       {onFollowUp ? (
         <FollowUpQuestions
           kind={followUpKind}

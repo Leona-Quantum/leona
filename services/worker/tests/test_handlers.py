@@ -513,6 +513,11 @@ async def test_missing_conversation_inputs_return_a_clarification_instead_of_run
     assert "次の問題固有の情報が必要" in completed["text"]
     assert "expected returns for each stock" in completed["text"]
     assert "無関係なサンプル回路" in completed["text"]
+    assert completed["missing_inputs"] == [
+        "expected returns for each stock",
+        "risk model and fixed risk bound",
+    ]
+    assert completed["allow_ai_assumptions_available"] is True
     assert completed["model"] == "majorana-readiness-gate"
     assert run_store.observed == (
         RunStatus.SUCCEEDED,

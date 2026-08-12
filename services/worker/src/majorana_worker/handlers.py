@@ -304,6 +304,7 @@ async def handle_run_execute(
         timeout_s=run.timeout_s,
         sink=RepoEventSink(scope, session, run_id),
         response_locale=normalize_response_locale(payload.get("response_locale")),
+        allow_ai_assumptions=bool(payload.get("allow_ai_assumptions", False)),
         conversation_id=run.conversation_id,
         source_code=payload.get("source_code"),
         source_framework=Framework(run.framework),
@@ -333,6 +334,7 @@ async def handle_run_execute(
                 llm=provider,
                 has_source_code=bool(payload.get("source_code")),
                 conversation_messages=conversation_messages,
+                allow_ai_assumptions=ctx.allow_ai_assumptions,
             )
             ctx = await _title_conversation(ctx, store, scope=scope, session=session, llm=provider)
             if ctx.mode is not RunMode.EXECUTE:
@@ -592,6 +594,7 @@ async def _resolve_mode(
     llm: LLMClient,
     has_source_code: bool,
     conversation_messages: list[dict[str, str]] | None = None,
+    allow_ai_assumptions: bool = False,
 ) -> RunContext:
     """Settle which mode this run dispatches in, before anything else happens.
 
@@ -619,9 +622,11 @@ async def _resolve_mode(
         llm,
         has_source_code=has_source_code,
         conversation_messages=conversation_messages or (),
+        allow_ai_assumptions=allow_ai_assumptions,
     )
     if not decision.changed:
         return ctx
+    ctx = replace(ctx, needs_user_inputs=decision.needs_user_inputs)
     if decision.resolved is RunMode.EXECUTE:
         # Checked BEFORE the row is rewritten. The reservation sees this row as
         # AUTO, which is exactly the in-flight state that must be charged once
@@ -770,6 +775,7 @@ async def _handle_agent_execution(
         requested_shots=ctx.shots,
         requested_seed=ctx.seed,
         initial_source=ctx.source_code,
+        allow_ai_assumptions=ctx.allow_ai_assumptions,
         rollback=session.rollback,
     )
     outcome = await SimpleCircuitPipeline(
@@ -807,6 +813,7 @@ def _outcome_explanation_evidence(
     review = outcome.review
     return {
         "request": ctx.task_prompt,
+        "allow_ai_assumptions": ctx.allow_ai_assumptions,
         "run_status": outcome.status.value,
         "plan": plan,
         "candidate": (
@@ -1147,6 +1154,8 @@ async def _finish_missing_inputs_clarification(
         "chat.completed",
         {
             "text": text,
+            "missing_inputs": missing,
+            "allow_ai_assumptions_available": True,
             "model": "majorana-readiness-gate",
             "input_tokens": 0,
             "output_tokens": 0,
@@ -1301,6 +1310,14 @@ async def _handle_conversation(
         "chat.completed",
         {
             "text": interpretation,
+            **(
+                {
+                    "allow_ai_assumptions_available": True,
+                    "missing_inputs": [],
+                }
+                if ctx.needs_user_inputs
+                else {}
+            ),
             "model": response.model,
             "input_tokens": response.input_tokens,
             "output_tokens": response.output_tokens,
