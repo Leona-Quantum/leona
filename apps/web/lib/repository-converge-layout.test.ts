@@ -1702,9 +1702,15 @@ test("a line that opens into something says so, and a line that does not is not 
   // fourteen described above: the ingredient was the whole of what opening it
   // would have drawn, that ingredient is now on the card, and the canvas has
   // nothing left to expand. `leaves` 60 → 61, `openable` unchanged at 27.
-  assert.equal(openable + leaves + 1, 89, "the twenty-three figures draw 89 lines between them");
-  assert.equal(openable, 27, "27 of them open into something the canvas draws");
+  //
+  // And one more openable line in session 129: `berry-multistep` is a seventh
+  // top-level route on `linear-ode-solve`, and unlike `layerwise-training` it
+  // DOES open — the two hops it delegates are named route segments, not
+  // ingredients, so the canvas still has something to expand.
+  assert.equal(openable + leaves + 1, 90, "the twenty-three figures draw 90 lines between them");
+  assert.equal(openable, 28, "28 of them open into something the canvas draws");
   assert.equal(leaves, 61, "61 are leaves — the canvas records nothing finer for them");
+
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -3799,7 +3805,16 @@ const SIZE_CEILING = {
   // saturated width over all 46 figure-locales falls **50,013 → 27,762px
   // (−44.5%)**. Calibrated the same way the two numbers above it were: 3,000
   // is a bar the geometry it replaces (5,908, and 7,083 before that) cannot
-  // fit under, while today's widest keeps 964px — 47% — of room to grow.
+  // fit under.
+  //
+  // **1,955 after issue 22** — `nonlinear-ode-solve` in `en`. The tolerance
+  // cut is a width story through `labelPad` (18 -> 8, the box around a label)
+  // and `margin` (34 -> 18): summed saturated width 27,832 -> 25,327 (-9.0%).
+  // The bar is not lowered again, deliberately — it was set one change ago
+  // against a geometry that could not fit under it, and lowering a ceiling on
+  // every pass turns it into a running total of the drawing rather than a
+  // bound on it. 1,045px of room, and the two variational nodes are what it
+  // is being kept for.
   saturatedWidth: 3_000,
   /**
    * Tallest, same sweep. Today **4,634** — `nonlinear-ode-solve` in `en`.
@@ -3809,7 +3824,8 @@ const SIZE_CEILING = {
    * number the width work left untouched by construction, recorded here at the
    * time so this bar could be set against it. 5,500 is therefore a ceiling
    * **the geometry it replaces cannot fit under**, while today's tallest keeps
-   * 866px (18.7%) of room to grow.
+   * room to grow. (Both numbers are pre-#16; see the note below the constant
+   * for where the figure actually stands.)
    *
    * What came off it: a lane that writes its name INSIDE its own line, and an
    * opened fan that writes its name on the BONE, both stopped reserving a
@@ -3845,8 +3861,16 @@ const SIZE_CEILING = {
   //
   // 3,000 and not lower because the two variational stubs are still to land
   // under it and the shared-sub-method dedup is still what the remaining
-  // height is made of; 1,054px — 54% — of room, which is the most this bar has
+  // height is made of; 1,160px — 39% — of room, which is the most this bar has
   // ever left and is meant to be spent rather than admired.
+  //
+  // **1,840 after issue 22** — `nonlinear-ode-solve` in `en`, from 1,946 —
+  // through `margin`, `spineBand` and
+  // `innerStateRadius`. A further ~200px was measured, built and taken back
+  // out — see the block on `labelBand` in `converge-layout.ts` for the
+  // rendered name overlap that stopped it, which is still owed. Summed
+  // saturated height 21,477 -> 19,593 (-8.8%). Held at 3,000 for the reason
+  // above.
   saturatedHeight: 3_000,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
@@ -3879,6 +3903,14 @@ const SIZE_CEILING = {
    * 15,287, summed height 11,275, widest 920 — which is also the cheapest
    * evidence that the change removed a drawing rather than rearranging one.
    */
+  //
+  // **749 after issue 22** — `nonlinear-ode-solve` in `en`, from 824 — and
+  // this number is the one the ceiling
+  // was always about, because past 1,204 a figure arrives scaled down. It has
+  // never had this much room. Summed shut width 16,759 -> 14,395 (-14.1%) and
+  // summed shut height 12,979 -> 11,499 (-11.4%), which is where `margin`
+  // lands: it is a fixed cost per figure, so the smaller the figure the larger
+  // its share.
   shutWidth: 1_400,
 } as const;
 
@@ -5266,7 +5298,10 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
   assert.equal(embedding.foldedCount, 0);
 
   const ode = diagramFor("linear-ode-solve");
-  assert.equal(ode.drawnMethodCount, 5);
+  // 5 → 6 in session 129: `berry-multistep` is a sixth top-level route on this
+  // slot. The folded pair is unchanged — Krovi and the improved kernel — so the
+  // sentence the legend prints still adds up against `methodsRealizing`.
+  assert.equal(ode.drawnMethodCount, 6);
   assert.equal(ode.foldedCount, 2);
   assert.equal(
     ode.drawnMethodCount + ode.foldedCount,
@@ -5282,7 +5317,9 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
     method: node,
     locale: "en",
   });
-  assert.equal(page.drawnMethodCount, 6, "the unfolded subject counts as drawn on its own page");
+  // 6 → 7 with `berry-multistep`: Krovi's own page unfolds Krovi and draws the
+  // slot's other six tops beside it, one of which is now Berry.
+  assert.equal(page.drawnMethodCount, 7, "the unfolded subject counts as drawn on its own page");
   assert.equal(page.foldedCount, 1, "the OTHER fold stays folded there");
   assert.equal(
     page.drawnMethodCount + page.foldedCount,

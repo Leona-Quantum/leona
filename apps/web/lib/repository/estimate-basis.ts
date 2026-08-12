@@ -11,8 +11,9 @@
 //   refused     an operation this stack cannot name, so there is no number
 //   no_circuit  nothing to cost; nothing was attempted and nothing failed
 //
-// `refused` and `no_circuit` are kept apart deliberately. 163 of the 283
-// published entries are literature and operator records with no circuit, and
+// `refused` and `no_circuit` are kept apart deliberately. Most published entries
+// are literature and operator records with no circuit (163 of the then-283,
+// measured 2026-07), and
 // showing those as refusals would invent a doubt about them that the data does
 // not support.
 export const PUBLIC_ESTIMATE_BASES = ["exact", "estimated", "refused", "no_circuit"] as const;

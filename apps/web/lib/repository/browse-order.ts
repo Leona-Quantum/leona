@@ -140,8 +140,9 @@ export function orderEntries<T>(
  * Keep only entries whose circuit was measured.
  *
  * The one filter R1 ships, and the reason it is this one: `present` is a
- * distinction the *data* makes — 163 of 283 published entries are literature and
- * operator records that pin no gate sequence — so it needs no boundary anybody
+ * distinction the *data* makes — most published entries are literature and
+ * operator records that pin no gate sequence (163 of the then-283, measured
+ * 2026-07) — so it needs no boundary anybody
  * had to choose. A "depth under N" control would need an N, and a number picked
  * to make the buckets look even is a claim about the corpus dressed as a filter.
  */

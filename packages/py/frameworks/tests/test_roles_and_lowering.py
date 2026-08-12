@@ -87,8 +87,12 @@ def test_unknown_has_two_meanings_and_a_lenient_caller_must_tell_them_apart():
     of an operator, written in English, is not source at all.
 
     `import-public` needs the difference: refusing every UNKNOWN would have taken
-    276 of the 283 live catalog entries out of the Library, because those rows
+    276 of the then-283 live catalog entries out of the Library, because those rows
     predate the binding fix. It refuses the prose and files the circuit.
+
+    That ratio is the measurement that decided the rule, taken in 2026-07; it is
+    not a claim about today's corpus, which is larger. The rule does not depend on
+    the ratio staying put — one unbound row would justify it.
     """
     forgot_the_binding = "from qiskit import QuantumCircuit\n\nqc = QuantumCircuit(2)\nqc.h(0)"
     a_record = (
