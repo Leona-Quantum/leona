@@ -17,7 +17,7 @@ import {
  * **The corpus is not imported here**, for the reason `repository-topics.test.ts`
  * and `repository-interface.test.ts` both state: `public-repository.ts` reaches
  * its entry modules with extensionless specifiers and `node --test` resolves
- * paths literally. The properties that are *about* the 283 records — 15 stems,
+ * paths literally. The properties that are *about* the records — 15 stems,
  * eight widths each, and no refusals — are asserted in
  * `scripts/check-repository-data.mjs`, which bundles with esbuild and runs in
  * `lint`.

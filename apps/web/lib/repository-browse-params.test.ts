@@ -123,8 +123,8 @@ test("?port= resolves an end, and an unrecognised one is no selection", () => {
 
 test("junk in the four params added with the cap also resolves to no filter", () => {
   // Same rule as the original four, and one of these is sharper than the rest:
-  // `?circuit=` REMOVES 163 of 283 records, so a value this build does not
-  // recognise resolving to `true` would hide most of the catalogue from a
+  // `?circuit=` REMOVES the majority of records — 163 of the then-283 — so a
+  // value this build does not recognise resolving to `true` would hide most of the catalogue from a
   // reader who mistyped a URL.
   const junk = resolveBrowseParams({
     q: "   ",

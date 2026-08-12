@@ -10,8 +10,8 @@ import type { RepositoryProfile } from "./repository/profile.ts";
  * holds resolves to nothing rather than to a partly-rendered row.
  *
  * The stakes are lower than for a cost — a depth is not a hardware claim — but
- * the failure mode is worse-looking: 163 of 283 published entries carry no
- * circuit, so a parser that turned "absent" into zeros would put 163 phantom
+ * the failure mode is worse-looking: most published entries carry no
+ * circuit (163 of the then-283, measured 2026-07), so a parser that turned "absent" into zeros would put 163 phantom
  * zero-depth circuits at the top of a "shallowest first" list.
  */
 

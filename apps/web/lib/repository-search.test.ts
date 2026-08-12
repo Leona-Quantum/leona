@@ -10,7 +10,7 @@
  * dropped field breaks no test and simply makes 57 values unreachable.
  *
  * The corpus-wide half of the claim ("no family loses a member to search") is
- * asserted over the real 283 entries in `scripts/check-repository-data.mjs`.
+ * asserted over the real corpus in `scripts/check-repository-data.mjs`.
  * What is here is the predicate's own behaviour.
  */
 

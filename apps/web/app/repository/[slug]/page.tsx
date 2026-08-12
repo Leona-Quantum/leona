@@ -83,7 +83,8 @@ export default async function RepositoryEntryPage({
   // re-imported, and a value read off fields that are already there has no such
   // second half.
   //
-  // The corpus walk is 283 derivations and 566 comparisons per render. It is
+  // The corpus walk is one derivation and about two comparisons per entry, per
+  // render (283 derivations and 566 comparisons measured 2026-07). It is
   // cheaper than the fetch that already happened above it.
   const corpusInterfaces = new Map<string, EntryInterface>(
     entries.map((candidate) => [
@@ -147,20 +148,21 @@ export default async function RepositoryEntryPage({
         estimate={
           // Decided here, not by testing the element: a React element is truthy
           // whatever it renders, so passing one unconditionally gives an empty
-          // "Fault-tolerant cost" section on the 163 entries with no circuit.
+          // "Fault-tolerant cost" section on entries with no circuit (163 of
+          // the then-283, measured 2026-07).
           hasVisibleEstimate(estimate) ? <RepositoryEstimatePanel estimate={estimate} locale={locale} /> : null
         }
         profile={
           // Decided here for the same reason, and the reason bit once already:
           // a truthy element would give an empty "Circuit structure" section on
-          // the 163 entries that carry no circuit.
+          // the entries that carry no circuit (same 163 as above).
           hasVisibleProfile(profile) ? <RepositoryProfilePanel profile={profile} locale={locale} /> : null
         }
         connections={
           // Unconditional, unlike its two neighbours. An entry with no ports
           // renders a sentence saying it is not a pipeline stage, because that
           // is the answer to the question the section asks — and it is the
-          // answer for 121 of the 283 records.
+          // answer for most records (121 of the then-283, measured 2026-07).
           <RepositoryInterfacePanel
             entry={entryInterface}
             neighbours={neighbours}
@@ -174,7 +176,8 @@ export default async function RepositoryEntryPage({
           // Rendered on the server and passed in as a slot, like the three
           // above, and for the same reason: the entry view is a client
           // component. Returns null when no node in the graph names this slug,
-          // which is 279 of the 283 today — the strip is absent rather than
+          // which is most of them (279 of the then-283, measured 2026-07) — the
+          // strip is absent rather than
           // empty, and the honest count of what the graph does cover is printed
           // on /repository/layers instead.
           <EntryLayerLinks
