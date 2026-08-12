@@ -842,6 +842,67 @@ test("an empty Implementations section carries a worklist, and never a count of 
   assert.equal(withLeads, methods.length, `${withLeads}/${methods.length} methods have a read paper`);
 });
 
+test("every declared absence reaches a reader, in both locales", () => {
+  // **`noneFound` is right when nobody has looked and wrong when somebody has.**
+  // A record that declares why a field is empty has been read; showing it "None
+  // found yet." tells the reader the opposite of what the record knows.
+  //
+  // Asserted against the AUTHORED graph rather than a fixture, deliberately and
+  // against this directory's usual rule. The claim is not that the plumbing
+  // works — it is that **every declaration in the corpus actually surfaces**, and
+  // a fixture proves that on data nobody ships. It caught the case this test was
+  // first written wrong for: four of the six declarations are `example.text` on
+  // methods that HAVE pseudocode, so their Example section is held, the
+  // section-level gap note never draws, and the reason had nowhere to go until
+  // `CardExample.textReason` existed. The pseudocode was hiding the account of
+  // the missing half.
+  const reaching = (card: Card, field: string): string | null => {
+    if (card.kind !== "method") return null;
+    if (field === "cost") return card.cost.held === false ? (card.cost.reason ?? null) : null;
+    if (field === "conditions") {
+      return card.whenItApplies.held === false ? (card.whenItApplies.reason ?? null) : null;
+    }
+    if (field === "implementations") {
+      return card.implementations.held === false ? (card.implementations.reason ?? null) : null;
+    }
+    if (field === "example.text") {
+      return card.example.held ? card.example.value.textReason : (card.example.reason ?? null);
+    }
+    return card.example.held === false ? (card.example.reason ?? null) : null;
+  };
+  let declared = 0;
+  for (const locale of ["en", "ja"] as const) {
+    const input = { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale, register: PAPER_REGISTER } as const;
+    for (const node of LAYER_GRAPH.nodes) {
+      if (!isMethod(node) || node.absences === undefined) continue;
+      const card = cardFor(input, node.id);
+      assert.ok(card?.kind === "method");
+      for (const field of Object.keys(node.absences)) {
+        const shown = reaching(card, field);
+        assert.ok(
+          shown !== null && shown.trim().length > 40,
+          `${node.id} (${locale}): the declared reason for ${field} does not reach a reader`,
+        );
+        declared += 1;
+      }
+    }
+  }
+  // Non-vacuous, and the floor is the six merged in #452 across both locales.
+  assert.ok(declared >= 12, `${declared} declarations checked, fewer than the 12 that exist`);
+  // The two locales must not be one string — the failure a paired field has, and
+  // the one an English-only read cannot see.
+  const en = cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER }, "backward-euler");
+  const ja = cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "ja", register: PAPER_REGISTER }, "backward-euler");
+  assert.ok(en?.kind === "method" && ja?.kind === "method");
+  assert.notEqual(reaching(en, "implementations"), reaching(ja, "implementations"));
+  // And a gap with NO declaration still gets the standing sentence — this must
+  // not turn every empty field into a claim. `qsvt-transform` carries no
+  // `absences` at all.
+  const undeclared = cardFor({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER }, "qsvt-transform");
+  assert.ok(undeclared?.kind === "method");
+  assert.equal(reaching(undeclared, "example.text"), null);
+});
+
 test("an empty Implementations section says WHICH of the three things it means", () => {
   // **Zero became ambiguous on 2026-08-12 and the card had one sentence for two
   // very different facts.** Until then every populated register row was an abstract read,

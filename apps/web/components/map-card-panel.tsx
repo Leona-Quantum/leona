@@ -362,8 +362,28 @@ const COPY: Record<Lang, Copy> = {
  */
 function Gap({ gap, copy, note }: { gap: CardGap; copy: Copy; note?: string }): React.ReactElement {
   return (
-    <p className={`mj-card-gap mj-card-gap--${gap}`} data-gap={gap}>
-      {note ?? (gap === "none-recorded" ? copy.noneFound : copy.noField)}
+    <p
+      className={`mj-card-gap mj-card-gap--${gap}`}
+      data-gap={gap}
+      // So a sweep counts the accounted gaps apart from the unexplained ones —
+      // the same reason `--closure` prints them on separate lines. Without it
+      // the two are one string in the DOM and the distinction this change exists
+      // to draw is invisible to every instrument, including the production
+      // read-back that is the only thing verifying this component at all.
+      data-explained={note === undefined ? undefined : "true"}
+    >
+      {/* **Through `MathText`, because a declared reason carries mathematics.**
+          `backward-euler`'s names the Padé order the paper's theorems require —
+          `$k \ge 3$` — and a gap note drawn as plain text would print the
+          dollars. The other caller passes prose with no `$`, where this is a
+          no-op. */}
+      {note !== undefined ? (
+        <MathText source={note} />
+      ) : gap === "none-recorded" ? (
+        copy.noneFound
+      ) : (
+        copy.noField
+      )}
     </p>
   );
 }
@@ -439,7 +459,18 @@ function Section({
           children
         ) : (
           <>
-            <Gap gap={value.gap} copy={copy} note={note} />
+            {/* **A declared reason outranks the standing gap sentence.** `noneFound`
+                — the owner's own *"none found yet"* — is right when nobody has
+                looked, and it is the wrong sentence on a record where somebody
+                looked at every cited source and wrote down what they found.
+                `backward-euler` carries such a reason for its Implementations
+                section, and a reader shown "None found yet." there is being told
+                the opposite of what the record knows.
+
+                `note` still wins over both: it is the own-step card's *no named
+                step covers this*, a statement about the MAP rather than about
+                the sources, and the two are not competing for the same slot. */}
+            <Gap gap={value.gap} copy={copy} note={note ?? value.reason} />
             {whenEmpty}
           </>
         )}
@@ -874,7 +905,7 @@ function Implementations({
                       <MathText source={section.value.value} />
                     </p>
                   ) : (
-                    <Gap gap={section.value.gap} copy={copy} />
+                    <Gap gap={section.value.gap} copy={copy} note={section.value.reason} />
                   )}
                 </div>
               ))}
@@ -1058,6 +1089,21 @@ function Body({ card, id, copy }: { card: Card; id: CardSectionId; copy: Copy })
           {card.example.value.text ? (
             <p>
               <MathText source={card.example.value.text} />
+            </p>
+          ) : card.example.value.textReason ? (
+            /* **The account of the missing half, which the section-level gap note
+               can never reach.** A method with pseudocode and no prose has a HELD
+               Example section, so `Gap` never draws — and four of the graph's
+               first six declared absences are exactly that shape. The pseudocode
+               was hiding the account of the missing half. Marked `data-gap` like
+               any other gap so a sweep counts it, and `data-explained` so it is
+               counted apart from an unexplained one. */
+            <p
+              className="mj-card-gap mj-card-gap--none-recorded"
+              data-gap="none-recorded"
+              data-explained="true"
+            >
+              <MathText source={card.example.value.textReason} />
             </p>
           ) : null}
           {/* Not localised, and the card says why by not offering a second one:
