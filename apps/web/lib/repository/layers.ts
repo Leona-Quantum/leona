@@ -17,8 +17,8 @@
 // those levels has its own alternatives with their own trade-offs.
 //
 // A containment relation cannot be derived from register widths. It also cannot
-// be hung on a record: 283 records would each need to know their place in a
-// structure that mostly does not exist yet, and 282 of them would say
+// be hung on a record: every record would need to know its place in a
+// structure that mostly does not exist yet, and all but one of them would say
 // `unknown` — the second empty skeleton D88.3 forbids. So the graph is a
 // **separate authored artifact**, small, cited, and deliberately allowed to
 // describe layers the corpus has no record for. Where the corpus is empty the
@@ -32,7 +32,7 @@
 // merge, then regenerate the bootstrap manifest and re-import. This graph is not
 // entries. Like `topics.ts` — the other closed vocabulary in this directory — it
 // is code the Next app reads directly, which makes it a one-part deploy and
-// keeps it out of the 283-record pin, the width-family gate, and the manifest
+// keeps it out of the record pin, the width-family gate, and the manifest
 // freshness check. It references the corpus **by slug**, in one direction only.
 //
 // ## The four things this module must never do
@@ -3169,7 +3169,7 @@ export interface LayerCorpusEntry {
    * **Owner ruling `27267f` (2026-08-12): the method card and the repository
    * record "may as well be the same thing".** The measurement behind it is
    * blunt — `implementations` is empty on all 74 methods while `codeVariants`
-   * is present on all 283 records, and in every one of the 27 method→record
+   * is present on every record, and in every one of the 27 method→record
    * pairs the card renders "none-recorded" over a record that carries code. The
    * section was never un-researched; nothing had joined it.
    *

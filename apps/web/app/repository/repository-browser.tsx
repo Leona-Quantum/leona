@@ -130,8 +130,9 @@ const COPY = {
     // `circuitOnlyHint` was here and is deleted. It was the one place on any
     // public Atlas surface where a number was **typed** into a translated
     // sentence rather than counted — "163 of the published entries" — correct
-    // only for as long as 283 − 120 stayed 163, with nothing failing when it
-    // drifted. That is exactly the failure the counting rule exists to prevent.
+    // only for as long as the then-283 minus 120 stayed 163, with nothing
+    // failing when it drifted. That is exactly the failure the counting rule
+    // exists to prevent.
     //
     // It is deleted rather than rewritten because **nothing rendered it**: the
     // key had no reader. `copy.circuitOnly` (the toggle's own label) is used at
@@ -562,7 +563,7 @@ export function RepositoryBrowser({
    * How many entries have any port at all — the number that qualifies the whole
    * control, the way `entriesWithDomain` qualifies the domain group.
    *
-   * It is 162 of 283 on today's corpus and the group heading says so, because a
+   * It was 162 of the then-283 (measured 2026-07) and the group heading says so, because a
    * filter offering six interface kinds without that number reads as though the
    * catalogue is a set of connectable parts. Most of it is not.
    *
@@ -738,8 +739,9 @@ export function RepositoryBrowser({
   /**
    * One card's cost, in as few characters as a card can carry.
    *
-   * Renders nothing at all for an entry with no circuit: 163 of the 283
-   * published records are literature and operator entries, and a "no circuit"
+   * Renders nothing at all for an entry with no circuit: most published records
+   * are literature and operator entries (163 of the then-283, measured
+   * 2026-07), and a "no circuit"
    * chip on every one of them would be noise that says nothing. A *refusal* is
    * different and does get a chip — there the circuit exists and its cost is
    * genuinely unknown, which is information.
@@ -830,8 +832,9 @@ export function RepositoryBrowser({
     // These are anchors rather than buttons on purpose. Folding a group emits ONE
     // card, so only the active member got a real /repository/<slug> link — the
     // inactive sibling had no crawlable entry point anywhere on the site (this is
-    // why the corpus looked like "281 of 283": 283 records, two folded pairs, 281
-    // rows — working as designed, but two slugs were unreachable by link). Giving
+    // why the corpus looked like "281 of the then-283" — the then-283 records,
+    // two folded pairs, 281 rows, measured 2026-07 — working as designed, but
+    // two slugs were unreachable by link). Giving
     // every member an href restores that without changing the curated UX: a plain
     // left-click still swaps in place, while crawlers, middle-click, and no-JS
     // visitors follow the href to the record's own page.
@@ -1017,7 +1020,8 @@ export function RepositoryBrowser({
    * different fact, and it is stated by the control under the list.
    *
    * R2.6 made the header disagree with the page: it said "283 public entries"
-   * over 176 cards, because 120 records fold into 15 width families and 4 more
+   * (the then-283, measured 2026-07) over 176 cards, because 120 records fold
+   * into 15 width families and 4 more
    * into 2 curated clusters. Both numbers were true and the gap was never
    * explained, so it read as "where did the other 107 go".
    *

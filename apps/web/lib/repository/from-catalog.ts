@@ -130,7 +130,7 @@ export function parseCatalogRecord(record: unknown): PublicRepositoryEntry | nul
   // §3.6's two fields, on the same undefined-tolerant terms — and the tolerance
   // is load-bearing rather than stylistic. There is a window between deploying
   // this code and re-importing the corpus in which every published record still
-  // predates both fields. A guard that REQUIRED them would reject all 283 for
+  // predates both fields. A guard that REQUIRED them would reject every record for
   // the length of that window, `entries.length` would hit 0, and
   // repository-source.ts would fall back to the static corpus with only a
   // console line — a broken cutover that renders as a working site.
@@ -149,8 +149,8 @@ export function parseCatalogRecord(record: unknown): PublicRepositoryEntry | nul
  * Deliberately a separate function from parseCatalogRecord rather than a
  * relaxation of it: the list projection omits introduction/explanation/
  * verificationDetails/source by design, and parseCatalogRecord REQUIRES those
- * (they are what the detail page renders). Reusing it would reject all 283
- * records and silently drop the site onto the static corpus. Keeping the two
+ * (they are what the detail page renders). Reusing it would reject every
+ * record and silently drop the site onto the static corpus. Keeping the two
  * boundaries separate means each validates exactly what its own view reads.
  */
 export function parseCatalogListRecord(record: unknown): PublicRepositoryListEntry | null {
@@ -200,7 +200,7 @@ export function parseCatalogListRecord(record: unknown): PublicRepositoryListEnt
   // §3.6's two fields, on the same undefined-tolerant terms — and the tolerance
   // is load-bearing rather than stylistic. There is a window between deploying
   // this code and re-importing the corpus in which every published record still
-  // predates both fields. A guard that REQUIRED them would reject all 283 for
+  // predates both fields. A guard that REQUIRED them would reject every record for
   // the length of that window, `entries.length` would hit 0, and
   // repository-source.ts would fall back to the static corpus with only a
   // console line — a broken cutover that renders as a working site.

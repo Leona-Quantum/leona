@@ -17,7 +17,7 @@ import {
  * **The corpus is not imported here and that is not an oversight.**
  * `public-repository.ts` reaches its entry modules with extensionless
  * specifiers, and `node --test` strips types but resolves paths literally — so
- * this file cannot see the 283 records. The properties that are *about* the
+ * this file cannot see the records. The properties that are *about* the
  * corpus (every entry has exactly one role, no vocabulary member is empty, the
  * domain facet stays sparse) are asserted in `scripts/check-repository-data.mjs`
  * instead, which bundles with esbuild and, as of this change, runs in `lint`.

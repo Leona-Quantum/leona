@@ -35,7 +35,7 @@
 // ## Why it is a register rather than a normalisation, for now
 //
 // The end state is that a citation is `{paper: PaperId, relevance}` and carries
-// no metadata of its own. That is a shape change to 283 records that production
+// no metadata of its own. That is a shape change to every record that production
 // serves from the catalog API, so it is a two-part deploy and its own PR. What
 // lands here gets the whole correctness benefit without the shape change: the
 // citations keep their fields, **and a script asserts every one of them equals

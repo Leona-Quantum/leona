@@ -5,7 +5,7 @@
 // states: `node --test` resolves paths literally and `public-repository.ts`
 // reaches its entry modules extensionlessly. The rule is pinned here against
 // fixtures; `scripts/check-layer-graph.mjs` runs the same functions against the
-// real 283 records and the real graph, so the two cannot drift.
+// real records and the real graph, so the two cannot drift.
 import assert from "node:assert/strict";
 import test from "node:test";
 
@@ -127,8 +127,8 @@ test("a slug the corpus does not carry is somebody else's error, not this one", 
 });
 
 test("coverage is counted against the eligible set, never the whole corpus", () => {
-  // The number this replaces was "9 of 283", and 221 of those 283 are records no
-  // node could honestly anchor. A denominator that includes them makes the map
+  // The number this replaces was "9 of the then-283" (measured 2026-07), and 221
+  // of those were records no node could honestly anchor. A denominator that includes them makes the map
   // look 4x emptier than it is and gives no reading list.
   const audit = auditAnchors(
     [
