@@ -214,7 +214,7 @@ export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIE
     // field.
     sourceCoverage: entry.sourceCoverage ?? unknownCoverage(),
     // `knownGaps` is deliberately absent from this list. Defaulting it to []
-    // would make all 283 records assert "reviewed, declares no gaps" when
+    // would make every record assert "reviewed, declares no gaps" when
     // nobody has looked at them — see the field's doc comment in
     // ./repository/types and knownGapsState() in ./repository/coverage.
   };
@@ -226,8 +226,8 @@ export const PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = ALL_RAW_ENTRIE
  * source fields deriveVerificationMethods() falls back to.
  *
  * That fallback is unreachable for list entries in practice — verificationMethods
- * is derived for every record before the bootstrap manifest is generated, and all
- * 283 published records carry it — so the narrowing below is a guard, not a code
+ * is derived for every record before the bootstrap manifest is generated, and every
+ * published record carries it — so the narrowing below is a guard, not a code
  * path with a behaviour to preserve. It is written as a type narrowing rather
  * than a cast so that widening the projection later cannot silently reintroduce
  * a call to derive on a record that lacks the fields it reads.

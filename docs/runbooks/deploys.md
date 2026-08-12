@@ -130,7 +130,7 @@ gcloud run deploy majorana-api --project majorana-core --region us-west1 \
 # → https://verify---majorana-api-nikekeixtq-uw.a.run.app
 curl -s .../health                       # 200
 curl -s .../v1/me -o /dev/null -w '%{http_code}\n'   # 401 — auth still closed
-curl -s .../v1/catalog/entries | jq length            # 283
+curl -s .../v1/catalog/entries | jq length            # the manifest's item_count
 gcloud run services update-traffic majorana-api \
   --project majorana-core --region us-west1 --to-latest
 ```
@@ -312,10 +312,18 @@ is why the operational consequence below kept surprising people.
 **There is a whole-corpus fallback and it is deliberate.** If the API is unreachable,
 returns nothing usable, or fails the page-completeness check, `repository-source.ts`
 serves the static corpus anyway rather than 500 the public site, and logs
-`[repository-source] falling back to the static corpus`. That is safe only for as long
-as both sides really are the same 283 records. **Grep the Vercel logs for that line
-before concluding the cutover is healthy** — a silent fallback makes a broken cutover
-look like a working one, which is exactly why it is logged loudly.
+`[repository-source] falling back to the static corpus`. **Grep the Vercel logs for that
+line before concluding the cutover is healthy** — a silent fallback makes a broken
+cutover look like a working one, which is exactly why it is logged loudly.
+
+This used to say the fallback was safe "for as long as both sides really are the same
+283 records". The conditional was right and the premise has stopped holding: the two
+sides now differ routinely, because the database is one catalog sync behind the
+committed corpus and the corpus is edited every day. What makes the fallback tolerable
+is not that they are identical but that the corpus is the source the database is synced
+*from* — a fallback serves content at worst one sync AHEAD of what is published, never
+behind. Since 2026-08-12 the sync runs on every deploy (ADR-0019), so that window is one
+deploy rather than unbounded.
 
 **The consequence that surprises everyone: editing the TypeScript corpus does not
 change the site.** With the flag on, the entries files are the *editing* surface and
@@ -348,8 +356,11 @@ just where it reads from:
 The corpus is a snapshot of the manifest that was last imported. Anything published to
 the catalog since then — a new record, a corrected field, a re-attested entry — lives in
 the database only, and turning the flag off deletes it from the public pages until it is
-round-tripped back into the entries files and a new manifest is generated. The two sides
-are interchangeable only while they hold the same records, which today is the same 283.
+round-tripped back into the entries files and a new manifest is generated. **The two
+sides are not interchangeable and have not been since the deploy-time sync went live** —
+the database holds everything published up to the last sync, the corpus holds everything
+committed, and each can lead the other on a different record. Do not reason from a
+record count: equal totals do not mean equal content.
 
 That is also the precondition the automatic fallback assumes and cannot check. Before
 flipping the flag off deliberately, confirm the database holds nothing extra:

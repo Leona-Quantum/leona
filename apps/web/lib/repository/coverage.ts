@@ -28,7 +28,7 @@ import {
 /**
  * The honest default: nobody has checked any axis.
  *
- * A fresh object every call — this is spread into 283 records and a shared
+ * A fresh object every call — this is spread into every record and a shared
  * frozen literal would make one record's later correction silently rewrite all
  * of them.
  */
@@ -118,7 +118,7 @@ export function isKnownGapList(value: unknown): value is PublicRepositoryKnownGa
  * Whether a coverage record says anything at all.
  *
  * On day one every record is all-`unknown`, and rendering three "unknown" chips
- * on 283 pages is noise that teaches a reader to ignore the control. Renderers
+ * on every page is noise that teaches a reader to ignore the control. Renderers
  * show the block only when `isInformative` — which also means the field becoming
  * *less* informative over time is visible as the block disappearing, rather than
  * as three chips that never change.

@@ -1414,9 +1414,11 @@ export function RepositoryBrowser({
             Both were removed rather than restyled, and both removals were
             measured against the corpus first (roadmap §0.3):
 
-            `algorithmFamily` was 57 free-text values over 283 entries, **33 of
-            them worn by exactly one entry** — a search box implemented as a
-            dropdown. `role` + `method` now cover it by rule, as supersets: 49
+            `algorithmFamily` was 57 free-text values, **33 of them worn by
+            exactly one entry** — a search box implemented as a dropdown.
+            (Measured at s81 over the then-283 entries; the shape is what decided
+            it, and the corpus has grown since without anyone re-counting.)
+            `role` + `method` now cover it by rule, as supersets: 49
             of the 57 families share a single role+method signature. The 8 that
             scatter, and the 12 signatures that cover more than one family, are
             why the fallback matters — and the fallback is exact. The search
@@ -1428,8 +1430,10 @@ export function RepositoryBrowser({
 
             `framework` looked like a filter and was not one. Its eight options
             produce **five distinct result sets** — CUDA-Q, Amazon Braket,
-            PyQuil and Qmod select the identical 153 entries — and the most
-            selective option still keeps 191 of 283. It asks "can I export this
+            PyQuil and Qmod selected the identical 153 entries — and even the most
+            selective option kept **more than two thirds of the catalogue** (191 of
+            the then-283 at s81). A control that removes a third of the rows at its
+            most aggressive setting is not a filter. It asks "can I export this
             to Cirq", which is a question about an entry already found; the
             entry page's export section answers it per record. `entry.framework`
             stays in the search haystack, so the placeholder still holds.

@@ -85,8 +85,13 @@ const missing = <T,>(gap: CardGap, reason?: string): CardValue<T> =>
  *
  * Keyed exactly as an author writes it — `cost`, `example.text` — so the lookup
  * and the declaration cannot drift apart into two spellings of one field name.
+ *
+ * **Exported for the same reason `exampleRunNote` is.** The method's own page
+ * (`components/repository-layers.tsx`) reads the node directly rather than through
+ * a card, so it needs this lookup too — and a second copy of "which key does an
+ * author type" is exactly the drift the keying comment above is about.
  */
-function absenceOf(method: LayerMethod, field: string, ja: boolean): string | undefined {
+export function absenceOf(method: LayerMethod, field: string, ja: boolean): string | undefined {
   const absence = method.absences?.[field];
   if (absence === undefined) return undefined;
   return ja ? absence.reasonJa : absence.reason;
@@ -755,7 +760,7 @@ function exampleOf(method: LayerMethod, ja: boolean): CardValue<CardExample> {
  * The joined implementations: what the node authored, then what its records run.
  *
  * **Ruling `27267f`, as code.** Before this, the section read `method.implementations`
- * alone and was empty on all 74 methods — while all 283 corpus records carry
+ * alone and was empty on all 74 methods — while every corpus record carries
  * `codeVariants`, and in all 27 method→record pairs the card rendered
  * "none-recorded" over a record that had code. That was never a research gap.
  * The content was authored; nothing joined it.
