@@ -32,7 +32,7 @@ function isPublicPath(pathname: string): boolean {
 // uses Next.js matcher glob syntax, where "/repository" matches that path ONLY —
 // so the subtree has to be spelled out as a pattern.
 //
-// This previously enumerated all 283 entry paths by importing the static corpus,
+// This previously enumerated every entry path by importing the static corpus,
 // which forced the entire repository dataset into the Edge bundle at cold start
 // and made the middleware a build-time consumer of data that Slice D moves behind
 // an async API call. The glob is equivalent and carries no data dependency.

@@ -21,8 +21,8 @@
 //   does not enter it at all — and one draft edge (discrete adiabatic "skipping"
 //   eigenvalue estimation) was removed on exactly that test.
 // - **`entries` names records the Atlas actually carries**, and most nodes name
-//   none. That is the measurement, not a gap to paper over: the corpus is 283
-//   records of circuits and primitives, and the literature this graph describes
+//   none. That is the measurement, not a gap to paper over: the corpus is
+//   circuits and primitives, and the literature this graph describes
 //   is largely not in it. The index prints the count.
 import type { LayerGraph } from "./layers.ts";
 

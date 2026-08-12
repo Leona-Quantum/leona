@@ -71,7 +71,7 @@ const CORPUS: LayerCorpusEntry[] = [
   description: "",
   descriptionJa: "",
   // Exactly one runnable variant each, because in production **every** record
-  // has at least one — 283 of 283 carry `codeVariants`, measured. Before the
+  // has at least one `codeVariants` entry, measured. Before the
   // record join this field did not exist and the fixture was representative
   // without it; now a corpus without it would make the join untestable here and
   // would understate what production feeds, which is the opposite of the
@@ -614,8 +614,8 @@ test("the card reads the map node, which is the populated side of the join", () 
   // It was measuring a premise: *"the record side is thin, so the card reads the
   // node because the record is empty."*
   //
-  // **That premise is refuted, not strained.** The record side is 283 records and
-  // every one of them carries runnable code, while `implementations` was empty on
+  // **That premise is refuted, not strained.** The record side is every record and
+  // each one carries runnable code, while `implementations` was empty on
   // all 74 methods — and in all 27 method->record pairs the card rendered
   // "none-recorded" over a record that had code. The section was never
   // un-researched; nothing had joined it. Owner ruling `27267f` merged them

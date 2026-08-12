@@ -17,7 +17,7 @@
 // prose records have no ports at all, and 120 circuits end in a measurement that
 // nothing consumes. Drawn as a piece, each of those is immediately a piece with
 // a straight edge — you can see there is nothing to join before you read a word.
-// Drawn as a row of labels, all 283 look equally connectable.
+// Drawn as a row of labels, all entries look equally connectable.
 //
 // ## What the panel must never do
 //
@@ -402,7 +402,8 @@ function PartnerList({
  * all is a sentence saying so, not silence. It is the opposite call from
  * `hasVisibleProfile`, where an absent circuit is a literature record behaving
  * as intended and a panel explaining it would invent a doubt. Here the absence
- * *is* the finding: 121 of 283 records are not pipeline stages, and a reader
+ * *is* the finding: most records are not pipeline stages (121 of the then-283,
+ * measured 2026-07), and a reader
  * looking for something to compose needs to be told that rather than left to
  * infer it from a missing section.
  *

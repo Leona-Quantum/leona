@@ -5,7 +5,7 @@
 // directory's standing rule: a test that reads the real corpus asserts today's
 // content and goes green the day the content changes for an unrelated reason.
 //
-// **The 283 records are not imported here**, for the reason
+// **The records are not imported here**, for the reason
 // `repository-interface.test.ts` and `repository-topics.test.ts` both state:
 // `public-repository.ts` reaches its entry modules with extensionless
 // specifiers and `node --test` resolves paths literally. So the split is —
@@ -1061,7 +1061,7 @@ test("validation rejects a `through` that is not a narrowing", () => {
 /**
  * Every slug the graph itself names.
  *
- * Passing this as the corpus satisfies the one rule that needs the real 283 —
+ * Passing this as the corpus satisfies the one rule that needs the real corpus —
  * "`entries` names a slug the corpus carries" — trivially, so what the
  * assertion below actually pins is every *other* rule: ids, both locales,
  * citations, edge resolution, the refines contract, and the two acyclicity
