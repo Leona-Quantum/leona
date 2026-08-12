@@ -31,7 +31,14 @@ function openableAddresses(id: string): string[] {
     if (!node || !isCapability(node)) throw new Error(`${id} is not a capability`);
     const diagram = layoutConverge({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "en", open });
     let grew = false;
-    for (const openable of [...diagram.lanes, ...diagram.feeds]) {
+    // **`feeds` exists before #16 and not after, and this script has to run on both.**
+    // An ingredient used to hang off the strand as a `ConvergeFeed`; #16 moved
+    // ingredients into the card's Requires section and `ConvergeDiagram.feeds` went
+    // with them. Reading it unguarded threw `diagram.feeds is not iterable` the first
+    // time this was pointed at that branch. Optional rather than removed, because the
+    // script's job is to compare a tree before a change against the same tree after.
+    const feeds = (diagram as { feeds?: readonly { openHref: string | null; address: string }[] }).feeds ?? [];
+    for (const openable of [...diagram.lanes, ...feeds]) {
       if (openable.openHref === null) continue;
       if (seen.has(openable.address)) continue;
       seen.add(openable.address);
@@ -64,7 +71,13 @@ for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
 // not exported, so these two numbers are hand-mirrored. The output says so rather
 // than presenting them as authoritative: if this script and the test ever disagree,
 // the test is right and this line is stale.
-const CEILING_MIRROR = { height: 5_500, width: 7_000 } as const;
+// Updated 5,500/7,000 → 3,000/3,000 when issue 16 took ingredients off the canvas
+// and the ceiling was re-derived from the smaller drawing. The mirror going stale
+// is the predicted failure of keeping a copy, so it is worth saying that it did:
+// the script kept running and quietly reported 3,554px of headroom against a bar
+// that had moved to 1,054px. Same direction as the defect this script exists to
+// catch — a number that is right about a tree nobody is on.
+const CEILING_MIRROR = { height: 3_000, width: 3_000 } as const;
 
 rows.sort((a, b) => b.height - a.height);
 for (const row of rows) {
