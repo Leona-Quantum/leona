@@ -313,15 +313,12 @@ function Feed({
   // One writer for where the name sits — shared with the caption resolver,
   // which keeps captions off this text. See `feedNameY`.
   const nameY = feedNameY(feed);
-  const stub = (
-    <line
-      className="mj-converge-feed-line"
-      x1={n(feed.x)}
-      y1={n(feed.y0)}
-      x2={n(feed.x)}
-      y2={n(feed.y1)}
-    />
-  );
+  // **A path, not a line, and the shape is the point.** An ingredient is drawn
+  // as a tributary that comes in from the left and merges into the strand it
+  // feeds — the owner's own description in `6988d3`, which a perpendicular tick
+  // never was. The curve is computed by `tributaryPath` and carried on the feed;
+  // this component draws what the layout measured, as it does everywhere else.
+  const stub = <path className="mj-converge-feed-line" d={feed.d} fill="none" />;
   return (
     <g
       className={`mj-converge-feed${feed.open ? " mj-converge-feed--open" : ""}${selected ? " mj-converge-feed--selected" : ""}${cited ? " mj-converge-feed--paper-cited" : ""}`}
@@ -340,13 +337,7 @@ function Feed({
           {/* A 1.5px stub is not a click target. A stroke, not a fill — the shape
               is a line and has no interior to hit. Same trick, same reason, as
               `.mj-converge-strand-hit`. */}
-          <line
-            className="mj-converge-feed-hit"
-            x1={n(feed.x)}
-            y1={n(feed.y0)}
-            x2={n(feed.x)}
-            y2={n(feed.y1)}
-          />
+          <path className="mj-converge-feed-hit" d={feed.d} fill="none" />
         </a>
       )}
 
@@ -366,7 +357,10 @@ function Feed({
         aria-label={`${title} — ${feed.cardHref === null ? copy.readAbout : copy.readHere}`}
       >
         <title>{`${title} — ${feed.cardHref === null ? copy.readAbout : copy.readHere}`}</title>
-        <text className="mj-converge-feed-name" x={n(feed.x + 4)} y={n(nameY)}>
+        {/* At the tributary's own start, not at the join: the name labels the
+            line that comes in from the left, and `feedNameY` already keys off
+            that end's `y1`. Before the curve the two were the same x. */}
+        <text className="mj-converge-feed-name" x={n(feed.xEnd + 4)} y={n(nameY)}>
           {feed.label}
         </text>
       </a>
@@ -376,7 +370,7 @@ function Feed({
       {feed.loopClosure === null ? null : (
         <path
           className={`mj-converge-loop${feed.loopClosure === "measured" ? " mj-converge-loop--measured" : ""}`}
-          d={loopGlyphPath(feed.x + 4 + feed.labelWidth, nameY - 4)}
+          d={loopGlyphPath(feed.xEnd + 4 + feed.labelWidth, nameY - 4)}
           aria-hidden="true"
         />
       )}
