@@ -102,6 +102,7 @@ import {
   levelSlices,
   ribbonOutline,
   ribbonPath,
+  tributaryPath,
   tendonSlope,
   type Level,
   type Ribbon,
@@ -1151,6 +1152,18 @@ export interface ConvergeFeed {
   x: number;
   y0: number;
   y1: number;
+  /**
+   * The line itself, as path data — a **tributary** that comes in from the left
+   * and merges into the strand at `(x, y0)`, level at both ends.
+   *
+   * Emitted here rather than built by the renderer for the reason every other
+   * shape on this canvas is: geometry has one writer. The renderer drew a
+   * straight `<line>` between `y0` and `y1` and that is the shape the owner has
+   * twice said is not what he described (`6988d3`).
+   */
+  d: string;
+  /** Where the tributary starts, left of the join. `x` remains the join. */
+  xEnd: number;
   /** Which way the label sits, so the renderer does not re-derive it. */
   outward: 1 | -1;
   depth: number;
@@ -4074,33 +4087,57 @@ function placeFeeds(
     const fitted = fitMarkedName(feed, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(feed));
     const fittedWidth = estimateTextWidth(fitted.text, M.laneFont);
     const y0 = at.y + outward * inner;
-    // **How far the stub is DRAWN — and it is now the same number the fan is
-    // placed at.**
+    // **How far the stub is DRAWN — back to `feedRun`, and PR 430 is reverted
+    // here with the measurement that says it must be.**
     //
-    // It was `feedRun` flat, 18px, while an opened ingredient's fan hangs at
-    // `max(feedRun, vHalf)` past `innerReach`. So the line stopped 18px out and
-    // its own fan sat as much as **516.8px further away with nothing drawn
-    // between them** — measured over all 31 opened ingredients on the corpus;
-    // the worst is `hhl-qpe-inversion`'s `hamiltonian-simulation` on
-    // `quantum-linear-solve`. A reader saw a tick, and somewhere below it a
-    // detached fan, which is a fair description of the owner's *"i still don't
-    // see the ingredients"* (`6988d3`).
+    // PR 430 made this `max(feedRun, vHalf)` for an opened ingredient so the line
+    // would REACH the fan it opens into, closing a gap of up to 516.8px where
+    // nothing was drawn at all. The gap was real and the reasoning held; what
+    // neither the tests nor I checked was what the drawn line then crosses.
+    // Measured on the corpus, both ways, over all 212 ingredients:
     //
-    // **The room was always reserved and simply never spent.** `feedReach`
-    // reserves `max(feedRun, vHalf) + vHalf` and has since ingredients could
-    // open; this is the first half of it, drawn. So no figure gets bigger —
-    // checked, every width and height is unchanged — and `fanBase` below now
-    // reads this number instead of deriving a second one that could drift from
-    // it, which is exactly how the gap opened.
-    const stubReach = feed.open
-      ? Math.max(M.feedRun, size.feeds[index]!.vHalf)
-      : M.feedRun;
+    //     stub = feedRun, fan pushed out (before PR 430):  18 of 212  (8.5%)
+    //     stub = max(feedRun, vHalf)          (PR 430):     68 of 212  (32.1%)
+    //
+    // The 18 are a lane passing within a stub's own 18px root and predate all of
+    // this; the 68 are lines up to 572px long drawn across other strands' fans.
+    // (An earlier reading of this control said 0 rather than 18: it reverted the
+    // stub length while leaving PR 430's fan base in place, which is not the
+    // geometry that shipped before PR 430. The numbers above are both arms
+    // measured against the real one.)
+    //
+    // The longest ran 572px across four labelled lanes of a fan belonging to a
+    // different strand — seen in a screenshot, then counted. **This canvas's one load-bearing property is that two
+    // process lines share space only at a circle they both genuinely touch**
+    // (D96.2) — and the crossing-free invariants did not see it, because they
+    // are stated over lanes, which are a one-parameter family, and a stub is
+    // not one. A connected line that cuts through four other names is worse
+    // than an unconnected one, so the connection comes back only when the fan
+    // is placed somewhere the line can reach cleanly. That is
+    // **OWNER_TODO `3f6889`**, not this PR.
+    const stubReach = M.feedRun;
     const y1 = at.y + outward * (inner + stubReach);
+    // **How far left the tributary starts, by the same law every other curve on
+    // this canvas obeys.** A flat `2 · feedRun` was the first attempt and it is
+    // wrong in the way that matters: an opened ingredient's line can rise 500px
+    // or more, and a 36px lead against a 534px rise draws a vertical line with
+    // two small kinks in it — a tick again, which is the thing being fixed.
+    // `tendonRunFor` converts a rise into a horizontal run at `tendonAngleDeg`,
+    // which is precisely the question here, and it carries the same floor and
+    // ceiling the tendons do, so an ingredient bends like the rest of the
+    // drawing instead of on a rule of its own.
+    //
+    // Bounded by the stub's own slice, so the shape still costs the figure
+    // nothing: `measure` charged the column for a `1/(n+1)` slice per stub, and
+    // 0.45 of one keeps the curve inside room that is already paid for and
+    // clear of the neighbouring stub, which is a whole slice away.
+    const lead = Math.min(slice * 0.45, tendonRunFor(stubReach));
     context.out.rightmost = Math.max(
       context.out.rightmost,
       // The glyph draws past the name's end, so the canvas must reach past it
       // too — the same silent-clip `rightmost` exists to prevent for the text.
-      at.x + 4 + fittedWidth + loopAllowance(feed),
+      // From the tributary's own start, which is where the name is drawn.
+      at.x - lead + 4 + fittedWidth + loopAllowance(feed),
     );
     context.out.feeds.push({
       key: `${strand.key}~${feed.id ?? index}`,
@@ -4122,6 +4159,13 @@ function placeFeeds(
       x: round(at.x),
       y0: round(y0),
       y1: round(y1),
+      // **Inside the slice this stub already owns**, so the shape costs the
+      // figure nothing: `placeFeeds` gives stub `i` a `1/(n+1)` slice and
+      // `measure` charged the column for exactly that, so a lead bounded well
+      // inside it needs no new width and cannot reach its neighbour. Two stubs
+      // are a whole slice apart; this takes at most 0.45 of one.
+      xEnd: round(at.x - lead),
+      d: tributaryPath({ x: at.x, y: y0 }, lead, stubReach, outward),
       outward,
       depth: depth + 1,
       // The control that opens the ingredient. Same two conditions as a lane's:
@@ -4166,10 +4210,17 @@ function placeFeeds(
     // top of this function has always said a stub never points back through
     // the figure; until the fix this replaced, the stub obeyed it and its fan
     // did not.
-    // **The stub's own drawn end.** Not a second derivation of it: the two were
-    // computed apart, one was drawn and the other was not, and the difference
-    // was the gap above.
-    const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: y1 };
+    // **Pushed out past the stub's drawn end again, and the note PR 430 removed
+    // was right.** A base AT `y1` draws half the ingredient back through the
+    // belly whenever the fan's half-band exceeds `feedRun` — the 10 measured
+    // overlaps `feedReach` records. `feedReach` reserves exactly this
+    // `max(feedRun, vHalf)`, so reservation and drawing still agree; what does
+    // NOT agree is the stub's drawn end, and that gap is the honest state of
+    // this feature until the fan can be placed where a line reaches it without
+    // crossing anything (OWNER_TODO `3f6889`).
+    const feedVHalf = size.feeds[index]!.vHalf;
+    const fanY = at.y + outward * (inner + Math.max(M.feedRun, feedVHalf));
+    const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: fanY };
     place(
       fanBase,
       // **`nameless`, because the stub above already carries this name.** The

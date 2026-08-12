@@ -314,3 +314,42 @@ export function levelShares(level: Level, weights: readonly number[]): Level[] {
   }
   return pieces;
 }
+
+/**
+ * An ingredient's line, drawn as a **tributary**: it comes in from the left and
+ * merges into the strand that consumes it, level at both ends.
+ *
+ * The owner's ask, verbatim and twice unmet (`6988d3`): *"i still don't see the
+ * ingredients in the better ui that i has described — as a process line that
+ * merges into smoothly from the left with backward-s-shaped line."* It has been
+ * drawn as a perpendicular tick since ingredients existed; everything said about
+ * ingredients since session 118 was answered by making that tick openable,
+ * nameable and spread along the belly, and never by changing its shape.
+ *
+ * Two horizontal tangents and one cubic between them is exactly that S. The
+ * tangent at the JOIN is the load-bearing one: it is what makes the line *merge*
+ * into the strand rather than strike it, which is the whole difference between a
+ * tributary and a tick. The tangent at the far end matters for the same reason
+ * one step lower — an opened ingredient's fan hangs on a level base there, and a
+ * curve arriving at an angle would read as a corner in the middle of that line.
+ *
+ * `lead` is how far LEFT of the join the line starts. Its bound is the caller's
+ * (`placeFeeds` keeps it inside the slice the stub already owns) so this stays
+ * pure arithmetic with no opinion about layout — the same division of labour as
+ * every other function in this file.
+ */
+export function tributaryPath(
+  join: { x: number; y: number },
+  lead: number,
+  rise: number,
+  outward: 1 | -1,
+): string {
+  const x0 = join.x - lead;
+  const y0 = join.y + outward * rise;
+  // Half the lead on each side: the control points sit level with their own
+  // endpoints, so both tangents are horizontal and the curve is symmetric about
+  // its midpoint. A shorter handle makes it a corner, a longer one makes it
+  // overshoot the join.
+  const k = lead / 2;
+  return `M${n(x0)} ${n(y0)} C${n(x0 + k)} ${n(y0)}, ${n(join.x - k)} ${n(join.y)}, ${n(join.x)} ${n(join.y)}`;
+}
