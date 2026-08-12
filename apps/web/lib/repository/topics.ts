@@ -471,6 +471,14 @@ const FAMILY_RULES: readonly TopicRule[] = [
   { family: "Markov-chain sampling", topics: ["algorithm-reference", "optimization"] },
   { family: "Quantum sampling algorithm", topics: ["algorithm-reference", "state-preparation"] },
   { family: "Optimization · decoded interferometry", topics: ["algorithm-reference", "optimization"] },
+  // Classiq-parity intake (entries-classiq-parity.ts). Three more families, same rule as
+  // above: new family strings over existing topic ids, so the facet vocabulary and its
+  // tests do not move. Benchmarking protocols and image processing are subject areas the
+  // Zoo has no section for at all — they are work, not results, which is the whole reason
+  // the Classiq half of the parity question needed its own index.
+  { family: "Quantum benchmarking protocol", topics: ["algorithm-reference", "stabilizer"] },
+  { family: "Quantum image processing", topics: ["algorithm-reference", "machine-learning"] },
+  { family: "Optimization · Ising encoding", topics: ["algorithm-reference", "optimization"] },
 ];
 
 /**
