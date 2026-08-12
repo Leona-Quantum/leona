@@ -652,6 +652,63 @@ if (!ENTRY_FILE) {
   }
 }
 
+// --- the folder navigation reaches every record --------------------------------
+//
+// `apps/web/lib/repository/folder-tree.ts` builds the category → family → topic tree
+// the owner picked (EshMis/ai-ops#15). Its rules are unit-tested against fixtures in
+// `apps/web/lib/repository-folder-tree.test.ts`; this runs the same function over the
+// real corpus, which the test cannot import.
+//
+// **The failure it exists for is silent.** Two family names that slug to one segment
+// produce a folder that renders, counts plausibly, and is missing a family; a record
+// with no family or no vocabulary topic is in the browse list's 323 and in no folder
+// at all. Both are refusals returned by the builder rather than exceptions, so unless
+// something asserts on them nothing ever looks.
+if (!ENTRY_FILE) {
+  const treeOut = mkdtempSync(join(tmpdir(), "repo-folders-"));
+  const treeFile = join(treeOut, "folder-tree.mjs");
+  let treeMod;
+  try {
+    await esbuild.build({
+      entryPoints: [join(root, "apps/web/lib/repository/folder-tree.ts")],
+      bundle: true,
+      format: "esm",
+      platform: "neutral",
+      outfile: treeFile,
+      logLevel: "silent",
+    });
+    treeMod = await import(pathToFileURL(treeFile).href);
+  } finally {
+    rmSync(treeOut, { recursive: true, force: true });
+  }
+
+  const tree = treeMod.buildFolderTree(entries);
+  for (const refusal of tree.refused) {
+    errors.push(
+      refusal.kind === "slug-collision"
+        ? `folder tree: "${refusal.detail[0]}" and "${refusal.detail[1]}" both slug to `
+          + `"${refusal.subject}" under ${refusal.category}, so one of them would have no folder. `
+          + "Rename one family, or give folder-tree.ts a disambiguation rule."
+        : `folder tree: ${refusal.subject} (${refusal.category}) — ${refusal.detail[0]}`,
+    );
+  }
+  // The denominator, and the reason it is asserted rather than only printed: a tree
+  // built from an empty list has no refusals either.
+  if (tree.placed !== entries.length) {
+    errors.push(
+      `folder tree: ${tree.placed} of ${entries.length} records are reachable by browsing `
+        + `(${tree.unreachable.slice(0, 5).join(", ")}${tree.unreachable.length > 5 ? ", …" : ""})`,
+    );
+  }
+  if (!QUIET) {
+    const families = tree.root.reduce((total, node) => total + node.children.length, 0);
+    console.log(
+      `\nfolder tree: ${tree.placed}/${entries.length} records reachable · ${tree.root.length} categories · `
+        + `${families} families · ${tree.root.map((n) => `${n.segment}:${n.children.length}`).join(", ")}`,
+    );
+  }
+}
+
 if (entries.length < MIN_ENTRIES) {
   errors.push(`catalog has ${entries.length} entries, below required minimum ${MIN_ENTRIES}`);
 }
