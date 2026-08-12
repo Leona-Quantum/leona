@@ -60,6 +60,7 @@ import {
 import { convergeNotes } from "../lib/repository/converge-notes";
 import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
+import { cardFor } from "../lib/repository/card-content";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
 import { paperTraces } from "../lib/repository/paper-traces";
 import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
@@ -1499,14 +1500,64 @@ export function LayerCensusPanel({
  * emptiness is a finding. Here an absence is the default for 279 of 283 records
  * and saying so on every one of them would be noise, not honesty.
  */
+/**
+ * One node's contract, drawn on the record page.
+ *
+ * Absent rather than empty when the node states none: a record page that
+ * printed "Takes —" would be asserting the map had looked and found nothing,
+ * when the truth is that nobody has written it yet.
+ */
+function EntryNodeContract({
+  graph,
+  corpus,
+  locale,
+  nodeId,
+  copy,
+}: {
+  graph: LayerGraph;
+  corpus: readonly LayerCorpusEntry[];
+  locale: PublicLocale;
+  nodeId: string;
+  copy: ReturnType<typeof copyFor>;
+}) {
+  const card = cardFor(
+    { graph, vocabulary: STATE_VOCABULARY, corpus, locale, register: PAPER_REGISTER },
+    nodeId,
+  );
+  if (card === null || !card.contract.held) return null;
+  return (
+    <p className="mj-layers-item-contract">
+      <span className="mj-layers-item-contract-label">{copy.takes}</span>{" "}
+      <MathText source={card.contract.value.takes} />{" "}
+      <span className="mj-layers-item-contract-label">{copy.returns}</span>{" "}
+      <MathText source={card.contract.value.returns} />
+    </p>
+  );
+}
+
+/**
+ * Where a record sits on the map — and, since W23, what the map KNOWS about it.
+ *
+ * Ruling `27267f`: a method card and its repository record are one subject. This
+ * is the record-page half of that. It used to be a bare list of links, so a
+ * reader on `/repository/<slug>` could see that the graph named their record and
+ * had to follow the link to find out anything it said.
+ *
+ * The **contract** is read through `cardFor`, the same composer the map card
+ * uses, rather than off the node here — one subject, one source per field
+ * (`W23-record-join.md` §4: the contract is node-authored). A second reader
+ * would be a second thing to keep in step.
+ */
 export function EntryLayerLinks({
   graph,
   slug,
   locale,
+  corpus = [],
 }: {
   graph: LayerGraph;
   slug: string;
   locale: PublicLocale;
+  corpus?: readonly LayerCorpusEntry[];
 }) {
   const copy = copyFor(locale);
   const nodes = graph.nodes.filter((node) => (node.entries ?? []).includes(slug));
@@ -1522,6 +1573,13 @@ export function EntryLayerLinks({
             <span className="mj-layers-item-kind">
               {isCapability(node) ? copy.kindCapability : copy.kindMethod}
             </span>
+            <EntryNodeContract
+              graph={graph}
+              corpus={corpus}
+              locale={locale}
+              nodeId={node.id}
+              copy={copy}
+            />
           </li>
         ))}
       </ul>

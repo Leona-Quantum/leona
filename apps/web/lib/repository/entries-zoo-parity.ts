@@ -1160,6 +1160,378 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     ],
     relatedSlugs: ["grover-unstructured-search", "amplitude-amplification", "qaoa-maxcut-ring"],
   },
+  {
+    slug: "graph-property-testing",
+    title: "Property testing of bounded-degree graphs in the adjacency list model",
+    titleJa: "隣接リストモデルにおける次数有界グラフの性質検査",
+    family: "Quantum query algorithm",
+    zooName: "Graph Properties in the Adjacency List Model",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given only an oracle that, for a vertex of an N-vertex graph of degree d together with an index j in {1, 2, ..., d}, returns that vertex's j-th neighbor or null when the vertex has degree less than d, decide in as few queries as possible whether the graph is bipartite or far from bipartite — far meaning that a constant fraction of the edges would have to be removed to achieve bipartiteness — and, in the same model, whether the graph is an expander or far from being one.",
+    problemJa:
+      "N 頂点で次数 d のグラフについて、頂点のラベルと j ∈ {1, 2, ..., d} を与えるとその頂点の j 番目の隣接頂点を返し、次数が d に満たないときは null を返すオラクルだけが与えられたとき、そのグラフが二部グラフであるか、それとも二部グラフにするには辺の一定割合を取り除かねばならないという意味で二部性から遠いかを、できるだけ少ないクエリ数で判定し、同じモデルのもとでエキスパンダーであるかエキスパンダーから遠いかも同様に判定する問題です。",
+    idea:
+      "Ambainis, Childs and Liu treat the testing of bipartiteness and of expansion for bounded-degree graphs. Their abstract credits the construction to a combination of classical property testing techniques due to Goldreich and Ron, derandomization, and the quantum algorithm for element distinctness, and the Zoo likewise names element distinctness as the key quantum algorithmic tool. For expansion testing the paper also proves a quantum query lower bound, obtained by the polynomial method with algebraic techniques and combinatorial analysis that the abstract calls novel and describes as accommodating the graph structure, and it presents that bound as ruling out the possibility of an exponential quantum speedup. The Zoo sets this beside other results in the same adjacency list model — query complexities for a minimal spanning tree, for connectivity in the undirected and directed cases and for the lowest weight path from a given source on a weighted graph, and algorithms for st-connectivity, bipartiteness and forest testing that run in Õ(N√d) time using only logarithmically many qubits — all of which rest on papers outside this record.",
+    ideaJa:
+      "Ambainis、Childs、Liu は、次数有界グラフの二部性とエキスパンダー性を検査する量子アルゴリズムを扱っています。要旨によれば、この構成は Goldreich と Ron による古典的な性質検査の技法、脱乱択化、そして要素相異性問題に対する量子アルゴリズムを組み合わせたものであり、Zoo も要素相異性問題のアルゴリズムを中核的な量子的道具として挙げています。エキスパンダー性の検査については量子クエリの下界も証明されており、要旨はこれを多項式法によるものとし、グラフの構造を扱うために新しい代数的技法と組合せ論的解析を用いたと述べたうえで、この下界が指数関数的な量子高速化の可能性を排除すると位置づけています。Zoo はこの結果を、同じ隣接リストモデルにおける別の結果群と並べて示しています。すなわち、最小全域木、無向および有向の連結性、重み付きグラフ上のある始点からの最小重み経路に対するクエリ計算量と、st 連結性・二部性・森であることの判定を Õ(N√d) 時間かつ対数個の量子ビットのみで行うアルゴリズムであり、いずれも本記録の対象外の論文に基づきます。",
+    complexity:
+      "Õ(N^(1/3)) quantum complexity, in the Zoo's words, for deciding bipartiteness on an N-vertex bounded-degree graph promised to be either bipartite or far from bipartite, and Õ(N^(1/3)) together with an Ω̃(N^(1/4)) quantum lower bound, the two not meeting, for distinguishing expanders from graphs far from being expanders, against a classical Θ̃(√N); the primary paper states the same upper bound as time O(N^(1/3)) for both problems, its quantum lower bound as Ω(N^(1/4)) and the classical side as an Ω(√N) lower bound holding for both problems, all without tildes. The Zoo adds, from papers outside this record, Θ(√(NM)) quantum query complexity for finding a minimal spanning tree, Θ(N) for deciding connectivity in the undirected case and Θ̃(√(NM)) in the directed case, Θ̃(√(NM)) for computing the lowest weight path from a given source to all other vertices on a weighted graph, and Õ(N√d) running time for st-connectivity, bipartiteness and forest testing using only logarithmically many qubits, where N is the number of vertices, M the number of edges and d the degree.",
+    complexityBasis:
+      'abstract of arXiv:1012.3174, which writes its bounds in plain text without tildes: "We give quantum algorithms that solve these problems in time O(N^(1/3)), beating the Omega(sqrt(N)) classical lower bound", and "For testing expansion, we also prove an Omega(N^(1/4)) quantum query lower bound, thus ruling out the possibility of an exponential quantum speedup." Quantum Algorithm Zoo entry "Graph Properties in the Adjacency List Model", with LaTeX rendered into Unicode and widetilde written as a tilde over the symbol (Õ, Ω̃, Θ̃): "Suppose we are given the promise that G is either bipartite or is far from bipartite in the sense that a constant fraction of the edges would need to be removed to achieve bipartiteness", "the quantum complexity of deciding bipartiteness is Õ(N^(1/3))", "distinguishing expander graphs from graphs that are far from being expanders has quantum complexity Õ(N^(1/3)) and Ω̃(N^(1/4)), whereas the classical complexity is Θ̃(√N)", "finding a minimal spanning tree has quantum query complexity Θ(√(NM)), deciding graph connectivity has quantum query complexity Θ(N) in the undirected case, and Θ̃(√(NM)) in the directed case, and computing the lowest weight path from a given source to all other vertices on a weighted graph has quantum query complexity Θ̃(√(NM))", and "quantum algorithms are given for st-connectivity, deciding bipartiteness, and deciding whether a graph is a forest, which run in Õ(N √d) time and use only logarithmically many qubits". Neither source states a gate count or a constant factor.',
+    caveat:
+      "This is a literature record: no oracle was instantiated, no circuit was compiled, simulated or run, and no graph was tested here. The bipartiteness and expansion bounds belong to a property-testing setting, so they hold only under the promise the Zoo states — the graph either has the property or is far from having it, far from bipartite meaning that a constant fraction of the edges would have to be removed — and they say nothing about deciding bipartiteness or expansion on an arbitrary graph. The input model carries as much of the claim as the exponent does: every figure here is stated for the adjacency list model on a graph of bounded degree d, and this record says nothing about how the same properties behave in any other input model. Every figure above is quoted in its source's own words: the Zoo says quantum complexity for the bipartiteness and expansion figures and quantum query complexity for the spanning tree, connectivity and lowest weight path figures, the primary paper says time, and the Õ(N√d) figure is a running time. Gate counts, the cost of realizing the neighbor oracle, and the constant and logarithmic factors hidden by O(·) and by the tildes all sit outside this record; the only qubit statement anywhere here is the Zoo's own, for the st-connectivity, bipartiteness and forest algorithms. Two forms of the same results are quoted rather than reconciled: the abstract writes time O(N^(1/3)), a quantum lower bound Ω(N^(1/4)) and a classical Ω(√N) with no tilde, while the Zoo writes Õ(N^(1/3)), Ω̃(N^(1/4)) and Θ̃(√N). The paper presents its lower bound as ruling out an exponential quantum speedup for expansion testing; it does not close the gap to the upper bound, so nothing here says Õ(N^(1/3)) is optimal, and no quantum lower bound at all is recorded for bipartiteness — the Ω(√N) the paper states for both problems is a classical one. The classical side is quoted from the two sources and not re-derived. The remaining results in the same Zoo entry — the minimal spanning tree, connectivity and lowest weight path complexities, and the Õ(N√d)-time st-connectivity, bipartiteness and forest algorithms with logarithmically many qubits — rest on papers the Zoo cites and this record does not read.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、オラクルを具体化したことも、回路をコンパイル・シミュレーション・実行したこともなく、実際にグラフを検査したわけでもありません。二部性とエキスパンダー性についての評価は性質検査の枠組みにおける主張であり、Zoo が述べる約束、すなわちグラフがその性質を持つか、あるいはそこから遠いか（二部性から遠いとは、二部グラフにするために辺の一定割合を取り除く必要があることを指します）のいずれかであるという前提のもとでのみ成り立ち、任意のグラフに対する二部性やエキスパンダー性の判定については何も述べていません。入力モデルは指数と同じだけ主張を支えています。ここに挙げた数値はいずれも、次数有界のグラフに対する隣接リストモデルのもとで述べられたものであり、同じ性質が他の入力モデルでどうなるかについて本記録は何も述べていません。上記の数値はいずれも出典の言葉のまま引いたものです。Zoo は二部性とエキスパンダー性については quantum complexity、最小全域木・連結性・最小重み経路については quantum query complexity と書き、主論文は time と書いており、Õ(N√d) は実行時間です。ゲート数、隣接頂点オラクルを実現するコスト、O(·) やチルダに隠れる定数因子と対数因子はいずれも対象外です。量子ビット数に触れているのは、st 連結性・二部性・森の判定についての Zoo 自身の記述だけです。同じ結果の二通りの書き方をそのまま併記しており、整合させてはいません。要旨はチルダなしで time O(N^(1/3))、量子下界 Ω(N^(1/4))、古典下界 Ω(√N) と書き、Zoo は Õ(N^(1/3))、Ω̃(N^(1/4))、Θ̃(√N) と書いています。論文はこの下界を、エキスパンダー性の検査について指数関数的な量子高速化の可能性を排除するものと位置づけていますが、上界との差を埋めるものではないため、Õ(N^(1/3)) が最適であるとは本記録では述べていません。また、二部性については量子の下界を記録していません。論文が両方の問題について挙げる Ω(√N) は古典の下界です。古典側の数値も二つの出典からの引用であり、導出し直したものではありません。同じ Zoo 項目に含まれる最小全域木・連結性・最小重み経路の計算量、および Õ(N√d) 時間で対数個の量子ビットのみを用いる st 連結性・二部性・森の判定は、いずれも Zoo が引用する本記録の対象外の論文に基づきます。",
+    tags: ["property testing", "adjacency list", "bipartiteness", "expansion", "query complexity"],
+    source: {
+      id: "arxiv:1012.3174",
+      title: "Quantum property testing for bounded-degree graphs",
+      authors: "Andris Ambainis, Andrew M. Childs, Yi-Kai Liu",
+      year: "2010",
+      url: "https://arxiv.org/abs/1012.3174",
+    },
+    literature: [
+      {
+        title: "Quantum property testing for bounded-degree graphs",
+        authors: "Andris Ambainis, Andrew M. Childs, Yi-Kai Liu",
+        year: "2010",
+        url: "https://arxiv.org/abs/1012.3174",
+        relevance:
+          "Primary source for the bipartiteness and expansion figures in this record, and for those only. It gives quantum algorithms for testing bipartiteness and expansion of bounded-degree graphs in time O(N^(1/3)) against an Ω(√N) classical lower bound, proves an Ω(N^(1/4)) quantum query lower bound for testing expansion, and credits the algorithms to classical property testing techniques due to Goldreich and Ron, derandomization, and the quantum algorithm for element distinctness. Consult it for the promise each test assumes, for the degree bound, and for how the polynomial-method lower bound is set up, none of which the abstract spells out.",
+        relevanceJa:
+          "本記録に含まれる数値のうち、二部性とエキスパンダー性に関するものについてのみ一次資料にあたります。次数有界グラフの二部性とエキスパンダー性の検査を time O(N^(1/3)) で行う量子アルゴリズムを、古典の下界 Ω(√N) と対比して与え、エキスパンダー性の検査については量子クエリ下界 Ω(N^(1/4)) を証明し、アルゴリズムの由来を Goldreich と Ron による古典的な性質検査の技法、脱乱択化、要素相異性問題に対する量子アルゴリズムに帰しています。各検査が前提とする約束、次数の上限、多項式法による下界の設定は要旨に明示されていないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["element-distinctness", "graph-properties-adjacency-matrix", "quantum-walk-line"],
+  },
+  {
+    slug: "radial-function-center",
+    title: "Finding the center of a radial function with the curvelet transform",
+    titleJa: "カーブレット変換による球対称関数の中心の探索",
+    family: "Quantum query algorithm",
+    zooName: "Center of Radial Function",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given oracle access to a spherically symmetric function f from R^d to an arbitrary set S, locate its center of symmetry to a fixed precision using as few queries as possible.",
+    problemJa:
+      "R^d から任意の集合 S への球対称な関数 f にオラクル経由でアクセスできるとき、その対称中心を、あらかじめ固定した精度で、できるだけ少ないクエリ数で求める問題です。",
+    idea:
+      "Liu takes up the curvelet transform, a directional wavelet transform over R^n used to analyze functions that have singularities along smooth surfaces, and gives an efficient implementation of a quantum curvelet transform. Two applications rest on that implementation: a single-shot measurement procedure that approximately finds the center of a ball in R^n from a quantum-sample over the ball, and — the algorithm this record covers — a quantum algorithm for finding the center of a radial function over R^n from oracle access to the function. The Zoo records the condition under which the second one applies, namely that f fluctuates on sufficiently small scales, for example when the level sets of f are sufficiently thin spherical shells. What the paper proves are bounds on the distribution of probability mass for the continuous curvelet transform, offered as support for its own conjecture and showing that the algorithms work in an idealized continuous model.",
+    ideaJa:
+      "Liu は、滑らかな曲面上に特異性を持つ関数を解析するために用いられる R^n 上の方向性ウェーブレット変換であるカーブレット変換を取り上げ、その量子版の効率的な実装を与えています。この実装の上に二つの応用が置かれており、一つは球上の量子サンプルから R^n における球の中心を近似的に求める単発測定の手続き、もう一つが本項目の対象、すなわち関数へのオラクルアクセスから R^n 上の球対称関数の中心を求める量子アルゴリズムです。Zoo は後者が働く条件を記しており、f が十分小さいスケールで変動すること、たとえば f の等位集合が十分に薄い球殻である場合を挙げています。論文が証明しているのは連続カーブレット変換における確率質量の分布に関する評価であり、これは論文自身の予想を支える根拠として示され、上記のアルゴリズムが理想化された連続モデルで機能することを示すものです。",
+    complexity:
+      "A constant number of quantum queries independent of the dimension, written O(1) oracle queries, against a classical lower bound of Ω(d) queries, the Zoo naming that dimension d where the paper names it n. The Zoo states the constant-query result flatly, but the paper puts the count forward as a conjecture rather than a theorem: it conjectures that the algorithms succeed with constant probability using one quantum-sample and O(1) oracle queries respectively, independent of the dimension n. What the paper reports as proved are rigorous bounds on the distribution of probability mass for the continuous curvelet transform, which show that the algorithms work in an idealized continuous model. The precision to which the center is located is fixed for simplicity in the Zoo statement, and neither source states a gate count.",
+    complexityBasis:
+      'abstract of arXiv:0810.4968: "I conjecture that these algorithms succeed with constant probability, using one quantum-sample and O(1) oracle queries, respectively, independent of the dimension n -- this can be interpreted as a quantum speed-up", and, for what is actually established, "To support this conjecture, I prove rigorous bounds on the distribution of probability mass for the continuous curvelet transform. This shows that the above algorithms work in an idealized \'continuous\' model." The abstract encloses continuous in double quotation marks; they appear here as single marks so as not to close the quotation around them. Quantum Algorithm Zoo entry "Center of Radial Function", LaTeX rendered into Unicode: "We wish to locate the center of symmetry, up to some precision. (For simplicity, let the precision be fixed.)", "Liu gives a quantum algorithm, based on a curvelet transform, that solves this problem using a constant number of quantum queries independent of d. This constitutes a polynomial speedup over the classical lower bound, which is Ω(d) queries", together with "The quantum algorithm is shown to work in an idealized continuous model, and nonrigorous arguments suggest that discretization effects should be small." Neither source states a gate count, a circuit depth or a constant factor, and the two name the dimension differently, n in the paper and d in the Zoo.',
+    caveat:
+      "This is a literature record: no circuit was constructed, compiled, simulated or run, no curvelet transform was implemented here, and no center was located. The headline cost is a conjecture rather than a theorem — the paper conjectures that its algorithms succeed with constant probability using O(1) oracle queries independent of the dimension, and what it proves is a set of bounds on the distribution of probability mass for the continuous curvelet transform — so this record establishes only that the paper states the constant-query claim, not the claim itself. The Zoo carries the same result without that hedge, saying outright that the algorithm solves the problem in a constant number of queries; the hedge is the paper's own, and this record keeps it. That proof covers an idealized continuous model; the Zoo says nonrigorous arguments suggest that discretization effects should be small, which is an expectation and not a result, and nothing here bounds the cost of a discretized version. The figure is a query count, so gate counts, qubit counts, circuit depth, the cost of realizing the oracle for a given f, and the cost of the quantum curvelet transform itself, which the abstract calls efficient without quoting a figure, all fall outside this record. The claim is conditional on the function: the Zoo states that the algorithm works when f fluctuates on sufficiently small scales, for instance when its level sets are sufficiently thin spherical shells, so a smooth or slowly varying radial function is not covered. Precision is treated as fixed for simplicity, so nothing here says how the cost grows as the center is demanded more precisely, and neither source gives a success probability beyond calling it constant. The classical Ω(d) lower bound is the Zoo's figure, quoted and not re-derived. The single-shot ball-center procedure in the same paper is a separate application that consumes a quantum-sample rather than oracle queries, and it is not the algorithm this entry covers.",
+    caveatJa:
+      "本項目は文献に基づく記録であり、回路の構成・コンパイル・シミュレーション・実行はいずれも行っておらず、カーブレット変換を実装したことも、実際に中心を求めたこともありません。本項目が掲げるコストの主張は定理ではなく予想です。論文は、次元によらず O(1) 回のオラクルクエリで定数の確率で成功すると予想する一方、実際に証明しているのは連続カーブレット変換における確率質量の分布に関する評価です。したがって本記録が示せるのは、論文がこの定数クエリの主張を述べているという事実までであり、主張そのものではありません。Zoo は同じ結果をこの留保なしに、定数回のクエリで問題を解くと言い切って記していますが、留保は論文自身のものであり、本記録はそれに従います。証明の対象は理想化された連続モデルです。Zoo は離散化の影響が小さいことを示唆する厳密でない議論があると述べていますが、これは見込みであって結果ではなく、離散化した場合のコストについて本記録は何も保証していません。示されている数値はクエリ数であるため、ゲート数、量子ビット数、回路深さ、与えられた f に対するオラクルの実現コスト、および要旨が efficient と述べるだけで具体的な数値を挙げていない量子カーブレット変換自体のコストは、いずれも対象外です。主張は関数の性質に依存します。Zoo は、f が十分小さいスケールで変動する場合、たとえば等位集合が十分に薄い球殻である場合にアルゴリズムが働くと述べており、滑らかで緩やかにしか変化しない球対称関数は対象に含まれません。精度は簡単のため固定した扱いであり、より高い精度を要求したときにコストがどう増えるかは本記録では述べておらず、成功確率についても定数であるという以上の記述は両出典にありません。古典側の下界 Ω(d) は Zoo の記述の引用であり、導出し直したものではありません。同じ論文にあるもう一つの応用、すなわち球の中心を求める単発測定の手続きは、オラクルクエリではなく量子サンプルを消費するものであり、本項目が扱うアルゴリズムではありません。",
+    tags: ["curvelet transform", "radial function", "center finding", "query complexity", "oracle"],
+    source: {
+      id: "arxiv:0810.4968",
+      title: "Quantum Algorithms Using the Curvelet Transform",
+      authors: "Yi-Kai Liu",
+      year: "2008",
+      url: "https://arxiv.org/abs/0810.4968",
+    },
+    literature: [
+      {
+        title: "Quantum Algorithms Using the Curvelet Transform",
+        authors: "Yi-Kai Liu",
+        year: "2008",
+        url: "https://arxiv.org/abs/0810.4968",
+        relevance:
+          "Primary source. It gives an efficient implementation of a quantum curvelet transform — the curvelet transform being a directional wavelet transform over R^n for functions with singularities along smooth surfaces, which the abstract attributes to Candes and Donoho, 2002 — and applies it both to finding the center of a ball from a quantum-sample and to finding the center of a radial function from oracle access. The O(1)-query cost is stated there as a conjecture supported by bounds on the distribution of probability mass for the continuous curvelet transform, so consult the paper for what the continuous model assumes and for how far the rigorous bounds reach.",
+        relevanceJa:
+          "一次資料です。滑らかな曲面上に特異性を持つ関数を扱う R^n 上の方向性ウェーブレット変換であるカーブレット変換について、量子版の効率的な実装を与え（要旨はこの変換を Candes と Donoho の 2002 年の仕事に帰しています）、量子サンプルから球の中心を求める場合と、オラクルアクセスから球対称関数の中心を求める場合の双方に適用しています。O(1) クエリというコストは、連続カーブレット変換における確率質量の分布の評価に支えられた予想として述べられているため、連続モデルが何を前提とし、厳密な評価がどこまで及ぶのかは原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["hidden-nonlinear-structures", "hidden-shift-problem", "quantum-fourier-transform"],
+  },
+  {
+    slug: "group-order-and-membership",
+    title: "Group order and membership for black-box groups",
+    titleJa: "ブラックボックス群の位数計算と所属判定",
+    family: "Quantum query algorithm",
+    zooName: "Group Order and Membership",
+    zooSection: "Oracular Algorithms",
+    speedup: "Superpolynomial",
+    problem:
+      "Given a finite group G presented only through an oracle that takes an ordered pair of element labels and returns the label of their product, compute the order of G from the labels of a set of generators, and decide whether a given bitstring is the label of a group element — in the constructive form of the membership question, exhibiting that element as a product of the generators.",
+    problemJa:
+      "有限群 G が、2 元のラベルの順序対を受け取ってその積のラベルを返すオラクルとしてのみ与えられているとき、生成元のラベルの一覧から G の位数を求め、また与えられたビット列が群の元のラベルであるかどうかを判定する問題です。所属判定の構成的な形では、肯定の場合にその元を生成元の積として書き下すことまでが求められます。",
+    idea:
+      "The Zoo records that for Abelian groups these tasks reduce to the Abelian hidden subgroup problem, which is how Mosca solves them with polylog(|G|) queries. Watrous extends the reach to solvable groups: the paper gives a polynomial-time quantum algorithm for computing orders of solvable groups, and its abstract states that testing membership in a solvable group, testing equality of two subgroups of a given solvable group and testing normality of a subgroup all reduce to that order computation, so each admits a polynomial-time quantum algorithm as well. The abstract describes an important byproduct: the algorithm is able to produce a pure quantum state that is uniform over the elements in any chosen subgroup of a solvable group, which it says yields a natural way to apply existing quantum algorithms to factor groups of solvable groups. The setting throughout is black-box groups, in which, the abstract states, none of these problems can be computed classically in polynomial time.",
+    ideaJa:
+      "Zoo は、可換群の場合これらの課題が可換な隠れ部分群問題に帰着され、Mosca がそれによって polylog(|G|) クエリで解いたと記しています。Watrous の論文は対象を可解群へ広げ、可解群の位数を計算する多項式時間の量子アルゴリズムを与えたうえで、可解群における所属判定、与えられた可解群の 2 つの部分群が等しいかどうかの判定、部分群が正規部分群であるかどうかの判定はいずれも位数計算に帰着するため、同じく多項式時間の量子アルゴリズムを持つと要旨で述べています。要旨は重要な副産物も挙げており、このアルゴリズムは可解群の任意の部分群の元の上で一様な純粋状態を生成でき、それによって可解群の剰余群に既存の量子アルゴリズムを適用する自然な方法が得られるとしています。前提となるのは一貫してブラックボックス群の設定であり、要旨は、この設定ではこれらの問題はいずれも古典的には多項式時間で計算できないと述べています。",
+    complexity:
+      "polylog(|G|) queries to compute the order and to decide membership when G is solvable, and likewise when G is Abelian, against a classical query cost that the Zoo says cannot be brought down to polylog(|G|) even for Abelian G. Watrous states the solvable case as a polynomial-time quantum algorithm for computing orders of solvable groups, and the abstract names no query count and no parameter that its polynomial time is measured in.",
+    complexityBasis:
+      'Quantum Algorithm Zoo entry "Group Order and Membership", quoted with the entry reference numerals omitted and the spacing inside | G | left as the Zoo prints it: "Classically, these problems cannot be solved using polylog(| G |) queries even if G is Abelian. For Abelian groups, quantum computers can solve these problems using polylog(| G |) queries by reduction to the Abelian hidden subgroup problem, as shown by Mosca", and "quantum computers can solve these problems using polylog(| G |) queries for any solvable group"; abstract of arXiv:quant-ph/0011023: "In this paper we give a polynomial-time quantum algorithm for computing orders of solvable groups" together with "Our algorithm works in the setting of black-box groups, wherein none of these problems can be computed classically in polynomial time." The polylog(|G|) figures are the Zoo entry\'s; the abstract states neither a query count nor the quantity its polynomial is in.',
+    caveat:
+      "This is a literature record: no group was represented, no group oracle was implemented, and no circuit was built, compiled, simulated or run; no order was computed and no membership question was decided here. The polylog(|G|) figures count queries to the group oracle in the black-box model, so they bound neither gate count nor circuit depth nor the cost of realizing the group oracle for a concrete G, and polylog leaves both the power of the logarithm and the constant in front of it unstated. The two sources measure different things — the Zoo counts queries, while the Watrous abstract claims polynomial time without naming the parameter — and this record does not equate them. The reach is Abelian groups, on Mosca's result as reported by the Zoo, and solvable groups, on Watrous; nothing here covers a general finite group, and Mosca's paper is cited through the Zoo rather than read for this record. The abstract names membership testing but not the constructive version, and the Zoo clause quoted above states its polylog(|G|) figure for these problems without listing them inside the quoted fragment, so no clause quoted here establishes on its own the cost of decomposing a given element into a product of generators. The classical side is the Zoo's and the abstract's own statement about the black-box setting, not a lower bound re-derived here. The Zoo's separate remark that for groups given as matrices over a finite field rather than oracularly the order finding and constructive membership problems can be solved in polynomial time using the quantum algorithms for discrete log and factoring concerns a different input model and rests on papers outside this record, as does the group isomorphism entry the Zoo points to next.",
+    caveatJa:
+      "本項目は文献に基づく記録です。群を具体的に表現したことも、群オラクルを実装したことも、回路を構成・コンパイル・シミュレーション・実行したこともなく、実際に位数を求めたり所属を判定したりしたわけでもありません。polylog(|G|) はブラックボックスモデルにおける群オラクルへのクエリ数であり、ゲート数も回路深さも、具体的な G について群オラクルを実現するコストも押さえるものではありません。また polylog は対数の次数も前に付く定数も明示していません。2 つの出典が測っているものは同一ではありません。Zoo はクエリ数を数える一方、Watrous の要旨は多項式時間と述べるだけでその変数を明示しておらず、本項目で両者を同一視してはいません。対象範囲は、Zoo が伝える Mosca の結果による可換群と、Watrous による可解群であり、一般の有限群については何も述べていません。Mosca の論文は Zoo を通じて引用したものであって、本記録のために読んだものではありません。要旨は所属判定に触れていますが構成的な版には触れておらず、上で引用した Zoo の文も polylog(|G|) を「これらの問題」について述べるだけで、その内訳は引用した範囲に含まれていません。したがって、与えられた元を生成元の積へ分解するコストは、ここに引用したどの文だけからも定まりません。古典側についても、ブラックボックス設定に関する Zoo と要旨自身の記述であり、本記録で導出し直した下界ではありません。オラクルではなく有限体上の行列として群が与えられる場合、位数計算と構成的な所属判定は離散対数と素因数分解の量子アルゴリズムによって多項式時間で解ける、という Zoo の別の記述は入力のモデルが異なり、本記録の対象外の論文に基づきます。Zoo が続けて参照する群同型問題の項目も同様です。",
+    tags: ["black-box group", "group order", "membership testing", "solvable groups", "hidden subgroup"],
+    source: {
+      id: "arxiv:quant-ph/0011023",
+      title: "Quantum algorithms for solvable groups",
+      authors: "John Watrous",
+      year: "2000",
+      url: "https://arxiv.org/abs/quant-ph/0011023",
+    },
+    literature: [
+      {
+        title: "Quantum algorithms for solvable groups",
+        authors: "John Watrous",
+        year: "2000",
+        url: "https://arxiv.org/abs/quant-ph/0011023",
+        relevance:
+          "Primary source: it gives the polynomial-time quantum algorithm for computing orders of solvable groups that this record rests on, states that membership testing, equality of subgroups and normality of a subgroup reduce to that order computation, works throughout in the black-box group setting where the abstract says none of these problems is classically polynomial-time, and reports the byproduct that the algorithm can produce a pure quantum state uniform over the elements of any chosen subgroup. Consult it for the black-box group model it assumes and for the quantity its polynomial time is measured in, which the abstract does not name.",
+        relevanceJa:
+          "一次資料です。本記録が依拠する、可解群の位数を計算する多項式時間の量子アルゴリズムを与え、所属判定、部分群の一致判定、部分群の正規性判定がいずれも位数計算に帰着すると述べています。議論は一貫してブラックボックス群の設定で行われ、要旨はこの設定でこれらの問題が古典的には多項式時間で解けないとしています。さらに、任意の部分群の元の上で一様な純粋状態を生成できるという副産物も報告しています。前提となるブラックボックス群のモデルと、多項式時間がどの量について測られているのかは、いずれも原論文で確認してください。後者は要旨に示されていません。",
+      },
+    ],
+    relatedSlugs: ["group-commutativity-testing", "discrete-logarithm", "shor-period-finding", "quantum-fourier-transform"],
+  },
+  {
+    slug: "distribution-property-testing",
+    title: "Testing properties of distributions given by sample oracles",
+    titleJa: "サンプルオラクルで与えられる分布の性質判定",
+    family: "Quantum query algorithm",
+    zooName: "Statistical Difference",
+    zooSection: "Oracular Algorithms",
+    speedup: "Polynomial",
+    problem:
+      "Given oracle access to two unknown probability distributions P and Q on an N-element set — in the Zoo's setup, black boxes A and B whose domain is the integers 1 through T and whose range is the integers 1 through N, with the distribution over outputs induced by choosing uniformly at random among allowed inputs — approximate the L1 distance between the two distributions to constant precision.",
+    problemJa:
+      "N 元集合上の 2 つの未知の確率分布 P と Q のサンプルオラクルへアクセスできるとき、その 2 つの分布の L1 距離を定数精度で近似する問題です。Zoo の設定では、定義域が 1 から T、値域が 1 から N のブラックボックス A と B が与えられ、許される入力の中から一様ランダムに選ぶことで出力の上に確率分布が定まります。",
+    idea:
+      "Bravyi, Harrow and Hassidim pose the question as one of sample complexity in property testing: given oracles generating samples from two unknown distributions P and Q on an N-element set, how many samples are needed to test whether the two are close or far from each other in the L1 norm. Their paper studies quantum algorithms for testing properties of distributions, and it shows that the L1 distance can be estimated with constant precision using approximately N^(1/2) queries in the quantum setting, where classical computers need Ω(N). The paper also describes quantum algorithms for testing Uniformity and Orthogonality, at query complexity O(N^(1/3)) against a classical query complexity the abstract says is known to be Ω(N^(1/2)). The Zoo names the main tool behind these results as the quantum counting algorithm, and it records that a further improved quantum algorithm for this task has since been obtained in a paper outside this record.",
+    ideaJa:
+      "Bravyi、Harrow、Hassidim は、この課題を性質判定におけるサンプル数の問題として立てています。すなわち、N 元集合上の 2 つの未知の分布 P と Q からサンプルを生成するオラクルが与えられたとき、両者が L1 ノルムで近いか遠いかを判定するには何個のサンプルが必要か、という問いです。論文は分布の性質判定に対する量子アルゴリズムを論じ、量子の設定では L1 距離をおよそ N^(1/2) クエリで定数精度で推定でき、古典計算機には Ω(N) クエリが必要であることを示しています。さらに、一様性と直交性を判定する量子アルゴリズムも記述しており、そのクエリ計算量は O(N^(1/3))、要旨によれば古典のクエリ計算量は Ω(N^(1/2)) と知られています。Zoo はこれらの結果を支える主要な道具が量子カウンティングのアルゴリズムであると述べ、またこの課題に対してより改良された量子アルゴリズムがその後得られていることも記していますが、その論文は本記録の対象外です。",
+    complexity:
+      "About N^(1/2) queries to estimate the L1 distance between P and Q with constant precision, where classical computers need Ω(N) queries; O(N^(1/3)) queries for testing Uniformity and Orthogonality, whose classical query complexity the abstract says is known to be Ω(N^(1/2)). The Zoo states the first figure as O(√N) and describes the classical requirement as scaling essentially linearly with N.",
+    complexityBasis:
+      'abstract of arXiv:0907.3920, with \\Omega rendered into Unicode as Ω: "It is shown that the L_1-distance between P and Q can be estimated with a constant precision using approximately N^{1/2} queries in the quantum settings, whereas classical computers need Ω(N) queries", and "We also describe quantum algorithms for testing Uniformity and Orthogonality with query complexity O(N^{1/3}). The classical query complexity of these problems is known to be Ω(N^{1/2})."; Quantum Algorithm Zoo entry "Statistical Difference", quoted in clauses that omit the entry reference numerals, with the inline-math delimiters \\( \\) stripped and \\sqrt{N} rendered into Unicode as √N: "Classically the number of necessary queries scales essentially linearly with N", "a quantum computer can achieve this using O(√N) queries", and "Approximate uniformity and orthogonality of probability distributions can also be decided on a quantum computer using O(N^{1/3}) queries."',
+    caveat:
+      "This is a literature record: no oracle was instantiated, no distribution was sampled, and no circuit was built, compiled, simulated or run; no L1 distance was estimated here. Every figure above counts queries to the sample oracles, so none of it bounds gate count, circuit depth, qubit count, or the cost of building A and B for concrete distributions. The abstract writes approximately N^(1/2) rather than a bound with a stated constant, and it attaches that figure to a constant precision only: no dependence on an accuracy parameter ε is quoted by either source, so nothing above bounds the cost of a sharper estimate. The O(N^(1/3)) figure belongs to the Uniformity and Orthogonality tests, which the Zoo states as deciding approximate uniformity and orthogonality, and not to the L1-distance estimate. The classical Ω(N) and Ω(N^(1/2)) figures are recorded as the abstract states them, and are not re-derived here; the Zoo puts the classical side without asymptotic notation, as the number of necessary queries scaling essentially linearly with N, and this record does not treat that phrasing and the abstract's Ω(N) as the same statement. The Zoo's parameter T, the domain size of the two black boxes, appears in neither bound, so the cost above is stated in the range size N alone. That the main tool is the quantum counting algorithm is the Zoo's attribution to a paper outside this record, as is the further improved quantum algorithm the Zoo says was later obtained for this task.",
+    caveatJa:
+      "本項目は文献に基づく記録です。オラクルを具体化したことも、分布からサンプリングしたことも、回路を構成・コンパイル・シミュレーション・実行したこともなく、実際に L1 距離を推定したわけでもありません。上記の数値はいずれもサンプルオラクルへのクエリ数であり、ゲート数、回路深さ、量子ビット数、具体的な分布に対して A と B を構築するコストのいずれについても上界を与えるものではありません。要旨は定数を明示した評価ではなく「およそ N^(1/2)」と書いており、しかもその数値は定数精度の場合に限られています。精度パラメータ ε への依存性はどちらの資料にも示されていないため、より高精度な推定のコストについては何も言えません。O(N^(1/3)) は一様性と直交性の判定に対する数値であり、Zoo の表現では近似的な一様性と直交性の判定に関するものであって、L1 距離の推定に対するものではありません。古典側の Ω(N) と Ω(N^(1/2)) は要旨の記述をそのまま記録したものであり、本記録で導出し直したものではありません。Zoo 自身は古典側を漸近記法ではなく、必要なクエリ数が N にほぼ比例して増える、という形で述べており、本記録ではこの表現と要旨の Ω(N) を同じ主張としては扱いません。ブラックボックスの定義域の大きさである Zoo のパラメータ T はどちらの評価にも現れないため、上記のコストは値域の大きさ N のみで表されています。主要な道具が量子カウンティングのアルゴリズムであるという点は Zoo が本記録の対象外の論文に帰した記述であり、この課題に対してより改良された量子アルゴリズムが後に得られたという記述も同様です。",
+    tags: ["distribution testing", "l1 distance", "property testing", "quantum counting", "query complexity"],
+    source: {
+      id: "arxiv:0907.3920",
+      title: "Quantum algorithms for testing properties of distributions",
+      authors: "Sergey Bravyi, Aram W. Harrow, Avinatan Hassidim",
+      year: "2009",
+      url: "https://arxiv.org/abs/0907.3920",
+    },
+    literature: [
+      {
+        title: "Quantum algorithms for testing properties of distributions",
+        authors: "Sergey Bravyi, Aram W. Harrow, Avinatan Hassidim",
+        year: "2009",
+        url: "https://arxiv.org/abs/0907.3920",
+        relevance:
+          "Primary source: it states the approximately N^(1/2)-query estimate of the L1 distance at constant precision against Ω(N) classically, and the O(N^(1/3))-query tests for Uniformity and Orthogonality against a classical Ω(N^(1/2)). Consult it for the sample-oracle model it assumes, for how the Uniformity and Orthogonality properties are defined, and for the constants and success probabilities the abstract leaves out of approximately N^(1/2).",
+        relevanceJa:
+          "一次資料です。定数精度での L1 距離の推定がおよそ N^(1/2) クエリで済み、古典計算機には Ω(N) クエリが必要であることを示し、また一様性と直交性の判定が O(N^(1/3)) クエリで済むこと、それらの問題の古典のクエリ計算量が Ω(N^(1/2)) と知られていることを述べています。前提となるサンプルオラクルのモデル、一様性と直交性の定義、そして「およそ N^(1/2)」という表現が省いている定数や成功確率については、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["quantum-counting", "amplitude-estimation", "element-distinctness"],
+  },
+  {
+    slug: "finite-ring-ideals",
+    title: "Ideals in a finite black-box ring",
+    titleJa: "有限ブラックボックス環におけるイデアル",
+    family: "Hidden-period / factoring",
+    zooName: "Finite Rings and Ideals",
+    zooSection: "Oracular Algorithms",
+    speedup: "Superpolynomial",
+    problem:
+      "Given black-box access to a finite ring R, not necessarily commutative, together with a list of generators for an ideal I in R, find an additive basis representation for I.",
+    problemJa:
+      "可換とは限らない有限環 R へのブラックボックスアクセスと、R のイデアル I の生成元の一覧が与えられたとき、I の加法的な基底表現を求める問題です。",
+    idea:
+      "The Zoo sets the problem in a model where black boxes implement the addition and multiplication operations on a finite ring R, not necessarily commutative, and records that under addition alone R forms a finite Abelian group (R,+), and that a quantum computer can find in poly(log |R|) time a set of additive generators whose cyclic subgroups decompose (R,+) as a direct product, the number of those generators being polylogarithmic in |R|; that decomposition is what allows efficient computation of a multiplication tensor for R. Wocjan, Jordan, Ahmadi and Brennan carry this from the ring to its ideals: given black-box access to R and a list of generators for an ideal I, their algorithm finds an additive basis representation for I, which the abstract describes as a generalization of a quantum algorithm of Arvind et al. that finds a basis representation for R itself. The paper then treats that basis as a primitive and derives from it procedures to test whether two ideals are identical, find their intersection and their quotient, prove whether a given ring element belongs to a given ideal, prove whether a given element is a unit and if so find its inverse, find the additive and multiplicative identities, compute the order of an ideal, solve linear equations over rings, decide whether an ideal is maximal, find annihilators, and test the injectivity and surjectivity of ring homomorphisms. The abstract states that these problems appear to be hard classically.",
+    ideaJa:
+      "Zoo は、可換とは限らない有限環 R の加法と乗法を実行するブラックボックスが与えられる設定を前提としたうえで、加法だけに着目すると R が有限可換群 (R,+) をなすこと、そして量子計算機が poly(log |R|) 時間で加法的な生成元の組を求められることを記しています。その生成元が生成する巡回群の直積として (R,+) が分解され、生成元の個数は |R| の多対数程度に収まります。この分解によって R の乗法テンソルを効率的に計算できます。Wocjan、Jordan、Ahmadi、Brennan は、これを環そのものからイデアルへ広げています。R へのブラックボックスアクセスと、イデアル I の生成元の一覧が与えられたとき、彼らのアルゴリズムは I の加法的な基底表現を求めます。要旨はこれを、R 自身の基底表現を求める Arvind らの量子アルゴリズムの一般化であると述べています。論文はこの基底表現をプリミティブとして扱い、そこから、2つのイデアルが一致するかの判定、共通部分と商の計算、与えられた環の元が与えられたイデアルに属することの証明、与えられた元が単元であるかの証明とその場合の逆元の計算、加法単位元と乗法単位元の決定、イデアルの位数の計算、環上の線形方程式の求解、イデアルが極大かどうかの判定、零化子の計算、環準同型の単射性・全射性の判定といった手続きを導いています。要旨は、これらの問題が古典的には困難と見られると述べています。",
+    complexity:
+      "poly(log |R|) time to find an additive basis representation for an ideal I in a finite ring R, the same order the Zoo states for finding additive generators of (R,+) itself, against known classical algorithms that the Zoo says scale as poly(|R|); neither source quotes an exponent, a constant factor or a gate count, and neither quotes a separate cost for any of the ideal problems derived from the basis.",
+    complexityBasis:
+      'abstract of arXiv:0908.0022: "We show how to find an additive basis representation for I in poly(log |R|) time." Quantum Algorithm Zoo entry "Finite Rings and Ideals", with the scraped spacing normalized and its LaTeX rendered into Unicode: "on a quantum computer one can find in poly(log |R|) time a set of additive generators {h₁, …, hₘ} ⊂ R" and, from the clause that follows in the same sentence, "m is polylogarithmic in |R|", and, for the classical side, "Known classical algorithms for these problems scale as poly(|R|)." Neither clause carries an exponent, a constant factor, a gate count or a qubit count.',
+    caveat:
+      "This is a literature record: no ring was represented, no addition or multiplication black box was implemented, and no circuit was built, compiled, simulated or run. poly(log |R|) is asymptotic in the cardinality of the ring, and with no exponent, constant factor, gate count or qubit count stated on either side, nothing here bounds the cost for a concrete ring; the cost of realizing the two black boxes, and of supplying the generating sets both sources assume as input, is outside this record. The long list of ideal problems is reported as a consequence of the basis primitive, and neither source quotes a separate cost for any one of them, so this record fixes no cost for deciding maximality, finding annihilators, or any other item on that list. The classical comparison is the Zoo's own statement that known classical algorithms for these problems scale as poly(|R|), and the abstract says only that these problems appear to be hard classically, so the superpolynomial separation is not a proven lower bound. The decomposition of (R,+), which the Zoo credits to a numbered reference rather than to any named author, the algorithm of Arvind et al. for R itself that the abstract says this result generalizes, and the Zoo's further result that a quantum computer can efficiently decide whether a given polynomial is identically zero on a given finite black-box ring all rest on papers outside this record.",
+    caveatJa:
+      "本項目は文献に基づく記録です。環を具体的に表現したことも、加法や乗法のブラックボックスを実装したことも、回路を構成・コンパイル・シミュレーション・実行したこともありません。poly(log |R|) は環の位数に関する漸近的な主張であり、量子側にも古典側にも指数・定数因子・ゲート数・量子ビット数の記載がないため、具体的な環に対するコストはここからは分かりません。2つのブラックボックスを実現するコストや、両資料が入力として前提している生成元の組を用意するコストも本項目の対象外です。イデアルに関する一連の問題は、この基底表現をプリミティブとした帰結として報告されているだけで、個々の問題についてのコストはいずれの資料にも示されていません。したがって、極大性の判定や零化子の計算をはじめ、その一覧のどの項目についてもコストは確定していません。古典側は、これらの問題について既知の古典アルゴリズムは poly(|R|) 程度であるという Zoo 自身の記述であり、要旨も「これらの問題は古典的には困難と見られる」と述べているにすぎないため、超多項式的な差は証明された下界ではありません。Zoo が著者名ではなく番号のみで参照している文献に帰している (R,+) の分解、要旨が本結果はその一般化であると述べる Arvind らの R 自身に対するアルゴリズム、および与えられた多項式が与えられた有限ブラックボックス環上で恒等的に零かどうかを量子計算機が効率的に判定できるという Zoo のもう一つの記述は、いずれも本記録の対象外の論文に基づきます。",
+    tags: ["finite rings", "ideals", "black-box ring", "abelian group", "additive basis"],
+    source: {
+      id: "arxiv:0908.0022",
+      title: "Efficient quantum processing of ideals in finite rings",
+      authors: "Pawel M. Wocjan, Stephen P. Jordan, Hamed Ahmadi, Joseph P. Brennan",
+      year: "2009",
+      url: "https://arxiv.org/abs/0908.0022",
+    },
+    literature: [
+      {
+        title: "Efficient quantum processing of ideals in finite rings",
+        authors: "Pawel M. Wocjan, Stephen P. Jordan, Hamed Ahmadi, Joseph P. Brennan",
+        year: "2009",
+        url: "https://arxiv.org/abs/0908.0022",
+        relevance:
+          "Primary source: it states the poly(log |R|) additive basis representation for an ideal I given by a list of generators, describes that result as generalizing the quantum algorithm of Arvind et al. for R itself, and presents the basis as a primitive from which the ideal problems listed above are derived. Consult it for the black-box ring model it assumes and for the cost of each derived problem, since the abstract quotes only the one bound.",
+        relevanceJa:
+          "一次資料です。生成元の一覧で与えられたイデアル I の加法的な基底表現が poly(log |R|) 時間で求まることを述べ、これを R 自身に対する Arvind らの量子アルゴリズムの一般化と位置づけたうえで、その基底表現をプリミティブとして上記のイデアル関連の問題を導いています。要旨に示された評価はこの1つだけなので、前提となるブラックボックス環のモデルや、導出された各問題のコストは原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["discrete-logarithm", "shor-period-finding", "hidden-nonlinear-structures", "quantum-fourier-transform"],
+  },
+  {
+    slug: "turaev-viro-invariants",
+    title: "Additive approximation of Turaev-Viro 3-manifold invariants",
+    titleJa: "Turaev-Viro 3次元多様体不変量の加法的近似",
+    family: "Topological invariants",
+    zooName: "Three-manifold Invariants",
+    zooSection: "Approximation and Simulation Algorithms",
+    speedup: "Superpolynomial",
+    problem:
+      "Given a compact, orientable three-manifold presented by a Heegaard splitting, compute a certain additive approximation to its Turaev-Viro invariant, the scalar topological invariant that takes the same value on homeomorphic manifolds.",
+    problemJa:
+      "Heegaard 分解によって与えられたコンパクトで向き付け可能な3次元多様体に対し、その Turaev-Viro 不変量のある加法的近似を求める問題です。Turaev-Viro 不変量は、同相な多様体には同じ値を与えるスカラーの位相不変量です。",
+    idea:
+      "The Turaev-Viro invariants are scalar topological invariants of compact, orientable 3-manifolds, and Alagic, Jordan, Koenig and Reichardt give a quantum algorithm that additively approximates them for a manifold presented by a Heegaard splitting. The paper describes the algorithm as motivated by the relationship between topological quantum computers and (2+1)-D topological quantum field theories. The abstract states that its accuracy is shown to be nontrivial in the following sense: the same algorithm, after efficient classical preprocessing, can solve any problem efficiently decidable by a quantum computer, so approximating certain Turaev-Viro invariants of manifolds presented by Heegaard splittings is a universal problem for quantum computation, which the Zoo records by saying that this approximation is BQP-complete. The Zoo sets the result beside an earlier polynomial-time quantum algorithm that additively approximates the Witten-Reshitikhin-Turaev (WRT) invariant of a manifold given by a surgery presentation, notes that squaring the WRT invariant yields the Turaev-Viro invariant, and states that whether the earlier approximation is BQP-complete is unknown.",
+    ideaJa:
+      "Turaev-Viro 不変量は、コンパクトで向き付け可能な3次元多様体に対するスカラーの位相不変量です。Alagic、Jordan、Koenig、Reichardt は、Heegaard 分解で与えられた多様体についてこの不変量を加法的に近似する量子アルゴリズムを与えています。論文は、このアルゴリズムが位相的量子計算機と (2+1) 次元の位相的量子場理論との関係に動機づけられたものであると述べています。要旨は、その精度が自明でないことが次の意味で示されていると述べています。すなわち、同じアルゴリズムは効率的な古典的前処理を経ることで、量子計算機で効率的に判定できる任意の問題を解くことができ、したがって Heegaard 分解で与えられた多様体の特定の Turaev-Viro 不変量を近似する問題は、量子計算に対して普遍的です。Zoo はこれを、この近似が BQP完全であるという形で記しています。Zoo はさらに、手術表示で与えられた多様体の Witten-Reshitikhin-Turaev (WRT) 不変量を加法的に近似する先行の多項式時間量子アルゴリズムを並べて挙げ、WRT 不変量を2乗すると Turaev-Viro 不変量が得られること、そして先行研究の近似が BQP完全かどうかは分かっていないことを述べています。",
+    complexity: "",
+    complexityBasis:
+      'Two sources were read and neither states a cost for this algorithm. The abstract of arXiv:1003.0923 quotes no running time, query count, gate count or qubit count: it says only "We give a quantum algorithm for additively approximating Turaev-Viro invariants of a manifold presented by a Heegaard splitting" and that "the same algorithm, after efficient classical preprocessing, can solve any problem efficiently decidable by a quantum computer". The Quantum Algorithm Zoo entry "Three-manifold Invariants" is likewise unquantified for this result: "a quantum computer can efficiently find a certain additive approximation to its Turaev-Viro invariant, and this approximation is BQP-complete [ 129 ]." The only clause in that entry naming a running time belongs to a different algorithm in a different reference — "Earlier, in [ 114 ], a polynomial-time quantum algorithm was given to additively approximate the Witten-Reshitikhin-Turaev (WRT) invariant of a manifold given by a surgery presentation" — and that paper is not part of this record, so its bound is not carried over here. BQP-completeness is a statement of hardness rather than a cost, so the field is left empty rather than filled from elsewhere.',
+    caveat:
+      "This is a literature record: no manifold was presented to any program, no circuit was built, compiled, simulated or run, and no invariant was computed here. Neither source states a running time, query count, gate count or qubit count for this algorithm, so nothing here bounds the cost for a manifold of any given size or genus; the word efficiently carries the claim in the Zoo entry and is left unquantified there. The approximation is additive and neither source quantifies its window, so this record does not establish that the output is usable as a multiplicative estimate of the invariant, and the abstract's claim is that the accuracy is nontrivial rather than that it meets any stated tolerance. BQP-completeness and universality are statements about which problems a quantum computer can solve, not evidence about any device, and they do not by themselves establish that a particular pair of non-homeomorphic 3-manifolds can be told apart. The result is stated for manifolds presented by a Heegaard splitting, and that presentation is part of the statement: the earlier WRT algorithm the Zoo cites takes a surgery presentation, the Zoo records the BQP-completeness of its approximation as unknown, and that algorithm, together with the suggested link between quantum computation and three-manifold invariants that the Zoo cites separately, rests on papers outside this record. The relation that squaring the WRT invariant yields the Turaev-Viro invariant is recorded as the Zoo states it and is not re-derived here.",
+    caveatJa:
+      "本項目は文献に基づく記録です。多様体を何らかのプログラムに与えたことも、回路を構成・コンパイル・シミュレーション・実行したこともなく、不変量を実際に計算したわけでもありません。いずれの資料も、このアルゴリズムについて実行時間・クエリ数・ゲート数・量子ビット数を示していないため、どの大きさや種数の多様体に対してもコストは確定していません。Zoo の記述では「効率的に」という語が主張の中心にありますが、その定量的な内容は示されていません。近似は加法的なものであり、その誤差幅はどちらの資料にも定量的に示されていないため、出力が不変量の乗法的な推定として使えることは本項目では保証しません。要旨の主張も、精度が自明でないというものであって、特定の許容誤差を満たすというものではありません。BQP完全性や普遍性は、量子計算機がどの問題を解けるかについての主張であって、実機についての証拠ではなく、同相でない特定の3次元多様体の組を区別できることを、それ自体で保証するものでもありません。結果は Heegaard 分解で与えられた多様体についての主張であり、この表示の与え方も主張の一部です。Zoo が挙げる先行の WRT アルゴリズムは手術表示を入力とし、その近似が BQP完全かどうかは分かっていないと Zoo は記しています。この先行アルゴリズムも、Zoo が別途言及する量子計算と3次元多様体不変量との関連の示唆も、本記録の対象外の論文に基づきます。WRT 不変量を2乗すると Turaev-Viro 不変量が得られるという関係は、Zoo の記述をそのまま記録したものであり、ここで導出し直したものではありません。",
+    tags: ["turaev-viro", "3-manifold", "topological invariants", "heegaard splitting", "bqp-complete"],
+    source: {
+      id: "arxiv:1003.0923",
+      title: "Approximating Turaev-Viro 3-manifold invariants is universal for quantum computation",
+      authors: "Gorjan Alagic, Stephen P. Jordan, Robert Koenig, Ben W. Reichardt",
+      year: "2010",
+      url: "https://arxiv.org/abs/1003.0923",
+    },
+    literature: [
+      {
+        title: "Approximating Turaev-Viro 3-manifold invariants is universal for quantum computation",
+        authors: "Gorjan Alagic, Stephen P. Jordan, Robert Koenig, Ben W. Reichardt",
+        year: "2010",
+        url: "https://arxiv.org/abs/1003.0923",
+        relevance:
+          "Primary source: it gives the quantum algorithm that additively approximates Turaev-Viro invariants of a manifold presented by a Heegaard splitting, motivates the construction by the relationship between topological quantum computers and (2+1)-D topological quantum field theories, and establishes that approximating certain such invariants is a universal problem for quantum computation, which it presents as a novel relation between distinguishing non-homeomorphic 3-manifolds and the power of a general quantum computer. Consult it for the accuracy the approximation achieves and for the classical preprocessing the universality claim assumes, since the abstract quantifies neither and states no running time.",
+        relevanceJa:
+          "一次資料です。Heegaard 分解で与えられた多様体の Turaev-Viro 不変量を加法的に近似する量子アルゴリズムを与え、その構成を位相的量子計算機と (2+1) 次元の位相的量子場理論との関係から動機づけたうえで、特定の不変量の近似が量子計算に対して普遍的な問題であることを示しています。論文はこれを、同相でない3次元多様体を区別する課題と一般の量子計算機の能力とを結ぶ新しい関係として提示しています。近似が達成する精度も、普遍性の主張が前提とする古典的前処理も要旨には定量的に示されておらず、実行時間の記載もないため、いずれも原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["jones-polynomial-approximation", "amplitude-estimation", "hamiltonian-simulation-ising"],
+  },
+  {
+    slug: "top-eigenvector-estimation",
+    title: "Approximating the top eigenvector of a Hermitian matrix",
+    titleJa: "エルミート行列の主固有ベクトルの近似",
+    family: "Quantum linear algebra",
+    zooName: "Computing the Principal Eigenvector",
+    zooSection: "Optimization, Numerics, and Machine Learning",
+    speedup: "Polynomial",
+    problem:
+      "Given query access to the entries of a d × d Hermitian matrix A, output a classical description of a good approximation of its top eigenvector, the eigenvector belonging to the largest eigenvalue.",
+    problemJa:
+      "d × d のエルミート行列 A の成分へのクエリアクセスが与えられたとき、その主固有ベクトル、すなわち最大固有値に属する固有ベクトルの良い近似を、古典的な記述として出力する問題です。",
+    idea:
+      "The Zoo separates this from the ground state problem: obtaining the top eigenvector as a quantum state would be equivalent to that problem, whereas what is wanted here is a classical description of the vector. Chen, Gilyén and de Wolf give two quantum algorithms under an assumed constant eigenvalue gap, and the paper describes both as running a version of the classical power method that is robust to certain benign kinds of errors, with each matrix-vector multiplication implemented on a quantum computer with small and well-behaved error. The two differ in how that multiplication is done: the first estimates the matrix-vector product one entry at a time, by a new procedure the paper calls Gaussian phase estimation, while the second uses block-encoding techniques to compute the product as a quantum state and then obtains a classical description from it by a new time-efficient unbiased pure-state tomography procedure. The same paper extends the construction to a classical description of the subspace spanned by the top-q eigenvectors, and proves a nearly-optimal lower bound on the quantum query complexity of approximating the top eigenvector.",
+    ideaJa:
+      "Zoo はこの問題を基底状態問題と区別しています。主固有ベクトルを量子状態として得るだけであれば基底状態問題と同等ですが、ここで求めるのはそのベクトルの古典的な記述です。Chen、Gilyén、de Wolf は固有値ギャップが定数であるという仮定のもとで二つの量子アルゴリズムを与えており、論文はいずれについても、ある種の穏やかな誤差に対して頑健にした古典のべき乗法を用い、各回の行列ベクトル積を量子計算機上で小さく扱いやすい誤差のもとに実装するものだと説明しています。両者の違いはこの行列ベクトル積の実装方法にあります。一つ目は、論文が Gaussian phase estimation と呼ぶ新しい手続きによって行列ベクトル積を成分ごとに推定し、二つ目は、ブロック符号化の技法によって行列ベクトル積を量子状態として計算したうえで、新しい時間効率のよい不偏な純粋状態トモグラフィーの手続きによってそこから古典的な記述を取り出します。同じ論文は、この構成を上位 q 個の固有ベクトルが張る部分空間の古典的な記述へと拡張し、さらに主固有ベクトルの近似に対する量子クエリ計算量のほぼ最適な下界も示しています。",
+    complexity:
+      "Two algorithms for a d × d Hermitian matrix under an assumed constant eigenvalue gap: one of time complexity Õ(d^1.75), one of time complexity d^(1.5+o(1)), against the best-possible classical algorithm, which the abstract states needs Ω(d²) queries to the entries of A and hence Ω(d²) time. The same abstract states time q·d^(1.5+o(1)) for a classical description of the subspace spanned by the top-q eigenvectors, and a nearly-optimal lower bound of Ω̃(d^1.5) on the quantum query complexity of approximating the top eigenvector. The Zoo instead gives a single figure, Õ(d^(3/2)) against a best classical Õ(d²), which matches neither of the abstract's two upper bounds exactly.",
+    complexityBasis:
+      'abstract of arXiv:2405.14765 (TeX rendered into Unicode: the abstract\'s tilde-O written Õ, tilde-Omega written Ω̃, math delimiters removed): "We give two different quantum algorithms that, given query access to the entries of a Hermitian matrix A and assuming a constant eigenvalue gap, output a classical description of a good approximation of the top eigenvector: one algorithm with time complexity Õ(d^{1.75}) and one with time complexity d^{1.5+o(1)}", "Both of our quantum algorithms provide a polynomial speed-up over the best-possible classical algorithm, which needs Ω(d^2) queries to entries of A, and hence Ω(d^2) time", "We extend this to a quantum algorithm that outputs a classical description of the subspace spanned by the top-q eigenvectors in time qd^{1.5+o(1)}", and "We also prove a nearly-optimal lower bound of Ω̃(d^{1.5}) on the quantum query complexity of approximating the top eigenvector." The single Zoo figure is from the Quantum Algorithm Zoo entry "Computing the Principal Eigenvector" (widetilde O rendered Õ, math delimiters removed, reference number and its spacing left as written): "The quantum of [ 462 ] runs in time Õ(d^{3/2}) whereas the best classical algorithm runs in time Õ(d^2)." That sentence is quoted as the Zoo has it, missing noun included.',
+    caveat:
+      "This is a literature record: nothing was constructed, compiled, simulated, run or benchmarked here, and no matrix's top eigenvector was approximated. Both upper bounds are stated under the constant eigenvalue gap the abstract assumes, and neither source says what the cost becomes when that gap is small or absent. The figures are asymptotic complexities in a model whose input is query access to the entries of A, so no gate count, qubit count, constant factor or error-correction budget follows from them, and the cost of realizing that entry oracle is outside this record. The exponent in d^(1.5+o(1)) carries an o(1) that the abstract does not quantify, so it is not the same claim as Õ(d^1.5), and the Ω̃(d^1.5) lower bound is stated for quantum query complexity rather than for time; nothing here closes the distance between the two. The output quality is stated only as a good approximation: the abstract says the first algorithm has a slightly better dependence on the ℓ₂-error of the approximating vector than the second, without giving either dependence, so no accuracy is fixed by this record. The Zoo's Õ(d^(3/2)) matches neither of the abstract's two upper bounds exactly, and the Zoo cites its reference by number only, so this record does not establish that the two sources describe the same algorithm; the difference is recorded, not reconciled. The classical Ω(d²) is the abstract's own statement about the best-possible classical algorithm, and the argument behind it was not read here.",
+    caveatJa:
+      "本項目は文献に基づく記録です。回路の構成、コンパイル、シミュレーション、実行、ベンチマークはいずれも行っておらず、具体的な行列の主固有ベクトルを近似したこともありません。二つの上界はいずれも、要旨が仮定する定数の固有値ギャップのもとでの主張であり、そのギャップが小さい場合や存在しない場合にコストがどうなるかは、いずれの資料にも述べられていません。示されている値は、A の成分へのクエリアクセスを入力とするモデルでの漸近的な計算量であり、ゲート数、量子ビット数、定数因子、誤り訂正の見積もりはいずれも導けません。成分オラクルを実現するコストも本記録の対象外です。d^(1.5+o(1)) の指数に含まれる o(1) は要旨では定量化されていないため、これは Õ(d^1.5) とは別の主張です。また Ω̃(d^1.5) は時間ではなく量子クエリ計算量に対する下界であり、両者の隔たりは本記録では埋まっていません。出力の精度についても「良い近似」と述べられているだけです。要旨は、一つ目のアルゴリズムのほうが近似ベクトルの ℓ₂ 誤差への依存性がわずかに良いと述べていますが、その依存性そのものは示していないため、本記録は精度を確定していません。Zoo の Õ(d^(3/2)) は要旨の二つの上界のいずれとも正確には一致せず、Zoo は出典を参照番号でしか示していないため、本記録は両資料が同じアルゴリズムを述べていることを確認したものではありません。この食い違いは記録するにとどめ、ここでは解消していません。古典側の Ω(d²) も、可能な最良の古典アルゴリズムについての要旨自身の主張であり、その根拠はここでは参照していません。",
+    tags: ["principal eigenvector", "power method", "block encoding", "tomography", "query complexity"],
+    source: {
+      id: "arxiv:2405.14765",
+      title: "A Quantum Speed-Up for Approximating the Top Eigenvectors of a Matrix",
+      authors: "Yanlin Chen, András Gilyén, Ronald de Wolf",
+      year: "2024",
+      url: "https://arxiv.org/abs/2405.14765",
+    },
+    literature: [
+      {
+        title: "A Quantum Speed-Up for Approximating the Top Eigenvectors of a Matrix",
+        authors: "Yanlin Chen, András Gilyén, Ronald de Wolf",
+        year: "2024",
+        url: "https://arxiv.org/abs/2405.14765",
+        relevance:
+          "Primary source: it states the query-access input model, the constant eigenvalue gap assumption, the two time complexities Õ(d^1.75) and d^(1.5+o(1)), the classical Ω(d²) it measures them against, the q·d^(1.5+o(1)) extension to the top-q eigenvector subspace and the Ω̃(d^1.5) quantum query lower bound. It also names the two mechanisms, Gaussian phase estimation for the entry-by-entry route and block-encoding plus unbiased pure-state tomography for the state-based route. Consult it for the ℓ₂-error dependence of each algorithm and for what the o(1) in the exponent hides, neither of which the abstract states.",
+        relevanceJa:
+          "一次資料です。クエリアクセスという入力モデル、定数の固有値ギャップという仮定、二つの時間計算量 Õ(d^1.75) と d^(1.5+o(1))、比較対象となる古典側の Ω(d²)、上位 q 個の固有ベクトルが張る部分空間への q·d^(1.5+o(1)) の拡張、および量子クエリ計算量の下界 Ω̃(d^1.5) が述べられています。機構についても、成分ごとに推定する経路の Gaussian phase estimation と、量子状態を経由する経路のブロック符号化および不偏な純粋状態トモグラフィーという二つが名指しされています。各アルゴリズムの ℓ₂ 誤差への依存性と、指数に含まれる o(1) の中身は要旨に記載がないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: [
+      "spectral-sum-estimation",
+      "quantum-phase-estimation",
+      "quantum-singular-value-transformation",
+      "hhl-linear-systems",
+    ],
+  },
+  {
+    slug: "zero-sum-game-equilibria",
+    title: "Approximate Nash equilibria of zero-sum games by dynamic Gibbs sampling",
+    titleJa: "動的 Gibbs サンプリングによるゼロ和ゲームの近似 Nash 均衡",
+    family: "Markov-chain sampling",
+    zooName: "Approximating Nash Equilibria",
+    zooSection: "Optimization, Numerics, and Machine Learning",
+    speedup: "Polynomial",
+    problem:
+      "Given oracle access to the m × n payoff matrix of a zero-sum game with bounded entries, compute a classical representation of an ε-approximate Nash equilibrium of that game.",
+    problemJa:
+      "成分が有界な m × n の利得行列で与えられるゼロ和ゲームについて、その行列へのオラクルアクセスのもとで ε 近似 Nash 均衡の古典的な表現を求める問題です。",
+    idea:
+      "The Zoo states the route in one clause: the runtime is reached by making a connection between Nash equilibria and Gibbs sampling. Bouland, Getachew, Jin, Sidford and Tian write that they obtain their result by designing new quantum data structures for efficiently sampling from a slowly-changing Gibbs distribution, which the paper's title calls improved dynamic Gibbs sampling. The input model is a standard quantum oracle for accessing the payoff matrix, whose entries are assumed bounded, and the stated output is a classical representation of the ε-approximate Nash equilibrium. The paper sets that runtime against the best prior quantum runtime and against the classical runtime it cites, and names the range of ε over which its improvement is claimed.",
+    ideaJa:
+      "Zoo はこの道筋を一節で述べています。すなわち、Nash 均衡と Gibbs サンプリングを結びつけることでこの実行時間に到達する、というものです。Bouland、Getachew、Jin、Sidford、Tian は、ゆっくり変化する Gibbs 分布から効率的にサンプリングするための新しい量子データ構造を設計することでこの結果を得たと述べており、論文の表題はこれを改良された動的 Gibbs サンプリングと呼んでいます。入力モデルは利得行列にアクセスするための標準的な量子オラクルで、その成分は有界であると仮定されており、出力として述べられているのは ε 近似 Nash 均衡の古典的な表現です。論文はこの実行時間を、従来の最良の量子アルゴリズムの実行時間と、論文が挙げる古典アルゴリズムの実行時間の双方と対比し、改善が主張できる ε の範囲も明示しています。",
+    complexity:
+      "Õ(√(m+n)·ε^(-2.5) + ε^(-3)) time, given a standard quantum oracle for accessing the payoff matrix, to output a classical representation of an ε-approximate Nash equilibrium; the abstract sets this against the best prior quantum runtime Õ(√(m+n)·ε^(-3)) and the classic Õ((m+n)·ε^(-2)), and states the improvement whenever ε = Ω((m+n)^(-1)). The Zoo quotes the same quantum runtime and the same classical Õ((m+n)·ε^(-2)), and states no runtime for the prior result it says this algorithm improves on.",
+    complexityBasis:
+      'abstract of arXiv:2301.03763 (TeX rendered into Unicode: widetilde O written Õ, epsilon written ε, \\cdot written ·, \\sqrt{m+n} written √(m+n), math delimiters removed): "Given a standard quantum oracle for accessing the payoff matrix our algorithm runs in time Õ(√(m + n)·ε^{-2.5} + ε^{-3}) and outputs a classical representation of the ε-approximate Nash equilibrium", and "This improves upon the best prior quantum runtime of Õ(√(m + n)·ε^{-3}) obtained by [vAG19] and the classic Õ((m + n)·ε^{-2}) runtime due to [GK95] whenever ε = Ω((m +n)^{-1})." The Quantum Algorithm Zoo entry "Approximating Nash Equilibria" states the same contrast, rendered the same way and with its reference-number spacing left as written: "Classically, the best algorithm for this has runtime Õ((m+n) ε^{-2}). The quantum algorithm of [ 485 ], improving on the prior result of [ 486 ] achieves this in runtime Õ(√(m+n) ε^{-2.5} + ε^{-3}) by making a connection between Nash equilibria and Gibbs sampling."',
+    caveat:
+      "This is a literature record: nothing was constructed, compiled, simulated, run or benchmarked, and no game was solved here. The runtime is asymptotic and its Õ suppresses factors neither source names, so no gate count, qubit count, constant factor, error-correction budget or wall-clock time follows from it. The abstract attaches the condition ε = Ω((m+n)^(-1)) to its improvement claim, so outside that range of ε neither comparison it makes is asserted, and the gain in dimension, √(m+n) against m+n, is bought with a worse dependence on the accuracy, ε^(-2.5) plus an additive ε^(-3) against ε^(-2); this record does not establish where the crossover falls for any concrete m, n and ε. The result assumes a standard quantum oracle for the payoff matrix and bounded entries, and the cost of providing that oracle, together with what the new quantum data structures cost to build and maintain, is outside this record. Neither source defines what ε-approximate means for the equilibrium, and the statement is for zero-sum games only, so nothing here bears on general-sum games. The classical figure is attributed by the abstract to [GK95] as the runtime being improved on rather than as a proved lower bound, and the prior quantum runtime is attributed to [vAG19]. The Zoo cites by number only, and its numbers do not line up with those two: [ 485 ] is the algorithm this record covers and [ 486 ] the prior result it improves on. The Zoo states no runtime for [ 486 ] and attaches no reference number to the classical figure at all. This record reads none of those references and does not establish which papers the Zoo's numbers denote.",
+    caveatJa:
+      "本項目は文献に基づく記録です。回路の構成、コンパイル、シミュレーション、実行、ベンチマークはいずれも行っておらず、具体的なゲームを解いたこともありません。示されている実行時間は漸近的なもので、Õ が隠している因子はいずれの資料にも示されていないため、ゲート数、量子ビット数、定数因子、誤り訂正の見積もり、実時間はここからは分かりません。要旨は改善の主張に ε = Ω((m+n)^(-1)) という条件を付しており、この範囲を外れる ε については、要旨が挙げる二つの比較のいずれも主張されていません。また、次元に関する m+n から √(m+n) への利得は、精度への依存性の悪化、すなわち ε^(-2) に対する ε^(-2.5) と加法項 ε^(-3) と引き換えに得られたものであり、具体的な m、n、ε でどこが分かれ目になるかは本記録では確定していません。この結果は利得行列に対する標準的な量子オラクルと成分の有界性を仮定しており、そのオラクルを用意するコストや、新しい量子データ構造の構築と更新に要するコストは本記録の対象外です。ε 近似の定義はいずれの資料にも示されておらず、主張の対象はゼロ和ゲームに限られるため、一般和ゲームについては何も述べていません。古典側の値は、要旨において改善の対象として [GK95] に帰されたものであって証明された下界ではなく、従来の最良の量子アルゴリズムの実行時間は [vAG19] に帰されています。Zoo の引用は番号のみで、その番号はこの二つとは対応していません。[ 485 ] は本記録が扱う量子アルゴリズム、[ 486 ] はそれが改善した従来の結果です。Zoo は [ 486 ] の実行時間を示しておらず、古典側の値には参照番号自体を付していません。本記録はこれらの参照文献をいずれも参照しておらず、Zoo の番号がどの論文を指すかも確認していません。",
+    tags: ["zero-sum game", "nash equilibrium", "gibbs sampling", "payoff matrix", "quantum data structures"],
+    source: {
+      id: "arxiv:2301.03763",
+      title: "Quantum Speedups for Zero-Sum Games via Improved Dynamic Gibbs Sampling",
+      authors: "Adam Bouland, Yosheb Getachew, Yujia Jin, Aaron Sidford, Kevin Tian",
+      year: "2023",
+      url: "https://arxiv.org/abs/2301.03763",
+    },
+    literature: [
+      {
+        title: "Quantum Speedups for Zero-Sum Games via Improved Dynamic Gibbs Sampling",
+        authors: "Adam Bouland, Yosheb Getachew, Yujia Jin, Aaron Sidford, Kevin Tian",
+        year: "2023",
+        url: "https://arxiv.org/abs/2301.03763",
+        relevance:
+          "Primary source: it states the bounded-entry m × n payoff matrix, the standard quantum oracle input model, the Õ(√(m+n)·ε^(-2.5) + ε^(-3)) runtime, the classical representation of the output, and the comparison with Õ(√(m+n)·ε^(-3)) from [vAG19] and Õ((m+n)·ε^(-2)) from [GK95] under ε = Ω((m+n)^(-1)). It attributes the speedup to new quantum data structures for efficiently sampling from a slowly-changing Gibbs distribution. Consult it for the definition of the ε-approximation and for what those data structures cost per update, neither of which the abstract states.",
+        relevanceJa:
+          "一次資料です。成分が有界な m × n の利得行列、標準的な量子オラクルという入力モデル、実行時間 Õ(√(m+n)·ε^(-2.5) + ε^(-3))、出力が古典的な表現であること、および ε = Ω((m+n)^(-1)) のもとでの [vAG19] の Õ(√(m+n)·ε^(-3)) と [GK95] の Õ((m+n)·ε^(-2)) との比較が述べられています。高速化の要因は、ゆっくり変化する Gibbs 分布から効率的にサンプリングするための新しい量子データ構造に帰されています。ε 近似の定義と、そのデータ構造の更新1回あたりのコストは要旨に記載がないため、原論文で確認してください。",
+      },
+    ],
+    relatedSlugs: ["gibbs-state-sampling", "quantum-simulated-annealing", "decoded-quantum-interferometry"],
+  },
 ];
 
 /** The Zoo entry each record covers — read by scripts/check-zoo-parity.mjs. */
