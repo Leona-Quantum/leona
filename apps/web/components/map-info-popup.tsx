@@ -55,16 +55,15 @@ import { ThemeToggle } from "./theme-toggle";
  * they look like, so a change to the drawing renames the legend row with it.
  */
 /**
- * `open` and `feed` were missing from the content spec this box was built to,
- * and were added back on review. The canvas draws both — an opened lane is a
- * `mj-converge-spine` rather than a `mj-converge-strand-body`, and an
- * ingredient hangs off a belly as a `mj-converge-feed-line` — so a key without
- * them explains six of the eight marks a reader can actually see. The old
- * `KeyMark` this box replaced had all eight; losing two while claiming to be
- * "the legend" would be a quieter version of the defect that key already
- * shipped once, where a swatch drew a shape the canvas had stopped drawing.
+ * `open` was missing from the content spec this box was built to and was added
+ * back on review: the canvas draws an opened lane as a `mj-converge-spine`
+ * rather than a `mj-converge-strand-body`, so a key without it explains one
+ * fewer mark than a reader can see. `feed` was here beside it and is gone with
+ * the shape — an ingredient is card content now (issue 16) and this canvas
+ * draws no stub. A legend row for a mark the drawing has stopped making is the
+ * defect the `KeyMark` this box replaced already shipped once.
  */
-type LegendKind = "terminal" | "inner" | "recorded" | "unpinned" | "unpublished" | "atlas" | "open" | "feed";
+type LegendKind = "terminal" | "inner" | "recorded" | "unpinned" | "unpublished" | "atlas" | "open";
 
 interface MapInfoCopy {
   /** The box's own name, above the section list. Not a heading — the sections are. */
@@ -105,7 +104,6 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
       { kind: "unpinned", text: "A step whose way through has not been pinned to one method." },
       { kind: "unpublished", text: "A step nothing published fills yet." },
       { kind: "open", text: "A step you have opened. What is drawn inside it is how it was done." },
-      { kind: "feed", text: "Something the route needs but does not produce — an ingredient it takes in." },
       { kind: "atlas", text: "There is a record in the repository for this one." },
     ],
     move: [
@@ -161,7 +159,6 @@ const COPY: Record<PublicLocale, MapInfoCopy> = {
       { kind: "unpinned", text: "通る方法が特定の手法に結びつけられていない工程。" },
       { kind: "unpublished", text: "公開された文献がまだ満たしていない工程。" },
       { kind: "open", text: "開いた工程。その内側に描かれているのが、どう行われたかです。" },
-      { kind: "feed", text: "その経路が必要とするが自身では作らないもの。外から受け取る材料です。" },
       { kind: "atlas", text: "これについてはリポジトリに記録があります。" },
     ],
     move: [
@@ -237,18 +234,6 @@ function LegendMark({ kind, lane }: { kind: LegendKind; lane: string }): React.R
       <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
         <g className="mj-converge-lane mj-converge-lane--recorded">
           <path className="mj-converge-spine" d="M4 9 H30" />
-        </g>
-      </svg>
-    );
-  }
-  // An ingredient hangs off the belly rather than lying along it, so it is the
-  // one mark drawn across the swatch instead of through it.
-  if (kind === "feed") {
-    return (
-      <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
-        <g className="mj-converge-lane mj-converge-lane--recorded">
-          <path className="mj-converge-strand-body" d="M4 5 H30" />
-          <line className="mj-converge-feed-line" x1="17" y1="5" x2="17" y2="16" />
         </g>
       </svg>
     );

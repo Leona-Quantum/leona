@@ -8436,6 +8436,32 @@ export const LAYER_GRAPH: LayerGraph = {
   },
   {
     kind: "method",
+    id: "layerwise-training",
+    label: "Grow the circuit a layer at a time while training it",
+    labelJa: "学習しながら回路を一層ずつ育てる",
+    shortLabel: "Layerwise training",
+    shortLabelJa: "層ごとの学習",
+    summary: "Do not settle the circuit before optimising it. Start shallow, train what is there, then hold most of it fixed and add the next layer on top — so every step of the search runs on a shallow circuit with few free parameters, which is where a gradient is still large enough to follow.",
+    summaryJa: "最適化を始める前に回路を決めてしまわないやり方です。浅い回路から始めて、そこにあるものを学習し、その大部分を固定したうえで次の層を上に積みます。こうして探索のどのステップも、浅い回路と少数の自由パラメータの上で進みます。勾配がまだ追えるだけの大きさを保っているのは、そこだからです。",
+    realizes: "parameter-optimization",
+    conditions: "Skolik et al. state the strategy in one sentence — \"the circuit depth is incrementally grown during optimization, and only subsets of parameters are updated in each training step\" — and then hedge the benefit they claim from it: \"when considering sampling noise, this strategy can help avoid the problem of barren plateaus of the error surface\". *Can help*, and under sampling noise; the reason offered is structural rather than incidental — \"the low depth of circuits, low number of parameters trained in one step, and larger magnitude of gradients compared to training the full circuit\". The evidence is the part to read before carrying the numbers anywhere, because it is *not chemistry*. The demonstration is \"an image-classification task on handwritten digits\", and there layerwise learning \"attains an $8$% lower generalization error on average in comparison to standard learning schemes for training quantum circuits of the same size\", with \"the percentage of runs that reach lower test errors ... up to $40$% larger compared to training the full circuit\". Both figures are relative to full-circuit training of the same size on that one benchmark, so neither is a claim about the molecular energies the rest of this region is drawn from.",
+    conditionsJa: "Skolik らはこの戦略を一文で述べています。「回路の深さを最適化の途中で少しずつ増やしていき、各学習ステップではパラメータの部分集合だけを更新する」。そのうえで、そこから得られる利点には留保を付けています。「標本雑音を考慮した場合、この戦略は誤差曲面の不毛平原（barren plateau）の問題を避ける助けになりうる」。「助けになりうる」であり、しかも標本雑音のもとでの話です。理由として挙げられているのは偶然ではなく構造的なものです。「回路が浅いこと、1 ステップで学習されるパラメータが少ないこと、そして回路全体を学習する場合に比べて勾配の大きさが大きいこと」。根拠については、数値をどこかへ持ち出す前に読むべき点があります。これは化学ではありません。実証は「手書き数字の画像分類タスク」で行われており、そこで層ごとの学習は「同じ大きさの量子回路を学習させる標準的な学習方式と比べて、汎化誤差を平均で $8$% 低くする」とされ、また「より低いテスト誤差に到達する実行の割合は、回路全体を学習する場合に比べて最大で $40$% 大きい」とされています。いずれの数値も、その一つのベンチマーク上で同じ大きさの回路を全体学習した場合を基準とした相対値であり、この領域の他の部分が描かれている分子エネルギーについての主張ではありません。",
+    // The ingredient none of this slot's other methods hang, and the reason it is
+    // an ingredient rather than a remark: layerwise training is not handed a
+    // circuit to tune. It BUILDS the circuit as it goes — the depth is
+    // "incrementally grown during optimization" — so `ansatz-construction` is
+    // consumed by this route in a way `cvar-objective` and `natural-gradient-optimization`
+    // never consume it. That is also what keeps this node out of the folded
+    // class: a different walk is a drawable difference, so there is nothing here
+    // for `sameInternalsAsParent` to be true of.
+    steps: ["ansatz-construction"],
+    entries: ["vqe-layerwise-training"],
+    citations: [
+      { title: "Layerwise learning for quantum neural networks", authors: "Andrea Skolik, Jarrod R. McClean, Masoud Mohseni, Patrick van der Smagt, Martin Leib", year: "2020", url: "https://arxiv.org/abs/2006.14904" },
+    ],
+  },
+  {
+    kind: "method",
     id: "orbital-optimized-ansatz",
     label: "Orbital-optimized coupled-cluster circuits",
     labelJa: "軌道最適化した結合クラスター回路",
