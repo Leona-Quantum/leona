@@ -4041,23 +4041,23 @@ function placeFeeds(
     const fitted = fitMarkedName(feed, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(feed));
     const fittedWidth = estimateTextWidth(fitted.text, M.laneFont);
     const y0 = at.y + outward * inner;
-    // **How far the stub is DRAWN — back to `feedRun`, and #430 is reverted
+    // **How far the stub is DRAWN — back to `feedRun`, and PR 430 is reverted
     // here with the measurement that says it must be.**
     //
-    // #430 made this `max(feedRun, vHalf)` for an opened ingredient so the line
+    // PR 430 made this `max(feedRun, vHalf)` for an opened ingredient so the line
     // would REACH the fan it opens into, closing a gap of up to 516.8px where
     // nothing was drawn at all. The gap was real and the reasoning held; what
     // neither the tests nor I checked was what the drawn line then crosses.
     // Measured on the corpus, both ways, over all 212 ingredients:
     //
-    //     stub = feedRun, fan pushed out (before #430):  18 of 212  (8.5%)
-    //     stub = max(feedRun, vHalf)          (#430):     68 of 212  (32.1%)
+    //     stub = feedRun, fan pushed out (before PR 430):  18 of 212  (8.5%)
+    //     stub = max(feedRun, vHalf)          (PR 430):     68 of 212  (32.1%)
     //
     // The 18 are a lane passing within a stub's own 18px root and predate all of
     // this; the 68 are lines up to 572px long drawn across other strands' fans.
     // (An earlier reading of this control said 0 rather than 18: it reverted the
-    // stub length while leaving #430's fan base in place, which is not the
-    // geometry that shipped before #430. The numbers above are both arms
+    // stub length while leaving PR 430's fan base in place, which is not the
+    // geometry that shipped before PR 430. The numbers above are both arms
     // measured against the real one.)
     //
     // The longest ran 572px across four labelled lanes of a fan belonging to a
@@ -4164,7 +4164,7 @@ function placeFeeds(
     // top of this function has always said a stub never points back through
     // the figure; until the fix this replaced, the stub obeyed it and its fan
     // did not.
-    // **Pushed out past the stub's drawn end again, and the note #430 removed
+    // **Pushed out past the stub's drawn end again, and the note PR 430 removed
     // was right.** A base AT `y1` draws half the ingredient back through the
     // belly whenever the fan's half-band exceeds `feedRun` — the 10 measured
     // overlaps `feedReach` records. `feedReach` reserves exactly this

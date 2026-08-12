@@ -1736,7 +1736,7 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
           // one: the old formula would still pass if the stub's line stopped
           // short, and that was the bug.
           // Back to the push term, because the geometry it describes is back:
-          // #430 drew the stub all the way to the fan and that line crossed
+          // PR 430 drew the stub all the way to the fan and that line crossed
           // another lane on 68 of 212 ingredients, so the length was reverted
           // and the fan sits past the stub's end again. See `placeFeeds` and
           // OWNER_TODO `3f6889` — the gap is known, measured and parked, not
