@@ -37,6 +37,28 @@
 > accounts hold the catalog reviewer grant, which is a production data decision and owner-only.
 > The refusal is the guard working, not a defect: it named both candidates and wrote nothing.
 > Everything below describes the mechanism as merged; only its invocation waits.)*
+>
+> **Owner ruling, 2026-08-12 (ai-ops#13) — the step stays, and switches on when someone can
+> watch a deploy through.** The question put to the owner was whether every deploy should copy
+> the corpus into the live database at all, with three options: keep it and switch it on under
+> supervision, keep it but leave it off indefinitely, or take the step back out and return to
+> copying by hand. The answer was the first. So *whether* is closed and only *when* is open —
+> and "when" is a data condition, not a further decision: the sync switches on once no record
+> is refusing its attestation, and the flip is `gh variable set CATALOG_SYNC_ENABLED --body
+> true` with no code change.
+>
+> **Two blockers stood in the way; one is now gone.** The reviewer ambiguity that parked the
+> step is resolved — `pick_standing_reviewer` gained a signature-count narrowing, and the
+> read-only `reviewers` report has printed `VERDICT: exactly one eligible account has signed`
+> on every deploy since (one of the two grants was never used, so there is nothing to choose
+> between). What remains is the records whose provenance claim moved, which need a human
+> signature by name; `catalog_admin attest-plan` names them off a deploy log.
+>
+> **The order is signature first, variable second, and that is not merely caution.** Flipping
+> the variable while records are refusing runs the import — which resets a changed record's
+> `review_state` to DRAFT and takes it off `/repository` — and then exits at the attest step
+> before `publish-bootstrap` runs. The corpus would be left staged and unpublished, which is a
+> worse state for a reader than the staleness this amendment exists to end.
 > This narrows one sentence in the status note above ("production publication is still an
 > owner-run, approval-gated CLI action") and nothing else. `deploy.yml`'s final step,
 > `sync the published catalog`, runs `catalog_admin sync-bootstrap --attested-by-standing`
