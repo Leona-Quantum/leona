@@ -11658,20 +11658,15 @@ div.mj-rail-row:hover {
    up with the taper and read as murkier rather than as further away. Depths 3
    and 4 share a step rather than each getting their own — past that point the
    geometry has already done the work and a further opacity cut just loses
-   legibility. Applies to feeds too: an ingredient hanging off a depth-2 strand
-   is exactly as far from the figure's own axis as the strand is. */
-.mj-converge-lane[data-depth="1"],
-.mj-converge-feed[data-depth="1"] {
+   legibility. */
+.mj-converge-lane[data-depth="1"] {
   opacity: 0.94;
 }
-.mj-converge-lane[data-depth="2"],
-.mj-converge-feed[data-depth="2"] {
+.mj-converge-lane[data-depth="2"] {
   opacity: 0.88;
 }
 .mj-converge-lane[data-depth="3"],
-.mj-converge-lane[data-depth="4"],
-.mj-converge-feed[data-depth="3"],
-.mj-converge-feed[data-depth="4"] {
+.mj-converge-lane[data-depth="4"] {
   opacity: 0.82;
 }
 
@@ -11724,8 +11719,7 @@ div.mj-rail-row:hover {
    atlas rule on purpose: a node can be both, and the paper's claim is the one
    the reader asked this surface about. Not a colour, not a dash — both spoken
    for, same argument as `--selected`. */
-.mj-converge-lane--paper-cited .mj-converge-lane-name,
-.mj-converge-feed--paper-cited .mj-converge-feed-name {
+.mj-converge-lane--paper-cited .mj-converge-lane-name {
   text-decoration: underline solid from-font;
   text-underline-offset: 3px;
   text-decoration-thickness: 1.5px;
@@ -11770,13 +11764,6 @@ div.mj-rail-row:hover {
 .mj-converge-lane--selected .mj-converge-lane-name {
   font-weight: 600;
 }
-.mj-converge-feed--selected .mj-converge-feed-line {
-  stroke-width: 2;
-  opacity: 0.8;
-}
-.mj-converge-feed--selected .mj-converge-feed-name {
-  font-weight: 600;
-}
 .mj-converge-hub--selected .mj-converge-dot {
   stroke-width: 3;
   opacity: 1;
@@ -11784,7 +11771,7 @@ div.mj-rail-row:hover {
 /* The veil (owner, verbatim: "the item needs to show up through the card
    itself, and the map need to be faint behind it, hence the translucency and
    not transparency"). With a card open, the figure itself goes faint — every
-   lane, feed, circle and plate EXCEPT the selected ones — instead of a uniform
+   lane, circle and plate EXCEPT the selected ones — instead of a uniform
    backdrop wash. The difference is the whole point: a wash over the viewport
    dims the selected item by exactly as much as its neighbours, so nothing can
    show through the card; dimming in the drawing leaves the one thing the
@@ -11795,7 +11782,6 @@ div.mj-rail-row:hover {
    dimmed under a full-strength name would punch a hole behind the one label
    the reader is on. */
 .mj-converge-canvas--veiled .mj-converge-lane:not(.mj-converge-lane--selected),
-.mj-converge-canvas--veiled .mj-converge-feed:not(.mj-converge-feed--selected),
 .mj-converge-canvas--veiled .mj-converge-hub:not(.mj-converge-hub--selected),
 .mj-converge-canvas--veiled .mj-converge-name-plate:not(.mj-converge-name-plate--selected) {
   opacity: 0.3;
@@ -11845,68 +11831,6 @@ div.mj-rail-row:hover {
 .mj-converge-hub--inner .mj-converge-dot {
   stroke-width: 1.25;
   opacity: 0.72;
-}
-
-/* --- ingredients ------------------------------------------------------------
-   An ingredient hanging off an opened strand — `hhl-qpe-inversion` needs a
-   block-encoding and a prepared |b⟩, and having them does not move the route
-   along, so it is drawn hanging off the line rather than sitting on it.
-   Modelled directly on `.mj-process-feed` above: thin line, smaller and
-   quieter name than a lane's own, because it has to read as subordinate to the
-   strand it hangs from before a reader has followed where it goes. */
-.mj-converge-feed-line {
-  stroke: currentColor;
-  stroke-width: 1;
-  opacity: 0.4;
-}
-.mj-converge-feed-name {
-  fill: var(--text-2);
-  font-family: var(--font-ui);
-  font-size: 11px;
-}
-/* The stub's click target. A stroke and not a fill, because the shape is a line
-   and a line has no interior to hit — the same reason `.mj-converge-strand-hit`
-   is written this way. Narrower than a strand's 24 because a stub is short and
-   its neighbours are `belly/(n+1)` apart, so a target that wide would overlap
-   the next ingredient's. */
-.mj-converge-feed-hit {
-  stroke: currentColor;
-  stroke-width: 14;
-  fill: none;
-  opacity: 0;
-  pointer-events: stroke;
-}
-.mj-converge-canvas a:hover .mj-converge-feed-hit { opacity: 0.07; }
-/* An opened ingredient reads as opened on the stub itself, the way an opened
-   lane reads on its own line: the reader has to be able to see which of several
-   stubs is the one whose fan is now on the canvas, without tracing it. Weight,
-   not colour — colour on this canvas means hover. */
-.mj-converge-feed--open .mj-converge-feed-line {
-  opacity: 0.75;
-  stroke-width: 1.75;
-}
-/* **And its name becomes a footnote to the fan, rather than a second headline.**
-   This rule used to brighten the stub's name to `--text-1` when the ingredient
-   opened. That was written before a stub could open anything: since PR 328 the
-   fan that opens beneath it draws the *same name* on its own spine, ~75px away, at
-   12px `--text-1` — so the one rule meant to say "this is the open one" was
-   raising a duplicate to the weight of the original.
-
-   Not deleted, though it is the obvious fix. The stub's name is the **only link
-   from the map to that ingredient's own page** — the line is the open/shut
-   target, the name is the destination — so dropping it when open would tidy a
-   repetition by removing a way through the site. It is shrunk and quietened
-   instead: 10px, `--text-2`, italic, which is the treatment
-   `.mj-process--method .mj-process-name` already uses on the sibling canvas for
-   a name subordinate to one drawn above it.
-
-   The "which stub is open" signal is not lost with it: the line above already
-   carries it in weight (0.75 opacity, 1.75 stroke), which is where this canvas
-   puts state — and italic is itself a second reading of the same fact. */
-.mj-converge-feed--open .mj-converge-feed-name {
-  fill: var(--text-2);
-  font-size: 10px;
-  font-style: italic;
 }
 
 /* --- hit targets --------------------------------------------------------- */
@@ -12028,15 +11952,8 @@ div.mj-rail-row:hover {
     y var(--dur-converge) var(--ease-converge),
     width var(--dur-converge) var(--ease-converge);
 }
-.mj-converge-canvas :where(.mj-converge-lane-name, .mj-converge-feed-name, .mj-converge-hit-name) {
+.mj-converge-canvas :where(.mj-converge-lane-name, .mj-converge-hit-name) {
   transition: transform var(--dur-converge) var(--ease-converge);
-}
-.mj-converge-canvas .mj-converge-feed-line {
-  transition:
-    x1 var(--dur-converge) var(--ease-converge),
-    x2 var(--dur-converge) var(--ease-converge),
-    y1 var(--dur-converge) var(--ease-converge),
-    y2 var(--dur-converge) var(--ease-converge);
 }
 /* A branch that was not there before has no previous value to transition *from*,
    so growing it out is a keyframe rather than a transition. It runs on insertion,
@@ -12044,7 +11961,7 @@ div.mj-rail-row:hover {
    re-render when its key is stable, so only the genuinely new shapes animate. The
    first paint animates everything once, which reads as the figure drawing itself
    and is worth having. */
-.mj-converge-canvas :where(.mj-converge-lane, .mj-converge-feed) {
+.mj-converge-canvas .mj-converge-lane {
   animation: mj-converge-grow var(--dur-converge) var(--ease-converge) both;
 }
 @keyframes mj-converge-grow {
@@ -12066,13 +11983,11 @@ div.mj-rail-row:hover {
       .mj-converge-dot,
       .mj-converge-hit,
       .mj-converge-lane-name,
-      .mj-converge-feed-name,
-      .mj-converge-hit-name,
-      .mj-converge-feed-line
+      .mj-converge-hit-name
     ) {
     transition: none;
   }
-  .mj-converge-canvas :where(.mj-converge-lane, .mj-converge-feed) {
+  .mj-converge-canvas .mj-converge-lane {
     animation: none;
   }
 }
@@ -12152,19 +12067,6 @@ div.mj-rail-row:hover {
 .mj-converge-lanes li[data-depth="2"] { margin-left: calc(var(--sp-4) * 2); }
 .mj-converge-lanes li[data-depth="3"],
 .mj-converge-lanes li[data-depth="4"] { margin-left: calc(var(--sp-4) * 3); }
-/* The ingredient sub-list a lane row carries — the prose reading of
-   `.mj-converge-feed-name` on the canvas. Quieter than the lane it hangs off
-   for the same reason that mark is quieter than a lane's own name: it has to
-   read as subordinate before a reader follows where it goes. */
-.mj-converge-feeds {
-  margin: var(--sp-1) 0 0;
-  padding-left: var(--sp-4);
-  color: var(--text-2);
-  font-size: var(--fs-13);
-  line-height: 1.6;
-  list-style: none;
-}
-
 /* The focused slot's own write-up. This surface drew a thing for four sessions
    and never linked the page describing it. */
 .mj-converge-own {

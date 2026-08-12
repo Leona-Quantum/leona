@@ -160,7 +160,7 @@ for (const story of withPlates) {
 // name. Measured on this graph fully opened, 12 of the 45 crossed names were crossed by a
 // line drawn later, and no plate could ever have hidden those. Interleave the plates with
 // the names instead and the other half breaks: a plate rubs out any earlier *name* it
-// overlaps, which is 4 pairs today and is the case ingredient fans multiply.
+// overlaps, which measured as 4 pairs.
 //
 // Read off the source rather than the DOM on purpose. It is the same claim, it needs no
 // browser, and it runs over all 38 figures instead of the ones a `page.setContent` happens
@@ -171,9 +171,6 @@ const MARK = {
   lineHit: 'class="mj-converge-strand-hit',
   plate: PLATE_IN_MARKUP,
   name: 'class="mj-converge-lane-name',
-  feed: 'class="mj-converge-feed"',
-  feedLine: 'class="mj-converge-feed-line"',
-  feedName: 'class="mj-converge-feed-name"',
   hub: 'class="mj-converge-hub',
   dot: 'class="mj-converge-dot"',
 };
@@ -209,20 +206,10 @@ for (const story of withPlates) {
         `instead of the lines under one`,
     ).toBeLessThan(firstName);
 
-    // **The other two passes, so the five-pass contract is checked and not just
-    // its middle.** A stub is a line like any other and a plate has to be able to
-    // hide it; a circle is the thing several lines share, so it sits on top of
-    // everything including the names. Reordering either would leave the two
-    // assertions above perfectly green.
-    for (const mark of [MARK.feed, MARK.feedLine, MARK.feedName]) {
-      const lastFeed = last(mark);
-      if (lastFeed === -1) continue;
-      expect(
-        lastFeed,
-        `${story.name}: an ingredient stub is emitted after the first name plate, so it paints ` +
-          `over a name the plate was supposed to clear`,
-      ).toBeLessThan(firstPlate);
-    }
+    // **The last pass, so the contract is checked and not just its middle.** A
+    // circle is the thing several lines share, so it sits on top of everything
+    // including the names. Reordering it would leave the two assertions above
+    // perfectly green.
     for (const mark of [MARK.hub, MARK.dot]) {
       const firstHub = first(mark);
       if (firstHub === -1) continue;
@@ -455,174 +442,3 @@ for (const story of withPlates) {
   }
 }
 
-// ---------------------------------------------------------------------------------------
-// **An opened ingredient's name is drawn once, and it is drawn as a footnote to its fan.**
-//
-// Since #328 a stub can be opened in place, and the fan of methods that opens beneath it is
-// a strand like any other — so `place` drew its name on its own spine while the stub it hangs
-// from drew that same name ~75px away. Two copies of one string, 94 of 94 open ingredients.
-//
-// This file used to be about **demoting** the second copy rather than removing it, and the
-// reasoning it recorded was right about the constraint and wrong about which copy to drop:
-// *"the obvious fix is to drop the stub's copy when open, and it is the wrong one: the stub's
-// name is the only link from the map to that ingredient's own page."* True — so session 118
-// dropped **the other one**, the fan base's, which is a link to nothing the stub does not
-// already reach. The owner had reported the duplicate directly: *"strange repeats within
-// larger processes. These kinds of things need to be eliminated."*
-//
-// The demotion stays and is still asserted below, because it was never only about the
-// duplicate: an opened stub's name is the ingredient, and the lane names under it are the
-// methods that fill it, and the smaller italic says which is which. What flips is the premise
-// — this file now asserts that **no** opened stub's name is repeated by a lane, where it used
-// to require that at least one was.
-//
-// **`.mj-converge-feed--open` had never been rendered here.** `saturate` in
-// `converge-stories.tsx` walked `diagram.lanes` only, while its own comment claimed it walked
-// what the layout test walks — which has included `diagram.feeds` since #328. So every
-// occurrence of this class in the built stories was in the inlined stylesheet, and ask D's
-// whole render-level surface was uncovered while documented as covered. 20 figures and 136
-// opened stubs now (188 before session 118 took the two iterators' solver off the map), and
-// the counts below are what stop that recurring.
-const FEED_OPEN_IN_MARKUP = `class="mj-converge-feed mj-converge-feed--open"`;
-const withOpenFeeds = manifest.filter((story) => source(story).includes(FEED_OPEN_IN_MARKUP));
-
-test("an opened ingredient is actually rendered somewhere, or the check below is vacuous", () => {
-  const stubs = withOpenFeeds.reduce(
-    (total, story) => total + (source(story).split(FEED_OPEN_IN_MARKUP).length - 1),
-    0,
-  );
-  expect(
-    withOpenFeeds.length,
-    "no rendered figure opens an ingredient — `saturate` has stopped walking `diagram.feeds`, " +
-      "which is how this went uncovered for a whole feature once already",
-  ).toBeGreaterThanOrEqual(18);
-  // **160 until session 118, and the floor falls because two stubs stopped being
-  // drawn on purpose.** The owner ruled that an iterator must not hang its solver
-  // as an ingredient — *"Crank-nicholson needing quantum linear solve as an
-  // ingredient doesn't make sense at all"* — so `backward-euler` and
-  // `trapezoidal-rule` lost the only step either of them had, and every figure
-  // they appear on lost a stub in both locales. 188 -> 136.
-  //
-  // Written down here rather than only in the commit, because a floor lowered to
-  // fit a run is indistinguishable from one lowered because the thing it counts
-  // got smaller, and only the reason tells them apart.
-  //
-  // **136 until W15, and the floor falls because duplicate interiors stopped
-  // being drawn on purpose.** A shared interior draws once per figure and every
-  // other occurrence demotes to a jump (`dedupSharedInteriors`), so the stubs
-  // that used to re-open inside each copy of the same fan now open exactly
-  // once — measured 48 on the dedup's landing. The stubs that remain are every
-  // opened ingredient a reader can actually see, and the census test in
-  // `repository-converge-layout.test.ts` guards the demotions themselves (80
-  // at saturation, printed every run).
-  expect(stubs, "too few opened stubs to be checking anything").toBeGreaterThanOrEqual(44);
-});
-
-for (const story of withOpenFeeds) {
-  test(`an opened stub's name reads as a footnote to its fan — ${story.name}`, async ({ page }) => {
-    await page.setContent(source(story), { waitUntil: "load" });
-    await page.evaluate(() => document.fonts.ready);
-
-    const report = await page.evaluate(() => {
-      const px = (element: Element) => Number.parseFloat(getComputedStyle(element).fontSize);
-      const read = (element: Element) => {
-        const style = getComputedStyle(element);
-        return {
-          text: element.textContent ?? "",
-          size: Number.parseFloat(style.fontSize),
-          fill: style.fill,
-          italic: style.fontStyle === "italic",
-        };
-      };
-      const opened = [...document.querySelectorAll(".mj-converge-feed--open .mj-converge-feed-name")];
-      const shut = [...document.querySelectorAll(".mj-converge-feed:not(.mj-converge-feed--open) .mj-converge-feed-name")];
-      const lanes = [...document.querySelectorAll("text.mj-converge-lane-name")];
-      return {
-        opened: opened.map(read),
-        laneNames: lanes.map((lane) => ({
-          text: lane.textContent ?? "",
-          key: lane.getAttribute("data-name") ?? "",
-        })),
-        smallestLane: lanes.length === 0 ? null : Math.min(...lanes.map(px)),
-        largestShutStub: shut.length === 0 ? null : Math.max(...shut.map(px)),
-        laneFill: lanes.length === 0 ? null : getComputedStyle(lanes[0]!).fill,
-      };
-    });
-
-    expect(report.opened.length, `${story.name} draws no opened stub`).toBeGreaterThan(0);
-
-    // **The duplicate is gone, and this is the render-level proof of it.** Until session 118
-    // this expectation ran the other way — it required at least one opened stub to be echoed
-    // by a lane, because the treatment below existed to quiet that echo. The echo is now
-    // removed at the source, so the assertion inverts: no opened stub's name may appear on a
-    // lane of the same figure. Asserted here rather than only in the layout test because the
-    // layout test measures strings the layout computed, and this measures the rendered page.
-    //
-    // **By identity, since session 119, not by string.** The defect this pins is the stub's
-    // own FAN BASE regaining a name — that lane's key ends `~slot:<id>` with nothing after
-    // (`placeFeeds` re-places the feed strand itself as the fan's base, `nameless`). A lane
-    // elsewhere on the figure that happens to carry the same words is a different,
-    // documented thing: the shared-sub-method repeat (W15 draws a shared interior once per figure; the census test prints the live count), where one
-    // node is genuinely drawn in two branches. `linear-ode-solve`'s fan drew "Matrix
-    // function" as a stub in one route and as a sibling route's chain step two bands away,
-    // and the string-global match filed that as a stub echo. A base is nameless by
-    // construction, so the bar is zero: any base drawing any text is the regression.
-    // Total, not tied to the stub's exact string: a name element only exists
-    // when a lane draws text, so a base that regains ANY name — the full label,
-    // a short form, anything — is the regression, whatever it says.
-    const isFanBase = (key: string) => /~slot:[^/~]+$/.test(key);
-    const repeated = report.laneNames.filter((lane) => isFanBase(lane.key));
-    // **A ceiling, and the number it fell from is the point.** Before session 118 an opened
-    // ingredient's name was drawn twice by construction — the stub, and again on the fan base
-    // hanging off it — so this was 100%: 31 of 31 on `quantum-linear-solve`, 10 of 10 on
-    // `nonlinear-ode-solve`. Blanking the fan base takes it to **at most one per figure**, on
-    // three figures of twenty.
-    //
-    // The one that is left is a **different repeat with a different cause** and it is not
-    // fixed here: a sub-method that two branches both reach is drawn once per branch rather
-    // than once, so its name can appear both as somebody's ingredient and as a lane elsewhere.
-    // Saturated, `nonlinear-ode-solve` draws "Block-encode a matrix" fourteen times and
-    // "Matrix function" twelve. That is the owner's *"strange repeats within larger
-    // processes"* still standing, and it is layout work.
-    //
-    // Held at one rather than asserted to zero, because zero is not true yet and a test that
-    // claims it would have to be disabled to commit. A regression of the fix above takes this
-    // straight back to ten or thirty-one.
-    console.log(
-      `[stub echo] ${story.name}: ${repeated.length} of ${report.opened.length} opened stubs echoed by a lane`,
-    );
-    expect(
-      repeated.length,
-      `${story.name}: ${repeated.length} fan bases draw a name ` +
-        `(${repeated.map((lane) => lane.text).join(", ")}) — the stub and its own fan are ` +
-        `drawing the same string again`,
-    ).toBeLessThanOrEqual(0);
-
-    for (const stub of report.opened) {
-      const where = `${story.name}: opened stub "${stub.text}"`;
-      if (report.smallestLane !== null) {
-        expect(
-          stub.size,
-          `${where} is drawn at ${stub.size}px against the smallest lane name's ` +
-            `${report.smallestLane}px — the copy on the stub is not smaller than the copy on ` +
-            `the fan, so the two read as two headlines rather than a name and its footnote`,
-        ).toBeLessThan(report.smallestLane);
-      }
-      if (report.largestShutStub !== null) {
-        expect(
-          stub.size,
-          `${where} is ${stub.size}px while a shut stub on the same figure is ` +
-            `${report.largestShutStub}px — opening an ingredient made its stub label louder, ` +
-            `which is the rule this replaced`,
-        ).toBeLessThan(report.largestShutStub);
-      }
-      expect(stub.italic, `${where} is not italic`).toBe(true);
-      if (report.laneFill !== null) {
-        expect(
-          stub.fill,
-          `${where} is filled "${stub.fill}", the same shade a lane name uses`,
-        ).not.toEqual(report.laneFill);
-      }
-    }
-  });
-}
