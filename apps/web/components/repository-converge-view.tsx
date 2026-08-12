@@ -59,7 +59,7 @@ import { ConvergeCanvas } from "./repository-converge-map";
 import { CanvasContinuity } from "./canvas-continuity";
 import { InfiniteCanvas } from "./infinite-canvas";
 import { MapInfoPopup } from "./map-info-popup";
-import { ArrowLeftIcon, InfoIcon } from "./icons";
+import { ArrowLeftIcon, CollapseAllIcon, ExpandAllIcon, InfoIcon } from "./icons";
 import {
   MAP_ABOUT_SECTIONS,
   withAbout,
@@ -84,6 +84,7 @@ import {
   layoutConverge,
   legendMark,
   methodHasInterior,
+  openableAddresses,
   spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -180,10 +181,22 @@ interface ConvergeCopy {
   inside: string;
   routes: (delegated: number, partly: number, whole: number) => string;
   canvasLabel: (subject: string) => string;
-  /** The two overlay controls, which have icons and no visible label. */
+  /** The three overlay controls, which have icons and no visible label. */
   backToAtlas: string;
   openInfo: string;
   closeInfo: string;
+  /**
+   * The open-everything control, and it carries its count for a reason.
+   *
+   * The glyph says *more*; only the number says *how much more*, and on this
+   * map "how much more" is the whole question — a reader on
+   * `nonlinear-ode-solve` is about to add 45 lines and a reader on
+   * `matrix-function` is about to add 4. It is the same argument `waysCount`
+   * records one screen down: a count is part of the sentence, not a decoration
+   * beside it, and the separator between the two differs by language.
+   */
+  expandAll: (n: number) => string;
+  collapseAll: string;
   /** Names the clipped reading for a screen reader and for a printout. */
   readingRegion: string;
   /** The paper surface's panel (W20). */
@@ -274,6 +287,9 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     backToAtlas: "Back to the Atlas",
     openInfo: "About this map",
     closeInfo: "Close",
+    expandAll: (n: number) =>
+      n === 1 ? "Open the one line that opens" : `Open all ${n} lines that open`,
+    collapseAll: "Close every open line",
     readingRegion: "This figure in words",
     paperEyebrow: "Paper",
     paperShows: (drawn: number, total: number) =>
@@ -359,6 +375,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     backToAtlas: "アトラスに戻る",
     openInfo: "この地図について",
     closeInfo: "閉じる",
+    expandAll: (n: number) => `開ける線 ${n} 本をすべて開く`,
+    collapseAll: "開いている線をすべて閉じる",
     readingRegion: "この図の内容を文章で",
     paperEyebrow: "論文",
     paperShows: (drawn: number, total: number) =>
@@ -1000,24 +1018,84 @@ export function ConvergeView({
       }
     }
   }
-  // One control, two states. A separate close button in the overlay would be a
-  // third thing in a corner the owner asked to hold exactly two.
+  // One control, two states. A separate close button in the overlay would be an
+  // extra thing in a corner that holds as little as it can — and the corner is
+  // three wide now rather than two only because the owner asked for the third
+  // (ai-ops#22), which is a different thing from it growing on its own.
   const infoHref = about === null ? sectionHrefs[MAP_ABOUT_SECTIONS[0]] : closeHref;
   const infoLabel = about === null ? copy.openInfo : copy.closeInfo;
+
+  // --- open everything / close everything (ai-ops#22) -----------------------
+  //
+  // > *"it would be nice to have a fully open / fully close option somewhere on
+  // > the map. Perhaps next to the information logo."* — owner
+  //
+  // Built the same way every other control on this page is: a plain `<a>` to
+  // this same path with a different `?open=`, so it works with JavaScript off,
+  // has an address a reader can send somebody, and is intercepted by
+  // `CanvasContinuity` so the reader keeps the pan they are standing on.
+  // "Open everything" is literally the set of addresses clicking every line in
+  // turn would produce (`openableAddresses`), so this control and the lines
+  // cannot come to different answers about what "open" means.
+  //
+  // **Union across the drawn figures, not the focused one.** Unfocused this
+  // page draws four roots and hands one `?open=` set to all of them; a set
+  // built from `focus` alone would open everything on one figure and nothing on
+  // the other three. Addresses carry their subject's id as a prefix, so the
+  // four sets are disjoint by construction (`addressRoot`).
+  //
+  // Drawn figures and not every subject, because `drawn` is what `collapsed`
+  // below is summed over and the two have to be about the same picture.
+  const expandable = new Set(
+    drawn.flatMap((figure) =>
+      openableAddresses({
+        graph,
+        vocabulary: STATE_VOCABULARY,
+        focus: figure.subject,
+        locale,
+        // The same fold this page is drawing under. Without it the walk
+        // saturates a *different* figure from the one on screen, and every
+        // address the reveal added would be missing from "everything".
+        unfold: paper?.unfold ?? undefined,
+      }),
+    ),
+  );
+  // **Nothing here opens, so there is no control** — R12.2, the dead control
+  // this canvas has produced twice. This is not a corner case on today's graph,
+  // it is the common case: since issue 16 took ingredients off the canvas,
+  // **15 of the 23 drawable figures have no openable line at all**, because
+  // `methodHasInterior` is now `segments.length >= 2` and their methods are all
+  // single-segment. A reader focused on `state-preparation`, `gate-synthesis`
+  // or `error-correction` gets two overlay controls, as before.
+  //
+  // `collapsed` is the state, and it is already the number the clipped reading
+  // and the information box speak from — *"n lines have something recorded
+  // inside that you have not opened"* against *"everything on this figure that
+  // opens is open"*. Deriving the button's state from a second count would put
+  // a control and a sentence about that control on two different sources.
+  const expandHref =
+    expandable.size === 0
+      ? null
+      : collapsed > 0
+        ? figureHref(focusId, [...expandable].sort(), atParam)
+        : figureHref(focusId, [], atParam);
+  const expandLabel = collapsed > 0 ? copy.expandAll(expandable.size) : copy.collapseAll;
 
   return (
     // `CanvasContinuity` wraps the whole surface rather than only the canvas,
     // which is a widening of its job and deliberate. Every control on this page
-    // that is not the back arrow — the information icon, the five section links,
-    // the close link, the size rungs — is a link to *this* path with a different
-    // query, and that is exactly the click it was built to intercept. Left
-    // around the canvas alone, opening the box would have been a document
-    // replacement: the figure would remount, and a reader who had panned would
-    // be put back where the server last rendered them, because the anchor
-    // carries the rendered `?at=` and not the live one. It substitutes the live
+    // that is not the back arrow — the information icon, the open-everything
+    // control, the five section links, the close link, the size rungs — is a
+    // link to *this* path with a different query, and that is exactly the click
+    // it was built to intercept. Left around the canvas alone, opening the box
+    // would have been a document replacement: the figure would remount, and a
+    // reader who had panned would be put back where the server last rendered
+    // them, because the anchor carries the rendered `?at=` and not the live one. It substitutes the live
     // value; that is the whole reason it takes `renderedAt`.
     <CanvasContinuity className="mj-map-shell" renderedAt={atParam}>
-      {/* The two controls, and nothing else on the page.
+      {/* The three controls, and nothing else on the page. Three since
+          ai-ops#22; two of them are unconditional and the third is absent on a
+          figure with nothing to open — see `expandHref`.
 
           `position: absolute` and outside the flow, so the canvas below is
           exactly `100dvh` — see the rewritten comment on
@@ -1050,6 +1128,27 @@ export function ConvergeView({
         >
           <InfoIcon />
         </a>
+        {/* The owner's own placement: *"Perhaps next to the information logo."*
+            After it rather than before it, so the two Tab stops that already
+            existed keep their order — `map-info-popup.tsx`'s focus fallback
+            records the count ("the next stop is the back arrow and the one
+            after it is this control") and putting a new control in front of the
+            icon would have made that comment wrong without anything failing.
+
+            `aria-expanded` on a link that is not a disclosure would be a lie —
+            this opens forty-five other things, not itself — so the state is
+            carried by the accessible name changing instead, which is what a
+            reader of either kind actually gets told. */}
+        {expandHref !== null ? (
+          <a
+            className="mj-map-overlay-button"
+            href={expandHref}
+            aria-label={expandLabel}
+            title={expandLabel}
+          >
+            {collapsed > 0 ? <ExpandAllIcon /> : <CollapseAllIcon />}
+          </a>
+        ) : null}
       </div>
 
       {drawn.length > 0 ? (

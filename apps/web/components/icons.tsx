@@ -30,10 +30,12 @@ export function ChevronIcon(props: IconProps) {
  *
  * `ChevronIcon` above is the disclosure mark — it points at something that will
  * expand where it is. This one leaves the page, and the shaft is what says so:
- * on the map's overlay it is one of exactly two controls with no label beside
- * it, so the glyph has to carry the whole distinction between "open this" and
- * "go back". Drawn to the same 16×16 box and the same 1.35 stroke as the rest,
- * with the head at x=6 so the arrow reads as centred despite being asymmetric.
+ * on the map's overlay it is one of three controls with no label beside it, so
+ * the glyph has to carry the whole distinction between "open this" and "go
+ * back" — and, since ai-ops#22, between both of those and "open everything"
+ * (`ExpandAllIcon` below, which is why that one is drawn on the diagonal).
+ * Drawn to the same 16×16 box and the same 1.35 stroke as the rest, with the
+ * head at x=6 so the arrow reads as centred despite being asymmetric.
  */
 export function ArrowLeftIcon(props: IconProps) {
   return <Icon {...props}><path d="M13 8H3.5M7 4 3 8l4 4" /></Icon>;
@@ -53,6 +55,49 @@ export function InfoIcon(props: IconProps) {
       <circle cx="8" cy="8" r="5.75" />
       <path d="M8 7.4v3.2" />
       <circle cx="8" cy="5.2" r="0.6" fill="currentColor" stroke="none" />
+    </Icon>
+  );
+}
+
+/**
+ * Open everything — two arrows pushing apart along the diagonal.
+ *
+ * Drawn on the **diagonal**, not as a vertical pair, and that is the whole
+ * legibility argument at 16px beside `InfoIcon` on the map's overlay. A pair of
+ * up/down chevrons is the disclosure mark this codebase already spends on one
+ * row (`ChevronIcon`), and reusing that shape for "every row at once" makes the
+ * two controls read as the same control. Arrows leaving a shared centre read as
+ * a thing being pushed open instead.
+ *
+ * The corner tick and the shaft are one path per arrow so the head cannot drift
+ * off its own line at a different stroke width, and both stop at 2.6/13.4 —
+ * inside the 16 box by more than the 1.35 stroke's half-width, so nothing is
+ * clipped when the glyph is scaled down.
+ */
+export function ExpandAllIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M6.4 2.6H2.6V6.4M2.6 2.6L6.4 6.4" />
+      <path d="M9.6 13.4H13.4V9.6M13.4 13.4L9.6 9.6" />
+    </Icon>
+  );
+}
+
+/**
+ * Close everything — the same two arrows, pulled back into the centre.
+ *
+ * Deliberately `ExpandAllIcon` reversed rather than a different metaphor: the
+ * control is one control with two states (the map overlay's `InfoIcon` sets
+ * that precedent), and a reader who has learned the open glyph should not have
+ * to learn a second one to undo it. The heads sit at 6.4/9.6 — where the other
+ * glyph's tails start — so the two swap in place without the mark appearing to
+ * move.
+ */
+export function CollapseAllIcon(props: IconProps) {
+  return (
+    <Icon {...props}>
+      <path d="M2.6 6.4H6.4V2.6M6.4 6.4L2.6 2.6" />
+      <path d="M13.4 9.6H9.6V13.4M9.6 9.6L13.4 13.4" />
     </Icon>
   );
 }
