@@ -206,7 +206,7 @@ place it is a standing, re-runnable handle on the production database that anyon
 is a comma and `--attested-by` values are fine, but any argument containing a comma would be
 silently split into two.
 
-#### Clearing refusals in production — the one run where that delimiter is load-bearing
+### Clearing refusals in production — the one run where that delimiter is load-bearing
 
 `--re-attest` takes a **comma-separated** list, so it is the argument the paragraph above is
 warning about. Without `^~^`, gcloud splits a 25-identity list into 25 positional arguments
@@ -237,6 +237,8 @@ email, which is the current state of this workspace, so pass the UUID: it is the
 **Expect it to refuse if your list is even one identity out**, in either direction, and to
 write nothing when it does. That is `plan_re_attestation` reconciling, not a failure — reread
 the refusal, fix the list, run again.
+
+### Finding the reviewer — use `--attested-by-email`, not a hand-copied UUID
 
 **`--attested-by-email <you>` resolves the row and refuses if it is ambiguous.** Prefer it.
 The alternative is running an ad-hoc query against production, reading the rule below
