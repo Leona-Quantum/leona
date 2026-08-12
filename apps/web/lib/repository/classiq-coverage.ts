@@ -23,7 +23,7 @@
 // chemistry at scale, CFD, telecom, cybersecurity. An independent token-overlap
 // measurement in 2026-08 put 51 of Classiq's then-102 entries as sharing no
 // vocabulary with any Leona slug, which is the same finding arrived at a cruder way.
-// Two intakes have since worked that half — 8 records, then 19 records and the nine
+// Three intakes have since worked that half — 8 records, then 19, then 4, plus the ten
 // declarations at the foot of this file — and `check-classiq-parity.mjs` prints
 // where it stands now. Do not read a count out of this comment; run the gauge.
 
@@ -78,7 +78,7 @@ export const CLASSIQ_COVERAGE: Readonly<Record<string, readonly string[]>> = {
   "applications/physical_systems/ising_model": ["hamiltonian-simulation-ising"],
 
   // ---- Applied half, declared 2026-08-12 ----------------------------------
-  // Nine demonstrations whose algorithm this catalog already carries as a record.
+  // Ten demonstrations whose algorithm this catalog already carries as a record.
   // Nothing was written for these; the work was reading each demonstration's own
   // problem statement and deciding whether the record answers it. Where it does
   // not, the entry stays MISSING — `classiq_chemistry_application` (a tour of a
@@ -100,6 +100,12 @@ export const CLASSIQ_COVERAGE: Readonly<Record<string, readonly string[]>> = {
   // The Lanchester demonstration discretizes a linear model into a linear system
   // and solves it with HHL; HHL is the algorithm it demonstrates.
   "applications/physical_systems/hhl_lanchester": ["hhl-linear-systems"],
+  // The fuzzing demonstration says in its own first line that it "uses the quantum
+  // Grover algorithm to boost the process of whitebox fuzzing", and its references
+  // are Grover 1997 plus a software-engineering paper about whitebox fuzz testing.
+  // Grover over the program's input space is the algorithm; the application is the
+  // choice of search space.
+  "applications/cybersecurity/whitebox_fuzzing": ["grover-unstructured-search"],
 
   // Six problems whose Ising formulation is in Lucas, arXiv:1302.5843, the source
   // of `ising-formulations-np-problems`.

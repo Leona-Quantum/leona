@@ -205,7 +205,7 @@ out.crossPage = { url: page.url(), stayed: await page.evaluate(() => window.__st
 
 /** The canvas box the fly centres into — `rootRef` in `infinite-canvas.tsx`. */
 const CANVAS_BOX = ".mj-canvas-viewport";
-const SELECTED = ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected";
+const SELECTED = ".mj-converge-lane--selected, .mj-converge-hub--selected";
 
 /**
  * How far the selected element sits from the centre of the canvas box, in CSS
@@ -721,7 +721,7 @@ const CARD = {};
         const bg = card ? getComputedStyle(card).backgroundColor : null;
         const alpha = bg?.match(/\/\s*([\d.]+)\)/) ?? bg?.match(/rgba\([^)]+,\s*([\d.]+)\)/);
         const selected = document.querySelector(
-          ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected",
+          ".mj-converge-lane--selected, .mj-converge-hub--selected",
         );
         const dimmed = document.querySelector(
           ".mj-converge-canvas--veiled .mj-converge-lane:not(.mj-converge-lane--selected)",
@@ -804,10 +804,10 @@ const PAPER = {};
         return {
           subject: value ? value.split(":")[0] : null,
           lanes: svg.querySelectorAll(".mj-converge-lane").length,
-          cited: svg.querySelectorAll(".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited")
+          cited: svg.querySelectorAll(".mj-converge-lane--paper-cited")
             .length,
           selected: svg.querySelectorAll(
-            ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected",
+            ".mj-converge-lane--selected, .mj-converge-hub--selected",
           ).length,
         };
       }),
@@ -923,7 +923,7 @@ const PAPER = {};
       camPage.evaluate(() => {
         const root = document.querySelector(".mj-canvas-viewport");
         const target = document.querySelector(
-          ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected",
+          ".mj-converge-lane--selected, .mj-converge-hub--selected",
         );
         if (!root || !target) return { root: root !== null, target: target !== null };
         const box = root.getBoundingClientRect();
@@ -967,10 +967,10 @@ const PAPER = {};
         panel: panel !== null,
         panelTitle: panel?.querySelector(".mj-paper-panel-title")?.textContent?.trim() || null,
         cited: document.querySelectorAll(
-          ".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited",
+          ".mj-converge-lane--paper-cited",
         ).length,
         selected: document.querySelectorAll(
-          ".mj-converge-lane--selected, .mj-converge-feed--selected, .mj-converge-hub--selected",
+          ".mj-converge-lane--selected, .mj-converge-hub--selected",
         ).length,
         lanes: document.querySelectorAll("svg.mj-converge-canvas .mj-converge-lane").length,
       };
@@ -990,7 +990,7 @@ const PAPER = {};
         titleAbsent: panel ? panel.querySelector(".mj-paper-panel-title") === null : null,
         note: panel?.querySelector(".mj-paper-panel-count")?.textContent?.trim() || null,
         cited: document.querySelectorAll(
-          ".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited",
+          ".mj-converge-lane--paper-cited",
         ).length,
         lanes: document.querySelectorAll("svg.mj-converge-canvas .mj-converge-lane").length,
       };
@@ -1021,7 +1021,7 @@ const PAPER = {};
       const within = (p) =>
         p.x >= 0 && p.x <= window.innerWidth && p.y >= 0 && p.y <= window.innerHeight;
       for (const svg of document.querySelectorAll("svg.mj-converge-canvas")) {
-        if (!svg.querySelector(".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited"))
+        if (!svg.querySelector(".mj-converge-lane--paper-cited"))
           continue;
         let sawAnchor = false;
         for (const a of svg.querySelectorAll("a[href*='open=']")) {
@@ -1073,7 +1073,7 @@ const PAPER = {};
           cited: await readerPage.evaluate(
             () =>
               document.querySelectorAll(
-                ".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited",
+                ".mj-converge-lane--paper-cited",
               ).length,
           ),
         };
@@ -1095,7 +1095,7 @@ const PAPER = {};
         panelEnds: document.querySelector(".mj-paper-panel") === null,
         citedEnds:
           document.querySelectorAll(
-            ".mj-converge-lane--paper-cited, .mj-converge-feed--paper-cited",
+            ".mj-converge-lane--paper-cited",
           ).length === 0,
       }));
     }

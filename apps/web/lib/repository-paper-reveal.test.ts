@@ -39,7 +39,6 @@ function drawnAddresses(
   });
   const addresses = new Set<string>();
   for (const lane of diagram.lanes) addresses.add(lane.address);
-  for (const feed of diagram.feeds) addresses.add(feed.address);
   return addresses;
 }
 
@@ -77,7 +76,6 @@ function saturatedIndex(): Map<string, Set<string>> {
     // `draws`, as the module does: a leaf method's lane has `id: null` and its
     // subject in `draws` — the same measurement recorded in `paper-reveal.ts`.
     for (const lane of diagram.lanes) note(lane.draws ?? lane.nodeId);
-    for (const feed of diagram.feeds) note(feed.nodeId);
   }
   return index;
 }
