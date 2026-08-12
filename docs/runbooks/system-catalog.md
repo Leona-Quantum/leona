@@ -409,9 +409,21 @@ attestation on a fresh environment — that one cannot be automated, because
 
 **When the pipeline step goes red, the deploy still succeeded.** It runs last, after the
 stack has been verified live, so a refusal means the new revision is serving and only the
-corpus content did not land. Nothing is partially published: every record stays on its
-previous version. The usual cause is a moved provenance claim — see *When `attest-bootstrap`
-refuses* above, resolve it with an explicit `--re-attest` run, and the next deploy converges.
+corpus content did not land. The usual cause is a moved provenance claim — see *When
+`attest-bootstrap` refuses* above, resolve it with an explicit `--re-attest` run, and the
+next deploy converges.
+
+**Nothing is partially published, and the listing still gets shorter.** Both are true, and
+the second one is the surprise. No record serves half-attested content — but the refusal
+happens *after* the import, and staging a new version resets `review_state` to DRAFT, so
+every record whose content changed in that deploy drops out of the browse listing until it
+is attested. The public predicate is ACCEPTED **and** PUBLIC; a DRAFT record fails the first
+half. Direct links to those records keep working, because the listing query is what filters
+them, so the symptom is a `/repository` count that falls rather than an error anywhere.
+
+This is not hypothetical and it is the state production has been in: a run refused 25
+records and `x-catalog-total` went from 283 to 258. Read a falling count after a refusal as
+the refusal, not as a second failure.
 
 The step runs on **every** deploy rather than only when `manifest.json` changed. A no-change
 run writes nothing (the importer compares hashes; publishing an already-public record is a
