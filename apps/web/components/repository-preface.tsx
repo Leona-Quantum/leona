@@ -5,7 +5,8 @@
 //
 // ## Why a preface, when the page already had a heading and a sentence
 //
-// The page opened straight into a control bar over 283 cards. A reader arriving
+// The page opened straight into a control bar over the whole corpus of cards
+// (283 of them, measured 2026-07). A reader arriving
 // from a search engine had no way to learn, before touching a control, what kind
 // of thing these records are or what the site is claiming about them — and the
 // controls themselves cannot teach it, because a filter answers "which of these"

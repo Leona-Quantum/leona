@@ -27,7 +27,7 @@ import type { BlockRole, PublicRepositoryKnownGap } from "./repository/types.ts"
  * **The corpus is not imported here**, for the reason `repository-topics.test.ts`
  * states: `public-repository.ts` reaches its entry modules with extensionless
  * specifiers and `node --test` resolves paths literally. The properties that are
- * *about* the 283 records — the stance census, the 414 compatible pairs, and the
+ * *about* the records — the stance census, the 414 compatible pairs, and the
  * 196 entries that meet nothing at either end — are asserted in
  * `scripts/check-repository-data.mjs`, which bundles with esbuild and runs in
  * `lint`.
@@ -412,7 +412,7 @@ test("a hole is a candidate at the width it publishes, and nowhere else", () => 
   // stated, so it can say no — and this is the assertion that keeps one
   // authored gap from making the whole catalogue look connectable: without it
   // the hole met 149 entries instead of 18, and the browse heading went from
-  // "87 of 283 meet another entry" to 163.
+  // "87 of the then-283 meet another entry" to 163.
   assert.equal(connects(hole, deriveInterface(GATE(4))), "incompatible");
   // Nothing reaches it from the left: only its readout is declared missing.
   assert.equal(connects(deriveInterface(STATE(3)), hole), "off-graph");

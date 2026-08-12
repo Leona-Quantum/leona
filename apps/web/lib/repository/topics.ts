@@ -2,7 +2,7 @@
 //
 // ## Why a closed vocabulary at all
 //
-// The corpus carried 307 distinct free-text `tags` across 283 entries, and **217
+// As of 2026-07, the corpus carried 307 distinct free-text `tags` across 283 entries, and **217
 // of them — 71% — were used by exactly one entry.** A label one record wears is
 // a keyword, not a facet: nothing can be filtered by it and nothing is grouped
 // by it. Worse, the set had eight case-splits, and two of them hid real records
@@ -27,7 +27,7 @@
 //   portfolio content. A filter that claims coverage the data does not have is
 //   worse than an absent filter, because the visitor cannot see it is lying.
 //   Entries with no defensible domain carry none, and the browse control says
-//   how many that is. **53 of 283 carry one — 19%.**
+//   how many that is. **As of 2026-07, 53 of the then-283 carried one — 19%.**
 //
 // ### The line a benchmark has to cross to earn a domain
 //
@@ -56,7 +56,7 @@
 // entry already carries. Three reasons, in order of how much they matter:
 //
 // 1. **It is re-runnable.** The owner has said the corpus population may be
-//    revamped wholesale. 283 hand-written labels would be discarded with it; a
+//    revamped wholesale. The hand-written labels would be discarded with it; a
 //    rule table classifies whatever the corpus becomes.
 // 2. **It is reviewable.** A reader can see *why* an entry is tagged
 //    `chemistry` — some rule said so, and the rule is four lines long.
@@ -532,8 +532,8 @@ const REFINEMENT_RULES: readonly TopicRule[] = [
  * Per-slug corrections, for records the rules read correctly and still land
  * somewhere a domain expert would not. Corrections REPLACE the derived set.
  *
- * **Empty, and that is a measurement rather than an omission.** Every one of the
- * 283 published entries is classified by the tables above; none needed a hand
+ * **Empty, and that is a measurement rather than an omission.** Every published
+ * entry is classified by the tables above; none needed a hand
  * correction. `deriveVerificationMethods` needed sixteen, which is the honest
  * comparison — that classifier reads free prose, and this one reads fields that
  * were written as labels.

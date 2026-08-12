@@ -194,7 +194,7 @@ const COPY = {
     refinementsLabel: "Narrower versions of this one",
     variantOf: (label: string) => `a narrower version of ${label}`,
     atlasHeading: "In the Atlas",
-    // "283 records" was typed here, not counted, and this component never sees
+    // A record count was typed here, not counted, and this component never sees
     // the corpus — so the number could only ever be a copy of one kept somewhere
     // else. The sentence's work is the *kind* of thing the catalogue holds, and
     // that is what tells a reader why this gap exists; the size of it never did.
@@ -1528,8 +1528,9 @@ export function LayerCensusPanel({
  * The strip an Atlas entry page shows when the layer graph names it.
  *
  * Renders nothing when no node does — unlike the panels on this surface, whose
- * emptiness is a finding. Here an absence is the default for 279 of 283 records
- * and saying so on every one of them would be noise, not honesty.
+ * emptiness is a finding. Here an absence is the default for most records (279
+ * of the then-283, measured 2026-07) and saying so on every one of them would
+ * be noise, not honesty.
  */
 /**
  * One node's contract, drawn on the record page.
