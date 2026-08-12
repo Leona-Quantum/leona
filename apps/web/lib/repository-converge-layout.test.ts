@@ -1664,6 +1664,8 @@ test("a line that opens into something says so, and a line that does not is not 
   // 83 since B5 unit 3: `variance-objective` and `measurement-grouped-readout`, one lane each.
   // 86 since B5's leaf anchors: `particle-hole-ansatz` and `orbital-optimized-ansatz`
   // under `ansatz-construction`, `symmetry-verification` under `error-mitigation`.
+  // 88 still: the folded refinement draws NO lane of its own, which is the whole point
+  // of the fold — its node exists, its page draws, and the slot figure is unchanged.
   assert.equal(openable + leaves + 1, 88, "the twenty-three figures draw 88 lines between them");
   assert.equal(openable, 41, "41 of them open into something recorded");
   assert.equal(leaves, 46, "46 are leaves — nothing finer is recorded for them");
@@ -4753,6 +4755,18 @@ const DRAWN_NOWHERE: readonly string[] = [
   // pages, where `layoutConvergeForMethod` unfolds its subject.
   // (`lightsabre-routing` is folded too, but atomic — no interior to miss.)
   "krovi-linear-ode",
+  // B5's continuation: a third folded refinement holding an interior, same reason as
+  // the two below it. `tetris-adapt-ansatz` hangs its parent's `observable-estimation`
+  // stub — an interior by this census's definition — and folds because nothing in the
+  // walk differs from ADAPT's. What differs is a schedule (how many operators a round
+  // admits), which the map cannot draw; that is on the node as `potentialPath`, so this
+  // entry is a statement about the map's backlog rather than about the paper.
+  "tetris-adapt-ansatz",
+  // Same class again: `iterative-qcc-ansatz` folds into `qcc-ansatz` and hangs its
+  // parent's screening stub, so it holds an interior and no slot figure draws it. Its
+  // backlog item is the more general of the two — a Hamiltonian that grows between
+  // rounds while the circuit does not — and it is on the node as `potentialPath`.
+  "iterative-qcc-ansatz",
   "lchs-improved-kernel",
 ];
 
