@@ -32,6 +32,7 @@ import {
   legendMark,
   loopAllowance,
   ownStepName,
+  openableAddresses as saturatedOpen,
   spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
@@ -1404,36 +1405,20 @@ test("a narrowing with no plain sibling still draws, named after its filler", ()
  * that count things. The id path keeps its own test.
  */
 /** Every address `id`'s figure can open, to saturation. `graph` so a fixture
- *  graph can be saturated too — the cap's own test needs that. */
+ *  graph can be saturated too — the cap's own test needs that.
+ *
+ *  A thin wrapper now, and that is the point (ai-ops#22). This walk lived here
+ *  as the cap's measuring stick until the map grew an **open everything**
+ *  control that has to emit the same set; a second copy would mean the cap is
+ *  asserted against one set while the overlay mints another, and the day they
+ *  drift is the day the control emits an address the page drops on arrival.
+ *  `lanesSeeNoFurther` below is the independent check that the shared function
+ *  really does saturate — the one claim that a delegating wrapper cannot make
+ *  about itself. */
 function openableAddresses(id: string, graph: LayerGraph = LAYER_GRAPH): string[] {
-  const seen = new Set<string>();
-  const walk = (open: ReadonlySet<string>) => {
-    const node = layerNode(graph, id);
-    assert.ok(node && isCapability(node));
-    const diagram = layoutConverge({
-      graph,
-      vocabulary: STATE_VOCABULARY,
-      focus: node,
-      locale: "en",
-      open,
-    });
-    let grew = false;
-    // Lanes, and lanes are all there are. It walked `diagram.feeds` alongside
-    // them while an ingredient's control lived on a stub of its own; issue 16
-    // took ingredients off this canvas, so the second list is gone rather than
-    // empty. If a second kind of openable shape is ever added, it belongs here
-    // — with lanes alone this walk once excluded a whole feature and left every
-    // opened-state check in this file green over a set that could not reach it.
-    for (const openable of diagram.lanes) {
-      if (openable.openHref === null) continue;
-      if (seen.has(openable.address)) continue;
-      seen.add(openable.address);
-      grew = true;
-    }
-    if (grew) walk(new Set(seen));
-  };
-  walk(new Set());
-  return [...seen];
+  const node = layerNode(graph, id);
+  assert.ok(node && isCapability(node));
+  return [...saturatedOpen({ graph, vocabulary: STATE_VOCABULARY, focus: node, locale: "en" })];
 }
 
 function openDiagram(id: string, open: Iterable<string>, locale: PublicLocale = "en"): ConvergeDiagram {
@@ -1546,6 +1531,140 @@ test("the cap is above what a reader can reach by clicking", () => {
   // with one of the cap's places gone before any of their own ids are counted.
   const reserved = resolveOpenIds(overview, (id) => layerNode(LAYER_GRAPH, id) !== null, 1);
   assert.equal(reserved.dropped, 0, "a method's page reserves one slot, and the overview no longer fits beside it");
+});
+
+// --- fully open, fully closed (ai-ops#22) ------------------------------------
+//
+// > *"it would be nice to have a fully open / fully close option somewhere on
+// > the map."* — owner
+//
+// The map's overlay control emits `openableAddresses` verbatim. Three things
+// have to be true of that set for the control to be honest, and none of them
+// follows from the walk terminating:
+//
+//   1. it **saturates** — laying the figure out under it leaves no further
+//      control unbanked, so "fully open" is fully open and not one rung of it;
+//   2. it **lands on the collapse state** — `collapsedCount` goes to 0, which
+//      is the number the button's own two states are read from and the number
+//      the clipped reading and the information box already speak from;
+//   3. it is **empty exactly where the control must not render**, because a
+//      control that opens nothing is the dead control R12.2 refuses, and since
+//      issue 16 that is not a corner case — it is most of the figures.
+//
+// Each is asserted with the census printed beside it, so a run that goes green
+// over an empty sweep says so on the record instead of in a passing assertion.
+
+test("`openableAddresses` saturates: opening everything leaves nothing to open", () => {
+  const figures = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY);
+  let banked = 0;
+  let withInterior = 0;
+  for (const slot of figures) {
+    const addresses = new Set(openableAddresses(slot.id));
+    banked += addresses.size;
+    if (addresses.size > 0) withInterior += 1;
+    const node = layerNode(LAYER_GRAPH, slot.id);
+    assert.ok(node && isCapability(node));
+    const opened = layoutConverge({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      focus: node,
+      locale: "en",
+      open: addresses,
+    });
+
+    // (1) The fixed point, checked from the other side. Every control the
+    // opened drawing still shows is either one of the banked addresses or a
+    // W15 jump — which is a link to where the interior IS drawn, not an open
+    // control, and putting its address in `?open=` opens nothing because
+    // `openable` is false on it.
+    for (const lane of opened.lanes) {
+      if (lane.openHref === null || lane.sharedWith !== null) continue;
+      assert.ok(
+        addresses.has(lane.address),
+        `${slot.id}: ${lane.address} still offers a control the saturation walk never banked`,
+      );
+    }
+
+    // (2) The state the button reads. `collapsedCount` is shut-and-openable by
+    // construction, so 0 is exactly *"everything on this figure that opens is
+    // open"* — the sentence the copy has claimed since before there was a
+    // control that could produce it.
+    assert.equal(
+      opened.collapsedCount,
+      0,
+      `${slot.id}: ${opened.collapsedCount} lines still shut after opening everything`,
+    );
+  }
+  console.log(
+    `open everything: ${banked} addresses over ${figures.length} figures; `
+      + `${withInterior} have an interior, ${figures.length - withInterior} open nothing at all`,
+  );
+
+  // Not vacuous, and deliberately two claims rather than one sum. A walk that
+  // went quiet on every figure would satisfy (1) and (2) on all 23 of them.
+  assert.ok(banked >= 20, `the whole corpus banked only ${banked} addresses`);
+  assert.ok(withInterior >= 4, `only ${withInterior} figures have anything to open`);
+});
+
+test("the figures that open nothing offer no control to open them", () => {
+  // (3) The control's absence. Where `openableAddresses` is empty the shut
+  // drawing must show no open control either — otherwise "there is nothing to
+  // expand" and "here is a thing to click" are on screen together.
+  //
+  // **This is where issue 16 landed, and it is worth having the number.**
+  // `methodHasInterior` is `segments.length >= 2` since ingredients came off
+  // the canvas; twelve one-segment methods that used to open into their
+  // ingredients now hold nothing this canvas can draw, and the figures whose
+  // methods are all one-segment therefore hold nothing at all.
+  const barren: string[] = [];
+  for (const slot of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    if (openableAddresses(slot.id).length > 0) continue;
+    barren.push(slot.id);
+    const shut = openDiagram(slot.id, []);
+    const controls = shut.lanes.filter((lane) => lane.openHref !== null);
+    assert.equal(
+      controls.length,
+      0,
+      `${slot.id} opens nothing, yet draws ${controls.length} open controls`,
+    );
+    assert.equal(shut.collapsedCount, 0, `${slot.id} opens nothing, yet reports lines to open`);
+  }
+  console.log(`figures with no expandable interior at all: ${barren.length} — ${barren.join(", ")}`);
+  assert.ok(barren.length > 0, "no figure is barren — the ingredient ruling would have to have been reverted");
+});
+
+test("open everything means the same thing in both locales", () => {
+  // The overlay's label is translated; its href must not be. A set that
+  // differed by locale would mean a Japanese reader's "open everything" opened
+  // a different figure from an English reader's, and the two would be sharing
+  // links that do not reproduce.
+  for (const slot of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const node = layerNode(LAYER_GRAPH, slot.id);
+    assert.ok(node && isCapability(node));
+    const en = saturatedOpen({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "en" });
+    const ja = saturatedOpen({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "ja" });
+    assert.deepEqual([...en].sort(), [...ja].sort(), `${slot.id} opens a different set in ja`);
+  }
+});
+
+test("the overview's open-everything set is one query the cap and a proxy both take", () => {
+  // What the control actually puts in the address bar on the four-root
+  // overview, measured rather than assumed. Two ceilings sit above it and the
+  // second is not in this codebase: `CONVERGE_OPEN_MAX`, and the ~8KB request
+  // line common proxies default to — see the comment on the constant, which
+  // says past 256 the answer is a different address scheme rather than another
+  // power of two. Before this control the saturated URL was something a reader
+  // could only reach by clicking sixty-nine times; now it is one click, so the
+  // number belongs on the record.
+  const overview = overviewAddresses();
+  const query = new URLSearchParams();
+  for (const address of [...overview].sort()) query.append("open", address);
+  const href = `/repository/layers?${query.toString()}`;
+  console.log(`open everything, four-root overview: ${overview.length} addresses, ${href.length} bytes of URL`);
+
+  const resolved = resolveOpenIds(overview, (id) => layerNode(LAYER_GRAPH, id) !== null);
+  assert.equal(resolved.dropped, 0, `the control emits ${resolved.dropped} addresses the page would drop`);
+  assert.ok(href.length < 4_000, `the overview's open-everything URL is ${href.length} bytes`);
 });
 
 test("`?open=` is parsed the same way wherever it is read", () => {

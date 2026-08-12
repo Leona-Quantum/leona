@@ -12366,7 +12366,11 @@ div.mj-rail-row:hover {
   text-align: center;
 }
 
-/* --- the two controls, top left ------------------------------------------ */
+/* --- the overlay controls, top left --------------------------------------- */
+/* Three of them since ai-ops#22 — back, information, open-everything — and the
+   third is conditional, so this row is sized by `gap` and the button rule
+   rather than by a count. Nothing here needed changing to admit it, which is
+   the point of having written it as a flex row. */
 .mj-map-overlay {
   position: absolute;
   top: var(--sp-4);
@@ -12483,7 +12487,7 @@ div.mj-rail-row:hover {
     white-space: normal;
     overflow: visible;
   }
-  /* The two controls are navigation, and navigation does not print. */
+  /* The overlay controls are navigation, and navigation does not print. */
   .mj-map-overlay {
     display: none;
   }
