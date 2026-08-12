@@ -1509,7 +1509,7 @@ test("inside the card, every control the figure emits stays on the outer address
       innerBase: base,
     });
     if (diagram.empty) continue;
-    for (const shape of [...diagram.lanes, ...diagram.feeds]) {
+    for (const shape of diagram.lanes) {
       if (shape.openHref !== null) {
         toggles += 1;
         const q = new URLSearchParams(shape.openHref.slice(shape.openHref.indexOf("?") + 1));
@@ -1542,26 +1542,52 @@ test("inside the card, every control the figure emits stays on the outer address
   console.log(`[inner figure census] ${DRAWABLE.length} drawable slots, ${toggles} toggles, ${names} card links`);
 });
 
-test("a method's interior is the lane's own notion of it — ingredients count", () => {
+test("a method's interior is the lane's own notion of it — ingredients are not one", () => {
   // The card's expand control and the lane's open control must answer "does
   // this method have an interior" identically, and `methodHasInterior` is the
-  // one writer both read. The case that catches a narrower re-derivation is
-  // `hhl-qpe-inversion`: every step it names is an ingredient, so a predicate
-  // over route *segments* alone calls it empty — which is exactly the method
-  // the layout's own comment records going inert once already.
+  // one writer both read. That has not changed; **what the predicate answers
+  // has.**
+  //
+  // It read `segments >= 2 || feeds.length > 0` while an ingredient was a
+  // shape on the canvas, and `hhl-qpe-inversion` was the fixture that pinned
+  // the second clause: every step it names is an ingredient, so a predicate
+  // over segments alone called it empty and the layout's own comment recorded
+  // it going inert once already. The owner has since ruled ingredients off the
+  // map and onto the card (issue 16), so the second clause is the defect now —
+  // HHL's expand control would offer a truncated map with nothing in it to
+  // draw.
+  //
+  // Same fixture, inverted, which is the point: this is the case where the two
+  // readings differ, and it is the one worth pinning either way round.
   const hhl = layerNode(LAYER_GRAPH, "hhl-qpe-inversion")!;
   assert.ok(isMethod(hhl));
   const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, hhl);
   assert.ok(route.segments.length < 2, "hhl grew named segments — pick a new fixture for this case");
   assert.ok(route.feeds.length > 0, "hhl lost its ingredients — pick a new fixture for this case");
-  assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, hhl), true);
-  // And a method with neither has none — the control would expand into nothing.
-  const empty = LAYER_GRAPH.nodes.filter(isMethod).filter((method) => {
-    const r = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
-    return r.segments.length < 2 && r.feeds.length === 0;
-  });
-  assert.ok(empty.length >= 1, "no leaf method left to pin the negative case on");
-  for (const method of empty) {
-    assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, method), false, method.id);
+  assert.equal(
+    methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, hhl),
+    false,
+    "a method whose only recorded structure is its ingredients has no interior the map can draw",
+  );
+  // …and the ingredients are not lost with the control: they are the card's
+  // Requires section, which is where the ruling put them.
+  const card = cardFor(
+    { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER },
+    "hhl-qpe-inversion",
+  );
+  assert.ok(card && card.kind === "method");
+  assert.ok(card.ingredients.held, "hhl's Requires section is empty");
+  assert.deepEqual(
+    card.ingredients.value.map((item) => item.link.id),
+    [...route.feeds],
+  );
+  // The positive case still needs a witness, or the predicate could be a
+  // constant `false` and this would pass.
+  const withSegments = LAYER_GRAPH.nodes.filter(isMethod).filter(
+    (method) => routeOf(LAYER_GRAPH, STATE_VOCABULARY, method).segments.length >= 2,
+  );
+  assert.ok(withSegments.length >= 10, `only ${withSegments.length} methods walk two named hops`);
+  for (const method of withSegments) {
+    assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, method), true, method.id);
   }
 });
