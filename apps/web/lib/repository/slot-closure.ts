@@ -157,8 +157,40 @@ export const SLOT_CLOSURES: readonly SlotClosure[] = [
         // (`linear-ode-solve.entries`), and the paper is already in the register.
         // So a reader arriving from the catalog reaches the slot and finds seven
         // methods, none of them the one their record is about.
+        // **The full-text read is done; the authoring is not.** Left here rather
+        // than in a session note so the next reader starts from the paper rather
+        // than from a search. Read off the v2 PDF directly, section VII and the
+        // Conclusions:
+        //
+        // - Eq. (76), the Conclusions' own summary: "By encoding the differential
+        //   equation as a linear system, and using the algorithm of Ref. [12] for
+        //   solving linear systems, the complexity is (including only scaling in
+        //   ‖A‖ and Δt), Õ((‖A‖Δt)²)." Ref. [12] is Harrow, Hassidim and Lloyd —
+        //   so `steps: ["time-discretization", "quantum-linear-solve"]`, and the
+        //   `via` hop has no pin, because none of the five recorded
+        //   discretizations is an A(α)-stable multistep method of order p.
+        // - Eq. (74), the sharper bound: "Õ(log(N_x) s^{9/2} (‖A‖Δt)^{2+2/p}
+        //   κ_V^{2+4/p} (‖x_in‖ + ‖b‖/‖A‖)^{1/p} / ε^{1+2/p})", stated under
+        //   "If we assume that this error is negligible" — the error in *starting*
+        //   the multistep method, which Eq. (71)'s more conservative figure keeps.
+        //   A quotation of (74) has to carry that condition with it.
+        // - The hypothesis that bounds the whole thing, Conclusions: "These
+        //   results are for constant coefficients, because that enables an
+        //   analytic error analysis. This approach can also be used to solve
+        //   linear differential equations with time-dependent coefficients,
+        //   though the error analysis will be more difficult." So this route does
+        //   **not** meet the slot's `A(t)` contract in the way LCHS and Dyson do,
+        //   and that difference is the interesting thing about having it drawn.
+        // - Section VII: the Δt² scaling "is likely suboptimal, because the lower
+        //   bound is linear scaling" — from the no-fast-forwarding theorem.
+        //
+        // What is still missing is the middle of the paper: this slot's siblings
+        // carry an `implementations` entry that writes the matrix family out row
+        // by row in both locales (see `truncated-taylor-propagator`), and a node
+        // authored from the tail alone would be the one thin record in a region
+        // whose whole point is that it is the template.
         because:
-          "Not authored: the corpus already holds this route as the record `linear-differential-equations` and the map draws no method for it, so the gap is a divergence rather than a discovery. Authoring it is a content job — conditions, cost and pseudocode in both locales from a full-text read — and writing them from the Zoo record's summary instead would put this map's name on a reading nobody did.",
+          "Not authored: the corpus already holds this route as the record `linear-differential-equations` and the map draws no method for it, so the gap is a divergence rather than a discovery. The complexity and the hypotheses are read and quoted in the comment above — Eq. (76), Eq. (74) and the constant-coefficient caveat — so what remains is the paper's middle sections, which is what this slot's siblings carry as an `implementations` entry in both locales. Authoring it from the tail alone would put the region's one thin record in the region that is meant to be the template.",
       },
     ],
   },

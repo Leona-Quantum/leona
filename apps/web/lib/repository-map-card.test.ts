@@ -402,7 +402,13 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // equation-of-motion routes draw their own stretch beside two ingredients each.
   // 124 since B5 unit 3: the two new leaves draw one hop each.
   // 127 since B5's three leaf anchors, one hop each.
-  assert.equal(hops, 131, `${hops} hops, not 131`);
+  // 132 since `layerwise-training`, and it adds exactly ONE despite having a step. The
+  // `ansatz-construction` it declares is an ingredient it HANGS, not a named segment on its
+  // spine — `routeOf` gives it the single stretch `parameterized-circuit → prepared-state`
+  // and nothing else — so the step it consumes costs a stub on the drawing and no second hop
+  // here. Worth stating because the arithmetic looks wrong otherwise: a method with a step
+  // that contributes one hop is the ingredient shape, not a miscount.
+  assert.equal(hops, 132, `${hops} hops, not 132`);
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
   // authored hop is what proves the parse, the spans, the legend and both locales against
@@ -1338,7 +1344,11 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // their own work with it — while the other five excited-state routes end on
   // `observable-estimation` and so have no own stretch, exactly as VQE does not.
   // 70 since B5 unit 3: the two new leaves each close their own stretch.
-  assert.equal(withOwn.length, 77);
+  // 78 since `layerwise-training`. Its stretch stands at index 0 rather than after a named
+  // step — the slot it consumes is an ingredient hanging off the strand, not something it
+  // walks through first — so `trailing` is deliberately unchanged at 14. The two numbers
+  // moving apart is the point of counting them separately.
+  assert.equal(withOwn.length, 78);
   assert.equal(trailing.length, 14);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1394,7 +1404,10 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 66 since W21: the ten methods of the variational region each have one, for the reason
   // recorded on the stretch census above.
   // 68 since W21-E, for the two routes named on the stretch census above.
-  assert.equal(built, 77);
+  // 78 since `layerwise-training`, tracking the stretch census above one-for-one, which is
+  // the whole claim this test makes: the own-card population and the stretch population are
+  // the same set, so they move together or one of them is wrong.
+  assert.equal(built, 78);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);
@@ -1534,7 +1547,7 @@ test("inside the card, every control the figure emits stays on the outer address
       innerBase: base,
     });
     if (diagram.empty) continue;
-    for (const shape of [...diagram.lanes, ...diagram.feeds]) {
+    for (const shape of diagram.lanes) {
       if (shape.openHref !== null) {
         toggles += 1;
         const q = new URLSearchParams(shape.openHref.slice(shape.openHref.indexOf("?") + 1));
@@ -1567,26 +1580,52 @@ test("inside the card, every control the figure emits stays on the outer address
   console.log(`[inner figure census] ${DRAWABLE.length} drawable slots, ${toggles} toggles, ${names} card links`);
 });
 
-test("a method's interior is the lane's own notion of it — ingredients count", () => {
+test("a method's interior is the lane's own notion of it — ingredients are not one", () => {
   // The card's expand control and the lane's open control must answer "does
   // this method have an interior" identically, and `methodHasInterior` is the
-  // one writer both read. The case that catches a narrower re-derivation is
-  // `hhl-qpe-inversion`: every step it names is an ingredient, so a predicate
-  // over route *segments* alone calls it empty — which is exactly the method
-  // the layout's own comment records going inert once already.
+  // one writer both read. That has not changed; **what the predicate answers
+  // has.**
+  //
+  // It read `segments >= 2 || feeds.length > 0` while an ingredient was a
+  // shape on the canvas, and `hhl-qpe-inversion` was the fixture that pinned
+  // the second clause: every step it names is an ingredient, so a predicate
+  // over segments alone called it empty and the layout's own comment recorded
+  // it going inert once already. The owner has since ruled ingredients off the
+  // map and onto the card (issue 16), so the second clause is the defect now —
+  // HHL's expand control would offer a truncated map with nothing in it to
+  // draw.
+  //
+  // Same fixture, inverted, which is the point: this is the case where the two
+  // readings differ, and it is the one worth pinning either way round.
   const hhl = layerNode(LAYER_GRAPH, "hhl-qpe-inversion")!;
   assert.ok(isMethod(hhl));
   const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, hhl);
   assert.ok(route.segments.length < 2, "hhl grew named segments — pick a new fixture for this case");
   assert.ok(route.feeds.length > 0, "hhl lost its ingredients — pick a new fixture for this case");
-  assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, hhl), true);
-  // And a method with neither has none — the control would expand into nothing.
-  const empty = LAYER_GRAPH.nodes.filter(isMethod).filter((method) => {
-    const r = routeOf(LAYER_GRAPH, STATE_VOCABULARY, method);
-    return r.segments.length < 2 && r.feeds.length === 0;
-  });
-  assert.ok(empty.length >= 1, "no leaf method left to pin the negative case on");
-  for (const method of empty) {
-    assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, method), false, method.id);
+  assert.equal(
+    methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, hhl),
+    false,
+    "a method whose only recorded structure is its ingredients has no interior the map can draw",
+  );
+  // …and the ingredients are not lost with the control: they are the card's
+  // Requires section, which is where the ruling put them.
+  const card = cardFor(
+    { graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, corpus: CORPUS, locale: "en", register: PAPER_REGISTER },
+    "hhl-qpe-inversion",
+  );
+  assert.ok(card && card.kind === "method");
+  assert.ok(card.ingredients.held, "hhl's Requires section is empty");
+  assert.deepEqual(
+    card.ingredients.value.map((item) => item.link.id),
+    [...route.feeds],
+  );
+  // The positive case still needs a witness, or the predicate could be a
+  // constant `false` and this would pass.
+  const withSegments = LAYER_GRAPH.nodes.filter(isMethod).filter(
+    (method) => routeOf(LAYER_GRAPH, STATE_VOCABULARY, method).segments.length >= 2,
+  );
+  assert.ok(withSegments.length >= 10, `only ${withSegments.length} methods walk two named hops`);
+  for (const method of withSegments) {
+    assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, method), true, method.id);
   }
 });
