@@ -206,6 +206,38 @@ place it is a standing, re-runnable handle on the production database that anyon
 is a comma and `--attested-by` values are fine, but any argument containing a comma would be
 silently split into two.
 
+### Clearing refusals in production — the one run where that delimiter is load-bearing
+
+`--re-attest` takes a **comma-separated** list, so it is the argument the paragraph above is
+warning about. Without `^~^`, gcloud splits a 25-identity list into 25 positional arguments
+and the command fails on an unrecognised argument rather than doing anything dangerous — but
+it fails after you have assembled the list, which is the expensive part.
+
+Get the identities from `attest-plan` (below) or from the refusal itself. Both print one per
+line and neither hands back a pasteable string; assembling the list is the step where a
+person looks at each record, and that is deliberate.
+
+```bash
+gcloud run jobs update leona-admin-oneshot \
+  --project=majorana-core --region=us-west1 \
+  --args="^~^-m~majorana_api.catalog_admin~sync-bootstrap~--attested-by~<reviewer-uuid>~--re-attest~<id>,<id>,…"
+
+gcloud run jobs execute leona-admin-oneshot --project=majorana-core --region=us-west1 --wait
+```
+
+`sync-bootstrap` rather than `attest-bootstrap`, because re-signing alone leaves the records
+attested and still private — the publish step is what returns them to the browse listing.
+
+**Name the reviewer explicitly here.** `--attested-by-standing` is the pipeline's form and it
+resolves correctly, but a re-signature is a human act and the audit row should carry the
+account of the human who made it. `--attested-by-email` refuses while two live rows carry one
+email, which is the current state of this workspace, so pass the UUID: it is the account
+`reviewers` reports with a nonzero `signed=` count.
+
+**Expect it to refuse if your list is even one identity out**, in either direction, and to
+write nothing when it does. That is `plan_re_attestation` reconciling, not a failure — reread
+the refusal, fix the list, run again.
+
 ### Finding the reviewer — use `--attested-by-email`, not a hand-copied UUID
 
 **`--attested-by-email <you>` resolves the row and refuses if it is ambiguous.** Prefer it.
@@ -409,9 +441,21 @@ attestation on a fresh environment — that one cannot be automated, because
 
 **When the pipeline step goes red, the deploy still succeeded.** It runs last, after the
 stack has been verified live, so a refusal means the new revision is serving and only the
-corpus content did not land. Nothing is partially published: every record stays on its
-previous version. The usual cause is a moved provenance claim — see *When `attest-bootstrap`
-refuses* above, resolve it with an explicit `--re-attest` run, and the next deploy converges.
+corpus content did not land. The usual cause is a moved provenance claim — see *When
+`attest-bootstrap` refuses* above, resolve it with an explicit `--re-attest` run, and the
+next deploy converges.
+
+**Nothing is partially published, and the listing still gets shorter.** Both are true, and
+the second one is the surprise. No record serves half-attested content — but the refusal
+happens *after* the import, and staging a new version resets `review_state` to DRAFT, so
+every record whose content changed in that deploy drops out of the browse listing until it
+is attested. The public predicate is ACCEPTED **and** PUBLIC; a DRAFT record fails the first
+half. Direct links to those records keep working, because the listing query is what filters
+them, so the symptom is a `/repository` count that falls rather than an error anywhere.
+
+This is not hypothetical and it is the state production has been in: a run refused 25
+records and `x-catalog-total` went from 283 to 258. Read a falling count after a refusal as
+the refusal, not as a second failure.
 
 The step runs on **every** deploy rather than only when `manifest.json` changed. A no-change
 run writes nothing (the importer compares hashes; publishing an already-public record is a
