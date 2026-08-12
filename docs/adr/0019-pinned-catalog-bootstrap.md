@@ -32,11 +32,12 @@
 > written and each is marked inline with the current count.
 
 > **Amendment, 2026-08-12 — the sync is now run by the deploy pipeline, not by hand.**
-> *(Status, same day: the step is BUILT, reviewed and merged, and **parked** behind the
-> repository variable `CATALOG_SYNC_ENABLED` after its first production run refused — two live
-> accounts hold the catalog reviewer grant, which is a production data decision and owner-only.
-> The refusal is the guard working, not a defect: it named both candidates and wrote nothing.
-> Everything below describes the mechanism as merged; only its invocation waits.)*
+> *(Status, end of day: **LIVE**. `CATALOG_SYNC_ENABLED` is `true` and the step ran
+> unattended on deploy 31599927661 at 13:22:43Z — it resolved its own reviewer through the
+> standing grant, imported, attested and published the whole manifest with nothing refused.
+> The published corpus went **258 → 342**. It spent most of the day parked behind that
+> variable after its first run refused on two live reviewer grants; that refusal was the
+> guard working, and what cleared it is recorded below and in `desk/decisions/Leona.md`.)*
 >
 > **Owner ruling, 2026-08-12 (ai-ops#13) — the step stays, and switches on when someone can
 > watch a deploy through.** The question put to the owner was whether every deploy should copy
