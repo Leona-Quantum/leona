@@ -401,7 +401,8 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // `ground-state-energy` ingredient it hangs, and the subspace-expansion and
   // equation-of-motion routes draw their own stretch beside two ingredients each.
   // 124 since B5 unit 3: the two new leaves draw one hop each.
-  assert.equal(hops, 124, `${hops} hops, not 124`);
+  // 127 since B5's three leaf anchors, one hop each.
+  assert.equal(hops, 131, `${hops} hops, not 131`);
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
   // authored hop is what proves the parse, the spans, the legend and both locales against
@@ -1036,7 +1037,8 @@ test("a method's card says what it is a narrower version of, and what narrows it
   // a partition read off a set that silently grew is not the partition that was checked.
   // Six since W21: `qubit-adapt-ansatz` refines `adapt-ansatz`, with the mark "ADAPT"
   // verifiable against the parent's own label in both locales, as validation requires.
-  assert.equal(declared.length, 6, `${declared.length} methods declare refines, not 6`);
+  // 7 since B5 folded `tetris-adapt-ansatz` into `adapt-ansatz` (W17/s121).
+  assert.equal(declared.length, 8, `${declared.length} methods declare refines, not 8`);
 
   for (const node of declared) {
     const card = byId.get(node.id);
@@ -1099,14 +1101,19 @@ test("a method's card says what it is a narrower version of, and what narrows it
   const drawn = methods.filter((card) => card.refines !== null || card.refinedBy.length > 0);
   assert.equal(
     drawn.length,
-    8,
+    // 9 since B5 folded `tetris-adapt-ansatz` into `adapt-ansatz`: the refinement LINE is
+    // a card-level statement ("a narrower version of X"), which a folded refinement still
+    // makes — folding removes its LANE from the slot figure, never its card.
+    10,
     `the refinement line draws on ${drawn.length} of ${methods.length} cards: ${drawn.map((c) => c.id).sort().join(", ")}`,
   );
   const sectioned = methods.filter((card) => card.refinements.held);
   assert.deepEqual(
     sectioned.map((c) => c.id).sort(),
-    ["lchs-route", "sabre-routing", "taylor-all-at-once"],
-    "the refinements section holds on exactly the three folded parents",
+    // `adapt-ansatz` is a fourth folded parent since B5 folded TETRIS-ADAPT into it:
+    // the section is where a folded refinement lives instead of on the map.
+    ["adapt-ansatz", "lchs-route", "qcc-ansatz", "sabre-routing", "taylor-all-at-once"],
+    "the refinements section holds on exactly the five folded parents",
   );
 });
 
@@ -1213,7 +1220,7 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // their own work with it — while the other five excited-state routes end on
   // `observable-estimation` and so have no own stretch, exactly as VQE does not.
   // 70 since B5 unit 3: the two new leaves each close their own stretch.
-  assert.equal(withOwn.length, 70);
+  assert.equal(withOwn.length, 77);
   assert.equal(trailing.length, 14);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1269,7 +1276,7 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 66 since W21: the ten methods of the variational region each have one, for the reason
   // recorded on the stretch census above.
   // 68 since W21-E, for the two routes named on the stretch census above.
-  assert.equal(built, 70);
+  assert.equal(built, 77);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);

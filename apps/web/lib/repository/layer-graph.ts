@@ -74,6 +74,122 @@ export const LAYER_GRAPH: LayerGraph = {
       "nonlinear-linear-embedding": "carleman-linearization",
       "time-discretization": "forward-euler",
     },
+    // A transcription, from Liu et al. arXiv:2011.03185 plus this record's own
+    // `summary`/`conditions`/`cost`/`via`. The rescaling step is in the listing
+    // because the record's own conditions already turn on it.
+    example: {
+      pseudocode: [
+        "given  quadratic ODE   du/dt = F_2 u^(x)2 + F_1 u + F_0(t),   u(0) = u_in     (Problem 1)",
+        "       F_2, F_1, F_0 s-sparse;  F_1 diagonalizable with",
+        "           Re(lambda_n) <= ... <= Re(lambda_1) < 0",
+        "       sparse-access oracles O_F2, O_F1, O_F0;  O_x : |00...0> -> |u_in>",
+        "       known ||u_in||, Re(lambda_1), ||F_2||, ||F_1||, ||F_0(t)||, ||F_0||, ||F_0'||",
+        "       horizon T,  error tolerance eps <= 1,  and g = ||u(T)||, q = ||u_in||/||u(T)||",
+        "",
+        "requires  R = (1/|Re(lambda_1)|) (||u_in|| ||F_2|| + ||F_0||/||u_in||) < 1,",
+        "          and ||F_0|| <= ||F_2||",
+        "    # R >= sqrt(2): the same paper proves the general quadratic ODE problem",
+        "    #   intractable there -- any quantum algorithm has worst-case complexity",
+        "    #   exponential in T.  1 <= R < sqrt(2) is left open.",
+        "    # exponential decay of the solution precludes efficiency because it inflates q,",
+        "    #   so the useful regime is driven equations that avoid decay despite dissipation",
+        "",
+        "# --- rescale first: R is invariant, and this buys the two normalisations used below",
+        "gamma = 1 / sqrt(||u_in|| r_+),",
+        "    r_+ = (-Re(lambda_1) + sqrt(Re(lambda_1)^2 - 4 ||F_2|| ||F_0||)) / (2 ||F_2||)",
+        "u <- gamma u        # gives ||u_in|| < 1 and ||F_2|| + ||F_0|| < |Re(lambda_1)|",
+        "",
+        "set  delta = g eps / (1 + eps)          # <= g/2; split half here, half at Euler",
+        "",
+        "# --- nonlinear-linear-embedding, via carleman-linearization -------------------",
+        "N = ceil( log(2 T ||F_2|| / delta) / log(1/||u_in||) )",
+        "    # half the budget:  ||u(T) - yhat_1(T)|| <= delta/2  by Lemma 2",
+        "lift   yhat_j = u^(x)j,   yhat_in = [u_in; u_in^(x)2; ...; u_in^(x)N]",
+        "build  dyhat/dt = A(t) yhat + b(t),   b(t) = [F_0(t); 0; ...; 0]",
+        "       A(t) tri-diagonal in blocks:",
+        "           A^j_{j+1} = F_2 (x) I^(x)(j-1) + ... + I^(x)(j-1) (x) F_2",
+        "           A^j_j     the same sum built from F_1",
+        "           A^j_{j-1} the same sum built from F_0(t)",
+        "    # the lift itself is exact; all of the error comes from the truncation at N",
+        "    # A is (3Ns)-sparse;  dimension Delta = n + n^2 + ... + n^N = O(n^N)",
+        "",
+        "# --- time-discretization, via forward-euler ----------------------------------",
+        "h = min{ g eps / (12 N^2.5 T [(||F_2||+||F_1||+||F_0||)^2 + ||F_0'||]),   # other half",
+        "         1 / (N ||F_1||),",
+        "         2 (|Re(lambda_1)| - ||F_2|| - ||F_0||)",
+        "           / (N (|Re(lambda_1)|^2 - (||F_2||+||F_0||)^2 + ||F_1||^2)) }",
+        "    # h <= 1/(N ||F_1||) alone suffices when the eigenvalues of F_1 are all real",
+        "    # the last two entries are what ensure ||I + Ah|| <= 1, which Lemma 3's",
+        "    #   linear-in-T error bound and Lemma 4's condition number both rest on",
+        "m = p = ceil(T / h)",
+        "",
+        "# explicit: each step's recurrence is evaluated, never solved",
+        "#     y^{k+1} = [I + A(kh)h] y^k + b(kh),   y^0 = y_in = yhat_in",
+        "# and all y^k are held equal for k = m+1 ... m+p  (the padding steps)",
+        "",
+        "assemble the banded all-at-once system  L|Y> = |B>  over all m+p+1 blocks:",
+        "    row 0     :  y^0                                = y_in",
+        "    row k     :  y^k - [I + A((k-1)h)h] y^{k-1}     = b((k-1)h)     1 <= k <= m",
+        "    row k     :  y^k - y^{k-1}                      = 0             m <  k <= m+p",
+        "    # (m+p+1)Delta x (m+p+1)Delta, lower triangular, O(Ns) nonzeros per row or",
+        "    #   column, condition number at most 3(m+p+1)                    (Lemma 4)",
+        "",
+        "# --- own work: prepare the right-hand side -----------------------------------",
+        "embed y_in into z_in = [u_in (x) v_0^{N-1}; ...; u_in^(x)N]   # tensor structure",
+        "prepare |B> from ||z_in|| |0>|z_in> and ||b((k-1)h)|| |k>|b((k-1)h)>, k = 1..m,",
+        "        over the normalising factor B_m",
+        "    # O(N) queries to O_x and O(m) queries to O_F0                  (Lemma 5)",
+        "",
+        "# --- quantum-linear-solve ----------------------------------------------------",
+        "solve L|Y> = |B> with the high-precision QLSA of Childs, Kothari and Somma",
+        "    # this route reduces to a quantum linear solve; it does not remove that layer.",
+        "    #   the whole horizon is handed down once, not one solve per time step",
+        "    # the QLSA's own error is the third contribution and is bounded separately,",
+        "    #   at poly(log(1/eps)) cost",
+        "",
+        "# --- own work: extract the answer --------------------------------------------",
+        "measure k and accept iff k lies in {m, m+1, ..., m+p}",
+        "    # those p+1 blocks all hold y_1^m, the state at time T, up to normalisation",
+        "    # one round succeeds with probability >= (p+1)/(9(m+p+1) N q^2) = Omega(1/N q^2)",
+        "repeat coherently: O(sqrt(N) q) rounds of amplitude amplification give Omega(1)",
+        "",
+        "return  y_1^m / ||y_1^m||  --  a state eps-close to u(T)/||u(T)||, with a flag",
+        "        indicating success",
+        "",
+        "# end-to-end cost, under R < 1:",
+        "#     T^2 q poly(log T, log n, log 1/eps) / eps                      (Theorem 1)",
+      ].join("\n"),
+    },
+    hops: {
+      // **The nonlinear front end's first authored hops** (2026-08-12), from Liu,
+      // Kolden, Krovi, Loureiro, Trivisa and Childs (arXiv:2011.03185) read as a
+      // full PDF. This route's `via` already pins Carleman for the embedding and
+      // forward Euler for the discretisation, so each note is about what THIS
+      // route does at that slot rather than about the slot in general — the same
+      // division the linear-ODE routes' notes use.
+      //
+      // Every claim was re-checked against the paper by a second reader whose
+      // instruction was to refute; where that pass changed something the change
+      // is recorded on the hop it changed.
+      "nonlinear-linear-embedding": {
+        theory:
+          "The route hands the embedding slot Problem 1's quadratic ODE $du/dt = F_2 u^{\\otimes 2} + F_1 u + F_0(t)$ together with a truncation level $N$ of its own choosing, and receives back the linear ODE (3.1), $d\\hat{y}/dt = A(t)\\hat{y} + b(t)$ with $\\hat{y}(0) = \\hat{y}_{\\mathrm{in}}$, whose blocks are the tensor powers $\\hat{y}_j = u^{\\otimes j} \\in \\mathbb{R}^{n^j}$ and whose lifted initial condition is $\\hat{y}_{\\mathrm{in}} = [u_{\\mathrm{in}}; u_{\\mathrm{in}}^{\\otimes 2}; \\ldots; u_{\\mathrm{in}}^{\\otimes N}]$. $A(t)$ is tri-diagonal in blocks: $A^j_{j+1} = F_2 \\otimes I^{\\otimes j-1} + I \\otimes F_2 \\otimes I^{\\otimes j-2} + \\cdots + I^{\\otimes j-1} \\otimes F_2$, with $A^j_j$ the same sum built from $F_1$ and $A^j_{j-1}$ the same sum built from $F_0(t)$, and the inhomogeneity is $b(t) = [F_0(t); 0; \\ldots; 0]$. What comes down to the next slot is therefore a $(3Ns)$-sparse generator at dimension $\\Delta = n + n^2 + \\cdots + n^N = (n^{N+1}-n)/(n-1) = O(n^N)$. [[approximation: The tower is cut at level $N$, so the coupling of the top level to level $N+1$ is dropped. Lemma 2 prices that: for $\\eta_j(t) := u^{\\otimes j}(t) - \\hat{y}_j(t)$, $\\|\\eta_j(t)\\| \\le \\|\\eta(t)\\| \\le tN\\|F_2\\|\\|u_{\\mathrm{in}}\\|^{N+1}$. This route spends half its error budget here — with $\\delta := g\\varepsilon/(1+\\varepsilon)$ it takes $N = \\lceil \\log(2T\\|F_2\\|/\\delta)/\\log(1/\\|u_{\\mathrm{in}}\\|) \\rceil = \\lceil \\log(2T\\|F_2\\|/\\delta)/\\log(r_+) \\rceil$, which gives $\\|u(T) - \\hat{y}_1(T)\\| \\le \\delta/2$.]] [[assumption: That bound holds under Problem 1's hypotheses — $F_1$ diagonalizable with $\\mathrm{Re}(\\lambda_n) \\le \\cdots \\le \\mathrm{Re}(\\lambda_1) < 0$ — plus the separate hypothesis Lemma 2 and Theorem 1 both add, $R < 1$, where Problem 1 only defines $R$. The route rescales before handing the system down, $u \\to \\gamma u$ with $\\gamma = 1/\\sqrt{\\|u_{\\mathrm{in}}\\|r_+}$, which leaves $R$ unchanged while buying $\\|u_{\\mathrm{in}}\\| < 1$ and $\\|F_2\\| + \\|F_0\\| < |\\mathrm{Re}(\\lambda_1)|$. That is what makes the truncation cheap rather than merely finite: for $R \\ge 1$ the paper's own sharper bound $\\|\\eta_1(t)\\| \\le \\|u_{\\mathrm{in}}\\|R^N(1 - e^{\\mathrm{Re}(\\lambda_1)t})^N$ forces $N = \\Omega(e^{|\\mathrm{Re}(\\lambda_1)|t})$, so the truncation order would have to grow exponentially with $t$.]]",
+        theoryJa:
+          "この経路は埋め込みの層に、Problem 1 の二次常微分方程式 $du/dt = F_2 u^{\\otimes 2} + F_1 u + F_0(t)$ と、自ら選んだ打ち切り水準 $N$ を渡し、線形常微分方程式 (3.1)、すなわち $d\\hat{y}/dt = A(t)\\hat{y} + b(t)$、$\\hat{y}(0) = \\hat{y}_{\\mathrm{in}}$ を受け取ります。各ブロックはテンソル冪 $\\hat{y}_j = u^{\\otimes j} \\in \\mathbb{R}^{n^j}$ であり、持ち上げられた初期条件は $\\hat{y}_{\\mathrm{in}} = [u_{\\mathrm{in}}; u_{\\mathrm{in}}^{\\otimes 2}; \\ldots; u_{\\mathrm{in}}^{\\otimes N}]$ です。$A(t)$ はブロック三重対角で、$A^j_{j+1} = F_2 \\otimes I^{\\otimes j-1} + I \\otimes F_2 \\otimes I^{\\otimes j-2} + \\cdots + I^{\\otimes j-1} \\otimes F_2$、$A^j_j$ は同じ和を $F_1$ から、$A^j_{j-1}$ は同じ和を $F_0(t)$ から作ったものです。非斉次項は $b(t) = [F_0(t); 0; \\ldots; 0]$ です。したがって次の層に渡るのは、$(3Ns)$ 疎で次元 $\\Delta = n + n^2 + \\cdots + n^N = (n^{N+1}-n)/(n-1) = O(n^N)$ の生成子です。[[approximation: 塔は水準 $N$ で切られますので、最上位の水準と水準 $N+1$ との結合が落ちます。その代価を Lemma 2 が与えており、$\\eta_j(t) := u^{\\otimes j}(t) - \\hat{y}_j(t)$ について $\\|\\eta_j(t)\\| \\le \\|\\eta(t)\\| \\le tN\\|F_2\\|\\|u_{\\mathrm{in}}\\|^{N+1}$ です。この経路は誤差の予算の半分をここで使います。$\\delta := g\\varepsilon/(1+\\varepsilon)$ として $N = \\lceil \\log(2T\\|F_2\\|/\\delta)/\\log(1/\\|u_{\\mathrm{in}}\\|) \\rceil = \\lceil \\log(2T\\|F_2\\|/\\delta)/\\log(r_+) \\rceil$ と取り、$\\|u(T) - \\hat{y}_1(T)\\| \\le \\delta/2$ とします。]] [[assumption: この評価が成り立つのは Problem 1 の仮定、すなわち $F_1$ が対角化可能で $\\mathrm{Re}(\\lambda_n) \\le \\cdots \\le \\mathrm{Re}(\\lambda_1) < 0$ であることに加えて、Lemma 2 と定理 1 がそれぞれ別に置く仮定 $R < 1$ のもとです。Problem 1 自体は $R$ を定義するだけです。またこの経路は系を下層に渡す前に $u \\to \\gamma u$（$\\gamma = 1/\\sqrt{\\|u_{\\mathrm{in}}\\|r_+}$）と再尺度化します。これは $R$ を変えないまま $\\|u_{\\mathrm{in}}\\| < 1$ と $\\|F_2\\| + \\|F_0\\| < |\\mathrm{Re}(\\lambda_1)|$ をもたらします。打ち切りが単に有限で済むだけでなく安く済むのは、そのためです。$R \\ge 1$ の場合、論文自身のより鋭い評価 $\\|\\eta_1(t)\\| \\le \\|u_{\\mathrm{in}}\\|R^N(1 - e^{\\mathrm{Re}(\\lambda_1)t})^N$ から $N = \\Omega(e^{|\\mathrm{Re}(\\lambda_1)|t})$ が要求され、打ち切りの次数が $t$ について指数的に増えることになります。]]",
+      },
+      "time-discretization": {
+        theory:
+          "What the route sends into the discretization slot is the Carleman system $d\\hat{y}/dt = A(t)\\hat{y} + b(t)$ at dimension $\\Delta$, and what it asks back is one linear system rather than a march: $[0,T]$ is divided into $m = T/h$ time steps, forward Euler is applied to give $y^{k+1} = [I + A(kh)h]y^k + b(kh)$ with $y^0 = y_{\\mathrm{in}} := \\hat{y}(0) = \\hat{y}_{\\mathrm{in}}$, and all $y^k$ are then held equal for $k$ beyond $m$ for a sufficiently large integer $p$ of padding steps, so that the steps become the rows of the $(m+p+1)\\Delta \\times (m+p+1)\\Delta$ system $L|Y\\rangle = |B\\rangle$ of (3.8), which the paper observes is lower triangular. [[approximation: First-order stepping, and Lemma 3 is where this route buys its second half of the budget. It bounds the global Euler error by $\\|\\hat{y}(T) - y^m\\| \\le 3N^{2.5}Th[(\\|F_2\\| + \\|F_1\\| + \\|F_0\\|)^2 + \\|F_0'\\|]$ — linear in $T$, rather than the $e^{LT}$ a general Lipschitz argument would give — and requiring $\\|\\hat{y}_1(T) - y_1^m\\| \\le \\delta/2$ is what fixes $h \\le g\\varepsilon/(12N^{2.5}T[(\\|F_2\\| + \\|F_1\\| + \\|F_0\\|)^2 + \\|F_0'\\|])$. Krovi's later paper names the consequence of choosing this scheme: \"the main reason that [2] has a polynomial dependence on the error is the use of Euler method\", [2] there being this route's own paper.]] [[assumption: The step is not free in the other direction either. Lemma 3 also requires $h \\le \\min\\{1/(N\\|F_1\\|),\\, 2(|\\mathrm{Re}(\\lambda_1)| - \\|F_2\\| - \\|F_0\\|)/(N(|\\mathrm{Re}(\\lambda_1)|^2 - (\\|F_2\\| + \\|F_0\\|)^2 + \\|F_1\\|^2))\\}$, or $h \\le 1/(N\\|F_1\\|)$ when the eigenvalues of $F_1$ are all real, and the discussion says what that choice is for: \"it suffices to choose the time step (4.46) to ensure $\\|I + Ah\\| \\le 1$\". It also needs the hop above to have already delivered $\\|\\eta(t)\\| \\le g/4$ before its bound applies, and it needs the dissipativity the route carries from that hop: \"the Euler method for (3.1) is unstable if $\\mathrm{Re}(\\lambda_1) > 0$\".]]",
+        theoryJa:
+          "この経路が離散化の層に送るのは、次元 $\\Delta$ の Carleman 系 $d\\hat{y}/dt = A(t)\\hat{y} + b(t)$ であり、求めるのは逐次の時間積分ではなく一つの線形系です。区間 $[0,T]$ を $m = T/h$ 個の時間ステップに分け、前進 Euler 法を適用して $y^{k+1} = [I + A(kh)h]y^k + b(kh)$、$y^0 = y_{\\mathrm{in}} := \\hat{y}(0) = \\hat{y}_{\\mathrm{in}}$ とします。さらに十分大きな整数 $p$ を取り、$k$ が $m$ を超える範囲では $y^k$ をすべて等しく保ちます。こうして各ステップが行となり、$(m+p+1)\\Delta \\times (m+p+1)\\Delta$ の線形系 $L|Y\\rangle = |B\\rangle$（式 (3.8)）が得られます。論文はこれが下三角の構造を持つと述べています。[[approximation: 一次精度の時間刻みであり、この経路が予算の残り半分を使うのが Lemma 3 です。この補題は Euler 法の大域誤差を $\\|\\hat{y}(T) - y^m\\| \\le 3N^{2.5}Th[(\\|F_2\\| + \\|F_1\\| + \\|F_0\\|)^2 + \\|F_0'\\|]$ と評価します。一般の Lipschitz 型の議論が与える $e^{LT}$ ではなく、$T$ に線形の評価です。$\\|\\hat{y}_1(T) - y_1^m\\| \\le \\delta/2$ を課すことが $h \\le g\\varepsilon/(12N^{2.5}T[(\\|F_2\\| + \\|F_1\\| + \\|F_0\\|)^2 + \\|F_0'\\|])$ を定めます。この手法を選んだことの帰結は、Krovi による後年の論文が名指しで述べています。「[2] が誤差について多項式的な依存性しか持たない主な理由は、Euler 法を用いていることである」。ここでの [2] は、この経路そのものの論文です。]] [[assumption: 刻み幅はもう一方向にも自由ではありません。Lemma 3 はさらに $h \\le \\min\\{1/(N\\|F_1\\|),\\, 2(|\\mathrm{Re}(\\lambda_1)| - \\|F_2\\| - \\|F_0\\|)/(N(|\\mathrm{Re}(\\lambda_1)|^2 - (\\|F_2\\| + \\|F_0\\|)^2 + \\|F_1\\|^2))\\}$ を要求し、$F_1$ の固有値がすべて実数であれば $h \\le 1/(N\\|F_1\\|)$ で足ります。この選び方の目的は考察に述べられています。「Euler 法についてこの結果を示すには、$\\|I + Ah\\| \\le 1$ となるように時間刻み (4.46) を選べば十分である」。またこの評価が使えるためには、上の層がすでに $\\|\\eta(t)\\| \\le g/4$ を達成していることが必要であり、上の層から引き継ぐ散逸性も必要です。「(3.1) に対する Euler 法は $\\mathrm{Re}(\\lambda_1) > 0$ のとき不安定である」からです。]]",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The system this route hands the solver is $L|Y\\rangle = |B\\rangle$ at $m = p = \\lceil T/h \\rceil$, an $(m+p+1)\\Delta \\times (m+p+1)\\Delta$ matrix with $O(Ns)$ nonzero entries in any row or column, $L = \\sum_{k=0}^{m+p}|k\\rangle\\langle k| \\otimes I - \\sum_{k=1}^{m}|k\\rangle\\langle k-1| \\otimes [I + A((k-1)h)h] - \\sum_{k=m+1}^{m+p}|k\\rangle\\langle k-1| \\otimes I$, with $|B\\rangle = (1/\\sqrt{B_m})(\\|z_{\\mathrm{in}}\\||0\\rangle \\otimes |z_{\\mathrm{in}}\\rangle + \\sum_{k=1}^{m}\\|b((k-1)h)\\||k\\rangle \\otimes |b((k-1)h)\\rangle)$. Lemma 4 bounds its condition number by $\\kappa \\le 3(m+p+1)$, and Lemma 5 charges the preparation of $|B\\rangle$ at $O(N)$ queries to $O_x$ and $O(m)$ queries to $O_{F_0}$ — the direct sum $y_{\\mathrm{in}}$ being \"cumbersome to prepare\", it is first embedded in the slightly larger $z_{\\mathrm{in}} = [u_{\\mathrm{in}} \\otimes v_0^{N-1}; u_{\\mathrm{in}}^{\\otimes 2} \\otimes v_0^{N-2}; \\ldots; u_{\\mathrm{in}}^{\\otimes N}]$ of dimension $Nn^N$, which has a tensor product structure. [[assumption: That conditioning bound is not free-standing — it is the step restriction of the hop above, read at the solver. Lemma 4's proof splits $L = L_1 + L_2 + L_3$, takes $\\|L_1\\| = \\|L_3\\| = 1$, and gets $\\|L_2\\| \\le \\max_{t \\in [0,T]}\\|I + A(t)h\\| \\le 1$ only \"which follows from the choice of time step (4.46)\", so $\\|L\\| \\le 3$; the lemma is stated for the forward Euler method applied with that time step and no other.]] The route names its solver even though its own summary does not: it applies \"the high-precision quantum linear system algorithm (QLSA)\" of Childs, Kothari and Somma, quoting Theorem 5 of that paper for the query count, and notes that the original HHL algorithm could be used instead but \"would slightly complicate the error analysis and might perform worse in practice\". [[approximation: The solve contributes a third error term beside Carleman truncation and Euler, and the route does not fold it into $\\delta$ — \"Since the QLSA produces a solution with error at most $\\varepsilon$ with complexity $\\mathrm{poly}(\\log(1/\\varepsilon))$, we focus on bounding the first two contributions.\"]] What comes back is postselected rather than read: $k$ is measured and an outcome in $[m+p+1]_0 \\setminus [m]_0$ accepted, which returns $y_1^k/\\|y_1^k\\|$ — the last $p+1$ blocks all hold $y_1^m$ — and Lemma 6 lower-bounds that at $P_{\\mathrm{measure}} \\ge (p+1)/(9(m+p+1)Nq^2)$, which at $m = p$ is $\\Omega(1/Nq^2)$; $O(\\sqrt{N}q)$ iterations of amplitude amplification suffice to succeed with constant probability.",
+        theoryJa:
+          "この経路がソルバーに渡す系は、$m = p = \\lceil T/h \\rceil$ のもとでの $L|Y\\rangle = |B\\rangle$ です。これは $(m+p+1)\\Delta \\times (m+p+1)\\Delta$ の行列で、任意の行・列の非零成分は $O(Ns)$ 個であり、$L = \\sum_{k=0}^{m+p}|k\\rangle\\langle k| \\otimes I - \\sum_{k=1}^{m}|k\\rangle\\langle k-1| \\otimes [I + A((k-1)h)h] - \\sum_{k=m+1}^{m+p}|k\\rangle\\langle k-1| \\otimes I$、右辺は $|B\\rangle = (1/\\sqrt{B_m})(\\|z_{\\mathrm{in}}\\||0\\rangle \\otimes |z_{\\mathrm{in}}\\rangle + \\sum_{k=1}^{m}\\|b((k-1)h)\\||k\\rangle \\otimes |b((k-1)h)\\rangle)$ です。Lemma 4 はその条件数を $\\kappa \\le 3(m+p+1)$ と抑え、Lemma 5 は $|B\\rangle$ の用意に $O_x$ への $O(N)$ 回、$O_{F_0}$ への $O(m)$ 回の問い合わせを課します。直和である $y_{\\mathrm{in}}$ は「そのままでは用意しにくい」ため、まず少し大きな空間の $z_{\\mathrm{in}} = [u_{\\mathrm{in}} \\otimes v_0^{N-1}; u_{\\mathrm{in}}^{\\otimes 2} \\otimes v_0^{N-2}; \\ldots; u_{\\mathrm{in}}^{\\otimes N}]$（次元 $Nn^N$）に埋め込まれます。こちらはテンソル積の構造を持つからです。[[assumption: この条件数の評価は単独で成り立つものではなく、上の層の刻み幅の制約をソルバーの側から読んだものです。Lemma 4 の証明は $L = L_1 + L_2 + L_3$ と分け、$\\|L_1\\| = \\|L_3\\| = 1$ とし、$\\|L_2\\| \\le \\max_{t \\in [0,T]}\\|I + A(t)h\\| \\le 1$ を「時間刻み (4.46) の選び方から従う」ものとしてのみ得ています。こうして $\\|L\\| \\le 3$ となります。この補題は、その時間刻みで前進 Euler 法を適用した場合についてのみ述べられています。]] この経路は、自らの要約では名指ししていないソルバーを、論文では名指ししています。用いられるのは Childs・Kothari・Somma の「高精度量子線形システムアルゴリズム（QLSA）」であり、クエリ数はその論文の Theorem 5 から引かれています。元の HHL アルゴリズムを使うこともできるが「誤差解析がやや複雑になり、実用上の性能も劣る可能性がある」とも述べられています。[[approximation: 求解は Carleman 打ち切りと Euler 法に並ぶ第三の誤差項をもたらしますが、この経路はそれを $\\delta$ に繰り入れていません。「QLSA は $\\mathrm{poly}(\\log(1/\\varepsilon))$ の計算量で誤差高々 $\\varepsilon$ の解を返すため、我々は最初の二つの寄与を評価することに集中する」からです。]] 返ってくるものは読み出されるのではなく事後選択されます。$k$ を測定し、結果が $[m+p+1]_0 \\setminus [m]_0$ に入っていれば受理して $y_1^k/\\|y_1^k\\|$ を得ます。最後の $p+1$ 個のブロックはいずれも $y_1^m$ を保持しているからです。Lemma 6 はその確率を $P_{\\mathrm{measure}} \\ge (p+1)/(9(m+p+1)Nq^2)$ と下から抑えており、$m = p$ では $\\Omega(1/Nq^2)$ です。振幅増幅を $O(\\sqrt{N}q)$ 回繰り返せば、定数の確率で成功します。",
+      },
+    },
     citations: [
       { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Jin-Peng Liu, Herman Øie Kolden, Hari K. Krovi, Nuno F. Loureiro, Konstantina Trivisa, Andrew M. Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
       { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
@@ -111,6 +227,67 @@ export const LAYER_GRAPH: LayerGraph = {
     // observable of the solution"). Owner ruling, session 120: the map
     // restructures to hold what the literature has (`plans/atlas-revamp/
     // W14-readout-wiring.md`).
+    // A transcription, from Joseph arXiv:2003.09980 plus this record's own fields.
+    // The two lines that say what does NOT happen — no dilated linear system, no
+    // quantum linear solve — are `bypasses`, written where a reader meets them.
+    example: {
+      pseudocode: [
+        "given  a nonlinear, possibly non-Hamiltonian classical system dx/dt = v(x,t),",
+        "       an observable O on phase space, an evolution time, and accuracy eps",
+        "",
+        "# --- nonlinear-linear-embedding, via koopman-von-neumann-lift --------------",
+        "lift   the Liouville equation for the phase-space density f onto the KvN",
+        "       Schroedinger equation  i hbar d_t psi = H_hat psi,  psi = f^(1/2) e^(i phi)",
+        "           H_hat = (1/2)( P_hat . v_hat + v_hat . P_hat ) + W_hat,  P_hat = -i hbar grad",
+        "       # H_hat is HERMITIAN and its propagator unitary.  That is the narrowing:",
+        "       # nothing is dilated and no linear system is assembled, so this route",
+        "       # bypasses both time-discretization and quantum-linear-solve",
+        "       # the lift is exact; its price is dimension, twice the classical",
+        "       # phase space",
+        "",
+        "# --- put H_hat on a finite register ---------------------------------------",
+        "make   each coordinate x^j periodic on X_max^j with L_j levels,",
+        "           dx^j = X_max^j / L_j",
+        "       so the conjugate momentum also has L_j levels,",
+        "           dP_j = h / X_max^j,   range  P_j,max = h L_j / X_max^j",
+        "prepare the initial PDF as a SQUEEZED state: squeezing x^j by L_j^(-1/2) gives",
+        "           sigma_x^j = dx^j, the limit set by the discretization",
+        "       # keep initialization sparse -- e.g. near a Maxwell-Boltzmann",
+        "       # equilibrium, prepared by quantum walk.  Setting each initial condition",
+        "       # individually is not desirable",
+        "",
+        "# --- hamiltonian-simulation, landing on a runnable evolution ---------------",
+        "simulate the unitary evolution generated by H_hat",
+        "       if H_hat is sparse (local or banded):",
+        "           split H_hat = sum_{j=1..m} H_j, m independent of the number of",
+        "               states N, and use a Trotter-Suzuki product formula",
+        "               # error proportional to sum_{j != k} <[H_j, H_k]>",
+        "       as general s-sparse simulation on n qubits, the cost is ~ s n T,",
+        "           T = || H_hat t ||_max, read as the number of required time steps",
+        "       # circuit + prepared input IS the routine for the state:",
+        "       # \"the KvN simulation computes the state |psi>\"",
+        "",
+        "# --- observable-estimation, via amplitude-estimation-readout ---------------",
+        "append an ancillary qubit and build R_phi with phi = O^(1/2) psi:",
+        "           R_phi |psi>|0> = N^(-1/2) sum_x |x> ( phi'(x)|0> + phi(x)|1> )",
+        "       # R_phi is a reversible computation of phi and costs two KvN",
+        "       # simulations: one to compute phi, one to uncompute it by running the",
+        "       # KvN simulation backward in time",
+        "amplitude-estimate the amplitude of the ancillary |1> state",
+        "       # R_phi is a rotation by sin(theta) = <O/N>^(1/2)",
+        "",
+        "repeat, coherently, 4K ~ O(1/eps) KvN simulations",
+        "       # R_phi and R_phi^dagger use two evaluations of |psi> each, so one",
+        "       # amplification step is four KvN simulations",
+        "       # averaging repeated projective measurements instead returns to the",
+        "       # classical O(1/eps^2) sampling law; overall complexity O(s D T / eps)",
+        "",
+        "return <O> = sum_x O(x) f(x), an estimate to accuracy eps",
+        "       # a number, not a state.  Measuring the entire PDF over all states is",
+        "       # \"not desirable\", so a trajectory-level answer is a separate problem",
+        "       # this paper does not solve",
+      ].join("\n"),
+    },
     hops: {
       "observable-estimation": {
         theory:
@@ -121,6 +298,25 @@ export const LAYER_GRAPH: LayerGraph = {
           "ここでは状態そのものは読み出されません。得られるのは位相空間の観測量の期待値 $⟨O⟩ = \\Sigma_x O(x) f(x)$ です。補助量子ビットを一つ加え、$\\phi = O^{1/2}\\psi$ の可逆計算によって $R̂_\\phi$ を構成します。「この可逆計算には二回の KvN シミュレーションが必要である。一回は $\\phi$ を計算するため、もう一回は $\\phi$ を打ち消すためで、後者は KvN シミュレーションを時間逆向きに走らせることを要する」とされています。続いて補助量子ビットの $|1\\rangle$ 振幅を振幅推定します。" +
           "[[approximation: 振幅推定が返すのは値ではなく推定値です。「$R̂_\\phi$ と $R̂\\dagger_\\phi$ の各評価が $|\\psi\\rangle$ の評価を二回使うため、振幅増幅アルゴリズムは一段あたり四回の KvN シミュレーションを要する」とされ、精度 $\\varepsilon$ には $4K \\sim O(1/\\varepsilon)$ 回かかります。読み出しは上の工程の出力を測るのではなく、上の工程を呼び直しています。]] " +
           "Joseph は代替案を名指しで退けています。射影測定を繰り返して平均を取る方法は古典的な $1/\\varepsilon^2$ の法則に戻ってしまい、全状態にわたって確率密度関数そのものを測ることは「望ましくない」と述べています。",
+      },
+      // Joseph, arXiv:2003.09980, full PDF. **These two notes are what the
+      // route's `through` field has been asserting without explaining**: the
+      // embedding lands on a *Hermitian* generator and the simulation on a
+      // runnable evolution, and the Hermiticity is exactly why this route may
+      // hand its generator straight to a simulator while every discretise-and-
+      // solve route cannot. The `observable-estimation` hop below was authored
+      // in session 115 and is untouched.
+      "nonlinear-linear-embedding": {
+        theory:
+          "The route hands the embedding slot an arbitrary classical system presented as first order in time, $\\dot{x} = v(x,t)$ on $x \\in \\mathbb{R}^d$ with $v$ an arbitrary vector field, and takes back not merely a linear generator but a Hermitian one. Conservation of the phase-space density is the Liouville equation $\\partial_t f + \\nabla \\cdot (v f) = 0$, and what comes back is the generalized Koopman-von Neumann equation $i\\hbar \\partial_t \\psi = \\hat{H}\\psi$ with $\\hat{H} = \\frac{1}{2}(\\hat{P}\\cdot\\hat{v} + \\hat{v}\\cdot\\hat{P}) + \\hat{W}$ and $\\hat{P} = -i\\hbar\\nabla$. [[assumption: The derivation starts from the postulate that the density is the inner product of a complex probability amplitude with its adjoint, $f = \\psi^\\dagger\\psi$, so that $\\psi = f^{1/2}e^{i\\varphi}$, together with an assumed equation of motion for the phase, $\\partial_t\\varphi + v\\cdot\\nabla\\varphi = -W(x,t)/\\hbar$; within classical dynamics the phase is not measurable, so the choice of $W$ is a choice of gauge.]] [[assumption: Reading an expectation back as $\\langle O\\rangle = \\int O\\psi^\\dagger\\psi\\,d^dx$ requires the density normalized to yield unit probability after integration over all of phase space.]] The narrowing this route records is one line of the paper's, proved by integration by parts over the inner product $\\langle\\phi|\\psi\\rangle = \\int \\phi^\\dagger(x,t)\\psi(x,t)\\,d^dx$: \"Because the KvN Hamiltonian is Hermitian, the corresponding KvN evolution operator is unitary\", and the generalized form \"leads to a unitary evolution operator for any set of ODEs, even if they are not Hamiltonian\". A generator that were only linear would still have to be dilated or assembled into a linear system before anything could run it; this one already generates a unitary, which is what lets the next hop be a simulator and what the route's bypass of the solver rests on. The lift is exact rather than truncated — Heisenberg's equations for the coordinates return the original equations of motion, $d\\hat{x}/dt = [\\hat{x},\\hat{H}]/i\\hbar = v(\\hat{x},t)$ — and its price is dimensional: $\\hat{H}$ quantizes the constrained Hamiltonian $H(x,P,t) = P\\cdot v(x,t) + W(x,t)$ on twice the classical phase-space dimension, the conjugate momenta acting as Lagrange multipliers that enforce the classical equations of motion.",
+        theoryJa:
+          "この経路は埋め込みの層に、時間について一階の形で書かれた任意の古典力学系 $\\dot{x} = v(x,t)$（$x \\in \\mathbb{R}^d$、$v$ は任意のベクトル場）を渡し、単に線形であるだけの生成子ではなく、エルミートな生成子を受け取ります。位相空間の分布の保存は Liouville 方程式 $\\partial_t f + \\nabla \\cdot (v f) = 0$ であり、戻ってくるのは一般化された Koopman-von Neumann 方程式 $i\\hbar \\partial_t \\psi = \\hat{H}\\psi$ です。ここで $\\hat{H} = \\frac{1}{2}(\\hat{P}\\cdot\\hat{v} + \\hat{v}\\cdot\\hat{P}) + \\hat{W}$、$\\hat{P} = -i\\hbar\\nabla$ です。[[assumption: 導出は、分布が複素確率振幅とその随伴との内積である、すなわち $f = \\psi^\\dagger\\psi$（したがって $\\psi = f^{1/2}e^{i\\varphi}$）という要請から出発し、さらに位相の運動方程式 $\\partial_t\\varphi + v\\cdot\\nabla\\varphi = -W(x,t)/\\hbar$ を仮定します。古典力学の枠内では位相は測定できませんので、$W$ の選び方はゲージの選び方にあたります。]] [[assumption: 期待値を $\\langle O\\rangle = \\int O\\psi^\\dagger\\psi\\,d^dx$ として読み出すには、位相空間全体で積分したときに確率が 1 になるよう分布が規格化されている必要があります。]] この経路が記録している絞り込みは論文の一文であり、内積 $\\langle\\phi|\\psi\\rangle = \\int \\phi^\\dagger(x,t)\\psi(x,t)\\,d^dx$ についての部分積分で示されます。「KvN ハミルトニアンはエルミートであるから、対応する KvN 発展演算子はユニタリである」、そして一般化された形は「ハミルトン系でなくとも、任意の常微分方程式系に対してユニタリな発展演算子を与える」とされています。単に線形なだけの生成子であれば、何かがそれを実行できるようになる前に、拡大するか線形系に組み立てるかが必要です。ここで戻ってくる生成子はすでにユニタリを生成しますので、次の工程をシミュレータにすることができ、この経路がソルバーの層を迂回できる根拠もそこにあります。持ち上げは打ち切りではなく厳密であり、座標に対する Heisenberg の運動方程式は元の運動方程式そのもの $d\\hat{x}/dt = [\\hat{x},\\hat{H}]/i\\hbar = v(\\hat{x},t)$ を返します。その代償は次元です。$\\hat{H}$ は、古典位相空間の二倍の次元をもつ拘束ハミルトン系 $H(x,P,t) = P\\cdot v(x,t) + W(x,t)$ を量子化したものであり、共役運動量は古典的な運動方程式を拘束条件として課す Lagrange 乗数の役を担います。",
+      },
+      "hamiltonian-simulation": {
+        theory:
+          "What reaches the simulation slot is the Koopman-von Neumann Hamiltonian $\\hat{H} = \\frac{1}{2}(\\hat{P}\\cdot\\hat{v} + \\hat{v}\\cdot\\hat{P}) + \\hat{W}$ and the propagator defined by $i\\hbar\\partial_t\\hat{U} = \\hat{H}\\hat{U}$. Nothing has to be recast — $\\hat{H}$ is already Hermitian and $\\hat{U}$ already unitary — so the slot's work is to put them on a finite register. [[approximation: \"A quantum computer with finite resources can be used to simulate a finite-dimensional approximation of this unitary evolution operator\": each coordinate $x^j$ is made periodic on a length $X_{\\mathrm{max}}^j$ and carried on $L_j$ levels with spacing $\\Delta x^j = X_{\\mathrm{max}}^j/L_j$, and the Fourier representation of the conjugate momentum makes it periodic on $L_j$ levels too, with spacing $\\Delta P_j = h/X_{\\mathrm{max}}^j$ and range $P_{j,\\mathrm{max}} = hL_j/X_{\\mathrm{max}}^j$.]] That discretization leaves a phase-space cell $\\Delta x^j \\Delta P_j = h/L_j$ far smaller than the Heisenberg limit requires, which is why a coherent state is the wrong input — it is wide compared with the level spacing, $\\sigma_{x^j}/\\Delta x^j = (L_j/4\\pi)^{1/2}$ — and Joseph squeezes instead: shrinking the uncertainty in $x^j$ by $L_j^{-1/2}$ brings $\\sigma_{x^j} = \\Delta x^j$, the limit set by numerical discretization, at the cost of $\\sigma_{P_j} = (L_j/4\\pi)\\Delta P_j$, and squeezed states serve as both the initial conditions and the final measurement states. [[assumption: The efficiency claim needs $\\hat{H}$ sparse, \"e.g. because it is local\", so that it breaks into a small number $m$ of non-commuting parts $\\hat{H} = \\Sigma_{j=1}^{m}\\hat{H}_j$ with $m$ independent of the number of states $N$.]] [[approximation: The evolution is then realized by the Trotter-Suzuki product formula, \"with error proportional to $\\Sigma_{j \\neq k} \\langle [\\hat{H}_j,\\hat{H}_k] \\rangle$\"; priced instead as general $s$-sparse Hamiltonian simulation on $n$ qubits, the complexity is, neglecting polylogarithmic factors, proportional to $snT$, where $T = \\|\\hat{H}t\\|_{\\mathrm{max}}$ \"can be interpreted as the number of required time steps\".]] The hop lands holding a computation of the evolved state rather than only a circuit, and that is what this route's narrowing records: Joseph's program is initialization, simulation and output together, with the input prepared as a squeezed state or by a quantum walk and required to be \"sparse\" so that its complexity does not exceed the simulation's, and \"the KvN simulation computes the state $|\\psi\\rangle$ where $\\psi = f^{1/2}e^{i\\varphi}$\". So the readout above it can call this hop forward and backward as a subroutine instead of measuring something handed over to it.",
+        theoryJa:
+          "シミュレーションの層に届くのは、Koopman-von Neumann ハミルトニアン $\\hat{H} = \\frac{1}{2}(\\hat{P}\\cdot\\hat{v} + \\hat{v}\\cdot\\hat{P}) + \\hat{W}$ と、$i\\hbar\\partial_t\\hat{U} = \\hat{H}\\hat{U}$ で定まる伝播子です。書き換えは要りません。$\\hat{H}$ はすでにエルミートであり $\\hat{U}$ もすでにユニタリですので、この層の仕事は両者を有限のレジスタに載せることです。[[approximation: 「有限の資源をもつ量子計算機は、このユニタリな発展演算子の有限次元近似をシミュレートするために用いることができる」とされます。各座標 $x^j$ を長さ $X_{\\mathrm{max}}^j$ について周期的とし、$L_j$ 準位、間隔 $\\Delta x^j = X_{\\mathrm{max}}^j/L_j$ で表します。共役運動量も Fourier 表示により同じく $L_j$ 準位の周期的な量となり、間隔は $\\Delta P_j = h/X_{\\mathrm{max}}^j$、範囲は $P_{j,\\mathrm{max}} = hL_j/X_{\\mathrm{max}}^j$ です。]] この離散化が残す位相空間の面積 $\\Delta x^j \\Delta P_j = h/L_j$ は Heisenberg の限界がゆるす値よりはるかに小さく、そのためコヒーレント状態は入力として適しません。準位間隔に比べて幅が広いからで、$\\sigma_{x^j}/\\Delta x^j = (L_j/4\\pi)^{1/2}$ です。Joseph はかわりにスクイーズを用います。$x^j$ の不確定性を $L_j^{-1/2}$ 倍に絞ると $\\sigma_{x^j} = \\Delta x^j$、すなわち数値離散化が定める限界に達し、その代償として $\\sigma_{P_j} = (L_j/4\\pi)\\Delta P_j$ となります。スクイーズド状態は初期条件としても、最終の測定状態としても用いられます。[[assumption: 効率の主張は $\\hat{H}$ が疎であること、「たとえば局所的であること」を必要とします。そのとき $\\hat{H}$ は互いに可換でない少数 $m$ 個の部分 $\\hat{H} = \\Sigma_{j=1}^{m}\\hat{H}_j$ に分解でき、$m$ は状態数 $N$ に依存しません。]] [[approximation: 発展はその上で Trotter-Suzuki の積公式によって実現され、「誤差は $\\Sigma_{j \\neq k} \\langle [\\hat{H}_j,\\hat{H}_k] \\rangle$ に比例する」とされます。一般の $s$ 疎ハミルトニアンのシミュレーションとして $n$ 量子ビット上で見積もれば、多重対数因子を除いて計算量は $snT$ に比例し、$T = \\|\\hat{H}t\\|_{\\mathrm{max}}$ は「必要な時間ステップ数と解釈できる」とされています。]] この工程が手にして終わるのは回路だけではなく、発展後の状態の計算そのものです。それがこの経路の絞り込みの記録している内容です。Joseph の計画は初期化・シミュレーション・出力の三つを合わせたものであり、入力はスクイーズド状態あるいは量子ウォークで用意され、その計算量がシミュレーションの段階を上回らないよう「疎」であることが求められます。そして「KvN シミュレーションは状態 $|\\psi\\rangle$（$\\psi = f^{1/2}e^{i\\varphi}$）を計算する」とされています。したがって上の読み出しは、渡された状態を測るのではなく、この工程を順方向にも逆方向にもサブルーチンとして呼び出すことができます。",
       },
     },
     // The lift this route uses returns a *Hermitian* generator, and that is the
@@ -186,6 +382,77 @@ export const LAYER_GRAPH: LayerGraph = {
     // summary. The linear solve it hands off to is left unpinned: it says
     // "solve the linear problem quantumly" and names no algorithm.
     via: { "nonlinear-linear-embedding": "level-set-linearization" },
+    // A transcription, from arXiv:2202.07834 plus this record's own fields.
+    example: {
+      pseudocode: [
+        "given  a (d+1)-dimensional nonlinear PDE with M initial data, k = 1..M:",
+        "           Hamilton-Jacobi in gradient form,  d_t u^[k] + grad H(u^[k], x) = 0",
+        "           or scalar hyperbolic,  d_t u^[k] + F(u^[k]).grad_x u^[k] + Q(x, u^[k]) = 0",
+        "       an observable function G, a time T = t_n, a precision eps",
+        "",
+        "# ---- step 1: nonlinear-linear-embedding, performed by level-set-linearization ----",
+        "# \"the exact level-set mapping to a linear PDE\": no truncation, no convergence parameter",
+        "",
+        "build the level-set function:  phi_i^[k](t, x, p = u^[k](t,x)) = 0",
+        "    phi^[k] solves the LINEAR Liouville equation",
+        "        d_t phi + grad_p H . grad_x phi - grad_x H . grad_p phi = 0",
+        "        phi_i^[k](0, x, p) = p_i - u_i^[k](0, x)",
+        "    # (2d+1) dimensions for Hamilton-Jacobi, (d+2) for the scalar hyperbolic case:",
+        "    # the price of exactness is dimension, not an error term",
+        "",
+        "solve instead for psi, on the SAME linear equation, with the M initial data",
+        "folded into ONE initial datum:",
+        "    psi(0, x, p) = (1/M) sum_{k=1..M} prod_{i=1..d} delta(p_i - u_i^[k](0, x))",
+        "    # Lemma 9:  psi(t, x, p) = (1/M) sum_k delta(phi^[k](t, x, p))",
+        "    # this is why \"for M sets of initial data the cost does not grow with M\"",
+        "",
+        "# ---- step 2: linear-ode-solve.  the route names no algorithm for this slot ----",
+        "# it says only \"solve the linear problem quantumly\"",
+        "",
+        "discretise psi on the phase-space mesh [0,1]^{2d}:  forward Euler in time,",
+        "upwind in x and p,  h = 1/N,  x -> h j,  p -> h l,  t_n = n dt",
+        "    require the CFL condition",
+        "        d (dt/h) max_i sup_{x,p} { |dH/dx_i| , |dH/dp_i| }  <=  1",
+        "    replace delta by the smoothed delta_omega,  omega = m h",
+        "    # the three approximations live here, not in step 1: first-order scheme,",
+        "    # smoothed delta, quadrature for the p-integral",
+        "    # Lemma 12:  eps_CL <= C (omega + d h / omega^2) = C (d h)^{1/3} at omega = (d h)^{1/3}",
+        "",
+        "assemble  K . (psi_1, ..., psi_{N_t})^T = (psi_0, 0, ..., 0)^T",
+        "    # K is N_t N^{2d} x N_t N^{2d}, Toeplitz",
+        "K is not Hermitian, so hand down the dilation M carrying K and K^dagger off-diagonal",
+        "    # \"the same sparsity and condition number as K\"",
+        "    # Lemma 10:  kappa <= O(d N T),  s = O(d)",
+        "",
+        "# ---- readout: observables, NOT the full solution vector ----",
+        "",
+        "ask for  Upsilon = <psi_0| (M^-1)^dagger  G  M^-1 |psi_0>,  G = |G_n,j><G_n,j|",
+        "    # by amplitude estimation on the block encodings (Appendix H, steps 0-5)",
+        "return  <G(t_n, x = j/N)>  ~=  n_psi0 . n_G . |sqrt(Upsilon)|",
+        "    # error split (Lemma 15):  eps_CL + eps_Q <= eps,  eps_G ~ eps / (n_G n_psi0)",
+        "    # the advantage claimed is for computing observables, not for producing the",
+        "    # full solution vector",
+      ].join("\n"),
+    },
+    hops: {
+      // arXiv:2202.07834, full PDF. The level-set lift is EXACT — it is not an
+      // approximation of the nonlinear problem but a change of unknown that is
+      // linear by construction — so the first note's job is to say what that
+      // exactness costs (dimension), and the second's is what the resulting
+      // linear problem hands to `linear-ode-solve`.
+      "nonlinear-linear-embedding": {
+        theory:
+          "The route hands the embedding slot a $(d+1)$-dimensional nonlinear PDE carrying $M$ initial data and takes back a linear one. For the Hamilton-Jacobi equation in gradient form, $\\partial_t u^{[k]} + \\nabla H(u^{[k]}, x) = 0$ with $u^{[k]} = \\nabla S^{[k]}$ and $k = 1, \\ldots, M$, the level-set function is fixed by $\\phi_i^{[k]}(t, x, p = u^{[k]}(t,x)) = 0$ and solves the linear Liouville equation $\\partial_t \\phi^{[k]} + \\nabla_p H \\cdot \\nabla_x \\phi^{[k]} - \\nabla_x H \\cdot \\nabla_p \\phi^{[k]} = 0$ from the initial data $\\phi_i^{[k]}(0,x,p) = p_i - u_i^{[k]}(0,x)$, an equation whose bicharacteristics are the Hamiltonian system $\\partial_t x = \\nabla_p H$, $\\partial_t p = -\\nabla_x H$. No clause of this stretch is marked as an approximation, and that is the claim rather than an omission: \"we have now transformed a $(d+1)$-dimensional nonlinear PDE — the Hamilton-Jacobi equation — to a $(2d+1)$-dimensional linear PDE — the Liouville equation — without any assumptions on either the form or extent of the original nonlinearity. No linear approximation is made. The mapping is exact.\" The price is charged in dimension instead — \"the cost in going from a nonlinear to a linear system is only at the expense of doubling the dimension\" — so $d+1$ becomes $2d+1$ here, and $d+1$ becomes $d+2$ for the scalar hyperbolic equation of §IV, whose level-set variable is $p \\in \\mathbb{R}$ rather than $p \\in \\mathbb{R}^d$. [[assumption: The exactness is claimed for these two classes and stops there — §VI opens \"this same result, however, cannot be done analytically for general nonlinear PDEs\". A general $(d+1)$-dimensional nonlinear PDE has instead to be discretised in space first, into $D$ nonlinear ODEs with $D = d^2/\\varepsilon$ under a Lagrangian discretisation or $D = (d/\\varepsilon)^d$ under an Eulerian one, and on that path the paper claims an advantage in $M$ alone and only in the large-$M$ limit.]] [[assumption: The solution notion is the multi-valued one and not the viscosity one: $\\phi_i^{[k]}(t,x,p) = 0$ may have $J_k$ roots $p_\\gamma$, and every branch $u_\\gamma^{[k]}(t,x) = \\cap_{i=1}^{d}\\{p_\\gamma(t,x) \\mid \\phi_i^{[k]}(t,x,p_\\gamma) = 0\\}$ is kept. The paper takes that case because in geometric optics and in the semiclassical limit the viscosity solution \"violates the linear superposition principle\", and says of the level-set formulation that \"this method is globally valid and one solves a linear system of PDEs\".]] What travels downstream is not $\\phi$: recovering $u$ or an observable from a state proportional to $\\phi$ \"would be too costly\" because of \"the extra measurement costs in finding the zero level set\". It is $\\psi$, solving the same linear equation from the single initial datum $\\psi(0,x,p) = \\frac{1}{M}\\sum_{k=1}^{M}\\prod_{i=1}^{d}\\delta(p_i - u_i^{[k]}(0,x))$, for which Lemma 9 gives $\\psi(t,x,p) = \\frac{1}{M}\\sum_{k=1}^{M}\\delta(\\phi^{[k]}(t,x,p))$ — \"all $M$ distinct initial conditions of $u^{[k]}$ in the original problem have now been converted into a single initial condition in $\\psi$\", which is where this route's $M$-independent cost comes from.",
+        theoryJa:
+          "この経路は、$M$ 組の初期データを担う $(d+1)$ 次元の非線形偏微分方程式を埋め込みの層に渡し、線形の偏微分方程式を受け取ります。勾配形の Hamilton-Jacobi 方程式 $\\partial_t u^{[k]} + \\nabla H(u^{[k]}, x) = 0$（$u^{[k]} = \\nabla S^{[k]}$、$k = 1, \\ldots, M$）では、レベルセット関数は $\\phi_i^{[k]}(t, x, p = u^{[k]}(t,x)) = 0$ によって定められ、初期値 $\\phi_i^{[k]}(0,x,p) = p_i - u_i^{[k]}(0,x)$ のもとで線形の Liouville 方程式 $\\partial_t \\phi^{[k]} + \\nabla_p H \\cdot \\nabla_x \\phi^{[k]} - \\nabla_x H \\cdot \\nabla_p \\phi^{[k]} = 0$ を満たします。この方程式の双特性曲線は Hamilton 系 $\\partial_t x = \\nabla_p H$、$\\partial_t p = -\\nabla_x H$ です。この区間には近似の印がひとつも付いていませんが、それは書き落としではなく主張そのものです。論文はこう述べています。「$(d+1)$ 次元の非線形偏微分方程式である Hamilton-Jacobi 方程式を、もとの非線形性の形についても大きさについても何ら仮定を置くことなく、$(2d+1)$ 次元の線形偏微分方程式である Liouville 方程式へと変換した。線形近似は行っていない。この写像は厳密である。」代価は次元で支払われます。「非線形系から線形系へ移る費用は、次元が二倍になることだけである」とあり、ここでは $d+1$ が $2d+1$ になります。第 IV 節のスカラー双曲型方程式では $d+1$ が $d+2$ になります。そのレベルセット変数が $p \\in \\mathbb{R}^d$ ではなく $p \\in \\mathbb{R}$ だからです。[[assumption: 厳密性が主張されているのはこの二つのクラスまでです。第 VI 節は「しかしながら、一般の非線形偏微分方程式に対して同じ結果を解析的に得ることはできない」と始まります。一般の $(d+1)$ 次元非線形偏微分方程式については、まず空間を離散化して $D$ 個の非線形常微分方程式に直す必要があり、Lagrange 的な離散化では $D = d^2/\\varepsilon$、Euler 的な離散化では $D = (d/\\varepsilon)^d$ です。その道筋で主張されている優位性は $M$ についてのみであり、しかも $M$ が大きい極限に限られます。]] [[assumption: 解の意味は粘性解ではなく多価解です。$\\phi_i^{[k]}(t,x,p) = 0$ は $J_k$ 個の根 $p_\\gamma$ をもちうるため、各分枝 $u_\\gamma^{[k]}(t,x) = \\cap_{i=1}^{d}\\{p_\\gamma(t,x) \\mid \\phi_i^{[k]}(t,x,p_\\gamma) = 0\\}$ をすべて保持します。幾何光学や半古典極限では粘性解が「線形重ね合わせの原理を破る」ため、論文はこの場合を扱っており、レベルセットによる定式化については「この方法は時間大域的に有効であり、解くのは線形の偏微分方程式系である」と述べています。]] 下流へ運ばれるのは $\\phi$ ではありません。$\\phi$ に比例する状態から $u$ や観測量を取り出すことは、「零レベルセットを見つけるための測定費用が余分にかかるため」「あまりに高くつく」からです。運ばれるのは $\\psi$ で、同じ線形方程式を単一の初期値 $\\psi(0,x,p) = \\frac{1}{M}\\sum_{k=1}^{M}\\prod_{i=1}^{d}\\delta(p_i - u_i^{[k]}(0,x))$ から解きます。補題 9 により $\\psi(t,x,p) = \\frac{1}{M}\\sum_{k=1}^{M}\\delta(\\phi^{[k]}(t,x,p))$ となり、「もとの問題における $u^{[k]}$ の $M$ 個の異なる初期条件は、いまや $\\psi$ の単一の初期条件に変換されている」わけです。この経路の費用が $M$ に依存しないのは、ここに由来します。",
+      },
+      "linear-ode-solve": {
+        theory:
+          "What reaches the linear slot is not the Liouville equation but its discretisation, handed over as a matrix-inversion problem. On a $2d$-dimensional phase-space mesh of $[0,1]^{2d}$ with $h = 1/N$, $x \\to hj$, $p \\to hl$ and $t_n = n\\Delta t$, the paper uses \"the forward Euler method in time and upwind approximation in $x$ and $p$-derivatives\", with $\\partial H/\\partial x_i$ and $\\partial H/\\partial p_i$ evaluated analytically for a given $H$ rather than approximated. [[approximation: Three approximations enter at this stretch and none of them entered the mapping above. The linear PDE is replaced by a first-order finite difference or finite volume scheme with forward Euler in time; the delta function in the initial datum is replaced by a discrete delta $\\delta_\\omega$ with smoothing parameter $\\omega = mh$, vanishing for $|x| > \\omega$ and integrating to $1$; and the observable's integral is replaced by the quadrature $\\langle G^\\omega_{n,j}\\rangle = N^{-d}\\sum_l G_l \\psi^\\omega_{n,j,l}$. Lemma 12 bounds the three together by $\\varepsilon_{CL} \\le C(\\omega + dh/\\omega^2)$ with $C$ independent of $h$ and $\\omega$, which at $\\omega = (dh)^{1/3}$ is $C(dh)^{1/3}$; the constant is in the paper and is not quoted here.]] [[assumption: The scheme is stable only under the CFL condition $d\\lambda \\max_i \\sup_{x,p}\\{|\\partial H/\\partial x_i|, |\\partial H/\\partial p_i|\\} \\le 1$ with $\\lambda = \\Delta t/h$, and the mesh can be a finite box only because the initial data are assumed to have compact support in $x$ — which keeps the solution compactly supported for $t \\le T$ — while the $p$-support stays compact because the initial data in $p$ are delta functions and $u$ is bounded for $T < \\infty$; both are then scaled into $[0,1]^{2d}$.]] What that assembles is $K$, an $N_t N^{2d} \\times N_t N^{2d}$ Toeplitz matrix whose diagonal blocks are the $N^{2d}$ identity and whose subdiagonal blocks are the single-step operator of Eq. (B3), acting on the stacked $\\psi_{n,j,l}$ with $(\\psi_{0,j,l}, 0, \\ldots, 0)^T$ on the right. $K$ is not Hermitian, so what is actually handed down is the Hermitian dilation $\\mathcal{M}$ carrying $K$ and $K^\\dagger$ in its off-diagonal blocks, \"which has the same sparsity and condition number as $K$\". Lemma 10 prices that object rather than the solve: $\\kappa \\le O(dNT)$ with $T = N_t\\Delta t$ the stopping time, and sparsity $s = O(d)$. [[assumption: The slot is asked for the inversion under sparse access $(s = O(d), \\|\\mathcal{M}\\|_{\\max} = O(1), O_{\\mathcal{M}}, O_F)$ with $\\|\\mathcal{M}\\| = O(1)$, together with $U_{\\mathrm{initial}}|0\\rangle = |\\psi_0\\rangle$ preparing the discretised initial datum and $L(t_n, j/N)|0\\rangle = |G_{n,j}\\rangle$ preparing the observable's state. Those are Theorem 17's inputs; the count that theorem proves is the whole route's price and is not quoted at this hop.]] And what is asked of the slot is not the solution vector. The quantity extracted is $\\Upsilon = \\langle\\psi_0|(\\mathcal{M}^{-1})^\\dagger \\mathcal{G} \\mathcal{M}^{-1}|\\psi_0\\rangle$ with $\\mathcal{G} = |G_{n,j}\\rangle\\langle G_{n,j}|$, which equals $N^{2d}\\langle G^\\omega_{n,j}\\rangle^2/(N_{\\psi_0}^2 N_G^2)$, so the observable comes back as $\\langle G(t_n, j/N)\\rangle \\approx n_{\\psi_0} n_G |\\sqrt{\\Upsilon}|$, where $n_G = N_G/N^{d/2} = O(1)$ and $O(1) \\le n_{\\psi_0} = N_{\\psi_0}/N^{d/2} \\le O(N^{d/2})$ depending on the initial data. [[approximation: The device returns only $\\tilde{\\Upsilon}$, to finite precision $|\\sqrt{\\tilde{\\Upsilon}} - \\sqrt{\\Upsilon}| \\le \\varepsilon_G$, so the quantum error is $\\varepsilon_Q \\le \\varepsilon_G n_G n_{\\psi_0}$; Lemma 15 splits the budget as $\\varepsilon_{CL} + \\varepsilon_Q \\le \\varepsilon$ and balances the halves by choosing $\\varepsilon_G \\sim \\varepsilon/(n_G n_{\\psi_0})$.]] The paper records a second way of using this slot which the map does not draw: HHL or CKS applied to the same system prepares the level-set encoded state $|\\psi\\rangle \\propto \\sum_{n,j,l}\\psi_{n,j,l}|j\\rangle|l\\rangle|n\\rangle$, from which a swap test against $|G\\rangle$ also recovers $\\Upsilon$, \"although with worse query complexity compared to the current algorithm in Theorem 17\".",
+        theoryJa:
+          "線形の層に届くのは Liouville 方程式そのものではなく、その離散化であり、行列の逆問題として渡されます。$[0,1]^{2d}$ の $2d$ 次元位相空間格子上で $h = 1/N$、$x \\to hj$、$p \\to hl$、$t_n = n\\Delta t$ とし、論文は「時間には前進 Euler 法、$x$ と $p$ の微分には風上近似」を用います。$\\partial H/\\partial x_i$ と $\\partial H/\\partial p_i$ は、与えられた $H$ に対して解析的に評価でき、近似する必要はありません。[[approximation: この区間で三つの近似が入ります。いずれも上の写像には入っていなかったものです。線形偏微分方程式は、時間に前進 Euler 法を用いる一次の差分法あるいは有限体積法で置き換えられます。初期値のデルタ関数は、平滑化パラメータ $\\omega = mh$ をもつ離散デルタ関数 $\\delta_\\omega$ で置き換えられます。$\\delta_\\omega$ は $|x| > \\omega$ で $0$ となり、積分は $1$ です。そして観測量の積分は求積 $\\langle G^\\omega_{n,j}\\rangle = N^{-d}\\sum_l G_l \\psi^\\omega_{n,j,l}$ で置き換えられます。補題 12 はこの三つをまとめて $\\varepsilon_{CL} \\le C(\\omega + dh/\\omega^2)$ と評価します。$C$ は $h$ と $\\omega$ によらず、$\\omega = (dh)^{1/3}$ と取れば $C(dh)^{1/3}$ になります。その定数は論文にあり、ここでは引用しません。]] [[assumption: この差分法が安定なのは、$\\lambda = \\Delta t/h$ として CFL 条件 $d\\lambda \\max_i \\sup_{x,p}\\{|\\partial H/\\partial x_i|, |\\partial H/\\partial p_i|\\} \\le 1$ が成り立つ場合に限られます。また計算領域を有限の箱に取れるのは、初期データが $x$ についてコンパクトな台をもつと仮定されており、そのため $t \\le T$ でも解の台がコンパクトにとどまるからです。$p$ については初期データがデルタ関数であり、$T < \\infty$ の範囲で $u$ が有界であるかぎり台はコンパクトに保たれます。両者を尺度変換して $[0,1]^{2d}$ に収めます。]] こうして組み上がるのが $K$ で、$N_t N^{2d} \\times N_t N^{2d}$ の Toeplitz 行列です。対角ブロックは $N^{2d}$ 次の単位行列、劣対角ブロックは式 (B3) の一ステップ作用素であり、積み上げた $\\psi_{n,j,l}$ に作用して右辺が $(\\psi_{0,j,l}, 0, \\ldots, 0)^T$ となります。$K$ はエルミートではありませんので、実際に下層へ渡されるのは、非対角ブロックに $K$ と $K^\\dagger$ を置いたエルミートな拡大 $\\mathcal{M}$ です。これは「$K$ と同じ疎性と条件数をもつ」とされています。補題 10 が値段を付けているのは求解ではなくこの対象です。$T = N_t\\Delta t$ を停止時刻として $\\kappa \\le O(dNT)$、疎性は $s = O(d)$ です。[[assumption: この層に求解を頼むにあたっては、疎アクセス $(s = O(d), \\|\\mathcal{M}\\|_{\\max} = O(1), O_{\\mathcal{M}}, O_F)$ と $\\|\\mathcal{M}\\| = O(1)$、および離散化された初期値を用意する $U_{\\mathrm{initial}}|0\\rangle = |\\psi_0\\rangle$ と、観測量の状態を用意する $L(t_n, j/N)|0\\rangle = |G_{n,j}\\rangle$ を前提とします。これらは定理 17 の入力であり、同定理が証明する回数は経路全体の値段ですので、この区間では引用しません。]] そして、この層に求められているのは解ベクトルではありません。取り出される量は $\\mathcal{G} = |G_{n,j}\\rangle\\langle G_{n,j}|$ として $\\Upsilon = \\langle\\psi_0|(\\mathcal{M}^{-1})^\\dagger \\mathcal{G} \\mathcal{M}^{-1}|\\psi_0\\rangle$ であり、これは $N^{2d}\\langle G^\\omega_{n,j}\\rangle^2/(N_{\\psi_0}^2 N_G^2)$ に等しくなります。したがって観測量は $\\langle G(t_n, j/N)\\rangle \\approx n_{\\psi_0} n_G |\\sqrt{\\Upsilon}|$ として戻ってきます。ここで $n_G = N_G/N^{d/2} = O(1)$ であり、$n_{\\psi_0} = N_{\\psi_0}/N^{d/2}$ は初期データに応じて $O(1) \\le n_{\\psi_0} \\le O(N^{d/2})$ の範囲を動きます。[[approximation: 装置が返すのは有限精度の $\\tilde{\\Upsilon}$ にすぎず、$|\\sqrt{\\tilde{\\Upsilon}} - \\sqrt{\\Upsilon}| \\le \\varepsilon_G$ です。したがって量子側の誤差は $\\varepsilon_Q \\le \\varepsilon_G n_G n_{\\psi_0}$ となります。補題 15 は誤差の予算を $\\varepsilon_{CL} + \\varepsilon_Q \\le \\varepsilon$ と分け、$\\varepsilon_G \\sim \\varepsilon/(n_G n_{\\psi_0})$ と選ぶことで両者を釣り合わせます。]] 論文には、この地図が描いていないもう一つの使い方も記されています。同じ系に HHL あるいは CKS を適用してレベルセット符号化された状態 $|\\psi\\rangle \\propto \\sum_{n,j,l}\\psi_{n,j,l}|j\\rangle|l\\rangle|n\\rangle$ を用意し、$|G\\rangle$ とのスワップテストによって $\\Upsilon$ を得るというもので、「ただし定理 17 の現在のアルゴリズムと比べるとクエリ計算量は悪くなる」とされています。",
+      },
+    },
     citations: [
       { title: "Quantum algorithms for computing observables of nonlinear partial differential equations", authors: "Shi Jin, Nana Liu", year: "2022", url: "https://arxiv.org/abs/2202.07834" },
     ],
@@ -209,6 +476,94 @@ export const LAYER_GRAPH: LayerGraph = {
     // ODE system" — this route's own summary. The solver it then calls is
     // "a quantum linear-ODE algorithm", unnamed, so that hop stays a slot.
     via: { "nonlinear-linear-embedding": "homotopy-perturbation-lift" },
+    // A transcription, from arXiv:2111.07486 plus this record's own fields.
+    example: {
+      pseudocode: [
+        "given  n-dimensional quadratic ODEs  du/dt = F_1 u + F_2 u^{(x)2},  u(0) = u_in",
+        "       F_1, F_2 time-independent and s-sparse",
+        "       F_1 normal, eigenvalues Re(lambda_n) <= ... <= Re(lambda_1) < 0",
+        "       oracles O_F1, O_F2 for nonzero positions and values of F_1, F_2",
+        "       oracle  O_u : |0> -> |u_in / ||u_in|| >",
+        "       horizon T, error budget eps",
+        "",
+        "# the parameter that characterises the nonlinearity, Eq.(3)",
+        "K     = 4 ||u_in|| ||F_2|| / |Re(lambda_1)|",
+        "        # require K < sqrt(2)/2   -- stronger than the K < 1 convergence alone needs",
+        "        # if K < ||u_in||, rescale u -> zeta u by a constant that leaves K unchanged",
+        "eta   = ||u_in|| / ||u(T)||",
+        "eta'  = eta K / ||u_in||",
+        "g     = max_{t in [0,T]} || |y(t)> || / || |y(T)> ||",
+        "c     = ceil( log_{1/K}( 4 ||u_in|| / ((1-K) eps eta) ) )      # truncation order",
+        "        # require (c+1) ||F_2|| / |Re(lambda_1)| <= 1",
+        "",
+        "# --- nonlinear-linear-embedding, via homotopy-perturbation-lift --------------",
+        "build  dy/dt = A y,  y(0) = y_in                # Eq.(8);  N ~ (n+1)^{c+1}",
+        "    # embed the homotopy-perturbation series into a finite-dimensional linear",
+        "    # ODE system -- the whole of that construction is the lift's own card",
+        "    # what comes back:  sparsity O(s c^2), ||A|| <= (c+1)(||F_1|| + ||F_2||),",
+        "    #     Re(gamma_i) < 0 for every eigenvalue of A,",
+        "    #     the lift y_in, and the readout: the first block of y is utilde",
+        "    # O_A costs O(c) queries to O_F1 and O(1) queries to O_F2   (Lemma 6)",
+        "    # |0>|y_in> is prepared with O(c) queries to O_u            (Lemma 1)",
+        "",
+        "# --- linear-ode-solve --------------------------------------------------------",
+        "h     = T / ceil(T ||A||)",
+        "m = p = T/h = ceil(T ||A||)",
+        "delta = eps sqrt(1 - 2K^2) / (30 sqrt(78 m) g eta')     # the solver's budget",
+        "Omega = 50 m (c+1)(c+2) g / delta",
+        "k     = floor( 2 log(Omega) / log(log(Omega)) )         # so that (k+1)! >= Omega",
+        "",
+        "repeat O( g eta' / sqrt(1 - 2K^2) ) times, coherently -- amplitude amplification:",
+        "",
+        "    prepare |0>|y_in>",
+        "    assemble  C_{m,k,p}(Ah) |x> = |0>|y_in>              # Eq.(21), Eq.(22)",
+        "        Taylor-term rows : |x_{i,1}> = Ah |x_{i,0}>,",
+        "                           |x_{i,j}> = (Ah/j) |x_{i,j-1}>,   2 <= j <= k",
+        "        step-closing row : |x_{i,0}> = sum_{j=0..k} |x_{i-1,j}>",
+        "        padding rows     : |x_{m,j}> = |x_{m,j-1}>,          1 <= j <= p",
+        "        # sparsity        s_C < k + c^2 s",
+        "        # condition no.   kappa_C <= 2 e sqrt(k) (m(k+1)+p)(c+2)   (Lemma 8)",
+        "    solve that system with the quantum linear system algorithm, to within delta",
+        "        of the normalised solution",
+        "        # this route reduces to a quantum linear solve; it does not remove it",
+        "",
+        "    # --- measurement, in two steps (Sect. III D) ---",
+        "    measure the first register of |x>",
+        "    accept iff the outcome lies in S = {m(k+1), ..., m(k+1)+p}",
+        "        # those p+1 blocks all hold |y(T)>",
+        "        # probability >= 1 / (p + 77 m g^2)                       (Lemma 11)",
+        "    measure the block register of |y(T)> = sum_{i,j} |i,j> |y_{i,j}(T)>",
+        "    accept iff the outcome is |0,0>",
+        "        # that block is utilde(T) = nu_0 + ... + nu_c",
+        "        # probability >= (1 - 2K^2) / (1 - 2K^2 + 2 eta'^2)       (Lemma 12)",
+        "",
+        "return the remaining register -- a state eps-close to the normalized exact",
+        "       solution u(T)/||u(T)||, with Omega(1) success probability",
+        "",
+        "# query complexity for O_F1, O_F2, O_u:",
+        "#   O( g eta s T (||F_1|| + ||F_2||) / (sqrt(1-2K^2) ||u_in||)",
+        "#      * poly log( g eta s T ||F_1|| ||F_2|| / (eps (1-2K^2) ||u_in||) ) )",
+        "# gate complexity is larger by a factor O(poly log(n g eta s T ||F_1|| ||F_2||",
+        "#                                          / (eps (1-2K^2) ||u_in||)))",
+        "# quoted on this record as  O(g eta T poly(log(nT/eps)))",
+      ].join("\n"),
+    },
+    hops: {
+      // arXiv:2111.07486, full PDF, with the route's other two citations used
+      // only where they say something about this route.
+      "nonlinear-linear-embedding": {
+        theory:
+          "The route hands the embedding slot the quadratic problem of Eq. (1), $du/dt = F_1u + F_2u^{\\otimes 2}$ with $u(0) = u_{in}$, together with a homotopy truncation order $c$, and receives back the finite-dimensional linear system of Eq. (8), $d\\vec{y}/dt = A\\vec{y}$ with $\\vec{y}(0) = y_{in}$: dimension $N = (n+1)^{c+1} - 1 - cn \\approx (n+1)^{c+1}$, block bidiagonal, with sparsity $O(sc^2)$ by Lemma 2, $\\lVert A\\rVert \\le (c+1)(\\lVert F_1\\rVert + \\lVert F_2\\rVert)$ by Lemma 3, and every eigenvalue satisfying $\\mathrm{Re}(\\gamma_i) < 0$ by Lemma 4. It receives the lift with it — $y_{in} = [[u_{in}],[u_{in}^{\\otimes 2},0,\\ldots,0],[u_{in}^{\\otimes 3},0,\\ldots,0],\\ldots,[u_{in}^{\\otimes c+1}]]$ of Eq. (12) — and the readout, which is that the first block carries $\\vec{y}_0 = \\nu_0 + \\nu_1 + \\cdots + \\nu_c = \\tilde{u}$, so the answer sits on the $\\lvert 0,0\\rangle$ branch of the block register of $\\lvert y(t)\\rangle = \\sum_{i=0}^{c}\\sum_{j=0}^{\\beta_i - 1}\\lvert i,j\\rangle\\lvert y_{i,j}(t)\\rangle$. [[approximation: The exact solution is the whole series $u(t) = \\sum_{i=0}^{\\infty}\\nu_i(t)$ and only the first $c+1$ terms survive. Lemma 9 bounds what is dropped: $\\lVert u(t) - \\tilde{u}(t)\\rVert \\le \\varepsilon$ once $K < 1$ and $c > \\log_{1/K}\\frac{1}{\\varepsilon(1-K)}$, and Theorem 1 fixes $c = \\lceil \\log_{1/K}\\frac{4\\lVert u_{in}\\rVert}{(1-K)\\varepsilon\\eta} \\rceil$ with $\\eta = \\lVert u_{in}\\rVert/\\lVert u(T)\\rVert$.]] [[assumption: Theorem 1 is stated for $K = 4\\lVert u_{in}\\rVert\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert < \\sqrt{2}/2$, a strictly stronger constraint than convergence of the series alone needs, and for $(c+1)\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert \\le 1$, which is the condition under which $\\lVert e^{At}\\rVert \\le c+1$ holds for the generator this slot returns.]]",
+        theoryJa:
+          "この経路は埋め込みの層に、式 (1) の二次の常微分方程式 $du/dt = F_1u + F_2u^{\\otimes 2}$、$u(0) = u_{in}$ と、ホモトピーの打ち切り次数 $c$ を渡し、式 (8) の有限次元線形系 $d\\vec{y}/dt = A\\vec{y}$、$\\vec{y}(0) = y_{in}$ を受け取ります。次元は $N = (n+1)^{c+1} - 1 - cn \\approx (n+1)^{c+1}$ で、$A$ はブロック二重対角です。補題 2 により疎性は $O(sc^2)$、補題 3 により $\\lVert A\\rVert \\le (c+1)(\\lVert F_1\\rVert + \\lVert F_2\\rVert)$、補題 4 によりすべての固有値が $\\mathrm{Re}(\\gamma_i) < 0$ を満たします。持ち上げ写像も同時に受け取ります。式 (12) の $y_{in} = [[u_{in}],[u_{in}^{\\otimes 2},0,\\ldots,0],[u_{in}^{\\otimes 3},0,\\ldots,0],\\ldots,[u_{in}^{\\otimes c+1}]]$ です。読み出し写像も同様で、最初のブロックが $\\vec{y}_0 = \\nu_0 + \\nu_1 + \\cdots + \\nu_c = \\tilde{u}$ を担いますので、答えは $\\lvert y(t)\\rangle = \\sum_{i=0}^{c}\\sum_{j=0}^{\\beta_i - 1}\\lvert i,j\\rangle\\lvert y_{i,j}(t)\\rangle$ のブロックレジスタの $\\lvert 0,0\\rangle$ の枝にあります。[[approximation: 厳密解は級数全体 $u(t) = \\sum_{i=0}^{\\infty}\\nu_i(t)$ であり、残るのは最初の $c+1$ 項だけです。捨てられる分を評価するのが補題 9 で、$K < 1$ かつ $c > \\log_{1/K}\\frac{1}{\\varepsilon(1-K)}$ であれば $\\lVert u(t) - \\tilde{u}(t)\\rVert \\le \\varepsilon$ となります。定理 1 は $\\eta = \\lVert u_{in}\\rVert/\\lVert u(T)\\rVert$ として $c = \\lceil \\log_{1/K}\\frac{4\\lVert u_{in}\\rVert}{(1-K)\\varepsilon\\eta} \\rceil$ と定めます。]] [[assumption: 定理 1 は $K = 4\\lVert u_{in}\\rVert\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert < \\sqrt{2}/2$ のもとで述べられており、これは級数の収束だけを求める条件より厳しい制約です。あわせて $(c+1)\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert \\le 1$ も仮定されます。これは、この層が返す生成子について $\\lVert e^{At}\\rVert \\le c+1$ が成り立つための条件です。]]",
+      },
+      "linear-ode-solve": {
+        theory:
+          "What reaches the linear-ODE slot is Eq. (8), $d\\vec{y}/dt = A\\vec{y}$ with $\\vec{y}(0) = y_{in}$, and the route solves it with the all-at-once Taylor encoding of Berry, Childs, Ostrander and Wang: $C_{m,k,p}(Ah)\\lvert x\\rangle = \\lvert 0\\rangle\\lvert y_{in}\\rangle$ of Eq. (22), whose rows are $\\lvert x_{0,0}\\rangle = \\lvert y_{in}\\rangle$, $\\lvert x_{i,1}\\rangle = Ah\\lvert x_{i,0}\\rangle$, $\\lvert x_{i,j}\\rangle = (Ah/j)\\lvert x_{i,j-1}\\rangle$ for $2 \\le j \\le k$, $\\lvert x_{i,0}\\rangle = \\sum_{j=0}^{k}\\lvert x_{i-1,j}\\rangle$ for $1 \\le i \\le m$, and $\\lvert x_{m,j}\\rangle = \\lvert x_{m,j-1}\\rangle$ for $1 \\le j \\le p$, at $h = T/\\lceil T\\lVert A\\rVert\\rceil$ and $m = p = \\lceil T\\lVert A\\rVert\\rceil$; its sparsity is $s_C < k + c^2 s$ and Lemma 8 bounds its condition number by $\\kappa_C \\le 2e\\sqrt{k}\\,(m(k+1)+p)(c+2)$. [[approximation: One step of $e^{Ah}$ is replaced by $T_k(Ah) = \\sum_{j=0}^{k}(Ah)^j/j!$, so that $\\lvert x_{j,0}\\rangle = T_k^{\\,j}(Ah)\\lvert x_{0,0}\\rangle$ stands in for $\\lvert y(jh)\\rangle = e^{Ajh}\\lvert y(0)\\rangle$; Lemma 10 carries the replacement across the march as $\\lVert \\lvert y(jh)\\rangle - \\lvert x_{j,0}\\rangle\\rVert \\le 2j(c+1)(c+2)\\lVert y_{in}\\rVert/(k+1)!$ for $j = 0,1,\\ldots,m$.]] [[assumption: $\\lVert Ah\\rVert \\le 1$ throughout, and $(c+1)\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert \\le 1$, which is what Lemma 7 needs to give $\\lVert e^{At}\\rVert \\le c+1$ and hence $\\lVert (T_k(Ah))^{m-a-1}\\rVert \\le c+2$; the condition-number bound additionally requires $k \\ge 5$ and $\\frac{2}{(k+1)!}m(c+1)(c+2) \\le 1$, and Lemma 11 requires $(k+1)! \\ge 50m(c+1)(c+2)g$, which is why $k = \\lfloor 2\\log\\Omega/\\log\\log\\Omega \\rfloor$ is chosen at $\\Omega = 50m(c+1)(c+2)g/\\delta$.]] [[approximation: The quantum linear system algorithm returns only a state $\\delta$-close to the normalised solution, $\\lVert \\lvert \\bar{x}\\rangle - \\lvert \\bar{x}'\\rangle\\rVert \\le \\delta$ with $\\delta = \\varepsilon\\sqrt{1-2K^2}/(30\\sqrt{78m}\\,g\\eta')$ and $\\eta' = \\eta K/\\lVert u_{in}\\rVert$.]] The answer is then taken by two measurements. The first register of $\\lvert x\\rangle$ must land in $S = \\{m(k+1),\\ldots,m(k+1)+p\\}$, whose blocks all hold $\\lvert y(T)\\rangle$; Lemma 11 puts that at $\\lVert \\lvert x_{m,0}\\rangle\\rVert^2/\\lVert \\lvert x\\rangle\\rVert^2 \\ge 1/(p + 77mg^2)$. The block register of $\\lvert y(T)\\rangle$ must then give $\\lvert 0,0\\rangle$; Lemma 12 puts that at $\\lVert \\lvert y_0(T)\\rangle\\rVert^2/\\lVert \\lvert y(T)\\rangle\\rVert^2 \\ge (1-2K^2)/(1-2K^2+2(\\eta')^2)$. The two together give success probability at least $(1-2K^2)/(400(g\\eta')^2)$, raised to $\\Omega(1)$ by running the linear system algorithm $O(g\\eta'/\\sqrt{1-2K^2})$ times under amplitude amplification.",
+        theoryJa:
+          "線形常微分方程式の層に届くのは式 (8)、すなわち $d\\vec{y}/dt = A\\vec{y}$、$\\vec{y}(0) = y_{in}$ です。この経路はそれを Berry・Childs・Ostrander・Wang の一括 Taylor 符号化で解きます。式 (22) の $C_{m,k,p}(Ah)\\lvert x\\rangle = \\lvert 0\\rangle\\lvert y_{in}\\rangle$ であり、その行は $\\lvert x_{0,0}\\rangle = \\lvert y_{in}\\rangle$、$\\lvert x_{i,1}\\rangle = Ah\\lvert x_{i,0}\\rangle$、$2 \\le j \\le k$ について $\\lvert x_{i,j}\\rangle = (Ah/j)\\lvert x_{i,j-1}\\rangle$、$1 \\le i \\le m$ について $\\lvert x_{i,0}\\rangle = \\sum_{j=0}^{k}\\lvert x_{i-1,j}\\rangle$、$1 \\le j \\le p$ について $\\lvert x_{m,j}\\rangle = \\lvert x_{m,j-1}\\rangle$ です。刻み幅と段数は $h = T/\\lceil T\\lVert A\\rVert\\rceil$、$m = p = \\lceil T\\lVert A\\rVert\\rceil$ と取ります。疎性は $s_C < k + c^2 s$ であり、補題 8 は条件数を $\\kappa_C \\le 2e\\sqrt{k}\\,(m(k+1)+p)(c+2)$ と抑えます。[[approximation: 1 ステップの $e^{Ah}$ は $T_k(Ah) = \\sum_{j=0}^{k}(Ah)^j/j!$ で置き換えられ、$\\lvert y(jh)\\rangle = e^{Ajh}\\lvert y(0)\\rangle$ の代わりに $\\lvert x_{j,0}\\rangle = T_k^{\\,j}(Ah)\\lvert x_{0,0}\\rangle$ が立ちます。補題 10 はその置き換えを時間刻み全体にわたり $\\lVert \\lvert y(jh)\\rangle - \\lvert x_{j,0}\\rangle\\rVert \\le 2j(c+1)(c+2)\\lVert y_{in}\\rVert/(k+1)!$（$j = 0,1,\\ldots,m$）と評価します。]] [[assumption: 全体を通して $\\lVert Ah\\rVert \\le 1$ とします。$(c+1)\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert \\le 1$ は、補題 7 が $\\lVert e^{At}\\rVert \\le c+1$、したがって $\\lVert (T_k(Ah))^{m-a-1}\\rVert \\le c+2$ を得るために必要とする条件です。条件数の評価にはさらに $k \\ge 5$ と $\\frac{2}{(k+1)!}m(c+1)(c+2) \\le 1$ が要り、補題 11 には $(k+1)! \\ge 50m(c+1)(c+2)g$ が要ります。$\\Omega = 50m(c+1)(c+2)g/\\delta$ として $k = \\lfloor 2\\log\\Omega/\\log\\log\\Omega \\rfloor$ と選ぶのは、そのためです。]] [[approximation: 量子線形システムアルゴリズムが返すのは、正規化された解に $\\delta$ まで近い状態にすぎません。$\\lVert \\lvert \\bar{x}\\rangle - \\lvert \\bar{x}'\\rangle\\rVert \\le \\delta$ であり、$\\eta' = \\eta K/\\lVert u_{in}\\rVert$ として $\\delta = \\varepsilon\\sqrt{1-2K^2}/(30\\sqrt{78m}\\,g\\eta')$ です。]] 答えは二段階の測定で取り出します。まず $\\lvert x\\rangle$ の第一レジスタの測定結果が $S = \\{m(k+1),\\ldots,m(k+1)+p\\}$ に入る必要があります。これらのブロックはいずれも $\\lvert y(T)\\rangle$ を担っており、補題 11 はその確率を $\\lVert \\lvert x_{m,0}\\rangle\\rVert^2/\\lVert \\lvert x\\rangle\\rVert^2 \\ge 1/(p + 77mg^2)$ と評価します。次に $\\lvert y(T)\\rangle$ のブロックレジスタが $\\lvert 0,0\\rangle$ を返す必要があり、補題 12 はその確率を $\\lVert \\lvert y_0(T)\\rangle\\rVert^2/\\lVert \\lvert y(T)\\rangle\\rVert^2 \\ge (1-2K^2)/(1-2K^2+2(\\eta')^2)$ と評価します。両者を合わせた成功確率は $(1-2K^2)/(400(g\\eta')^2)$ 以上であり、振幅増幅のもとで線形システムアルゴリズムを $O(g\\eta'/\\sqrt{1-2K^2})$ 回走らせることで $\\Omega(1)$ まで引き上げられます。",
+      },
+    },
     citations: [
       { title: "Quantum homotopy perturbation method for nonlinear dissipative ordinary differential equations", authors: "Cheng Xue, Yu-Chun Wu, Guo-Ping Guo", year: "2021", url: "https://arxiv.org/abs/2111.07486" },
       { title: "Improved quantum algorithms for linear and nonlinear differential equations", authors: "Hari Krovi", year: "2022", url: "https://arxiv.org/abs/2202.01054" },
@@ -272,6 +627,67 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "Liu らは同じ論文で、R ≥ √2 のとき一般の二次常微分方程式の問題が効率的には解けないことも証明しています。したがって 1 ≤ R < √2 の範囲は未解決であり、$R < 1$ を必要条件のように述べてはなりません。その後 Wu・Wang・Li は、散逸条件ではなく共鳴条件のもとで打ち切り水準 $N$ に関する線形収束を証明し、Burgers 方程式、Fermi-Pasta-Ulam 鎖、Korteweg-de Vries 方程式で数値検証しています。これは埋め込みの収束が判明している系の範囲を広げるものであって、R ≥ √2 の結果を覆すものではありません。",
     steps: [],
     atomic: true,
+    // A transcription of the embedding itself, from arXiv:2011.03185 with
+    // arXiv:2405.12714, plus this record's own `summary` and `conditions`.
+    example: {
+      pseudocode: [
+        "given  F_2, F_1, F_0(t), u_in, horizon T, error tolerance eps,",
+        "       for the quadratic ODE  du/dt = F_2 u^(x)2 + F_1 u + F_0(t)",
+        "",
+        "# conditions, as this record states them: F_1 diagonalizable with eigenvalues",
+        "#   ordered Re(lambda_n) <= ... <= Re(lambda_1) < 0, that is, a strictly",
+        "#   dissipative linear part, and R < 1 for",
+        "#       R = (1/|Re(lambda_1)|)(||u_in|| ||F_2|| + ||F_0||/||u_in||).",
+        "#   Liu et al.'s truncation bound also assumes ||F_0|| <= ||F_2||.",
+        "",
+        "rescale  u -> gamma u      # leaves R unchanged, and gives",
+        "                           # ||F_2|| + ||F_0|| < |Re(lambda_1)| and ||u_in|| < 1",
+        "",
+        "choose the truncation level",
+        "    N = ceil( log(2 T ||F_2|| / delta) / log(1/||u_in||) ),",
+        "    with delta = g eps/(1 + eps)  and  g = ||u(T)||",
+        "",
+        "# the lift: the tower of tensor powers.  The lift itself is exact; all of the",
+        "# error comes from the truncation",
+        "y_j  := u^(x)j                         for j = 1 ... N",
+        "y_in  = [ u_in ; u_in^(x)2 ; ... ; u_in^(x)N ]",
+        "",
+        "# each level couples only to its neighbours, so A(t) is block tridiagonal",
+        "for j = 1 ... N:",
+        "    A^j_{j+1} = F_2 (x) I^(x)(j-1) + I (x) F_2 (x) I^(x)(j-2) + ... + I^(x)(j-1) (x) F_2",
+        "    A^j_j     = the same sum built from F_1",
+        "    A^j_{j-1} = the same sum built from F_0(t)",
+        "# A is (3 N s)-sparse, and the lifted system has dimension",
+        "#     Delta = n + n^2 + ... + n^N = O(n^N)",
+        "",
+        "# truncate at level N: the exact level-N equation carries the coupling",
+        "# A^N_{N+1} u^(x)(N+1) to the level above, and cutting at N drops that term",
+        "emit  dy/dt = A(t) y + b(t),  y(0) = y_in,  b(t) = [ F_0(t) ; 0 ; ... ; 0 ]",
+        "",
+        "# under R < 1 the truncation error decays with N:",
+        "#     ||u(t) - y_1(t)|| <= ||eta(t)|| <= t N ||F_2|| ||u_in||^(N+1)",
+        "#   and, for F_0 = 0,  ||eta_j(t)|| <= ||u_in||^j R^(N+1-j)",
+        "# R < 1 is sufficient, not necessary: the intractability result begins at",
+        "# R >= sqrt(2), and 1 <= R < sqrt(2) is open",
+        "",
+        "return y_1 as the approximation of u; the linear system this produces is solved",
+        "       by the layer below -- on its own the linearization is a change of",
+        "       variables and buys nothing until something solves the system it produces",
+      ].join("\n"),
+    },
+    hops: {
+      // The embedding itself, from arXiv:2011.03185 with arXiv:2405.12714. This
+      // node is a FOLDED refinement of `koopman-linearization`, so the note says
+      // what Carleman does concretely — the tower of tensor powers, the
+      // truncation order, and the dissipativity ratio the truncation error decays
+      // under — rather than restating the general Koopman idea its parent holds.
+      "carleman-linearization": {
+        theory:
+          "The lift is the tower of tensor powers: $\\hat{y}_j = u^{\\otimes j}$ for $j = 1, \\ldots, N$, started from $\\hat{y}_{in} = [u_{in}; u_{in}^{\\otimes 2}; \\ldots; u_{in}^{\\otimes N}]$. Differentiating $u^{\\otimes j}$ along $du/dt = F_2 u^{\\otimes 2} + F_1 u + F_0(t)$ leaves each level coupled only to its two neighbours, so the tower obeys $d\\hat{y}/dt = A(t)\\hat{y} + b(t)$ with $\\hat{y}(0) = \\hat{y}_{in}$ and $A$ block-tridiagonal: $A^j_{j+1} = F_2 \\otimes I^{\\otimes j-1} + I \\otimes F_2 \\otimes I^{\\otimes j-2} + \\cdots + I^{\\otimes j-1} \\otimes F_2$, $A^j_j$ the same sum built from $F_1$, $A^j_{j-1}$ the same sum built from $F_0(t)$, and $b(t) = [F_0(t); 0; \\ldots; 0]$. $A$ is $(3Ns)$-sparse and the lifted system has dimension $\\Delta = n + n^2 + \\cdots + n^N = O(n^N)$. [[approximation: The tower is infinite and the truncation is what closes it — the exact level-$N$ equation carries the coupling $A^N_{N+1}u^{\\otimes(N+1)}$ to the level above, and cutting at $N$ drops precisely that term, so the residual $\\eta_j(t) := u^{\\otimes j}(t) - \\hat{y}_j(t)$ solves $d\\eta/dt = A(t)\\eta + \\hat{b}(t)$ with $\\eta(0) = 0$ and $\\hat{b}$ carrying that one dropped block. The lift itself is exact; this is where all of the error comes from.]] [[assumption: The bound on that residual is Liu et al.'s Lemma 2, which assumes Problem 1's hypotheses — $F_1$ diagonalizable with $\\mathrm{Re}(\\lambda_n) \\le \\cdots \\le \\mathrm{Re}(\\lambda_1) < 0$ — together with $R < 1$ for $R = (1/|\\mathrm{Re}(\\lambda_1)|)(\\lVert u_{in} \\rVert \\lVert F_2 \\rVert + \\lVert F_0 \\rVert / \\lVert u_{in} \\rVert)$ and $\\lVert F_0 \\rVert \\le \\lVert F_2 \\rVert$, and is run after the rescaling $u \\to \\gamma u$ that leaves $R$ unchanged while giving $\\lVert F_2 \\rVert + \\lVert F_0 \\rVert < |\\mathrm{Re}(\\lambda_1)|$ and $\\lVert u_{in} \\rVert < 1$.]] Under those, $\\lVert \\eta_j(t) \\rVert \\le \\lVert \\eta(t) \\rVert \\le tN\\lVert F_2 \\rVert \\lVert u_{in} \\rVert^{N+1}$, and for a homogeneous equation ($F_0(t) = 0$) Corollary 1 gives $\\lVert \\eta_j(t) \\rVert \\le \\lVert u_{in} \\rVert^j R^{N+1-j}$, with the tighter $\\lVert \\eta_1(t) \\rVert \\le \\lVert u_{in} \\rVert R^N (1 - e^{\\mathrm{Re}(\\lambda_1)t})^N$ at the first level. That is what the dissipativity condition is for — in the paper's own words, \"if $R < 1$, both (4.28) and (4.29) decrease exponentially with $N$, making the truncation efficient\", whereas for $R \\ge 1$ the same bounds force $N = \\Omega(e^{|\\mathrm{Re}(\\lambda_1)|t})$, so \"the truncation order given by Lemma 2 must grow exponentially with $t$\". It is sufficient and not necessary: the paper's own intractability result begins at $R \\ge \\sqrt{2}$ and leaves $1 \\le R < \\sqrt{2}$ open. The level actually taken is $N = \\lceil \\log(2T\\lVert F_2 \\rVert/\\delta)/\\log(1/\\lVert u_{in} \\rVert) \\rceil$ with $\\delta = g\\varepsilon/(1+\\varepsilon)$ and $g = \\lVert u(T) \\rVert$. Katz, Muraleedharan and Alase reach the same tower from Koopman linearization by taking the polynomials as the observables and the monomials $\\Psi_j: x \\mapsto x^j$ as the basis: for $dx/dt = -x^2$ that gives $L\\Psi_j = -j\\Psi_{j+1}$, so truncating at $N$ leaves the $N \\times N$ generator carrying $-1, -2, \\ldots, -(N-1)$ on its superdiagonal and zero elsewhere.",
+        theoryJa:
+          "持ち上げはテンソル冪の塔です。$j = 1, \\ldots, N$ について $\\hat{y}_j = u^{\\otimes j}$ とし、$\\hat{y}_{in} = [u_{in}; u_{in}^{\\otimes 2}; \\ldots; u_{in}^{\\otimes N}]$ から出発します。$du/dt = F_2 u^{\\otimes 2} + F_1 u + F_0(t)$ に沿って $u^{\\otimes j}$ を微分すると、各水準は隣接する二つの水準としか結合しません。したがって塔は $d\\hat{y}/dt = A(t)\\hat{y} + b(t)$、$\\hat{y}(0) = \\hat{y}_{in}$ に従い、$A$ はブロック三重対角で、$A^j_{j+1} = F_2 \\otimes I^{\\otimes j-1} + I \\otimes F_2 \\otimes I^{\\otimes j-2} + \\cdots + I^{\\otimes j-1} \\otimes F_2$、$A^j_j$ は $F_1$ から作った同じ和、$A^j_{j-1}$ は $F_0(t)$ から作った同じ和であり、$b(t) = [F_0(t); 0; \\ldots; 0]$ です。$A$ は $(3Ns)$ 疎であり、持ち上げた系の次元は $\\Delta = n + n^2 + \\cdots + n^N = O(n^N)$ です。[[approximation: 塔は無限であり、それを閉じるのが打ち切りです。厳密な第 $N$ 水準の式は一つ上の水準への結合 $A^N_{N+1}u^{\\otimes(N+1)}$ を含んでおり、$N$ で切るとはまさにその項を落とすことです。残差 $\\eta_j(t) := u^{\\otimes j}(t) - \\hat{y}_j(t)$ は $d\\eta/dt = A(t)\\eta + \\hat{b}(t)$、$\\eta(0) = 0$ を満たし、$\\hat{b}$ が担うのは落としたその一ブロックだけです。持ち上げ自体は厳密であり、誤差はすべてここから生じます。]] [[assumption: この残差の評価は Liu らの Lemma 2 であり、Problem 1 の仮定、すなわち $F_1$ が対角化可能で $\\mathrm{Re}(\\lambda_n) \\le \\cdots \\le \\mathrm{Re}(\\lambda_1) < 0$ であることに加えて、$R = (1/|\\mathrm{Re}(\\lambda_1)|)(\\lVert u_{in} \\rVert \\lVert F_2 \\rVert + \\lVert F_0 \\rVert / \\lVert u_{in} \\rVert)$ について $R < 1$ であること、および $\\lVert F_0 \\rVert \\le \\lVert F_2 \\rVert$ であることを仮定します。解析は、$R$ を変えないまま $\\lVert F_2 \\rVert + \\lVert F_0 \\rVert < |\\mathrm{Re}(\\lambda_1)|$ と $\\lVert u_{in} \\rVert < 1$ を与える再スケーリング $u \\to \\gamma u$ ののちに行われます。]] これらのもとで $\\lVert \\eta_j(t) \\rVert \\le \\lVert \\eta(t) \\rVert \\le tN\\lVert F_2 \\rVert \\lVert u_{in} \\rVert^{N+1}$ が成り立ち、斉次の場合（$F_0(t) = 0$）には Corollary 1 が $\\lVert \\eta_j(t) \\rVert \\le \\lVert u_{in} \\rVert^j R^{N+1-j}$ を、第一水準についてはより精密な $\\lVert \\eta_1(t) \\rVert \\le \\lVert u_{in} \\rVert R^N (1 - e^{\\mathrm{Re}(\\lambda_1)t})^N$ を与えます。散逸条件はそのためにあります。論文自身の言葉では「$R < 1$ であれば (4.28) と (4.29) はいずれも $N$ について指数的に減少し、打ち切りが効率的になる」のであり、$R \\ge 1$ では同じ評価が $N = \\Omega(e^{|\\mathrm{Re}(\\lambda_1)|t})$ を強いるため、「Lemma 2 が与える打ち切り次数は $t$ とともに指数的に増大せざるをえない」ことになります。これは十分条件であって必要条件ではありません。論文自身の困難性の結果は $R \\ge \\sqrt{2}$ から始まり、$1 \\le R < \\sqrt{2}$ は未解決のまま残されています。実際に取る水準は $N = \\lceil \\log(2T\\lVert F_2 \\rVert/\\delta)/\\log(1/\\lVert u_{in} \\rVert) \\rceil$ であり、$\\delta = g\\varepsilon/(1+\\varepsilon)$、$g = \\lVert u(T) \\rVert$ です。Katz・Muraleedharan・Alase は、観測量を多項式に、基底を単項式 $\\Psi_j: x \\mapsto x^j$ に取ることで、Koopman 線形化から同じ塔に到達しています。$dx/dt = -x^2$ の場合、これは $L\\Psi_j = -j\\Psi_{j+1}$ を与えますので、$N$ で打ち切ると、超対角成分に $-1, -2, \\ldots, -(N-1)$ を並べ、他は零である $N \\times N$ の生成子が残ります。",
+      },
+    },
     citations: [
       { title: "Efficient quantum algorithm for dissipative nonlinear differential equations", authors: "Jin-Peng Liu, Herman Øie Kolden, Hari K. Krovi, Nuno F. Loureiro, Konstantina Trivisa, Andrew M. Childs", year: "2020", url: "https://arxiv.org/abs/2011.03185" },
       { title: "Quantum Algorithms for Nonlinear Dynamics: Revisiting Carleman Linearization with No Dissipative Conditions", authors: "Hsuan-Cheng Wu, Jingyao Wang, Xiantao Li", year: "2024", url: "https://arxiv.org/abs/2405.12714" },
@@ -286,6 +702,24 @@ export const LAYER_GRAPH: LayerGraph = {
     summary: "Pick a space of observables $G$ containing the quantity of interest and a basis $Ψ$ for it; the Koopman generator acting on $Ψ$ gives an infinite-dimensional linear ODE, truncated by projecting onto $N$ basis functions. $G$ fixes which observables the lifted dynamics can report and $Ψ$ fixes the structure of the generator, so this is a family of lifts parameterised by that choice rather than a single lift. Only basis choices a cited paper has carried through are recorded here — Katz, Muraleedharan and Alase name Chebyshev and Hermite bases as directions rather than results — so the narrower versions recorded under it are a sample of the framework and not an enumeration of it.",
     summaryJa: "対象となる量を含む観測量の空間 $G$ と、その基底 $Ψ$ を選びます。$Ψ$ に作用する Koopman 生成子が無限次元の線形常微分方程式を与え、$N$ 個の基底関数への射影によって打ち切ります。$G$ は持ち上げた力学から読み取れる観測量を決め、$Ψ$ は生成子の構造を決めるため、これは単一の持ち上げではなく、その選択でパラメータ付けられた族です。ここに記録するのは、引用元の論文が実際に用いた基底の選び方だけです。Katz・Muraleedharan・Alase は Chebyshev 基底や Hermite 基底を今後の方向として挙げるにとどめており、ここに記録されているより狭い種類は枠組みの一例であって、その全体を数え上げたものではありません。",
     realizes: "nonlinear-linear-embedding",
+    // **`conditions` authored 2026-08-12 from a full read of arXiv:2512.06488,
+    // and what it says is that the requirement is on the OBSERVABLE SPACE rather
+    // than on the dynamics** — the observable must lie in $G$, and $G$ must be
+    // closed under the evolution, which the paper says is "ensured in practice by
+    // carefully selecting a sufficiently large $G$". It also records the part a
+    // reader would otherwise assume away: projection does not commute with the
+    // dynamics, and convergence of the readout is stated conditionally and not
+    // proved at this generality.
+    //
+    // Every quantitative hypothesis in that paper — the dissipativity condition,
+    // the finite-time and truncation-error bounds — is derived for the FOURIER
+    // basis, so it belongs to `carleman-fourier-linearization` and is deliberately
+    // not repeated here. That is the same division the empty `cost` on this node
+    // already records.
+    conditions:
+      "Stated for a first-order nonlinear ODE $dx/dt = F(x)$, $x(0) = x_0$, with $x(t) \\in \\mathbb{C}^n$ and $F : \\mathbb{C}^n \\to \\mathbb{C}^n$, and for a (Banach) space $G$ of observables $\\psi : \\mathbb{C}^n \\to \\mathbb{C}$. What has to hold is a property of $G$ rather than of the dynamics, and there are two parts to it. The observable of interest must lie in $G$, because the readout is its expansion $g = d \\cdot \\Psi = \\sum_j d_j \\Psi_j$ in a basis $\\Psi$ of $G$; and $G$ must be closed under the evolution — Katz, Muraleedharan and Alase write that in defining the Koopman operator they \"assumed that the image of $K_t$ is in $G$, which can be ensured in practice by carefully selecting a sufficiently large $G$\". Truncation is by projection onto an $N$-dimensional subspace $G_N$, and the paper is explicit that projecting does not commute with the dynamics: $\\Psi^{(N)}$ and $\\Pi\\Psi$ agree at $t = 0$, but \"in general $\\Psi^{(N)}(t) \\neq \\Pi\\Psi(t)$ for $t > 0$\". Convergence of the readout is stated conditionally at this generality and not proved — \"As $N \\to \\infty$, if $g_N(t) \\to g(t)$, then the value of the observable obtained using the truncated lifted dynamics $g_N(t)[x_0] = g_N(x(t)) \\to g(t)[x_0] = g(x(t))$ converges to the desired value.\" Every quantitative hypothesis in the paper — the dissipativity condition, the finite-time bound, the truncation-error bounds — is derived for the Fourier basis and belongs to the record below rather than here.",
+    conditionsJa:
+      "一階の非線形常微分方程式 $dx/dt = F(x)$、$x(0) = x_0$（$x(t) \\in \\mathbb{C}^n$、$F : \\mathbb{C}^n \\to \\mathbb{C}^n$）と、観測量 $\\psi : \\mathbb{C}^n \\to \\mathbb{C}$ の（Banach）空間 $G$ について述べられています。要求されるのは力学の性質ではなく $G$ の性質であり、それは二つに分かれます。ひとつは、読み出しが $G$ の基底 $\\Psi$ による展開 $g = d \\cdot \\Psi = \\sum_j d_j \\Psi_j$ である以上、目的の観測量が $G$ に属していなければならないこと。もうひとつは、$G$ が発展のもとで閉じていることです。Katz・Muraleedharan・Alase は Koopman 作用素の定義において「$K_t$ の像が $G$ に含まれることを仮定した」と述べ、それは「十分に大きな $G$ を注意深く選ぶことで実際上は保証できる」としています。打ち切りは $N$ 次元部分空間 $G_N$ への射影で行われますが、射影と発展が交換しないことを論文は明言しています。$\\Psi^{(N)}$ と $\\Pi\\Psi$ は $t = 0$ では一致しますが、「一般に $t > 0$ では $\\Psi^{(N)}(t) \\neq \\Pi\\Psi(t)$」です。読み出しの収束も、この一般性では条件付きで述べられるにとどまり、証明されてはいません。「$N \\to \\infty$ のとき、もし $g_N(t) \\to g(t)$ ならば、打ち切った持ち上げ力学から得られる観測量の値 $g_N(t)[x_0] = g_N(x(t)) \\to g(t)[x_0] = g(x(t))$ は所望の値に収束する」。論文にある定量的な仮定、すなわち散逸条件、有限時間の評価、打ち切り誤差の評価は、いずれも Fourier 基底について導かれており、この枠組みではなく下位の記録に属します。",
     // No `conditions` and no `cost`, and that is a reading of the paper rather
     // than a gap. Every stated hypothesis and every complexity in
     // arXiv:2512.06488 is for the Fourier basis — that is, for the child below,
@@ -293,6 +727,62 @@ export const LAYER_GRAPH: LayerGraph = {
     // instance's costs to the family.
     steps: [],
     atomic: true,
+    // A transcription from arXiv:2512.06488 and this record's own prose. **No
+    // complexity appears in it**, matching the authored-absent `cost` above.
+    example: {
+      pseudocode: [
+        "given  a first-order nonlinear ODE  dx/dt = F(x),  x(0) = x_0,  x(t) in C^n,",
+        "       an observable g : C^n -> C wanted at the final time,",
+        "       a truncation level N",
+        "",
+        "# the parameter of this method is the pair (G, Psi), not a step size",
+        "choose  a space of observables G containing the quantity of interest g",
+        "choose  a basis Psi = {Psi_j} of G",
+        "        # G fixes which observables the lifted dynamics can report",
+        "        # Psi fixes the structure of the generator",
+        "        # so this is a family of lifts parameterised by that choice,",
+        "        # not a single lift",
+        "",
+        "# the Koopman generator, written in that basis",
+        "        # (K_t psi)(x(0)) = psi(x(t)),  and K_t is linear on G",
+        "        # L(psi) = lim_{t -> 0+} (psi(t) - psi(0)) / t",
+        "form    L = [L_jk]   from   L Psi_j = sum_k L_kj Psi_k",
+        "write   dPsi(t)/dt = L^T Psi",
+        "        # transposed: what evolves is the basis of G, not one vector's",
+        "        # representation in it",
+        "evaluate at the initial configuration:",
+        "        d(Psi(t)[x_0])/dt = L^T (Psi(t)[x_0])",
+        "        # the lifted state is now an array of complex numbers",
+        "",
+        "# truncate by projecting onto N basis functions",
+        "project onto  G_N = span{Psi_1, ..., Psi_N}  by  Pi : G -> G_N",
+        "form    L_N,  whose j-th column is  Pi L Psi_j  in the basis {Psi_j}_{j=1..N}",
+        "        # if Pi keeps Psi_j for j <= N and sends it to 0 for j > N,",
+        "        # L_N^T is simply the top-left N x N block of L",
+        "solve   dPsi^(N)/dt = L_N^T Psi^(N),   initial data Psi^(N)(x_0)",
+        "        # not the projected exact equation: Psi^(N)(t) != Pi Psi(t) in",
+        "        # general for t > 0, though the two agree at t = 0",
+        "",
+        "# decode",
+        "expand  g ~ g_N = sum_{j=1..N} d_j Psi_j      # the closest approximation in G_N",
+        "        # obtaining Psi(t)[x_0] at time t also gives g(x(t)) = d . Psi(t)[x_0]",
+        "",
+        "hand the truncated linear ODE, its initial data Psi^(N)(x_0) and the decoding d",
+        "     to the layer below",
+      ].join("\n"),
+    },
+    hops: {
+      // arXiv:2512.06488. **`cost` stays absent here and that is authored, not a
+      // gap** — the comment on that field records the reading: the paper states
+      // route-level complexity, not the framework's. The hop note is held to the
+      // same line: it states the lift and says nothing about what it costs.
+      "koopman-linearization": {
+        theory:
+          "The Koopman operator of $dx/dt = F(x)$, $x(0) = x_0$, acts on a space $G$ of observables by $(K_t\\psi)(x(0)) = \\psi(x(t))$ and is a linear operator on $G$; its infinitesimal generator is $L(\\psi) = \\lim_{t \\to 0^+}(\\psi(t) - \\psi(0))/t$. [[assumption: The image of $K_t$ lies in $G$ — assumed in the definition, and \"can be ensured in practice by carefully selecting a sufficiently large $G$\" — and the observable of interest lies in $G$ as well, since the readout is its expansion $g = d \\cdot \\Psi = \\sum_j d_j \\Psi_j$ in the basis.]] Writing $L\\Psi_j = \\sum_k L_{kj}\\Psi_k$ in a basis $\\Psi$ of $G$ represents $L$ as $[L_{jk}]$ and gives the Koopman representation $d\\Psi(t)/dt = L^{T}\\Psi$ — transposed because what evolves is the basis of $G$ rather than the representation of one vector in it. Evaluated at an initial configuration it reads $d(\\Psi(t)[x_0])/dt = L^{T}(\\Psi(t)[x_0])$, so the lifted state is an array of complex numbers, and the target comes back out as $g(x(t)) = d \\cdot \\Psi(t)[x_0]$. [[approximation: $G$, and with it $L$, is in general infinite-dimensional, so the generator is replaced by its projection onto an $N$-dimensional subspace $G_N$ spanned by $\\{\\Psi_j\\}_{j=1}^{N}$: $L_N$ has $j$-th column $\\Pi L\\Psi_j$ in that basis, and the lifted dynamics becomes $d\\Psi^{(N)}/dt = L_N^{T}\\Psi^{(N)}$. That is not the projected exact equation $\\Pi L\\Psi_j = \\Pi\\, d\\Psi_j/dt$, so although $\\Psi^{(N)}$ and $\\Pi\\Psi$ coincide at $t = 0$, in general $\\Psi^{(N)}(t) \\neq \\Pi\\Psi(t)$ for $t > 0$, and the observable is read from the closest approximation in $G_N$, $g \\approx g_N = \\sum_{j=1}^{N} d_j\\Psi_j$.]]",
+        theoryJa:
+          "$dx/dt = F(x)$、$x(0) = x_0$ に付随する Koopman 作用素は、観測量の空間 $G$ 上に $(K_t\\psi)(x(0)) = \\psi(x(t))$ として作用し、$G$ 上の線形作用素です。その無限小生成子は $L(\\psi) = \\lim_{t \\to 0^+}(\\psi(t) - \\psi(0))/t$ で定義されます。[[assumption: $K_t$ の像が $G$ に含まれることを仮定します。論文はこれを定義の中で仮定したと述べ、「十分に大きな $G$ を注意深く選ぶことで実際上は保証できる」としています。読み出しは基底による展開 $g = d \\cdot \\Psi = \\sum_j d_j \\Psi_j$ ですので、目的の観測量もまた $G$ に属している必要があります。]] $G$ の基底 $\\Psi$ について $L\\Psi_j = \\sum_k L_{kj}\\Psi_k$ と書くと、$L$ は $[L_{jk}]$ として表現され、Koopman 表現 $d\\Psi(t)/dt = L^{T}\\Psi$ が得られます。転置が現れるのは、発展するのが $G$ の一つのベクトルの表現ではなく基底そのものだからです。これを初期配置で評価すると $d(\\Psi(t)[x_0])/dt = L^{T}(\\Psi(t)[x_0])$ となり、持ち上げられた状態は複素数の配列になります。目的の量は $g(x(t)) = d \\cdot \\Psi(t)[x_0]$ として取り出されます。[[approximation: $G$ は、したがって $L$ も一般に無限次元ですので、生成子を $\\{\\Psi_j\\}_{j=1}^{N}$ が張る $N$ 次元部分空間 $G_N$ への射影で置き換えます。$L_N$ の第 $j$ 列はその基底における $\\Pi L\\Psi_j$ であり、持ち上げた力学は $d\\Psi^{(N)}/dt = L_N^{T}\\Psi^{(N)}$ になります。これは厳密な方程式を射影した $\\Pi L\\Psi_j = \\Pi\\, d\\Psi_j/dt$ とは一致しませんので、$t = 0$ では $\\Psi^{(N)}$ と $\\Pi\\Psi$ が一致していても、一般に $t > 0$ では $\\Psi^{(N)}(t) \\neq \\Pi\\Psi(t)$ です。観測量は $G_N$ における最も近い近似 $g \\approx g_N = \\sum_{j=1}^{N} d_j\\Psi_j$ から読み出されます。]]",
+      },
+    },
     citations: [
       { title: "Efficient quantum algorithm for solving differential equations with Fourier nonlinearity via Koopman linearization", authors: "Judd Katz, Gopikrishnan Muraleedharan, Abhijeet Alase", year: "2025", url: "https://arxiv.org/abs/2512.06488" },
     ],
@@ -315,6 +805,65 @@ export const LAYER_GRAPH: LayerGraph = {
     // about this embedding.
     steps: [],
     atomic: true,
+    // A transcription from arXiv:2411.11598, and like `koopman-linearization`
+    // above it states no complexity — that absence is authored, not a gap.
+    example: {
+      pseudocode: [
+        "given  the Fourier ODE  du/dt = G_0 + G_1 e^{iu},  u(0) = u_0,  u(t) in C^n,",
+        "       G_0 in C^n,  G_1 in C^{n x n},  e^{iu} the vector with entries {e^{iu_j}},",
+        "       the Fourier coefficients d_j of the readout g,",
+        "       a truncation level N",
+        "",
+        "# rescale first",
+        "choose  nu > 0 large enough that  gamma := ||e^{ix_0}|| = ||e^{iu_0}|| / nu  <  1",
+        "set     x_j = u_j + i ln(nu),   j = 1..n",
+        "        # the rescaled ODE is  dx/dt = F_1 e^{ix} + F_0,",
+        "        # with  F_1 = nu G_1  and  F_0 = G_0",
+        "        # mu~_0 and R_p are invariant under this rescaling",
+        "set     c_j = nu^{|j|} d_j",
+        "        # f(x) = sum_j c_j e^{i x . j}  then satisfies  f(x) = g(u)",
+        "",
+        "# lift onto the Fourier tower, not the monomial tower",
+        "set     Psi_j(x) = [e^{ix}]^{tensor j},   j = 1, 2, ...",
+        "        # expanding the same equation in monomials leaves the coefficient",
+        "        # matrix non-sparse; in the single-variable illustration",
+        "        #   d(e^{ix})/dt = i F_0 e^{ix} + i F_1 e^{2ix}",
+        "        # each row of the Fourier coefficient matrix has two non-zero entries",
+        "form    F~_0 = diag(F_0)  in C^{n x n}",
+        "        F~_1 in C^{n x n^2}, the rows of F_1 laid out blockwise",
+        "        # d(e^{ix})/dt = i F~_1 Psi_2 + i F~_0 Psi_1",
+        "form    B^(1)_{j+1} = i F~_1 (x) I^(x)(j-1) + I (x) i F~_1 (x) I^(x)(j-2)",
+        "                      + ... + I^(x)(j-1) (x) i F~_1",
+        "        B^(0)_j     = the same expression with F~_0 in place of F~_1",
+        "        # recurrence:  dPsi_j/dt = B^(1)_{j+1} Psi_{j+1} + B^(0)_j Psi_j",
+        "        # so  dPsi/dt = L^T Psi  is block upper bidiagonal",
+        "",
+        "# truncate at level N",
+        "keep    the first N blocks:  dPsi^(N)/dt = L_N^T Psi^(N),  initial data Psi^(N)(x_0)",
+        "        # L_N^T is the top-left block of L^T; its last block row is",
+        "        #   ( 0 ... 0  B^(0)_N ),  i.e. the coupling B^(1)_{N+1} is dropped,",
+        "        # and that is where  eta_k = Psi_k - Psi^(N)_k  enters",
+        "pad     Psi^(N)(t) = direct sum over j = 1..N of  e_1^(x)(N-j) (x) Psi_j(t),",
+        "        in C^{N n^N}",
+        "        # blocks of unequal size complicate the circuit",
+        "",
+        "hand the truncated linear ODE, its initial data Psi^(N)(x_0) and the rescaled",
+        "     readout coefficients c to the layer below",
+        "     # which bound eta obeys depends on the regime: Theorem 4.2 for all time",
+        "     # under mu~_0 >= 0 and R_p < 1, Theorem 4.4 on [0, Tmax] without them",
+      ].join("\n"),
+    },
+    hops: {
+      // arXiv:2411.11598 with arXiv:2512.06488. Same standing as
+      // `koopman-linearization` above on `cost`: absent by an authored reading,
+      // and this note does not smuggle a complexity in through the side door.
+      "carleman-fourier-linearization": {
+        theory:
+          "The problem as posed is $du/dt = G_0 + G_1 e^{iu}$; the substitution $x_j := u_j + i\\ln(\\nu)$, $j = 1,\\ldots,n$, rescales the exponent of the initial state, $e^{ix_0} = e^{iu_0}/\\nu$, and carries the equation to $dx/dt = F_1 e^{ix} + F_0$ with $F_1 = \\nu G_1$ and $F_0 = G_0$. [[assumption: $\\nu$ is taken large enough that $\\gamma := \\lVert e^{ix_0}\\rVert < 1$, which is what the readout needs; Katz, Muraleedharan and Alase observe that $\\tilde\\mu_0$ and $R_p$ are invariant under this rescaling, and rescale the readout coefficients with it as $c_j = \\nu^{\\lvert j\\rvert} d_j$ so that $f(x) = \\sum_j c_j e^{ix \\cdot j}$ satisfies $f(x) = g(u)$.]] The lift then takes the Fourier basis $\\Psi_j(x) = [e^{ix}]^{\\otimes j}$ in place of monomials. Differentiating the first block gives $de^{ix}/dt = i\\tilde{F}_1\\Psi_2 + i\\tilde{F}_0\\Psi_1$, where $\\tilde{F}_0 = \\mathrm{diag}(F_0) \\in \\mathbb{C}^{n \\times n}$ and $\\tilde{F}_1 \\in \\mathbb{C}^{n \\times n^2}$ lays out the rows of $F_1$ blockwise; differentiating $\\Psi_j$ by the product rule and splitting the sum in two gives the recurrence $d\\Psi_j/dt = B^{(1)}_{j+1}\\Psi_{j+1} + B^{(0)}_j\\Psi_j$ with $B^{(1)}_{j+1} = i\\tilde{F}_1 \\otimes I^{\\otimes(j-1)} + I \\otimes i\\tilde{F}_1 \\otimes I^{\\otimes(j-2)} + \\cdots + I^{\\otimes(j-1)} \\otimes i\\tilde{F}_1$ and $B^{(0)}_j$ the same expression with $\\tilde{F}_0$, so the infinite lifted system $d\\Psi/dt = L^{T}\\Psi$ is block upper bidiagonal. That is the reason for the basis: in the single-variable illustration it reads $d(e^{ix})/dt = iF_0e^{ix} + iF_1e^{2ix}$, \"only two non-zero entries in each row\", whereas expanding the same equation in monomials leaves the coefficient matrix not sparse. [[approximation: The tower is cut at level $N$, $d\\Psi^{(N)}/dt = L_N^{T}\\Psi^{(N)}$ with $L_N^{T}$ the top-left block of $L^{T}$, whose last block row is $(0,\\ldots,0,B^{(0)}_N)$ — the coupling $B^{(1)}_{N+1}$ to level $N+1$ is dropped, and that is where the error $\\eta_k = \\Psi_k - \\Psi^{(N)}_k$ enters. Blocks of unequal size are then padded, $\\Psi^{(N)}(t) = \\bigoplus_{j=1}^{N} e_1^{\\otimes(N-j)} \\otimes \\Psi_j(t) \\in \\mathbb{C}^{Nn^{N}}$, to simplify the circuit.]] [[assumption: Which bound that error obeys depends on the regime. Under dissipativity — $\\tilde\\mu_0 := \\min_j \\mathrm{Im}\\{(F_0)_j\\} \\ge 0$ and $R_p := \\lVert F_1\\rVert_{\\mathrm{row},q}\\lVert\\Psi_1(0)\\rVert_p/\\tilde\\mu_0 < 1$, with $1/p + 1/q = 1$ — Theorem 4.2 gives $\\lVert\\eta_k\\rVert_p \\le (\\lVert\\Psi_1(0)\\rVert_p)^{N+1}(\\lVert F_1\\rVert_{\\mathrm{row},q}/\\tilde\\mu_0)^{N+1-k}$ for all time. Without it, Theorem 4.4 requires $\\lVert\\Psi_1(0)\\rVert_p < 1/r$ for some $r > 1$ and holds only on $[0,T_{\\max}]$, $T_{\\max} = \\min\\{T_r,\\ \\ln r/(\\lVert F_0\\rVert_{\\infty} + \\lVert F_1\\rVert_{\\mathrm{row},q})\\}$ with $T_r$ from Lemma 4.3, bounding $\\lVert\\eta(t)\\rVert_p \\le (1/r)(e^{(\\lVert F_0\\rVert_{\\infty} + \\lVert F_1\\rVert_{\\mathrm{row},q})t}/r)^{N}$.]]",
+        theoryJa:
+          "もとの問題は $du/dt = G_0 + G_1 e^{iu}$ です。置き換え $x_j := u_j + i\\ln(\\nu)$（$j = 1,\\ldots,n$）は初期状態の指数を $e^{ix_0} = e^{iu_0}/\\nu$ と再スケーリングし、方程式を $dx/dt = F_1 e^{ix} + F_0$（$F_1 = \\nu G_1$、$F_0 = G_0$）に移します。[[assumption: $\\nu$ は $\\gamma := \\lVert e^{ix_0}\\rVert < 1$ となるだけ大きく取ります。これは読み出しが必要とする条件です。Katz・Muraleedharan・Alase は $\\tilde\\mu_0$ と $R_p$ がこの再スケーリングのもとで不変であることを指摘し、読み出しの係数もあわせて $c_j = \\nu^{\\lvert j\\rvert} d_j$ と再スケーリングして、$f(x) = \\sum_j c_j e^{ix \\cdot j}$ が $f(x) = g(u)$ を満たすようにしています。]] 持ち上げでは、単項式のかわりに Fourier 基底 $\\Psi_j(x) = [e^{ix}]^{\\otimes j}$ を取ります。第一ブロックを微分すると $de^{ix}/dt = i\\tilde{F}_1\\Psi_2 + i\\tilde{F}_0\\Psi_1$ となります。ここで $\\tilde{F}_0 = \\mathrm{diag}(F_0) \\in \\mathbb{C}^{n \\times n}$、$\\tilde{F}_1 \\in \\mathbb{C}^{n \\times n^2}$ は $F_1$ の各行をブロックとして並べたものです。$\\Psi_j$ を積の微分法で微分し、和を二つに分けると漸化式 $d\\Psi_j/dt = B^{(1)}_{j+1}\\Psi_{j+1} + B^{(0)}_j\\Psi_j$ が得られます。ここで $B^{(1)}_{j+1} = i\\tilde{F}_1 \\otimes I^{\\otimes(j-1)} + I \\otimes i\\tilde{F}_1 \\otimes I^{\\otimes(j-2)} + \\cdots + I^{\\otimes(j-1)} \\otimes i\\tilde{F}_1$、$B^{(0)}_j$ は同じ式で $\\tilde{F}_0$ を用いたものです。したがって無限次元の持ち上げ系 $d\\Psi/dt = L^{T}\\Psi$ はブロック上二重対角の形になります。基底をこう選ぶ理由がここにあります。一変数の例では $d(e^{ix})/dt = iF_0e^{ix} + iF_1e^{2ix}$ となり「各行の非零成分は二つだけ」ですが、同じ方程式を単項式で展開すると係数行列は疎になりません。[[approximation: 塔は水準 $N$ で切られ、$d\\Psi^{(N)}/dt = L_N^{T}\\Psi^{(N)}$ となります。$L_N^{T}$ は $L^{T}$ の左上ブロックで、その最終ブロック行は $(0,\\ldots,0,B^{(0)}_N)$ です。すなわち水準 $N+1$ への結合 $B^{(1)}_{N+1}$ が落とされ、そこから誤差 $\\eta_k = \\Psi_k - \\Psi^{(N)}_k$ が生じます。さらに、大きさの異なるブロックには詰め物を入れ、$\\Psi^{(N)}(t) = \\bigoplus_{j=1}^{N} e_1^{\\otimes(N-j)} \\otimes \\Psi_j(t) \\in \\mathbb{C}^{Nn^{N}}$ として回路を簡単にします。]] [[assumption: その誤差がどの評価に従うかは領域によります。散逸的な場合、すなわち $1/p + 1/q = 1$ のもとで $\\tilde\\mu_0 := \\min_j \\mathrm{Im}\\{(F_0)_j\\} \\ge 0$ かつ $R_p := \\lVert F_1\\rVert_{\\mathrm{row},q}\\lVert\\Psi_1(0)\\rVert_p/\\tilde\\mu_0 < 1$ のとき、定理 4.2 は全時刻について $\\lVert\\eta_k\\rVert_p \\le (\\lVert\\Psi_1(0)\\rVert_p)^{N+1}(\\lVert F_1\\rVert_{\\mathrm{row},q}/\\tilde\\mu_0)^{N+1-k}$ を与えます。散逸性を仮定しない場合、定理 4.4 はある $r > 1$ について $\\lVert\\Psi_1(0)\\rVert_p < 1/r$ を要求し、$[0,T_{\\max}]$ の上でのみ成り立ちます。$T_{\\max} = \\min\\{T_r,\\ \\ln r/(\\lVert F_0\\rVert_{\\infty} + \\lVert F_1\\rVert_{\\mathrm{row},q})\\}$（$T_r$ は補題 4.3 が与えます）であり、評価は $\\lVert\\eta(t)\\rVert_p \\le (1/r)(e^{(\\lVert F_0\\rVert_{\\infty} + \\lVert F_1\\rVert_{\\mathrm{row},q})t}/r)^{N}$ です。]]",
+      },
+    },
     citations: [
       { title: "Carleman-Fourier Linearization of Complex Dynamical Systems: Convergence and Explicit Error Bounds", authors: "Panpan Chen, Nader Motee, Qiyu Sun", year: "2024", url: "https://arxiv.org/abs/2411.11598" },
       { title: "Efficient quantum algorithm for solving differential equations with Fourier nonlinearity via Koopman linearization", authors: "Judd Katz, Gopikrishnan Muraleedharan, Abhijeet Alase", year: "2025", url: "https://arxiv.org/abs/2512.06488" },
@@ -336,6 +885,60 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "Koopman-von Neumann ハミルトニアンが疎であれば、古典力学の量子シミュレーションは Liouville 方程式の決定論的なオイラー的（格子上の）離散化より指数的に効率的である、と要旨に述べられています。一般の非線形系に対する無条件の端から端までのクエリ数は示されていません。",
     steps: [],
     atomic: true,
+    // A transcription of the lift, from Joseph arXiv:2003.09980.
+    example: {
+      pseudocode: [
+        "given  a classical system presented as first order in time,",
+        "           dx/dt = v(x,t),   x in R^d,   v an arbitrary vector field",
+        "       # nonlinear, and not required to be Hamiltonian; a PDE reaches this form",
+        "       # through the method of lines",
+        "",
+        "# the object lifted is the phase-space density, not a trajectory",
+        "write  the Liouville equation for conservation of the PDF f on phase space:",
+        "           d f/dt + f div v  =  d_t f + div( v f ) = 0",
+        "",
+        "# the KvN postulate",
+        "set    f = psi^dagger psi,     i.e.   psi = f^(1/2) e^(i phi)",
+        "choose W(x,t) and let the phase obey",
+        "           d_t phi + v . grad phi = -W(x,t)/hbar",
+        "       # within classical dynamics phi is not measurable, so W is a gauge",
+        "       # choice; W = 0 is the constrained classical action",
+        "",
+        "differentiate psi and multiply by i hbar:",
+        "           i hbar d_t psi = -i hbar (1/2)( v . grad + div v ) psi + W psi",
+        "       # a Schroedinger equation, i hbar d_t psi = H_hat psi",
+        "",
+        "promote x -> x_hat, P -> P_hat = -i hbar grad, and every function of the",
+        "coordinates to an operator by its formal Taylor series:",
+        "           H_hat = (1/2)( P_hat . v_hat + v_hat . P_hat ) + W_hat",
+        "",
+        "# Hermitian over <phi|psi> = int phi^dagger(x,t) psi(x,t) d^d x, by integration",
+        "# by parts, for ANY set of ODEs -- Hamiltonian or not, dissipative or not --",
+        "# so the propagator U_hat of  i hbar d_t U_hat = H_hat U_hat  is unitary",
+        "# no truncation, hence no convergence parameter: the lift is exact",
+        "",
+        "return H_hat (Hermitian), U_hat (unitary), the lift f -> psi, and the readout",
+        "           f = psi^dagger psi,   <O> = int O f d^d x",
+        "       # the lifted object is a distribution over phase space, so a single",
+        "       # trajectory or a pointwise value is a separate readout problem",
+        "",
+        "# the price is dimensional, not an approximation error: H_hat is the",
+        "# quantization of the constrained Hamiltonian H = P . v(x,t) + W(x,t) on twice",
+        "# the classical phase space dimension, the momenta acting as Lagrange",
+        "# multipliers that enforce the equations of motion",
+      ].join("\n"),
+    },
+    hops: {
+      // The lift itself, from Joseph arXiv:2003.09980 — the phase-space density
+      // whose generator is Hermitian, which is the fact the route above is built
+      // on and the reason it bypasses the linear-solve layer entirely.
+      "koopman-von-neumann-lift": {
+        theory:
+          "The lifted object is the phase-space density, not a trajectory. For $d$ ODEs $\\dot{x} = v(x,t)$ with $v$ an arbitrary vector field, conservation of the density is the Liouville equation $\\dot{f} + f\\nabla\\cdot v = \\partial_t f + \\nabla\\cdot(vf) = 0$, whose Liouville operator $-(d/dt)^\\dagger = \\partial_t + \\nabla\\cdot v$ is the adjoint of the advection operator $d/dt = \\partial_t + v\\cdot\\nabla$ and coincides with it, both anti-Hermitian, only when $\\nabla\\cdot v = 0$ — the general case is exactly what this lift has to handle. [[assumption: The lift's postulate is that the density is the inner product of a complex probability amplitude with its adjoint, $f = \\psi^\\dagger\\psi$, so that $\\psi = f^{1/2}e^{i\\varphi}$, together with an assumed equation of motion for the phase, $\\partial_t\\varphi + v\\cdot\\nabla\\varphi = -W(x,t)/\\hbar$; the phase has no effect on the classical dynamics and is not measurable within it, so the choice of $W$ is a choice of gauge, the trivial choice $W = 0$ being the constrained classical action.]] [[assumption: Expectations are read back as $\\langle O\\rangle = \\int O\\psi^\\dagger\\psi\\,d^dx = \\int Of\\,d^dx$, which requires the density normalized to yield unit probability after integration over all of phase space.]] Differentiating $\\psi$ then gives $\\partial_t\\psi + \\frac{1}{2}(v\\cdot\\nabla + \\nabla\\cdot v)\\psi = -iW\\psi/\\hbar$, and multiplying by $i\\hbar$ gives the generalized Koopman-von Neumann equation $i\\hbar\\partial_t\\psi = -i\\hbar\\frac{1}{2}(v\\cdot\\nabla + \\nabla\\cdot v)\\psi + W\\psi$, which has the form of a Schrödinger equation $i\\hbar\\partial_t\\psi = \\hat{H}\\psi$: promoting $\\hat{x} = x$, $\\hat{P} = -i\\hbar\\nabla$ and every function of the coordinates to an operator by its formal Taylor series gives $\\hat{H} = \\frac{1}{2}(\\hat{P}\\cdot\\hat{v} + \\hat{v}\\cdot\\hat{P}) + \\hat{W}$. Integration by parts over $\\langle\\phi|\\psi\\rangle = \\int\\phi^\\dagger(x,t)\\psi(x,t)\\,d^dx$ proves $\\hat{H}$ Hermitian, so the propagator $\\hat{U}$ of $i\\hbar\\partial_t\\hat{U} = \\hat{H}\\hat{U}$ is unitary for any set of ODEs, not only Hamiltonian ones; solved by characteristics along $x = \\xi(x_0,t)$ it is explicit, $\\langle x|\\hat{U}_{t,t_0}|x_0\\rangle = J_0^{-1/2}(x_0,t)\\,\\delta^d(x - \\xi(x_0,t))\\,e^{-i\\int_{t_0}^{t}W_0(x_0,t)dt/\\hbar}$ with $J_0(x_0,t) = \\det(\\partial x_0^j/\\partial x^k)$. The branch of $J_0^{1/2}$ is irrelevant to the classical system, but Joseph records that the phase shift $\\Delta\\varphi = -\\nu\\pi/2$ set by the Maslov index $\\nu$, which counts the zeros of the Jacobian along the trajectory, must be accounted for to obtain the correct semiclassical phase factor — a framework he leaves for future work. Because $\\hat{H}$ is linear in $\\hat{P}$, Heisenberg's equations for the coordinates are exactly the classical ones, $d\\hat{x}/dt = [\\hat{x},\\hat{H}]/i\\hbar = v(\\hat{x},t)$, and the uncertainty principle binds each $x^j$ only to its own conjugate momentum and never one original variable to another, so there is \"complete fidelity to the classical phase space evolution\". Nothing is truncated and there is no convergence parameter; the price is dimensional, $\\hat{H}$ being the quantization of the constrained Hamiltonian $H(x,P,t) = P\\cdot v(x,t) + W(x,t)$ on twice the classical phase-space dimension, whose momenta are Lagrange multipliers enforcing the equations of motion.",
+        theoryJa:
+          "持ち上げられる対象は軌道ではなく、位相空間の分布です。$d$ 個の常微分方程式 $\\dot{x} = v(x,t)$（$v$ は任意のベクトル場）に対して、分布の保存は Liouville 方程式 $\\dot{f} + f\\nabla\\cdot v = \\partial_t f + \\nabla\\cdot(vf) = 0$ です。その Liouville 演算子 $-(d/dt)^\\dagger = \\partial_t + \\nabla\\cdot v$ は移流演算子 $d/dt = \\partial_t + v\\cdot\\nabla$ の随伴であり、両者が一致して反エルミートになるのは $\\nabla\\cdot v = 0$ のときだけです。この持ち上げが扱わなければならないのは、まさにそうでない一般の場合です。[[assumption: この持ち上げの要請は、分布が複素確率振幅とその随伴との内積である、すなわち $f = \\psi^\\dagger\\psi$（したがって $\\psi = f^{1/2}e^{i\\varphi}$）ということ、および位相の運動方程式 $\\partial_t\\varphi + v\\cdot\\nabla\\varphi = -W(x,t)/\\hbar$ を仮定することです。位相は古典力学に何の影響も与えず、その枠内では測定もできませんので、$W$ の選び方はゲージの選び方にあたります。自明な選択 $W = 0$ は拘束系の古典作用に対応します。]] [[assumption: 期待値は $\\langle O\\rangle = \\int O\\psi^\\dagger\\psi\\,d^dx = \\int Of\\,d^dx$ として読み出されますので、位相空間全体で積分したときに確率が 1 になるよう分布が規格化されている必要があります。]] $\\psi$ を微分すると $\\partial_t\\psi + \\frac{1}{2}(v\\cdot\\nabla + \\nabla\\cdot v)\\psi = -iW\\psi/\\hbar$ が得られ、$i\\hbar$ を掛ければ一般化された Koopman-von Neumann 方程式 $i\\hbar\\partial_t\\psi = -i\\hbar\\frac{1}{2}(v\\cdot\\nabla + \\nabla\\cdot v)\\psi + W\\psi$ になります。これは Schrödinger 方程式 $i\\hbar\\partial_t\\psi = \\hat{H}\\psi$ の形をしています。$\\hat{x} = x$、$\\hat{P} = -i\\hbar\\nabla$ とし、座標の任意の関数を形式的な Taylor 展開によって演算子に持ち上げると、$\\hat{H} = \\frac{1}{2}(\\hat{P}\\cdot\\hat{v} + \\hat{v}\\cdot\\hat{P}) + \\hat{W}$ が得られます。内積 $\\langle\\phi|\\psi\\rangle = \\int\\phi^\\dagger(x,t)\\psi(x,t)\\,d^dx$ についての部分積分により $\\hat{H}$ はエルミートであることが示されますので、$i\\hbar\\partial_t\\hat{U} = \\hat{H}\\hat{U}$ の伝播子 $\\hat{U}$ は、ハミルトン系に限らず任意の常微分方程式系についてユニタリです。特性曲線 $x = \\xi(x_0,t)$ に沿って解けば、その形は明示的で、$\\langle x|\\hat{U}_{t,t_0}|x_0\\rangle = J_0^{-1/2}(x_0,t)\\,\\delta^d(x - \\xi(x_0,t))\\,e^{-i\\int_{t_0}^{t}W_0(x_0,t)dt/\\hbar}$、ここで $J_0(x_0,t) = \\det(\\partial x_0^j/\\partial x^k)$ です。$J_0^{1/2}$ の分枝の取り方は古典系には関係しませんが、Joseph は、軌道に沿った Jacobian の零点を数える Maslov 指数 $\\nu$ が定める位相のずれ $\\Delta\\varphi = -\\nu\\pi/2$ を正しく勘定に入れなければ、正しい半古典的な位相因子は得られないと記しています。その枠組みの整備は今後の課題として残されています。$\\hat{H}$ が $\\hat{P}$ について一次であるため、座標に対する Heisenberg の運動方程式は古典のそれと厳密に同じ $d\\hat{x}/dt = [\\hat{x},\\hat{H}]/i\\hbar = v(\\hat{x},t)$ となり、不確定性原理は各 $x^j$ とその共役運動量との間にのみ働き、元の位相空間の変数どうしの間には働きません。したがって「古典的な位相空間の発展に対する完全な忠実さ」があります。打ち切りは一切なく、収束パラメータも存在しません。代償は次元です。$\\hat{H}$ は、古典位相空間の二倍の次元をもつ拘束ハミルトン系 $H(x,P,t) = P\\cdot v(x,t) + W(x,t)$ を量子化したものであり、その運動量は運動方程式を拘束条件として課す Lagrange 乗数です。",
+      },
+    },
     citations: [
       { title: "Koopman-von Neumann Approach to Quantum Simulation of Nonlinear Classical Dynamics", authors: "Ilon Joseph", year: "2020", url: "https://arxiv.org/abs/2003.09980" },
     ],
@@ -354,6 +957,59 @@ export const LAYER_GRAPH: LayerGraph = {
     costJa: "要旨には、写像単体のコストではなく、アルゴリズム全体の主張として述べられています。物理的な観測量の計算が、初期データの数 $M$ に依存しないコストで、任意の非線形性について行えること。初期データの詳細によっては、偏微分方程式の次元と観測量の誤差の双方について指数的な優位性まで得られること。一般の非線形偏微分方程式では、$M$ が大きい極限で $M$ に関する量子優位が可能であること。要旨に閉じた式はありません。",
     steps: [],
     atomic: true,
+    // A transcription of the lift, from arXiv:2202.07834.
+    example: {
+      pseudocode: [
+        "given  a (d+1)-dimensional nonlinear PDE with M initial data, k = 1..M:",
+        "           Hamilton-Jacobi in gradient form,",
+        "               d_t u^[k] + grad H(u^[k], x) = 0,        u^[k] = grad S^[k] in R^d",
+        "           or scalar hyperbolic,",
+        "               d_t u^[k] + F(u^[k]).grad_x u^[k] + Q(x, u^[k]) = 0,   u^[k] in R",
+        "",
+        "# 1. lift: put the solution inside the zero level set of a new function",
+        "",
+        "define  phi^[k](t, x, p)  by   phi_i^[k](t, x, p = u^[k](t,x)) = 0,   i = 1..d",
+        "    initial data:  phi_i^[k](0, x, p) = p_i - u_i^[k](0, x)          # Hamilton-Jacobi",
+        "                   phi^[k](0, x, p)   = p   - u_0^[k](x)             # scalar hyperbolic",
+        "",
+        "# 2. the lifted equation is linear -- exactly, for arbitrary nonlinearity",
+        "",
+        "Hamilton-Jacobi:    d_t phi + grad_p H . grad_x phi - grad_x H . grad_p phi = 0",
+        "                    # (2d+1)-dimensional",
+        "scalar hyperbolic:  d_t phi + F(p) . grad_x phi - Q(x,p) d_p phi = 0",
+        "                    # (d+2)-dimensional, because p is a scalar here",
+        "    # no truncation, and therefore no convergence parameter:",
+        "    # \"the price is a higher-dimensional linear problem\", not an error term",
+        "    # there is no analogue of Carleman's R < 1",
+        "",
+        "# 3. read back",
+        "",
+        "u^[k](t, x) = { p(t,x) | phi_i^[k](t,x,p) = 0, i = 1..d }",
+        "    # the intersection of the d zero level sets",
+        "    # phi_i^[k] = 0 may have J_k roots p_gamma: all multi-valued branches are kept",
+        "",
+        "# 4. what the mapping preserves is physical observables, not a directly",
+        "#    readable solution vector",
+        "",
+        "<G(t,x)> = integral_{R^d} G(p) psi(t,x,p) dp",
+        "         = (1/M) sum_{k=1..M} sum_{gamma=1..J_k} G(u_gamma^[k](t,x)) / J_gamma^[k]",
+        "    # J_gamma^[k] = |det(d phi^[k] / d p)| at p = u_gamma^[k](t,x)",
+        "    # the level-set encoding carries these Jacobian weights automatically;",
+        "    # an amplitude encoding of u itself would have to inject them, and they are",
+        "    # not known a priori",
+        "",
+        "return  the linear PDE, its initial datum, and the observable rule",
+      ].join("\n"),
+    },
+    hops: {
+      // arXiv:2202.07834, the lift on its own.
+      "level-set-linearization": {
+        theory:
+          "The lift is stated twice, once for each class the paper claims it for. For the $(d+1)$-dimensional Hamilton-Jacobi equation in gradient form, $\\partial_t u^{[k]} + \\nabla H(u^{[k]}, x) = 0$ with $u^{[k]} = \\nabla S^{[k]} \\in \\mathbb{R}^d$, the level-set function $\\phi_i^{[k]}(t,x,p)$ is defined by $\\phi_i^{[k]}(t, x, p = u^{[k]}(t,x)) = 0$ for $i = 1, \\ldots, d$ and satisfies the linear Liouville equation $\\partial_t \\phi^{[k]} + \\nabla_p H \\cdot \\nabla_x \\phi^{[k]} - \\nabla_x H \\cdot \\nabla_p \\phi^{[k]} = 0$ from $\\phi_i^{[k]}(0,x,p) = p_i - u_i^{[k]}(0,x)$, in $2d+1$ dimensions. For the $(d+1)$-dimensional scalar hyperbolic equation $\\partial_t u^{[k]} + F(u^{[k]}) \\cdot \\nabla_x u^{[k]} + Q(x, u^{[k]}) = 0$ the same device gives the linear transport equation $\\partial_t \\phi^{[k]} + F(p) \\cdot \\nabla_x \\phi^{[k]} - Q(x,p)\\,\\partial_p \\phi^{[k]} = 0$ from $\\phi^{[k]}(0,x,p) = p - u_0^{[k]}(x)$, in $d+2$ dimensions, \"the only difference\" being that \"now $p \\in \\mathbb{R}^1$ instead of being a $d$-dimensional vector\". Neither lift truncates anything, so neither has a convergence parameter to mark: \"no linear approximation is made. The mapping is exact\", and the whole of the price is \"at the expense of doubling the dimension\". [[assumption: These two classes are the stated scope, and the paper draws the boundary itself: \"this same result, however, cannot be done analytically for general nonlinear PDEs\". A general nonlinear PDE is instead discretised in space first, into $D$ nonlinear ODEs with $D = d^2/\\varepsilon$ under a Lagrangian discretisation or $D = (d/\\varepsilon)^d$ under an Eulerian one, and only that system is given a linear representation.]] The solution comes back as a set rather than as a vector — $u^{[k]}(t,x) = \\{p(t,x) \\mid \\phi_i^{[k]}(t,x,p) = 0,\\ i = 1, \\ldots, d\\}$, the intersection of the $d$ zero level sets — and since $\\phi_i^{[k]}(t,x,p) = 0$ may have $J_k$ roots $p_\\gamma$, every branch $u_\\gamma^{[k]}$ is kept. What the lift preserves is therefore an observable: for $G : \\mathbb{R}^d \\to \\mathbb{R}$, Definition 11 sets $\\langle G(t,x)\\rangle = \\int_{\\mathbb{R}^d} G(p)\\psi(t,x,p)\\,dp = \\frac{1}{M}\\sum_{k=1}^{M}\\sum_{\\gamma=1}^{J_k} G(u_\\gamma^{[k]}(t,x))/J_\\gamma^{[k]}$, each branch weighted by the Jacobian $J_\\gamma^{[k]} = |\\det(\\partial\\phi^{[k]}/\\partial p)|$ evaluated at $p = u_\\gamma^{[k]}(t,x)$; taking $G(p) = 1, p, |p|^2$ gives the zeroth, first and second moments — density, momentum and kinetic energy in the semiclassical setting the paper works through — and the moments of $\\psi$ give those same physical observables in the special case $A_0(x) = 1$. Those weights are the argument for encoding the lifted variable rather than $u$: recovering observables from amplitudes proportional to the original solutions \"requires one to inject the Jacobian factors in Definition 11 explicitly\", and those factors \"are not generally a priori known since they depend on the solutions of the PDE and also cannot be ignored\", whereas with a level-set encoded state \"these Jacobian factors are automatically taken care of\".",
+        theoryJa:
+          "この持ち上げは、論文が主張の対象とする二つのクラスそれぞれについて述べられています。勾配形の $(d+1)$ 次元 Hamilton-Jacobi 方程式 $\\partial_t u^{[k]} + \\nabla H(u^{[k]}, x) = 0$（$u^{[k]} = \\nabla S^{[k]} \\in \\mathbb{R}^d$）では、レベルセット関数 $\\phi_i^{[k]}(t,x,p)$ が $i = 1, \\ldots, d$ について $\\phi_i^{[k]}(t, x, p = u^{[k]}(t,x)) = 0$ で定義され、初期値 $\\phi_i^{[k]}(0,x,p) = p_i - u_i^{[k]}(0,x)$ のもとで線形の Liouville 方程式 $\\partial_t \\phi^{[k]} + \\nabla_p H \\cdot \\nabla_x \\phi^{[k]} - \\nabla_x H \\cdot \\nabla_p \\phi^{[k]} = 0$ を満たします。次元は $2d+1$ です。$(d+1)$ 次元のスカラー双曲型方程式 $\\partial_t u^{[k]} + F(u^{[k]}) \\cdot \\nabla_x u^{[k]} + Q(x, u^{[k]}) = 0$ では、同じ仕掛けによって線形の輸送方程式 $\\partial_t \\phi^{[k]} + F(p) \\cdot \\nabla_x \\phi^{[k]} - Q(x,p)\\,\\partial_p \\phi^{[k]} = 0$ が初期値 $\\phi^{[k]}(0,x,p) = p - u_0^{[k]}(x)$ のもとで得られ、次元は $d+2$ です。「Hamilton-Jacobi 方程式との唯一の違い」は「$p$ が $d$ 次元ベクトルではなく $p \\in \\mathbb{R}^1$ である」ことだとされています。どちらの持ち上げも打ち切りを行いませんので、近似として印を付けるべき収束パラメータも存在しません。「線形近似は行っていない。この写像は厳密である」とあり、支払うものは「次元が二倍になること」のみです。[[assumption: 記述された適用範囲はこの二つのクラスです。境界は論文自身が引いています。「しかしながら、一般の非線形偏微分方程式に対して同じ結果を解析的に得ることはできない。」一般の非線形偏微分方程式については、まず空間を離散化して $D$ 個の非線形常微分方程式に直します。Lagrange 的な離散化では $D = d^2/\\varepsilon$、Euler 的な離散化では $D = (d/\\varepsilon)^d$ であり、線形表現が与えられるのはその系に対してです。]] 解はベクトルとしてではなく集合として戻ってきます。すなわち $u^{[k]}(t,x) = \\{p(t,x) \\mid \\phi_i^{[k]}(t,x,p) = 0,\\ i = 1, \\ldots, d\\}$ という、$d$ 個の零レベルセットの交わりです。$\\phi_i^{[k]}(t,x,p) = 0$ は $J_k$ 個の根 $p_\\gamma$ をもちうるため、各分枝 $u_\\gamma^{[k]}$ はすべて保持されます。したがって、この持ち上げが保存するのは観測量です。$G : \\mathbb{R}^d \\to \\mathbb{R}$ に対して、定義 11 は $\\langle G(t,x)\\rangle = \\int_{\\mathbb{R}^d} G(p)\\psi(t,x,p)\\,dp = \\frac{1}{M}\\sum_{k=1}^{M}\\sum_{\\gamma=1}^{J_k} G(u_\\gamma^{[k]}(t,x))/J_\\gamma^{[k]}$ と定め、各分枝は $p = u_\\gamma^{[k]}(t,x)$ で評価したヤコビアン $J_\\gamma^{[k]} = |\\det(\\partial\\phi^{[k]}/\\partial p)|$ で重み付けられます。$G(p) = 1, p, |p|^2$ と取れば零次・一次・二次のモーメントが得られ、論文が辿る半古典的な設定では、それぞれ密度、運動量、運動エネルギーにあたります。$\\psi$ のモーメントも、$A_0(x) = 1$ という特別な場合には同じ物理的観測量を与えます。この重みこそが、$u$ ではなく持ち上げた変数を符号化する理由です。もとの解に比例する振幅から観測量を取り出すには「定義 11 のヤコビアン因子を明示的に注入する必要がある」のですが、その因子は「偏微分方程式の解に依存するため一般には事前には分からず、しかも無視することもできない」とされています。これに対しレベルセット符号化された状態では「これらのヤコビアン因子は自動的に扱われる」のです。",
+      },
+    },
     citations: [
       { title: "Quantum algorithms for computing observables of nonlinear partial differential equations", authors: "Shi Jin, Nana Liu", year: "2022", url: "https://arxiv.org/abs/2202.07834" },
     ],
@@ -378,6 +1034,64 @@ export const LAYER_GRAPH: LayerGraph = {
     contestedJa: "その後 Xue らは、関連するホモトピー解析法の各段階に量子シミュレーションを直接適用すると、打ち切り次数に対して計算量が指数的に増大すると報告しています。そのうえで、過程全体を一つの線形偏微分方程式系に写す「量子計算と両立する線形化」を導入し、打ち切り次数に対する増大を多項式にとどめています。",
     steps: [],
     atomic: true,
+    // A transcription of the lift, from arXiv:2111.07486.
+    example: {
+      pseudocode: [
+        "given  du/dt = F_1 u + F_2 u^{(x)2},  u(0) = u_in            # the quadratic ODEs, Eq.(1)",
+        "       F_1, F_2 time-independent and s-sparse",
+        "       F_1 normal, eigenvalues Re(lambda_n) <= ... <= Re(lambda_1) < 0",
+        "       homotopy truncation order c",
+        "",
+        "# --- 1. homotopy perturbation: one nonlinear system becomes a chain -----------",
+        "#     construct the homotopy nu(t,p), Eq.(4):",
+        "#         H(nu,p) = dnu/dt - F_1 nu - p F_2 nu^{(x)2} = 0,   nu(0,p) = u_in",
+        "#     write nu = nu_0 + p nu_1 + p^2 nu_2 + ... + p^c nu_c and equate the terms",
+        "#     with identical powers of p, giving Eq.(6):",
+        "    dnu_0/dt = F_1 nu_0,                                       nu_0(0) = u_in",
+        "    dnu_i/dt = F_1 nu_i + F_2 sum_{j=0..i-1} nu_j (x) nu_{i-1-j},  nu_i(0) = 0",
+        "#     at p = 1:   utilde = nu_0 + nu_1 + ... + nu_c",
+        "",
+        "# --- 2. embed that chain in linear ODEs, Eq.(8)-(12) -------------------------",
+        "    y_0     = [nu_0 + nu_1 + ... + nu_c]",
+        "    y_{i,j} = nu_{a_{i,j,0}} (x) nu_{a_{i,j,1}} (x) ... (x) nu_{a_{i,j,i}},   1 <= i <= c",
+        "              over the index vectors a_{i,j} with",
+        "                  a_{i,j,k} >= 0   and   i+1 <= sum_k (a_{i,j,k} + 1) <= c+1",
+        "    beta_0  = 1,   beta_i = sum_{k=i..c} binom(k,i)         # blocks at level i",
+        "    N       = sum_{i=0..c} n^{i+1} beta_i = (n+1)^{c+1} - 1 - cn",
+        "",
+        "#     differentiating y_{i,j} gives a linear part inside level i and, through",
+        "#     F_2, terms that all lie in y_{i+1} -- that is the closure, and it is why A",
+        "#     is block bidiagonal with nothing below the diagonal:",
+        "    A_{i,i}   = I_{beta_i} (x) sum_{j=0..i} I_{n^j} (x) F_1 (x) I_n^{(x) i-j}",
+        "    A_{i,i+1} = the F_2 terms of that derivative,  i = 0 ... c-1",
+        "#     level c has A_{c,c} and nothing above it -- the truncation closes the system",
+        "",
+        "#     fix y_{i,0} = nu_0^{(x) i+1}, so the lift of the initial condition is",
+        "    y_in = [[u_in], [u_in^{(x)2}, 0, ..., 0], ..., [u_in^{(x)c+1}, 0, ..., 0]]",
+        "",
+        "# --- 3. what this layer hands down -------------------------------------------",
+        "return  dy/dt = A y,  y(0) = y_in       # finite-dimensional by construction",
+        "        the readout: the first block of y is utilde, so the answer is on |0,0>",
+        "        sparsity O(s c^2);  ||A|| <= (c+1)(||F_1|| + ||F_2||);  Re(gamma_i) < 0",
+        "        truncation error as a function of c:",
+        "            ||nu_i(t)|| < (4 K_1)^i ||u_in|| <= K^{i+1},",
+        "                K_1 = ||u_in|| ||F_2|| / |Re(lambda_1)|,   K = 4 K_1",
+        "            ||u(t) - utilde(t)|| <= eps   when K < 1 and",
+        "                c > log_{1/K} ( 1 / (eps (1-K)) )",
+        "",
+        "# O_A is built from O(c) queries to O_F1 and O(1) queries to O_F2   (Lemma 6)",
+        "# solving dy/dt = A y with a quantum linear-ODE algorithm is the layer below",
+      ].join("\n"),
+    },
+    hops: {
+      // arXiv:2111.07486, the lift on its own.
+      "homotopy-perturbation-lift": {
+        theory:
+          "Homotopy perturbation replaces Eq. (1) by the homotopy $H(\\nu,p) = \\frac{d\\nu}{dt} - F_1\\nu - pF_2\\nu^{\\otimes 2} = 0$ with $\\nu(0,p) = u_{in}$, writes $\\nu = \\nu_0 + p\\nu_1 + p^2\\nu_2 + \\cdots + p^c\\nu_c$, and equates the terms with identical powers of $p$, which gives the chain of Eq. (6): $\\frac{d\\nu_0}{dt} = F_1\\nu_0$ with $\\nu_0(0) = u_{in}$, and $\\frac{d\\nu_i}{dt} = F_1\\nu_i + F_2\\sum_{j=0}^{i-1}\\nu_j \\otimes \\nu_{i-1-j}$ with $\\nu_i(0) = 0$; at $p = 1$ the solution is $\\tilde{u} = \\nu_0 + \\nu_1 + \\cdots + \\nu_c$. That chain is what embeds. Write $\\vec{y} = [\\vec{y}_0,\\vec{y}_1,\\ldots,\\vec{y}_c]$ with $\\vec{y}_0 = [\\nu_0 + \\nu_1 + \\cdots + \\nu_c]$ and, for $1 \\le i \\le c$, $\\vec{y}_{i,j} = \\bigotimes_{k=0}^{i}\\nu_{a_{i,j,k}}$ over the index vectors satisfying $a_{i,j,k} \\ge 0$ and $i+1 \\le \\sum_{k=0}^{i}(a_{i,j,k}+1) \\le c+1$, so that $\\beta_0 = 1$ and $\\beta_i = \\sum_{k=i}^{c}\\binom{k}{i}$ blocks sit at level $i$ and the whole space has dimension $N = \\sum_{i=0}^{c}n^{i+1}\\beta_i = (n+1)^{c+1} - 1 - cn$. Differentiating $\\vec{y}_{i,j}$ by Eq. (16) gives a linear part inside level $i$ and, through $F_2$, terms every one of which lies in $\\vec{y}_{i+1}$ — that closure is what makes the generator block bidiagonal, $A_{i,i} = I_{\\beta_i}\\otimes(\\sum_{j=0}^{i}I_{n^j}\\otimes F_1\\otimes I_n^{\\otimes i-j})$ with $A_{i,i+1}$ read off the $F_2$ terms and nothing below the diagonal, and level $c$ carries $A_{c,c}$ with no block above it. Setting $\\vec{y}_{i,0} = \\nu_0^{\\otimes i+1}$ makes the lift of the initial condition Eq. (12), $y_{in} = [[u_{in}],[u_{in}^{\\otimes 2},0,\\ldots,0],\\ldots,[u_{in}^{\\otimes c+1}]]$. [[approximation: The embedding is finite only because the expansion stops at order $c$; the exact solution is $u(t) = \\sum_{i=0}^{\\infty}\\nu_i(t)$. What is dropped is bounded through the Catalan recursion $\\alpha_{i+1} = \\sum_{j=0}^{i}\\alpha_j\\alpha_{i-j}$ with $\\alpha_0 = 1$ and $\\alpha_i = \\frac{1}{i+1}\\binom{2i}{i} < 4^i$, giving $\\lVert \\nu_i(t)\\rVert < (4K_1)^i\\lVert u_{in}\\rVert \\le K^{i+1}$ with $K_1 = \\lVert u_{in}\\rVert\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert$ and $K = 4K_1$, so the truncation error is the tail $\\sum_{i=c+1}^{\\infty}K^{i+1}$ and Lemma 9 reads $\\lVert u(t) - \\tilde{u}(t)\\rVert \\le \\varepsilon$ once $c > \\log_{1/K}\\frac{1}{\\varepsilon(1-K)}$.]] [[assumption: $F_1$ and $F_2$ are time-independent and $s$-sparse, $F_1$ is normal, and its eigenvalues satisfy $\\mathrm{Re}(\\lambda_n) \\le \\cdots \\le \\mathrm{Re}(\\lambda_1) < 0$ — the dissipation the whole bound rests on, entering the induction as $\\lVert \\nu_0(t)\\rVert \\le \\lVert e^{F_1t}\\rVert \\lVert u_{in}\\rVert \\le \\lVert u_{in}\\rVert$ and $\\int_0^t \\lVert e^{\\mathrm{Re}(\\lambda_1)(t-\\tau)}\\rVert\\,d\\tau \\le (1 - e^{\\mathrm{Re}(\\lambda_1)t})/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert$. The tail converges only for $K < 1$, and the step $\\lVert \\nu_i\\rVert \\le K^{i+1}$ additionally needs $K \\ge \\lVert u_{in}\\rVert$, which the paper arranges by rescaling $u$ to $\\zeta u$ with a constant that leaves $4\\lVert u_{in}\\rVert\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert$ unchanged.]]",
+        theoryJa:
+          "ホモトピー摂動法はまず、式 (1) をホモトピー $H(\\nu,p) = \\frac{d\\nu}{dt} - F_1\\nu - pF_2\\nu^{\\otimes 2} = 0$、$\\nu(0,p) = u_{in}$ に置き換えます。$\\nu = \\nu_0 + p\\nu_1 + p^2\\nu_2 + \\cdots + p^c\\nu_c$ と展開し、$p$ の同じ冪の項どうしを等置しますと、式 (6) の連鎖が得られます。すなわち $\\frac{d\\nu_0}{dt} = F_1\\nu_0$、$\\nu_0(0) = u_{in}$ と、$\\frac{d\\nu_i}{dt} = F_1\\nu_i + F_2\\sum_{j=0}^{i-1}\\nu_j \\otimes \\nu_{i-1-j}$、$\\nu_i(0) = 0$ です。$p = 1$ とすれば解は $\\tilde{u} = \\nu_0 + \\nu_1 + \\cdots + \\nu_c$ となります。埋め込まれるのはこの連鎖です。$\\vec{y} = [\\vec{y}_0,\\vec{y}_1,\\ldots,\\vec{y}_c]$ とし、$\\vec{y}_0 = [\\nu_0 + \\nu_1 + \\cdots + \\nu_c]$、$1 \\le i \\le c$ については $\\vec{y}_{i,j} = \\bigotimes_{k=0}^{i}\\nu_{a_{i,j,k}}$ と置きます。添字ベクトルは $a_{i,j,k} \\ge 0$ かつ $i+1 \\le \\sum_{k=0}^{i}(a_{i,j,k}+1) \\le c+1$ を満たすものすべてを走ります。したがって $\\beta_0 = 1$、$\\beta_i = \\sum_{k=i}^{c}\\binom{k}{i}$ 個のブロックが第 $i$ 層に並び、空間全体の次元は $N = \\sum_{i=0}^{c}n^{i+1}\\beta_i = (n+1)^{c+1} - 1 - cn$ となります。式 (16) に従って $\\vec{y}_{i,j}$ を微分しますと、第 $i$ 層の内部に留まる線形部と、$F_2$ を通じて現れる項とに分かれ、後者はいずれも $\\vec{y}_{i+1}$ に属します。この閉じ方こそが生成子をブロック二重対角にするもので、$A_{i,i} = I_{\\beta_i}\\otimes(\\sum_{j=0}^{i}I_{n^j}\\otimes F_1\\otimes I_n^{\\otimes i-j})$、$A_{i,i+1}$ は $F_2$ の項から読み取られ、対角の下には何もありません。第 $c$ 層は $A_{c,c}$ を持ち、その上にブロックはありません。$\\vec{y}_{i,0} = \\nu_0^{\\otimes i+1}$ と定めますと、初期条件の持ち上げは式 (12)、すなわち $y_{in} = [[u_{in}],[u_{in}^{\\otimes 2},0,\\ldots,0],\\ldots,[u_{in}^{\\otimes c+1}]]$ になります。[[approximation: この埋め込みが有限次元で済むのは、展開を次数 $c$ で止めているからにほかなりません。厳密解は $u(t) = \\sum_{i=0}^{\\infty}\\nu_i(t)$ です。捨てられる分は Catalan 数の漸化式 $\\alpha_{i+1} = \\sum_{j=0}^{i}\\alpha_j\\alpha_{i-j}$、$\\alpha_0 = 1$、$\\alpha_i = \\frac{1}{i+1}\\binom{2i}{i} < 4^i$ を通じて評価されます。$K_1 = \\lVert u_{in}\\rVert\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert$、$K = 4K_1$ として $\\lVert \\nu_i(t)\\rVert < (4K_1)^i\\lVert u_{in}\\rVert \\le K^{i+1}$ となりますので、打ち切り誤差は残余 $\\sum_{i=c+1}^{\\infty}K^{i+1}$ であり、補題 9 は $c > \\log_{1/K}\\frac{1}{\\varepsilon(1-K)}$ のとき $\\lVert u(t) - \\tilde{u}(t)\\rVert \\le \\varepsilon$ となることを述べます。]] [[assumption: $F_1$ と $F_2$ は時間に依らず $s$ 疎であり、$F_1$ は正規行列で、その固有値は $\\mathrm{Re}(\\lambda_n) \\le \\cdots \\le \\mathrm{Re}(\\lambda_1) < 0$ を満たすものとします。評価全体が寄りかかっているのはこの散逸性で、帰納法には $\\lVert \\nu_0(t)\\rVert \\le \\lVert e^{F_1t}\\rVert \\lVert u_{in}\\rVert \\le \\lVert u_{in}\\rVert$ と $\\int_0^t \\lVert e^{\\mathrm{Re}(\\lambda_1)(t-\\tau)}\\rVert\\,d\\tau \\le (1 - e^{\\mathrm{Re}(\\lambda_1)t})/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert$ として入ります。残余が収束するのは $K < 1$ の場合に限られ、さらに $\\lVert \\nu_i\\rVert \\le K^{i+1}$ の段階では $K \\ge \\lVert u_{in}\\rVert$ が必要です。論文はこれを、$4\\lVert u_{in}\\rVert\\lVert F_2\\rVert/\\lvert \\mathrm{Re}(\\lambda_1)\\rvert$ を変えない定数 $\\zeta$ で $u$ を $\\zeta u$ に取り直すことで満たしています。]]",
+      },
+    },
     citations: [
       { title: "Quantum homotopy perturbation method for nonlinear dissipative ordinary differential equations", authors: "Cheng Xue, Yu-Chun Wu, Guo-Ping Guo", year: "2021", url: "https://arxiv.org/abs/2111.07486" },
       { title: "Quantum homotopy analysis method with quantum-compatible linearization for nonlinear partial differential equations", authors: "Cheng Xue, Xiao-Fan Xu, Xi-Ning Zhuang, Tai-Ping Sun, Yun-Jie Wang, Ming-Yang Tan, Chuang-Chao Ye, Huan-Yu Liu, Yu-Chun Wu, Zhao-Yun Chen, Guo-Ping Guo", year: "2024", url: "https://arxiv.org/abs/2411.06759" },
@@ -626,6 +1340,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "論文はこの特殊化を、走らせるアルゴリズムとしてではなく論拠として用いています。Hamiltonian シミュレーションがこの場合にあたるため、no-fast-forwarding 定理から、発展時間 $T$ への依存が対数因子を除いて最適であることが従う、というものです。計算は行われておらず、この場合のための別立ての構成も書かれていません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason:
+          "Berry, Childs, Ostrander and Wang report no run of any kind. A full-text read (2026-08-12, which moved the register row for arxiv:1701.03684 from an abstract basis to a full-text one) found no figure, no table, no worked instance with numbers, no dataset, no simulator and no hardware anywhere in the paper — the only occurrences of \"simulation\" are in the sense of Hamiltonian simulation. There is therefore nothing to write up, and there is no neighbouring numerical work to describe either.",
+        reasonJa:
+          "Berry・Childs・Ostrander・Wang はいかなる実行も報告していません。2026-08-12 の全文読解（これにより arxiv:1701.03684 の登録行は要旨ベースから全文ベースへ移りました）では、図も表も、数値を伴う具体例も、データも、シミュレータも実機も見当たりませんでした。「シミュレーション」という語が現れるのはハミルトニアンシミュレーションの意味においてのみです。したがって書き起こすべき実行はなく、代わりに述べるべき近傍の数値実験もありません。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
@@ -1328,6 +2050,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "得られたものは定理 3 であり、実行はありません。このアルゴリズムは $|u(T)\\rangle$ の $\\varepsilon$ 近似を $\\Omega(1)$ の成功確率と成功フラグつきで用意します。$O_{V_I}$ と $O_{V_R}$ へのクエリは $\\tilde{O}\\left(\\frac{\\|u_0\\|}{\\|u(T)\\|}T\\left(\\max_t\\|H(t)\\|\\right)\\mathrm{poly}\\log\\frac{\\max_t\\|V_R'(t)\\|\\|V_I\\|}{\\varepsilon}\\right)$ 回、$O_{\\mathrm{prep}}$ へのクエリは $O(\\|u_0\\|/\\|u(T)\\|)$ 回で、$\\max_t\\|H(t)\\| = O(N^2 + \\max_t\\|V_R(t)\\|)$ です。著者らはこれをすべてのパラメータについてほぼ最適なスケーリングと述べ、さらに $H(t)$ が任意の時間依存ハミルトニアン、$L$ が時間非依存で高速前進可能なハミルトニアンであるより一般の場合にも同じ結果が成り立つと注意しています。その代わりにこの変種が支払う代価は Discussion に書かれています。相互作用描像でのハミルトニアンシミュレーションは「実装が難しいかもしれない」とされ、より望ましい解決策としてカーネル $(1+k^2)^{-1}$ を速く減衰するものに置き換えることが挙げられています。これは本項目の隣にある改良カーネルの記録が進んだ方向です。ここでも実行はありません。Supplemental §VIII は定理 3 の証明であり、数値結果は報告されていません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason:
+          "An, Liu and Lin's contribution is analytical throughout: Theorem 1 is the kernel identity, Theorems 2 and 3 are query-complexity theorems and Theorem 9 is a sampling-complexity theorem for the hybrid variant. A full-text read including the Supplemental Materials found no numerical experiment, no simulator and no hardware run. The improved-kernel paper cited under Refinements does carry numerics, but they measure that kernel's truncation and belong to `lchs-improved-kernel`.",
+        reasonJa:
+          "An・Liu・Lin の寄与は終始解析的です。定理 1 はカーネル恒等式、定理 2 と定理 3 はクエリ計算量の定理、定理 9 はハイブリッド版の標本計算量の定理です。補足資料を含む全文読解では、数値実験もシミュレータも実機での実行も見当たりませんでした。「改良」の節で引用している改良カーネルの論文には数値実験がありますが、それはそのカーネルの打ち切りを測るものであり、`lchs-improved-kernel` に属します。",
+      },
+    },
     citations: [
       { title: "Linear combination of Hamiltonian simulation for nonunitary dynamics with optimal state preparation cost", authors: "Dong An, Jin-Peng Liu, Lin Lin", year: "2023", url: "https://arxiv.org/abs/2303.01029" },
     ],
@@ -2321,6 +3051,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "[[approximation: 一次精度の陰的な時間刻みですので、精度依存性は $1/\\varepsilon$ の多項式のままです。]]",
       },
     },
+    absences: {
+      "implementations": {
+        reason:
+          "Dong, Li and Xue implement diagonal Pade approximants and nothing else. Their Section 3.1 sets the off-diagonal cases aside in one sentence — \"Since the diagonal Pade approximation ($p = q$) is usually preferred over the off-diagonal cases ($p \\\\ne q$), we consider the case $p = q = k$ in the rest of the paper\" — two sections before the first experiment, and backward Euler is the $(0,1)$ approximant. The words \"backward Euler\" appear nowhere in the paper. So there is no implementation of THIS scheme to write up, which is the same sentence that stops `cost` quoting a complexity here.",
+        reasonJa:
+          "Dong・Li・Xue が実装しているのは対角 Pade 近似だけです。第 3.1 節は「対角 Pade 近似（$p = q$）は非対角の場合（$p \\\\ne q$）より通常好まれるため、本論文の残りでは $p = q = k$ の場合を考える」と一文で非対角の場合を脇に置いており、これは最初の数値実験より二節も前のことです。後退 Euler 法は $(0,1)$ 近似にあたります。論文中に「後退 Euler」という語は一度も現れません。したがってこの手法自体の実装として書き起こせるものはありません。これは `cost` がここで計算量を引用しない理由と同じ一文です。",
+      },
+    },
     citations: [
       { title: "A quantum algorithm for linear autonomous differential equations via Padé approximation", authors: "Dekuan Dong, Yingzhou Li, Jungong Xue", year: "2025", url: "https://arxiv.org/abs/2504.06948" },
     ],
@@ -2390,6 +3128,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "The step averages the generator at the two ends, $(I - \\frac{h}{2}A)u_{k+1} = (I + \\frac{h}{2}A)u_k + \\frac{h}{2}(b_k + b_{k+1})$, which as a rational approximation of $e^{hA}$ is the $(1,1)$ diagonal Padé approximant $R_{11}(Ah) = [D_{11}(Ah)]^{-1}N_{11}(Ah)$ of Dong, Li and Xue's Definition 3.1. [[approximation: The propagator $e^{hA}$ is replaced by a ratio of degree-one polynomials in $Ah$, whose denominator $D_{11}(Ah) = I - \\frac{h}{2}A$ is the matrix each implicit step solves against; second order, so the precision dependence stays polynomial in $1/\\varepsilon$.]] For the autonomous case they treat, a step of this form, $\\hat{x}(sh) = R(Ah)\\hat{x}((s-1)h) + (R(Ah) - I)A^{-1}b$, is encoded as block rows of one large block-sparse linear system, and that assembled system is what this layer hands down. [[assumption: The denominator must be non-singular, which the source assures only when $p$ and $q$ are large enough or when the eigenvalues of $A$ are all negative.]]",
         theoryJa:
           "各ステップは両端で生成子を平均し、$(I - \\frac{h}{2}A)u_{k+1} = (I + \\frac{h}{2}A)u_k + \\frac{h}{2}(b_k + b_{k+1})$ となります。これは $e^{hA}$ の有理近似として見ると、Dong・Li・Xue の Definition 3.1 にある $(1,1)$ 型の対角 Padé 近似 $R_{11}(Ah) = [D_{11}(Ah)]^{-1}N_{11}(Ah)$ にあたります。[[approximation: 伝播子 $e^{hA}$ を $Ah$ の一次多項式どうしの比で置き換えます。その分母 $D_{11}(Ah) = I - \\frac{h}{2}A$ が、各陰的ステップで解く相手の行列です。二次精度ですので、精度依存性は $1/\\varepsilon$ の多項式のままです。]] 彼らが扱う自励系の場合、この形のステップ $\\hat{x}(sh) = R(Ah)\\hat{x}((s-1)h) + (R(Ah) - I)A^{-1}b$ は、ひとつの大きなブロック疎線形系のブロック行として符号化され、この層が引き渡すのはその組み上げた系です。[[assumption: 分母は非特異でなければなりません。出典がそれを保証するのは、$p$ と $q$ が十分大きいときか、$A$ の固有値がすべて負のときに限られます。]]",
+      },
+    },
+    absences: {
+      "implementations": {
+        reason:
+          "The same sentence as `backward-euler`'s: Dong, Li and Xue analyse and implement only diagonal Pade approximants, and Crank-Nicolson is the $(1,1)$ case, which their complexity theorems exclude by requiring $k \\\\ge 3$. Their four numerical experiments run order nine or an order chosen to meet a precision — never this one.",
+        reasonJa:
+          "`backward-euler` と同じ一文によります。Dong・Li・Xue が解析し実装しているのは対角 Pade 近似だけであり、Crank-Nicolson は $(1,1)$ の場合で、彼らの計算量の定理は $k \\\\ge 3$ を要求してこれを除外しています。四つの数値実験が走らせているのは次数 9 か、精度を満たすように選ばれた次数であって、この場合ではありません。",
       },
     },
     citations: [
@@ -2479,6 +3225,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "この構成について論文が出しているのは定理であって、測定値ではありません。補題 4 はノルムを評価し、行列を単位部分・ステップを閉じる部分・Taylor 項の部分に分けることで、$\\lVert A\\rVert \\le 1$ かつ $k \\ge 5$ のとき $\\lVert C_{m,k,p}(A)\\rVert \\le 2\\sqrt{k}$ を示します。補題 2 は、$\\lvert\\lambda\\rvert \\le 1$、$\\operatorname{Re}(\\lambda) \\le 0$、$k \\ge 5$、$(k+1)! \\ge 2m$ のもとでスカラーの場合の逆行列の各列を抑えます。補題 3 はこれを、系全体を $\\tilde{V} = \\sum_{j}\\lvert j\\rangle\\langle j\\rvert \\otimes V$ により $C(A) = \\tilde{V}C(D)\\tilde{V}^{-1}$ と対角化して持ち上げ、$\\lVert C_{m,k,p}(A)^{-1}\\rVert \\le 3\\kappa_V\\sqrt{k}(m+p)$ を得ます。$\\tilde{V}$ の条件数は $V$ のそれと同じです。定理 5 は両者を掛け合わせて $\\kappa_C \\le 6\\kappa_V k(m+p)$ とします。定理 6 は、対角化した変数のもとで付録 A の二つの $1/(k+1)!$ の補題を通じて 1 ステップごとの打ち切り誤差を積み上げ、$j \\in \\{0, 1, \\ldots, m\\}$ のすべてについて $\\lVert\\lvert x(jh)\\rangle - x_{j,0}\\rVert \\le 2.8\\kappa_V j(\\lVert x_{\\mathrm{in}}\\rVert + mh\\lVert b\\rVert)/(k+1)!$ を与えます。数値的に計算されたものは何もありません。論文は実験を報告しておらず、図も表もなく、シミュレータやハードウェアの名前も挙がっていません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason:
+          "Its only source is arXiv:1701.03684, and the full-text read that settled `taylor-all-at-once` above settles this record too: the paper reports no numerics of any kind. Nothing about the truncated propagator was run separately either.",
+        reasonJa:
+          "この記録の出典は arXiv:1701.03684 のみであり、上の `taylor-all-at-once` を確定させた全文読解がこの記録も確定させます。すなわち、この論文はいかなる数値実験も報告していません。打ち切り伝播子だけを取り出して実行した記録もありません。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for linear differential equations with exponentially improved dependence on precision", authors: "Dominic W. Berry, Andrew M. Childs, Aaron Ostrander, Guoming Wang", year: "2017", url: "https://arxiv.org/abs/1701.03684" },
     ],
@@ -3284,6 +4038,14 @@ export const LAYER_GRAPH: LayerGraph = {
           "第 4.1 節はクエリ数の見積もりで、第 4.3 節はゲート数の見積もりで終わります。$W$ も $T$ も $P_A$ への $O(1)$ 回の問い合わせで済みますので、$T_n(H)$ を作る写像の費用は $O(n)$ 回となり、これがチェビシェフ経路のクエリ計算量を、増幅の回数と生き残った最高次数との積にしています。ウォーク 1 ステップは、誤差 $\\varepsilon'$ までであればゲート計算量 $O(\\log N + \\log^{2.5}(\\kappa d/\\varepsilon'))$ で行えます。ここで実行されるものはありません。ウォークは仕様として定められ、費用が数えられ、正しさが証明されるだけで、具体的な $A$ もシミュレータもデバイスも現れません。",
       },
     ],
+    absences: {
+      "example.text": {
+        reason:
+          "Childs, Kothari and Somma's paper is a complexity result and carries no numerical section; a full-text read (2026-08-12) confirmed it, and the register row moved to a full-text basis with that reading. The numerics on the neighbouring `eigenstate-filtering-inversion` record are Lin and Tong's and test a different construction.",
+        reasonJa:
+          "Childs・Kothari・Somma の論文は計算量の結果であり、数値実験の節を持ちません。2026-08-12 の全文読解でこれを確認し、その読解をもって登録行は全文ベースに移りました。隣の `eigenstate-filtering-inversion` にある数値実験は Lin・Tong のもので、別の構成を試すものです。",
+      },
+    },
     citations: [
       { title: "Quantum algorithm for systems of linear equations with exponentially improved dependence on precision", authors: "Andrew M. Childs, Robin Kothari, Rolando D. Somma", year: "2015", url: "https://arxiv.org/abs/1511.02306" },
     ],
@@ -6755,6 +7517,24 @@ export const LAYER_GRAPH: LayerGraph = {
     ],
   },
   {
+    kind: "method",
+    id: "symmetry-verification",
+    label: "Check the symmetries the answer must have",
+    labelJa: "答えが満たすべき対称性を検査する",
+    shortLabel: "Symmetry verification",
+    shortLabelJa: "対称性検査",
+    summary: "The physics fixes quantities the true state cannot change — particle number, spin. Measure them alongside the run and discard, or post-process away, the outcomes that violate them: an error that moves the state out of the sector announces itself, and one that keeps it inside does not.",
+    summaryJa: "物理は、真の状態が変えられない量——粒子数やスピン——を定めます。それらを実行と並行して測定し、違反する結果を捨てるか、後処理で取り除きます。状態をセクターの外へ動かす誤りは自ら姿を現し、内側に留める誤りは現しません。",
+    realizes: "error-mitigation",
+    conditions: "Bonet-Monroig et al. give two mechanisms and one honest boundary. The mechanisms: \"two protocols to measure conserved symmetries during the bulk of an experiment\", and \"a zero-cost post-processing protocol which is equivalent to a variant of the quantum subspace expansion\" — the same construction this map draws under `subspace-expansion-excited-state`, arrived at from the error side rather than the spectrum side. They also \"develop methods for inserting global and local symmetries into quantum algorithms, and for adjusting natural symmetries of the problem to boost their mitigation against different error channels\", so which symmetry is checked is a design choice tuned to the noise, not a fixed recipe. The boundary is the scale of the evidence: the demonstration is \"two- and four-qubit simulations of the hydrogen molecule (using a classical density-matrix simulator)\", where they find \"up to an order of magnitude reduction of the error in obtaining the ground state dissociation curve\". *Up to*, on a density-matrix simulator, at two and four qubits — no device run and no larger system is claimed here.",
+    conditionsJa: "Bonet-Monroig らは、二つの機構と一つの誠実な限界を示しています。機構は「実験の本体部分で保存対称性を測定する二つのプロトコル」と、「零コストの後処理プロトコルであり、量子部分空間展開の一変種と等価であるもの」です。後者は、この地図が `subspace-expansion-excited-state` として描いている構成そのものに、スペクトルの側からではなく誤りの側から到達したものです。さらに彼らは「大域的および局所的な対称性を量子アルゴリズムに埋め込む方法、および問題が本来もつ対称性を調整して、異なる誤りチャネルに対する軽減効果を高める方法」を開発しています。したがって、どの対称性を検査するかは固定の処方ではなく、雑音に合わせた設計上の選択です。限界は根拠の規模です。実証は「（古典的な密度行列シミュレータを用いた）水素分子の 2 量子ビットおよび 4 量子ビットのシミュレーション」であり、そこで「基底状態の解離曲線を求める際の誤差が最大で一桁減少する」ことを見出しています。「最大で」であり、密度行列シミュレータ上の 2 量子ビットと 4 量子ビットです。実機での実行も、より大きな系も、ここでは主張されていません。",
+    steps: [],
+    entries: ["vqe-symmetry-verification"],
+    citations: [
+      { title: "Low-cost error mitigation by symmetry verification", authors: "X. Bonet-Monroig, R. Sagastizabal, M. Singh, T.E. O'Brien", year: "2018", url: "https://arxiv.org/abs/1807.10050" },
+    ],
+  },
+  {
     kind: "capability",
     id: "error-correction",
     label: "Build logical qubits at a target logical error rate",
@@ -7645,6 +8425,146 @@ export const LAYER_GRAPH: LayerGraph = {
     entries: ["vqe-variance-objective"],
     citations: [
       { title: "Variational quantum eigensolvers by variance minimization", authors: "Dan-Bo Zhang, Zhan-Hao Yuan, Tao Yin", year: "2020", url: "https://arxiv.org/abs/2006.15781" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "particle-hole-ansatz",
+    label: "Particle-hole coupled-cluster circuits",
+    labelJa: "粒子・正孔描像の結合クラスター回路",
+    shortLabel: "Particle-hole UCC",
+    shortLabelJa: "粒子・正孔 UCC",
+    summary: "Rewrite the Hamiltonian around the reference determinant so that what the circuit has to describe is excitations out of it, then build the family from gates that move an electron without creating or destroying one. Staying inside the right particle-number sector is a property of the gates, not something the optimiser has to discover.",
+    summaryJa: "参照配置のまわりでハミルトニアンを書き直し、回路が記述すべき対象をその配置からの励起にします。そのうえで、電子を生成も消滅もさせずに動かすゲートから回路族を構成します。正しい粒子数セクターの中に留まることは、最適化器が発見すべき事柄ではなく、ゲートの性質になります。",
+    realizes: "ansatz-construction",
+    conditions: "Barkoutsos et al. put the transformation before the circuit: they \"propose a transformation of the electronic structure Hamiltonian in the second quantization framework into the particle-hole (p/h) picture, which offers a better starting point for the expansion of the trial wavefunction\", so that the state \"is parametrized in a way to efficiently explore the sector of the molecular Fock space that contains the desired solution\". The circuit family follows from that choice — \"a new family of quantum circuits based on exchange-type gates that enable accurate calculations while keeping the gate count (i.e., the circuit depth) low\" — and the resulting method is named in the paper: \"the particle-hole implementation of the Unitary Coupled Cluster (UCC) method within the Variational Quantum Eigensolver approach ... named q-UCC\". The claim to read carefully is the last one, because it is about Trotterisation rather than about accuracy in general: they \"show how a single Trotter step can accurately and efficiently reproduce the ground state energies of simple molecular systems\", and *simple* is the paper's own word. No hardware run is reported.",
+    conditionsJa: "Barkoutsos らは、回路より先に変換を置きます。彼らは「第二量子化の枠組みにおける電子構造ハミルトニアンを粒子・正孔（p/h）描像へ変換することを提案する。これは試行波動関数の展開のより良い出発点を与える」とし、その結果として状態は「望む解を含む分子 Fock 空間のセクターを効率的に探索できる形にパラメータ化される」と述べます。回路族はこの選択から導かれます。「交換型ゲートにもとづく新しい量子回路の族であり、ゲート数（すなわち回路深さ）を低く保ちながら精度のよい計算を可能にする」。そして得られる手法には論文自身が名前を与えています。「変分量子固有値ソルバーの枠組みにおけるユニタリ結合クラスター（UCC）法の粒子・正孔版であり、q-UCC と名づける」。注意して読むべきは最後の主張です。これは一般的な精度ではなく Trotter 分解についての主張だからです。彼らは「単一の Trotter ステップが単純な分子系の基底状態エネルギーを正確かつ効率的に再現しうることを示す」と述べており、「単純な」は論文自身の言葉です。実機での実行の報告はありません。",
+    steps: [],
+    entries: ["vqe-particle-conserving"],
+    citations: [
+      { title: "Quantum algorithms for electronic structure calculations: particle/hole Hamiltonian and optimized wavefunction expansions", authors: "Panagiotis Kl. Barkoutsos, Jerome F. Gonthier, Igor Sokolov, Nikolaj Moll, Gian Salis, Andreas Fuhrer, Marc Ganzhorn, Daniel J. Egger, Matthias Troyer, Antonio Mezzacapo, Stefan Filipp, Ivano Tavernelli", year: "2018", url: "https://arxiv.org/abs/1805.04340" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "natural-gradient-optimization",
+    label: "Follow the steepest descent in the state's own geometry",
+    labelJa: "状態そのものの幾何における最急降下に従う",
+    shortLabel: "Natural gradient",
+    shortLabelJa: "自然勾配",
+    summary: "Take the step that moves the state fastest, not the one that moves the parameters fastest. The two differ because equal changes in parameters do not make equal changes in the state, and the metric measuring that difference has to be estimated before every step.",
+    summaryJa: "パラメータが最も速く動く方向ではなく、状態が最も速く動く方向へ一歩を進めます。両者が異なるのは、パラメータの同じ変化が状態の同じ変化を意味しないからです。その差を測る計量は、各ステップの前に推定しておく必要があります。",
+    realizes: "parameter-optimization",
+    conditions: "Stokes et al. state exactly what the step is taken with respect to: the optimization dynamics \"is interpreted as moving in the steepest descent direction with respect to the Quantum Information Geometry, corresponding to the real part of the Quantum Geometric Tensor (QGT), also known as the Fubini-Study metric tensor\". That tensor is the extra thing this method buys its better steps with, and the paper's own contribution is making it affordable rather than exact — \"an efficient algorithm is presented for computing a block-diagonal approximation to the Fubini-Study metric tensor for parametrized quantum circuits\". Block-diagonal is an approximation, and the abstract states no bound on what it costs in step quality, so none is quoted here.",
+    conditionsJa: "Stokes らは、この一歩が何に関して取られるのかを明示しています。その最適化のダイナミクスは「量子情報幾何に関する最急降下方向へ進むものとして解釈される。これは量子幾何テンソル（QGT）の実部、すなわち Fubini-Study 計量テンソルに対応する」。このテンソルこそ、この方式がより良い一歩を買うために支払う追加の対象であり、論文自身の貢献は、それを厳密に求めることではなく手頃にすることにあります。「パラメータ付き量子回路に対する Fubini-Study 計量テンソルのブロック対角近似を計算する効率的なアルゴリズムを提示する」。ブロック対角化は近似であり、それが一歩の質にどれだけ影響するかについて要旨は限界を述べていないので、ここでも数値は挙げません。",
+    steps: [],
+    entries: ["vqe-natural-gradient"],
+    citations: [
+      { title: "Quantum Natural Gradient", authors: "James Stokes, Josh Izaac, Nathan Killoran, Giuseppe Carleo", year: "2019", url: "https://arxiv.org/abs/1909.02108" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "orbital-optimized-ansatz",
+    label: "Orbital-optimized coupled-cluster circuits",
+    labelJa: "軌道最適化した結合クラスター回路",
+    shortLabel: "Orbital-optimized UCC",
+    shortLabelJa: "軌道最適化 UCC",
+    summary: "Let the orbitals move too. The usual family fixes a basis and varies the amplitudes; this one varies the molecular orbital coefficients alongside them, so the same accuracy is reachable from a smaller active space and a shallower circuit — and the energy becomes fully variational, which is what makes forces available.",
+    summaryJa: "軌道そのものも動かします。通常の族は基底を固定して振幅だけを変えますが、この族は分子軌道係数も同時に変えます。そのおかげで、同じ精度により小さな活性空間と浅い回路で到達でき、しかもエネルギーが完全に変分的になります。力が得られるのはそのためです。",
+    realizes: "ansatz-construction",
+    conditions: "Mizukami et al. state what is varied and what follows from it. OO-UCC \"variationally determines the coupled cluster amplitudes and also molecular orbital coefficients\", and \"owing to its fully variational nature, first-order properties are readily available\" — which they cash out immediately: \"this feature allows the optimization of molecular structures in VQE without solving any additional equations\". The resource claim is comparative and unquantified in the abstract: \"the method requires smaller active space and shallower quantum circuit than UCC to achieve the same accuracy\", with no number attached, so none is quoted here. Evidence is simulation, and it is worth naming what was simulated because it is a property calculation rather than a single energy: \"numerical examples of OO-UCC using quantum simulators, which include the geometry optimization of the water and ammonia molecules using analytical first derivatives of the VQE\".",
+    conditionsJa: "Mizukami らは、何を変分の対象とするか、そしてそこから何が従うかを述べています。OO-UCC は「結合クラスター振幅に加えて分子軌道係数も変分的に決定する」ものであり、「完全に変分的であることにより、一次の物理量がただちに利用できる」。彼らはその帰結をすぐに現金化します。「この性質により、追加の方程式を解くことなく VQE の中で分子構造を最適化できる」。資源についての主張は比較的なもので、要旨では定量されていません。「同じ精度を得るために、この方法は UCC より小さい活性空間と浅い量子回路で済む」とあるだけで数値は伴わないため、ここでも数値は挙げません。根拠はシミュレーションですが、何をシミュレートしたかは述べる価値があります。単一のエネルギーではなく物性の計算だからです。「量子シミュレータを用いた OO-UCC の数値例であり、VQE の解析的一次微分を用いた水分子およびアンモニア分子の構造最適化を含む」。",
+    steps: [],
+    entries: ["vqe-orbital-optimized"],
+    citations: [
+      { title: "Orbital optimized unitary coupled cluster theory for quantum computer", authors: "Wataru Mizukami, Kosuke Mitarai, Yuya O. Nakagawa, Takahiro Yamamoto, Tennin Yan, Yu-ya Ohnishi", year: "2019", url: "https://arxiv.org/abs/1910.11526" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "symmetry-preserving-ansatz",
+    label: "Symmetry-preserving state-preparation circuits",
+    labelJa: "対称性を保つ状態準備回路",
+    shortLabel: "Symmetry-preserving",
+    shortLabelJa: "対称性を保つ",
+    summary: "Build the circuit so that it cannot leave the symmetry sector the chemistry lives in. Particle number, total spin, spin projection and time reversal are respected by the gate structure itself, so the search never spends parameters on states the answer cannot be in.",
+    summaryJa: "対象とする化学が属する対称性セクターから出られないように回路を構成します。粒子数、全スピン、スピン射影、時間反転の各対称性がゲート構造そのものによって保たれるため、探索が答えの存在しない状態にパラメータを費やすことがありません。",
+    realizes: "ansatz-construction",
+    conditions: "Gard et al. put the argument for the family before the family itself: \"the efficiency of this algorithm depends crucially on the ability to prepare multi-qubit trial states ... that either include, or at least closely approximate, the actual energy eigenstates of the problem being simulated while avoiding states that have little overlap with them\", and \"symmetries play a central role in determining the best trial states\". Their circuits \"respect particle number, total spin, spin projection, and time-reversal symmetries\" and \"contain the minimal number of variational parameters needed to fully span the appropriate symmetry subspace dictated by the chemistry problem while avoiding all irrelevant sectors of Hilbert space\" — minimality OVER THE SUBSPACE, which is a stronger claim than a small parameter count. The construction is general rather than tabulated: they \"show how to construct these circuits for arbitrary numbers of orbitals, electrons, and spin quantum numbers\" and \"provide explicit decompositions and gate counts in terms of standard gate sets in each case\". The evidence is simulation and its scope is stated: they \"test our circuits in quantum simulations of the $H_2$ and $LiH$ molecules and find that they outperform standard state preparation methods in terms of both accuracy and circuit depth\".",
+    conditionsJa: "Gard らは、この回路族そのものより先に、族を選ぶ論拠を述べています。「このアルゴリズムの効率は、シミュレートされる問題の実際のエネルギー固有状態を含む、あるいは少なくともよく近似する多量子ビット試行状態を、それらとの重なりが小さい状態を避けつつ準備できるかどうかに決定的に依存する」。そして「最良の試行状態を決めるうえで対称性が中心的な役割を果たす」。彼らの回路は「粒子数、全スピン、スピン射影、時間反転の各対称性を尊重」し、「化学の問題が指定する適切な対称性部分空間を完全に張るのに必要な、最小個数の変分パラメータをもつ。同時に、ヒルベルト空間の無関係なセクターをすべて避ける」。これは部分空間上での最小性であり、単にパラメータが少ないというより強い主張です。構成は表ではなく一般的な手続きとして与えられます。「任意の軌道数、電子数、スピン量子数についてこれらの回路を構成する方法を示し」、「それぞれの場合について標準的なゲート集合による明示的な分解とゲート数を与える」。根拠はシミュレーションであり、その範囲も述べられています。「$H_2$ および $LiH$ 分子の量子シミュレーションで回路を検証し、標準的な状態準備法を精度と回路深さの双方で上回ることを見出した」。",
+    steps: [],
+    entries: ["vqe-symmetry-preserving"],
+    citations: [
+      { title: "Efficient Symmetry-Preserving State Preparation Circuits for the Variational Quantum Eigensolver Algorithm", authors: "Bryan T. Gard, Linghua Zhu, George S. Barron, Nicholas J. Mayhall, Sophia E. Economou, Edwin Barnes", year: "2019", url: "https://arxiv.org/abs/1904.10910" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "tetris-adapt-ansatz",
+    label: "TETRIS-ADAPT-VQE ansatz",
+    labelJa: "TETRIS-ADAPT-VQE アンザッツ",
+    shortLabel: "TETRIS-ADAPT",
+    shortLabelJa: "TETRIS-ADAPT",
+    summary: "Keep ADAPT's habit of growing the ansatz from measured gradients, and stop adding one operator per round. Several operators acting on disjoint qubits can go in together, filling the same layer instead of stacking — the same circuit, packed rather than piled.",
+    summaryJa: "測定した勾配からアンザッツを育てるという ADAPT のやり方はそのままに、1 周につき 1 演算子という制限をやめます。互いに素な量子ビットに作用する複数の演算子は同時に加えることができ、積み上げるのではなく同じ層に詰め込まれます。回路は同じでも、積まれ方が違います。",
+    realizes: "ansatz-construction",
+    conditions: "Anastasiou et al. describe the change as lifting exactly one rule: this is \"a modified version of the ADAPT-VQE algorithm in which the one-operator-at-a-time rule is lifted to allow for the addition of multiple operators with disjoint supports in each iteration\". What it buys is stated without a number and with its limits named — the result is \"denser but significantly shallower circuits, without increasing the number of CNOT gates or variational parameters\", and \"its advantage over the original algorithm in terms of circuit depths increases with the system size\". It also cuts the measurement overhead ADAPT pays between rounds: \"the expensive step of measuring the energy gradient with respect to each candidate unitary at each iteration is performed only a fraction of the time compared to ADAPT-VQE\", because fewer rounds are needed once a round may add more than one operator. The motivation is hardware rather than accuracy — adaptive algorithms \"are not yet viable due, in large part, to the severe coherence time limitations on current devices\".",
+    conditionsJa: "Anastasiou らは、この変更をちょうど一つの規則を外すこととして説明しています。これは「ADAPT-VQE アルゴリズムの改変版であり、1 回の反復につき 1 演算子という規則を外して、台が互いに素な複数の演算子を各反復で追加できるようにしたもの」です。それによって得られるものは、数値を伴わずに、しかし限界を明示して述べられています。結果は「より密だが著しく浅い回路であり、CNOT ゲート数も変分パラメータ数も増やさない」ものであり、「回路深さの点での元のアルゴリズムに対する優位は、系のサイズとともに増大する」。ADAPT が各周のあいだに支払う測定の負担も減ります。「各反復で候補となる各ユニタリに関するエネルギー勾配を測定するという高価な工程が、ADAPT-VQE に比べてごく一部の回数しか実行されない」。1 周でより多くの演算子を追加できれば、必要な周回数が減るからです。動機は精度ではなくハードウェアです。適応的アルゴリズムは「現行デバイスの厳しいコヒーレンス時間の制約が大きな理由となって、まだ実用の域にない」とされています。",
+    refines: "adapt-ansatz",
+    refinesMark: "ADAPT",
+    refinesMarkJa: "ADAPT",
+    // **Folded (s121, W17), and folding is the CORRECT model here rather than a
+    // way past the figure ceiling.** This refinement records no
+    // map-representable internal difference from its parent: the same single
+    // step, the same `observable-estimation` stub, no `via` its parent does not
+    // have. What actually changed is how many operators one round may add —
+    // a rule about the search, not a construction — and this graph has no
+    // vocabulary for that. Validation enforces the claim rather than trusting
+    // it: the flag is refused if the chain facts differ.
+    //
+    // Do NOT resolve the fold by inventing a `via` pin. The paper chooses no
+    // different filler for the estimation step; it changes how often that step
+    // is reached, which is exactly the distinction the map does not draw.
+    sameInternalsAsParent: true,
+    potentialPath: "Drawing this apart from ADAPT needs the map to represent a SCHEDULE — how many operators a round admits, and therefore how often the gradient measurement is paid — where today a repeat is a count on one hop and nothing expresses \"fewer rounds, more per round\". The paper's own claim is precisely a trade between those two, so the moment the map can say it, this refinement has a drawable difference and stops being folded.",
+    potentialPathJa: "これを ADAPT と別に描くには、地図が「スケジュール」を表現できる必要があります。すなわち、1 周が何個の演算子を受け入れ、その結果として勾配測定を何回支払うのか、ということです。今日の地図では、繰り返しは一つのホップ上の回数でしかなく、「周回数は減り、1 周あたりは増える」を言い表す手立てがありません。この論文の主張はまさにその二者間の取引そのものなので、地図がそれを言えるようになった時点で、この精緻化は描画可能な差異をもち、折り畳まれた状態ではなくなります。",
+    steps: ["observable-estimation"],
+    entries: ["vqe-tetris-adapt"],
+    citations: [
+      { title: "TETRIS-ADAPT-VQE: An adaptive algorithm that yields shallower, denser circuit ansätze", authors: "Panagiotis G. Anastasiou, Yanzhu Chen, Nicholas J. Mayhall, Edwin Barnes, Sophia E. Economou", year: "2022", url: "https://arxiv.org/abs/2209.10562" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "iterative-qcc-ansatz",
+    label: "Iterative qubit coupled cluster",
+    labelJa: "反復的キュービット結合クラスター",
+    shortLabel: "iQCC",
+    shortLabelJa: "iQCC",
+    summary: "Stop growing the circuit and grow the Hamiltonian instead. Each round folds the entanglers found so far into the operator by a canonical transformation, so every round runs a circuit of the same size — the cost moves off the device and into the number of terms that have to be measured.",
+    summaryJa: "回路を大きくするのをやめ、代わりにハミルトニアンを大きくします。各周では、それまでに見つかったエンタングラーを正準変換によって演算子側へ畳み込むため、どの周も同じ大きさの回路を実行します。代償は装置から離れ、測定すべき項の個数へと移ります。",
+    realizes: "ansatz-construction",
+    conditions: "Ryabinkin et al. state the trade in one sentence — \"each iteration involves a canonical transformation of the Hamiltonian and employs constant-size quantum circuits at the expense of increasing the Hamiltonian size\" — which is the whole point of the method: a NISQ device is bounded in circuit size, not in how many terms a classical computer can carry. The condition attached to convergence is the part not to skip: they \"found that the exact ground-state energies can be systematically approached only if the generators of the QCC ansatz are sampled from a specific set of operators\", so the generator pool is a correctness requirement here rather than a tuning choice, and the paper supplies an algorithm for constructing that set. Evidence is numerical, on LiH, H2O and N2; no hardware run is reported.",
+    conditionsJa: "Ryabinkin らはこの取引を一文で述べています。「各反復はハミルトニアンの正準変換を伴い、ハミルトニアンの大きさが増える代わりに、一定サイズの量子回路を用いる」。これこそがこの方法の要点です。NISQ 装置に課される限界は回路の大きさであって、古典計算機が扱える項数ではないからです。収束に付された条件は飛ばしてはならない部分です。彼らは「厳密な基底状態エネルギーに系統的に近づけるのは、QCC アンザッツの生成子が特定の演算子の集合から選ばれている場合に限られる」ことを見出しました。したがってここでの生成子プールは調整の選択ではなく正しさの要件であり、論文はその集合を構成するアルゴリズムを与えています。根拠は LiH、H2O、N2 についての数値計算であり、実機での実行の報告はありません。",
+    refines: "qcc-ansatz",
+    refinesMark: "QCC",
+    refinesMarkJa: "QCC",
+    // **Folded (W17/s121), and the `potentialPath` below is doing real work
+    // rather than excusing the fold.** Against its parent this records no
+    // map-representable internal difference: the same single step, the same
+    // `observable-estimation` stub it uses to screen generators, no `via` QCC
+    // lacks. The difference the paper is actually about — the Hamiltonian is
+    // transformed between rounds while the circuit stays the same size — is a
+    // difference this map has no shape for, because nothing here draws a
+    // problem being rewritten between iterations of the method solving it.
+    sameInternalsAsParent: true,
+    potentialPath: "Drawing this apart from QCC needs the map to represent a problem that CHANGES between rounds: iQCC folds each round's entanglers into the Hamiltonian by a canonical transformation, so the operator handed to round n+1 is not the one round n was given. Today a method's inputs are fixed for the whole route, and the `hamiltonian-recasting` slot that does exist recasts a problem ONCE on the way into a region rather than repeatedly inside a loop. Give the map a way to say \"the same slot, on a rewritten problem, again\" and this refinement has drawable internals — and so, probably, does every other method whose cost is a growing operator rather than a growing circuit.",
+    potentialPathJa: "これを QCC と別に描くには、地図が「周ごとに変化する問題」を表現できる必要があります。iQCC は各周のエンタングラーを正準変換によってハミルトニアンへ畳み込むため、第 n+1 周に渡される演算子は第 n 周が受け取ったものとは別物です。今日の地図では、方式の入力は経路全体を通じて固定であり、既存の `hamiltonian-recasting` の層も、領域へ入る途中で問題を一度だけ書き換えるものであって、ループの内部で繰り返し書き換えるものではありません。「同じ層を、書き換えられた問題の上で、もう一度」と言える手立てを地図に与えれば、この精緻化は描画可能な内部構造をもちます。そしておそらく、回路ではなく演算子が増えることを代償とする他のあらゆる方式についても同じことが言えます。",
+    steps: ["observable-estimation"],
+    entries: ["vqe-iterative-qcc"],
+    citations: [
+      { title: "Iterative Qubit Coupled Cluster approach with efficient screening of generators", authors: "Ilya G. Ryabinkin, Robert A. Lang, Scott N. Genin, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1906.11192" },
     ],
   },
   {

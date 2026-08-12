@@ -417,8 +417,14 @@ const KNOWN_TWINS = [
   },
   {
     slot: "ansatz-construction",
-    methods: ["adapt-ansatz", "qubit-adapt-ansatz", "qcc-ansatz"],
-    why: "The three adaptive constructions, and they draw one chain because they genuinely share it: each grows the ansatz by measuring how much a candidate operator would move the energy, so each hangs one `observable-estimation` stub and nothing else. What separates them is the POOL the candidates are drawn from — fermionic excitations for ADAPT, qubit operators for qubit-ADAPT, entanglers ranked by energy response for QCC — and this graph has no vocabulary for an operator pool, so there is nothing honest to pin a `via` to. Recorded as a worklist item rather than papered over: giving the pool a state would split this group, and it would also give `parameter-optimization` something to narrow. `qubit-adapt-ansatz` additionally declares `refines: adapt-ansatz`, which is why the card already says why IT looks like its parent; the residual pair is ADAPT and QCC.",
+    methods: [
+      "adapt-ansatz",
+      "qubit-adapt-ansatz",
+      "qcc-ansatz",
+      "tetris-adapt-ansatz",
+      "iterative-qcc-ansatz",
+    ],
+    why: "The three adaptive constructions, and they draw one chain because they genuinely share it: each grows the ansatz by measuring how much a candidate operator would move the energy, so each hangs one `observable-estimation` stub and nothing else. What separates them is the POOL the candidates are drawn from — fermionic excitations for ADAPT, qubit operators for qubit-ADAPT, entanglers ranked by energy response for QCC — and this graph has no vocabulary for an operator pool, so there is nothing honest to pin a `via` to. Recorded as a worklist item rather than papered over: giving the pool a state would split this group, and it would also give `parameter-optimization` something to narrow. `qubit-adapt-ansatz` additionally declares `refines: adapt-ansatz`, which is why the card already says why IT looks like its parent; the residual pair is ADAPT and QCC. **`tetris-adapt-ansatz` joined in B5's continuation and is here for the same reason `qubit-adapt-ansatz` is** — it declares `refines: adapt-ansatz` and is additionally FOLDED (`sameInternalsAsParent`), so it draws no lane at all, but the refinement rule below drops a member only when the group is a CHAIN, and two siblings refining one parent is a fork. Its own difference is a schedule — how many operators one round admits, and therefore how often the gradient measurement is paid — which this graph cannot draw today; that is written on the node as its `potentialPath`. **`iterative-qcc-ansatz` joined the same way and for the same structural reason** — folded into `qcc-ansatz`, in this row because a fork is not a chain. Its own difference is that the HAMILTONIAN grows between rounds while the circuit stays one size, which this map cannot draw because a method's inputs are fixed for its whole route; that is on its node as `potentialPath`, and it is the more interesting of the two backlog items because it would also give a shape to every method whose cost is a growing operator rather than a growing circuit.",
   },
 ];
 
@@ -748,9 +754,23 @@ if (CLOSURE_IDS.length > 0) {
   console.log(
     `  ${region.capabilities.length} slots · ${region.methods.length} methods realising them`,
   );
+  const declared = region.declaredAbsences;
   for (const field of region.fields) {
     const line = `  ${field.field.padEnd(20)} ${String(field.present).padStart(3)}/${field.total}`;
-    console.log(field.missing.length === 0 ? `${line}  ✓` : `${line}  missing: ${field.missing.join(" ")}`);
+    if (field.missing.length === 0) {
+      console.log(`${line}  ✓`);
+      continue;
+    }
+    // A gap with a declared reason is ACCOUNTED, not open — the whole point of
+    // `absences`. Printed apart from the open ones so the worklist stays a
+    // worklist: a reader scanning for what to do next must not have to re-read
+    // twelve settled cases to find the two live ones.
+    const accounted = new Set(declared.get(field.field) ?? []);
+    const open = field.missing.filter((id) => !accounted.has(id));
+    const closed = field.missing.filter((id) => accounted.has(id));
+    const mark = open.length === 0 ? "  ✓ (every gap accounted for)" : `  missing: ${open.join(" ")}`;
+    console.log(`${line}${mark}`);
+    if (closed.length > 0) console.log(`      accounted: ${closed.join(" ")}`);
   }
   // Stretches, not methods — see `RegionClosure.hopStretches` for why a
   // per-method count reads as finished on a region that is not.
@@ -765,6 +785,12 @@ if (CLOSURE_IDS.length > 0) {
   for (const [method, keys] of byMethod) {
     console.log(`      ${method.padEnd(32)} ${keys.join(" ")}`);
   }
+  // The one line that was not sayable before `absences`: which fields have
+  // nothing left open at all. Fields, not one boolean — they are not the same
+  // kind of gap, so "closed" is a claim about each separately.
+  console.log(
+    `  ${"closed".padEnd(20)} ${region.closedFields.length}/${region.fields.length} fields — ${region.closedFields.join(", ") || "none"}`,
+  );
   // The classification, and it is the half of this report that says which
   // absences are work. `accounted` is a finished answer; `unread` is a paper to
   // read, not an example to write.

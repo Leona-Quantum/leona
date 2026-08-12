@@ -463,6 +463,76 @@ test("an outstanding verdict names the paper that produced it, because it is a l
   });
 });
 
+test("a declared absence is checked every way it can be false except the one that matters", () => {
+  // **What this replaces is a `//` comment.** This graph already carries careful
+  // accounts of honest absences — `backward-euler`'s `cost` says so in the field,
+  // `koopman-linearization`'s says so in a comment above it — and no machine could
+  // tell either from a field nobody had looked at. So a region could only be
+  // declared closed by a human reading the file.
+  //
+  // Three of the four rules are enforceable and are enforced here. The fourth —
+  // that the reason names what was READ — is review's, and it is the one that
+  // matters most: "not stated" is the absent field with extra words.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      method("accounted", "solve", {
+        absences: { cost: { reason: "the source proves it only for k >= 3", reasonJa: "出典は k >= 3 の場合しか示していません" } },
+      }),
+      method("explains-a-filled-field", "solve", {
+        cost: "$O(n)$",
+        costJa: "$O(n)$",
+        absences: { cost: { reason: "r", reasonJa: "r" } },
+      }),
+      method("not-declarable", "solve", {
+        absences: { entries: { reason: "r", reasonJa: "r" } },
+      }),
+      method("half-translated", "solve", {
+        absences: { conditions: { reason: "r", reasonJa: "  " } },
+      }),
+    ],
+  };
+  const errors = validateLayerGraph(graph, new Set<string>(), NARROWING, NO_DISPOSITIONS);
+  // A reason beside a FILLED field is the second copy that drifts the first time
+  // either is edited.
+  assert.ok(
+    errors.some((e) => e.includes("explains-a-filled-field") && e.includes("not empty")),
+    `expected a filled-field error, got ${JSON.stringify(errors)}`,
+  );
+  // A field a source could never supply is not a field an absence can account
+  // for — `entries` is about the corpus, not about any paper.
+  assert.ok(errors.some((e) => e.includes("not-declarable") && e.includes("absences names entries")));
+  // Half the readers cannot read half a reason.
+  assert.ok(errors.some((e) => e.includes("half-translated") && e.includes("empty reason")));
+  // And the honest one passes.
+  assert.ok(!errors.some((e) => e.includes("accounted:")), `the valid declaration was rejected: ${JSON.stringify(errors)}`);
+});
+
+test("a field whose every gap is declared is CLOSED, and one open gap is enough to reopen it", () => {
+  // The verdict the gauge could not reach before. Per FIELD rather than one
+  // boolean, because the fields are not the same kind of gap — "the region is
+  // closed" is a claim about each of them separately, and collapsing them is the
+  // same substitution the no-percentage rule above refuses.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("solve", { contract: contract("alpha", "gamma") }),
+      method("filled", "solve", { cost: "$O(n)$", costJa: "$O(n)$", conditions: "c", conditionsJa: "c" }),
+      method("declared", "solve", {
+        conditions: "c",
+        conditionsJa: "c",
+        absences: { cost: { reason: "no source states one", reasonJa: "出典にありません" } },
+      }),
+      method("open", "solve", { cost: "$O(n)$", costJa: "$O(n)$" }),
+    ],
+  };
+  const region = regionClosure(graph, FIXTURE_STATES, ["solve"], new Map());
+  assert.deepEqual(region.declaredAbsences.get("cost"), ["declared"]);
+  // `cost` is closed: one method carries it, one declares why it does not.
+  assert.ok(region.closedFields.includes("cost"));
+  // `conditions` is NOT: `open` neither carries it nor accounts for it.
+  assert.ok(!region.closedFields.includes("conditions"));
+});
+
 test("a region's fields are counted apart, and a blank one is not counted at all", () => {
   // Per field, never averaged. `MethodExample`'s own doc comment draws the line
   // this refuses to cross: pseudocode is transcribable from the record and a
@@ -1240,7 +1310,10 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // to tell any of them apart by — what this one changes is which TERMS share one set of
   // shots, and a term grouping is not a step.
   ["observable-estimation", 4],
-  ["error-mitigation", 3],
+  // 4 since B5's leaf anchors: `symmetry-verification` is a fourth mitigation consuming a
+  // prepared state and nothing else. What separates it from its siblings is WHICH quantity
+  // it checks and what it does with a violation, and neither is a step this graph draws.
+  ["error-mitigation", 4],
   ["quantum-linear-solve", 2],
   ["polynomial-approximation", 2],
   ["block-encode-matrix", 2],
@@ -1251,7 +1324,13 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // family in one step, plus the adaptive pair that each hang one `observable-estimation`
   // stub. `qubit-adapt-ansatz` is dropped by the `refines` rule in the test, as designed —
   // a declared refinement is not a hollow twin.
-  ["ansatz-construction", 5],
+  // 8 since B5's leaf anchors: `particle-hole-ansatz` and `orbital-optimized-ansatz` join
+  // `symmetry-preserving-ansatz` (PR 441), so five fixed families now. Each constructs its
+  // circuit family in one step and has no recorded interior yet — the honest state of a
+  // family nobody has decomposed — and each is authored as a LEAF rather than given a stub
+  // it was never described as having, which would be inventing structure to escape this
+  // line.
+  ["ansatz-construction", 8],
   // **W21-E's region, and this line is the thing a global ceiling could not say.** Six of
   // the seven excited-state methods draw a sibling's picture, in two groups: four take
   // VQE's three hops and differ only in the objective handed to the optimiser, and two
@@ -1272,7 +1351,10 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // one hop, with no second hop to separate them. What separates them is the objective
   // itself, which is not a step this graph draws — the same shape as the readout row
   // above, and the same fix (an objective needs a state before a `via` can pin it).
-  ["parameter-optimization", 2],
+  // 3 since B5 unit 4: `natural-gradient-optimization` is a third one-hop filler.
+  // The three differ in the objective (`cvar-objective`, `variance-objective`) or in the
+  // metric the step is taken against (this one), and neither is a step this graph draws.
+  ["parameter-optimization", 3],
 ]);
 
 /**
