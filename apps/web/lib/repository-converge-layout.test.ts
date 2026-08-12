@@ -1666,8 +1666,10 @@ test("a line that opens into something says so, and a line that does not is not 
   // under `ansatz-construction`, `symmetry-verification` under `error-mitigation`.
   // 88 still: the folded refinement draws NO lane of its own, which is the whole point
   // of the fold — its node exists, its page draws, and the slot figure is unchanged.
-  assert.equal(openable + leaves + 1, 88, "the twenty-three figures draw 88 lines between them");
-  assert.equal(openable, 41, "41 of them open into something recorded");
+  // 88 → 89 in session 129: `berry-multistep`, one more top-level route on
+  // `linear-ode-solve`, openable into the two hops it delegates.
+  assert.equal(openable + leaves + 1, 89, "the twenty-three figures draw 89 lines between them");
+  assert.equal(openable, 42, "42 of them open into something recorded");
   assert.equal(leaves, 46, "46 are leaves — nothing finer is recorded for them");
 });
 
@@ -5525,7 +5527,10 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
   assert.equal(embedding.foldedCount, 0);
 
   const ode = diagramFor("linear-ode-solve");
-  assert.equal(ode.drawnMethodCount, 5);
+  // 5 → 6 in session 129: `berry-multistep` is a sixth top-level route on this
+  // slot. The folded pair is unchanged — Krovi and the improved kernel — so the
+  // sentence the legend prints still adds up against `methodsRealizing`.
+  assert.equal(ode.drawnMethodCount, 6);
   assert.equal(ode.foldedCount, 2);
   assert.equal(
     ode.drawnMethodCount + ode.foldedCount,
@@ -5541,7 +5546,9 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
     method: node,
     locale: "en",
   });
-  assert.equal(page.drawnMethodCount, 6, "the unfolded subject counts as drawn on its own page");
+  // 6 → 7 with `berry-multistep`: Krovi's own page unfolds Krovi and draws the
+  // slot's other six tops beside it, one of which is now Berry.
+  assert.equal(page.drawnMethodCount, 7, "the unfolded subject counts as drawn on its own page");
   assert.equal(page.foldedCount, 1, "the OTHER fold stays folded there");
   assert.equal(
     page.drawnMethodCount + page.foldedCount,

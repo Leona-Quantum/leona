@@ -139,58 +139,19 @@ export const SLOT_CLOSURES: readonly SlotClosure[] = [
           "Not authored: the paper's abstract states only complexity poly(log d, log(1/ε)) and its own hypotheses are in the body, so conditions and cost cannot be written from an abstract read — and quoting An, Childs and Lin's Table 1 row for them would attribute a later paper's tabulation to the original, which is the class of claim this graph's header rule removed. It is also not yet in the paper register. Needs a full-text read, not a slot. Room is not the constraint: an added all-at-once route measures at +84px against 5,500 (3,199 → 3,283).",
       },
       {
-        absent: "High-order (linear multistep) method",
-        citation: {
-          title: "High-order quantum algorithm for solving linear differential equations",
-          authors: "Dominic W. Berry",
-          year: "2010",
-          url: "https://arxiv.org/abs/1010.2745",
-        },
-        // **This one is a corpus/map divergence, not only a literature gap, and
-        // it is the sharper of the two.** The catalog carries
-        // `linear-differential-equations`, whose `source` is this paper, and
-        // whose `idea` describes this construction and distinguishes it from the
-        // Taylor route in as many words: "Berry discretizes the evolution with a
-        // high-order finite difference method… The later Berry, Childs, Ostrander
-        // and Wang algorithm replaces the difference stencil with a Taylor series
-        // approximation." That record is anchored to this slot
-        // (`linear-ode-solve.entries`), and the paper is already in the register.
-        // So a reader arriving from the catalog reaches the slot and finds seven
-        // methods, none of them the one their record is about.
-        // **The full-text read is done; the authoring is not.** Left here rather
-        // than in a session note so the next reader starts from the paper rather
-        // than from a search. Read off the v2 PDF directly, section VII and the
-        // Conclusions:
-        //
-        // - Eq. (76), the Conclusions' own summary: "By encoding the differential
-        //   equation as a linear system, and using the algorithm of Ref. [12] for
-        //   solving linear systems, the complexity is (including only scaling in
-        //   ‖A‖ and Δt), Õ((‖A‖Δt)²)." Ref. [12] is Harrow, Hassidim and Lloyd —
-        //   so `steps: ["time-discretization", "quantum-linear-solve"]`, and the
-        //   `via` hop has no pin, because none of the five recorded
-        //   discretizations is an A(α)-stable multistep method of order p.
-        // - Eq. (74), the sharper bound: "Õ(log(N_x) s^{9/2} (‖A‖Δt)^{2+2/p}
-        //   κ_V^{2+4/p} (‖x_in‖ + ‖b‖/‖A‖)^{1/p} / ε^{1+2/p})", stated under
-        //   "If we assume that this error is negligible" — the error in *starting*
-        //   the multistep method, which Eq. (71)'s more conservative figure keeps.
-        //   A quotation of (74) has to carry that condition with it.
-        // - The hypothesis that bounds the whole thing, Conclusions: "These
-        //   results are for constant coefficients, because that enables an
-        //   analytic error analysis. This approach can also be used to solve
-        //   linear differential equations with time-dependent coefficients,
-        //   though the error analysis will be more difficult." So this route does
-        //   **not** meet the slot's `A(t)` contract in the way LCHS and Dyson do,
-        //   and that difference is the interesting thing about having it drawn.
-        // - Section VII: the Δt² scaling "is likely suboptimal, because the lower
-        //   bound is linear scaling" — from the no-fast-forwarding theorem.
-        //
-        // What is still missing is the middle of the paper: this slot's siblings
-        // carry an `implementations` entry that writes the matrix family out row
-        // by row in both locales (see `truncated-taylor-propagator`), and a node
-        // authored from the tail alone would be the one thin record in a region
-        // whose whole point is that it is the template.
-        because:
-          "Not authored: the corpus already holds this route as the record `linear-differential-equations` and the map draws no method for it, so the gap is a divergence rather than a discovery. The complexity and the hypotheses are read and quoted in the comment above — Eq. (76), Eq. (74) and the constant-coefficient caveat — so what remains is the paper's middle sections, which is what this slot's siblings carry as an `implementations` entry in both locales. Authoring it from the tail alone would put the region's one thin record in the region that is meant to be the template.",
+        // **Was an absence, authored in session 129.** The row is kept in the
+        // history of this file rather than deleted quietly, because the way it
+        // was found generalises: nothing in the graph knew this method was
+        // missing, and what noticed was the population pin — the catalog record
+        // `linear-differential-equations` sources this paper, is anchored to
+        // this slot, and its own prose distinguishes the construction from the
+        // Taylor route. A reader arriving from the catalog reached the slot and
+        // found four all-at-once routes, none of them the one their record was
+        // about. Authored from the full text: Theorem 9, Eq. (74), Eq. (76) and
+        // the constant-coefficient caveat are all on the node, and the
+        // discretization it pins, `linear-multistep-discretization`, was
+        // authored with it because R13 correctly refused an unpinned twin.
+        node: "berry-multistep",
       },
     ],
   },

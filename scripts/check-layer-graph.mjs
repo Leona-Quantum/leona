@@ -386,6 +386,25 @@ const refinementChain = (ids) => {
 // — a stale exemption is where the next real collision hides.
 const KNOWN_TWINS = [
   {
+    slot: "linear-ode-solve",
+    methods: ["berry-multistep", "krovi-linear-ode"],
+    why:
+      "Neither hop can be pinned, and for opposite reasons — which is the fact the shared picture is " +
+      "reporting. Krovi's paper CHOOSES no discretization: it re-analyses the Taylor propagator Berry, " +
+      "Childs, Ostrander and Wang already chose, so a pin would put a name on a hop no source puts " +
+      "there (see the note on that node). Berry's paper DEFINES its discretization, but only as a " +
+      "family — Definition 2 plus \"for any α < π/2 and k ∈ ℕ, there is an A(α)-stable linear k-step " +
+      "method of order p = k\" — and never instantiates it: no order chosen, no k fixed, no method " +
+      "named. Session 129 authored the family as a sixth node under `time-discretization` and backed " +
+      "it out, because it is a SUPERSET of three of its own would-be siblings: forward Euler and " +
+      "backward Euler are 1-step methods of order 1 and the trapezoidal rule is a 2-step method of " +
+      "order 2, all of them linear multistep methods. A family drawn beside three of its own " +
+      "instances is not a sibling. Berry additionally needs p > 2, so none of those three is the pin " +
+      "either — he introduces multistep methods in order to beat Euler's O(Δt⁴). Unpinnable until " +
+      "some route names a specific higher-order method, at which point that becomes the node and " +
+      "this row goes.",
+  },
+  {
     slot: "quantum-linear-solve",
     methods: ["discrete-adiabatic-inversion", "eigenstate-filtering-inversion"],
     why: "Both walk block-encode → prepare → apply a matrix function. The difference is which function and how its phases are found, which lives inside `matrix-function` — a pin waiting on that slot being decomposed.",

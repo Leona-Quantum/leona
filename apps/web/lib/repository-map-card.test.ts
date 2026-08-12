@@ -402,7 +402,9 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // equation-of-motion routes draw their own stretch beside two ingredients each.
   // 124 since B5 unit 3: the two new leaves draw one hop each.
   // 127 since B5's three leaf anchors, one hop each.
-  assert.equal(hops, 131, `${hops} hops, not 131`);
+  // 131 → 133 in session 129: `berry-multistep` carries a hop note on each of
+  // the two stretches it delegates, the same pair `taylor-all-at-once` does.
+  assert.equal(hops, 133, `${hops} hops, not 133`);
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
   // authored hop is what proves the parse, the spans, the legend and both locales against
