@@ -515,6 +515,16 @@ export const LAYER_GRAPH: LayerGraph = {
     realizes: "linear-ode-solve",
     conditions: "Requires the decomposition $A(t) = L(t) + iH(t)$ with $L(t) = (A(t)+A(t)^†)/2$ the Hermitian part, and $L(t) ⪰ 0$ throughout the interval. Without a shift it does not apply when the Hermitian part has a negative eigenvalue anywhere on the interval — this is a real restriction, and the analogue at the linear layer of Carleman's dissipativity requirement. It does not rely on converting the problem into a dilated linear system problem, or on the spectral mapping theorem that underpins QSVT-based approaches, which is what substantiates the bypass rather than merely asserting it.",
     conditionsJa: "$A(t) = L(t) + iH(t)$ の分解を要求します。ここで $L(t) = (A(t)+A(t)^†)/2$ はエルミート部で、区間全体で $L(t) ⪰ 0$ でなければなりません。シフトを入れない限り、区間のどこかでエルミート部が負の固有値をもつ場合には適用できません。これは実際の制約であり、線形層における Carleman の散逸条件に相当します。問題を拡大された線形系に変換することにも、QSVT 系の手法を支えるスペクトル写像定理にも依存しません。この点が、迂回を主張だけでなく裏付けています。",
+    // **The abstract states no complexity, and for two sessions this field read
+    // the same way an unsourced one does: as *nobody stated one*.** Somebody
+    // did — the paper's own Theorem 2, under the heading "Computational cost".
+    // Quoted from there rather than from An, Childs and Lin's Table 1, whose
+    // "Original LCHS" row is the homogeneous specialisation of the same bound
+    // as a *later* paper tabulates it; this file's header rule is that a
+    // complexity lifted from a survey's comparison table and attributed to the
+    // original is exactly the class of claim the re-check removed.
+    cost: "$\\tilde{O}\\left( \\left(\\frac{||u_0|| + ||b||_{L^1}}{||u(T)||}\\right)^{2+2/p} \\Gamma_p^{1+1/p} T^{1+1/p} / \\varepsilon^{1+2/p} \\right)$ queries to the input models of $H$ and $L$, where $\\Gamma_p = \\max_{0 \\leq q \\leq p,\\, \\tau \\in [0,T]} (||H^{(q)}(\\tau)|| + ||L^{(q)}(\\tau)||)^{1/(q+1)}$ and $||b||_{L^1} = \\int_0^T ||b(s)||\\,ds$. State preparation costs $O\\left(\\frac{||u_0|| + ||b||_{L^1}}{||u(T)||}\\right)$ queries, which is the optimality the abstract claims. Theorem 2; the abstract states no complexity at all.",
+    costJa: "$H$ と $L$ の入力モデルへのクエリ数は $\\tilde{O}\\left( \\left(\\frac{||u_0|| + ||b||_{L^1}}{||u(T)||}\\right)^{2+2/p} \\Gamma_p^{1+1/p} T^{1+1/p} / \\varepsilon^{1+2/p} \\right)$ です。ここで $\\Gamma_p = \\max_{0 \\leq q \\leq p,\\, \\tau \\in [0,T]} (||H^{(q)}(\\tau)|| + ||L^{(q)}(\\tau)||)^{1/(q+1)}$、$||b||_{L^1} = \\int_0^T ||b(s)||\\,ds$ です。状態準備のクエリ数は $O\\left(\\frac{||u_0|| + ||b||_{L^1}}{||u(T)||}\\right)$ で、要旨のいう状態準備についての最適性はこれを指します。定理 2 によります。要旨自体には計算量の記述はありません。",
     // Two steps, not one, since session 106. This route was filed as reaching
     // `hamiltonian-simulation` straight from a linear ODE system, which is a
     // generator that is *not* Hermitian — so the conversion was missing from the

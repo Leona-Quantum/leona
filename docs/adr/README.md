@@ -45,6 +45,7 @@ the work.
 | 0022 | Three-state verification + private Studio materialization | **partially implemented; runtime superseded by 0023** |
 | 0023 | Fixed nameko-style circuit pipeline | **implemented** — this is the shipping pipeline |
 | 0024 | Cloud SQL for PostgreSQL 17 | **implemented** — production since 2026-07-27 |
+| 0025 | A slot is closed against a citable population | **accepted** — one slot closed (`linear-ode-solve`) |
 
 ## Decisions with no ADR
 
