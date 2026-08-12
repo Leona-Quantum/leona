@@ -42,17 +42,37 @@
 // which one it drew (`ConvergeLane.opensInto`):
 //
 //   - a **slot** opens ACROSS, into a fan of the methods that fill it;
-//   - a **method** opens ALONG, into the chain of steps it is made of, with the
-//     ingredients it needs hanging off the side.
+//   - a **method** opens ALONG, into the chain of steps it is made of.
 //
 // As drawn today, the 18 figures come to **55 lines: 24 open, 1 is a run of
 // named hops drawn open from the start, and 30 are leaves** the graph records
 // nothing finer for. Those numbers are pinned in the test file rather than only
-// stated here, because the second time this was measured it had changed: an
-// earlier draft required a route to have two segments before it would open, and
-// that made **twelve** methods inert whose entire recorded structure is the
-// ingredients they consume. `hhl-qpe-inversion` names three steps, all three of
-// them ingredients, and opened into nothing at all.
+// stated here, because they have changed twice under this file's own edits.
+//
+// ## Ingredients are not on this canvas, and that is a ruling
+//
+// > *"i think ingredients don't belong on the map visual. i think any
+// > method/process that has ingredients should have a section in their card for
+// > them. since essentially the card is a culmination of everything that goes
+// > into the algorithm anyway!"*
+// > — owner, issue 16
+//
+// An ingredient is something a route *needs* and not a stage it passes through
+// — `hhl-qpe-inversion` needs a block-encoding and a prepared |b⟩, and having
+// them does not move the route along. Drawn on the canvas it was a stub hanging
+// off the consuming line with its own fan at the end, and the whole of that
+// shape is gone: no stub, no fan, no `feeds` on the diagram. `routeOf` still
+// classifies a step as a feed, and `card-content.ts`'s **Requires** section is
+// where a reader meets one. What that removes from the drawing is not a fact —
+// the fact is one click away, on the card, with the multiplicity beside it,
+// which is more than the stub ever said.
+//
+// The knock-on is that a method whose entire recorded structure is its
+// ingredients now has nothing to open: twelve of the twenty-nine decomposed
+// methods have one segment and at least one ingredient, and they are drawn as
+// leaves, name in the line, one click to the card. That is the correct reading
+// of the ruling rather than a casualty of it — a control that opens into
+// nothing the canvas may draw is the dead control this file has produced twice.
 //
 // ## The crossing-free argument, which survives nesting
 //
@@ -279,15 +299,6 @@ export const CONVERGE_METRICS = {
    * call — one number, two uses, never two derivations.
    */
   spineBand: 22,
-  /**
-   * How far an ingredient stub hangs off the strand that consumes it.
-   *
-   * An ingredient is not a stage — `hhl-qpe-inversion` needs a block-encoding
-   * and a prepared |b⟩, and having them does not move the route along — so it is
-   * drawn hanging off the line rather than as part of it. Long enough to read as
-   * a separate thing, short enough that it does not become one.
-   */
-  feedRun: 18,
   /**
    * How much thinner a strand gets per level of nesting.
    *
@@ -734,34 +745,28 @@ export type OpensInto = "ways" | "steps";
 export interface ConvergeState {
   key: string;
   stateId: string;
-  /** The name, for a `<title>`. Not drawn on the canvas — it has no extent. */
-  label: string;
   /**
-   * The convergence, drawn as its name (W19 PR-2) — or null, which removes
-   * nothing: `label` stays in the `<title>` and the aria sentence everywhere.
+   * The name — a `<title>` and an `aria-label`, and **never drawn**.
    *
-   * Non-null only where the `--shared` condition already holds at depth 0
-   * (`arriving > 1 || leaving > 1` — one predicate, the class's own) and the
-   * adjacent span offers the room. The owner's ask: *"we can definitely find a
-   * better way to visualize how several things converge in a step, but then
-   * each composite process has its own name"* — so the SHARED CIRCLE gains the
-   * state's own authored name and every lane keeps its own; nothing is coined.
-   * Drawn ABOVE the circle: the below side is where a bow-0 middle lane's
-   * label lives (fixed global sides), and the caption band sits inside the
-   * half-height every figure already reserves, so no geometry moves.
+   * > *"states never have visible labels, only hover tooltips."*
+   * > — owner, issue 17
+   *
+   * W19 PR-2 read an earlier ask — *"each composite process has its own
+   * name"* — as licence to write a shared circle's own name above it, and
+   * built the whole apparatus for it: a fitted caption, an anchor that turned
+   * inward at the ends, a width, and a resolver that chose a side against the
+   * names already placed or dropped the caption when neither side was clear.
+   * The ruling above is the correction, and it is a correction of the
+   * *subject*: a composite **process** is a line, and a line already carries
+   * its own name. So the circle carries none, and the five fields that placed
+   * one are gone rather than left null — a field nothing writes is the next
+   * session's invitation to start writing it again.
+   *
+   * Nothing is lost from the page. `Hub` puts this string in the `<title>`
+   * and in the `aria-label` alongside the convergence sentence, so a hover, a
+   * screen reader and a printout all still name the state.
    */
-  caption: string | null;
-  /** Anchor x for the caption text, per `captionAnchor`. */
-  captionX: number;
-  /** Caption BASELINE y — above the circle's top. */
-  captionY: number;
-  /**
-   * Ends anchor inward so the caption never leaves the canvas: the first
-   * circle writes rightward, the last leftward, interior ones centre.
-   */
-  captionAnchor: "start" | "middle" | "end";
-  /** The engine's own measurement of the drawn caption — never re-derived. */
-  captionWidth: number;
+  label: string;
   cx: number;
   cy: number;
   r: number;
@@ -854,21 +859,6 @@ export interface ConvergeLane {
    * to a person is not the same as a structure something can rely on.
    */
   parentKey: string | null;
-  /**
-   * The **stub** this lane hangs off, or null when it lies on its parent's own
-   * line.
-   *
-   * The two are different claims and only one of them is "this is a
-   * decomposition of that". A step is drawn *on* the line it decomposes, and
-   * `a step drawn inside a lane sits ON that lane, at both of its ends` asserts
-   * exactly that over every nested lane. An **ingredient** is not a
-   * decomposition of the strand that consumes it — it hangs off the side, at the
-   * end of a stub — so its fan starts at the stub's end and is off its parent's
-   * curve by construction. Carried as a field rather than inferred, because the
-   * alternative is that invariant quietly acquiring a "unless it looks like a
-   * feed" clause and stopping being total.
-   */
-  feedKey: string | null;
   /** What is drawn: the short form if the node has one, else the full label,
    *  either way cut to the column by `fitLabel`. */
   label: string;
@@ -1091,119 +1081,11 @@ export interface ConvergeLane {
  */
 export type ConvergeGrain = "states" | "methods";
 
-/**
- * An ingredient a route needs, hanging off the strand that consumes it.
- *
- * Drawn only inside an **opened** strand, because that is what asking to see the
- * inside of a method means. Measured on the authored graph: 27 ingredients
- * across 20 of the 29 decomposed methods — and before this existed, opening
- * `hhl-qpe-inversion` showed nothing at all, because all three of its steps are
- * ingredients rather than stages and `routeOf` therefore returned one segment.
- * A method whose whole recorded structure is its ingredients read as a method
- * with no recorded structure.
- */
-export interface ConvergeFeed {
-  key: string;
-  /**
-   * The strand this stub hangs off, as an identity rather than as a prefix.
-   *
-   * `ConvergeLane` has carried this since keys became hierarchical; a stub never
-   * did, so the only way to ask "which ingredients belong to this method" was
-   * `feed.key.startsWith(`${lane.key}~`)` — and a **grandchild's** key starts with
-   * that same prefix, because a nested stub's key is built from its parent
-   * strand's key, which already contains one `~`. A prefix of an address selects
-   * the whole subtree under it, never one generation.
-   *
-   * That is not hypothetical. `no two routes through one slot draw the same
-   * interior` summarises a method by its steps and its ingredients, and with the
-   * prefix it absorbed the ingredients of anything reachable below it — so the
-   * summary changed with **how far that branch happened to open**, which the
-   * depth cap and the cycle guard make different at different reach points. It
-   * reported `hhl-qpe-inversion draws 3 different interiors depending on where it
-   * is reached`. The three interiors were the same method; the helper was reading
-   * three different depths of its subtree.
-   */
-  parentKey: string;
-  /** The ingredient's own node id. */
-  nodeId: string;
-  label: string;
-  fullLabel: string;
-  /** The authored short name if this stub drew one. See `ConvergeLane.shortLabel`. */
-  shortLabel: string | null;
-  /** The count drawn at the end of `label`. See `ConvergeLane.repeatMark`. */
-  repeatMark: string | null;
-  /** The marked loop's closure. See `ConvergeLane.loopClosure`. */
-  loopClosure: LoopClosure | null;
-  /**
-   * The drawn label's own measured width (W19) — the engine's number, carried
-   * so the renderer can end-anchor the loop glyph without measuring text a
-   * second way. `ConvergeLane` has carried its `labelWidth` since the click
-   * target was sized to the name; a feed name never needed one until the glyph
-   * gave it something drawn past its end.
-   */
-  labelWidth: number;
-  /** What this stub narrows. See `ConvergeLane.refinement`. */
-  refinement: StrandRefinement | null;
-  labelTruncated: boolean;
-  href: string;
-  /** As `ConvergeLane.cardHref`: the card for this ingredient, or null. */
-  cardHref: string | null;
-  /** The stub: from a point beside the strand, outward. */
-  x: number;
-  y0: number;
-  y1: number;
-  /**
-   * The line itself, as path data — a **tributary** that comes in from the left
-   * and merges into the strand at `(x, y0)`, level at both ends.
-   *
-   * Emitted here rather than built by the renderer for the reason every other
-   * shape on this canvas is: geometry has one writer. The renderer drew a
-   * straight `<line>` between `y0` and `y1` and that is the shape the owner has
-   * twice said is not what he described (`6988d3`).
-   */
-  d: string;
-  /** Where the tributary starts, left of the join. `x` remains the join. */
-  xEnd: number;
-  /** Which way the label sits, so the renderer does not re-derive it. */
-  outward: 1 | -1;
-  depth: number;
-  /**
-   * This stub's position in the figure, and what `?open=` names.
-   *
-   * Numbered after the strand's steps in the same dot path, because `ADDRESS` is
-   * positions and dots and nothing else parses — see `planForMethod`.
-   */
-  address: string;
-  /**
-   * Where clicking the stub goes: this figure, with the ingredient opened or
-   * shut. Null when nothing is recorded inside it, and then it is not a control
-   * at all — the same rule R12.2 gives every line.
-   */
-  openHref: string | null;
-  /** The earlier occurrence drawing this stub's interior, or null — see
-   *  `ConvergeLane.sharedWith` (W15). The stub's `openHref` is then the jump. */
-  sharedWith: string | null;
-  open: boolean;
-  /** What is inside, whether or not it is open — so a shut stub can say so. */
-  inside: number;
-  /**
-   * The half-band this ingredient's own fan needs — `size.feeds[index].vHalf`
-   * from `measure`, the same number `feedReach` and `placeFeeds` compute the
-   * fan's actual base from. Recorded rather than left internal so a check can
-   * confirm the fan landed where that arithmetic says it should, `y1 +
-   * outward · max(0, vHalf − feedRun)`, without a second, hand-carried copy of
-   * the formula going stale next to the one that draws it.
-   */
-  vHalf: number;
-}
-
 export interface ConvergeDiagram {
   width: number;
   height: number;
   states: readonly ConvergeState[];
   lanes: readonly ConvergeLane[];
-  /** Ingredients hanging off opened strands. Empty until something is opened. */
-  feeds: readonly ConvergeFeed[];
   /** The focused process's own name, drawn once. */
   caption: string;
   /** Nothing at all to draw: no interior states *and* nothing fills the slot. */
@@ -1752,12 +1634,11 @@ interface PlanStrand {
    * already on the page once."* They suppress the same drawing for opposite
    * reasons, and a future session that lifts one must not lift the other.
    *
-   * True on **two** kinds of strand. The remainder hop, the part of a route the
-   * method performs itself: its name is the method's, and the method's name is
-   * written on the bone or the exoskeleton above it. And, since session 118, the
-   * base an open ingredient's fan hangs from: its name is the stub's, drawn one
-   * shape above it, and drawing it twice is what the owner was reading as a
-   * repeat. See `placeFeeds`.
+   * True on one kind of strand today: the remainder hop, the part of a route
+   * the method performs itself, whose name is the method's and is already
+   * written on the bone or the exoskeleton above it. It was true on a second
+   * until issue 16 — the base an open ingredient's fan hung from — and that
+   * shape has left the canvas with the rest of the ingredients.
    */
   nameless: boolean;
   /**
@@ -1816,28 +1697,13 @@ interface PlanStrand {
   interior: readonly string[];
   ways: number;
   /**
-   * Ingredients this strand consumes, drawn once it is open.
-   *
-   * **A full strand each, not a name and a link.** They were a flat
-   * `{id,label,href}` record, which is what made `state-preparation` and
-   * `success-amplification` — the two the owner named — unopenable: the layout
-   * read "not a stage" as "not openable" and there was nothing on a feed to
-   * open. They are slots like any other, planned by `planForSlot`, so a feed
-   * that is open carries its own fan of methods and every one of those is a
-   * `ConvergeLane`. That last part is the load-bearing half: the test sweep
-   * enumerates `diagram.lanes`, so a fan emitted any other way would leave the
-   * crossing-free, canvas-bounds and angle-cap checks green over a set that
-   * excludes the whole feature.
-   */
-  feeds: PlanStrand[];
-  /**
    * Narrower versions of this method, nested under its own line (W13).
    *
    * Planned whether or not the strand is open — the owner's rule is that
    * *"the refinements are there during the same expansion"*, and the expansion
    * they mean is the fan that drew the parent, not a further click on it. Full
-   * strands, for the reason `feeds` are: a refinement is a method, it can open
-   * into its own chain, and everything it draws has to land in
+   * strands rather than a name and a link: a refinement is a method, it can
+   * open into its own chain, and everything it draws has to land in
    * `diagram.lanes` where the sweeps can see it.
    *
    * Empty on every strand that is not a fan-grouped parent —
@@ -2075,7 +1941,6 @@ function chainInside(
       slots: [],
       interior: [],
       ways: 0,
-      feeds: [],
       variants: [],
     } satisfies PlanStrand;
   });
@@ -2153,7 +2018,6 @@ function planForSlot(
     slots: [slotId],
     interior: [],
     ways: methods.length,
-    feeds: [],
     // A slot is a capability, and only a method narrows a method — the same
     // reason its `refinement` above is null.
     variants: [],
@@ -2162,45 +2026,55 @@ function planForSlot(
 
 /**
  * The position a variant takes in its parent's address namespace: after the
- * steps and after the feeds.
+ * steps.
  *
  * Derived from the **route** rather than from what was planned, because a shut
- * parent plans neither its children nor its feeds and its variants are drawn
- * anyway — an address that shifted when the parent opened would silently shut
- * a variant the reader had opened. One writer: `planForMethod` numbers the
- * variants with it and the subject match on a method's own page
- * (`layoutConvergeForMethod`) reads it back.
+ * parent plans no children and its variants are drawn anyway — an address that
+ * shifted when the parent opened would silently shut a variant the reader had
+ * opened. One writer: `planForMethod` numbers the variants with it and the
+ * subject match on a method's own page (`layoutConvergeForMethod`) reads it
+ * back.
+ *
+ * It counted `route.feeds.length` too, while ingredients were lanes on this
+ * canvas and held addresses of their own. They are cards now (issue 16), so
+ * those positions are not handed out and the variants move up into them. A
+ * saturated `?open=` written down before that change names one lane per
+ * position and can land on a different one here; addresses are positional and
+ * the parameter is deliberately forgiving, so the cost is a stale link opening
+ * the wrong sibling rather than an error, and every ingredient address in such
+ * a link had already stopped resolving.
  */
-function variantPosition(
-  route: { segments: readonly unknown[]; feeds: readonly unknown[] },
-  index: number,
-): number {
-  return route.segments.length + route.feeds.length + index;
+function variantPosition(route: { segments: readonly unknown[] }, index: number): number {
+  return route.segments.length + index;
 }
 
 /**
  * Whether a method's lane has anything inside it to draw — the **single
  * writer** of "this method has an interior".
  *
- * **Or `feeds`, not just `segments`.** Twelve of the twenty-nine decomposed
- * methods have exactly one segment and at least one ingredient — every step
- * they name is something they *need* rather than a stage they pass through —
- * and requiring two segments made all twelve of them inert. `hhl-qpe-inversion`
- * names three steps and opened into nothing at all.
+ * **Segments, and only segments — and it read `|| route.feeds.length > 0`
+ * until issue 16.** Twelve of the twenty-nine decomposed methods have exactly
+ * one segment and at least one ingredient, and while a stub was a shape on the
+ * canvas that clause was what kept all twelve openable. Ingredients are card
+ * content now, so those twelve hold nothing this canvas can draw: an open
+ * control on one would expand into an empty belly, which is the dead control
+ * R12.2 refuses.
  *
  * Exported for the method card's expand control (W9): *"the method card gets it
  * too where the method has an interior"* has to mean the same interior the lane
  * opens into, or the card offers a truncated map that expands into nothing —
  * which is precisely what a view-side re-derivation from `segments` alone did
- * to `hhl-qpe-inversion` a second time, caught on the served page.
+ * to `hhl-qpe-inversion` a second time, caught on the served page. That is
+ * also why the ruling is applied **here** rather than at `planForMethod`: one
+ * predicate, so the card and the lane cannot come to different answers about
+ * what has an inside.
  */
 export function methodHasInterior(
   graph: LayerGraph,
   vocabulary: StateVocabulary,
   method: LayerMethod,
 ): boolean {
-  const route = routeOf(graph, vocabulary, method);
-  return route.segments.length >= 2 || route.feeds.length > 0;
+  return routeOf(graph, vocabulary, method).segments.length >= 2;
 }
 
 function planForMethod(
@@ -2240,41 +2114,6 @@ function planForMethod(
         address,
       )
     : null;
-  // An ingredient is a slot, so it plans as one — the same `planForSlot` the
-  // steps use, which is what gives a feed a fan, an `openHref` and an address.
-  //
-  // **Positions continue past the steps rather than starting a namespace of
-  // their own.** `ADDRESS` is `<subject>:\d+(\.\d+)*` and nothing else parses,
-  // so a `~n` or `f n` segment would need the grammar widened on both surfaces
-  // that read `?open=`. A feed *is* one of the things inside this strand, and
-  // numbering it after the steps says exactly that. The count is taken from the
-  // planned children rather than from `segments`, because those are the same
-  // positions `chainInside` just handed out.
-  const childCount = inside?.children.length ?? 0;
-  const feeds = isOpen
-    ? route.feeds.map((id, index) =>
-        // **Where most of the repeat marks land.** Measured against `routeOf`:
-        // 7 of the corpus's 10 records key a `feeds` step rather than a hop —
-        // the three readouts' ε^-2 and HHL's two κ's are facts about a stub —
-        // so a mark written only onto the chain would reach 3 of them.
-        withRepeatMark(
-          planForSlot(
-            graph,
-            vocabulary,
-            id,
-            locale,
-            open,
-            depth + 1,
-            new Set([...seen, method.id]),
-            `${key}~`,
-            `${address}.${childCount + index}`,
-          ),
-          method,
-          id,
-          locale,
-        ),
-      )
-    : [];
   // The narrower versions nested under this line (W13). `methodFanGroups` is
   // the one writer of the grouping: a method that is itself a variant finds no
   // group of its own here, so the recursion grounds one level down, and a
@@ -2380,18 +2219,17 @@ function planForMethod(
     refinement: refinementOf(graph, method, locale),
     href: `/repository/layers/${method.id}`,
     standing: "recorded",
-    // Open even when there is no chain to draw: the ingredients are the whole
-    // of what a single-segment method has recorded, and they are worth drawing.
     open: isOpen && holds,
     layout: inside?.layout ?? null,
     // Emptied only when the unfolded variant draws this same chain — see
     // `drawsItsHostsChain` above.
     children: drawsItsHostsChain ? [] : ownChildren,
     boundaries: inside?.boundaries ?? [],
-    // `route.feeds`, not the planned `feeds`: a shut method has no planned
-    // feeds and still has to say how many things are inside it, or its own
-    // control reads as opening into nothing.
-    inside: holds ? segments + route.feeds.length : 0,
+    // The steps, and nothing else. It counted `route.feeds.length` as well,
+    // which was right while the stubs were drawn: the number is what the line
+    // promises to show when clicked, and a promise the canvas cannot keep is
+    // the *"opens into 4"* control that renders shut.
+    inside: holds ? segments : 0,
     openable: canOpen && holds,
     composite: false,
     nameless: false,
@@ -2403,7 +2241,6 @@ function planForMethod(
     slots: [],
     interior: [],
     ways: 0,
-    feeds,
     variants,
   };
 }
@@ -2501,7 +2338,6 @@ function planForLane(
     slots: named.slots,
     interior: lane.interior,
     ways: laneFillers(graph, lane).length,
-    feeds: [],
     variants: [],
   };
 }
@@ -2573,53 +2409,6 @@ export function chainColumnNeed(childNeeds: readonly number[]): number {
   for (const need of childNeeds) total += need;
   return total;
 }
-
-/**
- * How much further out an ingredient reaches than what is drawn inside the
- * strand consuming it.
- *
- * **The stub's own length plus whatever is drawn at the end of it** — not the
- * constant `innerStateRadius + feedRun + labelBand` this replaced. That constant
- * was the height of a stub with a name on the end, which was the whole of what
- * an ingredient could ever be while it could not open. It can now, so the room
- * it needs is a measurement of its own fan.
- *
- * One function, read by the three `measure` branches that reserve the band and
- * by the `placeFeeds` that draws into it, so a reservation and a drawing cannot
- * come to different answers.
- */
-function feedReach(feeds: readonly Measure[]): number {
-  if (feeds.length === 0) return 0;
-  // **The fan's own half-band, twice, only for the part of it that is not
-  // already spent on the stub.** A fan is allocated around its own base, so a
-  // base placed at the stub's end puts half the fan back *inward* — through
-  // the belly the stub hangs off and into whatever that strand drew inside
-  // itself. Measured, before the fix below existed: on `quantum-linear-solve`
-  // the `state-preparation` stub ended at y=6272.7 and two of its three
-  // children were drawn at 6162.8 and 6209.7, 110px and 63px the wrong side of
-  // it, landing on a lane inside the chain at 6167.0 — same x, 4.2px apart.
-  // That is 10 of the 10 opened-against-shut name overlaps this branch was
-  // parked on. So `placeFeeds` pushes the base out by the fan's own half-band
-  // and the fan occupies `[stub end, stub end + 2·vHalf]` outward — that fixed
-  // the 10 overlaps, at the cost of `feedRun + 2·vHalf` of height for every
-  // opened ingredient, which tripped the height ceiling: `time-discretization`
-  // (en) measured 16,836px against the 16,000px bar.
-  //
-  // **`feedRun` was never a clearance requirement — it is the length the
-  // *stub itself* is drawn.** The clearance requirement is only that the fan's
-  // inward half not reach back past `innerReach`, which is `max(feedRun,
-  // vHalf)` beyond it, not `feedRun + vHalf`: when `vHalf ≤ feedRun` the stub
-  // is already long enough that the fan's own half-band, folded back inward
-  // from the stub's end, cannot reach `innerReach` at all, and no push is
-  // owed. Only the excess of `vHalf` over `feedRun`, if any, is real demand.
-  // Reserved here, spent in `placeFeeds`'s `fanY` by the identical formula —
-  // one number, so a reservation and a drawing still cannot come to different
-  // answers.
-  return Math.max(
-    ...feeds.map((feed) => Math.max(CONVERGE_METRICS.feedRun, feed.vHalf) + feed.vHalf),
-  );
-}
-
 
 /** Half a strand's drawn thickness at `depth`. */
 function halfAt(depth: number): number {
@@ -2709,43 +2498,28 @@ function framedNameHalf(): number {
  * May this lane give up the band beside it — the `labelBand` it reserves for a
  * name it does not write there?
  *
- * `wearsNameInside` is the whole of the *drawing* answer. This adds the one
- * thing the drawing does not know: **at depth 0 that band is holding something
- * else up.**
+ * `wearsNameInside` is the whole of the answer, and **it is now the whole of
+ * the condition too.**
  *
- * A shared circle's caption (W19 PR-2 — the owner's *"each composite process
- * has its own name"*) is drawn above or below a depth-0 circle, and the
- * resolver drops it when neither side is clear. The side it uses is the room
- * between the base and the nearest lane's name, and on the figure's own base
- * that room was — accidentally — the leaf `labelBand`. Dropping it there cost
- * **11 of the 75 drawn captions** (75 → 64 of 88 eligible, on
- * `time-discretization`, `hamiltonian-recasting`, `qsp-phase-factors`,
- * `polynomial-approximation` and `state-preparation`), and nothing failed: the
- * resolver behaved exactly as documented while the feature quietly left the
- * page. What noticed was the browser sweep's own subject count — 279 tests
- * became 269, and both said `passed`.
+ * It read `depth > 0 && wearsNameInside(strand)`, and the depth clause was
+ * never about the drawing: at depth 0 that band was holding a **caption** up.
+ * A shared circle wore its own name above or below it (W19 PR-2), the resolver
+ * chose the side against the names already placed, and the room it chose from
+ * on the figure's own base was — accidentally — the leaf `labelBand`. Dropping
+ * the band there cost 11 of the 75 drawn captions, so the exemption was added
+ * to hold them.
  *
- * ## Why depth, and not a caption band at the base
- *
- * The obvious fix is to reserve that clearance by name, the way an opened
- * lane's bone reserves `spineBand`. It was built and measured rather than
- * argued about: it recovers every caption — **88 of 88, thirteen more than
- * production draws** — and keeps the whole height cut. But
- * `allocateBowsAroundSpine` keeps *every* member off the middle, and at depth 0
- * the member on the middle is the figure's own through-line: a one-lane bundle
- * stopped lying on its own axis, and the summed-band half-height stopped
- * describing the row, which four containment tests said at once. That is a
- * change to what the primary line MEANS, not to how much room it is given, so
- * it is parked as **OWNER_TODO `03ea5b`** with its numbers rather than taken
- * unasked.
- *
- * So: nested lanes give the band up, the figure's own row keeps it. The nested
- * lanes are where the height is — 65 of the 100 lanes on the tallest figure —
- * and the corpus keeps every caption it draws today, for 784px of the 17,396px
- * this unit saves.
+ * The owner has since ruled that *"states never have visible labels, only
+ * hover tooltips"* (issue 17). There is no caption to hold up, so the
+ * exemption has no subject and goes with it: a leaf at depth 0 stops reserving
+ * a band beside itself for a name it writes inside its own line, exactly as
+ * one at depth 1 already does. That is the same rule applied everywhere rather
+ * than a new one — and the alternative, a `depth > 0` clause whose comment
+ * defends a feature the canvas no longer has, is how a number comes to be
+ * defended by a sentence that has stopped describing it.
  */
-function dropsNameBand(strand: Parameters<typeof wearsNameInside>[0], depth: number): boolean {
-  return depth > 0 && wearsNameInside(strand);
+function dropsNameBand(strand: Parameters<typeof wearsNameInside>[0]): boolean {
+  return wearsNameInside(strand);
 }
 
 /**
@@ -2815,56 +2589,21 @@ interface Measure {
    */
   hRun: number;
   children: Measure[];
-  /** One per `PlanStrand.feed`, in the same order — `placeFeeds` indexes it. */
-  feeds: Measure[];
   /** One per `PlanStrand.variants`, in the same order — the variant row in
    *  `place` indexes it, and the wrapper half of `measure` is its one writer. */
   variants: Measure[];
   /**
    * How far out everything drawn **inside** this strand reaches, before its own
-   * name and before anything hanging off it.
+   * name and before anything nesting outward of it.
    *
-   * The number a stub has to start past, and it is stored rather than recomputed
-   * because the two ways of getting it disagree on exactly the shape that
-   * matters. `placeFeeds` took `max(children.vHalf) + innerStateRadius`, which is
-   * right for a **chain** — its steps sit on the spine — and wrong for a **fan**,
-   * whose children are at allocated offsets and reach `|offset| + vHalf`. So a
-   * fan's stubs started inside its own spread, its ingredient's fan came out into
-   * the neighbouring lane's band, and eight names landed on each other the first
-   * time ingredients could open. Same measurement, one writer.
+   * The number the variant row has to start past, and it is stored rather than
+   * recomputed because the two ways of getting it disagree on exactly the shape
+   * that matters: `max(children.vHalf) + innerStateRadius` is right for a
+   * **chain** — its steps sit on the spine — and wrong for a **fan**, whose
+   * children are at allocated offsets and reach `|offset| + vHalf`. Same
+   * measurement, one writer.
    */
   innerReach: number;
-}
-
-/** An ingredient stub's drawn name width, capped the same way a lane's is. */
-function feedWidth(feed: {
-  label: string;
-  shortLabel: string | null;
-  loopClosure?: LoopClosure | null;
-}): number {
-  const M = CONVERGE_METRICS;
-  return (
-    Math.min(M.labelCap, estimateTextWidth(feed.shortLabel ?? feed.label, M.laneFont)) +
-    loopAllowance({ loopClosure: feed.loopClosure ?? null })
-  );
-}
-
-/**
- * The extra belly length `n` stubs need to stand side by side.
- *
- * `placeFeeds` spreads them at `(i+1)/(n+1)` and draws each name from its stub
- * rightwards with a 4px offset, so the belly has to be `(n+1)·(widest + 4)` long
- * before two names can miss each other. Returned as the amount **past** what the
- * steps' own names already bought, because those two demands share one belly and
- * charging for both would widen every method that has an ingredient.
- */
-function feedSpread(
-  feeds: readonly { label: string; shortLabel: string | null }[],
-  already: number,
-): number {
-  if (feeds.length === 0) return 0;
-  const widest = Math.max(...feeds.map(feedWidth));
-  return Math.max(0, (feeds.length + 1) * (widest + 4) - already);
 }
 
 /**
@@ -2954,7 +2693,7 @@ type MarkedStrand = {
   shortLabel: string | null;
   repeatMark: string | null;
   refinement: StrandRefinement | null;
-  /** See `PlanStrand.standingName`. Optional so a feed's record still fits. */
+  /** See `PlanStrand.standingName`. */
   standingName?: string | null;
 };
 
@@ -2981,8 +2720,8 @@ type MarkedStrand = {
  * gives way to it — but the jump glyph is a constant-width affordance, and
  * cutting characters off "打ち切り Taylor 級数の LCU によるシミュレーション" to
  * make 14px of room for it inverts the value order. One writer, used by the
- * demand (`measure`) and the cut (`place`, `placeFeeds`) alike, so the two
- * cannot drift the way `hFit` did.
+ * demand (`measure`) and the cut (`place`) alike, so the two cannot drift the
+ * way `hFit` did.
  */
 const sharedAllowance = (strand: { sharedWith?: string | null }): number =>
   strand.sharedWith == null ? 0 : estimateTextWidth(" ⤴", CONVERGE_METRICS.laneFont);
@@ -2993,9 +2732,9 @@ const sharedAllowance = (strand: { sharedWith?: string | null }): number =>
  * The `⤴`'s rule, for the `⤴`'s reason: a constant-width affordance rides
  * BEYOND the label cap rather than eating the name's characters. Unlike the
  * jump glyph this one is geometry, not text — `markSuffix` never carries it —
- * so the demand (`ownNameDemand`, `feedWidth`), the placement
- * (`loopGlyphPath`'s callers) and the overlap sweeps all add it through this
- * one function or drift apart the way `hFit` once did.
+ * so the demand (`ownNameDemand`), the placement (`loopGlyphPath`'s callers)
+ * and the overlap sweeps all add it through this one function or drift apart
+ * the way `hFit` once did.
  */
 export const loopAllowance = (strand: { loopClosure: LoopClosure | null }): number =>
   strand.loopClosure === null
@@ -3012,18 +2751,6 @@ export const loopAllowance = (strand: { loopClosure: LoopClosure | null }): numb
  * `midY` the text's vertical middle; the glyph centres itself `loopGap + r`
  * past it, inside the `labelBand` every name already reserves.
  */
-/**
- * Where a stub's name sits, vertically — one writer (W19 PR-2).
- *
- * This lived inline in the renderer, which was fine while nothing else needed
- * it; the caption resolver must know where feed names are to keep captions off
- * them, and a second copy of `+9 : −3` is how the resolver and the drawing
- * would come to disagree about the same pixels.
- */
-export function feedNameY(feed: { y1: number; outward: 1 | -1 }): number {
-  return feed.y1 + (feed.outward > 0 ? 9 : -3);
-}
-
 export function loopGlyphPath(endX: number, midY: number): string {
   const r = CONVERGE_METRICS.loopRadius;
   const cx = endX + CONVERGE_METRICS.loopGap + r;
@@ -3160,20 +2887,15 @@ const VARIANT_FRAME_PAD = 3;
 
 /**
  * The band a strand keeps for itself before anything nests outward of it —
- * its content, its ingredients, and the `labelBand` its own name sits in.
+ * its content, and the `labelBand` its own name sits in.
  *
- * Equal to every arm of `measureCore`'s `vHalf` by construction (each arm is
- * `innerReach + feedReach + labelBand`, with the leaf's `feedReach` zero), and
- * written once here because `place`'s variant row and the exoskeleton frame
- * both need it back from a `Measure` whose `vHalf` has since grown to include
- * the variants. A second derivation of a band is the `hFit` mistake again.
+ * Equal to every arm of `measureCore`'s `vHalf` by construction, and written
+ * once here because `place`'s variant row and the exoskeleton frame both need
+ * it back from a `Measure` whose `vHalf` has since grown to include the
+ * variants. A second derivation of a band is the `hFit` mistake again.
  */
-function coreBandHalf(size: {
-  innerReach: number;
-  feeds: readonly Measure[];
-  nameBand: number;
-}): number {
-  return size.innerReach + feedReach(size.feeds) + size.nameBand;
+function coreBandHalf(size: { innerReach: number; nameBand: number }): number {
+  return size.innerReach + size.nameBand;
 }
 
 /**
@@ -3240,69 +2962,39 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
   // demand keeps one number flowing through `need` → `span` → `fit` →
   // `columnFit` → `fitLabel`, so the column and the cut agree by construction.
   const own = ownNameDemand(strand);
-  const feeds = strand.feeds.map((feed) => measure(feed, depth + 1));
-  // **The horizontal demand a stub's own fan makes.** `placeFeeds` gives stub `i`
-  // a `1/(n+1)` slice of the belly to draw its fan in, so a run spent inside one
-  // is a run the belly has to find `(n+1)` times over — the exact analogue of a
-  // chain's `k`, and `chainColumnNeed` is the same multiplier for the same
-  // reason. Without it the sizing simply does not see the new shapes.
-  const feedScale = feeds.length + 1;
-  const feedFit = feeds.length > 0 ? Math.max(...feeds.map((feed) => feed.hFit)) * feedScale : 0;
-  // Each stub's fan also spends its own two tendons inside its slice, at bow 0,
-  // so `minTendonRun` each — the same charge a chain's step pays.
-  const feedRun =
-    feeds.length > 0
-      ? Math.max(...feeds.map((feed) => feed.hRun + 2 * M.minTendonRun)) * feedScale
-      : 0;
-  // **`|| feeds.length > 0`, and that clause is the bug this feature is made
-  // of.** Twelve of the twenty-nine decomposed methods have one segment and at
-  // least one ingredient, so they plan with no children at all — and the leaf
-  // return below hands back a band with no room in it for anything hanging off
-  // the side. `place` had the same early return, one line apart, and dropped the
-  // stubs silently.
-  if (!strand.open || (strand.children.length === 0 && feeds.length === 0)) {
+  // Shut, or open over nothing this canvas draws. The second case is real and
+  // is not a leaf misfiled: a method whose whole recorded structure is its
+  // ingredients plans no children at all now that ingredients are card content
+  // (issue 16), and `methodHasInterior` refuses it an open control for the same
+  // reason, so the two agree rather than one of them dropping shapes the other
+  // reserved. It read `|| feeds.length === 0` here, and `place` carried the
+  // same clause one function away.
+  if (!strand.open || strand.children.length === 0) {
     return {
       // The band this lane keeps beside itself: `labelBand` when its name is
       // written there, and only its own thickness against the text when the
       // name is written **in** the line instead. See `insideNameHalf` for the
       // measurement. A `max`, not a sum: an inside name is centred on the
       // belly, so the band is the thicker of the stroke and the text.
-      vHalf: dropsNameBand(strand, depth)
+      vHalf: dropsNameBand(strand)
         ? Math.max(halfAt(depth), insideNameHalf())
         : halfAt(depth) + M.labelBand,
-      nameBand: dropsNameBand(strand, depth) ? 0 : M.labelBand,
+      nameBand: dropsNameBand(strand) ? 0 : M.labelBand,
       hFit: own,
       hRun: 0,
       children: [],
-      feeds: [],
       // The text is centred on the belly, so an inside name widens the strand's
       // own reach rather than sitting beyond it — `max`, and the same `max` the
       // band above is built from.
-      innerReach: dropsNameBand(strand, depth)
+      innerReach: dropsNameBand(strand)
         ? Math.max(halfAt(depth), insideNameHalf())
         : halfAt(depth),
     };
   }
+  // The arm that stood here — open, no children, everything hanging off the
+  // side — was the ingredients-only case, and it has no subject: a strand with
+  // no children now returns above as the leaf it is.
   const children = strand.children.map((child) => measure(child, depth + 1));
-  if (strand.children.length === 0) {
-    // Open, and everything it holds is hanging off the side. The band is the
-    // strand's own plus the feed room; the column is whatever the feeds demand.
-    const innerReach = halfAt(depth);
-    return {
-      vHalf: innerReach + feedReach(feeds) + M.labelBand,
-      // Kept: an opened strand with nothing but ingredients is neither on a
-      // bone nor framed, so `place` writes its name OUTSIDE this band, and the
-      // band is what keeps that name off the next sibling.
-      nameBand: M.labelBand,
-      hFit: Math.max(own, feedFit),
-      // Only the stubs' own runs and their spacing: this strand has no children,
-      // so nothing else is drawn inside its belly.
-      hRun: feedRun + feedSpread(strand.feeds, own),
-      children: [],
-      feeds,
-      innerReach,
-    };
-  }
   if (strand.layout === "chain") {
     // Children run one after another **along** this strand's belly, so they
     // share its band and stack its width. The extra `innerStateRadius` is the
@@ -3316,15 +3008,12 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
     const innerReach =
       Math.max(...children.map((child) => child.vHalf)) + M.innerStateRadius;
     return {
-      vHalf: innerReach + feedReach(feeds) + M.labelBand,
+      vHalf: innerReach + M.labelBand,
       // An opened chain wears its name ON the exoskeleton edge, at `frameHalf`
       // — which is this band less exactly this number — so the band it needs is
       // what the text reaches past that edge, not a flat `labelBand`. See
       // `framedNameHalf`.
       nameBand: framedNameHalf(),
-      // The feed clause used to be a bare label width, capped. It is now the
-      // feed's own measured demand times `(n+1)` — which subsumes that label,
-      // since a shut feed measures as a leaf whose `hFit` *is* its capped name.
       // **`own` belongs in this max and was missing from it.** An opened chain
       // wears its own name on the exoskeleton drawn along this very span (see
       // `labelInside`/`framed`), so the column has to hold that name as much as
@@ -3337,7 +3026,7 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       // to 252.0px against `lcu-taylor-simulation`'s own 298.7px demand and the
       // canvas drew "…によるシミュレ…". A latent hole, reached by making the
       // sizing honest.
-      hFit: Math.max(own, chainColumnNeed(children.map((child) => child.hFit)), feedFit),
+      hFit: Math.max(own, chainColumnNeed(children.map((child) => child.hFit))),
       // A step sits **on** the belly — `place` hands it bow 0 — so a chain adds
       // no bow of its own and buys no tendon of its own. What each step *does*
       // spend is its own two tendons, which at bow 0 are exactly `minTendonRun`
@@ -3353,30 +3042,8 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       // as one sum each rather than as one combined number: `hFit` is a label
       // budget and `hRun` is drawing room, and the file has already paid twice
       // for letting those two collapse into each other.
-      hRun:
-        Math.max(
-          chainColumnNeed(children.map((child) => child.hRun + 2 * M.minTendonRun)),
-          feedRun,
-        ) +
-        // **Room for the stubs to stand side by side**, over and above whatever
-        // the steps' own names already ask for.
-        //
-        // `placeFeeds` puts stub `i` at `(i+1)/(n+1)` of the belly and writes its
-        // name from there *rightwards*, so two stubs are `belly/(n+1)` apart and
-        // the names collide unless that gap holds one. `measure` only ever asked
-        // for the **widest single** stub, so it has never asked for the room the
-        // placement actually needs — three ingredients on one method could always
-        // have written over each other.
-        //
-        // It became visible rather than latent with the tendons, because a belly
-        // is shorter than the span it sits in: read on the rendered page,
-        // `hhl-qpe-inversion` drew *"Simulate Hamiltonian evolutiAmplify a success
-        // branch"*. Charged to `hRun` and not to `hFit` for the reason `hRun`
-        // exists — this is room the *drawing* needs, and a method with three
-        // ingredients has not earned its labels more characters.
-        feedSpread(strand.feeds, chainColumnNeed(children.map((child) => child.hFit))),
+      hRun: chainColumnNeed(children.map((child) => child.hRun + 2 * M.minTendonRun)),
       children,
-      feeds,
       innerReach,
     };
   }
@@ -3416,22 +3083,19 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
     // pushed apart"*. The owner's ask is that breathing room, by name — *"much
     // less horizontal and vertical tolerance between things"* — and the
     // siblings are still `laneGap` apart with their own bands intact.
-    vHalf: reach + feedReach(feeds),
+    vHalf: reach,
     nameBand: 0,
-    hFit: Math.max(own, feedFit, ...children.map((child) => child.hFit)),
+    hFit: Math.max(own, ...children.map((child) => child.hFit)),
     // The two runs this fan spends getting its children off its own belly, plus
-    // whatever the deepest thing inside it spends — a child, or a stub's own fan
-    // in its `1/(n+1)` slice. **Not** clamped to a range here: `measure` runs
-    // before any span exists, and a run that depended on the span would have to
-    // be derived a second time in `place`. The clamp lives in `runAcross`, once,
-    // and `every belly is long enough to hold its own name` is what says it never
-    // bites.
+    // whatever the deepest thing inside it spends. **Not** clamped to a range
+    // here: `measure` runs before any span exists, and a run that depended on
+    // the span would have to be derived a second time in `place`. The clamp
+    // lives in `runAcross`, once, and `every belly is long enough to hold its
+    // own name` is what says it never bites.
     hRun:
       2 * Math.max(0, ...offsets.map((offset) => tendonRunFor(offset))) +
-      Math.max(0, feedRun, ...children.map((child) => child.hRun)) +
-      feedSpread(strand.feeds, Math.max(own, ...children.map((child) => child.hFit))),
+      Math.max(0, ...children.map((child) => child.hRun)),
     children,
-    feeds,
     innerReach: reach,
   };
 }
@@ -3443,19 +3107,6 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
 interface Placement {
   lanes: ConvergeLane[];
   inner: ConvergeState[];
-  feeds: ConvergeFeed[];
-  /**
-   * The furthest right anything reaches, including text.
-   *
-   * An ingredient's name is drawn from its stub *rightwards*, so unlike a lane
-   * name — which is centred in a column sized to hold it — it can run past the
-   * edge of the canvas. Read on production: `Amplify a success branc` inside a
-   * viewport that clips, with no ellipsis to say it had been cut, which is the
-   * silent-truncation failure in its smallest form. The width is stretched to
-   * cover it after placement, which is safe because nothing else's position
-   * depends on the total width.
-   */
-  rightmost: number;
   /** Ids already given a view-transition name, so no two elements claim one. */
   named: Set<string>;
   /** Shut, something inside, and openable — a click the reader has not made. */
@@ -3498,11 +3149,9 @@ function place(
     out: Placement;
     columnFit: number;
     parentKey: string | null;
-    /** The stub this strand hangs off. See `ConvergeLane.feedKey`. */
-    feedKey: string | null;
     /** This placement is a nested refinement. See `ConvergeLane.variant`.
-     *  Every child call site resets it explicitly, the same discipline
-     *  `feedKey` has — a variant's own steps are not variants. */
+     *  Every child call site resets it explicitly — a variant's own steps are
+     *  not variants. */
     variant: boolean;
     /**
      * This figure's own address, for hanging a `?card=` off. Null on a surface
@@ -3630,19 +3279,15 @@ function place(
           };
           return { offsets, run, d: ribbonOutline(bracket, (hi - lo) / 2) };
         })();
-  // Which edge of the shell carries the name. Two text populations approach
-  // the shell and they sit on fixed GLOBAL sides, not on the lane's own
-  // outward: a step's name always hangs below its spine (a step is at bow 0,
-  // so its outward is always +1), and an ingredient's fan hangs on the lane's
-  // outward side. So the upper edge is clear unless the lane bows up AND has
-  // feeds — and in exactly that case the lower edge is the inward one, clear
-  // of the step names' known ~3.6px slop by the whole of `feedReach` (≥ a
-  // tendon run). Measured both ways before this rule existed: the outward
-  // edge was grazed by fan names at 14.8px on three map figures, and the
-  // inward edge by step names at ~7px on `taylor-all-at-once`'s own page —
-  // a fan the map sweeps never draw, which is why the second one was found
-  // in a browser and not by a test.
-  const nameEdge: 1 | -1 = outward === -1 && strand.feeds.length > 0 ? 1 : -1;
+  // The shell's name goes on its **upper** edge, always. Only one text
+  // population approaches the shell now that ingredients are card content
+  // (issue 16), and it sits on a fixed global side rather than on the lane's
+  // own outward: a step's name always hangs below its spine, because a step is
+  // drawn at bow 0 and so its outward is always +1. The upper edge therefore
+  // faces nothing. The rule this replaces had a second arm — put the name on
+  // the lower edge when the lane bows up AND has ingredients — and that arm no
+  // longer has a subject.
+  const NAME_EDGE = -1;
   // A lane with nothing inside wears its name IN the line (owner, session
   // 119) — one shape, one destination. Everything still expandable keeps the
   // two-target split: the line opens, the name reads.
@@ -3664,7 +3309,7 @@ function place(
     : framed
       ? // ON the chosen edge, baseline-dropped so the name sits on the line —
         // the treatment the bone gives its own name, one band out.
-        peak.y + nameEdge * frameHalf + M.laneFont * 0.35
+        peak.y + NAME_EDGE * frameHalf + M.laneFont * 0.35
       : labelInside
         ? peak.y + M.laneFont * 0.35
         : outward > 0
@@ -3702,12 +3347,7 @@ function place(
         : fitMarkedName(strand, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(strand));
   const fittedWidth = fitted.text === "" ? 0 : estimateTextWidth(fitted.text, M.laneFont);
   // A framed name sits at the LEFT of the shell, not the centre — the owner's
-  // own bracket sketch, and a measured constraint: `placeFeeds` puts a lone
-  // ingredient stub at the belly's exact middle, and the outermost fan name
-  // under that stub pokes its known ~3.6px past the band, which grazed a
-  // centre-placed shell name's click target by 0.2px on `quantum-linear-solve`
-  // (ja). The left end of the flat part faces no stub and no step name at
-  // shell height. `min(…, peak.x)` so a name wider than the belly stays
+  // own bracket sketch. `min(…, peak.x)` so a name wider than the belly stays
   // centred rather than hanging off the left tendon.
   // Past the variant row's tendon zone as well as the pad: a variant converges
   // at the belly's two ends, so its tendon rises THROUGH the shell's edge
@@ -3765,7 +3405,6 @@ function place(
     bellyY: belly.y,
     depth,
     parentKey: context.parentKey,
-    feedKey: context.feedKey,
     label: fitted.text,
     // The FULL name, never the short one. This is what the `<title>` on every
     // drawn shape reads, and what the accessible list beside the figure prints,
@@ -3882,7 +3521,6 @@ function place(
         {
           ...context,
           parentKey: strand.key,
-          feedKey: null,
           variant: true,
           // A variant spans the whole belly, so it is fitted against the
           // parent's own column — floored at its measured demand, the same
@@ -3893,16 +3531,10 @@ function place(
     }
   }
 
-  if (!strand.open) return;
-  // **Before the children check, not after it.** This return read
-  // `|| strand.children.length === 0`, so an opened method whose whole content
-  // is ingredients — twelve of the twenty-nine decomposed ones — dropped every
-  // stub without a word. It is the same clause `measure` had, one function away,
-  // and the two were wrong together, which is why nothing ever disagreed.
-  if (strand.children.length === 0) {
-    placeFeeds(belly, strand, size, bow, depth, context);
-    return;
-  }
+  // Nothing inside to draw. `measure`'s leaf arm carries the same condition,
+  // one function away, and the two must stay one condition: the session that
+  // let them differ dropped every shape one of them had reserved room for.
+  if (!strand.open || strand.children.length === 0) return;
 
   if (strand.layout === "chain") {
     // The steps are laid out on the **belly**, which is level, so cutting it is
@@ -3931,10 +3563,7 @@ function place(
       place(piece, child, size.children[index]!, 0, stepRun, depth + 1, {
         ...context,
         parentKey: strand.key,
-        // Cleared: a step lies on the line it decomposes even when that line is
-        // itself an ingredient's. `feedKey` marks the one hop off the side.
-        feedKey: null,
-        // Cleared for the same reason: a variant's own steps are not variants.
+        // Cleared: a variant's own steps are not variants.
         variant: false,
         // Each step is fitted against **the share of the column its own piece
         // is**, not against a `1/k` of it — the same change the cut above made,
@@ -3957,7 +3586,6 @@ function place(
         ),
       });
     }
-    placeFeeds(belly, strand, size, bow, depth, context);
     // The objects between the steps, sitting exactly where the pieces meet — on
     // the belly, at its own height, which is where the steps themselves are.
     for (let index = 1; index < strand.children.length; index += 1) {
@@ -3982,15 +3610,6 @@ function place(
         // and this field is where it lands when `cardFor` can build one.
         cardHref: null,
         terminal: false,
-        // No caption: `arriving`/`leaving` are the literal 1/1 below — a
-        // boundary inside ONE chain is not a convergence, and the caption's
-        // predicate is the convergence. When inner circles ever carry real
-        // fan-in counts, they earn the caption through the same predicate.
-        caption: null,
-        captionX: 0,
-        captionY: 0,
-        captionAnchor: "middle",
-        captionWidth: 0,
         arriving: 1,
         leaving: 1,
         depth: depth + 1,
@@ -3999,7 +3618,6 @@ function place(
     return;
   }
 
-  placeFeeds(belly, strand, size, bow, depth, context);
   // Around the bone, never on it. See `allocateBowsAroundSpine`.
   //
   // Centred on **0**, not on `bow`: a child's base is now this strand's belly, so
@@ -4027,9 +3645,7 @@ function place(
   // drew under every name without incident.
   const nameClear = (belly.x1 - belly.x0 - ownNameDemand(strand)) / 2 - M.labelPad;
   // Same all-shut gate as the first-order row, for the same measured reason.
-  const childrenShut = size.children.every(
-    (child) => child.children.length === 0 && child.feeds.length === 0,
-  );
+  const childrenShut = size.children.every((child) => child.children.length === 0);
   const childRuns = childrenShut
     ? hugRuns(
         strand.children.map((child, index) => ({
@@ -4045,228 +3661,8 @@ function place(
     place(belly, child, size.children[index]!, bows[index]!, childRuns[index]!, depth + 1, {
       ...context,
       parentKey: strand.key,
-      feedKey: null,
       variant: false,
     });
-  }
-}
-
-/**
- * The ingredients an opened strand consumes, hanging clear of everything drawn
- * inside it.
- *
- * Spread over the strand rather than bunched at one end — `(index + 1) / (n + 1)`
- * puts one stub in the middle, two at a third and two thirds, and so on, which
- * is the same "leave the ends alone" rule the fan uses, and the ends are where
- * every line converges and there is no room.
- *
- * They hang **outward**, the way the strand already bows, so a stub never points
- * back through the figure's own spine.
- */
-function placeFeeds(
-  /** The strand's **belly** — stubs hang off the flat part, never off a tendon. */
-  belly: Level,
-  strand: PlanStrand,
-  size: Measure,
-  bow: number,
-  depth: number,
-  context: Parameters<typeof place>[6],
-): void {
-  if (strand.feeds.length === 0) return;
-  const M = CONVERGE_METRICS;
-  const outward: 1 | -1 = bow >= 0 ? 1 : -1;
-  // `size.innerReach`, not a second derivation from the children. See `Measure`.
-  const inner = size.innerReach;
-  // The slice each stub owns, and the same `(n+1)` `measure` costed the column
-  // in. One number, used for the geometry and for the budget, so the drawing and
-  // the demand cannot describe different pictures.
-  const slice = (belly.x1 - belly.x0) / (strand.feeds.length + 1);
-  for (const [index, feed] of strand.feeds.entries()) {
-    const t = (index + 1) / (strand.feeds.length + 1);
-    const at = { x: belly.x0 + (belly.x1 - belly.x0) * t, y: belly.y };
-    const fitted = fitMarkedName(feed, M.laneFont, nameBudget(context.columnFit) + sharedAllowance(feed));
-    const fittedWidth = estimateTextWidth(fitted.text, M.laneFont);
-    const y0 = at.y + outward * inner;
-    // **How far the stub is DRAWN — back to `feedRun`, and PR 430 is reverted
-    // here with the measurement that says it must be.**
-    //
-    // PR 430 made this `max(feedRun, vHalf)` for an opened ingredient so the line
-    // would REACH the fan it opens into, closing a gap of up to 516.8px where
-    // nothing was drawn at all. The gap was real and the reasoning held; what
-    // neither the tests nor I checked was what the drawn line then crosses.
-    // Measured on the corpus, both ways, over all 212 ingredients:
-    //
-    //     stub = feedRun, fan pushed out (before PR 430):  18 of 212  (8.5%)
-    //     stub = max(feedRun, vHalf)          (PR 430):     68 of 212  (32.1%)
-    //
-    // The 18 are a lane passing within a stub's own 18px root and predate all of
-    // this; the 68 are lines up to 572px long drawn across other strands' fans.
-    // (An earlier reading of this control said 0 rather than 18: it reverted the
-    // stub length while leaving PR 430's fan base in place, which is not the
-    // geometry that shipped before PR 430. The numbers above are both arms
-    // measured against the real one.)
-    //
-    // The longest ran 572px across four labelled lanes of a fan belonging to a
-    // different strand — seen in a screenshot, then counted. **This canvas's one load-bearing property is that two
-    // process lines share space only at a circle they both genuinely touch**
-    // (D96.2) — and the crossing-free invariants did not see it, because they
-    // are stated over lanes, which are a one-parameter family, and a stub is
-    // not one. A connected line that cuts through four other names is worse
-    // than an unconnected one, so the connection comes back only when the fan
-    // is placed somewhere the line can reach cleanly. That is
-    // **OWNER_TODO `3f6889`**, not this PR.
-    const stubReach = M.feedRun;
-    const y1 = at.y + outward * (inner + stubReach);
-    // **How far left the tributary starts, by the same law every other curve on
-    // this canvas obeys.** A flat `2 · feedRun` was the first attempt and it is
-    // wrong in the way that matters: an opened ingredient's line can rise 500px
-    // or more, and a 36px lead against a 534px rise draws a vertical line with
-    // two small kinks in it — a tick again, which is the thing being fixed.
-    // `tendonRunFor` converts a rise into a horizontal run at `tendonAngleDeg`,
-    // which is precisely the question here, and it carries the same floor and
-    // ceiling the tendons do, so an ingredient bends like the rest of the
-    // drawing instead of on a rule of its own.
-    //
-    // Bounded by the stub's own slice, so the shape still costs the figure
-    // nothing: `measure` charged the column for a `1/(n+1)` slice per stub, and
-    // 0.45 of one keeps the curve inside room that is already paid for and
-    // clear of the neighbouring stub, which is a whole slice away.
-    const lead = Math.min(slice * 0.45, tendonRunFor(stubReach));
-    context.out.rightmost = Math.max(
-      context.out.rightmost,
-      // The glyph draws past the name's end, so the canvas must reach past it
-      // too — the same silent-clip `rightmost` exists to prevent for the text.
-      // From the tributary's own start, which is where the name is drawn.
-      at.x - lead + 4 + fittedWidth + loopAllowance(feed),
-    );
-    context.out.feeds.push({
-      key: `${strand.key}~${feed.id ?? index}`,
-      parentKey: strand.key,
-      nodeId: feed.id ?? "",
-      label: fitted.text,
-      fullLabel: feed.label,
-      shortLabel: feed.shortLabel,
-      repeatMark: feed.repeatMark,
-      loopClosure: feed.loopClosure,
-      labelWidth: fittedWidth,
-      refinement: feed.refinement,
-      labelTruncated: fitted.truncated,
-      href: feed.href,
-      cardHref:
-        context.cardBase !== null && feed.id !== null
-          ? withCard(context.cardBase, feed.id, context.innerBase === null ? feed.address : null)
-          : null,
-      x: round(at.x),
-      y0: round(y0),
-      y1: round(y1),
-      // **Inside the slice this stub already owns**, so the shape costs the
-      // figure nothing: `placeFeeds` gives stub `i` a `1/(n+1)` slice and
-      // `measure` charged the column for exactly that, so a lead bounded well
-      // inside it needs no new width and cannot reach its neighbour. Two stubs
-      // are a whole slice apart; this takes at most 0.45 of one.
-      xEnd: round(at.x - lead),
-      d: tributaryPath({ x: at.x, y: y0 }, lead, stubReach, outward),
-      outward,
-      depth: depth + 1,
-      // The control that opens the ingredient. Same two conditions as a lane's:
-      // something recorded inside, and room left under the cap — unless W15
-      // demoted this occurrence, in which case the control is the jump, exactly
-      // as on a lane — and, exactly as on a lane, the jump only exists OUTSIDE
-      // the truncated map: `figureHref` is a whole outer address, and from
-      // inside the card it would silently exit it (the W9×W15 composition at
-      // the lane's `openHref` records the reasoning once).
-      sharedWith: feed.sharedWith ?? null,
-      openHref:
-        feed.sharedWith !== undefined
-          ? context.innerBase === null
-            ? figureHref(context.focusId, context.open, feed.sharedWith)
-            : null
-          : feed.openable &&
-          (isOpenedBy(context.open, feed.address, feed.id) ||
-          context.open.size < CONVERGE_OPEN_MAX)
-          ? context.innerBase === null
-            ? toggleHref(context.focusId, context.open, feed.address, null, feed.id)
-            : innerToggleHref(context.innerBase, context.open, feed.address, feed.id)
-          : null,
-      address: feed.address,
-      open: feed.open,
-      inside: feed.inside,
-      vHalf: size.feeds[index]!.vHalf,
-    });
-    if (!feed.open) continue;
-    // **The fan itself, as lanes.** Drawn on a level base at the end of the stub,
-    // spanning this stub's slice of the parent — so it is the same shape as every
-    // other fan on the canvas, obeys the angle cap by the same arithmetic, and
-    // lands in `diagram.lanes` where the sweeps can see it. A fan emitted as some
-    // private shape on `ConvergeFeed` would leave the crossing-free, canvas-bounds
-    // and angle-cap checks passing over a set with the whole feature missing.
-    // **Pushed out only as far as the fan's own half-band actually demands
-    // past `innerReach`**, so the whole fan clears what is drawn inside this
-    // strand instead of straddling it, without spending more of the stub than
-    // that requires. `place` allocates a fan's bows around its base, so a base
-    // *at* `y1` draws half the ingredient back through the belly whenever the
-    // fan's half-band exceeds `feedRun` — see `feedReach`, which reserves the
-    // identical `max(feedRun, vHalf) + vHalf` this spends. The comment at the
-    // top of this function has always said a stub never points back through
-    // the figure; until the fix this replaced, the stub obeyed it and its fan
-    // did not.
-    // **Pushed out past the stub's drawn end again, and the note PR 430 removed
-    // was right.** A base AT `y1` draws half the ingredient back through the
-    // belly whenever the fan's half-band exceeds `feedRun` — the 10 measured
-    // overlaps `feedReach` records. `feedReach` reserves exactly this
-    // `max(feedRun, vHalf)`, so reservation and drawing still agree; what does
-    // NOT agree is the stub's drawn end, and that gap is the honest state of
-    // this feature until the fan can be placed where a line reaches it without
-    // crossing anything (OWNER_TODO `3f6889`).
-    const feedVHalf = size.feeds[index]!.vHalf;
-    const fanY = at.y + outward * (inner + Math.max(M.feedRun, feedVHalf));
-    const fanBase: Level = { x0: at.x - slice / 2, x1: at.x + slice / 2, y: fanY };
-    place(
-      fanBase,
-      // **`nameless`, because the stub above already carries this name.** The
-      // owner, session 118: *"still seeing things like … strange repeats within
-      // larger processes. These kinds of things need to be eliminated."*
-      //
-      // An open ingredient was drawn twice, in the same words, one shape apart:
-      // once as the stub's own name and once again on the strand its fan hangs
-      // from, which `place` pushes into `out.lanes` at the identical address.
-      // Measured, **94 of 94 open ingredients** across the nineteen saturated
-      // figures. On `quantum-linear-solve` opened three deep the page drew
-      // *"Prepare an input state ×O(κ)"* at two heights and the reader has no way
-      // to know they are one thing.
-      //
-      // This is the second kind of strand `PlanStrand.nameless`'s own doc
-      // comment said would arrive — *"the day a second kind of strand borrows a
-      // name already drawn"* — and it is exactly that claim: the name is
-      // correct and is already on the page once. Nothing else is lost. The stub
-      // keeps the name, the `<title>`, the card and the click; only the second
-      // copy of the string goes.
-      //
-      // Set here rather than in `measure`, deliberately: the column still
-      // reserves the width this name would have taken, so no figure changes size
-      // and no label that fits today starts being cut. Reclaiming that width is a
-      // separate change with its own measurements.
-      { ...feed, nameless: true },
-      size.feeds[index]!,
-      0,
-      // The stub's own fan is one strand on a level base, so its row is a row of
-      // one and its run is `minTendonRun` — the taper that pinches it to a point
-      // at each end of its slice. Through `runAcross` so the clamp against a
-      // short slice applies here as everywhere else.
-      runAcross([0], slice),
-      depth + 1,
-      {
-        ...context,
-        parentKey: strand.key,
-        feedKey: `${strand.key}~${feed.id ?? index}`,
-        variant: false,
-        // Floored at the ingredient's own demand, same reason as a chain's steps.
-        columnFit: Math.max(
-          size.feeds[index]!.hFit,
-          context.columnFit / (strand.feeds.length + 1),
-        ),
-      },
-    );
   }
 }
 
@@ -4385,7 +3781,6 @@ export function layoutConvergeForMethod(options: {
       height: 0,
       states: [],
       lanes: [],
-      feeds: [],
       caption: labelOf(method, locale),
       empty: true,
       unpublishedCount: 0,
@@ -4550,7 +3945,7 @@ export function layoutConverge(options: {
 function corpusShape(strand: PlanStrand): string {
   const part = (s: PlanStrand): string =>
     `${s.draws ?? s.own ?? ""}:${s.layout ?? ""}` +
-    `[${s.children.map(part).join(",")}|${s.feeds.map(part).join(",")}|${s.variants.map(part).join(",")}]` +
+    `[${s.children.map(part).join(",")}|${s.variants.map(part).join(",")}]` +
     `#${s.boundaries.join(">")}`;
   return part(strand);
 }
@@ -4574,7 +3969,7 @@ function corpusShape(strand: PlanStrand): string {
  * The **shallowest open** occurrence, ties to draw order — not the first in
  * draw order, which was the first design and picked exactly wrong once: the
  * first-drawn `chebyshev-lcu-inversion` on the saturated nonlinear figure sits
- * a level deeper than its twin, so the depth cap had already shut the feeds
+ * a level deeper than its twin, so the depth cap had already shut the steps
  * the shallower copy could draw. A group with no open member demotes nobody —
  * every shut line keeps its own open control until a reader opens one, and
  * from then on that copy hosts and its twins jump to it.
@@ -4593,7 +3988,7 @@ function corpusShape(strand: PlanStrand): string {
  *
  * The lane stays — the branch genuinely contains the node, and hiding the lane
  * would redraw the false picture the dedup exists to prevent. Its interior
- * (children, feeds, variants, boundaries) drops, its open controls go, and
+ * (children, variants, boundaries) drops, its open controls go, and
  * `sharedWith` carries the host's address for the jump and the `⤴` mark. The
  * figure's own subject (a method page's top lane) never demotes: its interior
  * is the page's point.
@@ -4618,13 +4013,12 @@ function dedupSharedInteriors(
       if (
         strand.draws !== null &&
         strand.address !== subjectAddress &&
-        (strand.children.length > 0 || strand.feeds.length > 0)
+        strand.children.length > 0
       ) {
         const key = `${strand.draws}#${corpusShape(strand)}`;
         groups.set(key, [...(groups.get(key) ?? []), strand]);
       }
       for (const child of strand.children) walk(child);
-      for (const feed of strand.feeds) walk(feed);
       for (const variant of strand.variants) walk(variant);
     };
     for (const bundle of bundles) for (const lane of bundle.lanes) walk(lane);
@@ -4652,7 +4046,6 @@ function dedupSharedInteriors(
       twin.sharedWith = host.address;
       twin.children = [];
       twin.boundaries = [];
-      twin.feeds = [];
       twin.variants = [];
       twin.layout = null;
       twin.open = false;
@@ -4711,7 +4104,6 @@ function repointBuriedHosts(
   const walk = (strand: PlanStrand): void => {
     live.add(strand);
     for (const child of strand.children) walk(child);
-    for (const feed of strand.feeds) walk(feed);
     for (const variant of strand.variants) walk(variant);
   };
   for (const bundle of bundles) for (const lane of bundle.lanes) walk(lane);
@@ -4723,7 +4115,7 @@ function repointBuriedHosts(
   for (const strand of live) {
     if (strand.sharedWith !== undefined || !strand.open) continue;
     if (strand.draws === null) continue;
-    if (strand.children.length === 0 && strand.feeds.length === 0) continue;
+    if (strand.children.length === 0) continue;
     const key = `${strand.draws}#${corpusShape(strand)}`;
     candidates.set(key, [...(candidates.get(key) ?? []), strand]);
   }
@@ -4836,7 +4228,6 @@ function layoutFigure(options: {
       height: 0,
       states: [],
       lanes: [],
-      feeds: [],
       caption,
       empty: true,
       unpublishedCount: 0,
@@ -4947,40 +4338,10 @@ function layoutFigure(options: {
     const state = layerState(vocabulary, stateId);
     const label = state ? labelOf(state, locale) : stateId;
     const cx = xs[index]!;
-    const meets = (arriving.get(stateId) ?? 0) > 1 || (leaving.get(stateId) ?? 0) > 1;
-    // The caption's room (W19 PR-2): inside the adjacent span, never past the
-    // cap. An end circle writes inward and owns half its one span; an interior
-    // circle centres and owns half of its NARROWER side twice over — either
-    // way the caption cannot reach the next circle's territory. Below ~40px a
-    // name is an ellipsis wearing a plate, so the caption stays null and the
-    // `<title>` keeps carrying it — same honesty case as `shortLabelOf`.
-    const spanLeft = index === 0 ? 0 : cx - xs[index - 1]!;
-    const spanRight = index === plan.chain.length - 1 ? 0 : xs[index + 1]! - cx;
-    const captionAnchor: ConvergeState["captionAnchor"] =
-      index === 0 ? "start" : index === plan.chain.length - 1 ? "end" : "middle";
-    const budget = Math.min(
-      M.labelCap,
-      captionAnchor === "start"
-        ? spanRight / 2 - M.stateRadius
-        : captionAnchor === "end"
-          ? spanLeft / 2 - M.stateRadius
-          : Math.min(spanLeft, spanRight) - 2 * M.stateRadius,
-    );
-    const fitted = meets && state && budget >= 40 ? fitLabel(label, M.stateFont, budget) : null;
     return {
       key: `s:${stateId}`,
       stateId,
       label,
-      caption: fitted === null ? null : fitted.text,
-      captionX:
-        captionAnchor === "start"
-          ? cx - M.stateRadius
-          : captionAnchor === "end"
-            ? cx + M.stateRadius
-            : cx,
-      captionY: yc - M.stateRadius - 8,
-      captionAnchor,
-      captionWidth: fitted === null ? 0 : estimateTextWidth(fitted.text, M.stateFont),
       cx,
       cy: yc,
       r: M.stateRadius,
@@ -4997,9 +4358,7 @@ function layoutFigure(options: {
   const out: Placement = {
     lanes: [],
     inner: [],
-    feeds: [],
     named: new Set(),
-    rightmost: 0,
     collapsed: 0,
     capped: 0,
     unpublished: 0,
@@ -5030,9 +4389,7 @@ function layoutFigure(options: {
     // through them. A row with any opened member therefore keeps the shared
     // run — today's exact geometry — and every shut row hugs. The owner's
     // named offenders (an 11.9× "HHL" belly among them) are all shut rows.
-    const allShut = measured[index]!.every(
-      (lane) => lane.children.length === 0 && lane.feeds.length === 0,
-    );
+    const allShut = measured[index]!.every((lane) => lane.children.length === 0);
     const runs = allShut
       ? hugRuns(
           bundle.lanes.map((lane, at) => ({
@@ -5053,7 +4410,6 @@ function layoutFigure(options: {
         out,
         columnFit: columns[index]!.fit,
         parentKey: null,
-        feedKey: null,
         variant: false,
         cardBase,
         innerBase,
@@ -5061,67 +4417,19 @@ function layoutFigure(options: {
     }
   }
 
-  // The caption resolver (W19 PR-2): a caption draws above its circle, or
-  // below it, or not at all — decided against the names actually placed, in
-  // that order, deterministically. Text populations it must clear: lane names
-  // (widened by `loopAllowance` where a glyph follows them), stub names (at
-  // `feedNameY`, the one writer), and captions already resolved. A caption
-  // with no clear side goes back to null and the `<title>` keeps the name —
-  // dropping is honest where a collision would lie about both texts. The
-  // candidates sit inside the half-height every figure already reserves, so
-  // resolution moves no geometry; it only chooses among places that exist.
-  {
-    const boxes: { x0: number; x1: number; y0: number; y1: number }[] = [];
-    for (const lane of out.lanes) {
-      if (lane.label === "") continue;
-      boxes.push({
-        x0: lane.labelX - lane.labelWidth / 2,
-        x1: lane.labelX + lane.labelWidth / 2 + loopAllowance(lane),
-        y0: lane.labelY - M.laneFont,
-        y1: lane.labelY,
-      });
-    }
-    for (const feed of out.feeds) {
-      if (feed.label === "") continue;
-      const nameY = feedNameY(feed);
-      boxes.push({
-        x0: feed.x + 4,
-        x1: feed.x + 4 + feed.labelWidth + loopAllowance(feed),
-        y0: nameY - M.laneFont,
-        y1: nameY + 3,
-      });
-    }
-    const clear = (x0: number, x1: number, y0: number, y1: number) =>
-      x0 >= 0 &&
-      x1 <= Math.max(width, round(out.rightmost + M.margin)) &&
-      y0 >= 0 &&
-      boxes.every((box) => !(x0 < box.x1 && box.x0 < x1 && y0 < box.y1 && box.y0 < y1));
-    for (const state of states) {
-      if (state.caption === null) continue;
-      const x0 =
-        state.captionAnchor === "start"
-          ? state.captionX
-          : state.captionAnchor === "end"
-            ? state.captionX - state.captionWidth
-            : state.captionX - state.captionWidth / 2;
-      const above = state.cy - M.stateRadius - 8;
-      const below = state.cy + M.stateRadius + 8 + M.stateFont * 0.8;
-      const at = [above, below].find((y) => clear(x0, x0 + state.captionWidth, y - 12, y + 3));
-      if (at === undefined) {
-        state.caption = null;
-        state.captionWidth = 0;
-      } else {
-        state.captionY = at;
-        boxes.push({ x0, x1: x0 + state.captionWidth, y0: at - 12, y1: at + 3 });
-      }
-    }
-  }
-
+  // **The caption resolver stood here and its subject is gone.** It chose a
+  // side for a shared circle's own name — above, below, or nowhere — against
+  // every name already placed, and dropped the caption when neither side was
+  // clear. The owner ruled the captions off (*"states never have visible
+  // labels, only hover tooltips"*, issue 17), so there is nothing left to
+  // resolve: a circle's name reaches the reader through the `<title>` and the
+  // `aria-label` `Hub` writes, on hover and to a screen reader alike.
   return {
-    // Stretched to cover any ingredient name that runs past the last circle.
-    // Never shrunk: `width` is the tiled columns plus their margins, and that is
-    // the minimum whatever the labels do.
-    width: Math.max(width, round(out.rightmost + M.margin)),
+    // The tiled columns plus their margins, and nothing stretches it. It used
+    // to be stretched past that to cover an ingredient name, which was drawn
+    // from its stub rightwards and so could run off the canvas; every name the
+    // figure draws now is centred in a column sized to hold it.
+    width,
     height,
     states: [...states, ...out.inner].map((state) => carryViewport(state, options.at, open)),
     lanes: out.lanes.map((lane) => ({
@@ -5132,17 +4440,6 @@ function layoutFigure(options: {
       // string equality: a child of the subject has a longer address and is a
       // different line.
       subject: subjectAddress !== null && lane.address === subjectAddress,
-    })),
-    // `openHref` explicitly, exactly as the lanes above — `carryViewport`
-    // rewrites `href` and nothing else. Measured on `linear-ode-solve` saturated
-    // with a viewport: 53 of 53 lanes carried it and **0 of 12 feeds did**, so
-    // opening or shutting an ingredient dropped the reader back at the origin at
-    // 100%, which reads as the map jumping rather than as a control working. The
-    // test that enumerates every address on a figure listed `lane.href`,
-    // `lane.openHref`, `state.href` and `feed.href`, and omitted this one.
-    feeds: out.feeds.map((feed) => ({
-      ...carryViewport(feed, options.at, open),
-      openHref: withViewport(feed.openHref, options.at),
     })),
     caption,
     empty: false,

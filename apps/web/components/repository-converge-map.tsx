@@ -22,9 +22,6 @@
 //   become one thing here*, which is what a convergence is.
 // - A strand drawn **faint and thin** is one a reader has opened: its own body
 //   is gone and what was inside it is drawn in its place, around it or along it.
-// - A **stub hanging off** an opened strand is an ingredient that route needs —
-//   a block-encoding, a prepared state — which does not move the route along and
-//   so is not a stage.
 //
 // ## Two targets on one strand, which is the whole interaction
 //
@@ -46,12 +43,10 @@
 // different screen: the destination page draws the same subject under the same
 // name, so the browser morphs one into the other.
 import {
-  feedNameY,
   loopGlyphPath,
   ownStepName,
   spokenName,
   type ConvergeDiagram,
-  type ConvergeFeed,
   type ConvergeLane,
   type ConvergeState,
 } from "../lib/repository/converge-layout";
@@ -97,8 +92,18 @@ interface ConvergeCopy {
   lineReadHere: string;
   openHere: string;
   closeHere: string;
+  /**
+   * What an **opened** line's name does — shut it (issue 17).
+   *
+   * A fourth string beside `closeHere` rather than a reuse of it, for the same
+   * reason `lineReadHere` is a third beside `readHere`: the two are different
+   * controls in different places, and a reader told "click the line" while
+   * their pointer is on a word has been told to go somewhere else. The name
+   * and the line now do the same thing on an opened lane, and each says so in
+   * its own words.
+   */
+  nameCloseHere: string;
   inside: string;
-  needs: string;
   inAtlas: string;
   handsOn: string;
   /**
@@ -129,8 +134,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     lineReadHere: "click the line to read about it here",
     openHere: "click the line to open it here",
     closeHere: "click the line to close it",
+    nameCloseHere: "click the name to close it",
     inside: "open",
-    needs: "needs",
     inAtlas: "the Atlas has a full record of this",
     handsOn: "what one part hands to the next",
     variantsNested: "narrower versions, nested under the line they refine",
@@ -150,8 +155,8 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     lineReadHere: "線をクリックするとこの場で解説を開きます",
     openHere: "線をクリックするとこの場で展開します",
     closeHere: "線をクリックすると畳みます",
+    nameCloseHere: "名前をクリックすると畳みます",
     inside: "展開中",
-    needs: "必要なもの",
     inAtlas: "アトラスに完全な記録があります",
     handsOn: "ある工程が次の工程へ渡す対象",
     variantsNested: "その上の線をより狭めた版が、入れ子で示されています",
@@ -228,152 +233,13 @@ function Hub({
           r={n(Math.max(state.r + 6, 13))}
         />
       </a>
-      {/* The convergence, drawn as its name (W19 PR-2). Hubs are the figure's
-          LAST pass, so this plate sits over every taper it must rub out — the
-          same paint-order argument that moved `NamePlate` out of `Lane`. The
-          anchor above already speaks this name with its note, so the drawn
-          copy is decoration to a screen reader.
-
-          **It wears its own class, and that is load-bearing rather than
-          cosmetic.** `mj-converge-name-plate` is the marker two guards in
-          `converge-plate.spec.ts` read out of the emitted markup: one pins
-          every plate BEFORE every name (a plate rubs out any earlier name it
-          overlaps), the other measures each plate against the lane name it is
-          supposed to cover. A caption plate answers to neither — it is in the
-          last pass on purpose, and the text it covers is a caption, not a lane
-          name — so borrowing the marker made both guards fail on a figure that
-          was drawing correctly. The contract it DOES answer to is proved
-          upstream in `repository-converge-layout.test.ts`: over every figure,
-          opening and locale, no caption box overlaps any lane name's box. That
-          is what makes emitting it last safe, and it is a stronger claim than
-          paint order could make. */}
-      {state.caption === null ? null : (
-        <g aria-hidden="true">
-          <rect
-            className="mj-converge-caption-plate"
-            x={n(
-              state.captionAnchor === "start"
-                ? state.captionX - 4
-                : state.captionAnchor === "end"
-                  ? state.captionX - state.captionWidth - 4
-                  : state.captionX - state.captionWidth / 2 - 4,
-            )}
-            y={n(state.captionY - 12)}
-            width={n(state.captionWidth + 8)}
-            height="15"
-          />
-          <text
-            className="mj-converge-hub-caption"
-            x={n(state.captionX)}
-            y={n(state.captionY)}
-            textAnchor={state.captionAnchor}
-          >
-            {state.caption}
-          </text>
-        </g>
-      )}
-    </g>
-  );
-}
-
-/**
- * An ingredient a route needs, hanging under the strand that consumes it.
- *
- * **Two targets, the same split a `Lane` has** — and until this was written the
- * stub had only one. `layoutConverge` has computed `openHref` for every stub, and
- * drawn the fan of methods behind an opened one, since ingredients became
- * openable; this component read `feed.href` and nothing else, so the only way to
- * open an ingredient was to type its address into `?open=` by hand. The layout
- * described a control no reader could reach.
- *
- * That is the ask: *"they are neither state nor process visually. They **are**
- * processes."* A thing you can open is a process; a thing you can only follow is
- * a tag. So the **stub** opens and shuts it here, and the **name** goes to its
- * own page — the line and the name being two destinations is the rule this canvas
- * already follows, and the reason `.mj-converge-canvas a:hover` is written per
- * target rather than per group.
- *
- * A stub with nothing recorded inside it gets no control at all, which is the
- * same rule R12.2 gives every line: `openHref` is null there, and the bare line
- * keeps the descriptive title so it does not lose its name along with its action.
- */
-function Feed({
-  feed,
-  copy,
-  selected = false,
-  cited = false,
-}: {
-  feed: ConvergeFeed;
-  copy: ConvergeCopy;
-  selected?: boolean;
-  cited?: boolean;
-}): React.ReactElement {
-  const title = `${copy.needs}: ${spokenName(feed)}`;
-  const action = feed.open ? copy.closeHere : copy.openHere;
-  // One writer for where the name sits — shared with the caption resolver,
-  // which keeps captions off this text. See `feedNameY`.
-  const nameY = feedNameY(feed);
-  // **A path, not a line, and the shape is the point.** An ingredient is drawn
-  // as a tributary that comes in from the left and merges into the strand it
-  // feeds — the owner's own description in `6988d3`, which a perpendicular tick
-  // never was. The curve is computed by `tributaryPath` and carried on the feed;
-  // this component draws what the layout measured, as it does everywhere else.
-  const stub = <path className="mj-converge-feed-line" d={feed.d} fill="none" />;
-  return (
-    <g
-      className={`mj-converge-feed${feed.open ? " mj-converge-feed--open" : ""}${selected ? " mj-converge-feed--selected" : ""}${cited ? " mj-converge-feed--paper-cited" : ""}`}
-      data-depth={feed.depth}
-    >
-      {/* Target one: the stub. Opens or shuts the ingredient, here. */}
-      {feed.openHref === null ? (
-        <g>
-          <title>{title}</title>
-          {stub}
-        </g>
-      ) : (
-        <a href={feed.openHref} aria-label={`${spokenName(feed)} — ${action}`}>
-          <title>{`${title} — ${action}`}</title>
-          {stub}
-          {/* A 1.5px stub is not a click target. A stroke, not a fill — the shape
-              is a line and has no interior to hit. Same trick, same reason, as
-              `.mj-converge-strand-hit`. */}
-          <path className="mj-converge-feed-hit" d={feed.d} fill="none" />
-        </a>
-      )}
-
-      {/* Target two: the name. The ingredient's card where there is one, and its
-          own page where there is not — same rule as a lane's name, **including
-          saying which**. This label read as the bare ingredient name until the
-          card href landed under it, at which point the accessible name stopped
-          describing the click: a reader on assistive technology was told
-          "needs: Prepare a state" for a control that opens a panel in place.
-          `LaneName` has carried its action since it was written; this is the
-          same two strings for the same reason. Caught in review on PR 332.
-          (Written without the hash: `check-raw-hex` reads a three-digit PR
-          reference as a colour. Session 112's standing note, hit twice here —
-          once writing it and once writing the note explaining it.) */}
-      <a
-        href={feed.cardHref ?? feed.href}
-        aria-label={`${title} — ${feed.cardHref === null ? copy.readAbout : copy.readHere}`}
-      >
-        <title>{`${title} — ${feed.cardHref === null ? copy.readAbout : copy.readHere}`}</title>
-        {/* At the tributary's own start, not at the join: the name labels the
-            line that comes in from the left, and `feedNameY` already keys off
-            that end's `y1`. Before the curve the two were the same x. */}
-        <text className="mj-converge-feed-name" x={n(feed.xEnd + 4)} y={n(nameY)}>
-          {feed.label}
-        </text>
-      </a>
-      {/* Same glyph, same rules, as a lane's — see `LaneName`. Seven of the
-          corpus's ten recorded loops are facts about an ingredient, so a glyph
-          drawn on lanes alone would miss most of what it exists to show. */}
-      {feed.loopClosure === null ? null : (
-        <path
-          className={`mj-converge-loop${feed.loopClosure === "measured" ? " mj-converge-loop--measured" : ""}`}
-          d={loopGlyphPath(feed.xEnd + 4 + feed.labelWidth, nameY - 4)}
-          aria-hidden="true"
-        />
-      )}
+      {/* **No drawn name, and that is the owner's rule rather than an
+          omission**: *"states never have visible labels, only hover
+          tooltips"* (issue 17). W19 PR-2 drew one — a fitted caption on its
+          own plate, above the circle or below it — and the whole apparatus is
+          gone with the ruling. The anchor above is where the name lives now,
+          in the `<title>` a hover shows and in the `aria-label` a screen
+          reader reads, both carrying the convergence sentence with it. */}
     </g>
   );
 }
@@ -506,13 +372,40 @@ function LaneName({
   cited?: boolean;
 }): React.ReactElement | null {
   if (lane.label === "") return null;
-  // The card when this surface has one, the node's own page when it does not.
-  // **One expression, not two branches**, because the anchor around it is
+  // **An opened line's name is part of the control that shuts it.**
+  //
+  // > *"processes that are opened have the label ON the center bone, so they
+  // > have the same click box that collapses. processes that aren't opened yet
+  // > have the label above/below the line; labels click into cards, lines
+  // > click to expand."*
+  // > — owner, issue 17
+  //
+  // The placement was already his: `place` writes an opened fan's name on the
+  // bone and an opened chain's on its exoskeleton, which is that lane's
+  // collapse target for the reason a chain has no clear spine left. What did
+  // not follow was the click — the name went to the card whatever the line was
+  // doing, so on an opened line the reader had the collapse stroke everywhere
+  // except on the one shape drawn in the middle of it, and hitting the word
+  // opened a panel over the figure they were trying to close.
+  //
+  // **The card is not lost from an opened line**, and it must not be, because
+  // the ruling would otherwise trade one destination for another: the body of
+  // an opened chain's steps, every branch of an opened fan and the circles at
+  // both ends all still open cards, and shutting the line puts its own card
+  // one click from the same word. What the name gives up is being a *second*
+  // way to the card on the one line where it was also sitting on the collapse
+  // target.
+  //
+  // One expression rather than two branches, because the anchor around it is
   // twenty lines of hit-target geometry and duplicating it to change one
-  // attribute is how the two copies come apart. The full page is not lost: it
-  // is the card's first link.
-  const nameHref = lane.cardHref ?? lane.href;
-  const nameAction = lane.cardHref === null ? copy.readAbout : copy.readHere;
+  // attribute is how the two copies come apart.
+  const shuts = lane.open && lane.openHref !== null;
+  const nameHref = shuts ? lane.openHref! : (lane.cardHref ?? lane.href);
+  const nameAction = shuts
+    ? copy.nameCloseHere
+    : lane.cardHref === null
+      ? copy.readAbout
+      : copy.readHere;
   return (
     <g className={laneClass(lane, isDocumented(lane, atlas), selected, cited)} data-depth={lane.depth}>
       {/* `spokenName`, not `fullLabel`: the count must reach a reader who is not
@@ -774,13 +667,12 @@ function Lane({
  * one alt string, and the whole point is that each shape is its own link. Same
  * call as the process canvas, D90.2.
  *
- * Z-order is load-bearing, and it is now five passes rather than three: strands,
- * the stubs hanging off them, every name's plate, every name, then the circles —
- * a circle is the thing several strands share, so it has to sit on top of all of
- * them or the shared circle reads as lines passing behind a dot. Within the
- * strands, deeper ones are emitted after shallower ones, which the layout
- * already guarantees by emitting a parent before its children. See the passes
- * themselves for why the names had to come out of their lanes' groups.
+ * Z-order is load-bearing: strands, every name's plate, every name, then the
+ * circles — a circle is the thing several strands share, so it has to sit on
+ * top of all of them or the shared circle reads as lines passing behind a dot.
+ * Within the strands, deeper ones are emitted after shallower ones, which the
+ * layout already guarantees by emitting a parent before its children. See the
+ * passes themselves for why the names had to come out of their lanes' groups.
  */
 export function ConvergeCanvas({
   diagram,
@@ -804,7 +696,7 @@ export function ConvergeCanvas({
    * figure that is not the selected one receives null outright. The class it
    * paints is what the client's camera fly-to finds and measures.
    */
-  selection?: { laneAddress: string | null; stateKey: string | null; feedKey: string | null } | null;
+  selection?: { laneAddress: string | null; stateKey: string | null } | null;
   /**
    * A card is open over this figure: every element except the selected one
    * drops to a fraction of its ink (the owner's "the map need to be faint
@@ -886,15 +778,6 @@ export function ConvergeCanvas({
           cited={cited?.has(lane.draws ?? lane.nodeId ?? "") ?? false}
         />
       ))}
-      {diagram.feeds.map((feed) => (
-        <Feed
-          key={feed.key}
-          feed={feed}
-          copy={copy}
-          selected={selection?.feedKey === feed.key}
-          cited={cited?.has(feed.nodeId) ?? false}
-        />
-      ))}
       {/* Every plate, then every name, and both after every line. Three passes
           over one list rather than one pass emitting three things, because on
           this canvas paint order *is* the occlusion rule and there is no other
@@ -903,10 +786,9 @@ export function ConvergeCanvas({
             paint straight back over the name it is hiding them from.
           - Names after every plate, so a plate can never rub out a *name*. With
             the two interleaved, a plate covers any earlier name it overlaps,
-            which measured as 4 pairs today and is exactly the case ingredient
-            fans multiply. Text over text is hard to read; text erased by a
-            neighbour's box is not there at all, and the reader cannot tell it
-            was ever drawn.
+            which measured as 4 pairs. Text over text is hard to read; text
+            erased by a neighbour's box is not there at all, and the reader
+            cannot tell it was ever drawn.
           - Circles last, unchanged: a circle is the thing several lines share,
             so it sits on top of all of them. */}
       {diagram.lanes.map((lane) => (
