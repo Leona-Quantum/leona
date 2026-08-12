@@ -402,11 +402,13 @@ export const CONVERGE_METRICS = {
    * in the shipped cut** where the rest of the vertical set is not, because it
    * is the band an opened line keeps for its own name down the middle of its
    * own fan — it does not change how close two *neighbouring* names sit, which
-   * is what the rendered overlap turned on. Its own
-   * derivation above is `spineStroke/2 + labelLift + laneFont·0.8` = 2 + 6 +
-   * 9.6 = 17.6, and it is held at 19 rather than 18 for the reason the
-   * original note gives: the band must not be exactly the text bounding box.
-   * The 12px Japanese names are why the extra pixel and a half is not spent.
+   * is what the rendered overlap turned on.
+   *
+   * The derivation above is `spineStroke/2 + labelLift + laneFont·0.8` = 2 + 7
+   * + 9.6 = **18.6**, and 22 was that rounded up so the band would not be
+   * exactly the text bounding box. 19 keeps the rounding-up and spends the
+   * three pixels of slack that were above it — the name still clears the
+   * stroke by the whole of `labelLift`, which is what the derivation is for.
    */
   spineBand: 19,
   /**
