@@ -197,9 +197,11 @@ const KIND_COPY: Record<
 const COPY = {
   en: {
     kinds: "The four kinds",
+    folders: "Browse by folder",
   },
   ja: {
     kinds: "四つの種別",
+    folders: "フォルダで見る",
   },
 } as const;
 
@@ -251,6 +253,16 @@ export function RepositoryPreface({
           );
         })}
       </ul>
+      {/* The folder tree's only entrance.
+          The hierarchy the owner picked (EshMis/ai-ops#15) is a public surface at
+          `/repository/folders`, and a surface nothing links to is one no reader and no
+          crawler will ever reach — the same defect `?category=` had before §0.5.1, and
+          it looks identical to not having built it. One link, here, because this
+          section is already the "what kinds of thing are these" answer and browsing
+          down is the next question after it. */}
+      <p className="mj-repo-preface-kinds">
+        <a href="/repository/folders">{copy.folders}</a>
+      </p>
     </section>
   );
 }

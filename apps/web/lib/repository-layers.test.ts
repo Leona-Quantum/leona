@@ -1554,6 +1554,15 @@ test("the hollow twins are counted per slot, and every slot's count is declared"
   // any lane whose corpus work decomposes a method now edits one number in this file and
   // its diff records the win. That is the trade, taken deliberately.
   //
+  // **The owner was asked to settle it, because it is a taste question about strictness
+  // versus speed and it reverses in one line.** He was given both sides — exact means
+  // nothing shrinks unnoticed at the cost of one extra edit on every legitimate map change;
+  // a ceiling means fewer interruptions when several sessions edit the map at once, but a
+  // number left too high hides real losses. He chose the exact census
+  // (github.com/EshMis/ai-ops/issues/21, 2026-08-12). So the friction below is not an
+  // agent's preference to be traded away by the next session that finds it inconvenient:
+  // softening this back to `<=` needs him, not a rebase.
+  //
   // **Absent from the table means zero.** A brand-new slot therefore cannot arrive
   // quietly — opening a region forces a line here, with the count and the reason, which
   // is the whole difference between "a region opened" and "a slot rotted" that the global
