@@ -1694,9 +1694,17 @@ test("a line that opens into something says so, and a line that does not is not 
   // **A picture removed, not affordance quietly lost**, the same distinction
   // session 118's note above draws, and the reason both numbers are named: 27
   // alone is indistinguishable from a graph that stopped recording routes.
-  assert.equal(openable + leaves + 1, 88, "the twenty-three figures draw 88 lines between them");
+  // 89 since `layerwise-training`, and it lands as a **leaf** rather than as an
+  // openable line — which is the opposite of what this same node would have been
+  // one commit earlier, and worth writing down because the reason is issue 16
+  // rather than anything about the node. It records one route segment and one
+  // ingredient (`ansatz-construction`), so it is precisely the shape of the
+  // fourteen described above: the ingredient was the whole of what opening it
+  // would have drawn, that ingredient is now on the card, and the canvas has
+  // nothing left to expand. `leaves` 60 → 61, `openable` unchanged at 27.
+  assert.equal(openable + leaves + 1, 89, "the twenty-three figures draw 89 lines between them");
   assert.equal(openable, 27, "27 of them open into something the canvas draws");
-  assert.equal(leaves, 60, "60 are leaves — the canvas records nothing finer for them");
+  assert.equal(leaves, 61, "61 are leaves — the canvas records nothing finer for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
