@@ -154,8 +154,23 @@ export const CONVERGE_METRICS = {
   strandHalf: 9,
   /** Room beside a strand for its own name. */
   labelBand: 13,
-  /** Between two sibling strands. */
-  laneGap: 10,
+  /**
+   * Between two sibling strands.
+   *
+   * **6 since the vertical compaction, and this is the owner's ask rather than
+   * a shave.** `5314ca` names it: *"much less horizontal and vertical tolerance
+   * between things."* This IS that tolerance — the clear space between two
+   * siblings, over and above the band each one already keeps for its own ink
+   * and its own name. It is paid once per sibling pair per level, so on a deeply
+   * nested figure it is one of the two numbers that set the height: measured on
+   * `excited-state-energy` (en), the tallest figure, 10 → 6 takes it **4,826 →
+   * 4,402px**.
+   *
+   * Not lower, and the floor is a measurement rather than taste: the
+   * name-collision invariants are what bound this, and they are what to re-run
+   * before touching it again.
+   */
+  laneGap: 6,
   /**
    * How far apart two lanes of a shut fan sit, at the peak.
    *
@@ -169,8 +184,15 @@ export const CONVERGE_METRICS = {
    * It was 30 once, which put a two-lane fan at ±11 on screen; read on the
    * rendered page the two ways into `linear-ivp` were almost a single line and
    * the convergence did not read as one.
+   *
+   * **50 since `laneGap` became 6** — `2·(9 + 13) + 6`. It is written out rather
+   * than computed, so the test `allocateBows reproduces laneOffsets exactly when
+   * every sibling is a leaf` exists to catch exactly this: a change to
+   * `strandHalf`, `labelBand` or `laneGap` that forgets to bring this with it.
+   * It caught nothing this time because it was updated in the same edit, which
+   * is the point of having it.
    */
-  laneBow: 54,
+  laneBow: 50,
   /** Shortest a bundle may be drawn before its labels are considered. */
   minSpan: 150,
   /** Slack either side of a lane's label. */
@@ -2647,6 +2669,30 @@ function insideNameHalf(): number {
 }
 
 /**
+ * Half the band an opened chain's name occupies **outward of the edge it is
+ * written on**.
+ *
+ * A framed name sits ON the exoskeleton edge, at `frameHalf`, baseline-dropped
+ * by `laneFont · 0.35` so it reads as sitting on the line. Its collision box is
+ * `[labelY − laneFont, labelY]`, which reaches `0.65 · laneFont` past that edge
+ * — **7.8px at today's font, against the 13px `labelBand` was reserving.**
+ *
+ * Same argument as `insideNameHalf`, one placement over: reserve what the text
+ * actually occupies rather than a flat constant that predates knowing where the
+ * text goes. `labelBand` stays for the lanes whose name really is written out in
+ * open space beside them — an opened strand with only ingredients, whose name
+ * `place` puts outside the band entirely.
+ *
+ * Measured on `excited-state-energy` (en), the tallest figure and the one B5's
+ * last node is blocked behind: this is where most of `labelBand`'s vertical cost
+ * on a saturated figure lives, because on such a figure almost every lane with a
+ * name beside it is an opened chain.
+ */
+function framedNameHalf(): number {
+  return CONVERGE_METRICS.laneFont * 0.65;
+}
+
+/**
  * May this lane give up the band beside it — the `labelBand` it reserves for a
  * name it does not write there?
  *
@@ -3258,11 +3304,11 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
       Math.max(...children.map((child) => child.vHalf)) + M.innerStateRadius;
     return {
       vHalf: innerReach + feedReach(feeds) + M.labelBand,
-      // Kept, and this is the arm that genuinely uses it: an opened chain wears
-      // its name ON the exoskeleton edge, at `frameHalf` — which is this band
-      // less exactly this number. Take it away and the name is drawn on the
-      // rim of a band that no longer has room for it.
-      nameBand: M.labelBand,
+      // An opened chain wears its name ON the exoskeleton edge, at `frameHalf`
+      // — which is this band less exactly this number — so the band it needs is
+      // what the text reaches past that edge, not a flat `labelBand`. See
+      // `framedNameHalf`.
+      nameBand: framedNameHalf(),
       // The feed clause used to be a bare label width, capped. It is now the
       // feed's own measured demand times `(n+1)` — which subsumes that label,
       // since a shut feed measures as a leaf whose `hFit` *is* its capped name.
