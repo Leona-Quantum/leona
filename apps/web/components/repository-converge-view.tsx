@@ -172,7 +172,6 @@ interface ConvergeCopy {
   sizePercent: (n: number) => string;
   opens: (n: number) => string;
   inside: string;
-  needs: string;
   routes: (delegated: number, partly: number, whole: number) => string;
   canvasLabel: (subject: string) => string;
   /** The two overlay controls, which have icons and no visible label. */
@@ -244,7 +243,6 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     sizePercent: (n: number) => `${n}%`,
     opens: (n: number) => `opens into ${n}`,
     inside: "open",
-    needs: "needs",
     routes: (delegated: number, partly: number, whole: number) =>
       `Of the routes that have been taken apart, ${delegated} are built entirely from named slots, ${partly} hand off part of the work and finish the rest themselves, and ${whole} are one undivided act. None of the three is a defect; they are different things to reuse.`,
     canvasLabel: (subject: string) =>
@@ -313,7 +311,6 @@ const COPY: Record<"en" | "ja", ConvergeCopy> = {
     sizePercent: (n: number) => `${n}%`,
     opens: (n: number) => `内側に ${n} 件`,
     inside: "展開中",
-    needs: "必要なもの",
     routes: (delegated: number, partly: number, whole: number) =>
       `分解されている経路のうち、${delegated} 件は名前のついた枠だけで構成され、${partly} 件は一部を枠に委ね残りを自身で行い、${whole} 件は分けられないひとつの作業です。いずれも欠陥ではなく、再利用の単位が違うということです。`,
     canvasLabel: (subject: string) =>
@@ -546,34 +543,17 @@ function Lines({
   diagram: ConvergeDiagram;
   copy: ConvergeCopy;
 }): React.ReactElement {
-  // **`parentKey`, not a key prefix**, and `ConvergeFeed.parentKey` exists for
-  // exactly this — its own doc comment is a warning that a prefix of an address
-  // selects the whole subtree under it and never one generation.
-  //
-  // **This is a hardening, not a repair, and the measurement says so.** Swept
-  // over every slot figure and every method page, saturated — 2,830 lanes — the
-  // two agree everywhere, because a feed's key is `<parentKey>~<slot>` and feeds
-  // are only ever planned on the lane that consumes them. The prefix is right by
-  // an accident of two facts rather than by the one that matters, and this list
-  // is the whole of the figure for a reader who is not looking at it. `a lane's
-  // ingredients are its own, not its descendants'` pins the equivalence so the
-  // day a feed is planned one level down, it is caught here rather than read out
-  // to somebody as the truth.
-  const feedsFor = (lane: ConvergeLane) =>
-    diagram.feeds.filter((feed) => feed.parentKey === lane.key);
   return (
     <ol className="mj-converge-lanes">
       {/* **A lane whose name is already on the page is not read out a second
           time.** `nameless` means exactly that — the canvas suppresses the
           drawing for it — and this list was restating it anyway: 117 own-stretch
-          lanes said their method's name straight after the method said it, and
-          since session 118 an open ingredient's fan base would have said the
-          stub's. A reader who cannot see the picture got the repeat the owner
-          reported, twice over, with no shape beside it to explain why.
+          lanes said their method's name straight after the method said it. A
+          reader who cannot see the picture got the repeat the owner reported,
+          with no shape beside it to explain why.
 
           Skipping costs no destination: an own stretch links to its method's
-          page, which is the row above it, and a fan base links to its slot,
-          which is the stub listed under its own parent. */}
+          page, which is the row above it. */}
       {diagram.lanes.filter((lane) => !lane.nameless).map((lane) => (
         <li
           key={lane.key}
@@ -602,17 +582,6 @@ function Lines({
                 </>
               ) : null}
             </span>
-          ) : null}
-          {feedsFor(lane).length > 0 ? (
-            <ul className="mj-converge-feeds">
-              {feedsFor(lane).map((feed) => (
-                <li key={feed.key}>
-                  {copy.needs}
-                  {": "}
-                  <a href={feed.href}>{spokenName(feed)}</a>
-                </li>
-              ))}
-            </ul>
           ) : null}
         </li>
       ))}

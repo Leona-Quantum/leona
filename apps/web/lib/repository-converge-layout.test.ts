@@ -48,6 +48,7 @@ import {
   rootCapabilities,
   routeOf,
   type LayerCapability,
+  type LayerMethod,
 } from "./repository/layers.ts";
 import { cardFor, ownCardId } from "./repository/card-content.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
@@ -58,6 +59,22 @@ import type { PublicLocale } from "./public-locale.ts";
 
 const M = CONVERGE_METRICS;
 const EPS = 1e-6;
+
+/**
+ * What `cardFor` needs, with an empty corpus.
+ *
+ * Empty because no assertion in this file reads the *Records* section — the
+ * join to the repository is `repository-map-card.test.ts`'s subject. Declared
+ * up here rather than beside the card block because two sections now build
+ * cards: that one, and the guard that ingredients left the canvas for one.
+ */
+const CARD_INPUT = {
+  graph: LAYER_GRAPH,
+  vocabulary: STATE_VOCABULARY,
+  corpus: [],
+  locale: "en",
+  register: PAPER_REGISTER,
+} as const;
 
 function diagramFor(id: string, locale: PublicLocale = "en"): ConvergeDiagram {
   const node = layerNode(LAYER_GRAPH, id);
@@ -1178,14 +1195,13 @@ function openableAddresses(id: string, graph: LayerGraph = LAYER_GRAPH): string[
       open,
     });
     let grew = false;
-    // **Feeds as well as lanes, and this line is why the ingredient work could
-    // have shipped broken-green.** This walked `diagram.lanes` only. An
-    // ingredient's control lives on its stub, which is a `ConvergeFeed`, so with
-    // lanes alone no test in this file ever builds a figure with an opened
-    // ingredient — and `opening a line keeps every line apart`, the canvas-bounds
-    // check and `no line stands up on end` would all have stayed green over a
-    // set that excluded the entire feature.
-    for (const openable of [...diagram.lanes, ...diagram.feeds]) {
+    // Lanes, and lanes are all there are. It walked `diagram.feeds` alongside
+    // them while an ingredient's control lived on a stub of its own; issue 16
+    // took ingredients off this canvas, so the second list is gone rather than
+    // empty. If a second kind of openable shape is ever added, it belongs here
+    // — with lanes alone this walk once excluded a whole feature and left every
+    // opened-state check in this file green over a set that could not reach it.
+    for (const openable of diagram.lanes) {
       if (openable.openHref === null) continue;
       if (seen.has(openable.address)) continue;
       seen.add(openable.address);
@@ -1418,9 +1434,22 @@ test("a line that opens into something says so, and a line that does not is not 
   // (−2 slot lanes, +7 method lanes, all seven openable into their routes),
   // and the Koopman-von Neumann narrowing stopped being drawn beside the
   // embedding lane whose fan contains it (−1 leaf).
+  // 27/36 until issue 16 took ingredients off the canvas. **The total does not
+  // move and the split does, by exactly seven**, and that is the shape of the
+  // change rather than a coincidence: `hhl-qpe-inversion`,
+  // `chebyshev-lcu-inversion`, `pauli-lcu-block-encoding`,
+  // `fixed-point-amplification` and the three readouts each record one route
+  // segment and at least one ingredient, so the ingredients were the whole of
+  // what opening them drew. With those on the card there is nothing left for the
+  // canvas to expand, and all seven move from `openable` to `leaves` — a name in
+  // the line, one click to a card that lists what they need.
+  //
+  // **A picture removed, not affordance quietly lost**, the same distinction
+  // session 118's note above draws, and the reason both numbers are named: 20
+  // alone is indistinguishable from a graph that stopped recording routes.
   assert.equal(openable + leaves + 1, 64, "the nineteen figures draw 64 lines between them");
-  assert.equal(openable, 27, "27 of them open into something recorded");
-  assert.equal(leaves, 36, "36 are leaves — nothing finer is recorded for them");
+  assert.equal(openable, 20, "20 of them open into something the canvas draws");
+  assert.equal(leaves, 43, "43 are leaves — the canvas records nothing finer for them");
 });
 
 test("opening a line keeps every line apart — the crossing-free claim, with things open", () => {
@@ -1454,52 +1483,21 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
   // line it is a decomposition of — and it would look like a rendering artefact
   // rather than the false claim it is.
   //
-  // **Ingredients are the one nested lane this is not true of, and they are held
-  // to the counterpart rather than excused.** A step decomposes the line it is
-  // drawn on; an ingredient is something that line *consumes*, hanging off the
-  // side at the end of a stub. So a lane with a `feedKey` is checked against the
-  // stub instead — both its ends must sit on the stub's far end — which is the
-  // same claim ("you are attached to what you say you are attached to") measured
-  // against the thing it is actually attached to. Both arms carry a denominator,
-  // because an invariant that silently checks nothing is the failure this file
-  // has a whole section of comments about.
+  // **Total over every nested lane, with no exception left.** An ingredient's
+  // fan used to be one: it hung off the side at the end of a stub rather than
+  // lying on the line it was drawn under, so it was checked against the stub
+  // instead. Issue 16 took ingredients off this canvas, so every nested lane on
+  // the figure is now a decomposition of the one above it and the second arm
+  // has no subject. A denominator is carried, because an invariant that
+  // silently checks nothing is the failure this file has a whole section of
+  // comments about.
   let onParent = 0;
-  let onStub = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       const diagram = openDiagram(focus.id, open);
       const byKey = new Map(diagram.lanes.map((lane) => [lane.key, lane]));
-      const stubs = new Map(diagram.feeds.map((feed) => [feed.key, feed]));
       for (const lane of diagram.lanes) {
         if (lane.depth === 0) continue;
-        if (lane.feedKey !== null) {
-          const stub = stubs.get(lane.feedKey);
-          assert.ok(stub, `${lane.key} hangs off a stub ${lane.feedKey} that is not drawn`);
-          // **Not `stub.y1`.** `feedReach`/`placeFeeds` push the fan's base
-          // out past the stub's own drawn end whenever the fan's half-band
-          // (`stub.vHalf`) exceeds `feedRun` — see the comment on `feedReach`
-          // — so a lane hanging off an *opened* stub sits on the fan's base,
-          // `y1 + outward · max(0, vHalf − feedRun)`, not on `y1` itself.
-          // Derived from `stub.vHalf`, which `placeFeeds` recorded from the
-          // same `Measure` this formula reads in production, rather than a
-          // constant copied in by hand — so a future change to the push
-          // amount fails this test by disagreeing with itself, not by
-          // silently drifting out of sync with a number pinned here.
-          const fanY = stub.y1 + stub.outward * Math.max(0, stub.vHalf - M.feedRun);
-          const ends = drawnEnds(lane.d);
-          for (const [x, y] of [
-            [ends.sx, ends.sy],
-            [ends.ex, ends.ey],
-          ] as const) {
-            assert.ok(
-              Math.abs(y - fanY) < 0.6,
-              `${focus.id}: ${lane.key} ends at y=${y}, off the fan base of stub ${stub.key} at ${fanY}`,
-            );
-            void x;
-          }
-          onStub += 1;
-          continue;
-        }
         assert.ok(lane.parentKey, `${lane.key} is nested but names no parent`);
         const parent = byKey.get(lane.parentKey);
         assert.ok(parent, `${lane.key} names a parent ${lane.parentKey} that is not drawn`);
@@ -1556,7 +1554,6 @@ test("a step drawn inside a lane sits ON that lane, at both of its ends", () => 
     }
   }
   assert.ok(onParent > 500, `only ${onParent} nested lanes checked against a parent line`);
-  assert.ok(onStub > 0, `no ingredient fan was drawn at all — ${onStub} lanes hang off a stub`);
 });
 
 test("nothing an opened figure draws leaves the canvas", () => {
@@ -1878,7 +1875,6 @@ test("no two shapes on one figure share a key", () => {
       const keys = [
         ...diagram.lanes.map((lane) => lane.key),
         ...diagram.states.map((state) => state.key),
-        ...diagram.feeds.map((feed) => feed.key),
       ];
       assert.equal(
         new Set(keys).size,
@@ -1889,139 +1885,86 @@ test("no two shapes on one figure share a key", () => {
   }
 });
 
-test("an ingredient is drawn only inside an opened strand, and always as an address", () => {
-  // 27 ingredients across 20 of the 29 decomposed methods. Before they were
-  // drawn, opening `hhl-qpe-inversion` showed nothing at all — all three of its
-  // steps are things it needs rather than stages it passes through, so
-  // `routeOf` returned one segment and the method read as having no recorded
-  // structure at all.
-  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    assert.equal(diagramFor(focus.id).feeds.length, 0, `${focus.id} draws ingredients unopened`);
-  }
-  let drawn = 0;
-  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    for (const open of openings(focus.id)) {
-      const diagram = openDiagram(focus.id, open);
-      for (const feed of diagram.feeds) {
-        drawn += 1;
-        assert.ok(feed.href.startsWith("/repository/layers/"), `${feed.key} is not an address`);
-        assert.ok(feed.fullLabel.length > 0, `${feed.key} has no name`);
-        assert.notEqual(feed.y0, feed.y1, `${feed.key} is a stub of no length`);
-        assert.ok(
-          feed.y1 > 0 && feed.y1 < diagram.height,
-          `${feed.key} hangs off the canvas at ${feed.y1} of ${diagram.height}`,
-        );
-        // It must hang the way its strand bows, never back through the figure.
-        assert.equal(
-          Math.sign(feed.y1 - feed.y0),
-          feed.outward,
-          `${feed.key} hangs against its own direction`,
-        );
-      }
-    }
-  }
-  assert.ok(drawn > 0, "no ingredient was drawn on any opening — the feature is inert");
-});
-
-test("an open ingredient is named once, not once as a stub and again on its fan", () => {
-  // The owner, session 118: *"still seeing things like … strange repeats within
-  // larger processes. These kinds of things need to be eliminated."*
+test("no ingredient is drawn on the canvas, and every one of them is on a card", () => {
+  // **The owner's ruling, issue 16**, and the only place it is checkable
+  // against the whole corpus at once:
   //
-  // An open ingredient was two shapes carrying one string. `placeFeeds` pushes
-  // the stub, then calls `place` on the same strand, which pushes a lane at the
-  // **identical address** — and both drew the name. Measured before the fix: 94
-  // of 94 open ingredients, e.g. `quantum-linear-solve` opened three deep drew
-  // *"Prepare an input state ×O(κ)"* at two heights with nothing saying they are
-  // one thing.
+  // > *"i think ingredients don't belong on the map visual. i think any
+  // > method/process that has ingredients should have a section in their card
+  // > for them."*
   //
-  // Asserted against the **drawn** string rather than against the plan, because
-  // that is what the reader sees, and pinned with a floor so the sweep cannot
-  // pass by finding no open ingredients at all.
-  let pairs = 0;
-  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    for (const locale of ["en", "ja"] as const) {
-      for (const open of openings(focus.id)) {
-        const diagram = openDiagram(focus.id, open, locale);
-        const byKey = new Map(diagram.feeds.map((feed) => [feed.key, feed]));
-        for (const lane of diagram.lanes) {
-          if (lane.feedKey === null) continue;
-          const stub = byKey.get(lane.feedKey);
-          if (stub === undefined) continue;
-          pairs += 1;
-          assert.equal(
-            lane.label,
-            "",
-            `${lane.key} draws "${lane.label}" and the stub above it draws "${stub.label}"`,
-          );
-          // …and the name did not simply vanish with the second copy.
-          assert.ok(
-            stub.label.length > 0,
-            `${stub.key}: the ingredient is now named nowhere at all`,
-          );
-        }
-      }
-    }
-  }
-  assert.ok(pairs > 50, `only ${pairs} opened ingredients were examined`);
-});
-
-test("a lane's ingredients are its own, not its descendants'", () => {
-  // The accessible list beside the figure — which **is** the figure for a reader
-  // who is not looking at it — groups ingredients under the lane that needs them,
-  // and it selected them by key prefix until session 118. `ConvergeFeed.parentKey`
-  // exists because a prefix of an address selects the whole subtree under it and
-  // never one generation, and that warning is written on the field itself.
+  // Three tests stood here and all three were about the stub and the fan the
+  // canvas used to draw — that they hung the way their strand bowed, that an
+  // open one was named once rather than twice, that a lane's ingredients were
+  // its own and not its descendants'. Their subject is gone, so they are gone,
+  // and this is what replaces them: the same fact stated as the two halves the
+  // ruling actually has.
   //
-  // **The two are not interchangeable, and this counts by how much.** A feed's
-  // key is `<parentKey>~<slot>`, so a lane that opens into methods which
-  // themselves hang ingredients matches every one of them by prefix — the extras
-  // belonging to whatever is two levels down.
-  //
-  // **The count is printed rather than described**, and that is deliberate: the
-  // worked example this comment used to carry named a lane that session 118's own
-  // corpus change then turned into a leaf, so the prose went stale the same
-  // afternoon it was written. A number the run prints cannot. It is asserted
-  // non-zero rather than pinned, because it is the *reason* the field exists — if
-  // it ever reaches zero, that is not a fix, it is a graph that stopped nesting,
-  // and the equivalence would then look safe to anyone who came back to simplify
-  // this.
-  let lanes = 0;
-  let owned = 0;
-  let overReported = 0;
-  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    for (const open of openings(focus.id)) {
-      const diagram = openDiagram(focus.id, open);
-      const keys = new Set(diagram.lanes.map((lane) => lane.key));
-      // Exactly one lane owns each ingredient, and it is a lane that is drawn.
-      for (const feed of diagram.feeds) {
-        assert.ok(
-          keys.has(feed.parentKey),
-          `${feed.key}: parentKey ${feed.parentKey} is not a lane on this figure`,
-        );
-      }
-      for (const lane of diagram.lanes) {
-        lanes += 1;
-        const byParent = diagram.feeds.filter((feed) => feed.parentKey === lane.key);
-        const byPrefix = diagram.feeds.filter((feed) => feed.key.startsWith(`${lane.key}~`));
-        if (byParent.length > 0) owned += 1;
-        assert.ok(
-          byPrefix.length >= byParent.length,
-          `${lane.key}: parentKey names an ingredient the prefix does not`,
-        );
-        if (byPrefix.length > byParent.length) overReported += 1;
-      }
-    }
-  }
-  assert.ok(lanes > 100, `only ${lanes} lanes examined`);
-  assert.ok(owned > 0, "no lane owns an ingredient, so this compares two empty lists");
-  console.log(
-    `[ingredient ownership] ${lanes} lanes, ${owned} own one, ${overReported} would be over-reported by a key prefix`,
+  // Both halves matter and only together. Deleting the drawing and stopping
+  // there would take the ingredient off the page entirely, which is not what he
+  // asked for — the card is where it went.
+  const withIngredients = LAYER_GRAPH.nodes.filter(
+    (node): node is LayerMethod =>
+      isMethod(node) && routeOf(LAYER_GRAPH, STATE_VOCABULARY, node).feeds.length > 0,
   );
+  // Not vacuous: 20 of the 63 methods consume something. If the corpus ever
+  // stops recording ingredients at all, this says so instead of passing.
   assert.ok(
-    overReported > 0,
-    "a key prefix and `parentKey` now agree everywhere — the trap this guards against has no " +
-      "witness, so re-read `ConvergeFeed.parentKey` before trusting either",
+    withIngredients.length >= 15,
+    `only ${withIngredients.length} methods record an ingredient — this guard has nothing to check`,
   );
+
+  // Half one: the canvas. Swept saturated, because the stub was only ever drawn
+  // inside an opened strand — a shut sweep would pass over a figure that never
+  // had one.
+  let lanes = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const saturated = openDiagram(focus.id, openableAddresses(focus.id));
+    lanes += saturated.lanes.length;
+    const ids = new Set(saturated.lanes.map((lane) => lane.draws).filter((id) => id !== null));
+    for (const method of withIngredients) {
+      if (!ids.has(method.id)) continue;
+      for (const id of routeOf(LAYER_GRAPH, STATE_VOCABULARY, method).feeds) {
+        // An ingredient may still appear as a **slot of its own** somewhere else
+        // on the figure — `state-preparation` is a step of one route and an
+        // ingredient of another, and the first is a hop that moves the route
+        // along. What must not exist is a lane drawn *under* the method that
+        // consumes it, which is what a stub's fan was.
+        const under = saturated.lanes.filter(
+          (lane) =>
+            lane.draws === id &&
+            lane.parentKey !== null &&
+            (saturated.lanes.find((parent) => parent.key === lane.parentKey)?.draws ?? null) ===
+              method.id,
+        );
+        assert.equal(
+          under.length,
+          0,
+          `${focus.id}: ${method.id} draws its ingredient ${id} on the canvas (${under
+            .map((lane) => lane.key)
+            .join(", ")})`,
+        );
+      }
+    }
+  }
+  assert.ok(lanes > 300, `only ${lanes} lanes swept`);
+
+  // Half two: the card. `Requires` is held for every method that consumes
+  // anything, and it names the same ids `routeOf` classified as feeds — so what
+  // left the drawing arrived somewhere a reader can still reach.
+  for (const method of withIngredients) {
+    const card = cardFor(CARD_INPUT, method.id);
+    assert.ok(card && card.kind === "method", `${method.id} builds no method card`);
+    assert.ok(
+      card.ingredients.held,
+      `${method.id} consumes an ingredient and its card's Requires section is empty`,
+    );
+    assert.deepEqual(
+      card.ingredients.value.map((item) => item.link.id),
+      [...routeOf(LAYER_GRAPH, STATE_VOCABULARY, method).feeds],
+      `${method.id}: the card's Requires list is not the route's ingredients`,
+    );
+  }
 });
 
 test("a chain's column is wide enough for its widest step, taken once per step", () => {
@@ -2099,14 +2042,34 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
   // by `backward-euler`. A lookup keyed on the node id would put one route's
   // count on the other's line, and the picture would read as a claim no source
   // makes. So the expected set is read off the graph, per (method, step) pair.
+  // **Partitioned on where the step is drawn, and the partition is the point.**
+  // 7 of the corpus's 10 records key a step `routeOf` files as an *ingredient*
+  // — the three readouts' ε^-2 and HHL's two κ's — and an ingredient is card
+  // content since issue 16. So a mark keyed to one of those is not owed a lane
+  // and never can have one; it is owed a row in that method's Requires
+  // section. This test used to demand every record reach a figure, which was
+  // right while the stub was drawn and would now be a demand the drawing cannot
+  // meet.
+  //
+  // Both halves are checked, and that is what stops the ruling from quietly
+  // losing the most expensive numbers on this map: a record that reaches
+  // neither surface still fails.
   const expected = new Map<string, string>();
+  const onCard = new Map<string, string>();
   for (const node of LAYER_GRAPH.nodes) {
     if (!isMethod(node) || node.repeats === undefined) continue;
+    const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, node);
     for (const [stepId, repetition] of Object.entries(node.repeats)) {
-      expected.set(`${node.id}|${stepId}`, repetition.mark);
+      const key = `${node.id}|${stepId}`;
+      if (route.feeds.includes(stepId)) onCard.set(key, repetition.count);
+      else expected.set(key, repetition.mark);
     }
   }
   assert.ok(expected.size > 0, "no multiplicity is recorded at all — this test measures nothing");
+  assert.ok(
+    onCard.size > 0,
+    "no multiplicity keys an ingredient — the card half below is checking nothing",
+  );
   const drawn = new Set<string>();
   let marked = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
@@ -2116,23 +2079,17 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
         for (const lane of diagram.lanes) {
           if (lane.repeatMark === null) continue;
           marked += 1;
-          // **A nameless lane draws no label, so the mark rides on the shape that
-          // does.** Since session 118 the base an open ingredient's fan hangs
-          // from is `nameless` — the stub one shape above it carries the name,
-          // and drawing both was the repeat the owner reported. The count must
-          // still reach the reader, so this arm follows it to the stub rather
-          // than excusing the lane: an exemption that only skipped would let the
-          // mark vanish from the figure entirely and pass.
-          if (lane.nameless) {
-            assert.equal(lane.label, "", `${lane.key} is nameless and draws "${lane.label}"`);
-            assert.ok(
-              diagram.feeds.some(
-                (feed) => feed.key === lane.feedKey && feed.repeatMark === lane.repeatMark,
-              ),
-              `${lane.key} carries ${lane.repeatMark}, draws nothing, and no stub above it draws it either`,
-            );
-            continue;
-          }
+          // **A nameless lane draws no label, so a mark on one would be drawn
+          // nowhere.** There was a shape this happened to — the base an open
+          // ingredient's fan hung from, whose name the stub above it carried —
+          // and it left the canvas with the ingredients. Asserted rather than
+          // assumed: if a second nameless shape ever picks up a count, the mark
+          // vanishes from the figure in silence, which is exactly how this
+          // relation was invisible for nine sessions.
+          assert.ok(
+            !lane.nameless,
+            `${lane.key} carries ${lane.repeatMark} and draws no name, so the count is drawn nowhere`,
+          );
           // The mark is at the end of what is drawn, whether or not the name in
           // front of it was cut. This is the invariant the whole placement is
           // for: a name is legible from the figure's other lanes, and the count
@@ -2144,14 +2101,6 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
           assert.ok(
             [...lane.repeatMark].length <= REPEAT_MARK_MAX,
             `${lane.key}: ${lane.repeatMark} is longer than a mark may be`,
-          );
-        }
-        for (const feed of diagram.feeds) {
-          if (feed.repeatMark === null) continue;
-          marked += 1;
-          assert.ok(
-            feed.label.endsWith(` ${feed.repeatMark}`),
-            `${feed.key} carries ${feed.repeatMark} and draws "${feed.label}"`,
           );
         }
       }
@@ -2171,13 +2120,11 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
           // Whole-id, not substring — the same correction the refinement census
           // needed, applied here because it is the same idiom and the same
           // corpus: `lightsabre-routing` ends with the whole of `sabre-routing`.
+          if (!expected.has(key)) continue;
           const onLane = diagram.lanes.some(
             (lane) => lane.repeatMark === expected.get(key) && keyNames(lane.key).has(method.id),
           );
-          const onFeed = diagram.feeds.some(
-            (feed) => feed.repeatMark === expected.get(key) && keyNames(feed.parentKey).has(method.id),
-          );
-          if (onLane || onFeed) drawn.add(key);
+          if (onLane) drawn.add(key);
         }
       }
     }
@@ -2185,9 +2132,27 @@ test("every recorded multiplicity is drawn on the lane that walks it, on the rou
   assert.deepEqual(
     [...expected.keys()].filter((key) => !drawn.has(key)),
     [],
-    "a recorded multiplicity reaches no figure at all",
+    "a recorded multiplicity that keys a hop reaches no figure at all",
   );
-  console.log(`[map repeat census] ${expected.size} records, ${marked} marked lanes drawn across every figure and opening`);
+  // The other half: a multiplicity that keys an ingredient reaches the card of
+  // the method that walks it, with the count the graph recorded.
+  for (const [key, count] of onCard) {
+    const [methodId, stepId] = key.split("|") as [string, string];
+    const card = cardFor(CARD_INPUT, methodId);
+    assert.ok(card && card.kind === "method", `${methodId} builds no method card`);
+    assert.ok(card.ingredients.held, `${methodId}: Requires is empty and holds a count`);
+    const row = card.ingredients.value.find((item) => item.link.id === stepId);
+    assert.ok(row, `${methodId}: Requires does not list ${stepId}`);
+    assert.equal(
+      row.repetition?.count,
+      count,
+      `${key}: the card does not carry the count the graph records`,
+    );
+  }
+  console.log(
+    `[map repeat census] ${expected.size} hop records drawn as ${marked} marked lanes across every ` +
+      `figure and opening; ${onCard.size} ingredient records on their methods' cards`,
+  );
 });
 
 test("every declared refinement is drawn on the lane of the method that declares it", () => {
@@ -2223,7 +2188,7 @@ test("every declared refinement is drawn on the lane of the method that declares
       for (const open of openings(focus.id)) {
         const diagram = openDiagram(focus.id, open, locale);
         const byKey = new Map(diagram.lanes.map((lane) => [lane.key, lane]));
-        for (const shape of [...diagram.lanes, ...diagram.feeds]) {
+        for (const shape of diagram.lanes) {
           if (shape.refinement === null) continue;
           marks += 1;
           assert.ok(
@@ -2287,12 +2252,11 @@ test("every declared refinement is drawn on the lane of the method that declares
     }
   }
   assert.ok(nested > 0, "no variant lane was drawn at all — the nesting is untested");
-  // Reached-a-drawing, resolved by **exact** id. A lane carries its method in
-  // `draws`, which `planForMethod` sets unconditionally — `nodeId` goes null on
-  // a leaf and a leaf is most of this corpus. A stub has no such field, so its
-  // parent key is split into id-shaped tokens and matched whole: `includes` is
-  // wrong here and not hypothetically so, since `lightsabre-routing` ends with
-  // the whole of `sabre-routing`.
+  // Reached-a-drawing, resolved by **exact** id on `draws`, which
+  // `planForMethod` sets unconditionally — `nodeId` goes null on a leaf and a
+  // leaf is most of this corpus. It had a second arm matching a stub by
+  // id-shaped tokens in its parent key, because a stub carried no `draws`;
+  // ingredients are card content since issue 16 and there is no second shape.
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       const diagram = openDiagram(focus.id, open);
@@ -2300,10 +2264,7 @@ test("every declared refinement is drawn on the lane of the method that declares
         const onLane = diagram.lanes.some(
           (lane) => lane.refinement?.mark === mark && lane.draws === methodId,
         );
-        const onFeed = diagram.feeds.some(
-          (feed) => feed.refinement?.mark === mark && keyNames(feed.parentKey).has(methodId),
-        );
-        if (onLane || onFeed) drawn.add(methodId);
+        if (onLane) drawn.add(methodId);
       }
     }
   }
@@ -2369,7 +2330,7 @@ test("the count reaches a reader who is not looking at the picture", () => {
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const open of openings(focus.id)) {
       const diagram = openDiagram(focus.id, open);
-      for (const shape of [...diagram.lanes, ...diagram.feeds]) {
+      for (const shape of diagram.lanes) {
         assert.equal(
           spokenName(shape),
           expected(shape),
@@ -2391,29 +2352,6 @@ test("the count reaches a reader who is not looking at the picture", () => {
   }
   assert.ok(checked > 0, "no marked lane was checked — this test measures nothing");
   assert.ok(narrowed > 0, "no refinement was checked — this test measures half of what it says");
-});
-
-test("an ingredient's name stays on the canvas", () => {
-  // A lane name is centred in a column sized to hold it, so it cannot escape. An
-  // ingredient's name is drawn from its stub *rightwards* and had no such
-  // guarantee: read on production, `Amplify a success branc` — clipped by the
-  // viewport, with no ellipsis to say it had been cut, which is the
-  // silent-truncation failure in its smallest form.
-  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    for (const locale of ["en", "ja"] as const) {
-      for (const open of openings(focus.id)) {
-        const diagram = openDiagram(focus.id, open, locale);
-        for (const feed of diagram.feeds) {
-          const right = feed.x + 4 + estimateTextWidth(feed.label, M.laneFont);
-          assert.ok(
-            right <= diagram.width,
-            `${focus.id} (${locale}): "${feed.label}" reaches ${right.toFixed(1)} ` +
-              `on a canvas ${diagram.width} wide`,
-          );
-        }
-      }
-    }
-  }
 });
 
 /**
@@ -2699,13 +2637,11 @@ test("a name past the cap is cut, and the full text survives in the title", () =
       ...lanesOn(slot.id, new Set()),
       ...lanesOn(slot.id, new Set(openableAddresses(slot.id, graph))),
     ])
-    // **`!nameless`, because the subject is the cut and a nameless lane makes no
-    // cut.** Since session 118 the base an open ingredient's fan hangs from draws
-    // no label — the stub above it carries the name — so it reaches here with
-    // `fullLabel` set and `label` empty, and asking whether *that* was truncated
-    // is asking about a string nobody drew. The stub itself is checked by
-    // `an ingredient's name stays on the canvas`; the floor below is what keeps
-    // this filter from quietly emptying the subject.
+    // **`!nameless`, because the subject is the cut and a nameless lane makes
+    // no cut.** A nameless lane reaches here with `fullLabel` set and `label`
+    // empty, and asking whether *that* was truncated is asking about a string
+    // nobody drew. The floor below is what keeps this filter from quietly
+    // emptying the subject.
     .filter((lane) => lane.fullLabel === long && !lane.nameless);
   assert.ok(drawn.length > 0, "the fixture's long name is drawn on no figure at all");
   for (const lane of drawn) {
@@ -2735,63 +2671,6 @@ test("a name past the cap is cut, and the full text survives in the title", () =
   }
 });
 
-test("two ingredient names never overlap", () => {
-  // **A latent defect the tendons made visible, and the reason it was latent.**
-  //
-  // `placeFeeds` spreads stubs at `(i+1)/(n+1)` along their strand and writes
-  // each name from its own stub *rightwards*. `measure` asked the column for the
-  // **widest single** stub name and never for `n` of them side by side, so a
-  // method with three ingredients could always have written one over another —
-  // it just happened not to while a strand's whole span was available. A belly is
-  // shorter than the span it sits in, so the same spacing rule over a shorter run
-  // brought it out: read on the rendered page at `hhl-qpe-inversion`,
-  // *"Simulate Hamiltonian evolutiAmplify a success branch"*.
-  //
-  // Failable: deleting the `feedSpread` term from `measure`'s chain arm brings
-  // that overlap straight back on this figure.
-  let checked = 0;
-  // **Every opening, not just saturation.** Saturation is the *widest* a column
-  // ever gets, so it is the state least likely to show this: measured, the
-  // overlap is 0 there and 8 across the partial openings. A sweep that only ever
-  // fully opens a figure would have gone green over the defect that was on the
-  // screen — which is what it did, until this loop was widened.
-  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
-    for (const locale of ["en", "ja"] as const) {
-      for (const open of openings(focus.id)) {
-      const diagram = openDiagram(focus.id, open, locale);
-      // Grouped by the strand they hang off, because two stubs on two different
-      // strands are at two different heights and a shared x means nothing.
-      const rows = new Map<string, typeof diagram.feeds[number][]>();
-      for (const feed of diagram.feeds) {
-        const key = `${feed.y1}|${feed.outward}`;
-        rows.set(key, [...(rows.get(key) ?? []), feed]);
-      }
-      for (const row of rows.values()) {
-        const boxes = row
-          .filter((feed) => feed.label !== "")
-          .map((feed) => ({
-            label: feed.label,
-            x0: feed.x + 4,
-            x1: feed.x + 4 + estimateTextWidth(feed.label, M.laneFont),
-          }))
-          .sort((a, b) => a.x0 - b.x0);
-        for (let index = 1; index < boxes.length; index += 1) {
-          checked += 1;
-          assert.ok(
-            boxes[index]!.x0 >= boxes[index - 1]!.x1,
-            `${focus.id} (${locale}): "${boxes[index - 1]!.label}" runs into ` +
-              `"${boxes[index]!.label}" — the belly is too short to stand ${boxes.length} ` +
-              `ingredient names side by side`,
-          );
-        }
-      }
-      }
-    }
-  }
-  // A guard over an empty set passes for the wrong reason: 117 stub instances
-  // across the graph, most of them on methods with more than one.
-  assert.ok(checked > 40, `only ${checked} adjacent ingredient pairs checked`);
-});
 
 test("no two names overlap on an opened figure either", () => {
   // **This used to be a budget. It is now zero, and the zero was not bought.**
@@ -3140,34 +3019,39 @@ test("firstOrderRun is a share of the line, floored by the bow and ceilinged", (
  */
 const SIZE_CEILING = {
   /**
-   * Widest figure, fully opened, either locale. Today **10,573** —
-   * `linear-ode-solve` in `ja`. It was 9,571 before first-order lines started
-   * taking a share of themselves as tendon (`firstOrderRun`, session 112), then
-   * 10,867, and session 115 took 294px back off it by steepening
-   * `tendonAngleDeg` to 76° on the owner's ask to shorten the distance between
-   * states. Saturated is where that change buys least — the 340px ceiling is
-   * already what binds here — and the shut figures a reader actually arrives on
-   * is where it buys most.
-   */
-  saturatedWidth: 12_000,
-  /**
-   * Tallest, same sweep. Today **22,982** — `linear-ode-solve` in `en`, and it
-   * is new: that slot drew a two-lane state chain until session 119, when its
-   * own methods' `bypasses` refuted the chain and the figure became the fan
-   * of all seven routes (`drawsAsStateChain`).
+   * Widest figure, fully opened, either locale. Today **4,032** —
+   * `nonlinear-ode-solve` in `ja`.
    *
-   * **The trip was taken as the decision the note below demands, and this is
-   * the decision.** The height is not a regression in the drawing — it is the
-   * honest figure, inflated by a defect this file already has on the books: a
-   * shared sub-method is drawn once per branch, so the saturated fan draws
-   * `time-discretization`'s five methods once under Taylor, again under
-   * Krovi, again under Dyson (the 130-group census, NEXT.md §3). The real fix
-   * is that dedup, and this ceiling comes back down with it; a shape that
-   * merely hid the seven routes was not a smaller figure, it was a false one.
-   * Before the fan: 15,900 — `time-discretization` (en), 100px of headroom,
-   * which is why the old number sat at 16,000.
+   * It was 10,573 (`linear-ode-solve`, `ja`) against a 12,000 bar until issue
+   * 16 took ingredients off the canvas: an ingredient's fan was a whole extra
+   * level of nesting inside its consumer's belly, and `measure` charged the
+   * column `(n+1) ×` the widest of them. Summed over all 38 figure-locales,
+   * saturated width fell **66,899px → 36,805px, −45%**.
+   *
+   * **The ceiling comes down with it, and that is the point of having one.** A
+   * bar left at 12,000 over a 4,032px drawing is not a guard, it is 8,000px of
+   * room for the next regression to hide in — which is the exact failure the
+   * block comment above this one records.
    */
-  saturatedHeight: 24_000,
+  saturatedWidth: 5_000,
+  /**
+   * Tallest, same sweep. Today **8,748** — `linear-ode-solve` in `en`.
+   *
+   * **22,982 against a 24,000 bar until issue 16**, and this is where taking
+   * ingredients off the canvas paid most: a stub reserved
+   * `max(feedRun, vHalf) + vHalf` of band on the consuming strand *and* the
+   * strand's own `labelBand` on top, at every level of nesting, so the cost
+   * compounded down the tree. Summed over all 38 figure-locales, saturated
+   * height fell **136,383px → 45,837px, −66%**, and the saturated lane count
+   * fell 1,702 → 874.
+   *
+   * The remaining height is still inflated by a defect this file has on the
+   * books and did not fix: a shared sub-method is drawn once per branch, so
+   * the saturated fan draws `time-discretization`'s five methods once under
+   * Taylor, again under Krovi, again under Dyson (the 130-group census,
+   * NEXT.md §3). That dedup is what takes the next chunk out.
+   */
+  saturatedHeight: 10_000,
   /**
    * Widest figure with **nothing** open, which is what a reader is handed on
    * arrival. Today **1,045** against a 1,204px canvas, so this one is nearly
@@ -3185,6 +3069,13 @@ const SIZE_CEILING = {
    * first-order tendon is a *share* of the line rather than a longer flat run:
    * a flat 120px floor fixed the long lines and took this to **1,393**, buying
    * every shut figure a scale-down for a taper its short lines did not need.
+   *
+   * **Issue 16 did not move it, and that is the expected null result rather
+   * than a disappointment**: an ingredient was only ever drawn inside an
+   * *opened* strand, so a figure with nothing open never had one. Every shut
+   * number in the sweep is byte-identical across that change — summed width
+   * 15,287, summed height 11,275, widest 920 — which is also the cheapest
+   * evidence that the change removed a drawing rather than rearranging one.
    */
   shutWidth: 1_400,
 } as const;
@@ -3289,18 +3180,17 @@ test("every address a figure emits keeps the reader where they were standing", (
         open,
         at: AT,
       });
-      // **`feed.openHref` is in this list, and it was the one address that was
-      // not.** `layoutFigure` patched the lanes' open links explicitly and handed
-      // the feeds only `carryViewport`, which rewrites `href` and nothing else —
-      // so on `linear-ode-solve` saturated, 53 of 53 lanes carried the viewport
-      // and **0 of 12 feeds did**. Opening or shutting an ingredient threw the
-      // reader back to the origin at 100%, which does not read as a control
-      // working; it reads as the map jumping. This enumeration is the guard, and
-      // it had the hole: it listed four of the five addresses a figure emits.
+      // **Every address the figure emits, enumerated by hand, and the hand is
+      // the risk.** It listed four of the five while a stub carried a fifth,
+      // and the one it omitted was `feed.openHref`: `layoutFigure` patched the
+      // lanes' open links explicitly and handed the feeds only `carryViewport`,
+      // which rewrites `href` and nothing else, so on `linear-ode-solve`
+      // saturated 53 of 53 lanes carried the viewport and 0 of 12 stubs did.
+      // There are four again since issue 16 took ingredients off the canvas.
+      // A new kind of shape belongs in this list on the day it is added.
       const addresses = [
         ...carried.lanes.flatMap((lane) => [lane.href, lane.openHref]),
         ...carried.states.map((state) => state.href),
-        ...carried.feeds.flatMap((feed) => [feed.href, feed.openHref]),
       ].filter((href): href is string => typeof href === "string");
       assert.ok(addresses.length > 0, `${focus.id} emitted no addresses`);
       for (const href of addresses) {
@@ -3320,7 +3210,6 @@ test("every address a figure emits keeps the reader where they were standing", (
         const toNodePages = [
           ...carried.lanes.map((lane) => lane.href),
           ...carried.states.map((state) => state.href),
-          ...carried.feeds.map((feed) => feed.href),
         ].filter((href) => href.startsWith("/repository/layers/"));
         for (const href of toNodePages) {
           for (const id of open) {
@@ -3556,38 +3445,23 @@ test("a node id in ?open= still opens what it always opened", () => {
  * picture — would stop being able to find anything.
  */
 function drawnInterior(diagram: ConvergeDiagram, lane: ConvergeLane): string | null {
-  // **Steps only — `feedKey === null` excludes the hop off the side.** An opened
-  // ingredient's own lane is placed with `parentKey` set to the method it hangs
-  // off (its geometry is checked against the stub, which is not a lane, so it
-  // cannot point at one), which put it in this list *as well as* in `feeds`
-  // below. Two consequences, both wrong: the ingredient was named twice, and the
-  // string only grew the second name when that branch was shallow enough for the
-  // depth cap to let the ingredient open at all. `hhl-qpe-inversion` read as
-  // `«own»` at depth 3 and as `«own» ▸ Prepare an input state ▸ …` at depth ≤ 2 —
-  // the "2 different interiors" this gate reported about one unchanged method.
+  // **Steps only.** It carried a `feedKey === null` clause as well, to keep an
+  // opened ingredient's own lane out of the sequence: a stub's fan was placed
+  // with `parentKey` set to the method it hung off, so it landed in this list
+  // *as well as* in the ingredient list that used to follow, and the summary
+  // then changed with how far that branch happened to open. Ingredients are
+  // card content since issue 16 and no lane hangs off the side any more.
   // **And not a nested refinement (W13).** A variant carries `parentKey` like
   // a step does — it is drawn within the parent's band — but it is a peer of
   // the route, not a hop of it, and counting it here made `taylor-all-at-once`
   // read as `Krovi's reanalysis ▸ Truncated Taylor series ▸ …`, a route that
   // begins with a different method.
   const hops = diagram.lanes
-    .filter((child) => child.parentKey === lane.key && child.feedKey === null && !child.variant)
+    .filter((child) => child.parentKey === lane.key && !child.variant)
     .sort((a, b) => a.x0 - b.x0)
     .map((child) => (child.nameless ? "«own»" : child.fullLabel));
-  // **`parentKey`, not a key prefix.** A nested stub's key is built from its
-  // parent strand's key, which already carries a `~`, so
-  // `startsWith(`${lane.key}~`)` matched every stub in the whole subtree rather
-  // than this method's own. The interior string then grew or shrank with how far
-  // that branch happened to open — and the depth cap and the cycle guard make
-  // that different at different reach points — so this helper reported
-  // `hhl-qpe-inversion draws 3 different interiors depending on where it is
-  // reached` about three readings of one unchanged method.
-  const feeds = diagram.feeds
-    .filter((feed) => feed.parentKey === lane.key)
-    .map((feed) => feed.fullLabel)
-    .sort();
-  if (hops.length === 0 && feeds.length === 0) return null;
-  return `${hops.join(" ▸ ")}${feeds.length > 0 ? ` + needs ${feeds.join(" & ")}` : ""}`;
+  if (hops.length === 0) return null;
+  return hops.join(" ▸ ");
 }
 
 /**
@@ -3668,13 +3542,20 @@ test("a route that pins its step draws the algorithm's name there, not the slot'
  * Groups of methods that fill one slot and draw one interior, with the reason
  * each survives.
  *
- * **The twin of `KNOWN_TWINS` in `scripts/check-layer-graph.mjs`, and the two
- * are expected to hold the same groups.** They are not one list because they
- * measure two different things — that script groups the authored routes, this
- * groups a rendered diagram — and the whole reason this session exists is that
- * the two models had silently disagreed. What keeps them honest is that
- * **both sides error on a row nothing exercises**: a group that stops colliding
- * fails here and there, so a drift is red on one side rather than quiet on both.
+ * **The twin of `KNOWN_TWINS` in `scripts/check-layer-graph.mjs`.** They are
+ * not one list because they measure two different things — that script groups
+ * the authored routes, this groups a rendered diagram — and the whole reason
+ * this session exists is that the two models had silently disagreed. What keeps
+ * them honest is that **both sides error on a row nothing exercises**: a group
+ * that stops colliding fails here and there, so a drift is red on one side
+ * rather than quiet on both.
+ *
+ * **They no longer hold the same groups, and the difference is issue 16.** A
+ * method whose only recorded structure is its ingredients draws no interior at
+ * all now that ingredients are card content, so the three readouts collide as
+ * authored routes and do not collide as pictures — the picture is empty on all
+ * three, and an empty picture is a leaf rather than a twin. The row for them
+ * lives on that script's list and not on this one.
  *
  * A `refines` chain is not on this list and never needs to be. Declaring one
  * method a narrower version of another is the graph already saying why two
@@ -3689,20 +3570,46 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
   // scoreboard, which is a different measurement and a corpus job.
   {
     slot: "quantum-linear-solve",
-    methods: ["discrete-adiabatic-inversion", "eigenstate-filtering-inversion"],
+    methods: [
+      "qsvt-matrix-inversion",
+      "discrete-adiabatic-inversion",
+      "eigenstate-filtering-inversion",
+    ],
     why:
-      "Both walk block-encode → matrix function and prepare a state on the side. The difference is "
+      "All three walk block-encode → matrix function → their own closing work. The difference is "
       + "which function and how its phases are found, which lives inside `matrix-function` — a pin "
       + "waiting on that slot being decomposed.",
   },
   {
-    slot: "observable-estimation",
-    methods: ["direct-sampling-readout", "amplitude-estimation-readout", "classical-shadow-readout"],
+    slot: "hamiltonian-simulation",
+    methods: ["lcu-taylor-simulation", "qubitization-simulation"],
     why:
-      "Three readouts that each consume a prepared state and do their own work on it. The interior is "
-      + "one hop long, so there is no second hop to tell them apart by; what tells them apart is their "
-      + "own cost, which is on the method and not in the drawing.",
+      "Both block-encode the Hamiltonian and then do their own work on it, so the drawn sequence is "
+      + "one hop and a remainder for each. Everything that differs is an ingredient — Taylor needs a "
+      + "prepared state and an amplification round, qubitization needs QSP phase factors — and "
+      + "ingredients are on the card, not the canvas.",
   },
+  {
+    slot: "matrix-function",
+    methods: ["qsvt-transform", "lcu-chebyshev-transform"],
+    why:
+      "The same shape one slot down: both block-encode and then transform, and what differs is what "
+      + "each needs to do it — QSVT wants phase factors on top of the polynomial approximation both "
+      + "take. That is an ingredient, so it is on the card.",
+  },
+  // **This row went from two members to three with issue 16, and that is a
+  // cost of the ruling rather than a regression in the graph.** What told
+  // `qsvt-matrix-inversion` apart from the other two was an ingredient: it
+  // consumes `success-amplification` and they do not, and the stub for it was
+  // in the drawn interior. Ingredients are card content now, so the picture is
+  // the same for all three and the amplification is a line in QSVT's Requires
+  // section. Recorded here rather than removed by inventing a `via` pin the
+  // corpus does not carry.
+  // The `observable-estimation` row — the three readouts — was deleted with
+  // issue 16. Each records one hop and an ingredient, so what made their
+  // pictures identical was the ingredient; with that on the card they hold no
+  // interior the canvas draws and are leaves, and two leaves draw no picture at
+  // all rather than one picture twice.
 ];
 
 /**
@@ -3744,11 +3651,14 @@ test("no two routes through one slot draw the same interior unless something say
   const holders = LAYER_GRAPH.nodes.filter((node) => {
     if (!isMethod(node)) return false;
     const route = routeOf(LAYER_GRAPH, STATE_VOCABULARY, node);
-    // `planForMethod`'s own `holds`: two hops, or at least one ingredient. A leaf
-    // draws no interior at all, and two nothings are not one picture — without
-    // this the four atomic ways through `qsp-phase-factors` would read as a
-    // group of four drawing the same blank.
-    return route.segments.length >= 2 || route.feeds.length > 0;
+    // `planForMethod`'s own `holds`, and it must stay that expression: two
+    // hops. A leaf draws no interior at all, and two nothings are not one
+    // picture — without this the four atomic ways through `qsp-phase-factors`
+    // would read as a group of four drawing the same blank. It read
+    // `|| route.feeds.length > 0` while ingredients were shapes on the canvas,
+    // and dropping that clause here without dropping it there would leave seven
+    // methods listed as holding an interior the map cannot draw.
+    return route.segments.length >= 2;
   });
   const undrawn = holders.map((node) => node.id).filter((id) => !drawn.has(id));
   console.log(
@@ -3756,7 +3666,13 @@ test("no two routes through one slot draw the same interior unless something say
       + `${drawableSlots(LAYER_GRAPH, STATE_VOCABULARY).length} saturated figures`,
   );
   assert.deepEqual(undrawn.sort(), [...DRAWN_NOWHERE].sort());
-  assert.ok(drawn.size >= 20, `only ${drawn.size} methods drew an interior — the sweep has gone quiet`);
+  // 20 until issue 16. The seven methods whose only recorded structure was
+  // their ingredients hold no interior the canvas draws, so they leave both
+  // sides of this census at once — `holders` above and `drawn` here — and the
+  // floor comes down with them rather than becoming a bar the ruling cannot
+  // clear. It is still an absolute number and not a share of `holders`: a share
+  // is satisfied by a sweep that has stopped drawing anything at all.
+  assert.ok(drawn.size >= 14, `only ${drawn.size} methods drew an interior — the sweep has gone quiet`);
 
   const groups = new Map<string, { slot: string; drawn: string; ids: string[] }>();
   for (const id of drawn.keys()) {
@@ -3867,7 +3783,6 @@ function drawnShape(diagram: ConvergeDiagram): string {
       lane.depth,
       lane.subject,
     ]),
-    feeds: diagram.feeds.map((feed) => [feed.nodeId, feed.x, feed.y0, feed.y1]),
   });
 }
 
@@ -3988,14 +3903,6 @@ test("the map never marks a subject lane", () => {
  * on the catalog, which is exactly the coupling `card-content.ts` takes a
  * projection to avoid.
  */
-const CARD_INPUT = {
-  graph: LAYER_GRAPH,
-  vocabulary: STATE_VOCABULARY,
-  corpus: [],
-  locale: "en",
-  register: PAPER_REGISTER,
-} as const;
-
 // --- the card layer, and which surface is allowed to offer it ----------------
 //
 // W5 slice two. A name on the map opens the node's card in place instead of
@@ -4035,7 +3942,7 @@ test("a card link is offered only where a card layer exists, and never otherwise
         open,
       });
 
-      const offered = [...off.lanes, ...off.feeds].filter((mark) => mark.cardHref !== null);
+      const offered = off.lanes.filter((mark) => mark.cardHref !== null);
       assert.deepEqual(
         offered.map((mark) => mark.address),
         [],
@@ -4051,9 +3958,9 @@ test("a card link is offered only where a card layer exists, and never otherwise
         `${capability.id}: a state circle offered a card that ?card= cannot resolve`,
       );
 
-      for (const mark of [...on.lanes, ...on.feeds]) {
-        const own = "own" in mark ? (mark as ConvergeLane).own : null;
-        const draws = "draws" in mark ? (mark as ConvergeLane).draws : mark.nodeId;
+      for (const mark of on.lanes) {
+        const own = mark.own;
+        const draws = mark.draws;
         const id = own !== null ? ownCardId(own) : draws;
         if (mark.cardHref === null) {
           // **One shape may go without a card, and only one.** The stretch a
@@ -4068,7 +3975,7 @@ test("a card link is offered only where a card layer exists, and never otherwise
           // uncovered: `composite` and `own` are both null-id lanes and only one
           // of them is meant to be cardless.
           assert.ok(
-            "composite" in mark && (mark as ConvergeLane).composite,
+            mark.composite,
             `${capability.id}: ${mark.address} (draws=${draws}, own=${own}) was offered no card`,
           );
           continue;
@@ -4198,17 +4105,6 @@ test("every opened line's shut control is reachable where its own children do no
         });
       }
     }
-    for (const feed of diagram.feeds) {
-      if (feed.openHref === null) continue;
-      out.push({
-        order: order++,
-        owner: null,
-        test: (x, y) =>
-          Math.abs(x - feed.x) <= FEED_HIT / 2 &&
-          y >= Math.min(feed.y0, feed.y1) - FEED_HIT / 2 &&
-          y <= Math.max(feed.y0, feed.y1) + FEED_HIT / 2,
-      });
-    }
     for (const lane of diagram.lanes) {
       if (lane.label === "") continue;
       const x0 = lane.labelX - lane.labelWidth / 2 - 4;
@@ -4294,11 +4190,18 @@ test("every opened line's shut control is reachable where its own children do no
       );
     }
   }
-  // The denominators, so a saturation walk that returns nothing cannot pass
-  // this test over an empty map — and the chain count is the population the 85
-  // came from, so it is the one that must stay swept.
-  assert.ok(opened > 200, `only ${opened} opened lanes were checked`);
-  assert.ok(chains > 80, `only ${chains} of them are chains — the exoskeleton population is missing`);
+  // The denominators, printed and floored, so a saturation walk that returns
+  // nothing cannot pass this test over an empty map — and the chain count is
+  // the population the 85 came from, so it is the one that must stay swept.
+  //
+  // **The floors fell with issue 16 and the figures got smaller under them.**
+  // They were 200 and 80 against a canvas that also drew every ingredient and
+  // every ingredient's fan; with those on the card the saturated corpus is a
+  // smaller drawing, and a floor left at the old number would be a bar the
+  // change cannot clear rather than a guard against a quiet sweep.
+  console.log(`[collapse reach] ${opened} opened lanes, ${chains} of them chains`);
+  assert.ok(opened > 120, `only ${opened} opened lanes were checked`);
+  assert.ok(chains > 50, `only ${chains} of them are chains — the exoskeleton population is missing`);
 });
 
 test("a slot drawn as a state chain is walked by every method that fills it", () => {

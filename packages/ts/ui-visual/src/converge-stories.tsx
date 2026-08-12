@@ -38,20 +38,14 @@ import type { Story } from "./stories";
 function saturate(focusId: string, locale: PublicLocale): ConvergeDiagram | null {
   const focus = layerNode(LAYER_GRAPH, focusId);
   if (!focus || !isCapability(focus)) return null;
-  // `lane.address` **and `feed.address`** — the same accumulation
-  // `openableAddresses` does in the layout test file, deliberately, so the two
-  // guards cover the same figures. Reading `?open=` back out of `lane.openHref`
-  // was the first version and it opened a third as many lanes, because an href is
-  // a whole new address list rather than the one thing that lane adds.
+  // `lane.address`, accumulated the same way `openableAddresses` does in the
+  // layout test file, deliberately, so the two guards cover the same figures.
+  // Reading `?open=` back out of `lane.openHref` was the first version and it
+  // opened a third as many lanes, because an href is a whole new address list
+  // rather than the one thing that lane adds.
   //
-  // **`diagram.feeds` was missing, and the sentence above was false because of
-  // it.** #328 made an ingredient's stub a control — the fan of methods that
-  // opens beneath it is drawn by `place` like any other strand — and added
-  // `feed.address` to the layout test's walk. This one kept walking lanes only,
-  // so every figure rendered here has had **no opened ingredient in it at all**
-  // since that shipped: `mj-converge-feed--open` appears 144 times across the
-  // stories and every one of them is in the inlined stylesheet. A whole feature's
-  // render-level surface, uncovered, while the two walks were documented as one.
+  // It walked `diagram.feeds` alongside them until issue 16 took ingredients
+  // off this canvas. There is no second list of openables now.
   const open = new Set<string>();
   for (let round = 0; round < 12; round += 1) {
     const diagram = layoutConverge({
@@ -62,7 +56,7 @@ function saturate(focusId: string, locale: PublicLocale): ConvergeDiagram | null
       open,
     });
     let grew = false;
-    for (const openable of [...diagram.lanes, ...diagram.feeds]) {
+    for (const openable of diagram.lanes) {
       if (openable.openHref === null || open.has(openable.address)) continue;
       open.add(openable.address);
       grew = true;
