@@ -181,7 +181,6 @@ function saturatedOccurrences(
   // `nodeId` alone loses every leaf method, which was measured as 48 of 86
   // papers "revealing nowhere" before this line said `draws`.
   for (const lane of diagram.lanes) note(lane.draws ?? lane.nodeId, lane.address);
-  for (const feed of diagram.feeds) note(feed.nodeId, feed.address);
   for (const list of occurrences.values()) {
     list.sort((a, b) => depthOf(a) - depthOf(b) || (a < b ? -1 : 1));
   }
@@ -246,7 +245,6 @@ function drawnUnder(
   if (!focus || !isCapability(focus)) return addresses;
   const diagram = layoutConverge({ graph, vocabulary, focus, locale: "en", open: new Set(open), unfold });
   for (const lane of diagram.lanes) addresses.add(lane.address);
-  for (const feed of diagram.feeds) addresses.add(feed.address);
   return addresses;
 }
 

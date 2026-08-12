@@ -31,7 +31,7 @@ export const SEL_PARAM = "sel";
  * plus a state id, because selections come from clicks on all three. Matching
  * order is specificity: an address names one drawn occurrence outright; a state
  * id names its circle; a node id can be drawn several times since W15 (one host
- * plus demoted references), so it falls to the first lane or feed drawing it.
+ * plus demoted references), so it falls to the first lane drawing it.
  * First figure wins on the unfocused overview — an address is only unambiguous
  * within one figure, and the focused view (where selection actually happens)
  * draws exactly one.
@@ -39,26 +39,22 @@ export const SEL_PARAM = "sel";
 export function resolveSelection(
   sel: string | null,
   diagrams: readonly ConvergeDiagram[],
-): { figure: number; laneAddress: string | null; stateKey: string | null; feedKey: string | null } | null {
+): { figure: number; laneAddress: string | null; stateKey: string | null } | null {
   if (!sel) return null;
+  // A third arm stood in each of these passes, matching an ingredient's stub by
+  // address and by node id. Ingredients are card content since issue 16 and the
+  // canvas draws no stub, so there is no third kind of drawn thing to select.
   for (const [figure, diagram] of diagrams.entries()) {
     const byAddress = diagram.lanes.find((lane) => lane.address === sel);
-    if (byAddress) return { figure, laneAddress: byAddress.address, stateKey: null, feedKey: null };
-    // An ingredient's control lives on its stub, so opening one puts a FEED
-    // address into `?open=` — the address pass has to look there too, or a
-    // selected ingredient would only ever match by node id.
-    const byFeedAddress = diagram.feeds.find((feed) => feed.address === sel);
-    if (byFeedAddress) return { figure, laneAddress: null, stateKey: null, feedKey: byFeedAddress.key };
+    if (byAddress) return { figure, laneAddress: byAddress.address, stateKey: null };
   }
   for (const [figure, diagram] of diagrams.entries()) {
     const byStateId = diagram.states.find((state) => state.stateId === sel);
-    if (byStateId) return { figure, laneAddress: null, stateKey: byStateId.key, feedKey: null };
+    if (byStateId) return { figure, laneAddress: null, stateKey: byStateId.key };
   }
   for (const [figure, diagram] of diagrams.entries()) {
     const byNodeId = diagram.lanes.find((lane) => lane.nodeId === sel);
-    if (byNodeId) return { figure, laneAddress: byNodeId.address, stateKey: null, feedKey: null };
-    const byFeed = diagram.feeds.find((feed) => feed.nodeId === sel);
-    if (byFeed) return { figure, laneAddress: null, stateKey: null, feedKey: byFeed.key };
+    if (byNodeId) return { figure, laneAddress: byNodeId.address, stateKey: null };
   }
   return null;
 }

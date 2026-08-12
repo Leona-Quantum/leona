@@ -74,15 +74,16 @@ test("the owner's bug, end to end: a card click on the SECOND drawing of a node 
   const node = layerNode(LAYER_GRAPH, "linear-ode-solve");
   assert.ok(node && isCapability(node));
 
-  type Mark = { id: string; kind: "lane" | "feed"; address: string; key: string; cardHref: string | null };
-  const marksOf = (diagram: ReturnType<typeof layoutConverge>): Mark[] => [
-    ...diagram.lanes
+  // A second kind — an ingredient's stub — stood beside `lane` here until
+  // issue 16 took ingredients off the canvas. One kind now, and the `kind`
+  // field is kept rather than flattened because the branch below reads as the
+  // claim it is: whatever the drawn thing was, the carried selection lands on
+  // that occurrence and not on the node's first drawing.
+  type Mark = { id: string; kind: "lane"; address: string; key: string; cardHref: string | null };
+  const marksOf = (diagram: ReturnType<typeof layoutConverge>): Mark[] =>
+    diagram.lanes
       .filter((lane) => lane.nodeId !== null)
-      .map((lane): Mark => ({ id: lane.nodeId!, kind: "lane", address: lane.address, key: lane.key, cardHref: lane.cardHref })),
-    ...diagram.feeds
-      .filter((feed) => feed.nodeId !== "")
-      .map((feed): Mark => ({ id: feed.nodeId, kind: "feed", address: feed.address, key: feed.key, cardHref: feed.cardHref })),
-  ];
+      .map((lane): Mark => ({ id: lane.nodeId!, kind: "lane", address: lane.address, key: lane.key, cardHref: lane.cardHref }));
   const secondDrawing = (marks: Mark[]): { first: Mark; second: Mark } | null => {
     const seen = new Map<string, Mark>();
     for (const mark of marks) {
@@ -117,8 +118,8 @@ test("the owner's bug, end to end: a card click on the SECOND drawing of a node 
   const byId = resolveSelection(pair.second.id, [diagram]);
   assert.ok(byId);
   assert.notEqual(
-    pair.second.kind === "lane" ? byId.laneAddress : byId.feedKey,
-    pair.second.kind === "lane" ? pair.second.address : pair.second.key,
+    byId.laneAddress,
+    pair.second.address,
     "the id fallback already lands on the second drawing — the control proves nothing, pick a different pair",
   );
 
@@ -128,11 +129,7 @@ test("the owner's bug, end to end: a card click on the SECOND drawing of a node 
   carrySelection(params("focus=linear-ode-solve"), next);
   const resolved = resolveSelection(next.get(SEL_PARAM), [diagram]);
   assert.ok(resolved, "the carried selection resolved to nothing");
-  if (pair.second.kind === "lane") {
-    assert.equal(resolved.laneAddress, pair.second.address);
-  } else {
-    assert.equal(resolved.feedKey, pair.second.key);
-  }
+  assert.equal(resolved.laneAddress, pair.second.address);
 });
 
 test("a W15 jump's ?at=<address> becomes ?sel=, and the live viewport is carried under it", () => {
@@ -183,36 +180,12 @@ test("resolveSelection: a lane address names its own occurrence, a state id its 
   const lane = diagram.lanes[0];
   assert.ok(lane, "the real figure draws at least one lane");
   const byAddress = resolveSelection(lane.address, [diagram]);
-  assert.deepEqual(byAddress, { figure: 0, laneAddress: lane.address, stateKey: null, feedKey: null });
+  assert.deepEqual(byAddress, { figure: 0, laneAddress: lane.address, stateKey: null });
 
   const state = diagram.states[0];
   assert.ok(state, "the real figure draws at least one state");
   const byState = resolveSelection(state.stateId, [diagram]);
-  assert.deepEqual(byState, { figure: 0, laneAddress: null, stateKey: state.key, feedKey: null });
-});
-
-test("resolveSelection: an ingredient's FEED address matches its stub — the control that put it into ?open= lives there", () => {
-  const node = layerNode(LAYER_GRAPH, "linear-ode-solve");
-  assert.ok(node && isCapability(node));
-  // Open outward from the top until a stub exists: which depth first hangs an
-  // ingredient is the layout's business, and hard-coding an open set that
-  // happens to produce one today is the fixture drifting from the figure.
-  const open = new Set<string>();
-  let diagram = layoutConverge({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "en" });
-  for (let round = 0; round < 8 && diagram.feeds.length === 0; round++) {
-    let grew = false;
-    for (const lane of diagram.lanes) {
-      if (lane.openHref === null || open.has(lane.address)) continue;
-      open.add(lane.address);
-      grew = true;
-    }
-    assert.ok(grew, "the walk keeps finding openable lanes until a stub appears");
-    diagram = layoutConverge({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "en", open });
-  }
-  const feed = diagram.feeds[0];
-  assert.ok(feed, "the saturation walk reaches at least one ingredient stub");
-  const resolved = resolveSelection(feed.address, [diagram]);
-  assert.deepEqual(resolved, { figure: 0, laneAddress: null, stateKey: null, feedKey: feed.key });
+  assert.deepEqual(byState, { figure: 0, laneAddress: null, stateKey: state.key });
 });
 
 test("resolveSelection: a node id falls to the first lane drawing it; the first figure wins; junk resolves to null", () => {
