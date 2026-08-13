@@ -27,14 +27,38 @@ reviewer can still see them.
 To accept a specific finding, add its OSV id to ALLOWLIST below with a reason
 and a review date. Prefer upgrading.
 
+The gate also refuses a report that scanned nothing. `osv-scanner` emits
+`{"results": []}` when it finds no lockfiles at all, and an empty finding list
+is indistinguishable from a clean one by severity alone — so a scanner that
+silently stopped reading our lockfiles would report the repo as clean forever.
+REQUIRED_SOURCES makes the report carry its own denominator: each lockfile must
+appear with a plausible package count, which needs `--all-packages` on the scan
+(without it, osv-scanner lists only sources that HAVE advisories, so a clean
+lockfile is absent from the report and cannot be told apart from an unread one).
+
 Usage: python scripts/check_osv_report.py osv.json   (exit 1 on blocking finds)
+       python scripts/check_osv_report.py --self-test
 """
 
 import json
+import os
 import sys
-from pathlib import Path
+from pathlib import Path, PurePosixPath
 
 BLOCKING_CVSS = 7.0
+
+# lockfile -> the fewest packages a real scan of it can plausibly report.
+#
+# These are floors against a scan that read nothing or read a truncated file,
+# not an inventory: measured on origin/dev at 45395f9e, `pnpm-lock.yaml` held
+# 484 packages and `uv.lock` held 161, so the floors sit near a quarter of each
+# and survive ordinary dependency churn. If a real removal ever takes a lockfile
+# below its floor, lower the floor in the same commit that removes the deps —
+# do not delete the entry, which is what turns this back into a vacuous gate.
+REQUIRED_SOURCES: dict[str, int] = {
+    "uv.lock": 40,
+    "pnpm-lock.yaml": 100,
+}
 
 # OSV id -> why it is accepted. Keep short, dated, and revisit on expiry.
 #
@@ -86,11 +110,164 @@ def findings(report: dict) -> tuple[list[str], list[str]]:
     return blocking, informational
 
 
+def _repo_relative(path: str, root: str) -> str | None:
+    """The report path as a repo-relative one, or None if it is outside the root.
+
+    Matching a bare basename would let a lockfile ANYWHERE in the tree satisfy
+    the requirement — a `fixtures/uv.lock` big enough to clear the floor would
+    stand in for the real one, which is the same vacuous pass this check exists
+    to prevent, just harder to see.
+    """
+    candidate = PurePosixPath(path)
+    if not candidate.is_absolute():
+        # Some osv-scanner outputs are already relative to the scan root.
+        return str(candidate)
+    try:
+        return str(candidate.relative_to(PurePosixPath(root)))
+    except ValueError:
+        return None
+
+
+def coverage_failures(report: dict, root: str | None = None) -> list[str]:
+    """Returns a line per required lockfile the report does not show as scanned.
+
+    Separate from findings() on purpose: findings() answers "is anything wrong
+    with what was scanned", this answers "was anything scanned at all". The two
+    fail for opposite reasons and a report can pass one while failing the other.
+
+    `root` is the directory the scan ran from — the gate runs at the repo root
+    in CI, which is why that is the default.
+    """
+    root = os.getcwd() if root is None else root
+    scanned: dict[str, int] = {}
+    for result in report.get("results", []):
+        # osv-scanner reports absolute runner paths; the REQUIRED_SOURCES keys
+        # are repo-relative, so a nested copy cannot answer for the root one.
+        name = _repo_relative(str(result.get("source", {}).get("path", "")), root)
+        if name in REQUIRED_SOURCES:
+            scanned[name] = max(scanned.get(name, 0), len(result.get("packages", [])))
+    problems = []
+    for name, floor in sorted(REQUIRED_SOURCES.items()):
+        if name not in scanned:
+            problems.append(f"{name}: not scanned — absent from the report")
+        elif scanned[name] < floor:
+            problems.append(f"{name}: only {scanned[name]} packages, floor is {floor}")
+    return problems
+
+
+def _self_test() -> int:
+    """Prove both halves still fail before their verdicts are believed.
+
+    A clean scan from a broken gate is indistinguishable from a clean scan,
+    which is how the Snyk check stayed meaningless for months.
+    """
+    root = "/home/runner/work/majorana/majorana"
+
+    def _at(prefix: str) -> list[dict]:
+        return [
+            {
+                "source": {"path": f"{root}/{prefix}{name}"},
+                "packages": [{"package": {"name": f"p{i}"}} for i in range(floor + 1)],
+            }
+            for name, floor in REQUIRED_SOURCES.items()
+        ]
+
+    full = {"results": _at("")}
+    cases: list[tuple[str, bool, dict]] = [
+        ("a report covering every lockfile passes", False, full),
+        ("an empty report is refused", True, {"results": []}),
+        ("a report with no results key is refused", True, {}),
+        (
+            "one missing lockfile is refused",
+            True,
+            {"results": full["results"][:1]},
+        ),
+        (
+            "a lockfile under its floor is refused",
+            True,
+            {
+                "results": [
+                    {"source": {"path": f"{root}/{n}"}, "packages": []} for n in REQUIRED_SOURCES
+                ]
+            },
+        ),
+        # A nested copy must not answer for the root lockfile, however big it is.
+        ("nested lockfiles do not satisfy the root ones", True, {"results": _at("fixtures/")}),
+        (
+            "a lockfile outside the scan root is ignored",
+            True,
+            {
+                "results": [
+                    {"source": {"path": f"/elsewhere/{n}"}, "packages": [{}] * 999}
+                    for n in REQUIRED_SOURCES
+                ]
+            },
+        ),
+    ]
+    failed = 0
+    for label, want_problems, report in cases:
+        got = bool(coverage_failures(report, root=root))
+        ok = got == want_problems
+        print(f"  {'ok  ' if ok else 'FAIL'} {label}")
+        failed += not ok
+    # The severity half, mutated the same way: a threshold that never fires is
+    # the failure mode this file exists to prevent.
+    high = {
+        "results": [
+            {
+                "source": {"path": "uv.lock"},
+                "packages": [
+                    {
+                        "package": {"name": "w", "version": "1", "ecosystem": "PyPI"},
+                        "groups": [{"ids": ["GHSA-x"], "max_severity": "9.8"}],
+                    }
+                ],
+            }
+        ]
+    }
+    if not findings(high)[0]:
+        print("  FAIL a CVSS 9.8 finding must block")
+        failed += 1
+    else:
+        print("  ok   a CVSS 9.8 finding blocks")
+    print(f"check_osv_report --self-test: {'FAILED' if failed else 'passed'}")
+    return 1 if failed else 0
+
+
 def main() -> int:
+    if len(sys.argv) == 2 and sys.argv[1] == "--self-test":
+        return _self_test()
     if len(sys.argv) != 2:
         print(__doc__)
         return 2
-    report = json.loads(Path(sys.argv[1]).read_text())
+    path = Path(sys.argv[1])
+    try:
+        report = json.loads(path.read_text())
+    except FileNotFoundError:
+        print(f"check_osv_report: no report at {path} — the scan did not run")
+        return 1
+    except json.JSONDecodeError as exc:
+        # An unreadable report is a scanner that died mid-write, not a clean repo.
+        print(f"check_osv_report: {path} is not valid JSON ({exc}) — the scan did not run")
+        return 1
+    if not isinstance(report, dict):
+        print(f"check_osv_report: {path} is not an osv-scanner report")
+        return 1
+
+    # The gate runs from the repo root in CI, so that is what report paths are
+    # measured against; naming it makes a coverage failure diagnosable.
+    root = os.getcwd()
+    uncovered = coverage_failures(report, root=root)
+    if uncovered:
+        print(f"SCAN DID NOT COVER THE LOCKFILES IT GATES (root {root}):")
+        print("\n".join(f"  {line}" for line in uncovered))
+        print(
+            "\nA report that scanned nothing looks exactly like a clean one. Check that"
+            "\nosv-scanner ran with --all-packages, that the lockfiles are present, and"
+            "\nthat the scan ran from this directory — a nested copy does not count."
+        )
+        return 1
+
     blocking, informational = findings(report)
     if informational:
         print(f"NOT BLOCKING (below CVSS {BLOCKING_CVSS}, or allowlisted):")
@@ -100,7 +277,17 @@ def main() -> int:
         print("\n".join(f"  {line}" for line in blocking))
         print("\nUpgrade the dependency, or allowlist the id in scripts/check_osv_report.py")
         return 1
-    print(f"check_osv_report: clean ({len(informational)} finding(s) below threshold)")
+    # Print what was scanned, not just the verdict: "clean" is only meaningful
+    # next to the number of packages it is a statement about.
+    scanned = ", ".join(
+        f"{str(r.get('source', {}).get('path', '?')).rsplit('/', 1)[-1]}"
+        f" {len(r.get('packages', []))}"
+        for r in report.get("results", [])
+    )
+    print(
+        f"check_osv_report: clean ({len(informational)} finding(s) below threshold; "
+        f"scanned {scanned})"
+    )
     return 0
 
 
