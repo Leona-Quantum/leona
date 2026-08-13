@@ -13,6 +13,7 @@ import { getPublicLocale } from "../../../../lib/public-locale-server";
 import { getRepositoryEntries } from "../../../../lib/repository-source";
 import { LAYER_GRAPH } from "../../../../lib/repository/layer-graph";
 import { PAPER_REGISTER } from "../../../../lib/repository/paper-register";
+import { STATE_VOCABULARY } from "../../../../lib/repository/state-vocabulary";
 import { paperPageFor, paperPages } from "../../../../lib/repository/paper-pages";
 import { paperIdFromSlug, paperSlug } from "../../../../lib/repository/papers";
 
@@ -44,7 +45,7 @@ export default async function RepositoryPaperPage({
   // The corpus is fetched before the 404 check would need it, but only after the
   // slug has parsed — an unparseable segment must not cost a corpus read.
   const [locale, entries] = await Promise.all([getPublicLocale(), getRepositoryEntries()]);
-  const page = paperPageFor(paperPages(PAPER_REGISTER, LAYER_GRAPH, entries), paperId);
+  const page = paperPageFor(paperPages(PAPER_REGISTER, LAYER_GRAPH, entries, STATE_VOCABULARY), paperId);
   if (!page) notFound();
   return (
     <PublicSite

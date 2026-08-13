@@ -15,6 +15,7 @@
 import type { LayerGraph, LayerNode } from "./layers";
 import type { PaperTrace } from "./paper-traces";
 import type { PaperId, PaperRegister, RegisteredPaper } from "./papers";
+import type { StateVocabulary } from "./states";
 import { isCapability } from "./layers.ts";
 import { paperTraces, traceFor } from "./paper-traces.ts";
 import { indexPapers, paperIdFromUrl, paperSlug } from "./papers.ts";
@@ -89,8 +90,9 @@ export function paperPages(
   register: PaperRegister,
   graph: LayerGraph,
   corpus: readonly PaperCorpusEntry[],
+  vocabulary: StateVocabulary,
 ): PaperPage[] {
-  const traces = paperTraces(graph);
+  const traces = paperTraces(graph, vocabulary);
   const nodesByPaper = new Map<PaperId, PaperCitationSite[]>();
   for (const node of graph.nodes) {
     for (const citation of node.citations ?? []) {

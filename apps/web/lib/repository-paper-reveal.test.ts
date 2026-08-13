@@ -16,7 +16,7 @@ import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
  * reader clicks, not about one that happens to work.
  */
 
-const traces = paperTraces(LAYER_GRAPH);
+const traces = paperTraces(LAYER_GRAPH, STATE_VOCABULARY);
 
 function drawnAddresses(
   focusId: string,
