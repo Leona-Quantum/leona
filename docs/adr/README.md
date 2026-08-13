@@ -47,6 +47,7 @@ the work.
 | 0024 | Cloud SQL for PostgreSQL 17 | **implemented** — production since 2026-07-27 |
 | 0025 | A closed slot's population is pinned to a citable enumeration | **accepted** — one slot pinned (`linear-ode-solve`) |
 | 0026 | Sub-paper extraction: a component may come from a paper about something else | **accepted** — in force |
+| 0027 | A cross-region join is a shared state, a missing process, or a refusal | **accepted** — instrument shipped, no join built under it yet |
 
 ## Decisions with no ADR
 
@@ -124,6 +125,15 @@ answers "why" only from runbooks, memory and code comments.
   — the assumption lived in G1's pre-registration prose and in practice. Adds the
   scattered-trace gate to `check-paper-register.mjs` as the checkable half of the
   owner's "does not abstract to unrelated topics".
+- 2026-08-13: **ADR-0027** fixes the shape of a cross-region join, for ai-ops#64's
+  "several groups can eventually be combined into bigger maps". A join is a shared
+  state, a missing process, or a refusal — never a new edge type, and never a
+  `joins:` field. Measured first: **105 of the 491 method-to-method compositions on
+  the join surface already cross a region**, all of them leaving the algorithms
+  region for the same seven compilation methods, so the transpilation join the owner
+  asked for exists in the data and is merely undrawn. The other two he named do not
+  exist, and error mitigation — which he did not name — is sealed at both ends. Adds
+  `check-region-joins.mjs`, which refuses only a declaration going out of date.
 - 2026-08-04: status-line sweep — 0016/0019/0020/0021/0023 marked implemented, 0022
   marked partially implemented and partially superseded by 0023, 0017 and 0018
   annotated with what was never built, and the no-ADR list above opened.
