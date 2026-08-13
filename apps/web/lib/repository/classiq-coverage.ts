@@ -198,6 +198,59 @@ export const CLASSIQ_COVERAGE: Readonly<Record<string, readonly string[]>> = {
   // So none of these declarations is made on the strength of a demonstration's
   // bibliography. Each is made on what the notebook's own prose and code say the
   // demonstration does.
+  //
+  // ## All thirteen were then re-read at code-cell level. Nothing moved, and that
+  // ## is the result.
+  //
+  // The first pass read prose. Because reading only prose is exactly what had
+  // left three other rows wrongly in MISSING (see the CFD and chemistry rows
+  // below), all 13 were re-read through their **code** — 14 notebooks, since
+  // `resiliency_planning` has two. The question being asked was whether any of
+  // them carries a component that is separately extractable under ai-ops#51 and
+  // formulated in a paper this catalog holds, which would move that row from
+  // `method-instance` to `source-formulates-problem` **without changing the
+  // headline number**. The answer is no, for all thirteen, and the two near
+  // misses are worth recording because both look like a yes from a distance.
+  //
+  // **They are not one implementation shape but three:**
+  //
+  //   * **Eight go Pyomo model → `CombinatorialProblem`** (`portfolio_optimization`,
+  //     `facility_location`, `electric_grid_optimization`,
+  //     `integer_linear_programming`, `kidney_exchange`,
+  //     `max_induced_k_color_subgraph`, `max_k_vertex_cover`,
+  //     `minimum_dominating_set`). Classiq generates the QAOA circuit from the
+  //     model; `num_layers` is p and `penalty_factor` weights the constraint term.
+  //   * **Two go Pyomo → `QAOAConfig` + `OptimizerConfig`** — `rectangles_packing`
+  //     (`num_layers=10, penalty_energy=100`) and `radio_access_network`
+  //     (`num_layers=4, penalty_energy=3.0`).
+  //   * **Three build the ansatz by hand in Qmod** — `vehicle_routing_problem`
+  //     (`NUM_LAYERS=12`), `network_traffic_optimization` (`NUM_LAYERS=5`) and
+  //     `resiliency_planning`. Each is `allocate` → `hadamard_transform` → a loop
+  //     of `phase(cost(x), γ)` then a mixer of `RX(β)` applied to every qubit.
+  //     That is Farhi's construction written out: the uniform superposition, the
+  //     cost operator, and the transverse-field mixer, alternating p times.
+  //     **These three are the strongest evidence in the batch** — and they are
+  //     three of the six notebooks with no references cell at all.
+  //
+  // **The CVaR near miss, which is the reason this re-read was worth doing.**
+  // Six of the thirteen cite Barkoutsos et al. on CVaR. **None of them uses a CVaR
+  // objective.** Only two expose the parameter at all, and both set it to the
+  // degenerate value: `OptimizerConfig(max_iteration=60, alpha_cvar=1)` in
+  // `rectangles_packing` and `alpha_cvar=1.0` in `radio_access_network`. CVaR at
+  // α = 1 *is* the expectation value, so the objective being optimised is plain
+  // QAOA's in every one of the thirteen. Six citations, zero uses — a count of
+  // citations would have said the opposite.
+  //
+  // **The `alpha` trap.** A grep for `alpha` hits eight of these notebooks and is
+  // a CVaR signal in none of them: it is matplotlib's plot transparency in
+  // `optimization_result["cost"].plot(..., alpha=0.6)`. The token that looks like
+  // evidence is the same failure as the bibliography that looks like a source.
+  //
+  // **Penalties are the platform's, not a paper's.** `penalty_factor` and
+  // `penalty_energy` are a scalar weight Classiq applies to the constraint term.
+  // No notebook derives a penalty weight from a formulation, and none uses Lucas's
+  // per-problem penalty constructions, so no row moves to
+  // `source-formulates-problem` on that basis either.
 
   // Title: "Portfolio Optimization with the Quantum Approximate Optimization
   // Algorithm (QAOA)". States its own subject as allocating a portfolio of
