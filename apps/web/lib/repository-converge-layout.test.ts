@@ -909,7 +909,11 @@ test("every capability draws a figure — not just the two that converge", () =>
   // **23 since W21-E**, which added `excited-state-energy`, and the tripwire did
   // its job a second time: its figure is the one that pushed the four-root
   // overview past `CONVERGE_OPEN_MAX` (see that constant's own note).
-  assert.equal(capabilities.length, 23, "the graph's slot count changed; update these figures");
+  // **24 since session 15 unit 2**, which added `phase-estimation`. The tripwire did
+  // its job a third time: the slot exists because three papers in unit 1 needed a
+  // readout that reads an eigenvalue off an accumulated phase and this map had none,
+  // and its figure had to be looked at before it could ship.
+  assert.equal(capabilities.length, 24, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -940,7 +944,7 @@ test("every capability draws a figure — not just the two that converge", () =>
   // one chain every filler walks.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 22);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 23);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -953,10 +957,10 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     .filter((focus) => !diagramFor(focus.id).empty)
     .map((focus) => focus.id);
   assert.deepEqual(offered, draws);
-  // 22 since W21, 23 since W21-E — the same new slots the figure test above
-  // pins, and the point of asserting the length beside the deepEqual is that two
-  // empty lists are also deep-equal.
-  assert.equal(offered.length, 23);
+  // 22 since W21, 23 since W21-E, 24 since session 15's `phase-estimation` — the
+  // same new slots the figure test above pins, and the point of asserting the
+  // length beside the deepEqual is that two empty lists are also deep-equal.
+  assert.equal(offered.length, 24);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -1849,9 +1853,15 @@ test("a line that opens into something says so, and a line that does not is not 
   // spine to open. A method with a step that still draws a leaf is the ingredient shape,
   // not a miscount — the same distinction `layerwise-training` is annotated for above.
   // `openable` 29 → 30, `leaves` 62 → 66.
-  assert.equal(openable + leaves + 1, 97, "the twenty-three figures draw 97 lines between them");
+  // Two more in session 15 unit 2, both LEAVES, and that is the honest opening state
+  // of a slot rather than a shortcoming: `register-phase-estimation` and
+  // `single-ancilla-phase-estimation` are each one undecomposed act, because what
+  // separates them — a register of ancillas against one reused ancilla with classical
+  // feedback — is a resource choice inside the method, not a step this graph draws.
+  // `openable` unchanged at 30, `leaves` 66 -> 68.
+  assert.equal(openable + leaves + 1, 99, "the twenty-four figures draw 99 lines between them");
   assert.equal(openable, 30, "30 of them open into something the canvas draws");
-  assert.equal(leaves, 66, "66 are leaves — the canvas records nothing finer for them");
+  assert.equal(leaves, 68, "68 are leaves — the canvas records nothing finer for them");
 
 });
 

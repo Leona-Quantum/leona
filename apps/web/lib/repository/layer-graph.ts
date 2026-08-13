@@ -9011,6 +9011,73 @@ export const LAYER_GRAPH: LayerGraph = {
       { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
     ],
   },
+  // ── Session 15 unit 2, ai-ops#57: the phase-estimation slot ─────────────────
+  // **Built because three papers in unit 1 walked into the hole where it should
+  // have been** — the Aspuru-Guzik molecular-energy route IS phase estimation end
+  // to end, the tensor-hypercontraction encoding exists to make phase estimation
+  // affordable ("With O(λ/ε) repetitions of these circuits one can use phase
+  // estimation to sample in the molecular eigenbasis"), and the double-bracket
+  // paper argues against phase estimation by name. The corpus was already holding
+  // two records for it, unanchored, and they are two genuinely different methods
+  // rather than one drawn twice, which is what makes this a slot.
+  {
+    kind: "capability",
+    id: "phase-estimation",
+    label: "Estimate the eigenphase of a unitary",
+    labelJa: "ユニタリの固有位相を推定する",
+    summary: "Given a circuit whose controlled powers you can apply, and a routine preparing a state with non-negligible overlap on one of its eigenvectors, return that eigenvector's phase as a number with an error bar. The phase is read out of an ancilla, never out of the system register — the system is only ever the thing the controlled powers act on.",
+    summaryJa: "制御べき乗を作用させられる回路と、その固有ベクトルの一つと無視できない重なりをもつ状態を準備する手続きが与えられたとき、その固有ベクトルの位相を誤差付きの数として返します。位相が読み出されるのは常に補助量子ビットからであり、系のレジスタからではありません。系は制御べき乗が作用する対象であるにすぎません。",
+    contract: {
+      from: "eigenphase-problem",
+      to: "observable-value",
+      takes: "A circuit for U that can be applied as controlled U^(2^j), a preparation routine for a state whose overlap with the target eigenvector is not negligible, the number of bits of the phase wanted, and the failure probability that may be tolerated.",
+      takesJa: "制御 U^(2^j) の形で作用させられる U の回路、目標の固有ベクトルとの重なりが無視できない状態の準備手続き、求めたい位相の桁数、そして許容できる失敗確率。",
+      returns: "An estimate of the eigenphase to the requested number of bits, with the failure probability it was obtained at, plus the two costs that actually differ between routes: how many ancillas were held at once, and how many sequential rounds were run.",
+      returnsJa: "要求した桁数までの固有位相の推定値と、それが得られた際の失敗確率。あわせて、経路ごとに実際に異なる二つの費用、すなわち同時に保持した補助量子ビットの数と、逐次実行した周回数を返します。",
+    },
+    entries: [],
+    whyALayer: "The methods here differ in a resource trade a reader has to make deliberately, and Dobsicek et al. state both sides of it in one sentence: to reach a precision of order $1/2^m$ \"it is possible to run either log m rounds (iterations) with m ancillary qubits or m log(m) rounds with only a single ancilla\". So the choice is ancillas against rounds — hold a whole register coherent and finish quickly, or hold one qubit and pay in sequential measurements with classical feedback between them. Which is cheaper is a property of the machine rather than of the algorithm, and their own motivation says so: \"As long as the number of qubits is a limiting factor, implementations of phase estimation with only a single ancillary qubit will be of foremost importance.\" A cost model that says \"phase estimation\" without saying which of the two has not said what the machine is being asked for.",
+    whyALayerJa: "ここに並ぶ手法は、読み手が意識して選ぶべき資源の交換において異なります。Dobsicek らはその両側を一文で述べています。$1/2^m$ 程度の精度に到達するには「m 個の補助量子ビットで log m 周回を実行することも、補助量子ビット 1 個だけで m log(m) 周回を実行することもできる」。つまり選択は補助量子ビットと周回数の交換です。レジスタ全体をコヒーレントに保って短く終えるか、1 量子ビットだけを保ち、その代わりに古典的なフィードバックを挟む逐次測定で支払うか。どちらが安いかはアルゴリズムではなく機械の性質であり、著者ら自身の動機がそう述べています。「量子ビット数が制約である限り、補助量子ビット 1 個だけの位相推定の実装が最重要となる」。どちらであるかを言わずに「位相推定」とだけ書いたコスト見積もりは、機械に何を求めているかを述べていません。",
+  },
+  {
+    kind: "method",
+    id: "register-phase-estimation",
+    label: "Phase estimation into an ancilla register",
+    labelJa: "補助レジスタへの位相推定",
+    shortLabel: "Register QPE",
+    shortLabelJa: "レジスタ型 QPE",
+    summary: "Put a register of ancillas into superposition, apply controlled U raised to each power of two into it, and let the phase accumulate across the register. The register then holds the phase in the Fourier basis, and one transform back turns it into bits you can measure.",
+    summaryJa: "補助量子ビットのレジスタを重ね合わせにし、2 のべき乗ごとの制御 U を作用させて、レジスタ全体に位相を蓄積させます。するとレジスタは位相を Fourier 基底で保持しており、逆変換を一度かければ、測定できるビット列になります。",
+    realizes: "phase-estimation",
+    conditions: "Kitaev's paper is where measuring an eigenvalue of a unitary is introduced — \"Our method is based on a procedure for measuring an eigenvalue of a unitary operator\" — and it is introduced in the service of something else, the Abelian Stabilizer Problem, which is the shape ADR-0026 permits. The construction is the ancilla-and-controlled-U one: with $S$ the Hadamard, \"the operator $\\Xi(U) = S \\Lambda(U) S$ is a measurement operator for the observable $\\varphi$\", and precision comes from having the controlled powers available — \"the situation is different if we have in our disposal the operators $\\Lambda(U^k)$ for all $k$\".",
+    conditionsJa: "ユニタリの固有値を測るという発想が導入されたのは Kitaev のこの論文です。「我々の方法は、ユニタリ演算子の固有値を測定する手続きに基づく」。そしてそれは別のもの、すなわちアーベル安定化群問題のために導入されています。これは ADR-0026 が認める形です。構成は補助量子ビットと制御 U によるものです。$S$ を Hadamard として「演算子 $\\Xi(U) = S \\Lambda(U) S$ は可観測量 $\\varphi$ に対する測定演算子である」とされ、精度は制御べき乗が使えることから得られます。「すべての $k$ について演算子 $\\Lambda(U^k)$ が手元にあるなら、事情は異なる」。",
+    contested: "The circuit usually drawn for this method — one coherent register and a single inverse quantum Fourier transform at the end — is NOT the circuit in the paper cited here. Kitaev localizes each power separately and combines the results classically; Dobsicek et al. describe his scheme from the outside as the one \"where the Fourier transform is replaced with a Hadamard transform\". The coherent-register-plus-inverse-QFT formulation is the later one, usually credited to Cleve, Ekert, Macchiavello and Mosca (1998), which this repository's paper register does not yet carry. Recorded rather than quietly fixed, because which paper a method is credited to is the owner's call, not an agent's. Nothing about the slot turns on it: the resource trade against the single-ancilla route is stated by Dobsicek et al. and holds whichever paper this circuit is attributed to.",
+    contestedJa: "この手法に対して通常描かれる回路、すなわち一つのコヒーレントなレジスタと末尾の逆量子 Fourier 変換は、ここで引用している論文の回路ではありません。Kitaev は各べき乗を個別に絞り込み、その結果を古典的に統合します。Dobsicek らは外から彼の方式を「Fourier 変換が Hadamard 変換に置き換えられた」ものと表現しています。コヒーレントなレジスタと逆 QFT による定式化は後年のものであり、通常は Cleve、Ekert、Macchiavello、Mosca（1998）に帰されますが、その論文は本リポジトリの論文レジスタにまだ収録されていません。黙って直すのではなく記録しているのは、ある手法をどの論文に帰すかが所有者の判断であってエージェントの判断ではないからです。この層の成立自体はこの点に依存しません。単一補助量子ビット経路との資源の交換は Dobsicek らが述べており、この回路がどちらの論文に帰されようと成り立ちます。",
+    steps: [],
+    entries: ["quantum-phase-estimation", "quantum-fourier-transform"],
+    citations: [
+      { title: "Quantum measurements and the Abelian Stabilizer Problem", authors: "A. Yu. Kitaev", year: "1995", url: "https://arxiv.org/abs/quant-ph/9511026" },
+      { title: "An approximate Fourier transform useful in quantum factoring", authors: "D. Coppersmith", year: "2002", url: "https://arxiv.org/abs/quant-ph/0201067" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "single-ancilla-phase-estimation",
+    label: "Iterative phase estimation on one ancilla",
+    labelJa: "単一補助量子ビットによる反復位相推定",
+    shortLabel: "Iterative QPE",
+    shortLabelJa: "反復型 QPE",
+    summary: "Use one ancilla and measure it, over and over, least significant bit first. Each measured bit is fed back classically as a rotation angle on the next round, so the register the other route holds in superposition is replaced by a classical string that grows one bit at a time.",
+    summaryJa: "補助量子ビットを 1 個だけ使い、それを何度も測定します。下位のビットから順に求め、測定した各ビットは次の周回の回転角として古典的にフィードバックされます。もう一方の経路が重ね合わせで保持するレジスタが、1 ビットずつ伸びていく古典的なビット列に置き換わります。",
+    realizes: "phase-estimation",
+    conditions: "Dobsicek et al. state the size claim in the abstract — an iterative phase estimation \"with a single ancillary qubit\" — and make explicit that the qubit count does not grow with the precision: \"The minimal system for implementing the iterative PEA is a two qubit system, where one qubit is a read-out ancilla, and the second qubit represents a physical system.\" The order of the rounds is part of the method rather than an implementation detail: \"first less significant digits are evaluated and then the obtained information improves the quantum part of the search for more significant digits\", carried by \"an extra single qubit Z-rotation that is inserted into the circuit\" whose angle is a function of the bits already measured — $\\omega_k = -2\\pi(0.0x_{k+1}x_{k+2} \\ldots x_m)$, with $\\omega_m = 0$. Nothing quantum passes between rounds; the feedback is a classically computed angle.",
+    conditionsJa: "Dobsicek らは規模に関する主張を要旨で述べています。「単一の補助量子ビットによる」反復位相推定です。そして量子ビット数が精度とともに増えないことを明示します。「反復 PEA を実装する最小の系は 2 量子ビット系であり、一方が読み出し用の補助量子ビット、他方が物理系を表す」。周回の順序は実装上の細部ではなく手法の一部です。「まず下位の桁を評価し、得られた情報が上位の桁の探索の量子的部分を改善する」。これは「回路に挿入される追加の単一量子ビット Z 回転」によって運ばれ、その角度はすでに測定されたビットの関数です。すなわち $\\omega_k = -2\\pi(0.0x_{k+1}x_{k+2} \\ldots x_m)$ であり、$\\omega_m = 0$ です。周回のあいだを量子的な情報が渡ることはなく、フィードバックは古典的に計算された角度です。",
+    steps: [],
+    entries: ["iterative-phase-estimation"],
+    citations: [
+      { title: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark", authors: "M. Dobsicek, G. Johansson, V. S. Shumeiko, G. Wendin", year: "2006", url: "https://arxiv.org/abs/quant-ph/0610214" },
+    ],
+  },
   // ── Session 15, ai-ops#57 "grow the map" ────────────────────────────────────
   // Five methods for corpus records that were map-eligible and reached by no
   // node. Each was chosen after reading the paper, not the record's one-line

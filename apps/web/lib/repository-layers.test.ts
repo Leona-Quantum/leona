@@ -1406,6 +1406,22 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // kinds of difference now sit in one undrawable group, which is the argument for giving
   // the objective a state rather than for raising this number again.
   ["parameter-optimization", 4],
+  // **New in session 15 unit 2, and this row is a slot OPENING rather than rot** — the
+  // distinction this census exists to let us state. `phase-estimation` was authored with
+  // exactly two methods and neither has a recorded interior yet, which is the honest
+  // starting state of a slot nobody has decomposed. What separates them is not a step
+  // but a resource choice — m ancillas read out together against one ancilla reused
+  // across m rounds with classical feedback — and Dobsicek et al. state that trade in
+  // their own words, so the difference is sourced even though the drawing cannot show
+  // it.
+  //
+  // **Note this row has NO matching `KNOWN_TWINS` entry, unlike every other row here,
+  // and that is not an omission.** That gate only inspects methods whose route opens
+  // into something; these two open into nothing at all, so it never sees them. The two
+  // instruments therefore disagree about what a look-alike is, and this census is the
+  // stricter of the two — which is worth knowing before trusting a green
+  // `check-layer-graph` as evidence that a new slot's methods are distinguishable.
+  ["phase-estimation", 2],
 ]);
 
 /**

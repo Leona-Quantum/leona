@@ -426,7 +426,10 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // molecular Hamiltonian and reads the energy off a phase, and there is no readout
   // slot on this map for that. It is the fifth witness to `OWNER_TODO` §1's missing
   // readout, and the first from the variational side rather than the ODE side.
-  assert.equal(hops, 143, `${hops} hops, not 143`);
+  // 145 in session 15 unit 2: `register-phase-estimation` and
+  // `single-ancilla-phase-estimation` carry one hop each — each is a single
+  // undivided act, so the hop IS the method.
+  assert.equal(hops, 145, `${hops} hops, not 145`);
 
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
@@ -1392,7 +1395,11 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // an accumulated phase is a readout this map has no slot for. A new region's methods
   // having own stretches is the honest starting state, not a defect — the W21 note above
   // says the same thing about the variational region, and it is still true.
-  assert.equal(withOwn.length, 84);
+  // 86/15 in session 15 unit 2. Both new phase-estimation methods add a stretch at
+  // index 0 — they delegate to nothing — so `withOwn` moves by two and `trailing`
+  // does not move at all. The two numbers coming apart again is the point of
+  // counting them separately.
+  assert.equal(withOwn.length, 86);
   assert.equal(trailing.length, 15);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1471,7 +1478,8 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // one-for-one as it must. If these two ever disagree, the own-card population and
   // the stretch population have come apart and one of them is wrong — which is the
   // only claim this number is here to make.
-  assert.equal(built, 84);
+  // 86 in session 15 unit 2, tracking the stretch census above one-for-one as it must.
+  assert.equal(built, 86);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);
