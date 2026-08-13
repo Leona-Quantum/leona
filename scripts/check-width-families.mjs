@@ -212,11 +212,21 @@ const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
 // Classiq-parity intake batches added records that belong to no width family and
 // therefore fold to nothing: 188, 194, 200, 208, 216, 235, 239. See the header.
 //
+// +1 for ai-ops#42, taking it to 240: `qaoa-combinatorial-optimization`, the one
+// general QAOA record the owner asked for, is a literature reference in no width
+// family and so adds exactly one row. The thirteen declarations that landed with
+// it add nothing here — a declaration writes no record.
+//
 // Note for whoever changes it next: this count is computed from the **manifest**,
 // not from the corpus module — so a corpus change that has not regenerated
 // `services/api/catalog_bootstrap/manifest.json` yet will report the OLD number
-// and look like it did not move the fold at all.
-const EXPECTED_BROWSE_ROWS = 239;
+// and look like it did not move the fold at all. That nearly went wrong here: the
+// record above was first pushed without a regenerated manifest and every check
+// stayed green, because the corpus/manifest cross-check below compares width
+// *families* and a record belonging to no family is invisible to it. If you add a
+// record, regenerate the manifest in the same commit whether or not anything
+// complains — otherwise the corpus has it and the serving surface does not.
+const EXPECTED_BROWSE_ROWS = 240;
 if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
     `${records.length} records fold to ${rows.length} browse rows, expected ${EXPECTED_BROWSE_ROWS}. `
