@@ -216,7 +216,22 @@ function LegendMark({ kind, lane }: { kind: LegendKind; lane: string }): React.R
     return (
       <svg className="mj-strand-legend-mark mj-converge-key" {...common}>
         <g className="mj-converge-lane mj-converge-lane--recorded mj-converge-lane--atlas">
-          <text className="mj-converge-lane-name" x="17" y="13" textAnchor="middle">
+          {/* **`--key-name`, not `--lane-name`, and the difference is a probe's.**
+              This is sample text in a legend, not a name on the canvas, and it
+              wore the canvas's own class purely to inherit the look. That made
+              `.mj-converge-lane-name` mean "a painted name, plus one per legend
+              swatch" — so the live arm `painted names == name plates` came back
+              11 against 12 and read as a defect. `ci` found it while verifying the
+              R15 merge and made the case for fixing it rather than special-casing the
+              probe: an arm that is reliably off by one is worse than no arm,
+              because the first person to run it decides the discrepancy is "just
+              the legend" and stops trusting the check — which is exactly when a
+              `<title>` promoted to a `<text>` would slip through.
+
+              The styling is unchanged and not duplicated: `styles.css` lists both
+              classes on one rule, and on the `--atlas` rule that gives this
+              swatch its dotted underline. */}
+          <text className="mj-converge-key-name" x="17" y="13" textAnchor="middle">
             abc
           </text>
         </g>
