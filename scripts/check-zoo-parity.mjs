@@ -15,17 +15,36 @@
 // happens to overlap with a survey of the literature. That is the number this
 // gauge exists to make impossible to not know.
 //
+// ## Two corrections to that sentence, both from 2026-08-13
+//
+// **The denominator was never 60.** The Zoo has 74 entries; the index generator's
+// entry splitter matched one spelling of the label and missed 14, absorbing each
+// into the row above it. Every figure this gauge ever printed — 8/60, 19/60,
+// 39/60, 57/60, 59/60 — was measured against a denominator missing four subject
+// areas, including Adiabatic Algorithms and Machine Learning. See
+// ./generate-zoo-index.mjs for the parse and the guard that now catches it.
+//
+// **And "covered" meant two different things.** 35 of the 74 rows are subject
+// headings, not results, and a row went green on one record out of a possible
+// twenty-three. Coverage is now three-state — closed, partial, unreviewed — and a
+// heading can only ever report partial. ../apps/web/lib/repository/zoo-coverage.ts
+// carries the shape of every row and the reason for it.
+//
 // ## What it fails on, and what it only reports
 //
-// Report-only: the coverage number. A gauge that fails the build gets greened the
+// Report-only: the coverage numbers. A gauge that fails the build gets greened the
 // cheapest way, and the cheapest way here is to declare the remainder
-// not-applicable — so the number exits 0 whatever it says. People decide.
+// not-applicable — so the counts exit 0 whatever they say. People decide.
 //
-// Fails (exit 1): a coverage declaration that no longer refers to anything —
+// Fails (exit 1): a declaration that no longer refers to anything, or a row nobody
+// has judged —
 //   * a slug declared as covering a Zoo entry that is not in the corpus,
-//   * a Zoo entry named in a declaration that is not in the pinned index.
-// Those are the two ways a hand-maintained list rots without anyone seeing it, and
-// unlike the number they have no honest reading.
+//   * a Zoo entry named in a declaration that is not in the pinned index,
+//   * a row of the pinned index with no shape declared,
+//   * a row declared `result` or `union` with no reason behind it.
+// The first two are how a hand-maintained list rots without anyone seeing it. The
+// last two are why the honest number survives the next session: abstaining is a
+// typed answer here, so a row cannot be quietly left out to keep the count high.
 //
 // The Zoo index is pinned (scripts/zoo-parity/zoo-index.json) and refreshed by
 // `node scripts/generate-zoo-index.mjs` — see that file for why the fetch is a
@@ -71,10 +90,12 @@ const index = JSON.parse(readFileSync(join(root, "scripts/zoo-parity/zoo-index.j
 const corpusMod = await bundle("apps/web/lib/public-repository.ts", "public-repository");
 const intakeMod = await bundle("apps/web/lib/repository/entries-zoo-parity.ts", "entries-zoo-parity");
 const coverageMod = await bundle("apps/web/lib/repository/zoo-coverage.ts", "zoo-coverage");
+const papersMod = await bundle("apps/web/lib/repository/papers.ts", "papers");
 
 const { PUBLIC_REPOSITORY_ENTRIES } = corpusMod;
 const { ZOO_PARITY_COVERAGE, ZOO_SPEEDUP_PROVENANCE } = intakeMod;
-const { ZOO_LEGACY_COVERAGE, ZOO_NOT_APPLICABLE } = coverageMod;
+const { ZOO_LEGACY_COVERAGE, ZOO_NOT_APPLICABLE, ZOO_ROW_SHAPE } = coverageMod;
+const { paperIdFromUrl } = papersMod;
 
 const corpusSlugs = new Set(PUBLIC_REPOSITORY_ENTRIES.map((entry) => entry.slug));
 const zooNames = new Set(index.entries.map((entry) => entry.name));
@@ -114,33 +135,137 @@ for (const zooName of Object.keys(ZOO_NOT_APPLICABLE)) {
   }
 }
 
-const rows = index.entries.map((entry) => ({
-  name: entry.name,
-  section: entry.section,
-  speedup: entry.speedup,
-  slugs: (claimed.get(entry.name) ?? []).map((c) => c.slug),
-  notApplicable: Object.hasOwn(ZOO_NOT_APPLICABLE, entry.name),
-}));
-const covered = rows.filter((row) => row.slugs.length > 0);
-const notApplicable = rows.filter((row) => row.notApplicable && row.slugs.length === 0);
-const missing = rows.filter((row) => row.slugs.length === 0 && !row.notApplicable);
+// --- the row's shape decides what covering it means -----------------------------
+//
+// `covered` was a binary predicate over `slugs.length > 0`, and 35 of the Zoo's 74
+// rows are subject headings rather than results — "Quantum Cryptanalysis" cites 23
+// papers, "Machine Learning" 56. One record covering one strand made the whole
+// heading read as closed. See ../apps/web/lib/repository/zoo-coverage.ts for the
+// argument; here is the arithmetic it buys:
+//
+//   closed      the row is one result and something covers it
+//   partial     the row is a heading and something covers part of it — never closed
+//   unreviewed  nobody has judged the row's shape, or two passes disagreed
+//   declined    out of scope, with a reason
+//   missing     nothing covers it
+//
+// A silence is not one of the states. Every row of the pinned index must have a
+// shape or this check fails, so the cheapest way to raise the headline is to read
+// a Zoo entry rather than to leave one out.
+for (const name of Object.keys(ZOO_ROW_SHAPE)) {
+  if (!zooNames.has(name)) {
+    errors.push(`ZOO_ROW_SHAPE declares "${name}", which is not in the pinned index — the Zoo renamed or removed it`);
+  }
+}
+for (const entry of index.entries) {
+  const shape = ZOO_ROW_SHAPE[entry.name];
+  if (!shape) {
+    errors.push(
+      `no shape declared for Zoo row "${entry.name}". Read the entry and say whether it is one result or a`
+      + " subject heading — `{ kind: \"unreviewed\" }` is an acceptable answer and an honest one, but silence"
+      + " is not, because a row nobody declared is indistinguishable from a row nobody looked at.",
+    );
+    continue;
+  }
+  if ((shape.kind === "result" || shape.kind === "union") && !shape.reason?.trim()) {
+    errors.push(`Zoo row "${entry.name}" is declared "${shape.kind}" with no reason — a judgement nobody can disagree with`);
+  }
+}
+
+/**
+ * Which of a row's references this repository actually cites.
+ *
+ * Derived, never declared. The row's references carry arXiv and DOI links; the
+ * covering records carry their own `source` and `literature` urls; `paperIdFromUrl`
+ * canonicalises both sides so a publisher's front door and an arXiv abs page do not
+ * read as two papers. A hand-maintained strand count would be a second thing to keep
+ * true, and it would be true on the day it was written and never checked again.
+ *
+ * Only `kind: "paper"` references count. The other two kinds are not things a record
+ * could carry: 14 are cross-links to other Zoo entries, and 3 are citations to
+ * anchors the Zoo's own page does not define.
+ */
+const paperIdsOf = (slug) => {
+  const entry = PUBLIC_REPOSITORY_ENTRIES.find((candidate) => candidate.slug === slug);
+  if (!entry) return [];
+  const urls = [entry.source?.url, ...(entry.literature ?? []).map((citation) => citation.url)];
+  return urls.filter(Boolean).map((url) => paperIdFromUrl(url)).filter(Boolean);
+};
+
+const rows = index.entries.map((entry) => {
+  const slugs = (claimed.get(entry.name) ?? []).map((c) => c.slug);
+  const shape = ZOO_ROW_SHAPE[entry.name] ?? { kind: "unreviewed" };
+  const cited = new Set(slugs.flatMap(paperIdsOf));
+  const papers = entry.refs.filter((ref) => ref.kind === "paper");
+  // 103 of the Zoo's 625 paper references carry no arXiv or DOI link at all — a
+  // conference or journal citation typed as prose. This join cannot see those in
+  // either direction, so they are counted apart rather than folded into the
+  // denominator: "1 of 23" would otherwise mean partly "we do not cite it" and
+  // partly "there is nothing here to match", and no later reader could separate them.
+  const linked = papers.filter((ref) => (ref.links ?? []).length > 0);
+  const carried = linked.filter((ref) =>
+    ref.links.some((link) => {
+      const id = paperIdFromUrl(link);
+      return id !== null && cited.has(id);
+    }));
+  const notApplicable = Object.hasOwn(ZOO_NOT_APPLICABLE, entry.name);
+  const state = notApplicable
+    ? "declined"
+    : slugs.length === 0
+      ? "missing"
+      : shape.kind === "result"
+        ? "closed"
+        : shape.kind === "union" ? "partial" : "unreviewed";
+  return {
+    name: entry.name,
+    section: entry.section,
+    speedup: entry.speedup,
+    slugs,
+    shape: shape.kind,
+    state,
+    references: papers.length,
+    referencesLinked: linked.length,
+    referencesCarried: carried.length,
+  };
+});
+
+const of = (state) => rows.filter((row) => row.state === state);
+const [closed, partial, unreviewed, declined, missing] =
+  ["closed", "partial", "unreviewed", "declined", "missing"].map(of);
+
+// Strands are only meaningful where the row is a union, so the fraction is printed
+// over exactly those rows and nowhere else. Summing it over the whole index would
+// count a single-result row's bibliography as unmet coverage.
+const strands = partial.reduce(
+  (total, row) => ({
+    carried: total.carried + row.referencesCarried,
+    linked: total.linked + row.referencesLinked,
+    references: total.references + row.references,
+  }),
+  { carried: 0, linked: 0, references: 0 },
+);
 
 const bySection = {};
 for (const row of rows) {
   const key = row.section ?? "(unsectioned)";
-  bySection[key] ??= { total: 0, covered: 0 };
+  bySection[key] ??= { total: 0, closed: 0, partial: 0, unreviewed: 0, missing: 0, declined: 0 };
   bySection[key].total += 1;
-  if (row.slugs.length > 0) bySection[key].covered += 1;
+  bySection[key][row.state] += 1;
 }
 
 const report = {
   source: index.source,
   indexFetchedAt: index.fetchedAt,
   zooEntries: rows.length,
-  covered: covered.length,
-  notApplicable: notApplicable.length,
+  closed: closed.length,
+  partial: partial.length,
+  unreviewed: unreviewed.length,
+  declined: declined.length,
   missing: missing.length,
+  partialStrands: strands,
   bySection,
+  partialNames: partial.map((row) => `${row.name} (${row.referencesCarried}/${row.referencesLinked} linked, ${row.references} papers)`),
+  unreviewedNames: unreviewed.map((row) => row.name),
   missingNames: missing.map((row) => row.name),
   errors,
 };
@@ -149,17 +274,33 @@ if (AS_JSON) {
   console.log(JSON.stringify(report, null, 1));
 } else if (!QUIET || errors.length > 0) {
   console.log(
-    `Zoo parity: ${covered.length}/${rows.length} covered`
-    + `${notApplicable.length > 0 ? `, ${notApplicable.length} declared not-applicable` : ""}`
-    + `, ${missing.length} missing  (index fetched ${index.fetchedAt})`,
+    `Zoo parity: ${rows.length} rows — ${closed.length} closed, ${partial.length} partial,`
+    + ` ${unreviewed.length} shape-unreviewed, ${declined.length} declined, ${missing.length} missing`
+    + `  (index fetched ${index.fetchedAt})`,
+  );
+  console.log(
+    `  the ${partial.length} partial rows are subject headings. Of the ${strands.references} papers they`
+    + ` reference, ${strands.linked} carry an arXiv or DOI link this check can match on, and this`
+    + ` repository cites ${strands.carried} of those. The remaining ${strands.references - strands.linked}`
+    + " are matched by nothing either way.",
   );
   if (!QUIET) {
     for (const [section, counts] of Object.entries(bySection)) {
-      console.log(`  ${counts.covered}/${counts.total}  ${section}`);
+      console.log(
+        `  ${String(counts.closed).padStart(2)} closed  ${String(counts.partial).padStart(2)} partial`
+        + `  ${String(counts.missing).padStart(2)} missing  of ${String(counts.total).padStart(2)}  ${section}`,
+      );
     }
   }
   if (SHOW_MISSING) {
     for (const row of missing) console.log(`  missing: ${row.name}  [${row.section}]`);
+    for (const row of partial) {
+      console.log(
+        `  partial: ${row.name} — ${row.referencesCarried} of ${row.referencesLinked} linked papers cited`
+        + ` (${row.references} referenced in all)`,
+      );
+    }
+    for (const row of unreviewed) console.log(`  shape unreviewed: ${row.name}`);
   }
 }
 
