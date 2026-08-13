@@ -9,6 +9,8 @@ import test from "node:test";
 
 import type { LayerGraph } from "./repository/layers.ts";
 import {
+  DECLARED_SCATTERED_PAPERS,
+  auditScatteredTraces,
   layerAdjacency,
   paperTraces,
   papersByNode,
@@ -211,4 +213,89 @@ test("the census sums to the number of papers, so no shape can go uncounted", ()
   assert.equal(census.widest, Math.max(...traces.map((trace) => trace.nodes.length)));
   assert.equal(traceFor(traces, "arxiv:nothing"), null);
   assert.equal(traceFor(traces, "arxiv:1")?.paper, "arxiv:1");
+});
+
+// ---------------------------------------------------------------------------
+// The ADR-0026 drift guard
+// ---------------------------------------------------------------------------
+//
+// Every arm below builds the state that must FAIL and asserts it fails, rather
+// than building the state that passes and watching it pass. A guard only ever
+// exercised on good input has not been shown to guard.
+
+/** Two nodes in two components citing one paper — the shape the guard is about. */
+const SCATTERED_GRAPH: LayerGraph = {
+  nodes: [
+    capability("slot-a"),
+    method("m1", "slot-a", [], [paper(1)]),
+    capability("slot-b"),
+    method("m2", "slot-b", [], [paper(1)]),
+  ],
+};
+
+test("an undeclared scattered paper is reported", () => {
+  const audit = auditScatteredTraces(paperTraces(SCATTERED_GRAPH), {});
+  assert.equal(audit.undeclared.length, 1);
+  assert.equal(audit.undeclared[0].paper, "arxiv:1");
+  // The components travel with it, because "this paper is scattered" is not
+  // actionable and "it is cited from m1 and from m2, which nothing joins" is.
+  assert.equal(audit.undeclared[0].components.length, 2);
+  assert.deepEqual(audit.stale, []);
+});
+
+test("a declaration clears the scatter only when it carries a reason", () => {
+  const traces = paperTraces(SCATTERED_GRAPH);
+  assert.deepEqual(auditScatteredTraces(traces, { "arxiv:1": "why" }).undeclared, []);
+  // Without these two arms the list degenerates into a set of ids, and the one
+  // thing it exists to preserve — the judgement, written where the next reader
+  // can disagree with it — is gone.
+  assert.equal(auditScatteredTraces(traces, { "arxiv:1": "" }).undeclared.length, 1);
+  assert.equal(auditScatteredTraces(traces, { "arxiv:1": "   " }).undeclared.length, 1);
+});
+
+test("a declaration for a paper that is no longer scattered fails as stale", () => {
+  // The second direction, and the one a list like this normally lacks. A row
+  // that outlives its condition is an excuse nobody re-judged, and it reads to
+  // the next author as though the case were still live.
+  const joined: LayerGraph = {
+    nodes: [
+      capability("slot-a"),
+      method("m1", "slot-a", [], [paper(1)]),
+      method("m2", "slot-a", [], [paper(1)]),
+    ],
+  };
+  const audit = auditScatteredTraces(paperTraces(joined), { "arxiv:1": "why" });
+  assert.deepEqual(audit.undeclared, []);
+  assert.deepEqual(audit.stale, ["arxiv:1"]);
+  // A declaration for a paper the map does not cite at all is stale too: a
+  // trace that does not exist is not a scattered one.
+  assert.deepEqual(auditScatteredTraces([], { "arxiv:9": "why" }).stale, ["arxiv:9"]);
+});
+
+test("point, contiguous and joinable traces are never reported as drift", () => {
+  // The guard must fire on `scattered` and on nothing else. A version reaching
+  // for "far apart" instead of "not joined at all" would fail 29 of the real
+  // map's papers today — the `joinable` ones, which are usually two competing
+  // methods meeting at the slot they both fill.
+  const graph: LayerGraph = {
+    nodes: [
+      capability("slot", [paper(3)]),
+      method("m1", "slot", [], [paper(1), paper(3)]),
+      method("m2", "slot", [], [paper(1)]),
+      capability("other"),
+      method("m3", "other", ["slot"], [paper(2)]),
+      method("m4", "slot", [], [paper(2)]),
+    ],
+  };
+  const traces = paperTraces(graph);
+  assert.equal(traceCensus(traces).scattered, 0);
+  assert.deepEqual(auditScatteredTraces(traces, {}).undeclared, []);
+});
+
+test("the repository declares no scattered papers, and that is the intended state", () => {
+  // Pinned so that growing the list is a deliberate edit somebody defends in a
+  // diff. ADR-0026's reversal trigger is this list growing past a handful: at
+  // that point the gate is measuring the map's disconnection rather than an
+  // extraction's drift, and the fix is the map's missing edges.
+  assert.deepEqual(Object.keys(DECLARED_SCATTERED_PAPERS), []);
 });

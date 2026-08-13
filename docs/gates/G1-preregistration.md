@@ -269,3 +269,34 @@ is unchanged and is now narrowed to 24 marks in
 does not exist in this repository — the roadmap lives outside it, at
 `~/Documents/Projects/Majorana/plans/leona-block-repository-roadmap.md`, §8 for the gate
 definition and §3.1–3.3 for the block schema.
+
+## Appended 2026-08-13 — one note. Nothing above this line was edited.
+
+**4. §3's unit of extraction — "One six-role block record per paper" — is no longer the
+project's rule, and this is where that assumption was written down.** The enforcement sites
+were read exhaustively on 2026-08-13 looking for the rule that a thing gets a record only when
+a whole paper is devoted to it. It is not in any checker. It is in that sentence, and in the
+practice of whoever was authoring. The owner overturned it (`EshMis/ai-ops` issue #51,
+2026-08-13):
+
+> a whole paper doesn't need to be dedicated to a specific thing for it to exist!! […] even
+> something small like an objective can be gleaned from a paper and put where it fits, even if
+> it isn't the point of the whole paper!
+
+`docs/adr/0026-sub-paper-extraction.md` is the policy that replaces it.
+
+**This changes nothing about the ten records already extracted or the 120 marks.** G1 graded
+one whole-paper record per paper and was scored on that basis; the bar above stands unamended
+for the run it was written for, exactly as note 1 does. For **any future extraction**, the unit
+is a component the paper contains rather than the paper, and note 1's locator rule is what
+carries over and gets sharper rather than looser: the section number and short verbatim quote
+now have to point at *the component*, not merely at the paper. A sub-paper extraction with no
+locus is `RECALL` by §4's own definition — a claim that may well be true and that nobody can
+check — and one whose quote supports a different part of the paper than the claim is
+`FABRICATED`, unchanged.
+
+One thing the new policy explicitly does **not** license, because it is the failure this gate
+exists to catch in a new coat: carrying a figure the paper states for its whole algorithm — a
+complexity, a qubit count, a depth, a speedup — down onto a component pulled out of it. The
+paper does not state it *of the component*, so there is no locator for it, so it is a guess in
+the hole. Leave the field out or declare the gap.
