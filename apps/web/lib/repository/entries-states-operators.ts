@@ -1248,7 +1248,7 @@ RESULT = {"max_commutator_norm": float(np.abs(commutator).max()), "conserves_par
     relatedSlugs: ["heisenberg-xxz-operator", "number-operator", "vqe-ground-state-energy"],
     literature: [
       {
-        title: "Electron Correlations in Narrow Energy Bands",
+        title: "Electron correlations in narrow energy bands",
         authors: "J. Hubbard",
         year: "1963",
         url: "https://doi.org/10.1098/rspa.1963.0204",

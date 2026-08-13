@@ -92,7 +92,42 @@ function replaceLegacyBrand(value: string): string {
  * missing a rename is an unrewritten legacy brand string in one panel; the cost
  * of rewriting a source's own words is a corpus that misquotes its sources.
  */
-const BRAND_REWRITE_EXEMPT_KEYS = new Set(["knownGaps", "literature"]);
+const BRAND_REWRITE_EXEMPT_KEYS = new Set([
+  "knownGaps",
+  "literature",
+  // **Added 2026-08-13, the first time this fired in anger.** The comment above
+  // predicted the failure exactly and guarded two fields; the corpus then gained
+  // a record whose primary source is Kitaev's *Unpaired Majorana fermions in
+  // quantum wires*, and every field below carries that title or the physics term
+  // — none of which was exempt. `check-paper-register.mjs` caught it, reporting
+  // that the entry's source title was "Unpaired Leona Quantum fermions in
+  // quantum wires" while the register said "Majorana". A misquoted paper title,
+  // on a public page.
+  //
+  // These are exactly the fields the comment's own principle names — "fields
+  // carrying sourced scientific prose" — enumerated rather than left implicit.
+  // `sourceUrl` is here for the second reason it gives: a URL containing the
+  // substring is rewritten into a dead link.
+  // The whole `source` object, matching the `literature` precedent above: after
+  // `makeReferenceEntry` the paper's title and URL live at `source.title` and
+  // `source.url`, so exempting the flat `sourceTitle`/`sourceUrl` names the
+  // author passes in would not reach them. Exempting the container does.
+  "source",
+  "description",
+  "descriptionJa",
+  "introduction",
+  "introductionJa",
+  "explanation",
+  "explanationJa",
+  "explanationMd",
+  "explanationMdJa",
+  // **The remaining question is not this list, and should not be answered by
+  // growing it.** Each addition is a field somebody noticed; the fields nobody
+  // has noticed yet are the ones that will misquote the next source. Whether a
+  // rewrite of the old product name should still run at all against a corpus
+  // being populated from physics papers — where "Majorana" is a live term — is a
+  // question for the owner rather than a set this lane keeps extending.
+]);
 
 function normalizePublicRepositoryText(value: unknown): unknown {
   if (typeof value === "string") return replaceLegacyBrand(value);

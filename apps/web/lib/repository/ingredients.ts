@@ -152,9 +152,22 @@ export const ABSTENTION_REASONS = [
   "hamiltonian-term",
   /**
    * A mapping from one representation to another — Jordan–Wigner, Bravyi–Kitaev,
-   * QUBO-to-Ising. These are **processes**, and the map draws none of them. The
-   * record is filed as an operator because what it publishes is the resulting
-   * operator, but what it documents is the transformation.
+   * QUBO-to-Ising. These are **processes**, and the map draws none of *these
+   * six*. The record is filed as an operator because what it publishes is the
+   * resulting operator, but what it documents is the transformation.
+   *
+   * **Narrowed 2026-08-13 from "the map draws none of them", which claimed more
+   * than it could defend.** The old phrasing read as *the map draws no
+   * representation-changing process at all*, and that is a claim about the whole
+   * graph rather than about these records. `joins` flagged it while proposing a
+   * spatial-discretisation slot — a PDE becoming a discretised system is exactly
+   * a representation change — and the sentence would have gone quietly false the
+   * moment that landed, without any of these six records changing.
+   *
+   * The narrow claim is the one this abstention needs and the one that survives:
+   * no map process turns a fermionic operator into a qubit operator, or a QUBO
+   * into an Ising model. Whether some *other* representation change is drawn is
+   * not this reason's business.
    */
   "encoding",
   /**
@@ -503,7 +516,7 @@ export const INGREDIENT_ABSTAIN_RULES: readonly AbstainRule[] = [
     ],
     reason: "encoding",
     because:
-      "a mapping between representations. The record publishes the operator that comes out; what it documents is the transformation, and the map draws no such process",
+      "a mapping between representations. The record publishes the operator that comes out; what it documents is the transformation — and no map process performs a fermion-to-qubit mapping or a QUBO-to-Ising reduction",
   },
   {
     tagAny: [

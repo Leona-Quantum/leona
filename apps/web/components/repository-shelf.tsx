@@ -86,7 +86,7 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
       "hamiltonian-term":
         "it is a term of a Hamiltonian rather than a Hamiltonian, and nothing hands one to a simulator on its own",
       encoding:
-        "it is a mapping between representations — a process, and one the map does not draw",
+        "it is a mapping between representations — a process, and no process on the map performs this one",
       "generator-pool":
         "it is the set an ansatz picks generators from, which its process names in prose",
       "objective-transform":
@@ -110,7 +110,7 @@ const COPY: Record<"en" | "ja", ShelfCopy> = {
         "測定される対象だからです。測定される演算子は工程の契約の中でパラメータとして言及されており、パラメータは状態ではありません",
       "hamiltonian-term":
         "ハミルトニアンそのものではなくその項であり、単独でシミュレータに渡されることはないからです",
-      encoding: "表現のあいだの写像、すなわち工程であり、しかもマップが描いていない工程だからです",
+      encoding: "表現のあいだの写像、すなわち工程であり、この写像を行う工程をマップが描いていないからです",
       "generator-pool": "アンサッツが生成子を選ぶ候補集合であり、工程の側が散文で言及しているからです",
       "objective-transform":
         "ある問いを別の問いへ書き換えるものであり、その書き換えを行う工程をマップは描いていないからです",
