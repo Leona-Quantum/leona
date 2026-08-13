@@ -507,6 +507,17 @@ const FAMILY_RULES: readonly TopicRule[] = [
   // Filing them under a method family would state the method as the subject.
   { family: "Computational number theory", topics: ["algorithm-reference", "phase-estimation"] },
   { family: "PromiseBQP-complete problem", topics: ["algorithm-reference", "phase-estimation"] },
+  // Two more from the same pass. `Lattice problems` is filed under `cryptography`
+  // rather than `phase-estimation` because that is what the papers are for and what
+  // their own limitations sections argue about — Chen, Liu and Zhandry spend their
+  // future-work section explaining that their result does *not* affect deployed
+  // lattice cryptosystems, which is only a thing worth saying about a cryptography
+  // record. `Diagonalization · double-bracket flow` could not reuse
+  // `Eigenvalue estimation`: that family carries `phase-estimation`, and the paper
+  // is explicitly an alternative to phase estimation, so the facet would have
+  // contradicted the record.
+  { family: "Lattice problems", topics: ["algorithm-reference", "cryptography"] },
+  { family: "Diagonalization · double-bracket flow", topics: ["algorithm-reference", "variational"] },
 ];
 
 /**

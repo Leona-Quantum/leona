@@ -190,7 +190,17 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   //   exponential-congruences              — van Dam and Shparlinski state the
   //     cubic gap outright, and in the same breath that both sides are still
   //     superpolynomial in log q.
-  reported: 4,
+  // Four more from the second batch of the same pass:
+  //   matrix-products-over-semirings       — Le Gall and Nishimura name Duan and
+  //     Pettie's O(n^2.687) as the classical figure they beat.
+  //   viterbi-decoding-convolutional-codes — Grice and Meyer claim "better than
+  //     classical performance under certain conditions", but state no classical
+  //     bound anywhere, so the claim is comparative and qualitative at once.
+  //   average-case-lattice-problems-by-filtering — the claim is the narrow one:
+  //     no polynomial-time algorithm, classical or quantum, was known for these
+  //     variants. Not the Zoo's "Exponential".
+  //   quantum-primality-test-order-finding — compared against AKS by exponent.
+  reported: 8,
   // Read and silent. gibbs-state-sampling was the first: Poulin and Wocjan's
   // abstract makes no comparison to a classical algorithm and the Zoo's
   // "Superpolynomial" is the section heading's. This is the record the owner's
@@ -200,7 +210,14 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   //     "Superpolynomial" has no support in the paper the Zoo cites for it.
   //   subset-finding-quantum-walk — Childs and Eisenberg compare only against
   //     quantum query lower bounds; the word "classical" is not in the body.
-  absent: 3,
+  // Two more from the second batch:
+  //   quadratically-signed-weight-enumerators — Knill and Laflamme prove an
+  //     equivalence, not a speedup. The Zoo files it "Superpolynomial"; the paper
+  //     it cites for that makes no comparison of costs at all.
+  //   double-bracket-diagonalization — every comparison is against other quantum
+  //     methods. `read` scopes this to a partial retrieval, which is exactly the
+  //     case the field's narrowness was written for.
+  absent: 5,
   // The worklist. The intake checked the problem statement, the class against the
   // Zoo, the reference metadata and the complexity claim — it never asked whether
   // the paper supports the class. `unknown` says that, rather than pretending.
