@@ -210,6 +210,14 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   //     are classically easy." One sentence, both halves.
   //   boson-sampling-linear-optics — the Jerrum-Sinclair-Vigoda contrast between
   //     nonnegative and complex permanents.
+  // Two more from the fifth batch, the two Zoo *subject headings* — see the
+  // declaration comments in ./entries-zoo-parity.ts for which of each heading's
+  // eight references these carry and which stay outstanding:
+  //   elliptic-curve-discrete-log-resources — Proos and Zalka name Pollard rho and
+  //     call the classical side truly exponential. The famous "1000 qubits" is
+  //     LOGICAL qubits on an explicitly noise-free machine.
+  //   backtracking-quantum-walk-speedup — Montanaro's near-quadratic speedup, and
+  //     the square root is of the TREE SIZE, not the problem size.
   //
   // A third was written and could not land. The Zoo's "Subset-sum" entry is cited
   // to Bernstein, Jeffery, Lange and Meurer, whose only identifier is the Springer
@@ -219,7 +227,7 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   // papers.ts:110-116 says the check exists for, firing for the first time. The
   // record is written and the paper is read; it lands when the identity scheme can
   // represent that DOI. Not a sourcing problem.
-  reported: 12,
+  reported: 14,
   // Read and silent. gibbs-state-sampling was the first: Poulin and Wocjan's
   // abstract makes no comparison to a classical algorithm and the Zoo's
   // "Superpolynomial" is the section heading's. This is the record the owner's
