@@ -917,14 +917,9 @@ test("every capability draws a figure — not just the two that converge", () =>
   // **23 since W21-E**, which added `excited-state-energy`, and the tripwire did
   // its job a second time: its figure is the one that pushed the four-root
   // overview past `CONVERGE_OPEN_MAX` (see that constant's own note).
-  // **24 since session 15 unit 2**, which added `phase-estimation`. The tripwire did
-  // its job a third time: the slot exists because three papers in unit 1 needed a
-  // readout that reads an eigenvalue off an accumulated phase and this map had none,
-  // and its figure had to be looked at before it could ship.
-  // **25 since session 15 unit 3**, which added `hidden-period-finding` — the first
-  // genuinely new SUBJECT region on this map rather than another slot inside one of
-  // the two spines it already had.
-  assert.equal(capabilities.length, 25, "the graph's slot count changed; update these figures");
+    // 25 in session 15: the two PDE discretization slots, each a root nothing
+  // steps into, joined to the rest of the map only by the states they produce.
+  assert.equal(capabilities.length, 27, "the graph's slot count changed; update these figures");
 
   for (const focus of capabilities) {
     for (const locale of ["en", "ja"] as const) {
@@ -955,7 +950,7 @@ test("every capability draws a figure — not just the two that converge", () =>
   // one chain every filler walks.
   const byGrain = capabilities.map((focus) => diagramFor(focus.id).grain);
   assert.equal(byGrain.filter((grain) => grain === "states").length, 1);
-  assert.equal(byGrain.filter((grain) => grain === "methods").length, 24);
+  assert.equal(byGrain.filter((grain) => grain === "methods").length, 26);
 });
 
 test("`drawableSlots` is the list of slots that actually draw", () => {
@@ -968,10 +963,10 @@ test("`drawableSlots` is the list of slots that actually draw", () => {
     .filter((focus) => !diagramFor(focus.id).empty)
     .map((focus) => focus.id);
   assert.deepEqual(offered, draws);
-  // 22 since W21, 23 since W21-E, 24 since session 15's `phase-estimation` — the
-  // same new slots the figure test above pins, and the point of asserting the
-  // length beside the deepEqual is that two empty lists are also deep-equal.
-  assert.equal(offered.length, 25);
+  // 22 since W21, 23 since W21-E — the same new slots the figure test above
+  // pins, and the point of asserting the length beside the deepEqual is that two
+  // empty lists are also deep-equal.
+  assert.equal(offered.length, 27);
 
   // And it is still a strict superset of the convergence claim, which is a
   // different and narrower statement — narrower by one since session 119,
@@ -1864,22 +1859,11 @@ test("a line that opens into something says so, and a line that does not is not 
   // spine to open. A method with a step that still draws a leaf is the ingredient shape,
   // not a miscount — the same distinction `layerwise-training` is annotated for above.
   // `openable` 29 → 30, `leaves` 62 → 66.
-  // Two more in session 15 unit 2, both LEAVES, and that is the honest opening state
-  // of a slot rather than a shortcoming: `register-phase-estimation` and
-  // `single-ancilla-phase-estimation` are each one undecomposed act, because what
-  // separates them — a register of ancillas against one reused ancilla with classical
-  // feedback — is a resource choice inside the method, not a step this graph draws.
-  // `openable` unchanged at 30, `leaves` 66 -> 68.
-  // Three more in session 15 unit 3, all LEAVES again. A brand-new subject region's
-  // methods are undecomposed by construction — that is the honest opening state W21
-  // recorded for the variational region and it is still true here. `openable`
-  // unchanged at 30, `leaves` 68 -> 71. That `openable` has now not moved across two
-  // consecutive new regions is worth reading as a fact rather than a coincidence: a
-  // new region adds figures, and it adds nothing to open until somebody breaks one of
-  // its methods apart.
-  assert.equal(openable + leaves + 1, 102, "the twenty-five figures draw 102 lines between them");
+    // 101 with the two PDE slots: two lanes each, all four leaves.
+  assert.equal(openable + leaves + 1, 106, "the twenty-three figures draw 97 lines between them");
   assert.equal(openable, 30, "30 of them open into something the canvas draws");
-  assert.equal(leaves, 71, "71 are leaves — the canvas records nothing finer for them");
+    // 70 with the four PDE methods: all atomic, nothing finer to open into.
+  assert.equal(leaves, 75, "66 are leaves — the canvas records nothing finer for them");
 
 });
 
