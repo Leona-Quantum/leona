@@ -255,7 +255,7 @@ const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
 // a reported figure.** Four different wrong values for this constant circulated
 // during the W22 session — 247, 253, 257 and 258 — each correct for a branch state
 // that had already moved by the time it was quoted. Run the checker.
-const EXPECTED_BROWSE_ROWS = 261;
+const EXPECTED_BROWSE_ROWS = 262;
 if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
     `${records.length} records fold to ${rows.length} browse rows, expected ${EXPECTED_BROWSE_ROWS}. `

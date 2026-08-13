@@ -1748,7 +1748,7 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     verification: "Two-bit message decoding circuit reviewed",
     method: "Prepare a Bell pair, apply the sender's message encoding, then decode with CX and H before measurement.",
     result: "The ideal circuit decodes the selected two classical message bits.",
-    caveat: "The protocol uses a pre-shared Bell pair and a two-bit classical readout; it does not transmit two arbitrary qubits.",
+    caveat: "The protocol uses a pre-shared Bell pair and a two-bit classical readout; it does not transmit two arbitrary qubits. Bennett and Wiesner are explicit that this is not a saving in transmissions: sending two bits via two particles, one of which stays put while the other makes a round trip, is \"no more efficient in number of particles or number of transmissions than the obvious scheme of directly encoding each bit in one transmitted particle\". What it buys is timing — some of the transmissions can happen before the message has been decided upon, which the authors suggest may be done at cheaper off-peak rates. The paper also proposes a photonic implementation by parametric down-conversion rather than reporting one, and says that reassembling the two spin-1/2 particles into a jointly measurable entity \"appears technologically infeasible\".",
     exportStatus: "Native Qiskit · direct gate-level export",
     provenance: "Primary paper",
     updatedAt: "2026-08-12",
@@ -1765,15 +1765,26 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     // document that states the result. The primary source is Bennett & Wiesner
     // 1992, the paper that introduced the protocol.
     //
-    // **Read this before treating it as verified the way the QFT row above is.**
-    // Its abstract was NOT fetched first-hand in the session that made this
-    // change: the paper is from 1992 and so predates arXiv's quant-ph archive,
-    // and every publisher host (doi.org, journals.aps.org) is blocked by this
-    // environment's egress proxy. What was established is *which* paper — the
-    // identity of the DOI — which is the one thing a third party's reference
-    // list is allowed to tell you. Nothing in this record's prose was taken
-    // from it. Recorded in ai-ops drafts/issue-44-untraceable.md as read-pending
-    // rather than left silently looking like a first-hand read.
+    // **Read-pending, and now read.** This note used to say the opposite, and why
+    // it could is worth keeping. The paper is from 1992, predates arXiv's
+    // quant-ph archive, and every publisher host (doi.org, journals.aps.org) is
+    // blocked by this environment's egress proxy — so the session that set this
+    // citation established only *which* paper the DOI names, took nothing from
+    // it, and recorded that as read-pending rather than letting it look
+    // first-hand.
+    //
+    // The owner supplied the PDF on ai-ops#56. All four pages were read, and what
+    // this record says about the protocol now comes from the paper: the
+    // abstract's "two bits to be encoded reliably in one spin-1/2 particle", and
+    // p.2883's "Bob has communicated a two-bit message by unitarily operating on
+    // a single spin-1/2 particle". So do the limits, which are the half a
+    // second-hand read would have missed — the paper says outright that the
+    // scheme saves no transmissions, and that its own implementation is a
+    // proposal. Both are in `caveat` now.
+    //
+    // The register row carries `reports` for the first time on the same read:
+    // theory reported, simulation and hardware absent. Figure 1 is a *possible*
+    // implementation by parametric down-conversion, not an experiment performed.
     sourceTitle: "Communication via one- and two-particle operators on Einstein-Podolsky-Rosen states",
     sourceUrl: "https://doi.org/10.1103/physrevlett.69.2881",
     wires: ["Alice", "Bob"],
