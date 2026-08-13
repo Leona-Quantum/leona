@@ -140,12 +140,22 @@ author as coverage the checker does not have.
 - `regionsOf` reaches `layerAdjacency` from `paper-traces.ts` rather than re-deriving components,
   so "region" here and "component" in ADR-0026's scatter gate cannot drift. This matters: the
   scatter gate's whole meaning is that two citations fall in different components.
-- **Making the walk see state adjacency is a separate, deliberate PR.** Teaching `layerAdjacency`
-  that a producer's `to` satisfying a consumer's `from` is an edge would collapse the three
-  components toward one, which re-grades every paper trace and moves the ADR-0026 gate. It is the
-  right eventual fix — a paper cited at both `hamiltonian-simulation` and `gate-synthesis` is
-  following the pipeline legitimately and is flagged as drift today — but it must be landed with
-  the before-and-after paper census measured, not assumed.
+- **Making the walk see state adjacency is a separate, deliberate PR — and it is now measured
+  rather than feared.** Teaching `layerAdjacency` that a producer's `to` satisfying a consumer's
+  `from` is an edge adds **23 undirected capability edges** and takes the map from **3 components
+  to 2** (112 nodes and 5): compilation joins the algorithms region, and error mitigation stays
+  separate, because nothing produces `noisy-estimate`. The paper census is **unchanged in every
+  bucket** — 117 papers cited, 86 `point` / 2 `contiguous` / 29 `joinable` / **0 `scattered`**
+  before and after — so the ADR-0026 gate does not move today. What the change buys is the future
+  false positive: a paper cited at both `hamiltonian-simulation` and `gate-synthesis` is following
+  the pipeline legitimately and would be graded `scattered` today.
+
+  It stays a separate PR for a reason found while measuring it: **`regionsOf` must not adopt the
+  widened edge set.** A region is a *containment* component — an area somebody authored as one —
+  and a join is a state-level edge *between* two of them. Fold the joins into the definition of a
+  region and there are no cross-region joins by construction, and this instrument measures
+  nothing. So the widening needs `paper-traces.ts` to export two relations, not one: containment
+  (what a region is) and containment-plus-state (what a trace may walk).
 - `producedStates` is exported for `check-ingredients.mjs`, which asks the same question of object
   records that this asks of slots. Two definitions of "the map produces this" would drift the first
   time either was edited.
