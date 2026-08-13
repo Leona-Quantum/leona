@@ -432,6 +432,25 @@ export const STATE_VOCABULARY: StateVocabulary = {
       specializes: ["runnable-evolution"],
     },
     {
+      id: "device-figure",
+      label: "Number about the machine",
+      labelJa: "機械についての数値",
+      summary:
+        "A figure of merit for the hardware itself — an average error rate, a largest circuit it can actually run — together with the protocol that produced it and the confidence it was established at. It answers a question about the computer, never a question the computer was asked.",
+      summaryJa:
+        "ハードウェアそのものについての性能指標。平均誤り率や、実際に実行できる最大の回路といったものであり、それを生んだプロトコルと、確立された際の信頼度を伴います。答えているのは計算機についての問いであって、計算機に与えられた問いではありません。",
+      // **Deliberately not `observable-value`, and this is the distinction the
+      // owner's ai-ops#68 ruling makes possible rather than removes.** That state
+      // is "a scalar estimate with an additive-error guarantee" and it sits under
+      // `solution-answer` — the family of things a route hands back about a
+      // problem it was given. A quantum volume is an integer about a machine and
+      // an average error rate is a property of a gate set; neither is an answer to
+      // anything the machine was asked to compute. Reusing `observable-value`
+      // would have let the path-finder hand a benchmark result to anything that
+      // consumes a measured number, and would have told a reader that these
+      // protocols solve problems. They characterise the thing that solves them.
+    },
+    {
       id: "periodic-function-oracle",
       label: "Function promised to be periodic",
       labelJa: "周期をもつと約束された関数",
