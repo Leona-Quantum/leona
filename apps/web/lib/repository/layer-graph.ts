@@ -620,8 +620,20 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     conditions: "The truncation bound assumes the exact solution has the derivatives the stencil's Taylor expansion uses: Costa, Jordan and Ostrander state that a discretization with error $O(a^k)$ of an $m$-th derivative 'is only justified if the exact solution is $(k+m)$-times differentiable'. A scatterer is modelled as removed lattice points, and the presence of one breaks translational invariance, so the Laplacian can no longer simply be diagonalized by a Fourier transform. The hypergraph incidence-matrix factorizations the higher orders rest on are, in the authors' own words, not known to appear elsewhere in the literature.",
     conditionsJa: "打ち切り誤差の評価は、厳密解がステンシルの Taylor 展開で用いる階数の微分をもつことを前提とします。Costa・Jordan・Ostrander は、$m$ 階微分に対する誤差 $O(a^k)$ の離散化は「厳密解が $(k+m)$ 回微分可能である場合にのみ正当化される」と述べています。散乱体は格子点を取り除いたものとして表され、散乱体があると並進対称性が破れるため、ラプラシアンはもはや Fourier 変換で単純に対角化できません。高次の構成が依拠するハイパーグラフ接続行列による分解は、著者ら自身の言によれば、他の文献には見当たらないものです。",
-    cost: "Costa, Jordan and Ostrander give the truncation error of the second-order stencil as $O(a^2)$ at finite lattice spacing $a$, and generalise it: a $k$-th order Laplacian gives truncation errors of order $a^k$, so over evolution time $T$ the accumulated error is of order $a^k T$. Relating the order to the sparsity actually simulated, a $D$-dimensional Laplacian of order $k$ has a $D(k/2+1)$-sparse incidence matrix, so an $s$-sparse Hamiltonian corresponds to $k = 2(s/D) - 2$ and the total accumulated error is on the order of $T a^{2(s/D)-2}$.",
-    costJa: "Costa・Jordan・Ostrander は、2 次のステンシルの打ち切り誤差を、有限の格子間隔 $a$ において $O(a^2)$ と与え、さらに一般化しています。$k$ 次のラプラシアンは $a^k$ の位数の打ち切り誤差を与えるため、発展時間 $T$ にわたって蓄積する誤差は $a^k T$ の位数になります。次数を実際にシミュレートする疎性に結びつけると、$k$ 次の $D$ 次元ラプラシアンの接続行列は $D(k/2+1)$ 疎であり、$s$ 疎なハミルトニアンは $k = 2(s/D) - 2$ に対応するので、蓄積誤差の総量は $T a^{2(s/D)-2}$ の位数になります。",
+    // **Deliberately stops short of the paper's T-resolved figure, and that is
+    // ai-ops#58 rather than caution.** §8 continues: over evolution time $T$ the
+    // accumulated error is of order $a^k T$, resolving to $T a^{2(s/D)-2}$. That
+    // sentence carries two claims at two levels — the subordinate clause is about
+    // the stencil and belongs on this card, the main clause is about running the
+    // whole algorithm for a time $T$ and belongs at the whole algorithm. This map
+    // has no node for that algorithm, so the figure has nowhere honest to live and
+    // is omitted rather than borrowed downward.
+    //
+    // Caught in review by `regions`, who put the reason better than the rule does:
+    // a whole-algorithm figure sitting on a part is the half of #58 no checker can
+    // see. Do not restore it here without a whole-algorithm node to move it to.
+    cost: "Costa, Jordan and Ostrander give the truncation error of the second-order stencil as $O(a^2)$ at finite lattice spacing $a$, and generalise it: a $k$-th order Laplacian gives truncation errors of order $a^k$. The order is not free of what the stencil feeds — a $D$-dimensional Laplacian of order $k$ has a $D(k/2+1)$-sparse incidence matrix, so an $s$-sparse Hamiltonian corresponds to $k = 2(s/D) - 2$, which is the order-against-sparsity trade in the form the paper states it.",
+    costJa: "Costa・Jordan・Ostrander は、2 次のステンシルの打ち切り誤差を、有限の格子間隔 $a$ において $O(a^2)$ と与え、さらに一般化しています。$k$ 次のラプラシアンは $a^k$ の位数の打ち切り誤差を与えます。この次数は、ステンシルが供給する先と無関係ではありません。$k$ 次の $D$ 次元ラプラシアンの接続行列は $D(k/2+1)$ 疎であり、$s$ 疎なハミルトニアンは $k = 2(s/D) - 2$ に対応します。これが、論文の述べる形での次数と疎性の引き換えです。",
     steps: [],
     atomic: true,
     entries: ["wave-equation-simulation"],
