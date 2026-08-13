@@ -1643,3 +1643,67 @@ test("a method's interior is the lane's own notion of it — ingredients are not
     assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, method), true, method.id);
   }
 });
+
+// **The partition the method page's two lists rely on.**
+//
+// `/repository/layers/<method>` draws *Requires* from `card.ingredients` and
+// *What it needs* from the steps that are not in it. That is only a partition if
+// every ingredient is one of the method's own steps — otherwise Requires would
+// name something the steps list never contained, and the page would show a
+// method needing a slot it does not step through.
+//
+// It also pins the shape the page's third empty note exists for. 17 of the 27
+// methods with an ingredient have no chain step left after the split, and the
+// note the page draws for them says so; if that number ever went to zero the
+// note would be unreachable copy, and if the partition broke the note would fire
+// on methods that do have chain steps.
+test("every ingredient is one of the method's own steps, so the two lists partition them", () => {
+  const input = {
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    corpus: CORPUS,
+    locale: "en" as const,
+    register: PAPER_REGISTER,
+  };
+  const methods = LAYER_GRAPH.nodes.filter(isMethod);
+  let withIngredients = 0;
+  let allStepsAreIngredients = 0;
+  for (const method of methods) {
+    const card = cardFor(input, method.id);
+    assert.ok(card && card.kind === "method", method.id);
+    if (!card.ingredients.held) continue;
+    withIngredients += 1;
+    const ingredientIds = card.ingredients.value.map((item) => item.link.id);
+    for (const id of ingredientIds) {
+      assert.ok(
+        method.steps.includes(id),
+        `${method.id}: Requires names ${id}, which is not one of its steps`,
+      );
+    }
+    assert.equal(
+      new Set(ingredientIds).size,
+      ingredientIds.length,
+      `${method.id}: an ingredient is listed twice`,
+    );
+    const chain = method.steps.filter((step) => !ingredientIds.includes(step));
+    assert.equal(
+      chain.length + ingredientIds.length,
+      method.steps.length,
+      `${method.id}: the two lists do not add up to the steps`,
+    );
+    if (chain.length === 0) allStepsAreIngredients += 1;
+  }
+  // Both witnesses, so neither branch of the page can rot into unreachable copy.
+  assert.ok(
+    withIngredients >= 20,
+    `only ${withIngredients} methods have an ingredient — Requires is close to dead copy`,
+  );
+  assert.ok(
+    allStepsAreIngredients > 0,
+    "no method has ingredients for all of its steps — the page's third empty note is unreachable",
+  );
+  assert.ok(
+    allStepsAreIngredients < withIngredients,
+    "every method with an ingredient has only ingredients — the chain branch is unreachable",
+  );
+});

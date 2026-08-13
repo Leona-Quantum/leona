@@ -101,54 +101,152 @@ const byId = papers.indexPapers(PAPER_REGISTER);
 // Every `entry.source.title` that disagrees with the register **today**, pinned
 // to the exact wrong string, with what it should say.
 //
-// Why a pinned list and not a straight failure: `source` is what the catalog
-// attestation hashes. Correcting these twelve titles moves twelve claim hashes,
-// which turns twelve attested records into refusals needing a fresh human
-// signature — the same event nine VQE records are already mid-way through. That
-// is a deliberate, sequenced edit an owner makes with `--re-attest` in hand, not
-// a drive-by fix, and least of all one made in the same change that first
-// measured them.
+// **Ten of the original twelve were corrected and are gone from here.** Their
+// `source.title` now equals its register row, so each line had to come out in
+// the same commit: the second loop below fails a slug that no longer records
+// the wrong string it is pinned to. See the 2026-08-13 entries in the desk
+// decisions file.
+//
+// **The two that remain are held deliberately, and they are not the same kind
+// of thing as the ten.** A record disagreeing with the document its own URL
+// resolves to is an error, and correcting it is a correction. These two carry
+// the **peer-reviewed journal title** for a paper the register holds from its
+// arXiv preprint — two real titles for one work, not a mistake:
+//
+//   hhl-linear-systems  record: "Quantum algorithm for linear systems of equations"
+//                       = Crossref's title for the published PRL, exactly
+//                       arXiv 0811.3171 prints "...for solving linear systems..."
+//   graph-state-ring    record: "Multiparty entanglement in graph states"
+//                       = Crossref's title for the published PRA, exactly
+//                       arXiv quant-ph/0307130 prints "Multi-party..."
+//
+// Checked against arXiv's own metadata and Crossref on 2026-08-13, not inferred
+// from the shape of the strings. Choosing between them is a decision about which
+// of two legitimate titles the record should carry — and the better fix may be
+// to register the journal DOI and point the record there, rather than to rewrite
+// the title. That is the owner's call, and it must not be settled by being
+// swept into a signing run, because a signature cannot be taken back.
+//
+// **The batch they land in:** whichever run answers that question. They are the
+// only two rows here, and neither is waiting on a person to notice them — the
+// question is on record.
+//
+// Why the list existed at all, since the mechanism is worth keeping: `source` is
+// what the catalog attestation hashes, so correcting a title moves that record's
+// claim hash and turns an attested record into a refusal needing a fresh
+// signature. That is a deliberate, sequenced edit made with `--re-attest` in
+// hand, not a drive-by fix. The twelve were therefore quarantined until they
+// could be fixed in one batch alongside a signing run, which is what happened.
+//
+// **The bar for putting anything back.** This map is not a way to make a failing
+// record pass. It is a way to say "this is wrong, it is recorded, and it is
+// being fixed in the next signing run" — so a line added here without that run
+// already scheduled is a permission slip, which is exactly what it must never
+// become. If you are adding one, name the batch it lands in.
 //
 // It cannot go stale in either direction, which is the only thing that makes a
 // list like this safe (same rule `AttestationPolicy` applies to its
 // `excluded_identities`): a slug whose title stops matching the pinned wrong
 // string fails as a stale line, so fixing a record forces its line out of here
 // in the same commit; and a *new* drift is not in the list and fails outright.
+// Both directions were broken deliberately and confirmed to exit 1; the evidence
+// is in the PR that emptied it down to these two.
 //
-// Four of the twelve are pure casing. The rest are a real disagreement, and one
-// is the exact failure ./papers.ts was written to kill: `cluster-state-1d` cites
-// quant-ph/0010033 as "A one-way quantum computer", which is a different, real
-// Raussendorf–Briegel paper. The register caught that in `literature` in PR #305
+// The worst of the twelve is worth remembering, because it is the failure
+// ./papers.ts was written to kill and it survived here for months:
+// `cluster-state-1d` cited quant-ph/0010033 as "A one-way quantum computer",
+// which is a different, real Raussendorf–Briegel paper. arXiv's own metadata for
+// that id says "Quantum computing via measurements only" (checked 2026-08-13),
+// and the record's own `literature` array had it right all along — only
+// `source.title` disagreed. The register caught it in `literature` in PR #305
 // and could not see it here.
 const KNOWN_SOURCE_TITLE_DRIFT = new Map([
   ["hhl-linear-systems", "Quantum algorithm for linear systems of equations"],
-  ["surface-code-memory", "The XZZX surface code"],
-  [
-    "iterative-phase-estimation",
-    "Arbitrary accuracy iterative quantum phase estimation algorithm using a single ancilla qubit",
-  ],
-  ["quantum-walk-line", "Quantum walks on graphs"],
-  ["cluster-state-1d", "A one-way quantum computer"],
   ["graph-state-ring", "Multiparty entanglement in graph states"],
-  ["magic-t-state", "Universal quantum computation with ideal Clifford gates and noisy ancillas"],
-  [
-    "heisenberg-xxz-operator",
-    "An Introduction to Integrable Techniques for One-Dimensional Quantum Spin Systems",
-  ],
-  ["parity-operator-measurement", "Quantum Computation and Quantum Information"],
-  ["plus-minus-states", "Quantum Computation and Quantum Information"],
-  ["noon-state", "A quantum Rosetta stone for interferometry"],
-  ["maximally-mixed-state", "Quantum Computation and Quantum Information"],
 ]);
 
-// A URL that is not an arXiv or DOI address is not a paper: 28 records cite the
-// OpenQASM spec and 9 cite vendor documentation. Those are legitimate sources
-// and the register has no remit over them. But "the register cannot key on it"
-// must not become the way a *typo'd* arXiv link goes quiet, so an address that
-// is plainly one of the two schemes and still fails to parse is an error.
+// A URL that is not an arXiv or DOI address is not a paper. "The register
+// cannot key on it" must not become the way a *typo'd* arXiv link goes quiet,
+// so an address that is plainly one of the two schemes and still fails to parse
+// is an error.
 const PAPER_SHAPED = /arxiv\.org|(^|\/)doi(\.org)?\//i;
 
-const sourceAudit = { checked: 0, notAPaper: 0, quarantined: new Set() };
+// The only non-paper addresses a record's `source` may name, one line each,
+// with what kind of document it is.
+//
+// ## What this replaced, and why a silent bucket was the bug
+//
+// This check used to count every unkeyable `source.url` into a `notAPaper`
+// tally and print it as "34 cite a spec or vendor doc, which the register does
+// not key". That sentence was doing two different jobs: it was true of the 31
+// records citing a *normative specification* or a framework's own *definition*
+// of a gate it ships, and it was the hiding place for three records citing
+// something that states no result at all —
+//
+//   - `bell-state-qiskit`   → "LeonaQ starter verification fixture" over
+//                             `qiskit.org/learn/`, a framework's learning
+//                             homepage. This project citing itself, one step
+//                             removed, on the field a reader follows for proof.
+//   - `qft-resource-screen` → `quantumai.google/cirq`, a product landing page.
+//   - `superdense-coding-…` → a vendor course *index*.
+//
+// All three had a real primary source available; all three were published for
+// weeks with every check green, because a tally is not a rule. Owner ruled on
+// ai-ops#44 (2026-08-12) to re-source them, and the tally is now an allowlist:
+// a `source.url` that is neither a registered paper nor a line in here fails.
+//
+// ## The two directions, both of which have to fail
+//
+// A URL not on the list fails — that is the new gate. And a line on the list
+// that no record uses fails as stale, so removing the last record that cites a
+// spec forces its line out in the same commit. Same rule as
+// `KNOWN_SOURCE_TITLE_DRIFT` above and for the same reason: a list nobody is
+// forced to maintain silently becomes a permission slip for whatever gets added
+// to it.
+//
+// ## What may go on this list
+//
+// A document that **normatively defines the thing the record shows**: the
+// OpenQASM specification defines `h`; Qiskit's API page defines the `ECRGate`
+// Qiskit ships. Neither has a paper and neither is standing in for one.
+//
+// What may **not**: a tutorial, a course, a learning path, a landing page, a
+// notebook gallery, a reference list, or anything belonging to this project.
+// Those are directories — a directory can tell you *which* paper states a
+// result and can never tell you *what* it says. If a record's only source is
+// one of those, it does not go on this list; it gets re-sourced, or it goes on
+// the untraceable list for the owner. Nothing is scrapped for it (ai-ops#44).
+//
+// Textbooks are **not** on this list and must never be added to it: a textbook
+// is a primary source (owner, ai-ops#44) and belongs in the register with
+// `medium: "textbook"`, where every rule that applies to a paper applies to it.
+// This list is for documents that are not primary sources at all.
+const PERMITTED_NON_PAPER_SOURCES = new Map([
+  [
+    "https://openqasm.com/language/gates.html",
+    "the OpenQASM 3 specification's normative standard-gate definitions",
+  ],
+  [
+    "https://docs.quantum.ibm.com/api/qiskit/qiskit.circuit.library.DCXGate",
+    "Qiskit's own definition of a gate Qiskit ships and no paper introduces",
+  ],
+  [
+    "https://docs.quantum.ibm.com/api/qiskit/qiskit.circuit.library.ECRGate",
+    "Qiskit's own definition of a gate Qiskit ships and no paper introduces",
+  ],
+  [
+    "https://docs.pennylane.ai/en/stable/introduction/circuits.html",
+    "PennyLane's normative definition of the circuit/QNode construction this record is an instance of",
+  ],
+]);
+
+const sourceAudit = {
+  checked: 0,
+  notAPaper: 0,
+  quarantined: new Set(),
+  permittedUsed: new Set(),
+  textbookSourced: [],
+};
 for (const entry of corpusMod.PUBLIC_REPOSITORY_ENTRIES) {
   const where = `entry:${entry.slug}`;
   const source = entry.source;
@@ -162,8 +260,13 @@ for (const entry of corpusMod.PUBLIC_REPOSITORY_ENTRIES) {
       errors.push(
         `${where}: source.url ${source.url} is an arxiv.org or doi address the register cannot key on — fix the link`,
       );
-    } else {
+    } else if (PERMITTED_NON_PAPER_SOURCES.has(source.url)) {
       sourceAudit.notAPaper += 1;
+      sourceAudit.permittedUsed.add(source.url);
+    } else {
+      errors.push(
+        `${where}: source.url ${source.url} is neither a registered paper nor a permitted non-paper source. A record cites the document that states its result — a paper or a textbook, never a tutorial, a course index, a landing page or this project's own code (ai-ops#12, ai-ops#44). Re-source it, or add it to the untraceable list for the owner; do not add it to PERMITTED_NON_PAPER_SOURCES unless it normatively *defines* what this record shows.`,
+      );
     }
     continue;
   }
@@ -173,6 +276,7 @@ for (const entry of corpusMod.PUBLIC_REPOSITORY_ENTRIES) {
     continue;
   }
   sourceAudit.checked += 1;
+  if (paper.medium === "textbook") sourceAudit.textbookSourced.push(entry.slug);
   // Identity, not bytes — the one place this check is deliberately looser than
   // `auditCitations`. `canonicalPaperUrl` lowercases a DOI because that is how
   // `paperIdFromUrl` keys one, while nine records carry the publisher's
@@ -202,6 +306,16 @@ for (const [slug, title] of KNOWN_SOURCE_TITLE_DRIFT) {
   if (sourceAudit.quarantined.has(slug)) continue;
   errors.push(
     `entry:${slug}: no longer records the known-wrong source.title ${JSON.stringify(title)} — if you fixed it, delete its line from KNOWN_SOURCE_TITLE_DRIFT (and re-attest the record)`,
+  );
+}
+
+// The other direction, without which the allowlist only ever grows. See its
+// comment: a permitted address no record cites is a permission nobody is using,
+// and the next record that wants it must argue for it rather than inherit it.
+for (const [url, why] of PERMITTED_NON_PAPER_SOURCES) {
+  if (sourceAudit.permittedUsed.has(url)) continue;
+  errors.push(
+    `PERMITTED_NON_PAPER_SOURCES: no record cites ${url} (${why}) — delete its line`,
   );
 }
 
@@ -293,8 +407,19 @@ if (!QUIET) {
   // the three whose text a production write hashes. Folding it into the 438
   // would hide both the different check and the different denominator.
   console.log(
-    `  ${sourceAudit.checked} of ${corpusMod.PUBLIC_REPOSITORY_ENTRIES.length} records name a registered paper as their own source (${sourceAudit.notAPaper} cite a spec or vendor doc, which the register does not key)`,
+    `  ${sourceAudit.checked} of ${corpusMod.PUBLIC_REPOSITORY_ENTRIES.length} records name a registered paper as their own source (${sourceAudit.notAPaper} cite one of the ${PERMITTED_NON_PAPER_SOURCES.size} permitted normative specs, which the register does not key)`,
   );
+  // Printed by name, because the whole point of `medium` is that the set of
+  // textbook-sourced records is enumerated rather than inferred from a title
+  // by whoever next asks "is this traceable to a primary source?". A textbook
+  // is a primary source (owner, ai-ops#44) and this line is the corpus saying
+  // which records rest on one.
+  const textbooks = PAPER_REGISTER.papers.filter((paper) => paper.medium === "textbook");
+  console.log(
+    `  ${textbooks.length} registered sources are textbooks — primary sources, cited by ${sourceAudit.textbookSourced.length} records:`,
+  );
+  for (const paper of textbooks) console.log(`      ${paper.id} — ${paper.title}`);
+  for (const slug of sourceAudit.textbookSourced) console.log(`      ← ${slug}`);
   // The two numbers the owner's "papers as traces" rests on. A paper cited from
   // both sides is one the Atlas and the map already agree about; the rest are
   // two bibliographies of one field that have never been joined.
