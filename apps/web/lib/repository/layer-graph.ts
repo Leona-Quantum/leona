@@ -1119,7 +1119,17 @@ export const LAYER_GRAPH: LayerGraph = {
     // pointing at it, so a reader arriving from the catalog could not reach the
     // region at all — the parity gap measured from the other side by
     // `scripts/check-zoo-parity.mjs`.
-    entries: ["linear-differential-equations"],
+    //
+    // `wave-equation-simulation` added session 15. Costa, Jordan and Ostrander
+    // write the discretised wave equation as a genuine linear ODE system on the
+    // enlarged vertex-plus-edge space — their eq. (5), $d/dt[\phi_V;\phi_E]$ against
+    // an anti-Hermitian generator — and then simulate it: "Simulating the time
+    // evolution according to (5) can be achieved using state of the art quantum
+    // algorithms for simulating the dynamics induced by general sparse
+    // Hamiltonians" (§2). That is this slot's second family exactly, the one that
+    // never assembles a linear system. Anchored at the capability rather than at
+    // `schrodingerisation`, whose node cites a different paper.
+    entries: ["linear-differential-equations", "wave-equation-simulation"],
     whyALayer: "This is the pivot of the cluster. Methods fulfilling it split into two structurally different families: those that assemble one large linear system and call a quantum linear solver, and those that never form a linear system at all, reducing instead to Hamiltonian simulation or to repeated singular value amplification. The two families differ in how many queries they make to the initial-state preparation oracle, and that difference is structural rather than a matter of constants — when the initial state is expensive to prepare, it dominates the end-to-end cost.",
     whyALayerJa: "この層が全体の分岐点です。ここを満たす手法は、構造的に二つの系統に分かれます。ひとつは大きな線形系をまとめて組み立てて量子線形ソルバーを呼ぶもの、もうひとつは線形系をそもそも作らず、ハミルトニアンシミュレーションや特異値増幅の反復に帰着させるものです。両者は初期状態準備オラクルへのクエリ数が定数倍ではなく構造的に異なり、初期状態の準備が高価な場合には、その差が全体の費用を支配します。",
   },
@@ -5756,6 +5766,17 @@ export const LAYER_GRAPH: LayerGraph = {
       returns: "A unitary U on s+a qubits, its subnormalization α, and its ancilla/flag count a. Because ||U|| = 1, Gilyén, Su, Low and Wiebe's Definition 43 forces ||A|| ≤ α + ε.",
       returnsJa: "s+a 量子ビット上のユニタリ U、その副正規化係数 α、およびアンシラ（フラグ）数 a。||U|| = 1 であるため、Gilyén–Su–Low–Wiebe の Definition 43 により ||A|| ≤ α + ε が課されます。",
     },
+    // `linear-kinetic-plasma-encoding` added session 15, and it is a cross-link to
+    // this slot rather than to a solver on purpose. Novikau and Joseph stop at the
+    // encoding by their own statement: the plasma problem is "cast in the form of a
+    // linear vector equation $A\psi = b$ to be solved by using the quantum signal
+    // processing algorithm... We propose how to encode $A$ in a circuit in a
+    // compressed form" (abstract), and "The presentation of the rest of the
+    // algorithm and (emulation of) quantum simulations are left to the future work"
+    // (§1). Anchoring it to a differential-equation solver would have claimed the
+    // solve the paper explicitly defers — and it is not an initial-value problem at
+    // all, but a frequency-domain boundary-value problem.
+    entries: ["linear-kinetic-plasma-encoding"],
     whyALayer: "Downstream query counts are linear in $\\alpha$, so the same matrix encoded two different ways can differ in end-to-end cost by orders of magnitude: $\\alpha = 1$ for a purified density operator, $||c||_1$ for a Pauli LCU, $sqrt(s_r·s_c)$ for sparse access under $|a_ij| \\leq 1$, and $2^n$ for FABLE. Comparing two block-encodings without comparing their $\\alpha$ says nothing. This is also where an exponential advantage most often dies quietly, because a construction that needs $\\Omega(N)$ gates to build $U$ erases whatever the solver above it saves — and most results at this layer are stated in queries to an oracle rather than in gates.",
     whyALayerJa: "上位のクエリ数は $\\alpha$ に比例するため、同じ行列でもエンコード方法が異なれば全体のコストは桁で変わります。純粋化された密度演算子なら $\\alpha = 1$、Pauli LCU なら $||c||_1$、$|a_ij| \\leq 1$ のスパースアクセスなら $sqrt(s_r·s_c)$、FABLE なら $2^n$ です。$\\alpha$ を比べずに二つのブロックエンコーディングを比較しても、何も言ったことになりません。指数的な優位が静かに失われるのもこの層です。$U$ の構成に $\\Omega(N)$ 個のゲートが必要なら、上位のソルバが節約した分はそこで相殺されます。しかもこの層の結果の多くは、ゲート数ではなくオラクルへのクエリ数で述べられています。",
   },
@@ -6473,7 +6494,21 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     whyALayer: "The families here consume genuinely different inputs and pay in different currencies. Product formulas need only a term decomposition and build no block-encoding, but carry a polynomial dependence on $1/\\varepsilon$. LCU and qubitization need a block-encoding and its ancillas and reach a logarithmic dependence on $1/\\varepsilon$. Which is cheaper depends on the precision regime and on the structure of $H$, so a cost model that names \"Hamiltonian simulation\" without naming the family has not costed anything. The norm parameter is inherited from the block-encoding layer below, which is where the constant that dominates real resource estimates is actually fixed.",
     whyALayerJa: "ここに並ぶ系統は、消費する入力も支払う通貨も本当に異なります。積公式は項への分解だけを必要とし、ブロックエンコーディングを構成しませんが、$1/\\varepsilon$ に対する依存は多項式です。LCU と qubitization はブロックエンコーディングとそのアンシラを必要とする代わりに、$1/\\varepsilon$ に対して対数的な依存に到達します。どちらが安いかは要求精度の領域と $H$ の構造で決まるため、系統を指定せずに「ハミルトニアンシミュレーション」とだけ書いたコスト見積もりは、何も見積もっていません。ノルムのパラメータは下位のブロックエンコーディング層から継承され、実際の資源見積もりを支配する定数はそこで決まります。",
-    entries: ["trotter-suzuki-simulation", "hamiltonian-simulation-ising"],
+    // `correlated-fermion-simulation` added session 15. Kivlichan et al. state the
+    // time-evolution contribution in the abstract — "We also present methods to
+    // simulate each time step in the evolution of the 2D Fermi-Hubbard model —
+    // again on a 2D qubit array — with $O(N)$ gates and $O(\sqrt{N})$ circuit
+    // depth" — under the connectivity the paper fixes throughout: "two-dimensional
+    // (2D) or linear geometry with nearest-neighbor qubit-qubit couplings, typical
+    // for superconducting transmon qubit arrays".
+    //
+    // **Deliberately anchored here only, and the record is wider than this slot.**
+    // The same paper's Slater-determinant and fermionic-Gaussian-state preparations
+    // are a second, independently substantial contribution — a separate extraction
+    // under ADR-0026, belonging to `state-preparation`, and none of the three
+    // methods there is the Givens-rotation construction. Not authored in this pass
+    // because a second extraction needs its own node, not a second cross-link.
+    entries: ["trotter-suzuki-simulation", "hamiltonian-simulation-ising", "correlated-fermion-simulation"],
   },
   {
     kind: "method",
@@ -8974,6 +9009,117 @@ export const LAYER_GRAPH: LayerGraph = {
     entries: ["vqe-measurement-grouping"],
     citations: [
       { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
+    ],
+  },
+  // ── Session 15, ai-ops#57 "grow the map" ────────────────────────────────────
+  // Five methods for corpus records that were map-eligible and reached by no
+  // node. Each was chosen after reading the paper, not the record's one-line
+  // description, and that distinction did real work: of seventeen records
+  // hand-classified as "needs no new region", nine did not survive the reading
+  // and are recorded as refusals in the PR rather than anchored here.
+  {
+    kind: "method",
+    id: "generalized-excitation-ansatz",
+    label: "Generalized singles and doubles ansatz",
+    labelJa: "一般化一重・二重励起アンザッツ",
+    shortLabel: "UCCGSD",
+    shortLabelJa: "UCCGSD",
+    summary: "Drop the rule that an excitation has to move an electron from an occupied orbital into an empty one. Every pair of orbitals may be coupled, so the circuit stops depending on which reference determinant it was built around — a wider variational manifold, paid for in parameters.",
+    summaryJa: "励起は電子を占有軌道から空軌道へ移すものでなければならない、という制約を外します。どの軌道の組も結合できるようになるため、回路はどの参照行列式を土台に組まれたかに依存しなくなります。変分多様体は広がり、その代償はパラメータ数です。",
+    realizes: "ansatz-construction",
+    conditions: "Lee et al. define the ansatz by the distinction it removes: \"Here the single and double 'excitation' terms do not distinguish between occupied and unoccupied orbitals and they are therefore called 'generalized' singles and doubles (GSD)\", and name the result in the same section — \"We shall term this ansatz UCCGSD\". Its cost is stated beside its sibling's rather than alone: the paper's Table 1 puts UCCGSD at $O(N^4)$ gates and $O(N^3)$ depth against k-UpCCGSD's $O(kN^2)$ and $O(kN)$. The two are separate ansätze in this paper, compared against each other and against UCCSD, which is why `k-upccgsd-ansatz` and this node are separate rather than one node drawn twice.",
+    conditionsJa: "Lee らは、このアンザッツを「取り除いた区別」によって定義しています。「ここでは一重および二重の『励起』の項が占有軌道と非占有軌道を区別しない。それゆえこれらは『一般化された』一重・二重励起（GSD）と呼ばれる」。そして同じ節で結果に名前を与えます。「このアンザッツを UCCGSD と呼ぶことにする」。コストは単独ではなく、兄弟手法と並べて述べられています。同論文の Table 1 は、UCCGSD を $O(N^4)$ ゲート・$O(N^3)$ 深さとし、k-UpCCGSD の $O(kN^2)$・$O(kN)$ と対置しています。両者はこの論文の中で互いに、また UCCSD と比較される別々のアンザッツです。`k-upccgsd-ansatz` と本ノードを一つにまとめず別に立てているのは、そのためです。",
+    steps: [],
+    entries: ["vqe-generalized-excitations"],
+    citations: [
+      { title: "Generalized Unitary Coupled Cluster Wavefunctions for Quantum Computation", authors: "Joonho Lee, William J. Huggins, Martin Head-Gordon, K. Birgitta Whaley", year: "2018", url: "https://arxiv.org/abs/1810.02327" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "batched-adapt-ansatz",
+    label: "Batched ADAPT-VQE ansatz",
+    labelJa: "バッチ型 ADAPT-VQE アンザッツ",
+    shortLabel: "Batched ADAPT",
+    shortLabelJa: "バッチ型 ADAPT",
+    summary: "Keep ADAPT's habit of growing the ansatz from measured gradients, and stop adding exactly one operator per round. Every operator whose gradient is close to the largest goes in together, so the ansatz reaches the same size in far fewer rounds — and it is the rounds, not the operators, that cost measurements.",
+    summaryJa: "測定した勾配からアンザッツを育てるという ADAPT のやり方はそのままに、1 周につき 1 演算子という制限をやめます。勾配が最大値に近い演算子はまとめて加えられるため、同じ規模のアンザッツに達するまでの周回数が大きく減ります。測定の費用を決めているのは演算子の数ではなく周回数です。",
+    realizes: "ansatz-construction",
+    conditions: "Sapova and Fedorov introduce the variant by name — \"we introduce batched ADAPT-VQE that adds multiple operators with the largest gradients simultaneously. This approach allows reducing the number of gradient computations while building a compact ansatz\" — and state the selection rule as a ratio rather than a fixed count: \"At each ADAPT-VQE iteration, we pick all the gradients that differ from the largest by a ratio less than r\". What it buys is stated without a number: \"Since batched ADAPT-VQE adds multiple operators at each step, it requires sizably fewer iterations to build an ansatz, which considerably reduces the cost of computing gradients\". The saving is in iterations, not in the per-iteration measurement — the whole operator pool is still scanned each round, which is why this method carries the same `observable-estimation` step its parent does.",
+    conditionsJa: "Sapova と Fedorov は、この変種に自ら名前を与えています。「勾配が最大の演算子を複数同時に加えるバッチ型 ADAPT-VQE を導入する。この方法により、コンパクトなアンザッツを構成しながら勾配計算の回数を減らすことができる」。選択の規則は固定数ではなく比で述べられます。「各 ADAPT-VQE の反復において、最大値との比が r 未満であるような勾配をすべて選ぶ」。得られるものは数値を伴わずに述べられています。「バッチ型 ADAPT-VQE は各ステップで複数の演算子を加えるため、アンザッツの構成に要する反復回数が大幅に少なくなり、勾配計算の費用を相当に減らす」。節約されるのは反復回数であって、1 反復あたりの測定ではありません。演算子プール全体の走査は毎周そのまま残ります。本手法が親と同じ `observable-estimation` のステップを持つのは、そのためです。",
+    refines: "adapt-ansatz",
+    refinesMark: "ADAPT",
+    refinesMarkJa: "ADAPT",
+    steps: ["observable-estimation"],
+    entries: ["vqe-batched-adapt"],
+    citations: [
+      { title: "Variational quantum eigensolver techniques for simulating carbon monoxide oxidation", authors: "M. D. Sapova, A. K. Fedorov", year: "2021", url: "https://arxiv.org/abs/2108.11167" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "spsa-optimization",
+    label: "Simultaneous-perturbation optimization",
+    labelJa: "同時摂動による最適化",
+    shortLabel: "SPSA",
+    shortLabelJa: "SPSA",
+    summary: "Perturb every parameter at once, in one random direction, and take the difference of two objective evaluations as the gradient estimate. The estimate is bad in any single round and unbiased across rounds, so the cost of a step stops growing with the number of parameters.",
+    summaryJa: "すべてのパラメータを一度に、ひとつのランダムな方向へ摂動させ、目的関数の 2 回の評価の差を勾配の推定値とします。この推定値は 1 周ごとに見れば粗いものですが、周回を通じては偏りがありません。そのため 1 ステップの費用がパラメータ数とともに増えなくなります。",
+    realizes: "parameter-optimization",
+    conditions: "Spall states the saving as a count of measurements, against the finite-difference alternative: \"In contrast to SA algorithms based on finite difference methods, which require 2p (noisy) measurements of L at each iteration, the 'simultaneous perturbation' algorithm here requires only 2q, q ≥ 1, measurements of L at each iteration, where for large p we typically have q ≪ p\" (§I). The mechanism is named in the same paper: \"this estimate differs from the usual finite difference approximation in that only two measurements (instead of 2p) are used. (The name 'simultaneous perturbation'... arises from the fact that all elements of the θ_k vector are being varied simultaneously.)\" (§II). **This citation is a 1992 control-theory paper and predates variational quantum algorithms entirely.** It is cited here for what it contains — the optimizer and its measurement count — and for nothing about quantum circuits; the claim this node makes is a claim about SPSA.",
+    conditionsJa: "Spall はこの節約を、有限差分法との対比で測定回数として述べています。「有限差分法にもとづく確率近似アルゴリズムが各反復で L の（雑音を含む）測定を 2p 回必要とするのに対し、ここでの『同時摂動』アルゴリズムは各反復で L の測定を 2q 回（q ≥ 1）しか必要とせず、p が大きい場合には通常 q ≪ p である」（§I）。仕組みも同じ論文の中で名指しされています。「この推定は、2p 回ではなく 2 回の測定しか用いない点で、通常の有限差分近似とは異なる。（『同時摂動』という名は、θ_k ベクトルのすべての成分が同時に変化させられることに由来する。）」（§II）。**この引用は 1992 年の制御理論の論文であり、変分量子アルゴリズムよりも前のものです。** ここで引用しているのは、この論文が含んでいるもの、すなわち最適化手法とその測定回数だけであって、量子回路については何も引用していません。本ノードが述べているのは SPSA についての主張です。",
+    steps: [],
+    entries: ["vqe-spsa-optimizer"],
+    citations: [
+      { title: "Multivariate stochastic approximation using a simultaneous perturbation gradient approximation", authors: "J. C. Spall", year: "1992", url: "https://doi.org/10.1109/9.119632" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "phase-estimation-ground-state",
+    label: "Ground-state energy by phase estimation",
+    labelJa: "位相推定による基底状態エネルギー",
+    shortLabel: "PEA energy",
+    shortLabelJa: "位相推定",
+    summary: "Prepare a state that already overlaps the ground state, evolve it under the molecular Hamiltonian, and read the energy off the accumulated phase. Nothing is optimized and nothing is varied — the answer is a measured eigenvalue, and the whole difficulty moves into the starting state.",
+    summaryJa: "あらかじめ基底状態と重なりを持つ状態を用意し、分子ハミルトニアンのもとで発展させ、蓄積した位相からエネルギーを読み取ります。最適化も変分もありません。答えは測定された固有値であり、難しさはすべて初期状態の側へ移ります。",
+    realizes: "ground-state-energy",
+    conditions: "Aspuru-Guzik et al. state the identification the method rests on — \"A molecular ground-state energy is the lowest eigenvalue of a time-independent Schrödinger equation. The phase estimation algorithm (PEA) of Abrams and Lloyd can be used to obtain eigenvalues of Hermitian operators; we address issues concerning its implementation for molecular Hamiltonians\" — and then name the condition that decides whether it works: \"the algorithm requires that any estimated ground state has a large overlap with the actual eigenstate. We show how a good estimate of the ground-state wave function may be prepared adiabatically from a crude starting point\". Their preparation is stated concretely: \"Our Hamiltonian is changed slowly by discretized linear interpolation from the trivial HF case to the FCI operator\". The evolution operator is a product-formula approximation whose error is a free parameter — \"M can always be chosen such that the error is bounded by some preset threshold. The number of gates to implement Û then scales polynomially with the system size\".",
+    conditionsJa: "Aspuru-Guzik らは、この手法が拠って立つ同定をまず述べます。「分子の基底状態エネルギーは、時間に依存しない Schrödinger 方程式の最小固有値である。Abrams と Lloyd の位相推定アルゴリズム（PEA）はエルミート演算子の固有値を得るために用いることができる。本稿では、それを分子ハミルトニアンに対して実装する際の問題を扱う」。そのうえで、成否を決める条件を名指しします。「このアルゴリズムは、推定された基底状態が実際の固有状態と大きな重なりを持つことを要求する。粗い出発点から断熱的に良い基底状態波動関数の推定を用意する方法を示す」。その準備は具体的に述べられています。「ハミルトニアンを、自明な Hartree–Fock の場合から FCI 演算子へと、離散化した線形補間によってゆっくり変化させる」。発展演算子は積公式による近似であり、その誤差は自由なパラメータです。「M は常に、誤差があらかじめ定めた閾値以下になるように選ぶことができる。そのとき Û を実装するゲート数は系の大きさに対して多項式的に増える」。",
+    // **The readout is quantum phase estimation and this map has no slot for it.**
+    // Controlled powers of Û followed by an inverse QFT match none of the four
+    // methods on `observable-estimation`, all of which measure a state already
+    // prepared. Rather than pin this route to a readout it does not use, the phase
+    // estimation stays inside this method's own description, and the missing
+    // capability is a finding handed to the lane that owns joins between regions —
+    // its contract would take an `evolution-circuit` AND a `prepared-state`, a
+    // two-input shape the graph does not currently have. Two other records walked
+    // into the same hole in the same pass (`tensor-hypercontraction-block-encoding`
+    // exists to make phase estimation affordable; `double-bracket-diagonalization`
+    // argues against phase estimation by name), so this is three independent
+    // sightings, not one.
+    steps: ["state-preparation", "hamiltonian-simulation"],
+    entries: ["molecular-energy-phase-estimation"],
+    citations: [
+      { title: "Simulated Quantum Computation of Molecular Energies", authors: "Alán Aspuru-Guzik, Anthony D. Dutoi, Peter J. Love, Martin Head-Gordon", year: "2005", url: "https://arxiv.org/abs/quant-ph/0604193" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "thc-block-encoding",
+    label: "Tensor hypercontraction block encoding",
+    labelJa: "テンソル超縮約によるブロックエンコーディング",
+    shortLabel: "THC",
+    shortLabelJa: "THC",
+    summary: "Factorize the chemistry Hamiltonian's two-electron integrals into a product of much smaller matrices first, then build the block-encoding of the factorized form. The saving is not in the encoding technique but in what is being encoded — a tensor with far fewer independent entries than the one the basis handed you.",
+    summaryJa: "まず量子化学ハミルトニアンの二電子積分を、はるかに小さな行列の積へと分解し、そのうえで分解後の形のブロックエンコーディングを構成します。節約されているのはエンコーディングの技法ではなく、エンコードされる対象です。基底が与えたテンソルよりも、独立成分の数がはるかに少ないテンソルを扱います。",
+    realizes: "block-encode-matrix",
+    conditions: "Lee et al. state the contribution as a circuit and a complexity, not as a solve: \"We describe quantum circuits with only Õ(N) Toffoli complexity that block encode the spectra of quantum chemistry Hamiltonians in a basis of N arbitrary (e.g., molecular) orbitals\" (abstract). What a consumer does with it is stated as an option rather than as this paper's work — \"With O(λ/ε) repetitions of these circuits one can use phase estimation to sample in the molecular eigenbasis\" — and §II is titled \"Tensor Hypercontraction Representations for Quantum Simulation\", a representation rather than an algorithm. The mechanism is the one its siblings on this slot use: \"Our approach to encoding the eigenspectra of the THC representation... will use the linear combination of unitaries (LCU) query model\", with the coefficient loading done by \"a three step procedure where we first prepare an equal superposition over the μ and ν registers, then perform coherent alias sampling, then swap\" — which is why this node steps into `state-preparation`.",
+    conditionsJa: "Lee らは、その貢献を回路と計算量として述べており、求解としては述べていません。「$N$ 個の任意の（例えば分子）軌道からなる基底における量子化学ハミルトニアンのスペクトルをブロックエンコードする、Toffoli 計算量が Õ(N) にとどまる量子回路を与える」（要旨）。それを使って何をするかは、この論文の仕事としてではなく可能性として述べられます。「これらの回路を O(λ/ε) 回繰り返せば、位相推定によって分子の固有基底からサンプリングすることができる」。§II の表題も「量子シミュレーションのためのテンソル超縮約表現」であり、アルゴリズムではなく表現です。仕組みは、この層の兄弟手法が使うものと同じです。「THC 表現の固有スペクトルをエンコードする我々の方法は……ユニタリの線形結合（LCU）クエリモデルを用いる」。係数の読み込みは「まず μ と ν のレジスタ上に一様な重ね合わせを用意し、次にコヒーレントなエイリアスサンプリングを行い、そして交換する、という 3 段階の手続き」で行われます。本ノードが `state-preparation` へステップを持つのは、そのためです。",
+    steps: ["state-preparation"],
+    entries: ["tensor-hypercontraction-block-encoding"],
+    citations: [
+      { title: "Even more efficient quantum computations of chemistry through tensor hypercontraction", authors: "Joonho Lee, Dominic W. Berry, Craig Gidney, William J. Huggins, Jarrod R. McClean, Nathan Wiebe, Ryan Babbush", year: "2020", url: "https://arxiv.org/abs/2011.03494" },
     ],
   },
   ],
