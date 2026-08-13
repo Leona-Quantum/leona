@@ -47,8 +47,17 @@ const COPY = {
     schemeCategory: "Kind of record",
     schemeMethod: "Kind of algorithm",
     // Printed only under the second scheme, and always as a fraction.
+    //
+    // **The sentence after the fraction was wrong twice before it was measured**,
+    // and the wrong version was the one that sounded obvious: "most of them are
+    // gates, which have none by design". The 83 unplaced records are 51
+    // operators, 16 gates, 15 algorithm references and 1 state — so gates are
+    // under a fifth of it, and the group that actually dominates is operators.
+    // The reason is not "by design" either; it is that a technique is a way of
+    // doing something and an operator is a thing, so most of them have nothing
+    // to put in that facet.
     coverage: (placed: number, total: number) =>
-      `This arrangement reaches ${placed} of ${total} records. The rest carry no technique in the catalogue's vocabulary — most of them are gates, which have none by design.`,
+      `This arrangement reaches ${placed} of ${total} records. The rest carry no technique in the catalogue's vocabulary — most of them are operators, which name a thing rather than a way of doing something.`,
   },
   ja: {
     title: "フォルダ",
@@ -67,7 +76,7 @@ const COPY = {
     schemeCategory: "記録の種別",
     schemeMethod: "アルゴリズムの種類",
     coverage: (placed: number, total: number) =>
-      `この並べ方が到達するのは ${total} 件中 ${placed} 件です。残りはカタログの語彙で手法が付いていない記録で、その多くは設計上手法を持たないゲートです。`,
+      `この並べ方が到達するのは ${total} 件中 ${placed} 件です。残りはカタログの語彙で手法が付いていない記録で、その多くは演算子です。演算子はやり方ではなく対象そのものを指すためです。`,
   },
 } as const;
 
