@@ -18,6 +18,7 @@ import test from "node:test";
 
 import {
   ABSTENTION_REASONS,
+  INGREDIENT_ABSTAIN_RULES,
   buildShelf,
   contractedProcessCount,
   ingredientJoin,
@@ -329,4 +330,36 @@ test("only object roles are in scope", () => {
   assert.ok(!isObjectRole("algorithm-reference"));
   assert.ok(!isObjectRole("benchmark-circuit"));
   assert.ok(!isObjectRole(null));
+});
+
+/**
+ * **No abstention may cite ai-ops#44 as a reason a record is off the map.**
+ *
+ * ai-ops#44 says *"just leave the gates. they are primitives, not needed to be
+ * sourced"*, answering whether 31 gate records citing a normative specification
+ * should cite an academic paper instead. It is a citation standard, and
+ * `check-paper-register.mjs` cites it correctly for that. `primitive-by-ruling`
+ * cited it as a *second* ruling that gates stay off the map, and the shelf
+ * printed "the owner ruled twice" to every visitor — thirty rows, live on
+ * leonaqt.com, measured 45395f9e.
+ *
+ * The mechanism is worth naming because it will recur: the quote was clipped one
+ * clause early. Drop *"not needed to be sourced"* and a sourcing ruling reads as
+ * a map ruling, and no checker can tell, because the sentence is well-formed and
+ * the issue number is real. So the guard is a **denylist of one issue on one
+ * surface** rather than a general claim-checker, which is the honest scope: it
+ * cannot verify what any ruling says, only that this file has stopped
+ * attributing a map decision to the one ruling known not to be about the map.
+ *
+ * If ai-ops#44 is ever genuinely widened to cover map eligibility, this test is
+ * the thing that has to be deleted deliberately — which is the point.
+ */
+test("no abstention reason attributes a map ruling to ai-ops#44", () => {
+  const sourcingOnly = /ai-ops#44/;
+  for (const rule of INGREDIENT_ABSTAIN_RULES) {
+    assert.ok(
+      !sourcingOnly.test(rule.because),
+      `abstention "${rule.reason}" cites ai-ops#44, which ruled on sourcing ("not needed to be sourced") and not on map eligibility — cite ai-ops#14 for the map, or state the structural reason`,
+    );
+  }
 });

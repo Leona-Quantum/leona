@@ -71,6 +71,39 @@
 // cannot hold this yet, not that the record is weak — several of them are among
 // the best-sourced things here. It is a statement about the map's vocabulary,
 // and it is the worklist for extending it.
+//
+// ## But the operators corpus is thin, and joining is not what would fix it
+//
+// The question the shelf was built to answer — *which operators are worth
+// deepening and which are decoration* — has an answer now, and it does not
+// divide along the join. Measured at 45395f9e over all 368 records, by the
+// fraction of a record's `explanation` whose sentences appear verbatim in
+// another record's:
+//
+// - **39 of the 46 unjoined operators** are template expansions of one
+//   six-field table — `OPERATOR_CONCEPTS` in `entries-literature-expansion.ts`,
+//   family *"VQE Hamiltonians and observables"*. Each shares **76–85%** of its
+//   prose with the other 49 members, all 50 cite the **same single source**
+//   (OpenFermion, arXiv:1710.07629), and each carries **one** literature entry.
+//   The authored content that distinguishes one from another is two short
+//   strings: `form` (a formula) and `role` (one sentence).
+// - **11 of the 16 joined operators come from that same table**, at the same
+//   78–83%, on the same one citation. So joining did not select for depth: the
+//   rule found the eleven whose one-line `role` happens to say *Hamiltonian*.
+// - The seven records that are genuinely hand-authored — the three Pauli
+//   records, `shor-code-error-correction`, `surface-code-memory`,
+//   `number-operator`, `parity-operator-measurement` — all measure **0%**
+//   shared, as do all 12 states records and the five hand-authored Hamiltonian
+//   operators. The measure discriminates; it is not flagging boilerplate that
+//   every record has.
+//
+// **So the honest reading of 16/62 is not that 46 operators are waiting for a
+// state to join.** 50 of the 62 are one table expanded, and wiring more of them
+// to the map would attach it to records carrying two authored strings each.
+// Deepening comes first, and it is needed on the joined ones too. That is a
+// finding for the owner about where the operators corpus goes next, not a
+// licence for this file to widen its rules — nothing here should be changed to
+// make the fraction look better.
 import { deriveTopics, roleOf, type TopicEvidence, type TopicId } from "./topics.ts";
 import { kindsOf, stateSatisfies, type StateVocabulary } from "./states.ts";
 import type { LayerGraph, LayerNode } from "./layers.ts";
@@ -146,12 +179,39 @@ export const ABSTENTION_REASONS = [
    */
   "documents-a-process",
   /**
-   * A gate. The owner ruled these off the map twice — *"gates are just
-   * primitives, so it is okay for them to be their section"* (ai-ops#14) and
-   * *"just leave the gates. they are primitives"* (ai-ops#44). This abstention
-   * exists so that the 27 gate records are **counted** as deliberately unjoined
-   * rather than merely unmatched, which is what makes the shelf's Gates section
-   * an honest zero instead of an empty one.
+   * A gate — which this vocabulary has no way to hold, and which the owner has
+   * also ruled off the map.
+   *
+   * **The structural reason comes first because it is the one that does not
+   * depend on anyone's decision.** `states.ts`: *"A state is the mathematical
+   * object being carried, not the parameters riding alongside it."* The five
+   * circuit states are where a gate would have to live, and every one of them
+   * names the gate *set* as a parameter rather than as the object —
+   * `discrete-circuit` is *"continuous rotations replaced by words in a finite
+   * gate set"*, and a single gate is a member of that set. So a gate sits one
+   * level further from being a state than an `observable` does: an observable is
+   * at least a parameter a contract names, and a gate is an element of one.
+   * Nothing in the 34-state vocabulary is *a unitary you can apply*.
+   *
+   * The owner's ruling agrees, once: *"gates are just primitives, so it is okay
+   * for them to be their section… including operators/gates/whatever states are
+   * would be introducing tons of primitives for no reason"* (ai-ops#14, which
+   * asked whether every repository record gets a map node).
+   *
+   * **ai-ops#44 is not a second map ruling and must not be cited as one.** Its
+   * sentence is *"just leave the gates. they are primitives, **not needed to be
+   * sourced**"*, and the question it answered was whether 31 gate records citing
+   * a normative specification should cite an academic paper instead. It is a
+   * citation standard, and `scripts/check-paper-register.mjs` already cites it
+   * correctly for exactly that. This file claimed it as a second ruling that
+   * gates stay off the map, and the shelf printed *"the owner ruled twice"* to
+   * every visitor, thirty times — measured on leonaqt.com 2026-08-13 at
+   * 45395f9e. The mechanism was a quote clipped one clause early: drop *"not
+   * needed to be sourced"* and a sourcing ruling reads as a map ruling.
+   *
+   * This abstention exists so that the 27 gate records are **counted** as
+   * deliberately unjoined rather than merely unmatched, which is what makes the
+   * shelf's Gates section an honest zero instead of an empty one.
    */
   "primitive-by-ruling",
 ] as const;
@@ -355,7 +415,7 @@ export const INGREDIENT_ABSTAIN_RULES: readonly AbstainRule[] = [
     family,
     reason: "primitive-by-ruling" as const,
     because:
-      "a gate. The owner ruled twice that gates stay off the map and keep their own section (ai-ops#14, ai-ops#44); nothing here proposes to reopen it",
+      "a gate. Nothing in the vocabulary is a unitary you can apply — the circuit states name the gate set as a parameter, and `states.ts` is explicit that a parameter is not a state. The owner's ai-ops#14 ruling agrees; nothing here proposes to reopen it",
   })),
 
   // --- records that document a process -------------------------------------
