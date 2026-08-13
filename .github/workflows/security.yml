@@ -41,6 +41,12 @@ jobs:
       # (aquasecurity/trivy-action's March 2026 credential-stealer incident
       # reached everyone tracking its tags).
       - name: install osv-scanner
+        # Backstop for the case curl's own deadlines cannot catch. --max-time
+        # bounds each attempt and --retry-max-time bounds the retry window, but
+        # neither is a wall clock over the step, so this is the thing that
+        # guarantees a stalled download fails instead of holding a runner until
+        # the six-hour default.
+        timeout-minutes: 5
         env:
           OSV_VERSION: v2.4.0
           OSV_SHA256: 15314940c10d26af9c6649f150b8a47c1262e8fc7e17b1d1029b0e479e8ed8a0
@@ -53,6 +59,7 @@ jobs:
           # a tampered file fails sha256sum on attempt one and on attempt five
           # identically. Never add a retry to the checksum line.
           curl -fsSL --retry 5 --retry-delay 4 --retry-all-errors --retry-max-time 180 \
+            --connect-timeout 10 --max-time 60 \
             -o osv-scanner \
             "https://github.com/google/osv-scanner/releases/download/${OSV_VERSION}/osv-scanner_linux_amd64"
           echo "${OSV_SHA256}  osv-scanner" | sha256sum -c -
