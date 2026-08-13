@@ -209,7 +209,7 @@ $n=4$の場合、具体的には $K_1 = X_1Z_2$、$K_2 = Z_1X_2Z_3$、$K_3 = Z_2
       { label: "Entangling gate", value: "CZ" },
       { label: "Stabilizer group size", value: "2⁴ = 16" },
     ],
-    sourceTitle: "A one-way quantum computer",
+    sourceTitle: "Quantum computing via measurements only",
     sourceUrl: "https://arxiv.org/abs/quant-ph/0010033",
     wires: ["q[0]", "q[1]", "q[2]", "q[3]"],
     operations: [
@@ -577,7 +577,7 @@ $$|T\rangle = T|+\rangle = \frac{1}{\sqrt2}\big(|0\rangle + e^{i\pi/4}|1\rangle\
       { label: "Stabilizer", value: "Non-Pauli: cos(π/4)X + sin(π/4)Y" },
       { label: "Distillation ratio", value: "15:1 → O(ε³)" },
     ],
-    sourceTitle: "Universal quantum computation with ideal Clifford gates and noisy ancillas",
+    sourceTitle: "Universal Quantum Computation with ideal Clifford gates and noisy ancillas",
     sourceUrl: "https://arxiv.org/abs/quant-ph/0403025",
     wires: ["q[0]"],
     operations: [
@@ -925,7 +925,7 @@ $$H = J\sum_{i=1}^{n-1}\big(X_iX_{i+1} + Y_iY_{i+1} + \Delta\, Z_iZ_{i+1}\big)$$
       { label: "Δ=1 point", value: "Isotropic Heisenberg (Bethe-solvable)" },
       { label: "Regime (this entry)", value: "Δ=1, gapless Luttinger liquid" },
     ],
-    sourceTitle: "An Introduction to Integrable Techniques for One-Dimensional Quantum Spin Systems",
+    sourceTitle: "An introduction to integrable techniques for one-dimensional quantum systems",
     sourceUrl: "https://arxiv.org/abs/1609.02100",
     wires: ["S₀", "S₁", "S₂", "S₃"],
     operations: [
@@ -1458,7 +1458,7 @@ $$P = Z_1 Z_2 \cdots Z_n$$
       { label: "Eigenvalues", value: "±1 (even/odd Hamming weight)" },
       { label: "P²", value: "I" },
     ],
-    sourceTitle: "Quantum Computation and Quantum Information",
+    sourceTitle: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
     sourceUrl: "https://doi.org/10.1017/CBO9780511976667",
     wires: ["q[0]", "q[1]", "q[2]", "q[3]", "ancilla"],
     operations: [

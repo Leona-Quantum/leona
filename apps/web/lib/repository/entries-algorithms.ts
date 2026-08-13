@@ -536,7 +536,7 @@ FINAL_CIRCUIT = qc`,
       { label: "Qubit overhead", value: "O(1) vs O(t) for textbook QPE" },
       { label: "Feedback", value: "Classical, between rounds" },
     ],
-    sourceTitle: "Arbitrary accuracy iterative quantum phase estimation algorithm using a single ancilla qubit",
+    sourceTitle: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark",
     sourceUrl: "https://arxiv.org/abs/quant-ph/0610214",
     wires: ["ancilla", "eigenstate"],
     operations: [
@@ -834,7 +834,7 @@ $$
       { label: "Shift", value: "Conditional cyclic ±1" },
       { label: "2-step distribution", value: "P(-2,0,+2) = 1/4, 1/2, 1/4" },
     ],
-    sourceTitle: "Quantum walks on graphs",
+    sourceTitle: "Quantum Walks On Graphs",
     sourceUrl: "https://arxiv.org/abs/quant-ph/0012090",
     wires: ["coin", "pos[0]", "pos[1]", "pos[2]"],
     operations: [
