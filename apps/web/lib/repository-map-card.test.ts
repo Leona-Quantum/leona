@@ -71,7 +71,7 @@ const CORPUS: LayerCorpusEntry[] = [
   description: "",
   descriptionJa: "",
   // Exactly one runnable variant each, because in production **every** record
-  // has at least one — 283 of 283 carry `codeVariants`, measured. Before the
+  // has at least one `codeVariants` entry, measured. Before the
   // record join this field did not exist and the fixture was representative
   // without it; now a corpus without it would make the join untestable here and
   // would understate what production feeds, which is the opposite of the
@@ -411,7 +411,10 @@ test("Theory is held on every method, and each hop inside it is empty or filled 
   // +2 in session 129: `berry-multistep` carries a hop note on each of the two stretches it
   // delegates — the same pair `taylor-all-at-once` does, and the contrast with the note above
   // is exactly the ingredient/segment distinction.
-  assert.equal(hops, 134, `${hops} hops, not 134`);
+  // 137 in session 130: `childs-liu-spectral` carries two (its Chebyshev
+  // collocation and its linear solve) and `chebyshev-pseudospectral-collocation`
+  // one (its own stretch).
+  assert.equal(hops, 137, `${hops} hops, not 137`);
 
   // **A floor, and it must not be zero.** The marked-prose path is the whole of the owner's
   // re-decision, and a rendering path with no instance anywhere has never been drawn. One
@@ -611,8 +614,8 @@ test("the card reads the map node, which is the populated side of the join", () 
   // It was measuring a premise: *"the record side is thin, so the card reads the
   // node because the record is empty."*
   //
-  // **That premise is refuted, not strained.** The record side is 283 records and
-  // every one of them carries runnable code, while `implementations` was empty on
+  // **That premise is refuted, not strained.** The record side is every record and
+  // each one carries runnable code, while `implementations` was empty on
   // all 74 methods — and in all 27 method->record pairs the card rendered
   // "none-recorded" over a record that had code. The section was never
   // un-researched; nothing had joined it. Owner ruling `27267f` merged them
@@ -1352,7 +1355,12 @@ test("the unnamed stretch is 56 of 63 methods, one each, and 13 of them follow a
   // step — the slot it consumes is an ingredient hanging off the strand, not something it
   // walks through first — so `trailing` is deliberately unchanged at 14. The two numbers
   // moving apart is the point of counting them separately.
-  assert.equal(withOwn.length, 78);
+  // 79 since `chebyshev-pseudospectral-collocation` (session 130). It is atomic, so
+  // its stretch is the whole route and stands at index 0 — `trailing` is deliberately
+  // unchanged at 14, the same way `layerwise-training` moved one number and not the
+  // other. `childs-liu-spectral`, authored in the same commit, moves NEITHER: it
+  // delegates both of its hops to named slots, so it has no own stretch at all.
+  assert.equal(withOwn.length, 79);
   assert.equal(trailing.length, 14);
 
   // The three that remain of the four the owner named. Pinned by their states
@@ -1411,7 +1419,9 @@ test("an own: card exists for exactly the methods that have the stretch, and no 
   // 78 since `layerwise-training`, tracking the stretch census above one-for-one, which is
   // the whole claim this test makes: the own-card population and the stretch population are
   // the same set, so they move together or one of them is wrong.
-  assert.equal(built, 78);
+  // 79 since `chebyshev-pseudospectral-collocation`, tracking the stretch census
+  // above one-for-one as it must.
+  assert.equal(built, 79);
   // A prefix on nothing, and a prefix on a capability, both resolve to shut
   // rather than to something. `?card=` is user-supplied.
   assert.equal(cardExists(input, ownCardId("not-a-method")), false);
@@ -1632,4 +1642,68 @@ test("a method's interior is the lane's own notion of it — ingredients are not
   for (const method of withSegments) {
     assert.equal(methodHasInterior(LAYER_GRAPH, STATE_VOCABULARY, method), true, method.id);
   }
+});
+
+// **The partition the method page's two lists rely on.**
+//
+// `/repository/layers/<method>` draws *Requires* from `card.ingredients` and
+// *What it needs* from the steps that are not in it. That is only a partition if
+// every ingredient is one of the method's own steps — otherwise Requires would
+// name something the steps list never contained, and the page would show a
+// method needing a slot it does not step through.
+//
+// It also pins the shape the page's third empty note exists for. 17 of the 27
+// methods with an ingredient have no chain step left after the split, and the
+// note the page draws for them says so; if that number ever went to zero the
+// note would be unreachable copy, and if the partition broke the note would fire
+// on methods that do have chain steps.
+test("every ingredient is one of the method's own steps, so the two lists partition them", () => {
+  const input = {
+    graph: LAYER_GRAPH,
+    vocabulary: STATE_VOCABULARY,
+    corpus: CORPUS,
+    locale: "en" as const,
+    register: PAPER_REGISTER,
+  };
+  const methods = LAYER_GRAPH.nodes.filter(isMethod);
+  let withIngredients = 0;
+  let allStepsAreIngredients = 0;
+  for (const method of methods) {
+    const card = cardFor(input, method.id);
+    assert.ok(card && card.kind === "method", method.id);
+    if (!card.ingredients.held) continue;
+    withIngredients += 1;
+    const ingredientIds = card.ingredients.value.map((item) => item.link.id);
+    for (const id of ingredientIds) {
+      assert.ok(
+        method.steps.includes(id),
+        `${method.id}: Requires names ${id}, which is not one of its steps`,
+      );
+    }
+    assert.equal(
+      new Set(ingredientIds).size,
+      ingredientIds.length,
+      `${method.id}: an ingredient is listed twice`,
+    );
+    const chain = method.steps.filter((step) => !ingredientIds.includes(step));
+    assert.equal(
+      chain.length + ingredientIds.length,
+      method.steps.length,
+      `${method.id}: the two lists do not add up to the steps`,
+    );
+    if (chain.length === 0) allStepsAreIngredients += 1;
+  }
+  // Both witnesses, so neither branch of the page can rot into unreachable copy.
+  assert.ok(
+    withIngredients >= 20,
+    `only ${withIngredients} methods have an ingredient — Requires is close to dead copy`,
+  );
+  assert.ok(
+    allStepsAreIngredients > 0,
+    "no method has ingredients for all of its steps — the page's third empty note is unreachable",
+  );
+  assert.ok(
+    allStepsAreIngredients < withIngredients,
+    "every method with an ingredient has only ingredients — the chain branch is unreachable",
+  );
 });

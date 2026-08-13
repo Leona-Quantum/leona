@@ -536,7 +536,7 @@ FINAL_CIRCUIT = qc`,
       { label: "Qubit overhead", value: "O(1) vs O(t) for textbook QPE" },
       { label: "Feedback", value: "Classical, between rounds" },
     ],
-    sourceTitle: "Arbitrary accuracy iterative quantum phase estimation algorithm using a single ancilla qubit",
+    sourceTitle: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark",
     sourceUrl: "https://arxiv.org/abs/quant-ph/0610214",
     wires: ["ancilla", "eigenstate"],
     operations: [
@@ -834,7 +834,7 @@ $$
       { label: "Shift", value: "Conditional cyclic ±1" },
       { label: "2-step distribution", value: "P(-2,0,+2) = 1/4, 1/2, 1/4" },
     ],
-    sourceTitle: "Quantum walks on graphs",
+    sourceTitle: "Quantum Walks On Graphs",
     sourceUrl: "https://arxiv.org/abs/quant-ph/0012090",
     wires: ["coin", "pos[0]", "pos[1]", "pos[2]"],
     operations: [
@@ -1646,6 +1646,165 @@ FINAL_CIRCUIT = circuit`,
       "最適ハミルトニアンシミュレーション",
       "スペクトルフィルタリングと固有値変換",
       "QSVTアルゴリズムの単一量子ビット核",
+    ],
+  }),
+  // The general QAOA record, written 2026-08-13 for the owner's ai-ops#42 ruling:
+  // "Write ONE general QAOA record, cited to Farhi, and declare all 13
+  // demonstrations against it."
+  //
+  // **What this record is for, and why it is not a Classiq-parity record.** The
+  // Classiq library publishes thirteen optimisation demonstrations — portfolio
+  // allocation, vehicle routing, kidney exchange, antenna placement and nine more
+  // — that all solve their problem the same way: state it as a constrained binary
+  // program, translate that into a cost Hamiltonian, and run QAOA on it. Farhi,
+  // Goldstone and Gutmann's paper is the primary source for **the method**, and
+  // for none of those thirteen problems. It formulates MaxCut and nothing else.
+  // So the thirteen are declared against this record in ./classiq-coverage.ts
+  // with basis `method`, and this record does not carry a `classiqPath` — a
+  // record that claimed one of the thirteen directories as its own subject would
+  // be asserting Farhi contains a problem he never writes down, which is the
+  // failure ai-ops#12 forbids.
+  //
+  // Distinct from `qaoa-maxcut-ring`, which is a p=1 five-node instance with a
+  // recorded TVD run. That record is one circuit; this one is the algorithm.
+  makeReferenceEntry({
+    slug: "qaoa-combinatorial-optimization",
+    title: "The Quantum Approximate Optimization Algorithm",
+    titleJa: "量子近似最適化アルゴリズム",
+    category: "algorithms",
+    categoryLabel: "Algorithms",
+    categoryLabelJa: "アルゴリズム",
+    algorithmFamily: "QAOA",
+    framework: "Qiskit",
+    status: "verified_caveats",
+    verification:
+      "Literature record · every claim below is a clause of the abstract of arXiv:1411.4028, read on"
+      + " its arXiv abs page on 2026-08-13 and quoted rather than paraphrased",
+    verificationMethods: ["research_paper"],
+    method:
+      "Curation only. The title, the three authors, the submission date (14 Nov 2014, v1 and the only"
+      + " version), the report number MIT-CTP/4610 and the complete abstract were read from"
+      + " https://arxiv.org/abs/1411.4028 and every span this record quotes was compared"
+      + " character-for-character against that page. No circuit was constructed, compiled, simulated"
+      + " or run, no value of p was chosen, and no instance of any problem was encoded or solved.",
+    result:
+      "Pass · the parameter p, the locality bound on the gates, the linear depth growth, the two"
+      + " regimes for fixed and growing p, and the 0.6924 ratio are each stated by that abstract in"
+      + " the terms repeated here.",
+    caveat:
+      "This is a literature record for the method, and its most important limit is about what the"
+      + " paper does NOT contain. Farhi, Goldstone and Gutmann study one problem — MaxCut on regular"
+      + " graphs, analysed on 2-regular and 3-regular graphs for fixed p. The paper does not"
+      + " formulate portfolio optimisation, facility location, vehicle routing, electric-grid"
+      + " dispatch, integer linear programming, kidney exchange, colourable induced subgraphs,"
+      + " k-bounded vertex cover, minimum dominating sets, rectangle packing, network traffic, radio"
+      + " access networks or resiliency planning, and no reader should take the thirteen"
+      + " demonstrations declared against this record as evidence that it does; see the basis"
+      + " recorded for each in ./classiq-coverage.ts. Nor does it supply the machinery those"
+      + " demonstrations sit on: the modelling layer that turns a constrained program into a QUBO,"
+      + " the penalty weights that carry the constraints, the classical outer optimiser, and the"
+      + " CVaR objective some of them substitute for the expectation value are all later work by"
+      + " other authors. The 0.6924 figure is an approximation ratio, not a running time and not a"
+      + " speedup: the abstract states no comparison with any classical algorithm, and this record"
+      + " makes none. It holds for p = 1 on 3-regular graphs and for nothing else quoted here. The"
+      + " statement that quality improves as p is increased is the paper's, about its own algorithm,"
+      + " and carries no claim about the cost of finding good parameters at any p. Finally, the"
+      + " alternating-operator ansatz that generalises this construction to constrained problems is"
+      + " a different paper by different authors and is not cited here.",
+    exportStatus: "Literature reference · no circuit supplied",
+    provenance: "Leona Quantum literature curation pass",
+    updatedAt: "2026-08-13",
+    description:
+      "A quantum algorithm that produces approximate solutions for combinatorial optimization"
+      + " problems, tunable by a positive integer p.",
+    descriptionJa:
+      "組合せ最適化問題の近似解を与える量子アルゴリズムで、正の整数pによって精度を調整します。",
+    introduction:
+      "QAOA is the algorithm the whole applied-optimisation half of the Classiq library runs on. Its"
+      + " paper introduces a quantum algorithm that produces approximate solutions for combinatorial"
+      + " optimization problems, depending on a positive integer p, with the quality of the"
+      + " approximation improving as p is increased.",
+    introductionJa:
+      "QAOAは、Classiqライブラリの応用最適化側がこぞって用いているアルゴリズムです。原論文は、組合せ最適化問題の近似解を与える量子アルゴリズムを導入しており、正の整数pに依存し、pを大きくするほど近似の質が向上するとしています。",
+    explanation:
+      "The quantum circuit that implements the algorithm consists of unitary gates whose locality is"
+      + " at most the locality of the objective function whose optimum is sought, and the depth of"
+      + " the circuit grows linearly with p times, at worst, the number of constraints. The authors"
+      + " give two regimes: if p is fixed, that is, independent of the input size, the algorithm"
+      + " makes use of efficient classical preprocessing, and if p grows with the input size a"
+      + " different strategy is proposed. They study the algorithm as applied to MaxCut on regular"
+      + " graphs and analyze its performance on 2-regular and 3-regular graphs for fixed p; for"
+      + " p = 1, on 3-regular graphs the quantum algorithm always finds a cut that is at least"
+      + " 0.6924 times the size of the optimal cut.",
+    explanationJa:
+      "このアルゴリズムを実装する量子回路は、最適化したい目的関数の局所性を超えない局所性をもつユニタリゲートから構成され、回路の深さはpと制約数の積に対して（最悪の場合）線形に増大します。著者らは2つの状況を示しています。pが入力サイズによらず固定であれば効率的な古典的前処理を用い、pが入力サイズとともに増大する場合には別の方策を提案しています。正則グラフ上のMaxCutへの適用を検討し、2正則および3正則グラフについて固定pでの性能を解析しており、p = 1 のとき3正則グラフ上でこの量子アルゴリズムは常に最適カットの0.6924倍以上のカットを見つけるとしています。",
+    tags: ["qaoa", "combinatorial optimization", "variational", "maxcut", "approximation ratio"],
+    resources: [
+      { label: "Record type", value: "Literature reference" },
+      { label: "Tunable parameter", value: "A positive integer p" },
+      { label: "Circuit depth", value: "Linear in p times (at worst) the number of constraints" },
+    ],
+    metadata: [
+      { label: "Gate locality", value: "At most the locality of the objective function" },
+      { label: "Problem studied in the paper", value: "MaxCut on 2-regular and 3-regular graphs" },
+      { label: "Stated guarantee", value: "p = 1, 3-regular: cut at least 0.6924 of optimal" },
+      { label: "Speedup claimed by the abstract", value: "None; no classical comparison is made" },
+      { label: "Circuit", value: "Not supplied" },
+    ],
+    sourceTitle: "A Quantum Approximate Optimization Algorithm",
+    sourceUrl: "https://arxiv.org/abs/1411.4028",
+    sourceLicense: "Citation metadata only; source publication terms apply",
+    wires: ["objective", "ansatz", "readout"],
+    operations: [
+      { label: "prepare", qubits: [0], tone: "neutral" },
+      { label: "cost(γ)", qubits: [0, 1], tone: "warn" },
+      { label: "mixer(β)", qubits: [1, 2], tone: "accent" },
+    ],
+    outcomes: [],
+    code:
+      "ALGORITHM: The Quantum Approximate Optimization Algorithm\n"
+      + "PROBLEM: Produce approximate solutions for combinatorial optimization problems.\n"
+      + "PARAMETER: a positive integer p; the quality of the approximation improves as p is increased.\n"
+      + "CIRCUIT: unitary gates whose locality is at most the locality of the objective function\n"
+      + "         whose optimum is sought; depth grows linearly with p times (at worst) the number\n"
+      + "         of constraints.\n"
+      + "REGIMES: p fixed and independent of the input size -> efficient classical preprocessing;\n"
+      + "         p growing with the input size -> a different strategy is proposed.\n"
+      + "STUDIED ON: MaxCut on regular graphs; performance analyzed on 2-regular and 3-regular\n"
+      + "         graphs for fixed p.\n"
+      + "STATED GUARANTEE: for p = 1, on 3-regular graphs the algorithm always finds a cut that is\n"
+      + "         at least 0.6924 times the size of the optimal cut.\n"
+      + "NOT IN THE PAPER: any problem other than MaxCut; the QUBO modelling layer; penalty weights;\n"
+      + "         the classical outer optimiser; the CVaR objective; any comparison with a classical\n"
+      + "         algorithm; any running time.\n"
+      + "PRIMARY SOURCE: Edward Farhi, Jeffrey Goldstone, Sam Gutmann (2014),\n"
+      + "         A Quantum Approximate Optimization Algorithm — https://arxiv.org/abs/1411.4028\n\n"
+      + "This is a literature reference record, not an executable circuit.",
+    filename: "qaoa-combinatorial-optimization.txt",
+    language: "text",
+    relatedSlugs: [
+      "qaoa-maxcut-ring",
+      "ising-formulations-np-problems",
+      "operator-qubo",
+      "quantum-adiabatic-evolution",
+    ],
+    literature: [
+      {
+        title: "A Quantum Approximate Optimization Algorithm",
+        authors: "Edward Farhi, Jeffrey Goldstone, Sam Gutmann",
+        year: "2014",
+        url: "https://arxiv.org/abs/1411.4028",
+        relevance:
+          "Primary source, and the only source read for this record. It introduces the algorithm,"
+          + " fixes the meaning of p, states the locality bound on the gates and the linear growth"
+          + " of circuit depth, separates the fixed-p and growing-p regimes, and proves the 0.6924"
+          + " ratio for p = 1 on 3-regular graphs. Consult it for the form of the cost and mixer"
+          + " operators, for how the fixed-p classical preprocessing selects the angles, for the"
+          + " strategy proposed when p grows with the input size, and for the 2-regular analysis —"
+          + " none of which the abstract states. It formulates MaxCut and no other problem.",
+        relevanceJa:
+          "一次資料であり、本記録のために読んだ唯一の出典です。アルゴリズムを導入し、pの意味を定め、ゲートの局所性の上界と回路深さの線形増大を述べ、pを固定する場合と増大させる場合を区別し、3正則グラフ上でp = 1のときの0.6924という比を示しています。コスト演算子とミキサー演算子の具体形、pを固定した場合に古典的前処理が角度をどのように選ぶか、pが入力サイズとともに増大する場合に提案される方策、そして2正則グラフの解析については、要旨に記載がないため原論文で確認してください。なお、この論文が定式化している問題はMaxCutのみです。",
+      },
     ],
   }),
 ];

@@ -17,8 +17,8 @@
 // those levels has its own alternatives with their own trade-offs.
 //
 // A containment relation cannot be derived from register widths. It also cannot
-// be hung on a record: 283 records would each need to know their place in a
-// structure that mostly does not exist yet, and 282 of them would say
+// be hung on a record: every record would need to know its place in a
+// structure that mostly does not exist yet, and all but one of them would say
 // `unknown` — the second empty skeleton D88.3 forbids. So the graph is a
 // **separate authored artifact**, small, cited, and deliberately allowed to
 // describe layers the corpus has no record for. Where the corpus is empty the
@@ -32,7 +32,7 @@
 // merge, then regenerate the bootstrap manifest and re-import. This graph is not
 // entries. Like `topics.ts` — the other closed vocabulary in this directory — it
 // is code the Next app reads directly, which makes it a one-part deploy and
-// keeps it out of the 283-record pin, the width-family gate, and the manifest
+// keeps it out of the record pin, the width-family gate, and the manifest
 // freshness check. It references the corpus **by slug**, in one direction only.
 //
 // ## The four things this module must never do
@@ -3169,7 +3169,7 @@ export interface LayerCorpusEntry {
    * **Owner ruling `27267f` (2026-08-12): the method card and the repository
    * record "may as well be the same thing".** The measurement behind it is
    * blunt — `implementations` is empty on all 74 methods while `codeVariants`
-   * is present on all 283 records, and in every one of the 27 method→record
+   * is present on every record, and in every one of the 27 method→record
    * pairs the card renders "none-recorded" over a record that carries code. The
    * section was never un-researched; nothing had joined it.
    *
@@ -3189,6 +3189,25 @@ export interface LayerCorpusEntry {
   verification?: string;
   /** The record's provenance line, verbatim. Half of the classification stamp. */
   provenance?: string;
+  /**
+   * The two label fields the ingredient join classifies on.
+   *
+   * **Widened for `ingredients.ts`, and deliberately only this far.** The join
+   * is a rule table over the fields that were written *as labels* — family and
+   * the free tags — and `topics.ts` gives the reason the projection must not
+   * grow past them: `description` and `title` are prose a content pass rewrites
+   * without thinking about classification, so a rule keyed off a phrase in them
+   * re-joins records when the copy is edited. They are on this interface anyway,
+   * for display; a rule that read them would be a rule this projection cannot
+   * stop, which is why the stopping happens in `IngredientRule` instead.
+   *
+   * Optional, because two surfaces build a corpus entry for a record they
+   * already hold and one of them predates the join. A record arriving without
+   * them is simply unjoined, which is the same answer an abstention gives and
+   * never a wrong link.
+   */
+  algorithmFamily?: string;
+  tags?: readonly string[];
 }
 
 /** One runnable variant of a record, as the map is allowed to know it. */
@@ -3221,6 +3240,8 @@ export function layerCorpusEntry(entry: {
   codeVariants?: readonly { framework: string; status?: string; filename?: string }[];
   verification?: string;
   provenance?: string;
+  algorithmFamily?: string;
+  tags?: readonly string[];
 }): LayerCorpusEntry {
   return {
     slug: entry.slug,
@@ -3236,6 +3257,8 @@ export function layerCorpusEntry(entry: {
     })),
     verification: entry.verification,
     provenance: entry.provenance,
+    algorithmFamily: entry.algorithmFamily,
+    tags: entry.tags,
   };
 }
 

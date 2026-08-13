@@ -115,7 +115,27 @@
 // control that only works after hydration has no address (D88.2).
 import { ownCardId } from "./card-content.ts";
 import { withCard, withIopen } from "./map-card.ts";
-import { estimateTextWidth, fitLabel, LANE_FONT_PX, stateHref } from "./process-layout.ts";
+import {
+  estimateTextWidth,
+  fitLabel,
+  LANE_FONT_PX,
+  NAME_ASCENT_RATIO,
+  NAME_DESCENT_RATIO,
+  NAME_PLATE_BELOW_RATIO,
+  NAME_PLATE_TOP_RATIO,
+  stateHref,
+} from "./process-layout.ts";
+
+/**
+ * How far a name written **on** a line is dropped below it, as a multiple of the
+ * font size, so the text reads as sitting on the line rather than floating over
+ * it.
+ *
+ * Named because three placements share it — the inside name, the framed name and
+ * the shell's — and two reservations are derived from it. It was written out as
+ * `0.35` at five sites, which is fine until a sixth reads it as `0.3`.
+ */
+const LABEL_BASELINE_DROP = 0.35;
 import {
   bellyOf,
   levelShares,
@@ -198,7 +218,7 @@ export const CONVERGE_METRICS = {
    *     shut       summed height  12,979 -> 11,499  (-11.4%)
    *     shut       tallest figure    499 ->    467
    *
-   * ## **The vertical cut was measured, built, and then taken back out**
+   * ## **The vertical cut, three quarters taken — and what stopped the rest**
    *
    * A sensitivity sweep put the height in `labelBand` (−828px for three
    * pixels), `laneGap` and `strandHalf`, and a combined cut —
@@ -207,43 +227,71 @@ export const CONVERGE_METRICS = {
    * invariants**, including both name-overlap sweeps, and took a further
    * ~200px off the tallest saturated figure.
    *
-   * It is not here, because on the **rendered page** it put
-   * *"QSVT matrix inversion"* 2.2px into *"HHL"* on the shut
-   * `quantum-linear-solve` figure. Measured against the real `next/font` face
-   * through a browser, not against the estimator.
+   * It did not ship, because on the **rendered page** it put *"QSVT matrix
+   * inversion"* 2.2px into *"HHL"* on the shut `quantum-linear-solve` figure.
+   * Measured against the real `next/font` face through a browser, not against
+   * the estimator.
    *
-   * **The reason is a modelling gap, and it is the finding worth keeping.**
-   * The overlap invariants model a drawn name as `laneFont` tall — 12px — and
-   * a 12px name draws about **15px** of ink box. `NamePlate` already knows
-   * this: it sizes its cover 17px tall and its comment records measuring 15.2px
-   * for a Japanese name. So the engine believes it has three pixels it does
-   * not have, and the margin on that pair was **0.6px before this unit** — the
-   * cut did not create the tightness, it spent the last of it.
+   * **The reason was a modelling gap, and it has now been closed.** Every
+   * name-against-name invariant modelled a drawn name as ending at its
+   * baseline; a 12px name draws 15.2px of ink and about a fifth of it hangs
+   * below. That number now lives in `NAME_INK_RATIO`, one writer, read by the
+   * reservations here and by the invariants in the test file. Measured with
+   * it, the canvas was carrying **11 pairs of overlapping names before any cut
+   * was taken at all** — the cut did not create the tightness, and neither did
+   * it spend the last of it, because it was already gone.
    *
-   * Two lanes are close there because a leaf reserves no name band (issue 17's
-   * `dropsNameBand`, correctly — its name is inside its own line) while its
-   * neighbour's name hangs down into exactly that space. The honest fix is to
-   * teach the sweeps the rendered height and give an inside-name lane the
-   * clearance a neighbour's name actually needs; that is layout work with its
-   * own measurements, and doing it buys the whole vertical cut back. Recorded
-   * rather than taken, and the four numbers above are the part that is safe
-   * today: none of them changes how close two names sit.
+   * All 11 were one shape, and the previous session's diagnosis was the right
+   * one seen from one level down. An opened chain writes its name **on** its
+   * exoskeleton edge, and `framedNameHalf` reserved only the half of that name
+   * standing outward of the edge; the other half hangs into the chain's own
+   * interior, where the first step's inside name is drawn. See
+   * `framedNameInward`, which is the fix, and the chain arm of `measureCore`,
+   * which is the one place that pays for it.
+   *
+   * ## What that bought, measured over all 46 figure-locales, saturated
+   *
+   *     summed height   20,082 -> 19,848   (-234px)
+   *     summed width    25,535 -> 25,399   (-136px)
+   *     tallest figure   1,997.64 -> 2,031.88   (+34.24px)
+   *     widest figure    1,954.93 -> 1,947.91
+   *     overlapping name pairs      11 -> 0
+   *
+   * Three of the cut's four numbers are here — `laneGap`, `strandHalf`,
+   * `labelLift`, with `laneBow` re-derived to 47. **`labelBand` is not**, and
+   * that is the honest half of this entry: taking it to 10 puts *"HHL"* and
+   * *"QSVT matrix inversion"* back together, and the gate now says so by name
+   * rather than staying green. The cause is no longer a mystery either — a
+   * lane whose name is written *beside* it places that name at
+   * `halfAt + labelLift`, **outside** the `labelBand` it reserved, so the band
+   * would have to be at least `laneFont · NAME_INK_RATIO` = 15.2px for the ink
+   * to clear the strand at all, against the 13 it is. Raising it there costs
+   * +571px on the tallest figure, which is worse than not cutting.
+   *
+   * The remedy is a one-sided name band — a lane reserves a name's room on the
+   * side it actually writes it and nothing on the other — which needs `Measure`
+   * to carry `vAbove`/`vBelow` and the three allocators to pack asymmetric
+   * halves. That is a whole unit of work with its own measurements, and it is
+   * the one that would buy the rest of issue 22's height. Recorded rather than
+   * taken.
    */
-  /** Half a top-level strand's thickness, at its thickest point. Part of the
-   *  vertical cut issue 22 measured and did not take — see the block above. */
-  strandHalf: 9,
+  /** Half a top-level strand's thickness, at its thickest point. **8 since the
+   *  vertical cut landed** — see the block above for what the four numbers moved
+   *  together and which one of them did not come with them. */
+  strandHalf: 8,
   /** Room beside a strand for its own name.
    *
    *  13, and the single most expensive tolerance on the canvas — the sweep
    *  measured −828px of summed saturated height for three pixels off it,
-   *  because every lane at every depth reserves it on both sides. See the
-   *  block above for why it is still 13. */
+   *  because every lane at every depth reserves it on both sides — **on both
+   *  sides, and a lane writes its name on one**, which is the whole of why this
+   *  one is still 13 while the other three moved. See the block above. */
   labelBand: 13,
   /**
    * Between two sibling strands.
    *
-   * **6 since the vertical compaction, and this is the owner's ask rather than
-   * a shave.** `5314ca` names it: *"much less horizontal and vertical tolerance
+   * **5 since the vertical cut landed, 6 before it, and this is the owner's ask
+   * rather than a shave.** `5314ca` names it: *"much less horizontal and vertical tolerance
    * between things."* This IS that tolerance — the clear space between two
    * siblings, over and above the band each one already keeps for its own ink
    * and its own name. It is paid once per sibling pair per level, so on a deeply
@@ -255,7 +303,7 @@ export const CONVERGE_METRICS = {
    * name-collision invariants are what bound this, and they are what to re-run
    * before touching it again.
    */
-  laneGap: 6,
+  laneGap: 5,
   /**
    * How far apart two lanes of a shut fan sit, at the peak.
    *
@@ -270,14 +318,14 @@ export const CONVERGE_METRICS = {
    * rendered page the two ways into `linear-ivp` were almost a single line and
    * the convergence did not read as one.
    *
-   * **50 since `laneGap` became 6** — `2·(9 + 13) + 6`. It is written out rather
+   * **47 since the vertical cut landed** — `2·(8 + 13) + 5`. It is written out rather
    * than computed, so the test `allocateBows reproduces laneOffsets exactly when
    * every sibling is a leaf` exists to catch exactly this: a change to
    * `strandHalf`, `labelBand` or `laneGap` that forgets to bring this with it.
    * It caught nothing this time because it was updated in the same edit, which
    * is the point of having it.
    */
-  laneBow: 50,
+  laneBow: 47,
   /** Shortest a bundle may be drawn before its labels are considered.
    *  Left at 150 through issue 22: the sweep measured 110 and 90 at −28px of
    *  summed width between them, which is one figure's rounding. It binds on
@@ -351,9 +399,10 @@ export const CONVERGE_METRICS = {
   captionFont: 13,
   /** A lane's label sits this far off its own edge. One pixel off it is
    *  −152px of summed saturated height and it is paid on the shut figures too,
-   *  so it is the second-cheapest vertical pixel here — and it is part of the
-   *  vertical cut issue 22 measured and did not take. See `labelBand`. */
-  labelLift: 7,
+   *  so it is the second-cheapest vertical pixel here. **6 since the vertical
+   *  cut landed**; see the block above `strandHalf` for the one number of that
+   *  cut which did not come with it, and why. */
+  labelLift: 6,
   /**
    * The loop glyph: a drawn circular arrow after the name of a lane a route
    * walks more than once (W19). The owner's ask, verbatim: *"iterator needs to
@@ -2579,7 +2628,26 @@ function wearsNameInside(strand: {
  * lanes depend on.
  */
 function insideNameHalf(): number {
-  return CONVERGE_METRICS.laneFont * 0.65;
+  // **The descender does not bind here, and it is worth saying why rather than
+  // leaving the two 0.65s looking like the same accident.** An inside name is
+  // centred on the belly: it reaches `1 − LABEL_BASELINE_DROP` = 0.65·laneFont
+  // above it and `LABEL_BASELINE_DROP + NAME_DESCENT_RATIO` = 0.617·laneFont
+  // below. The band is the larger, so it is the ascent side, and adding the
+  // descender to the model left this number where it was. A framed name, which
+  // sits on an edge rather than on a centre line, is the placement where the
+  // same descender is load-bearing — see `framedNameInward`.
+  // **The ink, not the plate, and this one is measured.** `framedNameInward`
+  // reserves the plate because a framed name is drawn on an *edge*, with the
+  // next lane's own name immediately past it — there is nothing else in that
+  // gap, so a 1.8px plate seam is the whole of what a reader sees. An inside
+  // name is centred on its own belly with `laneGap` and two half-thicknesses to
+  // the next one, and its plate is over its own line by design. Reserving the
+  // plate here instead costs **+86.4px on the tallest figure** — it is paid by
+  // every leaf on the canvas — to move a seam that is not against anything.
+  return CONVERGE_METRICS.laneFont * Math.max(
+    NAME_ASCENT_RATIO - LABEL_BASELINE_DROP,
+    LABEL_BASELINE_DROP + NAME_DESCENT_RATIO,
+  );
 }
 
 /**
@@ -2603,7 +2671,29 @@ function insideNameHalf(): number {
  * name beside it is an opened chain.
  */
 function framedNameHalf(): number {
-  return CONVERGE_METRICS.laneFont * 0.65;
+  return CONVERGE_METRICS.laneFont * (NAME_PLATE_TOP_RATIO - LABEL_BASELINE_DROP);
+}
+
+/**
+ * Half the band that same framed name occupies **inward** of the edge — the half
+ * `framedNameHalf` is not about, and the half nothing on this canvas reserved.
+ *
+ * A name written on an edge is not outside it. The baseline is dropped
+ * `LABEL_BASELINE_DROP · laneFont` past the edge so the text reads as sitting on
+ * the line, and the ink then runs a further `NAME_DESCENT_RATIO · laneFont`
+ * below that baseline. Both of those are inward, and together they are **7.4px**
+ * at today's 12px lane font, against the `innerStateRadius` of 5 that the
+ * interior actually started at.
+ *
+ * The 2.4px difference is the whole of the collision the canvas shipped; see the
+ * chain arm of `measureCore`, which is the one caller.
+ *
+ * Written as a function of the same two ratios `framedNameHalf` uses, so the two
+ * halves of one piece of text cannot drift apart — the second derivation of a
+ * band is the `hFit` mistake this file has already paid for twice.
+ */
+function framedNameInward(): number {
+  return CONVERGE_METRICS.laneFont * (LABEL_BASELINE_DROP + NAME_PLATE_BELOW_RATIO);
 }
 
 /**
@@ -3117,8 +3207,34 @@ function measureCore(strand: PlanStrand, depth: number): Omit<Measure, "variants
     // step's own demand laid end to end, and `levelShares` then gives each step
     // exactly the piece this sum bought for it. `chainColumnNeed` carries the
     // rule and the measurement that changed it from `k × widest`.
+    // **The chain's own name hangs INWARD, and only its outward half was ever
+    // reserved.** `framedNameHalf` is documented as "the band an opened chain's
+    // name occupies *outward of the edge it is written on*", and that is exactly
+    // what it is — but a name written on an edge sits on both sides of it. Its
+    // baseline is dropped `laneFont · 0.35` below the edge and its ink runs to
+    // `NAME_DESCENT_RATIO · laneFont` past that, so `framedNameInward()` of it
+    // hangs down into this chain's own interior, where the first step's inside
+    // name is drawn.
+    //
+    // Nothing reserved that. The frame edge sits at exactly `innerReach`, the
+    // topmost child's band starts `innerStateRadius` inside it, and 5px is less
+    // than the 7.4px the name reaches — so the parent's name landed **2.4px**
+    // into the child's. That is not a hypothetical: it is every one of the 11
+    // name-ink collisions this canvas shipped, in one shape, on
+    // `matrix-function`, `hamiltonian-simulation`, `compile-to-device`,
+    // `linear-ode-solve` and `nonlinear-ode-solve` — always an opened chain
+    // against the first leaf inside it, always 2.4px, in both locales.
+    //
+    // It was invisible for the same reason in every case: under the box the
+    // invariants modelled — `laneFont` tall, ending at the baseline — the name
+    // reaches only `laneFont · 0.35` = 4.2px inward and clears the child by
+    // 0.8px. The whole defect is the descender the model did not have, and this
+    // `max` is where the engine is told about it. It is a `max` and not a sum
+    // because the boundary circle and the name occupy the same space inward of
+    // the edge; whichever reaches further is what the interior must start past.
     const innerReach =
-      Math.max(...children.map((child) => child.vHalf)) + M.innerStateRadius;
+      Math.max(...children.map((child) => child.vHalf))
+      + Math.max(M.innerStateRadius, framedNameInward());
     return {
       vHalf: innerReach + M.labelBand,
       // An opened chain wears its name ON the exoskeleton edge, at `frameHalf`
@@ -3421,9 +3537,9 @@ function place(
     : framed
       ? // ON the chosen edge, baseline-dropped so the name sits on the line —
         // the treatment the bone gives its own name, one band out.
-        peak.y + NAME_EDGE * frameHalf + M.laneFont * 0.35
+        peak.y + NAME_EDGE * frameHalf + M.laneFont * LABEL_BASELINE_DROP
       : labelInside
-        ? peak.y + M.laneFont * 0.35
+        ? peak.y + M.laneFont * LABEL_BASELINE_DROP
         : outward > 0
           ? peak.y + bandHalf + M.labelLift + M.laneFont * 0.8
           : peak.y - bandHalf - M.labelLift;
@@ -4043,6 +4159,86 @@ export function layoutConverge(options: {
   unfold?: string;
 }): ConvergeDiagram {
   return layoutFigure(options);
+}
+
+/**
+ * Every address on this figure a reader could reach by clicking, to saturation
+ * — *"fully open"*, as a set.
+ *
+ * A fixed point and not one pass, because that is what "everything" means here:
+ * a lane nested inside another lane does not exist as a shape until its parent
+ * is open, so a single layout can only ever see the outermost rung. The walk
+ * lays the figure out, banks every control it can see, lays it out again with
+ * those banked, and stops when a pass adds nothing.
+ *
+ * **One writer, for the same reason `methodHasInterior` is one.** The test file
+ * grew this walk first, to measure `CONVERGE_OPEN_MAX` against what a reader
+ * can reach; the expand-all control needs the identical set. Two copies would
+ * mean the cap is asserted against one set while the control emits another, and
+ * the day they diverge is the day the control mints an address the page drops
+ * on arrival — the dead control this canvas has produced twice already.
+ *
+ * **Jump controls are not open controls.** A W15-demoted shared lane carries an
+ * `openHref` that goes to the *earlier* occurrence where its interior is drawn;
+ * putting its own address in `?open=` opens nothing, because `openable` is
+ * false on it. Excluded here so the emitted set is addresses that actually do
+ * something. Measured today: excluding them changes the total not at all
+ * (138 either way, over 23 figures) — every one of those 47 saturated jump
+ * lanes sits at an address a toggle had already banked. Kept as a filter rather
+ * than dropped as a no-op because "identical today" is the thing that drifts.
+ *
+ * Memoised per graph, subject, locale and unfold. The walk costs about seven
+ * layouts on the widest figure — ~160ms measured, against ~5ms for the one
+ * layout the render already does — and the map re-renders on every pan, every
+ * card and every section click. The result is a pure function of the graph, so
+ * the cache is sound by construction; it is keyed on the graph *object* so a
+ * fixture graph in a test cannot be answered with the real one's addresses.
+ * Locale is in the key rather than argued away, though the two agree today:
+ * every one of the 23 figures returns byte-identical address sets in `en` and
+ * `ja`, which is what you would expect from a plan built before any text is
+ * measured — but it is an expectation, not an invariant this file enforces.
+ */
+const OPENABLE_CACHE = new WeakMap<LayerGraph, Map<string, readonly string[]>>();
+
+export function openableAddresses(options: {
+  graph: LayerGraph;
+  vocabulary: StateVocabulary;
+  focus: LayerCapability;
+  locale: PublicLocale;
+  unfold?: string;
+}): readonly string[] {
+  let perGraph = OPENABLE_CACHE.get(options.graph);
+  if (perGraph === undefined) {
+    perGraph = new Map();
+    OPENABLE_CACHE.set(options.graph, perGraph);
+  }
+  const key = `${options.focus.id}|${options.locale}|${options.unfold ?? ""}`;
+  const cached = perGraph.get(key);
+  if (cached !== undefined) return cached;
+
+  const seen = new Set<string>();
+  for (;;) {
+    const diagram = layoutFigure({
+      graph: options.graph,
+      vocabulary: options.vocabulary,
+      focus: options.focus,
+      locale: options.locale,
+      open: new Set(seen),
+      unfold: options.unfold,
+    });
+    let grew = false;
+    for (const lane of diagram.lanes) {
+      if (lane.openHref === null) continue;
+      if (lane.sharedWith !== null) continue;
+      if (seen.has(lane.address)) continue;
+      seen.add(lane.address);
+      grew = true;
+    }
+    if (!grew) break;
+  }
+  const addresses = [...seen];
+  perGraph.set(key, addresses);
+  return addresses;
 }
 
 /**

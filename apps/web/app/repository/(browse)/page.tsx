@@ -11,6 +11,9 @@ import { VerificationLegend } from "../../../components/repository-verification"
 import { AboutTheAtlas, RepositoryPreface } from "../../../components/repository-preface";
 import { resolveBrowseParams } from "../../../lib/repository/browse-params";
 import { RepositoryBrowser } from "../repository-browser";
+import { IngredientShelf } from "../../../components/repository-shelf";
+import { LAYER_GRAPH } from "../../../lib/repository/layer-graph";
+import { STATE_VOCABULARY } from "../../../lib/repository/state-vocabulary";
 
 /**
  * Localised, for the reason `layers/page.tsx:12-19` already states: a static
@@ -119,6 +122,18 @@ export default async function RepositoryPage({
             and it still takes `entries` because the corpus is what decides
             which kinds exist. */}
         <RepositoryPreface entries={entries} locale={locale} />
+        {/* The Ingredients shelf, between the kinds and the controls: it is
+            navigation over the objects, which is the same job the preface does
+            over the categories, and it belongs on the same side of the search
+            box. Three shut `<details>` — see `repository-shelf.tsx` for why the
+            counts have to be legible without opening one, and why it takes the
+            listing already in hand rather than fetching anything. */}
+        <IngredientShelf
+          records={entries}
+          graph={LAYER_GRAPH}
+          vocabulary={STATE_VOCABULARY}
+          locale={locale}
+        />
         <RepositoryBrowser
           entries={entries}
           locale={locale}

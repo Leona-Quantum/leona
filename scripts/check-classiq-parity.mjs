@@ -67,8 +67,19 @@ const coverageMod = await bundle("apps/web/lib/repository/classiq-coverage.ts", 
 const intakeMod = await bundle("apps/web/lib/repository/entries-classiq-parity.ts", "entries-classiq-parity");
 
 const { PUBLIC_REPOSITORY_ENTRIES } = corpusMod;
-const { CLASSIQ_COVERAGE, CLASSIQ_NOT_APPLICABLE } = coverageMod;
+const { CLASSIQ_COVERAGE, CLASSIQ_COVERAGE_BASIS, CLASSIQ_NOT_APPLICABLE } = coverageMod;
 const { CLASSIQ_PARITY_COVERAGE } = intakeMod;
+
+// The strengths a declaration can have, in the order they are printed. Kept in
+// step with `ClassiqClaimBasis` in apps/web/lib/repository/classiq-coverage.ts —
+// a value there that is missing here would be silently dropped from the split,
+// so the loop below refuses one it does not recognise rather than ignoring it.
+const BASIS_ORDER = [
+  "same-subject",
+  "source-formulates-problem",
+  "method-instance",
+  "not-re-derived",
+];
 
 // Half derived, half declared — the same split as the Zoo gauge, and for the same
 // reason: a record written for a Classiq entry states which entry from its own data
@@ -102,6 +113,40 @@ for (const [path, claims] of coverage) {
     }
   }
 }
+// A declaration says *that* a record covers a demonstration; it cannot say on
+// what evidence. `CLASSIQ_COVERAGE_BASIS` says that, and this is what stops it
+// rotting: a new declaration with no basis fails here rather than quietly joining
+// the strong ones. The count never moves — every declared path is covered either
+// way — so this gate has nothing to gain by being greened.
+const basisCounts = new Map(BASIS_ORDER.map((basis) => [basis, 0]));
+for (const path of Object.keys(CLASSIQ_COVERAGE)) {
+  const basis = CLASSIQ_COVERAGE_BASIS[path];
+  if (basis === undefined) {
+    errors.push(
+      `coverage declares "${path}" with no entry in CLASSIQ_COVERAGE_BASIS. Every declaration has to`
+      + " say what kind of claim it is — whether a source read for the covering record formulates"
+      + " this demonstration's problem, or whether the demonstration merely runs the method that"
+      + " record documents. Add it to CLASSIQ_COVERAGE_BASIS in"
+      + " apps/web/lib/repository/classiq-coverage.ts.",
+    );
+    continue;
+  }
+  if (!basisCounts.has(basis)) {
+    errors.push(
+      `"${path}" declares basis "${basis}", which is not one of ${BASIS_ORDER.join(", ")}.`
+      + " Adding a value to ClassiqClaimBasis means adding it to BASIS_ORDER in this script too,"
+      + " or it drops out of the printed split.",
+    );
+    continue;
+  }
+  basisCounts.set(basis, basisCounts.get(basis) + 1);
+}
+for (const path of Object.keys(CLASSIQ_COVERAGE_BASIS)) {
+  if (!Object.hasOwn(CLASSIQ_COVERAGE, path)) {
+    errors.push(`CLASSIQ_COVERAGE_BASIS names "${path}", which is not a declared coverage path`);
+  }
+}
+
 for (const path of Object.keys(CLASSIQ_NOT_APPLICABLE)) {
   if (!indexPaths.has(path)) {
     errors.push(`notApplicable declares "${path}", which is not in the pinned index`);
@@ -138,6 +183,7 @@ const report = {
   notApplicable: notApplicable.length,
   missing: missing.length,
   byCategory,
+  declaredByBasis: Object.fromEntries(basisCounts),
   missingPaths: missing.map((row) => row.path),
   errors,
 };
@@ -154,6 +200,15 @@ if (AS_JSON) {
   if (!QUIET) {
     for (const [category, counts] of Object.entries(byCategory)) {
       console.log(`  ${counts.covered}/${counts.total}  ${category}`);
+    }
+    // The split the headline cannot show. `source-formulates-problem` is a
+    // stronger claim than `method-instance`, and after ai-ops#42 the two are
+    // indistinguishable from the count alone.
+    const declared = [...basisCounts.values()].reduce((sum, count) => sum + count, 0);
+    console.log(`  of ${declared} declared (the rest are records written for their own entry):`);
+    for (const basis of BASIS_ORDER) {
+      const count = basisCounts.get(basis);
+      if (count > 0) console.log(`    ${String(count).padStart(3)}  ${basis}`);
     }
   }
   if (SHOW_MISSING) {

@@ -16,8 +16,8 @@
 //
 // ## What measuring the corpus first said, because it changed this module
 //
-// Three counts, taken over all 283 published records before any of this was
-// designed:
+// Three counts, taken over the then-283 published records (measured 2026-07)
+// before any of this was designed:
 //
 // 1. **All 120 published circuits end in a measurement.** `measure: true` on
 //    every one, no exceptions. So all 120 return classical bits — and nothing in
@@ -26,14 +26,14 @@
 // 2. **The 163 records with no circuit are where composition would live** — 29
 //    gate primitives, 13 states, 60 observables, 61 prose references — and only
 //    the first two publish anything a machine can read as an interface.
-// 3. **38 of 283 entries appear in at least one connectable pair.** The other
-//    245 connect to nothing, and that is a fact about the corpus rather than a
-//    gap in this classifier.
+// 3. **38 of the then-283 entries appear in at least one connectable pair.** The
+//    other 245 connect to nothing, and that is a fact about the corpus rather
+//    than a gap in this classifier.
 //
 // That is why this module is shaped as a *classifier with a large honest
 // bottom class* rather than as a graph builder. A "connections" feature over
-// this corpus that did not say 245 of 283 are unconnected would be describing a
-// different catalogue.
+// this corpus that did not say 245 of the then-283 are unconnected would be
+// describing a different catalogue.
 //
 // ## The rule that keeps a connection honest
 //
@@ -136,8 +136,8 @@ export type PortType = "qubits" | "bits";
  *
  * Carrying the width is what keeps a hole from meaning *everything*. The first
  * cut of this modelled a hole as a bare flag, and one authored gap on
- * `vqe-ssvqe` then made the browse heading read "163 of 283 meet another entry"
- * against 87 the day before — the 75 records whose port is the only one of its
+ * `vqe-ssvqe` then made the browse heading read "163 of the then-283 meet
+ * another entry" against 87 the day before — the 75 records whose port is the only one of its
  * width in the catalogue all acquired a partner, because a hole with no width
  * is a candidate for the whole corpus. That is the parts-bin reading this
  * module's header refuses. A width mismatch against a hole is therefore a real
@@ -194,7 +194,8 @@ export interface EntryInterface {
    * census over the corpus is what refuted it: with no input port, `unknown`
    * became unreachable — the whole three-valued predicate collapsed to two
    * values and the honest middle case, the one roadmap §6 says is the common
-   * one, could not be produced by any pair of the 283 records. A program does
+   * one, could not be produced by any pair of the then-283 records (measured
+   * 2026-07). A program does
    * have a left-hand edge; what is true is that its stated behaviour assumed
    * what was on it.
    */
@@ -570,7 +571,7 @@ export function isOnGraph(entry: EntryInterface): boolean {
   );
 }
 
-/** Ports only — the 162-of-283 number the browse heading qualifies itself with. */
+/** Ports only — the number the browse heading qualifies itself with (162 of the then-283, measured 2026-07). */
 export function declaresPort(entry: EntryInterface): boolean {
   return entry.input !== null || entry.output !== null;
 }
@@ -686,8 +687,8 @@ export interface InterfaceOption {
  * How many entries meet at least one other entry at either end, on either the
  * `compatible` or the `unknown` verdict.
  *
- * **Not the same number as "has a port", and the gap is the point.** On today's
- * corpus 162 of 283 declare ports and **87** meet anything — 38 of them in a
+ * **Not the same number as "has a port", and the gap is the point.** As of
+ * 2026-07, 162 of the then-283 declared ports and **87** met anything — 38 of them in a
  * `compatible` pair, 71 in an `unknown` one, 22 in both. The other 75 declare a
  * port that is the only one of its width and type in the catalogue. A control
  * that published only the 162 would read as a parts bin.

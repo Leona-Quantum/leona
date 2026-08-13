@@ -178,13 +178,77 @@ if (AS_JSON) {
 // record without a word; an exact count makes reading a paper an edit to this line,
 // which is the diff that records the win.
 const SPEEDUP_PROVENANCE_CENSUS = {
-  // Nobody has yet found a primary paper stating a comparable speedup in its own
-  // words. Zero is a real value here, not an unfinished one.
-  reported: 0,
-  // gibbs-state-sampling. Poulin and Wocjan's abstract was read in full and makes
-  // no comparison to a classical algorithm; the Zoo's "Superpolynomial" is the
-  // section heading's. This is the record the owner's ruling was about.
-  absent: 1,
+  // Primary papers that state a comparable speedup in their own words. This read
+  // 0 until W22, when the second Zoo-parity pass read six primary papers in full
+  // rather than from their abstracts:
+  //   sparse-matrix-power-diagonal-entries — Janzing and Wocjan, conditional on
+  //     BQP≠BPP and, as section 2 insists, on the b^m scale the accuracy is
+  //     measured against.
+  //   string-rewriting-derivation-counts   — the same authors, same condition.
+  //   zeta-function-of-a-curve             — Kedlaya names Schoof and Lauder-Wan
+  //     and their costs; he never writes "superpolynomial", which is the Zoo's word.
+  //   exponential-congruences              — van Dam and Shparlinski state the
+  //     cubic gap outright, and in the same breath that both sides are still
+  //     superpolynomial in log q.
+  // Four more from the second batch of the same pass:
+  //   matrix-products-over-semirings       — Le Gall and Nishimura name Duan and
+  //     Pettie's O(n^2.687) as the classical figure they beat.
+  //   viterbi-decoding-convolutional-codes — Grice and Meyer claim "better than
+  //     classical performance under certain conditions", but state no classical
+  //     bound anywhere, so the claim is comparative and qualitative at once.
+  //   average-case-lattice-problems-by-filtering — the claim is the narrow one:
+  //     no polynomial-time algorithm, classical or quantum, was known for these
+  //     variants. Not the Zoo's "Exponential".
+  //   quantum-primality-test-order-finding — compared against AKS by exponent.
+  // Two more from the third batch. Both from Hallgren's J. ACM paper, which is the
+  // one number-theory source here that does state a classical cost, in L-notation.
+  //   pell-equation-regulator, principal-ideal-problem
+  // Two more from the fourth batch, and on one of them the very same sentence
+  // takes most of the claim back:
+  //   irreducible-representation-matrix-elements — "exponential speedup in worst
+  //     case complexity ... On the other hand, we show that average case instances
+  //     are classically easy." One sentence, both halves.
+  //   boson-sampling-linear-optics — the Jerrum-Sinclair-Vigoda contrast between
+  //     nonnegative and complex permanents.
+  // Two more from the fifth batch, the two Zoo *subject headings* — see the
+  // declaration comments in ./entries-zoo-parity.ts for which of each heading's
+  // eight references these carry and which stay outstanding:
+  //   elliptic-curve-discrete-log-resources — Proos and Zalka name Pollard rho and
+  //     call the classical side truly exponential. The famous "1000 qubits" is
+  //     LOGICAL qubits on an explicitly noise-free machine.
+  //   backtracking-quantum-walk-speedup — Montanaro's near-quadratic speedup, and
+  //     the square root is of the TREE SIZE, not the problem size.
+  //
+  // A third was written and could not land. The Zoo's "Subset-sum" entry is cited
+  // to Bernstein, Jeffery, Lange and Meurer, whose only identifier is the Springer
+  // chapter DOI 10.1007/978-3-642-38616-9_2. `paperSlug` maps "/" to "_", and that
+  // DOI already contains "_2", so the id does not survive a round trip through its
+  // own url segment and `validatePaperRegister` refuses it — exactly the case
+  // papers.ts:110-116 says the check exists for, firing for the first time. The
+  // record is written and the paper is read; it lands when the identity scheme can
+  // represent that DOI. Not a sourcing problem.
+  reported: 14,
+  // Read and silent. gibbs-state-sampling was the first: Poulin and Wocjan's
+  // abstract makes no comparison to a classical algorithm and the Zoo's
+  // "Superpolynomial" is the section heading's. This is the record the owner's
+  // ruling was about. W22 added two more, both from full-text reads:
+  //   gauss-sum-estimation        — van Dam and Seroussi decline to prove classical
+  //     hardness and leave it open in their conclusion, so the Zoo's
+  //     "Superpolynomial" has no support in the paper the Zoo cites for it.
+  //   subset-finding-quantum-walk — Childs and Eisenberg compare only against
+  //     quantum query lower bounds; the word "classical" is not in the body.
+  // Two more from the second batch:
+  //   quadratically-signed-weight-enumerators — Knill and Laflamme prove an
+  //     equivalence, not a speedup. The Zoo files it "Superpolynomial"; the paper
+  //     it cites for that makes no comparison of costs at all.
+  //   double-bracket-diagonalization — every comparison is against other quantum
+  //     methods. `read` scopes this to a partial retrieval, which is exactly the
+  //     case the field's narrowness was written for.
+  // Two more from the third batch, and the contrast with the pair above is the
+  // finding: the SAME author's STOC 2005 paper, read cover to cover, states no
+  // classical running time at all, where his J. ACM paper states one in L-notation.
+  //   unit-group-of-a-number-field, class-group-of-a-number-field
+  absent: 7,
   // The worklist. The intake checked the problem statement, the class against the
   // Zoo, the reference metadata and the complexity claim — it never asked whether
   // the paper supports the class. `unknown` says that, rather than pretending.

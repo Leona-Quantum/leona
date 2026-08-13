@@ -210,8 +210,11 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       result: "Pass · only 00 and 11 appear in the ideal measurement distribution.",
     },
     exportStatus: "OpenQASM 3 available · lossless gate mapping",
-    provenance: "Verified starter",
-    updatedAt: "2026-07-10",
+    // ai-ops#44: was "Verified starter", which pointed at us on the same record
+    // whose `source` pointed at us. The check we ran is still stated in
+    // `verification`/`verificationDetails`; this line is now about the document.
+    provenance: "Textbook reference",
+    updatedAt: "2026-08-12",
     description: "A two-qubit entanglement example with a return contract and distribution check.",
     descriptionJa: "出力形式と分布を確認できる、2量子ビットのエンタングルメント例です。",
     introduction:
@@ -233,12 +236,24 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       { label: "Ideal P(00)", value: "0.5" },
       { label: "Ideal P(11)", value: "0.5" },
     ],
+    // ai-ops#44. This record used to name **our own starter fixture** as its
+    // source, over a link to a framework's learning homepage — this project
+    // citing itself for a result, one step removed, which is the shape the
+    // owner ruled on for `qaoa-maxcut-ring`. Our own check belongs in
+    // `verification`/`verificationDetails` above, where it still is; `source`
+    // is where the record says which *document* states the thing it shows.
+    //
+    // The document is Nielsen & Chuang §1.3.6/§4.3 — the H-then-CNOT Bell-pair
+    // construction and its |00⟩/|11⟩ support. A textbook is a permissible
+    // primary source by the owner's ruling on ai-ops#44 (2026-08-12): *"textbooks
+    // are also primary sources!!"*. See `RegisteredPaper.medium` in ./papers.ts,
+    // which is where that ruling is enforced rather than only described.
     source: {
-      kind: "verified_run",
-      title: "LeonaQ starter verification fixture",
-      url: "https://qiskit.org/learn/",
+      kind: "curated_reference",
+      title: "Quantum Computation and Quantum Information: 10th Anniversary Edition",
+      url: "https://doi.org/10.1017/cbo9780511976667",
       contributor: "LeonaQ public reference set",
-      reviewedBy: "LeonaQ verification pass",
+      reviewedBy: "LeonaQ curation pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
     visualization: {
@@ -1294,7 +1309,7 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     ],
     source: {
       kind: "curated_reference",
-      title: "The XZZX surface code",
+      title: "The XZZX Surface Code",
       url: "https://arxiv.org/abs/2009.07851",
       reviewedBy: "LeonaQ literature curation pass",
       license: "Public bibliographic link; code is an original reference sketch",
@@ -1387,10 +1402,17 @@ export const RAW_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
       { label: "Bit order", value: "Swap layer explicit" },
       { label: "Export", value: "QASM parse checked" },
     ],
+    // ai-ops#44. Was a vendor's product landing page, which states no result.
+    // The document that states this construction is Coppersmith's IBM research
+    // report (arXiv:quant-ph/0201067), read first-hand from the paper itself:
+    // its `P_J` is the Hadamard on wire J, its `Q_JK` are the two-bit controlled
+    // phase factors ω^(2^(L-1-K+J)), and it handles bit order by *reversing the
+    // output indexing* (`b` is the reversal of `c`) rather than by a swap layer
+    // — which is the "bit-order convention" this record keeps explicit.
     source: {
       kind: "curated_reference",
-      title: "Cirq circuit construction reference",
-      url: "https://quantumai.google/cirq",
+      title: "An approximate Fourier transform useful in quantum factoring",
+      url: "https://arxiv.org/abs/quant-ph/0201067",
       reviewedBy: "LeonaQ curation pass",
       license: "CC BY 4.0-compatible reference metadata",
     },
@@ -1650,7 +1672,11 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     result: "The ideal circuit distinguishes the supplied constant and balanced oracle families with one query.",
     caveat: "The catalog stores a small educational oracle instance, not a universal application benchmark.",
     exportStatus: "Native Cirq · framework-specific oracle boundary retained",
-    provenance: "Official framework tutorial",
+    // ai-ops#44. `source` was corrected to Deutsch & Jozsa 1992 when the owner
+    // ruled on this record; this display string was left saying "tutorial" over
+    // a paper link. It is not in the hashed `source` object, so nobody's check
+    // moved and nothing failed — a reader was simply told the wrong thing.
+    provenance: "Primary paper",
     updatedAt: "2026-07-15",
     description: "A one-query promise-problem circuit that separates constant from balanced Boolean oracles.",
     descriptionJa: "定数関数とバランス関数のオラクルを1回のクエリで区別する約束問題の回路です。",
@@ -1686,7 +1712,9 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     result: "The ideal circuit returns the encoded secret string with one oracle query.",
     caveat: "The one-query claim is for the promise/query model; state preparation, oracle construction, and readout costs remain visible.",
     exportStatus: "Native Qiskit · oracle construction classified separately",
-    provenance: "Official learning module",
+    // ai-ops#44, same as `deutsch-jozsa-cirq` above: `source` now names
+    // Bernstein & Vazirani, and this string still said "learning module".
+    provenance: "Primary paper",
     updatedAt: "2026-07-15",
     description: "A query circuit that recovers the hidden bit string in f(x) = s · x.",
     descriptionJa: "f(x) = s · xに埋め込まれた隠れたビット列を復元するクエリ回路です。",
@@ -1722,8 +1750,8 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     result: "The ideal circuit decodes the selected two classical message bits.",
     caveat: "The protocol uses a pre-shared Bell pair and a two-bit classical readout; it does not transmit two arbitrary qubits.",
     exportStatus: "Native Qiskit · direct gate-level export",
-    provenance: "Official course reference",
-    updatedAt: "2026-07-15",
+    provenance: "Primary paper",
+    updatedAt: "2026-08-12",
     description: "An entanglement-assisted communication protocol that encodes two classical bits into one transmitted qubit.",
     descriptionJa: "エンタングルメントを使い、1量子ビットの送信で2古典ビットを符号化する通信プロトコルです。",
     introduction: "Superdense coding complements teleportation by making the communication direction and resource assumptions visible.",
@@ -1733,8 +1761,21 @@ export const ADDITIONAL_PUBLIC_REPOSITORY_ENTRIES: PublicRepositoryEntry[] = [
     tags: ["communication", "entanglement", "dense coding", "Qiskit"],
     resources: [{ label: "Qubits", value: "2" }, { label: "Classical bits", value: "2" }, { label: "Shared resource", value: "Bell pair" }],
     metadata: [{ label: "Encoding", value: "I / X / Z / XZ" }, { label: "Transmission", value: "1 qubit" }, { label: "Readout", value: "2 classical bits" }],
-    sourceTitle: "IBM Quantum Learning · Basics of quantum information",
-    sourceUrl: "https://quantum.cloud.ibm.com/learning/en/courses/basics-of-quantum-information",
+    // ai-ops#44. Was a vendor course *index*, which is a directory and not a
+    // document that states the result. The primary source is Bennett & Wiesner
+    // 1992, the paper that introduced the protocol.
+    //
+    // **Read this before treating it as verified the way the QFT row above is.**
+    // Its abstract was NOT fetched first-hand in the session that made this
+    // change: the paper is from 1992 and so predates arXiv's quant-ph archive,
+    // and every publisher host (doi.org, journals.aps.org) is blocked by this
+    // environment's egress proxy. What was established is *which* paper — the
+    // identity of the DOI — which is the one thing a third party's reference
+    // list is allowed to tell you. Nothing in this record's prose was taken
+    // from it. Recorded in ai-ops drafts/issue-44-untraceable.md as read-pending
+    // rather than left silently looking like a first-hand read.
+    sourceTitle: "Communication via one- and two-particle operators on Einstein-Podolsky-Rosen states",
+    sourceUrl: "https://doi.org/10.1103/physrevlett.69.2881",
     wires: ["Alice", "Bob"],
     operations: [{ label: "H", qubits: [0], tone: "accent" }, { label: "CX", qubits: [0, 1], tone: "ok" }, { label: "ENC", qubits: [0], tone: "warn" }, { label: "DEC", qubits: [0, 1], tone: "neutral" }],
     outcomes: [{ label: "00 / 01 / 10 / 11", probability: 1 }],

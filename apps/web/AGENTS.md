@@ -12,3 +12,11 @@ landing/studio, LCP <2.5s, CLS <0.1, first-load JS <250KB gz on /run — these a
 Styling: Tailwind v4 + vendored components in `packages/ts/ui` + tokens.css. No new
 styling systems, no component libraries.
 Nav labels live in one config file — surface naming (Run/Studio) is owner-revisable.
+
+**Corpus and map content is not renderer work, and it has its own rules.** `lib/repository/`
+holds the Atlas records, the layer graph, the paper register and the rule tables that classify
+them. Before adding a record, a node or a citation, read `docs/adr/0026-sub-paper-extraction.md`
+(what may be extracted from a paper, and on what evidence) and `docs/adr/0025-slot-closure.md`
+(what pins a slot's population). Both are enforced in `lint` by `scripts/check-repository-data.mjs`,
+`scripts/check-layer-graph.mjs` and `scripts/check-paper-register.mjs` — a content change that
+skips them fails `ts` in CI, not review.

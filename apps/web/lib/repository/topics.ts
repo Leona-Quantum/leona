@@ -2,7 +2,7 @@
 //
 // ## Why a closed vocabulary at all
 //
-// The corpus carried 307 distinct free-text `tags` across 283 entries, and **217
+// As of 2026-07, the corpus carried 307 distinct free-text `tags` across 283 entries, and **217
 // of them — 71% — were used by exactly one entry.** A label one record wears is
 // a keyword, not a facet: nothing can be filtered by it and nothing is grouped
 // by it. Worse, the set had eight case-splits, and two of them hid real records
@@ -27,7 +27,7 @@
 //   portfolio content. A filter that claims coverage the data does not have is
 //   worse than an absent filter, because the visitor cannot see it is lying.
 //   Entries with no defensible domain carry none, and the browse control says
-//   how many that is. **53 of 283 carry one — 19%.**
+//   how many that is. **As of 2026-07, 53 of the then-283 carried one — 19%.**
 //
 // ### The line a benchmark has to cross to earn a domain
 //
@@ -56,7 +56,7 @@
 // entry already carries. Three reasons, in order of how much they matter:
 //
 // 1. **It is re-runnable.** The owner has said the corpus population may be
-//    revamped wholesale. 283 hand-written labels would be discarded with it; a
+//    revamped wholesale. The hand-written labels would be discarded with it; a
 //    rule table classifies whatever the corpus becomes.
 // 2. **It is reviewable.** A reader can see *why* an entry is tagged
 //    `chemistry` — some rule said so, and the rule is four lines long.
@@ -488,6 +488,45 @@ const FAMILY_RULES: readonly TopicRule[] = [
   // existing topic ids, asserting no method.
   { family: "Hamiltonian simulation · model systems", topics: ["algorithm-reference", "materials"] },
   { family: "Optimization · Ising encoding", topics: ["algorithm-reference", "optimization"] },
+  // Zoo-parity intake, second pass (W22). Two more families over existing topic ids,
+  // for the two subject areas that account for most of the Zoo entries this catalog
+  // still had no record of. Neither could reuse a family already here without saying
+  // something false about the record.
+  //
+  // `Computational number theory` covers the Zoo's largest gap by far — 11 of the 21
+  // uncovered entries sit in "Algebraic and Number Theoretic Algorithms". The obvious
+  // existing family, `Hidden-period / factoring`, carries the topic `cryptography`,
+  // which is right for Shor and wrong for the zeta function of a curve; the machinery
+  // these papers share is period finding and Fourier sampling, so `phase-estimation`
+  // is the facet that is actually true of all of them.
+  //
+  // `PromiseBQP-complete problem` is a family the corpus genuinely lacked a shape for.
+  // These records are not "here is a faster way to do X" — they are "this innocuous
+  // matrix or combinatorial question is exactly as hard as quantum computation itself",
+  // and the algorithm inside them is phase estimation applied to a spectral quantity.
+  // Filing them under a method family would state the method as the subject.
+  { family: "Computational number theory", topics: ["algorithm-reference", "phase-estimation"] },
+  { family: "PromiseBQP-complete problem", topics: ["algorithm-reference", "phase-estimation"] },
+  // Two more from the same pass. `Lattice problems` is filed under `cryptography`
+  // rather than `phase-estimation` because that is what the papers are for and what
+  // their own limitations sections argue about — Chen, Liu and Zhandry spend their
+  // future-work section explaining that their result does *not* affect deployed
+  // lattice cryptosystems, which is only a thing worth saying about a cryptography
+  // record. `Diagonalization · double-bracket flow` could not reuse
+  // `Eigenvalue estimation`: that family carries `phase-estimation`, and the paper
+  // is explicitly an alternative to phase estimation, so the facet would have
+  // contradicted the record.
+  { family: "Lattice problems", topics: ["algorithm-reference", "cryptography"] },
+  { family: "Diagonalization · double-bracket flow", topics: ["algorithm-reference", "variational"] },
+  // Robot inverse kinematics by a variational hybrid loop: the quantum circuit
+  // computes forward kinematics from parameterised rotations, a classical
+  // optimiser closes the loop. `variational` because the parameters are the joint
+  // angles a classical optimiser tunes, `optimization` because minimising the
+  // distance to a target end-effector position is the whole problem. Not `qaoa` —
+  // the paper explicitly says only that its method is "based on variational
+  // optimization methods similar to" VQE and QAOA, and there is no cost
+  // Hamiltonian and no mixer anywhere in it.
+  { family: "Optimization · variational kinematics", topics: ["algorithm-reference", "variational", "optimization"] },
 ];
 
 /**
@@ -532,8 +571,8 @@ const REFINEMENT_RULES: readonly TopicRule[] = [
  * Per-slug corrections, for records the rules read correctly and still land
  * somewhere a domain expert would not. Corrections REPLACE the derived set.
  *
- * **Empty, and that is a measurement rather than an omission.** Every one of the
- * 283 published entries is classified by the tables above; none needed a hand
+ * **Empty, and that is a measurement rather than an omission.** Every published
+ * entry is classified by the tables above; none needed a hand
  * correction. `deriveVerificationMethods` needed sixteen, which is the honest
  * comparison — that classifier reads free prose, and this one reads fields that
  * were written as labels.

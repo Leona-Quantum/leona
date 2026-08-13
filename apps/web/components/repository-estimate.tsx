@@ -13,7 +13,8 @@
 // and both runtime terms are shown next to the one that actually binds.
 //
 // The refusals get the same care as the numbers. Two of the four bases carry no
-// cost at all, and 163 of the 283 published entries land on one of them.
+// cost at all, and most published entries land on one of them (163 of the
+// then-283, measured 2026-07).
 import type { ReactNode } from "react";
 import type { PublicLocale } from "../lib/public-locale";
 import type { RepositoryEstimate } from "../lib/repository/estimate";

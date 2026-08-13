@@ -5,7 +5,7 @@
 // directory's standing rule: a test that reads the real corpus asserts today's
 // content and goes green the day the content changes for an unrelated reason.
 //
-// **The 283 records are not imported here**, for the reason
+// **The records are not imported here**, for the reason
 // `repository-interface.test.ts` and `repository-topics.test.ts` both state:
 // `public-repository.ts` reaches its entry modules with extensionless
 // specifiers and `node --test` resolves paths literally. So the split is —
@@ -1061,7 +1061,7 @@ test("validation rejects a `through` that is not a narrowing", () => {
 /**
  * Every slug the graph itself names.
  *
- * Passing this as the corpus satisfies the one rule that needs the real 283 —
+ * Passing this as the corpus satisfies the one rule that needs the real corpus —
  * "`entries` names a slug the corpus carries" — trivially, so what the
  * assertion below actually pins is every *other* rule: ids, both locales,
  * citations, edge resolution, the refines contract, and the two acyclicity
@@ -1298,7 +1298,14 @@ test("a coined composite is refused in the short form too, where it is likeliest
  */
 const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // The three the owner named by sight. Each is a corpus job, not a gate problem.
-  ["time-discretization", 5],
+  // 5 → 6 in session 130, and declared rather than absorbed: the sixth is
+  // `chebyshev-pseudospectral-collocation`, authored from arXiv:1901.00961 §2 so
+  // that `childs-liu-spectral` had something sourced to pin its first hop to.
+  // It is hollow for the same reason the five beside it are — what a
+  // discretization produces is a system of rows, and assembling rows is not a
+  // capability this graph decomposes — so this is a region widening by one
+  // known member, not a new kind of gap.
+  ["time-discretization", 6],
   ["nonlinear-linear-embedding", 4],
   ["hamiltonian-recasting", 2],
   // Four phase-factor routines that differ in their numerics and in nothing this graph
@@ -1314,7 +1321,12 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // prepared state and nothing else. What separates it from its siblings is WHICH quantity
   // it checks and what it does with a violation, and neither is a step this graph draws.
   ["error-mitigation", 4],
-  ["quantum-linear-solve", 2],
+  // The `quantum-linear-solve` row is gone: 2 → 0. `discrete-adiabatic-inversion` and
+  // `eigenstate-filtering-inversion` were the pair, and they are now pinned to the two
+  // methods that realise `matrix-function` — the box the owner named in ai-ops#51 as
+  // where the difference actually lives. Each pin is the record's own summary: one
+  // applies its filter "as a linear combination of walk operators rather than by quantum
+  // signal processing", the other "through quantum signal processing".
   // 2 since session 129 authored `berry-multistep`. It and `krovi-linear-ode` draw the same
   // "discretize → solve", and the shared picture is the finding rather than the defect: neither
   // hop can be pinned, for OPPOSITE reasons. Krovi's paper chooses no discretization — it
@@ -1356,7 +1368,14 @@ const HOLLOW_BY_SLOT: ReadonlyMap<string, number> = new Map([
   // group as soon as `vqe-variance-objective` has a node to pin `via`, and this number
   // becomes 5 — at which point this test fails until someone edits it, which is the
   // census working rather than breaking.
-  ["excited-state-energy", 6],
+  // **5, and the census called this shot.** The note above ends "leaves the first group
+  // as soon as `vqe-variance-objective` has a node to pin `via`, and this number becomes
+  // 5 — at which point this test fails until someone edits it, which is the census
+  // working rather than breaking." That is exactly what happened: the node existed, the
+  // pin was written and sourced to Cadi Tazi and Thom's own words, and the only thing
+  // holding it was a size argument measured against a figure seven times the size of the
+  // one that exists now. The pin costs this figure 0.76px.
+  ["excited-state-energy", 5],
   // 2 since B5 unit 3, and this slot is new to the census rather than newly rotten:
   // `variance-objective` joins `cvar-objective` as a second objective filling the slot in
   // one hop, with no second hop to separate them. What separates them is the objective

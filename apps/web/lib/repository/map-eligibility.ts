@@ -264,6 +264,35 @@ export interface AnchorAudit {
  * residue records below its own paper and this check fails until the slug is
  * removed from the list. That is the failure that stops a stale allowance from
  * quietly re-permitting a share nobody re-examined.
+ *
+ * ## What this list covers, which is narrower than it reads
+ *
+ * `auditAnchors` builds `sharedSources` from **`unanchored`**, and `unanchored`
+ * is already filtered to map-eligible records. So this list sees a share only
+ * while every record in it is an `algorithm-reference` that no node anchors.
+ * Anchor one and the group leaves the check; author a share among `operator`,
+ * `state`, `gate-primitive` or `benchmark-circuit` records and it was never in
+ * it. Measured 2026-08-13 over the 346 published records: **10 registered papers
+ * are already the source of more than one record**, and the two largest —
+ * arXiv:1710.07629 behind 50 operator records and arXiv:2204.13719 behind 120
+ * benchmark records — are invisible here by role. The sentence above ("a share
+ * is legal only when it is written down here") is the rule for the slice this
+ * runs on, not for the corpus, and it used to read as though it were both.
+ *
+ * ## ai-ops#51 changed what a share MEANS, and this list survives it
+ *
+ * The failure it was built for is a **factory default** — `vqeEntry`'s
+ * `concept.source ?? VQE_SURVEY` manufacturing 25 citations nobody chose. That
+ * failure is unaffected by #51 and this check is still the only thing that sees
+ * it. What #51 changes is the remedy: *"a whole paper doesn't need to be
+ * dedicated to a specific thing for it to exist"*, so two records genuinely
+ * extracted from one paper are now the **expected** shape rather than a
+ * suspicious one, and "give each record its own primary paper" is no longer the
+ * default fix. Declaring the share with its reason is. The two entries below
+ * that already say exactly that — Lee et al. introducing generalized UCC *and*
+ * its k-UpCCGSD truncation, Shor 1995 carrying two algorithms in its own title —
+ * were the exceptions when they were written and are the ordinary case now.
+ * See ADR-0026.
  */
 export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>> = {
   // Peruzzo et al. 2013 is the paper that introduced VQE. Both records are about
@@ -307,6 +336,38 @@ export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>
   // this same paper for both. Two records sharing it is the literature's own
   // shape, not a default filling in for a search nobody ran.
   "https://arxiv.org/abs/quant-ph/9508027": ["discrete-logarithm", "shor-period-finding"],
+  // Zoo-parity intake, W22. Two more of the literature's own shape, and the same
+  // shape as the Shor row above: one paper, two problems, and the Quantum
+  // Algorithm Zoo files each pair as two entries citing that one paper for both.
+  //
+  // Hallgren's J. ACM paper names both problems in its own title — "Pell's
+  // Equation **and** the Principal Ideal Problem" — and proves them as separate
+  // theorems (Theorem 2 for the regulator, Theorem 3 for the principal ideal
+  // problem) with different guarantees: Theorem 3 additionally needs the regulator
+  // to exceed an absolute constant and succeeds only with probability Ω(1/log Δ)
+  // per trial. Two records rather than one because those are two different claims.
+  "https://doi.org/10.1145/1206035.1206039": ["pell-equation-regulator", "principal-ideal-problem"],
+  // The STOC 2005 paper likewise does the unit group and the class group in one
+  // document, and splitting them is not bookkeeping: the unit-group theorem is
+  // unconditional and the class-group theorem assumes the GRH. A single record
+  // would have to state one condition for both and would be wrong about one of them.
+  "https://doi.org/10.1145/1060590.1060660": ["class-group-of-a-number-field", "unit-group-of-a-number-field"],
+  // Farhi, Goldstone and Gutmann 2014 is one paper doing two things, and this
+  // repository holds a record for each of them. It introduces QAOA as a general
+  // method for combinatorial optimization — `qaoa-combinatorial-optimization`,
+  // written for the owner's ai-ops#42 ruling — and it then works exactly one
+  // problem, MaxCut on regular graphs, which is what `qaoa-maxcut-ring`
+  // demonstrates at p = 1 on a five-node ring with a recorded TVD run. Neither
+  // record could be given a different primary paper without citing a document
+  // that does not contain its subject, so the share is the literature's own
+  // shape rather than a default filling in.
+  //
+  // The pairing is also load-bearing in the other direction. Thirteen Classiq
+  // demonstrations are declared against the general record in
+  // ./classiq-coverage.ts precisely *because* Farhi formulates MaxCut and none of
+  // their thirteen problems, so the one problem this paper does formulate needs
+  // to stay visibly attached to the record that demonstrates it.
+  "https://arxiv.org/abs/1411.4028": ["qaoa-combinatorial-optimization", "qaoa-maxcut-ring"],
 };
 
 /**

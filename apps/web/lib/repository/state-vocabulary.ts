@@ -24,7 +24,7 @@
 // parameter of that process and belongs in its contract prose.
 //
 // Authored in TS beside the graph for the reason D89.3 gives: it reaches a
-// visitor on the merge, and it stays outside the 283-record pin, the manifest
+// visitor on the merge, and it stays outside the record pin, the manifest
 // freshness check and the width-family gate.
 import type { StateVocabulary } from "./states.ts";
 

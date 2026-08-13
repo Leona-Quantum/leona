@@ -32,13 +32,18 @@ import {
   legendMark,
   loopAllowance,
   ownStepName,
+  openableAddresses as saturatedOpen,
   spokenName,
   type ConvergeDiagram,
   type ConvergeLane,
 } from "./repository/converge-layout.ts";
 import type { LayerGraph } from "./repository/layers.ts";
 import { PATH_LIMITS, expansionOf, methodFanOf } from "./repository/state-graph.ts";
-import { estimateTextWidth } from "./repository/process-layout.ts";
+import {
+  estimateTextWidth,
+  NAME_ASCENT_RATIO,
+  NAME_DESCENT_RATIO,
+} from "./repository/process-layout.ts";
 import { levelShares, ribbonY } from "./repository/strand-geometry.ts";
 import {
   isCapability,
@@ -702,15 +707,14 @@ test("two lane labels never overlap", () => {
       // no name to collide, and its box would be a point that could sit inside
       // a real name's box and report a collision no reader can see. Same rule
       // as `no two names overlap on an opened figure either`.
+      // `nameBox`, not a fourth inlined copy of it. This test carried its own
+      // `[labelY − laneFont, labelY]`, the opened twin carried
+      // `[labelY − laneFont·0.8, labelY]`, and the click-target test a third
+      // shape again — three boxes for one piece of text, and the two that
+      // mattered were both short by a descender. See `nameBox`.
       const boxes = diagram.lanes
         .filter((lane) => lane.label !== "")
-        .map((lane) => ({
-          key: lane.key,
-          x0: lane.labelX - estimateTextWidth(lane.label, M.laneFont) / 2,
-          x1: lane.labelX + estimateTextWidth(lane.label, M.laneFont) / 2,
-          y0: lane.labelY - M.laneFont,
-          y1: lane.labelY,
-        }));
+        .map((lane) => ({ key: lane.key, ...nameInkBox(lane) }));
       for (let i = 0; i < boxes.length; i += 1) {
         for (let j = i + 1; j < boxes.length; j += 1) {
           const a = boxes[i]!;
@@ -1404,36 +1408,20 @@ test("a narrowing with no plain sibling still draws, named after its filler", ()
  * that count things. The id path keeps its own test.
  */
 /** Every address `id`'s figure can open, to saturation. `graph` so a fixture
- *  graph can be saturated too — the cap's own test needs that. */
+ *  graph can be saturated too — the cap's own test needs that.
+ *
+ *  A thin wrapper now, and that is the point (ai-ops#22). This walk lived here
+ *  as the cap's measuring stick until the map grew an **open everything**
+ *  control that has to emit the same set; a second copy would mean the cap is
+ *  asserted against one set while the overlay mints another, and the day they
+ *  drift is the day the control emits an address the page drops on arrival.
+ *  `lanesSeeNoFurther` below is the independent check that the shared function
+ *  really does saturate — the one claim that a delegating wrapper cannot make
+ *  about itself. */
 function openableAddresses(id: string, graph: LayerGraph = LAYER_GRAPH): string[] {
-  const seen = new Set<string>();
-  const walk = (open: ReadonlySet<string>) => {
-    const node = layerNode(graph, id);
-    assert.ok(node && isCapability(node));
-    const diagram = layoutConverge({
-      graph,
-      vocabulary: STATE_VOCABULARY,
-      focus: node,
-      locale: "en",
-      open,
-    });
-    let grew = false;
-    // Lanes, and lanes are all there are. It walked `diagram.feeds` alongside
-    // them while an ingredient's control lived on a stub of its own; issue 16
-    // took ingredients off this canvas, so the second list is gone rather than
-    // empty. If a second kind of openable shape is ever added, it belongs here
-    // — with lanes alone this walk once excluded a whole feature and left every
-    // opened-state check in this file green over a set that could not reach it.
-    for (const openable of diagram.lanes) {
-      if (openable.openHref === null) continue;
-      if (seen.has(openable.address)) continue;
-      seen.add(openable.address);
-      grew = true;
-    }
-    if (grew) walk(new Set(seen));
-  };
-  walk(new Set());
-  return [...seen];
+  const node = layerNode(graph, id);
+  assert.ok(node && isCapability(node));
+  return [...saturatedOpen({ graph, vocabulary: STATE_VOCABULARY, focus: node, locale: "en" })];
 }
 
 function openDiagram(id: string, open: Iterable<string>, locale: PublicLocale = "en"): ConvergeDiagram {
@@ -1546,6 +1534,140 @@ test("the cap is above what a reader can reach by clicking", () => {
   // with one of the cap's places gone before any of their own ids are counted.
   const reserved = resolveOpenIds(overview, (id) => layerNode(LAYER_GRAPH, id) !== null, 1);
   assert.equal(reserved.dropped, 0, "a method's page reserves one slot, and the overview no longer fits beside it");
+});
+
+// --- fully open, fully closed (ai-ops#22) ------------------------------------
+//
+// > *"it would be nice to have a fully open / fully close option somewhere on
+// > the map."* — owner
+//
+// The map's overlay control emits `openableAddresses` verbatim. Three things
+// have to be true of that set for the control to be honest, and none of them
+// follows from the walk terminating:
+//
+//   1. it **saturates** — laying the figure out under it leaves no further
+//      control unbanked, so "fully open" is fully open and not one rung of it;
+//   2. it **lands on the collapse state** — `collapsedCount` goes to 0, which
+//      is the number the button's own two states are read from and the number
+//      the clipped reading and the information box already speak from;
+//   3. it is **empty exactly where the control must not render**, because a
+//      control that opens nothing is the dead control R12.2 refuses, and since
+//      issue 16 that is not a corner case — it is most of the figures.
+//
+// Each is asserted with the census printed beside it, so a run that goes green
+// over an empty sweep says so on the record instead of in a passing assertion.
+
+test("`openableAddresses` saturates: opening everything leaves nothing to open", () => {
+  const figures = drawableSlots(LAYER_GRAPH, STATE_VOCABULARY);
+  let banked = 0;
+  let withInterior = 0;
+  for (const slot of figures) {
+    const addresses = new Set(openableAddresses(slot.id));
+    banked += addresses.size;
+    if (addresses.size > 0) withInterior += 1;
+    const node = layerNode(LAYER_GRAPH, slot.id);
+    assert.ok(node && isCapability(node));
+    const opened = layoutConverge({
+      graph: LAYER_GRAPH,
+      vocabulary: STATE_VOCABULARY,
+      focus: node,
+      locale: "en",
+      open: addresses,
+    });
+
+    // (1) The fixed point, checked from the other side. Every control the
+    // opened drawing still shows is either one of the banked addresses or a
+    // W15 jump — which is a link to where the interior IS drawn, not an open
+    // control, and putting its address in `?open=` opens nothing because
+    // `openable` is false on it.
+    for (const lane of opened.lanes) {
+      if (lane.openHref === null || lane.sharedWith !== null) continue;
+      assert.ok(
+        addresses.has(lane.address),
+        `${slot.id}: ${lane.address} still offers a control the saturation walk never banked`,
+      );
+    }
+
+    // (2) The state the button reads. `collapsedCount` is shut-and-openable by
+    // construction, so 0 is exactly *"everything on this figure that opens is
+    // open"* — the sentence the copy has claimed since before there was a
+    // control that could produce it.
+    assert.equal(
+      opened.collapsedCount,
+      0,
+      `${slot.id}: ${opened.collapsedCount} lines still shut after opening everything`,
+    );
+  }
+  console.log(
+    `open everything: ${banked} addresses over ${figures.length} figures; `
+      + `${withInterior} have an interior, ${figures.length - withInterior} open nothing at all`,
+  );
+
+  // Not vacuous, and deliberately two claims rather than one sum. A walk that
+  // went quiet on every figure would satisfy (1) and (2) on all 23 of them.
+  assert.ok(banked >= 20, `the whole corpus banked only ${banked} addresses`);
+  assert.ok(withInterior >= 4, `only ${withInterior} figures have anything to open`);
+});
+
+test("the figures that open nothing offer no control to open them", () => {
+  // (3) The control's absence. Where `openableAddresses` is empty the shut
+  // drawing must show no open control either — otherwise "there is nothing to
+  // expand" and "here is a thing to click" are on screen together.
+  //
+  // **This is where issue 16 landed, and it is worth having the number.**
+  // `methodHasInterior` is `segments.length >= 2` since ingredients came off
+  // the canvas; twelve one-segment methods that used to open into their
+  // ingredients now hold nothing this canvas can draw, and the figures whose
+  // methods are all one-segment therefore hold nothing at all.
+  const barren: string[] = [];
+  for (const slot of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    if (openableAddresses(slot.id).length > 0) continue;
+    barren.push(slot.id);
+    const shut = openDiagram(slot.id, []);
+    const controls = shut.lanes.filter((lane) => lane.openHref !== null);
+    assert.equal(
+      controls.length,
+      0,
+      `${slot.id} opens nothing, yet draws ${controls.length} open controls`,
+    );
+    assert.equal(shut.collapsedCount, 0, `${slot.id} opens nothing, yet reports lines to open`);
+  }
+  console.log(`figures with no expandable interior at all: ${barren.length} — ${barren.join(", ")}`);
+  assert.ok(barren.length > 0, "no figure is barren — the ingredient ruling would have to have been reverted");
+});
+
+test("open everything means the same thing in both locales", () => {
+  // The overlay's label is translated; its href must not be. A set that
+  // differed by locale would mean a Japanese reader's "open everything" opened
+  // a different figure from an English reader's, and the two would be sharing
+  // links that do not reproduce.
+  for (const slot of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const node = layerNode(LAYER_GRAPH, slot.id);
+    assert.ok(node && isCapability(node));
+    const en = saturatedOpen({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "en" });
+    const ja = saturatedOpen({ graph: LAYER_GRAPH, vocabulary: STATE_VOCABULARY, focus: node, locale: "ja" });
+    assert.deepEqual([...en].sort(), [...ja].sort(), `${slot.id} opens a different set in ja`);
+  }
+});
+
+test("the overview's open-everything set is one query the cap and a proxy both take", () => {
+  // What the control actually puts in the address bar on the four-root
+  // overview, measured rather than assumed. Two ceilings sit above it and the
+  // second is not in this codebase: `CONVERGE_OPEN_MAX`, and the ~8KB request
+  // line common proxies default to — see the comment on the constant, which
+  // says past 256 the answer is a different address scheme rather than another
+  // power of two. Before this control the saturated URL was something a reader
+  // could only reach by clicking sixty-nine times; now it is one click, so the
+  // number belongs on the record.
+  const overview = overviewAddresses();
+  const query = new URLSearchParams();
+  for (const address of [...overview].sort()) query.append("open", address);
+  const href = `/repository/layers?${query.toString()}`;
+  console.log(`open everything, four-root overview: ${overview.length} addresses, ${href.length} bytes of URL`);
+
+  const resolved = resolveOpenIds(overview, (id) => layerNode(LAYER_GRAPH, id) !== null);
+  assert.equal(resolved.dropped, 0, `the control emits ${resolved.dropped} addresses the page would drop`);
+  assert.ok(href.length < 4_000, `the overview's open-everything URL is ${href.length} bytes`);
 });
 
 test("`?open=` is parsed the same way wherever it is read", () => {
@@ -1707,9 +1829,17 @@ test("a line that opens into something says so, and a line that does not is not 
   // top-level route on `linear-ode-solve`, and unlike `layerwise-training` it
   // DOES open — the two hops it delegates are named route segments, not
   // ingredients, so the canvas still has something to expand.
-  assert.equal(openable + leaves + 1, 90, "the twenty-three figures draw 90 lines between them");
-  assert.equal(openable, 28, "28 of them open into something the canvas draws");
-  assert.equal(leaves, 61, "61 are leaves — the canvas records nothing finer for them");
+  //
+  // Two more in session 130, and they land on opposite sides, which is why the
+  // total moves by 2 while neither sub-count moves by 2. `childs-liu-spectral`
+  // is an eighth top-level route on `linear-ode-solve` and OPENS, for Berry's
+  // reason: both of its hops are named route segments. The
+  // `chebyshev-pseudospectral-collocation` it pins is a LEAF — atomic, like
+  // every other member of `time-discretization` except the two propagator
+  // series. `openable` 28 → 29, `leaves` 61 → 62.
+  assert.equal(openable + leaves + 1, 92, "the twenty-three figures draw 92 lines between them");
+  assert.equal(openable, 29, "29 of them open into something the canvas draws");
+  assert.equal(leaves, 62, "62 are leaves — the canvas records nothing finer for them");
 
 });
 
@@ -3028,8 +3158,27 @@ test("the count reaches a reader who is not looking at the picture", () => {
  * The box a lane's name occupies, in the units the canvas draws in.
  *
  * `text-anchor="middle"` at `(labelX, labelY)`, so it is centred in x and sits on
- * its baseline in y. The 0.8 is the same ascent fraction `place` uses to lift a
- * name clear of the strand below it — one number, one place it came from.
+ * its baseline in y.
+ *
+ * ## Why this box grew, and what it caught
+ *
+ * It was `[labelY − laneFont·0.8, labelY]` — 9.6px tall, ending at the baseline.
+ * The sibling invariant two hundred lines up used `[labelY − laneFont, labelY]`,
+ * 12px, also ending at the baseline. **Neither is a name.** Measured with
+ * `getBBox()` against the shipped face, a 12px name draws 15.2px of ink and
+ * about a fifth of it is below the baseline, which is the half of a name that
+ * hangs into whatever is under it — see `NAME_INK_RATIO`.
+ *
+ * Three pixels of unmodelled descender is not a rounding error here. Sweeping
+ * all 46 figure-locales shut and saturated under this box against the old one:
+ * **11 pairs of names overlap on the shipped canvas by 2.4px each**, and every
+ * invariant in this file reported zero, because all of them were asking about a
+ * box that stops where the descenders start. That is also what blocked issue
+ * 22's remaining vertical cut — a cut that passed all 88 invariants and then put
+ * *"QSVT matrix inversion"* 2.2px into *"HHL"* on the real page.
+ *
+ * So this is one box, read by every text invariant here, derived from the one
+ * number that was measured on a browser rather than assumed at a desk.
  */
 function nameBox(lane: ConvergeLane): { x0: number; x1: number; y0: number; y1: number } {
   const w = estimateTextWidth(lane.label, M.laneFont);
@@ -3038,6 +3187,55 @@ function nameBox(lane: ConvergeLane): { x0: number; x1: number; y0: number; y1: 
     x1: lane.labelX + w / 2,
     y0: lane.labelY - M.laneFont * 0.8,
     y1: lane.labelY,
+  };
+}
+
+/**
+ * The same name, as much **ink** as it actually draws — and the box every
+ * name-against-name invariant here now uses.
+ *
+ * ## Why this is a second box and not a correction of the one above
+ *
+ * `nameBox` is the subject of one question: *does a drawn line pass through this
+ * name?* Its reader, `laneEnters`, samples the neighbour's spine and inflates it
+ * by that lane's **maximum** half-thickness along the whole curve, including the
+ * tendon where the lane is pinched to a point — a deliberate over-estimate, and
+ * its own comment says so: it "can call a near miss a hit but never the other way
+ * round".
+ *
+ * This box is the subject of a different question: *do two names overlap?* There
+ * is no conservatism budget in that one. Two names either share pixels or they
+ * do not, and the answer has to be the ink.
+ *
+ * ## The measurement, and why the two boxes are not merged
+ *
+ * A 12px name draws **15.2px** of ink, about a fifth of it below the baseline —
+ * `getBBox()` against the shipped face, recorded on `NamePlate`; see
+ * `NAME_INK_RATIO`. Both name-against-name invariants here modelled a box that
+ * stopped at the baseline (one at `laneFont`, one at `laneFont · 0.8`), so both
+ * were blind to the descender. Swept over all 46 figure-locales, shut and
+ * saturated, that blindness was **11 pairs of names overlapping on the shipped
+ * canvas by 2.4px each**, every invariant green. It is also what blocked issue
+ * 22's remaining vertical cut, which passed all 88 invariants and then put
+ * *"QSVT matrix inversion"* 2.2px into *"HHL"* on the real page.
+ *
+ * Feeding this taller box to `laneEnters` as well was tried and **is not what
+ * shipped**, because it cannot tell what it found: it flags exactly two shut
+ * names, *"Warped phase transformation"* on `hamiltonian-recasting` and *"Exact
+ * layout synthesis"* on `qubit-routing`, and in both the neighbour's real stroke
+ * is 7.6px clear of the descender — the whole reported crossing is inside the
+ * 9px uniform inflation, at the taper, where the lane is drawn as a point. Making
+ * that detector agree would have meant shrinking its padding, which is loosening
+ * a guard to fit a measurement it was never making. The two boxes answer two
+ * questions and stay two boxes.
+ */
+function nameInkBox(lane: ConvergeLane): { x0: number; x1: number; y0: number; y1: number } {
+  const w = estimateTextWidth(lane.label, M.laneFont);
+  return {
+    x0: lane.labelX - w / 2,
+    x1: lane.labelX + w / 2,
+    y0: lane.labelY - M.laneFont * NAME_ASCENT_RATIO,
+    y1: lane.labelY + M.laneFont * NAME_DESCENT_RATIO,
   };
 }
 
@@ -3084,6 +3282,7 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   let openedHit = 0;
   let shutNamed = 0;
   let shutHit = 0;
+  const shutWhere: string[] = [];
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     const open = new Set(openableAddresses(focus.id));
     const diagram = openDiagram(focus.id, open);
@@ -3106,13 +3305,21 @@ test("an opened line draws its name, and the name is not worse placed than a shu
           up = byKey.get(up)?.parentKey ?? null;
         }
       }
-      const hit = diagram.lanes.some((other) => !skip.has(other.key) && laneEnters(other, box));
+      const crossing = diagram.lanes.find((other) => !skip.has(other.key) && laneEnters(other, box));
+      const hit = crossing !== undefined;
       if (lane.open) {
         openedNamed += 1;
         if (hit) openedHit += 1;
       } else {
         shutNamed += 1;
-        if (hit) shutHit += 1;
+        if (hit) {
+          shutHit += 1;
+          // **Named, not counted.** The bar below is 0, so a failure is one or
+          // two cases and the reader's next question is always which. This test
+          // reported `2/243` for a whole session with no way to find the pair
+          // short of re-instrumenting it.
+          shutWhere.push(`${diagram.caption}: "${lane.label}" crossed by "${crossing.label || crossing.key}"`);
+        }
       }
     }
   }
@@ -3198,7 +3405,7 @@ test("an opened line draws its name, and the name is not worse placed than a shu
     0,
     `${shutHit}/${shutNamed} shut names have a line through them. This was 34 before the ` +
       `tendons and 0 after: a belly is level and its neighbours' bellies are level too, so a ` +
-      `name is only crossed if something moved it off its own belly`,
+      `name is only crossed if something moved it off its own belly. Where: ${shutWhere.join("; ")}`,
   );
   assert.equal(
     openedHit,
@@ -3408,8 +3615,8 @@ test("no two names overlap on an opened figure either", () => {
         else shutNames += 1;
       for (let i = 0; i < drawn.length; i += 1) {
         for (let j = i + 1; j < drawn.length; j += 1) {
-          const a = nameBox(drawn[i]!);
-          const b = nameBox(drawn[j]!);
+          const a = nameInkBox(drawn[i]!);
+          const b = nameInkBox(drawn[j]!);
           if (!(a.x0 < b.x1 - EPS && b.x0 < a.x1 - EPS && a.y0 < b.y1 - EPS && b.y0 < a.y1 - EPS))
             continue;
           const openCount = Number(drawn[i]!.open) + Number(drawn[j]!.open);
@@ -4433,6 +4640,27 @@ test("a route that pins its step draws the algorithm's name there, not the slot'
  * pictures are one, and it is checked structurally below.
  */
 const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why: string }> = [
+  {
+    slot: "quantum-linear-solve",
+    methods: ["qsvt-matrix-inversion", "eigenstate-filtering-inversion"],
+    why:
+      "**Made by pinning, and kept rather than un-pinned, because the pins are true.** Both records "
+      + "name their construction outright — one says \"apply the quantum singular value transformation "
+      + "with an odd polynomial approximating a scaled $1/x$ away from the origin\", the other applies "
+      + "its filter \"through quantum signal processing\" — and of the two methods realising "
+      + "`matrix-function` only `qsvt-transform` carries a phase sequence. So both hops honestly read "
+      + "QSVT, and drawing the same name twice is the correct drawing. Before the pins these two drew "
+      + "the slot's name and looked identical for a worse reason: the map could not say what filled the "
+      + "hop at all. This row is a smaller gap than the one it replaces. What still separates the two "
+      + "and the map cannot say is WHICH POLYNOMIAL goes through the transform — a scaled $1/x$ against "
+      + "a minimax filter that is 1 at a target eigenvalue and uniformly small outside a spectral gap — "
+      + "and that is a specification on a hop, not a method filling it. It is the same missing mechanism "
+      + "the three remaining `excited-state-energy` routes are waiting on, and the owner has named the "
+      + "shape of it in ai-ops#51: *\"we can put specifications in the labels rather than another item on "
+      + "the map\"*. `via` names a method and `through` names a state; neither can carry \"with an odd "
+      + "polynomial approximating $1/x$\". Both records already state their polynomial, so this row's "
+      + "exit is a field to write it into, not a source to go and find.",
+  },
   // The `time-discretization` row — `backward-euler` with `trapezoidal-rule` —
   // was deleted in session 118. Both drew one interior only because both hung the
   // same `quantum-linear-solve` stub, and that step is gone by the owner's
@@ -4453,14 +4681,23 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
   {
     slot: "excited-state-energy",
     methods: [
+      // **Four, not five: `folded-spectrum-excited-state` has left.** It is pinned to
+      // `variance-objective` and `measurement-grouped-readout` on Cadi Tazi and Thom's own
+      // words — the method "minimizes the energy variance" and "employ[s] a Pauli grouping
+      // procedure" — so its middle and last hops now wear those names instead of the slots'.
+      // The pins were written in B5 unit 3 and held on a size argument that had gone stale by
+      // three orders of magnitude; see the `KNOWN_TWINS` row in `scripts/check-layer-graph.mjs`
+      // for the measurement. The remaining four are the ones with nowhere honest to point:
+      // their objectives have no node, and authoring one each would draw the same papers a
+      // second time. The owner's ai-ops#51 answer names the fix — a specification in the
+      // label, "something like 'penalty objective'" — and that field does not exist yet.
       "deflation-excited-state",
       "subspace-search-excited-state",
-      "folded-spectrum-excited-state",
       "penalty-excited-state",
       "contracted-excited-state",
     ],
     why:
-      "Five ways to a state above the ground state that each choose an ansatz, optimise it and " +
+      "Four ways to a state above the ground state that each choose an ansatz, optimise it and " +
       "estimate an observable — VQE's three hops, reused deliberately rather than by accident. What " +
       "separates them is the OBJECTIVE handed to the optimiser: a weighted sum over orthogonal " +
       "inputs, the variance around a target energy, the energy plus a symmetry penalty, and a " +
@@ -4472,20 +4709,13 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
       "16 put ingredients on the card, so the difference is no longer drawn and the exclusion has " +
       "no basis. It is a line in deflation's Requires section instead.",
   },
-  {
-    slot: "quantum-linear-solve",
-    methods: [
-      "qsvt-matrix-inversion",
-      "discrete-adiabatic-inversion",
-      "eigenstate-filtering-inversion",
-    ],
-    why:
-      "All three walk block-encode → matrix function → their own closing work. The difference is " +
-      "which function and how its phases are found, which lives inside `matrix-function` — a pin " +
-      "waiting on that slot being decomposed. **Three members and not two since issue 16**: what " +
-      "told `qsvt-matrix-inversion` apart was an ingredient, `success-amplification`, which the " +
-      "other two do not consume and which the canvas no longer draws.",
-  },
+  // The three-member `quantum-linear-solve` row that stood here is gone, and its own
+  // text said what would replace it: "a pin waiting on that slot being decomposed".
+  // `discrete-adiabatic-inversion` has left outright — it applies its filter "as a
+  // linear combination of walk operators rather than by quantum signal processing", so
+  // its hop wears `lcu-chebyshev-transform` and the other two wear `qsvt-transform`.
+  // The two that still draw one interior are the row at the top of this table, and the
+  // reason they do is now a different and smaller one.
   {
     slot: "hamiltonian-simulation",
     methods: ["lcu-taylor-simulation", "qubitization-simulation"],
@@ -5299,9 +5529,10 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
 
   const ode = diagramFor("linear-ode-solve");
   // 5 → 6 in session 129: `berry-multistep` is a sixth top-level route on this
-  // slot. The folded pair is unchanged — Krovi and the improved kernel — so the
+  // slot. 6 → 7 in session 130: `childs-liu-spectral` is a seventh. The folded
+  // pair is unchanged both times — Krovi and the improved kernel — so the
   // sentence the legend prints still adds up against `methodsRealizing`.
-  assert.equal(ode.drawnMethodCount, 6);
+  assert.equal(ode.drawnMethodCount, 7);
   assert.equal(ode.foldedCount, 2);
   assert.equal(
     ode.drawnMethodCount + ode.foldedCount,
@@ -5317,9 +5548,9 @@ test("the legend's two numbers count drawn variants and the unfolded subject", (
     method: node,
     locale: "en",
   });
-  // 6 → 7 with `berry-multistep`: Krovi's own page unfolds Krovi and draws the
-  // slot's other six tops beside it, one of which is now Berry.
-  assert.equal(page.drawnMethodCount, 7, "the unfolded subject counts as drawn on its own page");
+  // 6 → 7 with `berry-multistep`, 7 → 8 with `childs-liu-spectral`: Krovi's own
+  // page unfolds Krovi and draws the slot's other seven tops beside it.
+  assert.equal(page.drawnMethodCount, 8, "the unfolded subject counts as drawn on its own page");
   assert.equal(page.foldedCount, 1, "the OTHER fold stays folded there");
   assert.equal(
     page.drawnMethodCount + page.foldedCount,

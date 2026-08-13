@@ -1593,6 +1593,137 @@ const CLASSIQ_ALGORITHMS: ClassiqAlgorithm[] = [
     ],
     relatedSlugs: ["quantum-walk-line", "welded-tree-traversal", "element-distinctness", "gibbs-state-sampling"],
   },
+  // The one record in this file written from a full-text read of a PDF rather
+  // than from an arXiv abstract, because the owner supplied the PDF himself on
+  // ai-ops#42 after an earlier session could not reach the paper. Everything
+  // below comes from that document, Sci Rep 15, 28508 (2025), and the numbers are
+  // the paper's own prose figures rather than its tables — see the caveat for why.
+  //
+  // Note what this record is NOT: the demonstration sits under Classiq's
+  // `optimization` shelf beside thirteen QAOA demonstrations, and it is not one
+  // of them. The paper's method has no cost Hamiltonian and no mixer. It says
+  // only that it is "based on variational optimization methods similar to" VQE
+  // and QAOA, and that similarity is not a citation.
+  {
+    slug: "quantum-forward-kinematics-inverse-solve",
+    title: "Quantum computation for robot posture optimization",
+    titleJa: "ロボット姿勢最適化のための量子計算",
+    family: "Optimization · variational kinematics",
+    classiqPath: "applications/optimization/robust_posture_optimization",
+    classiqCategory: "applications",
+    classiqGroup: "optimization",
+    classiqName: "robust_posture_optimization",
+    problem:
+      "Given a target position for a robot manipulator's end effector, find joint angles that reach"
+      + " it — the inverse kinematics problem, which has no analytical solution for a general"
+      + " 6-degree-of-freedom arm and admits many joint configurations at once for a redundant one.",
+    problemJa:
+      "ロボットマニピュレータの手先に目標位置が与えられたとき、そこへ到達する関節角度を求める逆運動学の問題です。一般の6自由度アームでは解析解が存在せず、冗長なアームでは同じ手先位置を与える関節配置が複数存在します。",
+    idea:
+      "The method turns a qubit into a link. A qubit's state is a point on the Bloch sphere, so one"
+      + " qubit can carry the posture of one robot link: applying RX, RY and RZ rotation gates"
+      + " orients it, and the expectation values measured along X, Y and Z are coordinates on that"
+      + " sphere, which a classical computer multiplies by the link's length and sums to give the"
+      + " end-effector position. That is forward kinematics on a quantum circuit. Inverse kinematics"
+      + " is then a loop around it: the circuit computes the end-effector position for a set of joint"
+      + " angles, the difference from the target is evaluated classically, and COBYLA adjusts the"
+      + " angles until the difference falls below a threshold. The paper's second contribution is to"
+      + " replace independent per-qubit rotations with the two-qubit RXX, RYY and RZZ gates, which"
+      + " entangle the qubit for a parent link with the qubit for its child. The authors argue this"
+      + " represents the physical fact that rotating a parent link moves the child, and report that"
+      + " it converges in fewer iterations and to a better solution. On their two-joint"
+      + " six-degree-of-freedom model they report that after 30 iterations the total error was about"
+      + " 1.85 m without entanglement and 1.18 m with it, which they describe as a 36% reduction in"
+      + " overall positional error, and that the entangled circuit reached nearly the same accuracy"
+      + " in 10 iterations (1.17 m) as in 30 (1.21 m) — from which they infer that entanglement"
+      + " contributes most strongly to the early phase of the optimisation. Repeating the comparison"
+      + " on a 64-qubit superconducting machine, they report the total error after 30 iterations"
+      + " falling from about 1.84 m to 1.04 m, which they call a roughly 43% improvement, and note"
+      + " that hardware accuracy is below the simulation's because of noise. Because the posture of"
+      + " a link costs exactly one qubit, they state that a three-link manipulator needs three qubits"
+      + " and a sixteen-link humanoid sixteen, which they call well within present-day hardware.",
+    ideaJa:
+      "この手法は、1つの量子ビットを1本のリンクに対応させます。量子ビットの状態はBloch球面上の点であるため、1量子ビットでロボットの1リンクの姿勢を表現できます。RX・RY・RZの回転ゲートを作用させて向きを定めると、X・Y・Z方向に測定した期待値がその球面上の座標となり、古典計算機がこれにリンク長を掛けて総和をとることで手先位置が得られます。これが量子回路上での順運動学です。逆運動学はその周りのループとして構成されます。まず与えられた関節角度に対して回路が手先位置を計算し、目標との差を古典側で評価し、COBYLAが差が閾値を下回るまで角度を更新します。第二の貢献は、量子ビットごとに独立な回転ゲートを、2量子ビットに作用するRXX・RYY・RZZゲートで置き換えた点です。これにより親リンクの量子ビットと子リンクの量子ビットが量子もつれ状態になります。著者らは、これが親リンクの回転が子リンクを動かすという物理的事実を表現していると論じ、より少ない反復回数でより良い解に収束すると報告しています。1リンクの姿勢がちょうど1量子ビットで済むため、3リンクのマニピュレータには3量子ビット、16リンクのヒューマノイドには16量子ビットが必要であるとし、これは現在のハードウェアで十分に実現可能な範囲だと述べています。",
+    complexity: "",
+    complexityBasis:
+      "The full text of doi:10.1038/s41598-025-12109-0 was read for this record — the publisher PDF"
+      + " the owner supplied, not an abstract — and it states no complexity bound of any kind: no"
+      + " asymptotic scaling in the number of links or degrees of freedom, no gate or query count,"
+      + " no iteration bound, and no comparison of running time against a classical inverse-"
+      + " kinematics solver. What it reports instead are measured iteration counts and positional"
+      + " errors for one two-joint six-degree-of-freedom arm, which are quoted in this record's"
+      + " explanation and bounded by its caveat. The paper's only resource statement is a qubit"
+      + " count: one qubit per link, so three qubits for a three-link manipulator and sixteen for a"
+      + " sixteen-link humanoid. The Classiq index entry this record covers gives the directory path"
+      + " applications/optimization/robust_posture_optimization and two file names, and states no"
+      + " bound.",
+    caveat:
+      "This is a literature record. No circuit was constructed, compiled, simulated or run for it,"
+      + " no robot model was posed, and no inverse kinematics problem was solved here; the figures"
+      + " below are the paper's reports of its own experiments, attributed to it and not reproduced."
+      + " Everything is measured on a single model — one two-link arm with three rotational degrees"
+      + " of freedom at each of two joints, with a target at (0.6, 1.0, 0.2) — so nothing here"
+      + " establishes behaviour at the sixteen-link scale the paper names as feasible. The reported"
+      + " gains are comparisons against the same method without entanglement and against a SciPy"
+      + " optimisation of the same objective, not against the analytical or numerical solvers used"
+      + " in production robotics, and the paper claims no speedup: it states no running time for any"
+      + " configuration, and the improvements it does report are in accuracy and iteration count."
+      + " **Two numbers in the paper do not agree with each other, and this record does not pick"
+      + " one.** Its Results section says the error 'remains at 0.5 m after 30 iterations when no"
+      + " entanglement is used', while its Discussion gives 'approximately 1.85 m' for what reads as"
+      + " the same condition; the paper does not reconcile them. Relatedly, Tables 3 and 4 are"
+      + " captioned as sums of squared errors while the Discussion describes the same figures as"
+      + " Euclidean error in metres, so this record quotes only the prose figures and a reader who"
+      + " needs the per-axis values should open the tables in the PDF rather than trust a"
+      + " transcription of them. The authors state two limitations themselves: the method cannot be"
+      + " applied to robots with only prismatic joints, because the formulation represents rotational"
+      + " joints, and the entanglement captures only a unidirectional parent-to-child dependency"
+      + " rather than a bidirectional interaction. Finally, the demonstration's directory is named"
+      + " robust_posture_optimization, but neither the notebook's title nor the paper's uses the word"
+      + " robust, and nothing read here reports a robustness result.",
+    caveatJa:
+      "本項目は文献に基づく記録です。ここで回路の構成・コンパイル・シミュレーション・実行を行ったことはなく、ロボットモデルを設定したことも、逆運動学の問題を解いたこともありません。以下の数値は論文が自らの実験について報告したものであり、その帰属は論文にあり、本記録が再現したものではありません。すべての測定は単一のモデル、すなわち2つの関節がそれぞれ3つの回転自由度をもつ2リンクアーム1体、目標位置 (0.6, 1.0, 0.2) に対して行われており、論文が実現可能と述べる16リンク規模での挙動については何も示されていません。報告されている改善は、同じ手法でもつれを用いない場合との比較、および同じ目的関数をSciPyで最適化した場合との比較であって、実運用のロボット工学で用いられる解析的あるいは数値的なソルバとの比較ではありません。また論文は高速化を主張していません。いずれの構成についても実行時間を述べておらず、報告されている改善は精度と反復回数に関するものです。**論文中の2つの数値は互いに整合しておらず、本記録はどちらかを選ぶことはしません。** 結果の節では、もつれを用いない場合の誤差は「30回の反復の後も0.5 mのまま」とされる一方、考察の節では同じ条件と読める場合について「およそ1.85 m」とされており、論文はこの相違を説明していません。関連して、表3および表4の見出しは誤差の二乗和とされていますが、考察では同じ数値がメートル単位のユークリッド誤差として説明されています。そのため本記録は本文中の記述のみを引用しており、軸ごとの値を必要とする読者は、転記を信頼せずPDFの表を直接参照してください。著者ら自身が2つの限界を挙げています。第一に、定式化が回転関節を表現するものであるため、直動関節のみで動作するロボットには適用できません。第二に、もつれが捉えているのは親から子への一方向の依存関係のみであり、双方向の相互作用ではありません。最後に、デモのディレクトリ名は robust_posture_optimization ですが、ノートブックの表題にも論文の表題にも robust の語はなく、ここで読んだ範囲にロバスト性に関する結果の報告はありません。",
+    tags: [
+      "inverse kinematics",
+      "robotics",
+      "variational hybrid",
+      "entangling gates",
+      "bloch sphere encoding",
+    ],
+    source: {
+      id: "doi:10.1038/s41598-025-12109-0",
+      title: "Quantum computation for robot posture optimization",
+      authors: "Takuya Otani, Atsuo Takanishi, Nobuyuki Hara, Yutaka Takita, Koichi Kimura",
+      year: "2025",
+      url: "https://doi.org/10.1038/s41598-025-12109-0",
+    },
+    literature: [
+      {
+        title: "Quantum computation for robot posture optimization",
+        authors: "Takuya Otani, Atsuo Takanishi, Nobuyuki Hara, Yutaka Takita, Koichi Kimura",
+        year: "2025",
+        url: "https://doi.org/10.1038/s41598-025-12109-0",
+        relevance:
+          "Primary source, and the demonstration's only reference — the Classiq notebook cites this"
+          + " paper and nothing else. Read in full text rather than in abstract. It supplies the"
+          + " Bloch-sphere encoding of a link's posture, the forward-kinematics circuit, the COBYLA"
+          + " loop that closes inverse kinematics around it, and the RXX/RYY/RZZ construction that"
+          + " entangles a parent link's qubit with its child's. It reports a Fujitsu 40-qubit"
+          + " mpiQulacs simulation and a run on the 64-qubit superconducting machine of the RIKEN"
+          + " RQC-Fujitsu Collaboration Center. Consult it for the D-H parameters of the model arm"
+          + " in its Table 1, for the per-axis figures in Tables 3 and 4, and for the derivation"
+          + " relating the RXX rotation angle to concurrence — and note that it states no complexity"
+          + " bound and no comparison against a production inverse-kinematics solver.",
+        relevanceJa:
+          "一次資料であり、デモが挙げる唯一の参考文献です。Classiqのノートブックはこの論文のみを引用しています。要旨ではなく全文を読みました。リンクの姿勢をBloch球面上に符号化する方法、順運動学の回路、その周りで逆運動学を閉じるCOBYLAのループ、そして親リンクの量子ビットと子リンクの量子ビットをもつれさせるRXX・RYY・RZZの構成を与えています。富士通の40量子ビットmpiQulacsによるシミュレーションと、理研RQC-富士通連携センターの64量子ビット超伝導量子計算機での実行を報告しています。モデルアームのD-Hパラメータは表1、軸ごとの数値は表3および表4、RXXの回転角と concurrence を関係づける議論については、原論文で確認してください。なお、計算量の上界は述べられておらず、実運用の逆運動学ソルバとの比較も行われていません。",
+      },
+    ],
+    relatedSlugs: [
+      "vqe-ground-state-energy",
+      "qaoa-combinatorial-optimization",
+      "vqe-hardware-efficient-ansatz",
+    ],
+  },
 ];
 
 /** The Classiq directory each record covers — read by scripts/check-classiq-parity.mjs. */

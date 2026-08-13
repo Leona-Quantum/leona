@@ -226,7 +226,7 @@ export interface PublicRepositoryEntry {
    * classified deterministically in public-repository.ts (see deriveTopics) —
    * the same arrangement `verificationMethods` has used since session 60, for
    * the same reason: a corpus the owner may repopulate wholesale should not
-   * carry 283 hand-written labels that a repopulation discards.
+   * carry hand-written labels that a repopulation discards.
    */
   topics?: TopicId[];
   /**
@@ -248,8 +248,8 @@ export interface PublicRepositoryEntry {
    * - `[]` — somebody reviewed this record and found none;
    * - **absent — nobody has looked.**
    *
-   * Defaulting to `[]` would collapse the third into the second and make all
-   * 283 records assert "reviewed, no gaps" — a false statement in the one field
+   * Defaulting to `[]` would collapse the third into the second and make every
+   * record assert "reviewed, no gaps" — a false statement in the one field
    * whose entire purpose is honest disclosure. Renderers must distinguish all
    * three; `renderableKnownGaps` in ./coverage exists so they cannot forget.
    */
@@ -291,7 +291,7 @@ export interface PublicRepositoryEntry {
  *
  * Why this exists: the full corpus serialises to ~2.37 MB, over Vercel's 2 MB
  * data-cache ceiling, so the 5-minute revalidate on the catalog fetch was inert
- * and every visitor refetched all 283 records. Projected to these fields the
+ * and every visitor refetched every record. Projected to these fields the
  * same corpus is ~0.91 MB and caches. Everything omitted here (the long-form
  * explanation/introduction prose and its Markdown variants, literature,
  * verificationDetails, source, classicalComparison, industryUseCases,
@@ -357,8 +357,8 @@ export const PUBLIC_REPOSITORY_LIST_FIELDS = [
   //
   // The objection it overrides was that this field is unbounded per record, and
   // that objection is real. It is answered with a measurement rather than a
-  // judgement: +1,037 bytes over the 283-record corpus today (one record
-  // carries gaps), and ~290 KB if every record carried one of that size,
+  // judgement: +1,037 bytes over the then-283-record corpus (one record
+  // carries gaps, measured 2026-07), and ~290 KB if every record carried one of that size,
   // against 770,397 bytes projected and a 2 MB ceiling. The ceiling is now
   // asserted over the real corpus in
   // scripts/catalog-bootstrap/from-catalog-validator.test.mjs, so growth here

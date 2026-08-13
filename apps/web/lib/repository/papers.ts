@@ -35,7 +35,7 @@
 // ## Why it is a register rather than a normalisation, for now
 //
 // The end state is that a citation is `{paper: PaperId, relevance}` and carries
-// no metadata of its own. That is a shape change to 283 records that production
+// no metadata of its own. That is a shape change to every record that production
 // serves from the catalog API, so it is a two-part deploy and its own PR. What
 // lands here gets the whole correctness benefit without the shape change: the
 // citations keep their fields, **and a script asserts every one of them equals
@@ -134,6 +134,55 @@ export function canonicalPaperUrl(id: PaperId): string {
   return `https://doi.org/${id.slice("doi:".length)}`;
 }
 
+/**
+ * What kind of document a register row is. **Both are primary sources.**
+ *
+ * Owner ruling, `EshMis/ai-ops` issue #44,
+ * https://github.com/EshMis/ai-ops/issues/44#issuecomment-5269393488, EshMis
+ * (OWNER), 2026-08-12T16:13:38Z: *"ALSO, put this in memory: textbooks are also
+ * primary sources!!"* — answering the primary-source-first ruling on #12, which
+ * on its own reads as "a paper or nothing".
+ *
+ * ## Why this is a field and not a sentence in a doc comment
+ *
+ * The register keys on `arxiv:` and `doi:` and nothing else, so a textbook with
+ * a publisher DOI has *always* been able to sit in it. Nothing here was
+ * blocking a textbook, and that is exactly the problem: nothing distinguished
+ * one either. A row for a 400-page book was indistinguishable from a row for a
+ * 6-page letter, so the next pass that asks "is this record traceable to a
+ * primary source?" had nothing to read and would answer from the row's *shape*
+ * — and a textbook does not look like a paper. This project's recurring defect
+ * is a value that is wrong but well-formed; "scrapped for not being a paper"
+ * is that defect with a record deleted at the end of it.
+ *
+ * So the ruling is a value the code carries, with three things resting on it:
+ * `validatePaperRegister` refuses an unknown medium; it also refuses a book DOI
+ * whose row does not say so, so the set of textbooks is enumerated rather than
+ * guessed at (see `TEXTBOOK_DOI_PREFIXES`); and
+ * `scripts/check-paper-register.mjs` prints the textbook count and every
+ * textbook-sourced record on each CI run, so the set is visible rather than
+ * inferred by the next person deciding what counts as traceable.
+ *
+ * Absent means `"article"`. That is the majority and stating it 232 times would
+ * bury the 2 rows the distinction exists for.
+ */
+export const PRIMARY_SOURCE_MEDIA = ["article", "textbook"] as const;
+
+export type PrimarySourceMedium = (typeof PRIMARY_SOURCE_MEDIA)[number];
+
+/**
+ * DOI registrant prefixes that only ever mint book identifiers, used to catch a
+ * textbook row somebody forgot to tag.
+ *
+ * `10.1017/cbo…` and `10.1017/9781…` are Cambridge University Press's book
+ * DOIs — Cambridge's *journal* DOIs are `10.1017/S…`. The check is deliberately
+ * one-directional: it can prove a row IS a book and never that a row is not, so
+ * it warns on an untagged book and says nothing about anything else. A future
+ * textbook from a publisher not on this list is tagged by hand, and this list
+ * does not pretend otherwise.
+ */
+const TEXTBOOK_DOI_PREFIXES = ["doi:10.1017/cbo", "doi:10.1017/9781"] as const;
+
 export interface RegisteredPaper {
   id: PaperId;
   title: string;
@@ -151,6 +200,13 @@ export interface RegisteredPaper {
    */
   year: string;
   url: string;
+  /**
+   * `"textbook"` where this row is a book rather than an article. Absent means
+   * `"article"`. **Neither is less primary than the other** — see
+   * `PRIMARY_SOURCE_MEDIA` for the ruling this encodes and why it is a value
+   * rather than a paragraph.
+   */
+  medium?: PrimarySourceMedium;
   /**
    * What this paper reports, on the three axes `SourceCoverage` already names.
    *
@@ -303,6 +359,28 @@ export function validatePaperRegister(register: PaperRegister): string[] {
     }
     if (!/^\d{4}$/.test(paper.year)) {
       errors.push(`${paper.id}: year is not four digits — ${JSON.stringify(paper.year)}`);
+    }
+    // A typo'd medium is the failure mode this field exists to stop, arriving
+    // through the field itself: `"book"` or `"Textbook"` is falsy against every
+    // comparison downstream and so reads as `"article"` — the row goes back to
+    // being indistinguishable from a paper while looking tagged.
+    if (paper.medium !== undefined && !PRIMARY_SOURCE_MEDIA.includes(paper.medium)) {
+      errors.push(
+        `${paper.id}: medium is ${JSON.stringify(paper.medium)}, not one of ${PRIMARY_SOURCE_MEDIA.join(", ")}`,
+      );
+    }
+    // An untagged book. See `TEXTBOOK_DOI_PREFIXES` for why this can only fire
+    // one way. It is an error rather than a warning because the whole value of
+    // `medium` is that the set of textbooks is *enumerated* rather than guessed
+    // at by whoever reads the register next — and a warning is a thing CI
+    // prints and nobody reads.
+    if (
+      paper.medium !== "textbook" &&
+      TEXTBOOK_DOI_PREFIXES.some((prefix) => paper.id.toLowerCase().startsWith(prefix))
+    ) {
+      errors.push(
+        `${paper.id}: this is a book DOI and the row does not say medium: "textbook" — a textbook is a primary source (ai-ops#44) and must be findable as one`,
+      );
     }
     // `reports` and `reportsBasis` stand or fall together, in **both**
     // directions. A judgement with no basis is a claim whose strength nobody

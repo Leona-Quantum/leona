@@ -283,8 +283,9 @@ export function RepositoryEntryView({
    * The interface panel — what this entry takes and returns, and what meets it.
    *
    * A slot like the two above, but passed unconditionally: an entry with no
-   * ports has an answer ("not a pipeline stage"), and 121 of the 283 records
-   * are in that position. A missing section would leave a reader looking for
+   * ports has an answer ("not a pipeline stage"), and most records are in that
+   * position (121 of the then-283, measured 2026-07). A missing section would
+   * leave a reader looking for
    * something to compose to infer it from silence.
    */
   connections?: ReactNode;
@@ -302,7 +303,7 @@ export function RepositoryEntryView({
   /**
    * Where the layer graph names this record, or null when it does not.
    *
-   * Null on 279 of the 283 today, and unlike every panel on the Layers surface
+   * Null on most records (279 of the then-283, measured 2026-07), and unlike every panel on the Layers surface
    * itself this one renders **nothing** in that case. The difference is
    * deliberate: over there an empty list is the finding — it says which part of
    * the literature the corpus has not reached — and here it would be the same

@@ -59,6 +59,8 @@ import {
 } from "../lib/repository/converge-layout";
 import { convergeNotes } from "../lib/repository/converge-notes";
 import { LOOP_CLOSURE_COPY } from "../lib/repository/loop-closure-copy";
+import { THEORY_MARK_COPY } from "../lib/repository/theory-mark-copy";
+import { THEORY_MARKS, type TheorySpan } from "../lib/repository/theory-marks";
 import { IDENTITY, type Viewport } from "../lib/repository/canvas-viewport";
 import { absenceOf, cardFor, exampleRunNote } from "../lib/repository/card-content";
 import { PAPER_REGISTER } from "../lib/repository/paper-register";
@@ -66,6 +68,12 @@ import { paperTraces } from "../lib/repository/paper-traces";
 import { indexPapers, paperIdFromUrl, paperSlug } from "../lib/repository/papers";
 import { SOURCE_COVERAGE_AXES } from "../lib/repository/types";
 import { STATE_VOCABULARY } from "../lib/repository/state-vocabulary";
+import {
+  contractedProcessCount,
+  ingredientJoin,
+  processesTouching,
+  recordsForState,
+} from "../lib/repository/ingredients";
 import {
   kindsOf,
   layerState,
@@ -164,10 +172,50 @@ const COPY = {
     implementationsNone:
       "Nobody has written one up yet. That is a gap in this record, not a statement that the method has never been run — the paper register already records, per paper, which sources report numerics or a hardware run.",
     contestedHeading: "Where the claim is contested",
+    // --- the record ↔ state join (ai-ops#41 option B) ----------------------
+    //
+    // Three headings for one relation seen from three places. They are worded
+    // as three different sentences on purpose: the same link means "here is an
+    // instance of the thing you are reading about" on a state page, "here is
+    // where the map would use this" on a record page, and "here is what this
+    // slot is handling" on a slot page. A single reused string would read as
+    // correct on one of the three and vague on the other two.
+    stateRecordsHeading: "Records that are this object",
+    stateRecordsLead:
+      "Each of these is an instance of this state, filed in the catalogue with its own construction. The map does not know them individually — it knows the object, and these are what the object is.",
+    stateRecordsNone:
+      "Nothing in the catalogue has been joined to this state. That is a gap in the join rather than a claim that no such object exists; the shelf on /repository lists what is joined and what is not, with the reason.",
+    recordProcessesHeading: "Where the map uses this",
+    recordProcessesLead:
+      "This record is an instance of an object the map names, so these are the processes that consume or produce one. None of them is about this record in particular.",
+    recordProcessesConsumes: "takes one",
+    recordProcessesProduces: "hands one back",
+    slotObjectsHeading: "Records for what it handles",
+    slotObjectsLead:
+      "The catalogue's own entries for the objects on either side of this contract.",
+    slotObjectsTakes: "It takes",
+    slotObjectsReturns: "It returns",
+    joinCount: (n: number, of: number) =>
+      n === 1 ? `1 of ${of} processes` : `${n} of ${of} processes`,
+    // The owner's fourth section, and until now the one this page did not draw
+    // at all. See `RequiresSection` for what was missing and for how much.
+    requiresHeading: "Requires",
+    requiresLead:
+      "These do not move the route along. The method needs each of them alongside its own work, and the cost of getting them is part of what the method costs.",
+    requiresNone:
+      "Every step this method names moves its route along, so there is nothing it needs alongside them.",
     needsHeading: "What it needs",
     needsNone: "Nothing below this — it bottoms out here.",
     needsUndecomposed:
       "Nobody has taken this apart yet. That is a gap in this graph, not a claim that the method has no parts.",
+    // **A fourth thing this heading can mean, and it needed its own sentence.**
+    // The list above draws the steps that move the route along; a method every
+    // one of whose steps is an ingredient has none, and it is neither atomic nor
+    // undecomposed. Measured 2026-08-13: 17 of the 27 methods with an ingredient
+    // are in exactly this position, so the wrong note here would have been the
+    // common case rather than an edge one.
+    needsAllRequired:
+      "Every step this method names is listed under Requires above. It walks its own span in one hop and calls out to the rest — that is a fact about the recorded route, not a claim that the span is simple.",
     needsWays: (n: number) =>
       n === 0 ? "no method recorded" : n === 1 ? "1 method" : `${n} methods`,
     // The badge says the multiplicity; the closure says what one turn costs.
@@ -194,7 +242,7 @@ const COPY = {
     refinementsLabel: "Narrower versions of this one",
     variantOf: (label: string) => `a narrower version of ${label}`,
     atlasHeading: "In the Atlas",
-    // "283 records" was typed here, not counted, and this component never sees
+    // A record count was typed here, not counted, and this component never sees
     // the corpus — so the number could only ever be a copy of one kept somewhere
     // else. The sentence's work is the *kind* of thing the catalogue holds, and
     // that is what tells a reader why this gap exists; the size of it never did.
@@ -318,10 +366,32 @@ const COPY = {
     implementationsNone:
       "まだ誰も書き起こしていません。これはこのレコードの欠落であって、この手法が一度も実行されたことがないという主張ではありません。どの文献が数値計算や実機実行を報告しているかは、論文レジスタが論文ごとにすでに記録しています。",
     contestedHeading: "主張が争われている点",
+    stateRecordsHeading: "この対象にあたる項目",
+    stateRecordsLead:
+      "いずれもこの状態の一例であり、それぞれ独自の構成とともにカタログに登録されています。マップはこれらを個別に把握しているわけではありません。マップが把握しているのは対象そのものであり、これらはその対象が何であるかを示すものです。",
+    stateRecordsNone:
+      "カタログのどの項目もこの状態に結び付けられていません。これは結び付けの側の欠落であって、そのような対象が存在しないという主張ではありません。何が結び付けられ、何が結び付けられていないかは、理由とともに /repository の棚に一覧があります。",
+    recordProcessesHeading: "マップ上でこれが使われる箇所",
+    recordProcessesLead:
+      "この項目はマップが名前を与えている対象の一例です。したがって以下は、その対象を受け取る、あるいは返す工程です。いずれもこの項目そのものについての記述ではありません。",
+    recordProcessesConsumes: "受け取る",
+    recordProcessesProduces: "返す",
+    slotObjectsHeading: "扱う対象にあたる項目",
+    slotObjectsLead: "この契約の両側にある対象について、カタログが持つ項目です。",
+    slotObjectsTakes: "受け取るもの",
+    slotObjectsReturns: "返すもの",
+    joinCount: (n: number, of: number) => `工程 ${of} 件中 ${n} 件`,
+    requiresHeading: "必要な材料",
+    requiresLead:
+      "これらは経路を前へ進めるものではありません。この手法は自身の作業と並行してこれらを必要とし、それらを用意する費用も、この手法の費用の一部です。",
+    requiresNone:
+      "この手法が挙げる手順はすべて経路を前へ進めるものです。並行して必要とするものはありません。",
     needsHeading: "必要とするもの",
     needsNone: "これより下はありません。ここで行き止まりです。",
     needsUndecomposed:
       "まだ分解されていません。これはこのグラフ側の欠落であって、この手法に部品がないという主張ではありません。",
+    needsAllRequired:
+      "この手法が挙げる手順は、すべて上の「必要な材料」に挙げられています。自身の区間を 1 ホップで歩き、残りは外部に呼び出します。これは記録された経路についての事実であって、その区間が単純だという主張ではありません。",
     needsWays: (n: number) => (n === 0 ? "手法の記録なし" : `手法${n}件`),
     repeatsBadge: LOOP_CLOSURE_COPY.ja.badge,
     repeatsCoherent: LOOP_CLOSURE_COPY.ja.closure.coherent,
@@ -831,6 +901,20 @@ function CapabilityView({
         </p>
       </section>
 
+      {/* The catalogue's entries for the objects on either side of this slot's
+          contract. Not the slot's `entries`, which are records documenting the
+          PROCESS and are governed by `map-eligibility.ts` — these are records
+          that ARE the object, joined by `ingredients.ts`. Two different claims,
+          so two different sections. */}
+      <SlotObjects
+        vocabulary={STATE_VOCABULARY}
+        contract={node.contract}
+        nodeId={node.id}
+        corpus={corpus}
+        locale={locale}
+        copy={copy}
+      />
+
       <section className="mj-layers-section" aria-labelledby={`ways-${node.id}`}>
         <h2 id={`ways-${node.id}`}>{copy.waysHeading}</h2>
         {methods.length === 0 ? (
@@ -950,6 +1034,354 @@ function LoopComparison({
   );
 }
 
+/**
+ * The three halves of the record ↔ state join, as three sections.
+ *
+ * ## What did not exist before this
+ *
+ * Measured 2026-08-13: the map carries a vocabulary of 34 named states, each
+ * with a page; the catalogue carries 101 records whose role is an object. **Not
+ * one of the 34 pointed at a record, and not one of the 101 pointed back.** The
+ * two halves were built separately and never joined.
+ *
+ * ## Why the join is derived here rather than read from a field
+ *
+ * `ingredients.ts` joins a record to a **state**, once, by rule. Everything on
+ * these three surfaces is then computed from the graph: which slots consume or
+ * produce that state is `processesTouching`, which reads the contracts that were
+ * already there. So a slot that is split, renamed or re-contracted carries its
+ * records with it and nothing here is edited — which matters this session, with
+ * the map being decomposed in the next lane over.
+ *
+ * The count each surface prints comes with its denominator, because "5
+ * processes" is a different claim on a map of 23 slots than on a map of 200 and
+ * the reader cannot tell which without being told.
+ */
+function RecordLink({ slug, title }: { slug: string; title: string }) {
+  return <a href={`/repository/${slug}`}>{title}</a>;
+}
+
+/** *Records that are this object* — on a state's own page. */
+function StateRecords({
+  vocabulary,
+  state,
+  corpus,
+  locale,
+  copy,
+}: {
+  vocabulary: StateVocabulary;
+  state: LayerState;
+  corpus: readonly LayerCorpusEntry[];
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const records = recordsForState(
+    corpus.map((entry) => ({
+      slug: entry.slug,
+      title: locale === "ja" ? (entry.titleJa ?? entry.title) : entry.title,
+      category: entry.category,
+      algorithmFamily: entry.algorithmFamily ?? "",
+      tags: entry.tags ?? [],
+    })),
+    vocabulary,
+    state.id,
+  );
+  return (
+    <section className="mj-layers-section" aria-labelledby={`records-${state.id}`}>
+      <h2 id={`records-${state.id}`}>{copy.stateRecordsHeading}</h2>
+      {records.length === 0 ? (
+        <EmptyNote>{copy.stateRecordsNone}</EmptyNote>
+      ) : (
+        <>
+          <p>{copy.stateRecordsLead}</p>
+          <ul className="mj-layers-list mj-layers-state-records">
+            {records.map((record) => (
+              <li key={record.slug}>
+                <RecordLink slug={record.slug} title={record.title ?? record.slug} />
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
+/**
+ * *Where the map uses this* — on a record's own page.
+ *
+ * Renders nothing when the record is not joined, and that is deliberate rather
+ * than lazy: 73 of the 101 object records abstain, most of them because the map
+ * has no state for an observable, and a "the map does not reach this" note on 73
+ * pages would be one sentence about the map repeated until it stopped being
+ * read. The count and the reasons are published once, on the shelf, where they
+ * can be compared.
+ */
+export function EntryStateLinks({
+  graph,
+  vocabulary,
+  entry,
+  locale,
+}: {
+  graph: LayerGraph;
+  vocabulary: StateVocabulary;
+  entry: LayerCorpusEntry;
+  locale: PublicLocale;
+}) {
+  const copy = copyFor(locale);
+  const join = ingredientJoin({
+    slug: entry.slug,
+    category: entry.category,
+    algorithmFamily: entry.algorithmFamily ?? "",
+    tags: entry.tags ?? [],
+  });
+  if (join.kind !== "joined") return null;
+  const state = layerState(vocabulary, join.state);
+  const processes = processesTouching(graph, vocabulary, join.state);
+  if (state === null || processes.length === 0) return null;
+  const denominator = contractedProcessCount(graph);
+  return (
+    <section className="mj-layers-entry-strip" aria-labelledby={`entry-states-${entry.slug}`}>
+      <h2 id={`entry-states-${entry.slug}`}>{copy.recordProcessesHeading}</h2>
+      <p>{copy.recordProcessesLead}</p>
+      {/* The object first, then the processes: a reader has to know WHICH
+          object the map thinks this is before a list of processes means
+          anything, and the state's own page is where the claim can be checked. */}
+      <p className="mj-layers-item-kind">
+        <a href={href(state.id)}>{stateLabel(state, locale)}</a>{" "}
+        {copy.joinCount(processes.length, denominator)}
+      </p>
+      <ul className="mj-layers-list">
+        {processes.map((process) => {
+          const node = layerNode(graph, process.id);
+          if (!node) return null;
+          return (
+            <li key={`${process.id}:${process.relation}`} className="mj-layers-item">
+              <a href={href(node.id)}>{label(node, locale)}</a>{" "}
+              <span className="mj-layers-item-kind">
+                {process.relation === "consumes"
+                  ? copy.recordProcessesConsumes
+                  : copy.recordProcessesProduces}
+              </span>
+            </li>
+          );
+        })}
+      </ul>
+    </section>
+  );
+}
+
+/** *Records for what it handles* — on a slot's own page, both sides of the contract. */
+function SlotObjects({
+  vocabulary,
+  contract,
+  nodeId,
+  corpus,
+  locale,
+  copy,
+}: {
+  vocabulary: StateVocabulary;
+  contract: { from: string; to: string };
+  nodeId: string;
+  corpus: readonly LayerCorpusEntry[];
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const candidates = corpus.map((entry) => ({
+    slug: entry.slug,
+    title: locale === "ja" ? (entry.titleJa ?? entry.title) : entry.title,
+    category: entry.category,
+    algorithmFamily: entry.algorithmFamily ?? "",
+    tags: entry.tags ?? [],
+  }));
+  const sides = (
+    [
+      ["takes", contract.from, copy.slotObjectsTakes],
+      ["returns", contract.to, copy.slotObjectsReturns],
+    ] as const
+  )
+    .map(([key, stateId, heading]) => ({
+      key,
+      heading,
+      state: layerState(vocabulary, stateId),
+      records: recordsForState(candidates, vocabulary, stateId),
+    }))
+    .filter((side) => side.records.length > 0 && side.state !== null);
+  if (sides.length === 0) return null;
+  return (
+    <section className="mj-layers-section" aria-labelledby={`objects-${nodeId}`}>
+      <h2 id={`objects-${nodeId}`}>{copy.slotObjectsHeading}</h2>
+      <p>{copy.slotObjectsLead}</p>
+      {sides.map((side) => (
+        <div key={side.key}>
+          <h3>
+            {side.heading}: <a href={href(side.state!.id)}>{stateLabel(side.state!, locale)}</a>
+          </h3>
+          <ul className="mj-layers-list">
+            {side.records.map((record) => (
+              <li key={record.slug}>
+                <RecordLink slug={record.slug} title={record.title ?? record.slug} />
+              </li>
+            ))}
+          </ul>
+        </div>
+      ))}
+    </section>
+  );
+}
+
+/**
+ * The mathematics of one ingredient, with the two clauses a reader must not
+ * miss marked where they occur.
+ *
+ * The card draws this too, and the labels are shared (`theory-mark-copy.ts`);
+ * the markup is not, because the two surfaces carry different class prefixes
+ * and the card's version sits inside a disclosure this page does not have. What
+ * had to be one copy is the wording — including the screen-reader prefix, where
+ * a divergence between surfaces would be inaudible rather than visible.
+ */
+function IngredientTheory({
+  spans,
+  locale,
+}: {
+  spans: readonly TheorySpan[];
+  locale: PublicLocale;
+}) {
+  const labels = THEORY_MARK_COPY[locale === "ja" ? "ja" : "en"];
+  const marked = THEORY_MARKS.filter((mark) => spans.some((span) => span.mark === mark));
+  return (
+    <>
+      <p className="mj-layers-requires-math">
+        {spans.map((span, index) =>
+          span.mark === null ? (
+            <span key={index}>
+              <MathText source={span.text} />
+            </span>
+          ) : (
+            <span
+              key={index}
+              className={`mj-layers-mark mj-layers-mark--${span.mark}`}
+              data-mark={span.mark}
+            >
+              <span className="sr-only">{labels[span.mark]}: </span>
+              <MathText source={span.text} />
+            </span>
+          ),
+        )}
+      </p>
+      {marked.length > 0 ? (
+        <p className="mj-layers-mark-key">
+          {marked.map((mark) => (
+            <span key={mark} className={`mj-layers-mark mj-layers-mark--${mark}`}>
+              {labels[mark]}
+            </span>
+          ))}
+        </p>
+      ) : null}
+    </>
+  );
+}
+
+/**
+ * *Requires* on the method's own page — the section the #16 ruling created and
+ * only one of the two renderers ever built.
+ *
+ * ## What was missing, and how much of it
+ *
+ * A method is drawn by two renderers: the card a reader gets on the map, and
+ * this page. #16 moved ingredients off the canvas and into the card's *Requires*
+ * section — pages and links, not pixels — and the card grew one. This page did
+ * not, so a visitor who arrived here directly got neither the drawing (removed)
+ * nor the replacement (never built).
+ *
+ * Measured against the graph on 2026-08-13, before this section existed:
+ *
+ * - **27 of 94 methods have at least one ingredient; there are 36 in total.**
+ * - The page did list them — inside *What it needs*, mixed in with the steps
+ *   that move the route along and indistinguishable from them. **On 17 of the
+ *   27, every step is an ingredient**, so that list was entirely ingredients
+ *   and read as the route's spine.
+ * - **10 ingredients carry the one sentence of mathematics that says why they
+ *   are expensive here, and this page rendered none of them.** They are on five
+ *   methods — `hhl-qpe-inversion` (3), `chebyshev-lcu-inversion` (3),
+ *   `qsvt-matrix-inversion` (2), `discrete-adiabatic-inversion` (1),
+ *   `eigenstate-filtering-inversion` (1) — and `CardIngredient.theory`'s own doc
+ *   comment predicted exactly this: a note "written about an ingredient
+ *   rendered on no surface at all". It was rendered on one. Not this one.
+ *
+ * ## Read through `cardFor`, not off the node
+ *
+ * The section is composed by the same function the map card is, for the reason
+ * `EntryNodeContract` below already gives and `W23-record-join.md` §4 states:
+ * one subject, one source per field. The partition into chain and ingredients
+ * is `routeOf`'s, reached here through `card.ingredients` — so a step that moves
+ * from hop to feed moves on both surfaces at once, and neither renderer can
+ * hold an opinion about which list a step belongs in.
+ */
+function RequiresSection({
+  card,
+  node,
+  locale,
+  copy,
+}: {
+  card: ReturnType<typeof cardFor>;
+  node: LayerMethod;
+  locale: PublicLocale;
+  copy: LayersCopy;
+}) {
+  const ingredients = card !== null && card.kind === "method" && card.ingredients.held
+    ? card.ingredients.value
+    : [];
+  return (
+    <section className="mj-layers-section" aria-labelledby={`requires-${node.id}`}>
+      <h2 id={`requires-${node.id}`}>{copy.requiresHeading}</h2>
+      {ingredients.length === 0 ? (
+        <EmptyNote>{copy.requiresNone}</EmptyNote>
+      ) : (
+        <>
+          <p>{copy.requiresLead}</p>
+          <ul className="mj-layers-list mj-layers-requires">
+            {ingredients.map(({ link, repetition, theory }) => (
+              <li key={link.id}>
+                {/* The space before the badge is deliberate, and the card's own
+                    comment records why: an `inline-block` badge is not
+                    guaranteed to be announced apart from the name before it. */}
+                <a href={href(link.id)}>{link.label}</a>{" "}
+                {repetition ? (
+                  <span
+                    className={`mj-layers-repeat mj-layers-repeat--${repetition.closure}`}
+                    data-closure={repetition.closure}
+                  >
+                    {copy.repeatsBadge(repetition.count)}
+                  </span>
+                ) : null}
+                {link.summary ? (
+                  <p>
+                    <MathText source={link.summary} />
+                  </p>
+                ) : null}
+                {repetition ? (
+                  <p className="mj-layers-repeat-note">
+                    {repetition.closure === "measured"
+                      ? copy.repeatsMeasured
+                      : copy.repeatsCoherent}{" "}
+                    <MathText source={repetition.note} />
+                  </p>
+                ) : null}
+                {/* Drawn only when a source states it. No gap note beside the
+                    ones without: printing "no source states the mathematics
+                    here" against all 36 would bury the 10 that have one — the
+                    card made the same call for the same reason. */}
+                {theory.held ? <IngredientTheory spans={theory.value} locale={locale} /> : null}
+              </li>
+            ))}
+          </ul>
+        </>
+      )}
+    </section>
+  );
+}
+
 /** One method page. */
 function MethodView({
   graph,
@@ -973,6 +1405,20 @@ function MethodView({
   const skipped = (node.bypasses ?? [])
     .map((id) => layerNode(graph, id))
     .filter((target): target is LayerNode => target !== null);
+  // One composition, read by two sections: *Requires* draws the ingredients and
+  // *What it needs* draws the steps that are not ingredients. Reading the
+  // partition twice — or reading it here and recomputing it there — is how the
+  // two lists would come to disagree about one step.
+  const card = cardFor(
+    { graph, vocabulary: STATE_VOCABULARY, corpus, locale, register: PAPER_REGISTER },
+    node.id,
+  );
+  const ingredientIds = new Set(
+    card !== null && card.kind === "method" && card.ingredients.held
+      ? card.ingredients.value.map((ingredient) => ingredient.link.id)
+      : [],
+  );
+  const chainSteps = node.steps.filter((stepId) => !ingredientIds.has(stepId));
 
   return (
     <>
@@ -998,6 +1444,19 @@ function MethodView({
           <EmptyNote>{copy.conditionsNone}</EmptyNote>
         )}
       </section>
+
+      {/* **Before Example, because the owner's order puts Requires before it**
+          — his seven were Input, Theory, Output, Requires, Example,
+          Performance, Implementations. The section below already follows that
+          order for Example-before-Performance; this is the fourth of the seven,
+          and until now this page drew six of them.
+
+          Methods only, for the reason `example` and `implementations` are: a
+          capability is a slot rather than a procedure, so it has no route and
+          therefore nothing alongside one. */}
+      {isMethod(node) ? (
+        <RequiresSection card={card} node={node} locale={locale} copy={copy} />
+      ) : null}
 
       {/* **Before Cost, because the owner's order puts Example before
           Performance** — his seven were Input, Theory, Output, Requires,
@@ -1154,9 +1613,18 @@ function MethodView({
 
       <section className="mj-layers-section" aria-labelledby={`needs-${node.id}`}>
         <h2 id={`needs-${node.id}`}>{copy.needsHeading}</h2>
-        {outlook === "decomposed" ? (
+        {/* **The steps that move the route along, and only those.** The
+            ingredients are drawn under *Requires* above, and listing them in
+            both places would put one step in two lists that answer different
+            questions. The third branch is the case that partition creates: a
+            method all of whose steps are ingredients has an empty chain here
+            and is neither atomic nor undecomposed — 17 of the 27, so the note
+            for it is the common case rather than an edge one. */}
+        {outlook === "decomposed" && chainSteps.length === 0 ? (
+          <EmptyNote>{copy.needsAllRequired}</EmptyNote>
+        ) : outlook === "decomposed" ? (
           <ol className="mj-layers-steps">
-            {node.steps.map((stepId) => {
+            {chainSteps.map((stepId) => {
               const step = layerNode(graph, stepId);
               if (!step) return null;
               // The count is the branching factor, and printing it here is what
@@ -1371,11 +1839,22 @@ export function LayerStateView({
   vocabulary,
   state,
   locale,
+  corpus = [],
 }: {
   graph: LayerGraph;
   vocabulary: StateVocabulary;
   state: LayerState;
   locale: PublicLocale;
+  /**
+   * **New, and it reverses a deliberate decision that was right until now.**
+   * The page route used to skip the Atlas fetch for a state page with the note
+   * that "a state page names processes and other states and never touches a
+   * record". That is no longer true: a state page is now one of the two ends of
+   * the record join, and the whole point of the join is that it is reachable
+   * from both. Defaulted so a caller that has no corpus renders the same page
+   * minus one section rather than failing.
+   */
+  corpus?: readonly LayerCorpusEntry[];
 }) {
   const copy = copyFor(locale);
   const index = new Map(vocabulary.states.map((entry) => [entry.id, entry]));
@@ -1416,6 +1895,16 @@ export function LayerStateView({
         <h2 id={`narrower-${state.id}`}>{copy.stateNarrowerHeading}</h2>
         <StateList states={narrower} locale={locale} empty={copy.stateNarrowerNone} />
       </section>
+      {/* Before the traffic sections, because it answers the question a reader
+          arrives with. "What IS this object" is settled by the lede and then by
+          these; "which processes touch it" is the next question, not the first. */}
+      <StateRecords
+        vocabulary={vocabulary}
+        state={state}
+        corpus={corpus}
+        locale={locale}
+        copy={copy}
+      />
       <section className="mj-layers-section" aria-labelledby={`arriving-${state.id}`}>
         <h2 id={`arriving-${state.id}`}>{copy.stateArrivingHeading}</h2>
         {traffic.arriving.length === 0 ? (
@@ -1528,8 +2017,9 @@ export function LayerCensusPanel({
  * The strip an Atlas entry page shows when the layer graph names it.
  *
  * Renders nothing when no node does — unlike the panels on this surface, whose
- * emptiness is a finding. Here an absence is the default for 279 of 283 records
- * and saying so on every one of them would be noise, not honesty.
+ * emptiness is a finding. Here an absence is the default for most records (279
+ * of the then-283, measured 2026-07) and saying so on every one of them would
+ * be noise, not honesty.
  */
 /**
  * One node's contract, drawn on the record page.
