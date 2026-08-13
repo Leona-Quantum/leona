@@ -378,7 +378,7 @@ test("the map is three regions, and ten of its twenty-three slots consume someth
   const regions = regionsOf(LAYER_GRAPH);
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
-    [99, 13, 5, 3, 3],
+    [104, 13, 5, 3, 3],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
@@ -405,18 +405,18 @@ test("the cross-region join surface is 105 compositions at three states", () => 
   // land on the same seven compilation methods, which is what "connect the
   // compilation region" is worth today.
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(surface.within + surface.crosses, 547);
-  assert.equal(surface.crosses, 161, "the cross-region surface moved — say why in the PR");
+  assert.equal(surface.within + surface.crosses, 611);
+  assert.equal(surface.crosses, 178, "the cross-region surface moved — say why in the PR");
 
   const crossing = surface.states.filter((state) => state.crosses > 0);
   assert.deepEqual(
     crossing.map((state) => [state.state, state.crosses]),
     [
-      ["parameterized-circuit", 77],
-      ["hermitian-generator", 23],
+      ["parameterized-circuit", 91],
+      ["hermitian-generator", 24],
       ["evolution-circuit", 21],
+      ["linear-system", 18],
       ["linear-ivp", 17],
-      ["linear-system", 16],
       ["runnable-evolution", 7],
     ],
   );
@@ -443,15 +443,19 @@ test("every crossing runs between three pairs of regions, and each pair is a dif
 
   const surface = joinSurface(LAYER_GRAPH, STATE_VOCABULARY);
   const crossings = surface.crossings.filter((crossing) => crossing.crosses);
-  assert.equal(crossings.length, 161);
+  assert.equal(crossings.length, 178);
 
   const pairs = new Set(
     crossings.map((crossing) => `${region.get(crossing.arrival)}->${region.get(crossing.departure)}`),
   );
   assert.deepEqual([...pairs].sort(), ["1->2", "4->1", "5->1"]);
 
+  // 105 when it was found, 119 now — and the 14 it gained came from neither this
+  // lane nor a specializes line, but from two ordinary ansatz methods landing on
+  // a slot whose exit already crossed. A crossing count is a PRODUCT, so a method
+  // on such a slot costs one crossing per method on the other side, not one.
   const toCompilation = crossings.filter((crossing) => region.get(crossing.departure) === 2);
-  assert.equal(toCompilation.length, 105, "the found join is unchanged by the built ones");
+  assert.equal(toCompilation.length, 119, "the found join, grown by other lanes rather than by this one");
   assert.equal(
     new Set(toCompilation.map((crossing) => crossing.departure)).size,
     7,
@@ -504,6 +508,6 @@ test("the map is three regions under containment and two under what a trace walk
     return sizes.sort((a, b) => b - a);
   };
 
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [99, 13, 5, 3, 3]);
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [118, 5]);
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [104, 13, 5, 3, 3]);
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [123, 5]);
 });
