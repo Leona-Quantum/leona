@@ -50,6 +50,24 @@ import { fileURLToPath } from "node:url";
 
 const root = join(dirname(fileURLToPath(import.meta.url)), "..");
 const OUT = join(root, "scripts/zoo-parity/zoo-index.json");
+
+/**
+ * What the Zoo held when this was last run, pinned **exactly** rather than as a
+ * floor, and a change in either direction fails.
+ *
+ * `MIN_ENTRIES = 40` used to be the guard, and 60 parsed clears 40 comfortably —
+ * so the fourteen entries this script was silently dropping never tripped it. A
+ * floor set far below the real value is a guard that has stopped guarding, and
+ * the comment above it claiming the parse "fails loudly" was worse than no
+ * comment, because it was read and believed.
+ *
+ * An exact pin makes the Zoo growing an edit to this line, which is the diff that
+ * records it. The floor stays underneath as a backstop for the case where both
+ * numbers collapse together — same convention as `DECLARED_SHARED_SOURCES` and
+ * `KNOWN_TWINS` elsewhere in this repo.
+ */
+const DECLARED_ENTRIES = 74;
+const DECLARED_ENTRY_REFERENCES = 642;
 const MIN_ENTRIES = 40;
 
 /**
@@ -200,6 +218,21 @@ if (unnamed.length > 0) {
   console.error(
     `✖ ${unnamed.length} parsed entries have no name or no speedup — the block layout changed:`
     + ` ${unnamed.map((entry) => entry.name || "(unnamed)").join(", ")}`,
+  );
+  process.exit(1);
+}
+
+const citedReferences = entries.reduce((total, entry) => total + entry.refs.length, 0);
+for (const [what, saw, pinned] of [
+  ["entries", entries.length, DECLARED_ENTRIES],
+  ["entry references", citedReferences, DECLARED_ENTRY_REFERENCES],
+]) {
+  if (saw === pinned) continue;
+  console.error(
+    `✖ parsed ${saw} ${what}, pinned at ${pinned}. If the Zoo really changed, update the pin in the`
+    + " same commit as the snapshot so the diff says so — that is the whole point of the pin. If it did"
+    + " not, the parse is dropping or duplicating something, and the count moving is the only symptom"
+    + " you get. Do not relax this to a floor: a floor is what let fourteen entries go missing.",
   );
   process.exit(1);
 }
