@@ -78,6 +78,7 @@ const papers = await bundle("apps/web/lib/repository/papers.ts", "papers");
 const registerMod = await bundle("apps/web/lib/repository/paper-register.ts", "paper-register");
 const corpusMod = await bundle("apps/web/lib/public-repository.ts", "public-repository");
 const graphMod = await bundle("apps/web/lib/repository/layer-graph.ts", "layer-graph");
+const tracesMod = await bundle("apps/web/lib/repository/paper-traces.ts", "paper-traces");
 
 const { PAPER_REGISTER } = registerMod;
 const errors = [...papers.validatePaperRegister(PAPER_REGISTER)];
@@ -220,6 +221,39 @@ for (const { citation, field, expected } of audit.drifted) {
   );
 }
 
+// ADR-0026's drift guard: the checkable half of the owner's #51 condition that a
+// sub-paper extraction "doesn't abstract to unrelated topics".
+//
+// Here rather than in `check-layer-graph.mjs` because it is a claim about a
+// PAPER — the register's own subject — and because this script already has both
+// the graph and the register, so the error can name the paper rather than an id.
+// See `DECLARED_SCATTERED_PAPERS` for why it is a declaration list and for the
+// measurement that shows the shape is reachable (3 map components) and the board
+// clean (0 of 117 scattered) on the day it was armed.
+const traces = tracesMod.paperTraces(graphMod.LAYER_GRAPH);
+const scatter = tracesMod.auditScatteredTraces(traces);
+for (const trace of scatter.undeclared) {
+  const title = byId.get(trace.paper)?.title ?? "not in the register";
+  // `components` are the components of the subgraph induced on the citing nodes
+  // — the groups the citations fall into — and NOT the components of the map,
+  // which is a different and smaller number (3, measured 2026-08-13). Saying
+  // "components of the map" here would send a reader to count the wrong thing.
+  // What `scattered` adds on top of the grouping is that no walk through the
+  // rest of the map joins them either, which is the sentence after the dash.
+  errors.push(
+    `${trace.paper} (${title}) is cited from ${trace.nodes.length} nodes falling into ${trace.components.length} groups `
+      + `(${trace.components.map((component) => component.join("+")).join(" | ")}) — and no path through the rest of the map joins them, `
+      + "so one of two things is true and only a person can say which: the extraction reached a topic this paper is not about "
+      + "(drop the citation), or the map is missing an edge between them (add it). If neither, declare the paper in "
+      + "DECLARED_SCATTERED_PAPERS with the reason (ADR-0026).",
+  );
+}
+for (const paper of scatter.stale) {
+  errors.push(
+    `DECLARED_SCATTERED_PAPERS carries ${paper}, whose trace is no longer scattered — delete the row rather than leave an excuse nobody re-judged`,
+  );
+}
+
 if (errors.length > 0) {
   console.error(`✖ paper register invalid (${errors.length} ${errors.length === 1 ? "error" : "errors"})`);
   for (const error of errors.slice(0, 40)) console.error(`  - ${error}`);
@@ -270,6 +304,15 @@ if (!QUIET) {
   // node + entry − shared = the register size, and a reader can check that here.
   console.log(
     `  ${audit.citedByNode.length} papers are cited by the map, ${audit.citedByEntry.length} by an Atlas record, ${audit.shared.length} by both`,
+  );
+  // The shape census, printed because ADR-0026 rests on it. `multiNode` is the
+  // number that says sub-paper extraction is already the map's practice rather
+  // than a new permission — a paper cited from more than one node IS a paper
+  // broken open — and `scattered` is the number the gate above holds at zero.
+  const traceCensus = tracesMod.traceCensus(traces);
+  const multiNode = traces.filter((trace) => trace.nodes.length > 1).length;
+  console.log(
+    `  ${multiNode} of ${traceCensus.papers} map-cited papers are cited from more than one node — ${traceCensus.contiguous} contiguous, ${traceCensus.joinable} joinable, ${traceCensus.scattered} scattered (widest ${traceCensus.widest} nodes)`,
   );
   // Reported, never failed. A registered paper nothing cites is the normal state
   // of an ingestion queue: read, recorded, not yet placed. See ./papers.ts.

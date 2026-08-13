@@ -264,6 +264,35 @@ export interface AnchorAudit {
  * residue records below its own paper and this check fails until the slug is
  * removed from the list. That is the failure that stops a stale allowance from
  * quietly re-permitting a share nobody re-examined.
+ *
+ * ## What this list covers, which is narrower than it reads
+ *
+ * `auditAnchors` builds `sharedSources` from **`unanchored`**, and `unanchored`
+ * is already filtered to map-eligible records. So this list sees a share only
+ * while every record in it is an `algorithm-reference` that no node anchors.
+ * Anchor one and the group leaves the check; author a share among `operator`,
+ * `state`, `gate-primitive` or `benchmark-circuit` records and it was never in
+ * it. Measured 2026-08-13 over the 346 published records: **10 registered papers
+ * are already the source of more than one record**, and the two largest —
+ * arXiv:1710.07629 behind 50 operator records and arXiv:2204.13719 behind 120
+ * benchmark records — are invisible here by role. The sentence above ("a share
+ * is legal only when it is written down here") is the rule for the slice this
+ * runs on, not for the corpus, and it used to read as though it were both.
+ *
+ * ## ai-ops#51 changed what a share MEANS, and this list survives it
+ *
+ * The failure it was built for is a **factory default** — `vqeEntry`'s
+ * `concept.source ?? VQE_SURVEY` manufacturing 25 citations nobody chose. That
+ * failure is unaffected by #51 and this check is still the only thing that sees
+ * it. What #51 changes is the remedy: *"a whole paper doesn't need to be
+ * dedicated to a specific thing for it to exist"*, so two records genuinely
+ * extracted from one paper are now the **expected** shape rather than a
+ * suspicious one, and "give each record its own primary paper" is no longer the
+ * default fix. Declaring the share with its reason is. The two entries below
+ * that already say exactly that — Lee et al. introducing generalized UCC *and*
+ * its k-UpCCGSD truncation, Shor 1995 carrying two algorithms in its own title —
+ * were the exceptions when they were written and are the ordinary case now.
+ * See ADR-0026.
  */
 export const DECLARED_SHARED_SOURCES: Readonly<Record<string, readonly string[]>> = {
   // Peruzzo et al. 2013 is the paper that introduced VQE. Both records are about
