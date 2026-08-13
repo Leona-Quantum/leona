@@ -21,6 +21,7 @@ import {
   regionsOf,
   slotEntries,
 } from "./repository/region-joins.ts";
+import { layerAdjacency, walkableAdjacency } from "./repository/paper-traces.ts";
 import { LAYER_GRAPH } from "./repository/layer-graph.ts";
 import { STATE_VOCABULARY } from "./repository/state-vocabulary.ts";
 
@@ -452,4 +453,40 @@ test("three slots want a join nobody has recorded, and they are the ones ai-ops#
   for (const entry of worklist) {
     assert.ok(DECLARED_SLOT_ENTRIES[entry.slot].reason.length > 80);
   }
+});
+
+test("the map is three regions under containment and two under what a trace walks", () => {
+  // ADR-0027's split, asserted on the real graph so it cannot quietly become
+  // one relation again. `regionsOf` must stay on containment: if it adopted the
+  // walkable set, compilation and algorithms would be one region and the 105
+  // crossings above would count themselves away.
+  //
+  // Measured 2026-08-13: the state relation contributes 23 undirected
+  // capability edges and merges the 99-node algorithms region with the 13-node
+  // compilation one. Error mitigation stays out, because nothing produces
+  // `noisy-estimate` — which is the finding, not a limitation of the walk.
+  const componentsUnder = (adjacency: ReadonlyMap<string, ReadonlySet<string>>) => {
+    const seen = new Set<string>();
+    const sizes: number[] = [];
+    for (const node of LAYER_GRAPH.nodes) {
+      if (seen.has(node.id)) continue;
+      let size = 0;
+      const queue = [node.id];
+      seen.add(node.id);
+      while (queue.length > 0) {
+        const here = queue.shift()!;
+        size += 1;
+        for (const neighbour of adjacency.get(here) ?? []) {
+          if (seen.has(neighbour)) continue;
+          seen.add(neighbour);
+          queue.push(neighbour);
+        }
+      }
+      sizes.push(size);
+    }
+    return sizes.sort((a, b) => b - a);
+  };
+
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [99, 13, 5]);
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [112, 5]);
 });

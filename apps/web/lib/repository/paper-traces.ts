@@ -34,6 +34,27 @@
 // explicitly avoids — the single strongest negative claim on the surface, read
 // backwards. A trace that needs a bypass to connect is not contiguous.
 //
+// **A shared state IS an edge, and it is a fourth kind.** When one slot's
+// `contract.to` satisfies another's `contract.from`, the second continues the
+// first — that is what a contract means, and `stateSatisfies` is the same
+// relation `routeOf` walks to decide whether a step advances a route. Under
+// containment alone the map is three disconnected components, and a paper cited
+// at both `hamiltonian-simulation` and `gate-synthesis` is **following the
+// pipeline** and would be graded `scattered` — drift — for doing so. Measured
+// 2026-08-13 before adding it: the state relation contributes 23 capability
+// edges and takes the map from three components to two, and the census does not
+// move in any bucket (117 cited, 86 `point` / 2 `contiguous` / 29 `joinable` /
+// 0 `scattered`, identically before and after). So this arms nothing new today
+// and closes a false positive that was waiting.
+//
+// **Two relations, not one, and the distinction is load-bearing.**
+// `layerAdjacency` stays *containment only* — it is what a **region** is, an
+// area somebody authored as one piece — and `walkableAdjacency` adds the state
+// edges, which is what a **trace** may walk. Folding the state edges into the
+// first would make "cross-region join" mean nothing by construction: two areas
+// joined by a shared state would be one region, and the thing worth counting
+// would have counted itself away. `region-joins.ts` depends on that split.
+//
 // ## What the shapes mean
 //
 // `point` and `scattered` are the two that must never be collapsed into
@@ -46,8 +67,10 @@ import type { PaperId } from "./papers";
 // Extensioned: `node --test` resolves specifiers literally, so an extensionless
 // runtime import fails at load. The `import type` lines above are erased before
 // they run, which is why they differ.
-import { isMethod } from "./layers.ts";
+import { isCapability, isMethod } from "./layers.ts";
 import { paperIdFromUrl } from "./papers.ts";
+import { stateSatisfies } from "./states.ts";
+import type { StateVocabulary } from "./states";
 
 export type TraceShape =
   /** One node cites it. A point is not a line, and there is nothing to draw. */
@@ -83,7 +106,13 @@ export interface PaperTrace {
   bridgeUpperBound?: readonly string[];
 }
 
-/** Undirected adjacency over the map. See the header for why `bypasses` is absent. */
+/**
+ * Containment adjacency: `realizes`, `steps`, `refines`. See the header for why
+ * `bypasses` is absent.
+ *
+ * **This is what a region is**, and it deliberately does not know about states.
+ * `walkableAdjacency` is what a trace walks. Keep them apart — see the header.
+ */
 export function layerAdjacency(graph: LayerGraph): ReadonlyMap<string, ReadonlySet<string>> {
   const ids = new Set(graph.nodes.map((node) => node.id));
   const adjacency = new Map<string, Set<string>>();
@@ -103,6 +132,55 @@ export function layerAdjacency(graph: LayerGraph): ReadonlyMap<string, ReadonlyS
     link(node.id, node.realizes);
     for (const step of node.steps) link(node.id, step);
     if (node.refines) link(node.id, node.refines);
+  }
+  return adjacency;
+}
+
+/**
+ * Slot-to-slot edges the state vocabulary asserts: one slot's `contract.to`
+ * satisfies another's `contract.from`, so the second continues the first.
+ *
+ * Directional in meaning and undirected here, for the same reason the rest of
+ * this module is: a trace asks whether two citations are *joined*, not which way
+ * a reader would travel. `stateSatisfies` decides sameness, so a narrower
+ * product satisfies a broader requirement and never the reverse — an
+ * `evolution-circuit` is an `abstract-circuit` and may be compiled; a general
+ * `abstract-circuit` is not an evolution circuit and this adds no edge claiming
+ * it is.
+ *
+ * Capabilities only. Two methods are joined through the slots they realise,
+ * which `layerAdjacency` already supplies, and adding method-level state edges
+ * here would assert every filler against every filler — the product this module
+ * has no source for.
+ */
+export function stateAdjacency(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const adjacency = new Map<string, Set<string>>();
+  const capabilities = graph.nodes.filter(isCapability);
+  for (const node of graph.nodes) adjacency.set(node.id, new Set());
+  for (const produces of capabilities) {
+    for (const consumes of capabilities) {
+      if (produces.id === consumes.id) continue;
+      if (!stateSatisfies(vocabulary, produces.contract.to, consumes.contract.from)) continue;
+      adjacency.get(produces.id)!.add(consumes.id);
+      adjacency.get(consumes.id)!.add(produces.id);
+    }
+  }
+  return adjacency;
+}
+
+/** Containment and shared states together — what a trace may walk. */
+export function walkableAdjacency(
+  graph: LayerGraph,
+  vocabulary: StateVocabulary,
+): ReadonlyMap<string, ReadonlySet<string>> {
+  const adjacency = new Map<string, Set<string>>();
+  for (const [id, neighbours] of layerAdjacency(graph)) adjacency.set(id, new Set(neighbours));
+  for (const [id, neighbours] of stateAdjacency(graph, vocabulary)) {
+    if (!adjacency.has(id)) adjacency.set(id, new Set());
+    for (const neighbour of neighbours) adjacency.get(id)!.add(neighbour);
   }
   return adjacency;
 }
@@ -186,8 +264,8 @@ function shortestPath(
  * The shape of every paper the map cites, in descending order of how many nodes
  * cite it, then by id so the order is total.
  */
-export function paperTraces(graph: LayerGraph): PaperTrace[] {
-  const adjacency = layerAdjacency(graph);
+export function paperTraces(graph: LayerGraph, vocabulary: StateVocabulary): PaperTrace[] {
+  const adjacency = walkableAdjacency(graph, vocabulary);
   const order = new Map(graph.nodes.map((node, index) => [node.id, index] as const));
   const nodesByPaper = new Map<PaperId, string[]>();
   for (const [nodeId, papers] of papersByNode(graph)) {

@@ -709,7 +709,7 @@ if (!QUIET) {
   // shape of the answer is the design: most papers are cited once and have no
   // line to draw at all, and printing that is what stops a surface promising 84
   // traces and rendering two.
-  const traces = tracesMod.paperTraces(LAYER_GRAPH);
+  const traces = tracesMod.paperTraces(LAYER_GRAPH, STATE_VOCABULARY);
   const traceCensus = tracesMod.traceCensus(traces);
   console.log(
     `  ${traceCensus.papers} papers cited — ${traceCensus.point} at a single node, ${traceCensus.contiguous} contiguous, ${traceCensus.joinable} joinable through uncited nodes, ${traceCensus.scattered} with no path at all (widest: ${traceCensus.widest} nodes)`,
