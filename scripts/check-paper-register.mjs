@@ -101,45 +101,45 @@ const byId = papers.indexPapers(PAPER_REGISTER);
 // Every `entry.source.title` that disagrees with the register **today**, pinned
 // to the exact wrong string, with what it should say.
 //
-// Why a pinned list and not a straight failure: `source` is what the catalog
-// attestation hashes. Correcting these twelve titles moves twelve claim hashes,
-// which turns twelve attested records into refusals needing a fresh human
-// signature — the same event nine VQE records are already mid-way through. That
-// is a deliberate, sequenced edit an owner makes with `--re-attest` in hand, not
-// a drive-by fix, and least of all one made in the same change that first
-// measured them.
+// **It is empty, and that is the finished state, not an unstarted one.** All
+// twelve records this list was built to hold were corrected together — see the
+// entry for 2026-08-13 in the desk decisions file. Each one's `source.title` now
+// equals its register row, so each one's line had to come out of here in the
+// same commit: the second loop below fails a slug that no longer records the
+// wrong string it is pinned to.
+//
+// Why the list existed at all, since the mechanism is worth keeping: `source` is
+// what the catalog attestation hashes, so correcting a title moves that record's
+// claim hash and turns an attested record into a refusal needing a fresh
+// signature. That is a deliberate, sequenced edit made with `--re-attest` in
+// hand, not a drive-by fix. The twelve were therefore quarantined until they
+// could be fixed in one batch alongside a signing run, which is what happened.
+//
+// **The bar for putting anything back.** This map is not a way to make a failing
+// record pass. It is a way to say "this is wrong, it is recorded, and it is
+// being fixed in the next signing run" — so a line added here without that run
+// already scheduled is a permission slip, which is exactly what it must never
+// become. If you are adding one, name the batch it lands in.
 //
 // It cannot go stale in either direction, which is the only thing that makes a
 // list like this safe (same rule `AttestationPolicy` applies to its
 // `excluded_identities`): a slug whose title stops matching the pinned wrong
 // string fails as a stale line, so fixing a record forces its line out of here
 // in the same commit; and a *new* drift is not in the list and fails outright.
+// Both directions were broken deliberately and confirmed to exit 1 before this
+// list was emptied; the evidence is in the PR that emptied it. With the map at
+// zero entries the stale-line direction has no live input, so it is the one to
+// re-break by hand if you ever add a line back.
 //
-// Four of the twelve are pure casing. The rest are a real disagreement, and one
-// is the exact failure ./papers.ts was written to kill: `cluster-state-1d` cites
-// quant-ph/0010033 as "A one-way quantum computer", which is a different, real
-// Raussendorf–Briegel paper. The register caught that in `literature` in PR #305
+// The worst of the twelve is worth remembering, because it is the failure
+// ./papers.ts was written to kill and it survived here for months:
+// `cluster-state-1d` cited quant-ph/0010033 as "A one-way quantum computer",
+// which is a different, real Raussendorf–Briegel paper. arXiv's own metadata for
+// that id says "Quantum computing via measurements only" (checked 2026-08-13),
+// and the record's own `literature` array had it right all along — only
+// `source.title` disagreed. The register caught it in `literature` in PR #305
 // and could not see it here.
-const KNOWN_SOURCE_TITLE_DRIFT = new Map([
-  ["hhl-linear-systems", "Quantum algorithm for linear systems of equations"],
-  ["surface-code-memory", "The XZZX surface code"],
-  [
-    "iterative-phase-estimation",
-    "Arbitrary accuracy iterative quantum phase estimation algorithm using a single ancilla qubit",
-  ],
-  ["quantum-walk-line", "Quantum walks on graphs"],
-  ["cluster-state-1d", "A one-way quantum computer"],
-  ["graph-state-ring", "Multiparty entanglement in graph states"],
-  ["magic-t-state", "Universal quantum computation with ideal Clifford gates and noisy ancillas"],
-  [
-    "heisenberg-xxz-operator",
-    "An Introduction to Integrable Techniques for One-Dimensional Quantum Spin Systems",
-  ],
-  ["parity-operator-measurement", "Quantum Computation and Quantum Information"],
-  ["plus-minus-states", "Quantum Computation and Quantum Information"],
-  ["noon-state", "A quantum Rosetta stone for interferometry"],
-  ["maximally-mixed-state", "Quantum Computation and Quantum Information"],
-]);
+const KNOWN_SOURCE_TITLE_DRIFT = new Map([]);
 
 // A URL that is not an arXiv or DOI address is not a paper. "The register
 // cannot key on it" must not become the way a *typo'd* arXiv link goes quiet,
