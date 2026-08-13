@@ -11,6 +11,7 @@ import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isWorkosAuthConfigured } from "./lib/auth-config";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
+import { pageviewLoggingEnabled, pageviewSignal } from "./lib/pageview-signal";
 import { isPublicDemoEnabled } from "./lib/public-demo";
 import { isRoutedPath } from "./lib/routed-paths";
 
@@ -66,7 +67,52 @@ const workosMiddleware = authkitMiddleware({
 // the session and stamps the headers `withAuth()` needs, and redirects nobody.
 const unauthenticatedFallThrough = authkitMiddleware();
 
+/**
+ * Write one line per public pageview to the runtime log, and change nothing.
+ *
+ * This is the whole public analytics implementation. It lives here because
+ * middleware is the only place that runs exactly once per request, sees the
+ * prefetch headers that distinguish a read from a hover, and is already being
+ * invoked — so counting costs no extra function invocation, no database write,
+ * and no call to the API service. Every alternative sink was rejected on cost:
+ * see `docs/runbooks/pageviews.md`.
+ *
+ * It is inert with respect to authentication by construction: it takes no
+ * decision, touches neither the request nor the response, cannot return, and
+ * swallows everything. `pageviewSignal` also never throws. In a blast-radius
+ * file the belt and the braces are both deliberate — a counter that 500s the
+ * site is worse than no counter.
+ */
+function countPageview(request: NextRequest): void {
+  try {
+    // Named statically, not read off `process.env` inside the helper. Next
+    // inlines edge-runtime environment variables only where it can see the key
+    // at build time, so a dynamic lookup here would always come back undefined
+    // and the off switch would silently never turn anything off.
+    if (!pageviewLoggingEnabled({ LEONA_PAGEVIEW_LOG: process.env.LEONA_PAGEVIEW_LOG })) return;
+    const signal = pageviewSignal({
+      pathname: request.nextUrl.pathname,
+      headers: request.headers,
+      selfHost: request.nextUrl.host,
+      now: new Date(),
+    });
+    if (signal === null) return;
+    // One line, one JSON object, no interpolation — the read-back procedure
+    // greps for the marker and parses the rest.
+    console.log(JSON.stringify(signal));
+  } catch {
+    // A metric is never worth a request.
+  }
+}
+
 export default async function middleware(request: NextRequest, event: NextFetchEvent) {
+  // First, and before any early return: the counter's contract is that it runs
+  // exactly once per request. It is also why placement here is safe next to the
+  // 404 fall-through below — `publicRoute()` returns null for anything outside
+  // the four PAGEVIEW_ROUTES, all of which are routed paths, so an unrouted URL
+  // logs nothing either way. Counting first keeps that true if the route list
+  // ever grows.
+  countPageview(request);
   // Before the gate, deliberately: an auth gate handed a path that resolves to
   // nothing can only send the visitor to AuthKit, so a typo, a stale bookmark
   // or a crawler landed on api.workos.com's sign-in screen. Nothing is exposed
