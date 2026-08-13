@@ -46,6 +46,7 @@ the work.
 | 0023 | Fixed nameko-style circuit pipeline | **implemented** — this is the shipping pipeline |
 | 0024 | Cloud SQL for PostgreSQL 17 | **implemented** — production since 2026-07-27 |
 | 0025 | A closed slot's population is pinned to a citable enumeration | **accepted** — one slot pinned (`linear-ode-solve`) |
+| 0026 | Sub-paper extraction: a component may come from a paper about something else | **accepted** — in force |
 
 ## Decisions with no ADR
 
@@ -114,6 +115,15 @@ answers "why" only from runbooks, memory and code comments.
   PostgreSQL 17 and supersedes ADR-0003. Written retrospectively on 2026-08-04.
 - 2026-07-31: Cloud Run revision tags other than `verify` removed as a public-URL
   hazard; ADR-0011's preview clause amended to match (2026-08-04).
+- 2026-08-13: **ADR-0026** writes the sourcing doctrine down as one policy for the
+  first time: a component may be extracted from a paper whose subject is something
+  else (owner, ai-ops#51), reconciled with #44 (textbooks are primary sources),
+  #42 (a reputable vendor library's implementations may be kept) and #12 (a record
+  may not cite a paper that does not contain what it claims). The enforcement sites
+  were read exhaustively first and **no checker had ever encoded paper granularity**
+  — the assumption lived in G1's pre-registration prose and in practice. Adds the
+  scattered-trace gate to `check-paper-register.mjs` as the checkable half of the
+  owner's "does not abstract to unrelated topics".
 - 2026-08-04: status-line sweep — 0016/0019/0020/0021/0023 marked implemented, 0022
   marked partially implemented and partially superseded by 0023, 0017 and 0018
   annotated with what was never built, and the no-ADR list above opened.
