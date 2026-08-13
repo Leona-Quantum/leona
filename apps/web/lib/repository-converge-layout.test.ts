@@ -21,6 +21,7 @@ import {
   drawableSlots,
   allocateBows,
   allocateBowsAroundSpine,
+  besideNameReach,
   chainColumnNeed,
   laneOffsets,
   reservedHalfHeight,
@@ -571,6 +572,12 @@ test("no branch of a fan enters the band the opened line reserved for itself", (
   // one, so it was the majority of the drawing.
   const spineHalf = 22;
   const gap = 10;
+  // **Driven with even bands on purpose.** This test and the next are about the
+  // allocator's odd/even packing, which predates the one-sided name band and did
+  // not change with it; `even` keeps them asking their own question. What the
+  // asymmetry does is a separate test below, so that a regression in one is not
+  // mistakable for a regression in the other.
+  const even = (half: number) => ({ above: half, below: half });
   for (const halves of [
     [20],
     [20, 20],
@@ -583,7 +590,7 @@ test("no branch of a fan enters the band the opened line reserved for itself", (
     [20, 20, 140],
     [9, 200, 31, 12],
   ]) {
-    const offsets = allocateBowsAroundSpine(halves, 0, gap, spineHalf);
+    const offsets = allocateBowsAroundSpine(halves.map(even), 0, gap, even(spineHalf));
     assert.equal(offsets.length, halves.length);
     for (const [index, offset] of offsets.entries()) {
       const half = halves[index]!;
@@ -606,7 +613,7 @@ test("no branch of a fan enters the band the opened line reserved for itself", (
       );
     }
   }
-  assert.deepEqual(allocateBowsAroundSpine([], 0, gap, spineHalf), []);
+  assert.deepEqual(allocateBowsAroundSpine([], 0, gap, even(spineHalf)), []);
 });
 
 test("a fan reserves the band its own branches reach, not half of a summed row", () => {
@@ -617,8 +624,9 @@ test("a fan reserves the band its own branches reach, not half of a summed row",
   // Failable: `spread / 2 + labelBand` for the first case below is 47 against a
   // drawing that reaches 72, so the parent reserved a band its own child
   // overflowed by 25px and the siblings it was packed against never knew.
+  const even = (half: number) => ({ above: half, below: half });
   for (const halves of [[20], [20, 20, 20], [140, 20, 20]]) {
-    const offsets = allocateBowsAroundSpine(halves, 0, M.laneGap, M.spineBand);
+    const offsets = allocateBowsAroundSpine(halves.map(even), 0, M.laneGap, even(M.spineBand));
     const reach = Math.max(...offsets.map((offset, index) => Math.abs(offset) + halves[index]!));
     const spread =
       halves.reduce((sum, half) => sum + half * 2, 0) + M.spineBand * 2 + M.laneGap * halves.length;
@@ -631,7 +639,7 @@ test("a fan reserves the band its own branches reach, not half of a summed row",
   // An even fan is the case where the two agree, and it must keep agreeing —
   // otherwise the fix moved every figure, not just the odd ones.
   for (const halves of [[20, 20], [20, 20, 20, 20], [140, 20, 20, 140]]) {
-    const offsets = allocateBowsAroundSpine(halves, 0, M.laneGap, M.spineBand);
+    const offsets = allocateBowsAroundSpine(halves.map(even), 0, M.laneGap, even(M.spineBand));
     const reach = Math.max(...offsets.map((offset, index) => Math.abs(offset) + halves[index]!));
     const spread =
       halves.reduce((sum, half) => sum + half * 2, 0) + M.spineBand * 2 + M.laneGap * halves.length;
@@ -2164,13 +2172,20 @@ test("allocateBows reproduces laneOffsets exactly when every sibling is a leaf",
   // Two writers of one spacing. `laneOffsets` is the shut case in closed form —
   // the one a reader can check by looking — and `allocateBows` is what the
   // layout actually calls. They have to agree, and `laneBow` is the number that
-  // makes them agree, so a change to `strandHalf`, `labelBand` or `laneGap` that
-  // forgets `laneBow` fails here rather than drifting the picture.
-  const leaf = M.strandHalf + M.labelBand;
+  // makes them agree, so a change to `strandHalf`, `besideNameReach` or
+  // `laneGap` that forgets `laneBow` fails here rather than drifting the picture.
+  //
+  // **`besideNameReach()`, not a literal, and not `labelBand` which is gone.**
+  // A leaf that writes its name beside itself reserves its own thickness plus
+  // the room that name takes, and this test's whole job is that `laneBow` keeps
+  // describing *that* band. Written as a literal it would have gone on passing
+  // while `laneOffsets` described a fan the layout no longer draws, which is
+  // exactly what it did do until the band was corrected.
+  const leaf = M.strandHalf + Math.max(besideNameReach().above, besideNameReach().below);
   assert.equal(leaf * 2 + M.laneGap, M.laneBow, "laneBow is not an independent number");
   for (const count of [1, 2, 3, 4, 5, 7]) {
     const closed = laneOffsets(count);
-    const allocated = allocateBows(new Array(count).fill(leaf), 0, M.laneGap);
+    const allocated = allocateBows(new Array(count).fill({ above: leaf, below: leaf }), 0, M.laneGap);
     for (let index = 0; index < count; index += 1) {
       assert.ok(
         Math.abs(closed[index]! - allocated[index]!) < 1e-9,
@@ -2197,25 +2212,35 @@ function outlineEdges(d: string): { upper: (x: number) => number; lower: (x: num
   };
 }
 
-test("every strand pinches to a point at both circles and stands 2·half across its belly", () => {
-  // The taper is not decoration: a line of constant width arriving at a circle
-  // says "this ends here", and a strand pinching to a point says "this and the
-  // others become one thing here", which is what a convergence is. Read off the
-  // emitted outline, because that is the shape a reader sees.
+test("every strand is a thin tendon, a body around its own name, and a thin tendon", () => {
+  // **R15, and this test used to assert the opposite.** It read *"every strand
+  // pinches to a point at both circles and stands 2·half across its belly"*, and
+  // its own comment defended the taper: *"a strand pinching to a point says 'this
+  // and the others become one thing here', which is what a convergence is."* The
+  // owner disagreed, in as many words:
   //
-  // **A ribbon since R14, and the claim got sharper rather than weaker.** The
-  // old shape was a lens — thickest at one point and thinning everywhere else —
-  // and the check that matched it counted the numbers in the path string, which
-  // is a check on the *arity* of the emitter rather than on the shape. The
-  // muscle is a taper, a constant belly, and a taper, so all three are asserted
-  // against samples of the drawn edges.
+  // > *"i don't like how lines taper off — just keep thin tendon lines and the
+  // > same short line bodies around labels rather than this taper."* — ai-ops#64
+  //
+  // So the shape is now thin / thick / thin with a step between, and the three
+  // things this asserts are the three parts. Read off the emitted outline,
+  // because that is the shape a reader sees, and because the fields and the path
+  // have come apart on this canvas before.
+  //
+  // **The `belly` sample moved to `body`, and that is the whole of the second
+  // ask.** A check that walked the belly would now pass on a strand drawn thick
+  // from tendon to tendon — which is exactly the shape being removed. It walks
+  // the body, and then walks the *rest of the belly* asserting it is thin.
   let checked = 0;
+  let bodies = 0;
+  let padded = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     const diagram = diagramFor(focus.id);
     for (const lane of diagram.lanes) {
       assert.ok(lane.outline.endsWith("Z"), `${lane.key}: an outline is closed`);
       assert.ok(lane.half > 0, `${lane.key}: a strand with no thickness`);
       const edges = outlineEdges(lane.outline);
+      const thin = 2 * Math.min(M.tendonHalf, lane.half);
       checked += 1;
       // Sampled at the ends the OUTLINE draws, not at `lane.x0`/`lane.x1`. The
       // emitter rounds to a hundredth and the layout's own numbers are exact, so
@@ -2224,33 +2249,95 @@ test("every strand pinches to a point at both circles and stands 2·half across 
       // back to the last segment. That returned the far end of the shape and
       // read as a 7px gap at a pinch that is exact.
       const ends = drawnEnds(lane.outline);
-      close(edges.upper(ends.sx), edges.lower(ends.sx), `${lane.key}: not pinched at its start`, 0.05);
-      close(edges.upper(ends.ex), edges.lower(ends.ex), `${lane.key}: not pinched at its end`, 0.05);
-      close(edges.upper(ends.sx), lane.yc, `${lane.key}: the pinch is off the base`, 0.05);
-      // Constant across the belly, at exactly the thickness the lane reports.
-      for (let step = 1; step < 20; step += 1) {
-        const x = lane.bellyX0 + ((lane.bellyX1 - lane.bellyX0) * step) / 20;
+      close(
+        edges.lower(ends.sx) - edges.upper(ends.sx),
+        thin,
+        `${lane.key}: the start is not the tendon's own thickness`,
+        0.05,
+      );
+      close(
+        edges.lower(ends.ex) - edges.upper(ends.ex),
+        thin,
+        `${lane.key}: the end is not the tendon's own thickness`,
+        0.05,
+      );
+      // The thin line is centred on the base, where the point used to be.
+      close(
+        (edges.upper(ends.sx) + edges.lower(ends.sx)) / 2,
+        lane.yc,
+        `${lane.key}: the end of the line is off the base`,
+        0.05,
+      );
+
+      // **The body is the rule, re-derived from the label rather than read back
+      // off the lane.** `bodyX0`/`bodyX1` are what `place` decided; this is what
+      // the rule says it should have decided, computed from the drawn string and
+      // the two constants. Reading the fields back and comparing them to
+      // themselves is the derived-cannot-verify-self mistake this file has paid
+      // for twice.
+      const ink = lane.label === "" ? 0 : estimateTextWidth(lane.label, M.laneFont);
+      const wanted = Math.min(
+        Math.max(M.minBody, ink + 2 * M.labelPad),
+        lane.bellyX1 - lane.bellyX0,
+      );
+      close(lane.bodyX1 - lane.bodyX0, wanted, `${lane.key}: the body is not the rule`, 0.01);
+      assert.ok(
+        lane.bodyX0 >= lane.bellyX0 - 0.01 && lane.bodyX1 <= lane.bellyX1 + 0.01,
+        `${lane.key}: the body [${lane.bodyX0}, ${lane.bodyX1}] leaves its belly ` +
+          `[${lane.bellyX0}, ${lane.bellyX1}]`,
+      );
+      // A named body holds its own name — the failure the rule must not produce.
+      if (ink > 0 && lane.bellyX1 - lane.bellyX0 >= ink) {
+        assert.ok(
+          lane.bodyX1 - lane.bodyX0 >= ink - 0.01,
+          `${lane.key}: a ${ink.toFixed(1)}px name on a ${(lane.bodyX1 - lane.bodyX0).toFixed(1)}px body`,
+        );
+      }
+
+      // Full thickness across the body...
+      if (lane.bodyX1 - lane.bodyX0 > 1) {
+        bodies += 1;
+        for (let step = 1; step < 20; step += 1) {
+          const x = lane.bodyX0 + ((lane.bodyX1 - lane.bodyX0) * step) / 20;
+          close(
+            edges.lower(x) - edges.upper(x),
+            2 * lane.half,
+            `${lane.key}: thickness across the body at x=${x}`,
+            0.05,
+          );
+        }
+      }
+      // ...and thin off it, on the belly as much as on the tendon. This is the
+      // sample that fails if the taper — or a body sized to the whole belly —
+      // comes back, and it only exists on a lane whose belly is longer than its
+      // body, which is 62% of them and every one the owner was complaining about.
+      const slack = lane.bodyX0 - lane.bellyX0;
+      if (slack > 2) {
+        padded += 1;
         close(
-          edges.lower(x) - edges.upper(x),
-          2 * lane.half,
-          `${lane.key}: thickness across the belly at x=${x}`,
+          edges.lower(lane.bodyX0 - 1) - edges.upper(lane.bodyX0 - 1),
+          thin,
+          `${lane.key}: the belly is thick ${slack.toFixed(1)}px off its own body`,
           0.05,
         );
       }
-      // And it tapers rather than stepping: halfway up a tendon the shape is
-      // thinner than the belly and thicker than the pinch.
       if (lane.run > 1) {
         const mid = lane.x0 + lane.run / 2;
-        const thickness = edges.lower(mid) - edges.upper(mid);
-        assert.ok(
-          thickness > 0.02 && thickness < 2 * lane.half - 0.02,
-          `${lane.key}: the tendon is ${thickness.toFixed(2)} thick against a belly of ` +
-            `${(2 * lane.half).toFixed(2)} — it steps rather than tapers`,
+        close(
+          edges.lower(mid) - edges.upper(mid),
+          thin,
+          `${lane.key}: the tendon tapers rather than running thin`,
+          0.05,
         );
       }
     }
   }
   assert.ok(checked > 50, `only ${checked} outlines checked`);
+  assert.ok(bodies > 50, `only ${bodies} bodies sampled`);
+  // A floor on the population the second half of the rule is about. Without it a
+  // future change that made every body fill its belly would leave this test green
+  // by having nothing left to check — the empty-for-the-wrong-reason failure.
+  assert.ok(padded > 20, `only ${padded} lanes have belly to spare — is the body still short?`);
 });
 
 test("the key's swatch is the same kind of shape the canvas draws", () => {
@@ -2490,7 +2577,12 @@ test("a name written inside its own line is not given a second band beside it", 
   // The names themselves are guarded elsewhere and deliberately not restated:
   // `no two names overlap on an opened figure either` is what says the text
   // still clears, and it is the invariant this compaction was tightened against.
-  const OLD_RESERVATION = 2 * CONVERGE_METRICS.labelBand + CONVERGE_METRICS.laneGap;
+  // A **historical** number, and a literal on purpose: 13 was `labelBand`, which
+  // this canvas no longer has (see its note in `CONVERGE_METRICS`). The bar is
+  // "tighter than the reservation this compaction removed", so it has to keep
+  // meaning the number that was removed rather than tracking whatever replaced
+  // it — a bar that moves with the thing it is measuring is not a bar.
+  const OLD_RESERVATION = 2 * 13 + CONVERGE_METRICS.laneGap;
   const gaps: number[] = [];
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     for (const locale of ["en", "ja"] as const) {
@@ -3067,6 +3159,118 @@ test("every declared refinement is drawn on the lane of the method that declares
   }
   console.log(
     `[map refinement census] ${expected.size} drawn + ${foldedExpected.size} folded records, ${marks} marked shapes drawn across every figure and opening`,
+  );
+});
+
+test("every authored specification is drawn on the hop that records it, and nowhere else", () => {
+  // **ai-ops#51's mechanism, and the reason it needs a gate of its own.**
+  //
+  // > *"we can put specifications in the labels rather than another item on the
+  // > map — something like 'penalty objective'."*   — owner, ai-ops#51
+  //
+  // `spec` is the only one of the four hop annotations that names **nothing**:
+  // `via` must be a method that fills the step, `through` must be a state that
+  // narrows it, `repeats` carries a closure the graph checks. A specification is
+  // free text on a drawing, so validation can only hold it to a shape — which
+  // makes "does it actually reach the picture, and does the picture compose it
+  // the way the demand does" the whole of what a test can add.
+  //
+  // Three claims, and the second is the one that already caught a real defect:
+  // the column was sized from `drawnName` and the text cut by a separately
+  // composed string, so `nonlinear-ode-solve` drew *"Quantum singular value
+  // transformation"* into a 361px column built for 235px of text.
+  const authored: Array<{ method: string; step: string; en: string; ja: string }> = [];
+  for (const id of METHOD_IDS) {
+    const node = layerNode(LAYER_GRAPH, id);
+    if (!node || !isMethod(node) || node.spec === undefined) continue;
+    for (const [step, en] of Object.entries(node.spec)) {
+      authored.push({ method: id, step, en, ja: node.specJa?.[step] ?? "" });
+    }
+  }
+  assert.ok(authored.length >= 2, `only ${authored.length} specifications authored — is the field in use?`);
+
+  for (const locale of ["en", "ja"] as const) {
+    const wanted = new Map(authored.map((a) => [`${a.method}/${a.step}`, locale === "ja" ? a.ja : a.en]));
+    const reached = new Set<string>();
+    for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+      for (const lane of openDiagram(focus.id, openableAddresses(focus.id), locale).lanes) {
+        if (lane.spec === null) continue;
+        assert.ok(
+          [...wanted.values()].includes(lane.spec),
+          `a lane draws "${lane.spec}", which no method records — the canvas invented a specification`,
+        );
+        for (const [key, text] of wanted) if (text === lane.spec) reached.add(key);
+
+        // **One composition, two readers.** `fullLabel` is the name plus the
+        // spec, and the drawn `label` is the same string with a short form and a
+        // cut allowed. Asserting the join here is what would have failed on the
+        // 361px column, because the two were composed apart.
+        assert.ok(
+          lane.fullLabel.endsWith(`, ${lane.spec}`),
+          `${lane.key}: fullLabel "${lane.fullLabel}" does not carry its own spec "${lane.spec}"`,
+        );
+        assert.ok(
+          lane.label.includes(lane.spec) || lane.labelTruncated,
+          `${lane.key}: the label "${lane.label}" drops the spec "${lane.spec}" without saying it was cut`,
+        );
+        // And the reader who listens gets it too, because `spokenName` reads
+        // `fullLabel` — one string for the eye, the tooltip and the screen
+        // reader, which is what `spokenName` exists to keep true.
+        assert.ok(
+          spokenName(lane).includes(lane.spec),
+          `${lane.key}: the spoken name drops the specification`,
+        );
+      }
+    }
+    for (const key of wanted.keys()) {
+      assert.ok(reached.has(key), `${locale}: ${key} records a specification the map draws nowhere`);
+    }
+  }
+
+  // **The failable half: without it, the two collide.** The row these two split
+  // was in `DRAWN_TWINS` until this field existed, and a test that only checked
+  // the string reached a label would stay green if the field stopped doing the
+  // job it was built for. So the hop is drawn twice — once with the specs the
+  // corpus records and once with them stripped — and the two runs must disagree.
+  //
+  // The hop, not the subtree. `qsvt-matrix-inversion` walks four steps and
+  // `eigenstate-filtering-inversion` three, so their subtrees were never
+  // identical; what was identical, and what the retired row was about, is the
+  // `matrix-function` hop both of them pin to `qsvt-transform`.
+  const qsvtHops = (strip: boolean): string[] => {
+    const graph = strip
+      ? {
+          ...LAYER_GRAPH,
+          nodes: LAYER_GRAPH.nodes.map((node) =>
+            isMethod(node) && node.spec !== undefined
+              ? { ...node, spec: undefined, specJa: undefined }
+              : node,
+          ),
+        }
+      : LAYER_GRAPH;
+    const focus = layerNode(graph, "quantum-linear-solve");
+    assert.ok(focus && isCapability(focus));
+    const open = new Set(openableAddresses("quantum-linear-solve", graph));
+    return layoutConverge({ graph, vocabulary: STATE_VOCABULARY, focus, locale: "en", open })
+      // `nodeId`, not the href — an href carries the reader's whole `?open=` set,
+      // and the method's own stretch borrows its parent's href while naming no
+      // node at all.
+      .lanes.filter((lane) => lane.nodeId === "qsvt-transform")
+      .map((lane) => lane.fullLabel)
+      .sort();
+  };
+  const stripped = qsvtHops(true);
+  const authoredHops = qsvtHops(false);
+  assert.ok(stripped.length >= 2, `only ${stripped.length} hops draw qsvt-transform — the control is vacuous`);
+  assert.equal(
+    new Set(stripped).size,
+    1,
+    `with specifications stripped, the hops that pin QSVT should all read the same — they read ${JSON.stringify([...new Set(stripped)])}, so this control has stopped controlling for anything`,
+  );
+  assert.equal(
+    new Set(authoredHops).size,
+    authoredHops.length,
+    `with specifications authored, two hops still read the same: ${JSON.stringify(authoredHops)} — the field is not reaching the picture`,
   );
 });
 
@@ -3737,6 +3941,121 @@ test("every belly is level, and every rise happens inside a tendon", () => {
   assert.ok(
     steepest >= 0,
     `steepest tendon on any figure: ${(Math.atan(steepest) * 180 / Math.PI).toFixed(1)}deg`,
+  );
+});
+
+/**
+ * The bar for how far past a shared circle two lines may still be one line.
+ *
+ * **The cost R15 created, named and bounded rather than argued away.** While a
+ * strand pinched to a point, two siblings' ink could not meet anywhere: their
+ * centres are `(b₁ − b₂)·φ(x)` apart and their thicknesses shrank by the same φ,
+ * so both went to zero together at the circle. A tendon of *constant* thickness
+ * does not, so near a shared circle — where the centre lines genuinely converge
+ * — two 2px lines overlap for a short stretch.
+ *
+ * That is a real change to the drawing and it is defensible on its own terms: the
+ * lines are converging on a node they share, which is what the figure is about.
+ * What it is not is unbounded, and the numbers are the reason to accept it rather
+ * than the reason to hide it. Measured over all 46 figure-locales, shut and
+ * saturated, at f1617681 — 1,042 sibling pairs over one base:
+ *
+ *     ink meets somewhere                            1,042 of 1,042
+ *     entirely under the state circle (r = 11)         948 (91.0%)
+ *     visible merge past the circle       p50 3.84px  p90 17.45px  max 35.14px
+ *     furthest merge from a circle        p50 3.99px  p90 10.08px  max 46.14px
+ *     worst as a share of its own span                        6.50%
+ *
+ * The two worsts are different pairs — 46.14px is 6.00% of its own 769px line,
+ * and the 6.50% is a shorter one — which is why both bars are checked per pair
+ * rather than one being derived from the other.
+ *
+ * So nine merges in ten are painted over by the very circle the lines are
+ * converging on, and the worst visible one is 35px on a 769px line.
+ *
+ * 60px and 12%, both, because either alone is the wrong instrument: an absolute
+ * bar goes vacuous on a 3,000px figure and a share goes vacuous on a short one.
+ * Doubling today's worst on each is deliberate headroom — this is a bar that
+ * should fail when the shape changes, not when the corpus grows a node.
+ */
+const INK_MERGE_MAX = { px: 60, share: 0.12 } as const;
+
+test("two lines' ink meets only where they converge on a circle they share", () => {
+  // `ribbonY` on the lane's own declared numbers, and the ink half-width from
+  // `bodyX0`/`bodyX1` — the same two fields the emitter draws from. The claim is
+  // about the *middle* of a span: two lines may run into each other at the ends,
+  // where they are arriving at one circle, and must be apart everywhere else.
+  const inkHalf = (lane: ConvergeLane, x: number): number =>
+    lane.open
+      ? M.spineStroke / 2
+      : x >= lane.bodyX0 && x <= lane.bodyX1
+        ? lane.half
+        : Math.min(M.tendonHalf, lane.half);
+  let pairs = 0;
+  let worst = { px: 0, share: 0, why: "" };
+  let hidden = 0;
+  let merged = 0;
+  for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
+    const addresses = openableAddresses(focus.id);
+    for (const locale of ["en", "ja"] as const) {
+      for (const open of [[], addresses]) {
+        const lanes = openDiagram(focus.id, open, locale).lanes;
+        for (let i = 0; i < lanes.length; i += 1) {
+          for (let j = i + 1; j < lanes.length; j += 1) {
+            const a = lanes[i]!;
+            const b = lanes[j]!;
+            // Only lanes over one base can meet at all — different bundles hold
+            // disjoint x, and that is a separate invariant's job.
+            if (a.parentKey !== b.parentKey) continue;
+            if (Math.abs(a.x0 - b.x0) > 0.01 || Math.abs(a.x1 - b.x1) > 0.01) continue;
+            if (Math.abs(a.yc - b.yc) > 0.01) continue;
+            pairs += 1;
+            const span = a.x1 - a.x0;
+            const ra = { x0: a.x0, x1: a.x1, y: a.yc, bow: a.bow, run: a.run };
+            const rb = { x0: b.x0, x1: b.x1, y: b.yc, bow: b.bow, run: b.run };
+            let far = -1;
+            for (let k = 0; k <= 400; k += 1) {
+              const x = a.x0 + (span * k) / 400;
+              const gap =
+                Math.abs(ribbonY(ra, x) - ribbonY(rb, x)) - inkHalf(a, x) - inkHalf(b, x);
+              if (gap >= 0) continue;
+              far = Math.max(far, Math.min(x - a.x0, a.x1 - x));
+            }
+            if (far < 0) continue;
+            merged += 1;
+            if (far <= M.stateRadius) hidden += 1;
+            const share = far / span;
+            if (far > worst.px) {
+              worst = {
+                px: far,
+                share,
+                why: `${focus.id} (${locale}) "${a.label}" vs "${b.label}" on a ${span.toFixed(0)}px line`,
+              };
+            }
+            assert.ok(
+              far <= INK_MERGE_MAX.px && share <= INK_MERGE_MAX.share,
+              `${focus.id} (${locale}): "${a.label}" and "${b.label}" are one line for ` +
+                `${far.toFixed(1)}px (${(100 * share).toFixed(1)}% of a ${span.toFixed(0)}px span) ` +
+                `past the circle they share — the bar is ${INK_MERGE_MAX.px}px and ` +
+                `${100 * INK_MERGE_MAX.share}%`,
+            );
+            // And the two ends stay two ends: a merge reaching the midpoint would
+            // satisfy both bars on a short enough line and mean the lines never
+            // separate at all.
+            assert.ok(
+              far < span / 2 - 0.01,
+              `${focus.id} (${locale}): "${a.label}" and "${b.label}" never come apart`,
+            );
+          }
+        }
+      }
+    }
+  }
+  assert.ok(pairs > 500, `only ${pairs} sibling pairs swept`);
+  console.log(
+    `[ink merge] ${merged} of ${pairs} sibling pairs meet near a shared circle, ` +
+      `${hidden} (${((100 * hidden) / Math.max(1, merged)).toFixed(1)}%) entirely under it; ` +
+      `worst ${worst.px.toFixed(2)}px / ${(100 * worst.share).toFixed(2)}% — ${worst.why}`,
   );
 });
 
@@ -4640,27 +4959,21 @@ test("a route that pins its step draws the algorithm's name there, not the slot'
  * pictures are one, and it is checked structurally below.
  */
 const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why: string }> = [
-  {
-    slot: "quantum-linear-solve",
-    methods: ["qsvt-matrix-inversion", "eigenstate-filtering-inversion"],
-    why:
-      "**Made by pinning, and kept rather than un-pinned, because the pins are true.** Both records "
-      + "name their construction outright — one says \"apply the quantum singular value transformation "
-      + "with an odd polynomial approximating a scaled $1/x$ away from the origin\", the other applies "
-      + "its filter \"through quantum signal processing\" — and of the two methods realising "
-      + "`matrix-function` only `qsvt-transform` carries a phase sequence. So both hops honestly read "
-      + "QSVT, and drawing the same name twice is the correct drawing. Before the pins these two drew "
-      + "the slot's name and looked identical for a worse reason: the map could not say what filled the "
-      + "hop at all. This row is a smaller gap than the one it replaces. What still separates the two "
-      + "and the map cannot say is WHICH POLYNOMIAL goes through the transform — a scaled $1/x$ against "
-      + "a minimax filter that is 1 at a target eigenvalue and uniformly small outside a spectral gap — "
-      + "and that is a specification on a hop, not a method filling it. It is the same missing mechanism "
-      + "the three remaining `excited-state-energy` routes are waiting on, and the owner has named the "
-      + "shape of it in ai-ops#51: *\"we can put specifications in the labels rather than another item on "
-      + "the map\"*. `via` names a method and `through` names a state; neither can carry \"with an odd "
-      + "polynomial approximating $1/x$\". Both records already state their polynomial, so this row's "
-      + "exit is a field to write it into, not a source to go and find.",
-  },
+  // **The `quantum-linear-solve` row is gone, and ai-ops#51 is why.** It held
+  // `qsvt-matrix-inversion` and `eigenstate-filtering-inversion`, and its own
+  // text named its exit precisely: *"What still separates the two and the map
+  // cannot say is WHICH POLYNOMIAL goes through the transform — a scaled $1/x$
+  // against a minimax filter that is 1 at a target eigenvalue and uniformly
+  // small outside a spectral gap — and that is a specification on a hop, not a
+  // method filling it. … `via` names a method and `through` names a state;
+  // neither can carry 'with an odd polynomial approximating $1/x$'. Both records
+  // already state their polynomial, so this row's exit is a field to write it
+  // into, not a source to go and find."*
+  //
+  // The field is `LayerMethod.spec`, the two phrases are read off the two
+  // `summary` clauses, and the row deleted itself: the census now finds the two
+  // interiors distinct and the "delete the row" assertion below is what said so.
+  //
   // The `time-discretization` row — `backward-euler` with `trapezoidal-rule` —
   // was deleted in session 118. Both drew one interior only because both hung the
   // same `quantum-linear-solve` stub, and that step is gone by the owner's
