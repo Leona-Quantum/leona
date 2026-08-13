@@ -203,7 +203,23 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   // Two more from the third batch. Both from Hallgren's J. ACM paper, which is the
   // one number-theory source here that does state a classical cost, in L-notation.
   //   pell-equation-regulator, principal-ideal-problem
-  reported: 10,
+  // Two more from the fourth batch, and on one of them the very same sentence
+  // takes most of the claim back:
+  //   irreducible-representation-matrix-elements — "exponential speedup in worst
+  //     case complexity ... On the other hand, we show that average case instances
+  //     are classically easy." One sentence, both halves.
+  //   boson-sampling-linear-optics — the Jerrum-Sinclair-Vigoda contrast between
+  //     nonnegative and complex permanents.
+  //
+  // A third was written and could not land. The Zoo's "Subset-sum" entry is cited
+  // to Bernstein, Jeffery, Lange and Meurer, whose only identifier is the Springer
+  // chapter DOI 10.1007/978-3-642-38616-9_2. `paperSlug` maps "/" to "_", and that
+  // DOI already contains "_2", so the id does not survive a round trip through its
+  // own url segment and `validatePaperRegister` refuses it — exactly the case
+  // papers.ts:110-116 says the check exists for, firing for the first time. The
+  // record is written and the paper is read; it lands when the identity scheme can
+  // represent that DOI. Not a sourcing problem.
+  reported: 12,
   // Read and silent. gibbs-state-sampling was the first: Poulin and Wocjan's
   // abstract makes no comparison to a classical algorithm and the Zoo's
   // "Superpolynomial" is the section heading's. This is the record the owner's
