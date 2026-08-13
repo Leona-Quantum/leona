@@ -1498,6 +1498,18 @@ a.mj-facet-option:hover {
   font-weight: 500;
 }
 
+/* 404 — borrows the legal hero's typography, but it is the only section on the
+   page: nothing follows it except the footer, whose own rule would sit a
+   hand's width under the hero's, so the hero drops its bottom border. The
+   actions need their own top margin because the lede's small bottom margin was
+   sized for a document continuing beneath it, not for a pair of buttons. */
+.mj-not-found-site .mj-legal-hero {
+  border-bottom: none;
+}
+.mj-not-found-site .mj-public-actions {
+  margin-top: var(--sp-6);
+}
+
 @media (max-width: 860px) {
   .mj-contact-hero,
   .mj-company-intro,

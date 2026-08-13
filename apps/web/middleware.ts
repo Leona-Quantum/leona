@@ -1,10 +1,18 @@
 // Blast-radius file (CODEOWNERS). Secure by default: every matched route
 // requires an AuthKit session unless listed in unauthenticatedPaths.
+//
+// One exception, and it is not a route: a path whose first segment matches no
+// route at all falls through unauthenticated so Next can answer with the site's
+// own 404 (lib/routed-paths.ts). Nothing is behind those paths to protect —
+// what the gate was doing instead was 307ing every typo to WorkOS. The list of
+// routed segments is checked against app/ by lib/routed-paths.test.ts, so a new
+// top-level route cannot slip out of this gate by being forgotten.
 import { authkitMiddleware } from "@workos-inc/authkit-nextjs";
 import { NextResponse, type NextFetchEvent, type NextRequest } from "next/server";
 import { isWorkosAuthConfigured } from "./lib/auth-config";
 import { isLocalDevAuthEnabled } from "./lib/local-dev-auth";
 import { isPublicDemoEnabled } from "./lib/public-demo";
+import { isRoutedPath } from "./lib/routed-paths";
 
 const PUBLIC_PATHS = [
   "/",
@@ -47,7 +55,27 @@ const workosMiddleware = authkitMiddleware({
   },
 });
 
+// The fall-through for paths that match no route at all (see lib/routed-paths.ts).
+//
+// It is a second AuthKit instance rather than a bare NextResponse.next() because
+// authkit-nextjs refuses to answer `withAuth()` on a request that did not pass
+// through its middleware — it throws, by design, so that a forgotten matcher is
+// loud. The 404 page renders the ordinary public shell, whose header asks who
+// you are, so a bare next() would have turned every unknown URL into a 500.
+// With `middlewareAuth` left at its default (disabled) this instance refreshes
+// the session and stamps the headers `withAuth()` needs, and redirects nobody.
+const unauthenticatedFallThrough = authkitMiddleware();
+
 export default async function middleware(request: NextRequest, event: NextFetchEvent) {
+  // Before the gate, deliberately: an auth gate handed a path that resolves to
+  // nothing can only send the visitor to AuthKit, so a typo, a stale bookmark
+  // or a crawler landed on api.workos.com's sign-in screen. Nothing is exposed
+  // by letting these through — there is no route behind them, so Next answers
+  // with app/not-found.tsx and a 404.
+  if (!isRoutedPath(request.nextUrl.pathname)) {
+    if (isLocalDevAuthEnabled() || !isWorkosAuthConfigured()) return NextResponse.next();
+    return unauthenticatedFallThrough(request, event);
+  }
   if (isLocalDevAuthEnabled()) return NextResponse.next();
   if (!isWorkosAuthConfigured()) {
     const { pathname } = request.nextUrl;
