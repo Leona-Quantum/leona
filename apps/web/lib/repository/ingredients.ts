@@ -553,6 +553,32 @@ export interface TouchingProcess {
  *
  * A slot can legitimately be both, and both are listed: the relation is a fact
  * about that slot, not a bucket the slot is sorted into.
+ *
+ * ## What this deliberately does NOT read: `through`
+ *
+ * **Contract ends only.** `LayerMethod.through` is a third way a state gets used
+ * — it pins the state a *route* is actually holding after a step, when that is
+ * narrower than the step's own slot promises — and nothing here looks at it. So
+ * a method that narrows through a state is not counted among that state's
+ * processes.
+ *
+ * Measured 2026-08-13 rather than assumed, because the size of the omission is
+ * the whole question: **the graph carries exactly two `through` pins, both on
+ * `kvn-simulation-route`** (`nonlinear-linear-embedding → hermitian-generator`,
+ * `hamiltonian-simulation → runnable-evolution`), and **neither target is a
+ * state any record joins** — all 28 joins land on `prepared-state` and
+ * `hamiltonian-access`, and neither is a `through` target. So no count this
+ * module publishes is understated today. It could become understated the moment
+ * a record joins a narrowed state, which is why the limit is written here rather
+ * than left to be rediscovered.
+ *
+ * **And a warning about the wrong test, which cost a cross-lane exchange to
+ * settle.** "Named by no contract" is *not* the same as "reached by nothing":
+ * `hermitian-generator`, `runnable-evolution` and `history-state` appear in no
+ * `contract.from`/`contract.to` at all, yet this function returns 5, 4 and 1
+ * process for them respectively, because `stateSatisfies` walks `specializes`. A
+ * grep over contract fields will tell you those states are orphans and it is
+ * wrong three times out of three.
  */
 export function processesTouching(
   graph: LayerGraph,
