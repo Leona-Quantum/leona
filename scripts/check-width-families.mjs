@@ -33,7 +33,7 @@
 //   * Every slug's declared width equals its own circuit's `qubitCount`, so the
 //     suffix the fold reads is not a naming convention drifting from the
 //     circuit it names.
-//   * 259 browse rows. The number the roadmap promises, computed the way the
+//   * 261 browse rows. The number the roadmap promises, computed the way the
 //     page computes it rather than typed in. It was 176 when R2.6 sized it
 //     against 281 cards; the parity intake published 12 unfolded records and then
 //     6, 6, 8, 8, 19, 4, 6, 1, 6, 4, 2 and 1 more, so the number moved by exactly 83. Deliberately, which is what the error
@@ -247,7 +247,15 @@ const rows = families.foldRows(records, (slug) => groupIndex.get(slug));
 // `✖ manifest drift: committed 346 items, regenerated 347`. So the backstop
 // exists and it works; it is just nowhere near here, and "green locally" does not
 // reach it. Regenerate the manifest in the same commit as any record you add.
-const EXPECTED_BROWSE_ROWS = 259;
+// +2 for the two Zoo *subject headings* — `elliptic-curve-discrete-log-resources`
+// and `backtracking-quantum-walk-speedup` — taking Zoo coverage to 59/60. Two
+// literature records in no width family, so two new rows: 259 → 261.
+//
+// **Measured off this checker after regenerating the manifest, not composed from
+// a reported figure.** Four different wrong values for this constant circulated
+// during the W22 session — 247, 253, 257 and 258 — each correct for a branch state
+// that had already moved by the time it was quoted. Run the checker.
+const EXPECTED_BROWSE_ROWS = 261;
 if (rows.length !== EXPECTED_BROWSE_ROWS) {
   errors.push(
     `${records.length} records fold to ${rows.length} browse rows, expected ${EXPECTED_BROWSE_ROWS}. `
