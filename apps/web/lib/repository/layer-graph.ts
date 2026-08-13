@@ -3931,6 +3931,15 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The $O(\\kappa \\log(1/\\varepsilon))$ figure is a query count against the block-encoding, not a gate count, and it carries neither $\\alpha$ nor the amplification. Lin and Tong summarise the end-to-end QSP/QSVT query complexity as $O(\\kappa² \\mathrm{polylog}(\\kappa/\\varepsilon))$, reduced to $O(\\kappa \\mathrm{polylog}(\\kappa/\\varepsilon))$ only by variable-time amplitude amplification — and they state that the performance of that technique for this problem has not been quantitatively reported in the literature.",
     contestedJa: "$O(\\kappa \\log(1/\\varepsilon))$ という数字はブロック符号化への問い合わせ回数であってゲート数ではなく、$\\alpha$ も増幅ぶんも含んでいません。Lin と Tong は QSP/QSVT の全体としての問い合わせ計算量を $O(\\kappa² \\mathrm{polylog}(\\kappa/\\varepsilon))$ と整理し、$O(\\kappa \\mathrm{polylog}(\\kappa/\\varepsilon))$ まで下がるのは可変時間振幅増幅を用いた場合だけだとしています。さらに両氏は、この問題に対するその技法の性能は定量的に報告されていないと述べています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function", "success-amplification"],
+    // **`summary` names the construction, so the hop may say it.** "apply the
+    // quantum singular value transformation with an odd polynomial
+    // approximating a scaled $1/x$ away from the origin" — that is
+    // `qsvt-transform`, this record's own words, not an inference from the id.
+    // Owner ruling ai-ops#51: break open the boxes where the difference
+    // actually lives. Three of the five routes out of this slot drew
+    // block-encode → prepare → matrix-function and differed only in decoration,
+    // because the hop could only name the slot they share.
+    via: { "matrix-function": "qsvt-transform" },
     // Transcribed from `summary`, `conditions` and the `repeats` note. The
     // subnormalisation sentence is the reason this listing is worth having:
     // `conditions` says what the transform produces is (δ/2)·A⁺ and therefore
@@ -4141,6 +4150,25 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "The $\\kappa²$ here is the pre-amplification figure. The same paper's Theorem 5 brings the $\\kappa$-dependence down to near-linear, but it does so by reintroducing a low-precision ('gapped') phase estimation to bucket the spectrum, and it applies to either the Fourier or the Chebyshev route. Describing that near-linear result as phase-estimation-free is incorrect.",
     contestedJa: "ここでの $\\kappa²$ は増幅前の数字です。同じ論文の定理 5 は $\\kappa$ 依存性をほぼ線形まで下げますが、そのためにスペクトルを区分けする低精度の（gapped な）位相推定を再導入しており、フーリエ経路とチェビシェフ経路のどちらにも適用できます。このほぼ線形の結果を位相推定なしと表現するのは誤りです。",
     steps: ["state-preparation", "matrix-function", "success-amplification"],
+    // **A `via` pin to `lcu-chebyshev-transform` was written here and NOT kept.**
+    // It is the one of the four this session considered that no sentence on any
+    // record actually states. Its siblings each name their construction outright
+    // — `qsvt-matrix-inversion` says "apply the quantum singular value
+    // transformation", `discrete-adiabatic-inversion` says "a linear combination
+    // of walk operators rather than by quantum signal processing",
+    // `eigenstate-filtering-inversion` says "through quantum signal processing".
+    // This record says "Expand an approximation of $1/x$ in Chebyshev
+    // polynomials and implement that expansion directly through the quantum
+    // walk", which reads the same as the sibling method's summary and shares its
+    // primary source (Childs, Kothari and Somma, arXiv:1511.02306) — but the
+    // identification is a reader putting two summaries side by side, not a
+    // clause either one contains.
+    //
+    // ai-ops#51 widened what may be EXTRACTED from a paper; it explicitly did
+    // not lower the bar on whether the document contains the thing. An inference
+    // that two descriptions are the same construction is a claim about the
+    // science, and the owner is the one who settles those. Left unpinned, and
+    // the route still draws distinctly on its own `bypasses`.
     bypasses: ["hamiltonian-simulation"],
     // Transcribed from `summary`, `conditions`, `steps`, `cost` and `contested`.
     // The two action lines are `summary`: "Expand an approximation of 1/x in
@@ -4360,6 +4388,23 @@ export const LAYER_GRAPH: LayerGraph = {
     contested: "Constant factors in this family are unsettled. Costa, An, Babbush and Berry (arXiv December 2023; Quantum 9, 1887 (2025)) report numerical testing on random matrices showing the discrete adiabatic solver's constant factor is in practice about 1,200 times smaller than the published upper bound, and about an order of magnitude better than the randomized adiabatic approach of arXiv:2305.11352 — but that comparison was made against the 2023 version of that work, whose published 2025 version postdates it. The ranking therefore rests on a 2023 comparison; the published Quantum version of the discrete-adiabatic benchmark still cites the 2023 preprint of the randomized solver.",
     contestedJa: "この系統の定数因子は決着していません。Costa・An・Babbush・Berry（arXiv は 2023 年 12 月、Quantum 9, 1887 (2025)）はランダム行列を用いた数値実験により、離散断熱の解法の定数因子が実際には公表された上界のおよそ 1,200 分の 1 であり、arXiv:2305.11352 の乱択断熱の手法よりおよそ一桁効率が良いと報告しています。ただしこの比較は当該研究の 2023 年版に対するもので、2025 年に公表された版はそれより後になります。したがってこの順位付けは 2023 年時点の比較にもとづくものです。公表された Quantum 版の離散断熱のベンチマークも、乱択断熱の解法については 2023 年のプレプリントを引いています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
+    // **The best-sourced pin on this slot, because the record names what fills
+    // the hop AND what does not.** `summary`: the route finishes "with an
+    // eigenstate filter implemented as a linear combination of walk operators
+    // rather than by quantum signal processing". `lcu-chebyshev-transform` is
+    // the linear-combination construction and it is the one method here that
+    // `bypasses: ["qsp-phase-factors"]`, so the record's "rather than" lands on
+    // its sibling exactly. The hop's own `theory` says the same thing a second
+    // way — "applied as a linear combination of $\ell$ walk steps with weights
+    // $w_j$", with the Dolph–Chebyshev window supplying the weights.
+    //
+    // This pair is what ai-ops#51 was about: this route and
+    // `eigenstate-filtering-inversion` both build a Hamiltonian from A and |b>,
+    // both end at an eigenstate filter, and both drew block-encode → prepare →
+    // matrix-function. The difference the owner said "lives inside the matrix
+    // function box" is which construction applies the filter, and it is now on
+    // the drawing rather than one click inside it.
+    via: { "matrix-function": "lcu-chebyshev-transform" },
     // `summary` states this one outright as three ordered stages, and the three
     // action stanzas are those sentences: "Encode the solution as the null
     // eigenstate of a Hamiltonian path built from A and |b>", "follow that path
@@ -4564,6 +4609,14 @@ export const LAYER_GRAPH: LayerGraph = {
     cost: "Lin and Tong: both QLSP variants achieve the near-optimal $\\tilde{O}(d \\kappa \\log(1/\\varepsilon))$ query complexity for a $d$-sparse matrix, where $\\kappa$ is the condition number and $\\varepsilon$ the desired precision. Their abstract states that neither algorithm uses phase estimation or amplitude amplification.",
     costJa: "Lin と Tong によれば、QLSP に対する 2 つの変種はいずれも $d$ 疎行列に対してほぼ最適な問い合わせ計算量 $\\tilde{O}(d \\kappa \\log(1/\\varepsilon))$ を達成します。ここで $\\kappa$ は条件数、$\\varepsilon$ は要求精度です。どちらのアルゴリズムも位相推定も振幅増幅も使わないと、論文の要旨に明記されています。",
     steps: ["block-encode-matrix", "state-preparation", "matrix-function"],
+    // `summary`: the minimax-optimal filter polynomial is applied "through
+    // quantum signal processing". Of the two methods realising this slot,
+    // `qsvt-transform` is the one that carries a phase sequence — its `steps`
+    // include `qsp-phase-factors` — and `lcu-chebyshev-transform` explicitly
+    // bypasses it. The pin is the record's own clause read against that
+    // partition, and it is the same clause its `discrete-adiabatic-inversion`
+    // sibling names when it says it does the opposite.
+    via: { "matrix-function": "qsvt-transform" },
     bypasses: ["success-amplification"],
     // The two action lines at the end are `summary`: "Construct the
     // minimax-optimal polynomial that is 1 at a target eigenvalue and uniformly
@@ -8654,6 +8707,21 @@ export const LAYER_GRAPH: LayerGraph = {
     // the readout `measurement-grouped-readout` is. Pinning them is also what
     // takes this route out of the four-way twin group it was declared into when
     // neither node existed — the exit condition written into that row, met.
+    //
+    // **Written in B5 unit 3, held back on a size argument, applied now because
+    // that argument's numbers no longer describe this figure.** The twin row
+    // said pinning "takes the excited-state figure from 5797px to 8887px, past
+    // its 8000px ceiling", and called the exit "blocked on figure compaction
+    // (lane B3), not on evidence". The compaction happened: issue 16 took
+    // ingredients off the canvas and the ceiling was re-derived to 3000/3000.
+    // Measured on this graph before applying the pins, `excited-state-energy`
+    // saturates at **852.36px tall / 1,189.39px wide** — a seventh of the
+    // number the hold was argued from, against a ceiling that also moved. The
+    // evidence was never the question and the size no longer is.
+    via: {
+      "parameter-optimization": "variance-objective",
+      "observable-estimation": "measurement-grouped-readout",
+    },
     entries: ["vqe-folded-spectrum"],
     citations: [
       { title: "Folded Spectrum VQE : A quantum computing method for the calculation of molecular excited states", authors: "Lila Cadi Tazi, Alex J.W. Thom", year: "2023", url: "https://arxiv.org/abs/2305.04783" },

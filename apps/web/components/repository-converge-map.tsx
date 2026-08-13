@@ -50,6 +50,11 @@ import {
   type ConvergeLane,
   type ConvergeState,
 } from "../lib/repository/converge-layout";
+import {
+  LANE_FONT_PX,
+  NAME_PLATE_HEIGHT_RATIO,
+  NAME_PLATE_TOP_RATIO,
+} from "../lib/repository/process-layout";
 import type { PublicLocale } from "../lib/public-locale";
 
 interface ConvergeCopy {
@@ -348,10 +353,17 @@ function NamePlate({
          has no CJK glyphs and those fall back to whatever face the *reader's*
          machine offers, which may have a taller ascent than 0.5px allows.
          1.0 / 1.5, one pixel taller. OWNER_TODO §3, taken with the change to
-         this component it was waiting for. */
-      y={n(lane.labelY - 12.5)}
+         this component it was waiting for.
+
+         **The same two numbers, now read rather than written.** The layout
+         reserves room beside a lane for this plate — not for the bare ink,
+         because the plate is the box a reader sees — so the two had to stop
+         being independent literals. They live in `process-layout.ts` beside the
+         measurement they came from; the values are unchanged, and
+         `LANE_FONT_PX` scales them if the lane font ever moves. */
+      y={n(lane.labelY - LANE_FONT_PX * NAME_PLATE_TOP_RATIO)}
       width={n(lane.labelWidth + 10)}
-      height="17"
+      height={n(LANE_FONT_PX * NAME_PLATE_HEIGHT_RATIO)}
     />
   );
 }
