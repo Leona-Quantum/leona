@@ -39,7 +39,11 @@ import {
 } from "./repository/converge-layout.ts";
 import type { LayerGraph } from "./repository/layers.ts";
 import { PATH_LIMITS, expansionOf, methodFanOf } from "./repository/state-graph.ts";
-import { estimateTextWidth } from "./repository/process-layout.ts";
+import {
+  estimateTextWidth,
+  NAME_ASCENT_RATIO,
+  NAME_DESCENT_RATIO,
+} from "./repository/process-layout.ts";
 import { levelShares, ribbonY } from "./repository/strand-geometry.ts";
 import {
   isCapability,
@@ -703,15 +707,14 @@ test("two lane labels never overlap", () => {
       // no name to collide, and its box would be a point that could sit inside
       // a real name's box and report a collision no reader can see. Same rule
       // as `no two names overlap on an opened figure either`.
+      // `nameBox`, not a fourth inlined copy of it. This test carried its own
+      // `[labelY − laneFont, labelY]`, the opened twin carried
+      // `[labelY − laneFont·0.8, labelY]`, and the click-target test a third
+      // shape again — three boxes for one piece of text, and the two that
+      // mattered were both short by a descender. See `nameBox`.
       const boxes = diagram.lanes
         .filter((lane) => lane.label !== "")
-        .map((lane) => ({
-          key: lane.key,
-          x0: lane.labelX - estimateTextWidth(lane.label, M.laneFont) / 2,
-          x1: lane.labelX + estimateTextWidth(lane.label, M.laneFont) / 2,
-          y0: lane.labelY - M.laneFont,
-          y1: lane.labelY,
-        }));
+        .map((lane) => ({ key: lane.key, ...nameInkBox(lane) }));
       for (let i = 0; i < boxes.length; i += 1) {
         for (let j = i + 1; j < boxes.length; j += 1) {
           const a = boxes[i]!;
@@ -3155,8 +3158,27 @@ test("the count reaches a reader who is not looking at the picture", () => {
  * The box a lane's name occupies, in the units the canvas draws in.
  *
  * `text-anchor="middle"` at `(labelX, labelY)`, so it is centred in x and sits on
- * its baseline in y. The 0.8 is the same ascent fraction `place` uses to lift a
- * name clear of the strand below it — one number, one place it came from.
+ * its baseline in y.
+ *
+ * ## Why this box grew, and what it caught
+ *
+ * It was `[labelY − laneFont·0.8, labelY]` — 9.6px tall, ending at the baseline.
+ * The sibling invariant two hundred lines up used `[labelY − laneFont, labelY]`,
+ * 12px, also ending at the baseline. **Neither is a name.** Measured with
+ * `getBBox()` against the shipped face, a 12px name draws 15.2px of ink and
+ * about a fifth of it is below the baseline, which is the half of a name that
+ * hangs into whatever is under it — see `NAME_INK_RATIO`.
+ *
+ * Three pixels of unmodelled descender is not a rounding error here. Sweeping
+ * all 46 figure-locales shut and saturated under this box against the old one:
+ * **11 pairs of names overlap on the shipped canvas by 2.4px each**, and every
+ * invariant in this file reported zero, because all of them were asking about a
+ * box that stops where the descenders start. That is also what blocked issue
+ * 22's remaining vertical cut — a cut that passed all 88 invariants and then put
+ * *"QSVT matrix inversion"* 2.2px into *"HHL"* on the real page.
+ *
+ * So this is one box, read by every text invariant here, derived from the one
+ * number that was measured on a browser rather than assumed at a desk.
  */
 function nameBox(lane: ConvergeLane): { x0: number; x1: number; y0: number; y1: number } {
   const w = estimateTextWidth(lane.label, M.laneFont);
@@ -3165,6 +3187,55 @@ function nameBox(lane: ConvergeLane): { x0: number; x1: number; y0: number; y1: 
     x1: lane.labelX + w / 2,
     y0: lane.labelY - M.laneFont * 0.8,
     y1: lane.labelY,
+  };
+}
+
+/**
+ * The same name, as much **ink** as it actually draws — and the box every
+ * name-against-name invariant here now uses.
+ *
+ * ## Why this is a second box and not a correction of the one above
+ *
+ * `nameBox` is the subject of one question: *does a drawn line pass through this
+ * name?* Its reader, `laneEnters`, samples the neighbour's spine and inflates it
+ * by that lane's **maximum** half-thickness along the whole curve, including the
+ * tendon where the lane is pinched to a point — a deliberate over-estimate, and
+ * its own comment says so: it "can call a near miss a hit but never the other way
+ * round".
+ *
+ * This box is the subject of a different question: *do two names overlap?* There
+ * is no conservatism budget in that one. Two names either share pixels or they
+ * do not, and the answer has to be the ink.
+ *
+ * ## The measurement, and why the two boxes are not merged
+ *
+ * A 12px name draws **15.2px** of ink, about a fifth of it below the baseline —
+ * `getBBox()` against the shipped face, recorded on `NamePlate`; see
+ * `NAME_INK_RATIO`. Both name-against-name invariants here modelled a box that
+ * stopped at the baseline (one at `laneFont`, one at `laneFont · 0.8`), so both
+ * were blind to the descender. Swept over all 46 figure-locales, shut and
+ * saturated, that blindness was **11 pairs of names overlapping on the shipped
+ * canvas by 2.4px each**, every invariant green. It is also what blocked issue
+ * 22's remaining vertical cut, which passed all 88 invariants and then put
+ * *"QSVT matrix inversion"* 2.2px into *"HHL"* on the real page.
+ *
+ * Feeding this taller box to `laneEnters` as well was tried and **is not what
+ * shipped**, because it cannot tell what it found: it flags exactly two shut
+ * names, *"Warped phase transformation"* on `hamiltonian-recasting` and *"Exact
+ * layout synthesis"* on `qubit-routing`, and in both the neighbour's real stroke
+ * is 7.6px clear of the descender — the whole reported crossing is inside the
+ * 9px uniform inflation, at the taper, where the lane is drawn as a point. Making
+ * that detector agree would have meant shrinking its padding, which is loosening
+ * a guard to fit a measurement it was never making. The two boxes answer two
+ * questions and stay two boxes.
+ */
+function nameInkBox(lane: ConvergeLane): { x0: number; x1: number; y0: number; y1: number } {
+  const w = estimateTextWidth(lane.label, M.laneFont);
+  return {
+    x0: lane.labelX - w / 2,
+    x1: lane.labelX + w / 2,
+    y0: lane.labelY - M.laneFont * NAME_ASCENT_RATIO,
+    y1: lane.labelY + M.laneFont * NAME_DESCENT_RATIO,
   };
 }
 
@@ -3211,6 +3282,7 @@ test("an opened line draws its name, and the name is not worse placed than a shu
   let openedHit = 0;
   let shutNamed = 0;
   let shutHit = 0;
+  const shutWhere: string[] = [];
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     const open = new Set(openableAddresses(focus.id));
     const diagram = openDiagram(focus.id, open);
@@ -3233,13 +3305,21 @@ test("an opened line draws its name, and the name is not worse placed than a shu
           up = byKey.get(up)?.parentKey ?? null;
         }
       }
-      const hit = diagram.lanes.some((other) => !skip.has(other.key) && laneEnters(other, box));
+      const crossing = diagram.lanes.find((other) => !skip.has(other.key) && laneEnters(other, box));
+      const hit = crossing !== undefined;
       if (lane.open) {
         openedNamed += 1;
         if (hit) openedHit += 1;
       } else {
         shutNamed += 1;
-        if (hit) shutHit += 1;
+        if (hit) {
+          shutHit += 1;
+          // **Named, not counted.** The bar below is 0, so a failure is one or
+          // two cases and the reader's next question is always which. This test
+          // reported `2/243` for a whole session with no way to find the pair
+          // short of re-instrumenting it.
+          shutWhere.push(`${diagram.caption}: "${lane.label}" crossed by "${crossing.label || crossing.key}"`);
+        }
       }
     }
   }
@@ -3325,7 +3405,7 @@ test("an opened line draws its name, and the name is not worse placed than a shu
     0,
     `${shutHit}/${shutNamed} shut names have a line through them. This was 34 before the ` +
       `tendons and 0 after: a belly is level and its neighbours' bellies are level too, so a ` +
-      `name is only crossed if something moved it off its own belly`,
+      `name is only crossed if something moved it off its own belly. Where: ${shutWhere.join("; ")}`,
   );
   assert.equal(
     openedHit,
@@ -3535,8 +3615,8 @@ test("no two names overlap on an opened figure either", () => {
         else shutNames += 1;
       for (let i = 0; i < drawn.length; i += 1) {
         for (let j = i + 1; j < drawn.length; j += 1) {
-          const a = nameBox(drawn[i]!);
-          const b = nameBox(drawn[j]!);
+          const a = nameInkBox(drawn[i]!);
+          const b = nameInkBox(drawn[j]!);
           if (!(a.x0 < b.x1 - EPS && b.x0 < a.x1 - EPS && a.y0 < b.y1 - EPS && b.y0 < a.y1 - EPS))
             continue;
           const openCount = Number(drawn[i]!.open) + Number(drawn[j]!.open);
@@ -4560,6 +4640,27 @@ test("a route that pins its step draws the algorithm's name there, not the slot'
  * pictures are one, and it is checked structurally below.
  */
 const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why: string }> = [
+  {
+    slot: "quantum-linear-solve",
+    methods: ["qsvt-matrix-inversion", "eigenstate-filtering-inversion"],
+    why:
+      "**Made by pinning, and kept rather than un-pinned, because the pins are true.** Both records "
+      + "name their construction outright — one says \"apply the quantum singular value transformation "
+      + "with an odd polynomial approximating a scaled $1/x$ away from the origin\", the other applies "
+      + "its filter \"through quantum signal processing\" — and of the two methods realising "
+      + "`matrix-function` only `qsvt-transform` carries a phase sequence. So both hops honestly read "
+      + "QSVT, and drawing the same name twice is the correct drawing. Before the pins these two drew "
+      + "the slot's name and looked identical for a worse reason: the map could not say what filled the "
+      + "hop at all. This row is a smaller gap than the one it replaces. What still separates the two "
+      + "and the map cannot say is WHICH POLYNOMIAL goes through the transform — a scaled $1/x$ against "
+      + "a minimax filter that is 1 at a target eigenvalue and uniformly small outside a spectral gap — "
+      + "and that is a specification on a hop, not a method filling it. It is the same missing mechanism "
+      + "the three remaining `excited-state-energy` routes are waiting on, and the owner has named the "
+      + "shape of it in ai-ops#51: *\"we can put specifications in the labels rather than another item on "
+      + "the map\"*. `via` names a method and `through` names a state; neither can carry \"with an odd "
+      + "polynomial approximating $1/x$\". Both records already state their polynomial, so this row's "
+      + "exit is a field to write it into, not a source to go and find.",
+  },
   // The `time-discretization` row — `backward-euler` with `trapezoidal-rule` —
   // was deleted in session 118. Both drew one interior only because both hung the
   // same `quantum-linear-solve` stub, and that step is gone by the owner's
@@ -4580,14 +4681,23 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
   {
     slot: "excited-state-energy",
     methods: [
+      // **Four, not five: `folded-spectrum-excited-state` has left.** It is pinned to
+      // `variance-objective` and `measurement-grouped-readout` on Cadi Tazi and Thom's own
+      // words — the method "minimizes the energy variance" and "employ[s] a Pauli grouping
+      // procedure" — so its middle and last hops now wear those names instead of the slots'.
+      // The pins were written in B5 unit 3 and held on a size argument that had gone stale by
+      // three orders of magnitude; see the `KNOWN_TWINS` row in `scripts/check-layer-graph.mjs`
+      // for the measurement. The remaining four are the ones with nowhere honest to point:
+      // their objectives have no node, and authoring one each would draw the same papers a
+      // second time. The owner's ai-ops#51 answer names the fix — a specification in the
+      // label, "something like 'penalty objective'" — and that field does not exist yet.
       "deflation-excited-state",
       "subspace-search-excited-state",
-      "folded-spectrum-excited-state",
       "penalty-excited-state",
       "contracted-excited-state",
     ],
     why:
-      "Five ways to a state above the ground state that each choose an ansatz, optimise it and " +
+      "Four ways to a state above the ground state that each choose an ansatz, optimise it and " +
       "estimate an observable — VQE's three hops, reused deliberately rather than by accident. What " +
       "separates them is the OBJECTIVE handed to the optimiser: a weighted sum over orthogonal " +
       "inputs, the variance around a target energy, the energy plus a symmetry penalty, and a " +
@@ -4599,20 +4709,13 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
       "16 put ingredients on the card, so the difference is no longer drawn and the exclusion has " +
       "no basis. It is a line in deflation's Requires section instead.",
   },
-  {
-    slot: "quantum-linear-solve",
-    methods: [
-      "qsvt-matrix-inversion",
-      "discrete-adiabatic-inversion",
-      "eigenstate-filtering-inversion",
-    ],
-    why:
-      "All three walk block-encode → matrix function → their own closing work. The difference is " +
-      "which function and how its phases are found, which lives inside `matrix-function` — a pin " +
-      "waiting on that slot being decomposed. **Three members and not two since issue 16**: what " +
-      "told `qsvt-matrix-inversion` apart was an ingredient, `success-amplification`, which the " +
-      "other two do not consume and which the canvas no longer draws.",
-  },
+  // The three-member `quantum-linear-solve` row that stood here is gone, and its own
+  // text said what would replace it: "a pin waiting on that slot being decomposed".
+  // `discrete-adiabatic-inversion` has left outright — it applies its filter "as a
+  // linear combination of walk operators rather than by quantum signal processing", so
+  // its hop wears `lcu-chebyshev-transform` and the other two wear `qsvt-transform`.
+  // The two that still draw one interior are the row at the top of this table, and the
+  // reason they do is now a different and smaller one.
   {
     slot: "hamiltonian-simulation",
     methods: ["lcu-taylor-simulation", "qubitization-simulation"],
