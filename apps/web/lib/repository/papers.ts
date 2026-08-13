@@ -108,15 +108,34 @@ export function paperIdFromUrl(url: string): PaperId | null {
  * every pre-2007 arXiv id and every DOI, a `/`. A segment containing a slash is
  * two segments, and the page 404s.
  *
- * The mapping is `:` → `-` and `/` → `_`, and it is **checked rather than
- * proved**. Nothing in the DOI grammar forbids an underscore, so a future row
- * could in principle collide with another row's slug or fail to round-trip.
- * `validatePaperRegister` refuses both, over the whole register, so the day it
- * happens the build says so instead of serving one paper at another's address —
- * which is the same failure the identity rule exists to stop, one layer up.
+ * The mapping is `:` → `-`, `/` → `_`, and `_` → `~`, and it is **checked rather
+ * than proved**. `validatePaperRegister` refuses a collision or a failed round
+ * trip over the whole register, so the day a DOI breaks this the build says so
+ * instead of serving one paper at another's address — the failure the identity
+ * rule exists to stop, one layer up.
+ *
+ * ## Why `_` → `~` and not `_` → `__`
+ *
+ * The check fired for real on 2026-08-13. The Zoo cites Bernstein, Jeffery,
+ * Lange and Meurer on subset-sum, whose only identifier is the Springer chapter
+ * DOI `10.1007/978-3-642-38616-9_2` — and that suffix already ends in `_2`, so
+ * with `/` → `_` alone the id came back as `…-9/2` and the register refused it.
+ * The entry could not be written at all, which is why the Zoo's Subset-sum row
+ * stood open with the paper read.
+ *
+ * Doubling the escape character is the obvious repair and it is **wrong here**:
+ * with `_` → `__` and `/` → `_`, the ids `a/_b` and `a_/b` both encode to
+ * `a___b`. The scheme has to be injective, not merely reversible-looking, and
+ * two papers sharing a URL is exactly the collision above. Mapping `_` to a
+ * third character is injective by construction.
+ *
+ * `~` is unreserved in RFC 3986, so it needs no encoding in a path segment, and
+ * no id in the register contains one. That last clause is an assumption, and it
+ * is the same *kind* of assumption the old mapping made about `_` — the
+ * difference is that this one is now stated, and both directions are checked.
  */
 export function paperSlug(id: PaperId): string {
-  return id.replace(":", "-").replaceAll("/", "_");
+  return id.replace(":", "-").replaceAll("_", "~").replaceAll("/", "_");
 }
 
 /** The inverse of `paperSlug`, or `null` if this is not a slug shape. */
@@ -125,7 +144,7 @@ export function paperIdFromSlug(slug: string): PaperId | null {
   if (separator <= 0) return null;
   const scheme = slug.slice(0, separator);
   if (!PAPER_ID_SCHEMES.includes(scheme as (typeof PAPER_ID_SCHEMES)[number])) return null;
-  return `${scheme}:${slug.slice(separator + 1).replaceAll("_", "/")}`;
+  return `${scheme}:${slug.slice(separator + 1).replaceAll("_", "/").replaceAll("~", "_")}`;
 }
 
 /** The address the register publishes for an id. One paper, one link. */

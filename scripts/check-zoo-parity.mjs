@@ -360,15 +360,23 @@ const SPEEDUP_PROVENANCE_CENSUS = {
   //   backtracking-quantum-walk-speedup — Montanaro's near-quadratic speedup, and
   //     the square root is of the TREE SIZE, not the problem size.
   //
-  // A third was written and could not land. The Zoo's "Subset-sum" entry is cited
-  // to Bernstein, Jeffery, Lange and Meurer, whose only identifier is the Springer
-  // chapter DOI 10.1007/978-3-642-38616-9_2. `paperSlug` maps "/" to "_", and that
-  // DOI already contains "_2", so the id does not survive a round trip through its
-  // own url segment and `validatePaperRegister` refuses it — exactly the case
-  // papers.ts:110-116 says the check exists for, firing for the first time. The
-  // record is written and the paper is read; it lands when the identity scheme can
-  // represent that DOI. Not a sourcing problem.
-  reported: 14,
+  // A third was written and could not land, and now has. The Zoo's "Subset-sum"
+  // entry is cited to Bernstein, Jeffery, Lange and Meurer, whose only identifier
+  // is the Springer chapter DOI 10.1007/978-3-642-38616-9_2. `paperSlug` mapped
+  // "/" to "_", and that DOI already contains "_2", so the id did not survive a
+  // round trip through its own url segment and `validatePaperRegister` refused it
+  // — exactly the case papers.ts says the check exists for, firing for the first
+  // time. The identity scheme now escapes the underscore, so:
+  //   subset-sum-quantum-walk — the authors state a cost exponent and claim it
+  //     beats every prior algorithm, quantum and classical. Their comparison
+  //     against the best CLASSICAL exponent is made in a table and in no sentence,
+  //     and they never call their own speedup polynomial, which is the Zoo's word
+  //     for this row. Read in full, all eighteen pages, from the authors' own text.
+  //
+  // Worth keeping on the record that this row was never a sourcing gap: the paper
+  // had been read for a session, and from the gauge a row held open by a url
+  // mapping looked exactly like a row nobody could source
+  reported: 15,
   // Read and silent. gibbs-state-sampling was the first: Poulin and Wocjan's
   // abstract makes no comparison to a classical algorithm and the Zoo's
   // "Superpolynomial" is the section heading's. This is the record the owner's

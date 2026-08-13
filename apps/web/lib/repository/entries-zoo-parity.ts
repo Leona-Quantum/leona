@@ -2459,6 +2459,57 @@ const ZOO_ALGORITHMS: ZooAlgorithm[] = [
     ],
     relatedSlugs: ["subset-finding-quantum-walk", "grover-unstructured-search", "element-distinctness"],
   },
+  // ---------------------------------------------------------------------------
+  // The Zoo's last uncovered Algebraic and Number Theoretic row, and the reason it
+  // stood open was not sourcing. The paper was read in full in W22; what stopped
+  // the record was `paperSlug`. Its only identifier is the Springer chapter DOI
+  // 10.1007/978-3-642-38616-9_2, whose suffix already ends in `_2`, and the url
+  // segment mapped `/` to `_` — so the id came back as ...-9/2 and
+  // `validatePaperRegister` refused it, exactly as papers.ts says it should. The
+  // identity scheme now escapes the underscore and the entry can exist. Not a
+  // sourcing problem, and worth saying so: a row that stays open for a mechanical
+  // reason looks identical, from the gauge, to one nobody could source.
+  // ---------------------------------------------------------------------------
+  {
+    slug: "subset-sum-quantum-walk",
+    title: "Subset-sum by quantum walk over representations",
+    titleJa: "表現法と量子ウォークによる部分和問題",
+    family: "Quantum walk",
+    zooName: "Subset-sum",
+    zooSection: "Algebraic and Number Theoretic Algorithms",
+    speedup: "Polynomial",
+    speedupPrimary: {
+      states: "reported",
+      quote: "We introduce the first subset-sum algorithm that beats 2^{n/4}. Specifically, we introduce a quantum algorithm that, under reasonable assumptions, uses at most 2^{(0.241…+o(1))n} qubit operations to solve a subset-sum problem.",
+    },
+    problem: "Given integers x₁, x₂, …, xₙ and s, decide whether some subset I of {1, 2, …, n} satisfies the sum of xᵢ over I equal to s. The authors take as the typical hard case that the xᵢ are independent uniform random integers in {0, 1, …, 2ⁿ}. Subset-sum was one of the first problems shown NP-complete, so the question the paper asks is not whether it can be solved in polynomial time but how far below the 2ⁿ cost of searching every subset an exponential-time algorithm can get.",
+    problemJa: "整数 x₁, x₂, …, xₙ と s が与えられたとき、添字集合 {1, 2, …, n} のある部分集合 I について xᵢ の総和が s に等しくなるかどうかを判定する問題です。著者らは、xᵢ が {0, 1, …, 2ⁿ} 上の独立一様乱数である場合を典型的な難しい事例として扱います。部分和問題は最初に NP 完全性が示された問題の一つであり、したがって本論文の問いは多項式時間で解けるかどうかではなく、すべての部分集合を調べる 2ⁿ のコストからどれだけ下げられるか、という点にあります。",
+    idea: "The algorithm layers three things. From Howgrave-Graham and Joux it takes the representation technique: a solution of weight n/2 is split into overlapping halves in many ways at once, so a solution can be found from any one of its representations rather than from a single fixed decomposition. From Ambainis's element-distinctness algorithm it takes a discrete-time quantum walk on a Johnson graph, whose vertices are r-element subsets of the b-bit strings and whose edges join sets differing in one element. The paper's own contribution is the data structure that makes the walk implementable: Ambainis handles the walk's memory with what the authors call an ad-hoc combination of a hash table and a skip list requiring several pages of analysis, and they replace it with a radix tree. The problem a walk's memory has is history dependence — the stored state must not remember the order in which elements arrived, or the superposition fails to interfere — and the authors solve it by putting a uniform superposition over all possible memory layouts of the nodes, which they say produces a unique quantum data structure representing the set.",
+    ideaJa: "このアルゴリズムは三つの要素を重ねています。第一に Howgrave-Graham と Joux による表現法です。重み n/2 の解を、重なりを持つ半分同士に多通りに分割し、一つの固定した分解ではなく、いずれかの表現から解を見つけられるようにします。第二に Ambainis の要素相異アルゴリズムに由来する、Johnson グラフ上の離散時間量子ウォークです。頂点は b ビット列の r 元部分集合であり、辺は一つの元だけ異なる集合を結びます。第三が本論文自身の寄与で、ウォークを実装可能にするデータ構造です。Ambainis はウォークの記憶を、著者らの言う「ハッシュ表とスキップリストの場当たり的な組合せ」で扱い、数ページの解析を要しましたが、著者らはこれを基数木に置き換えます。ウォークの記憶が抱える問題は履歴依存性、すなわち格納された状態が元の到着順を覚えていてはならないという点であり、著者らは節点のとりうるすべての記憶配置にわたる一様重ね合わせをとることでこれを解決し、それが集合を表す一意な量子データ構造を与えると述べています。",
+    complexity: "2^{(0.241…+o(1))n} qubit operations, where n is the number of integers x₁, …, xₙ and the paper lists an algorithm using 2^{(e+o(1))n} operations as exponent e. The classical algorithms the paper names for the same problem: brute force at 2ⁿ, the Horowitz-Sahni left-right split at 2^{n/2}, and Howgrave-Graham and Joux's representation algorithm at 2^{(0.337…+o(1))n}. The best classical exponent, 0.291… from Becker, Coron and Joux, appears in the paper's comparison table and in no sentence of its text.",
+    complexityBasis: 'abstract: "This paper introduces a subset-sum algorithm with heuristic asymptotic cost exponent below 0.25."; section 1: "We introduce the first subset-sum algorithm that beats 2^{n/4}. Specifically, we introduce a quantum algorithm that, under reasonable assumptions, uses at most 2^{(0.241…+o(1))n} qubit operations to solve a subset-sum problem."; the exponent convention is Table 1.1\'s own caption, "An algorithm using 2^{(e+o(1))n} operations is listed as \'exponent\' e."; for the classical baseline, section 5: "Howgrave-Graham and Joux introduced this technique in [17] and obtained a subset-sum algorithm that costs just 2^{(0.337…+o(1))n}." Read from the authors\' own full text (cr.yp.to, dated 2013.04.07), all eighteen pages, not from the abstract.',
+    caveat: "This is a literature record: no circuit was built, compiled, simulated or run here, and no subset-sum instance was solved. Four limits the authors state themselves, and the first is the one that decides what the number means. **The cost model assumes free quantum RAM.** Section 1 says that random access to an array of size 2^{O(n)} is assumed to cost only n^{O(1)}, even if the array index is a quantum superposition — and the algorithm's memory is exponential. The authors raise the objection three times and decline it each time, adding that they do not claim that improved operation counts imply improvements in other cost models. **The analysis is heuristic, not proved.** Section 1: their analyses are heuristic, they do not claim the algorithms work for all inputs, and they do not claim that what they call the hard case is the worst case; they speculate a proof is possible by adapting another paper's ideas. **It is asymptotic to the point that the input is free** — polynomial cost factors are suppressed systematically, so by the paper's own example reading the entire input costs only 1, and twice the authors note a real improvement is invisible at this level of detail. **And the statement is simplified**: sections 3 to 5 consider only half-weight solutions, n is assumed divisible by 16, the success probability is inverse polynomial in n rather than constant, and one sub-claim about that probability rests on experiments rather than analysis. Finally, two things about the Zoo's framing rather than the paper's. The Zoo files this entry under the speedup class Polynomial; **the word polynomial never describes this paper's own speedup** — all seventeen of its occurrences are about suppressed cost factors, the P versus NP framing, the data-structure limits, the success probability, or a reference's title. And the comparison against the best classical algorithm, Becker, Coron and Joux at exponent 0.291…, is made only in the comparison table, which has a Quantum yes/no column; no sentence of the paper states the margin.",
+    caveatJa: "本項目は文献に基づく記録です。ここで回路を構成・コンパイル・シミュレート・実行したことはなく、具体的な部分和問題の実例を解いたわけでもありません。著者ら自身が述べる四つの限界があり、最初のものがこの数値の意味を決めます。**コストモデルが量子 RAM を無償と仮定しています。** 第1節は、大きさ 2^{O(n)} の配列へのランダムアクセスのコストを、添字が量子的な重ね合わせであっても n^{O(1)} にすぎないと仮定すると述べており、このアルゴリズムの記憶量は指数的です。著者らはこの異論を三度提起して三度とも退け、演算回数の改善が他のコストモデルにおける改善を意味するとは主張しないと付け加えています。**解析は発見的であって証明ではありません。** 第1節によれば、解析は発見的であり、アルゴリズムがすべての入力に対して動作するとは主張せず、自ら「難しい」と呼ぶ場合が最悪の場合であるとも主張していません。別の論文の証明の着想を応用すれば証明できるだろうと推測するにとどまります。**漸近的であり、入力の読み込みすら無償です。** 多項式のコスト因子を系統的に無視するため、論文自身の例によれば入力全体を読むコストは 1 であり、著者らは現実の高速化がこの粒度では見えないと二度注記しています。**さらに定式化も簡略化されています。** 第3節から第5節は重み n/2 の解のみを扱い、n は 16 の倍数と仮定され、成功確率は定数ではなく n の逆多項式であり、その確率に関する一つの副次的主張は解析ではなく実験に基づいています。最後に、論文ではなく Zoo の分類について二点あります。Zoo は本項目を Polynomial という速度向上の区分に置いていますが、**この論文自身の速度向上を「多項式」と形容する箇所はありません**。十七箇所ある「polynomial」の用例はすべて、無視されるコスト因子、P と NP の対比、データ構造の上限、成功確率、または参考文献の題名についてのものです。また、最良の古典アルゴリズムである Becker, Coron, Joux の指数 0.291… との比較は、量子か否かの欄を持つ比較表の中でのみ行われており、その差を述べた文は本文のどこにもありません。",
+    tags: ["subset-sum", "quantum walk", "element distinctness", "representations", "knapsack"],
+    source: {
+      id: "doi:10.1007/978-3-642-38616-9_2",
+      title: "Quantum algorithms for the subset-sum problem",
+      authors: "Daniel J. Bernstein, Stacey Jeffery, Tanja Lange, Alexander Meurer",
+      year: "2013",
+      url: "https://doi.org/10.1007/978-3-642-38616-9_2",
+    },
+    literature: [
+      {
+        title: "Quantum algorithms for the subset-sum problem",
+        authors: "Daniel J. Bernstein, Stacey Jeffery, Tanja Lange, Alexander Meurer",
+        year: "2013",
+        url: "https://doi.org/10.1007/978-3-642-38616-9_2",
+        relevance: "Primary source and the source of every figure here. Section 1 carries both the cost exponent and the two sentences that scope it — the free-quantum-RAM convention and the statement that the analyses are heuristic. Table 1.1 is the comparison against the other eleven algorithms, quantum and classical, and is the only place the best classical exponent appears. Section 3 is the walk and the radix tree that replaces Ambainis's memory structure; section 5 is the representation technique and the final cost. The version of record is the Springer chapter; the authors' own full text is on cr.yp.to and carries no DOI or venue on its face.",
+        relevanceJa: "一次資料であり、ここに示したすべての数値の出典です。第1節にはコストの指数と、それを限定する二つの文、すなわち量子 RAM を無償とする約束事と、解析が発見的であるという言明の双方があります。表1.1 は量子・古典あわせて他の十一のアルゴリズムとの比較であり、最良の古典指数が現れる唯一の箇所です。第3節はウォークと、Ambainis の記憶構造を置き換える基数木であり、第5節は表現法と最終的なコストです。版としての正本は Springer の章であり、著者ら自身による全文は cr.yp.to にあって、その表面には DOI も掲載媒体も記されていません。",
+      },
+    ],
+    relatedSlugs: ["subset-finding-quantum-walk", "element-distinctness", "grover-unstructured-search", "average-case-lattice-problems-by-filtering"],
+  },
 ];
 
 /** The Zoo entry each record covers — read by scripts/check-zoo-parity.mjs. */
