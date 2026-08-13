@@ -16,10 +16,12 @@
 //   times — and joins the copies with a dotted tie. Here the copies are one
 //   circle, and the strands reaching it reach *it*. A **smaller** circle is an
 //   object inside one particular way across: what one step hands to the next.
-// - A **tapered strand** is a way across, pinched to a point at both circles.
-//   The taper is not decoration. A line of constant width arriving at a circle
-//   says *this ends here*; a strand pinching to a point says *this and the others
-//   become one thing here*, which is what a convergence is.
+// - A **strand** is a way across: a thin tendon line, a short body around the
+//   name, a thin tendon line out. The body is `name + 2·labelPad` long wherever
+//   the line sits, so a line reads as being about its own label rather than about
+//   the column it happens to be in — the owner's *"some rule for relational
+//   compactness"*, ai-ops#64. Until R15 it was tapered instead, pinched to a
+//   point at both circles; he asked for that to go, in as many words.
 // - A strand drawn **faint and thin** is one a reader has opened: its own body
 //   is gone and what was inside it is drawn in its place, around it or along it.
 //

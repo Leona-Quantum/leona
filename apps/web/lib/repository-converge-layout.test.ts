@@ -2197,25 +2197,35 @@ function outlineEdges(d: string): { upper: (x: number) => number; lower: (x: num
   };
 }
 
-test("every strand pinches to a point at both circles and stands 2·half across its belly", () => {
-  // The taper is not decoration: a line of constant width arriving at a circle
-  // says "this ends here", and a strand pinching to a point says "this and the
-  // others become one thing here", which is what a convergence is. Read off the
-  // emitted outline, because that is the shape a reader sees.
+test("every strand is a thin tendon, a body around its own name, and a thin tendon", () => {
+  // **R15, and this test used to assert the opposite.** It read *"every strand
+  // pinches to a point at both circles and stands 2·half across its belly"*, and
+  // its own comment defended the taper: *"a strand pinching to a point says 'this
+  // and the others become one thing here', which is what a convergence is."* The
+  // owner disagreed, in as many words:
   //
-  // **A ribbon since R14, and the claim got sharper rather than weaker.** The
-  // old shape was a lens — thickest at one point and thinning everywhere else —
-  // and the check that matched it counted the numbers in the path string, which
-  // is a check on the *arity* of the emitter rather than on the shape. The
-  // muscle is a taper, a constant belly, and a taper, so all three are asserted
-  // against samples of the drawn edges.
+  // > *"i don't like how lines taper off — just keep thin tendon lines and the
+  // > same short line bodies around labels rather than this taper."* — ai-ops#64
+  //
+  // So the shape is now thin / thick / thin with a step between, and the three
+  // things this asserts are the three parts. Read off the emitted outline,
+  // because that is the shape a reader sees, and because the fields and the path
+  // have come apart on this canvas before.
+  //
+  // **The `belly` sample moved to `body`, and that is the whole of the second
+  // ask.** A check that walked the belly would now pass on a strand drawn thick
+  // from tendon to tendon — which is exactly the shape being removed. It walks
+  // the body, and then walks the *rest of the belly* asserting it is thin.
   let checked = 0;
+  let bodies = 0;
+  let padded = 0;
   for (const focus of drawableSlots(LAYER_GRAPH, STATE_VOCABULARY)) {
     const diagram = diagramFor(focus.id);
     for (const lane of diagram.lanes) {
       assert.ok(lane.outline.endsWith("Z"), `${lane.key}: an outline is closed`);
       assert.ok(lane.half > 0, `${lane.key}: a strand with no thickness`);
       const edges = outlineEdges(lane.outline);
+      const thin = 2 * Math.min(M.tendonHalf, lane.half);
       checked += 1;
       // Sampled at the ends the OUTLINE draws, not at `lane.x0`/`lane.x1`. The
       // emitter rounds to a hundredth and the layout's own numbers are exact, so
@@ -2224,33 +2234,95 @@ test("every strand pinches to a point at both circles and stands 2·half across 
       // back to the last segment. That returned the far end of the shape and
       // read as a 7px gap at a pinch that is exact.
       const ends = drawnEnds(lane.outline);
-      close(edges.upper(ends.sx), edges.lower(ends.sx), `${lane.key}: not pinched at its start`, 0.05);
-      close(edges.upper(ends.ex), edges.lower(ends.ex), `${lane.key}: not pinched at its end`, 0.05);
-      close(edges.upper(ends.sx), lane.yc, `${lane.key}: the pinch is off the base`, 0.05);
-      // Constant across the belly, at exactly the thickness the lane reports.
-      for (let step = 1; step < 20; step += 1) {
-        const x = lane.bellyX0 + ((lane.bellyX1 - lane.bellyX0) * step) / 20;
+      close(
+        edges.lower(ends.sx) - edges.upper(ends.sx),
+        thin,
+        `${lane.key}: the start is not the tendon's own thickness`,
+        0.05,
+      );
+      close(
+        edges.lower(ends.ex) - edges.upper(ends.ex),
+        thin,
+        `${lane.key}: the end is not the tendon's own thickness`,
+        0.05,
+      );
+      // The thin line is centred on the base, where the point used to be.
+      close(
+        (edges.upper(ends.sx) + edges.lower(ends.sx)) / 2,
+        lane.yc,
+        `${lane.key}: the end of the line is off the base`,
+        0.05,
+      );
+
+      // **The body is the rule, re-derived from the label rather than read back
+      // off the lane.** `bodyX0`/`bodyX1` are what `place` decided; this is what
+      // the rule says it should have decided, computed from the drawn string and
+      // the two constants. Reading the fields back and comparing them to
+      // themselves is the derived-cannot-verify-self mistake this file has paid
+      // for twice.
+      const ink = lane.label === "" ? 0 : estimateTextWidth(lane.label, M.laneFont);
+      const wanted = Math.min(
+        Math.max(M.minBody, ink + 2 * M.labelPad),
+        lane.bellyX1 - lane.bellyX0,
+      );
+      close(lane.bodyX1 - lane.bodyX0, wanted, `${lane.key}: the body is not the rule`, 0.01);
+      assert.ok(
+        lane.bodyX0 >= lane.bellyX0 - 0.01 && lane.bodyX1 <= lane.bellyX1 + 0.01,
+        `${lane.key}: the body [${lane.bodyX0}, ${lane.bodyX1}] leaves its belly ` +
+          `[${lane.bellyX0}, ${lane.bellyX1}]`,
+      );
+      // A named body holds its own name — the failure the rule must not produce.
+      if (ink > 0 && lane.bellyX1 - lane.bellyX0 >= ink) {
+        assert.ok(
+          lane.bodyX1 - lane.bodyX0 >= ink - 0.01,
+          `${lane.key}: a ${ink.toFixed(1)}px name on a ${(lane.bodyX1 - lane.bodyX0).toFixed(1)}px body`,
+        );
+      }
+
+      // Full thickness across the body...
+      if (lane.bodyX1 - lane.bodyX0 > 1) {
+        bodies += 1;
+        for (let step = 1; step < 20; step += 1) {
+          const x = lane.bodyX0 + ((lane.bodyX1 - lane.bodyX0) * step) / 20;
+          close(
+            edges.lower(x) - edges.upper(x),
+            2 * lane.half,
+            `${lane.key}: thickness across the body at x=${x}`,
+            0.05,
+          );
+        }
+      }
+      // ...and thin off it, on the belly as much as on the tendon. This is the
+      // sample that fails if the taper — or a body sized to the whole belly —
+      // comes back, and it only exists on a lane whose belly is longer than its
+      // body, which is 62% of them and every one the owner was complaining about.
+      const slack = lane.bodyX0 - lane.bellyX0;
+      if (slack > 2) {
+        padded += 1;
         close(
-          edges.lower(x) - edges.upper(x),
-          2 * lane.half,
-          `${lane.key}: thickness across the belly at x=${x}`,
+          edges.lower(lane.bodyX0 - 1) - edges.upper(lane.bodyX0 - 1),
+          thin,
+          `${lane.key}: the belly is thick ${slack.toFixed(1)}px off its own body`,
           0.05,
         );
       }
-      // And it tapers rather than stepping: halfway up a tendon the shape is
-      // thinner than the belly and thicker than the pinch.
       if (lane.run > 1) {
         const mid = lane.x0 + lane.run / 2;
-        const thickness = edges.lower(mid) - edges.upper(mid);
-        assert.ok(
-          thickness > 0.02 && thickness < 2 * lane.half - 0.02,
-          `${lane.key}: the tendon is ${thickness.toFixed(2)} thick against a belly of ` +
-            `${(2 * lane.half).toFixed(2)} — it steps rather than tapers`,
+        close(
+          edges.lower(mid) - edges.upper(mid),
+          thin,
+          `${lane.key}: the tendon tapers rather than running thin`,
+          0.05,
         );
       }
     }
   }
   assert.ok(checked > 50, `only ${checked} outlines checked`);
+  assert.ok(bodies > 50, `only ${bodies} bodies sampled`);
+  // A floor on the population the second half of the rule is about. Without it a
+  // future change that made every body fill its belly would leave this test green
+  // by having nothing left to check — the empty-for-the-wrong-reason failure.
+  assert.ok(padded > 20, `only ${padded} lanes have belly to spare — is the body still short?`);
 });
 
 test("the key's swatch is the same kind of shape the canvas draws", () => {

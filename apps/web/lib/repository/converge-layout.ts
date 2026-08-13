@@ -465,10 +465,41 @@ export const CONVERGE_METRICS = {
    *
    * A muscle reading rather than a decorative one: the fibres inside a fascicle
    * are thinner than the fascicle. It also does real work — the band a child is
-   * allotted has to hold its taper *and* its name, and letting depth-3 strands
-   * keep a depth-0 thickness is what makes a four-level figure a solid block.
+   * allotted has to hold its own thickness *and* its name, and letting depth-3
+   * strands keep a depth-0 thickness is what makes a four-level figure a solid
+   * block.
    */
   depthTaper: 0.78,
+  /**
+   * Half the thickness of a **tendon** — the thin line either side of a body.
+   *
+   * The owner's ask, verbatim: *"i don't like how lines taper off — just keep
+   * thin tendon lines and the same short line bodies around labels rather than
+   * this taper."* (ai-ops#64). Before R15 a tendon had no thickness of its own:
+   * it was the body's `half` scaled by φ, so it ran from `2·half` down to
+   * **nothing** at each circle, and that ramp is the taper.
+   *
+   * 1, so a tendon draws at 2px — the same weight as `.mj-converge-spine`, which
+   * is the other thin line on this canvas and the one a reader already reads as
+   * "a line, not a body". It does **not** scale with `depthTaper`: at depth 3
+   * that would be 0.47 and a sub-pixel line renders as a grey smear rather than
+   * as a thin line. One thickness for every tendon at every depth is also what
+   * the owner asked for — *"the same short line bodies"* is a uniformity ask,
+   * and a tendon that thins with depth is the taper coming back in the other
+   * axis. `ribbonOutline` clamps it to `half` so a strand thinner than 2px
+   * cannot end up with a tendon wider than its own body.
+   */
+  tendonHalf: 1,
+  /**
+   * The shortest body a line may be drawn with, in px.
+   *
+   * A line with no name — a fan base, a composite run — would otherwise be
+   * `2·labelPad` of body and nothing else, which at 16px is a dash. This is the
+   * floor that keeps an unnamed line reading as a line with a body rather than
+   * as a tendon somebody forgot to finish, and it is what the rule below means
+   * by "a line is never all tendon".
+   */
+  minBody: 24,
   /**
    * The shortest tendon, in px — the taper every strand gets whatever its bow.
    *
@@ -609,7 +640,13 @@ export const CONVERGE_METRICS = {
  */
 export function legendMark(): { outline: string; spine: string } {
   const mark: Ribbon = { x0: 2, x1: 32, y: 13, bow: -4, run: 9 };
-  return { outline: ribbonOutline(mark, 3.5), spine: ribbonPath(mark) };
+  // A body in the middle of its belly (`[11, 23]`), thin tendons either side —
+  // the same three parts a lane draws, at legend scale. Written out rather than
+  // taken from `bodySpan`, because the swatch has no name to be in relation to
+  // and feeding it a fictional label width would be a number a reader could not
+  // check against anything.
+  const body = { x0: 13, x1: 21, tendonHalf: CONVERGE_METRICS.tendonHalf };
+  return { outline: ribbonOutline(mark, 3.5, body), spine: ribbonPath(mark) };
 }
 
 /**
@@ -974,9 +1011,13 @@ export interface ConvergeLane {
    */
   d: string;
   /**
-   * The **outline**: the region between `bow ± half`, closed and fillable. This
-   * is what a reader actually sees — tapered through the two tendons, exactly
-   * `2·half` thick across the whole belly.
+   * The **outline**: the drawn region, closed and fillable. This is what a reader
+   * actually sees — `2·tendonHalf` thick along both tendons and along whatever of
+   * the belly the body does not cover, and exactly `2·half` across the body.
+   *
+   * It was `2·half·φ(x)` until R15 — a taper from nothing at each circle to full
+   * thickness across the whole belly. `bodyX0`/`bodyX1` are the stretch that is
+   * still full thickness; `bodySpan` is the rule that decides them.
    */
   outline: string;
   x0: number;
@@ -1008,6 +1049,20 @@ export interface ConvergeLane {
   bellyX1: number;
   /** The height of the belly: `yc + bow`. */
   bellyY: number;
+  /**
+   * The **body**, in x — the stretch drawn at full thickness, around the name.
+   *
+   * A sub-range of the belly, `name + 2·labelPad` long, and everything outside it
+   * on this lane is drawn as a thin tendon. See `bodySpan` for the rule and for
+   * the measurement that made it necessary; R15.
+   *
+   * Carried for the same reason `run` and `bellyX0` are, and here it earns it
+   * twice over: the belly and the body come apart by hundreds of pixels on a long
+   * column, so a reader of this struct who assumed "the thick part is the belly"
+   * would be wrong about the shape rather than merely redundant.
+   */
+  bodyX0: number;
+  bodyX1: number;
   /** 0 for a lane of the figure's own bundles; deeper inside an opened lane. */
   depth: number;
   /**
@@ -2577,6 +2632,60 @@ function halfAt(depth: number): number {
 }
 
 /**
+ * **The relational compactness rule (R15), in one function.**
+ *
+ * > *"Mostly let there be some rule for relational compactness, how far the body
+ * > of the line should go in relation to the label, and then tendons can pad the
+ * > rest!"*                                                  — owner, ai-ops#64
+ *
+ * A line's body is `name + 2·labelPad` long and everything else on that line is
+ * tendon. That is a **drawing** rule, not a sizing one, and the distinction is
+ * the whole reason it can ship on its own: the column's width, the runs, the
+ * bands and the crossing-free argument are all untouched, and what changes is
+ * how much of a line is drawn as a body.
+ *
+ * ## Why the sizing could not carry it, measured
+ *
+ * `hugRuns` already gives each lane the run its own content leaves over —
+ * `(span − bare)/2` — so on paper a belly is already its own `bare`. It is not,
+ * and the reason is the crossing-free precondition rather than a missing clamp:
+ * a row's runs must be non-increasing in `|bow|`, so the lane furthest from the
+ * spine can never have a longer tendon than the innermost one, and whatever the
+ * innermost lane's content leaves over is what every outer lane's belly grows
+ * to. Measured over all 46 figure-locales, shut and saturated, before this
+ * change: **419 of 674 named lanes (62.2%) were drawn on a belly longer than
+ * their own name plus its padding, 54,746px of empty belly in total**, the worst
+ * being *"HHL"* — a 19.1px name — on an **854.5px** belly, 44.8× its own label.
+ *
+ * Shortening those bellies means shortening the *column*, which means breaking
+ * the shared span a row of siblings converges on. That is the owner's fourth ask
+ * in the same message — muscle groups pushed together along the x-axis — and it
+ * is a different piece of work. This one draws the line he asked for on the
+ * column that exists.
+ *
+ * `centreX` is where the name is written, not where the belly's midpoint is: a
+ * framed name sits at the left of its shell, and a body centred on the belly
+ * under a name at the left would be a bar the name hangs off.
+ */
+export function bodySpan(
+  centreX: number,
+  nameWidth: number,
+  belly: { x0: number; x1: number },
+): { x0: number; x1: number } {
+  const M = CONVERGE_METRICS;
+  const length = Math.min(
+    Math.max(M.minBody, nameWidth + 2 * M.labelPad),
+    Math.max(0, belly.x1 - belly.x0),
+  );
+  // Slid back inside the belly rather than clipped at it. A body clipped at the
+  // edge would be shorter than the rule says at exactly the lanes whose name is
+  // off-centre, which is every framed one — and "shorter than its own name" is
+  // the one failure this rule must not produce.
+  const lo = Math.min(Math.max(centreX - length / 2, belly.x0), belly.x1 - length);
+  return { x0: lo, x1: lo + length };
+}
+
+/**
  * Does this strand wear its name **in** its own line rather than beside it?
  *
  * Owner, session 119: a lane with nothing inside is one shape with one
@@ -3478,7 +3587,12 @@ function place(
   // carry, so it gets no shell.
   const framed = strand.open && strand.opensInto === "steps" && !strand.composite;
   const frameHalf = coreBandHalf(size) - size.nameBand;
-  const frame = framed ? { d: ribbonOutline(ribbon, frameHalf), half: frameHalf } : null;
+  // The shell's body is its **whole belly**, and that is the rule rather than an
+  // exception to it: a body is the stretch of a line that holds content, and
+  // what this shell holds — the chain's steps — is laid end to end along the
+  // belly. Its tendons hold nothing and are drawn thin like every other tendon.
+  const shellBody = { x0: belly.x0, x1: belly.x1, tendonHalf: M.tendonHalf };
+  const frame = framed ? { d: ribbonOutline(ribbon, frameHalf, shellBody), half: frameHalf } : null;
   // **The variant row (W13):** refinements nested under this lane's own line,
   // packed outward from the band the lane keeps for itself, wrapped in a
   // bracket. Same allocator, same clearance and same shared run as `measure`
@@ -3505,7 +3619,18 @@ function place(
             bow: outward * ((lo + hi) / 2),
             run,
           };
-          return { offsets, run, d: ribbonOutline(bracket, (hi - lo) / 2) };
+          // Same as the shell above: a variant spans the belly, so the bracket
+          // that holds the row is full-thickness across the belly and thin
+          // through the two tendons where there is no variant to hold.
+          return {
+            offsets,
+            run,
+            d: ribbonOutline(bracket, (hi - lo) / 2, {
+              x0: belly.x0,
+              x1: belly.x1,
+              tendonHalf: M.tendonHalf,
+            }),
+          };
         })();
   // The shell's name goes on its **upper** edge, always. Only one text
   // population approaches the shell now that ingredients are card content
@@ -3588,6 +3713,15 @@ function place(
         peak.x,
       )
     : peak.x;
+  // **The body: how much of this line is drawn thick, and where** (R15).
+  //
+  // Around the name, not around the belly's midpoint — `labelX` is where the
+  // text actually is, and on a framed lane that is the left of the shell.
+  // `fittedWidth` and not the label's *demand*: what the body has to be in
+  // relation to is the string this lane draws, which is the fitted one, and
+  // sizing it off the demand would draw a body wider than the name on the two
+  // lanes per figure where a cap or a shared allowance bites.
+  const body = bodySpan(labelX, fittedWidth, belly);
   if (strand.standing === "unpublished") out.unpublished += 1;
   // **A partition of the old single count, on `openable`.** Both arms need
   // `!open` and neither can drop it: a run of named hops is drawn open from the
@@ -3616,7 +3750,7 @@ function place(
     // it is building or who asked for it.
     subject: false,
     d: ribbonPath(ribbon),
-    outline: ribbonOutline(ribbon, half),
+    outline: ribbonOutline(ribbon, half, { ...body, tendonHalf: M.tendonHalf }),
     x0: base.x0,
     x1: base.x1,
     yc: base.y,
@@ -3631,6 +3765,8 @@ function place(
     bellyX0: belly.x0,
     bellyX1: belly.x1,
     bellyY: belly.y,
+    bodyX0: body.x0,
+    bodyX1: body.x1,
     depth,
     parentKey: context.parentKey,
     label: fitted.text,
