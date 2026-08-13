@@ -9041,6 +9041,177 @@ export const LAYER_GRAPH: LayerGraph = {
       { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
     ],
   },
+  // ── Session 15 unit 3, ai-ops#57: the number-theory region ──────────────────
+  // The first genuinely new SUBJECT region on this map — everything before it was
+  // the differential-equation spine, the variational spine, or the hardware tail.
+  // Eight corpus records, three methods, one slot, and the axis that separates the
+  // methods is stated by Hallgren himself rather than inferred by us.
+  //
+  // **These routes do NOT step into `phase-estimation`, and that absence was
+  // checked rather than assumed.** All three primary papers were read looking for
+  // exactly that link and none of them frames its method that way: Shor computes a
+  // Fourier transform and extracts the period with a continued-fraction expansion,
+  // and Hallgren calls his technique Fourier sampling — "the main workhorse of
+  // quantum algorithms". The identification of period finding with phase estimation
+  // is Kitaev's later unification, and Proos and Zalka name it as an import when
+  // they use it ("we will use the eigenvalue estimation viewpoint introduced by
+  // Kitaev"). Drawing the step would have put a 1995 paper's name on a framing it
+  // does not use. When the register carries Kitaev's unification as a citable
+  // paper, this becomes a `bypasses`-style question worth reopening; until then the
+  // honest drawing is no edge.
+  {
+    kind: "capability",
+    id: "hidden-period-finding",
+    label: "Recover the period of a periodic function",
+    labelJa: "周期関数の周期を回復する",
+    summary: "Given a function you can evaluate in superposition and a promise that it repeats, find what it repeats by. This is the engine underneath factoring, discrete logarithms and a row of classical number-theory problems that had no efficient algorithm at all — and the whole difficulty is that the period is read out of an interference pattern rather than looked up.",
+    summaryJa: "重ね合わせの上で評価できる関数と、それが繰り返すという約束が与えられたとき、何を周期として繰り返すのかを求めます。これは素因数分解、離散対数、そして効率的なアルゴリズムがまったく知られていなかった一連の古典的な整数論の問題の根底にある機構です。難しさのすべては、周期を調べて得るのではなく干渉パターンから読み出す点にあります。",
+    contract: {
+      from: "periodic-function-oracle",
+      to: "hidden-period",
+      takes: "A circuit evaluating f on a superposition of inputs, the promise that f is periodic, the kind of object its period is (an integer in a finite cyclic group, an irrational real, a lattice of rank r), and — where the period is not an integer — the precision wanted.",
+      takesJa: "入力の重ね合わせの上で f を評価する回路、f が周期的であるという約束、その周期がどのような対象であるか（有限巡回群の中の整数、無理数の実数、階数 r の格子）、そして周期が整数でない場合には求める精度。",
+      returns: "The period: an exact integer where the group is finite, or an approximation to the requested precision together with the classical post-processing that turned the measured samples into it.",
+      returnsJa: "周期。群が有限であれば正確な整数、そうでなければ要求された精度までの近似値と、測定したサンプルをそれに変換した古典的な後処理を伴います。",
+    },
+    entries: [],
+    whyALayer: "The routes here are separated by **what kind of thing the period is allowed to be**, and that is a difference in what is possible rather than in cost. Hallgren states it against Shor directly: the structure behind Pell's equation is \"a group-like subset of the reals modulo an irrational number\", and \"this prevents direct application of Shor's algorithms\" — an irrational period cannot be written down, so the continued-fraction step that finishes the integer route has nothing to finish. Going from one irrational period to a lattice of them costs again, and for a stated reason: the lattice method \"only appears to work for a constant number of dimensions because the rounding introduces new noise into the distribution that is not present in the integer lattice case\". So a claim that a problem \"reduces to period finding\" has said nothing until it says which of the three. The wider family these belong to is the **hidden subgroup problem**, which is deliberately not drawn as a node beside them: it also contains instances with no period interpretation at all — Hallgren names graph isomorphism as one of the \"still unsolved problems\" it covers — so a node for it would be a family standing beside three of its own members.",
+    whyALayerJa: "ここに並ぶ経路を分けているのは、**周期がどのような対象でありうるか**であり、これは費用の違いではなく可能かどうかの違いです。Hallgren は Shor に対してそれを直接述べています。Pell 方程式の背後にある構造は「無理数を法とする実数の、群に似た部分集合」であり、「これが Shor のアルゴリズムの直接的な適用を妨げる」。無理数の周期は書き下せないため、整数の経路を締めくくる連分数の工程には締めくくるべきものがありません。一つの無理数の周期から周期の格子へ進むと、さらに費用がかかります。その理由も述べられています。格子の手法は「丸めが、整数格子の場合には存在しない新たな雑音を分布に持ち込むため、次元数が定数の場合にしか機能しないように見える」。したがって、ある問題が「周期発見に帰着する」という主張は、三つのうちどれであるかを言うまでは何も言っていません。これらが属するより広い族は**隠れ部分群問題**ですが、それは意図的にノードとして並置していません。この族には周期としての解釈をもたない事例も含まれ、Hallgren はそれが覆う「未解決の問題」としてグラフ同型性を挙げています。そのためノードを立てれば、族が自らの三つの構成員の隣に並ぶことになります。",
+  },
+  {
+    kind: "method",
+    id: "cyclic-period-finding",
+    label: "Period finding in a finite cyclic group",
+    labelJa: "有限巡回群における周期発見",
+    shortLabel: "Order finding",
+    shortLabelJa: "位数発見",
+    summary: "Evaluate the function across a superposition of exponents, transform the input register, and measure. What comes back is a multiple of the sample size divided by the period, near enough that a continued-fraction expansion recovers the period exactly — and once it is exact it can be checked classically, so the whole quantum part may fail and be retried.",
+    summaryJa: "指数の重ね合わせにわたって関数を評価し、入力レジスタを変換して測定します。返ってくるのはサンプル数を周期で割った値の倍数に十分近い数であり、連分数展開によって周期を正確に回復できます。正確であればそれは古典的に検証できるので、量子的な部分は失敗しても再試行すれば済みます。",
+    realizes: "hidden-period-finding",
+    conditions: "Shor's paper gives the two algorithms separately — \"In §5, we give our algorithm for prime factorization, and in §6, we give our algorithm for extracting discrete logarithms\" — and both land here because both recover a period in a finite cyclic group. The extraction step is stated as classical post-processing, not as a quantum readout: \"We then perform our Fourier transform $A_q$ on the first register... This fraction can be found in polynomial time by using a continued fraction expansion of $c/q$, which finds all the best approximations of $c/q$ by fractions.\" Discrete log costs more of the same machinery rather than different machinery — \"two modular exponentiations and two quantum Fourier transforms\" against order finding's one of each — and Shor ties the two together explicitly: \"The order of the generator could in fact be computed using the quantum order-finding algorithm given in §5 of this paper.\"",
+    conditionsJa: "Shor の論文は二つのアルゴリズムを別々に与えています。「§5 で素因数分解のアルゴリズムを、§6 で離散対数を取り出すアルゴリズムを与える」。どちらもここに属するのは、いずれも有限巡回群における周期を回復するからです。取り出しの工程は量子的な読み出しではなく古典的な後処理として述べられています。「次に第一レジスタに Fourier 変換 $A_q$ を施す……この分数は $c/q$ の連分数展開を用いて多項式時間で求められる。連分数展開は $c/q$ の分数による最良近似をすべて与える」。離散対数が要するのは異なる機構ではなく同じ機構をより多く使うことです。位数発見がそれぞれ一回であるのに対し「二回の冪剰余計算と二回の量子 Fourier 変換」を要します。そして Shor は両者を明示的に結び付けています。「生成元の位数は、実際には本論文 §5 で与えた量子位数発見アルゴリズムを用いて計算できる」。",
+    // Two records here are **applications of this method rather than siblings of
+    // it**, which is the owner's ai-ops#57 shape — a problem is a wrapper of
+    // context around a method that already exists — and both papers say so
+    // themselves. `quantum-primality-test-order-finding` uses "the quantum order
+    // finding algorithm behind Shor's factoring and discrete logarithm algorithms"
+    // and treats it as "a black box"; `elliptic-curve-discrete-log-resources`
+    // shows "in some detail how to implement Shor's efficient quantum algorithm
+    // for discrete logarithms for the particular case of elliptic curve groups".
+    // Neither is a fourth route and neither gets a node.
+    steps: [],
+    entries: ["shor-period-finding", "discrete-logarithm", "quantum-primality-test-order-finding", "elliptic-curve-discrete-log-resources"],
+    citations: [
+      { title: "Polynomial-Time Algorithms for Prime Factorization and Discrete Logarithms on a Quantum Computer", authors: "Peter W. Shor", year: "1995", url: "https://arxiv.org/abs/quant-ph/9508027" },
+      { title: "A quantum primality test with order finding", authors: "Alvaro Donis-Vela, Juan Carlos Garcia-Escartin", year: "2017", url: "https://arxiv.org/abs/1711.02616" },
+      { title: "Shor's discrete logarithm quantum algorithm for elliptic curves", authors: "John Proos, Christof Zalka", year: "2003", url: "https://arxiv.org/abs/quant-ph/0301141" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "real-period-finding",
+    label: "Period finding over the reals",
+    labelJa: "実数上の周期発見",
+    shortLabel: "Irrational period",
+    shortLabelJa: "無理数周期",
+    summary: "When the period is irrational there is no exact answer to land on, so the function is evaluated on a discretisation of the reals and the period is approximated instead. Two samples are taken rather than one, and the continued-fraction step runs on their ratio — the same idea as the integer route, doing a job the integer route cannot do at all.",
+    summaryJa: "周期が無理数である場合、たどり着くべき正確な答えが存在しません。そこで関数は実数の離散化の上で評価され、周期は代わりに近似されます。サンプルは一つではなく二つ取られ、連分数の工程はその比に対して実行されます。着想は整数の経路と同じですが、整数の経路には決してできない仕事をしています。",
+    realizes: "hidden-period-finding",
+    conditions: "Hallgren is explicit that this is a different method and not a re-run of Shor's: the principal ideal problem \"reduces to a discrete log type problem, but there is no longer an underlying group. Instead, a group-like subset of the reals modulo an irrational number is used. This prevents direct application of Shor's algorithms.\" He names the technique and its limit in the same breath — \"Fourier sampling can only be performed over finite groups... In this work we extend Fourier sampling to non-finitely generated groups, as there will be an underlying periodic function over the reals whose period we wish to approximate\" — and states where the new difficulty sits: \"The general idea for the algorithm is the same as in Shor's discrete log algorithm, but we have new technical difficulties because we are computing modulo an irrational number.\"",
+    conditionsJa: "Hallgren は、これが Shor のものの再実行ではなく別の手法であることを明示しています。主イデアル問題は「離散対数型の問題に帰着するが、もはや背後に群は存在しない。代わりに、無理数を法とする実数の群に似た部分集合が用いられる。これが Shor のアルゴリズムの直接的な適用を妨げる」。彼は手法とその限界を同じ流れで名指しします。「Fourier サンプリングは有限群の上でしか実行できない……本研究では、近似したい周期をもつ実数上の周期関数が背後に存在することから、Fourier サンプリングを有限生成でない群へ拡張する」。そして新たな困難がどこにあるかを述べます。「アルゴリズムの一般的な着想は Shor の離散対数アルゴリズムと同じであるが、無理数を法として計算するために新たな技術的困難がある」。",
+    contested: "Hallgren's later paper calls this a special case of the next method rather than a parallel one: \"Solving Pell's equation is a special case of the more general problem of finding the unit group of a number field.\" The two are kept as separate nodes because the techniques are separably hard rather than nested — the rank-1 construction here does not generalise on its own, and the lattice route needed new machinery for the rounding noise that appears only in higher rank. A reader should hold both facts: mathematically one contains the other, and as algorithms they were solved apart.",
+    contestedJa: "Hallgren の後年の論文は、これを並行する手法ではなく次の手法の特別な場合と呼んでいます。「Pell 方程式を解くことは、数体の単数群を求めるというより一般の問題の特別な場合である」。それでも両者を別のノードとして保っているのは、二つの技法が入れ子であるというより、それぞれ別個に難しいからです。ここでの階数 1 の構成はそれ自体では一般化せず、格子の経路は、より高い階数でのみ現れる丸め雑音のために新しい機構を必要としました。読み手は両方の事実を保持すべきです。数学的には一方が他方を含み、アルゴリズムとしては別々に解かれました。",
+    steps: [],
+    entries: ["pell-equation-regulator", "principal-ideal-problem"],
+    citations: [
+      { title: "Polynomial-Time Quantum Algorithms for Pell's Equation and the Principal Ideal Problem", authors: "Sean Hallgren", year: "2007", url: "https://doi.org/10.1145/1206035.1206039" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "period-lattice-finding",
+    label: "Finding a lattice of periods",
+    labelJa: "周期の格子を求める",
+    shortLabel: "Period lattice",
+    shortLabelJa: "周期格子",
+    summary: "Some functions repeat in several independent directions at once, so what is hidden is not one period but a lattice of them. Sampling the dual lattice and reconstructing a basis from the samples replaces the continued fraction, and the rounding that makes real-valued directions representable is what limits how many directions can be handled.",
+    summaryJa: "関数によっては、独立な複数の方向に同時に繰り返します。そのとき隠れているのは一つの周期ではなく、周期の格子です。双対格子からサンプリングし、そのサンプルから基底を再構成することが連分数の代わりとなり、実数値の方向を表現可能にする丸めこそが、扱える方向の数を制限します。",
+    realizes: "hidden-period-finding",
+    conditions: "Hallgren states the extension and its cost together: \"Most of the success in solving this problem has been for abelian groups, including finite abelian groups, $\\mathbb{Z}$, $\\mathbb{Z}^n$, and $\\mathbb{R}$. In this paper we extend the hidden subgroup problem to work for $\\mathbb{R}^r$.\" The gap between the integer and the real case is not a matter of constants — \"While there is a straightforward solution of the HSP over $\\mathbb{Z}^n$, this does not appear to be the case for $\\mathbb{R}^r$\" — and the limit is stated with its cause rather than as a bound: the method \"only appears to work for a constant number of dimensions because the rounding introduces new noise into the distribution that is not present in the integer lattice case\". That is why the corpus records for both the unit group and the class group say *constant-degree* number field: the constant is the paper's, not ours.",
+    conditionsJa: "Hallgren は拡張とその代償を同時に述べています。「この問題の解決の多くはアーベル群について得られてきた。有限アーベル群、$\\mathbb{Z}$、$\\mathbb{Z}^n$、$\\mathbb{R}$ である。本論文では隠れ部分群問題を $\\mathbb{R}^r$ に対して機能するよう拡張する」。整数の場合と実数の場合の隔たりは定数倍の問題ではありません。「$\\mathbb{Z}^n$ 上の HSP には素直な解法があるが、$\\mathbb{R}^r$ についてはそうではないように見える」。そして限界は、単なる上界としてではなく原因とともに述べられます。この手法は「丸めが、整数格子の場合には存在しない新たな雑音を分布に持ち込むため、次元数が定数の場合にしか機能しないように見える」。単数群と類群のどちらの記録も *constant-degree* な数体と述べているのはこのためです。その定数は論文のものであって、こちらのものではありません。",
+    steps: [],
+    entries: ["class-group-of-a-number-field", "unit-group-of-a-number-field"],
+    citations: [
+      { title: "Fast Quantum Algorithms for Computing the Unit Group and Class Group of a Number Field", authors: "Sean Hallgren", year: "2005", url: "https://doi.org/10.1145/1060590.1060660" },
+    ],
+  },
+  // ── Session 15 unit 2, ai-ops#57: the phase-estimation slot ─────────────────
+  // **Built because three papers in unit 1 walked into the hole where it should
+  // have been** — the Aspuru-Guzik molecular-energy route IS phase estimation end
+  // to end, the tensor-hypercontraction encoding exists to make phase estimation
+  // affordable ("With O(λ/ε) repetitions of these circuits one can use phase
+  // estimation to sample in the molecular eigenbasis"), and the double-bracket
+  // paper argues against phase estimation by name. The corpus was already holding
+  // two records for it, unanchored, and they are two genuinely different methods
+  // rather than one drawn twice, which is what makes this a slot.
+  {
+    kind: "capability",
+    id: "phase-estimation",
+    label: "Estimate the eigenphase of a unitary",
+    labelJa: "ユニタリの固有位相を推定する",
+    summary: "Given a circuit whose controlled powers you can apply, and a routine preparing a state with non-negligible overlap on one of its eigenvectors, return that eigenvector's phase as a number with an error bar. The phase is read out of an ancilla, never out of the system register — the system is only ever the thing the controlled powers act on.",
+    summaryJa: "制御べき乗を作用させられる回路と、その固有ベクトルの一つと無視できない重なりをもつ状態を準備する手続きが与えられたとき、その固有ベクトルの位相を誤差付きの数として返します。位相が読み出されるのは常に補助量子ビットからであり、系のレジスタからではありません。系は制御べき乗が作用する対象であるにすぎません。",
+    contract: {
+      from: "eigenphase-problem",
+      to: "observable-value",
+      takes: "A circuit for U that can be applied as controlled U^(2^j), a preparation routine for a state whose overlap with the target eigenvector is not negligible, the number of bits of the phase wanted, and the failure probability that may be tolerated.",
+      takesJa: "制御 U^(2^j) の形で作用させられる U の回路、目標の固有ベクトルとの重なりが無視できない状態の準備手続き、求めたい位相の桁数、そして許容できる失敗確率。",
+      returns: "An estimate of the eigenphase to the requested number of bits, with the failure probability it was obtained at, plus the two costs that actually differ between routes: how many ancillas were held at once, and how many sequential rounds were run.",
+      returnsJa: "要求した桁数までの固有位相の推定値と、それが得られた際の失敗確率。あわせて、経路ごとに実際に異なる二つの費用、すなわち同時に保持した補助量子ビットの数と、逐次実行した周回数を返します。",
+    },
+    entries: [],
+    whyALayer: "The methods here differ in a resource trade a reader has to make deliberately, and Dobsicek et al. state both sides of it in one sentence: to reach a precision of order $1/2^m$ \"it is possible to run either log m rounds (iterations) with m ancillary qubits or m log(m) rounds with only a single ancilla\". So the choice is ancillas against rounds — hold a whole register coherent and finish quickly, or hold one qubit and pay in sequential measurements with classical feedback between them. Which is cheaper is a property of the machine rather than of the algorithm, and their own motivation says so: \"As long as the number of qubits is a limiting factor, implementations of phase estimation with only a single ancillary qubit will be of foremost importance.\" A cost model that says \"phase estimation\" without saying which of the two has not said what the machine is being asked for.",
+    whyALayerJa: "ここに並ぶ手法は、読み手が意識して選ぶべき資源の交換において異なります。Dobsicek らはその両側を一文で述べています。$1/2^m$ 程度の精度に到達するには「m 個の補助量子ビットで log m 周回を実行することも、補助量子ビット 1 個だけで m log(m) 周回を実行することもできる」。つまり選択は補助量子ビットと周回数の交換です。レジスタ全体をコヒーレントに保って短く終えるか、1 量子ビットだけを保ち、その代わりに古典的なフィードバックを挟む逐次測定で支払うか。どちらが安いかはアルゴリズムではなく機械の性質であり、著者ら自身の動機がそう述べています。「量子ビット数が制約である限り、補助量子ビット 1 個だけの位相推定の実装が最重要となる」。どちらであるかを言わずに「位相推定」とだけ書いたコスト見積もりは、機械に何を求めているかを述べていません。",
+  },
+  {
+    kind: "method",
+    id: "register-phase-estimation",
+    label: "Phase estimation into an ancilla register",
+    labelJa: "補助レジスタへの位相推定",
+    shortLabel: "Register QPE",
+    shortLabelJa: "レジスタ型 QPE",
+    summary: "Put a register of ancillas into superposition, apply controlled U raised to each power of two into it, and let the phase accumulate across the register. The register then holds the phase in the Fourier basis, and one transform back turns it into bits you can measure.",
+    summaryJa: "補助量子ビットのレジスタを重ね合わせにし、2 のべき乗ごとの制御 U を作用させて、レジスタ全体に位相を蓄積させます。するとレジスタは位相を Fourier 基底で保持しており、逆変換を一度かければ、測定できるビット列になります。",
+    realizes: "phase-estimation",
+    conditions: "Kitaev's paper is where measuring an eigenvalue of a unitary is introduced — \"Our method is based on a procedure for measuring an eigenvalue of a unitary operator\" — and it is introduced in the service of something else, the Abelian Stabilizer Problem, which is the shape ADR-0026 permits. The construction is the ancilla-and-controlled-U one: with $S$ the Hadamard, \"the operator $\\Xi(U) = S \\Lambda(U) S$ is a measurement operator for the observable $\\varphi$\", and precision comes from having the controlled powers available — \"the situation is different if we have in our disposal the operators $\\Lambda(U^k)$ for all $k$\".",
+    conditionsJa: "ユニタリの固有値を測るという発想が導入されたのは Kitaev のこの論文です。「我々の方法は、ユニタリ演算子の固有値を測定する手続きに基づく」。そしてそれは別のもの、すなわちアーベル安定化群問題のために導入されています。これは ADR-0026 が認める形です。構成は補助量子ビットと制御 U によるものです。$S$ を Hadamard として「演算子 $\\Xi(U) = S \\Lambda(U) S$ は可観測量 $\\varphi$ に対する測定演算子である」とされ、精度は制御べき乗が使えることから得られます。「すべての $k$ について演算子 $\\Lambda(U^k)$ が手元にあるなら、事情は異なる」。",
+    contested: "The circuit usually drawn for this method — one coherent register and a single inverse quantum Fourier transform at the end — is NOT the circuit in the paper cited here. Kitaev localizes each power separately and combines the results classically; Dobsicek et al. describe his scheme from the outside as the one \"where the Fourier transform is replaced with a Hadamard transform\". The coherent-register-plus-inverse-QFT formulation is the later one, usually credited to Cleve, Ekert, Macchiavello and Mosca (1998), which this repository's paper register does not yet carry. Recorded rather than quietly fixed, because which paper a method is credited to is the owner's call, not an agent's. Nothing about the slot turns on it: the resource trade against the single-ancilla route is stated by Dobsicek et al. and holds whichever paper this circuit is attributed to.",
+    contestedJa: "この手法に対して通常描かれる回路、すなわち一つのコヒーレントなレジスタと末尾の逆量子 Fourier 変換は、ここで引用している論文の回路ではありません。Kitaev は各べき乗を個別に絞り込み、その結果を古典的に統合します。Dobsicek らは外から彼の方式を「Fourier 変換が Hadamard 変換に置き換えられた」ものと表現しています。コヒーレントなレジスタと逆 QFT による定式化は後年のものであり、通常は Cleve、Ekert、Macchiavello、Mosca（1998）に帰されますが、その論文は本リポジトリの論文レジスタにまだ収録されていません。黙って直すのではなく記録しているのは、ある手法をどの論文に帰すかが所有者の判断であってエージェントの判断ではないからです。この層の成立自体はこの点に依存しません。単一補助量子ビット経路との資源の交換は Dobsicek らが述べており、この回路がどちらの論文に帰されようと成り立ちます。",
+    steps: [],
+    entries: ["quantum-phase-estimation", "quantum-fourier-transform"],
+    citations: [
+      { title: "Quantum measurements and the Abelian Stabilizer Problem", authors: "A. Yu. Kitaev", year: "1995", url: "https://arxiv.org/abs/quant-ph/9511026" },
+      { title: "An approximate Fourier transform useful in quantum factoring", authors: "D. Coppersmith", year: "2002", url: "https://arxiv.org/abs/quant-ph/0201067" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "single-ancilla-phase-estimation",
+    label: "Iterative phase estimation on one ancilla",
+    labelJa: "単一補助量子ビットによる反復位相推定",
+    shortLabel: "Iterative QPE",
+    shortLabelJa: "反復型 QPE",
+    summary: "Use one ancilla and measure it, over and over, least significant bit first. Each measured bit is fed back classically as a rotation angle on the next round, so the register the other route holds in superposition is replaced by a classical string that grows one bit at a time.",
+    summaryJa: "補助量子ビットを 1 個だけ使い、それを何度も測定します。下位のビットから順に求め、測定した各ビットは次の周回の回転角として古典的にフィードバックされます。もう一方の経路が重ね合わせで保持するレジスタが、1 ビットずつ伸びていく古典的なビット列に置き換わります。",
+    realizes: "phase-estimation",
+    conditions: "Dobsicek et al. state the size claim in the abstract — an iterative phase estimation \"with a single ancillary qubit\" — and make explicit that the qubit count does not grow with the precision: \"The minimal system for implementing the iterative PEA is a two qubit system, where one qubit is a read-out ancilla, and the second qubit represents a physical system.\" The order of the rounds is part of the method rather than an implementation detail: \"first less significant digits are evaluated and then the obtained information improves the quantum part of the search for more significant digits\", carried by \"an extra single qubit Z-rotation that is inserted into the circuit\" whose angle is a function of the bits already measured — $\\omega_k = -2\\pi(0.0x_{k+1}x_{k+2} \\ldots x_m)$, with $\\omega_m = 0$. Nothing quantum passes between rounds; the feedback is a classically computed angle.",
+    conditionsJa: "Dobsicek らは規模に関する主張を要旨で述べています。「単一の補助量子ビットによる」反復位相推定です。そして量子ビット数が精度とともに増えないことを明示します。「反復 PEA を実装する最小の系は 2 量子ビット系であり、一方が読み出し用の補助量子ビット、他方が物理系を表す」。周回の順序は実装上の細部ではなく手法の一部です。「まず下位の桁を評価し、得られた情報が上位の桁の探索の量子的部分を改善する」。これは「回路に挿入される追加の単一量子ビット Z 回転」によって運ばれ、その角度はすでに測定されたビットの関数です。すなわち $\\omega_k = -2\\pi(0.0x_{k+1}x_{k+2} \\ldots x_m)$ であり、$\\omega_m = 0$ です。周回のあいだを量子的な情報が渡ることはなく、フィードバックは古典的に計算された角度です。",
+    steps: [],
+    entries: ["iterative-phase-estimation"],
+    citations: [
+      { title: "Arbitrary accuracy iterative phase estimation algorithm as a two qubit benchmark", authors: "M. Dobsicek, G. Johansson, V. S. Shumeiko, G. Wendin", year: "2006", url: "https://arxiv.org/abs/quant-ph/0610214" },
+    ],
+  },
   // ── Session 15, ai-ops#57 "grow the map" ────────────────────────────────────
   // Five methods for corpus records that were map-eligible and reached by no
   // node. Each was chosen after reading the paper, not the record's one-line
@@ -9128,7 +9299,18 @@ export const LAYER_GRAPH: LayerGraph = {
     // exists to make phase estimation affordable; `double-bracket-diagonalization`
     // argues against phase estimation by name), so this is three independent
     // sightings, not one.
-    steps: ["state-preparation", "hamiltonian-simulation"],
+    // **`phase-estimation` added as a step in unit 2, and it is what stops this slot
+    // landing as an island.** Authored in unit 1, this route closed its own stretch
+    // because the map had no phase-estimation slot to hand the readout to; unit 2
+    // built the slot, and `check-region-joins.mjs` immediately reported it as a
+    // FOURTH region — three nodes nothing reaches — because nothing produced
+    // `eigenphase-problem`. Declaring the step here is not a fix for the checker, it
+    // is the claim the paper makes in its own first sentences: "The phase estimation
+    // algorithm (PEA) of Abrams and Lloyd can be used to obtain eigenvalues of
+    // Hermitian operators; we address issues concerning its implementation for
+    // molecular Hamiltonians." The route does not merely resemble phase estimation,
+    // it is phase estimation applied to a molecular Hamiltonian.
+    steps: ["state-preparation", "hamiltonian-simulation", "phase-estimation"],
     entries: ["molecular-energy-phase-estimation"],
     citations: [
       { title: "Simulated Quantum Computation of Molecular Energies", authors: "Alán Aspuru-Guzik, Anthony D. Dutoi, Peter J. Love, Martin Head-Gordon", year: "2006", url: "https://arxiv.org/abs/quant-ph/0604193" },
