@@ -84,15 +84,15 @@ export default async function RepositoryLayerNodePage({
   const node = layerNode(LAYER_GRAPH, id);
   const state = layerState(STATE_VOCABULARY, id);
   if (!node && !state) notFound();
-  // The catalogue is fetched only for a node page, which is the only one that
-  // cross-links into it. A state page names processes and other states and never
-  // touches a record, so making it wait on the Atlas would buy nothing and hand
-  // it a dependency that can be slow or short — the failure mode `censusUnresolved`
-  // exists to confess elsewhere on this surface.
-  const [locale, entries] = await Promise.all([
-    getPublicLocale(),
-    node ? getRepositoryListEntries() : Promise.resolve([]),
-  ]);
+  // **The catalogue is now fetched for both, and the note that used to stand
+  // here was right until this session.** It read: "a state page names processes
+  // and other states and never touches a record, so making it wait on the Atlas
+  // would buy nothing". A state page is now one end of the record ↔ state join
+  // (ai-ops#41 option B) — it lists the records that ARE the object — so the
+  // dependency buys exactly what it costs. Nothing else about the reasoning
+  // changed: the fetch can still be slow or short, and a state page with no
+  // corpus renders every other section and omits that one.
+  const [locale, entries] = await Promise.all([getPublicLocale(), getRepositoryListEntries()]);
   const corpus: LayerCorpusEntry[] = entries.map(layerCorpusEntry);
 
   // **Both halves of what the parser returns, because the count is the point.**
@@ -142,6 +142,7 @@ export default async function RepositoryLayerNodePage({
           vocabulary={STATE_VOCABULARY}
           state={state}
           locale={locale}
+          corpus={corpus}
         />
       ) : null}
     </PublicSite>
