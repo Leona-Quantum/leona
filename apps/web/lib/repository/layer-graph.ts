@@ -1472,6 +1472,138 @@ export const LAYER_GRAPH: LayerGraph = {
   },
   {
     kind: "method",
+    id: "childs-liu-spectral",
+    label: "Chebyshev spectral method, global collocation",
+    labelJa: "Chebyshev スペクトル法による大域的選点",
+    shortLabel: "Spectral method",
+    shortLabelJa: "スペクトル法",
+    summary: "The route that brought $\\mathrm{poly}(\\log(1/\\varepsilon))$ precision to linear ODEs with **time-dependent** coefficients, which is what its abstract says was missing: \"no such algorithm was previously known for differential equations with time-dependent coefficients\". It does it by not stepping. The solution is approximated globally by a truncated Chebyshev series, the coefficients are fixed by collocating the differential equation at Chebyshev nodes, and the resulting sparse system goes to a high-precision quantum linear system algorithm. The exponential precision is bought by smoothness rather than by the solver: it is the $C^{\\infty}$ convergence of the Chebyshev series that makes the series length logarithmic in $1/\\varepsilon$.",
+    summaryJa: "**時間に依存する**係数をもつ線形常微分方程式に $\\mathrm{poly}(\\log(1/\\varepsilon))$ の精度をもたらした経路です。要旨が欠けていると述べているのがまさにそこで、「時間依存の係数をもつ微分方程式については、そのようなアルゴリズムはこれまで知られていなかった」とあります。実現の鍵は、逐次に進めないことです。解を打ち切り Chebyshev 級数で大域的に近似し、Chebyshev 点で微分方程式を選点することによって係数を定め、得られた疎な系を高精度の量子線形システムアルゴリズムに渡します。指数的な精度を買うのはソルバーではなく滑らかさです。級数の長さを $1/\\varepsilon$ の対数にするのは、Chebyshev 級数の $C^{\\infty}$ 収束にほかなりません。",
+    realizes: "linear-ode-solve",
+    // **Everything below is from arXiv:1901.00961 itself.** Its abstract states
+    // only `poly(log d, log(1/ε))` and puts every hypothesis in the body, which
+    // is why this node stood as a recorded absence in `slot-closure.ts` until it
+    // was read in full. In particular the κ_V-bearing expression in `cost` is
+    // **Theorem 1 and Eq. (8.2) of this paper**, not the spectral-method row of
+    // An, Childs and Lin's Table 1 — `taylor-all-at-once`'s `cost` warns off
+    // that row precisely because reproducing a later paper's tabulation as the
+    // original's claim is the failure this graph's header rule removed, and the
+    // warning stands unchanged: the two are not asserted here to agree, and
+    // nothing on this node is taken from the table.
+    conditions: "**Problem 1** fixes the access model and one smoothness assumption before any theorem runs: $A(t) \\in \\mathbb{C}^{d\\times d}$ is $s$-sparse for every $t \\in [0,T]$, and \"we assume that $A_{ij}, f_i \\in C^{\\infty}(0,T)$ for all $i,j \\in [d]$\". Everything is reached through oracles — one computing \"the locations and values of the nonzero entries of $A(t)$\" in a given row or column, and oracles preparing $|\\gamma\\rangle$ and $|f(t)\\rangle$ that \"also compute $\\|\\gamma\\|$ and $\\|f(t)\\|$\" — and the deliverable is a quantum state, \"a quantum state $\\varepsilon$-close to $|x(T)\\rangle$\", never an explicit vector. **Theorem 1** adds the spectral hypothesis: \"$A(t)$ can be diagonalized as $A(t) = V(t)\\Lambda(t)V^{-1}(t)$ where $\\Lambda(t) = \\mathrm{diag}(\\lambda_1(t),\\ldots,\\lambda_d(t))$ with $\\mathrm{Re}(\\lambda_i(t)) \\leq 0$ for each $i \\in [d]_0$ and $t \\in [0,T]$\". The paper gives the reason and the comparison in one breath: the non-positive real parts are required \"so that the solution cannot grow exponentially\", and this \"is essentially the same as in the time-independent case considered in [10] and improves upon the analogous condition in [5] (which requires an additional stability condition)\" — [5] being Berry's multistep route on this same slot, whose $A(\\alpha)$-stability is the extra condition being improved upon. **The hypothesis the abstract does not carry is smoothness of the solution, and the headline rests on it.** Section 2: \"if the solution is in $C^{\\infty}$, the spectral method approximates the solution to within $\\varepsilon$ using only $n = \\mathrm{poly}(\\log(1/\\varepsilon))$ terms in the Chebyshev series\", whereas \"for a solution in $C^{r+1}$, the spectral method approximates the solution with $n = \\mathrm{poly}(1/\\varepsilon)$\". The Discussion lists it as an open problem rather than a technicality: \"our algorithm must assume that the solution is smooth. If the solution is in $C^r$, the solution error is $O(1/n^{r-2})$ by Lemma 1. Can we improve the complexity to $\\mathrm{poly}(\\log(1/\\varepsilon))$ under such weaker smoothness assumptions?\" Diagonalisability is the softer of the two hypotheses and the paper says so: \"our algorithm can produce approximate solutions for non-diagonalizable $A(t)$, although the dependence on $\\varepsilon$ degrades to $\\mathrm{poly}(1/\\varepsilon)$\".",
+    conditionsJa: "**問題 1** は、いずれの定理が動くよりも前に、アクセスの様式と滑らかさの仮定をひとつ定めます。$A(t) \\in \\mathbb{C}^{d\\times d}$ はすべての $t \\in [0,T]$ について $s$-疎であり、「すべての $i,j \\in [d]$ について $A_{ij}, f_i \\in C^{\\infty}(0,T)$ を仮定する」とあります。対象にはすべてオラクル経由で触れます。与えられた行または列における「$A(t)$ の非零成分の位置と値」を計算するもの、そして $|\\gamma\\rangle$ と $|f(t)\\rangle$ を用意し「あわせて $\\|\\gamma\\|$ と $\\|f(t)\\|$ を計算する」ものです。得られるのは量子状態、すなわち「$|x(T)\\rangle$ に $\\varepsilon$ だけ近い量子状態」であって、明示的なベクトルではありません。**定理 1** はさらにスペクトルに関する仮定を置きます。「$A(t)$ が $A(t) = V(t)\\Lambda(t)V^{-1}(t)$ と対角化でき、$\\Lambda(t) = \\mathrm{diag}(\\lambda_1(t),\\ldots,\\lambda_d(t))$ は各 $i \\in [d]_0$ と $t \\in [0,T]$ について $\\mathrm{Re}(\\lambda_i(t)) \\leq 0$ を満たす」というものです。論文はその理由と比較を続けて述べます。固有値の実部が非正であることは「解が指数的に増大しないため」に必要であり、これは「[10] が扱う時間非依存の場合と本質的に同じであり、[5] における対応する条件（追加の安定性条件を要求する）を改善している」とあります。[5] は同じ層にある Berry の多段法の経路であり、その $A(\\alpha)$-安定性こそが、ここで改善されている追加条件です。**要旨が担っていない仮定は解の滑らかさであり、看板の主張はそこに乗っています。** 第 2 節には「解が $C^{\\infty}$ にあれば、スペクトル法は Chebyshev 級数のわずか $n = \\mathrm{poly}(\\log(1/\\varepsilon))$ 項で解を $\\varepsilon$ 以内に近似する」とある一方、「$C^{r+1}$ の解については、スペクトル法は $n = \\mathrm{poly}(1/\\varepsilon)$ で解を近似する」とあります。議論の節はこれを些事ではなく未解決問題として挙げます。「我々のアルゴリズムは解が滑らかであることを仮定しなければならない。解が $C^r$ にあれば、補題 1 により解の誤差は $O(1/n^{r-2})$ である。そのような弱い滑らかさの仮定のもとで複雑さを $\\mathrm{poly}(\\log(1/\\varepsilon))$ に改善できるか」。対角化可能性は二つのうち緩いほうであり、論文自身がそう述べています。「我々のアルゴリズムは対角化できない $A(t)$ についても近似解を出せるが、$\\varepsilon$ への依存は $\\mathrm{poly}(1/\\varepsilon)$ に劣化する」。",
+    cost: "**Theorem 1**, the main result: $O(\\kappa_V s \\|A\\| T q\\,\\mathrm{poly}(\\log(\\kappa_V s \\|A\\| g' T/\\varepsilon g)))$ queries to the oracles $O_A(h,l)$, $O_x$ and $O_f(h,l)$, with a gate complexity \"larger than the query complexity by a factor of $\\mathrm{poly}(\\log(\\kappa_V d s \\|A\\| g' T/\\varepsilon))$\". Eq. (8.2) names every parameter rather than leaving them to a reader: $\\|A\\| := \\max_{t\\in[0,T]}\\|A(t)\\|$; $\\kappa_V := \\max_t \\kappa_V(t)$, where $\\kappa_V(t)$ is the condition number of the eigenvector matrix $V(t)$; $g := \\|\\hat{x}(T)\\|$; $g' := \\max_{t\\in[0,T]}\\max_{n\\in\\mathbb{N}}\\|\\hat{x}^{(n+1)}(t)\\|$; and $q := \\max_{t\\in[0,T]}\\|\\hat{x}(t)\\|/\\|x(T)\\|$. **Corollary 1** specialises to time-independent equations, replacing $g'$ by $\\|\\gamma\\| + 2\\tau\\|f\\|$: $O(\\kappa_V s\\|A\\|Tq\\,\\mathrm{poly}(\\log(\\kappa_V s\\gamma\\|A\\|\\|f\\|T/\\varepsilon g)))$. **The boundary value problem is much worse in the horizon** — Theorem 2 gives $O(\\kappa_V s\\|A\\|^{4}T^{4}q\\,\\mathrm{poly}(\\log(\\kappa_V s\\|A\\|g'T/\\varepsilon g)))$, a fourth power where the initial value problem has a first. Two of these parameters carry the paper's own warnings and neither is decoration. Of $g'$: \"in general, $g'$ could be unbounded above as $n \\to \\infty$\", and removing it is left open — \"the query complexity of Hamiltonian simulation is independent of that parameter. Can we develop quantum algorithms for general differential equations with query complexity independent of $g'$?\" Of $q$, which \"characterizes the decay of the final state relative to the initial state\": \"it is unlikely that the dependence on $q$ can be significantly improved, since renormalization of the state effectively implements postselection and an efficient procedure for performing this would have the unlikely consequence $\\mathsf{BQP} = \\mathsf{PP}$\". The horizon dependence, by contrast, is close to the floor: \"our algorithm has nearly optimal dependence on $T$, scaling as $O(T\\,\\mathrm{poly}(\\log T))$\", against the no-fast-forwarding bound that \"the complexity must be at least linear in $T$\".",
+    costJa: "**定理 1** が主結果です。オラクル $O_A(h,l)$、$O_x$、$O_f(h,l)$ への問い合わせが $O(\\kappa_V s \\|A\\| T q\\,\\mathrm{poly}(\\log(\\kappa_V s \\|A\\| g' T/\\varepsilon g)))$ 回であり、ゲート計算量は「問い合わせ計算量より $\\mathrm{poly}(\\log(\\kappa_V d s \\|A\\| g' T/\\varepsilon))$ 倍だけ大きい」とされます。式 (8.2) は各パラメータを読者任せにせず定義します。$\\|A\\| := \\max_{t\\in[0,T]}\\|A(t)\\|$、$\\kappa_V := \\max_t \\kappa_V(t)$（$\\kappa_V(t)$ は固有ベクトル行列 $V(t)$ の条件数）、$g := \\|\\hat{x}(T)\\|$、$g' := \\max_{t\\in[0,T]}\\max_{n\\in\\mathbb{N}}\\|\\hat{x}^{(n+1)}(t)\\|$、$q := \\max_{t\\in[0,T]}\\|\\hat{x}(t)\\|/\\|x(T)\\|$ です。**系 1** は時間非依存の場合への特殊化であり、$g'$ を $\\|\\gamma\\| + 2\\tau\\|f\\|$ で置き換えて $O(\\kappa_V s\\|A\\|Tq\\,\\mathrm{poly}(\\log(\\kappa_V s\\gamma\\|A\\|\\|f\\|T/\\varepsilon g)))$ を与えます。**境界値問題は時間幅に関して格段に重くなります。** 定理 2 は $O(\\kappa_V s\\|A\\|^{4}T^{4}q\\,\\mathrm{poly}(\\log(\\kappa_V s\\|A\\|g'T/\\varepsilon g)))$ であり、初期値問題の 1 乗に対してここは 4 乗です。これらのうち二つのパラメータには論文自身の警告が付いており、いずれも飾りではありません。$g'$ については「一般に $g'$ は $n \\to \\infty$ で上に有界でないことがありうる」とあり、その除去は未解決問題として残されています。「ハミルトニアンシミュレーションの問い合わせ計算量はこのパラメータに依存しない。一般の微分方程式について、$g'$ に依存しない問い合わせ計算量の量子アルゴリズムを作れるか」。「初期状態に対する終状態の減衰を特徴づける」$q$ については、「$q$ への依存を大きく改善できる見込みは薄い。状態の再規格化は実質的に事後選択を実装しており、それを効率的に行う手続きは $\\mathsf{BQP} = \\mathsf{PP}$ というありそうにない帰結をもたらすからである」とあります。他方、時間幅への依存は下限に近いところにあります。「我々のアルゴリズムの $T$ への依存はほぼ最適であり、$O(T\\,\\mathrm{poly}(\\log T))$ でスケールする」。これは「複雑さは少なくとも $T$ について線形でなければならない」という no-fast-forwarding の下界に対するものです。",
+    steps: ["time-discretization", "quantum-linear-solve"],
+    // **The discretization is pinned and the solver deliberately is not.**
+    //
+    // Pinned: this paper does not choose "some spectral scheme". It names the
+    // basis, the nodes and the differentiation matrix — Eq. (2.1), the
+    // Chebyshev-Gauss-Lobatto nodes t_l = cos(lπ/n), and D_n of Eq. (2.8) — so
+    // `chebyshev-pseudospectral-collocation` was authored with this route and
+    // the hop points at it. That is what keeps this node out of the
+    // `berry-multistep`/`krovi-linear-ode` KNOWN_TWINS group rather than making
+    // it a third member: those two share an UNPINNABLE first hop, and this one
+    // is pinnable.
+    //
+    // Not pinned: the paper says "we use the LCU-based QLSA to solve this linear
+    // system with high precision [15]" and then invokes "Theorem 5 of [15]" —
+    // Childs, Kothari and Somma. But that paper carries TWO routes, Fourier and
+    // Chebyshev, and its Theorem 5 is the amplified result that
+    // `chebyshev-lcu-inversion`'s own `contested` field already records as
+    // applying "to either the Fourier or the Chebyshev route". Pinning
+    // `chebyshev-lcu-inversion` here would therefore put a name on a hop the
+    // source leaves open, and the fact that the pin would also be convenient —
+    // it is the other way this node could have avoided a shared chain — is
+    // exactly why it is refused. `via` is for where a primary source pins it.
+    via: { "time-discretization": "chebyshev-pseudospectral-collocation" },
+    hops: {
+      "time-discretization": {
+        theory:
+          "What crosses here is a whole interval at once. The approximation is Eq. (2.1), $x_i(t) = \\sum_{k=0}^{n}c_{i,k}T_k(t)$ with the $c_{i,k}$ undetermined, and what determines them is Eq. (2.2) — the demand that $dx(t_l)/dt = A(t_l)x(t_l) + f(t_l)$ at the Chebyshev-Gauss-Lobatto nodes $t_l = \\cos(l\\pi/n)$ — together with $x_i(t_0) = \\gamma_i$. The derivative stays in the basis through the differentiation matrix of Eq. (2.8), $[D_n]_{kj} = 2j/\\sigma_k$ for $k+j$ odd and $j > k$, which comes from the Chebyshev identity $2T_k(t) = T'_{k+1}(t)/(k+1) - T'_{k-1}(t)/(k-1)$; Eq. (2.10) is the resulting system. [[approximation: Lemma 2, the $C^{\\infty}$ bound $\\max_{t}\\|\\hat{x}(t)-x(t)\\| \\leq \\sqrt{2/\\pi}\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|(e/2n)^{n}$, is what makes $n$ logarithmic in $1/\\varepsilon$; under Lemma 1's weaker $C^{r+1}$ hypothesis the same construction needs $n = \\mathrm{poly}(1/\\varepsilon)$ and the headline is gone.]] [[assumption: The solution is smooth. The Discussion states this as a limitation and an open problem — \"our algorithm must assume that the solution is smooth\" — not as a formality.]] **The interval is subdivided even so, and the reason is a norm rather than an error.** Rescaling $[0,T]$ onto $[-1,1]$ sends $A \\mapsto -(T/2)A$, \"which can dramatically increase the spectral norm. To avoid this phenomenon, we divide the interval $[0,T]$ into subintervals\" $[0,\\Gamma_1],\\ldots,[\\Gamma_{m-1},T]$, each rescaled by $K_h$, with $\\tau_h \\leq 2/\\max_{t}\\|A(t)\\|$ by Eq. (3.8) — so $m$ is chosen to make $\\|A\\|T/2m \\leq 1$. Global on each piece, pieced together across $m$ of them.",
+        theoryJa:
+          "ここを渡るのは区間全体です。近似は式 (2.1) の $x_i(t) = \\sum_{k=0}^{n}c_{i,k}T_k(t)$ で、$c_{i,k}$ は未定です。これを定めるのが式 (2.2)、すなわち Chebyshev-Gauss-Lobatto 点 $t_l = \\cos(l\\pi/n)$ において $dx(t_l)/dt = A(t_l)x(t_l) + f(t_l)$ が成り立つことの要求と、$x_i(t_0) = \\gamma_i$ です。微分も式 (2.8) の微分行列 $[D_n]_{kj} = 2j/\\sigma_k$（$k+j$ が奇数かつ $j > k$）によって同じ基底に留まります。これは Chebyshev の恒等式 $2T_k(t) = T'_{k+1}(t)/(k+1) - T'_{k-1}(t)/(k-1)$ から来ます。得られる系が式 (2.10) です。[[approximation: 補題 2 の $C^{\\infty}$ の評価 $\\max_{t}\\|\\hat{x}(t)-x(t)\\| \\leq \\sqrt{2/\\pi}\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|(e/2n)^{n}$ こそが $n$ を $1/\\varepsilon$ の対数にします。補題 1 のより弱い $C^{r+1}$ の仮定のもとでは、同じ構成に $n = \\mathrm{poly}(1/\\varepsilon)$ が必要となり、看板の主張は失われます。]] [[assumption: 解が滑らかであること。議論の節はこれを形式的な但し書きではなく、制約かつ未解決問題として述べています。「我々のアルゴリズムは解が滑らかであることを仮定しなければならない」。]] **それでも区間は分割されます。理由は誤差ではなくノルムです。** $[0,T]$ を $[-1,1]$ に再スケールすると $A \\mapsto -(T/2)A$ となり、「これはスペクトルノルムを劇的に増大させうる。この現象を避けるため、区間 $[0,T]$ を小区間に分割する」とあります。$[0,\\Gamma_1],\\ldots,[\\Gamma_{m-1},T]$ をそれぞれ $K_h$ で再スケールし、式 (3.8) により $\\tau_h \\leq 2/\\max_{t}\\|A(t)\\|$ とします。したがって $m$ は $\\|A\\|T/2m \\leq 1$ となるように選ばれます。各片の上では大域的であり、それを $m$ 個つなぐわけです。",
+      },
+      "quantum-linear-solve": {
+        theory:
+          "The assembled system is $L|X\\rangle = |B\\rangle$ of Eq. (3.12), and it goes to \"the high-precision QLSA\" of Childs, Kothari and Somma. [[assumption: The condition number that matters is the assembled system's, not $A$'s. Lemma 4: $\\kappa_L \\leq (\\pi m + p + 2)(n+1)^{3.5}(2\\kappa_V + e\\|\\gamma\\|)$, which under the chosen parameters is $O(\\kappa_V(m+p)n^{3.5})$ — so the number of subintervals, the padding $p$ and the series length all enter the solve directly, and $\\kappa_V$ enters in place of any conditioning of $A$ itself. $L$ is an $(m+p+1)d(n+1)$-square matrix \"with $O(ns)$ nonzero entries in any row or column\", so the series length also multiplies the sparsity the solver sees.]] [[approximation: The two error budgets are tied through Eq. (8.11): $\\|\\hat{x}(T)-x(T)\\| \\leq \\delta$ gives $\\|\\hat{x}(T)/\\|\\hat{x}(T)\\| - x(T)/\\|x(T)\\|\\| \\leq \\delta/(g-\\delta) =: \\varepsilon$, and $n$ is chosen by Eq. (8.6) from $\\log(\\Omega)/\\log(\\log(\\Omega))$ to make that hold.]] **The readout is a measurement on a padded register and the padding is what makes it cheap.** The first and third registers are measured, an outcome in $S = \\{m, m+1,\\ldots,m+p\\}$ is kept, and Lemma 5 puts that probability at $(p+1)(n+1)/(\\pi m q^{2} + (p+1)(n+1))$. Choosing $p = O(m) = O(\\|A\\|T)$ then gives success probability $\\Omega(1)$ with $O(q/\\sqrt{n})$ repetitions of amplitude amplification — which is where the factor $q$ in the cost comes from.",
+        theoryJa:
+          "組み上がった系は式 (3.12) の $L|X\\rangle = |B\\rangle$ であり、これを Childs・Kothari・Somma の「高精度 QLSA」に渡します。[[assumption: 効いてくる条件数は $A$ のものではなく、組み上がった系のものです。補題 4 は $\\kappa_L \\leq (\\pi m + p + 2)(n+1)^{3.5}(2\\kappa_V + e\\|\\gamma\\|)$ を与え、選ばれたパラメータのもとではこれが $O(\\kappa_V(m+p)n^{3.5})$ となります。すなわち小区間の個数、詰め物 $p$、級数の長さがそのまま求解に効き、$A$ 自身の条件付けの代わりに $\\kappa_V$ が現れます。$L$ は $(m+p+1)d(n+1)$ 次の正方行列で「どの行・列にも $O(ns)$ 個の非零成分」をもちますので、級数の長さはソルバーが見る疎性にも掛かります。]] [[approximation: 二つの誤差予算は式 (8.11) で結ばれます。$\\|\\hat{x}(T)-x(T)\\| \\leq \\delta$ から $\\|\\hat{x}(T)/\\|\\hat{x}(T)\\| - x(T)/\\|x(T)\\|\\| \\leq \\delta/(g-\\delta) =: \\varepsilon$ が従い、$n$ はこれが成り立つように式 (8.6) の $\\log(\\Omega)/\\log(\\log(\\Omega))$ から選ばれます。]] **読み出しは詰め物をしたレジスタ上の測定であり、その詰め物こそが読み出しを安くします。** 第一と第三のレジスタを測定し、$S = \\{m, m+1,\\ldots,m+p\\}$ に入る結果を採用します。補題 5 はその確率を $(p+1)(n+1)/(\\pi m q^{2} + (p+1)(n+1))$ とします。$p = O(m) = O(\\|A\\|T)$ と取れば、振幅増幅を $O(q/\\sqrt{n})$ 回繰り返すことで成功確率 $\\Omega(1)$ が得られます。計算量に現れる因子 $q$ の出どころはここです。",
+      },
+    },
+    example: {
+      pseudocode: [
+        "given  oracles for A(t) (s-sparse), f(t), gamma; horizon T; error budget e",
+        "",
+        "choose m so that  ||A||*T / (2*m) <= 1",
+        "    # NOT an accuracy choice. Rescaling [0,T] onto [-1,1] sends A -> -(T/2)A,",
+        "    # which 'can dramatically increase the spectral norm'; subdividing avoids it",
+        "divide [0,T] into [0,G_1], [G_1,G_2], ... , [G_{m-1},T]",
+        "    map each [G_h, G_{h+1}] onto [-1,1] by K_h, with K_h(G_h)=1, K_h(G_{h+1})=-1",
+        "",
+        "choose the series length n from Eq. (8.6)",
+        "    n = (e/2) * max( floor(log(Omega)/log(log(Omega))),",
+        "                     floor(log(omega)/log(log(omega))) )",
+        "    Omega = g'*e*m*(1+eps)/(g*eps),   omega = (g'/||gamma||)*(m+1)",
+        "    # poly-logarithmic in 1/eps only because the solution is assumed C^infinity",
+        "",
+        "for each subinterval, hand the layer above's collocation to this one:",
+        "    build the rows of  (L_1 + L_2(A_h)) |X> = |B_h>",
+        "    L_3 carries the coefficients c_{i,l}(G_{h+1}) into the next block",
+        "        as its initial condition",
+        "assemble one system  L |X> = |B>          # Eq. (3.12)",
+        "    L is (m+p+1)*d*(n+1) square, with O(n*s) nonzeros per row",
+        "    pad the final state p = O(m) = O(||A||*T) times via L_4, L_5",
+        "",
+        "hand L |X> = |B> to the layer below          # the high-precision QLSA",
+        "",
+        "measure the first and third registers",
+        "    keep outcomes in S = {m, m+1, ... , m+p}",
+        "    # success probability (p+1)(n+1) / (pi*m*q^2 + (p+1)(n+1)) by Lemma 5",
+        "amplitude-amplify O(q/sqrt(n)) times to reach success probability Omega(1)",
+        "",
+        "return the second register: a state e-close to x(T)/||x(T)||",
+      ].join("\n"),
+    },
+    // Read in full, and the absence is a finding rather than a gap nobody
+    // looked at. See the register row for 1901.00961, which this commit adds
+    // on a full-text basis with `simulation: "absent"`.
+    absences: {
+      "example.text": {
+        reason:
+          "Read in full: arXiv:1901.00961, the only paper this record cites, reports no run of the method. There is no figure, no table, no computed value, no dataset, no simulator and no hardware anywhere in it — the word \"simulation\" occurs only in the sense of Hamiltonian simulation and in reference titles. Its ten sections are a construction and its analysis end to end: the spectral method, the linear system, the solution error, the condition number, the success probability, state preparation, the main result and the boundary value problem. Appendix B, \"An example of the quantum spectral method\", is a structural display and not a run — $d = 1$, $m = 3$, $n = 2$, $p = 1$, with $A(t)$, $f(t)$ and $\\gamma$ left symbolic. So there is no run to transcribe here, and no nearby numerics to point at instead.",
+        reasonJa:
+          "全文を読んだ結果です。この記録が引く唯一の論文 arXiv:1901.00961 は、この手法の実行を何ひとつ報告していません。図も表も、計算された値も、データセットも、シミュレータも実機も、どこにもありません。「シミュレーション」という語が現れるのは、ハミルトニアンシミュレーションの意味においてと、参考文献の題目の中だけです。全 10 節は最初から最後まで構成とその解析です。スペクトル法、線形系、解の誤差、条件数、成功確率、状態の準備、主結果、そして境界値問題です。付録 B「量子スペクトル法の例」も実行ではなく構造の提示であり、$d = 1$、$m = 3$、$n = 2$、$p = 1$ と取って $A(t)$、$f(t)$、$\\gamma$ を記号のまま残しています。したがって、ここに書き起こすべき実行はなく、代わりに指し示すべき近傍の数値実験もありません。",
+      },
+    },
+    implementations: [
+      {
+        id: "childs-liu-chebyshev-linear-system",
+        label: "The global Chebyshev linear system $L|X\\rangle = |B\\rangle$ (sections 2 and 3)",
+        labelJa: "大域的な Chebyshev 線形系 $L|X\\rangle = |B\\rangle$（第 2 節・第 3 節）",
+        papers: [
+          { title: "Quantum spectral methods for differential equations", authors: "Andrew M. Childs, Jin-Peng Liu", year: "2019", url: "https://arxiv.org/abs/1901.00961" },
+        ],
+        about:
+          "Why a global approximation, in the paper's own order. Section 1 sets out the obstacle first: \"most of the aforementioned algorithms use a local approximation: they discretize the differential equations into small time intervals\", and even at high order \"when solving an equation over the interval $[0,T]$, the number of iterations is $T/h = \\Theta(\\varepsilon^{-1/k})$ for fixed $k$, giving a total complexity that is $\\mathrm{poly}(1/\\varepsilon)$ even using high-precision methods for the QLSA or Hamiltonian simulation\". Two escapes already existed and both need structure the general case does not have: \"when $A(t)$ is anti-Hermitian and $f(t) = 0$, we can directly apply Hamiltonian simulation; if $A$ and $f$ are time-independent, then [10] uses a Taylor series to achieve complexity $\\mathrm{poly}(\\log(1/\\varepsilon))$. However, the case of general time-dependent linear ODEs had remained elusive.\" Section 2's answer is the one this record is about: represent the components \"as linear combinations of basis functions $\\phi_j(t)$ expressing the time dependence\", so that no step count stands between the horizon and the error.",
+        aboutJa:
+          "なぜ大域的な近似なのかを、論文自身の順序で辿ります。第 1 節はまず障害を置きます。「前述のアルゴリズムの多くは局所的な近似を用いる。すなわち微分方程式を小さな時間区間に離散化する」のであり、高次にしても「区間 $[0,T]$ 上で方程式を解くとき、反復回数は固定した $k$ について $T/h = \\Theta(\\varepsilon^{-1/k})$ となり、QLSA やハミルトニアンシミュレーションに高精度の手法を用いてもなお全体の複雑さは $\\mathrm{poly}(1/\\varepsilon)$ となる」とあります。抜け道は既に二つありましたが、いずれも一般の場合には無い構造を必要とします。「$A(t)$ が反エルミートかつ $f(t) = 0$ のときは、ハミルトニアンシミュレーションを直接適用できる。$A$ と $f$ が時間に依存しないならば、[10] が Taylor 級数を用いて $\\mathrm{poly}(\\log(1/\\varepsilon))$ の複雑さを達成する。しかし一般の時間依存線形常微分方程式の場合は、なお捉えがたいままであった」。第 2 節の答えが、この記録の主題です。成分を「時間依存を表す基底関数 $\\phi_j(t)$ の線形結合として」表し、時間幅と誤差のあいだにステップ数が立たないようにします。",
+        methods:
+          "The approximation is Eq. (2.1), $x_i(t) = \\sum_{k=0}^{n}c_{i,k}T_k(t)$, and the coefficients \"are determined by demanding that $x(t)$ satisfies the ODE and initial conditions at a set of interpolation nodes $\\{t_l\\}_{l=0}^{n}$ (with $1 = t_0 > t_1 > \\cdots > t_n = -1$), where $x(t_0)$ and $x(t_n)$ are the initial and final states\" — Eq. (2.2) and Eq. (2.3). The nodes are Chebyshev-Gauss-Lobatto, $t_l = \\cos(l\\pi/n)$, \"since these nodes achieve the highest convergence rate among all schemes with the same number of nodes\", and because \"these nodes also have the convenient property that $T_k(t_l) = \\cos(kl\\pi/n)$\". Differentiation stays inside the basis: from $2T_k(t) = T'_{k+1}(t)/(k+1) - T'_{k-1}(t)/(k-1)$ comes the upper-triangular matrix $D_n$ of Eq. (2.8), $[D_n]_{kj} = 2j/\\sigma_k$ for $k+j$ odd and $j > k$, with $\\sigma_0 = 2$ and $\\sigma_k = 1$ otherwise, giving Eq. (2.10). Section 3 assembles this into $L|X\\rangle = |B\\rangle$, Eq. (3.12), over $m$ rescaled subintervals with initial conditions chained by $x_h(1) = x_{h-1}(-1)$, and pads the final state $(p+1)(n+1)$ times through $L_4$ and $L_5$ so the readout succeeds with constant probability. **The subdivision is the part most easily mistaken for a step count.** It is not chosen against the error budget at all: rescaling $[0,T]$ onto $[-1,1]$ sends $A \\mapsto -(T/2)A$, \"which can dramatically increase the spectral norm\", so the subintervals are sized by Eq. (3.8), $\\tau_h \\leq 2/\\max_{t\\in[\\Gamma_h,\\Gamma_{h+1}]}\\|A(t)\\|$. The error is controlled by $n$, and $n$ is logarithmic in $1/\\varepsilon$ by Lemma 2.",
+        methodsJa:
+          "近似は式 (2.1) の $x_i(t) = \\sum_{k=0}^{n}c_{i,k}T_k(t)$ であり、係数は「補間節点の集合 $\\{t_l\\}_{l=0}^{n}$（$1 = t_0 > t_1 > \\cdots > t_n = -1$ とする）において $x(t)$ が常微分方程式と初期条件を満たすことを要求することによって定まる。ここで $x(t_0)$ と $x(t_n)$ はそれぞれ初期状態と終状態である」とされます。式 (2.2) と式 (2.3) です。節点は Chebyshev-Gauss-Lobatto 点 $t_l = \\cos(l\\pi/n)$ であり、「これらの節点は同じ節点数をもつすべての方式の中で最も高い収束率を達成する」から、また「これらの節点は $T_k(t_l) = \\cos(kl\\pi/n)$ という扱いやすい性質ももつ」からです。微分も基底の内側に留まります。$2T_k(t) = T'_{k+1}(t)/(k+1) - T'_{k-1}(t)/(k-1)$ から式 (2.8) の上三角行列 $D_n$ が得られます。$k+j$ が奇数かつ $j > k$ のとき $[D_n]_{kj} = 2j/\\sigma_k$ であり、$\\sigma_0 = 2$、それ以外は $\\sigma_k = 1$ です。これにより式 (2.10) が得られます。第 3 節はこれを式 (3.12) の $L|X\\rangle = |B\\rangle$ に組み上げます。再スケールされた $m$ 個の小区間にわたり、初期条件は $x_h(1) = x_{h-1}(-1)$ で連鎖され、終状態は $L_4$ と $L_5$ によって $(p+1)(n+1)$ 回だけ複製されて、読み出しが定数確率で成功するようにされます。**最も誤解されやすいのは、この分割をステップ数と取り違えることです。** 分割は誤差予算に対して選ばれているのではありません。$[0,T]$ を $[-1,1]$ に再スケールすると $A \\mapsto -(T/2)A$ となり、「これはスペクトルノルムを劇的に増大させうる」ため、小区間の大きさは式 (3.8) の $\\tau_h \\leq 2/\\max_{t\\in[\\Gamma_h,\\Gamma_{h+1}]}\\|A(t)\\|$ で決まります。誤差を制御するのは $n$ であり、その $n$ は補題 2 により $1/\\varepsilon$ の対数です。",
+        data:
+          "No dataset and no instantiated matrix. $A(t)$, $f(t)$ and $\\gamma$ stay symbolic throughout and are reached only through oracles, exactly as on `berry-multistep`. The sole concrete display is Appendix B, \"An example of the quantum spectral method\", which fixes $d = 1$, $m = 3$, $n = 2$ and $p = 1$ and writes out the resulting block structure of $L$ — drawn to make that structure legible, with $A(t)$ and $f(t)$ still symbolic and no value computed. The quantitative choices the construction itself fixes are the node set $t_l = \\cos(l\\pi/n)$, the subinterval bound $\\tau_h \\leq 2/\\max_t\\|A(t)\\|$, and $p = O(m) = O(\\|A\\|T)$.",
+        dataJa:
+          "データセットも、具体化された行列もありません。$A(t)$、$f(t)$、$\\gamma$ は終始記号のままで、オラクルを通してのみ触れられます。`berry-multistep` とまったく同じです。唯一の具体的な表示は付録 B「量子スペクトル法の例」であり、$d = 1$、$m = 3$、$n = 2$、$p = 1$ と定めて $L$ のブロック構造を書き下しています。これもその構造を読み取りやすくするためのもので、$A(t)$ と $f(t)$ は記号のまま、計算された値はひとつもありません。構成そのものが定める量的な選択は、節点集合 $t_l = \\cos(l\\pi/n)$、小区間の上界 $\\tau_h \\leq 2/\\max_t\\|A(t)\\|$、そして $p = O(m) = O(\\|A\\|T)$ です。",
+      },
+    ],
+    citations: [
+      { title: "Quantum spectral methods for differential equations", authors: "Andrew M. Childs, Jin-Peng Liu", year: "2019", url: "https://arxiv.org/abs/1901.00961" },
+    ],
+  },
+  {
+    kind: "method",
     id: "krovi-linear-ode",
     label: "Krovi's reanalysis of the all-at-once encoding",
     labelJa: "Krovi による一括符号化の再解析",
@@ -3509,6 +3641,82 @@ export const LAYER_GRAPH: LayerGraph = {
     },
     whyALayer: "Callers above — differential equations, regression, finite-element methods — need exactly this contract and are indifferent to how it is met. The routes below are not interchangeable in their assumptions: some require sparse entry oracles, some need only $e^{-iAt}$, some use no amplitude amplification at all, and their costs differ by up to a full factor of $\\kappa$. $\\kappa$ itself is an input here; nothing in this layer estimates it for you.",
     whyALayerJa: "微分方程式、回帰、有限要素法といった上位の呼び出し側が必要とするのはこの契約だけで、どう実現されるかには依存しません。下位の経路は前提が互換ではありません。疎行列のエントリオラクルを要求するもの、$e^{-iAt}$ だけで足りるもの、振幅増幅を一切使わないものがあり、コストには最大で $\\kappa$ 一つ分の開きがあります。$\\kappa$ 自体はここでの入力であり、この層がそれを推定することはありません。",
+  },
+  {
+    kind: "method",
+    id: "chebyshev-pseudospectral-collocation",
+    label: "Chebyshev pseudospectral collocation",
+    labelJa: "Chebyshev 擬スペクトル選点法",
+    shortLabel: "Chebyshev collocation",
+    shortLabelJa: "Chebyshev 選点法",
+    summary: "A **global** discretization, and the only one on this slot. Write each component of the solution as a truncated Chebyshev series $x_i(t) = \\sum_{k=0}^{n} c_{i,k}T_k(t)$ with the coefficients undetermined, then fix them by demanding that the differential equation hold exactly at the $n+1$ Chebyshev-Gauss-Lobatto nodes $t_l = \\cos(l\\pi/n)$. What comes out is one linear system in the coefficients. Childs and Liu put the difference from every stepping scheme plainly: \"instead of locally approximating the ODE at discretized times, these linear equations use the behavior of the differential equations at the $n+1$ times $\\{t_l\\}$ to capture their behavior over the entire interval $[-1,1]$\".",
+    summaryJa: "**大域的な**離散化であり、この層で唯一のものです。解の各成分を係数未定の打ち切り Chebyshev 級数 $x_i(t) = \\sum_{k=0}^{n} c_{i,k}T_k(t)$ と書き、$n+1$ 個の Chebyshev-Gauss-Lobatto 点 $t_l = \\cos(l\\pi/n)$ において微分方程式が厳密に成り立つことを要求して係数を定めます。こうして係数についての線形系がひとつ得られます。あらゆる逐次法との違いを、Childs と Liu は明快に述べています。「離散化された時刻において常微分方程式を局所的に近似するのではなく、これらの線形方程式は $n+1$ 個の時刻 $\\{t_l\\}$ における微分方程式の振る舞いを用いて、区間 $[-1,1]$ 全体にわたる振る舞いを捉える」のです。",
+    realizes: "time-discretization",
+    conditions: "**Smoothness of the solution, and the rate is a function of how much of it there is.** Lemma 1, quoted by Childs and Liu from Gheorghiu, covers a solution $\\hat{x}(t) \\in C^{r+1}(-1,1)$: $\\max_{t}\\|\\hat{x}(t) - x(t)\\| \\leq C\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|/n^{r-2}$ for a constant $C$ independent of $n$. Lemma 2 covers $\\hat{x}(t) \\in C^{\\infty}(-1,1)$ and is the one the exponential precision needs: $\\max_{t}\\|\\hat{x}(t) - x(t)\\| \\leq \\sqrt{2/\\pi}\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|(e/2n)^{n}$. In Childs and Liu's summary, \"the convergence behavior of the spectral method is related to the smoothness of the solution\". Chebyshev rather than Fourier is a stated choice with a stated reason: \"a Fourier series provides an appropriate basis for periodic problems, whereas Chebyshev polynomials can be applied more generally\", and \"since general linear ODEs are non-periodic, and interpolation facilitates constructing a straightforward linear system, we develop a quantum algorithm based on the Chebyshev pseudo-spectral method\". The Chebyshev-Gauss-Lobatto nodes are likewise chosen rather than assumed — they \"achieve the highest convergence rate among all schemes with the same number of nodes\", and they have the convenient property $T_k(t_l) = \\cos(kl\\pi/n)$.",
+    conditionsJa: "**解の滑らかさが条件であり、収束の速さはその滑らかさの度合いの関数です。** Childs と Liu が Gheorghiu から引く補題 1 は、解 $\\hat{x}(t) \\in C^{r+1}(-1,1)$ を扱います。$n$ に依存しない定数 $C$ について $\\max_{t}\\|\\hat{x}(t) - x(t)\\| \\leq C\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|/n^{r-2}$ です。補題 2 は $\\hat{x}(t) \\in C^{\\infty}(-1,1)$ を扱い、指数的な精度が必要とするのはこちらです。$\\max_{t}\\|\\hat{x}(t) - x(t)\\| \\leq \\sqrt{2/\\pi}\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|(e/2n)^{n}$ です。Childs と Liu の要約では「スペクトル法の収束の振る舞いは解の滑らかさに関係する」となります。Fourier ではなく Chebyshev を選ぶことにも理由が明記されています。「Fourier 級数は周期的な問題に適した基底を与えるが、Chebyshev 多項式はより一般に適用できる」、そして「一般の線形常微分方程式は非周期的であり、また補間によって素直な線形系を構成しやすいので、Chebyshev 擬スペクトル法に基づく量子アルゴリズムを構築する」とあります。Chebyshev-Gauss-Lobatto 点もまた仮定ではなく選択です。それらは「同じ節点数をもつすべての方式の中で最も高い収束率を達成する」ものであり、$T_k(t_l) = \\cos(kl\\pi/n)$ という扱いやすい性質をもちます。",
+    cost: "What Childs and Liu state for the discretization by itself is **the number of terms**, not an end-to-end complexity — the latter belongs to the route that calls a solver on the assembled system. Under Lemma 2's $C^{\\infty}$ hypothesis: \"if the solution is in $C^{\\infty}$, the spectral method approximates the solution to within $\\varepsilon$ using only $n = \\mathrm{poly}(\\log(1/\\varepsilon))$ terms in the Chebyshev series\". Under Lemma 1's weaker hypothesis the same construction costs \"$n = \\mathrm{poly}(1/\\varepsilon)$\". That gap between the two is the whole reason a spectral discretization is worth building, and it is also the reason the smoothness hypothesis cannot be dropped quietly.",
+    costJa: "Childs と Liu が離散化そのものについて述べているのは**項数**であって、端から端までの複雑さではありません。後者は、組み上がった系にソルバーを呼ぶ経路のものです。補題 2 の $C^{\\infty}$ の仮定のもとでは「解が $C^{\\infty}$ にあれば、スペクトル法は Chebyshev 級数のわずか $n = \\mathrm{poly}(\\log(1/\\varepsilon))$ 項で解を $\\varepsilon$ 以内に近似する」とあります。補題 1 のより弱い仮定のもとでは、同じ構成に「$n = \\mathrm{poly}(1/\\varepsilon)$」がかかります。この二つの隔たりこそがスペクトル離散化を作る価値の全てであり、同時に、滑らかさの仮定を黙って落とせない理由でもあります。",
+    // Atomic for the same reason as `forward-euler` and `trapezoidal-rule`: what
+    // it produces is a system of rows, and assembling rows is not a capability
+    // this graph decomposes. The long argument is on `backward-euler`'s `steps`.
+    steps: [],
+    atomic: true,
+    // Childs and Liu, arXiv:1901.00961, §2 and Appendix A, read in full. Keyed
+    // by this node's own id, which is the convention for the stretch a method
+    // closes itself.
+    hops: {
+      "chebyshev-pseudospectral-collocation": {
+        theory:
+          "One system for a whole interval. The unknowns are the Chebyshev coefficients of Eq. (2.1), $x_i(t) = \\sum_{k=0}^{n}c_{i,k}T_k(t)$, and what pins them down is Eq. (2.2) — $dx(t_l)/dt = A(t_l)x(t_l) + f(t_l)$ required to hold at each node — together with the initial condition $x_i(t_0) = \\gamma_i$ of Eq. (2.3). The derivative never leaves the basis: the Chebyshev identity $2T_k(t) = T'_{k+1}(t)/(k+1) - T'_{k-1}(t)/(k-1)$ of Eq. (2.6) gives the upper-triangular differentiation matrix of Eq. (2.8), $[D_n]_{kj} = 2j/\\sigma_k$ for $k+j$ odd and $j > k$ with $\\sigma_0 = 2$ and $\\sigma_k = 1$ otherwise, so that $c'_{i,k} = \\sum_j [D_n]_{kj}c_{i,j}$ and collocation becomes Eq. (2.10), $\\sum_k T_k(t_l)c'_{i,k} = \\sum_j A_{ij}(t_l)\\sum_k T_k(t_l)c_{j,k} + f(t_l)_i$. [[approximation: The exact solution is replaced by a degree-$n$ Chebyshev polynomial, and the error is governed by how smooth the solution is rather than by any step size. Lemma 2, for $\\hat{x} \\in C^{\\infty}$: $\\max_{t\\in[-1,1]}\\|\\hat{x}(t)-x(t)\\| \\leq \\sqrt{2/\\pi}\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|(e/2n)^{n}$. Lemma 1, for $\\hat{x} \\in C^{r+1}$: $\\max_{t}\\|\\hat{x}(t)-x(t)\\| \\leq C\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|/n^{r-2}$, with $C$ independent of $n$ — the same construction, and the exponential rate is gone.]] [[assumption: The solution is smooth. Childs and Liu keep this in the foreground rather than the fine print: \"our algorithm must assume that the solution is smooth\", listed in the Discussion as an open problem.]] **Why these nodes and not any others.** The interpolation points are the Chebyshev-Gauss-Lobatto quadrature nodes $t_l = \\cos(l\\pi/n)$, \"since these nodes achieve the highest convergence rate among all schemes with the same number of nodes\"; and because $T_k(t_l) = \\cos(kl\\pi/n)$, evaluating the basis at them costs nothing. Their ordering $1 = t_0 > t_1 > \\cdots > t_n = -1$ is load-bearing too — $x(t_0)$ and $x(t_n)$ \"are the initial and final states\", so both the condition that goes in and the answer that comes out sit exactly on a node.",
+        theoryJa:
+          "区間全体に対してひとつの系を組みます。未知数は式 (2.1) の Chebyshev 係数 $x_i(t) = \\sum_{k=0}^{n}c_{i,k}T_k(t)$ であり、これを定めるのが式 (2.2)、すなわち各節点において $dx(t_l)/dt = A(t_l)x(t_l) + f(t_l)$ が成り立つことの要求と、式 (2.3) の初期条件 $x_i(t_0) = \\gamma_i$ です。微分は基底の外に出ません。式 (2.6) の Chebyshev の恒等式 $2T_k(t) = T'_{k+1}(t)/(k+1) - T'_{k-1}(t)/(k-1)$ から式 (2.8) の上三角な微分行列が得られます。$k+j$ が奇数かつ $j > k$ のとき $[D_n]_{kj} = 2j/\\sigma_k$、$\\sigma_0 = 2$、それ以外は $\\sigma_k = 1$ です。これにより $c'_{i,k} = \\sum_j [D_n]_{kj}c_{i,j}$ となり、選点は式 (2.10) の $\\sum_k T_k(t_l)c'_{i,k} = \\sum_j A_{ij}(t_l)\\sum_k T_k(t_l)c_{j,k} + f(t_l)_i$ になります。[[approximation: 厳密解を $n$ 次の Chebyshev 多項式で置き換えます。誤差を支配するのは刻み幅ではなく解の滑らかさです。$\\hat{x} \\in C^{\\infty}$ についての補題 2 は $\\max_{t\\in[-1,1]}\\|\\hat{x}(t)-x(t)\\| \\leq \\sqrt{2/\\pi}\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|(e/2n)^{n}$ です。$\\hat{x} \\in C^{r+1}$ についての補題 1 は、$n$ に依存しない $C$ を用いて $\\max_{t}\\|\\hat{x}(t)-x(t)\\| \\leq C\\max_{t}\\|\\hat{x}^{(n+1)}(t)\\|/n^{r-2}$ です。構成は同じでありながら、指数的な収束率は失われています。]] [[assumption: 解が滑らかであること。Childs と Liu はこれを但し書きではなく前面に置いています。「我々のアルゴリズムは解が滑らかであることを仮定しなければならない」とあり、議論の節では未解決問題として挙げられています。]] **なぜ他でもなくこれらの節点なのか。** 補間点は Chebyshev-Gauss-Lobatto の求積節点 $t_l = \\cos(l\\pi/n)$ です。「これらの節点は同じ節点数をもつすべての方式の中で最も高い収束率を達成する」からであり、また $T_k(t_l) = \\cos(kl\\pi/n)$ となるため、基底をそこで評価する手間がかからないからです。その並び $1 = t_0 > t_1 > \\cdots > t_n = -1$ にも意味があります。$x(t_0)$ と $x(t_n)$ が「初期状態と終状態」であり、入れる条件も出てくる答えも、ちょうど節点の上に載るのです。",
+      },
+    },
+    example: {
+      pseudocode: [
+        "given  A(t), f(t), initial value gamma, interval [-1, 1], series length n",
+        "",
+        "take the n+1 Chebyshev-Gauss-Lobatto nodes",
+        "    t_l = cos(l*pi/n)   for l = 0 ... n,   so  1 = t_0 > t_1 > ... > t_n = -1",
+        "    # highest convergence rate of any scheme with this many nodes;",
+        "    # t_0 and t_n are the initial and final times, which is what lets the",
+        "    # initial condition and the answer both be read off a node",
+        "",
+        "write each component as an undetermined truncated Chebyshev series",
+        "    x_i(t) = sum_{k=0..n} c_{i,k} T_k(t)",
+        "",
+        "express the derivative in the same basis",
+        "    dx_i/dt = sum_{k=0..n} c'_{i,k} T_k(t)",
+        "    c'_{i,k} = sum_{j=0..n} [D_n]_{kj} c_{i,j}",
+        "    [D_n]_{kj} = 2j/sigma_k   for k+j odd and j > k,  else 0",
+        "    sigma_0 = 2,  sigma_k = 1 for k >= 1",
+        "    # D_n is upper triangular; it comes from 2T_k = T'_{k+1}/(k+1) - T'_{k-1}/(k-1)",
+        "",
+        "collocate: demand the ODE hold at every node",
+        "    for l = 0 ... n, for i = 0 ... d-1:",
+        "        sum_k T_k(t_l) c'_{i,k} = sum_j A_ij(t_l) sum_k T_k(t_l) c_{j,k} + f_i(t_l)",
+        "    # T_k(t_l) = cos(k*l*pi/n), so no evaluation of T_k is needed",
+        "",
+        "add the initial condition as further rows",
+        "    x_i(1) = gamma_i        for i = 0 ... d-1",
+        "",
+        "return the linear system in the unknowns c_{i,k}",
+        "    # one global system for the whole interval, not one system per step",
+      ].join("\n"),
+    },
+    // Read in full. The paper this node is transcribed from carries no numerics
+    // of any kind, so there is no run to write down here either.
+    absences: {
+      "example.text": {
+        reason:
+          "Read in full: arXiv:1901.00961, the only paper this node cites, carries no numerics anywhere — no figure, no table, no computed value, no dataset and no simulator. Its Appendix B is titled \"An example of the quantum spectral method\" and is a structural display rather than a run: it takes $d = 1$, $m = 3$, $n = 2$, $p = 1$ and writes out the shape of the linear system with $A(t)$, $f(t)$ and $\\gamma$ left symbolic. The register row for 1901.00961 records that as a full-text read.",
+        reasonJa:
+          "全文を読んだ結果です。このノードが引く唯一の論文 arXiv:1901.00961 には、数値が一切ありません。図も表も、計算された値も、データセットも、シミュレータもありません。付録 B は「量子スペクトル法の例」と題されていますが、実行ではなく構造の提示です。$d = 1$、$m = 3$、$n = 2$、$p = 1$ と取り、$A(t)$、$f(t)$、$\\gamma$ を記号のまま残して線形系の形を書き下しています。1901.00961 の登録行は、これを全文読解として記録しています。",
+      },
+    },
+    citations: [
+      { title: "Quantum spectral methods for differential equations", authors: "Andrew M. Childs, Jin-Peng Liu", year: "2019", url: "https://arxiv.org/abs/1901.00961" },
+    ],
   },
   {
     kind: "method",
