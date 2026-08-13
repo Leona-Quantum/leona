@@ -79,6 +79,7 @@ const registerMod = await bundle("apps/web/lib/repository/paper-register.ts", "p
 const corpusMod = await bundle("apps/web/lib/public-repository.ts", "public-repository");
 const graphMod = await bundle("apps/web/lib/repository/layer-graph.ts", "layer-graph");
 const tracesMod = await bundle("apps/web/lib/repository/paper-traces.ts", "paper-traces");
+const statesMod = await bundle("apps/web/lib/repository/state-vocabulary.ts", "state-vocabulary");
 
 const { PAPER_REGISTER } = registerMod;
 const errors = [...papers.validatePaperRegister(PAPER_REGISTER)];
@@ -344,7 +345,7 @@ for (const { citation, field, expected } of audit.drifted) {
 // See `DECLARED_SCATTERED_PAPERS` for why it is a declaration list and for the
 // measurement that shows the shape is reachable (3 map components) and the board
 // clean (0 of 117 scattered) on the day it was armed.
-const traces = tracesMod.paperTraces(graphMod.LAYER_GRAPH);
+const traces = tracesMod.paperTraces(graphMod.LAYER_GRAPH, statesMod.STATE_VOCABULARY);
 const scatter = tracesMod.auditScatteredTraces(traces);
 for (const trace of scatter.undeclared) {
   const title = byId.get(trace.paper)?.title ?? "not in the register";
