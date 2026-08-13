@@ -29,6 +29,11 @@ grown since — treat an entry that says "pending" as a floor, not a fact.
 ```
 
 Also present and not covered by an S-number: `/dashboard`, `/lab`, `/welcome`.
+Nothing links to `/dashboard` or `/lab`; each is reached only by typing the URL, so each
+says in code what it does when someone does. `/dashboard` is a back-compat redirect to
+`/run` for old bookmarks and stale WorkOS `returnPathname` state — it renders nothing and
+stays. `/lab` is an unratified direction and 404s outside preview and local dev
+(`lib/lab-direction.ts`), the same shape as `/demo` and `/dev/ui`.
 Unauthenticated paths are enumerated in `apps/web/middleware.ts` (`PUBLIC_PATHS`); the
 middleware is secure-by-default, so a new public route needs an entry in **both** matchers
 there — they use different syntaxes and the file says so.
