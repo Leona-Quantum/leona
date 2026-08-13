@@ -145,4 +145,31 @@ if (!QUIET || AUDIT || UNJOINED) {
     `check-ingredients: ${shelf.joined}/${shelf.recordDenominator} object records join a map state ` +
       `(${parts.join(" · ")}) · ${shelf.processDenominator} processes carry a contract`,
   );
+
+  // **How much the shelf's ordering can actually distinguish**, printed beside
+  // the headline because it is the caveat on it.
+  //
+  // The row count answers the owner's *"relevant to many processes"* by asking
+  // how many contracted slots touch the object. But the join is to a STATE, so
+  // two objects joined to one state are indistinguishable by construction, and
+  // the figure below is the resolution that leaves: the number of distinct
+  // values the ordering key can take, and the number of states the whole shelf
+  // reaches. At 28/101 those are 2 and 2 — every joined record lands on
+  // `prepared-state` or `hamiltonian-access` — so the sort separates joined rows
+  // from abstained ones and then falls through to the slug.
+  //
+  // Reported rather than refused: a low resolution is a true statement about how
+  // little of the map the objects reach, not a defect in this file. It becomes
+  // the worklist, the same way `--unjoined` does. If it ever reads 1, the column
+  // is telling every reader the same thing and is worth removing.
+  const joinedEntries = shelf.sections.flatMap((section) =>
+    section.entries.filter((entry) => entry.join.kind === "joined"),
+  );
+  const distinctCounts = new Set(joinedEntries.map((entry) => entry.processes.length));
+  const distinctStates = new Set(joinedEntries.map((entry) => entry.join.state));
+  console.log(
+    `  ordering resolution: ${distinctCounts.size} distinct process-count(s) ` +
+      `[${[...distinctCounts].sort((a, b) => a - b).join(", ")}] over ${distinctStates.size} state(s) ` +
+      `[${[...distinctStates].sort().join(", ")}] — ties fall through to the slug`,
+  );
 }
