@@ -163,9 +163,8 @@ if (!QUIET) {
 // only appears when somebody remembers to look is a figure nobody reads.
 if (worklist.length > 0) {
   console.log(
-    `  ⚠ ${worklist.length} slots want a join nobody has recorded: ${worklist
-      .map((entry) => entry.slot)
-      .join(", ")}`,
+    `  ⚠ ${worklist.length} slots want a join nobody has recorded — a worklist, not a failure; ` +
+      `this script exits 0 with rows here: ${worklist.map((entry) => entry.slot).join(", ")}`,
   );
 }
 if (WORKLIST) {

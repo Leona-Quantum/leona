@@ -88,6 +88,42 @@ do not exist at all, and neither does a fourth nobody had noticed:
   one that runs a circuit on hardware and returns a biased number — the map has only
   `observable-estimation`, which returns the idealised one.
 
+## A process that needs two things at once is a conjunction state, not a fourth kind
+
+The hardest test the three kinds have been put to came from the other lane, unprompted: **quantum
+phase estimation has no capability on the map**, evidenced by three independent papers — one that
+*is* PEA end to end, one that exists to make block encodings cheap enough to support it, and one
+that argues against it by name — and its sketched contract wants **two inputs**, an
+`evolution-circuit` *and* a `prepared-state`, returning an `observable-value`. `LayerContract` has
+one `from` and one `to`. So: does that break the taxonomy?
+
+**No, and the vocabulary already contains the answer.** Two things arriving together is a state
+that `specializes` **both** of them, and that is the documented design rather than a workaround —
+`states.ts` says *"`specializes` is a partial order — a lattice, not a tree, because a Hermitian
+generator is honestly **both** a linear ODE system and a Hamiltonian you can simulate, and forcing
+it to pick one parent would make the Koopman-von Neumann route undrawable."* Four states are
+already conjunctions: `hermitian-generator`, `solution-state`, `history-state`, and —
+
+**`runnable-evolution`, which specializes exactly `evolution-circuit` and `prepared-state`.** It
+was authored in session 120 for this precise shape, and its own comment describes phase estimation
+without naming it: *"The pair is still a circuit… and it is also the routine that makes the evolved
+state: run it and the state is in hand, **control and invert it and an estimation readout can call
+the whole simulation as a subroutine**."* So the contract shape is `runnable-evolution →
+observable-value`: one input, already in the vocabulary, and `stateSatisfies` supplies both halves
+because a `runnable-evolution` satisfies `evolution-circuit` and `prepared-state` at once.
+
+So a two-input process is **category (b), a missing process** — whose entry state may also need
+authoring. That is ordinary vocabulary growth under `states.ts`'s existing admission rule (two
+processes arriving, or two leaving), and it changes nothing about what an edge is: still one
+contract, still `stateSatisfies`, still directional.
+
+**The constraint that keeps this honest, and it is the one to enforce at review:** a conjunction
+state must be an object *a source hands on as one thing*, never a tuple invented so a chain closes.
+That is `states.ts`'s first prohibition — *"Never invent a state to make a chain close"* — and
+`runnable-evolution` earned itself on Joseph's text rather than on convenience. A conjunction
+written because two arrows needed to meet is the same defect as a link we cannot source, wearing a
+type.
+
 ## The rule this model cannot check, stated rather than hidden
 
 The owner's session-91 rule is that **an arrival which cannot use every exit means the state has to
