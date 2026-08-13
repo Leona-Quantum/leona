@@ -81,14 +81,17 @@ def test_empty_report_is_clean():
 # `|| true` on the scan step used to let the second one through as "clean".
 
 
-def _covered(**counts):
+ROOT = "/home/runner/work/majorana/majorana"
+
+
+def _covered(prefix="", **counts):
     """A report shaped like `osv-scanner --all-packages`, which lists every
     lockfile it read rather than only the ones carrying advisories."""
     return {
         "results": [
             {
                 # osv-scanner reports absolute runner paths, not basenames.
-                "source": {"path": f"/home/runner/work/majorana/majorana/{name}"},
+                "source": {"path": f"{ROOT}/{prefix}{name}"},
                 "packages": [{"package": {"name": f"p{i}"}} for i in range(n)],
             }
             for name, n in counts.items()
@@ -96,31 +99,65 @@ def _covered(**counts):
     }
 
 
-def _full():
-    return _covered(**{n: f + 1 for n, f in check_osv_report.REQUIRED_SOURCES.items()})
+def _full(prefix=""):
+    return _covered(prefix, **{n: f + 1 for n, f in check_osv_report.REQUIRED_SOURCES.items()})
+
+
+def _failures(report):
+    return check_osv_report.coverage_failures(report, root=ROOT)
 
 
 def test_a_report_covering_every_lockfile_passes():
-    assert check_osv_report.coverage_failures(_full()) == []
+    assert _failures(_full()) == []
 
 
 def test_a_scan_that_read_nothing_is_refused():
     """The failure this exists for: osv-scanner emits `{"results": []}` when it
     finds no lockfiles, which is byte-identical to a clean scan by severity."""
     for empty in ({"results": []}, {}):
-        assert check_osv_report.coverage_failures(empty), f"{empty} must be refused"
+        assert _failures(empty), f"{empty} must be refused"
 
 
 def test_a_missing_lockfile_is_refused():
-    problems = check_osv_report.coverage_failures(_covered(**{"uv.lock": 500}))
+    problems = _failures(_covered(**{"uv.lock": 500}))
     assert any("pnpm-lock.yaml" in p and "not scanned" in p for p in problems)
 
 
 def test_a_lockfile_under_its_floor_is_refused():
     """A truncated or half-parsed lockfile still produces a source entry."""
-    problems = check_osv_report.coverage_failures(_covered(**{"uv.lock": 1, "pnpm-lock.yaml": 1}))
+    problems = _failures(_covered(**{"uv.lock": 1, "pnpm-lock.yaml": 1}))
     assert len(problems) == 2
     assert all("floor is" in p for p in problems)
+
+
+def test_a_nested_lockfile_does_not_answer_for_the_root_one():
+    """Matching a bare basename let any lockfile in the tree satisfy the floor —
+    a `fixtures/uv.lock` would stand in for the real one, which is the same
+    vacuous pass this check exists to prevent, only harder to see."""
+    problems = _failures(_full("fixtures/"))
+    assert len(problems) == 2
+    assert all("not scanned" in p for p in problems)
+
+
+def test_a_lockfile_outside_the_scan_root_does_not_count():
+    report = {
+        "results": [
+            {"source": {"path": f"/elsewhere/{n}"}, "packages": [{}] * 999}
+            for n in check_osv_report.REQUIRED_SOURCES
+        ]
+    }
+    assert len(_failures(report)) == 2
+
+
+def test_a_relative_report_path_is_read_as_repo_relative():
+    """Some osv-scanner outputs are already relative to the scan root."""
+    report = {
+        "results": [
+            {"source": {"path": n}, "packages": [{}] * (f + 1)}
+            for n, f in check_osv_report.REQUIRED_SOURCES.items()
+        ]
+    }
+    assert _failures(report) == []
 
 
 def test_coverage_is_independent_of_findings():
@@ -130,7 +167,7 @@ def test_coverage_is_independent_of_findings():
     report["results"][0]["packages"][0]["groups"] = [
         {"ids": ["GHSA-aaaa-bbbb-cccc"], "max_severity": "9.8"}
     ]
-    assert check_osv_report.coverage_failures(report) == []
+    assert _failures(report) == []
     assert check_osv_report.findings(report)[0]
 
 
