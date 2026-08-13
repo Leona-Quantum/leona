@@ -10,6 +10,13 @@
 // See ./papers.ts for the identity rule, the year convention, and the
 // measurement that produced this file.
 //
+// **Textbooks belong in here.** Owner ruling on ai-ops#44, 2026-08-12:
+// "textbooks are also primary sources!!". A book with a publisher DOI is a row
+// like any other and carries `medium: "textbook"`; see `PRIMARY_SOURCE_MEDIA`
+// in ./papers.ts for why that is a field rather than a note. A textbook with no
+// DOI has no key yet and is a decision, not a paste — say so on the issue
+// rather than inventing a third id scheme.
+//
 // Adding a paper: one row, keyed by `arxiv:<id>` or `doi:<doi>`, with the
 // metadata copied from the source rather than from a citation. Then the
 // citations may name it. `scripts/check-repository-data.mjs` and
@@ -244,8 +251,8 @@ export const PAPER_REGISTER: PaperRegister = {
     { id: "arxiv:quant-ph/9805082", title: "Quantum Counting", authors: "Gilles Brassard, Peter Hoyer, Alain Tapp", year: "1998", url: "https://arxiv.org/abs/quant-ph/9805082" },
     { id: "doi:10.1007/bf01331938", title: "Über das Paulische Äquivalenzverbot", authors: "P. Jordan, E. Wigner", year: "1928", url: "https://doi.org/10.1007/bf01331938" },
     { id: "doi:10.1016/0003-4916(70)90270-8", title: "The one-dimensional Ising model with a transverse field", authors: "P. Pfeuty", year: "1970", url: "https://doi.org/10.1016/0003-4916(70)90270-8" },
-    { id: "doi:10.1017/cbo9780511973765", title: "Quantum Phase Transitions", authors: "S. Sachdev", year: "2011", url: "https://doi.org/10.1017/cbo9780511973765" },
-    { id: "doi:10.1017/cbo9780511976667", title: "Quantum Computation and Quantum Information: 10th Anniversary Edition", authors: "Michael A. Nielsen and Isaac L. Chuang", year: "2010", url: "https://doi.org/10.1017/cbo9780511976667" },
+    { id: "doi:10.1017/cbo9780511973765", title: "Quantum Phase Transitions", authors: "S. Sachdev", year: "2011", url: "https://doi.org/10.1017/cbo9780511973765", medium: "textbook" },
+    { id: "doi:10.1017/cbo9780511976667", title: "Quantum Computation and Quantum Information: 10th Anniversary Edition", authors: "Michael A. Nielsen and Isaac L. Chuang", year: "2010", url: "https://doi.org/10.1017/cbo9780511976667", medium: "textbook" },
     { id: "doi:10.1098/rspa.1963.0204", title: "Electron Correlations in Narrow Energy Bands", authors: "J. Hubbard", year: "1963", url: "https://doi.org/10.1098/rspa.1963.0204" },
     { id: "doi:10.1098/rspa.1992.0167", title: "Rapid solution of problems by quantum computation", authors: "David Deutsch, Richard Jozsa", year: "1992", url: "https://doi.org/10.1098/rspa.1992.0167" },
     { id: "doi:10.1103/physicsphysiquefizika.1.195", title: "On the Einstein Podolsky Rosen Paradox", authors: "John S. Bell", year: "1964", url: "https://doi.org/10.1103/physicsphysiquefizika.1.195" },
