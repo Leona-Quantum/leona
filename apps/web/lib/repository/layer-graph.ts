@@ -9165,7 +9165,18 @@ export const LAYER_GRAPH: LayerGraph = {
     // exists to make phase estimation affordable; `double-bracket-diagonalization`
     // argues against phase estimation by name), so this is three independent
     // sightings, not one.
-    steps: ["state-preparation", "hamiltonian-simulation"],
+    // **`phase-estimation` added as a step in unit 2, and it is what stops this slot
+    // landing as an island.** Authored in unit 1, this route closed its own stretch
+    // because the map had no phase-estimation slot to hand the readout to; unit 2
+    // built the slot, and `check-region-joins.mjs` immediately reported it as a
+    // FOURTH region — three nodes nothing reaches — because nothing produced
+    // `eigenphase-problem`. Declaring the step here is not a fix for the checker, it
+    // is the claim the paper makes in its own first sentences: "The phase estimation
+    // algorithm (PEA) of Abrams and Lloyd can be used to obtain eigenvalues of
+    // Hermitian operators; we address issues concerning its implementation for
+    // molecular Hamiltonians." The route does not merely resemble phase estimation,
+    // it is phase estimation applied to a molecular Hamiltonian.
+    steps: ["state-preparation", "hamiltonian-simulation", "phase-estimation"],
     entries: ["molecular-energy-phase-estimation"],
     citations: [
       { title: "Simulated Quantum Computation of Molecular Energies", authors: "Alán Aspuru-Guzik, Anthony D. Dutoi, Peter J. Love, Martin Head-Gordon", year: "2006", url: "https://arxiv.org/abs/quant-ph/0604193" },

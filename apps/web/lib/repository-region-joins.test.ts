@@ -376,6 +376,18 @@ test("the authored graph's slot entries are all declared, and no row has gone st
 
 test("the map is three regions, and ten of its twenty-three slots consume something nothing produces", () => {
   const regions = regionsOf(LAYER_GRAPH);
+  // **[107, 13, 5] since session 15 unit 2 — and getting here took a correction.**
+  // The `phase-estimation` slot and its two methods first landed as a FOURTH region,
+  // [104, 13, 5, 3]: nothing produced `eigenphase-problem`, so three nodes sat where
+  // nothing reached them. The fix was not to relax anything but to declare a step the
+  // source already claims — `phase-estimation-ground-state` runs phase estimation on a
+  // molecular Hamiltonian, in Aspuru-Guzik et al.'s own opening sentences — which
+  // makes the slot an ingredient of region 1 rather than an island. **A new slot
+  // whose entry state nothing produces is a new region, silently, and this assertion
+  // is what says so out loud.** Had no route genuinely used it, the honest landing
+  // would have been a fourth region with a front-door row explaining it, not a
+  // manufactured step.
+  //
   // **[104, 13, 5] since session 15's anchoring pass, and the SHAPE did not change** —
   // which is the thing this assertion is actually watching. Five new methods landed,
   // all five inside the algorithms region, so region 1 grew and the other two did not
@@ -386,19 +398,23 @@ test("the map is three regions, and ten of its twenty-three slots consume someth
   // joining is a property of states and these introduced none.
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
-    [104, 13, 5],
+    [107, 13, 5],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
+  // 24 slots and 11 open since unit 2's `phase-estimation`. The new slot is open and
+  // an `ingredient`, so `ingredient` moves 5 -> 6 and the other two dispositions do
+  // not: a declaration that a phase is what you want is something a caller supplies,
+  // never something a prior process hands over.
   const entries = slotEntries(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(entries.length, 23);
+  assert.equal(entries.length, 24);
   const open = entries.filter((entry) => entry.supply !== "joined");
-  assert.equal(open.length, 10);
+  assert.equal(open.length, 11);
 
   const bySupply = (supply: string) => open.filter((entry) => entry.supply === supply).length;
   assert.equal(bySupply("front-door"), 3);
   assert.equal(bySupply("root-supplied"), 2);
-  assert.equal(bySupply("ingredient"), 5);
+  assert.equal(bySupply("ingredient"), 6);
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
 });
 
@@ -508,12 +524,12 @@ test("the map is three regions under containment and two under what a trace walk
     return sizes.sort((a, b) => b - a);
   };
 
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [104, 13, 5]);
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5]);
   // [117, 5] since session 15's five new methods, and the point ADR-0027 is making
   // survives the change intact: the merged component grew by exactly the five that
   // landed in the algorithms region (99 + 13 = 112 became 104 + 13 = 117), while error
   // mitigation stayed at 5 under BOTH relations. Adding methods moves the sizes and
   // never the split, which is what makes these two numbers worth asserting side by
   // side — the day one of them changes shape rather than size, something joined.
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [117, 5]);
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [120, 5]);
 });

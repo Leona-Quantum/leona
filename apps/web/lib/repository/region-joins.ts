@@ -470,6 +470,12 @@ export const DECLARED_SLOT_ENTRIES: Readonly<Record<string, EntryDisposition>> =
     reason:
       "Takes physical qubits, which no process here produces, and `fault-tolerant-compilation` files it as a feed rather than a hop — so the map says error correction is the substrate the pipeline runs on, matching this slot's own whyALayer ('everything above this layer is written in logical qubits and is indifferent to which code sits underneath'). ai-ops#64 asks for the other reading, that it 'happens on states measured on computers' and should come after measurement. Both are defensible and the choice is the owner's; the row stays join-wanted until he rules.",
   },
+  "phase-estimation": {
+    supply: "ingredient",
+    intent: "settled",
+    reason:
+      "Takes a unitary whose eigenphase is wanted — an evolution circuit, the routine preparing the state it acts on, AND the declaration that a phase in its spectrum is the quantity asked for. Nothing produces that declaration, because a declaration is not something a process hands over; it is what the caller wants. `phase-estimation-ground-state` files it as a feed, which is the right shape: Aspuru-Guzik et al. build the evolution and the reference state and then say what they want out of them. Worth recording that this slot spent one commit as a FOURTH REGION — three nodes nothing reached — until that step was declared, and the step was declared because the paper makes the claim, not because the checker asked. Had no route genuinely used it, the honest outcome would have been a front-door row saying so.",
+  },
   "error-mitigation": {
     supply: "front-door",
     intent: "join-wanted",
