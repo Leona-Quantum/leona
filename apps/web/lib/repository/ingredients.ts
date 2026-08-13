@@ -682,8 +682,25 @@ export function processesTouching(
 }
 
 /**
- * Every slot that carries a contract — the denominator every count on the shelf
- * is published against.
+ * Every **node** that carries a contract — the denominator every count on the
+ * shelf is published against.
+ *
+ * **Node, not slot, and the distinction is not pedantry.** This function filters
+ * on the presence of a `contract` field and does not look at `kind`, so a
+ * *method* that declares its own narrowed contract is counted too. Measured
+ * 2026-08-13: on `dev` all 25 contracted nodes are capabilities, which is why
+ * the earlier wording — "every slot that carries a contract" — was true, and
+ * true only by accident. `joins`' PDE branch adds
+ * `graph-laplacian-discretization`, a method pinning `pde-problem →
+ * hermitian-generator` because the wave paper's generator is Hermitian by
+ * construction, and on that branch the count is 27 capabilities + 1 method = 28.
+ *
+ * So the sentence would have gone quietly false on somebody else's merge, with
+ * nothing here changing and no checker able to notice — the third time in one
+ * session that a claim in this file was accidentally true rather than
+ * checkably true. Counting method contracts is correct, incidentally: a
+ * narrowed method contract is a real place the map moves an object, and
+ * `processesTouching` reads the same field for the same reason.
  *
  * A count with no denominator is the failure this project names most often. "5
  * processes" is a different claim on a map of 23 slots than on a map of 200, and
@@ -719,7 +736,11 @@ export interface ShelfSection {
 
 export interface Shelf {
   readonly sections: readonly ShelfSection[];
-  /** Every slot with a contract — the denominator for every process count. */
+  /**
+   * Every node with a contract — the denominator for every process count.
+   * Includes methods that narrow their slot's contract, not only slots; see
+   * `contractedProcessCount`.
+   */
   readonly processDenominator: number;
   /** Object records in total — the denominator for the coverage fraction. */
   readonly recordDenominator: number;
