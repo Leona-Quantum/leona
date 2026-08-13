@@ -4640,6 +4640,27 @@ test("a route that pins its step draws the algorithm's name there, not the slot'
  * pictures are one, and it is checked structurally below.
  */
 const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why: string }> = [
+  {
+    slot: "quantum-linear-solve",
+    methods: ["qsvt-matrix-inversion", "eigenstate-filtering-inversion"],
+    why:
+      "**Made by pinning, and kept rather than un-pinned, because the pins are true.** Both records "
+      + "name their construction outright — one says \"apply the quantum singular value transformation "
+      + "with an odd polynomial approximating a scaled $1/x$ away from the origin\", the other applies "
+      + "its filter \"through quantum signal processing\" — and of the two methods realising "
+      + "`matrix-function` only `qsvt-transform` carries a phase sequence. So both hops honestly read "
+      + "QSVT, and drawing the same name twice is the correct drawing. Before the pins these two drew "
+      + "the slot's name and looked identical for a worse reason: the map could not say what filled the "
+      + "hop at all. This row is a smaller gap than the one it replaces. What still separates the two "
+      + "and the map cannot say is WHICH POLYNOMIAL goes through the transform — a scaled $1/x$ against "
+      + "a minimax filter that is 1 at a target eigenvalue and uniformly small outside a spectral gap — "
+      + "and that is a specification on a hop, not a method filling it. It is the same missing mechanism "
+      + "the three remaining `excited-state-energy` routes are waiting on, and the owner has named the "
+      + "shape of it in ai-ops#51: *\"we can put specifications in the labels rather than another item on "
+      + "the map\"*. `via` names a method and `through` names a state; neither can carry \"with an odd "
+      + "polynomial approximating $1/x$\". Both records already state their polynomial, so this row's "
+      + "exit is a field to write it into, not a source to go and find.",
+  },
   // The `time-discretization` row — `backward-euler` with `trapezoidal-rule` —
   // was deleted in session 118. Both drew one interior only because both hung the
   // same `quantum-linear-solve` stub, and that step is gone by the owner's
@@ -4660,14 +4681,23 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
   {
     slot: "excited-state-energy",
     methods: [
+      // **Four, not five: `folded-spectrum-excited-state` has left.** It is pinned to
+      // `variance-objective` and `measurement-grouped-readout` on Cadi Tazi and Thom's own
+      // words — the method "minimizes the energy variance" and "employ[s] a Pauli grouping
+      // procedure" — so its middle and last hops now wear those names instead of the slots'.
+      // The pins were written in B5 unit 3 and held on a size argument that had gone stale by
+      // three orders of magnitude; see the `KNOWN_TWINS` row in `scripts/check-layer-graph.mjs`
+      // for the measurement. The remaining four are the ones with nowhere honest to point:
+      // their objectives have no node, and authoring one each would draw the same papers a
+      // second time. The owner's ai-ops#51 answer names the fix — a specification in the
+      // label, "something like 'penalty objective'" — and that field does not exist yet.
       "deflation-excited-state",
       "subspace-search-excited-state",
-      "folded-spectrum-excited-state",
       "penalty-excited-state",
       "contracted-excited-state",
     ],
     why:
-      "Five ways to a state above the ground state that each choose an ansatz, optimise it and " +
+      "Four ways to a state above the ground state that each choose an ansatz, optimise it and " +
       "estimate an observable — VQE's three hops, reused deliberately rather than by accident. What " +
       "separates them is the OBJECTIVE handed to the optimiser: a weighted sum over orthogonal " +
       "inputs, the variance around a target energy, the energy plus a symmetry penalty, and a " +
@@ -4679,20 +4709,13 @@ const DRAWN_TWINS: ReadonlyArray<{ slot: string; methods: readonly string[]; why
       "16 put ingredients on the card, so the difference is no longer drawn and the exclusion has " +
       "no basis. It is a line in deflation's Requires section instead.",
   },
-  {
-    slot: "quantum-linear-solve",
-    methods: [
-      "qsvt-matrix-inversion",
-      "discrete-adiabatic-inversion",
-      "eigenstate-filtering-inversion",
-    ],
-    why:
-      "All three walk block-encode → matrix function → their own closing work. The difference is " +
-      "which function and how its phases are found, which lives inside `matrix-function` — a pin " +
-      "waiting on that slot being decomposed. **Three members and not two since issue 16**: what " +
-      "told `qsvt-matrix-inversion` apart was an ingredient, `success-amplification`, which the " +
-      "other two do not consume and which the canvas no longer draws.",
-  },
+  // The three-member `quantum-linear-solve` row that stood here is gone, and its own
+  // text said what would replace it: "a pin waiting on that slot being decomposed".
+  // `discrete-adiabatic-inversion` has left outright — it applies its filter "as a
+  // linear combination of walk operators rather than by quantum signal processing", so
+  // its hop wears `lcu-chebyshev-transform` and the other two wear `qsvt-transform`.
+  // The two that still draw one interior are the row at the top of this table, and the
+  // reason they do is now a different and smaller one.
   {
     slot: "hamiltonian-simulation",
     methods: ["lcu-taylor-simulation", "qubitization-simulation"],

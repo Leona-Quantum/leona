@@ -404,11 +404,18 @@ const KNOWN_TWINS = [
       "some route names a specific higher-order method, at which point that becomes the node and " +
       "this row goes.",
   },
-  {
-    slot: "quantum-linear-solve",
-    methods: ["discrete-adiabatic-inversion", "eigenstate-filtering-inversion"],
-    why: "Both walk block-encode → prepare → apply a matrix function. The difference is which function and how its phases are found, which lives inside `matrix-function` — a pin waiting on that slot being decomposed.",
-  },
+  // The `quantum-linear-solve` row that stood here is gone, and its own text is
+  // why: "a pin waiting on that slot being decomposed". The owner answered
+  // ai-ops#51 with option 3 — *"break open the boxes where the difference
+  // actually lives"* — naming this box, and the two routes are now pinned to the
+  // two constructions that realise it. Neither pin is new evidence: each record
+  // already said which one it uses, in its own `summary`.
+  // `discrete-adiabatic-inversion` finishes "with an eigenstate filter
+  // implemented as a linear combination of walk operators rather than by quantum
+  // signal processing", and `eigenstate-filtering-inversion` applies its filter
+  // "through quantum signal processing" — the two halves of the same sentence,
+  // pointing at the two methods `matrix-function` has. This check went red the
+  // moment they stopped drawing one chain, which is the row doing its job.
   {
     slot: "observable-estimation",
     methods: [
@@ -423,11 +430,10 @@ const KNOWN_TWINS = [
     slot: "excited-state-energy",
     methods: [
       "subspace-search-excited-state",
-      "folded-spectrum-excited-state",
       "penalty-excited-state",
       "contracted-excited-state",
     ],
-    why: "Four routes to a state above the ground state that each choose an ansatz, optimise its parameters and estimate an observable — the same three hops VQE takes, which is the point rather than an accident: all four reuse the ground-state machinery unchanged. What separates them is WHICH OBJECTIVE the optimiser is handed: a weighted sum over mutually orthogonal inputs (SSVQE), the variance around a chosen target energy (folded spectrum), the energy plus a term punishing the wrong symmetry sector (penalty), and a contracted multistate objective (MC-VQE). This graph records an objective as its own node only where a paper is devoted to one — `cvar-objective` is exactly that — so three of these four have nothing honest to pin a `via` to; their objective is part of the method's own definition and shares its single source. **The fourth now HAS somewhere to point, and pointing it is deliberately not done yet.** `variance-objective` and `measurement-grouped-readout` were authored in B5 unit 3, and `folded-spectrum-excited-state`'s own paper names both choices — it \"minimizes the energy variance\" and \"employ[s] a Pauli grouping procedure\" — so the `via` pins are written and sourced. They are held back because pinning them changes which interiors the W15 dedup draws, and measured on this graph that takes the excited-state figure from 5797px to 8887px, past its 8000px ceiling. **This row's exit is therefore blocked on figure compaction (lane B3), not on evidence**, and that is a better thing to have written down than a pin that would have to be reverted. Splitting the other three would mean authoring three objective nodes out of the same three papers already cited here, which draws one paper twice instead of recording a distinction the literature makes.",
+    why: "Three routes to a state above the ground state that each choose an ansatz, optimise its parameters and estimate an observable — the same three hops VQE takes, which is the point rather than an accident: all of them reuse the ground-state machinery unchanged. What separates them is WHICH OBJECTIVE the optimiser is handed: a weighted sum over mutually orthogonal inputs (SSVQE), the energy plus a term punishing the wrong symmetry sector (penalty), and a contracted multistate objective (MC-VQE). **`folded-spectrum-excited-state` was the fourth member and has left**, pinned to `variance-objective` and `measurement-grouped-readout` on its own paper's words — Cadi Tazi and Thom's method \"minimizes the energy variance\" and \"employ[s] a Pauli grouping procedure\". Those pins were written in B5 unit 3 and held back on a size argument: \"pinning them takes the excited-state figure from 5797px to 8887px, past its 8000px ceiling\", the exit declared \"blocked on figure compaction (lane B3), not on evidence\". Re-measured before applying them, after issue 16 took ingredients off the canvas and the ceiling was re-derived to 3000/3000: this figure saturates at 852.36px tall, and the pins cost it **0.76px**. A hold whose own number had drifted by three orders of magnitude is the thing to look for when a row has sat still for a while. THE REMAINING THREE stay for the reason the owner has now named the fix for, not for lack of evidence. This graph records an objective as its own node only where a paper is devoted to one — `cvar-objective` and `variance-objective` are exactly that — so authoring three more objective nodes here would draw the same three papers a second time each, and would put a penalty term specific to the excited-state problem beside CVaR as though the two were interchangeable ways of optimising anything. The owner's ai-ops#51 answer supplies the alternative in as many words: *\"we can put specifications in the labels rather than another item on the map: something like 'penalty objective'\"*. That is a per-route qualifier drawn into an existing hop's label — a thing this graph cannot yet say, because `via` names a METHOD and requires the method to exist, and `through` names a STATE. Building that field is this row's exit and it is not built. The distinction is sourced and sitting in each record's own summary; what is missing is somewhere on the drawing to put it.",
   },
   {
     slot: "excited-state-energy",
