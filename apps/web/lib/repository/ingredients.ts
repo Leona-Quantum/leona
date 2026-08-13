@@ -185,13 +185,22 @@ export const ABSTENTION_REASONS = [
    * **The structural reason comes first because it is the one that does not
    * depend on anyone's decision.** `states.ts`: *"A state is the mathematical
    * object being carried, not the parameters riding alongside it."* The five
-   * circuit states are where a gate would have to live, and every one of them
-   * names the gate *set* as a parameter rather than as the object —
-   * `discrete-circuit` is *"continuous rotations replaced by words in a finite
-   * gate set"*, and a single gate is a member of that set. So a gate sits one
-   * level further from being a state than an `observable` does: an observable is
-   * at least a parameter a contract names, and a gate is an element of one.
-   * Nothing in the 34-state vocabulary is *a unitary you can apply*.
+   * circuit states are where a gate would have to live, and each names the gate
+   * *set* as a parameter rather than as the object — `discrete-circuit` is
+   * *"continuous rotations replaced by words in a finite gate set"*.
+   *
+   * The contracts say it outright, which is the stronger evidence:
+   * `ansatz-construction.takes` ends *"…and the connectivity and **native gate
+   * set** of the device the family has to run on"*, with `contract.from =
+   * eigenvalue-problem` and `contract.to = parameterized-circuit`. That is
+   * exactly the shape of `observable-estimation.takes` naming *"a description of
+   * O"* while its ends are `prepared-state → observable-value`: the object is in
+   * the prose, and the prose is where parameters live.
+   *
+   * So a gate sits one level further from being a state than an `observable`
+   * does — an observable is at least the parameter a contract names, and a gate
+   * is one element of one. Nothing in the 34-state vocabulary is *a unitary you
+   * can apply*.
    *
    * The owner's ruling agrees, once: *"gates are just primitives, so it is okay
    * for them to be their section… including operators/gates/whatever states are
