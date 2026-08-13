@@ -374,23 +374,41 @@ test("the authored graph's slot entries are all declared, and no row has gone st
   assert.deepEqual(audit.misclassified, []);
 });
 
-test("the map is three regions, and ten of its twenty-three slots consume something nothing produces", () => {
+test("the map is seven regions, and fifteen of its twenty-eight slots consume something nothing produces", () => {
   const regions = regionsOf(LAYER_GRAPH);
   assert.deepEqual(
     regions.map((region) => region.nodes.length),
-    [107, 13, 5, 4, 3, 3],
+    // **[107, 13, 5, 4, 3, 3, 3] — seven regions, and the last three arrived from
+    // two different lanes that never met.** The two 3s at indices 5 and 6 are the PDE
+    // discretization slots (ai-ops#64); the 3 at index 7 is `device-characterization`
+    // (ai-ops#68). Ties here break on graph order, not on arrival order, so the
+    // device-characterisation region sorts LAST despite its nodes being authored
+    // above the number-theory block — which is why the region-pair assertion further
+    // down still reads 5 and 6 and did not have to be renumbered.
+    [107, 13, 5, 4, 3, 3, 3],
     "the region shape changed; re-read what joined or split before updating this",
   );
 
   const entries = slotEntries(LAYER_GRAPH, STATE_VOCABULARY);
-  assert.equal(entries.length, 27);
+  assert.equal(entries.length, 28);
   const open = entries.filter((entry) => entry.supply !== "joined");
-  assert.equal(open.length, 14);
+  assert.equal(open.length, 15);
 
   const bySupply = (supply: string) => open.filter((entry) => entry.supply === supply).length;
-  assert.equal(bySupply("front-door"), 6);
-  assert.equal(bySupply("root-supplied"), 2);
-  assert.equal(bySupply("ingredient"), 6);
+  // **`root-supplied` moves 2 -> 3 without anyone editing `error-correction`.** Unit 4's
+  // `device-characterization` is a root that also consumes `physical-qubits`, so that
+  // state is now entered at a root and every slot naming it re-types. A disposition
+  // changing on a slot the commit never touched is the join model earning its place.
+  //
+  // The three dispositions move for three unrelated reasons and it is worth keeping
+  // them apart: `front-door` 4 -> 6 from the two PDE slots (ai-ops#64) and -> 7 from
+  // `device-characterization` (ai-ops#68); `root-supplied` 2 -> 3 from the re-type
+  // above; `ingredient` 6 -> 5 because `error-correction` LEFT this class rather than
+  // because anything stopped being a feed. A total that moved by two while three
+  // sub-counts moved is the reason they are asserted separately.
+  assert.equal(bySupply("front-door"), 7);
+  assert.equal(bySupply("root-supplied"), 3);
+  assert.equal(bySupply("ingredient"), 5);
   assert.equal(bySupply("joined"), 0, "by construction — `open` already excludes them");
 });
 
@@ -476,7 +494,7 @@ test("three slots want a join nobody has recorded, and they are the ones ai-ops#
   }
 });
 
-test("the map is three regions under containment and two under what a trace walks", () => {
+test("the map is seven regions under containment and four under what a trace walks", () => {
   // ADR-0027's split, asserted on the real graph so it cannot quietly become
   // one relation again. `regionsOf` must stay on containment: if it adopted the
   // walkable set, compilation and algorithms would be one region and the 105
@@ -508,6 +526,17 @@ test("the map is three regions under containment and two under what a trace walk
     return sizes.sort((a, b) => b - a);
   };
 
-  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5, 4, 3, 3]);
-  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [126, 5, 4]);
+  assert.deepEqual(componentsUnder(layerAdjacency(LAYER_GRAPH)), [107, 13, 5, 4, 3, 3, 3]);
+  // **[126, 5, 4, 3], and the two lanes that landed here behave OPPOSITELY under the
+  // walk — which is the distinction these two lines exist to make visible.** The PDE
+  // regions are separate under containment and merge into the 126 under the walk:
+  // nothing steps into them, but the states they produce are consumed, so a trace
+  // does cross where containment says there is no edge. `device-characterization`
+  // merges under neither. It produces `device-figure`, which by construction no slot
+  // anywhere consumes — a number about the machine is not an input to a computation —
+  // so it stays a 3 under both relations, exactly as number theory stays a 4 under
+  // both. That is the stronger statement of the two: the PDE split is a join the walk
+  // can see and containment cannot, while these two regions are genuinely disjoint
+  // subjects a reader enters directly.
+  assert.deepEqual(componentsUnder(walkableAdjacency(LAYER_GRAPH, STATE_VOCABULARY)), [126, 5, 4, 3]);
 });

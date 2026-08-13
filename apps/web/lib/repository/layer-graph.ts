@@ -9178,6 +9178,87 @@ export const LAYER_GRAPH: LayerGraph = {
       { title: "Measurement Optimization in the Variational Quantum Eigensolver Using a Minimum Clique Cover", authors: "Vladyslav Verteletskyi, Tzu-Ching Yen, Artur F. Izmaylov", year: "2019", url: "https://arxiv.org/abs/1907.03358" },
     ],
   },
+  // ── Session 15 unit 4, ai-ops#68: the device-characterisation region ────────
+  // **Built against a recommendation this lane made and the owner overruled.**
+  // Asked whether benchmarking protocols belong on the map, the recommendation was
+  // no — they are characterisation protocols, they do not take a problem and return
+  // an answer, and W21's precedent was to refuse a node on relevance rather than
+  // stretch a contract. He answered "option 2": put them on the map as a
+  // hardware-side region, so one parity number covers both surfaces. The trade he
+  // was choosing against is the one that made the question worth asking — refusing
+  // them keeps `/repository` and the map on different denominators, which is what
+  // ai-ops#57 asked us to close.
+  //
+  // **His ruling puts them on the map; it does not waive the map's own bar.** The
+  // two records were checked against the admission test on their papers and pass,
+  // which is why this is a slot with two methods rather than a topic tag.
+  //
+  // The entry state is `physical-qubits`, which already exists — so this region is
+  // NOT a new front door invented for it. It consumes the same floor
+  // `error-correction` consumes, which is the honest reading: both are about the
+  // machine underneath, and neither is about the computation running on it.
+  {
+    kind: "capability",
+    id: "device-characterization",
+    label: "Measure what the machine can actually do",
+    labelJa: "機械に実際に何ができるかを測る",
+    summary: "Run a protocol whose answer is already known, on the hardware, and read the machine's own performance off how far the result falls short. Nothing here computes anything a user wanted — the point is that the answer is known in advance, because that is what makes the shortfall a measurement.",
+    summaryJa: "答えがあらかじめ分かっているプロトコルをハードウェア上で実行し、結果がどれだけ及ばないかから機械自身の性能を読み取ります。ここでは利用者が求めた計算は何も行われません。答えが事前に分かっていることこそが要点であり、それゆえに「及ばなさ」が測定になります。",
+    contract: {
+      from: "physical-qubits",
+      to: "device-figure",
+      takes: "A programmable device — its qubits, its native gate set, its connectivity and its measurement — plus how many circuits and how many shots you are willing to spend, and the confidence level the answer has to be established at.",
+      takesJa: "プログラム可能なデバイス。すなわち量子ビット、ネイティブゲート集合、接続性、測定機構。あわせて、費やしてよい回路数とショット数、そして答えを確立すべき信頼水準。",
+      returns: "A number characterising the hardware, the protocol that produced it, and the statistical confidence it holds at — never an answer to a computational problem, because no computational problem was posed.",
+      returnsJa: "ハードウェアを特徴づける数値と、それを生んだプロトコル、そしてそれが成り立つ統計的信頼度。計算問題への答えではありません。そもそも計算問題が課されていないからです。",
+    },
+    entries: [],
+    whyALayer: "What a reader is choosing between is **what the number is about**: one method isolates a gate set from the rest of the machine, the other refuses to. Randomized benchmarking reports the average error rate of a gate set, from the decay of fidelity over random Clifford sequences, deliberately independent of everything around it. Quantum volume reports the largest random square circuit the whole machine can actually execute — gates, connectivity, crosstalk and compiler together — and Cross et al. introduce it precisely because they hold that the first kind of number does not predict the second: \"performance of isolated gates may not predict the behavior of the system. Methods such as randomized benchmarking, state and process tomography, and gateset tomography are valued for measuring the performance of operations on a few qubits, yet they fail to account for errors arising from interactions with spectator qubits.\" So the two do not merely differ in what they measure — one of them is an argument about the other's category, which is a stronger condition than a layer needs and the reason this one is not a topic tag.",
+    whyALayerJa: "読み手が選んでいるのは、**その数値が何についての数値か**です。一方の手法はゲート集合を機械の他の部分から切り離し、他方はそれを拒みます。ランダム化ベンチマークは、ランダムな Clifford 列に対する忠実度の減衰から、ゲート集合の平均誤り率を報告します。これは周囲のすべてから意図的に独立です。量子ボリュームは、機械全体、すなわちゲート・接続性・クロストーク・コンパイラを合わせたものが実際に実行できる最大のランダム正方回路を報告します。Cross らがこれを導入したのは、前者の種類の数値が後者を予測しないと考えるからです。「孤立したゲートの性能は、系全体の振る舞いを予測しないことがある。ランダム化ベンチマーク、状態・プロセストモグラフィ、ゲートセットトモグラフィといった手法は、少数の量子ビット上での操作の性能を測るものとして評価されているが、傍観者量子ビットとの相互作用に起因する誤りを説明できない」。つまり両者は測る対象が違うだけではありません。一方が他方の範疇についての主張になっています。これは層に必要な条件より強く、この層が単なる話題のタグではない理由です。",
+  },
+  {
+    kind: "method",
+    id: "quantum-volume-protocol",
+    label: "Quantum volume from random square circuits",
+    labelJa: "ランダム正方回路による量子ボリューム",
+    shortLabel: "Quantum volume",
+    shortLabelJa: "量子ボリューム",
+    summary: "Run random circuits that are as deep as they are wide, and ask how often the machine returns one of the outputs that should be more likely than the median. Widen and deepen together until it can no longer beat that bar; the last size it managed is the number.",
+    summaryJa: "幅と深さの等しいランダム回路を実行し、中央値より起こりやすいはずの出力を機械がどれだけの頻度で返すかを問います。幅と深さを同時に増やしていき、その基準を超えられなくなったところで止めます。最後に達成できた大きさが、その数値です。",
+    realizes: "device-characterization",
+    conditions: "The circuits are specified exactly: *\"Each layer is specified by choosing a uniformly random permutation of the m qubit indices and sampling each U^(t)_{a,b}, acting on qubits a and b, from the Haar measure on SU(4)\"*. The bar is a fixed fraction rather than a fitted curve — *\"The heavy output generation problem is to produce a set of output strings such that more than two-thirds are heavy\"* — and the number is where that bar is last cleared: *\"We define the achievable depth d(m) to be the largest d such that we are confident h_d > 2/3\"*, giving $\\log_2 V_Q = \\arg\\max_m \\min(m, d(m))$. What it is claimed to cover is broad and stated: *\"This metric takes into account all relevant hardware parameters. This includes the performance parameters (coherence, calibration errors, crosstalk, spectator errors, gate fidelity, measurement fidelity, initialization fidelity) as well as the design parameters such as connectivity and gate set.\"*",
+    conditionsJa: "回路は厳密に定められています。「各層は、m 個の量子ビット添字の一様ランダムな置換を選び、量子ビット a と b に作用する各 U^(t)_{a,b} を SU(4) 上の Haar 測度から標本抽出することで指定される」。基準は当てはめた曲線ではなく固定された割合です。「重い出力生成問題とは、出力文字列の集合であって、その 3 分の 2 を超えるものが重いようなものを生成することである」。そして数値は、その基準を最後に満たした点で定まります。「達成可能な深さ d(m) を、h_d > 2/3 であると確信できる最大の d と定義する」。これにより $\\log_2 V_Q = \\arg\\max_m \\min(m, d(m))$ が得られます。何を覆うと主張しているかも広く、明示されています。「この指標は関連するすべてのハードウェア・パラメータを考慮する。これには性能パラメータ（コヒーレンス、較正誤差、クロストーク、傍観者誤差、ゲート忠実度、測定忠実度、初期化忠実度）と、接続性やゲート集合といった設計パラメータが含まれる」。",
+    steps: [],
+    entries: ["quantum-volume-benchmark"],
+    citations: [
+      { title: "Validating quantum computers using randomized model circuits", authors: "Andrew W. Cross, Lev S. Bishop, Sarah Sheldon, Paul D. Nation, Jay M. Gambetta", year: "2018", url: "https://arxiv.org/abs/1811.12926" },
+    ],
+  },
+  {
+    kind: "method",
+    id: "clifford-randomized-benchmarking",
+    label: "Randomized benchmarking over Clifford sequences",
+    labelJa: "Clifford 列によるランダム化ベンチマーク",
+    shortLabel: "RB",
+    shortLabelJa: "RB",
+    summary: "Apply a random sequence of Clifford gates, then the one gate that undoes all of them, and see how often the machine comes back to where it started. Lengthen the sequence and the return probability decays; the decay rate is the average error a single gate costs, and preparation and measurement errors fall out of the fit rather than contaminating it.",
+    summaryJa: "ランダムな Clifford ゲートの列を作用させ、続いてそれらすべてを打ち消す一つのゲートを作用させ、機械がどれだけの頻度で出発点に戻るかを見ます。列を長くすると復帰確率は減衰し、その減衰率が 1 ゲートあたりの平均誤りです。状態準備と測定の誤りは、汚染要因になるのではなく、当てはめの中で分離されます。",
+    realizes: "device-characterization",
+    conditions: "The protocol's shape is stated exactly: *\"Generate a sequence of m + 1 quantum operations with the first m operations chosen uniformly at random from some group G ⊆ U(d) and the final operation chosen so that the net sequence (if realized without errors) is the identity operation\"*, with the Clifford group chosen *\"because each element of the Clifford group can be realized efficiently on a quantum processor\"*. The number that comes out is a per-gate average, read off the decay: $r = 1 - p - (1-p)/d$. **What \"robust\" means here is the paper's own contribution and it is a correction rather than a refinement:** earlier randomized benchmarking could be defeated outright — *\"it is easy to show (via a counter example with gate-dependent errors that consist of the exact inverse of the gate applied) that the decay rate estimated via RB methods can be totally unrelated to the actual error-rate\"* — and this analysis *\"is valid for a realistic noise model admitting time-dependent and gate-dependent errors and also accounts for state preparation and measurement errors\"*, requiring only that the variation across the gate set is not too strong.",
+    conditionsJa: "プロトコルの形は正確に述べられています。「m + 1 個の量子操作の列を生成する。最初の m 個は群 G ⊆ U(d) から一様ランダムに選び、最後の操作は、誤りなく実現されたときに列全体が恒等操作となるように選ぶ」。Clifford 群が選ばれるのは「Clifford 群の各要素は量子プロセッサ上で効率的に実現できる」からです。得られる数値は減衰から読み取る 1 ゲートあたりの平均であり、$r = 1 - p - (1-p)/d$ です。**ここでの「頑健（robust）」が意味するのは本論文自身の貢献であり、それは改良というより訂正です。** 従来のランダム化ベンチマークは完全に破られうるものでした。「（作用させたゲートのちょうど逆になるようなゲート依存誤りによる反例によって）RB 法で推定される減衰率が、実際の誤り率とまったく無関係になりうることは容易に示せる」。本論文の解析は「時間依存およびゲート依存の誤りを許す現実的な雑音モデルに対して有効であり、状態準備と測定の誤りも考慮する」ものであり、要求するのはゲート集合にわたる変動が強すぎないことだけです。",
+    // **The `whyALayer` above quotes Cross et al. naming this method's category,
+    // not this paper.** Their citation for "randomized benchmarking" resolves to
+    // Magesan, Gambetta and Emerson's later 2012 PRA paper, not to this 2010
+    // Letter. Same three authors and the same method family, so the argument
+    // applies — but they are not literally citing this node's source, and saying
+    // they were would be the citation drift ADR-0026 §1 forbids. Recorded here so
+    // the slot's justification can be checked without re-reading both papers.
+    steps: [],
+    entries: ["randomized-benchmarking-protocol"],
+    citations: [
+      { title: "Robust randomized benchmarking of quantum processes", authors: "Easwar Magesan, J. M. Gambetta, Joseph Emerson", year: "2010", url: "https://arxiv.org/abs/1009.3639" },
+    ],
+  },
   // ── Session 15 unit 3, ai-ops#57: the number-theory region ──────────────────
   // The first genuinely new SUBJECT region on this map — everything before it was
   // the differential-equation spine, the variational spine, or the hardware tail.
