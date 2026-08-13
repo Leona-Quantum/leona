@@ -38,10 +38,26 @@ silent about, plus the two guards the silence left missing.
 
 **Decision:**
 
-**1. What may be extracted.** A record in the Atlas, or a node on the map, may name a *component*
-of a paper — an objective, an encoding, an ansatz, a mixer, a subroutine, a stopping rule, a
-discretisation, a readout — regardless of whether the paper is about that component. The unit of
-extraction is what the paper *contains*, not what the paper is *for*.
+**1. What may be extracted, and in which direction.** A record in the Atlas, or a node on the map,
+may name a *component* of a paper — an objective, an encoding, an ansatz, a mixer, a subroutine, a
+stopping rule, a discretisation, a readout — regardless of whether the paper is about that
+component. The unit of extraction is what the paper *contains*, not what the paper is *for*.
+
+**An extraction narrows a paper's claim. It never widens one.** #51 permits going *finer* than a
+paper — "we are frankensteining and **breaking down** papers" — and the owner's own word for the
+opposite move is in the same sentence: *"when going at this more granular level it doesn't
+**abstract** to unrelated topics."* Generalising is that failure, not a smaller version of the
+permitted move. So the test is a direction: draw the boundary of what the paper states and ask
+whether the record sits **inside** it. #51 moved the granularity of what may be taken out; it did
+not move the boundary.
+
+The case that produced this clause, 2026-08-13: Lucas (arXiv:1302.5843) §3.4 formulates **binary**
+integer linear programming, and a Classiq demonstration solves **general-integer** ILP. General ILP
+needs a binary expansion of each integer variable before Lucas's formulation applies, and neither
+the expansion nor its qubit cost is in Lucas. That is not a smaller piece of Lucas; it is a larger
+claim than Lucas makes, and it stays a refusal. The right shipping form is a declaration against
+the general record plus a `knownGap` with `reason: "not_stated_in_source"` naming the binary
+expansion — which converts "we could not source this" into "here is precisely what is missing".
 
 **2. What a sub-paper extraction may claim, and what it may not.** It may claim the component's
 definition or construction as the paper states it; any property the paper states **of the
@@ -52,6 +68,35 @@ part of it. Where the paper does not state the figure for the component itself, 
 out or declared as a `knownGap`; §3.6's rule is untouched — *a block may ship with a hole, it may
 never ship with a guess in the hole.* This is the half of the policy a checker cannot see, and it
 is the reviewer's job.
+
+**2a. When two papers each hold half, neither becomes the record's `source`.** The commonest shape
+this doctrine produces: one paper states the *problem* exactly, another states the *method* exactly,
+and **no document contains the pair**. No record may claim the pair, because a record's claim is
+what some document says.
+
+The resolution is that the two citation sites are not interchangeable. `entry.source` is the
+record's *own provenance claim* — it is the whole of what the catalog attestation hashes into
+`claim_hash` — so naming a paper there asserts *this record documents that work*. `literature[]` is
+a work the record draws on. A paper holding one half goes in `literature[]` with its locus, and the
+demonstration itself stays a declaration against the general record, per #42 option (b).
+
+The case, 2026-08-13: a Classiq demonstration solves Max k-Vertex Cover with QAOA. Manurangsi
+(arXiv:1810.03792) states that problem exactly — objective and cardinality constraint, in the
+abstract's first sentence — and is **entirely classical**: FPT approximation scheme, approximate
+kernelization, an SDP-based 0.92-approximation, no quantum algorithm anywhere. Farhi states QAOA
+exactly. Putting Manurangsi in `source` would assert the record documents Manurangsi's work, which
+is false; leaving it out entirely would let a later session reach for Lucas's Vertex Cover section,
+which is a *different problem* (minimise the cover, not maximise coverage under a budget of k). So:
+register it, cite it for the problem statement, keep the demonstration a declaration.
+
+**A half also does not earn a record of its own**, and the reason is mechanical rather than
+editorial: a corpus record must resolve to a `role` through `FAMILY_RULES` (`topics.ts`), and for a
+classical problem statement every honest option is wrong. `algorithm-reference` would assert an
+algorithm described at reference depth — Manurangsi's algorithms are classical and are not what the
+record is about — and inventing a family for "classical combinatorial problem statement" tells a
+browsing reader the corpus has a category it does not have. A first-class home for problem
+statements is the ingredient shelf (ai-ops#41 option B), which is not built; until it is, the
+citation is the home.
 
 **3. The evidence a sub-paper extraction needs.**
 
@@ -69,6 +114,22 @@ is the reviewer's job.
   and this ADR does not add one — see *Open* below.
 - **A declaration when the extraction is shared.** Where `DECLARED_SHARED_SOURCES` applies (see 5),
   the URL and its exact slug set are written down with the reason.
+- **A reference list is never inherited.** Every reference that enters the register or a citation is
+  opened and confirmed to be the paper it is labelled as. This is not a general caution; it is a
+  measurement. Reading the 13 Classiq notebooks of the #42 batch first-hand at pinned commit
+  `ac61dccb` (lane 4, 2026-08-13) found **3 of 13 carrying a broken or wrong reference**:
+  `minimum_dominating_set`'s `[1]` is labelled "Dominating Set (Wikipedia)" and points at
+  `wiki/Partition_problem`; `integer_linear_programming` cites `#ILP` against an anchor spelled
+  `id='MVC'`, copy-paste residue from the neighbouring notebook; `electric_grid_optimization` cites
+  `#OpPwer` against `id='OpPower'`. The first of those is the exact failure `papers.ts` was built
+  for — a citation naming a different, real work — arriving from a new direction.
+  **This sharpens #42 rather than contradicting it.** "Reputable source (like classiq library)" is a
+  claim about the *implementation*: it runs, it is maintained, it is used. None of that is evidence
+  about a hyperlink somebody pasted into a markdown cell.
+- **An encyclopedia article is not a source.** ai-ops#12 settled that a directory entry is not a
+  source; a Wikipedia link is the same shape and does not belong in `literature[]`. A demonstration
+  whose only reference is one has **no** per-problem primary source, which is a different and more
+  honest state than a weak one.
 
 **4. "Relevant to the topic" and "does not abstract to unrelated topics", in checkable terms.**
 The owner's two conditions are one machine-checkable rule and one reviewer rule, and this ADR is
